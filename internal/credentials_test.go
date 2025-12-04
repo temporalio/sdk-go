@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"crypto/tls"
 	"testing"
 
@@ -59,4 +60,17 @@ func TestAPIKeyCredentials_ExplicitTLSConfigPreservedWithAPIKey(t *testing.T) {
 	require.NotNil(t, opts.TLS)
 	require.Equal(t, "test-domain", opts.TLS.ServerName)
 	require.Equal(t, uint16(tls.VersionTLS12), opts.TLS.MinVersion)
+}
+
+func TestConnectionOptions_TLSAndTLSDisabledMutuallyExclusive(t *testing.T) {
+	// Test that setting both TLS and TLSDisabled returns an error
+	_, err := NewClient(context.Background(), ClientOptions{
+		HostPort: "localhost:7233",
+		ConnectionOptions: ConnectionOptions{
+			TLS:         &tls.Config{},
+			TLSDisabled: true,
+		},
+	})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cannot set both TLS and TLSDisabled")
 }
