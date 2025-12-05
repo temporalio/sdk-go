@@ -50,6 +50,9 @@ env:
   # Prometheus version
   PROM_VERSION: "3.8.0"
 
+  # Language
+  SDK_LANG: "go"
+
 jobs:
   throughput-stress:
     runs-on: ubuntu-latest-4-cores
@@ -124,7 +127,7 @@ jobs:
           # to give CI a bit more time for visibility consistency
           go run ./cmd run-scenario-with-worker \
             --scenario throughput_stress \
-            --language go \
+            --language $SDK_LANG \
             --version $(pwd)/.. \
             --run-id $RUN_ID \
             --duration $TEST_DURATION \
@@ -161,9 +164,9 @@ jobs:
           if [[ "$GH_REF" != "refs/heads/main" || "$IS_EXPERIMENT_INPUT" == "true" ]]; then
             IS_EXPERIMENT="true"
           fi
-          echo "Uploading metrics: is_experiment=$IS_EXPERIMENT, language=go, date=$DATE"
+          echo "Uploading metrics: is_experiment=$IS_EXPERIMENT, language=$SDK_LANG, date=$DATE"
           aws s3 cp omes/$RUN_ID.parquet \
-            "s3://cloud-data-ingest-prod/github/sdk_load_test/is_experiment=$IS_EXPERIMENT/language=go/date=$DATE/$RUN_ID.parquet"
+            "s3://cloud-data-ingest-prod/github/sdk_load_test/is_experiment=$IS_EXPERIMENT/language=$SDK_LANG/date=$DATE/$RUN_ID.parquet"
 
       - name: Upload logs on failure/cancellation
         if: failure() || cancelled()
