@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
@@ -108,7 +108,8 @@ func (t *tracerImpl) MarshalSpan(span interceptor.TracerSpan) (map[string]string
 	if !ok {
 		return nil, fmt.Errorf("expected *tracerSpan, got %T", span)
 	}
-	if err := tracer.Inject(tSpan.Context(), &carrier); err != nil {
+
+	if err := tracer.Inject(tSpan.Context(), carrier); err != nil {
 		return nil, err
 	}
 	return carrier, nil
@@ -131,7 +132,7 @@ func (t *tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.Trace
 }
 
 // SpanFromWorkflowContext extracts the DataDog Span object from the workflow context.
-func SpanFromWorkflowContext(ctx workflow.Context) (ddtrace.Span, bool) {
+func SpanFromWorkflowContext(ctx workflow.Context) (*tracer.Span, bool) {
 	val := ctx.Value(activeSpanContextKey)
 	if val == nil {
 		return tracer.SpanFromContext(nil)
@@ -156,46 +157,51 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 		tracer.ResourceName(options.Name),
 		tracer.StartTime(options.Time),
 	}
-	// Set a deterministic span ID for workflows which are long-running and cross process boundaries
+	// Set a deterministic span ID for workflows which are long-running and cross-process boundaries
 	if options.IdempotencyKey != "" {
 		startOpts = append(startOpts, tracer.WithSpanID(genSpanID(options.IdempotencyKey)))
 	}
 
 	// Add parent span to start options
-	var parent ddtrace.SpanContext
+	var (
+		parentCtx *tracer.SpanContext
+		parent    *tracer.Span
+	)
+
 	switch opParent := options.Parent.(type) {
 	case nil:
 	case *tracerSpan:
-		parent = opParent.Context()
+		parent = opParent.Span
 	case *tracerSpanCtx:
-		parent = opParent
+		parentCtx = opParent.SpanContext
 	default:
-		// This should be considered an error, because something unexpected is
+		// This should be considered an error because something unexpected is
 		// in the place where only a parent trace should be. In this case, we don't
 		// set up the parent, so we will be creating a new top-level span
-	}
-	if parent != nil {
-		// Convert the parent context into a full trace.
-		// This is required, otherwise the implementation of StartSpan()
-		// will NOT respect ChildOf().
-		// The runtime type of parentTrace will be tracer.spanContext (note the
-		// starting lowercase on "spanContext", that's an internal struct)
-		parentTrace, err := tracer.Extract(newSpanContextReader(parent))
-		if err != nil {
-			return nil, err
-		}
-		startOpts = append(startOpts, tracer.ChildOf(parentTrace))
 	}
 
 	// Add tags to start options
 	for k, v := range options.Tags {
 		// TODO when custom span support is added we might have to revisit this
 		// Display Temporal tags in a nested group in Datadog APM
-		tagKey := fmt.Sprintf("temporal.%s", strings.TrimPrefix(k, "temporal."))
+		tagKey := "temporal." + strings.TrimPrefix(k, "temporal.")
 		startOpts = append(startOpts, tracer.Tag(tagKey, v))
 	}
 
-	// Start and return span
+	if parent != nil {
+		// Start Child Span and wrap
+		s := parent.StartChild(t.SpanName(options), startOpts...)
+		return &tracerSpan{OnFinish: t.opts.OnFinish, Span: s}, nil
+	}
+
+	if parentCtx != nil {
+		config := tracer.StartSpanConfig{
+			Parent: parentCtx,
+		}
+		startOpts = append(startOpts, tracer.WithStartSpanConfig(&config))
+	}
+
+	// Start New and return wrapped
 	s := tracer.StartSpan(t.SpanName(options), startOpts...)
 	return &tracerSpan{OnFinish: t.opts.OnFinish, Span: s}, nil
 }
@@ -215,7 +221,7 @@ func (t *tracerImpl) SpanName(options *interceptor.TracerStartSpanOptions) strin
 
 func newSpanContextReader(parent ddtrace.SpanContext) spanContextReader {
 	carrier := map[string]string{
-		tracer.DefaultTraceIDHeader:  strconv.FormatUint(parent.TraceID(), 10),
+		tracer.DefaultTraceIDHeader:  parent.TraceID(),
 		tracer.DefaultParentIDHeader: strconv.FormatUint(parent.SpanID(), 10),
 	}
 
@@ -245,18 +251,18 @@ func (r spanContextReader) ForeachKey(handler func(key string, value string) err
 }
 
 type tracerSpan struct {
-	ddtrace.Span
+	*tracer.Span
 	OnFinish func(options *interceptor.TracerFinishSpanOptions) []tracer.FinishOption
 }
 type tracerSpanCtx struct {
-	ddtrace.SpanContext
+	*tracer.SpanContext
 }
 
 func (t *tracerSpan) SpanID() uint64 {
 	return t.Span.Context().SpanID()
 }
 
-func (t *tracerSpan) TraceID() uint64 {
+func (t *tracerSpan) TraceID() string {
 	return t.Span.Context().TraceID()
 }
 
