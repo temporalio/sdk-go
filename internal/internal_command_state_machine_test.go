@@ -553,7 +553,7 @@ func Test_MarkerStateMachine(t *testing.T) {
 	h := newCommandsHelper()
 
 	// record marker for side effect
-	d := h.recordSideEffectMarker(1, nil, converter.GetDefaultDataConverter())
+	d := h.recordSideEffectMarker(1, nil, converter.GetDefaultDataConverter(), nil)
 	require.Equal(t, commandStateCreated, d.getState())
 
 	// send commands

@@ -7772,6 +7772,100 @@ func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
 	ts.Equal(summaryStr, summary)
 }
 
+func (ts *IntegrationTestSuite) TestSideEffectSummary() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	summaryStr := "My side effect summary"
+	workflowFn := func(ctx workflow.Context) error {
+		var result int
+		encoded := workflow.SideEffectWithOptions(ctx, workflow.SideEffectOptions{
+			Summary: summaryStr,
+		}, func(ctx workflow.Context) interface{} {
+			return 42
+		})
+		err := encoded.Get(&result)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	workflowID := "side-effect-summary-" + uuid.NewString()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "side-effect-summary"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 1 * time.Second,
+	}
+
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	var summary string
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		attributes := event.GetMarkerRecordedEventAttributes()
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "SideEffect" {
+			if event.UserMetadata != nil && event.UserMetadata.Summary != nil {
+				ts.NoError(converter.GetDefaultDataConverter().FromPayload(event.UserMetadata.Summary, &summary))
+			}
+		}
+	}
+	ts.Equal(summaryStr, summary)
+}
+
+func (ts *IntegrationTestSuite) TestMutableSideEffectSummary() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	summaryStr := "My mutable side effect summary"
+	workflowFn := func(ctx workflow.Context) error {
+		var result int
+		encoded := workflow.MutableSideEffectWithOptions(ctx, "my-mutable-side-effect", workflow.MutableSideEffectOptions{
+			Summary: summaryStr,
+		}, func(ctx workflow.Context) interface{} {
+			return 42
+		}, func(a, b interface{}) bool {
+			return a == b
+		})
+		err := encoded.Get(&result)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	workflowID := "mutable-side-effect-summary-" + uuid.NewString()
+	ts.worker.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: "mutable-side-effect-summary"})
+	startOptions := client.StartWorkflowOptions{
+		ID:                  workflowID,
+		TaskQueue:           ts.taskQueueName,
+		WorkflowTaskTimeout: 1 * time.Second,
+	}
+
+	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	var summary string
+	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	for iter.HasNext() {
+		event, err := iter.Next()
+		ts.NoError(err)
+		attributes := event.GetMarkerRecordedEventAttributes()
+		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "MutableSideEffect" {
+			if event.UserMetadata != nil && event.UserMetadata.Summary != nil {
+				ts.NoError(converter.GetDefaultDataConverter().FromPayload(event.UserMetadata.Summary, &summary))
+			}
+		}
+	}
+	ts.Equal(summaryStr, summary)
+}
+
 func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
 	assertGrpcErrorInHistory := func(ctx context.Context, run client.WorkflowRun) {
 		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)

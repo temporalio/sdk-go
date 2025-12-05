@@ -604,6 +604,36 @@ type (
 		// NOTE: Experimental
 		TimerOptions TimerOptions
 	}
+
+	// SideEffectOptions are options for executing a side effect.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SideEffectOptions]
+	SideEffectOptions struct {
+		// Summary is a single-line summary of this side effect that will appear in UI/CLI.
+		// This can be in single-line Temporal Markdown format.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		Summary string
+	}
+
+	// MutableSideEffectOptions are options for executing a mutable side effect.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.MutableSideEffectOptions]
+	MutableSideEffectOptions struct {
+		// Summary is a single-line summary of this side effect that will appear in UI/CLI.
+		// This can be in single-line Temporal Markdown format.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		Summary string
+	}
 )
 
 // Await blocks the calling thread until condition() returns true
@@ -2057,12 +2087,32 @@ func (b EncodedValue) HasValue() bool {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.SideEffect]
 func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
+	return SideEffectWithOptions(ctx, SideEffectOptions{}, f)
+}
+
+// SideEffectWithOptions executes the provided function once, records its result into the workflow history.
+// The recorded result on history will be returned without executing the provided function during replay.
+// This guarantees the deterministic requirement for workflow as the exact same result will be returned in replay.
+// Common use case is to run some short non-deterministic code in workflow, like getting random number or new UUID.
+// The only way to fail SideEffect is to panic which causes workflow task failure. The workflow task after timeout is
+// rescheduled and re-executed giving SideEffect another chance to succeed.
+//
+// The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.SideEffectWithOptions]
+func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
-	return i.SideEffect(ctx, f)
+	return i.SideEffectWithOptions(ctx, options, f)
 }
 
 func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
+	return wc.SideEffectWithOptions(ctx, SideEffectOptions{}, f)
+}
+
+func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
 	dc := getDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() (*commonpb.Payloads, error) {
@@ -2075,7 +2125,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Con
 	resultCallback := func(result *commonpb.Payloads, err error) {
 		settable.Set(EncodedValue{result, dc}, err)
 	}
-	wc.env.SideEffect(wrapperFunc, resultCallback)
+	wc.env.SideEffect(wrapperFunc, resultCallback, options.Summary)
 	var encoded EncodedValue
 	if err := future.Get(ctx, &encoded); err != nil {
 		panic(err)
@@ -2102,19 +2152,38 @@ func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Con
 //
 // Exposed as: [go.temporal.io/sdk/workflow.MutableSideEffect]
 func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+	return MutableSideEffectWithOptions(ctx, id, MutableSideEffectOptions{}, f, equals)
+}
+
+// MutableSideEffectWithOptions executes the provided function once, then it looks up the history for the value with the given id.
+// If there is no existing value, then it records the function result as a value with the given id on history;
+// otherwise, it compares whether the existing value from history has changed from the new function result by calling
+// the provided equals function. If they are equal, it returns the value without recording a new one in history;
+// otherwise, it records the new value with the same id on history.
+//
+// The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.MutableSideEffectWithOptions]
+func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
-	return i.MutableSideEffect(ctx, id, f, equals)
+	return i.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }
 
 func (wc *workflowEnvironmentInterceptor) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+	return wc.MutableSideEffectWithOptions(ctx, id, MutableSideEffectOptions{}, f, equals)
+}
+
+func (wc *workflowEnvironmentInterceptor) MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	wrapperFunc := func() interface{} {
 		coroutineState := getState(ctx)
 		defer coroutineState.dispatcher.setIsReadOnly(false)
 		coroutineState.dispatcher.setIsReadOnly(true)
 		return f(ctx)
 	}
-	return wc.env.MutableSideEffect(id, wrapperFunc, equals)
+	return wc.env.MutableSideEffect(id, wrapperFunc, equals, options.Summary)
 }
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before
