@@ -24,6 +24,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   # Workflow configuration
@@ -45,10 +46,6 @@ jobs:
   throughput-stress:
     runs-on: ubuntu-latest-4-cores
     timeout-minutes: ${{ fromJSON(inputs.job_timeout_minutes || (vars.NIGHTLY_JOB_TIMEOUT_MINUTES || '360')) }}
-    permissions:
-      contents: read
-      actions: write
-      id-token: write
 
     steps:
       - name: Print test configuration
