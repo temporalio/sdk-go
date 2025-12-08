@@ -3,7 +3,6 @@ package resourcetuner
 import (
 	"context"
 	"errors"
-	"go.temporal.io/sdk/internal/common/metrics"
 	"runtime"
 	"sync"
 	"time"
@@ -11,8 +10,15 @@ import (
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
+)
+
+// Metric names emitted by the resource-based tuner
+const (
+	ResourceSlotsCPUUsage = "temporal_resource_slots_cpu_usage"
+	ResourceSlotsMemUsage = "temporal_resource_slots_mem_usage"
 )
 
 type ResourceBasedTunerOptions struct {
@@ -277,7 +283,7 @@ func NewResourceController(options ResourceControllerOptions) *ResourceControlle
 	}
 }
 
-func (rc *ResourceController) pidDecision(logger log.Logger, metricsHandler metrics.Handler) (bool, error) {
+func (rc *ResourceController) pidDecision(logger log.Logger, metricsHandler client.MetricsHandler) (bool, error) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 
@@ -316,12 +322,12 @@ func (rc *ResourceController) pidDecision(logger log.Logger, metricsHandler metr
 		rc.cpuPid.State.ControlSignal > rc.options.CpuOutputThreshold, nil
 }
 
-func (rc *ResourceController) publishResourceMetrics(metricsHandler metrics.Handler, memUsage, cpuUsage float64) {
+func (rc *ResourceController) publishResourceMetrics(metricsHandler client.MetricsHandler, memUsage, cpuUsage float64) {
 	if metricsHandler == nil {
 		return
 	}
-	metricsHandler.Gauge(metrics.ResourceSlotsMemUsage).Update(memUsage * 100)
-	metricsHandler.Gauge(metrics.ResourceSlotsCPUUsage).Update(cpuUsage * 100)
+	metricsHandler.Gauge(ResourceSlotsMemUsage).Update(memUsage * 100)
+	metricsHandler.Gauge(ResourceSlotsCPUUsage).Update(cpuUsage * 100)
 }
 
 type psUtilSystemInfoSupplier struct {

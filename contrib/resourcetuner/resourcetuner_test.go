@@ -1,11 +1,12 @@
 package resourcetuner
 
 import (
-	"go.temporal.io/sdk/internal/common/metrics"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/log"
 )
 
 type FakeSystemInfoSupplier struct {
@@ -22,8 +23,8 @@ func (f FakeSystemInfoSupplier) GetCpuUsage(_ *SystemInfoContext) (float64, erro
 }
 
 func TestPidDecisions(t *testing.T) {
-	logger := &log.NoopLogger{}
-	metricsHandler := metrics.NopHandler
+	logger := log.NewNopLogger()
+	metricsHandler := client.MetricsNopHandler
 	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.5, cpuUse: 0.5}
 	rcOpts := DefaultResourceControllerOptions()
 	rcOpts.MemTargetPercent = 0.8
@@ -66,7 +67,7 @@ func TestPidDecisions(t *testing.T) {
 }
 
 func TestPidDecisionEmitsUsageMetrics(t *testing.T) {
-	logger := &log.NoopLogger{}
+	logger := log.NewNopLogger()
 	metricsHandler := metrics.NewCapturingHandler()
 	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.25, cpuUse: 0.75}
 
@@ -85,8 +86,8 @@ func TestPidDecisionEmitsUsageMetrics(t *testing.T) {
 		gaugesByName[gauge.Name] = gauge.Value()
 	}
 
-	assert.Equal(t, 25.0, gaugesByName[metrics.ResourceSlotsMemUsage])
-	assert.Equal(t, 75.0, gaugesByName[metrics.ResourceSlotsCPUUsage])
+	assert.Equal(t, 25.0, gaugesByName[ResourceSlotsMemUsage])
+	assert.Equal(t, 75.0, gaugesByName[ResourceSlotsCPUUsage])
 
 	fakeSupplier.memUse = 0.7
 	fakeSupplier.cpuUse = 0.9
@@ -101,6 +102,6 @@ func TestPidDecisionEmitsUsageMetrics(t *testing.T) {
 		gaugesByName[gauge.Name] = gauge.Value()
 	}
 
-	assert.Equal(t, 70.0, gaugesByName[metrics.ResourceSlotsMemUsage])
-	assert.Equal(t, 90.0, gaugesByName[metrics.ResourceSlotsCPUUsage])
+	assert.Equal(t, 70.0, gaugesByName[ResourceSlotsMemUsage])
+	assert.Equal(t, 90.0, gaugesByName[ResourceSlotsCPUUsage])
 }
