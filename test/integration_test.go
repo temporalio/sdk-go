@@ -7810,9 +7810,7 @@ func (ts *IntegrationTestSuite) TestSideEffectSummary() {
 		ts.NoError(err)
 		attributes := event.GetMarkerRecordedEventAttributes()
 		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "SideEffect" {
-			if event.UserMetadata != nil && event.UserMetadata.Summary != nil {
-				ts.NoError(converter.GetDefaultDataConverter().FromPayload(event.UserMetadata.Summary, &summary))
-			}
+			ts.NoError(converter.GetDefaultDataConverter().FromPayload(event.UserMetadata.Summary, &summary))
 		}
 	}
 	ts.Equal(summaryStr, summary)
@@ -7858,9 +7856,7 @@ func (ts *IntegrationTestSuite) TestMutableSideEffectSummary() {
 		ts.NoError(err)
 		attributes := event.GetMarkerRecordedEventAttributes()
 		if event.EventType == enumspb.EVENT_TYPE_MARKER_RECORDED && attributes.MarkerName == "MutableSideEffect" {
-			if event.UserMetadata != nil && event.UserMetadata.Summary != nil {
-				ts.NoError(converter.GetDefaultDataConverter().FromPayload(event.UserMetadata.Summary, &summary))
-			}
+			ts.NoError(converter.GetDefaultDataConverter().FromPayload(event.UserMetadata.Summary, &summary))
 		}
 	}
 	ts.Equal(summaryStr, summary)
