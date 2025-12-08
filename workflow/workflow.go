@@ -124,13 +124,9 @@ type (
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
 
 	// SideEffectOptions are options for executing a side effect.
-	//
-	// NOTE: Experimental
 	SideEffectOptions = internal.SideEffectOptions
 
 	// MutableSideEffectOptions are options for executing a mutable side effect.
-	//
-	// NOTE: Experimental
 	MutableSideEffectOptions = internal.MutableSideEffectOptions
 
 	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
@@ -409,8 +405,6 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 // This guarantees the deterministic requirement for workflow as the exact same result will be returned in replay.
 //
 // The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
-//
-// NOTE: Experimental
 func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
 	return internal.SideEffectWithOptions(ctx, options, f)
 }
@@ -436,8 +430,6 @@ func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, 
 
 // MutableSideEffectWithOptions is like MutableSideEffect but allows specifying additional options
 // like a summary that will be displayed in UI/CLI.
-//
-// NOTE: Experimental
 func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	return internal.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }

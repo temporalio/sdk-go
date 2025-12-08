@@ -607,8 +607,6 @@ type (
 
 	// SideEffectOptions are options for executing a side effect.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/workflow.SideEffectOptions]
 	SideEffectOptions struct {
 		// Summary is a single-line summary of this side effect that will appear in UI/CLI.
@@ -621,8 +619,6 @@ type (
 	}
 
 	// MutableSideEffectOptions are options for executing a mutable side effect.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.MutableSideEffectOptions]
 	MutableSideEffectOptions struct {
@@ -2099,8 +2095,6 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 //
 // The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/workflow.SideEffectWithOptions]
 func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
 	assertNotInReadOnlyState(ctx)
@@ -2162,8 +2156,6 @@ func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, 
 // otherwise, it records the new value with the same id on history.
 //
 // The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/workflow.MutableSideEffectWithOptions]
 func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
