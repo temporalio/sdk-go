@@ -86,8 +86,8 @@ func TestPidDecisionEmitsUsageMetrics(t *testing.T) {
 		gaugesByName[gauge.Name] = gauge.Value()
 	}
 
-	assert.Equal(t, 25.0, gaugesByName[ResourceSlotsMemUsage])
-	assert.Equal(t, 75.0, gaugesByName[ResourceSlotsCPUUsage])
+	assert.Equal(t, 25.0, gaugesByName[resourceSlotsMemUsage])
+	assert.Equal(t, 75.0, gaugesByName[resourceSlotsCPUUsage])
 
 	fakeSupplier.memUse = 0.7
 	fakeSupplier.cpuUse = 0.9
@@ -102,6 +102,6 @@ func TestPidDecisionEmitsUsageMetrics(t *testing.T) {
 		gaugesByName[gauge.Name] = gauge.Value()
 	}
 
-	assert.Equal(t, 70.0, gaugesByName[ResourceSlotsMemUsage])
-	assert.Equal(t, 90.0, gaugesByName[ResourceSlotsCPUUsage])
+	assert.Equal(t, 70.0, gaugesByName[resourceSlotsMemUsage])
+	assert.Equal(t, 90.0, gaugesByName[resourceSlotsCPUUsage])
 }

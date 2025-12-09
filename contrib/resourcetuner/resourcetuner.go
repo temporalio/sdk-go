@@ -17,8 +17,8 @@ import (
 
 // Metric names emitted by the resource-based tuner
 const (
-	ResourceSlotsCPUUsage = "temporal_resource_slots_cpu_usage"
-	ResourceSlotsMemUsage = "temporal_resource_slots_mem_usage"
+	resourceSlotsCPUUsage = "temporal_resource_slots_cpu_usage"
+	resourceSlotsMemUsage = "temporal_resource_slots_mem_usage"
 )
 
 type ResourceBasedTunerOptions struct {
@@ -326,8 +326,8 @@ func (rc *ResourceController) publishResourceMetrics(metricsHandler client.Metri
 	if metricsHandler == nil {
 		return
 	}
-	metricsHandler.Gauge(ResourceSlotsMemUsage).Update(memUsage * 100)
-	metricsHandler.Gauge(ResourceSlotsCPUUsage).Update(cpuUsage * 100)
+	metricsHandler.Gauge(resourceSlotsMemUsage).Update(memUsage * 100)
+	metricsHandler.Gauge(resourceSlotsCPUUsage).Update(cpuUsage * 100)
 }
 
 type psUtilSystemInfoSupplier struct {
