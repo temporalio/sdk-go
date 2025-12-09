@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal/common/metrics"
-	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/internal/log"
 )
 
 type FakeSystemInfoSupplier struct {
@@ -23,7 +23,7 @@ func (f FakeSystemInfoSupplier) GetCpuUsage(_ *SystemInfoContext) (float64, erro
 }
 
 func TestPidDecisions(t *testing.T) {
-	logger := log.NewNopLogger()
+	logger := &log.NoopLogger{}
 	metricsHandler := client.MetricsNopHandler
 	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.5, cpuUse: 0.5}
 	rcOpts := DefaultResourceControllerOptions()
@@ -67,7 +67,7 @@ func TestPidDecisions(t *testing.T) {
 }
 
 func TestPidDecisionEmitsUsageMetrics(t *testing.T) {
-	logger := log.NewNopLogger()
+	logger := &log.NoopLogger{}
 	metricsHandler := metrics.NewCapturingHandler()
 	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.25, cpuUse: 0.75}
 
