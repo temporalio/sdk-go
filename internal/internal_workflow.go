@@ -1401,6 +1401,7 @@ func (s *selectorImpl) Select(ctx Context) {
 		if pair.receiveFunc != nil {
 			f := *pair.receiveFunc
 			c := pair.channel
+			hasDefault := s.defaultFunc != nil
 			callback := &receiveCallback{
 				fn: func(v interface{}, more bool) bool {
 					if readyBranch != nil {
@@ -1416,12 +1417,15 @@ func (s *selectorImpl) Select(ctx Context) {
 						dropSignalFlag = env.GetFlag(SDKFlagBlockedSelectorSignalReceive)
 					}
 
-					if dropSignalFlag {
+					// Only store value immediately when default branch exists,
+					// otherwise store in readyBranch to avoid race when multiple
+					// selectors blocked on same channel
+					if dropSignalFlag && hasDefault {
 						c.recValue = &v
 					}
 
 					readyBranch = func() {
-						if !dropSignalFlag {
+						if !dropSignalFlag || !hasDefault {
 							c.recValue = &v
 						}
 						f(c, more)

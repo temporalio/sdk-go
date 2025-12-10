@@ -34,7 +34,7 @@ const (
 
 // unblockSelectorSignal exists to allow us to configure the default behavior of
 // SDKFlagBlockedSelectorSignalReceive. This is primarily useful with tests.
-var unblockSelectorSignal = os.Getenv("UNBLOCK_SIGNAL_SELECTOR") != ""
+var unblockSelectorSignal = os.Getenv("UNBLOCK_SIGNAL_SELECTOR") != "false"
 
 func sdkFlagFromUint(value uint32) sdkFlag {
 	switch value {
