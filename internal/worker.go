@@ -390,6 +390,9 @@ type (
 		//
 		// NOTE: Experimental
 		NexusTaskPollerBehavior PollerBehavior
+
+		// TODO(cretz): Document
+		Plugins []WorkerPlugin
 	}
 )
 
