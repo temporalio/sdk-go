@@ -1877,7 +1877,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertMemo() {
 		s.NotNil(wfInfo.Memo)
 		valBytes := wfInfo.Memo.Fields["CustomIntField"]
 		var result int
-		_ = converter.GetDefaultDataConverter().FromPayload(valBytes, &result)
+		err = converter.GetDefaultDataConverter().FromPayload(valBytes, &result)
+		s.NoError(err)
 		s.Equal(1, result)
 
 		return nil
