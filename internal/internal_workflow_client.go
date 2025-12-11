@@ -1345,8 +1345,12 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
 	defer cancel()
 	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
-	// We ignore unimplemented
-	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
+	switch err.(type) {
+	case nil, *serviceerror.Unimplemented:
+		// We ignore unimplemented
+	case *serviceerror.Unavailable:
+		return nil, fmt.Errorf("%w. failed reaching server for namespace %s: ensure this namespace exists and your connection is configured correctly", err, wc.namespace)
+	default:
 		return nil, fmt.Errorf("failed reaching server: %w", err)
 	}
 	if resp != nil && resp.Capabilities != nil {
