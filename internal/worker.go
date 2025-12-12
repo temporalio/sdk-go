@@ -391,7 +391,16 @@ type (
 		// NOTE: Experimental
 		NexusTaskPollerBehavior PollerBehavior
 
-		// TODO(cretz): Document
+		// Plugins that can configure options and intercept start/stop worker.
+		//
+		// Any plugins that were part of client options and implement
+		// worker.Plugin are automatically applied as worker plugins and should
+		// not also be set here.
+		//
+		// Plugins themselves should never mutate this field, the behavior is
+		// undefined.
+		//
+		// NOTE: Experimental
 		Plugins []WorkerPlugin
 	}
 )

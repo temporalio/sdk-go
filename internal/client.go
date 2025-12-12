@@ -523,7 +523,15 @@ type (
 		// If set true, error code labels will not be included on request failure metrics.
 		DisableErrorCodeMetricTags bool
 
-		// TODO(cretz): Document that it is undefined behavior if plugins mutate this option, and it shouldn't be done
+		// Plugins that can configure options and intercept client creation.
+		//
+		// Any plugins here that also implement worker.Plugin will be used as
+		// worker plugins as well.
+		//
+		// Plugins themselves should never mutate this field, the behavior is
+		// undefined.
+		//
+		// NOTE: Experimental
 		Plugins []ClientPlugin
 	}
 

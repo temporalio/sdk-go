@@ -1520,7 +1520,12 @@ type WorkflowReplayerOptions struct {
 	// workflow code with multiple breakpoints in a debugger.
 	DisableDeadlockDetection bool
 
-	// TODO(cretz): Document
+	// Plugins that can configure options and intercept replays.
+	//
+	// Plugins themselves should never mutate this field, the behavior is
+	// undefined.
+	//
+	// NOTE: Experimental
 	Plugins []WorkerPlugin
 }
 

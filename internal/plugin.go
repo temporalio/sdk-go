@@ -22,6 +22,8 @@ import (
 // automatically configured on workers made from the client.
 //
 // Exposed as: [go.temporal.io/sdk/client.Plugin]
+//
+// NOTE: Experimental
 type ClientPlugin interface {
 	// Name returns the name for this plugin.
 	Name() string
@@ -51,6 +53,8 @@ type ClientPlugin interface {
 // client plugin.
 //
 // Exposed as: [go.temporal.io/sdk/client.PluginConfigureClientOptions]
+//
+// NOTE: Experimental
 type ClientPluginConfigureClientOptions struct {
 	// ClientOptions are the set of mutable options that can be adjusted by
 	// plugins.
@@ -60,6 +64,8 @@ type ClientPluginConfigureClientOptions struct {
 // ClientPluginNewClientOptions are options for NewClient on a client plugin.
 //
 // Exposed as: [go.temporal.io/sdk/client.PluginNewClientOptions]
+//
+// NOTE: Experimental
 type ClientPluginNewClientOptions struct {
 	// ClientOptions are the set of options used for the client. These should
 	// not be mutated, that should be done via the ConfigureClient method.
@@ -68,14 +74,16 @@ type ClientPluginNewClientOptions struct {
 	// Lazy is whether the new client call is being invoked lazily or not.
 	Lazy bool
 
-	// FromExisting is set to a value if this client is being created from an
-	// existing client.
+	// FromExisting is set to a non-nil Client if this client is being created
+	// from an existing client.
 	FromExisting Client
 }
 
 // ClientPluginBase must be embedded into client plugin implementations.
 //
 // Exposed as: [go.temporal.io/sdk/client.PluginBase]
+//
+// NOTE: Experimental
 type ClientPluginBase struct{}
 
 var _ ClientPlugin = struct {
@@ -91,6 +99,8 @@ var _ ClientPlugin = struct {
 // plugins must implement Name().
 //
 // Exposed as: [go.temporal.io/sdk/worker.Plugin]
+//
+// NOTE: Experimental
 type WorkerPlugin interface {
 	// Name returns the name for this plugin.
 	Name() string
@@ -144,6 +154,8 @@ type WorkerPlugin interface {
 // WorkerPluginBase must be embedded into worker plugin implementations.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginBase]
+//
+// NOTE: Experimental
 type WorkerPluginBase struct{}
 
 var _ WorkerPlugin = struct {
@@ -155,6 +167,8 @@ var _ WorkerPlugin = struct {
 // worker plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginConfigureWorkerOptions]
+//
+// NOTE: Experimental
 type WorkerPluginConfigureWorkerOptions struct {
 	// WorkerInstanceKey is the unique, immutable instance key for this worker.
 	WorkerInstanceKey string
@@ -178,6 +192,8 @@ type WorkerPluginConfigureWorkerOptions struct {
 // callback inside their own.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginConfigureWorkerRegistryOptions]
+//
+// NOTE: Experimental
 type WorkerPluginConfigureWorkerRegistryOptions struct {
 	OnRegisterWorkflow        func(any, RegisterWorkflowOptions)
 	OnRegisterDynamicWorkflow func(any, DynamicRegisterWorkflowOptions)
@@ -190,6 +206,8 @@ type WorkerPluginConfigureWorkerRegistryOptions struct {
 // plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginStartWorkerOptions]
+//
+// NOTE: Experimental
 type WorkerPluginStartWorkerOptions struct {
 	// WorkerInstanceKey is the unique, immutable instance key for this worker.
 	WorkerInstanceKey string
@@ -211,6 +229,8 @@ type WorkerPluginStartWorkerOptions struct {
 // WorkerPluginStopWorkerOptions are options for StopWorker on a worker plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginStopWorkerOptions]
+//
+// NOTE: Experimental
 type WorkerPluginStopWorkerOptions struct {
 	// WorkerInstanceKey is the unique, immutable instance key for this worker.
 	WorkerInstanceKey string
@@ -220,6 +240,8 @@ type WorkerPluginStopWorkerOptions struct {
 // ConfigureWorkflowReplayer on a worker plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginConfigureWorkflowReplayerOptions]
+//
+// NOTE: Experimental
 type WorkerPluginConfigureWorkflowReplayerOptions struct {
 	// WorkflowReplayerInstanceKey is the unique, immutable instance key for
 	// this workflow replayer.
@@ -242,6 +264,8 @@ type WorkerPluginConfigureWorkflowReplayerOptions struct {
 // to invoke the existing callback inside their own.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginConfigureWorkflowReplayerRegistryOptions]
+//
+// NOTE: Experimental
 type WorkerPluginConfigureWorkflowReplayerRegistryOptions struct {
 	OnRegisterWorkflow        func(any, RegisterWorkflowOptions)
 	OnRegisterDynamicWorkflow func(any, DynamicRegisterWorkflowOptions)
@@ -251,6 +275,8 @@ type WorkerPluginConfigureWorkflowReplayerRegistryOptions struct {
 // plugin.
 //
 // Exposed as: [go.temporal.io/sdk/worker.PluginReplayWorkflowOptions]
+//
+// NOTE: Experimental
 type WorkerPluginReplayWorkflowOptions struct {
 	// WorkflowReplayerInstanceKey is the unique, immutable instance key for
 	// this workflow replayer.
@@ -286,6 +312,8 @@ func (pluginNamePanicForTypeChecking) Name() string { panic("unreachable") }
 // [go.temporal.io/sdk/temporal.NewSimplePlugin] to instantiate this.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.SimplePlugin]
+//
+// NOTE: Experimental
 type SimplePlugin struct {
 	options SimplePluginOptions
 }
@@ -296,6 +324,8 @@ var _ WorkerPlugin = (*SimplePlugin)(nil)
 // SimplePluginOptions are options for NewSimplePlugin.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.SimplePluginOptions]
+//
+// NOTE: Experimental
 type SimplePluginOptions struct {
 	// Name is the required name of the plugin.
 	Name string
@@ -359,6 +389,8 @@ type SimplePluginOptions struct {
 // simple plugin.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.SimplePluginRunContextBeforeOptions]
+//
+// NOTE: Experimental
 type SimplePluginRunContextBeforeOptions struct {
 	// InstanceKey is the unique, immutable instance key for the worker or
 	// workflow replayer.
@@ -384,6 +416,8 @@ type SimplePluginRunContextBeforeOptions struct {
 // simple plugin.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.SimplePluginRunContextAfterOptions]
+//
+// NOTE: Experimental
 type SimplePluginRunContextAfterOptions struct {
 	// InstanceKey is the unique, immutable instance key for the worker or
 	// workflow replayer.
