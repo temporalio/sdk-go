@@ -545,6 +545,12 @@ func isValidDefinition(line string, inGroup *string, insideStruct *bool) bool {
 
 // Checks if `line` is a valid definition, and that definition is for `private`
 func isValidDefinitionWithMatch(line, private string, inGroup string, insideStruct bool) bool {
+	// Vars with underscores are often used to assert interface validation and
+	// do not require docs
+	if strings.HasPrefix(line, "var _") {
+		return false
+	}
+
 	tokens := strings.Fields(line)
 	if strings.HasPrefix(line, "func "+private+"(") {
 		return true
