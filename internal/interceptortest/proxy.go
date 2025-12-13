@@ -400,6 +400,15 @@ func (p *proxyWorkflowOutbound) SideEffect(
 	return
 }
 
+func (p *proxyWorkflowOutbound) SideEffectWithOptions(
+	ctx workflow.Context,
+	options workflow.SideEffectOptions,
+	f func(ctx workflow.Context) interface{},
+) (ret converter.EncodedValue) {
+	ret, _ = p.invoke(ctx, options, f)[0].Interface().(converter.EncodedValue)
+	return
+}
+
 func (p *proxyWorkflowOutbound) MutableSideEffect(
 	ctx workflow.Context,
 	id string,
@@ -407,6 +416,17 @@ func (p *proxyWorkflowOutbound) MutableSideEffect(
 	equals func(a, b interface{}) bool,
 ) (ret converter.EncodedValue) {
 	ret, _ = p.invoke(ctx, id, f, equals)[0].Interface().(converter.EncodedValue)
+	return
+}
+
+func (p *proxyWorkflowOutbound) MutableSideEffectWithOptions(
+	ctx workflow.Context,
+	id string,
+	options workflow.MutableSideEffectOptions,
+	f func(ctx workflow.Context) interface{},
+	equals func(a, b interface{}) bool,
+) (ret converter.EncodedValue) {
+	ret, _ = p.invoke(ctx, id, options, f, equals)[0].Interface().(converter.EncodedValue)
 	return
 }
 
