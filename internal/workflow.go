@@ -2083,7 +2083,9 @@ func (b EncodedValue) HasValue() bool {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.SideEffect]
 func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
-	return SideEffectWithOptions(ctx, SideEffectOptions{}, f)
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.SideEffect(ctx, f)
 }
 
 // SideEffectWithOptions executes the provided function once, records its result into the workflow history.
@@ -2146,7 +2148,9 @@ func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, opt
 //
 // Exposed as: [go.temporal.io/sdk/workflow.MutableSideEffect]
 func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
-	return MutableSideEffectWithOptions(ctx, id, MutableSideEffectOptions{}, f, equals)
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.MutableSideEffect(ctx, id, f, equals)
 }
 
 // MutableSideEffectWithOptions executes the provided function once, then it looks up the history for the value with the given id.
