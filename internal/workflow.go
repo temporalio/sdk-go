@@ -1264,7 +1264,9 @@ type WorkflowInfo struct {
 	ContinuedExecutionRunID string
 	ParentWorkflowNamespace string
 	ParentWorkflowExecution *WorkflowExecution
-	Memo                    *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	// RootWorkflowExecution is the first workflow execution in the chain of workflows. If a workflow is itself a root workflow, then this field is nil.
+	RootWorkflowExecution *WorkflowExecution
+	Memo                  *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
 	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
 	RetryPolicy      *RetryPolicy

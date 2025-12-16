@@ -722,6 +722,15 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 			RunID: attributes.ParentWorkflowExecution.GetRunId(),
 		}
 	}
+
+	var rootWorkflowExecution *WorkflowExecution
+	if attributes.RootWorkflowExecution != nil {
+		rootWorkflowExecution = &WorkflowExecution{
+			ID:    attributes.RootWorkflowExecution.GetWorkflowId(),
+			RunID: attributes.RootWorkflowExecution.GetRunId(),
+		}
+	}
+
 	workflowInfo := &WorkflowInfo{
 		WorkflowExecution: WorkflowExecution{
 			ID:    workflowID,
@@ -743,6 +752,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		ContinuedExecutionRunID:  attributes.ContinuedExecutionRunId,
 		ParentWorkflowNamespace:  attributes.ParentWorkflowNamespace,
 		ParentWorkflowExecution:  parentWorkflowExecution,
+		RootWorkflowExecution:    rootWorkflowExecution,
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
 		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
