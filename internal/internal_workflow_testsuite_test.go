@@ -4250,3 +4250,65 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
 	err := env.GetWorkflowError()
 	s.NoError(err)
 }
+
+func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
+	previousFlag := unblockSelectorSignal
+	unblockSelectorSignal = true
+	defer func() { unblockSelectorSignal = previousFlag }()
+
+	require := s.Require()
+
+	// Two workers listening on the same channel with multiple items sent quickly.
+	// Without the fix, callbacks overwrite c.recValue causing items to be lost.
+	workflowFn := func(ctx Context) error {
+		ch := NewChannel(ctx)
+		var received []int
+
+		Go(ctx, func(ctx Context) {
+			ch.Send(ctx, 1)
+			ch.Send(ctx, 2)
+			ch.Send(ctx, 3)
+			ch.Close()
+		})
+
+		// Two workers both selecting on the same channel
+		wg := NewWaitGroup(ctx)
+		wg.Add(2)
+		for i := 0; i < 2; i++ {
+			Go(ctx, func(ctx Context) {
+				defer wg.Done()
+				for {
+					selector := NewSelector(ctx)
+					done := false
+					selector.AddReceive(ch, func(c ReceiveChannel, more bool) {
+						if more {
+							var v int
+							c.Receive(ctx, &v)
+							received = append(received, v)
+						} else {
+							done = true
+						}
+					})
+					selector.Select(ctx)
+					if done {
+						break
+					}
+				}
+			})
+		}
+
+		wg.Wait(ctx)
+
+		// Without the fix: callbacks overwrite c.recValue, causing items to be lost
+		// With the fix: each callback's value is stored in its own readyBranch closure
+		require.Len(received, 3, "Expected 3 items to be received")
+		require.ElementsMatch([]int{1, 2, 3}, received, "Expected all items to be received exactly once")
+		return nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+
+	require.True(env.IsWorkflowCompleted())
+	require.NoError(env.GetWorkflowError())
+}
