@@ -1,0 +1,18 @@
+all: false
+dir: mocks
+filename: '{{.InterfaceName}}.go'
+force-file-write: true
+formatter: goimports
+include-auto-generated: false
+log-level: info
+structname: '{{.InterfaceName}}'
+pkgname: mocks
+recursive: true
+require-template-schema-exists: true
+template: testify
+template-schema: '{{.Template}}.schema.json'
+exclude-subpkg-regex: [ "internal" ]
+packages:
+  go.temporal.io/sdk:
+    config:
+       all: true
