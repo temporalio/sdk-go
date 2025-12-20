@@ -249,8 +249,8 @@ func (t *tracer) GetLogger(logger log.Logger, ref interceptor.TracerSpanRef) log
 	}
 
 	logger = log.With(logger,
-		"TraceID", span.SpanContext().TraceID(),
-		"SpanID", span.SpanContext().SpanID(),
+		"TraceID", span.SpanContext().TraceID().String(),
+		"SpanID", span.SpanContext().SpanID().String(),
 	)
 
 	return logger
