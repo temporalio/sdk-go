@@ -745,6 +745,61 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 	s.Nil(env.GetWorkflowError())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_OnSideEffectAndActivityMock() {
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		se := SideEffectWithOptions(ctx, SideEffectOptions{Summary: "side-effect"}, func(ctx Context) interface{} {
+			return "real-side-effect"
+		})
+		var seVal string
+		if err := se.Get(&seVal); err != nil {
+			return "", err
+		}
+		var actVal string
+		if err := ExecuteActivity(ctx, testActivityHello, "msg1").Get(ctx, &actVal); err != nil {
+			return "", err
+		}
+		return seVal + ":" + actVal, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(testActivityHello)
+
+	env.OnSideEffect().Return("mock-side-effect").Once()
+	env.OnActivity(testActivityHello, mock.Anything, "msg1").Return("mock-activity", nil).Once()
+
+	env.ExecuteWorkflow(workflowFn)
+
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("mock-side-effect:mock-activity", result)
+	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_OnMutableSideEffect() {
+	workflowFn := func(ctx Context) (string, error) {
+		equals := func(a, b interface{}) bool { return a == b }
+		me := MutableSideEffect(ctx, "config-id", func(ctx Context) interface{} {
+			return "real-config"
+		}, equals)
+		var val string
+		if err := me.Get(&val); err != nil {
+			return "", err
+		}
+		return val, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.OnMutableSideEffect("config-id").Return("mock-config").Once()
+
+	env.ExecuteWorkflow(workflowFn)
+
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("mock-config", result)
+	env.AssertExpectations(s.T())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_LongRunningSideEffect() {
 	workflowFn := func(ctx Context) error {
 		// Sleep for 2 seconds would trigger deadlock detection timeout if we wouldn't override it below.
