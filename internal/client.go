@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"iter"
 	"sync/atomic"
 	"time"
 
@@ -180,18 +181,39 @@ type (
 
 		// CompleteActivityByID reports activity completed.
 		// Similar to CompleteActivity, but may save user from keeping taskToken info.
-		// activity Execute method can return activity.ErrResultPending to
-		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivityById() method
+		// This method works only for workflow activities. workflowID and runID must be set to the workflow ID and workflow run ID
+		// of the workflow that started the activity. To complete a standalone activity (not started by workflow),
+		// use CompleteActivityByActivityID.
+		//
+		// Activity's Execute method can return activity.ErrResultPending to
+		// indicate the activity is not completed when its Execute method returns. In that case, this CompleteActivityById() method
 		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
 		// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
 		// activity task failed event will be reported.
 		// An activity implementation should use activityID provided in ActivityOption to use for completion.
-		// namespace name, workflowID, activityID are required, runID is optional.
+		// namespace, workflowID and activityID are required, runID is optional.
 		// The errors it can return:
 		//  - ApplicationError
 		//  - TimeoutError
 		//  - CanceledError
 		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result interface{}, err error) error
+
+		// CompleteActivityByActivityID reports activity completed.
+		// Similar to CompleteActivity, but may save user from keeping taskToken info.
+		// This method works only for standalone activities. To complete a workflow activity, use CompleteActivityByID.
+		//
+		// Activity's Execute method can return activity.ErrResultPending to
+		// indicate the activity is not completed when its Execute method returns. In that case, this CompleteActivityById() method
+		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
+		// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
+		// activity task failed event will be reported.
+		// An activity implementation should use activityID provided in ActivityOption to use for completion.
+		// namespace and activityID are required, activityRunID is optional.
+		// The errors it can return:
+		//  - ApplicationError
+		//  - TimeoutError
+		//  - CanceledError
+		CompleteActivityByActivityID(ctx context.Context, namespace, activityID, activityRunID string, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity.
@@ -410,6 +432,14 @@ type (
 		// which can be polled for an outcome. Note that runID is optional and
 		// if not specified the most recent runID will be used.
 		GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
+
+		ExecuteActivity(ctx context.Context, options ClientExecuteActivityOptions, activity any, args ...any) (ActivityHandle, error)
+
+		GetActivityHandle(activityID string, runID string) ActivityHandle
+
+		ListActivities(ctx context.Context, options ListActivitiesOptions) iter.Seq2[*ActivityExecutionMetadata, error]
+
+		CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error)
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the

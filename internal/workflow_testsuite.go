@@ -273,6 +273,15 @@ func (t *TestActivityEnvironment) SetOnActivityHeartbeatListener(
 	return t
 }
 
+// SetExecuteActivitiesInWorkflow controls the simulated environment in which the tested activity is being executed.
+// If set to true, the activity will be executed as if it was started by a workflow.
+// If set to false, the activity will be executed as if it was started directly by a client.
+// Defaults to true.
+func (t *TestActivityEnvironment) SetExecuteActivitiesInWorkflow(executeActivitiesInWorkflow bool) *TestActivityEnvironment {
+	t.impl.executeActivitiesInWorkflow = executeActivitiesInWorkflow
+	return t
+}
+
 // RegisterWorkflow registers workflow implementation with the TestWorkflowEnvironment
 func (e *TestWorkflowEnvironment) RegisterWorkflow(w interface{}) {
 	e.impl.RegisterWorkflow(w)
