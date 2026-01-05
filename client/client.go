@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 //go:generate mockgen -copyright_file ../LICENSE -package client -source client.go -destination client_mock.go
 
 // Package client is used by external programs to communicate with Temporal service.
@@ -131,8 +107,9 @@ const (
 	WorkerVersioningModeUnversioned = internal.WorkerVersioningModeUnversioned
 
 	// WorkerVersioningModeVersioned - Workers with this mode are part of a
-	// Worker Deployment Version which is identified as
-	// "<deployment_name>.<build_id>".
+	// Worker Deployment Version which is a combination of a deployment name
+	// and a build id.
+	//
 	// Each Deployment Version is distinguished from other Versions for task
 	// routing, and users can configure the Temporal Server to send tasks to a
 	// particular Version.
@@ -250,8 +227,6 @@ type (
 
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
 	// See [client.Client.NewWithStartWorkflowOperation] and [client.Client.UpdateWithStartWorkflow].
-	//
-	// NOTE: Experimental
 	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
 
 	// HistoryEventIterator is a iterator which can return history events.
@@ -268,6 +243,12 @@ type (
 
 	// QueryWorkflowWithOptionsResponse defines the response to QueryWorkflowWithOptions.
 	QueryWorkflowWithOptionsResponse = internal.QueryWorkflowWithOptionsResponse
+
+	// WorkflowExecutionDescription defines the response to DescribeWorkflow.
+	WorkflowExecutionDescription = internal.WorkflowExecutionDescription
+
+	// WorkflowExecutionMetadata defines common workflow information across multiple calls.
+	WorkflowExecutionMetadata = internal.WorkflowExecutionMetadata
 
 	// CheckHealthRequest is a request for Client.CheckHealth.
 	CheckHealthRequest = internal.CheckHealthRequest
@@ -362,8 +343,6 @@ type (
 
 	// UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
 	// See [client.Client.UpdateWithStartWorkflow] and [client.Client.NewWithStartWorkflowOperation].
-	//
-	// NOTE: Experimental
 	UpdateWithStartWorkflowOptions = internal.UpdateWithStartWorkflowOptions
 
 	// WorkerDeploymentDescribeOptions provides options for [WorkerDeploymentHandle.Describe].
@@ -409,6 +388,18 @@ type (
 	//
 	// NOTE: Experimental
 	WorkerDeploymentSetRampingVersionResponse = internal.WorkerDeploymentSetRampingVersionResponse
+
+	// WorkerDeploymentSetManagerIdentityOptions provides options for
+	// [WorkerDeploymentHandle.SetManagerIdentity].
+	//
+	// NOTE: Experimental
+	WorkerDeploymentSetManagerIdentityOptions = internal.WorkerDeploymentSetManagerIdentityOptions
+
+	// WorkerDeploymentSetManagerIdentityResponse is the response for
+	// [WorkerDeploymentHandle.SetManagerIdentity].
+	//
+	// NOTE: Experimental
+	WorkerDeploymentSetManagerIdentityResponse = internal.WorkerDeploymentSetManagerIdentityResponse
 
 	// WorkerDeploymentDescribeVersionOptions provides options for
 	// [WorkerDeploymentHandle.DescribeVersion].
@@ -613,13 +604,31 @@ type (
 	// NOTE: Experimental
 	WorkflowExecutionOptionsChanges = internal.WorkflowExecutionOptionsChanges
 
+	// VersioningOverrideChange sets or removes a versioning override when used with
+	// [WorkflowExecutionOptionsChanges].
+	//
+	// NOTE: Experimental
+	VersioningOverrideChange = internal.VersioningOverrideChange
+
 	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
 	// configuration of a specific workflow execution.
-	// If set, it takes precedence over the Versioning Behavior provided with workflow type registration, or
-	// default worker options.
+	//
+	// If set, it takes precedence over the Versioning Behavior provided with workflow type
+	// registration, or default worker options.
 	//
 	// NOTE: Experimental
 	VersioningOverride = internal.VersioningOverride
+
+	// PinnedVersioningOverride means the workflow will be pinned to a specific deployment version.
+	//
+	// NOTE: Experimental
+	PinnedVersioningOverride = internal.PinnedVersioningOverride
+
+	// AutoUpgradeVersioningOverride means the workflow will auto-upgrade to the current deployment
+	// version on the next workflow task.
+	//
+	// NOTE: Experimental
+	AutoUpgradeVersioningOverride = internal.AutoUpgradeVersioningOverride
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
@@ -733,40 +742,61 @@ type (
 	WorkerVersionCapabilities = internal.WorkerVersionCapabilities
 
 	// UpdateWorkerVersioningRulesOptions is the input to [client.Client.UpdateWorkerVersioningRules].
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	UpdateWorkerVersioningRulesOptions = internal.UpdateWorkerVersioningRulesOptions
+	UpdateWorkerVersioningRulesOptions = internal.UpdateWorkerVersioningRulesOptions //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningConflictToken is a conflict token to serialize calls to [client.Client.UpdateWorkerVersioningRules].
 	// An update with an old token fails with `serviceerror.FailedPrecondition`.
 	// The current token can be obtained with [client.Client.GetWorkerVersioningRules],
 	// or returned by a successful [client.Client.UpdateWorkerVersioningRules].
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningConflictToken = internal.VersioningConflictToken
+	VersioningConflictToken = internal.VersioningConflictToken //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningRampByPercentage is a VersionRamp that sends a proportion of the traffic
 	// to the target Build ID.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningRampByPercentage = internal.VersioningRampByPercentage
+	VersioningRampByPercentage = internal.VersioningRampByPercentage //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningAssignmentRule is a BuildID  assigment rule for a task queue.
 	// Assignment rules only affect new workflows.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningAssignmentRule = internal.VersioningAssignmentRule
+	VersioningAssignmentRule = internal.VersioningAssignmentRule //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningAssignmentRuleWithTimestamp contains an assignment rule annotated
 	// by the server with its creation time.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningAssignmentRuleWithTimestamp = internal.VersioningAssignmentRuleWithTimestamp
+	VersioningAssignmentRuleWithTimestamp = internal.VersioningAssignmentRuleWithTimestamp //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningRedirectRule = internal.VersioningRedirectRule
+	VersioningRedirectRule = internal.VersioningRedirectRule //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningRedirectRuleWithTimestamp contains a redirect rule annotated
 	// by the server with its creation time.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningRedirectRuleWithTimestamp = internal.VersioningRedirectRuleWithTimestamp
+	VersioningRedirectRuleWithTimestamp = internal.VersioningRedirectRuleWithTimestamp //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningOperationInsertAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that inserts the rule to the list of assignment rules for this Task Queue.
@@ -775,40 +805,58 @@ type (
 	// By default, the new rule is inserted at the beginning of the list
 	// (index 0). If the given index is too larger the rule will be
 	// inserted at the end of the list.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOperationInsertAssignmentRule = internal.VersioningOperationInsertAssignmentRule
+	VersioningOperationInsertAssignmentRule = internal.VersioningOperationInsertAssignmentRule //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningOperationReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the assignment rule at a given index. By default presence of one
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOperationReplaceAssignmentRule = internal.VersioningOperationReplaceAssignmentRule
+	VersioningOperationReplaceAssignmentRule = internal.VersioningOperationReplaceAssignmentRule //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningOperationDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the assignment rule at a given index. By default presence of one
 	// unconditional rule, i.e., no hint filter or ramp, is enforced, otherwise
 	// the delete operation will be rejected. Set `force` to true to
 	// bypass this validation.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOperationDeleteAssignmentRule = internal.VersioningOperationDeleteAssignmentRule
+	VersioningOperationDeleteAssignmentRule = internal.VersioningOperationDeleteAssignmentRule //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningOperationAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that adds the rule to the list of redirect rules for this Task Queue. There
 	// can be at most one redirect rule for each distinct Source BuildID.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOperationAddRedirectRule = internal.VersioningOperationAddRedirectRule
+	VersioningOperationAddRedirectRule = internal.VersioningOperationAddRedirectRule //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningOperationReplaceRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that replaces the routing rule with the given source BuildID.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOperationReplaceRedirectRule = internal.VersioningOperationReplaceRedirectRule
+	VersioningOperationReplaceRedirectRule = internal.VersioningOperationReplaceRedirectRule //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningOperationDeleteRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
 	// that deletes the routing rule with the given source Build ID.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOperationDeleteRedirectRule = internal.VersioningOperationDeleteRedirectRule
+	VersioningOperationDeleteRedirectRule = internal.VersioningOperationDeleteRedirectRule //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// VersioningOperationCommitBuildID is an operation for UpdateWorkerVersioningRulesOptions
 	// that completes  the rollout of a BuildID and cleanup unnecessary rules possibly
@@ -823,16 +871,25 @@ type (
 	// To prevent committing invalid Build IDs, we reject the request if no
 	// pollers have been seen recently for this Build ID. Use the `force`
 	// option to disable this validation.
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	VersioningOperationCommitBuildID = internal.VersioningOperationCommitBuildID
+	VersioningOperationCommitBuildID = internal.VersioningOperationCommitBuildID //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// GetWorkerVersioningOptions is the input to [client.Client.GetWorkerVersioningRules].
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	GetWorkerVersioningOptions = internal.GetWorkerVersioningOptions
+	GetWorkerVersioningOptions = internal.GetWorkerVersioningOptions //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// WorkerVersioningRules is the response for [client.Client.GetWorkerVersioningRules].
+	//
+	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+	//
 	// WARNING: Worker versioning is currently experimental.
-	WorkerVersioningRules = internal.WorkerVersioningRules
+	WorkerVersioningRules = internal.WorkerVersioningRules //lint:ignore SA1019 transitioning to Worker Deployments
 
 	// WorkflowUpdateServiceTimeoutOrCanceledError is an error that occurs when an update call times out or is cancelled.
 	//
@@ -919,8 +976,6 @@ type (
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation for use with UpdateWithStartWorkflow.
 		// See [client.Client.UpdateWithStartWorkflow].
-		//
-		// NOTE: Experimental
 		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
 
 		// CancelWorkflow request cancellation of a workflow in execution. Cancellation request closes the channel
@@ -1000,7 +1055,7 @@ type (
 		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
 		// details - is the progress you want to record along with heart beat for this activity. If the activity is canceled,
 		// the error returned will be a CanceledError. If the activity is paused by the server, the error returned will be a
-		// ErrActivityPaused.
+		// ErrActivityPaused. If the activity is reset by the server, the error returned will be a ErrActivityReset.
 		// Otherwise the errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
@@ -1010,7 +1065,7 @@ type (
 		// RecordActivityHeartbeatByID records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity. If the activity is canceled,
 		// the error returned will be a CanceledError. If the activity is paused by the server, the error returned will be a
-		// ErrActivityPaused.
+		// ErrActivityPaused. If the activity is reset by the server, the error returned will be a ErrActivityReset.
 		// The errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
@@ -1133,6 +1188,16 @@ type (
 		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
+		// DescribeWorkflow returns information about the specified workflow execution.
+		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
+		//
+		// The errors it can return:
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		DescribeWorkflow(ctx context.Context, workflowID, runID string) (*WorkflowExecutionDescription, error)
+
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
 		// pollers which polled this taskqueue in last few minutes.
 		// The errors it can return:
@@ -1182,11 +1247,17 @@ type (
 		// conjunction with workers who specify their build id and thus opt into the feature.
 		// The errors it can return:
 		//  - serviceerror.FailedPrecondition when the conflict token is invalid
+		//
+		// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+		//
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 		UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
 
 		// GetWorkerVersioningRules
 		// Returns the worker-build-id assignment and redirect rules for a task queue.
+		//
+		// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
+		//
 		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
 		GetWorkerVersioningRules(ctx context.Context, options GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
 
@@ -1228,8 +1299,6 @@ type (
 		// has reached the WaitForStage in the options. Note that this means
 		// that the call will not return successfully until the update has been
 		// delivered to a worker.
-		//
-		// NOTE: Experimental
 		UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
@@ -1411,8 +1480,8 @@ func NewValue(data *commonpb.Payloads) converter.EncodedValue {
 }
 
 // NewValues creates a new [converter.EncodedValues] which can be used to decode binary data returned by Temporal. For example:
-// User had Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got response from calling [client.Client.DescribeWorkflowExecution].
-// The response contains binary field PendingActivityInfo.HeartbeatDetails,
+// User has Activity.RecordHeartbeat(ctx, "my-heartbeat", 123) and then got a response from calling [client.Client.DescribeWorkflowExecution].
+// The response contains the binary field PendingActivityInfo.HeartbeatDetails,
 // which can be decoded by using:
 //
 //	var result1 string
@@ -1445,6 +1514,8 @@ func HistoryFromJSON(r io.Reader, options HistoryJSONOptions) (*historypb.Histor
 // Note, this uses a fixed header value for authentication. Many users that want
 // to rotate this value without reconnecting should use
 // [NewAPIKeyDynamicCredentials].
+//
+// Note, TLS is auto-enabled when API key is provided and TLS is not explicitly set/disabled.
 func NewAPIKeyStaticCredentials(apiKey string) Credentials {
 	return internal.NewAPIKeyStaticCredentials(apiKey)
 }
@@ -1459,6 +1530,8 @@ func NewAPIKeyStaticCredentials(apiKey string) Credentials {
 // "Authorization" header with "Bearer " + the given function result. If the
 // resulting string is non-empty, it will overwrite any "Authorization" header
 // that may be on the context or from existing header provider.
+//
+// Note, TLS is auto-enabled when API key is provided and TLS is not explicitly set/disabled.
 func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, error)) Credentials {
 	return internal.NewAPIKeyDynamicCredentials(apiKeyCallback)
 }

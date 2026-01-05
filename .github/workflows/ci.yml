@@ -5,6 +5,10 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build-and-test:
     strategy:
@@ -20,9 +24,13 @@ jobs:
             # We only want to check docker compose on a single target
             testDockerCompose: true
           - os: macos-intel
-            runsOn: macos-13
+            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-14
+    permissions:
+      contents: read
+      checks: write
+      statuses: write
     runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
@@ -108,7 +116,7 @@ jobs:
       TEMPORAL_NAMESPACE: sdk-ci.a2dd6
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
-      GODEBUG: ${{ matrix.fips && 'fips140=only' || '' }}
+      GODEBUG: ${{ matrix.fips && 'fips140=on' || '' }}
 
     steps:
       - uses: actions/checkout@v4

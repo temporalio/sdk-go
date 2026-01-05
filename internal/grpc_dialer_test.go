@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -129,13 +105,13 @@ func TestHeadersProvider_Error(t *testing.T) {
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
 	interceptors := requiredInterceptors(&ClientOptions{}, nil)
-	require.Equal(t, 6, len(interceptors))
+	require.Equal(t, 7, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 	opts := &ClientOptions{HeadersProvider: authHeadersProvider{token: "test-auth-token"}}
 	interceptors := requiredInterceptors(opts, nil)
-	require.Equal(t, 7, len(interceptors))
+	require.Equal(t, 8, len(interceptors))
 }
 
 func TestMissingGetServerInfo(t *testing.T) {
@@ -470,6 +446,9 @@ func TestCredentialsAPIKey(t *testing.T) {
 	client, err := DialClient(context.Background(), ClientOptions{
 		HostPort:    srv.addr,
 		Credentials: NewAPIKeyStaticCredentials("my-api-key"),
+		ConnectionOptions: ConnectionOptions{
+			TLSDisabled: true, // Test server doesn't use TLS
+		},
 	})
 	require.NoError(t, err)
 	defer client.Close()
@@ -508,6 +487,9 @@ func TestCredentialsAPIKey(t *testing.T) {
 		Credentials: NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
 			return "my-callback-api-key", nil
 		}),
+		ConnectionOptions: ConnectionOptions{
+			TLSDisabled: true,
+		},
 	})
 	require.NoError(t, err)
 	defer client.Close()
@@ -527,6 +509,41 @@ func TestCredentialsAPIKey(t *testing.T) {
 		t,
 		[]string{clientNameHeaderValue},
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
+	)
+}
+
+func TestExistingContextMetadataJoinedWithSDKHeaders(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+
+	client, err := DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	// Create a context with existing metadata
+	ctxWithMD := metadata.NewOutgoingContext(
+		context.Background(),
+		metadata.New(map[string]string{"custom-header": "custom-value"}),
+	)
+
+	// Make a call with the context
+	err = client.SignalWorkflow(ctxWithMD, "workflow1", "", "my-signal", nil)
+	require.NoError(t, err)
+
+	// Verify custom header is preserved
+	require.Equal(t,
+		[]string{"custom-value"},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, "custom-header"),
+	)
+	// Verify SDK headers are also present
+	require.Equal(t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, clientVersionHeaderName),
+	)
+	require.Equal(t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, clientNameHeaderName),
 	)
 }
 

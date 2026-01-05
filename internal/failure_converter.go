@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -115,6 +93,7 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 			NonRetryable:   err.NonRetryable(),
 			Details:        convertErrDetailsToPayloads(err.details, dfc.dataConverter),
 			NextRetryDelay: delay,
+			Category:       enumspb.ApplicationErrorCategory(err.Category()),
 		}
 		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{ApplicationFailureInfo: failureInfo}
 	case *CanceledError:
@@ -174,9 +153,6 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		failure.FailureInfo = &failurepb.Failure_ChildWorkflowExecutionFailureInfo{ChildWorkflowExecutionFailureInfo: failureInfo}
 	case *NexusOperationError:
 		var token = err.OperationToken
-		if token == "" {
-			token = err.OperationID
-		}
 		failureInfo := &failurepb.NexusOperationFailureInfo{
 			ScheduledEventId: err.ScheduledEventID,
 			Endpoint:         err.Endpoint,
@@ -250,6 +226,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 					Cause:          dfc.FailureToError(failure.GetCause()),
 					Details:        []interface{}{details},
 					NextRetryDelay: nextRetryDelay,
+					Category:       ApplicationErrorCategory(applicationFailureInfo.GetCategory()),
 				},
 			)
 		}
@@ -296,6 +273,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 	} else if info := failure.GetNexusOperationExecutionFailureInfo(); info != nil {
 		token := info.GetOperationToken()
 		if token == "" {
+			//lint:ignore SA1019 ignore deprecated old operation id
 			token = info.GetOperationId()
 		}
 		err = &NexusOperationError{
@@ -307,7 +285,6 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			Service:          info.GetService(),
 			Operation:        info.GetOperation(),
 			OperationToken:   token,
-			OperationID:      token,
 		}
 	} else if info := failure.GetNexusHandlerFailureInfo(); info != nil {
 		var retryBehavior nexus.HandlerErrorRetryBehavior

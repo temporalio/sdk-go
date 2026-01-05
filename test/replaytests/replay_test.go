@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package replaytests
 
 import (
@@ -95,8 +71,8 @@ func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 	_ = we2.Get(context.Background(), &res2)
 
 	// Now run:
-	// tctl workflow show --workflow_id replay-tests-workflow1 --of workflow1.json
-	// tctl workflow show --workflow_id replay-tests-workflow2 --of workflow2.json
+	// temporal workflow show --workflow-id replay-tests-workflow1 --output json > workflow1.json
+	// temporal workflow show --workflow-id replay-tests-workflow2 --output json > workflow2.json
 }
 
 func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
@@ -509,6 +485,26 @@ func (s *replayTestSuite) TestResetWorkflowAfterChildComplete() {
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "reset-workflow-after-child-complete.json")
 	s.NoError(err)
 	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestCancelNexusOperation() {
+	replayer := worker.NewWorkflowReplayer()
+
+	replayer.RegisterWorkflow(CancelNexusOperationBeforeSentWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-before-sent.json")
+	s.NoErrorf(err, "Encountered error replaying cancel before schedule Nexus operation command is sent")
+
+	replayer.RegisterWorkflow(CancelNexusOperationBeforeStartWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-before-start.json")
+	s.NoErrorf(err, "Encountered error replaying cancel before Nexus operation is started")
+
+	replayer.RegisterWorkflow(CancelNexusOperationAfterStartWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-after-start.json")
+	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is started")
+
+	replayer.RegisterWorkflow(CancelNexusOperationAfterCompleteWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-after-complete.json")
+	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is completed")
 }
 
 type captureConverter struct {

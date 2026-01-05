@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package test_test
 
 import (
@@ -33,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"go.opentelemetry.io/otel/baggage"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -129,14 +106,57 @@ func (a *Activities) ActivityToBePaused(ctx context.Context, completeOnPause boo
 	}
 }
 
+func (a *Activities) ActivityToBeReset(ctx context.Context, completeOnReset bool) (string, error) {
+	a.append("ActivityToBeReset")
+	info := activity.GetInfo(ctx)
+	// Activity only has heartbeat details past attempt 1 (i.e. it has retried).
+	if activity.HasHeartbeatDetails(ctx) {
+		var hbDetails string
+		activity.GetHeartbeatDetails(ctx, &hbDetails)
+		return fmt.Sprintf("hb details? %t, attempts: %d, details: %s",
+			activity.HasHeartbeatDetails(ctx),
+			activity.GetInfo(ctx).Attempt,
+			hbDetails,
+		), nil
+	}
+
+	go func() {
+		// Reset the activity
+		activity.GetClient(ctx).WorkflowService().ResetActivity(context.Background(), &workflowservice.ResetActivityRequest{
+			Namespace: info.WorkflowNamespace,
+			Execution: &commonpb.WorkflowExecution{
+				WorkflowId: info.WorkflowExecution.ID,
+				RunId:      info.WorkflowExecution.RunID,
+			},
+			Activity: &workflowservice.ResetActivityRequest_Id{
+				Id: info.ActivityID,
+			},
+		})
+	}()
+	for {
+		select {
+		case <-time.After(1 * time.Second):
+			activity.RecordHeartbeat(ctx, "heartbeat-details")
+		case <-ctx.Done():
+			if errors.Is(context.Cause(ctx), activity.ErrActivityReset) {
+				if completeOnReset {
+					return "I am canceled by Reset", nil
+				}
+				return "", context.Cause(ctx)
+			}
+			return "I am canceled by Done", nil
+		}
+	}
+}
+
 func (a *Activities) EmptyActivity(ctx context.Context) error {
 	a.append("EmptyActivity")
 	return nil
 }
 
-func (a *Activities) PriorityActivity(ctx context.Context) (int, error) {
+func (a *Activities) PriorityActivity(ctx context.Context) (temporal.Priority, error) {
 	a.append("PriorityActivity")
-	return activity.GetInfo(ctx).Priority.PriorityKey, nil
+	return activity.GetInfo(ctx).Priority, nil
 }
 
 func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.Duration) (int, error) {
@@ -216,7 +236,7 @@ func (a *Activities) failNTimes(_ context.Context, times int, id int) error {
 	return errFailOnPurpose
 }
 
-func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool) error {
+func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool, scheduleToCloseTimeout, startToCloseTimeout time.Duration, retryPolicy *temporal.RetryPolicy) error {
 	a.append("inspectActivityInfo")
 	if !activity.IsActivity(ctx) {
 		return fmt.Errorf("expected InActivity to return %v but got %v", true, activity.IsActivity(ctx))
@@ -243,6 +263,15 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 	}
 	if info.IsLocalActivity != isLocalActivity {
 		return fmt.Errorf("expected IsLocalActivity %v but got %v", isLocalActivity, info.IsLocalActivity)
+	}
+	if info.ScheduleToCloseTimeout != scheduleToCloseTimeout {
+		return fmt.Errorf("expected ScheduleToCloseTimeout %v but got %v", scheduleToCloseTimeout, info.ScheduleToCloseTimeout)
+	}
+	if info.StartToCloseTimeout != startToCloseTimeout {
+		return fmt.Errorf("expected StartToCloseTimeout %v but got %v", startToCloseTimeout, info.StartToCloseTimeout)
+	}
+	if !cmp.Equal(info.RetryPolicy, retryPolicy) {
+		return fmt.Errorf("expected RetryPolicy %v but got %v", retryPolicy, info.RetryPolicy)
 	}
 	return nil
 }
@@ -484,4 +513,14 @@ func (a *Activities) ClientFromActivity(ctx context.Context) error {
 func (a *Activities) RawValueActivity(ctx context.Context, value converter.RawValue) (converter.RawValue, error) {
 	activity.GetLogger(ctx).Info("RawValue value", value.Payload())
 	return value, nil
+}
+
+func (a *Activities) CancelActivity(ctx context.Context) error {
+	t := time.NewTicker(200 * time.Millisecond)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+	return ctx.Err()
 }

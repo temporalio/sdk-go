@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -83,8 +61,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionSummary]
 	WorkerDeploymentVersionSummary struct {
-		// Version - Identifier in the form of "<deployment_name>.<build_id>" for this Version.
-		Version string
+		// Version - The version
+		Version WorkerDeploymentVersion
 
 		// CreateTime - When this Deployment Version was created.
 		CreateTime time.Time
@@ -121,6 +99,11 @@ type (
 		// LastModifierIdentity - The identity of the last client that modified the
 		// configuration of this Deployment.
 		LastModifierIdentity string
+
+		// ManagerIdentity - When present, clients whose identity does not match `ManagerIdentity` will not
+		// be able to make changes to this Worker Deployment. They can either set their own identity as the
+		// manager or unset the field to proceed. Empty by default.
+		ManagerIdentity string
 	}
 
 	// WorkerDeploymentDescribeResponse is the response type for [WorkerDeploymentHandle.Describe].
@@ -143,9 +126,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetCurrentVersionOptions]
 	WorkerDeploymentSetCurrentVersionOptions struct {
-		// Version - A Deployment Version identifier in the form of "<deployment_name>.<build_id>",
-		// or the "__unversioned__" special value, which represents all the unversioned workers.
-		Version string
+		// BuildID - A Build ID within this deployment to set as the current version. If empty, the
+		// current version will target unversioned workers.
+		BuildID string
 
 		// ConflictToken - Token to serialize Worker Deployment operations. Passing a non-empty
 		// conflict token will cause this request to fail with
@@ -155,12 +138,12 @@ type (
 		// The current token can be obtained with [WorkerDeploymentHandle.Describe],
 		// or returned by other successful Worker Deployment operations.
 		//
-		// Optional: defaulted to empty token, which bypasses conflict detection.
+		// Optional: defaults to empty token, which bypasses conflict detection.
 		ConflictToken []byte
 
-		// Identity: The identity of the client who initiated this request.
+		// Identity - The identity of the client who initiated this request.
 		//
-		// Optional: default to the identity of the underlying workflow client.
+		// Optional: defaults to the identity of the underlying workflow client.
 		Identity string
 
 		// IgnoreMissingTaskQueues - Override protection against accidental removal of Task Queues.
@@ -175,6 +158,15 @@ type (
 		//
 		// Optional: default to reject request when queues are missing.
 		IgnoreMissingTaskQueues bool
+
+		// AllowNoPollers - Override protection against accidentally sending tasks to a version without pollers.
+		// When false this request will be rejected if no pollers have been seen for the proposed Current Version,
+		// in order to protect users from routing tasks to pollers that do not exist, leading to possible timeouts.
+		// Pass `true` here to bypass this protection.
+		// WARNING: setting this flag could lead to tasks being sent to a version that has no pollers.
+		//
+		// Optional: default to reject request when version has never had pollers.
+		AllowNoPollers bool
 	}
 
 	// WorkerDeploymentSetCurrentVersionResponse is the response for
@@ -187,10 +179,11 @@ type (
 		// ConflictToken - Token to serialize Worker Deployment operations.
 		ConflictToken []byte
 
-		// PreviousVersion - The Version that was current before executing this operation.
-		// It returns an identifier in the form of "<deployment_name>.<build_id>",
-		// or the "__unversioned__" special value, which represents all the unversioned workers.
-		PreviousVersion string
+		// PreviousVersion - The Version that was current before executing this operation, if any.
+        //
+		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
+		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
+		PreviousVersion *WorkerDeploymentVersion
 	}
 
 	// WorkerDeploymentSetRampingVersionOptions provides options for
@@ -200,10 +193,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetRampingVersionOptions]
 	WorkerDeploymentSetRampingVersionOptions struct {
-		// Version - A Deployment Version identifier in the form of "<deployment_name>.<build_id>",
-		// or the "__unversioned__" special value, which represents all the unversioned workers,
-		// or the empty string to unset the Ramping Version.
-		Version string
+		// BuildID - A Build ID within this deployment to set as the ramping version. If empty, the
+		// current version will target unversioned workers.
+		BuildID string
 
 		// Percentage - Ramp percentage to set. Valid range: [0,100].
 		Percentage float32
@@ -216,12 +208,12 @@ type (
 		// The current token can be obtained with [WorkerDeploymentHandle.Describe],
 		// or returned by other successful Worker Deployment operations.
 		//
-		// Optional: defaulted to empty token, which bypasses conflict detection.
+		// Optional: defaults to empty token, which bypasses conflict detection.
 		ConflictToken []byte
 
-		// Identity: The identity of the client who initiated this request.
+		// Identity - The identity of the client who initiated this request.
 		//
-		// Optional: default to the identity of the underlying workflow client.
+		// Optional: defaults to the identity of the underlying workflow client.
 		Identity string
 
 		// IgnoreMissingTaskQueues - Override protection against accidental removal of Task Queues.
@@ -236,6 +228,15 @@ type (
 		//
 		// Optional: default to reject request when queues are missing.
 		IgnoreMissingTaskQueues bool
+
+		// AllowNoPollers - Override protection against accidentally sending tasks to a version without pollers.
+		// When false this request will be rejected if no pollers have been seen for the proposed Current Version,
+		// in order to protect users from routing tasks to pollers that do not exist, leading to possible timeouts.
+		// Pass `true` here to bypass this protection.
+		// WARNING: setting this flag could lead to tasks being sent to a version that has no pollers.
+		//
+		// Optional: default to reject request when version has never had pollers.
+		AllowNoPollers bool
 	}
 
 	// WorkerDeploymentSetRampingVersionResponse is the response for
@@ -248,13 +249,68 @@ type (
 		// ConflictToken - Token to serialize Worker Deployment operations.
 		ConflictToken []byte
 
-		// PreviousVersion - The Ramping Version before executing this operation.
-		// It returns an identifier in the form of "<deployment_name>.<build_id>",
-		// or the "__unversioned__" special value, which represents all the unversioned workers.
-		PreviousVersion string
+		// PreviousVersion - The Ramping Version before executing this operation, if any.
+		//
+		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
+		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
+		PreviousVersion *WorkerDeploymentVersion
 
 		// PreviousPercentage - The Ramping Version Percentage before executing this operation.
+		//
+		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
+		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
 		PreviousPercentage float32
+	}
+
+	// WorkerDeploymentSetManagerIdentityOptions provides options for
+	// [WorkerDeploymentHandle.SetManagerIdentity].
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityOptions]
+	WorkerDeploymentSetManagerIdentityOptions struct {
+		// ManagerIdentity - string to set as the Worker Deployment's ManagerIdentity.
+		// An empty string will clear the ManagerIdentity field.
+		// It is invalid to set Self=true and ManagerIdentity != "".
+		ManagerIdentity string
+
+		// Self - If true, set the Worker Deployment's ManagerIdentity field to the identity
+		// of the user submitting this request.
+		// It is invalid to set Self=true and ManagerIdentity != "".
+		Self bool
+
+		// ConflictToken - Token to serialize Worker Deployment operations. Passing a non-empty
+		// conflict token will cause this request to fail with
+		// `serviceerror.FailedPrecondition` if the
+		// Deployment's configuration has been modified between the API call that
+		// generated the token and this one.
+		// The current token can be obtained with [WorkerDeploymentHandle.Describe],
+		// or returned by other successful Worker Deployment operations.
+		//
+		// Optional: defaults to empty token, which bypasses conflict detection.
+		ConflictToken []byte
+
+		// Identity - The identity of the client who initiated this request.
+		//
+		// Optional: defaults to the identity of the underlying workflow client.
+		Identity string
+	}
+
+	// WorkerDeploymentSetManagerIdentityResponse is the response for
+	// [WorkerDeploymentHandle.SetManagerIdentity].
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityResponse]
+	WorkerDeploymentSetManagerIdentityResponse struct {
+		// ConflictToken - Token to serialize Worker Deployment operations.
+		ConflictToken []byte
+
+		// PreviousManagerIdentity - The Manager Identity before executing this operation, if any.
+		//
+		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
+		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
+		PreviousManagerIdentity string
 	}
 
 	// WorkerDeploymentDescribeVersionOptions provides options for
@@ -264,8 +320,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDescribeVersionOptions]
 	WorkerDeploymentDescribeVersionOptions struct {
-		// Version - A Deployment Version identifier in the form of "<deployment_name>.<build_id>".
-		Version string
+		// BuildID - A Build ID within this deployment to describe.
+		BuildID string
 	}
 
 	// WorkerDeploymentTaskQueueInfo describes properties of the Task Queues involved
@@ -289,7 +345,6 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionDrainageInfo]
 	WorkerDeploymentVersionDrainageInfo struct {
-
 		// DrainageStatus - The Worker Deployment Version drainage status to guarantee safe
 		// decommission of this Version.
 		DrainageStatus WorkerDeploymentVersionDrainageStatus
@@ -308,8 +363,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionInfo]
 	WorkerDeploymentVersionInfo struct {
-		// Version - A Deployment Version identifier in the form of "<deployment_name>.<build_id>".
-		Version string
+		// Version - A Deployment Version identifier.
+		Version WorkerDeploymentVersion
 
 		// CreateTime - When this Deployment Version was created.
 		CreateTime time.Time
@@ -357,9 +412,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDeleteVersionOptions]
 	WorkerDeploymentDeleteVersionOptions struct {
-		// Version - Identifier in the form of "<deployment_name>.<build_id>" for the Version
-		// to be deleted.
-		Version string
+		// BuildID - A Build ID within this deployment to delete.
+		BuildID string
 
 		// SkipDrainage - Force deletion even if the Version is still draining.
 		//
@@ -368,7 +422,7 @@ type (
 
 		// Identity - The identity of the client who initiated this request.
 		//
-		// Optional: default to the identity of the underlying workflow client.
+		// Optional: defaults to the identity of the underlying workflow client.
 		Identity string
 	}
 
@@ -404,9 +458,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentUpdateVersionMetadataOptions]
 	WorkerDeploymentUpdateVersionMetadataOptions struct {
-		// Version - Identifier in the form of "<deployment_name>.<build_id>" for the Version
-		// to be updated.
-		Version string
+		// Version - the deployment version to target.
+		Version WorkerDeploymentVersion
 
 		// MetadataUpdate - Changes to the user-defined metadata entries for this Version.
 		MetadataUpdate WorkerDeploymentMetadataUpdate
@@ -446,6 +499,11 @@ type (
 		//
 		// NOTE: Experimental
 		SetRampingVersion(ctx context.Context, options WorkerDeploymentSetRampingVersionOptions) (WorkerDeploymentSetRampingVersionResponse, error)
+
+		// SetManagerIdentity changes the Manager Identity of this Worker Deployment.
+		//
+		// NOTE: Experimental
+		SetManagerIdentity(ctx context.Context, options WorkerDeploymentSetManagerIdentityOptions) (WorkerDeploymentSetManagerIdentityResponse, error)
 
 		// DescribeVersion gives a description of one the Versions in this Worker Deployment.
 		//
@@ -490,20 +548,17 @@ type (
 	WorkerDeploymentRoutingConfig struct {
 		// CurrentVersion - Specifies which Deployment Version should receive new workflow
 		// executions and tasks of existing unversioned or AutoUpgrade workflows.
-		// Can be one of the following:
-		// - A Deployment Version identifier in the form of "<deployment_name>.<build_id>".
-		// - Or, the "__unversioned__" special value, to represent all the unversioned workers.
-		CurrentVersion string
+		// If nil, all unversioned workers are the target.
+		CurrentVersion *WorkerDeploymentVersion
 
 		// RampingVersion - Specifies that some traffic is being shifted from the CurrentVersion
 		// to this Version. RampingVersion should always be different from CurrentVersion.
-		// Can be one of the following:
-		// - A Deployment Version identifier in the form of "<deployment_name>.<build_id>".
-		// - Or, the "__unversioned__" special value, to represent all the unversioned workers.
+		// If nil, all unversioned workers are the target, if the percentage is nonzero.
+		//
 		// Note that it is possible to ramp from one Version to another Version,
 		// or from unversioned workers to a particular Version, or from a particular Version to
 		// unversioned workers.
-		RampingVersion string
+		RampingVersion *WorkerDeploymentVersion
 
 		// RampingVersionPercentage - Percentage of tasks that are routed to the RampingVersion
 		// instead of the Current Version.
@@ -565,7 +620,7 @@ type (
 
 		// Identity - The identity of the client who initiated this request.
 		//
-		// Optional: default to the identity of the underlying workflow client.
+		// Optional: defaults to the identity of the underlying workflow client.
 		Identity string
 	}
 

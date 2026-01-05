@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -474,6 +450,47 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_RawHistory_Success() {
 	err = workflowRun.Get(context.Background(), &decodedResult)
 	s.Nil(err)
 	s.Equal(workflowResult, decodedResult)
+}
+
+func (s *workflowRunSuite) TestExecuteWorkflow_StartWorkflowResponseInfo() {
+	link := &commonpb.Link{
+		Variant: &commonpb.Link_WorkflowEvent_{
+			WorkflowEvent: &commonpb.Link_WorkflowEvent{
+				Namespace:  DefaultNamespace,
+				WorkflowId: workflowID,
+				RunId:      runID,
+				Reference: &commonpb.Link_WorkflowEvent_EventRef{
+					EventRef: &commonpb.Link_WorkflowEvent_EventReference{
+						EventId:   1,
+						EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+					},
+				},
+			},
+		},
+	}
+	createResponse := &workflowservice.StartWorkflowExecutionResponse{
+		RunId:   runID,
+		Started: true,
+		Link:    link,
+	}
+	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any()).
+		Return(createResponse, nil).Times(1)
+
+	responseInfo := &startWorkflowResponseInfo{}
+	_, err := s.workflowClient.ExecuteWorkflow(
+		context.Background(),
+		StartWorkflowOptions{
+			ID:                                       workflowID,
+			TaskQueue:                                taskqueue,
+			WorkflowExecutionTimeout:                 timeoutInSeconds * time.Second,
+			WorkflowTaskTimeout:                      timeoutInSeconds * time.Second,
+			WorkflowIDReusePolicy:                    workflowIDReusePolicy,
+			WorkflowExecutionErrorWhenAlreadyStarted: true,
+			responseInfo:                             responseInfo,
+		}, workflowType,
+	)
+	s.NoError(err)
+	s.Equal(link, responseInfo.Link)
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedError() {
@@ -1454,6 +1471,36 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithContextAwareDat
 	s.Equal(startResponse.GetRunId(), resp.GetRunID())
 }
 
+func (s *workflowClientTestSuite) TestUpdateWorkflowWithContextAwareDataConverter() {
+	dc := NewContextAwareDataConverter(converter.GetDefaultDataConverter())
+	s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+	client, ok := s.client.(*WorkflowClient)
+	s.True(ok)
+
+	input := "test"
+
+	updateResponse := &workflowservice.UpdateWorkflowExecutionResponse{
+		Stage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+		Outcome: &updatepb.Outcome{
+			Value: &updatepb.Outcome_Success{},
+		},
+	}
+	s.service.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(updateResponse, nil).Do(func(_ interface{}, req *workflowservice.UpdateWorkflowExecutionRequest, _ ...interface{}) {
+		dc := client.dataConverter
+		inputs := dc.ToStrings(req.GetRequest().GetInput().Args)
+		s.Equal("\"te?t\"", inputs[0])
+	})
+	ctx := context.Background()
+	ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "s")
+
+	_, err := s.client.UpdateWorkflow(ctx, UpdateWorkflowOptions{
+		UpdateName:   "my-update",
+		WaitForStage: WorkflowUpdateStageCompleted,
+		Args:         []interface{}{input},
+	})
+	s.Nil(err)
+}
+
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowValidation() {
 	// ambiguous WorkflowID
 	_, err := s.client.SignalWithStartWorkflow(
@@ -1778,12 +1825,10 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
-	versioningOverride := VersioningOverride{
-		Behavior:      VersioningBehaviorPinned,
-		PinnedVersion: "deployment1.build1",
-		Deployment: Deployment{
-			BuildID:    "build1",
-			SeriesName: "deployment1",
+	versioningOverride := &PinnedVersioningOverride{
+		Version: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildID:        "build1",
 		},
 	}
 
@@ -1802,23 +1847,26 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1.build1", req.VersioningOverride.GetPinnedVersion())
+
+			s.Equal("deployment1", req.VersioningOverride.GetPinned().GetVersion().DeploymentName)
+			s.Equal("build1", req.VersioningOverride.GetPinned().GetVersion().BuildId)
 		})
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
 
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverride() {
-	versioningOverride := VersioningOverride{
-		Behavior:      VersioningBehaviorPinned,
-		PinnedVersion: "deployment1.build1",
-		Deployment: Deployment{
-			BuildID:    "build1",
-			SeriesName: "deployment1",
+	versioningOverride := &PinnedVersioningOverride{
+		Version: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildID:        "build1",
 		},
 	}
 
@@ -1836,12 +1884,17 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("build1", req.VersioningOverride.GetDeployment().GetBuildId())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1", req.VersioningOverride.GetDeployment().GetSeriesName())
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal("deployment1.build1", req.VersioningOverride.GetPinnedVersion())
+
+			s.Equal("deployment1", req.VersioningOverride.GetPinned().GetVersion().DeploymentName)
+			s.Equal("build1", req.VersioningOverride.GetPinned().GetVersion().BuildId)
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
 }

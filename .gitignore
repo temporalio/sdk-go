@@ -22,3 +22,5 @@ test.log
 go.work
 go.work.sum
 *~
+internal/cmd/build/*.sqlite*
+.claude

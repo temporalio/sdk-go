@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package resourcetuner
 
 import (
@@ -32,8 +10,15 @@ import (
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
+)
+
+// Metric names emitted by the resource-based tuner
+const (
+	resourceSlotsCPUUsage = "temporal_resource_slots_cpu_usage"
+	resourceSlotsMemUsage = "temporal_resource_slots_mem_usage"
 )
 
 type ResourceBasedTunerOptions struct {
@@ -53,8 +38,6 @@ type ResourceBasedTunerOptions struct {
 
 // NewResourceBasedTuner creates a WorkerTuner that dynamically adjusts the number of slots based
 // on system resources. Specify the target CPU and memory usage as a value between 0 and 1.
-//
-// WARNING: Resource based tuning is currently experimental.
 func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, error) {
 	options := DefaultResourceControllerOptions()
 	options.MemTargetPercent = opts.TargetMem
@@ -93,8 +76,6 @@ func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, 
 }
 
 // ResourceBasedSlotSupplierOptions configures a particular ResourceBasedSlotSupplier.
-//
-// WARNING: Resource based tuning is currently experimental.
 type ResourceBasedSlotSupplierOptions struct {
 	// MinSlots is minimum number of slots that will be issued without any resource checks.
 	MinSlots int
@@ -123,8 +104,6 @@ func DefaultActivityResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplier
 
 // ResourceBasedSlotSupplier is a worker.SlotSupplier that issues slots based on system resource
 // usage.
-//
-// WARNING: Resource based tuning is currently experimental.
 type ResourceBasedSlotSupplier struct {
 	controller *ResourceController
 	options    ResourceBasedSlotSupplierOptions
@@ -136,8 +115,6 @@ type ResourceBasedSlotSupplier struct {
 // NewResourceBasedSlotSupplier creates a ResourceBasedSlotSupplier given the provided
 // ResourceController and ResourceBasedSlotSupplierOptions. All ResourceBasedSlotSupplier instances
 // must use the same ResourceController.
-//
-// WARNING: Resource based tuning is currently experimental.
 func NewResourceBasedSlotSupplier(
 	controller *ResourceController,
 	options ResourceBasedSlotSupplierOptions,
@@ -187,7 +164,7 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(info worker.SlotReservationIn
 	numIssued := info.NumIssuedSlots()
 	if numIssued < r.options.MinSlots || (numIssued < r.options.MaxSlots &&
 		time.Since(r.lastSlotIssuedAt) > r.options.RampThrottle) {
-		decision, err := r.controller.pidDecision(info.Logger())
+		decision, err := r.controller.pidDecision(info.Logger(), info.MetricsHandler())
 		if err != nil {
 			info.Logger().Error("Error calculating resource usage", "error", err)
 			return nil
@@ -207,8 +184,6 @@ func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 }
 
 // SystemInfoSupplier implementations provide information about system resources.
-//
-// WARNING: Resource based tuning is currently experimental.
 type SystemInfoSupplier interface {
 	// GetMemoryUsage returns the current system memory usage as a fraction of total memory between
 	// 0 and 1.
@@ -225,8 +200,6 @@ type SystemInfoContext struct {
 // ResourceControllerOptions contains configurable parameters for a ResourceController.
 // It is recommended to use DefaultResourceControllerOptions to create a ResourceControllerOptions
 // and only modify the mem/cpu target percent fields.
-//
-// WARNING: Resource based tuning is currently experimental.
 type ResourceControllerOptions struct {
 	// MemTargetPercent is the target overall system memory usage as value 0 and 1 that the
 	// controller will attempt to maintain.
@@ -250,8 +223,6 @@ type ResourceControllerOptions struct {
 }
 
 // DefaultResourceControllerOptions returns a ResourceControllerOptions with default values.
-//
-// WARNING: Resource based tuning is currently experimental.
 func DefaultResourceControllerOptions() ResourceControllerOptions {
 	return ResourceControllerOptions{
 		MemTargetPercent:   0.8,
@@ -269,8 +240,6 @@ func DefaultResourceControllerOptions() ResourceControllerOptions {
 
 // A ResourceController is used by ResourceBasedSlotSupplier to make decisions about whether slots
 // should be issued based on system resource usage.
-//
-// WARNING: Resource based tuning is currently experimental.
 type ResourceController struct {
 	options ResourceControllerOptions
 
@@ -285,8 +254,6 @@ type ResourceController struct {
 // WARNING: It is important that you do not create multiple ResourceController instances. Since
 // the controller looks at overall system resources, multiple instances with different configs can
 // only conflict with one another.
-//
-// WARNING: Resource based tuning is currently experimental.
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
 	var infoSupplier SystemInfoSupplier
 	if options.InfoSupplier == nil {
@@ -316,7 +283,7 @@ func NewResourceController(options ResourceControllerOptions) *ResourceControlle
 	}
 }
 
-func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
+func (rc *ResourceController) pidDecision(logger log.Logger, metricsHandler client.MetricsHandler) (bool, error) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 
@@ -328,6 +295,7 @@ func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	rc.publishResourceMetrics(metricsHandler, memUsage, cpuUsage)
 	if memUsage >= rc.options.MemTargetPercent {
 		// Never allow going over the memory target
 		return false, nil
@@ -352,6 +320,14 @@ func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
 
 	return rc.memPid.State.ControlSignal > rc.options.MemOutputThreshold &&
 		rc.cpuPid.State.ControlSignal > rc.options.CpuOutputThreshold, nil
+}
+
+func (rc *ResourceController) publishResourceMetrics(metricsHandler client.MetricsHandler, memUsage, cpuUsage float64) {
+	if metricsHandler == nil {
+		return
+	}
+	metricsHandler.Gauge(resourceSlotsMemUsage).Update(memUsage * 100)
+	metricsHandler.Gauge(resourceSlotsCPUUsage).Update(cpuUsage * 100)
 }
 
 type psUtilSystemInfoSupplier struct {

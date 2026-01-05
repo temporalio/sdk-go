@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -144,8 +120,6 @@ type (
 			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation for use in UpdateWithStartWorkflow.
-		//
-		// NOTE: Experimental
 		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
 
 		// CancelWorkflow cancels a workflow in execution
@@ -347,6 +321,14 @@ type (
 		//  - serviceerror.NotFound
 		DescribeWorkflowExecution(ctx context.Context, workflowID, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error)
 
+		// DescribeWorkflow returns information about the specified workflow execution.
+		// The errors it can return:
+		//  - serviceerror.InvalidArgument
+		//  - serviceerror.Internal
+		//  - serviceerror.Unavailable
+		//  - serviceerror.NotFound
+		DescribeWorkflow(ctx context.Context, workflowID, runID string) (*WorkflowExecutionDescription, error)
+
 		// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution
 		// and returns the new [WorkflowExecutionOptions] after applying the changes.
 		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
@@ -422,8 +404,6 @@ type (
 		// workflow is running then, if the WorkflowIDConflictPolicy is
 		// USE_EXISTING, the update is issued against the specified workflow,
 		// and if the WorkflowIDConflictPolicy is FAIL, an error is returned.
-		//
-		// NOTE: Experimental
 		UpdateWithStartWorkflow(ctx context.Context, options UpdateWithStartWorkflowOptions) (WorkflowUpdateHandle, error)
 
 		// GetWorkflowUpdateHandle creates a handle to the referenced update
@@ -561,6 +541,12 @@ type (
 	ConnectionOptions struct {
 		// TLS configures connection level security credentials.
 		TLS *tls.Config
+
+		// TLSDisabled explicitly disables TLS. When true, TLS will not be used even
+		// if API key credentials are provided (which would normally auto-enable TLS).
+		// This is not recommended for production use as it sends credentials in plaintext.
+		// This option is mutually exclusive with TLS - an error will be returned if both are set.
+		TLSDisabled bool
 
 		// Authority specifies the value to be used as the :authority pseudo-header.
 		// This value only used when TLS is nil.
@@ -778,6 +764,10 @@ type (
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 
+		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.
+		// Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+		responseInfo *startWorkflowResponseInfo
+
 		// request ID. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		requestID string
 		// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
@@ -794,10 +784,15 @@ type (
 		onConflictOptions *OnConflictOptions
 	}
 
+	// startWorkflowResponseInfo can be passed to StartWorkflowOptions to receive additional information
+	// of StartWorkflowExecution response.
+	startWorkflowResponseInfo struct {
+		// Link to the workflow event.
+		Link *commonpb.Link
+	}
+
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
 	// See [NewWithStartWorkflowOperation] and [UpdateWithStartWorkflow].
-	//
-	// NOTE: Experimental
 	WithStartWorkflowOperation interface {
 		// Get returns the WorkflowRun that was targeted by the UpdateWithStartWorkflow call.
 		// This is a blocking API.
@@ -820,7 +815,7 @@ type (
 	// history only when the activity completes or "finally" timeouts/fails. And the started event only records the last
 	// started time. Because of that, to check an activity has started or not, you cannot rely on history events. Instead,
 	// you can use CLI to describe the workflow to see the status of the activity:
-	//     tctl --ns <namespace> wf desc -w <wf-id>
+	//     temporal workflow describe --namespace <namespace> --workflow-id <wf-id>
 	//
 	// Exposed as: [go.temporal.io/sdk/temporal.RetryPolicy]
 	RetryPolicy struct {
@@ -876,6 +871,28 @@ type (
 		// The default value when unset or 0 is calculated by (min+max)/2. With the
 		// default max of 5, and min of 1, that comes out to 3.
 		PriorityKey int
+
+		// FairnessKey is a short string that's used as a key for a fairness
+		// balancing mechanism. It may correspond to a tenant id, or to a fixed
+		// string like "high" or "low". The default is the empty string.
+		//
+		// The fairness mechanism attempts to dispatch tasks for a given key in
+		// proportion to its weight. For example, using a thousand distinct tenant
+		// ids, each with a weight of 1.0 (the default) will result in each tenant
+		// getting a roughly equal share of task dispatch throughput.
+		//
+		// Fairness keys are limited to 64 bytes.
+		FairnessKey string
+
+		// FairnessWeight for a task can come from multiple sources for
+		// flexibility. From highest to lowest precedence:
+		// 1. Weights for a small set of keys can be overridden in task queue
+		//    configuration with an API.
+		// 2. It can be attached to the workflow/activity in this field.
+		// 3. The default weight of 1.0 will be used.
+		//
+		// Weight values are clamped to the range [0.001, 1000].
+		FairnessWeight float32
 	}
 
 	// NamespaceClient is the client for managing operations on the namespace.
@@ -977,6 +994,11 @@ func newClient(ctx context.Context, options ClientOptions, existing *WorkflowCli
 	if options.Logger == nil {
 		options.Logger = ilog.NewDefaultLogger()
 		options.Logger.Info("No logger configured for temporal client. Created default one.")
+	}
+
+	// Validate mutually exclusive TLS options
+	if options.ConnectionOptions.TLS != nil && options.ConnectionOptions.TLSDisabled {
+		return nil, fmt.Errorf("cannot set both TLS and TLSDisabled in ConnectionOptions")
 	}
 
 	if options.Credentials != nil {
@@ -1199,7 +1221,13 @@ func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, e
 	return apiKeyCredentials(apiKeyCallback)
 }
 
-func (apiKeyCredentials) applyToOptions(*ConnectionOptions) error { return nil }
+func (apiKeyCredentials) applyToOptions(opts *ConnectionOptions) error {
+	// Auto-enable TLS when API key is provided and TLS is not explicitly set/disabled
+	if opts.TLS == nil && !opts.TLSDisabled {
+		opts.TLS = &tls.Config{}
+	}
+	return nil
+}
 
 func (a apiKeyCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return a.gRPCIntercept }
 
@@ -1291,4 +1319,14 @@ func SetOnConflictOptionsOnStartWorkflowOptions(opts *StartWorkflowOptions) {
 		AttachCompletionCallbacks: true,
 		AttachLinks:               true,
 	}
+}
+
+// SetResponseInfoOnStartWorkflowOptions is an internal only method for setting start workflow
+// response info object pointer on StartWorkflowOptions and return the object pointer.
+// StartWorkflowResponseInfo is purposefully not exposed to users for the time being.
+func SetResponseInfoOnStartWorkflowOptions(opts *StartWorkflowOptions) *startWorkflowResponseInfo {
+	if opts.responseInfo == nil {
+		opts.responseInfo = &startWorkflowResponseInfo{}
+	}
+	return opts.responseInfo
 }

@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package envconfig
 
 import (
@@ -56,7 +32,7 @@ func LoadDefaultClientOptions() (client.Options, error) {
 // LoadClientOptionsRequest are options for [LoadClientOptions].
 type LoadClientOptionsRequest struct {
 	// Override the file path to use to load the TOML file for config. Defaults to TEMPORAL_CONFIG_FILE environment
-	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporal/temporal.toml. If ConfigFileData is
+	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporalio/temporal.toml. If ConfigFileData is
 	// set, this cannot be set and no file loading from disk occurs. Ignored if DisableFile is true.
 	ConfigFilePath string
 
@@ -117,7 +93,7 @@ func LoadClientOptions(options LoadClientOptionsRequest) (client.Options, error)
 // [LoadClientConfigOptions] are options for [LoadClientConfig].
 type LoadClientConfigOptions struct {
 	// Override the file path to use to load the TOML file for config. Defaults to TEMPORAL_CONFIG_FILE environment
-	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporal/temporal.toml. If ConfigFileData is
+	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporalio/temporal.toml. If ConfigFileData is
 	// set, this cannot be set and no file loading from disk occurs.
 	ConfigFilePath string
 
@@ -182,7 +158,7 @@ func LoadClientConfig(options LoadClientConfigOptions) (ClientConfig, error) {
 // LoadClientConfigProfileOptions are options for [LoadClientConfigProfile].
 type LoadClientConfigProfileOptions struct {
 	// Override the file path to use to load the TOML file for config. Defaults to TEMPORAL_CONFIG_FILE environment
-	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporal/temporal.toml. If ConfigFileData is
+	// variable or if that is unset/empty, defaults to [os.UserConfigDir]/temporalio/temporal.toml. If ConfigFileData is
 	// set, this cannot be set and no file loading from disk occurs. Ignored if DisableFile is true.
 	ConfigFilePath string
 
@@ -272,7 +248,7 @@ func LoadClientConfigProfile(options LoadClientConfigProfileOptions) (ClientConf
 // DefaultConfigFileProfile is the default profile used.
 const DefaultConfigFileProfile = "default"
 
-// DefaultConfigFilePath is the default config file path used. It is [os.UserConfigDir]/temporal/temporal.toml.
+// DefaultConfigFilePath is the default config file path used. It is [os.UserConfigDir]/temporalio/temporal.toml.
 //
 // WARNING: Environment configuration is currently experimental.
 func DefaultConfigFilePath() (string, error) {

@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package workflow
 
 import (
@@ -67,6 +43,28 @@ const (
 	HandlerUnfinishedPolicyAbandon = internal.HandlerUnfinishedPolicyAbandon
 )
 
+// NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
+// caller is cancelled.
+type NexusOperationCancellationType = internal.NexusOperationCancellationType
+
+const (
+	// Nexus operation cancellation type is unknown.
+	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
+
+	// Do not request cancellation of the Nexus operation.
+	NexusOperationCancellationTypeAbandon
+
+	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
+	// to the caller.
+	NexusOperationCancellationTypeTryCancel
+
+	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
+	NexusOperationCancellationTypeWaitRequested
+
+	// Wait for the Nexus operation to complete. Default.
+	NexusOperationCancellationTypeWaitCompleted
+)
+
 type (
 
 	// ChildWorkflowFuture represents the result of a child workflow execution
@@ -86,6 +84,16 @@ type (
 
 	// RegisterOptions consists of options for registering a workflow
 	RegisterOptions = internal.RegisterWorkflowOptions
+
+	// LoadDynamicRuntimeOptionsDetails is used as input to the LoadDynamicRuntimeOptions callback for dynamic workflows
+	LoadDynamicRuntimeOptionsDetails = internal.LoadDynamicRuntimeOptionsDetails
+
+	// DynamicRegisterOptions consists of options for registering a dynamic workflow
+	DynamicRegisterOptions = internal.DynamicRegisterWorkflowOptions
+
+	// DynamicRuntimeOptions consists of options for a dynamic workflow that
+	// are decided on a per-workflow type basis.
+	DynamicRuntimeOptions = internal.DynamicRuntimeWorkflowOptions
 
 	// Info information about currently executing workflow
 	Info = internal.WorkflowInfo
@@ -114,6 +122,12 @@ type (
 	//
 	// NOTE: Experimental
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
+
+	// SideEffectOptions are options for executing a side effect.
+	SideEffectOptions = internal.SideEffectOptions
+
+	// MutableSideEffectOptions are options for executing a mutable side effect.
+	MutableSideEffectOptions = internal.MutableSideEffectOptions
 
 	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
 
@@ -179,7 +193,7 @@ type (
 //
 // If the activity failed to complete then the future get error would indicate the failure.
 // The error will be of type *ActivityError. It will have important activity information and actual error that caused
-// activity failure. Use errors.Unwrap to get this error or errors.As to check it type which can be one of
+// activity failure. Use errors.Unwrap to get this error or errors.As to check its type which can be one of
 // *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
 //
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
@@ -386,6 +400,15 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 	return internal.SideEffect(ctx, f)
 }
 
+// SideEffectWithOptions executes the provided function once, records its result into the workflow history.
+// The recorded result on history will be returned without executing the provided function during replay.
+// This guarantees the deterministic requirement for workflow as the exact same result will be returned in replay.
+//
+// The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
+func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
+	return internal.SideEffectWithOptions(ctx, options, f)
+}
+
 // MutableSideEffect executes the provided function once, then it looks up the history for the value with the given id.
 // If there is no existing value, then it records the function result as a value with the given id on history;
 // otherwise, it compares whether the existing value from history has changed from the new function result by calling
@@ -403,6 +426,12 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
 func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	return internal.MutableSideEffect(ctx, id, f, equals)
+}
+
+// MutableSideEffectWithOptions is like MutableSideEffect but allows specifying additional options
+// like a summary that will be displayed in UI/CLI.
+func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+	return internal.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before

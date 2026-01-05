@@ -1,31 +1,11 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package resourcetuner
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -44,6 +24,7 @@ func (f FakeSystemInfoSupplier) GetCpuUsage(_ *SystemInfoContext) (float64, erro
 
 func TestPidDecisions(t *testing.T) {
 	logger := &log.NoopLogger{}
+	metricsHandler := client.MetricsNopHandler
 	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.5, cpuUse: 0.5}
 	rcOpts := DefaultResourceControllerOptions()
 	rcOpts.MemTargetPercent = 0.8
@@ -52,7 +33,7 @@ func TestPidDecisions(t *testing.T) {
 	rc := NewResourceController(rcOpts)
 
 	for i := 0; i < 10; i++ {
-		decision, err := rc.pidDecision(logger)
+		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.True(t, decision)
 
@@ -63,7 +44,7 @@ func TestPidDecisions(t *testing.T) {
 	fakeSupplier.memUse = 0.8
 	fakeSupplier.cpuUse = 0.9
 	for i := 0; i < 10; i++ {
-		decision, err := rc.pidDecision(logger)
+		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.False(t, decision)
 	}
@@ -71,7 +52,7 @@ func TestPidDecisions(t *testing.T) {
 	fakeSupplier.memUse = 0.7
 	fakeSupplier.cpuUse = 0.9
 	for i := 0; i < 10; i++ {
-		decision, err := rc.pidDecision(logger)
+		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.False(t, decision)
 	}
@@ -79,8 +60,48 @@ func TestPidDecisions(t *testing.T) {
 	fakeSupplier.memUse = 0.7
 	fakeSupplier.cpuUse = 0.7
 	for i := 0; i < 10; i++ {
-		decision, err := rc.pidDecision(logger)
+		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.True(t, decision)
 	}
+}
+
+func TestPidDecisionEmitsUsageMetrics(t *testing.T) {
+	logger := &log.NoopLogger{}
+	metricsHandler := metrics.NewCapturingHandler()
+	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.25, cpuUse: 0.75}
+
+	rcOpts := DefaultResourceControllerOptions()
+	rcOpts.InfoSupplier = fakeSupplier
+	rc := NewResourceController(rcOpts)
+
+	_, err := rc.pidDecision(logger, metricsHandler)
+	assert.NoError(t, err)
+
+	gauges := metricsHandler.Gauges()
+	assert.Len(t, gauges, 2)
+
+	gaugesByName := make(map[string]float64)
+	for _, gauge := range gauges {
+		gaugesByName[gauge.Name] = gauge.Value()
+	}
+
+	assert.Equal(t, 25.0, gaugesByName[resourceSlotsMemUsage])
+	assert.Equal(t, 75.0, gaugesByName[resourceSlotsCPUUsage])
+
+	fakeSupplier.memUse = 0.7
+	fakeSupplier.cpuUse = 0.9
+	_, err = rc.pidDecision(logger, metricsHandler)
+	assert.NoError(t, err)
+
+	gauges = metricsHandler.Gauges()
+	assert.Len(t, gauges, 2)
+
+	gaugesByName = make(map[string]float64)
+	for _, gauge := range gauges {
+		gaugesByName[gauge.Name] = gauge.Value()
+	}
+
+	assert.Equal(t, 70.0, gaugesByName[resourceSlotsMemUsage])
+	assert.Equal(t, 90.0, gaugesByName[resourceSlotsCPUUsage])
 }

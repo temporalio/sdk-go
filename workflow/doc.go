@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 /*
 Package workflow contains functions and types used to implement Temporal workflows.
 
@@ -127,7 +103,7 @@ deterministic and repeatable within an execution context.
 
 Coroutine related constructs:
 
-  - [workflow.Go] : This is a replacement for the the go statement
+  - [workflow.Go] : This is a replacement for the go statement
   - [workflow.Channel] : This is a replacement for the native chan type. Temporal
     provides support for both buffered and unbuffered channels
   - [workflow.Selector] : This is a replacement for the select statement
@@ -421,11 +397,11 @@ SideEffect function any other way than through its recorded return value.
 # Query API
 
 A workflow execution could be stuck at some state for longer than expected period. Temporal provide facilities to query
-the current call stack of a workflow execution. You can use tctl to do the query, for example:
+the current call stack of a workflow execution. You can use temporal CLI to do the query, for example:
 
-	tctl --namespace samples-namespace workflow query -w my_workflow_id -r my_run_id -qt __stack_trace
+	temporal workflow stack --namespace samples-namespace --workflow-id my_workflow_id --run-id my_run_id
 
-The above cli command uses __stack_trace as the query type. The __stack_trace is a built-in query type that is
+The above CLI command uses __stack_trace as the query type. The __stack_trace is a built-in query type that is
 supported by temporal client library. You can also add your own custom query types to support thing like query current
 state of the workflow, or query how many activities the workflow has completed. To do so, you need to setup your own
 query handler using [workflow.SetQueryHandler] in your workflow code:
@@ -457,11 +433,11 @@ query handler using [workflow.SetQueryHandler] in your workflow code:
 	}
 
 The above sample code sets up a query handler to handle query type "state". With that, you should be able to query with
-cli:
+CLI:
 
-	tctl --namespace samples-namespace workflow query -w my_workflow_id -r my_run_id -qt state
+	temporal workflow query --namespace samples-namespace --workflow-id my_workflow_id --run-id my_run_id --type state
 
-Besides using tctl, you can also issue query from code using QueryWorkflow() API on temporal Client object.
+Besides using temporal CLI, you can also issue query from code using QueryWorkflow() API on temporal Client object.
 
 # Registration
 
@@ -556,8 +532,8 @@ framework via [go.temporal.io/sdk/testsuite.WorkflowTestSuite]. Since every test
 our struct to hold an instance of the test environment. This will allow us to initialize the test environment in a
 setup method. For testing workflows we use a [go.temporal.io/sdk/testsuite.TestWorkflowEnvironment].
 
-We then implement a SetupTest method to setup a new test environment before each test. Doing so ensure that each test
-runs in it's own isolated sandbox. We also implement an AfterTest function where we assert that all mocks we setup were
+We then implement a SetupTest method to set up a new test environment before each test. Doing so ensures that each test
+runs in its own isolated sandbox. We also implement an AfterTest function where we assert that all mocks we set up were
 indeed called by invoking s.env.AssertExpectations(s.T()).
 
 Finally, we create a regular test function recognized by "go test" and pass the struct to suite.Run.
