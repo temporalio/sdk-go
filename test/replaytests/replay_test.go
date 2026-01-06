@@ -2,6 +2,7 @@ package replaytests
 
 import (
 	"context"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"reflect"
 	"testing"
 
