@@ -195,11 +195,16 @@ type WorkerPluginConfigureWorkerOptions struct {
 //
 // NOTE: Experimental
 type WorkerPluginConfigureWorkerRegistryOptions struct {
-	OnRegisterWorkflow        func(any, RegisterWorkflowOptions)
+	// Called when a workflow is registered. The first parameter will be the workflow.
+	OnRegisterWorkflow func(any, RegisterWorkflowOptions)
+	// Called when a dynamic workflow is registered. The first parameter will be the workflow.
 	OnRegisterDynamicWorkflow func(any, DynamicRegisterWorkflowOptions)
-	OnRegisterActivity        func(any, RegisterActivityOptions)
+	// Called when an activity is registered. The first parameter will be the activity.
+	OnRegisterActivity func(any, RegisterActivityOptions)
+	// Called when a dynamic activity is registered. The first parameter will be the activity.
 	OnRegisterDynamicActivity func(any, DynamicRegisterActivityOptions)
-	OnRegisterNexusService    func(*nexus.Service)
+	// Called when a Nexus service is registered. The first parameter will be the Nexus service.
+	OnRegisterNexusService func(*nexus.Service)
 }
 
 // WorkerPluginStartWorkerOptions are options for StartWorker on a worker
@@ -267,7 +272,9 @@ type WorkerPluginConfigureWorkflowReplayerOptions struct {
 //
 // NOTE: Experimental
 type WorkerPluginConfigureWorkflowReplayerRegistryOptions struct {
-	OnRegisterWorkflow        func(any, RegisterWorkflowOptions)
+	// Called when a workflow is registered. The first parameter will be the workflow.
+	OnRegisterWorkflow func(any, RegisterWorkflowOptions)
+	// Called when a dynamic workflow is registered. The first parameter will be the workflow.
 	OnRegisterDynamicWorkflow func(any, DynamicRegisterWorkflowOptions)
 }
 
