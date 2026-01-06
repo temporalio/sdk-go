@@ -553,6 +553,12 @@ type (
 		// TLS configures connection level security credentials.
 		TLS *tls.Config
 
+		// TLSDisabled explicitly disables TLS. When true, TLS will not be used even
+		// if API key credentials are provided (which would normally auto-enable TLS).
+		// This is not recommended for production use as it sends credentials in plaintext.
+		// This option is mutually exclusive with TLS - an error will be returned if both are set.
+		TLSDisabled bool
+
 		// Authority specifies the value to be used as the :authority pseudo-header.
 		// This value only used when TLS is nil.
 		Authority string
@@ -1004,6 +1010,11 @@ func newClient(ctx context.Context, options ClientOptions, existing Client) (Cli
 		options.Logger.Info("No logger configured for temporal client. Created default one.")
 	}
 
+	// Validate mutually exclusive TLS options
+	if options.ConnectionOptions.TLS != nil && options.ConnectionOptions.TLSDisabled {
+		return nil, fmt.Errorf("cannot set both TLS and TLSDisabled in ConnectionOptions")
+	}
+
 	if options.Credentials != nil {
 		if err := options.Credentials.applyToOptions(&options.ConnectionOptions); err != nil {
 			return nil, err
@@ -1262,7 +1273,13 @@ func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, e
 	return apiKeyCredentials(apiKeyCallback)
 }
 
-func (apiKeyCredentials) applyToOptions(*ConnectionOptions) error { return nil }
+func (apiKeyCredentials) applyToOptions(opts *ConnectionOptions) error {
+	// Auto-enable TLS when API key is provided and TLS is not explicitly set/disabled
+	if opts.TLS == nil && !opts.TLSDisabled {
+		opts.TLS = &tls.Config{}
+	}
+	return nil
+}
 
 func (a apiKeyCredentials) gRPCInterceptor() grpc.UnaryClientInterceptor { return a.gRPCIntercept }
 
