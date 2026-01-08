@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/log"
 )
 
@@ -22,6 +24,7 @@ func (f FakeSystemInfoSupplier) GetCpuUsage(_ *SystemInfoContext) (float64, erro
 
 func TestPidDecisions(t *testing.T) {
 	logger := &log.NoopLogger{}
+	metricsHandler := client.MetricsNopHandler
 	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.5, cpuUse: 0.5}
 	rcOpts := DefaultResourceControllerOptions()
 	rcOpts.MemTargetPercent = 0.8
@@ -30,7 +33,7 @@ func TestPidDecisions(t *testing.T) {
 	rc := NewResourceController(rcOpts)
 
 	for i := 0; i < 10; i++ {
-		decision, err := rc.pidDecision(logger)
+		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.True(t, decision)
 
@@ -41,7 +44,7 @@ func TestPidDecisions(t *testing.T) {
 	fakeSupplier.memUse = 0.8
 	fakeSupplier.cpuUse = 0.9
 	for i := 0; i < 10; i++ {
-		decision, err := rc.pidDecision(logger)
+		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.False(t, decision)
 	}
@@ -49,7 +52,7 @@ func TestPidDecisions(t *testing.T) {
 	fakeSupplier.memUse = 0.7
 	fakeSupplier.cpuUse = 0.9
 	for i := 0; i < 10; i++ {
-		decision, err := rc.pidDecision(logger)
+		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.False(t, decision)
 	}
@@ -57,8 +60,48 @@ func TestPidDecisions(t *testing.T) {
 	fakeSupplier.memUse = 0.7
 	fakeSupplier.cpuUse = 0.7
 	for i := 0; i < 10; i++ {
-		decision, err := rc.pidDecision(logger)
+		decision, err := rc.pidDecision(logger, metricsHandler)
 		assert.NoError(t, err)
 		assert.True(t, decision)
 	}
+}
+
+func TestPidDecisionEmitsUsageMetrics(t *testing.T) {
+	logger := &log.NoopLogger{}
+	metricsHandler := metrics.NewCapturingHandler()
+	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.25, cpuUse: 0.75}
+
+	rcOpts := DefaultResourceControllerOptions()
+	rcOpts.InfoSupplier = fakeSupplier
+	rc := NewResourceController(rcOpts)
+
+	_, err := rc.pidDecision(logger, metricsHandler)
+	assert.NoError(t, err)
+
+	gauges := metricsHandler.Gauges()
+	assert.Len(t, gauges, 2)
+
+	gaugesByName := make(map[string]float64)
+	for _, gauge := range gauges {
+		gaugesByName[gauge.Name] = gauge.Value()
+	}
+
+	assert.Equal(t, 25.0, gaugesByName[resourceSlotsMemUsage])
+	assert.Equal(t, 75.0, gaugesByName[resourceSlotsCPUUsage])
+
+	fakeSupplier.memUse = 0.7
+	fakeSupplier.cpuUse = 0.9
+	_, err = rc.pidDecision(logger, metricsHandler)
+	assert.NoError(t, err)
+
+	gauges = metricsHandler.Gauges()
+	assert.Len(t, gauges, 2)
+
+	gaugesByName = make(map[string]float64)
+	for _, gauge := range gauges {
+		gaugesByName[gauge.Name] = gauge.Value()
+	}
+
+	assert.Equal(t, 70.0, gaugesByName[resourceSlotsMemUsage])
+	assert.Equal(t, 90.0, gaugesByName[resourceSlotsCPUUsage])
 }

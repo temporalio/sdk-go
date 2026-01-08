@@ -123,6 +123,12 @@ type (
 	// NOTE: Experimental
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
 
+	// SideEffectOptions are options for executing a side effect.
+	SideEffectOptions = internal.SideEffectOptions
+
+	// MutableSideEffectOptions are options for executing a mutable side effect.
+	MutableSideEffectOptions = internal.MutableSideEffectOptions
+
 	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
 
 	// NexusClient is a client for executing Nexus Operations from a workflow.
@@ -394,6 +400,15 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 	return internal.SideEffect(ctx, f)
 }
 
+// SideEffectWithOptions executes the provided function once, records its result into the workflow history.
+// The recorded result on history will be returned without executing the provided function during replay.
+// This guarantees the deterministic requirement for workflow as the exact same result will be returned in replay.
+//
+// The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
+func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
+	return internal.SideEffectWithOptions(ctx, options, f)
+}
+
 // MutableSideEffect executes the provided function once, then it looks up the history for the value with the given id.
 // If there is no existing value, then it records the function result as a value with the given id on history;
 // otherwise, it compares whether the existing value from history has changed from the new function result by calling
@@ -411,6 +426,12 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
 func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	return internal.MutableSideEffect(ctx, id, f, equals)
+}
+
+// MutableSideEffectWithOptions is like MutableSideEffect but allows specifying additional options
+// like a summary that will be displayed in UI/CLI.
+func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+	return internal.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before

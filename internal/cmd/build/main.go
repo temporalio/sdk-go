@@ -172,11 +172,11 @@ func (b *builder) integrationTest() error {
 	if *coverageFileFlag != "" {
 		args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, *coverageFileFlag), "-coverpkg=./...")
 	}
+	args = append(args, "./...")
 	if *devServerFlag {
-		args = append(args, "-using-cli-dev-server")
+		args = append(args, "--", "-using-cli-dev-server")
 		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
 	}
-	args = append(args, "./...")
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")

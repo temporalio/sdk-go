@@ -1,11 +1,14 @@
 package opentelemetry_test
 
 import (
+	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
@@ -15,6 +18,9 @@ import (
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
 	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
 func TestSpanPropagation(t *testing.T) {
@@ -151,4 +157,81 @@ func TestBenignErrorSpanStatus(t *testing.T) {
 			}
 		})
 	}
+}
+
+func setCustomSpanAttrWorkflow(ctx workflow.Context) error {
+	span, ok := opentelemetry.SpanFromWorkflowContext(ctx)
+	if !ok {
+		return errors.New("Did not find span in workflow context")
+	}
+
+	span.SetAttributes(attribute.String("testTag", "testValue"))
+	return nil
+}
+
+func TestSpanFromWorkflowContext(t *testing.T) {
+	rec := tracetest.NewSpanRecorder()
+	tracer, err := opentelemetry.NewTracer(opentelemetry.TracerOptions{
+		Tracer: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)).Tracer(""),
+	})
+	require.NoError(t, err)
+
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(setCustomSpanAttrWorkflow)
+
+	// Set tracer interceptor
+	env.SetWorkerOptions(worker.Options{
+		Interceptors: []interceptor.WorkerInterceptor{interceptor.NewTracingInterceptor(tracer)},
+	})
+
+	env.ExecuteWorkflow(setCustomSpanAttrWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+
+	// Verify span was recorded with added attribute
+	spans := rec.Ended()
+	require.GreaterOrEqual(t, len(spans), 1)
+
+	found := false
+	for _, s := range spans {
+		for _, kv := range s.Attributes() {
+			if string(kv.Key) == "testTag" && kv.Value.AsString() == "testValue" {
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+
+	require.True(t, found, "expected to find attribute 'testTag=testValue' on recorded spans")
+}
+
+func TestSpanFromWorkflowContextNoOpSpan(t *testing.T) {
+	var suite testsuite.WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+
+	nilValueWorkflow := func(ctx workflow.Context) error {
+		span, ok := opentelemetry.SpanFromWorkflowContext(ctx)
+
+		if ok {
+			return errors.New("Expected ok to be false")
+		}
+
+		// Make sure we retain behavior of returning no-op span when no span is present in context
+		noopSpan := trace.SpanFromContext(context.TODO())
+		if span != noopSpan {
+			return errors.New("Expected span to be no-op span")
+		}
+
+		return nil
+	}
+
+	env.RegisterWorkflow(nilValueWorkflow)
+	env.ExecuteWorkflow(nilValueWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
 }

@@ -446,6 +446,9 @@ func TestCredentialsAPIKey(t *testing.T) {
 	client, err := DialClient(context.Background(), ClientOptions{
 		HostPort:    srv.addr,
 		Credentials: NewAPIKeyStaticCredentials("my-api-key"),
+		ConnectionOptions: ConnectionOptions{
+			TLSDisabled: true, // Test server doesn't use TLS
+		},
 	})
 	require.NoError(t, err)
 	defer client.Close()
@@ -484,6 +487,9 @@ func TestCredentialsAPIKey(t *testing.T) {
 		Credentials: NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
 			return "my-callback-api-key", nil
 		}),
+		ConnectionOptions: ConnectionOptions{
+			TLSDisabled: true,
+		},
 	})
 	require.NoError(t, err)
 	defer client.Close()
@@ -503,6 +509,41 @@ func TestCredentialsAPIKey(t *testing.T) {
 		t,
 		[]string{clientNameHeaderValue},
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, clientNameHeaderName),
+	)
+}
+
+func TestExistingContextMetadataJoinedWithSDKHeaders(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+
+	client, err := DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	// Create a context with existing metadata
+	ctxWithMD := metadata.NewOutgoingContext(
+		context.Background(),
+		metadata.New(map[string]string{"custom-header": "custom-value"}),
+	)
+
+	// Make a call with the context
+	err = client.SignalWorkflow(ctxWithMD, "workflow1", "", "my-signal", nil)
+	require.NoError(t, err)
+
+	// Verify custom header is preserved
+	require.Equal(t,
+		[]string{"custom-value"},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, "custom-header"),
+	)
+	// Verify SDK headers are also present
+	require.Equal(t,
+		[]string{SDKVersion},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, clientVersionHeaderName),
+	)
+	require.Equal(t,
+		[]string{clientNameHeaderValue},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, clientNameHeaderName),
 	)
 }
 

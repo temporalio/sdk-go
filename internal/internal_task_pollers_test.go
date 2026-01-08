@@ -30,7 +30,7 @@ func (wth *countingTaskHandler) ProcessWorkflowTask(
 	task *workflowTask,
 	wfctx *workflowExecutionContextImpl,
 	hb workflowTaskHeartbeatFunc,
-) (interface{}, error) {
+) (*workflowTaskCompletion, error) {
 	wth.ProcessWorkflowTaskInvocationCount.Add(1)
 	return wth.WorkflowTaskHandler.ProcessWorkflowTask(task, wfctx, hb)
 }
@@ -362,7 +362,7 @@ func (wth *panickingTaskHandler) ProcessWorkflowTask(
 	task *workflowTask,
 	wfctx *workflowExecutionContextImpl,
 	hb workflowTaskHeartbeatFunc,
-) (interface{}, error) {
+) (*workflowTaskCompletion, error) {
 	panic("panickingTaskHandler")
 }
 

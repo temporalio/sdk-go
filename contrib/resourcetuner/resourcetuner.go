@@ -10,8 +10,15 @@ import (
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
+)
+
+// Metric names emitted by the resource-based tuner
+const (
+	resourceSlotsCPUUsage = "temporal_resource_slots_cpu_usage"
+	resourceSlotsMemUsage = "temporal_resource_slots_mem_usage"
 )
 
 type ResourceBasedTunerOptions struct {
@@ -37,24 +44,24 @@ func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, 
 	options.CpuTargetPercent = opts.TargetCpu
 	controller := NewResourceController(options)
 	wfSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
+		options: DefaultWorkflowResourceBasedSlotSupplierOptions()}
 	if opts.WorkflowRampThrottle != 0 {
 		wfSS.options.RampThrottle = opts.WorkflowRampThrottle
 	}
 	actSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultActivityResourceBasedSlotSupplierOptions()}
+		options: DefaultActivityResourceBasedSlotSupplierOptions()}
 	if opts.ActivityRampThrottle != 0 {
 		actSS.options.RampThrottle = opts.ActivityRampThrottle
 	}
 	laSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultActivityResourceBasedSlotSupplierOptions()}
+		options: DefaultActivityResourceBasedSlotSupplierOptions()}
 	if opts.ActivityRampThrottle != 0 {
 		laSS.options.RampThrottle = opts.ActivityRampThrottle
 	}
 	nexusSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultWorkflowResourceBasedSlotSupplierOptions()}
+		options: DefaultWorkflowResourceBasedSlotSupplierOptions()}
 	sessSS := &ResourceBasedSlotSupplier{controller: controller,
-		options: defaultActivityResourceBasedSlotSupplierOptions()}
+		options: DefaultActivityResourceBasedSlotSupplierOptions()}
 	compositeTuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
 		WorkflowSlotSupplier:        wfSS,
 		ActivitySlotSupplier:        actSS,
@@ -80,14 +87,14 @@ type ResourceBasedSlotSupplierOptions struct {
 	RampThrottle time.Duration
 }
 
-func defaultWorkflowResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplierOptions {
+func DefaultWorkflowResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplierOptions {
 	return ResourceBasedSlotSupplierOptions{
 		MinSlots:     5,
 		MaxSlots:     1000,
 		RampThrottle: 0 * time.Second,
 	}
 }
-func defaultActivityResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplierOptions {
+func DefaultActivityResourceBasedSlotSupplierOptions() ResourceBasedSlotSupplierOptions {
 	return ResourceBasedSlotSupplierOptions{
 		MinSlots:     1,
 		MaxSlots:     10_000,
@@ -157,7 +164,7 @@ func (r *ResourceBasedSlotSupplier) TryReserveSlot(info worker.SlotReservationIn
 	numIssued := info.NumIssuedSlots()
 	if numIssued < r.options.MinSlots || (numIssued < r.options.MaxSlots &&
 		time.Since(r.lastSlotIssuedAt) > r.options.RampThrottle) {
-		decision, err := r.controller.pidDecision(info.Logger())
+		decision, err := r.controller.pidDecision(info.Logger(), info.MetricsHandler())
 		if err != nil {
 			info.Logger().Error("Error calculating resource usage", "error", err)
 			return nil
@@ -276,7 +283,7 @@ func NewResourceController(options ResourceControllerOptions) *ResourceControlle
 	}
 }
 
-func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
+func (rc *ResourceController) pidDecision(logger log.Logger, metricsHandler client.MetricsHandler) (bool, error) {
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 
@@ -288,6 +295,7 @@ func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	rc.publishResourceMetrics(metricsHandler, memUsage, cpuUsage)
 	if memUsage >= rc.options.MemTargetPercent {
 		// Never allow going over the memory target
 		return false, nil
@@ -312,6 +320,14 @@ func (rc *ResourceController) pidDecision(logger log.Logger) (bool, error) {
 
 	return rc.memPid.State.ControlSignal > rc.options.MemOutputThreshold &&
 		rc.cpuPid.State.ControlSignal > rc.options.CpuOutputThreshold, nil
+}
+
+func (rc *ResourceController) publishResourceMetrics(metricsHandler client.MetricsHandler, memUsage, cpuUsage float64) {
+	if metricsHandler == nil {
+		return
+	}
+	metricsHandler.Gauge(resourceSlotsMemUsage).Update(memUsage * 100)
+	metricsHandler.Gauge(resourceSlotsCPUUsage).Update(cpuUsage * 100)
 }
 
 type psUtilSystemInfoSupplier struct {
