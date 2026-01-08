@@ -65,9 +65,13 @@ type (
 	}
 
 	testActivityHandle struct {
-		callback         ResultHandler
-		activityType     string
-		heartbeatDetails *commonpb.Payloads
+		callback          ResultHandler
+		activityType      string
+		heartbeatDetails  *commonpb.Payloads
+		heartbeatTimeout  time.Duration
+		lastHeartbeatTime time.Time
+		heartbeatTimedOut bool
+		cancelHeartbeat   func() // cancels the heartbeat monitoring goroutine
 	}
 
 	testWorkflowHandle struct {
@@ -108,6 +112,12 @@ type (
 		callback          func()
 		startWorkflowTask bool // start a new workflow task after callback() is handled.
 		env               *testWorkflowEnvironmentImpl
+	}
+
+	// heartbeatTimeoutResult is a marker type used to indicate that an activity
+	// timed out due to missing heartbeats.
+	heartbeatTimeoutResult struct {
+		details *commonpb.Payloads // last heartbeat details, if any
 	}
 
 	activityExecutorWrapper struct {
@@ -338,13 +348,15 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		activityID := ActivityID{id: string(r.TaskToken)}
 		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
 		activityHandle, ok := env.getActivityHandle(activityID.id, GetActivityInfo(c).WorkflowExecution.RunID)
-		env.locker.Unlock()
 		if !ok {
+			env.locker.Unlock()
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or canceled.",
 				tagActivityID, activityID)
 			return serviceerror.NewNotFound("")
 		}
 		activityHandle.heartbeatDetails = r.Details
+		activityHandle.lastHeartbeatTime = time.Now()
+		env.locker.Unlock()
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
 		if env.onActivityHeartbeatListener != nil {
 			// If we're only in an activity environment, posted callbacks are not
@@ -1246,15 +1258,66 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	)
 
 	taskHandler := env.newTestActivityTaskHandler(parameters.TaskQueueName, parameters.DataConverter)
-	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
+	activityHandle := &testActivityHandle{
+		callback:          callback,
+		activityType:      parameters.ActivityType.Name,
+		heartbeatTimeout:  parameters.HeartbeatTimeout,
+		lastHeartbeatTime: time.Now(),
+	}
 
 	env.setActivityHandle(activityID.id, env.workflowInfo.WorkflowExecution.RunID, activityHandle)
 	env.runningCount++
+
+	// Start heartbeat timeout monitoring if heartbeat timeout is configured
+	var heartbeatDone chan struct{}
+	if parameters.HeartbeatTimeout > 0 {
+		heartbeatDone = make(chan struct{})
+		activityHandle.cancelHeartbeat = func() { close(heartbeatDone) }
+		go func() {
+			ticker := time.NewTicker(parameters.HeartbeatTimeout / 2)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-heartbeatDone:
+					return
+				case <-ticker.C:
+					env.locker.Lock()
+					handle, ok := env.getActivityHandle(activityID.id, env.workflowInfo.WorkflowExecution.RunID)
+					if !ok {
+						env.locker.Unlock()
+						return // activity already completed
+					}
+					timeSinceLastHeartbeat := time.Since(handle.lastHeartbeatTime)
+					if timeSinceLastHeartbeat > parameters.HeartbeatTimeout {
+						handle.heartbeatTimedOut = true
+						env.locker.Unlock()
+						env.logger.Debug("Activity heartbeat timeout",
+							tagActivityID, activityID,
+							"timeSinceLastHeartbeat", timeSinceLastHeartbeat,
+							"heartbeatTimeout", parameters.HeartbeatTimeout)
+						return
+					}
+					env.locker.Unlock()
+				}
+			}
+		}()
+	}
+
 	// activity runs in separate goroutinue outside of workflow dispatcher
 	// do callback in a defer to handle calls to runtime.Goexit inside the activity (which is done by t.FailNow)
 	go func() {
 		var result interface{}
 		defer func() {
+			// Stop heartbeat monitoring
+			if heartbeatDone != nil {
+				select {
+				case <-heartbeatDone:
+					// already closed
+				default:
+					close(heartbeatDone)
+				}
+			}
+
 			panicErr := recover()
 			if result == nil && panicErr == nil {
 				failureErr := errors.New("activity called runtime.Goexit")
@@ -1267,6 +1330,22 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 					Failure: env.failureConverter.ErrorToFailure(failureErr),
 				}
 			}
+
+			// Check if heartbeat timeout occurred
+			env.locker.Lock()
+			handle, ok := env.getActivityHandle(activityID.id, env.workflowInfo.WorkflowExecution.RunID)
+			heartbeatTimedOut := ok && handle.heartbeatTimedOut
+			var heartbeatDetails *commonpb.Payloads
+			if heartbeatTimedOut {
+				heartbeatDetails = handle.heartbeatDetails
+			}
+			env.locker.Unlock()
+
+			if heartbeatTimedOut {
+				// Override result with heartbeat timeout error
+				result = &heartbeatTimeoutResult{details: heartbeatDetails}
+			}
+
 			// post activity result to workflow dispatcher
 			env.postCallback(func() {
 				env.handleActivityResult(activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
@@ -1654,6 +1733,16 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID Activity
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		blob = request.Result
 		activityHandle.callback(blob, nil)
+	case *heartbeatTimeoutResult:
+		// Activity timed out due to missing heartbeats
+		timeoutErr := NewHeartbeatTimeoutError(newEncodedValues(request.details, dataConverter))
+		err = env.wrapActivityError(
+			activityID,
+			activityType,
+			enumspb.RETRY_STATE_TIMEOUT,
+			timeoutErr,
+		)
+		activityHandle.callback(nil, err)
 	default:
 		if result == context.DeadlineExceeded {
 			err = env.wrapActivityError(
