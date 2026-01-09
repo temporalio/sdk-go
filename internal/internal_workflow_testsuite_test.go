@@ -4065,6 +4065,258 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	s.Equal("context deadline exceeded", timeoutErr.cause.Error())
 }
 
+// Test_ActivityHeartbeatTimeout tests that an activity that doesn't heartbeat
+// within the heartbeat timeout period will fail with a heartbeat timeout error.
+// This is a regression test for https://github.com/temporalio/sdk-go/issues/1282
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatTimeout() {
+	// Activity that sleeps without heartbeating
+	noHeartbeatFn := func(ctx context.Context, sleepDuration time.Duration) error {
+		time.Sleep(sleepDuration)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 10 * time.Second,
+			HeartbeatTimeout:    500 * time.Millisecond, // Short timeout for testing
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1, // No retries
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		// Activity sleeps for 2 seconds without heartbeating, should timeout after 500ms
+		return ExecuteActivity(ctx, noHeartbeatFn, 2*time.Second).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(noHeartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+}
+
+// Test_ActivityHeartbeatTimeout_WithHeartbeat tests that an activity that heartbeats
+// regularly does NOT timeout, even if the heartbeat timeout is set.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatTimeout_WithHeartbeat() {
+	// Activity that heartbeats regularly
+	heartbeatFn := func(ctx context.Context, sleepDuration time.Duration) error {
+		// Heartbeat every 200ms
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		deadline := time.Now().Add(sleepDuration)
+		for time.Now().Before(deadline) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+				RecordActivityHeartbeat(ctx, "still alive")
+			}
+		}
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 10 * time.Second,
+			HeartbeatTimeout:    500 * time.Millisecond,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		// Activity runs for 1 second but heartbeats every 200ms
+		return ExecuteActivity(ctx, heartbeatFn, 1*time.Second).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(heartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+// Test_ActivityHeartbeatTimeout_WithDetails tests that heartbeat details are
+// preserved when a heartbeat timeout occurs.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatTimeout_WithDetails() {
+	// Activity that sends one heartbeat with details then stops heartbeating
+	partialHeartbeatFn := func(ctx context.Context) error {
+		// Send one heartbeat with details
+		RecordActivityHeartbeat(ctx, "last-heartbeat-data")
+		// Then sleep without heartbeating
+		time.Sleep(2 * time.Second)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 10 * time.Second,
+			HeartbeatTimeout:    500 * time.Millisecond,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, partialHeartbeatFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(partialHeartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+
+	// Verify heartbeat details are preserved
+	s.True(timeoutErr.HasLastHeartbeatDetails())
+	var details string
+	err = timeoutErr.LastHeartbeatDetails(&details)
+	s.NoError(err)
+	s.Equal("last-heartbeat-data", details)
+}
+
+// Test_ActivityStartToCloseTimeout tests that an activity that exceeds its
+// StartToCloseTimeout will fail with a start-to-close timeout error, even if
+// the activity ignores context cancellation.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout() {
+	// Activity that ignores context cancellation and runs longer than timeout
+	longRunningFn := func(ctx context.Context, sleepDuration time.Duration) error {
+		// Intentionally ignoring ctx.Done() to test external timeout enforcement
+		time.Sleep(sleepDuration)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 500 * time.Millisecond, // Short timeout for testing
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1, // No retries
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		// Activity sleeps for 2 seconds, should timeout after 500ms
+		return ExecuteActivity(ctx, longRunningFn, 2*time.Second).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(longRunningFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+}
+
+// Test_ActivityStartToCloseTimeout_Respects tests that an activity that completes
+// within its StartToCloseTimeout does NOT timeout.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_Respects() {
+	// Activity that completes quickly
+	quickFn := func(ctx context.Context) error {
+		time.Sleep(100 * time.Millisecond)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 2 * time.Second,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, quickFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(quickFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+// Test_ActivityStartToCloseTimeout_HeartbeatPriority tests that when both
+// HeartbeatTimeout and StartToCloseTimeout are set, the one that fires first wins.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_HeartbeatPriority() {
+	// Activity that doesn't heartbeat - heartbeat timeout should fire first
+	noHeartbeatFn := func(ctx context.Context) error {
+		time.Sleep(2 * time.Second)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 5 * time.Second,    // Longer timeout
+			HeartbeatTimeout:    500 * time.Millisecond, // Shorter timeout - should fire first
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, noHeartbeatFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(noHeartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	// Heartbeat timeout should fire first since it's shorter
+	s.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	workflowFn := func(ctx Context) (bool, error) {
 		return AwaitWithTimeout(ctx, time.Second, func() bool { return false })
