@@ -2,6 +2,7 @@ package replaytests
 
 import (
 	"context"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"reflect"
 	"testing"
 
@@ -525,4 +526,29 @@ func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs .
 		c.fromPayloads = append(c.fromPayloads, reflect.ValueOf(v).Elem().Interface())
 	}
 	return err
+}
+
+func (s *replayTestSuite) TestMemoUserDCEncodeFlag() {
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		DataConverter: iconverter.NewTestDataConverter(),
+	})
+	s.NoError(err)
+	replayer.RegisterWorkflow(MemoChildWorkflowGob)
+	replayer.RegisterWorkflow(MemoEncodingWorkflowGob)
+	// Verify we can replay the new workflow that has the
+	// SDKFlagMemoUserDCEncode flag
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "memo-gob.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestMemoUserDCEncodeNoFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MemoChildWorkflowJSON)
+	replayer.RegisterWorkflow(MemoEncodingWorkflowJSON)
+	// Verify we can still replay an old workflow that does not
+	// have the SDKFlagMemoUserDCEncode flag
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "memo-json.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
 }

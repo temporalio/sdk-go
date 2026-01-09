@@ -3,6 +3,8 @@ package replaytests
 import (
 	"context"
 	"fmt"
+	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"math/rand"
 	"time"
 
@@ -739,4 +741,122 @@ func CancelNexusOperationAfterCompleteWorkflow(ctx workflow.Context) (string, er
 	_ = op.Get(opCtx, nil)
 	cancel()
 	return generateUUID(ctx, "nxs-cancel-after-complete-id")
+}
+
+func MemoChildWorkflowGob(ctx workflow.Context, input string) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["test-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'test-memo-key' not found")
+	}
+
+	// Use strict gob converter - will fail if memo is JSON-encoded
+	var memoValue string
+	dc := iconverter.NewTestDataConverter()
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with gob converter: %w", err)
+	}
+
+	return fmt.Sprintf("child-read-memo: %s", memoValue), nil
+}
+
+func MemoEncodingWorkflowGob(ctx workflow.Context, memoValue string) (string, error) {
+	// Execute a child workflow with memo
+	cwo := workflow.ChildWorkflowOptions{
+		Memo: map[string]interface{}{
+			"test-memo-key": memoValue,
+		},
+	}
+	childCtx := workflow.WithChildOptions(ctx, cwo)
+
+	var childResult string
+	err := workflow.ExecuteChildWorkflow(childCtx, MemoChildWorkflowGob, memoValue).Get(ctx, &childResult)
+	if err != nil {
+		return "", err
+	}
+
+	// Also upsert memo in the parent workflow
+	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+		"parent-memo-key": "parent-" + memoValue,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	info := workflow.GetInfo(ctx)
+	memoPayload, ok := info.Memo.Fields["parent-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'parent-memo-key' not found")
+	}
+
+	// Use strict gob converter - will fail if memo is JSON-encoded
+	var parentMemoValue string
+	dc := iconverter.NewTestDataConverter()
+	err = dc.FromPayload(memoPayload, &parentMemoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with gob converter: %w", err)
+	}
+
+	return childResult, nil
+}
+
+func MemoChildWorkflowJSON(ctx workflow.Context) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["test-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'test-memo-key' not found")
+	}
+
+	// will fail if memo is gob-encoded
+	var memoValue string
+	dc := converter.NewJSONPayloadConverter()
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with JSON converter: %w", err)
+	}
+
+	return fmt.Sprintf("child-read-memo: %s", memoValue), nil
+}
+
+func MemoEncodingWorkflowJSON(ctx workflow.Context, memoValue string) (string, error) {
+	cwo := workflow.ChildWorkflowOptions{
+		Memo: map[string]interface{}{
+			"test-memo-key": memoValue,
+		},
+	}
+	childCtx := workflow.WithChildOptions(ctx, cwo)
+
+	var childResult string
+	err := workflow.ExecuteChildWorkflow(childCtx, MemoChildWorkflowJSON).Get(ctx, &childResult)
+	if err != nil {
+		return "", err
+	}
+
+	// Also upsert memo in the parent workflow
+	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+		"parent-memo-key": "parent-" + memoValue,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["parent-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'parent-memo-key' not found")
+	}
+
+	// will fail if memo is gob-encoded
+	var parentMemoValue string
+	dc := converter.NewJSONPayloadConverter()
+	err = dc.FromPayload(memoPayload, &parentMemoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with JSON converter: %w", err)
+	}
+
+	return childResult, nil
 }
