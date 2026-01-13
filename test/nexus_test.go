@@ -2906,3 +2906,112 @@ func TestNexusTracingInterceptor(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToStartTimeout(t *testing.T) {
+	handlerWF := func(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
+		return nil, nil
+	}
+
+	opStartDelay := 250 * time.Millisecond
+	op := temporalnexus.NewWorkflowRunOperation(
+		"op",
+		handlerWF,
+		func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			time.Sleep(opStartDelay)
+			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
+		})
+
+	callerWF := func(ctx workflow.Context) error {
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(ctx, op, nil, workflow.NexusOperationOptions{
+			ScheduleToStartTimeout: opStartDelay - 100*time.Millisecond,
+			ScheduleToCloseTimeout: 10 * time.Second, // Long enough to not interfere
+		})
+		return fut.Get(ctx, nil)
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(handlerWF)
+	env.RegisterNexusService(service)
+	env.ExecuteWorkflow(callerWF)
+	require.True(t, env.IsWorkflowCompleted())
+
+	var execErr *temporal.WorkflowExecutionError
+	err := env.GetWorkflowError()
+	require.ErrorAs(t, err, &execErr)
+	var opErr *temporal.NexusOperationError
+	err = execErr.Unwrap()
+	require.ErrorAs(t, err, &opErr)
+	require.Equal(t, "endpoint", opErr.Endpoint)
+	require.Equal(t, "test", opErr.Service)
+	require.Equal(t, op.Name(), opErr.Operation)
+	require.Empty(t, opErr.OperationToken)
+	require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+	err = opErr.Unwrap()
+	var timeoutErr *temporal.TimeoutError
+	require.ErrorAs(t, err, &timeoutErr)
+	require.Equal(t, enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, timeoutErr.TimeoutType())
+	require.Contains(t, timeoutErr.Message(), "before starting")
+}
+
+func TestWorkflowTestSuite_WorkflowRunOperation_StartToCloseTimeout(t *testing.T) {
+	handlerSleepDuration := 500 * time.Millisecond
+	handlerWF := func(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
+		return nil, workflow.Sleep(ctx, handlerSleepDuration)
+	}
+
+	op := temporalnexus.NewWorkflowRunOperation(
+		"op",
+		handlerWF,
+		func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			// Start quickly, no delay
+			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
+		})
+
+	callerWF := func(ctx workflow.Context) error {
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(ctx, op, nil, workflow.NexusOperationOptions{
+			StartToCloseTimeout:    handlerSleepDuration - 300*time.Millisecond,
+			ScheduleToCloseTimeout: 10 * time.Second, // Long enough to not interfere
+		})
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return err
+		}
+		if exec.OperationToken == "" {
+			return errors.New("got empty operation ID")
+		}
+		return fut.Get(ctx, nil)
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(handlerWF)
+	env.RegisterNexusService(service)
+	env.ExecuteWorkflow(callerWF)
+	require.True(t, env.IsWorkflowCompleted())
+
+	var execErr *temporal.WorkflowExecutionError
+	err := env.GetWorkflowError()
+	require.ErrorAs(t, err, &execErr)
+	var opErr *temporal.NexusOperationError
+	err = execErr.Unwrap()
+	require.ErrorAs(t, err, &opErr)
+	require.Equal(t, "endpoint", opErr.Endpoint)
+	require.Equal(t, "test", opErr.Service)
+	require.Equal(t, op.Name(), opErr.Operation)
+	require.NotEmpty(t, opErr.OperationToken)
+	require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+	err = opErr.Unwrap()
+	var timeoutErr *temporal.TimeoutError
+	require.ErrorAs(t, err, &timeoutErr)
+	require.Equal(t, enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+	require.Contains(t, timeoutErr.Message(), "after starting")
+}
