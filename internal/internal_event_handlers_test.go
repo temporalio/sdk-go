@@ -159,6 +159,11 @@ func Test_MergeSearchAttributes(t *testing.T) {
 		return payload
 	}
 
+	encodeNil := func() *commonpb.Payload {
+		payload, _ := converter.GetDefaultDataConverter().ToPayload(nil)
+		return payload
+	}
+
 	tests := []struct {
 		name     string
 		current  *commonpb.SearchAttributes
@@ -199,6 +204,43 @@ func Test_MergeSearchAttributes(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "upsertNilDeletesKey",
+			current: &commonpb.SearchAttributes{
+				IndexedFields: map[string]*commonpb.Payload{
+					"CustomIntField":     encodeString(`1`),
+					"CustomKeywordField": encodeString(`keyword`),
+				},
+			},
+			upsert: &commonpb.SearchAttributes{
+				IndexedFields: map[string]*commonpb.Payload{
+					"CustomIntField": encodeNil(),
+				},
+			},
+			expected: &commonpb.SearchAttributes{
+				IndexedFields: map[string]*commonpb.Payload{
+					"CustomKeywordField": encodeString(`keyword`),
+				},
+			},
+		},
+		{
+			name: "upsertNilForNonExistentKeyIsNoOp",
+			current: &commonpb.SearchAttributes{
+				IndexedFields: map[string]*commonpb.Payload{
+					"CustomKeywordField": encodeString(`keyword`),
+				},
+			},
+			upsert: &commonpb.SearchAttributes{
+				IndexedFields: map[string]*commonpb.Payload{
+					"NonExistentField": encodeNil(),
+				},
+			},
+			expected: &commonpb.SearchAttributes{
+				IndexedFields: map[string]*commonpb.Payload{
+					"CustomKeywordField": encodeString(`keyword`),
+				},
+			},
+		},
 	}
 
 	for _, test := range tests {
@@ -209,6 +251,24 @@ func Test_MergeSearchAttributes(t *testing.T) {
 			require.Equal(t, test.expected, result)
 		})
 	}
+}
+
+func Test_IsNilPayload(t *testing.T) {
+	t.Parallel()
+
+	// nil payload pointer
+	require.True(t, isNilPayload(nil))
+
+	// payload encoding nil value
+	nilPayload, _ := converter.GetDefaultDataConverter().ToPayload(nil)
+	require.True(t, isNilPayload(nilPayload))
+
+	// payload with actual value
+	stringPayload, _ := converter.GetDefaultDataConverter().ToPayload("test")
+	require.False(t, isNilPayload(stringPayload))
+
+	intPayload, _ := converter.GetDefaultDataConverter().ToPayload(42)
+	require.False(t, isNilPayload(intPayload))
 }
 
 func Test_ValidateAndSerializeMemo(t *testing.T) {

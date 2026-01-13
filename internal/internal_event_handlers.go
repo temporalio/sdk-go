@@ -466,9 +466,23 @@ func mergeSearchAttributes(current, upsert *commonpb.SearchAttributes) *commonpb
 
 	fields := current.IndexedFields
 	for k, v := range upsert.IndexedFields {
-		fields[k] = v
+		// Delete nil payloads from workflow info. Nil payloads indicate user erasing a search attribute value.
+		// In a continue-as-new execution, search attributes are referenced from workflow info. History Events and UI should
+		// not display a nil value. UpsertWorkflowSearchAttributes will still receive the full map of search attributes.
+		if isNilPayload(v) {
+			delete(fields, k)
+		} else {
+			fields[k] = v
+		}
 	}
 	return current
+}
+
+func isNilPayload(p *commonpb.Payload) bool {
+	if p == nil {
+		return true
+	}
+	return string(p.GetMetadata()[converter.MetadataEncoding]) == converter.MetadataEncodingNil
 }
 
 func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*commonpb.SearchAttributes, error) {
