@@ -2664,6 +2664,35 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		)
 	}
 
+	if params.options.ScheduleToStartTimeout > 0 {
+		// Timer to fail the nexus operation due to schedule to start timeout.
+		env.NewTimer(
+			params.options.ScheduleToStartTimeout,
+			TimerOptions{},
+			func(result *commonpb.Payloads, err error) {
+				env.postCallback(func() {
+					// Only timeout if operation hasn't started yet
+					if !handle.started {
+						timeoutErr := env.failureConverter.FailureToError(nexusOperationFailure(
+							params,
+							"",
+							&failurepb.Failure{
+								Message: "operation timed out before starting",
+								FailureInfo: &failurepb.Failure_TimeoutFailureInfo{
+									TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
+										TimeoutType: enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START,
+									},
+								},
+							},
+						))
+						handle.startedCallback("", timeoutErr)
+						handle.completedCallback(nil, timeoutErr)
+					}
+				}, true)
+			},
+		)
+	}
+
 	task := handle.newStartTask()
 	env.runningCount++
 	go func() {
@@ -3518,6 +3547,34 @@ func (h *testNexusOperationHandle) startedCallback(token string, e error) {
 	h.started = true
 	h.onStarted(token, e)
 	h.env.runningCount--
+
+	// Start the StartToCloseTimeout timer if configured and operation started successfully
+	if e == nil && h.params.options.StartToCloseTimeout > 0 {
+		h.env.NewTimer(
+			h.params.options.StartToCloseTimeout,
+			TimerOptions{},
+			func(result *commonpb.Payloads, err error) {
+				h.env.postCallback(func() {
+					// Only timeout if operation hasn't completed yet
+					if !h.done {
+						timeoutErr := h.env.failureConverter.FailureToError(nexusOperationFailure(
+							h.params,
+							h.operationToken,
+							&failurepb.Failure{
+								Message: "operation timed out after starting",
+								FailureInfo: &failurepb.Failure_TimeoutFailureInfo{
+									TimeoutFailureInfo: &failurepb.TimeoutFailureInfo{
+										TimeoutType: enumspb.TIMEOUT_TYPE_START_TO_CLOSE,
+									},
+								},
+							},
+						))
+						h.completedCallback(nil, timeoutErr)
+					}
+				}, true)
+			},
+		)
+	}
 }
 
 func (h *testNexusOperationHandle) cancel() {
