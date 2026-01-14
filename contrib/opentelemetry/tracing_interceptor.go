@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/workflow"
 )
 
 // DefaultTextMapPropagator is the default OpenTelemetry TextMapPropagator used
@@ -172,6 +173,21 @@ func (t *tracer) ContextWithSpan(ctx context.Context, span interceptor.TracerSpa
 		ctx = baggage.ContextWithBaggage(ctx, span.(*tracerSpan).Baggage)
 	}
 	return trace.ContextWithSpan(ctx, span.(*tracerSpan).Span)
+}
+
+// SpanFromWorkflowContext extracts an OpenTelemetry span from the given
+// workflow context.  If no span is found, a no-op span is returned.
+func SpanFromWorkflowContext(ctx workflow.Context) (trace.Span, bool) {
+	val := ctx.Value(spanContextKey{})
+
+	if val != nil {
+		if span, ok := val.(*tracerSpan); ok {
+			return span.Span, true
+		}
+	}
+
+	// Fallback to OpenTelemetry span extraction behavior
+	return trace.SpanFromContext(nil), false
 }
 
 func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
