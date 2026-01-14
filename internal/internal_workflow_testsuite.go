@@ -1784,7 +1784,9 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID Activity
 		if request.timeoutType == enumspb.TIMEOUT_TYPE_HEARTBEAT {
 			timeoutErr = NewHeartbeatTimeoutError(newEncodedValues(request.details, dataConverter))
 		} else {
-			timeoutErr = NewTimeoutError("Activity timeout", request.timeoutType, nil)
+			// For StartToCloseTimeout, the cause is context.DeadlineExceeded since
+			// we set up the context deadline to match the timeout
+			timeoutErr = NewTimeoutError("Activity timeout", request.timeoutType, context.DeadlineExceeded)
 		}
 		err = env.wrapActivityError(
 			activityID,
