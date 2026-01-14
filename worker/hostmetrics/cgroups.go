@@ -1,6 +1,6 @@
 //go:build linux
 
-package resourcetuner
+package hostmetrics
 
 import (
 	"errors"

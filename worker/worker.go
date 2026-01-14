@@ -236,6 +236,13 @@ type (
 
 	// ReplayWorkflowHistoryOptions are options for replaying a workflow.
 	ReplayWorkflowHistoryOptions = internal.ReplayWorkflowHistoryOptions
+
+	// HostMetricsProvider provides host-level CPU and memory metrics for worker heartbeats.
+	// Implement this interface to provide custom metrics collection, or use the default
+	// implementation provided by the SDK in the worker/hostmetrics package.
+	//
+	// NOTE: Experimental
+	HostMetricsProvider = internal.HostMetricsProvider
 )
 
 var _ WorkflowRegistry = (WorkflowReplayer)(nil)

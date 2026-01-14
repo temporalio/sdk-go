@@ -3376,7 +3376,6 @@ func (ts *IntegrationTestSuite) TestSlotSupplierWFTFailMetrics() {
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOptions, waitsToProceedWorkflow)
 	ts.NoError(err)
 	ts.NotNil(run)
-	ts.NoError(err)
 
 	<-actStarted
 	// The workflow task will fail once and then pass
