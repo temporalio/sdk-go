@@ -178,9 +178,10 @@ type (
 		mockClock *clock.Mock
 		wallClock clock.Clock
 
-		callbackChannel chan testCallbackHandle
-		testTimeout     time.Duration
-		header          *commonpb.Header
+		callbackChannel            chan testCallbackHandle
+		testTimeout                time.Duration
+		activityTimeoutGracePeriod time.Duration // grace period for activities to react to context deadline
+		header                     *commonpb.Header
 
 		counterID              int64
 		activities             map[string]*testActivityHandle
@@ -1311,16 +1312,19 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 					}
 
 					// Check StartToCloseTimeout first (it's more severe)
+					// Add grace period to give well-behaved activities time to react to context deadline
 					if parameters.StartToCloseTimeout > 0 {
 						elapsed := time.Since(handle.startTime)
-						if elapsed > parameters.StartToCloseTimeout {
+						effectiveTimeout := parameters.StartToCloseTimeout + env.activityTimeoutGracePeriod
+						if elapsed > effectiveTimeout {
 							handle.timedOut = true
 							handle.timeoutType = enumspb.TIMEOUT_TYPE_START_TO_CLOSE
 							env.locker.Unlock()
 							env.logger.Debug("Activity start-to-close timeout",
 								tagActivityID, activityID,
 								"elapsed", elapsed,
-								"startToCloseTimeout", parameters.StartToCloseTimeout)
+								"startToCloseTimeout", parameters.StartToCloseTimeout,
+								"gracePeriod", env.activityTimeoutGracePeriod)
 							return
 						}
 					}
