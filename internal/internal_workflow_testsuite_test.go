@@ -4285,7 +4285,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_HeartbeatPr
 
 	workflowFn := func(ctx Context) error {
 		ao := ActivityOptions{
-			StartToCloseTimeout: 5 * time.Second,    // Longer timeout
+			StartToCloseTimeout: 5 * time.Second,        // Longer timeout
 			HeartbeatTimeout:    500 * time.Millisecond, // Shorter timeout - should fire first
 			RetryPolicy: &RetryPolicy{
 				MaximumAttempts: 1,
@@ -4315,6 +4315,100 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_HeartbeatPr
 	s.True(errors.As(err, &timeoutErr))
 	// Heartbeat timeout should fire first since it's shorter
 	s.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+}
+
+// Test_ActivityStartToCloseTimeout_GracePeriod tests that SetActivityTimeoutGracePeriod
+// delays when the monitoring goroutine forcibly times out activities. Activities that
+// exceed the timeout but return within the grace period will still get a timeout error
+// (via context.DeadlineExceeded), but the error path is through normal activity completion
+// rather than the monitoring goroutine's forced timeout.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_GracePeriod() {
+	// Activity that ignores context but completes within timeout + grace period
+	slowButFinishesFn := func(ctx context.Context) error {
+		// Takes 600ms total, exceeds 500ms timeout but within 500ms grace period
+		time.Sleep(600 * time.Millisecond)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 500 * time.Millisecond,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, slowButFinishesFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(slowButFinishesFn)
+	// Set grace period - monitoring won't fire until 1000ms (500ms + 500ms)
+	// Activity finishes at 600ms, so it completes before monitoring fires
+	env.SetActivityTimeoutGracePeriod(500 * time.Millisecond)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	// Activity still times out because it exceeded StartToCloseTimeout,
+	// but via context.DeadlineExceeded path (not monitoring's forced timeout)
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+}
+
+// Test_ActivityStartToCloseTimeout_GracePeriodExceeded tests that activities are still
+// timed out if they exceed both the timeout and the grace period.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_GracePeriodExceeded() {
+	// Activity that ignores context cancellation entirely
+	misbehavingFn := func(ctx context.Context) error {
+		// Ignore ctx.Done() and sleep for a long time
+		time.Sleep(2 * time.Second)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 500 * time.Millisecond,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, misbehavingFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(misbehavingFn)
+	// Set a short grace period - activity will still exceed it
+	env.SetActivityTimeoutGracePeriod(200 * time.Millisecond)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
