@@ -136,6 +136,21 @@ type (
 		TryUse(flag sdkFlag) bool
 		// GetFlag returns if the flag is currently used.
 		GetFlag(flag sdkFlag) bool
+
+		// GenerateActivityID returns the activity ID that would be used for the next
+		// scheduled activity. If activityID is non-empty, returns it unchanged.
+		// This allows generating the ID before serialization so it can be made
+		// available to context-aware data converters.
+		GenerateActivityID(activityID string) string
+		// GenerateChildWorkflowID returns the workflow ID that would be used for the
+		// next child workflow. If workflowID is non-empty, returns it unchanged.
+		// This allows generating the ID before serialization so it can be made
+		// available to context-aware data converters.
+		GenerateChildWorkflowID(workflowID string) string
+		// GenerateNexusOperationSeq returns the sequence number that would be used
+		// for the next Nexus operation. This allows generating the sequence before
+		// serialization so it can be made available to context-aware data converters.
+		GenerateNexusOperationSeq() string
 	}
 
 	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.

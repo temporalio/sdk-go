@@ -103,6 +103,46 @@ var (
 	errMemoNotSet                    = errors.New("memo is empty")
 )
 
+// outboundIDContextKey is used to store OutboundInfo in workflow context.
+type outboundIDContextKey struct{}
+
+// OutboundInfo contains information about an outbound call being scheduled.
+// This is available in workflow context when serializing activity input,
+// child workflow input, or Nexus operation input. Context-aware data converters
+// can use this to vary their behavior based on the target ID, for example
+// using the ID as associated data for encryption.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.OutboundInfo]
+type OutboundInfo struct {
+	// ActivityID is set when scheduling an activity.
+	ActivityID string
+	// ChildWorkflowID is set when starting a child workflow.
+	ChildWorkflowID string
+	// NexusOperationSeq is set when executing a Nexus operation (sequence number as string).
+	NexusOperationSeq string
+}
+
+// GetOutboundInfo returns outbound scheduling info from a workflow context.
+// Returns nil if not in an outbound scheduling context (i.e., when not
+// serializing activity input, child workflow input, or Nexus operation input).
+//
+// This is useful for context-aware data converters that need to vary their
+// behavior based on the target activity, child workflow, or Nexus operation ID.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.GetOutboundInfo]
+func GetOutboundInfo(ctx Context) *OutboundInfo {
+	info := ctx.Value(outboundIDContextKey{})
+	if info == nil {
+		return nil
+	}
+	return info.(*OutboundInfo)
+}
+
+// withOutboundInfo sets outbound info on the workflow context.
+func withOutboundInfo(ctx Context, info *OutboundInfo) Context {
+	return WithValue(ctx, outboundIDContextKey{}, info)
+}
+
 type (
 	// SendChannel is a write only view of the Channel
 	SendChannel interface {
@@ -928,7 +968,6 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 
 func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName string, args ...interface{}) Future {
 	// Validate type and its arguments.
-	dataConverter := getDataConverterFromWorkflowContext(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
 	future, settable := newDecodeFuture(ctx, typeName)
 	activityType, err := getValidatedActivityFunction(typeName, args, registry)
@@ -963,6 +1002,12 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		settable.Set(nil, err)
 		return future
 	}
+
+	// Generate activity ID before serialization so it's available to context-aware data converters
+	activityID := getWorkflowEnvironment(ctx).GenerateActivityID(options.ActivityID)
+	options.ActivityID = activityID
+	outboundCtx := withOutboundInfo(ctx, &OutboundInfo{ActivityID: activityID})
+	dataConverter := getDataConverterFromWorkflowContext(outboundCtx)
 
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
@@ -1261,8 +1306,13 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	}
 
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
-	dc := WithWorkflowContext(ctx, workflowOptionsFromCtx.DataConverter)
 	env := getWorkflowEnvironment(ctx)
+
+	// Generate child workflow ID before serialization so it's available to context-aware data converters
+	childWorkflowID := env.GenerateChildWorkflowID(workflowOptionsFromCtx.WorkflowID)
+	outboundCtx := withOutboundInfo(ctx, &OutboundInfo{ChildWorkflowID: childWorkflowID})
+	dc := WithWorkflowContext(outboundCtx, workflowOptionsFromCtx.DataConverter) // wrap data converter with context
+
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {
 		executionSettable.Set(nil, err)
@@ -1279,6 +1329,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	options.VersioningIntent = workflowOptionsFromCtx.VersioningIntent
 	options.StaticDetails = workflowOptionsFromCtx.StaticDetails
 	options.StaticSummary = workflowOptionsFromCtx.StaticSummary
+	options.WorkflowID = childWorkflowID
 	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
 	if err != nil {
 		executionSettable.Set(nil, err)
@@ -2908,7 +2959,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	params, err := wc.prepareNexusOperationParams(ctx, input)
+
+	// Generate Nexus operation sequence before serialization so it's available to context-aware data converters
+	nexusSeq := wc.env.GenerateNexusOperationSeq()
+	outboundCtx := withOutboundInfo(ctx, &OutboundInfo{NexusOperationSeq: nexusSeq})
+	params, err := wc.prepareNexusOperationParams(outboundCtx, input)
 	if err != nil {
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)

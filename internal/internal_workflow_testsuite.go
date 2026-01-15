@@ -423,10 +423,6 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 	if params.TaskQueueName == "" {
 		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task queue name", "", "")
 	}
-
-	if params.WorkflowID == "" {
-		params.WorkflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
-	}
 	var cronSchedule string
 	if len(params.CronSchedule) > 0 {
 		cronSchedule = params.CronSchedule
@@ -2328,6 +2324,24 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 func (env *testWorkflowEnvironmentImpl) IsReplaying() bool {
 	// this test environment never replay
 	return false
+}
+
+func (env *testWorkflowEnvironmentImpl) GenerateActivityID(activityID string) string {
+	if activityID != "" {
+		return activityID
+	}
+	return getStringID(env.nextID())
+}
+
+func (env *testWorkflowEnvironmentImpl) GenerateChildWorkflowID(workflowID string) string {
+	if workflowID != "" {
+		return workflowID
+	}
+	return env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
+}
+
+func (env *testWorkflowEnvironmentImpl) GenerateNexusOperationSeq() string {
+	return getStringID(env.nextID())
 }
 
 func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(

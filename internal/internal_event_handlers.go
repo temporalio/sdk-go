@@ -537,9 +537,6 @@ func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
 ) {
-	if params.WorkflowID == "" {
-		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
-	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
@@ -714,6 +711,24 @@ func (wc *workflowEnvironmentImpl) GenerateSequence() int64 {
 	return wc.commandsHelper.getNextID()
 }
 
+func (wc *workflowEnvironmentImpl) GenerateActivityID(activityID string) string {
+	if activityID != "" {
+		return activityID
+	}
+	return getStringID(wc.GenerateSequence())
+}
+
+func (wc *workflowEnvironmentImpl) GenerateChildWorkflowID(workflowID string) string {
+	if workflowID != "" {
+		return workflowID
+	}
+	return wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
+}
+
+func (wc *workflowEnvironmentImpl) GenerateNexusOperationSeq() string {
+	return getStringID(wc.GenerateSequence())
+}
+
 func (wc *workflowEnvironmentImpl) CreateNewCommand(commandType enumspb.CommandType) *commandpb.Command {
 	return &commandpb.Command{
 		CommandType: commandType,
@@ -723,12 +738,8 @@ func (wc *workflowEnvironmentImpl) CreateNewCommand(commandType enumspb.CommandT
 func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
 	scheduleID := wc.GenerateSequence()
-	if parameters.ActivityID == "" {
-		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
-	} else {
-		scheduleTaskAttr.ActivityId = parameters.ActivityID
-	}
-	activityID := scheduleTaskAttr.GetActivityId()
+	scheduleTaskAttr.ActivityId = parameters.ActivityID
+	activityID := parameters.ActivityID
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
