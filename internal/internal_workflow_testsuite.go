@@ -629,6 +629,10 @@ func (env *testWorkflowEnvironmentImpl) GetFlag(flag sdkFlag) bool {
 	return env.sdkFlags.getFlag(flag)
 }
 
+func (env *testWorkflowEnvironmentImpl) GenerateSequence() int64 {
+	return env.nextID()
+}
+
 func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
 	env.bufferedUpdateRequests[name] = append(env.bufferedUpdateRequests[name], f)
 }
@@ -1212,12 +1216,7 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
 	ensureDefaultRetryPolicy(&parameters)
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
-	scheduleID := env.nextID()
-	if parameters.ActivityID == "" {
-		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
-	} else {
-		scheduleTaskAttr.ActivityId = parameters.ActivityID
-	}
+	scheduleTaskAttr.ActivityId = parameters.ActivityID
 	activityID := ActivityID{id: scheduleTaskAttr.GetActivityId()}
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
@@ -2324,24 +2323,6 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 func (env *testWorkflowEnvironmentImpl) IsReplaying() bool {
 	// this test environment never replay
 	return false
-}
-
-func (env *testWorkflowEnvironmentImpl) GenerateActivityID(activityID string) string {
-	if activityID != "" {
-		return activityID
-	}
-	return getStringID(env.nextID())
-}
-
-func (env *testWorkflowEnvironmentImpl) GenerateChildWorkflowID(workflowID string) string {
-	if workflowID != "" {
-		return workflowID
-	}
-	return env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
-}
-
-func (env *testWorkflowEnvironmentImpl) GenerateNexusOperationSeq() string {
-	return getStringID(env.nextID())
 }
 
 func (env *testWorkflowEnvironmentImpl) SignalExternalWorkflow(

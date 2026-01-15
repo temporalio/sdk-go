@@ -1004,8 +1004,13 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 	}
 
 	// Generate activity ID before serialization so it's available to context-aware data converters
-	activityID := getWorkflowEnvironment(ctx).GenerateActivityID(options.ActivityID)
-	options.ActivityID = activityID
+	scheduleID := getWorkflowEnvironment(ctx).GenerateSequence()
+	var activityID string
+	if options.ActivityID != "" {
+		activityID = options.ActivityID
+	} else {
+		activityID = getStringID(scheduleID)
+	}
 	outboundCtx := withOutboundInfo(ctx, &OutboundInfo{ActivityID: activityID})
 	dataConverter := getDataConverterFromWorkflowContext(outboundCtx)
 
@@ -1021,6 +1026,8 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		DataConverter:          dataConverter,
 		Header:                 header,
 	}
+	params.ActivityID = activityID
+	params.ScheduleID = scheduleID
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
@@ -1309,7 +1316,12 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	env := getWorkflowEnvironment(ctx)
 
 	// Generate child workflow ID before serialization so it's available to context-aware data converters
-	childWorkflowID := env.GenerateChildWorkflowID(workflowOptionsFromCtx.WorkflowID)
+	var childWorkflowID string
+	if workflowOptionsFromCtx.WorkflowID != "" {
+		childWorkflowID = workflowOptionsFromCtx.WorkflowID
+	} else {
+		childWorkflowID = env.WorkflowInfo().WorkflowExecution.RunID + "_" + getStringID(env.GenerateSequence())
+	}
 	outboundCtx := withOutboundInfo(ctx, &OutboundInfo{ChildWorkflowID: childWorkflowID})
 	dc := WithWorkflowContext(outboundCtx, workflowOptionsFromCtx.DataConverter) // wrap data converter with context
 
@@ -1329,7 +1341,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	options.VersioningIntent = workflowOptionsFromCtx.VersioningIntent
 	options.StaticDetails = workflowOptionsFromCtx.StaticDetails
 	options.StaticSummary = workflowOptionsFromCtx.StaticSummary
-	options.WorkflowID = childWorkflowID
 	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
 	if err != nil {
 		executionSettable.Set(nil, err)
@@ -1345,6 +1356,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		scheduledTime:   Now(ctx), /* this is needed for test framework, and is not send to server */
 		attempt:         1,
 	}
+	params.WorkflowID = childWorkflowID
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
@@ -2905,7 +2917,7 @@ func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, opt
 	})
 }
 
-func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (executeNexusOperationParams, error) {
+func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput, nexusSequence int64) (executeNexusOperationParams, error) {
 	dc := WithWorkflowContext(ctx, wc.env.GetDataConverter())
 
 	var ok bool
@@ -2934,11 +2946,12 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	}
 
 	return executeNexusOperationParams{
-		client:      input.Client,
-		operation:   operationName,
-		input:       payload,
-		options:     input.Options,
-		nexusHeader: input.NexusHeader,
+		client:        input.Client,
+		operation:     operationName,
+		input:         payload,
+		options:       input.Options,
+		nexusHeader:   input.NexusHeader,
+		nexusSequence: nexusSequence,
 	}, nil
 }
 
@@ -2961,9 +2974,9 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 	cancellationCallback := &receiveCallback{}
 
 	// Generate Nexus operation sequence before serialization so it's available to context-aware data converters
-	nexusSeq := wc.env.GenerateNexusOperationSeq()
-	outboundCtx := withOutboundInfo(ctx, &OutboundInfo{NexusOperationSeq: nexusSeq})
-	params, err := wc.prepareNexusOperationParams(outboundCtx, input)
+	nexusSeq := wc.env.GenerateSequence()
+	outboundCtx := withOutboundInfo(ctx, &OutboundInfo{NexusOperationSeq: getStringID(nexusSeq)})
+	params, err := wc.prepareNexusOperationParams(outboundCtx, input, nexusSeq)
 	if err != nil {
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
