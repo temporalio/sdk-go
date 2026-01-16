@@ -1320,7 +1320,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	if workflowOptionsFromCtx.WorkflowID != "" {
 		childWorkflowID = workflowOptionsFromCtx.WorkflowID
 	} else {
-		childWorkflowID = env.WorkflowInfo().WorkflowExecution.RunID + "_" + getStringID(env.GenerateSequence())
+		childWorkflowID = env.WorkflowInfo().currentRunID + "_" + getStringID(env.GenerateSequence())
 	}
 	outboundCtx := withOutboundInfo(ctx, &OutboundInfo{ChildWorkflowID: childWorkflowID})
 	dc := WithWorkflowContext(outboundCtx, workflowOptionsFromCtx.DataConverter) // wrap data converter with context
