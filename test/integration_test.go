@@ -1183,6 +1183,20 @@ func (ts *IntegrationTestSuite) TestCancelTimerViaDeferAfterWFTFailure() {
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestAwaitWithTimeoutCancelTimerOnCondition() {
+	var result bool
+	err := ts.executeWorkflow("test-await-cancel-timer-on-condition", ts.workflows.AwaitWithTimeoutCancelTimerOnCondition, &result)
+	ts.NoError(err)
+	ts.True(result)
+}
+
+func (ts *IntegrationTestSuite) TestAwaitWithTimeoutConditionAlreadyTrue() {
+	var result bool
+	err := ts.executeWorkflow("test-await-condition-already-true", ts.workflows.AwaitWithTimeoutConditionAlreadyTrue, &result)
+	ts.NoError(err)
+	ts.True(result)
+}
+
 func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.CancelTimerAfterActivity, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
@@ -6866,15 +6880,18 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	// Confirm workflow has completed
 	ts.NoError(run.Get(ctx, nil))
 
-	// Confirm AwaitWithOptions's underlying timer has fired properly
+	// Find the AwaitWithOptions timer by its Summary metadata
 	iter := ts.client.GetWorkflowHistory(ctx, opts.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var timerEvent *historypb.HistoryEvent
 	for iter.HasNext() {
 		event, err1 := iter.Next()
 		ts.NoError(err1)
-		if event.GetTimerStartedEventAttributes() != nil {
-			ts.Nil(timerEvent)
-			timerEvent = event
+		if event.GetTimerStartedEventAttributes() != nil && event.UserMetadata != nil {
+			var summary string
+			if err := converter.GetDefaultDataConverter().FromPayload(event.UserMetadata.Summary, &summary); err == nil && summary == "await-timer" {
+				timerEvent = event
+				break
+			}
 		}
 	}
 	ts.NotNil(timerEvent)
