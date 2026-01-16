@@ -614,6 +614,8 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOper
 		Operation:              params.operation,
 		Input:                  params.input,
 		ScheduleToCloseTimeout: durationpb.New(params.options.ScheduleToCloseTimeout),
+		ScheduleToStartTimeout: durationpb.New(params.options.ScheduleToStartTimeout),
+		StartToCloseTimeout:    durationpb.New(params.options.StartToCloseTimeout),
 		NexusHeader:            params.nexusHeader,
 	}
 
