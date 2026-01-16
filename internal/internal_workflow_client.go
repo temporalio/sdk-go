@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	namespacepb "go.temporal.io/api/namespace/v1"
+	workerpb "go.temporal.io/api/worker/v1"
 	"io"
 	"math"
 	"reflect"
@@ -59,24 +61,31 @@ const (
 type (
 	// WorkflowClient is the client for starting a workflow execution.
 	WorkflowClient struct {
-		workflowService          workflowservice.WorkflowServiceClient
-		conn                     *grpc.ClientConn
-		namespace                string
-		registry                 *registry
-		logger                   log.Logger
-		metricsHandler           metrics.Handler
-		identity                 string
-		dataConverter            converter.DataConverter
-		failureConverter         converter.FailureConverter
-		contextPropagators       []ContextPropagator
-		workerPlugins            []WorkerPlugin
-		workerInterceptors       []WorkerInterceptor
-		interceptor              ClientOutboundInterceptor
-		excludeInternalFromRetry *atomic.Bool
-		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
-		capabilitiesLock         sync.RWMutex
-		eagerDispatcher          *eagerWorkflowDispatcher
-		getSystemInfoTimeout     time.Duration
+		workflowService           workflowservice.WorkflowServiceClient
+		conn                      *grpc.ClientConn
+		namespace                 string
+		registry                  *registry
+		logger                    log.Logger
+		metricsHandler            metrics.Handler
+		identity                  string
+		dataConverter             converter.DataConverter
+		failureConverter          converter.FailureConverter
+		contextPropagators        []ContextPropagator
+		workerPlugins             []WorkerPlugin
+		workerInterceptors        []WorkerInterceptor
+		clientPluginNames         []string
+		interceptor               ClientOutboundInterceptor
+		excludeInternalFromRetry  *atomic.Bool
+		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
+		capabilitiesLock          sync.RWMutex
+		namespaceCapabilities     *namespacepb.NamespaceInfo_Capabilities
+		namespaceCapabilitiesLock sync.RWMutex
+		eagerDispatcher           *eagerWorkflowDispatcher
+		getSystemInfoTimeout      time.Duration
+		workerHeartbeatInterval   time.Duration
+		workerGroupingKey         string
+		heartbeatWorkers          map[string]*sharedNamespaceWorker
+		heartbeatWorkersMu        sync.RWMutex
 
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
@@ -1366,6 +1375,33 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	return capabilities, nil
 }
 
+// Get namespace capabilities, lazily fetching from server if not already obtained.
+func (wc *WorkflowClient) loadNamespaceCapabilities(ctx context.Context) (*namespacepb.NamespaceInfo_Capabilities, error) {
+	wc.namespaceCapabilitiesLock.RLock()
+	capabilities := wc.namespaceCapabilities
+	wc.namespaceCapabilitiesLock.RUnlock()
+	if capabilities != nil {
+		return capabilities, nil
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
+	defer cancel()
+	resp, err := wc.workflowService.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: wc.namespace})
+	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
+		return nil, fmt.Errorf("failed reaching server: %w", err)
+	}
+	if resp != nil && resp.NamespaceInfo.Capabilities != nil {
+		capabilities = resp.NamespaceInfo.Capabilities
+	} else {
+		capabilities = &namespacepb.NamespaceInfo_Capabilities{}
+	}
+
+	wc.namespaceCapabilitiesLock.Lock()
+	wc.namespaceCapabilities = capabilities
+	wc.namespaceCapabilitiesLock.Unlock()
+	return capabilities, nil
+}
+
 func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 	// Just loading the capabilities is enough
 	_, err := wc.loadCapabilities(ctx)
@@ -1391,6 +1427,89 @@ func (wc *WorkflowClient) WorkerDeploymentClient() WorkerDeploymentClient {
 	return &workerDeploymentClient{
 		workflowClient: wc,
 	}
+}
+
+func (wc *WorkflowClient) RecordWorkerHeartbeat(ctx context.Context, request *workflowservice.RecordWorkerHeartbeatRequest) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.RecordWorkerHeartbeat(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
+}
+
+func (wc *WorkflowClient) getOrCreateHeartbeatWorker(namespace string) (*sharedNamespaceWorker, error) {
+	wc.heartbeatWorkersMu.Lock()
+	defer wc.heartbeatWorkersMu.Unlock()
+
+	if hw, ok := wc.heartbeatWorkers[namespace]; ok {
+		return hw, nil
+	}
+
+	capabilities, err := wc.loadNamespaceCapabilities(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("failed to get namespace capabilities: %w", err)
+	}
+	if !capabilities.WorkerHeartbeats {
+		wc.logger.Debug("Worker heartbeating configured, but server version does not support it.")
+		return nil, nil
+	}
+
+	hw := &sharedNamespaceWorker{
+		client:    wc,
+		namespace: namespace,
+		taskQueue: fmt.Sprintf("temporal-sys/worker-commands/%s/%s", namespace, wc.workerGroupingKey),
+		interval:  wc.workerHeartbeatInterval,
+		callbacks: make(map[string]func() *workerpb.WorkerHeartbeat),
+		stopC:     make(chan struct{}),
+		stoppedC:  make(chan struct{}),
+		logger:    wc.logger,
+	}
+
+	nexusWorker, err := hw.createNexusWorker()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create nexus worker for heartbeating: %w", err)
+	}
+	hw.nexusWorker = nexusWorker
+
+	if wc.heartbeatWorkers == nil {
+		wc.heartbeatWorkers = make(map[string]*sharedNamespaceWorker)
+	}
+	wc.heartbeatWorkers[namespace] = hw
+
+	go hw.run()
+
+	return hw, nil
+}
+
+// unregisterHeartbeatCallback removes a callback from the heartbeat worker for the given namespace.
+// Returns true if the heartbeat worker should be stopped (no more callbacks remain).
+// This method holds heartbeatWorkersMu while checking and removing, preventing races where
+// a new worker could get a reference to an about-to-be-stopped heartbeat worker.
+func (wc *WorkflowClient) unregisterHeartbeatCallback(namespace string, workerInstanceKey string) bool {
+	wc.heartbeatWorkersMu.Lock()
+	defer wc.heartbeatWorkersMu.Unlock()
+
+	hw, ok := wc.heartbeatWorkers[namespace]
+	if !ok {
+		return false
+	}
+
+	hw.mu.Lock()
+	delete(hw.callbacks, workerInstanceKey)
+	shouldStop := len(hw.callbacks) == 0
+	hw.mu.Unlock()
+
+	if shouldStop {
+		delete(wc.heartbeatWorkers, namespace)
+	}
+	return shouldStop
 }
 
 // Close client and clean up underlying resources.

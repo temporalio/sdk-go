@@ -35,6 +35,18 @@ type (
 		isPollerBehavior()
 	}
 
+	// HostMetricsProvider provides host-level CPU and memory metrics for worker heartbeats.
+	// Implement this interface to provide custom metrics collection, or use the default
+	// implementation provided by the SDK in the worker/hostmetrics package.
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.HostMetricsProvider]
+	HostMetricsProvider interface {
+		// GetCpuUsage returns the current host CPU usage as a fraction (0.0-1.0)
+		GetCpuUsage() (float64, error)
+		// GetMemoryUsage returns the current host memory usage as a fraction (0.0-1.0)
+		GetMemoryUsage() (float64, error)
+	}
+
 	// PollerBehaviorAutoscalingOptions is the options for NewPollerBehaviorAutoscaling.
 	//
 	// Exposed as: [go.temporal.io/sdk/worker.PollerBehaviorAutoscalingOptions]
