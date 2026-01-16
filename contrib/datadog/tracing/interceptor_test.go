@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/mocktracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/mocktracer"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/internal/interceptortest"
@@ -29,7 +29,7 @@ func (t testTracer) FinishedSpans() []*interceptortest.SpanInfo {
 	return spanChildren(t.mt.FinishedSpans(), 0)
 }
 
-func spanChildren(spans []mocktracer.Span, parentId uint64) (ret []*interceptortest.SpanInfo) {
+func spanChildren(spans []*mocktracer.Span, parentId uint64) (ret []*interceptortest.SpanInfo) {
 	for _, s := range spans {
 		if s.ParentID() == parentId {
 			spanName := s.OperationName()
