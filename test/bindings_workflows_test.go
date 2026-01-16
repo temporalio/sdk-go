@@ -60,26 +60,30 @@ func (d *SingleActivityWorkflowDefinition) Execute(env bindings.WorkflowEnvironm
 	d.callbacks = append(d.callbacks, func() {
 		env.NewTimer(time.Second, workflow.TimerOptions{}, d.addCallback(func(result *commonpb.Payloads, err error) {
 			input, _ := converter.GetDefaultDataConverter().ToPayloads("World")
+			scheduleID1 := env.GenerateSequence()
 			parameters1 := bindings.ExecuteActivityParams{
 				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
 					TaskQueueName:       env.WorkflowInfo().TaskQueueName,
 					StartToCloseTimeout: 10 * time.Second,
 					ActivityID:          "id1",
+					ScheduleID:          scheduleID1,
 				},
 				ActivityType: bindings.ActivityType{Name: "Activity1"},
 				Input:        input,
 			}
-			parameters2 := bindings.ExecuteActivityParams{
-				ExecuteActivityOptions: bindings.ExecuteActivityOptions{
-					TaskQueueName:       env.WorkflowInfo().TaskQueueName,
-					StartToCloseTimeout: 10 * time.Second,
-					ActivityID:          "id2",
-					RetryPolicy:         &commonpb.RetryPolicy{MaximumAttempts: 1},
-				},
-				ActivityType: bindings.ActivityType{Name: "ActivityThatFails"},
-				Input:        input,
-			}
 			_ = env.ExecuteActivity(parameters1, d.addCallback(func(result1 *commonpb.Payloads, err error) {
+				scheduleID2 := env.GenerateSequence()
+				parameters2 := bindings.ExecuteActivityParams{
+					ExecuteActivityOptions: bindings.ExecuteActivityOptions{
+						TaskQueueName:       env.WorkflowInfo().TaskQueueName,
+						StartToCloseTimeout: 10 * time.Second,
+						ActivityID:          "id2",
+						ScheduleID:          scheduleID2,
+						RetryPolicy:         &commonpb.RetryPolicy{MaximumAttempts: 1},
+					},
+					ActivityType: bindings.ActivityType{Name: "ActivityThatFails"},
+					Input:        input,
+				}
 				env.ExecuteActivity(parameters2, d.addCallback(func(result2 *commonpb.Payloads, err error) {
 					err = errors.Unwrap(err) // unwrap activity error
 					if err == nil {
