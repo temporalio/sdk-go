@@ -1183,6 +1183,20 @@ func (ts *IntegrationTestSuite) TestCancelTimerViaDeferAfterWFTFailure() {
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestAwaitWithTimeoutCancelTimerOnCondition() {
+	var result bool
+	err := ts.executeWorkflow("test-await-cancel-timer-on-condition", ts.workflows.AwaitWithTimeoutCancelTimerOnCondition, &result)
+	ts.NoError(err)
+	ts.True(result)
+}
+
+func (ts *IntegrationTestSuite) TestAwaitWithTimeoutConditionAlreadyTrue() {
+	var result bool
+	err := ts.executeWorkflow("test-await-condition-already-true", ts.workflows.AwaitWithTimeoutConditionAlreadyTrue, &result)
+	ts.NoError(err)
+	ts.True(result)
+}
+
 func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.CancelTimerAfterActivity, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})

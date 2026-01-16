@@ -1097,6 +1097,25 @@ func (w *Workflows) CancelTimerViaDeferAfterWFTFailure(ctx workflow.Context) err
 	return nil
 }
 
+func (w *Workflows) AwaitWithTimeoutCancelTimerOnCondition(ctx workflow.Context) (bool, error) {
+	conditionMet := false
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, 100*time.Millisecond)
+		conditionMet = true
+	})
+
+	return workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return conditionMet
+	})
+}
+
+func (w *Workflows) AwaitWithTimeoutConditionAlreadyTrue(ctx workflow.Context) (bool, error) {
+	return workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return true
+	})
+}
+
 func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) {
 	childCtx1, cancelFunc1 := workflow.WithCancel(ctx)
 	opts := workflow.ChildWorkflowOptions{
@@ -3585,6 +3604,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelTimer)
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
 	worker.RegisterWorkflow(w.CancelTimerViaDeferAfterWFTFailure)
+	worker.RegisterWorkflow(w.AwaitWithTimeoutCancelTimerOnCondition)
+	worker.RegisterWorkflow(w.AwaitWithTimeoutConditionAlreadyTrue)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.WaitForCancelWithDisconnectedContextWorkflow)
 	worker.RegisterWorkflow(w.ChildWorkflowWithRetryPolicy)
