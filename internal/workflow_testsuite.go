@@ -940,6 +940,16 @@ func (e *TestWorkflowEnvironment) SetWorkflowRunTimeout(runTimeout time.Duration
 	return e
 }
 
+// SetActivityTimeoutGracePeriod sets a grace period for activities to react to context deadline before being
+// forcibly timed out. When an activity's StartToCloseTimeout expires, the context deadline is exceeded, giving
+// well-behaved activities a chance to return gracefully. This grace period controls how long the test framework
+// waits before forcibly timing out activities that don't respect the context cancellation.
+// Default is 0 (no grace period - timeout is enforced immediately).
+func (e *TestWorkflowEnvironment) SetActivityTimeoutGracePeriod(gracePeriod time.Duration) *TestWorkflowEnvironment {
+	e.impl.activityTimeoutGracePeriod = gracePeriod
+	return e
+}
+
 // SetOnActivityStartedListener sets a listener that will be called before activity starts execution.
 //
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.

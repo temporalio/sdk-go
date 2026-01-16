@@ -68,6 +68,16 @@ type (
 		callback         ResultHandler
 		activityType     string
 		heartbeatDetails *commonpb.Payloads
+		// Timeout configuration
+		heartbeatTimeout    time.Duration
+		startToCloseTimeout time.Duration
+		// Timeout tracking
+		startTime         time.Time // when activity started executing
+		lastHeartbeatTime time.Time
+		// Timeout result (set by monitoring goroutine)
+		timedOut           bool
+		timeoutType        enumspb.TimeoutType // which timeout occurred
+		cancelTimeoutWatch func()              // cancels the timeout monitoring goroutine
 	}
 
 	testWorkflowHandle struct {
@@ -108,6 +118,13 @@ type (
 		callback          func()
 		startWorkflowTask bool // start a new workflow task after callback() is handled.
 		env               *testWorkflowEnvironmentImpl
+	}
+
+	// activityTimeoutResult is a marker type used to indicate that an activity
+	// timed out due to missing heartbeats or exceeding StartToCloseTimeout.
+	activityTimeoutResult struct {
+		timeoutType enumspb.TimeoutType
+		details     *commonpb.Payloads // last heartbeat details (for heartbeat timeout)
 	}
 
 	activityExecutorWrapper struct {
@@ -161,9 +178,10 @@ type (
 		mockClock *clock.Mock
 		wallClock clock.Clock
 
-		callbackChannel chan testCallbackHandle
-		testTimeout     time.Duration
-		header          *commonpb.Header
+		callbackChannel            chan testCallbackHandle
+		testTimeout                time.Duration
+		activityTimeoutGracePeriod time.Duration // grace period for activities to react to context deadline
+		header                     *commonpb.Header
 
 		counterID              int64
 		activities             map[string]*testActivityHandle
@@ -338,13 +356,15 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		activityID := ActivityID{id: string(r.TaskToken)}
 		env.locker.Lock() // need lock as this is running in activity worker's goroutinue
 		activityHandle, ok := env.getActivityHandle(activityID.id, GetActivityInfo(c).WorkflowExecution.RunID)
-		env.locker.Unlock()
 		if !ok {
+			env.locker.Unlock()
 			env.logger.Debug("RecordActivityTaskHeartbeat: ActivityID not found, could be already completed or canceled.",
 				tagActivityID, activityID)
 			return serviceerror.NewNotFound("")
 		}
 		activityHandle.heartbeatDetails = r.Details
+		activityHandle.lastHeartbeatTime = time.Now()
+		env.locker.Unlock()
 		activityInfo := env.getActivityInfo(activityID, activityHandle.activityType)
 		if env.onActivityHeartbeatListener != nil {
 			// If we're only in an activity environment, posted callbacks are not
@@ -1246,15 +1266,105 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	)
 
 	taskHandler := env.newTestActivityTaskHandler(parameters.TaskQueueName, parameters.DataConverter)
-	activityHandle := &testActivityHandle{callback: callback, activityType: parameters.ActivityType.Name}
+	now := time.Now()
+	activityHandle := &testActivityHandle{
+		callback:            callback,
+		activityType:        parameters.ActivityType.Name,
+		heartbeatTimeout:    parameters.HeartbeatTimeout,
+		startToCloseTimeout: parameters.StartToCloseTimeout,
+		startTime:           now,
+		lastHeartbeatTime:   now,
+	}
 
 	env.setActivityHandle(activityID.id, env.workflowInfo.WorkflowExecution.RunID, activityHandle)
 	env.runningCount++
+
+	// Start timeout monitoring if any timeout is configured
+	var timeoutWatchDone chan struct{}
+	needsTimeoutWatch := parameters.HeartbeatTimeout > 0 || parameters.StartToCloseTimeout > 0
+	if needsTimeoutWatch {
+		timeoutWatchDone = make(chan struct{})
+		activityHandle.cancelTimeoutWatch = func() { close(timeoutWatchDone) }
+
+		// Determine check interval - use the smallest configured timeout divided by 2
+		checkInterval := parameters.StartToCloseTimeout
+		if parameters.HeartbeatTimeout > 0 && (checkInterval == 0 || parameters.HeartbeatTimeout < checkInterval) {
+			checkInterval = parameters.HeartbeatTimeout
+		}
+		checkInterval = checkInterval / 2
+		if checkInterval < time.Millisecond {
+			checkInterval = time.Millisecond
+		}
+
+		go func() {
+			ticker := time.NewTicker(checkInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-timeoutWatchDone:
+					return
+				case <-ticker.C:
+					env.locker.Lock()
+					handle, ok := env.getActivityHandle(activityID.id, env.workflowInfo.WorkflowExecution.RunID)
+					if !ok {
+						env.locker.Unlock()
+						return // activity already completed
+					}
+
+					// Check StartToCloseTimeout first (it's more severe)
+					// Add grace period to give well-behaved activities time to react to context deadline
+					if parameters.StartToCloseTimeout > 0 {
+						elapsed := time.Since(handle.startTime)
+						effectiveTimeout := parameters.StartToCloseTimeout + env.activityTimeoutGracePeriod
+						if elapsed > effectiveTimeout {
+							handle.timedOut = true
+							handle.timeoutType = enumspb.TIMEOUT_TYPE_START_TO_CLOSE
+							env.locker.Unlock()
+							env.logger.Debug("Activity start-to-close timeout",
+								tagActivityID, activityID,
+								"elapsed", elapsed,
+								"startToCloseTimeout", parameters.StartToCloseTimeout,
+								"gracePeriod", env.activityTimeoutGracePeriod)
+							return
+						}
+					}
+
+					// Check HeartbeatTimeout
+					if parameters.HeartbeatTimeout > 0 {
+						timeSinceLastHeartbeat := time.Since(handle.lastHeartbeatTime)
+						if timeSinceLastHeartbeat > parameters.HeartbeatTimeout {
+							handle.timedOut = true
+							handle.timeoutType = enumspb.TIMEOUT_TYPE_HEARTBEAT
+							env.locker.Unlock()
+							env.logger.Debug("Activity heartbeat timeout",
+								tagActivityID, activityID,
+								"timeSinceLastHeartbeat", timeSinceLastHeartbeat,
+								"heartbeatTimeout", parameters.HeartbeatTimeout)
+							return
+						}
+					}
+
+					env.locker.Unlock()
+				}
+			}
+		}()
+	}
+
 	// activity runs in separate goroutinue outside of workflow dispatcher
 	// do callback in a defer to handle calls to runtime.Goexit inside the activity (which is done by t.FailNow)
 	go func() {
 		var result interface{}
 		defer func() {
+			// Stop timeout monitoring
+			if timeoutWatchDone != nil {
+				select {
+				case <-timeoutWatchDone:
+					// already closed
+				default:
+					close(timeoutWatchDone)
+				}
+			}
+
 			panicErr := recover()
 			if result == nil && panicErr == nil {
 				failureErr := errors.New("activity called runtime.Goexit")
@@ -1267,6 +1377,24 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 					Failure: env.failureConverter.ErrorToFailure(failureErr),
 				}
 			}
+
+			// Check if any timeout occurred
+			env.locker.Lock()
+			handle, ok := env.getActivityHandle(activityID.id, env.workflowInfo.WorkflowExecution.RunID)
+			activityTimedOut := ok && handle.timedOut
+			var timeoutType enumspb.TimeoutType
+			var heartbeatDetails *commonpb.Payloads
+			if activityTimedOut {
+				timeoutType = handle.timeoutType
+				heartbeatDetails = handle.heartbeatDetails
+			}
+			env.locker.Unlock()
+
+			if activityTimedOut {
+				// Override result with timeout error
+				result = &activityTimeoutResult{timeoutType: timeoutType, details: heartbeatDetails}
+			}
+
 			// post activity result to workflow dispatcher
 			env.postCallback(func() {
 				env.handleActivityResult(activityID, result, parameters.ActivityType.Name, parameters.DataConverter)
@@ -1654,6 +1782,23 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityID Activity
 	case *workflowservice.RespondActivityTaskCompletedRequest:
 		blob = request.Result
 		activityHandle.callback(blob, nil)
+	case *activityTimeoutResult:
+		// Activity timed out due to missing heartbeats or exceeding StartToCloseTimeout
+		var timeoutErr error
+		if request.timeoutType == enumspb.TIMEOUT_TYPE_HEARTBEAT {
+			timeoutErr = NewHeartbeatTimeoutError(newEncodedValues(request.details, dataConverter))
+		} else {
+			// For StartToCloseTimeout, the cause is context.DeadlineExceeded since
+			// we set up the context deadline to match the timeout
+			timeoutErr = NewTimeoutError("Activity timeout", request.timeoutType, context.DeadlineExceeded)
+		}
+		err = env.wrapActivityError(
+			activityID,
+			activityType,
+			enumspb.RETRY_STATE_TIMEOUT,
+			timeoutErr,
+		)
+		activityHandle.callback(nil, err)
 	default:
 		if result == context.DeadlineExceeded {
 			err = env.wrapActivityError(
