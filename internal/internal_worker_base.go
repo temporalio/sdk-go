@@ -66,12 +66,11 @@ type (
 	}
 
 	executeNexusOperationParams struct {
-		client        NexusClient
-		operation     string
-		input         *commonpb.Payload
-		options       NexusOperationOptions
-		nexusHeader   map[string]string
-		nexusSequence int64
+		client      NexusClient
+		operation   string
+		input       *commonpb.Payload
+		options     NexusOperationOptions
+		nexusHeader map[string]string
 	}
 
 	// WorkflowEnvironment Represents the environment for workflow.

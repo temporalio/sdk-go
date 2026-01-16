@@ -107,8 +107,8 @@ var (
 type outboundIDContextKey struct{}
 
 // OutboundInfo contains information about an outbound call being scheduled.
-// This is available in workflow context when serializing activity input,
-// child workflow input, or Nexus operation input. Context-aware data converters
+// This is available in workflow context when serializing activity input or
+// child workflow input. Context-aware data converters
 // can use this to vary their behavior based on the target ID, for example
 // using the ID as associated data for encryption.
 //
@@ -118,16 +118,14 @@ type OutboundInfo struct {
 	ActivityID string
 	// ChildWorkflowID is set when starting a child workflow.
 	ChildWorkflowID string
-	// NexusOperationSeq is set when executing a Nexus operation (sequence number as string).
-	NexusOperationSeq string
 }
 
 // GetOutboundInfo returns outbound scheduling info from a workflow context.
 // Returns nil if not in an outbound scheduling context (i.e., when not
-// serializing activity input, child workflow input, or Nexus operation input).
+// serializing activity input or child workflow input).
 //
 // This is useful for context-aware data converters that need to vary their
-// behavior based on the target activity, child workflow, or Nexus operation ID.
+// behavior based on the target activity or child workflow.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.GetOutboundInfo]
 func GetOutboundInfo(ctx Context) *OutboundInfo {
@@ -2917,7 +2915,7 @@ func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, opt
 	})
 }
 
-func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput, nexusSequence int64) (executeNexusOperationParams, error) {
+func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (executeNexusOperationParams, error) {
 	dc := WithWorkflowContext(ctx, wc.env.GetDataConverter())
 
 	var ok bool
@@ -2946,12 +2944,11 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	}
 
 	return executeNexusOperationParams{
-		client:        input.Client,
-		operation:     operationName,
-		input:         payload,
-		options:       input.Options,
-		nexusHeader:   input.NexusHeader,
-		nexusSequence: nexusSequence,
+		client:      input.Client,
+		operation:   operationName,
+		input:       payload,
+		options:     input.Options,
+		nexusHeader: input.NexusHeader,
 	}, nil
 }
 
@@ -2973,10 +2970,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
 
-	// Generate Nexus operation sequence before serialization so it's available to context-aware data converters
-	nexusSeq := wc.env.GenerateSequence()
-	outboundCtx := withOutboundInfo(ctx, &OutboundInfo{NexusOperationSeq: getStringID(nexusSeq)})
-	params, err := wc.prepareNexusOperationParams(outboundCtx, input, nexusSeq)
+	params, err := wc.prepareNexusOperationParams(ctx, input)
 	if err != nil {
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)

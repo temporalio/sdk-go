@@ -6,9 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nexus-rpc/sdk-go/nexus"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 
@@ -232,82 +229,4 @@ func (s *OutboundInfoTestSuite) TestChildWorkflowWithExplicitID() {
 		}
 	}
 	s.True(foundExplicitID, "should have captured the explicit ChildWorkflowID")
-}
-
-func TestGetOutboundInfo(t *testing.T) {
-	t.Run("returns nil when no outbound info in context", func(t *testing.T) {
-		ctx := Background()
-		info := GetOutboundInfo(ctx)
-		require.Nil(t, info)
-	})
-
-	t.Run("returns outbound info when present", func(t *testing.T) {
-		ctx := Background()
-		expected := &OutboundInfo{
-			ActivityID:        "activity-123",
-			ChildWorkflowID:   "child-456",
-			NexusOperationSeq: "7",
-		}
-		ctx = withOutboundInfo(ctx, expected)
-
-		info := GetOutboundInfo(ctx)
-		require.NotNil(t, info)
-		require.Equal(t, expected.ActivityID, info.ActivityID)
-		require.Equal(t, expected.ChildWorkflowID, info.ChildWorkflowID)
-		require.Equal(t, expected.NexusOperationSeq, info.NexusOperationSeq)
-	})
-}
-
-type nexusTestInput struct {
-	Message string
-}
-
-type nexusTestOutput struct {
-	Result string
-}
-
-var testNexusOpRef = nexus.NewOperationReference[nexusTestInput, nexusTestOutput]("test-nexus-operation")
-
-func (s *OutboundInfoTestSuite) TestNexusOperationOutboundInfo() {
-	dc := newOutboundInfoCapturingDataConverter()
-
-	env := s.NewTestWorkflowEnvironment()
-	env.SetDataConverter(dc)
-
-	env.OnNexusOperation(
-		"test-service",
-		testNexusOpRef,
-		mock.Anything,
-		mock.Anything,
-	).Return(
-		&nexus.HandlerStartOperationResultSync[nexusTestOutput]{
-			Value: nexusTestOutput{Result: "done"},
-		},
-		nil,
-	)
-
-	workflow := func(ctx Context) error {
-		client := NewNexusClient("test-endpoint", "test-service")
-		var result nexusTestOutput
-		err := client.ExecuteOperation(ctx, testNexusOpRef, nexusTestInput{Message: "hello"}, NexusOperationOptions{
-			ScheduleToCloseTimeout: time.Minute,
-		}).Get(ctx, &result)
-		return err
-	}
-
-	env.ExecuteWorkflow(workflow)
-	s.True(env.IsWorkflowCompleted())
-	s.NoError(env.GetWorkflowError())
-
-	capturedInfos := dc.getCapturedInfos()
-	s.NotEmpty(capturedInfos, "should have captured OutboundInfo during Nexus operation input serialization")
-
-	foundNexusSeq := false
-	for _, info := range capturedInfos {
-		if info.NexusOperationSeq != "" {
-			foundNexusSeq = true
-			break
-		}
-	}
-	s.True(foundNexusSeq, "should have captured NexusOperationSeq in OutboundInfo")
 }

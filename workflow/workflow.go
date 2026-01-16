@@ -102,8 +102,8 @@ type (
 	UpdateInfo = internal.UpdateInfo
 
 	// OutboundInfo contains information about an outbound call being scheduled.
-	// This is available in workflow context when serializing activity input,
-	// child workflow input, or Nexus operation input. Context-aware data converters
+	// This is available in workflow context when serializing activity input or
+	// child workflow input. Context-aware data converters
 	// can use this to vary their behavior based on the target ID, for example
 	// using the ID as associated data for encryption.
 	OutboundInfo = internal.OutboundInfo
@@ -305,10 +305,10 @@ func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 
 // GetOutboundInfo returns outbound scheduling info from a workflow context.
 // Returns nil if not in an outbound scheduling context (i.e., when not
-// serializing activity input, child workflow input, or Nexus operation input).
+// serializing activity input or child workflow input).
 //
 // This is useful for context-aware data converters that need to vary their
-// behavior based on the target activity, child workflow, or Nexus operation ID.
+// behavior based on the target activity or child workflow.
 func GetOutboundInfo(ctx Context) *OutboundInfo {
 	return internal.GetOutboundInfo(ctx)
 }
