@@ -423,6 +423,12 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 	if params.TaskQueueName == "" {
 		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task queue name", "", "")
 	}
+
+	// Tests set workflow ID slightly differently than prod, the test env doesn't set currentRunID,
+	// so we must detect and change ID to use RunID
+	if strings.HasPrefix(params.WorkflowID, "_") {
+		params.WorkflowID = env.workflowInfo.WorkflowExecution.RunID + params.WorkflowID
+	}
 	var cronSchedule string
 	if len(params.CronSchedule) > 0 {
 		cronSchedule = params.CronSchedule
