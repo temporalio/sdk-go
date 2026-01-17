@@ -1,5 +1,5 @@
 // Package hostmetrics provides host-level CPU and memory metrics collection
-// for worker heartbeats. It uses gopsutil for system metrics and supports
+// for worker heartbeats. It supports Linux, macOS, and Windows, with
 // cgroup metrics for containerized environments.
 package hostmetrics
 
@@ -9,16 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/shirou/gopsutil/v4/cpu"
-	"github.com/shirou/gopsutil/v4/mem"
+	"go.temporal.io/sdk/internal/sysinfo"
 	"go.temporal.io/sdk/log"
 )
 
-// PSUtilSystemInfoSupplier implements worker.HostMetricsProvider using gopsutil.
+// PSUtilSystemInfoSupplier implements worker.HostMetricsProvider for system metrics.
 type PSUtilSystemInfoSupplier struct {
 	mu                        sync.Mutex
 	lastRefresh               time.Time
-	lastMemStat               *mem.VirtualMemoryStat
+	lastMemStat               *sysinfo.VirtualMemoryStat
 	lastCpuUsage              float64
 	cGroupInfo                cGroupInfo
 	stopTryingToGetCGroupInfo bool
@@ -83,11 +82,11 @@ func (p *PSUtilSystemInfoSupplier) maybeRefresh(logger log.Logger) error {
 
 	ctx, cancelFn := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancelFn()
-	memStat, err := mem.VirtualMemoryWithContext(ctx)
+	memStat, err := sysinfo.VirtualMemoryWithContext(ctx)
 	if err != nil {
 		return err
 	}
-	cpuUsage, err := cpu.PercentWithContext(ctx, 0, false)
+	cpuUsage, err := sysinfo.PercentWithContext(ctx, 0, false)
 	if err != nil {
 		return err
 	}
