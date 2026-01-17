@@ -3,7 +3,7 @@
 // Modified to include only CPU percentage and memory usage for Linux/Darwin/Windows.
 //go:build darwin && cgo
 
-package cpu
+package sysinfo
 
 /*
 #include <stdlib.h>
