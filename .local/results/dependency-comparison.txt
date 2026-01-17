@@ -1,0 +1,157 @@
+# Dependency Comparison: gopsutil-vendor branch vs worker-heartbeat (parent branch)
+# Generated: 2026-01-16
+
+## Summary
+
+This branch removes gopsutil and its transitive dependencies by copying only the
+necessary code for CPU/memory metrics into internal/sysinfo.
+
+## Dependencies on worker-heartbeat branch:
+```
+github.com/cilium/ebpf
+github.com/containerd/cgroups/v3
+github.com/coreos/go-systemd/v22
+github.com/davecgh/go-spew
+github.com/facebookgo/clock
+github.com/go-ole/go-ole
+github.com/godbus/dbus/v5
+github.com/gogo/protobuf
+github.com/golang/mock
+github.com/google/go-cmp
+github.com/google/uuid
+github.com/grpc-ecosystem/go-grpc-middleware/v2
+github.com/grpc-ecosystem/grpc-gateway/v2
+github.com/lufia/plan9stats
+github.com/nexus-rpc/sdk-go
+github.com/opencontainers/runtime-spec
+github.com/pmezard/go-difflib
+github.com/power-devops/perfstat
+github.com/robfig/cron
+github.com/shirou/gopsutil/v4
+github.com/shoenig/go-m1cpu
+github.com/sirupsen/logrus
+github.com/stretchr/objx
+github.com/stretchr/testify
+github.com/tklauser/go-sysconf
+github.com/tklauser/numcpus
+github.com/yusufpapurcu/wmi
+go.einride.tech/pid
+go.temporal.io/api
+go.temporal.io/sdk/contrib/resourcetuner
+golang.org/x/exp
+golang.org/x/net
+golang.org/x/sync
+golang.org/x/sys
+golang.org/x/text
+golang.org/x/time
+google.golang.org/genproto/googleapis/api
+google.golang.org/genproto/googleapis/rpc
+google.golang.org/grpc
+google.golang.org/protobuf
+gopkg.in/yaml.v3
+```
+
+## Dependencies on this branch (gopsutil-vendor):
+```
+github.com/cilium/ebpf
+github.com/containerd/cgroups/v3
+github.com/coreos/go-systemd/v22
+github.com/davecgh/go-spew
+github.com/facebookgo/clock
+github.com/godbus/dbus/v5
+github.com/gogo/protobuf
+github.com/golang/mock
+github.com/google/go-cmp
+github.com/google/uuid
+github.com/grpc-ecosystem/go-grpc-middleware/v2
+github.com/grpc-ecosystem/grpc-gateway/v2
+github.com/nexus-rpc/sdk-go
+github.com/opencontainers/runtime-spec
+github.com/pmezard/go-difflib
+github.com/robfig/cron
+github.com/sirupsen/logrus
+github.com/stretchr/objx
+github.com/stretchr/testify
+go.temporal.io/api
+golang.org/x/exp
+golang.org/x/net
+golang.org/x/sync
+golang.org/x/sys
+golang.org/x/text
+golang.org/x/time
+google.golang.org/genproto/googleapis/api
+google.golang.org/genproto/googleapis/rpc
+google.golang.org/grpc
+google.golang.org/protobuf
+gopkg.in/yaml.v3
+```
+
+## Dependencies REMOVED (gopsutil and transitive deps):
+```
+github.com/go-ole/go-ole
+github.com/lufia/plan9stats
+github.com/power-devops/perfstat
+github.com/shirou/gopsutil/v4
+github.com/shoenig/go-m1cpu
+github.com/tklauser/go-sysconf
+github.com/tklauser/numcpus
+github.com/yusufpapurcu/wmi
+go.einride.tech/pid
+go.temporal.io/sdk/contrib/resourcetuner
+```
+
+## Dependencies ADDED:
+```
+```
+
+## Impact on SDK Users
+
+Before this change, users importing the Temporal Go SDK would have these
+dependencies in their go.mod due to Go's Minimal Version Selection:
+
+- github.com/shirou/gopsutil/v4 and all its transitive deps
+- github.com/go-ole/go-ole (Windows COM)
+- github.com/tklauser/go-sysconf (syscall wrappers)
+- github.com/yusufpapurcu/wmi (Windows WMI)
+- go.einride.tech/pid (PID controller - not even used!)
+- etc.
+
+After this change, those dependencies are no longer required.
+
+## go.mod diff (worker-heartbeat -> gopsutil-vendor)
+```diff
+diff --git a/go.mod b/go.mod
+index fe0edf0d..fee61b2c 100644
+--- a/go.mod
++++ b/go.mod
+@@ -14,7 +14,6 @@ require (
+ 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
+ 	github.com/nexus-rpc/sdk-go v0.5.1
+ 	github.com/robfig/cron v1.2.0
+-	github.com/shirou/gopsutil/v4 v4.24.8
+ 	github.com/stretchr/testify v1.10.0
+ 	go.temporal.io/api v1.59.0
+ 	golang.org/x/sync v0.13.0
+@@ -28,21 +27,12 @@ require (
+ 	github.com/cilium/ebpf v0.11.0 // indirect
+ 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
+ 	github.com/davecgh/go-spew v1.1.1 // indirect
+-	github.com/go-ole/go-ole v1.2.6 // indirect
+ 	github.com/godbus/dbus/v5 v5.0.4 // indirect
+ 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
+-	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
+ 	github.com/opencontainers/runtime-spec v1.0.2 // indirect
+ 	github.com/pmezard/go-difflib v1.0.0 // indirect
+-	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
+-	github.com/shoenig/go-m1cpu v0.1.6 // indirect
+ 	github.com/sirupsen/logrus v1.9.3 // indirect
+ 	github.com/stretchr/objx v0.5.2 // indirect
+-	github.com/tklauser/go-sysconf v0.3.12 // indirect
+-	github.com/tklauser/numcpus v0.6.1 // indirect
+-	github.com/yusufpapurcu/wmi v1.2.4 // indirect
+-	go.einride.tech/pid v0.1.3 // indirect
+-	go.temporal.io/sdk/contrib/resourcetuner v0.0.0-20260112203102-5b6df8e02dcf // indirect
+ 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
+ 	golang.org/x/net v0.39.0 // indirect
+ 	golang.org/x/text v0.24.0 // indirect
+```
