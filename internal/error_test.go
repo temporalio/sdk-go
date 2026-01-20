@@ -1020,7 +1020,7 @@ func Test_convertErrorToFailure_NexusHandlerError(t *testing.T) {
 		Cause:         errors.New("custom cause"),
 		RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable,
 	})
-	require.Equal("handler error (INTERNAL): custom cause", f.GetMessage())
+	require.Equal("handler error (INTERNAL)", f.GetMessage())
 	require.Equal(string(nexus.HandlerErrorTypeInternal), f.GetNexusHandlerFailureInfo().Type)
 	require.Equal(enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE, f.GetNexusHandlerFailureInfo().RetryBehavior)
 	require.Equal("", f.Cause.GetApplicationFailureInfo().Type)
@@ -1031,7 +1031,7 @@ func Test_convertErrorToFailure_NexusHandlerError(t *testing.T) {
 	require.ErrorAs(err, &handlerErr)
 	require.Equal(nexus.HandlerErrorTypeInternal, handlerErr.Type)
 	require.Equal(nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
-	require.Equal("handler error (INTERNAL): custom cause", handlerErr.Error())
+	require.Equal("handler error (INTERNAL)", handlerErr.Error())
 
 	var applicationErr *ApplicationError
 	require.ErrorAs(handlerErr.Cause, &applicationErr)
@@ -1265,4 +1265,96 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 	require.Equal("JavaSDK", f2.GetCause().GetSource())
 	require.Equal("SomeJavaException", f2.GetCause().GetApplicationFailureInfo().GetType())
 	require.Equal(true, f2.GetCause().GetApplicationFailureInfo().GetNonRetryable())
+}
+
+func TestErrorToFailure_NexusOperationError_SetsTokenAndId(t *testing.T) {
+	dfc := NewDefaultFailureConverter(DefaultFailureConverterOptions{})
+
+	err := &NexusOperationError{
+		Message:          "operation failed",
+		ScheduledEventID: 42,
+		Endpoint:         "endpoint",
+		Service:          "service",
+		Operation:        "op",
+		OperationToken:   "tok123",
+	}
+
+	failure := dfc.ErrorToFailure(err)
+	require.NotNil(t, failure)
+	require.Equal(t, "GoSDK", failure.Source)
+
+	info := failure.GetNexusOperationExecutionFailureInfo()
+	require.NotNil(t, info)
+	require.Equal(t, int64(42), info.GetScheduledEventId())
+	require.Equal(t, "endpoint", info.GetEndpoint())
+	require.Equal(t, "service", info.GetService())
+	require.Equal(t, "op", info.GetOperation())
+	require.Equal(t, "tok123", info.GetOperationToken())
+	//lint:ignore SA1019 ignore deprecated old operation id
+	require.Equal(t, "tok123", info.GetOperationId())
+}
+
+func TestFailureToError_NexusOperationExecution_TokenFallbackToId(t *testing.T) {
+	dfc := NewDefaultFailureConverter(DefaultFailureConverterOptions{})
+
+	failure := &failurepb.Failure{
+		Source: "GoSDK",
+		FailureInfo: &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: &failurepb.NexusOperationFailureInfo{
+			ScheduledEventId: 99,
+			Endpoint:         "ep",
+			Service:          "svc",
+			Operation:        "op",
+			OperationId:      "legacy-id",
+			OperationToken:   "",
+		}},
+		Message: "failed",
+	}
+
+	err := dfc.FailureToError(failure)
+	require.NotNil(t, err)
+
+	opErr, ok := err.(*NexusOperationError)
+	require.True(t, ok, "expected NexusOperationError")
+	require.Equal(t, int64(99), opErr.ScheduledEventID)
+	require.Equal(t, "ep", opErr.Endpoint)
+	require.Equal(t, "svc", opErr.Service)
+	require.Equal(t, "op", opErr.Operation)
+	require.Equal(t, "legacy-id", opErr.OperationToken, "should fallback to OperationId when token empty")
+	require.Equal(t, "failed", opErr.Message)
+	require.Nil(t, opErr.Cause)
+	require.NotNil(t, opErr.Failure, "original failure should be attached")
+}
+
+func TestHandlerError_EncodeCommonAttributes_RoundTrip(t *testing.T) {
+	dfc := NewDefaultFailureConverter(DefaultFailureConverterOptions{EncodeCommonAttributes: true})
+
+	srcErr := &nexus.HandlerError{
+		Type:          nexus.HandlerErrorType("user"),
+		Message:       "handler failed",
+		StackTrace:    "stacktrace",
+		RetryBehavior: nexus.HandlerErrorRetryBehaviorRetryable,
+	}
+
+	failure := dfc.ErrorToFailure(srcErr)
+	require.NotNil(t, failure)
+
+	// Common attributes should be encoded into EncodedAttributes
+	require.NotNil(t, failure.GetEncodedAttributes())
+	require.Equal(t, "Encoded failure", failure.GetMessage())
+	require.Equal(t, "", failure.GetStackTrace())
+
+	info := failure.GetNexusHandlerFailureInfo()
+	require.NotNil(t, info)
+	require.Equal(t, "user", info.GetType())
+	require.Equal(t, enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE, info.GetRetryBehavior())
+
+	// Round-trip back to error should decode common attributes and map fields
+	rtErr := dfc.FailureToError(failure)
+	require.NotNil(t, rtErr)
+	he, ok := rtErr.(*nexus.HandlerError)
+	require.True(t, ok, "expected nexus.HandlerError")
+	require.Equal(t, nexus.HandlerErrorType("user"), he.Type)
+	require.Equal(t, "handler failed", he.Message)
+	require.Equal(t, "stacktrace", he.StackTrace)
+	require.Equal(t, nexus.HandlerErrorRetryBehaviorRetryable, he.RetryBehavior)
 }

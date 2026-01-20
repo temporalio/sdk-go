@@ -2712,15 +2712,19 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		response, failure, err := taskHandler.Execute(task)
 		if err != nil {
 			// No retries for operations, fail the operation immediately.
-			failure = taskHandler.fillInFailure(task.TaskToken, nexusHandlerError(nexus.HandlerErrorTypeInternal, err.Error()))
+			failure, err = taskHandler.fillInFailure(task.TaskToken, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, err.Error()), false)
 		}
 		if failure != nil {
 			// Convert to a nexus HandlerError first to simulate the flow in the server.
 			var handlerErr error
-			//lint:ignore SA1019 transitioning to Failure field.
-			handlerErr, err = apiHandlerErrorToNexusHandlerError(failure.GetError(), env.failureConverter)
-			if err != nil {
-				handlerErr = fmt.Errorf("unexpected error while trying to reconstruct Nexus handler error: %w", err)
+			if failure.GetFailure() != nil {
+				handlerErr = env.failureConverter.FailureToError(failure.GetFailure())
+			} else {
+				//lint:ignore SA1019 handle legacy operation error format for backward compatibility.
+				handlerErr, err = apiHandlerErrorToNexusHandlerError(failure.GetError(), env.failureConverter)
+				if err != nil {
+					handlerErr = fmt.Errorf("unexpected error while trying to reconstruct Nexus handler error: %w", err)
+				}
 			}
 
 			// To simulate the server flow, convert to failure and then back to a Go error.
@@ -2752,8 +2756,16 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 					env.scheduleNexusAsyncOperationCompletion(handle)
 				}
 			}, true)
+		case *nexuspb.StartOperationResponse_Failure:
+			err := env.failureConverter.FailureToError(
+				nexusOperationFailure(params, "", v.Failure),
+			)
+			env.postCallback(func() {
+				handle.startedCallback("", err)
+				handle.completedCallback(nil, err)
+			}, true)
 		case *nexuspb.StartOperationResponse_OperationError:
-			//lint:ignore SA1019 transitioning to Failure field.
+			//lint:ignore SA1019 handle legacy operation error format for backward compatibility.
 			failure, err := operationErrorToTemporalFailure(apiOperationErrorToNexusOperationError(v.OperationError))
 			if err != nil {
 				err = fmt.Errorf("unexpected error while trying to reconstruct Nexus operation error: %w", err)
@@ -2920,7 +2932,7 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, token s
 		}
 		if err != nil {
 			failure := env.failureConverter.ErrorToFailure(err)
-			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure.GetCause()))
+			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure))
 		}
 		// Populate the token in case the operation completes before it marked as started.
 		// startedCallback is idempotent and will be a noop in case the operation has already been marked as started.
@@ -3493,6 +3505,9 @@ func (h *testNexusOperationHandle) newStartTask() *workflowservice.PollNexusTask
 		Request: &nexuspb.Request{
 			ScheduledTime: timestamppb.Now(),
 			Header:        h.params.nexusHeader,
+			Capabilities: &nexuspb.Request_Capabilities{
+				TemporalFailureResponses: true,
+			},
 			Variant: &nexuspb.Request_StartOperation{
 				StartOperation: &nexuspb.StartOperationRequest{
 					Service:   h.params.client.Service(),
@@ -3517,6 +3532,9 @@ func (h *testNexusOperationHandle) newCancelTask() *workflowservice.PollNexusTas
 		Request: &nexuspb.Request{
 			ScheduledTime: timestamppb.Now(),
 			Header:        h.params.nexusHeader,
+			Capabilities: &nexuspb.Request_Capabilities{
+				TemporalFailureResponses: true,
+			},
 			Variant: &nexuspb.Request_CancelOperation{
 				CancelOperation: &nexuspb.CancelOperationRequest{
 					Service:        h.params.client.Service(),
@@ -3612,8 +3630,12 @@ func (h *testNexusOperationHandle) cancel() {
 				h.completedCallback(nil, fmt.Errorf("operation cancelation handler failed: %w", err))
 			} else if failure != nil {
 				// No retries in the test env, fail the operation immediately.
-				//lint:ignore SA1019 transitioning to Failure field.
-				h.completedCallback(nil, fmt.Errorf("operation cancelation handler failed: %v", failure.GetError().GetFailure().GetMessage()))
+				if failure.GetFailure() != nil {
+					h.completedCallback(nil, fmt.Errorf("operation cancelation handler failed: %v", failure.GetFailure().GetMessage()))
+				} else {
+					//lint:ignore SA1019 handle legacy operation error format for backward compatibility.
+					h.completedCallback(nil, fmt.Errorf("operation cancelation handler failed: %v", failure.GetError().GetFailure().GetMessage()))
+				}
 			}
 			h.env.runningCount--
 			if h.env.onNexusOperationCanceledListener != nil {

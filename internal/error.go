@@ -142,11 +142,26 @@ type (
 		cause                error
 	}
 
+	// CanceledErrorOptions should be used to set all the desired attributes of a new CanceledError
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.CanceledErrorOptions]
+	CanceledErrorOptions struct {
+		// Message is the error message.
+		// Defaults to "canceled" if not set.
+		Message string
+		// Details is a list of arbitrary values that can be used to provide additional context to the error.
+		Details []interface{}
+		// Cause is the original error that caused this error.
+		Cause error
+	}
+
 	// CanceledError returned when operation was canceled.
 	//
 	// Exposed as: [go.temporal.io/sdk/temporal.CanceledError]
 	CanceledError struct {
 		temporalError
+		msg     string
+		cause   error
 		details converter.EncodedValues
 	}
 
@@ -439,12 +454,34 @@ func NewHeartbeatTimeoutError(details ...interface{}) error {
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewCanceledError]
 func NewCanceledError(details ...interface{}) error {
-	if len(details) == 1 {
-		if d, ok := details[0].(*EncodedValues); ok {
-			return &CanceledError{details: d}
+	return NewCanceledErrorWithOptions(CanceledErrorOptions{
+		Details: details,
+	})
+}
+
+// NewCanceledErrorWithOptions creates CanceledError instance.
+//
+// Exposed as: [go.temporal.io/sdk/temporal.NewCanceledErrorWithOptions]
+func NewCanceledErrorWithOptions(options CanceledErrorOptions) error {
+	msg := options.Message
+	if msg == "" {
+		msg = "canceled"
+	}
+
+	if len(options.Details) == 1 {
+		if d, ok := options.Details[0].(*EncodedValues); ok {
+			return &CanceledError{
+				msg:     msg,
+				details: d,
+				cause:   options.Cause,
+			}
 		}
 	}
-	return &CanceledError{details: ErrorDetailsValues(details)}
+	return &CanceledError{
+		msg:     msg,
+		details: ErrorDetailsValues(options.Details),
+		cause:   options.Cause,
+	}
 }
 
 // NewServerError create new instance of *ServerError with message.
@@ -707,7 +744,11 @@ func (e *CanceledError) Error() string {
 }
 
 func (e *CanceledError) message() string {
-	return "canceled"
+	return e.msg
+}
+
+func (e *CanceledError) Unwrap() error {
+	return e.cause
 }
 
 // HasDetails return if this error has strong typed detail data.
