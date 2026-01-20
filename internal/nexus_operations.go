@@ -274,6 +274,28 @@ func nexusOperationFailure(params executeNexusOperationParams, token string, cau
 	}
 }
 
+// temporalFailureToNexusFailure converts an API proto Failure to a Nexus SDK Failure setting the metadata "type" field to
+// the proto fullname of the temporal API Failure message or the standard Nexus SDK failure types.
+// Returns an error if the failure cannot be converted.
+func temporalFailureToNexusFailure(failure *failurepb.Failure) (*nexus.Failure, error) {
+	message := failure.Message
+	stackTrack := failure.StackTrace
+	failure.Message = ""
+	failure.StackTrace = ""
+	b, err := protojson.Marshal(failure)
+	if err != nil {
+		return nil, err
+	}
+	failure.Message = message
+	failure.StackTrace = stackTrack
+	return &nexus.Failure{
+		Message:  message,
+		Metadata: nexusFailureMetadata,
+		Details:  b,
+	}, nil
+
+}
+
 // nexusFailureToAPIFailure converts a Nexus Failure to an API proto Failure.
 // If the failure metadata "type" field is set to the fullname of the temporal API Failure message, the failure is
 // reconstructed using protojson.Unmarshal on the failure details field.
@@ -300,6 +322,7 @@ func nexusFailureToAPIFailure(failure nexus.Failure, retryable bool) (*failurepb
 	}
 	// Ensure this always gets written.
 	apiFailure.Message = failure.Message
+	apiFailure.StackTrace = failure.StackTrace
 	return apiFailure, nil
 }
 
