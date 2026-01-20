@@ -126,8 +126,8 @@ func TestCPUPercentMatchesGopsutil(t *testing.T) {
 		t.Logf("sysinfo CPU%%:  %.2f", sPercent[0])
 
 		// Allow some variance since measurements aren't perfectly synchronized
-		if math.Abs(gPercent[0]-sPercent[0]) > 15.0 {
-			t.Errorf("CPU percent differs by more than 15%%: gopsutil=%.2f, sysinfo=%.2f",
+		if math.Abs(gPercent[0]-sPercent[0]) > 5.0 {
+			t.Errorf("CPU percent differs by more than 5%%: gopsutil=%.2f, sysinfo=%.2f",
 				gPercent[0], sPercent[0])
 		}
 	})
