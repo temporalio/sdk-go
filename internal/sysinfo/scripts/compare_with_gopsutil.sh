@@ -172,24 +172,28 @@ func TestMemoryMatchesGopsutil(t *testing.T) {
 	t.Logf("sysinfo:  Total=%d Available=%d Used=%d UsedPercent=%.2f Free=%d",
 		sMem.Total, sMem.Available, sMem.Used, sMem.UsedPercent, sMem.Free)
 
+	// Total should be exactly the same (doesn't change)
 	if gMem.Total != sMem.Total {
 		t.Errorf("Total mismatch: gopsutil=%d, sysinfo=%d", gMem.Total, sMem.Total)
 	}
 
-	if gMem.Available != sMem.Available {
-		t.Errorf("Available mismatch: gopsutil=%d, sysinfo=%d", gMem.Available, sMem.Available)
+	// Other memory values can change between calls, allow 0.1% tolerance
+	tolerance := float64(gMem.Total) * 0.001
+
+	if math.Abs(float64(gMem.Available)-float64(sMem.Available)) > tolerance {
+		t.Errorf("Available differs by more than 0.1%%: gopsutil=%d, sysinfo=%d", gMem.Available, sMem.Available)
 	}
 
-	if gMem.Used != sMem.Used {
-		t.Errorf("Used mismatch: gopsutil=%d, sysinfo=%d", gMem.Used, sMem.Used)
+	if math.Abs(float64(gMem.Used)-float64(sMem.Used)) > tolerance {
+		t.Errorf("Used differs by more than 0.1%%: gopsutil=%d, sysinfo=%d", gMem.Used, sMem.Used)
 	}
 
-	if math.Abs(gMem.UsedPercent-sMem.UsedPercent) > 0.01 {
+	if math.Abs(gMem.UsedPercent-sMem.UsedPercent) > 0.1 {
 		t.Errorf("UsedPercent mismatch: gopsutil=%.4f, sysinfo=%.4f", gMem.UsedPercent, sMem.UsedPercent)
 	}
 
-	if gMem.Free != sMem.Free {
-		t.Errorf("Free mismatch: gopsutil=%d, sysinfo=%d", gMem.Free, sMem.Free)
+	if math.Abs(float64(gMem.Free)-float64(sMem.Free)) > tolerance {
+		t.Errorf("Free differs by more than 0.1%%: gopsutil=%d, sysinfo=%d", gMem.Free, sMem.Free)
 	}
 }
 

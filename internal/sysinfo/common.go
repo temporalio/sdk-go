@@ -6,12 +6,15 @@ package sysinfo
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+var ErrNotImplemented = errors.New("not implemented on this platform")
 
 var Timeout = 3 * time.Second
 
