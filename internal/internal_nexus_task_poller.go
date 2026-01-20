@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -10,6 +11,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
+	"google.golang.org/protobuf/encoding/prototext"
 )
 
 type nexusTaskPoller struct {
@@ -128,8 +130,12 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
 		// context wasn't propagated to us, use a background context.
-		_, err := ntp.taskHandler.client.WorkflowService().RespondNexusTaskFailed(
-			context.Background(), ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr))
+		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, response.GetRequest().GetCapabilities().GetTemporalFailureResponses())
+		if err != nil {
+			return err
+		}
+		_, err = ntp.taskHandler.client.WorkflowService().RespondNexusTaskFailed(
+			context.Background(), failedRequest)
 		return err
 	}
 
@@ -165,6 +171,13 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 			WithTags(metrics.NexusTaskFailureTags("operation_" + e.GetOperationState())).
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
+	} else if f := res.Response.GetStartOperation().GetFailure(); f != nil {
+		if sf := f.GetNexusSdkOperationFailureInfo(); sf != nil {
+			nctx.metricsHandler.
+				WithTags(metrics.NexusTaskFailureTags("operation_" + sf.GetState())).
+				Counter(metrics.NexusTaskExecutionFailedCounter).
+				Inc(1)
+		}
 	}
 
 	// Let the poller machinery drop the task, nothing to report back.
@@ -203,6 +216,7 @@ func (ntp *nexusTaskPoller) reportCompletion(
 		_, err := ntp.taskHandler.client.WorkflowService().RespondNexusTaskFailed(ctx, failure)
 		return err
 	}
+	fmt.Println(prototext.Format(completion))
 	_, err := ntp.taskHandler.client.WorkflowService().RespondNexusTaskCompleted(ctx, completion)
 	return err
 }

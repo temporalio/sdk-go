@@ -2,6 +2,8 @@ package internal
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -163,6 +165,10 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
 	case *nexus.HandlerError:
+		// if of := err.OriginalFailure; of != nil {
+		// 	// If this error was constructed from a failure, reuse that failure to preserve fidelity.
+		// 	return of
+		// }
 		var retryBehavior enumspb.NexusHandlerErrorRetryBehavior
 		switch err.RetryBehavior {
 		case nexus.HandlerErrorRetryBehaviorRetryable:
@@ -175,6 +181,26 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 			RetryBehavior: retryBehavior,
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusHandlerFailureInfo{NexusHandlerFailureInfo: failureInfo}
+		failure.StackTrace = err.StackTrace
+		if len(err.Message) > 0 {
+			failure.Message = err.Message
+		}
+	case *nexus.OperationError:
+		// if of := err.OriginalFailure; of != nil {
+		// 	// If this error was constructed from a failure, reuse that failure to preserve fidelity.
+		// 	return of
+		// }
+		failureInfo := &failurepb.NexusSDKOperationFailureInfo{
+			State: string(err.State),
+		}
+		failure.FailureInfo = &failurepb.Failure_NexusSdkOperationFailureInfo{NexusSdkOperationFailureInfo: failureInfo}
+		failure.StackTrace = err.StackTrace
+		failure.Message = err.Message
+	case *nexus.FailureError:
+		// TODO(quinn): implement full FailureError support
+		failure.FailureInfo = &failurepb.Failure_NexusSdkFailureErrorInfo{
+			NexusSdkFailureErrorInfo: &failurepb.NexusSDKFailureErrorFailureInfo{},
+		}
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         getErrType(err),
@@ -294,10 +320,26 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 		case enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE:
 			retryBehavior = nexus.HandlerErrorRetryBehaviorNonRetryable
 		}
+		// TODO(quinn): Check message for legacy format and not pass if so
+		cause := dfc.FailureToError(failure.GetCause())
+		typ := nexus.HandlerErrorType(info.Type)
+		if strings.HasPrefix(message, fmt.Sprintf("handler error (%s)", typ)) {
+			message = ""
+		}
 		err = &nexus.HandlerError{
-			Type:          nexus.HandlerErrorType(info.Type),
-			Cause:         dfc.FailureToError(failure.GetCause()),
+			Type:          typ,
+			Message:       message,
+			StackTrace:    stackTrace,
+			Cause:         cause,
 			RetryBehavior: retryBehavior,
+		}
+	} else if info := failure.GetNexusSdkOperationFailureInfo(); info != nil {
+		// Map Nexus SDK Operation failure to OperationError
+		err = &nexus.OperationError{
+			State:      nexus.OperationState(info.State),
+			Message:    message,
+			StackTrace: stackTrace,
+			Cause:      dfc.FailureToError(failure.GetCause()),
 		}
 	}
 

@@ -80,32 +80,54 @@ func newNexusTaskHandler(
 }
 
 func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueResponse) (*workflowservice.RespondNexusTaskCompletedRequest, *workflowservice.RespondNexusTaskFailedRequest, error) {
+	failureReasonSupport := task.GetRequest().GetCapabilities().GetTemporalFailureResponses()
 	nctx, handlerErr := h.newNexusOperationContext(task)
 	if handlerErr != nil {
-		return nil, h.fillInFailure(task.TaskToken, handlerErr), nil
+		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, failureRequest, nil
 	}
 	res, handlerErr, err := h.execute(nctx, task)
 	if err != nil {
 		return nil, nil, err
 	}
 	if handlerErr != nil {
-		return nil, h.fillInFailure(task.TaskToken, handlerErr), nil
+		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, failureRequest, nil
 	}
-	return h.fillInCompletion(task.TaskToken, res), nil, nil
+	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport)
+	if err != nil {
+		return nil, nil, err
+	}
+	return completedRequest, nil, nil
 }
 
 func (h *nexusTaskHandler) ExecuteContext(nctx *NexusOperationContext, task *workflowservice.PollNexusTaskQueueResponse) (*workflowservice.RespondNexusTaskCompletedRequest, *workflowservice.RespondNexusTaskFailedRequest, error) {
+	failureReasonSupport := task.GetRequest().GetCapabilities().GetTemporalFailureResponses()
 	res, handlerErr, err := h.execute(nctx, task)
 	if err != nil {
 		return nil, nil, err
 	}
 	if handlerErr != nil {
-		return nil, h.fillInFailure(task.TaskToken, handlerErr), nil
+		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
+		if err != nil {
+			return nil, nil, err
+		}
+		return nil, failureRequest, nil
 	}
-	return h.fillInCompletion(task.TaskToken, res), nil, nil
+	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport)
+	if err != nil {
+		return nil, nil, err
+	}
+	return completedRequest, nil, nil
 }
 
-func (h *nexusTaskHandler) execute(nctx *NexusOperationContext, task *workflowservice.PollNexusTaskQueueResponse) (*nexuspb.Response, *nexuspb.HandlerError, error) {
+func (h *nexusTaskHandler) execute(nctx *NexusOperationContext, task *workflowservice.PollNexusTaskQueueResponse) (*nexuspb.Response, *nexus.HandlerError, error) {
 	header := nexus.Header(task.GetRequest().GetHeader())
 	if header == nil {
 		header = nexus.Header{}
@@ -123,7 +145,10 @@ func (h *nexusTaskHandler) execute(nctx *NexusOperationContext, task *workflowse
 	case *nexuspb.Request_CancelOperation:
 		return h.handleCancelOperation(ctx, nctx, req.CancelOperation, header)
 	default:
-		return nil, nexusHandlerError(nexus.HandlerErrorTypeNotImplemented, "unknown request type"), nil
+		return nil, nexus.HandlerErrorf(
+			nexus.HandlerErrorTypeNotImplemented,
+			"unknown request type",
+		), nil
 	}
 }
 
@@ -132,7 +157,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 	nctx *NexusOperationContext,
 	req *nexuspb.StartOperationRequest,
 	header nexus.Header,
-) (*nexuspb.Response, *nexuspb.HandlerError, error) {
+) (*nexuspb.Response, *nexus.HandlerError, error) {
 	serializer := &payloadSerializer{
 		converter: h.dataConverter,
 		payload:   req.GetPayload(),
@@ -157,7 +182,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		linkURL, err := url.Parse(link.GetUrl())
 		if err != nil {
 			nctx.log.Error("Failed to parse link url: %s", link.GetUrl(), tagError, err)
-			return nil, nexusHandlerError(nexus.HandlerErrorTypeBadRequest, "failed to parse link url"), nil
+			return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "failed to parse link url"), nil
 		}
 		nexusLinks = append(nexusLinks, nexus.Link{
 			URL:  linkURL,
@@ -208,19 +233,11 @@ func (h *nexusTaskHandler) handleStartOperation(
 		var unsuccessfulOperationErr *nexus.OperationError
 		err = convertKnownErrors(err)
 		if errors.As(err, &unsuccessfulOperationErr) {
-			failure, err := h.errorToFailure(unsuccessfulOperationErr.Cause)
-			if err != nil {
-				return nil, nil, err
-			}
-
 			return &nexuspb.Response{
 				Variant: &nexuspb.Response_StartOperation{
 					StartOperation: &nexuspb.StartOperationResponse{
-						Variant: &nexuspb.StartOperationResponse_OperationError{
-							OperationError: &nexuspb.UnsuccessfulOperationError{
-								OperationState: string(unsuccessfulOperationErr.State),
-								Failure:        failure,
-							},
+						Variant: &nexuspb.StartOperationResponse_Failure{
+							Failure: h.failureConverter.ErrorToFailure(unsuccessfulOperationErr),
 						},
 					},
 				},
@@ -228,12 +245,13 @@ func (h *nexusTaskHandler) handleStartOperation(
 		}
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
-			protoErr, err := h.nexusHandlerErrorToProto(handlerErr)
-			return nil, protoErr, err
+			return nil, handlerErr, nil
 		}
 		// Default to internal error.
-		protoErr, err := h.internalError(err)
-		return nil, protoErr, err
+		return nil, &nexus.HandlerError{
+			Type:  nexus.HandlerErrorTypeInternal,
+			Cause: err,
+		}, nil
 	}
 	switch t := opres.(type) {
 	case *nexus.HandlerStartOperationResultAsync:
@@ -272,8 +290,10 @@ func (h *nexusTaskHandler) handleStartOperation(
 		payload, err := h.dataConverter.ToPayload(value)
 		if err != nil {
 			nctx.log.Error("Cannot convert Nexus sync result", tagError, err)
-			protoErr, err := h.internalError(fmt.Errorf("cannot convert nexus sync result: %w", err))
-			return nil, protoErr, err
+			return nil, nexus.HandlerErrorf(
+				nexus.HandlerErrorTypeInternal,
+				"cannot convert nexus sync result: %v", err,
+			), nil
 		}
 		return &nexuspb.Response{
 			Variant: &nexuspb.Response_StartOperation{
@@ -290,7 +310,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 	}
 }
 
-func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *NexusOperationContext, req *nexuspb.CancelOperationRequest, header nexus.Header) (*nexuspb.Response, *nexuspb.HandlerError, error) {
+func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *NexusOperationContext, req *nexuspb.CancelOperationRequest, header nexus.Header) (*nexuspb.Response, *nexus.HandlerError, error) {
 	cancelOptions := nexus.CancelOperationOptions{Header: header}
 	ctx = nexus.WithHandlerContext(ctx, nexus.HandlerInfo{
 		Service:   req.GetService(),
@@ -334,12 +354,13 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 		err = convertKnownErrors(err)
 		var handlerErr *nexus.HandlerError
 		if errors.As(err, &handlerErr) {
-			protoErr, err := h.nexusHandlerErrorToProto(handlerErr)
-			return nil, protoErr, err
+			return nil, handlerErr, nil
 		}
 		// Default to internal error.
-		protoErr, err := h.internalError(err)
-		return nil, protoErr, err
+		return nil, &nexus.HandlerError{
+			Type:  nexus.HandlerErrorTypeInternal,
+			Cause: err,
+		}, nil
 	}
 
 	return &nexuspb.Response{
@@ -357,7 +378,7 @@ func (h *nexusTaskHandler) internalError(err error) (*nexuspb.HandlerError, erro
 	return &nexuspb.HandlerError{ErrorType: string(nexus.HandlerErrorTypeInternal), Failure: failure}, nil
 }
 
-func (h *nexusTaskHandler) goContextForTask(nctx *NexusOperationContext, header nexus.Header) (context.Context, context.CancelFunc, *nexuspb.HandlerError) {
+func (h *nexusTaskHandler) goContextForTask(nctx *NexusOperationContext, header nexus.Header) (context.Context, context.CancelFunc, *nexus.HandlerError) {
 	// Associate the NexusOperationContext with the context.Context used to invoke operations.
 	ctx := context.WithValue(context.Background(), nexusOperationContextKey, nctx)
 
@@ -365,7 +386,7 @@ func (h *nexusTaskHandler) goContextForTask(nctx *NexusOperationContext, header 
 	if timeoutStr != "" {
 		timeout, err := time.ParseDuration(timeoutStr)
 		if err != nil {
-			return nil, nil, nexusHandlerError(nexus.HandlerErrorTypeBadRequest, "cannot parse request timeout")
+			return nil, nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "cannot parse request timeout")
 		}
 
 		ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -375,7 +396,7 @@ func (h *nexusTaskHandler) goContextForTask(nctx *NexusOperationContext, header 
 	return ctx, func() {}, nil
 }
 
-func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.PollNexusTaskQueueResponse) (*NexusOperationContext, *nexuspb.HandlerError) {
+func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.PollNexusTaskQueueResponse) (*NexusOperationContext, *nexus.HandlerError) {
 	var service, operation string
 
 	switch req := response.GetRequest().GetVariant().(type) {
@@ -386,7 +407,7 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 		service = req.CancelOperation.Service
 		operation = req.CancelOperation.Operation
 	default:
-		return nil, nexusHandlerError(nexus.HandlerErrorTypeNotImplemented, "unknown request type")
+		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeNotImplemented, "unknown request type")
 	}
 
 	logger := log.With(h.logger,
@@ -406,22 +427,56 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 	}, nil
 }
 
-func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response) *workflowservice.RespondNexusTaskCompletedRequest {
+func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response, failureReasonSupport bool) (*workflowservice.RespondNexusTaskCompletedRequest, error) {
+	if res.GetStartOperation().GetFailure() != nil && !failureReasonSupport {
+		// Convert to operation error for backwards compatibility.
+		f := res.GetStartOperation().GetFailure()
+		var state string
+		if of := f.GetNexusSdkOperationFailureInfo(); of != nil {
+			state = of.GetState()
+		} else {
+			return nil, fmt.Errorf("cannot convert nexus operation failure without sdk info")
+		}
+		failure, err := h.temporalFailureToNexusFailure(f.GetCause())
+		if err != nil {
+			return nil, err
+		}
+		res.Variant = &nexuspb.Response_StartOperation{
+			StartOperation: &nexuspb.StartOperationResponse{
+				Variant: &nexuspb.StartOperationResponse_OperationError{
+					OperationError: &nexuspb.UnsuccessfulOperationError{
+						OperationState: state,
+						Failure:        failure,
+					},
+				},
+			},
+		}
+	}
 	return &workflowservice.RespondNexusTaskCompletedRequest{
 		Identity:  h.identity,
 		Namespace: h.namespace,
 		TaskToken: taskToken,
 		Response:  res,
-	}
+	}, nil
 }
 
-func (h *nexusTaskHandler) fillInFailure(taskToken []byte, err *nexuspb.HandlerError) *workflowservice.RespondNexusTaskFailedRequest {
-	return &workflowservice.RespondNexusTaskFailedRequest{
+func (h *nexusTaskHandler) fillInFailure(taskToken []byte, handlerError *nexus.HandlerError, failureReasonSupport bool) (*workflowservice.RespondNexusTaskFailedRequest, error) {
+	r := &workflowservice.RespondNexusTaskFailedRequest{
 		Identity:  h.identity,
 		Namespace: h.namespace,
 		TaskToken: taskToken,
-		Error:     err,
 	}
+	if failureReasonSupport {
+		r.Failure = h.failureConverter.ErrorToFailure(handlerError)
+	} else {
+		he, err := h.nexusHandlerErrorToProto(handlerError)
+		if err != nil {
+			return nil, err
+		}
+		//lint:ignore SA1019 ignore deprecated
+		r.Error = he
+	}
+	return r, nil
 }
 
 var nexusFailureTypeString = string((&failurepb.Failure{}).ProtoReflect().Descriptor().FullName())
@@ -432,6 +487,20 @@ func (h *nexusTaskHandler) errorToFailure(err error) (*nexuspb.Failure, error) {
 	if failure == nil {
 		return nil, nil
 	}
+	message := failure.Message
+	failure.Message = ""
+	b, err := protojson.Marshal(failure)
+	if err != nil {
+		return nil, err
+	}
+	return &nexuspb.Failure{
+		Message:  message,
+		Metadata: nexusFailureMetadata,
+		Details:  b,
+	}, nil
+}
+
+func (h *nexusTaskHandler) temporalFailureToNexusFailure(failure *failurepb.Failure) (*nexuspb.Failure, error) {
 	message := failure.Message
 	failure.Message = ""
 	b, err := protojson.Marshal(failure)

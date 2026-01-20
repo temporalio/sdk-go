@@ -2499,7 +2499,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		response, failure, err := taskHandler.Execute(task)
 		if err != nil {
 			// No retries for operations, fail the operation immediately.
-			failure = taskHandler.fillInFailure(task.TaskToken, nexusHandlerError(nexus.HandlerErrorTypeInternal, err.Error()))
+			failure, err = taskHandler.fillInFailure(task.TaskToken, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, err.Error()), false)
 		}
 		if failure != nil {
 			// Convert to a nexus HandlerError first to simulate the flow in the server.

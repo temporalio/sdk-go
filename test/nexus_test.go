@@ -1541,18 +1541,18 @@ func (*manualAsyncOp) Name() string {
 }
 
 // Not relevant for this test.
-func (o *manualAsyncOp) FailureToError(nexus.Failure) error {
+func (o *manualAsyncOp) FailureToError(nexus.Failure) (error, error) {
 	panic("not implemented")
 }
 
-func (o *manualAsyncOp) ErrorToFailure(err error) nexus.Failure {
+func (o *manualAsyncOp) ErrorToFailure(err error) (nexus.Failure, error) {
 	return nexus.Failure{
 		Message: err.Error(),
 		Metadata: map[string]string{
 			"type": "custom",
 		},
 		Details: []byte(`"details"`),
-	}
+	}, nil
 }
 
 func (o *manualAsyncOp) Start(ctx context.Context, input nexus.NoValue, options nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[nexus.NoValue], error) {
