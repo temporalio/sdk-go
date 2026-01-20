@@ -93,8 +93,12 @@ func VirtualMemoryWithContext(ctx context.Context) (*VirtualMemoryStat, error) {
 		ret.Available = memFree + buffers + cached + sReclaimable
 	}
 
+	// Add SReclaimable to Cached (matches gopsutil v4.24.8)
+	ret.Cached += ret.Sreclaimable
+
 	// Calculate Used and UsedPercent
-	ret.Used = ret.Total - ret.Available
+	// Uses Total - Free - Buffers - Cached to match gopsutil v4.24.8
+	ret.Used = ret.Total - ret.Free - ret.Buffers - ret.Cached
 	if ret.Total > 0 {
 		ret.UsedPercent = float64(ret.Used) / float64(ret.Total) * 100.0
 	}
