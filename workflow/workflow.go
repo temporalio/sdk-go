@@ -28,6 +28,58 @@ const (
 	VersioningBehaviorAutoUpgrade = internal.VersioningBehaviorAutoUpgrade
 )
 
+// ContinueAsNewVersioningBehavior specifies how the new workflow run after ContinueAsNew should change its Build ID.
+//
+// NOTE: Experimental
+type ContinueAsNewVersioningBehavior = internal.ContinueAsNewVersioningBehavior
+
+const (
+	// ContinueAsNewVersioningBehaviorUnspecified - Workflow versioning policy unknown.
+	// If the source workflow was AutoUpgrade, the new workflow will start as AutoUpgrade.
+	// If the source workflow was Pinned, the new workflow will start Pinned to the same Build ID.
+	// If the source workflow had a Pinned Versioning Override, the new workflow will inherit that Versioning Override.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehaviorUnspecified]
+	ContinueAsNewVersioningBehaviorUnspecified = internal.ContinueAsNewVersioningBehaviorUnspecified
+
+	// ContinueAsNewVersioningBehaviorAutoUpgrade - Start the new workflow with AutoUpgrade versioning behavior.
+	// Like all AutoUpgrade workflows, use the Target Version of the workflow's task queue at start-time. After the
+	// first workflow task completes, use whatever Versioning Behavior the workflow is annotated with in the workflow
+	// code.
+	//
+	// Note that if the previous workflow had a Pinned override, that override will be inherited by the new workflow
+	// run regardless of the ContinueAsNewVersioningBehavior specified in the continue-as-new command.
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehaviorAutoUpgrade]
+	ContinueAsNewVersioningBehaviorAutoUpgrade = internal.ContinueAsNewVersioningBehaviorAutoUpgrade
+)
+
+// ContinueAsNewSuggestedReason specifies why ContinueAsNewSuggested is true. Multiple reasons can be true at the same time.
+//
+// NOTE: Experimental
+type ContinueAsNewSuggestedReason = internal.ContinueAsNewSuggestedReason
+
+const (
+	// ContinueAsNewSuggestedReasonUnspecified - The reason is unknown.
+	ContinueAsNewSuggestedReasonUnspecified = internal.ContinueAsNewSuggestedReasonUnspecified
+
+	// ContinueAsNewSuggestedReasonHistorySizeTooLarge - Workflow History size is getting too large.
+	ContinueAsNewSuggestedReasonHistorySizeTooLarge = internal.ContinueAsNewSuggestedReasonHistorySizeTooLarge
+
+	// ContinueAsNewSuggestedReasonTooManyHistoryEvents - Workflow History size is getting too large.
+	ContinueAsNewSuggestedReasonTooManyHistoryEvents = internal.ContinueAsNewSuggestedReasonTooManyHistoryEvents
+
+	// ContinueAsNewSuggestedReasonTooManyUpdates - Workflow's count of completed plus in-flight updates is too large.
+	ContinueAsNewSuggestedReasonTooManyUpdates = internal.ContinueAsNewSuggestedReasonTooManyUpdates
+
+	// ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged - Workflow's Target Worker Deployment Version
+	// is different from its Current Version and the workflow is versioned.
+	//
+	// The workflow's Target Version is the Current Version of its Task Queue, or, if the Task Queue has a Ramping
+	// Version with non-zero Ramp Percentage `P`, the workflow's Target Version has a P% chance of being the Ramping
+	// Version. Whether a workflow falls into the Ramping group depends on its Workflow ID and the Ramp Percentage.
+	ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged = internal.ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged
+)
+
 // HandlerUnfinishedPolicy defines the actions taken when a workflow exits while update handlers are
 // running. The workflow exit may be due to successful return, failure, cancellation, or
 // continue-as-new.
