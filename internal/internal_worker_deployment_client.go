@@ -135,12 +135,13 @@ func workerDeploymentInfoFromProto(info *deployment.WorkerDeploymentInfo) Worker
 	}
 
 	return WorkerDeploymentInfo{
-		Name:                 info.Name,
-		CreateTime:           safeAsTime(info.CreateTime),
-		VersionSummaries:     workerDeploymentVersionSummariesFromProto(info.VersionSummaries),
-		RoutingConfig:        workerDeploymentRoutingConfigFromProto(info.RoutingConfig),
-		LastModifierIdentity: info.LastModifierIdentity,
-		ManagerIdentity:      info.ManagerIdentity,
+		Name:                     info.Name,
+		CreateTime:               safeAsTime(info.CreateTime),
+		VersionSummaries:         workerDeploymentVersionSummariesFromProto(info.VersionSummaries),
+		RoutingConfig:            workerDeploymentRoutingConfigFromProto(info.RoutingConfig),
+		RoutingConfigUpdateState: WorkerDeploymentRoutingConfigUpdateState(info.RoutingConfigUpdateState),
+		LastModifierIdentity:     info.LastModifierIdentity,
+		ManagerIdentity:          info.ManagerIdentity,
 	}
 
 }

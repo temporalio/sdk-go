@@ -86,6 +86,21 @@ const (
 	WorkerDeploymentVersionDrainageStatusDrained = internal.WorkerDeploymentVersionDrainageStatusDrained
 )
 
+// WorkerDeploymentRoutingConfigUpdateState indicates whether the RoutingConfig has been fully propagated
+// to all relevant task queues and their partitions.
+type WorkerDeploymentRoutingConfigUpdateState = internal.WorkerDeploymentRoutingConfigUpdateState
+
+const (
+	// WorkerDeploymentRoutingConfigUpdateStateUnspecified - Update state not specified.
+	WorkerDeploymentRoutingConfigUpdateStateUnspecified = internal.WorkerDeploymentRoutingConfigUpdateStateUnspecified
+
+	// WorkerDeploymentRoutingConfigUpdateStateInProgress - Update to the RoutingConfig is currently in progress.
+	WorkerDeploymentRoutingConfigUpdateStateInProgress = internal.WorkerDeploymentRoutingConfigUpdateStateInProgress
+
+	// WorkerDeploymentRoutingConfigUpdateStateCompleted - Update to the RoutingConfig has completed successfully.
+	WorkerDeploymentRoutingConfigUpdateStateCompleted = internal.WorkerDeploymentRoutingConfigUpdateStateCompleted
+)
+
 // WorkerVersioningMode specifies whether the workflows processed by this
 // worker use the worker's Version. The Temporal Server will use this worker's
 // choice when dispatching tasks to it.

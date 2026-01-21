@@ -45,6 +45,29 @@ const (
 	WorkerDeploymentVersionDrainageStatusDrained
 )
 
+// WorkerDeploymentRoutingConfigUpdateState indicates whether the RoutingConfig has been fully propagated
+// to all relevant task queues and their partitions.
+//
+// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentRoutingConfigUpdateState]
+type WorkerDeploymentRoutingConfigUpdateState int
+
+const (
+	// WorkerDeploymentRoutingConfigUpdateStateUnspecified - Update state not specified.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentRoutingConfigUpdateStateUnspecified]
+	WorkerDeploymentRoutingConfigUpdateStateUnspecified = iota
+
+	// WorkerDeploymentRoutingConfigUpdateStateInProgress - Update to the RoutingConfig is currently in progress.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentRoutingConfigUpdateStateInProgress]
+	WorkerDeploymentRoutingConfigUpdateStateInProgress
+
+	// WorkerDeploymentRoutingConfigUpdateStateCompleted - Update to the RoutingConfig has completed successfully.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentRoutingConfigUpdateStateCompleted]
+	WorkerDeploymentRoutingConfigUpdateStateCompleted
+)
+
 type (
 
 	// WorkerDeploymentDescribeOptions provides options for [WorkerDeploymentHandle.Describe].
@@ -95,6 +118,9 @@ type (
 
 		// RoutingConfig - When to execute new or existing Workflow Tasks with this Deployment.
 		RoutingConfig WorkerDeploymentRoutingConfig
+
+		// RoutingConfigUpdateState - The state of the last attempted update to the RoutingConfig.
+		RoutingConfigUpdateState WorkerDeploymentRoutingConfigUpdateState
 
 		// LastModifierIdentity - The identity of the last client that modified the
 		// configuration of this Deployment.
@@ -180,7 +206,7 @@ type (
 		ConflictToken []byte
 
 		// PreviousVersion - The Version that was current before executing this operation, if any.
-        //
+		//
 		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
 		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
 		PreviousVersion *WorkerDeploymentVersion
