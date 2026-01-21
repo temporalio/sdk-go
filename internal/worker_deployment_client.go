@@ -5,6 +5,7 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
+	"go.temporal.io/sdk/client"
 )
 
 // WorkerDeploymentVersionDrainageStatus specifies the drainage status for a Worker
@@ -180,7 +181,7 @@ type (
 		ConflictToken []byte
 
 		// PreviousVersion - The Version that was current before executing this operation, if any.
-        //
+		//
 		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
 		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
 		PreviousVersion *WorkerDeploymentVersion
@@ -322,6 +323,8 @@ type (
 	WorkerDeploymentDescribeVersionOptions struct {
 		// BuildID - A Build ID within this deployment to describe.
 		BuildID string
+		// ReportTaskQueueStats - Whether to report stats for task queues which have been polled by this version.
+		ReportTaskQueueStats bool
 	}
 
 	// WorkerDeploymentTaskQueueInfo describes properties of the Task Queues involved
@@ -336,6 +339,13 @@ type (
 
 		// Type - The type of this task queue.
 		Type TaskQueueType
+
+		// Stats - Only set if ReportTaskQueueStats is set on the request.
+		Stats *TaskQueueStats
+
+		// StatsByPriorityKey - Task queue stats breakdown by priority key. Only contains actively used priority keys.
+		// Only set if ReportTaskQueueStats is set on the request.
+		StatsByPriorityKey map[int32]TaskQueueStats
 	}
 
 	// WorkerDeploymentVersionDrainageInfo describes drainage properties of a Deployment Version.
@@ -403,6 +413,9 @@ type (
 	WorkerDeploymentVersionDescription struct {
 		// Info - Information about this Version.
 		Info WorkerDeploymentVersionInfo
+
+		// All the Task Queues that have ever polled from this Deployment version.
+		TaskQueueInfos []WorkerDeploymentTaskQueueInfo
 	}
 
 	// WorkerDeploymentDeleteVersionOptions provides options for

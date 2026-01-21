@@ -328,6 +328,19 @@ func workerDeploymentTaskQueuesInfosFromProto(tqInfos []*deployment.WorkerDeploy
 	return result
 }
 
+func workerDeploymentTaskQueueInfosFromDescribeVersionProto(tqInfos []*workflowservice.DescribeWorkerDeploymentVersionResponse_VersionTaskQueue) []WorkerDeploymentTaskQueueInfo {
+	result := []WorkerDeploymentTaskQueueInfo{}
+	for _, info := range tqInfos {
+		result = append(result, WorkerDeploymentTaskQueueInfo{
+			Name:               info.GetName(),
+			Type:               TaskQueueType(info.GetType()),
+			Stats:              statsFromResponse(info.GetStats()),
+			StatsByPriorityKey: statsByPriorityKeyFromResponse(info.GetStatsByPriorityKey()),
+		})
+	}
+	return result
+}
+
 func workerDeploymentDrainageInfoFromProto(drainageInfo *deployment.VersionDrainageInfo) *WorkerDeploymentVersionDrainageInfo {
 	if drainageInfo == nil {
 		return nil
@@ -340,6 +353,29 @@ func workerDeploymentDrainageInfoFromProto(drainageInfo *deployment.VersionDrain
 }
 
 func workerDeploymentVersionInfoFromProto(info *deployment.WorkerDeploymentVersionInfo) WorkerDeploymentVersionInfo {
+	if info == nil {
+		return WorkerDeploymentVersionInfo{}
+	}
+	//lint:ignore SA1019 ignore deprecated versioning APIs
+	version := workerDeploymentVersionFromProtoOrString(info.DeploymentVersion, info.Version)
+	if version == nil {
+		// Should never happen unless server is sending junk data
+		version = &WorkerDeploymentVersion{}
+	}
+	return WorkerDeploymentVersionInfo{
+		Version:            *version,
+		CreateTime:         safeAsTime(info.CreateTime),
+		RoutingChangedTime: safeAsTime(info.RoutingChangedTime),
+		CurrentSinceTime:   safeAsTime(info.CurrentSinceTime),
+		RampingSinceTime:   safeAsTime(info.RampingSinceTime),
+		RampPercentage:     info.RampPercentage,
+		TaskQueuesInfos:    workerDeploymentTaskQueuesInfosFromProto(info.TaskQueueInfos),
+		DrainageInfo:       workerDeploymentDrainageInfoFromProto(info.DrainageInfo),
+		Metadata:           info.Metadata.GetEntries(),
+	}
+}
+
+func workerDeploymentVersionTaskQueuesFromProto(info *deployment.WorkerDeploymentVersionInfo) WorkerDeploymentVersionInfo {
 	if info == nil {
 		return WorkerDeploymentVersionInfo{}
 	}
@@ -381,6 +417,7 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 			BuildId:        options.BuildID,
 			DeploymentName: h.Name,
 		},
+		ReportTaskQueueStats: options.ReportTaskQueueStats,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -391,7 +428,8 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 	}
 
 	return WorkerDeploymentVersionDescription{
-		Info: workerDeploymentVersionInfoFromProto(resp.GetWorkerDeploymentVersionInfo()),
+		Info:           workerDeploymentVersionInfoFromProto(resp.GetWorkerDeploymentVersionInfo()),
+		TaskQueueInfos: workerDeploymentTaskQueueInfosFromDescribeVersionProto(resp.GetVersionTaskQueues()),
 	}, nil
 }
 
