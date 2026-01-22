@@ -1,8 +1,11 @@
 package internal
 
 import (
+	"fmt"
 	"math"
 	"os"
+	"strconv"
+	"strings"
 
 	"go.temporal.io/api/workflowservice/v1"
 )
@@ -32,9 +35,87 @@ const (
 	SDKFlagUnknown                      = math.MaxUint32
 )
 
-// unblockSelectorSignal exists to allow us to configure the default behavior of
-// SDKFlagBlockedSelectorSignalReceive. This is primarily useful with tests.
-var unblockSelectorSignal = os.Getenv("UNBLOCK_SIGNAL_SELECTOR") != ""
+// enabledByDefault returns whether this flag should be enabled by default for new
+// workflows. Flags must be explicitly listed to be enabled - unlisted flags default
+// to false. This ensures new flags don't accidentally ship enabled.
+//
+// We need to wait at least one release between a new SDK flag being introduced
+// and when it's enabled, for to backwards compatibility
+func (f sdkFlag) enabledByDefault() bool {
+	switch f {
+	case SDKFlagLimitChangeVersionSASize,
+		SDKFlagChildWorkflowErrorExecution,
+		SDKFlagProtocolMessageCommand,
+		SDKPriorityUpdateHandling:
+		return true
+	case SDKFlagBlockedSelectorSignalReceive:
+		return false
+	default:
+		return false
+	}
+}
+
+// sdkFlagOverrides holds env var overrides for SDK flags.
+var sdkFlagOverrides map[sdkFlag]bool
+
+func init() {
+	loadFlagOverrides()
+}
+
+// Env var format: TEMPORAL_SDK_FLAG_<FLAG_ID>=true|false
+// Example: TEMPORAL_SDK_FLAG_5=true (enables SDKFlagBlockedSelectorSignalReceive)
+//
+// Bulk override: TEMPORAL_SDK_FLAGS_ENABLE=1,5,6 or TEMPORAL_SDK_FLAGS_DISABLE=1,5
+//
+// NOTE: Using env vars to set flags is strongly discouraged, but this utility is built in
+// as an emergency mechanism in case there is an unanticipated bug with a flag flip, where
+// users would not have to wait until the next release to upgrade.
+func loadFlagOverrides() {
+	sdkFlagOverrides = make(map[sdkFlag]bool)
+
+	// Check bulk enable
+	if enableList := os.Getenv("TEMPORAL_SDK_FLAGS_ENABLE"); enableList != "" {
+		for _, idStr := range strings.Split(enableList, ",") {
+			if id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 32); err == nil {
+				flag := sdkFlagFromUint(uint32(id))
+				if flag.isValid() {
+					sdkFlagOverrides[flag] = true
+				}
+			}
+		}
+	}
+
+	// Check bulk disable (takes precedence if both set)
+	if disableList := os.Getenv("TEMPORAL_SDK_FLAGS_DISABLE"); disableList != "" {
+		for _, idStr := range strings.Split(disableList, ",") {
+			if id, err := strconv.ParseUint(strings.TrimSpace(idStr), 10, 32); err == nil {
+				flag := sdkFlagFromUint(uint32(id))
+				if flag.isValid() {
+					sdkFlagOverrides[flag] = false
+				}
+			}
+		}
+	}
+
+	// Individual flag overrides (highest precedence)
+	for i := uint32(1); i < uint32(SDKFlagUnknown); i++ {
+		flag := sdkFlagFromUint(i)
+		if !flag.isValid() {
+			continue
+		}
+		envKey := fmt.Sprintf("TEMPORAL_SDK_FLAG_%d", i)
+		if val := os.Getenv(envKey); val != "" {
+			if parsed, err := strconv.ParseBool(val); err == nil {
+				sdkFlagOverrides[flag] = parsed
+			}
+		}
+	}
+}
+
+func getFlagOverride(flag sdkFlag) (enabled bool, hasOverride bool) {
+	enabled, hasOverride = sdkFlagOverrides[flag]
+	return
+}
 
 func sdkFlagFromUint(value uint32) sdkFlag {
 	switch value {
@@ -77,20 +158,35 @@ func newSDKFlags(capabilities *workflowservice.GetSystemInfoResponse_Capabilitie
 	}
 }
 
-// tryUse returns true if this flag may currently be used. If record is true, always returns
-// true and records the flag as being used.
+// tryUse checks if a flag should be used, respecting enabledByDefault config and env var overrides.
 func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 	if !sf.capabilities.GetSdkMetadata() {
 		return false
 	}
 
-	if record && !sf.currentFlags[flag] {
-		// Only set new flags
-		sf.newFlags[flag] = true
+	// Flag already in history - return true
+	if sf.currentFlags[flag] || sf.newFlags[flag] {
 		return true
-	} else {
-		return sf.currentFlags[flag]
 	}
+
+	if !record {
+		return false
+	}
+
+	// Env var override takes priority
+	if enabled, hasOverride := getFlagOverride(flag); hasOverride {
+		if enabled {
+			sf.newFlags[flag] = true
+		}
+		return enabled
+	}
+
+	if !flag.enabledByDefault() {
+		return false
+	}
+
+	sf.newFlags[flag] = true
+	return true
 }
 
 // getFlag returns true if the flag is currently set.
@@ -125,8 +221,23 @@ func (sf *sdkFlags) gatherNewSDKFlags() []sdkFlag {
 	return flags
 }
 
-// SetUnblockSelectorSignal toggles the flag to unblock the selector signal.
+// SetFlagOverrideForTest sets a flag override for testing. Returns a cleanup function.
 // For test use only.
-func SetUnblockSelectorSignal(unblockSignal bool) {
-	unblockSelectorSignal = unblockSignal
+func SetFlagOverrideForTest(flag sdkFlag, enabled bool) func() {
+	old, existed := sdkFlagOverrides[flag]
+	sdkFlagOverrides[flag] = enabled
+	return func() {
+		if existed {
+			sdkFlagOverrides[flag] = old
+		} else {
+			delete(sdkFlagOverrides, flag)
+		}
+	}
+}
+
+// ReloadFlagOverridesFromEnvForTest reloads flag overrides from environment variables.
+// This clears any overrides set via SetFlagOverrideForTest.
+// For test use only.
+func ReloadFlagOverridesFromEnvForTest() {
+	loadFlagOverrides()
 }
