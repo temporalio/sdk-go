@@ -4619,6 +4619,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
+	cleanup := SetFlagOverrideForTest(SDKFlagBlockedSelectorSignalReceive, true)
+	defer cleanup()
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
@@ -4650,4 +4652,40 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
 	s.NoError(err)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SignalLost() {
+	cleanup := SetFlagOverrideForTest(SDKFlagBlockedSelectorSignalReceive, false)
+	defer cleanup()
+	workflowFn := func(ctx Context) error {
+		ch1 := GetSignalChannel(ctx, "test-signal")
+		ch2 := GetSignalChannel(ctx, "test-signal-2")
+		selector := NewSelector(ctx)
+		var v string
+		selector.AddReceive(ch1, func(c ReceiveChannel, more bool) {
+			c.Receive(ctx, &v)
+		})
+		selector.AddDefault(func() {
+			ch2.Receive(ctx, &v)
+		})
+		selector.Select(ctx)
+		s.Require().True(ch1.Len() == 0 && v == "s2")
+		selector.Select(ctx)
+
+		return nil
+	}
+
+	// send a signal after workflow has started
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("test-signal", "s1")
+		env.SignalWorkflow("test-signal-2", "s2")
+	}, 5*time.Second)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+	s.Equal("deadline exceeded (type: ScheduleToClose)", workflowErr.cause.Error())
 }
