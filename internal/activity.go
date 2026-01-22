@@ -25,13 +25,22 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/activity.Info]
 	ActivityInfo struct {
-		TaskToken              []byte
-		WorkflowType           *WorkflowType
-		WorkflowNamespace      string
+		TaskToken    []byte
+		WorkflowType *WorkflowType
+		// Namespace of the workflow that started this activity. Empty if this activity was not started by a workflow.
+		// If present, the value is always the same as Namespace since workflows can only run activities in their own
+		// namespace.
+		//
+		// Deprecated: use Namespace instead.
+		WorkflowNamespace string
+		// Execution details of the workflow that started this activity. All fields are empty if this activity was not
+		// started by a workflow.
 		WorkflowExecution      WorkflowExecution
 		ActivityID             string
+		ActivityRunID          string // Run ID of the activity. Empty if the activity was started by a workflow.
 		ActivityType           ActivityType
 		TaskQueue              string
+		Namespace              string        // Namespace of this activity.
 		HeartbeatTimeout       time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
 		ScheduleToCloseTimeout time.Duration // Schedule to close timeout set by the activity options.
 		StartToCloseTimeout    time.Duration // Start to close timeout set by the activity options.
@@ -194,6 +203,11 @@ type (
 	}
 )
 
+// IsWorkflowActivity returns true if this activity was started by a workflow.
+func (i *ActivityInfo) IsWorkflowActivity() bool {
+	return i.WorkflowExecution.ID != ""
+}
+
 // GetActivityInfo returns information about the currently executing activity.
 //
 // Exposed as: [go.temporal.io/sdk/activity.GetInfo]
@@ -307,24 +321,11 @@ func WithActivityTask(
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
 	deadline := calculateActivityDeadline(scheduled, scheduleToCloseTimeout, startToCloseTimeout)
 
-	logger = log.With(logger,
-		tagActivityID, task.ActivityId,
-		tagActivityType, task.ActivityType.GetName(),
-		tagAttempt, task.Attempt,
-		tagWorkflowType, task.WorkflowType.GetName(),
-		tagWorkflowID, task.WorkflowExecution.WorkflowId,
-		tagRunID, task.WorkflowExecution.RunId,
-	)
-
-	return newActivityContext(ctx, interceptors, &activityEnvironment{
-		taskToken:      task.TaskToken,
-		serviceInvoker: invoker,
-		activityType:   ActivityType{Name: task.ActivityType.GetName()},
-		activityID:     task.ActivityId,
-		workflowExecution: WorkflowExecution{
-			RunID: task.WorkflowExecution.RunId,
-			ID:    task.WorkflowExecution.WorkflowId},
-		logger:                 logger,
+	env := &activityEnvironment{
+		taskToken:              task.TaskToken,
+		serviceInvoker:         invoker,
+		activityType:           ActivityType{Name: task.ActivityType.GetName()},
+		activityID:             task.ActivityId,
 		metricsHandler:         metricsHandler,
 		deadline:               deadline,
 		heartbeatTimeout:       heartbeatTimeout,
@@ -337,15 +338,41 @@ func WithActivityTask(
 		attempt:                task.GetAttempt(),
 		priority:               task.GetPriority(),
 		heartbeatDetails:       task.HeartbeatDetails,
-		workflowType: &WorkflowType{
+		namespace:              task.WorkflowNamespace,
+		retryPolicy:            convertFromPBRetryPolicy(task.RetryPolicy),
+		workerStopChannel:      workerStopChannel,
+		contextPropagators:     contextPropagators,
+		client:                 client,
+	}
+
+	isWorkflowActivity := task.WorkflowExecution.GetWorkflowId() != ""
+	if isWorkflowActivity {
+		env.workflowExecution = WorkflowExecution{
+			RunID: task.WorkflowExecution.GetRunId(),
+			ID:    task.WorkflowExecution.GetWorkflowId(),
+		}
+		env.workflowType = &WorkflowType{
 			Name: task.WorkflowType.GetName(),
-		},
-		workflowNamespace:  task.WorkflowNamespace,
-		retryPolicy:        convertFromPBRetryPolicy(task.RetryPolicy),
-		workerStopChannel:  workerStopChannel,
-		contextPropagators: contextPropagators,
-		client:             client,
-	})
+		}
+		env.logger = log.With(logger,
+			tagActivityID, task.ActivityId,
+			tagActivityType, task.ActivityType.GetName(),
+			tagAttempt, task.Attempt,
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+		)
+	} else {
+		env.activityRunID = task.ActivityRunId
+		env.logger = log.With(logger,
+			tagActivityID, task.ActivityId,
+			tagActivityRunID, task.ActivityRunId,
+			tagActivityType, task.ActivityType.GetName(),
+			tagAttempt, task.Attempt,
+		)
+	}
+
+	return newActivityContext(ctx, interceptors, env)
 }
 
 // WithLocalActivityTask adds local activity specific information into context.
@@ -390,7 +417,7 @@ func WithLocalActivityTask(
 	}
 	return newActivityContext(ctx, interceptors, &activityEnvironment{
 		workflowType:           &workflowTypeLocal,
-		workflowNamespace:      task.params.WorkflowInfo.Namespace,
+		namespace:              task.params.WorkflowInfo.Namespace,
 		taskQueue:              task.params.WorkflowInfo.TaskQueueName,
 		activityType:           ActivityType{Name: activityType},
 		activityID:             fmt.Sprintf("%v", task.activityID),
