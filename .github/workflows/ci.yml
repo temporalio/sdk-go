@@ -165,3 +165,19 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: ./internal/sysinfo/scripts/compare_with_gopsutil.sh
+
+  cgroups-compare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compare cgroups with containerd/cgroups
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}":/workspace \
+            -w /workspace \
+            --memory=512m \
+            --cpus=1 \
+            golang:1.23 \
+            ./worker/hostmetrics/scripts/compare_with_containerd.sh
