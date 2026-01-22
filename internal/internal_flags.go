@@ -98,7 +98,8 @@ func loadFlagOverrides() {
 	}
 
 	// Individual flag overrides (highest precedence)
-	for i := uint32(1); i < uint32(SDKFlagUnknown); i++ {
+	// Iterate up to a reasonable bound
+	for i := uint32(1); i <= 100; i++ {
 		flag := sdkFlagFromUint(i)
 		if !flag.isValid() {
 			continue
