@@ -35,7 +35,11 @@ func TimesWithContext(ctx context.Context, percpu bool) ([]TimesStat, error) {
 			lines = append(lines, line)
 		}
 	} else {
-		lines, _ = ReadLinesOffsetN(filename, 0, 1)
+		var err error
+		lines, err = ReadLinesOffsetN(filename, 0, 1)
+		if err != nil || len(lines) == 0 {
+			return []TimesStat{}, nil
+		}
 	}
 
 	ret := make([]TimesStat, 0, len(lines))

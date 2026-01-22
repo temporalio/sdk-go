@@ -21,15 +21,18 @@ type win32_SystemProcessorPerformanceInformation struct {
 	UserTime       int64
 	DpcTime        int64
 	InterruptTime  int64
-	InterruptCount uint32
+	InterruptCount uint64
 }
 
 const (
-	// ClocksPerSec is 100ns units (10 million per second)
 	ClocksPerSec = 10000000.0
 
+	// systemProcessorPerformanceInformationClass information class to query with NTQuerySystemInformation
+	// https://processhacker.sourceforge.io/doc/ntexapi_8h.html#ad5d815b48e8f4da1ef2eb7a2f18a54e0
 	win32_SystemProcessorPerformanceInformationClass = 8
-	win32_SystemProcessorPerformanceInfoSize         = uint32(unsafe.Sizeof(win32_SystemProcessorPerformanceInformation{}))
+
+	// size of systemProcessorPerformanceInfoSize in memory
+	win32_SystemProcessorPerformanceInfoSize = uint32(unsafe.Sizeof(win32_SystemProcessorPerformanceInformation{}))
 )
 
 var (
@@ -48,7 +51,7 @@ func Times(percpu bool) ([]TimesStat, error) {
 	return TimesWithContext(context.Background(), percpu)
 }
 
-func TimesWithContext(ctx context.Context, percpu bool) ([]TimesStat, error) {
+func TimesWithContext(_ context.Context, percpu bool) ([]TimesStat, error) {
 	if percpu {
 		return perCPUTimes()
 	}
@@ -57,12 +60,12 @@ func TimesWithContext(ctx context.Context, percpu bool) ([]TimesStat, error) {
 	var lpIdleTime fileTime
 	var lpKernelTime fileTime
 	var lpUserTime fileTime
-	r, _, _ := procGetSystemTimes.Call(
+	r, _, err := procGetSystemTimes.Call(
 		uintptr(unsafe.Pointer(&lpIdleTime)),
 		uintptr(unsafe.Pointer(&lpKernelTime)),
 		uintptr(unsafe.Pointer(&lpUserTime)))
 	if r == 0 {
-		return ret, windows.GetLastError()
+		return nil, err
 	}
 
 	LOT := float64(0.0000001)
@@ -100,24 +103,38 @@ func perCPUTimes() ([]TimesStat, error) {
 	return ret, nil
 }
 
+// makes call to Windows API function to retrieve performance information for each core
 func perfInfo() ([]win32_SystemProcessorPerformanceInformation, error) {
+	// Make maxResults large for safety.
+	// We can't invoke the api call with a results array that's too small.
+	// If we have more than 2056 cores on a single host, then it's probably the future.
 	maxBuffer := 2056
+	// buffer for results from the windows proc
 	resultBuffer := make([]win32_SystemProcessorPerformanceInformation, maxBuffer)
+	// size of the buffer in memory
 	bufferSize := uintptr(win32_SystemProcessorPerformanceInfoSize) * uintptr(maxBuffer)
+	// size of the returned response
 	var retSize uint32
 
+	// Invoke windows api proc.
+	// The returned err from the windows dll proc will always be non-nil even when successful.
+	// See https://godoc.org/golang.org/x/sys/windows#LazyProc.Call for more information
 	retCode, _, err := procNtQuerySystemInformation.Call(
-		win32_SystemProcessorPerformanceInformationClass,
-		uintptr(unsafe.Pointer(&resultBuffer[0])),
-		bufferSize,
-		uintptr(unsafe.Pointer(&retSize)),
+		win32_SystemProcessorPerformanceInformationClass, // System Information Class -> SystemProcessorPerformanceInformation
+		uintptr(unsafe.Pointer(&resultBuffer[0])),        // pointer to first element in result buffer
+		bufferSize,                        // size of the buffer in memory
+		uintptr(unsafe.Pointer(&retSize)), // pointer to the size of the returned results the windows proc will set this
 	)
 
+	// check return code for errors
 	if retCode != 0 {
 		return nil, fmt.Errorf("call to NtQuerySystemInformation returned %d. err: %s", retCode, err.Error())
 	}
 
+	// calculate the number of returned elements based on the returned size
 	numReturnedElements := retSize / win32_SystemProcessorPerformanceInfoSize
+
+	// trim results to the number of returned elements
 	resultBuffer = resultBuffer[:numReturnedElements]
 
 	return resultBuffer, nil

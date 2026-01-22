@@ -50,7 +50,7 @@ func ReadLinesOffsetN(filename string, offset uint, n int) ([]string, error) {
 	for i := uint(0); i < uint(n)+offset || n < 0; i++ {
 		line, err := r.ReadString('\n')
 		if err != nil {
-			if err == io.EOF && len(line) > 0 {
+			if err == io.EOF && line != "" {
 				ret = append(ret, strings.Trim(line, "\n"))
 			}
 			break
@@ -95,17 +95,8 @@ func combine(value string, combineWith []string) string {
 	}
 }
 
-// HostProcWithContext returns the path to /proc (or HOST_PROC if set).
 func HostProcWithContext(ctx context.Context, combineWith ...string) string {
 	return GetEnvWithContext(ctx, "HOST_PROC", "/proc", combineWith...)
-}
-
-// PathExists checks if a path exists.
-func PathExists(filename string) bool {
-	if _, err := os.Stat(filename); err == nil {
-		return true
-	}
-	return false
 }
 
 // Sleep sleeps for the specified duration, respecting context cancellation.

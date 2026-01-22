@@ -23,7 +23,7 @@ func VirtualMemoryWithContext(ctx context.Context) (*VirtualMemoryStat, error) {
 	}
 
 	ret := &VirtualMemoryStat{}
-	var memAvailable, memFree, buffers, cached, sReclaimable uint64
+	var memAvailable, memFree, cached uint64
 	memAvailablePresent := false
 
 	for _, line := range lines {
@@ -51,7 +51,6 @@ func VirtualMemoryWithContext(ctx context.Context) (*VirtualMemoryStat, error) {
 			memAvailablePresent = true
 			memAvailable = v
 		case "Buffers":
-			buffers = v
 			ret.Buffers = v
 		case "Cached":
 			cached = v
@@ -71,7 +70,6 @@ func VirtualMemoryWithContext(ctx context.Context) (*VirtualMemoryStat, error) {
 		case "Slab":
 			ret.Slab = v
 		case "SReclaimable":
-			sReclaimable = v
 			ret.Sreclaimable = v
 		case "SUnreclaim":
 			ret.Sunreclaim = v
@@ -86,22 +84,17 @@ func VirtualMemoryWithContext(ctx context.Context) (*VirtualMemoryStat, error) {
 		}
 	}
 
+	ret.Cached += ret.Sreclaimable
+
 	// Calculate Available if not present (kernel < 3.14)
 	if memAvailablePresent {
 		ret.Available = memAvailable
 	} else {
-		ret.Available = memFree + buffers + cached + sReclaimable
+		ret.Available = memFree + cached
 	}
 
-	// Add SReclaimable to Cached (matches gopsutil v4.24.8)
-	ret.Cached += ret.Sreclaimable
-
-	// Calculate Used and UsedPercent
-	// Uses Total - Free - Buffers - Cached to match gopsutil v4.24.8
-	ret.Used = ret.Total - ret.Free - ret.Buffers - ret.Cached
-	if ret.Total > 0 {
-		ret.UsedPercent = float64(ret.Used) / float64(ret.Total) * 100.0
-	}
+	ret.Used = ret.Total - ret.Available
+	ret.UsedPercent = float64(ret.Used) / float64(ret.Total) * 100.0
 
 	return ret, nil
 }
