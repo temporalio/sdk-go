@@ -135,3 +135,49 @@ jobs:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
+
+  # Verify internal/sysinfo matches gopsutil on all platforms
+  sysinfo-compare:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
+        include:
+          - os: macos-intel
+            runsOn: macos-15-intel
+          - os: macos-arm
+            runsOn: macos-14
+    runs-on: ${{ matrix.runsOn || matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Compare sysinfo with gopsutil (Unix)
+        if: runner.os != 'Windows'
+        run: ./internal/sysinfo/scripts/compare_with_gopsutil.sh
+
+      - name: Compare sysinfo with gopsutil (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: ./internal/sysinfo/scripts/compare_with_gopsutil.sh
+
+  cgroups-compare:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compare cgroups with containerd/cgroups
+        run: |
+          docker run --rm \
+            -v "${{ github.workspace }}":/workspace \
+            -w /workspace \
+            --memory=512m \
+            --cpus=1 \
+            golang:1.23 \
+            ./worker/hostmetrics/scripts/compare_with_containerd.sh
