@@ -131,17 +131,10 @@ type SlotSupplier interface {
 	MaxSlots() int
 }
 
-// SlotSupplierKinder is an optional interface that slot suppliers can implement to provide
-// a custom kind/type name. If not implemented, getSlotSupplierKind will use reflection.
-type SlotSupplierKinder interface {
-	Kind() string
-}
-
 // getSlotSupplierKind returns the kind/type name of a slot supplier. If the supplier implements
-// SlotSupplierKinder, it returns the result of Kind(). Otherwise, it uses reflection to get the
-// type name.
+// a Kind() string method, it uses that. Otherwise, it falls back to reflection on the type name.
 func getSlotSupplierKind(s SlotSupplier) string {
-	if k, ok := s.(SlotSupplierKinder); ok {
+	if k, ok := s.(interface{ Kind() string }); ok {
 		return k.Kind()
 	}
 	t := reflect.TypeOf(s)

@@ -13,7 +13,7 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// PSUtilSystemInfoSupplier implements worker.HostMetricsProvider for system metrics.
+// PSUtilSystemInfoSupplier implements worker.TunerHostMetricsProvider for system metrics.
 type PSUtilSystemInfoSupplier struct {
 	mu                        sync.Mutex
 	lastRefresh               time.Time
@@ -63,8 +63,10 @@ func (p *PSUtilSystemInfoSupplier) GetMemoryUsageWithLogger(logger log.Logger) (
 	if err := p.maybeRefresh(logger); err != nil {
 		return 0, err
 	}
-	if cgroupMem := p.cGroupInfo.GetLastMemUsage(); cgroupMem != 0 {
-		return cgroupMem, nil
+	if p.cGroupInfo != nil {
+		if cgroupMem := p.cGroupInfo.GetLastMemUsage(); cgroupMem != 0 {
+			return cgroupMem, nil
+		}
 	}
 	return p.lastMemStat.UsedPercent / 100, nil
 }

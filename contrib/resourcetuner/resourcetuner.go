@@ -34,7 +34,7 @@ type ResourceBasedTunerOptions struct {
 	WorkflowRampThrottle time.Duration
 }
 
-// resourceBasedTuner wraps a WorkerTuner and implements HostMetricsProvider
+// resourceBasedTuner wraps a WorkerTuner and implements TunerHostMetricsProvider
 // so the SDK can reuse metrics instead of collecting them twice.
 type resourceBasedTuner struct {
 	worker.WorkerTuner

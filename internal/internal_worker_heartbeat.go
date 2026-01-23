@@ -2,15 +2,108 @@ package internal
 
 import (
 	"context"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/nexus-rpc/sdk-go/nexus"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/log"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"sync"
-	"sync/atomic"
-	"time"
 )
+
+// HeartbeatManager manages heartbeat workers across namespaces for a client.
+type HeartbeatManager struct {
+	client   *WorkflowClient
+	interval time.Duration
+	logger   log.Logger
+
+	mu      sync.Mutex
+	workers map[string]*sharedNamespaceWorker // namespace -> worker
+}
+
+// NewHeartbeatManager creates a new HeartbeatManager.
+func NewHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger) *HeartbeatManager {
+	return &HeartbeatManager{
+		client:   client,
+		interval: interval,
+		logger:   logger,
+		workers:  make(map[string]*sharedNamespaceWorker),
+	}
+}
+
+// RegisterWorker registers a worker's heartbeat callback with the shared heartbeat worker for the namespace.
+func (m *HeartbeatManager) RegisterWorker(
+	namespace string,
+	workerInstanceKey string,
+	callback func() *workerpb.WorkerHeartbeat,
+) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	hw, ok := m.workers[namespace]
+	if !ok {
+		capabilities, err := m.client.loadNamespaceCapabilities(context.Background())
+		if err != nil {
+			return fmt.Errorf("failed to get namespace capabilities: %w", err)
+		}
+		if !capabilities.WorkerHeartbeats {
+			m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
+			return nil
+		}
+
+		hw = &sharedNamespaceWorker{
+			client:    m.client,
+			namespace: namespace,
+			taskQueue: fmt.Sprintf("temporal-sys/worker-commands/%s/%s", namespace, m.client.workerGroupingKey),
+			interval:  m.interval,
+			callbacks: make(map[string]func() *workerpb.WorkerHeartbeat),
+			stopC:     make(chan struct{}),
+			stoppedC:  make(chan struct{}),
+			logger:    m.logger,
+		}
+
+		nexusWorker, err := hw.createNexusWorker()
+		if err != nil {
+			return fmt.Errorf("failed to create nexus worker for heartbeating: %w", err)
+		}
+		hw.nexusWorker = nexusWorker
+
+		m.workers[namespace] = hw
+		go hw.run()
+	}
+
+	hw.mu.Lock()
+	hw.callbacks[workerInstanceKey] = callback
+	hw.mu.Unlock()
+
+	return nil
+}
+
+// UnregisterWorker removes a worker's heartbeat callback. If no callbacks remain for the namespace,
+// the shared heartbeat worker is stopped.
+func (m *HeartbeatManager) UnregisterWorker(namespace, workerInstanceKey string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	hw, ok := m.workers[namespace]
+	if !ok {
+		return
+	}
+
+	hw.mu.Lock()
+	delete(hw.callbacks, workerInstanceKey)
+	remaining := len(hw.callbacks)
+	hw.mu.Unlock()
+
+	if remaining == 0 {
+		hw.stop()
+		delete(m.workers, namespace)
+	}
+}
 
 // sharedNamespaceWorker is the background nexus worker that handles heartbeating for
 // all workers in a specific namespace for a specific client.
@@ -45,13 +138,22 @@ func (hw *sharedNamespaceWorker) createNexusWorker() (*nexusWorker, error) {
 		NexusTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
 	}
 
+	reg := nexus.NewServiceRegistry()
+	handler, err := reg.NewHandler()
+	if err != nil {
+		return nil, err
+	}
+
+	// TODO: Register worker commands here
+
 	nw, err := newNexusWorker(nexusWorkerOptions{
 		executionParameters: params,
 		client:              hw.client,
 		workflowService:     hw.client.workflowService,
+		handler:             handler,
 	})
 
-	return nw, nil
+	return nw, err
 }
 
 func (hw *sharedNamespaceWorker) run() {
@@ -114,22 +216,6 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() {
 			return
 		}
 		hw.logger.Warn("Failed to send heartbeat", "Error", err)
-	}
-}
-
-func (hw *sharedNamespaceWorker) registerCallback(
-	workerInstanceKey string,
-	callback func() *workerpb.WorkerHeartbeat,
-) {
-	hw.mu.Lock()
-	defer hw.mu.Unlock()
-	hw.callbacks[workerInstanceKey] = callback
-}
-
-func (hw *sharedNamespaceWorker) unregisterCallback(workerInstanceKey string) {
-	shouldStop := hw.client.unregisterHeartbeatCallback(hw.namespace, workerInstanceKey)
-	if shouldStop {
-		hw.stop()
 	}
 }
 

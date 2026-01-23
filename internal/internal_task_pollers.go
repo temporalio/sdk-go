@@ -970,9 +970,9 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	}
 
 	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_STICKY {
-		metrics.RecordPollSuccess(wtp.metricsHandler, metrics.PollerTypeWorkflowStickyTask)
+		RecordPollSuccess(wtp.metricsHandler, metrics.PollerTypeWorkflowStickyTask)
 	} else {
-		metrics.RecordPollSuccess(wtp.metricsHandler, metrics.PollerTypeWorkflowTask)
+		RecordPollSuccess(wtp.metricsHandler, metrics.PollerTypeWorkflowTask)
 	}
 
 	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
@@ -1173,7 +1173,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		return &activityTask{}, nil
 	}
 
-	metrics.RecordPollSuccess(atp.metricsHandler, metrics.PollerTypeActivityTask)
+	RecordPollSuccess(atp.metricsHandler, metrics.PollerTypeActivityTask)
 
 	workflowType := response.WorkflowType.GetName()
 	activityType := response.ActivityType.GetName()

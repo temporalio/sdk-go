@@ -1186,6 +1186,10 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		workerGroupingKey:       uuid.NewString(),
 	}
 
+	if heartbeatInterval > 0 {
+		client.heartbeatManager = NewHeartbeatManager(client, heartbeatInterval, client.logger)
+	}
+
 	// Create outbound interceptor by wrapping backwards through chain
 	client.interceptor = &workflowClientInterceptor{client: client}
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {

@@ -232,8 +232,7 @@ type (
 
 	// workerHeartbeatManager includes all information needed to report worker heartbeats.
 	workerHeartbeatManager struct {
-		heartbeatWorker   *sharedNamespaceWorker
-		heartbeatMetrics  *metrics.HeartbeatMetricsHandler
+		heartbeatMetrics  *HeartbeatMetricsHandler
 		heartbeatCallback func() *workerpb.WorkerHeartbeat
 
 		// Slot suppliers for heartbeat reporting
@@ -243,7 +242,7 @@ type (
 		nexusTaskSlotSupplier     *trackingSlotSupplier
 
 		// Host metrics provider for CPU/memory reporting in heartbeats
-		hostMetricsProvider HostMetricsProvider
+		hostMetricsProvider TunerHostMetricsProvider
 	}
 )
 
@@ -1512,27 +1511,24 @@ func (aw *AggregatedWorker) Stop() {
 }
 
 func (aw *AggregatedWorker) registerHeartbeatWorker() error {
-	hw, err := aw.client.getOrCreateHeartbeatWorker(aw.executionParams.Namespace)
-	if err != nil {
-		return err
-	}
-
-	// Server doesn't support heartbeating.
-	if hw == nil {
+	if aw.client.heartbeatManager == nil {
 		return nil
 	}
-
-	aw.workerHeartbeatManager.heartbeatWorker = hw
-	hw.registerCallback(aw.workerInstanceKey, aw.workerHeartbeatManager.heartbeatCallback)
-
-	return nil
+	return aw.client.heartbeatManager.RegisterWorker(
+		aw.executionParams.Namespace,
+		aw.workerInstanceKey,
+		aw.workerHeartbeatManager.heartbeatCallback,
+	)
 }
 
 func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
-	if aw.workerHeartbeatManager != nil && aw.workerHeartbeatManager.heartbeatWorker != nil {
-		aw.workerHeartbeatManager.heartbeatWorker.unregisterCallback(aw.workerInstanceKey)
-		aw.workerHeartbeatManager.heartbeatWorker = nil
+	if aw.client.heartbeatManager == nil || aw.workerHeartbeatManager == nil {
+		return
 	}
+	aw.client.heartbeatManager.UnregisterWorker(
+		aw.executionParams.Namespace,
+		aw.workerInstanceKey,
+	)
 }
 
 // shutdownWorker sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
@@ -1568,9 +1564,12 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	if _, isUnimplemented := err.(*serviceerror.Unimplemented); isUnimplemented {
 		return
 	}
+	if _, isUnavailable := err.(*serviceerror.Unavailable); isUnavailable {
+		return
+	}
 
 	if err != nil {
-		aw.logger.Debug("ShutdownWorker failed.", tagError, err)
+		aw.logger.Debug("ShutdownWorker rpc errored during worker shutdown.", tagError, err)
 	}
 }
 
@@ -2129,11 +2128,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
 	var metricsHandler metrics.Handler
-	var heartbeatMetrics *metrics.HeartbeatMetricsHandler
+	var heartbeatMetrics *HeartbeatMetricsHandler
 	var heartbeatManager *workerHeartbeatManager
 
 	if client.workerHeartbeatInterval != 0 {
-		heartbeatMetrics = metrics.NewHeartbeatMetricsHandler(baseMetricsHandler)
+		heartbeatMetrics = NewHeartbeatMetricsHandler(baseMetricsHandler)
 		metricsHandler = heartbeatMetrics
 		heartbeatManager = &workerHeartbeatManager{}
 	} else {
@@ -2262,9 +2261,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	// Initialize host metrics provider for CPU/memory reporting.
-	// If the tuner implements HostMetricsProvider, use it to avoid double-measurement of system.
-	var hostMetricsProvider HostMetricsProvider
-	if provider, ok := options.Tuner.(HostMetricsProvider); ok {
+	// If the tuner implements TunerHostMetricsProvider, use it to avoid double-measurement of system.
+	var hostMetricsProvider TunerHostMetricsProvider
+	if provider, ok := options.Tuner.(TunerHostMetricsProvider); ok {
 		hostMetricsProvider = provider
 	} else if client.workerHeartbeatInterval != 0 {
 		hostMetricsProvider = hostmetrics.NewPSUtilSystemInfoSupplier(workerParams.Logger)
@@ -2283,99 +2282,31 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		var prevLocalActivityProcessed, prevLocalActivityFailed int64
 		var prevNexusProcessed, prevNexusFailed int64
 
+		populateOpts := &PopulateHeartbeatOptions{
+			WorkflowPollerBehavior:     options.WorkflowTaskPollerBehavior,
+			ActivityPollerBehavior:     options.ActivityTaskPollerBehavior,
+			NexusPollerBehavior:        options.NexusTaskPollerBehavior,
+			PrevWorkflowProcessed:      &prevWorkflowProcessed,
+			PrevWorkflowFailed:         &prevWorkflowFailed,
+			PrevActivityProcessed:      &prevActivityProcessed,
+			PrevActivityFailed:         &prevActivityFailed,
+			PrevLocalActivityProcessed: &prevLocalActivityProcessed,
+			PrevLocalActivityFailed:    &prevLocalActivityFailed,
+			PrevNexusProcessed:         &prevNexusProcessed,
+			PrevNexusFailed:            &prevNexusFailed,
+		}
+
 		heartbeatCallback = func() *workerpb.WorkerHeartbeat {
 			heartbeatTime := time.Now()
-			elapsedSinceLastHeartbeat := previousHeartbeatTime.Sub(heartbeatTime)
+			elapsedSinceLastHeartbeat := heartbeatTime.Sub(previousHeartbeatTime)
 			previousHeartbeatTime = heartbeatTime
 
-			var stickyCacheHit, stickyCacheMiss, stickyCacheSize int32
-			if aw.workerHeartbeatManager.heartbeatMetrics != nil {
-				stickyCacheHit = aw.workerHeartbeatManager.heartbeatMetrics.GetStickyCacheHit()
-				stickyCacheMiss = aw.workerHeartbeatManager.heartbeatMetrics.GetStickyCacheMiss()
-				stickyCacheSize = aw.workerHeartbeatManager.heartbeatMetrics.GetStickyCacheSize()
-			}
 			var deploymentVersion *deploymentpb.WorkerDeploymentVersion
 			if options.DeploymentOptions.UseVersioning {
 				deploymentVersion = &deploymentpb.WorkerDeploymentVersion{
 					DeploymentName: options.DeploymentOptions.Version.DeploymentName,
 					BuildId:        options.DeploymentOptions.Version.BuildID,
 				}
-			}
-
-			var workflowTaskSlotsInfo *workerpb.WorkerSlotsInfo
-			var activityTaskSlotsInfo *workerpb.WorkerSlotsInfo
-			var localActivitySlotsInfo *workerpb.WorkerSlotsInfo
-			var nexusTaskSlotsInfo *workerpb.WorkerSlotsInfo
-
-			if aw.workerHeartbeatManager.heartbeatMetrics != nil {
-				if aw.workerHeartbeatManager.workflowTaskSlotSupplier != nil {
-					workflowTaskSlotsInfo = buildSlotsInfo(
-						aw.workerHeartbeatManager.workflowTaskSlotSupplier.GetSlotSupplierKind(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetWorkflowSlotsAvailable(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetWorkflowSlotsUsed(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetWorkflowTasksProcessed(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetWorkflowTaskFailures(),
-						&prevWorkflowProcessed,
-						&prevWorkflowFailed,
-					)
-				}
-				if aw.workerHeartbeatManager.activityTaskSlotSupplier != nil {
-					activityTaskSlotsInfo = buildSlotsInfo(
-						aw.workerHeartbeatManager.activityTaskSlotSupplier.GetSlotSupplierKind(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetActivitySlotsAvailable(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetActivitySlotsUsed(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetActivityTasksProcessed(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetActivityTaskFailures(),
-						&prevActivityProcessed,
-						&prevActivityFailed,
-					)
-				}
-				if aw.workerHeartbeatManager.localActivitySlotSupplier != nil {
-					localActivitySlotsInfo = buildSlotsInfo(
-						aw.workerHeartbeatManager.localActivitySlotSupplier.GetSlotSupplierKind(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetLocalActivitySlotsAvailable(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetLocalActivitySlotsUsed(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetLocalActivityTasksProcessed(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetLocalActivityTaskFailures(),
-						&prevLocalActivityProcessed,
-						&prevLocalActivityFailed,
-					)
-				}
-				if aw.workerHeartbeatManager.nexusTaskSlotSupplier != nil {
-					nexusTaskSlotsInfo = buildSlotsInfo(
-						aw.workerHeartbeatManager.nexusTaskSlotSupplier.GetSlotSupplierKind(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetNexusSlotsAvailable(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetNexusSlotsUsed(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetNexusTasksProcessed(),
-						aw.workerHeartbeatManager.heartbeatMetrics.GetNexusTaskFailures(),
-						&prevNexusProcessed,
-						&prevNexusFailed,
-					)
-				}
-			}
-
-			var workflowPollerInfo, workflowStickyPollerInfo, activityPollerInfo, nexusPollerInfo *workerpb.WorkerPollerInfo
-			if aw.workerHeartbeatManager.heartbeatMetrics != nil {
-				workflowPollerInfo = buildPollerInfo(
-					aw.workerHeartbeatManager.heartbeatMetrics.GetWorkflowPollerCount(),
-					aw.workerHeartbeatManager.heartbeatMetrics.GetWorkflowLastPollTime(),
-					options.WorkflowTaskPollerBehavior,
-				)
-				workflowStickyPollerInfo = buildPollerInfo(
-					aw.workerHeartbeatManager.heartbeatMetrics.GetWorkflowStickyPollerCount(),
-					aw.workerHeartbeatManager.heartbeatMetrics.GetWorkflowStickyLastPollTime(),
-					options.WorkflowTaskPollerBehavior,
-				)
-				activityPollerInfo = buildPollerInfo(
-					aw.workerHeartbeatManager.heartbeatMetrics.GetActivityPollerCount(),
-					aw.workerHeartbeatManager.heartbeatMetrics.GetActivityLastPollTime(),
-					options.ActivityTaskPollerBehavior,
-				)
-				nexusPollerInfo = buildPollerInfo(
-					aw.workerHeartbeatManager.heartbeatMetrics.GetNexusPollerCount(),
-					aw.workerHeartbeatManager.heartbeatMetrics.GetNexusLastPollTime(),
-					options.NexusTaskPollerBehavior,
-				)
 			}
 
 			hb := &workerpb.WorkerHeartbeat{
@@ -2396,19 +2327,25 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				StartTime:                 startTime,
 				HeartbeatTime:             timestamppb.New(heartbeatTime),
 				ElapsedSinceLastHeartbeat: durationpb.New(elapsedSinceLastHeartbeat),
-				WorkflowTaskSlotsInfo:     workflowTaskSlotsInfo,
-				ActivityTaskSlotsInfo:     activityTaskSlotsInfo,
-				NexusTaskSlotsInfo:        nexusTaskSlotsInfo,
-				LocalActivitySlotsInfo:    localActivitySlotsInfo,
-				WorkflowPollerInfo:        workflowPollerInfo,
-				WorkflowStickyPollerInfo:  workflowStickyPollerInfo,
-				ActivityPollerInfo:        activityPollerInfo,
-				NexusPollerInfo:           nexusPollerInfo,
-				TotalStickyCacheHit:       stickyCacheHit,
-				TotalStickyCacheMiss:      stickyCacheMiss,
-				CurrentStickyCacheSize:    stickyCacheSize,
 				Plugins:                   pluginInfos,
 			}
+
+			if aw.workerHeartbeatManager.heartbeatMetrics != nil {
+				if aw.workerHeartbeatManager.workflowTaskSlotSupplier != nil {
+					populateOpts.WorkflowSlotSupplierKind = aw.workerHeartbeatManager.workflowTaskSlotSupplier.GetSlotSupplierKind()
+				}
+				if aw.workerHeartbeatManager.activityTaskSlotSupplier != nil {
+					populateOpts.ActivitySlotSupplierKind = aw.workerHeartbeatManager.activityTaskSlotSupplier.GetSlotSupplierKind()
+				}
+				if aw.workerHeartbeatManager.localActivitySlotSupplier != nil {
+					populateOpts.LocalActivitySlotSupplierKind = aw.workerHeartbeatManager.localActivitySlotSupplier.GetSlotSupplierKind()
+				}
+				if aw.workerHeartbeatManager.nexusTaskSlotSupplier != nil {
+					populateOpts.NexusSlotSupplierKind = aw.workerHeartbeatManager.nexusTaskSlotSupplier.GetSlotSupplierKind()
+				}
+				aw.workerHeartbeatManager.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
+			}
+
 			return hb
 		}
 	}
@@ -2764,53 +2701,7 @@ func workerDeploymentVersionFromProtoOrString(wd *deploymentpb.WorkerDeploymentV
 	}
 }
 
-func buildSlotsInfo(
-	supplierKind string,
-	slotsAvailable int32,
-	slotsUsed int32,
-	totalProcessed int64,
-	totalFailed int64,
-	prevProcessed *int64,
-	prevFailed *int64,
-) *workerpb.WorkerSlotsInfo {
-	intervalProcessed := totalProcessed - *prevProcessed
-	intervalFailed := totalFailed - *prevFailed
-
-	// Update previous totals for next interval
-	*prevProcessed = totalProcessed
-	*prevFailed = totalFailed
-
-	totalProcessedTasks := int32(totalProcessed)
-	totalFailedTasks := int32(totalFailed)
-	lastIntervalProcessed := int32(intervalProcessed)
-	lastIntervalFailed := int32(intervalFailed)
-
-	return &workerpb.WorkerSlotsInfo{
-		CurrentAvailableSlots:      slotsAvailable,
-		CurrentUsedSlots:           slotsUsed,
-		SlotSupplierKind:           supplierKind,
-		TotalProcessedTasks:        totalProcessedTasks,
-		TotalFailedTasks:           totalFailedTasks,
-		LastIntervalProcessedTasks: lastIntervalProcessed,
-		LastIntervalFailureTasks:   lastIntervalFailed,
-	}
-}
-
-func buildPollerInfo(currentPollers int32, lastSuccessfulPollTime time.Time, pollerBehavior PollerBehavior) *workerpb.WorkerPollerInfo {
-	var isAutoscaling bool
-	switch pollerBehavior.(type) {
-	case *pollerBehaviorAutoscaling:
-		isAutoscaling = true
-	}
-
-	return &workerpb.WorkerPollerInfo{
-		CurrentPollers:         currentPollers,
-		LastSuccessfulPollTime: timestamppb.New(lastSuccessfulPollTime),
-		IsAutoscaling:          isAutoscaling,
-	}
-}
-
-func getCpuUsage(provider HostMetricsProvider) float32 {
+func getCpuUsage(provider TunerHostMetricsProvider) float32 {
 	if provider == nil {
 		return 0
 	}
@@ -2818,7 +2709,7 @@ func getCpuUsage(provider HostMetricsProvider) float32 {
 	return float32(cpu)
 }
 
-func getMemUsage(provider HostMetricsProvider) float32 {
+func getMemUsage(provider TunerHostMetricsProvider) float32 {
 	if provider == nil {
 		return 0
 	}

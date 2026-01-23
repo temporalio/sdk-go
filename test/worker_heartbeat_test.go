@@ -115,11 +115,12 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	}
 
 	// Wait for heartbeat to capture the in-flight activity
-	time.Sleep(100 * time.Millisecond)
-
-	// Get worker info and verify activity slot is used
-	workerInfo := ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
+			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
+	}, time.Second, 50*time.Millisecond, "Should find worker with activity slot used")
 	ts.logWorkerInfo(workerInfo)
 
 	ts.Equal(enums.WORKER_STATUS_RUNNING, workerInfo.Status)
@@ -193,7 +194,6 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	// After shutdown checks
 	ts.Equal("WorkerHeartbeatTest", workerInfo.WorkerIdentity)
 	hostInfo := workerInfo.HostInfo
-	fmt.Println("hostInfo", hostInfo)
 	ts.NotEqual("", hostInfo.HostName)
 	ts.NotEqual("", hostInfo.ProcessId)
 	ts.NotEqual("", hostInfo.WorkerGroupingKey)
@@ -208,14 +208,11 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 
 	// Timestamp validations - second heartbeat check (after shutdown)
 	// StartTime should be unchanged
-	ts.Equal(firstStartTime, workerInfo.StartTime.AsTime(),
-		"StartTime should not change between heartbeats")
+	ts.Equal(firstStartTime, workerInfo.StartTime.AsTime())
 
 	// HeartbeatTime should have advanced
-	ts.True(workerInfo.HeartbeatTime.AsTime().After(firstHeartbeatTime),
-		"HeartbeatTime should advance between heartbeats")
+	ts.True(workerInfo.HeartbeatTime.AsTime().After(firstHeartbeatTime))
 
-	fmt.Println("aa")
 	workflowTaskSlots = workerInfo.WorkflowTaskSlotsInfo
 	ts.Equal(int32(2), workflowTaskSlots.TotalProcessedTasks)
 	ts.Equal("Fixed", workflowTaskSlots.SlotSupplierKind)
@@ -225,7 +222,6 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.Equal(int32(0), activityTaskSlots.CurrentUsedSlots)
 	ts.Equal(int32(1), activityTaskSlots.LastIntervalProcessedTasks)
 	ts.Equal("Fixed", activityTaskSlots.SlotSupplierKind)
-	fmt.Println("bb")
 	nexusTaskSlots = workerInfo.NexusTaskSlotsInfo
 	ts.NotNil(nexusTaskSlots)
 	ts.Equal(int32(0), nexusTaskSlots.TotalProcessedTasks)
@@ -237,7 +233,6 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.Equal(int32(1000), localActivityTaskSlots.CurrentAvailableSlots)
 	ts.Equal(int32(0), localActivityTaskSlots.CurrentUsedSlots)
 	ts.Equal("Fixed", localActivityTaskSlots.SlotSupplierKind)
-	//
 
 	workflowPollerInfo = workerInfo.WorkflowPollerInfo
 	ts.Equal(int32(1), workflowPollerInfo.CurrentPollers)
@@ -288,13 +283,13 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatDeploymentVersion() {
 	defer w.Stop()
 
 	// Wait for heartbeat to be sent
-	time.Sleep(200 * time.Millisecond)
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, taskQueue)
+		return workerInfo != nil && workerInfo.DeploymentVersion != nil
+	}, time.Second, 50*time.Millisecond, "Should find worker with deployment version")
 
-	// Get worker info and verify deployment version
-	workerInfo := ts.getWorkerInfo(ctx, taskQueue)
-	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
-
-	ts.NotNil(workerInfo.DeploymentVersion, "DeploymentVersion should be set")
+	ts.NotNil(workerInfo.DeploymentVersion)
 	ts.Equal("test_build_id", workerInfo.DeploymentVersion.BuildId)
 	ts.Equal("test-deployment", workerInfo.DeploymentVersion.DeploymentName)
 
@@ -502,15 +497,12 @@ func blockingActivity(ctx context.Context) (string, error) {
 	case blockingActivityStarted <- struct{}{}:
 	default:
 	}
-	fmt.Println("ACTIVITY STARTED")
 
 	// Wait for signal to complete
 	select {
 	case <-blockingActivityComplete:
-		fmt.Println("ACTIVITY COMPLETED")
 		return "done", nil
 	case <-ctx.Done():
-		fmt.Println("ACTIVITY TIMED OUT")
 		return "", ctx.Err()
 	}
 }
@@ -587,19 +579,17 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWithActivityInFlight() {
 		ts.Fail("Timeout waiting for activity to start")
 	}
 
-	time.Sleep(150 * time.Millisecond)
-
-	workerInfo := ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
+			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
+	}, time.Second, 50*time.Millisecond, "Should have at least 1 activity slot used")
 
 	ts.T().Logf("Activity slots used: %d, available: %d",
 		workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots,
 		workerInfo.ActivityTaskSlotsInfo.CurrentAvailableSlots)
-
-	ts.GreaterOrEqual(workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots, int32(1),
-		"Should have at least 1 activity slot used")
-	ts.GreaterOrEqual(workerInfo.ActivityTaskSlotsInfo.CurrentAvailableSlots, int32(0),
-		"Available slots should be non-negative")
+	ts.GreaterOrEqual(workerInfo.ActivityTaskSlotsInfo.CurrentAvailableSlots, int32(0))
 
 	blockingActivityComplete <- struct{}{}
 
@@ -608,14 +598,15 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWithActivityInFlight() {
 	ts.NoError(err)
 	ts.Equal("done", result)
 
-	time.Sleep(150 * time.Millisecond)
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
+			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots == 0
+	}, time.Second, 50*time.Millisecond, "Activity slot should be released after completion")
 
-	workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.True(workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil)
 	ts.T().Logf("After completion - Activity slots used: %d, available: %d",
 		workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots,
 		workerInfo.ActivityTaskSlotsInfo.CurrentAvailableSlots)
-	ts.Equal(int32(0), workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots)
 	ts.GreaterOrEqual(workerInfo.ActivityTaskSlotsInfo.TotalProcessedTasks, int32(1))
 }
 
@@ -714,14 +705,12 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStickyCacheMiss() {
 	ts.NoError(run2.Get(ctx, &result2))
 	ts.Equal("wf2", result2)
 
-	// Wait for heartbeat
-	time.Sleep(150 * time.Millisecond)
-
-	workerInfo := ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
-
-	ts.GreaterOrEqual(workerInfo.TotalStickyCacheMiss, int32(1),
-		"Should have at least 1 sticky cache miss")
+	// Wait for heartbeat to capture sticky cache miss
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.TotalStickyCacheMiss >= 1
+	}, time.Second, 50*time.Millisecond, "Should have at least 1 sticky cache miss")
 }
 
 // TestWorkerHeartbeatMultipleWorkers verifies that multiple workers can heartbeat
@@ -760,15 +749,13 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatMultipleWorkers() {
 	}
 	wg.Wait()
 
-	// Wait for heartbeats
-	time.Sleep(150 * time.Millisecond)
-
 	// Verify both workers are tracked
-	workerInfo1 := ts.getWorkerInfo(ctx, taskQueue1)
-	workerInfo2 := ts.getWorkerInfo(ctx, taskQueue2)
-
-	ts.NotNil(workerInfo1, "Should find worker1")
-	ts.NotNil(workerInfo2, "Should find worker2")
+	var workerInfo1, workerInfo2 *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo1 = ts.getWorkerInfo(ctx, taskQueue1)
+		workerInfo2 = ts.getWorkerInfo(ctx, taskQueue2)
+		return workerInfo1 != nil && workerInfo2 != nil
+	}, time.Second, 50*time.Millisecond, "Should find both workers")
 
 	ts.NotEqual(workerInfo1.WorkerInstanceKey, workerInfo2.WorkerInstanceKey,
 		"Different workers should have different instance keys")
@@ -803,24 +790,24 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatFailureMetrics() {
 
 	// Wait for workflow to complete (will fail due to activity failure)
 	err = run.Get(ctx, nil)
-	ts.Error(err, "Workflow should fail due to activity failure")
+	ts.Error(err)
 
 	// Wait for heartbeat to capture failure metrics
-	time.Sleep(150 * time.Millisecond)
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
+			workerInfo.ActivityTaskSlotsInfo.TotalFailedTasks >= 1
+	}, time.Second, 50*time.Millisecond, "Should have tracked at least 1 activity task failure")
 
-	// Get worker info and verify failure counts
-	workerInfo := ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
-	ts.NotNil(workerInfo.ActivityTaskSlotsInfo)
-	ts.GreaterOrEqual(workerInfo.ActivityTaskSlotsInfo.LastIntervalFailureTasks, int32(1),
-		"Should have at least 1 activity failure")
-	ts.GreaterOrEqual(workerInfo.ActivityTaskSlotsInfo.TotalFailedTasks, int32(1),
-		"Should have tracked at least 1 activity task failure")
+	ts.GreaterOrEqual(workerInfo.ActivityTaskSlotsInfo.LastIntervalFailureTasks, int32(1))
 
 	// Last interval should go back to 0 on next heartbeat
-	time.Sleep(150 * time.Millisecond)
-	workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.Equal(int32(0), workerInfo.ActivityTaskSlotsInfo.LastIntervalFailureTasks)
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
+			workerInfo.ActivityTaskSlotsInfo.LastIntervalFailureTasks == 0
+	}, time.Second, 50*time.Millisecond, "Last interval failure count should reset to 0")
 }
 
 func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskProcessed() {
@@ -842,21 +829,22 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskProcessed() {
 		ts.NoError(err)
 	}
 
-	// Wait for heartbeat
-	time.Sleep(150 * time.Millisecond)
+	// Wait for heartbeat to capture processed tasks
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
+			workerInfo.WorkflowTaskSlotsInfo.TotalProcessedTasks == int32(numWorkflows)
+	}, time.Second, 50*time.Millisecond, "Should have processed all workflow tasks")
 
-	workerInfo := ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
-	ts.NotNil(workerInfo.WorkflowTaskSlotsInfo)
-	ts.Equal(int32(numWorkflows), workerInfo.WorkflowTaskSlotsInfo.TotalProcessedTasks)
-	ts.GreaterOrEqual(workerInfo.WorkflowTaskSlotsInfo.LastIntervalProcessedTasks, int32(1),
-		"Should have processed at least 1 workflow task in last interval")
+	ts.GreaterOrEqual(workerInfo.WorkflowTaskSlotsInfo.LastIntervalProcessedTasks, int32(1))
 
 	// Last interval should go back to 0 on next heartbeat
-	time.Sleep(150 * time.Millisecond)
-	workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.NotNil(workerInfo)
-	ts.Equal(int32(0), workerInfo.WorkflowTaskSlotsInfo.LastIntervalProcessedTasks)
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
+			workerInfo.WorkflowTaskSlotsInfo.LastIntervalProcessedTasks == 0
+	}, time.Second, 50*time.Millisecond, "Last interval processed count should reset to 0")
 }
 
 func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatResourceBasedTuner() {
@@ -906,14 +894,13 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatResourceBasedTuner() {
 	ts.NoError(err)
 	ts.NoError(run.Get(ctx, nil))
 
-	// Wait for heartbeat
-	time.Sleep(150 * time.Millisecond)
-
-	workerInfo := ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
-
-	ts.NotNil(workerInfo.WorkflowTaskSlotsInfo)
-	ts.Equal("ResourceBased", workerInfo.WorkflowTaskSlotsInfo.SlotSupplierKind)
+	// Wait for heartbeat with resource-based tuner info
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
+			workerInfo.WorkflowTaskSlotsInfo.SlotSupplierKind == "ResourceBased"
+	}, time.Second, 50*time.Millisecond, "Should find worker with ResourceBased slot supplier")
 
 	ts.NotNil(workerInfo.ActivityTaskSlotsInfo)
 	ts.Equal("ResourceBased", workerInfo.ActivityTaskSlotsInfo.SlotSupplierKind)
@@ -978,20 +965,17 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	ts.NoError(err)
 	ts.NoError(run.Get(ctx, nil))
 
-	// Wait for heartbeat
-	time.Sleep(150 * time.Millisecond)
-
-	workerInfo := ts.getWorkerInfo(ctx, ts.taskQueueName)
-	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
-
-	// Verify plugin names are reported
-	ts.NotNil(workerInfo.Plugins)
-	ts.Len(workerInfo.Plugins, 2, "Should have 2 unique plugins (duplicates deduped)")
+	// Wait for heartbeat with plugin info
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && len(workerInfo.Plugins) == 2
+	}, time.Second, 50*time.Millisecond, "Should have 2 unique plugins (duplicates deduped)")
 
 	pluginNames := make(map[string]bool)
 	for _, plugin := range workerInfo.Plugins {
 		pluginNames[plugin.Name] = true
 	}
-	ts.True(pluginNames["test-client-plugin"], "Should contain client plugin")
-	ts.True(pluginNames["test-worker-plugin"], "Should contain worker plugin")
+	ts.True(pluginNames["test-client-plugin"])
+	ts.True(pluginNames["test-worker-plugin"])
 }

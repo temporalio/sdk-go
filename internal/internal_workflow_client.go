@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	namespacepb "go.temporal.io/api/namespace/v1"
-	workerpb "go.temporal.io/api/worker/v1"
 	"io"
 	"math"
 	"reflect"
@@ -23,6 +21,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	namespacepb "go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/sdk/v1"
@@ -84,8 +83,7 @@ type (
 		getSystemInfoTimeout      time.Duration
 		workerHeartbeatInterval   time.Duration
 		workerGroupingKey         string
-		heartbeatWorkers          map[string]*sharedNamespaceWorker
-		heartbeatWorkersMu        sync.RWMutex
+		heartbeatManager          *HeartbeatManager
 
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
@@ -1442,74 +1440,6 @@ func (wc *WorkflowClient) RecordWorkerHeartbeat(ctx context.Context, request *wo
 	}
 
 	return resp, nil
-}
-
-func (wc *WorkflowClient) getOrCreateHeartbeatWorker(namespace string) (*sharedNamespaceWorker, error) {
-	wc.heartbeatWorkersMu.Lock()
-	defer wc.heartbeatWorkersMu.Unlock()
-
-	if hw, ok := wc.heartbeatWorkers[namespace]; ok {
-		return hw, nil
-	}
-
-	capabilities, err := wc.loadNamespaceCapabilities(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("failed to get namespace capabilities: %w", err)
-	}
-	if !capabilities.WorkerHeartbeats {
-		wc.logger.Debug("Worker heartbeating configured, but server version does not support it.")
-		return nil, nil
-	}
-
-	hw := &sharedNamespaceWorker{
-		client:    wc,
-		namespace: namespace,
-		taskQueue: fmt.Sprintf("temporal-sys/worker-commands/%s/%s", namespace, wc.workerGroupingKey),
-		interval:  wc.workerHeartbeatInterval,
-		callbacks: make(map[string]func() *workerpb.WorkerHeartbeat),
-		stopC:     make(chan struct{}),
-		stoppedC:  make(chan struct{}),
-		logger:    wc.logger,
-	}
-
-	nexusWorker, err := hw.createNexusWorker()
-	if err != nil {
-		return nil, fmt.Errorf("failed to create nexus worker for heartbeating: %w", err)
-	}
-	hw.nexusWorker = nexusWorker
-
-	if wc.heartbeatWorkers == nil {
-		wc.heartbeatWorkers = make(map[string]*sharedNamespaceWorker)
-	}
-	wc.heartbeatWorkers[namespace] = hw
-
-	go hw.run()
-
-	return hw, nil
-}
-
-// unregisterHeartbeatCallback removes a callback from the heartbeat worker for the given namespace.
-// Returns true if the heartbeat worker should be stopped (no more callbacks remain).
-// This method holds heartbeatWorkersMu while checking and removing, preventing races where
-// a new worker could get a reference to an about-to-be-stopped heartbeat worker.
-func (wc *WorkflowClient) unregisterHeartbeatCallback(namespace string, workerInstanceKey string) bool {
-	wc.heartbeatWorkersMu.Lock()
-	defer wc.heartbeatWorkersMu.Unlock()
-
-	hw, ok := wc.heartbeatWorkers[namespace]
-	if !ok {
-		return false
-	}
-
-	hw.mu.Lock()
-	delete(hw.callbacks, workerInstanceKey)
-	shouldStop := len(hw.callbacks) == 0
-	hw.mu.Unlock()
-
-	if shouldStop {
-		delete(wc.heartbeatWorkers, namespace)
-	}
-	return shouldStop
 }
 
 // Close client and clean up underlying resources.

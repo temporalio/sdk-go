@@ -90,7 +90,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		return nil, nil
 	}
 
-	metrics.RecordPollSuccess(ntp.metricsHandler, metrics.PollerTypeNexusTask)
+	RecordPollSuccess(ntp.metricsHandler, metrics.PollerTypeNexusTask)
 
 	return &nexusTask{task: response}, nil
 }
