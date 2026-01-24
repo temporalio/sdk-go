@@ -1184,10 +1184,115 @@ func (ts *IntegrationTestSuite) TestCancelTimerViaDeferAfterWFTFailure() {
 }
 
 func (ts *IntegrationTestSuite) TestAwaitWithTimeoutCancelTimerOnCondition() {
-	var result bool
-	err := ts.executeWorkflow("test-await-cancel-timer-on-condition", ts.workflows.AwaitWithTimeoutCancelTimerOnCondition, &result)
+	// TODO: Remove this skip when SDKFlagCancelAwaitTimerOnCondition is enabled by default.
+	// This test verifies the timer cancellation behavior when the flag is ON.
+	// Currently the flag is OFF by default to allow a gradual rollout.
+	// See internal/workflow.go where GetFlag is used instead of TryUse.
+	ts.T().Skip("SDKFlagCancelAwaitTimerOnCondition is disabled by default. Enable this test when the flag is enabled by default.")
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Start workflow
+	opts := ts.startWorkflowOptions("test-await-cancel-timer-on-condition-" + uuid.NewString())
+	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.AwaitWithTimeoutCancelTimerOnCondition)
 	ts.NoError(err)
+
+	// Wait for workflow to complete
+	var result bool
+	ts.NoError(run.Get(ctx, &result))
 	ts.True(result)
+
+	// Verify timer was cancelled by checking history
+	iter := ts.client.GetWorkflowHistory(ctx, opts.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var timerStartedEvent *historypb.HistoryEvent
+	var timerCanceledEvent *historypb.HistoryEvent
+	var sdkFlags []uint32
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		ts.NoError(err1)
+		// Find the AwaitWithTimeout timer (10s timeout)
+		if attrs := event.GetTimerStartedEventAttributes(); attrs != nil {
+			if attrs.GetStartToFireTimeout().AsDuration() == 10*time.Second {
+				timerStartedEvent = event
+			}
+		}
+		// Find timer canceled event
+		if attrs := event.GetTimerCanceledEventAttributes(); attrs != nil {
+			if timerStartedEvent != nil && attrs.GetStartedEventId() == timerStartedEvent.GetEventId() {
+				timerCanceledEvent = event
+			}
+		}
+		// Capture SDK flags from workflow task completed
+		if attrs := event.GetWorkflowTaskCompletedEventAttributes(); attrs != nil {
+			if attrs.GetSdkMetadata() != nil {
+				sdkFlags = append(sdkFlags, attrs.GetSdkMetadata().GetLangUsedFlags()...)
+			}
+		}
+	}
+
+	// Verify timer was started
+	ts.NotNil(timerStartedEvent, "AwaitWithTimeout timer should be started")
+	// Verify timer was cancelled (new behavior with flag)
+	ts.NotNil(timerCanceledEvent, "AwaitWithTimeout timer should be cancelled when condition is satisfied")
+	// Verify the SDK flag was set
+	ts.Contains(sdkFlags, uint32(6), "SDKFlagCancelAwaitTimerOnCondition (flag 6) should be set")
+}
+
+// TestAwaitWithTimeoutTimerNotCancelledByDefault verifies that with SDKFlagCancelAwaitTimerOnCondition
+// disabled by default, the AwaitWithTimeout timer is NOT cancelled when the condition is satisfied
+// before the timeout expires. This is the current default behavior.
+// TODO: Remove this test when SDKFlagCancelAwaitTimerOnCondition is enabled by default.
+func (ts *IntegrationTestSuite) TestAwaitWithTimeoutTimerNotCancelledByDefault() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Start workflow
+	opts := ts.startWorkflowOptions("test-await-timer-not-cancelled-" + uuid.NewString())
+	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.AwaitWithTimeoutCancelTimerOnCondition)
+	ts.NoError(err)
+
+	// Wait for workflow to complete
+	var result bool
+	ts.NoError(run.Get(ctx, &result))
+	ts.True(result)
+
+	// Verify timer was NOT cancelled by checking history
+	// With SDKFlagCancelAwaitTimerOnCondition disabled by default, the timer should fire normally
+	// (or workflow completes before timer fires, but timer is not explicitly cancelled)
+	iter := ts.client.GetWorkflowHistory(ctx, opts.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var timerStartedEvent *historypb.HistoryEvent
+	var timerCanceledEvent *historypb.HistoryEvent
+	var sdkFlags []uint32
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		ts.NoError(err1)
+		// Find the AwaitWithTimeout timer (10s timeout)
+		if attrs := event.GetTimerStartedEventAttributes(); attrs != nil {
+			if attrs.GetStartToFireTimeout().AsDuration() == 10*time.Second {
+				timerStartedEvent = event
+			}
+		}
+		// Find timer canceled event
+		if attrs := event.GetTimerCanceledEventAttributes(); attrs != nil {
+			if timerStartedEvent != nil && attrs.GetStartedEventId() == timerStartedEvent.GetEventId() {
+				timerCanceledEvent = event
+			}
+		}
+		// Capture SDK flags from workflow task completed
+		if attrs := event.GetWorkflowTaskCompletedEventAttributes(); attrs != nil {
+			if attrs.GetSdkMetadata() != nil {
+				sdkFlags = append(sdkFlags, attrs.GetSdkMetadata().GetLangUsedFlags()...)
+			}
+		}
+	}
+
+	// Verify timer was started
+	ts.NotNil(timerStartedEvent, "AwaitWithTimeout timer should be started")
+	// Verify timer was NOT cancelled (flag is off by default)
+	ts.Nil(timerCanceledEvent, "AwaitWithTimeout timer should NOT be cancelled when SDKFlagCancelAwaitTimerOnCondition is disabled")
+	// Verify the SDK flag was NOT set
+	ts.NotContains(sdkFlags, uint32(6), "SDKFlagCancelAwaitTimerOnCondition (flag 6) should NOT be set")
 }
 
 func (ts *IntegrationTestSuite) TestAwaitWithTimeoutConditionAlreadyTrue() {

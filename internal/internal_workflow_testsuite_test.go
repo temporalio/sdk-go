@@ -15,6 +15,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
@@ -4423,6 +4424,81 @@ func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	result := true
 	_ = env.GetWorkflowResult(&result)
 	s.False(result)
+}
+
+// awaitWithTimeoutConditionMetWorkflow is used by tests to verify timer cancellation behavior.
+// Same logic as AwaitWithTimeoutNoTimerCancelWorkflow in test/replaytests/workflows.go.
+func awaitWithTimeoutConditionMetWorkflow(ctx Context) (bool, error) {
+	conditionMet := false
+
+	Go(ctx, func(ctx Context) {
+		_ = Sleep(ctx, 100*time.Millisecond)
+		conditionMet = true
+	})
+
+	return AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return conditionMet
+	})
+}
+
+// Test_AwaitWithTimeoutConditionMet_WithFlag verifies that when SDKFlagCancelAwaitTimerOnCondition
+// is enabled (new behavior), the timer IS cancelled when the condition becomes true.
+func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutConditionMet_WithFlag() {
+	env := s.NewTestWorkflowEnvironment()
+
+	// Track scheduled timers to identify the timeout timer
+	var timeoutTimerID string
+	env.SetOnTimerScheduledListener(func(timerID string, duration time.Duration) {
+		if duration == 10*time.Second {
+			timeoutTimerID = timerID
+		}
+	})
+
+	// Explicitly enable the flag (it's not auto-enabled by default for new workflows)
+	env.impl.sdkFlags.set(SDKFlagCancelAwaitTimerOnCondition)
+
+	env.ExecuteWorkflow(awaitWithTimeoutConditionMetWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	result := false
+	_ = env.GetWorkflowResult(&result)
+	s.True(result, "AwaitWithTimeout should return true when condition is met")
+
+	// With flag enabled, timer should be cancelled (removed from timers map)
+	s.NotEmpty(timeoutTimerID, "Timeout timer should have been scheduled")
+	_, timerExists := env.impl.timers[timeoutTimerID]
+	s.False(timerExists, "Timer SHOULD be cancelled (removed from map) when SDKFlagCancelAwaitTimerOnCondition is enabled")
+}
+
+// Test_AwaitWithTimeoutConditionMet_WithoutFlag verifies that when SDKFlagCancelAwaitTimerOnCondition
+// is disabled (old behavior), the timer is NOT cancelled when the condition becomes true.
+func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutConditionMet_WithoutFlag() {
+	env := s.NewTestWorkflowEnvironment()
+
+	// Track scheduled timers to identify the timeout timer
+	var timeoutTimerID string
+	env.SetOnTimerScheduledListener(func(timerID string, duration time.Duration) {
+		if duration == 10*time.Second {
+			timeoutTimerID = timerID
+		}
+	})
+
+	// Disable SdkMetadata capability to simulate old behavior (flag will return false)
+	env.impl.sdkFlags = newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: false})
+
+	env.ExecuteWorkflow(awaitWithTimeoutConditionMetWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	result := false
+	_ = env.GetWorkflowResult(&result)
+	s.True(result, "AwaitWithTimeout should return true when condition is met")
+
+	// With flag disabled, timer should NOT be cancelled (still in timers map)
+	s.NotEmpty(timeoutTimerID, "Timeout timer should have been scheduled")
+	_, timerExists := env.impl.timers[timeoutTimerID]
+	s.True(timerExists, "Timer should NOT be cancelled (still in map) when SDKFlagCancelAwaitTimerOnCondition is disabled")
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_NoDetachedChildWait() {
