@@ -836,3 +836,39 @@ func AllHandlersFinished(ctx Context) bool {
 func NewNexusClient(endpoint, service string) NexusClient {
 	return internal.NewNexusClient(endpoint, service)
 }
+
+// WaitExternalWorkflowOptions contains options for WaitExternalWorkflow.
+type WaitExternalWorkflowOptions = internal.WaitExternalWorkflowOptions
+
+// WaitExternalWorkflowResult contains the result of waiting for an external workflow.
+type WaitExternalWorkflowResult = internal.WaitExternalWorkflowResult
+
+// WaitExternalWorkflowFailure contains failure information from a workflow.
+type WaitExternalWorkflowFailure = internal.WaitExternalWorkflowFailure
+
+// WaitExternalWorkflowFuture represents the result of a WaitExternalWorkflow call.
+type WaitExternalWorkflowFuture = internal.WaitExternalWorkflowFuture
+
+// WaitExternalWorkflow waits for an external workflow to complete.
+// This is a convenience function that uses the system Nexus endpoint internally.
+//
+// Example usage:
+//
+//	future := workflow.WaitExternalWorkflow(ctx, workflow.WaitExternalWorkflowOptions{
+//	    WorkflowID: "target-workflow-id",
+//	})
+//	var result workflow.WaitExternalWorkflowResult
+//	if err := future.Get(ctx, &result); err != nil {
+//	    return err
+//	}
+//	if result.Status == enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED {
+//	    var output MyOutputType
+//	    if err := result.Get(&output); err != nil {
+//	        return err
+//	    }
+//	}
+//
+// NOTE: Experimental - this API is subject to change.
+func WaitExternalWorkflow(ctx Context, options WaitExternalWorkflowOptions) WaitExternalWorkflowFuture {
+	return internal.WaitExternalWorkflow(ctx, options)
+}
