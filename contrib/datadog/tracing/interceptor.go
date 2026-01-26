@@ -1,4 +1,18 @@
-// Package tracing provides Datadog tracing utilities
+// Package tracing provides Datadog tracing utilities for Temporal workflows.
+//
+// # Breaking Changes in v0.5.0
+//
+// This release upgrades from dd-trace-go v1 to v2. Most users will not be affected,
+// but there are two breaking changes:
+//
+//   - TracerOptions.OnFinish: If you provide a custom OnFinish function, update
+//     your import from gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer to
+//     github.com/DataDog/dd-trace-go/v2/ddtrace/tracer. The [tracer.FinishOption]
+//     type is source-compatible, so no other changes are needed.
+//
+//   - SpanFromWorkflowContext: The return type changed from ddtrace.Span to
+//     *tracer.Span. If you pass the returned span to code that expects the old
+//     type, you will need to update that code.
 package tracing
 
 import (
