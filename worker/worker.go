@@ -236,6 +236,15 @@ type (
 
 	// ReplayWorkflowHistoryOptions are options for replaying a workflow.
 	ReplayWorkflowHistoryOptions = internal.ReplayWorkflowHistoryOptions
+
+	// TunerHostMetricsProvider provides host-level CPU and memory metrics for worker heartbeats.
+	// This interface is typically implemented by a [WorkerTuner] to provide metrics from the same
+	// source used for tuning decisions, avoiding double-measurement. If the tuner passed to
+	// [Options] implements this interface, the SDK will automatically use it for heartbeat metrics.
+	// Alternatively, use the default implementation in the worker/hostmetrics package.
+	//
+	// NOTE: Experimental
+	TunerHostMetricsProvider = internal.TunerHostMetricsProvider
 )
 
 var _ WorkflowRegistry = (WorkflowReplayer)(nil)

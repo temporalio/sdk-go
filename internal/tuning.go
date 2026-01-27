@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"sync/atomic"
 
@@ -128,6 +129,19 @@ type SlotSupplier interface {
 	// Implementations may return 0 if there is no well-defined upper limit. In such cases the
 	// available task slots metric will not be emitted.
 	MaxSlots() int
+}
+
+// getSlotSupplierKind returns the kind/type name of a slot supplier. If the supplier implements
+// a Kind() string method, it uses that. Otherwise, it falls back to reflection on the type name.
+func getSlotSupplierKind(s SlotSupplier) string {
+	if k, ok := s.(interface{ Kind() string }); ok {
+		return k.Kind()
+	}
+	t := reflect.TypeOf(s)
+	if t.Kind() == reflect.Ptr {
+		return t.Elem().Name()
+	}
+	return t.Name()
 }
 
 // CompositeTuner allows you to build a tuner from multiple slot suppliers.
@@ -283,6 +297,9 @@ func (f *FixedSizeSlotSupplier) ReleaseSlot(SlotReleaseInfo) {
 }
 func (f *FixedSizeSlotSupplier) MaxSlots() int {
 	return f.numSlots
+}
+func (f *FixedSizeSlotSupplier) Kind() string {
+	return "Fixed"
 }
 
 type slotReservationData struct {
@@ -478,6 +495,7 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 	if permit.extraReleaseCallback != nil {
 		permit.extraReleaseCallback()
 	}
+
 	t.publishMetrics(usedSlots)
 }
 
@@ -486,4 +504,8 @@ func (t *trackingSlotSupplier) publishMetrics(usedSlots int) {
 		t.taskSlotsAvailableGauge.Update(float64(t.inner.MaxSlots() - usedSlots))
 	}
 	t.taskSlotsUsedGauge.Update(float64(usedSlots))
+}
+
+func (t *trackingSlotSupplier) GetSlotSupplierKind() string {
+	return getSlotSupplierKind(t.inner)
 }

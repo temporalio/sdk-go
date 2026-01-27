@@ -6,6 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	workerpb "go.temporal.io/api/worker/v1"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"math"
 	"os"
@@ -24,6 +27,7 @@ import (
 	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/temporalproto"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
@@ -35,6 +39,7 @@ import (
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/worker/hostmetrics"
 )
 
 const (
@@ -81,6 +86,7 @@ type (
 		identity            string
 		stopC               chan struct{}
 		localActivityStopC  chan struct{}
+		stickyUUID          string // Used for ShutdownWorker call
 	}
 
 	// ActivityWorker wraps the code for hosting activity types.
@@ -223,6 +229,21 @@ type (
 		// The build id specific to this worker
 		BuildID string
 	}
+
+	// workerHeartbeatManager includes all information needed to report worker heartbeats.
+	workerHeartbeatManager struct {
+		heartbeatMetrics  *HeartbeatMetricsHandler
+		heartbeatCallback func() *workerpb.WorkerHeartbeat
+
+		// Slot suppliers for heartbeat reporting
+		workflowTaskSlotSupplier  *trackingSlotSupplier
+		activityTaskSlotSupplier  *trackingSlotSupplier
+		localActivitySlotSupplier *trackingSlotSupplier
+		nexusTaskSlotSupplier     *trackingSlotSupplier
+
+		// Host metrics provider for CPU/memory reporting in heartbeats
+		hostMetricsProvider TunerHostMetricsProvider
+	}
 )
 
 var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
@@ -322,7 +343,9 @@ func newWorkflowTaskWorkerInternal(
 	if client != nil {
 		service = client.workflowService
 	}
-	taskProcessor := newWorkflowTaskProcessor(taskHandler, contextManager, service, params)
+	// Generate stickyUUID here so it can be stored in workflowWorker for ShutdownWorker call
+	stickyUUID := uuid.NewString()
+	taskProcessor := newWorkflowTaskProcessor(taskHandler, contextManager, service, params, stickyUUID)
 
 	var scalableTaskPollers []scalableTaskPoller
 	switch params.WorkflowTaskPollerBehavior.(type) {
@@ -412,6 +435,7 @@ func newWorkflowTaskWorkerInternal(
 		identity:            params.Identity,
 		stopC:               stopC,
 		localActivityStopC:  laStopChannel,
+		stickyUUID:          stickyUUID,
 	}
 }
 
@@ -1175,6 +1199,8 @@ type AggregatedWorker struct {
 	workerInstanceKey     string
 	plugins               []WorkerPlugin
 	pluginRegistryOptions *WorkerPluginConfigureWorkerRegistryOptions // Never nil
+
+	workerHeartbeatManager *workerHeartbeatManager
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1350,6 +1376,15 @@ func (aw *AggregatedWorker) start() error {
 		if err := aw.nexusWorker.Start(); err != nil {
 			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
+		if aw.nexusWorker.worker != nil && aw.workerHeartbeatManager != nil {
+			aw.workerHeartbeatManager.nexusTaskSlotSupplier = aw.nexusWorker.worker.slotSupplier
+		}
+	}
+
+	if aw.client.workerHeartbeatInterval > 0 {
+		if err := aw.registerHeartbeatWorker(); err != nil {
+			return fmt.Errorf("failed to register heartbeat worker: %w", err)
+		}
 	}
 	aw.logger.Info("Started Worker")
 	return nil
@@ -1439,6 +1474,8 @@ func (aw *AggregatedWorker) Stop() {
 		close(aw.stopC)
 	}
 
+	aw.shutdownWorker()
+
 	// Issue stop through plugins
 	stop := func(context.Context, WorkerPluginStopWorkerOptions) {
 		if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1468,7 +1505,72 @@ func (aw *AggregatedWorker) Stop() {
 		WorkerInstanceKey: aw.workerInstanceKey,
 	})
 
+	aw.unregisterHeartbeatWorker()
+
 	aw.logger.Info("Stopped Worker")
+}
+
+func (aw *AggregatedWorker) registerHeartbeatWorker() error {
+	if aw.client.heartbeatManager == nil {
+		return nil
+	}
+	return aw.client.heartbeatManager.RegisterWorker(
+		aw.executionParams.Namespace,
+		aw.workerInstanceKey,
+		aw.workerHeartbeatManager.heartbeatCallback,
+	)
+}
+
+func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
+	if aw.client.heartbeatManager == nil || aw.workerHeartbeatManager == nil {
+		return
+	}
+	aw.client.heartbeatManager.UnregisterWorker(
+		aw.executionParams.Namespace,
+		aw.workerInstanceKey,
+	)
+}
+
+// shutdownWorker sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
+// When StickyTaskQueue is non-empty, this is a best-effort attempt to indicate to Matching service
+// that this workflow task poller's sticky queue will no longer be polled.
+//
+// NOTE: errors are logged but don't fail the shutdown.
+func (aw *AggregatedWorker) shutdownWorker() {
+	ctx := context.Background()
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(aw.executionParams.MetricsHandler))
+	defer cancel()
+
+	var heartbeat *workerpb.WorkerHeartbeat
+	if aw.workerHeartbeatManager != nil && aw.workerHeartbeatManager.heartbeatCallback != nil {
+		heartbeat = aw.workerHeartbeatManager.heartbeatCallback()
+		heartbeat.Status = enumspb.WORKER_STATUS_SHUTTING_DOWN
+	}
+
+	var stickyTaskQueue string
+	if aw.workflowWorker != nil && aw.workflowWorker.stickyUUID != "" {
+		stickyTaskQueue = getWorkerTaskQueue(aw.workflowWorker.stickyUUID)
+	}
+
+	_, err := aw.client.workflowService.ShutdownWorker(grpcCtx, &workflowservice.ShutdownWorkerRequest{
+		Namespace:       aw.executionParams.Namespace,
+		StickyTaskQueue: stickyTaskQueue,
+		Identity:        aw.executionParams.Identity,
+		Reason:          "graceful shutdown",
+		WorkerHeartbeat: heartbeat,
+	})
+
+	// Ignore unimplemented (server doesn't support it) and unavailable (server shutting down)
+	if _, isUnimplemented := err.(*serviceerror.Unimplemented); isUnimplemented {
+		return
+	}
+	if _, isUnavailable := err.(*serviceerror.Unavailable); isUnavailable {
+		return
+	}
+
+	if err != nil {
+		aw.logger.Debug("ShutdownWorker rpc errored during worker shutdown.", tagError, err)
+	}
 }
 
 // WorkflowReplayer is used to replay workflow code from an event history
@@ -2024,6 +2126,19 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 
+	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
+	var metricsHandler metrics.Handler
+	var heartbeatMetrics *HeartbeatMetricsHandler
+	var heartbeatManager *workerHeartbeatManager
+
+	if client.workerHeartbeatInterval != 0 {
+		heartbeatMetrics = NewHeartbeatMetricsHandler(baseMetricsHandler)
+		metricsHandler = heartbeatMetrics
+		heartbeatManager = &workerHeartbeatManager{}
+	} else {
+		metricsHandler = baseMetricsHandler
+	}
+
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
@@ -2035,7 +2150,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerBuildID:                    options.BuildID,
 		UseBuildIDForVersioning:          options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
 		DeploymentOptions:                options.DeploymentOptions,
-		MetricsHandler:                   client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
+		MetricsHandler:                   metricsHandler,
 		Logger:                           client.logger,
 		EnableLoggingInReplay:            options.EnableLoggingInReplay,
 		BackgroundContext:                backgroundActivityContext,
@@ -2145,19 +2260,128 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		})
 	}
 
+	// Initialize host metrics provider for CPU/memory reporting.
+	// If the tuner implements TunerHostMetricsProvider, use it to avoid double-measurement of system.
+	var hostMetricsProvider TunerHostMetricsProvider
+	if provider, ok := options.Tuner.(TunerHostMetricsProvider); ok {
+		hostMetricsProvider = provider
+	} else if client.workerHeartbeatInterval != 0 {
+		hostMetricsProvider = hostmetrics.NewPSUtilSystemInfoSupplier(workerParams.Logger)
+	}
+
+	var heartbeatCallback func() *workerpb.WorkerHeartbeat
+	if heartbeatManager != nil {
+		startTime := timestamppb.New(time.Now())
+		hostname, _ := os.Hostname()
+		previousHeartbeatTime := time.Now()
+
+		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
+
+		var prevWorkflowProcessed, prevWorkflowFailed int64
+		var prevActivityProcessed, prevActivityFailed int64
+		var prevLocalActivityProcessed, prevLocalActivityFailed int64
+		var prevNexusProcessed, prevNexusFailed int64
+
+		populateOpts := &PopulateHeartbeatOptions{
+			WorkflowPollerBehavior:     options.WorkflowTaskPollerBehavior,
+			ActivityPollerBehavior:     options.ActivityTaskPollerBehavior,
+			NexusPollerBehavior:        options.NexusTaskPollerBehavior,
+			PrevWorkflowProcessed:      &prevWorkflowProcessed,
+			PrevWorkflowFailed:         &prevWorkflowFailed,
+			PrevActivityProcessed:      &prevActivityProcessed,
+			PrevActivityFailed:         &prevActivityFailed,
+			PrevLocalActivityProcessed: &prevLocalActivityProcessed,
+			PrevLocalActivityFailed:    &prevLocalActivityFailed,
+			PrevNexusProcessed:         &prevNexusProcessed,
+			PrevNexusFailed:            &prevNexusFailed,
+		}
+
+		heartbeatCallback = func() *workerpb.WorkerHeartbeat {
+			heartbeatTime := time.Now()
+			elapsedSinceLastHeartbeat := heartbeatTime.Sub(previousHeartbeatTime)
+			previousHeartbeatTime = heartbeatTime
+
+			var deploymentVersion *deploymentpb.WorkerDeploymentVersion
+			if options.DeploymentOptions.UseVersioning {
+				deploymentVersion = &deploymentpb.WorkerDeploymentVersion{
+					DeploymentName: options.DeploymentOptions.Version.DeploymentName,
+					BuildId:        options.DeploymentOptions.Version.BuildID,
+				}
+			}
+
+			hb := &workerpb.WorkerHeartbeat{
+				WorkerInstanceKey: aw.workerInstanceKey,
+				WorkerIdentity:    aw.client.identity,
+				HostInfo: &workerpb.WorkerHostInfo{
+					HostName:            hostname,
+					WorkerGroupingKey:   aw.client.workerGroupingKey,
+					ProcessId:           strconv.Itoa(os.Getpid()),
+					CurrentHostCpuUsage: getCpuUsage(hostMetricsProvider),
+					CurrentHostMemUsage: getMemUsage(hostMetricsProvider),
+				},
+				TaskQueue:                 aw.executionParams.TaskQueue,
+				DeploymentVersion:         deploymentVersion,
+				SdkName:                   SDKName,
+				SdkVersion:                SDKVersion,
+				Status:                    enumspb.WORKER_STATUS_RUNNING,
+				StartTime:                 startTime,
+				HeartbeatTime:             timestamppb.New(heartbeatTime),
+				ElapsedSinceLastHeartbeat: durationpb.New(elapsedSinceLastHeartbeat),
+				Plugins:                   pluginInfos,
+			}
+
+			if aw.workerHeartbeatManager.heartbeatMetrics != nil {
+				if aw.workerHeartbeatManager.workflowTaskSlotSupplier != nil {
+					populateOpts.WorkflowSlotSupplierKind = aw.workerHeartbeatManager.workflowTaskSlotSupplier.GetSlotSupplierKind()
+				}
+				if aw.workerHeartbeatManager.activityTaskSlotSupplier != nil {
+					populateOpts.ActivitySlotSupplierKind = aw.workerHeartbeatManager.activityTaskSlotSupplier.GetSlotSupplierKind()
+				}
+				if aw.workerHeartbeatManager.localActivitySlotSupplier != nil {
+					populateOpts.LocalActivitySlotSupplierKind = aw.workerHeartbeatManager.localActivitySlotSupplier.GetSlotSupplierKind()
+				}
+				if aw.workerHeartbeatManager.nexusTaskSlotSupplier != nil {
+					populateOpts.NexusSlotSupplierKind = aw.workerHeartbeatManager.nexusTaskSlotSupplier.GetSlotSupplierKind()
+				}
+				aw.workerHeartbeatManager.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
+			}
+
+			return hb
+		}
+	}
+
+	if heartbeatManager != nil {
+		heartbeatManager.heartbeatMetrics = heartbeatMetrics
+		heartbeatManager.heartbeatCallback = heartbeatCallback
+		heartbeatManager.hostMetricsProvider = hostMetricsProvider
+	}
+
 	aw = &AggregatedWorker{
-		client:                client,
-		workflowWorker:        workflowWorker,
-		activityWorker:        activityWorker,
-		sessionWorker:         sessionWorker,
-		logger:                workerParams.Logger,
-		registry:              registry,
-		stopC:                 make(chan struct{}),
-		capabilities:          &capabilities,
-		executionParams:       workerParams,
-		workerInstanceKey:     workerInstanceKey,
-		plugins:               plugins,
-		pluginRegistryOptions: &pluginRegistryOptions,
+		client:                 client,
+		workflowWorker:         workflowWorker,
+		activityWorker:         activityWorker,
+		sessionWorker:          sessionWorker,
+		logger:                 workerParams.Logger,
+		registry:               registry,
+		stopC:                  make(chan struct{}),
+		capabilities:           &capabilities,
+		executionParams:        workerParams,
+		workerInstanceKey:      workerInstanceKey,
+		plugins:                plugins,
+		pluginRegistryOptions:  &pluginRegistryOptions,
+		workerHeartbeatManager: heartbeatManager,
+	}
+
+	if aw.workerHeartbeatManager != nil {
+		if workflowWorker != nil && workflowWorker.worker != nil {
+			aw.workerHeartbeatManager.workflowTaskSlotSupplier = workflowWorker.worker.slotSupplier
+		}
+		if workflowWorker != nil && workflowWorker.localActivityWorker != nil {
+			aw.workerHeartbeatManager.localActivitySlotSupplier = workflowWorker.localActivityWorker.slotSupplier
+		}
+		if activityWorker != nil && activityWorker.worker != nil {
+			aw.workerHeartbeatManager.activityTaskSlotSupplier = activityWorker.worker.slotSupplier
+		}
 	}
 
 	// Set memoized start as a once-value that invokes plugins first
@@ -2475,4 +2699,38 @@ func workerDeploymentVersionFromProtoOrString(wd *deploymentpb.WorkerDeploymentV
 		DeploymentName: wd.DeploymentName,
 		BuildID:        wd.BuildId,
 	}
+}
+
+func getCpuUsage(provider TunerHostMetricsProvider) float32 {
+	if provider == nil {
+		return 0
+	}
+	cpu, _ := provider.GetCpuUsage()
+	return float32(cpu)
+}
+
+func getMemUsage(provider TunerHostMetricsProvider) float32 {
+	if provider == nil {
+		return 0
+	}
+	mem, _ := provider.GetMemoryUsage()
+	return float32(mem)
+}
+
+// collectPluginInfos collects plugin names from client and worker plugins,
+// deduplicates them, and returns a slice of PluginInfo for heartbeat reporting.
+func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
+	set := make(map[string]struct{}, len(clientPluginNames)+len(workerPlugins))
+	for _, name := range clientPluginNames {
+		set[name] = struct{}{}
+	}
+	for _, plugin := range workerPlugins {
+		set[plugin.Name()] = struct{}{}
+	}
+
+	result := make([]*workerpb.PluginInfo, 0, len(set))
+	for name := range set {
+		result = append(result, &workerpb.PluginInfo{Name: name})
+	}
+	return result
 }
