@@ -740,3 +740,19 @@ func CancelNexusOperationAfterCompleteWorkflow(ctx workflow.Context) (string, er
 	cancel()
 	return generateUUID(ctx, "nxs-cancel-after-complete-id")
 }
+
+// AwaitWithTimeoutNoTimerCancelWorkflow is used to test replay of old workflow histories
+// that were created before SDKFlagCancelAwaitTimerOnCondition was introduced.
+// In the old behavior, the timer is NOT cancelled when the condition becomes true.
+func AwaitWithTimeoutNoTimerCancelWorkflow(ctx workflow.Context) (bool, error) {
+	conditionMet := false
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, 100*time.Millisecond)
+		conditionMet = true
+	})
+
+	return workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return conditionMet
+	})
+}
