@@ -1,7 +1,7 @@
 package internal
 
 import (
-	"math"
+	"fmt"
 	"os"
 
 	"go.temporal.io/api/workflowservice/v1"
@@ -12,51 +12,72 @@ import (
 type sdkFlag uint32
 
 const (
-	SDKFlagUnset sdkFlag = 0
+	SDKFlagUnset sdkFlag = iota
 	// LimitChangeVersionSASize will limit the search attribute size of TemporalChangeVersion to 2048 when
 	// calling GetVersion. If the limit is exceeded the search attribute is not updated.
-	SDKFlagLimitChangeVersionSASize = 1
+	SDKFlagLimitChangeVersionSASize
 	// SDKFlagChildWorkflowErrorExecution return errors to child workflow execution future if the child workflow would
 	// fail in the synchronous path.
-	SDKFlagChildWorkflowErrorExecution = 2
+	SDKFlagChildWorkflowErrorExecution
 	// SDKFlagProtocolMessageCommand uses ProtocolMessageCommands inserted into
 	// a workflow task response's command set to order messages with respect to
 	// commands.
-	SDKFlagProtocolMessageCommand = 3
+	SDKFlagProtocolMessageCommand
 	// SDKPriorityUpdateHandling will cause update request to be handled before the main workflow method.
 	// It will also cause the SDK to immediately handle updates when a handler is registered.
-	SDKPriorityUpdateHandling = 4
+	SDKPriorityUpdateHandling
 	// SDKFlagBlockedSelectorSignalReceive will cause a signal to not be lost
 	// when the Default path is blocked.
-	SDKFlagBlockedSelectorSignalReceive = 5
-	SDKFlagUnknown                      = math.MaxUint32
+	SDKFlagBlockedSelectorSignalReceive
+	// SDKFlagUnknown must always be the last constant
+	SDKFlagUnknown
 )
 
-// unblockSelectorSignal exists to allow us to configure the default behavior of
-// SDKFlagBlockedSelectorSignalReceive. This is primarily useful with tests.
-var unblockSelectorSignal = os.Getenv("UNBLOCK_SIGNAL_SELECTOR") != ""
+// sdkFlagDefaults holds the default enabled state for each flag.
+// Env vars can override these at init time via TEMPORAL_SDK_FLAG_<ID>=1|0.
+// New flags should default to false until at least one release after introduction.
+var sdkFlagDefaults = map[sdkFlag]bool{
+	SDKFlagLimitChangeVersionSASize:     true,
+	SDKFlagChildWorkflowErrorExecution:  true,
+	SDKFlagProtocolMessageCommand:       true,
+	SDKPriorityUpdateHandling:           true,
+	SDKFlagBlockedSelectorSignalReceive: false,
+}
 
-func sdkFlagFromUint(value uint32) sdkFlag {
-	switch value {
-	case uint32(SDKFlagUnset):
-		return SDKFlagUnset
-	case uint32(SDKFlagLimitChangeVersionSASize):
-		return SDKFlagLimitChangeVersionSASize
-	case uint32(SDKFlagChildWorkflowErrorExecution):
-		return SDKFlagChildWorkflowErrorExecution
-	case uint32(SDKFlagProtocolMessageCommand):
-		return SDKFlagProtocolMessageCommand
-	case uint32(SDKPriorityUpdateHandling):
-		return SDKPriorityUpdateHandling
-	case uint32(SDKFlagBlockedSelectorSignalReceive):
-		return SDKFlagBlockedSelectorSignalReceive
-	default:
-		return SDKFlagUnknown
+func init() {
+	loadFlagOverridesFromEnv(sdkFlagDefaults)
+}
+
+// loadFlagOverridesFromEnv loads flag overrides from environment variables into the provided map.
+// Env var format: TEMPORAL_SDK_FLAG_<FLAG_ID>=1|0
+// Example: TEMPORAL_SDK_FLAG_5=1 (enables SDKFlagBlockedSelectorSignalReceive)
+//
+// NOTE: Using env vars to set flags is strongly discouraged, but this utility is built in
+// as an emergency mechanism in case there is an unanticipated bug with a flag flip, so
+// users would not have to wait until the next release to upgrade.
+func loadFlagOverridesFromEnv(overrides map[sdkFlag]bool) {
+	for flag := SDKFlagUnset + 1; flag < SDKFlagUnknown; flag++ {
+		envKey := fmt.Sprintf("TEMPORAL_SDK_FLAG_%d", flag)
+		if val := os.Getenv(envKey); val != "" {
+			switch val {
+			case "1":
+				overrides[flag] = true
+			case "0":
+				overrides[flag] = false
+			}
+		}
 	}
 }
 
+func sdkFlagFromUint(value uint32) sdkFlag {
+	if value > 0 && value < uint32(SDKFlagUnknown) {
+		return sdkFlag(value)
+	}
+	return SDKFlagUnknown
+}
+
 func (f sdkFlag) isValid() bool {
-	return f != SDKFlagUnset && f != SDKFlagUnknown
+	return f > SDKFlagUnset && f < SDKFlagUnknown
 }
 
 // sdkFlags represents all the flags that are currently set in a workflow execution.
@@ -84,13 +105,20 @@ func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 		return false
 	}
 
-	if record && !sf.currentFlags[flag] {
-		// Only set new flags
-		sf.newFlags[flag] = true
+	if sf.currentFlags[flag] || sf.newFlags[flag] {
 		return true
-	} else {
-		return sf.currentFlags[flag]
 	}
+
+	if !record {
+		return false
+	}
+
+	if !sdkFlagDefaults[flag] {
+		return false
+	}
+
+	sf.newFlags[flag] = true
+	return true
 }
 
 // getFlag returns true if the flag is currently set.
@@ -123,10 +151,4 @@ func (sf *sdkFlags) gatherNewSDKFlags() []sdkFlag {
 		flags = append(flags, flag)
 	}
 	return flags
-}
-
-// SetUnblockSelectorSignal toggles the flag to unblock the selector signal.
-// For test use only.
-func SetUnblockSelectorSignal(unblockSignal bool) {
-	unblockSelectorSignal = unblockSignal
 }

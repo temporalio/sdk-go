@@ -529,6 +529,10 @@ func TestBlockingSelect(t *testing.T) {
 }
 
 func TestSelectBlockingDefault(t *testing.T) {
+	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = false
+	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
 	var history []string
 	env := &workflowEnvironmentImpl{
 		sdkFlags:       newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
@@ -541,8 +545,6 @@ func TestSelectBlockingDefault(t *testing.T) {
 	}
 	// Verify that the flag is not set
 	require.False(t, env.GetFlag(SDKFlagBlockedSelectorSignalReceive))
-	unblockSelectorSignal = false
-	defer func() { unblockSelectorSignal = true }()
 
 	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err, "newWorkflowContext failed")
@@ -601,6 +603,10 @@ func TestSelectBlockingDefault(t *testing.T) {
 }
 
 func TestSelectBlockingDefaultWithFlag(t *testing.T) {
+	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = true
+	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
 	var history []string
 	env := &workflowEnvironmentImpl{
 		sdkFlags:       newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
@@ -611,7 +617,6 @@ func TestSelectBlockingDefaultWithFlag(t *testing.T) {
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
 	}
-	require.True(t, unblockSelectorSignal)
 	require.True(t, env.TryUse(SDKFlagBlockedSelectorSignalReceive))
 
 	interceptor, ctx, err := newWorkflowContext(env, nil)
