@@ -1111,7 +1111,7 @@ func (_m *Client) DescribeWorkflow(ctx context.Context, workflowID string, runID
 	return r0, r1
 }
 
-func (_m *Client) ExecuteActivity(ctx context.Context, options client.ExecuteActivityOptions, activity any, args ...any) (client.ActivityHandle, error) {
+func (_m *Client) ExecuteActivity(ctx context.Context, options client.StartActivityOptions, activity any, args ...any) (client.ActivityHandle, error) {
 	var _ca []interface{}
 	_ca = append(_ca, ctx, options, activity)
 	_ca = append(_ca, args...)
@@ -1123,10 +1123,10 @@ func (_m *Client) ExecuteActivity(ctx context.Context, options client.ExecuteAct
 
 	var r0 client.ActivityHandle
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, client.ExecuteActivityOptions, interface{}, ...interface{}) (client.ActivityHandle, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.StartActivityOptions, interface{}, ...interface{}) (client.ActivityHandle, error)); ok {
 		return rf(ctx, options, activity, args...)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, client.ExecuteActivityOptions, interface{}, ...interface{}) client.ActivityHandle); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.StartActivityOptions, interface{}, ...interface{}) client.ActivityHandle); ok {
 		r0 = rf(ctx, options, activity, args...)
 	} else {
 		if ret.Get(0) != nil {
@@ -1134,7 +1134,7 @@ func (_m *Client) ExecuteActivity(ctx context.Context, options client.ExecuteAct
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, client.ExecuteActivityOptions, interface{}, ...interface{}) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, client.StartActivityOptions, interface{}, ...interface{}) error); ok {
 		r1 = rf(ctx, options, activity, args...)
 	} else {
 		r1 = ret.Error(1)
@@ -1160,18 +1160,18 @@ func (_m *Client) GetActivityHandle(activityID string, runID string) client.Acti
 	return r0
 }
 
-func (_m *Client) ListActivities(ctx context.Context, options client.ListActivitiesOptions) iter.Seq2[*client.ActivityExecutionMetadata, error] {
+func (_m *Client) ListActivities(ctx context.Context, options client.ListActivitiesOptions) iter.Seq2[*client.ActivityExecutionInfo, error] {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListActivities")
 	}
 
-	var r0 iter.Seq2[*client.ActivityExecutionMetadata, error]
-	if rf, ok := ret.Get(0).(func(context.Context, client.ListActivitiesOptions) iter.Seq2[*client.ActivityExecutionMetadata, error]); ok {
+	var r0 iter.Seq2[*client.ActivityExecutionInfo, error]
+	if rf, ok := ret.Get(0).(func(context.Context, client.ListActivitiesOptions) iter.Seq2[*client.ActivityExecutionInfo, error]); ok {
 		r0 = rf(ctx, options)
 	} else {
-		r0 = ret.Get(0).(iter.Seq2[*client.ActivityExecutionMetadata, error])
+		r0 = ret.Get(0).(iter.Seq2[*client.ActivityExecutionInfo, error])
 	}
 
 	return r0

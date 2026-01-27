@@ -897,15 +897,17 @@ type (
 	// Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
 	WorkflowUpdateServiceTimeoutOrCanceledError = internal.WorkflowUpdateServiceTimeoutOrCanceledError
 
-	ExecuteActivityOptions       = internal.ClientExecuteActivityOptions
-	ListActivitiesOptions        = internal.ListActivitiesOptions
-	CountActivitiesOptions       = internal.CountActivitiesOptions
-	CountActivitiesResult        = internal.CountActivitiesResult
-	ActivityHandle               = internal.ActivityHandle
-	ActivityExecutionMetadata    = internal.ActivityExecutionMetadata
-	ActivityExecutionDescription = internal.ActivityExecutionDescription
-	CancelActivityOptions        = internal.CancelActivityOptions
-	TerminateActivityOptions     = internal.TerminateActivityOptions
+	StartActivityOptions            = internal.ClientStartActivityOptions
+	ListActivitiesOptions           = internal.ClientListActivitiesOptions
+	CountActivitiesOptions          = internal.ClientCountActivitiesOptions
+	CountActivitiesResult           = internal.ClientCountActivitiesResult
+	CountActivitiesAggregationGroup = internal.ClientCountActivitiesAggregationGroup
+	ActivityHandle                  = internal.ClientActivityHandle
+	ActivityExecutionInfo           = internal.ClientActivityExecutionInfo
+	ActivityExecutionDescription    = internal.ClientActivityExecutionDescription
+	DescribeActivityOptions         = internal.ClientDescribeActivityOptions
+	CancelActivityOptions           = internal.ClientCancelActivityOptions
+	TerminateActivityOptions        = internal.ClientTerminateActivityOptions
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -1338,11 +1340,11 @@ type (
 		// if not specified the most recent runID will be used.
 		GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
-		ExecuteActivity(ctx context.Context, options ExecuteActivityOptions, activity any, args ...any) (ActivityHandle, error)
+		ExecuteActivity(ctx context.Context, options StartActivityOptions, activity any, args ...any) (ActivityHandle, error)
 
 		GetActivityHandle(activityID string, runID string) ActivityHandle
 
-		ListActivities(ctx context.Context, options ListActivitiesOptions) iter.Seq2[*ActivityExecutionMetadata, error]
+		ListActivities(ctx context.Context, options ListActivitiesOptions) iter.Seq2[*ActivityExecutionInfo, error]
 
 		CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error)
 

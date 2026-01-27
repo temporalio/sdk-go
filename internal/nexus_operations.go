@@ -708,19 +708,19 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkerVersioningRules(ctx cont
 	panic("unimplemented in the test environment")
 }
 
-func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context, options ClientExecuteActivityOptions, activity any, args ...any) (ActivityHandle, error) {
+func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
 	panic("unimplemented in the test environment")
 }
 
-func (t *testSuiteClientForNexusOperations) GetActivityHandle(activityID string, runID string) ActivityHandle {
+func (t *testSuiteClientForNexusOperations) GetActivityHandle(activityID string, runID string) ClientActivityHandle {
 	panic("unimplemented in the test environment")
 }
 
-func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ListActivitiesOptions) iter.Seq2[*ActivityExecutionMetadata, error] {
+func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) iter.Seq2[*ClientActivityExecutionInfo, error] {
 	panic("unimplemented in the test environment")
 }
 
-func (t *testSuiteClientForNexusOperations) CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error) {
+func (t *testSuiteClientForNexusOperations) CountActivities(ctx context.Context, options ClientCountActivitiesOptions) (*ClientCountActivitiesResult, error) {
 	panic("unimplemented in the test environment")
 }
 

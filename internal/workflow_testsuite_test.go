@@ -1257,17 +1257,21 @@ func TestExecuteActivitiesInWorkflow(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestActivityEnvironment()
 	env.RegisterActivity(checkActivityInfo)
+
+	// Default true
 	_, err := env.ExecuteActivity(checkActivityInfo, true)
 	require.NoError(t, err)
 	_, err = env.ExecuteActivity(checkActivityInfo, false)
 	require.Error(t, err)
 
+	// Setting to false
 	env.SetExecuteActivitiesInWorkflow(false)
 	_, err = env.ExecuteActivity(checkActivityInfo, true)
 	require.Error(t, err)
 	_, err = env.ExecuteActivity(checkActivityInfo, false)
 	require.NoError(t, err)
 
+	// Explicitly setting to true
 	env.SetExecuteActivitiesInWorkflow(true)
 	_, err = env.ExecuteActivity(checkActivityInfo, false)
 	require.Error(t, err)
