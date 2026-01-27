@@ -79,7 +79,7 @@ func (a *Activities) ActivityToBePaused(ctx context.Context, completeOnPause boo
 	go func() {
 		// Pause the activity
 		activity.GetClient(ctx).WorkflowService().PauseActivity(context.Background(), &workflowservice.PauseActivityRequest{
-			Namespace: info.WorkflowNamespace,
+			Namespace: info.Namespace,
 			Execution: &commonpb.WorkflowExecution{
 				WorkflowId: info.WorkflowExecution.ID,
 				RunId:      info.WorkflowExecution.RunID,
@@ -123,7 +123,7 @@ func (a *Activities) ActivityToBeReset(ctx context.Context, completeOnReset bool
 	go func() {
 		// Reset the activity
 		activity.GetClient(ctx).WorkflowService().ResetActivity(context.Background(), &workflowservice.ResetActivityRequest{
-			Namespace: info.WorkflowNamespace,
+			Namespace: info.Namespace,
 			Execution: &commonpb.WorkflowExecution{
 				WorkflowId: info.WorkflowExecution.ID,
 				RunId:      info.WorkflowExecution.RunID,
@@ -239,7 +239,7 @@ func (a *Activities) failNTimes(_ context.Context, times int, id int) error {
 func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool, scheduleToCloseTimeout, startToCloseTimeout time.Duration, retryPolicy *temporal.RetryPolicy) error {
 	a.append("inspectActivityInfo")
 	if !activity.IsActivity(ctx) {
-		return fmt.Errorf("expected IsActivity to return %v but got %v", true, activity.IsActivity(ctx))
+		return fmt.Errorf("expected IsActivity to be true")
 	}
 
 	info := activity.GetInfo(ctx)
@@ -299,7 +299,7 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 func (a *Activities) InspectActivityInfoNoWorkflow(ctx context.Context, namespace, activityID, taskQueue string, scheduleToCloseTimeout, startToCloseTimeout time.Duration, retryPolicy *temporal.RetryPolicy) error {
 	a.append("inspectActivityInfoNoWorkflow")
 	if !activity.IsActivity(ctx) {
-		return fmt.Errorf("expected IsActivity to return %v but got %v", true, activity.IsActivity(ctx))
+		return fmt.Errorf("expected IsActivity to be true")
 	}
 
 	info := activity.GetInfo(ctx)
@@ -578,7 +578,7 @@ func (a *Activities) register(worker worker.Worker) {
 func (a *Activities) ClientFromActivity(ctx context.Context) error {
 	activityClient := activity.GetClient(ctx)
 	info := activity.GetInfo(ctx)
-	request := workflowservice.ListWorkflowExecutionsRequest{Namespace: info.WorkflowNamespace}
+	request := workflowservice.ListWorkflowExecutionsRequest{Namespace: info.Namespace}
 	resp, err := activityClient.ListWorkflow(ctx, &request)
 	if err != nil {
 		return err

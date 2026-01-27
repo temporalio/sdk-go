@@ -345,11 +345,18 @@ func WithActivityTask(
 		client:                 client,
 	}
 
-	isWorkflowActivity := task.WorkflowExecution.GetWorkflowId() != ""
-	if isWorkflowActivity {
+	if task.WorkflowExecution.GetWorkflowId() == "" {
+		env.activityRunID = task.ActivityRunId
+		env.logger = log.With(logger,
+			tagActivityID, task.ActivityId,
+			tagActivityRunID, task.ActivityRunId,
+			tagActivityType, task.ActivityType.GetName(),
+			tagAttempt, task.Attempt,
+		)
+	} else {
 		env.workflowExecution = WorkflowExecution{
-			RunID: task.WorkflowExecution.GetRunId(),
 			ID:    task.WorkflowExecution.GetWorkflowId(),
+			RunID: task.WorkflowExecution.GetRunId(),
 		}
 		env.workflowType = &WorkflowType{
 			Name: task.WorkflowType.GetName(),
@@ -361,14 +368,6 @@ func WithActivityTask(
 			tagWorkflowType, task.WorkflowType.GetName(),
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
-		)
-	} else {
-		env.activityRunID = task.ActivityRunId
-		env.logger = log.With(logger,
-			tagActivityID, task.ActivityId,
-			tagActivityRunID, task.ActivityRunId,
-			tagActivityType, task.ActivityType.GetName(),
-			tagAttempt, task.Attempt,
 		)
 	}
 

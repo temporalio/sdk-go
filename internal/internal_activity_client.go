@@ -18,45 +18,45 @@ import (
 )
 
 type (
-	// ClientExecuteActivityOptions contains configuration parameters for starting an activity execution.
+	// ClientStartActivityOptions contains configuration parameters for starting an activity execution.
 	// ID and TaskQueue are required. At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
 	// Other parameters are optional.
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ExecuteActivityOptions]
-	ClientExecuteActivityOptions struct {
-		ID                     string
-		TaskQueue              string
-		ScheduleToCloseTimeout time.Duration
-		ScheduleToStartTimeout time.Duration
-		StartToCloseTimeout    time.Duration
-		HeartbeatTimeout       time.Duration
-		IDConflictPolicy       enumspb.ActivityIdConflictPolicy
-		IDReusePolicy          enumspb.ActivityIdReusePolicy
-		RetryPolicy            *RetryPolicy
-		SearchAttributes       SearchAttributes
-		Summary                string
-		Priority               Priority
+	ClientStartActivityOptions struct {
+		ID                       string
+		TaskQueue                string
+		ScheduleToCloseTimeout   time.Duration
+		ScheduleToStartTimeout   time.Duration
+		StartToCloseTimeout      time.Duration
+		HeartbeatTimeout         time.Duration
+		ActivityIDConflictPolicy enumspb.ActivityIdConflictPolicy
+		ActivityIDReusePolicy    enumspb.ActivityIdReusePolicy
+		RetryPolicy              *RetryPolicy
+		TypedSearchAttributes    SearchAttributes
+		Summary                  string
+		Priority                 Priority
 	}
 
-	ListActivitiesOptions struct {
+	ClientListActivitiesOptions struct {
 		Query string
 	}
 
-	CountActivitiesOptions struct {
+	ClientCountActivitiesOptions struct {
 		Query string
 	}
 
-	CountActivitiesResult struct {
+	ClientCountActivitiesResult struct {
 		Count  int64
-		Groups []ActivityAggregationGroup
+		Groups []ClientCountActivitiesAggregationGroup
 	}
 
-	ActivityAggregationGroup struct {
+	ClientCountActivitiesAggregationGroup struct {
 		GroupValues []any
 		Count       int64
 	}
 
-	ActivityHandle interface {
+	ClientActivityHandle interface {
 		// GetID returns the ID of the activity this handle points to.
 		GetID() string
 		// GetRunID returns the run ID that this handle was created with.
@@ -72,55 +72,48 @@ type (
 		// If an error is encountered trying to get the activity result, that error is returned.
 		Get(ctx context.Context, valuePtr any) error
 		// Describe returns detailed information about current state of the activity execution.
-		Describe(ctx context.Context) (*ActivityExecutionDescription, error)
+		Describe(ctx context.Context, options ClientDescribeActivityOptions) (*ClientActivityExecutionDescription, error)
 		// Cancel requests cancellation of the activity.
-		Cancel(ctx context.Context, options CancelActivityOptions) error
+		Cancel(ctx context.Context, options ClientCancelActivityOptions) error
 		// Terminate terminates the activity.
-		Terminate(ctx context.Context, options TerminateActivityOptions) error
+		Terminate(ctx context.Context, options ClientTerminateActivityOptions) error
 	}
 
-	// DescribeActivityOptions contains options for ActivityHandle.Describe call.
+	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
 	// For future compatibility, currently unused.
-	DescribeActivityOptions struct{}
+	ClientDescribeActivityOptions struct{}
 
-	// CancelActivityOptions contains options for ActivityHandle.Cancel call.
-	CancelActivityOptions struct {
+	// ClientCancelActivityOptions contains options for ClientActivityHandle.Cancel call.
+	ClientCancelActivityOptions struct {
 		// Reason is optional description of the reason for cancellation.
 		Reason string
 	}
 
-	// TerminateActivityOptions contains options for ActivityHandle.Terminate call.
-	TerminateActivityOptions struct {
+	// ClientTerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
+	ClientTerminateActivityOptions struct {
 		// Reason is optional description of the reason for cancellation.
 		Reason string
 	}
 
-	ActivityExecutionMetadata struct {
-		// RawExecutionListInfo is the raw PB message this struct was built from.
-		// This field is nil in the result of ActivityHandle.Describe call - use
-		// ActivityExecutionDescription.RawExecutionInfo instead.
-		RawExecutionListInfo *activitypb.ActivityExecutionListInfo
-		ActivityID           string
-		ActivityRunID        string
-		ActivityType         string
-		ScheduleTime         time.Time
-		CloseTime            time.Time
-		Status               enumspb.ActivityExecutionStatus
-		SearchAttributes     SearchAttributes
-		TaskQueue            string
-		ExecutionDuration    time.Duration
+	ClientActivityExecutionInfo struct {
+		// Raw PB message this struct was built from. This field is nil in the result of ClientActivityHandle.Describe call - use
+		// ClientActivityExecutionDescription.RawExecutionInfo instead.
+		RawExecutionListInfo  *activitypb.ActivityExecutionListInfo
+		ActivityID            string
+		ActivityRunID         string
+		ActivityType          string
+		ScheduleTime          time.Time
+		CloseTime             time.Time
+		Status                enumspb.ActivityExecutionStatus
+		TypedSearchAttributes SearchAttributes
+		TaskQueue             string
+		ExecutionDuration     time.Duration
 	}
 
-	ActivityExecutionDescription struct {
-		ActivityExecutionMetadata
-		// RawExecutionInfo is the raw PB message this struct was built from.
-		RawExecutionInfo *activitypb.ActivityExecutionInfo
-		// DataConverter is the data converter used for reading certain fields. By default, it's the data converter of
-		// the client used to make the ActivityHandle.Describe call.
-		DataConverter converter.DataConverter
-		// FailureConverter is the failure converter used for reading last failure. By default, it's the data converter
-		// of the client used to make the ActivityHandle.Describe call.
-		FailureConverter        converter.FailureConverter
+	ClientActivityExecutionDescription struct {
+		ClientActivityExecutionInfo
+		// Raw PB message this struct was built from.
+		RawExecutionInfo        *activitypb.ActivityExecutionInfo
 		RunState                enumspb.PendingActivityState
 		LastHeartbeatTime       time.Time
 		LastStartedTime         time.Time
@@ -134,6 +127,8 @@ type (
 		LastDeploymentVersion   *WorkerDeploymentVersion
 		Priority                Priority
 		CanceledReason          string
+		dataConverter           converter.DataConverter
+		failureConverter        converter.FailureConverter
 	}
 
 	activityHandleImpl struct {
@@ -144,7 +139,7 @@ type (
 )
 
 // GetHeartbeatDetailsCount returns the number of heartbeat details. Does not perform data conversion.
-func (d *ActivityExecutionDescription) GetHeartbeatDetailsCount() int {
+func (d *ClientActivityExecutionDescription) GetHeartbeatDetailsCount() int {
 	return len(d.RawExecutionInfo.GetHeartbeatDetails().GetPayloads())
 }
 
@@ -153,7 +148,7 @@ func (d *ActivityExecutionDescription) GetHeartbeatDetailsCount() int {
 //
 // valuesPtr must be a pointer to slice (*[]T). The type of the slice is retrieved from valuesPtr using reflection;
 // heartbeat details are converted to that type.
-func (d *ActivityExecutionDescription) GetHeartbeatDetails(valuesPtr any) error {
+func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuesPtr any) error {
 	valuesPtrVal := reflect.ValueOf(valuesPtr)
 	if valuesPtrVal.Type().Kind() != reflect.Ptr || valuesPtrVal.Type().Elem().Kind() != reflect.Slice {
 		panic("valuesPtr is not a pointer to slice")
@@ -166,28 +161,32 @@ func (d *ActivityExecutionDescription) GetHeartbeatDetails(valuesPtr any) error 
 	for i := 0; i < detailsCount; i++ {
 		pointersSlice[i] = detailsSlice.Index(i).Addr().Interface()
 	}
-	if err := d.DataConverter.FromPayloads(d.RawExecutionInfo.GetHeartbeatDetails(), pointersSlice...); err != nil {
+	if err := d.dataConverter.FromPayloads(d.RawExecutionInfo.GetHeartbeatDetails(), pointersSlice...); err != nil {
 		return err
 	}
 	valuesPtrVal.Set(detailsSlice)
 	return nil
 }
 
-// GetLastFailure returns the last failure of the activity execution, using FailureConverter for conversion.
-// Returns nil if there was no failure.
-func (d *ActivityExecutionDescription) GetLastFailure() error {
-	return d.FailureConverter.FailureToError(d.RawExecutionInfo.GetLastFailure())
+// GetLastFailure returns the last failure of the activity execution, using the failure converter of the client used to
+// make the Describe call. Returns nil if there was no failure.
+func (d *ClientActivityExecutionDescription) GetLastFailure() error {
+	failure := d.RawExecutionInfo.GetLastFailure()
+	if failure == nil {
+		return nil
+	}
+	return d.failureConverter.FailureToError(failure)
 }
 
 // GetSummary returns summary of the activity. See ActivityOptions.Summary. Returns empty string if there is no summary.
-// Uses DataConverter for converting the summary payload to string. Returns error if data conversion fails.
-func (d *ActivityExecutionDescription) GetSummary() (string, error) {
+// Uses the data converter of the client used to make the Describe call. Returns error if data conversion fails.
+func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 	payload := d.RawExecutionInfo.GetUserMetadata().GetSummary()
 	if payload == nil {
 		return "", nil
 	}
 	var summary string
-	err := d.DataConverter.FromPayload(payload, &summary)
+	err := d.dataConverter.FromPayload(payload, &summary)
 	if err != nil {
 		return "", err
 	}
@@ -239,7 +238,7 @@ func (h *activityHandleImpl) pollResult(ctx context.Context) (*workflowservice.P
 	return h.client.WorkflowService().PollActivityExecution(grpcCtx, request)
 }
 
-func (h *activityHandleImpl) Describe(ctx context.Context) (*ActivityExecutionDescription, error) {
+func (h *activityHandleImpl) Describe(ctx context.Context, options ClientDescribeActivityOptions) (*ClientActivityExecutionDescription, error) {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -267,22 +266,20 @@ func (h *activityHandleImpl) Describe(ctx context.Context) (*ActivityExecutionDe
 		lastDeploymentVersion = &v
 	}
 
-	return &ActivityExecutionDescription{
-		ActivityExecutionMetadata: ActivityExecutionMetadata{
-			RawExecutionListInfo: nil,
-			ActivityID:           info.ActivityId,
-			ActivityRunID:        info.RunId,
-			ActivityType:         info.ActivityType.GetName(),
-			ScheduleTime:         info.ScheduleTime.AsTime(),
-			CloseTime:            info.CloseTime.AsTime(),
-			Status:               info.Status,
-			SearchAttributes:     convertToTypedSearchAttributes(h.client.logger, info.SearchAttributes.IndexedFields),
-			TaskQueue:            info.TaskQueue,
-			ExecutionDuration:    info.ExecutionDuration.AsDuration(),
+	return &ClientActivityExecutionDescription{
+		ClientActivityExecutionInfo: ClientActivityExecutionInfo{
+			RawExecutionListInfo:  nil,
+			ActivityID:            info.ActivityId,
+			ActivityRunID:         info.RunId,
+			ActivityType:          info.ActivityType.GetName(),
+			ScheduleTime:          info.ScheduleTime.AsTime(),
+			CloseTime:             info.CloseTime.AsTime(),
+			Status:                info.Status,
+			TypedSearchAttributes: convertToTypedSearchAttributes(h.client.logger, info.SearchAttributes.IndexedFields),
+			TaskQueue:             info.TaskQueue,
+			ExecutionDuration:     info.ExecutionDuration.AsDuration(),
 		},
 		RawExecutionInfo:        info,
-		DataConverter:           WithContext(ctx, h.client.dataConverter),
-		FailureConverter:        h.client.failureConverter,
 		RunState:                info.RunState,
 		LastHeartbeatTime:       info.LastHeartbeatTime.AsTime(),
 		LastStartedTime:         info.LastStartedTime.AsTime(),
@@ -296,10 +293,12 @@ func (h *activityHandleImpl) Describe(ctx context.Context) (*ActivityExecutionDe
 		LastDeploymentVersion:   lastDeploymentVersion,
 		Priority:                convertFromPBPriority(info.Priority),
 		CanceledReason:          info.CanceledReason,
+		dataConverter:           WithContext(ctx, h.client.dataConverter),
+		failureConverter:        h.client.failureConverter,
 	}, nil
 }
 
-func (h *activityHandleImpl) Cancel(ctx context.Context, options CancelActivityOptions) error {
+func (h *activityHandleImpl) Cancel(ctx context.Context, options ClientCancelActivityOptions) error {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return err
 	}
@@ -319,7 +318,7 @@ func (h *activityHandleImpl) Cancel(ctx context.Context, options CancelActivityO
 	return err
 }
 
-func (h *activityHandleImpl) Terminate(ctx context.Context, options TerminateActivityOptions) error {
+func (h *activityHandleImpl) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return err
 	}
@@ -339,7 +338,7 @@ func (h *activityHandleImpl) Terminate(ctx context.Context, options TerminateAct
 	return err
 }
 
-func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientExecuteActivityOptions, activity any, args ...any) (ActivityHandle, error) {
+func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -386,7 +385,7 @@ func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientExe
 	}, nil
 }
 
-func (options *ClientExecuteActivityOptions) validateAndSetInRequest(request *workflowservice.StartActivityExecutionRequest, dataConverter converter.DataConverter) error {
+func (options *ClientStartActivityOptions) validateAndSetInRequest(request *workflowservice.StartActivityExecutionRequest, dataConverter converter.DataConverter) error {
 	if options.ID == "" {
 		return errors.New("activity ID is required")
 	}
@@ -399,15 +398,10 @@ func (options *ClientExecuteActivityOptions) validateAndSetInRequest(request *wo
 	if options.StartToCloseTimeout < 0 {
 		return errors.New("negative StartToCloseTimeout")
 	}
-	startToCloseTimeout := options.StartToCloseTimeout
-	if startToCloseTimeout == 0 {
-		if options.ScheduleToCloseTimeout == 0 {
-			return errors.New("at least one of ScheduleToCloseTimeout and StartToCloseTimeout is required")
-		} else {
-			startToCloseTimeout = options.ScheduleToCloseTimeout
-		}
+	if options.StartToCloseTimeout == 0 && options.ScheduleToCloseTimeout == 0 {
+		return errors.New("at least one of ScheduleToCloseTimeout and StartToCloseTimeout is required")
 	}
-	searchAttrs, err := serializeTypedSearchAttributes(options.SearchAttributes.GetUntypedValues())
+	searchAttrs, err := serializeTypedSearchAttributes(options.TypedSearchAttributes.GetUntypedValues())
 	if err != nil {
 		return err
 	}
@@ -420,18 +414,18 @@ func (options *ClientExecuteActivityOptions) validateAndSetInRequest(request *wo
 	request.TaskQueue = &taskqueuepb.TaskQueue{Name: options.TaskQueue}
 	request.ScheduleToCloseTimeout = durationpb.New(options.ScheduleToCloseTimeout)
 	request.ScheduleToStartTimeout = durationpb.New(options.ScheduleToStartTimeout)
-	request.StartToCloseTimeout = durationpb.New(startToCloseTimeout)
+	request.StartToCloseTimeout = durationpb.New(options.StartToCloseTimeout)
 	request.HeartbeatTimeout = durationpb.New(options.HeartbeatTimeout)
 	request.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
-	request.IdReusePolicy = options.IDReusePolicy
-	request.IdConflictPolicy = options.IDConflictPolicy
+	request.IdReusePolicy = options.ActivityIDReusePolicy
+	request.IdConflictPolicy = options.ActivityIDConflictPolicy
 	request.SearchAttributes = searchAttrs
 	request.UserMetadata = userMetadata
 	request.Priority = convertToPBPriority(options.Priority)
 	return nil
 }
 
-func (wc *WorkflowClient) GetActivityHandle(activityID string, runID string) ActivityHandle {
+func (wc *WorkflowClient) GetActivityHandle(activityID string, runID string) ClientActivityHandle {
 	return &activityHandleImpl{
 		client: wc,
 		id:     activityID,
@@ -439,8 +433,8 @@ func (wc *WorkflowClient) GetActivityHandle(activityID string, runID string) Act
 	}
 }
 
-func (wc *WorkflowClient) ListActivities(ctx context.Context, options ListActivitiesOptions) iter.Seq2[*ActivityExecutionMetadata, error] {
-	return func(yield func(*ActivityExecutionMetadata, error) bool) {
+func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientListActivitiesOptions) iter.Seq2[*ClientActivityExecutionInfo, error] {
+	return func(yield func(*ClientActivityExecutionInfo, error) bool) {
 		if err := wc.ensureInitialized(ctx); err != nil {
 			yield(nil, err)
 			return
@@ -459,17 +453,17 @@ func (wc *WorkflowClient) ListActivities(ctx context.Context, options ListActivi
 			}
 
 			for _, ex := range resp.Executions {
-				if !yield(&ActivityExecutionMetadata{
-					RawExecutionListInfo: ex,
-					ActivityID:           ex.ActivityId,
-					ActivityRunID:        ex.RunId,
-					ActivityType:         ex.ActivityType.GetName(),
-					ScheduleTime:         ex.ScheduleTime.AsTime(),
-					CloseTime:            ex.CloseTime.AsTime(),
-					Status:               ex.Status,
-					SearchAttributes:     convertToTypedSearchAttributes(wc.logger, ex.SearchAttributes.IndexedFields),
-					TaskQueue:            ex.TaskQueue,
-					ExecutionDuration:    ex.ExecutionDuration.AsDuration(),
+				if !yield(&ClientActivityExecutionInfo{
+					RawExecutionListInfo:  ex,
+					ActivityID:            ex.ActivityId,
+					ActivityRunID:         ex.RunId,
+					ActivityType:          ex.ActivityType.GetName(),
+					ScheduleTime:          ex.ScheduleTime.AsTime(),
+					CloseTime:             ex.CloseTime.AsTime(),
+					Status:                ex.Status,
+					TypedSearchAttributes: convertToTypedSearchAttributes(wc.logger, ex.SearchAttributes.IndexedFields),
+					TaskQueue:             ex.TaskQueue,
+					ExecutionDuration:     ex.ExecutionDuration.AsDuration(),
 				}, nil) {
 					return
 				}
@@ -491,7 +485,7 @@ func (wc *WorkflowClient) getListActivitiesPage(ctx context.Context, request *wo
 	return wc.WorkflowService().ListActivityExecutions(grpcCtx, request)
 }
 
-func (wc *WorkflowClient) CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error) {
+func (wc *WorkflowClient) CountActivities(ctx context.Context, options ClientCountActivitiesOptions) (*ClientCountActivitiesResult, error) {
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
@@ -504,27 +498,20 @@ func (wc *WorkflowClient) CountActivities(ctx context.Context, options CountActi
 		return nil, err
 	}
 
-	if resp.Groups == nil {
-		return &CountActivitiesResult{
-			Count:  resp.Count,
-			Groups: nil,
-		}, nil
-	}
-
-	groups := make([]ActivityAggregationGroup, len(resp.Groups))
+	groups := make([]ClientCountActivitiesAggregationGroup, len(resp.Groups))
 	for i, group := range resp.Groups {
 		groupValues := make([]any, len(group.GroupValues))
 		for j, groupValue := range group.GroupValues {
 			// should never fail, and if it does, leaving nil behind
 			_ = converter.GetDefaultDataConverter().FromPayload(groupValue, &groupValues[j])
 		}
-		groups[i] = ActivityAggregationGroup{
+		groups[i] = ClientCountActivitiesAggregationGroup{
 			GroupValues: groupValues,
 			Count:       group.Count,
 		}
 	}
 
-	return &CountActivitiesResult{
+	return &ClientCountActivitiesResult{
 		Count:  resp.Count,
 		Groups: groups,
 	}, nil

@@ -8588,8 +8588,8 @@ func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
 }
 
 func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
-	makeOptions := func() client.ExecuteActivityOptions {
-		return client.ExecuteActivityOptions{
+	makeOptions := func() client.StartActivityOptions {
+		return client.StartActivityOptions{
 			ID:                     uuid.NewString(),
 			TaskQueue:              ts.taskQueueName,
 			ScheduleToCloseTimeout: 10 * time.Second,
@@ -8609,7 +8609,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		options := makeOptions()
 		searchAttrKey := temporal.NewSearchAttributeKeyString("CustomStringField")
 		searchAttrValue := "CustomValue"
-		options.SearchAttributes = temporal.NewSearchAttributes(searchAttrKey.ValueSet(searchAttrValue))
+		options.TypedSearchAttributes = temporal.NewSearchAttributes(searchAttrKey.ValueSet(searchAttrValue))
 		options.Summary = "activity summary"
 
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
@@ -8619,7 +8619,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		ts.Equal(options.ID, handle.GetID())
 		ts.NotEmpty(handle.GetRunID())
 
-		description, err := handle.Describe(ctx)
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
 		ts.NoError(err)
 		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_RUNNING, description.Status)
 		ts.Nil(description.RawExecutionListInfo)
@@ -8629,8 +8629,8 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		ts.Equal("readFromChannelActivity", description.ActivityType)
 		ts.Equal(ts.taskQueueName, description.TaskQueue)
 		ts.EqualValues(1, description.Attempt)
-		ts.EqualValues(1, description.SearchAttributes.Size())
-		attr, hasAttr := description.SearchAttributes.GetString(searchAttrKey)
+		ts.EqualValues(1, description.TypedSearchAttributes.Size())
+		attr, hasAttr := description.TypedSearchAttributes.GetString(searchAttrKey)
 		ts.True(hasAttr)
 		ts.Equal(searchAttrValue, attr)
 		summary, err := description.GetSummary()
@@ -8643,7 +8643,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		err = handle.Get(ctx, nil)
 		ts.NoError(err)
 
-		description, err = handle.Describe(ctx)
+		description, err = handle.Describe(ctx, client.DescribeActivityOptions{})
 		ts.NoError(err)
 		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED, description.Status)
 		ts.Equal(options.ID, description.ActivityID)
@@ -8710,7 +8710,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		err = handle.Get(ctx, nil)
 		ts.ErrorAs(err, &canceledErr)
 
-		description, err := handle.Describe(ctx)
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
 		ts.NoError(err)
 		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_CANCELED, description.Status)
 		ts.Equal(reason, description.CanceledReason)
@@ -8731,7 +8731,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		err = handle.Get(ctx, nil)
 		ts.ErrorAs(err, &terminatedErr)
 
-		description, err := handle.Describe(ctx)
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
 		ts.NoError(err)
 		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_TERMINATED, description.Status)
 		ts.Empty(description.CanceledReason)
@@ -8754,7 +8754,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 
 	ts.Run("GetActivityHandle", func() {
 		options := makeOptions()
-		options.IDReusePolicy = enumspb.ACTIVITY_ID_REUSE_POLICY_ALLOW_DUPLICATE
+		options.ActivityIDReusePolicy = enumspb.ACTIVITY_ID_REUSE_POLICY_ALLOW_DUPLICATE
 
 		executeActivity := func(ctx context.Context, argument string) client.ActivityHandle {
 			handle, err := ts.client.ExecuteActivity(ctx, options, activities.EchoString, argument)
@@ -8773,7 +8773,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 			ts.NoError(err)
 			ts.Equal(expectedResult, result)
 
-			description, err := handle.Describe(ctx)
+			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
 			ts.NoError(err)
 			ts.Equal(options.ID, description.ActivityID)
 			if runId != "" {
@@ -8794,5 +8794,19 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 
 		testGetHandle(ctx, act1Handle.GetRunID(), argument1)
 		testGetHandle(ctx, act2Handle.GetRunID(), argument2)
+	})
+
+	ts.Run("Activity result timeout", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "readFromChannelActivity")
+		ts.NoError(err)
+
+		getCtx, getCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer getCancel()
+		err = handle.Get(getCtx, nil)
+		var serviceErr *serviceerror.DeadlineExceeded
+		ts.True(errors.Is(err, context.DeadlineExceeded) || errors.As(err, &serviceErr))
+		activityResultChan <- "" // allow activity to complete
 	})
 }

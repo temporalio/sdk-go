@@ -2246,15 +2246,15 @@ func newServiceInvoker(
 // Execute executes an implementation of the activity.
 func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result interface{}, err error) {
 	traceLog(func() {
-		if t.WorkflowExecution.GetWorkflowId() != "" {
-			ath.logger.Debug("Processing new activity task",
+		if t.WorkflowExecution.GetWorkflowId() == "" {
+			ath.logger.Debug("Processing new standalone activity task",
 				tagActivityID, t.ActivityId,
 				tagActivityRunID, t.ActivityRunId,
 				tagActivityType, t.ActivityType.GetName(),
 				tagAttempt, t.Attempt,
 			)
 		} else {
-			ath.logger.Debug("Processing new activity task",
+			ath.logger.Debug("Processing new workflow activity task",
 				tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 				tagRunID, t.WorkflowExecution.GetRunId(),
 				tagActivityID, t.ActivityId,
