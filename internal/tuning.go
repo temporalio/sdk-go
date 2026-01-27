@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"sync"
 	"sync/atomic"
 
@@ -131,17 +130,15 @@ type SlotSupplier interface {
 	MaxSlots() int
 }
 
-// getSlotSupplierKind returns the kind/type name of a slot supplier. If the supplier implements
-// a Kind() string method, it uses that. Otherwise, it falls back to reflection on the type name.
 func getSlotSupplierKind(s SlotSupplier) string {
-	if k, ok := s.(interface{ Kind() string }); ok {
-		return k.Kind()
+	switch s.(type) {
+	case *FixedSizeSlotSupplier:
+		return "Fixed"
+	case *ResourceBasedSlotSupplier:
+		return "ResourceBased"
+	default:
+		return "Custom"
 	}
-	t := reflect.TypeOf(s)
-	if t.Kind() == reflect.Ptr {
-		return t.Elem().Name()
-	}
-	return t.Name()
 }
 
 // CompositeTuner allows you to build a tuner from multiple slot suppliers.
@@ -297,9 +294,6 @@ func (f *FixedSizeSlotSupplier) ReleaseSlot(SlotReleaseInfo) {
 }
 func (f *FixedSizeSlotSupplier) MaxSlots() int {
 	return f.numSlots
-}
-func (f *FixedSizeSlotSupplier) Kind() string {
-	return "Fixed"
 }
 
 type slotReservationData struct {

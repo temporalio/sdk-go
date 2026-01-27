@@ -241,8 +241,8 @@ type (
 		localActivitySlotSupplier *trackingSlotSupplier
 		nexusTaskSlotSupplier     *trackingSlotSupplier // TODO: nexus worker only gets started when worker is started, need to find a way to send kind over to heartbeat callback
 
-		// Host metrics provider for CPU/memory reporting in heartbeats
-		hostMetricsProvider TunerHostMetricsProvider
+		// SystemInfoSupplier for CPU/memory reporting in heartbeats
+		systemInfoSupplier SystemInfoSupplier
 	}
 )
 
@@ -2254,11 +2254,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		})
 	}
 
-	// If the tuner implements TunerHostMetricsProvider, use it for CPU/memory reporting in heartbeats.
-	// Otherwise, heartbeats will report 0 for CPU/memory usage.
-	var hostMetricsProvider TunerHostMetricsProvider
-	if provider, ok := options.Tuner.(TunerHostMetricsProvider); ok {
-		hostMetricsProvider = provider
+	// Get SystemInfoSupplier from tuner's slot supplier if it implements HasSystemInfoSupplier.
+	// If not available, heartbeats will report 0 for CPU/memory usage.
+	var systemInfoSupplier SystemInfoSupplier
+	if sis, ok := options.Tuner.GetWorkflowTaskSlotSupplier().(HasSystemInfoSupplier); ok {
+		systemInfoSupplier = sis.GetSystemInfoSupplier()
 	}
 
 	var heartbeatCallback func() *workerpb.WorkerHeartbeat
@@ -2308,8 +2308,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 					HostName:            hostname,
 					WorkerGroupingKey:   aw.client.workerGroupingKey,
 					ProcessId:           strconv.Itoa(os.Getpid()),
-					CurrentHostCpuUsage: getCpuUsage(hostMetricsProvider),
-					CurrentHostMemUsage: getMemUsage(hostMetricsProvider),
+					CurrentHostCpuUsage: getCpuUsage(systemInfoSupplier, workerParams.Logger),
+					CurrentHostMemUsage: getMemUsage(systemInfoSupplier, workerParams.Logger),
 				},
 				TaskQueue:                 aw.executionParams.TaskQueue,
 				DeploymentVersion:         deploymentVersion,
@@ -2345,7 +2345,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if heartbeatManager != nil {
 		heartbeatManager.heartbeatMetrics = heartbeatMetrics
 		heartbeatManager.heartbeatCallback = heartbeatCallback
-		heartbeatManager.hostMetricsProvider = hostMetricsProvider
+		heartbeatManager.systemInfoSupplier = systemInfoSupplier
 	}
 
 	aw = &AggregatedWorker{
@@ -2693,19 +2693,27 @@ func workerDeploymentVersionFromProtoOrString(wd *deploymentpb.WorkerDeploymentV
 	}
 }
 
-func getCpuUsage(provider TunerHostMetricsProvider) float32 {
-	if provider == nil {
+func getCpuUsage(supplier SystemInfoSupplier, logger log.Logger) float32 {
+	if supplier == nil {
 		return 0
 	}
-	cpu, _ := provider.GetCpuUsage()
+	cpu, err := supplier.GetCpuUsage(&SystemInfoContext{Logger: logger})
+	if err != nil {
+		logger.Warn("Failed to get CPU usage for heartbeat", "error", err)
+		return 0
+	}
 	return float32(cpu)
 }
 
-func getMemUsage(provider TunerHostMetricsProvider) float32 {
-	if provider == nil {
+func getMemUsage(supplier SystemInfoSupplier, logger log.Logger) float32 {
+	if supplier == nil {
 		return 0
 	}
-	mem, _ := provider.GetMemoryUsage()
+	mem, err := supplier.GetMemoryUsage(&SystemInfoContext{Logger: logger})
+	if err != nil {
+		logger.Warn("Failed to get memory usage for heartbeat", "error", err)
+		return 0
+	}
 	return float32(mem)
 }
 

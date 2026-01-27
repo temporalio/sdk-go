@@ -35,20 +35,6 @@ type (
 		isPollerBehavior()
 	}
 
-	// TunerHostMetricsProvider provides host-level CPU and memory metrics for worker heartbeats.
-	// This interface is typically implemented by a [WorkerTuner] to provide metrics from the same
-	// source used for tuning decisions, avoiding double-measurement. If the tuner passed to
-	// WorkerOptions implements this interface, the SDK will automatically use it for heartbeat
-	// metrics. Otherwise, heartbeats will report 0 for CPU/memory usage.
-	//
-	// Exposed as: [go.temporal.io/sdk/worker.TunerHostMetricsProvider]
-	TunerHostMetricsProvider interface {
-		// GetCpuUsage returns the current host CPU usage as a fraction (0.0-1.0)
-		GetCpuUsage() (float64, error)
-		// GetMemoryUsage returns the current host memory usage as a fraction (0.0-1.0)
-		GetMemoryUsage() (float64, error)
-	}
-
 	// PollerBehaviorAutoscalingOptions is the options for NewPollerBehaviorAutoscaling.
 	//
 	// Exposed as: [go.temporal.io/sdk/worker.PollerBehaviorAutoscalingOptions]
