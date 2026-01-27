@@ -3,14 +3,16 @@ package resourcetuner
 import (
 	"context"
 	"errors"
+	"runtime"
 	"sync"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/mem"
 	"go.einride.tech/pid"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/worker"
-	"go.temporal.io/sdk/worker/hostmetrics"
 )
 
 // Metric names emitted by the resource-based tuner
@@ -34,30 +36,12 @@ type ResourceBasedTunerOptions struct {
 	WorkflowRampThrottle time.Duration
 }
 
-// resourceBasedTuner wraps a WorkerTuner and implements TunerHostMetricsProvider
-// so the SDK can reuse metrics instead of collecting them twice.
-type resourceBasedTuner struct {
-	worker.WorkerTuner
-	hostMetrics *hostmetrics.PSUtilSystemInfoSupplier
-}
-
-func (t *resourceBasedTuner) GetCpuUsage() (float64, error) {
-	return t.hostMetrics.GetCpuUsage()
-}
-
-func (t *resourceBasedTuner) GetMemoryUsage() (float64, error) {
-	return t.hostMetrics.GetMemoryUsage()
-}
-
 // NewResourceBasedTuner creates a WorkerTuner that dynamically adjusts the number of slots based
 // on system resources. Specify the target CPU and memory usage as a value between 0 and 1.
 func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, error) {
-	hostMetrics := hostmetrics.NewPSUtilSystemInfoSupplier(nil)
-
 	options := DefaultResourceControllerOptions()
 	options.MemTargetPercent = opts.TargetMem
 	options.CpuTargetPercent = opts.TargetCpu
-	options.InfoSupplier = &hostMetricsInfoSupplier{provider: hostMetrics}
 	controller := NewResourceController(options)
 	wfSS := &ResourceBasedSlotSupplier{controller: controller,
 		options: DefaultWorkflowResourceBasedSlotSupplierOptions()}
@@ -88,23 +72,7 @@ func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (worker.WorkerTuner, 
 	if err != nil {
 		return nil, err
 	}
-	return &resourceBasedTuner{
-		WorkerTuner: compositeTuner,
-		hostMetrics: hostMetrics,
-	}, nil
-}
-
-// hostMetricsInfoSupplier adapts hostmetrics.PSUtilSystemInfoSupplier to SystemInfoSupplier
-type hostMetricsInfoSupplier struct {
-	provider *hostmetrics.PSUtilSystemInfoSupplier
-}
-
-func (s *hostMetricsInfoSupplier) GetMemoryUsage(ctx *SystemInfoContext) (float64, error) {
-	return s.provider.GetMemoryUsageWithLogger(ctx.Logger)
-}
-
-func (s *hostMetricsInfoSupplier) GetCpuUsage(ctx *SystemInfoContext) (float64, error) {
-	return s.provider.GetCpuUsageWithLogger(ctx.Logger)
+	return compositeTuner, nil
 }
 
 // ResourceBasedSlotSupplierOptions configures a particular ResourceBasedSlotSupplier.
@@ -214,9 +182,6 @@ func (r *ResourceBasedSlotSupplier) ReleaseSlot(worker.SlotReleaseInfo)   {}
 func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 	return 0
 }
-func (r *ResourceBasedSlotSupplier) Kind() string {
-	return "ResourceBased"
-}
 
 // SystemInfoSupplier implementations provide information about system resources.
 type SystemInfoSupplier interface {
@@ -290,11 +255,13 @@ type ResourceController struct {
 // the controller looks at overall system resources, multiple instances with different configs can
 // only conflict with one another.
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
-	infoSupplier := options.InfoSupplier
-	if infoSupplier == nil {
-		infoSupplier = &hostMetricsInfoSupplier{
-			provider: hostmetrics.NewPSUtilSystemInfoSupplier(nil),
+	var infoSupplier SystemInfoSupplier
+	if options.InfoSupplier == nil {
+		infoSupplier = &psUtilSystemInfoSupplier{
+			cGroupInfo: newCGroupInfo(),
 		}
+	} else {
+		infoSupplier = options.InfoSupplier
 	}
 	return &ResourceController{
 		options:      options,
@@ -361,4 +328,88 @@ func (rc *ResourceController) publishResourceMetrics(metricsHandler client.Metri
 	}
 	metricsHandler.Gauge(resourceSlotsMemUsage).Update(memUsage * 100)
 	metricsHandler.Gauge(resourceSlotsCPUUsage).Update(cpuUsage * 100)
+}
+
+type psUtilSystemInfoSupplier struct {
+	logger      log.Logger
+	mu          sync.Mutex
+	lastRefresh time.Time
+
+	lastMemStat  *mem.VirtualMemoryStat
+	lastCpuUsage float64
+
+	stopTryingToGetCGroupInfo bool
+	cGroupInfo                cGroupInfo
+}
+
+type cGroupInfo interface {
+	// Update requests an update of the cgroup stats. This is a no-op if not in a cgroup. Returns
+	// true if cgroup stats should continue to be updated, false if not in a cgroup or the returned
+	// error is considered unrecoverable.
+	Update() (bool, error)
+	// GetLastMemUsage returns last known memory usage as a fraction of the cgroup limit. 0 if not
+	// in a cgroup or limit is not set.
+	GetLastMemUsage() float64
+	// GetLastCPUUsage returns last known CPU usage as a fraction of the cgroup limit. 0 if not in a
+	// cgroup or limit is not set.
+	GetLastCPUUsage() float64
+}
+
+func (p *psUtilSystemInfoSupplier) GetMemoryUsage(infoContext *SystemInfoContext) (float64, error) {
+	if err := p.maybeRefresh(infoContext); err != nil {
+		return 0, err
+	}
+	lastCGroupMem := p.cGroupInfo.GetLastMemUsage()
+	if lastCGroupMem != 0 {
+		return lastCGroupMem, nil
+	}
+	return p.lastMemStat.UsedPercent / 100, nil
+}
+
+func (p *psUtilSystemInfoSupplier) GetCpuUsage(infoContext *SystemInfoContext) (float64, error) {
+	if err := p.maybeRefresh(infoContext); err != nil {
+		return 0, err
+	}
+
+	lastCGroupCPU := p.cGroupInfo.GetLastCPUUsage()
+	if lastCGroupCPU != 0 {
+		return lastCGroupCPU, nil
+	}
+	return p.lastCpuUsage / 100, nil
+}
+
+func (p *psUtilSystemInfoSupplier) maybeRefresh(infoContext *SystemInfoContext) error {
+	if time.Since(p.lastRefresh) < 100*time.Millisecond {
+		return nil
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// Double check refresh is still needed
+	if time.Since(p.lastRefresh) < 100*time.Millisecond {
+		return nil
+	}
+	ctx, cancelFn := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancelFn()
+	memStat, err := mem.VirtualMemoryWithContext(ctx)
+	if err != nil {
+		return err
+	}
+	cpuUsage, err := cpu.PercentWithContext(ctx, 0, false)
+	if err != nil {
+		return err
+	}
+
+	p.lastMemStat = memStat
+	p.lastCpuUsage = cpuUsage[0]
+
+	if runtime.GOOS == "linux" && !p.stopTryingToGetCGroupInfo {
+		continueUpdates, err := p.cGroupInfo.Update()
+		if err != nil {
+			infoContext.Logger.Warn("Failed to get cgroup stats", "error", err)
+		}
+		p.stopTryingToGetCGroupInfo = !continueUpdates
+	}
+
+	p.lastRefresh = time.Now()
+	return nil
 }

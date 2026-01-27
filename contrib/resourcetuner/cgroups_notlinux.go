@@ -1,6 +1,6 @@
 //go:build !linux
 
-package hostmetrics
+package resourcetuner
 
 import "errors"
 
@@ -8,7 +8,8 @@ func newCGroupInfo() cGroupInfo {
 	return &cGroupInfoImpl{}
 }
 
-type cGroupInfoImpl struct{}
+type cGroupInfoImpl struct {
+}
 
 func (p *cGroupInfoImpl) Update() (bool, error) {
 	return false, errors.New("cgroup is not supported on this platform")

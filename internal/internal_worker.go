@@ -14,6 +14,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,7 +40,6 @@ import (
 	"go.temporal.io/sdk/internal/common/util"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
-	"go.temporal.io/sdk/worker/hostmetrics"
 )
 
 const (
@@ -239,7 +239,7 @@ type (
 		workflowTaskSlotSupplier  *trackingSlotSupplier
 		activityTaskSlotSupplier  *trackingSlotSupplier
 		localActivitySlotSupplier *trackingSlotSupplier
-		nexusTaskSlotSupplier     *trackingSlotSupplier
+		nexusTaskSlotSupplier     *trackingSlotSupplier // TODO: nexus worker only gets started when worker is started, need to find a way to send kind over to heartbeat callback
 
 		// Host metrics provider for CPU/memory reporting in heartbeats
 		hostMetricsProvider TunerHostMetricsProvider
@@ -1201,6 +1201,7 @@ type AggregatedWorker struct {
 	pluginRegistryOptions *WorkerPluginConfigureWorkerRegistryOptions // Never nil
 
 	workerHeartbeatManager *workerHeartbeatManager
+	heartbeatCallback      func() *workerpb.WorkerHeartbeat
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1514,21 +1515,14 @@ func (aw *AggregatedWorker) registerHeartbeatWorker() error {
 	if aw.client.heartbeatManager == nil {
 		return nil
 	}
-	return aw.client.heartbeatManager.RegisterWorker(
-		aw.executionParams.Namespace,
-		aw.workerInstanceKey,
-		aw.workerHeartbeatManager.heartbeatCallback,
-	)
+	return aw.client.heartbeatManager.RegisterWorker(aw)
 }
 
 func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
 	if aw.client.heartbeatManager == nil || aw.workerHeartbeatManager == nil {
 		return
 	}
-	aw.client.heartbeatManager.UnregisterWorker(
-		aw.executionParams.Namespace,
-		aw.workerInstanceKey,
-	)
+	aw.client.heartbeatManager.UnregisterWorker(aw)
 }
 
 // shutdownWorker sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
@@ -2260,13 +2254,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		})
 	}
 
-	// Initialize host metrics provider for CPU/memory reporting.
-	// If the tuner implements TunerHostMetricsProvider, use it to avoid double-measurement of system.
+	// If the tuner implements TunerHostMetricsProvider, use it for CPU/memory reporting in heartbeats.
+	// Otherwise, heartbeats will report 0 for CPU/memory usage.
 	var hostMetricsProvider TunerHostMetricsProvider
 	if provider, ok := options.Tuner.(TunerHostMetricsProvider); ok {
 		hostMetricsProvider = provider
-	} else if client.workerHeartbeatInterval != 0 {
-		hostMetricsProvider = hostmetrics.NewPSUtilSystemInfoSupplier(workerParams.Logger)
 	}
 
 	var heartbeatCallback func() *workerpb.WorkerHeartbeat
@@ -2721,16 +2713,24 @@ func getMemUsage(provider TunerHostMetricsProvider) float32 {
 // deduplicates them, and returns a slice of PluginInfo for heartbeat reporting.
 func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin) []*workerpb.PluginInfo {
 	set := make(map[string]struct{}, len(clientPluginNames)+len(workerPlugins))
+	result := make([]*workerpb.PluginInfo, 0, len(clientPluginNames)+len(workerPlugins))
 	for _, name := range clientPluginNames {
+		if _, found := set[name]; !found {
+			set[name] = struct{}{}
+			result = append(result, &workerpb.PluginInfo{Name: name})
+		}
 		set[name] = struct{}{}
 	}
 	for _, plugin := range workerPlugins {
-		set[plugin.Name()] = struct{}{}
+		if _, found := set[plugin.Name()]; !found {
+			set[plugin.Name()] = struct{}{}
+			result = append(result, &workerpb.PluginInfo{Name: plugin.Name()})
+		}
 	}
 
-	result := make([]*workerpb.PluginInfo, 0, len(set))
-	for name := range set {
-		result = append(result, &workerpb.PluginInfo{Name: name})
-	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+
 	return result
 }

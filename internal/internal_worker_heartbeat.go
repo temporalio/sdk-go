@@ -37,13 +37,12 @@ func NewHeartbeatManager(client *WorkflowClient, interval time.Duration, logger 
 
 // RegisterWorker registers a worker's heartbeat callback with the shared heartbeat worker for the namespace.
 func (m *HeartbeatManager) RegisterWorker(
-	namespace string,
-	workerInstanceKey string,
-	callback func() *workerpb.WorkerHeartbeat,
+	worker *AggregatedWorker,
 ) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	namespace := worker.executionParams.Namespace
 	hw, ok := m.workers[namespace]
 	if !ok {
 		capabilities, err := m.client.loadNamespaceCapabilities(context.Background())
@@ -77,7 +76,7 @@ func (m *HeartbeatManager) RegisterWorker(
 	}
 
 	hw.mu.Lock()
-	hw.callbacks[workerInstanceKey] = callback
+	hw.callbacks[worker.workerInstanceKey] = worker.heartbeatCallback
 	hw.mu.Unlock()
 
 	return nil
@@ -85,17 +84,18 @@ func (m *HeartbeatManager) RegisterWorker(
 
 // UnregisterWorker removes a worker's heartbeat callback. If no callbacks remain for the namespace,
 // the shared heartbeat worker is stopped.
-func (m *HeartbeatManager) UnregisterWorker(namespace, workerInstanceKey string) {
+func (m *HeartbeatManager) UnregisterWorker(worker *AggregatedWorker) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	namespace := worker.executionParams.Namespace
 	hw, ok := m.workers[namespace]
 	if !ok {
 		return
 	}
 
 	hw.mu.Lock()
-	delete(hw.callbacks, workerInstanceKey)
+	delete(hw.callbacks, worker.workerInstanceKey)
 	remaining := len(hw.callbacks)
 	hw.mu.Unlock()
 

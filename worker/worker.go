@@ -241,7 +241,7 @@ type (
 	// This interface is typically implemented by a [WorkerTuner] to provide metrics from the same
 	// source used for tuning decisions, avoiding double-measurement. If the tuner passed to
 	// [Options] implements this interface, the SDK will automatically use it for heartbeat metrics.
-	// Alternatively, use the default implementation in the worker/hostmetrics package.
+	// Otherwise, heartbeats will report 0 for CPU/memory usage.
 	//
 	// NOTE: Experimental
 	TunerHostMetricsProvider = internal.TunerHostMetricsProvider

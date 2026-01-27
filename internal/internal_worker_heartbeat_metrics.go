@@ -324,121 +324,6 @@ func buildPollerInfo(currentPollers int32, lastSuccessfulPollTime time.Time, pol
 	}
 }
 
-// GetStickyCacheHit returns the total number of sticky cache hits.
-func (h *HeartbeatMetricsHandler) GetStickyCacheHit() int32 {
-	return int32(h.metrics[metricStickyCacheHit].Load())
-}
-
-// GetStickyCacheMiss returns the total number of sticky cache misses.
-func (h *HeartbeatMetricsHandler) GetStickyCacheMiss() int32 {
-	return int32(h.metrics[metricStickyCacheMiss].Load())
-}
-
-// GetStickyCacheSize returns the current sticky cache size.
-func (h *HeartbeatMetricsHandler) GetStickyCacheSize() int32 {
-	return int32(h.metrics[metricStickyCacheSize].Load())
-}
-
-// GetWorkflowTaskFailures returns the total number of workflow task failures.
-func (h *HeartbeatMetricsHandler) GetWorkflowTaskFailures() int64 {
-	return int64(h.metrics[metricWorkflowTaskFailures].Load())
-}
-
-// GetActivityTaskFailures returns the total number of activity task failures.
-func (h *HeartbeatMetricsHandler) GetActivityTaskFailures() int64 {
-	return int64(h.metrics[metricActivityTaskFailures].Load())
-}
-
-// GetLocalActivityTaskFailures returns the total number of local activity task failures.
-func (h *HeartbeatMetricsHandler) GetLocalActivityTaskFailures() int64 {
-	return int64(h.metrics[metricLocalActivityTaskFailures].Load())
-}
-
-// GetNexusTaskFailures returns the total number of nexus task failures.
-func (h *HeartbeatMetricsHandler) GetNexusTaskFailures() int64 {
-	return int64(h.metrics[metricNexusTaskFailures].Load())
-}
-
-// GetWorkflowSlotsAvailable returns the current workflow slots available.
-func (h *HeartbeatMetricsHandler) GetWorkflowSlotsAvailable() int32 {
-	return int32(h.metrics[metricWorkflowSlotsAvailable].Load())
-}
-
-// GetWorkflowSlotsUsed returns the current workflow slots used.
-func (h *HeartbeatMetricsHandler) GetWorkflowSlotsUsed() int32 {
-	return int32(h.metrics[metricWorkflowSlotsUsed].Load())
-}
-
-// GetActivitySlotsAvailable returns the current activity slots available.
-func (h *HeartbeatMetricsHandler) GetActivitySlotsAvailable() int32 {
-	return int32(h.metrics[metricActivitySlotsAvailable].Load())
-}
-
-// GetActivitySlotsUsed returns the current activity slots used.
-func (h *HeartbeatMetricsHandler) GetActivitySlotsUsed() int32 {
-	return int32(h.metrics[metricActivitySlotsUsed].Load())
-}
-
-// GetLocalActivitySlotsAvailable returns the current local activity slots available.
-func (h *HeartbeatMetricsHandler) GetLocalActivitySlotsAvailable() int32 {
-	return int32(h.metrics[metricLocalActivitySlotsAvailable].Load())
-}
-
-// GetLocalActivitySlotsUsed returns the current local activity slots used.
-func (h *HeartbeatMetricsHandler) GetLocalActivitySlotsUsed() int32 {
-	return int32(h.metrics[metricLocalActivitySlotsUsed].Load())
-}
-
-// GetNexusSlotsAvailable returns the current nexus slots available.
-func (h *HeartbeatMetricsHandler) GetNexusSlotsAvailable() int32 {
-	return int32(h.metrics[metricNexusSlotsAvailable].Load())
-}
-
-// GetNexusSlotsUsed returns the current nexus slots used.
-func (h *HeartbeatMetricsHandler) GetNexusSlotsUsed() int32 {
-	return int32(h.metrics[metricNexusSlotsUsed].Load())
-}
-
-// GetWorkflowTasksProcessed returns the total number of workflow tasks processed.
-func (h *HeartbeatMetricsHandler) GetWorkflowTasksProcessed() int64 {
-	return int64(h.metrics[metricWorkflowTasksProcessed].Load())
-}
-
-// GetActivityTasksProcessed returns the total number of activity tasks processed.
-func (h *HeartbeatMetricsHandler) GetActivityTasksProcessed() int64 {
-	return int64(h.metrics[metricActivityTasksProcessed].Load())
-}
-
-// GetLocalActivityTasksProcessed returns the total number of local activity tasks processed.
-func (h *HeartbeatMetricsHandler) GetLocalActivityTasksProcessed() int64 {
-	return int64(h.metrics[metricLocalActivityTasksProcessed].Load())
-}
-
-// GetNexusTasksProcessed returns the total number of nexus tasks processed.
-func (h *HeartbeatMetricsHandler) GetNexusTasksProcessed() int64 {
-	return int64(h.metrics[metricNexusTasksProcessed].Load())
-}
-
-// GetWorkflowPollerCount returns the current number of workflow task pollers.
-func (h *HeartbeatMetricsHandler) GetWorkflowPollerCount() int32 {
-	return int32(h.metrics[metricWorkflowPollerCount].Load())
-}
-
-// GetWorkflowStickyPollerCount returns the current number of workflow sticky task pollers.
-func (h *HeartbeatMetricsHandler) GetWorkflowStickyPollerCount() int32 {
-	return int32(h.metrics[metricWorkflowStickyPollerCount].Load())
-}
-
-// GetActivityPollerCount returns the current number of activity task pollers.
-func (h *HeartbeatMetricsHandler) GetActivityPollerCount() int32 {
-	return int32(h.metrics[metricActivityPollerCount].Load())
-}
-
-// GetNexusPollerCount returns the current number of nexus task pollers.
-func (h *HeartbeatMetricsHandler) GetNexusPollerCount() int32 {
-	return int32(h.metrics[metricNexusPollerCount].Load())
-}
-
 // RecordWorkflowPollSuccess records a successful workflow task poll.
 func (h *HeartbeatMetricsHandler) RecordWorkflowPollSuccess() {
 	h.metrics[metricWorkflowLastPoll].Store(uint64(time.Now().UnixNano()))
@@ -459,67 +344,23 @@ func (h *HeartbeatMetricsHandler) RecordNexusPollSuccess() {
 	h.metrics[metricNexusLastPoll].Store(uint64(time.Now().UnixNano()))
 }
 
-// GetWorkflowLastPollTime returns the last successful workflow task poll time.
-func (h *HeartbeatMetricsHandler) GetWorkflowLastPollTime() time.Time {
-	nanos := h.metrics[metricWorkflowLastPoll].Load()
-	if nanos == 0 {
-		return time.Time{}
-	}
-	return time.Unix(0, int64(nanos))
-}
-
-// GetWorkflowStickyLastPollTime returns the last successful workflow sticky task poll time.
-func (h *HeartbeatMetricsHandler) GetWorkflowStickyLastPollTime() time.Time {
-	nanos := h.metrics[metricWorkflowStickyLastPoll].Load()
-	if nanos == 0 {
-		return time.Time{}
-	}
-	return time.Unix(0, int64(nanos))
-}
-
-// GetActivityLastPollTime returns the last successful activity task poll time.
-func (h *HeartbeatMetricsHandler) GetActivityLastPollTime() time.Time {
-	nanos := h.metrics[metricActivityLastPoll].Load()
-	if nanos == 0 {
-		return time.Time{}
-	}
-	return time.Unix(0, int64(nanos))
-}
-
-// GetNexusLastPollTime returns the last successful nexus task poll time.
-func (h *HeartbeatMetricsHandler) GetNexusLastPollTime() time.Time {
-	nanos := h.metrics[metricNexusLastPoll].Load()
-	if nanos == 0 {
-		return time.Time{}
-	}
-	return time.Unix(0, int64(nanos))
-}
-
-// PollSuccessRecorder is an optional interface for recording successful poll times.
-type PollSuccessRecorder interface {
-	RecordWorkflowPollSuccess()
-	RecordWorkflowStickyPollSuccess()
-	RecordActivityPollSuccess()
-	RecordNexusPollSuccess()
-}
-
-// RecordPollSuccess records a successful poll time if the handler supports it.
+// RecordPollSuccess records a successful poll time if the handler is a *HeartbeatMetricsHandler.
 // pollerType should be one of PollerTypeWorkflowTask, PollerTypeWorkflowStickyTask,
 // PollerTypeActivityTask, or PollerTypeNexusTask.
 func RecordPollSuccess(h metrics.Handler, pollerType string) {
-	recorder, ok := h.(PollSuccessRecorder)
+	hm, ok := h.(*HeartbeatMetricsHandler)
 	if !ok {
 		return
 	}
 	switch pollerType {
 	case metrics.PollerTypeWorkflowTask:
-		recorder.RecordWorkflowPollSuccess()
+		hm.RecordWorkflowPollSuccess()
 	case metrics.PollerTypeWorkflowStickyTask:
-		recorder.RecordWorkflowStickyPollSuccess()
+		hm.RecordWorkflowStickyPollSuccess()
 	case metrics.PollerTypeActivityTask:
-		recorder.RecordActivityPollSuccess()
+		hm.RecordActivityPollSuccess()
 	case metrics.PollerTypeNexusTask:
-		recorder.RecordNexusPollSuccess()
+		hm.RecordNexusPollSuccess()
 	}
 }
 
