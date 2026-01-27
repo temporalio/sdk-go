@@ -4619,8 +4619,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
-	cleanup := SetFlagOverrideForTest(SDKFlagBlockedSelectorSignalReceive, true)
-	defer cleanup()
+	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = true
+	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
@@ -4655,8 +4657,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalLost() {
-	cleanup := SetFlagOverrideForTest(SDKFlagBlockedSelectorSignalReceive, false)
-	defer cleanup()
+	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = false
+	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")

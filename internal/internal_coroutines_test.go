@@ -529,8 +529,10 @@ func TestBlockingSelect(t *testing.T) {
 }
 
 func TestSelectBlockingDefault(t *testing.T) {
-	cleanup := SetFlagOverrideForTest(SDKFlagBlockedSelectorSignalReceive, false)
-	defer cleanup()
+	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = false
+	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
 	var history []string
 	env := &workflowEnvironmentImpl{
 		sdkFlags:       newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
@@ -601,8 +603,9 @@ func TestSelectBlockingDefault(t *testing.T) {
 }
 
 func TestSelectBlockingDefaultWithFlag(t *testing.T) {
-	cleanup := SetFlagOverrideForTest(SDKFlagBlockedSelectorSignalReceive, true)
-	defer cleanup()
+	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = true
+	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
 
 	var history []string
 	env := &workflowEnvironmentImpl{
@@ -614,7 +617,6 @@ func TestSelectBlockingDefaultWithFlag(t *testing.T) {
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
 	}
-	// Flag should be enabled via override and TryUse should return true
 	require.True(t, env.TryUse(SDKFlagBlockedSelectorSignalReceive))
 
 	interceptor, ctx, err := newWorkflowContext(env, nil)

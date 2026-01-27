@@ -7144,13 +7144,11 @@ func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, ope
 	return count
 }
 
+// TODO: remove once SDKFlagBlockedSelectorSignalReceive is enabled by default
 func (ts *IntegrationTestSuite) TestSelectorBlock() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-selector-block")
-
-	internal.SetUnblockSelectorSignal(false)
-	defer internal.SetUnblockSelectorSignal(true)
 
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal)
 	ts.NoError(err)
@@ -7160,6 +7158,7 @@ func (ts *IntegrationTestSuite) TestSelectorBlock() {
 }
 
 func (ts *IntegrationTestSuite) TestSelectorNoBlock() {
+	ts.T().Skip("Skip until SDKFlagBlockedSelectorSignalReceive is enabled by default")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-selector-block")
