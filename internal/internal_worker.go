@@ -229,21 +229,6 @@ type (
 		// The build id specific to this worker
 		BuildID string
 	}
-
-	// workerHeartbeatManager includes all information needed to report worker heartbeats.
-	workerHeartbeatManager struct {
-		heartbeatMetrics  *HeartbeatMetricsHandler
-		heartbeatCallback func() *workerpb.WorkerHeartbeat
-
-		// Slot suppliers for heartbeat reporting
-		workflowTaskSlotSupplier  *trackingSlotSupplier
-		activityTaskSlotSupplier  *trackingSlotSupplier
-		localActivitySlotSupplier *trackingSlotSupplier
-		nexusTaskSlotSupplier     *trackingSlotSupplier // TODO: nexus worker only gets started when worker is started, need to find a way to send kind over to heartbeat callback
-
-		// SystemInfoSupplier for CPU/memory reporting in heartbeats
-		systemInfoSupplier SystemInfoSupplier
-	}
 )
 
 var debugMode = os.Getenv("TEMPORAL_DEBUG") != ""
@@ -1200,8 +1185,8 @@ type AggregatedWorker struct {
 	plugins               []WorkerPlugin
 	pluginRegistryOptions *WorkerPluginConfigureWorkerRegistryOptions // Never nil
 
-	workerHeartbeatManager *workerHeartbeatManager
-	heartbeatCallback      func() *workerpb.WorkerHeartbeat
+	heartbeatMetrics  *HeartbeatMetricsHandler
+	heartbeatCallback func() *workerpb.WorkerHeartbeat
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1377,9 +1362,6 @@ func (aw *AggregatedWorker) start() error {
 		if err := aw.nexusWorker.Start(); err != nil {
 			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
-		if aw.nexusWorker.worker != nil && aw.workerHeartbeatManager != nil {
-			aw.workerHeartbeatManager.nexusTaskSlotSupplier = aw.nexusWorker.worker.slotSupplier
-		}
 	}
 
 	if aw.client.workerHeartbeatInterval > 0 {
@@ -1515,14 +1497,14 @@ func (aw *AggregatedWorker) registerHeartbeatWorker() error {
 	if aw.client.heartbeatManager == nil {
 		return nil
 	}
-	return aw.client.heartbeatManager.RegisterWorker(aw)
+	return aw.client.heartbeatManager.registerWorker(aw)
 }
 
 func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
-	if aw.client.heartbeatManager == nil || aw.workerHeartbeatManager == nil {
+	if aw.client.heartbeatManager == nil {
 		return
 	}
-	aw.client.heartbeatManager.UnregisterWorker(aw)
+	aw.client.heartbeatManager.unregisterWorker(aw)
 }
 
 // shutdownWorker sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
@@ -1536,8 +1518,8 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	defer cancel()
 
 	var heartbeat *workerpb.WorkerHeartbeat
-	if aw.workerHeartbeatManager != nil && aw.workerHeartbeatManager.heartbeatCallback != nil {
-		heartbeat = aw.workerHeartbeatManager.heartbeatCallback()
+	if aw.heartbeatCallback != nil {
+		heartbeat = aw.heartbeatCallback()
 		heartbeat.Status = enumspb.WORKER_STATUS_SHUTTING_DOWN
 	}
 
@@ -2123,12 +2105,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
 	var metricsHandler metrics.Handler
 	var heartbeatMetrics *HeartbeatMetricsHandler
-	var heartbeatManager *workerHeartbeatManager
 
 	if client.workerHeartbeatInterval != 0 {
 		heartbeatMetrics = NewHeartbeatMetricsHandler(baseMetricsHandler)
 		metricsHandler = heartbeatMetrics
-		heartbeatManager = &workerHeartbeatManager{}
 	} else {
 		metricsHandler = baseMetricsHandler
 	}
@@ -2262,7 +2242,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	var heartbeatCallback func() *workerpb.WorkerHeartbeat
-	if heartbeatManager != nil {
+	if client.workerHeartbeatInterval != 0 {
 		startTime := timestamppb.New(time.Now())
 		hostname, _ := os.Hostname()
 		previousHeartbeatTime := time.Now()
@@ -2322,58 +2302,39 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				Plugins:                   pluginInfos,
 			}
 
-			if aw.workerHeartbeatManager.heartbeatMetrics != nil {
-				if aw.workerHeartbeatManager.workflowTaskSlotSupplier != nil {
-					populateOpts.WorkflowSlotSupplierKind = aw.workerHeartbeatManager.workflowTaskSlotSupplier.GetSlotSupplierKind()
+			if aw.heartbeatMetrics != nil {
+				if aw.workflowWorker != nil {
+					populateOpts.WorkflowSlotSupplierKind = aw.workflowWorker.worker.slotSupplier.GetSlotSupplierKind()
+					populateOpts.LocalActivitySlotSupplierKind = aw.workflowWorker.localActivityWorker.slotSupplier.GetSlotSupplierKind()
 				}
-				if aw.workerHeartbeatManager.activityTaskSlotSupplier != nil {
-					populateOpts.ActivitySlotSupplierKind = aw.workerHeartbeatManager.activityTaskSlotSupplier.GetSlotSupplierKind()
+				if aw.activityWorker != nil {
+					populateOpts.ActivitySlotSupplierKind = aw.activityWorker.worker.slotSupplier.GetSlotSupplierKind()
 				}
-				if aw.workerHeartbeatManager.localActivitySlotSupplier != nil {
-					populateOpts.LocalActivitySlotSupplierKind = aw.workerHeartbeatManager.localActivitySlotSupplier.GetSlotSupplierKind()
+				if aw.nexusWorker != nil {
+					populateOpts.NexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 				}
-				if aw.workerHeartbeatManager.nexusTaskSlotSupplier != nil {
-					populateOpts.NexusSlotSupplierKind = aw.workerHeartbeatManager.nexusTaskSlotSupplier.GetSlotSupplierKind()
-				}
-				aw.workerHeartbeatManager.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
+				aw.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
 			}
 
 			return hb
 		}
 	}
 
-	if heartbeatManager != nil {
-		heartbeatManager.heartbeatMetrics = heartbeatMetrics
-		heartbeatManager.heartbeatCallback = heartbeatCallback
-		heartbeatManager.systemInfoSupplier = systemInfoSupplier
-	}
-
 	aw = &AggregatedWorker{
-		client:                 client,
-		workflowWorker:         workflowWorker,
-		activityWorker:         activityWorker,
-		sessionWorker:          sessionWorker,
-		logger:                 workerParams.Logger,
-		registry:               registry,
-		stopC:                  make(chan struct{}),
-		capabilities:           &capabilities,
-		executionParams:        workerParams,
-		workerInstanceKey:      workerInstanceKey,
-		plugins:                plugins,
-		pluginRegistryOptions:  &pluginRegistryOptions,
-		workerHeartbeatManager: heartbeatManager,
-	}
-
-	if aw.workerHeartbeatManager != nil {
-		if workflowWorker != nil && workflowWorker.worker != nil {
-			aw.workerHeartbeatManager.workflowTaskSlotSupplier = workflowWorker.worker.slotSupplier
-		}
-		if workflowWorker != nil && workflowWorker.localActivityWorker != nil {
-			aw.workerHeartbeatManager.localActivitySlotSupplier = workflowWorker.localActivityWorker.slotSupplier
-		}
-		if activityWorker != nil && activityWorker.worker != nil {
-			aw.workerHeartbeatManager.activityTaskSlotSupplier = activityWorker.worker.slotSupplier
-		}
+		client:                client,
+		workflowWorker:        workflowWorker,
+		activityWorker:        activityWorker,
+		sessionWorker:         sessionWorker,
+		logger:                workerParams.Logger,
+		registry:              registry,
+		stopC:                 make(chan struct{}),
+		capabilities:          &capabilities,
+		executionParams:       workerParams,
+		workerInstanceKey:     workerInstanceKey,
+		plugins:               plugins,
+		pluginRegistryOptions: &pluginRegistryOptions,
+		heartbeatMetrics:      heartbeatMetrics,
+		heartbeatCallback:     heartbeatCallback,
 	}
 
 	// Set memoized start as a once-value that invokes plugins first

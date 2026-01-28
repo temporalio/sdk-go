@@ -1187,7 +1187,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	if heartbeatInterval > 0 {
-		client.heartbeatManager = NewHeartbeatManager(client, heartbeatInterval, client.logger)
+		client.heartbeatManager = newHeartbeatManager(client, heartbeatInterval, client.logger)
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain

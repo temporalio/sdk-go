@@ -15,8 +15,8 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// HeartbeatManager manages heartbeat workers across namespaces for a client.
-type HeartbeatManager struct {
+// heartbeatManager manages heartbeat workers across namespaces for a client.
+type heartbeatManager struct {
 	client   *WorkflowClient
 	interval time.Duration
 	logger   log.Logger
@@ -25,9 +25,9 @@ type HeartbeatManager struct {
 	workers map[string]*sharedNamespaceWorker // namespace -> worker
 }
 
-// NewHeartbeatManager creates a new HeartbeatManager.
-func NewHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger) *HeartbeatManager {
-	return &HeartbeatManager{
+// newHeartbeatManager creates a new heartbeatManager.
+func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger) *heartbeatManager {
+	return &heartbeatManager{
 		client:   client,
 		interval: interval,
 		logger:   logger,
@@ -35,8 +35,8 @@ func NewHeartbeatManager(client *WorkflowClient, interval time.Duration, logger 
 	}
 }
 
-// RegisterWorker registers a worker's heartbeat callback with the shared heartbeat worker for the namespace.
-func (m *HeartbeatManager) RegisterWorker(
+// registerWorker registers a worker's heartbeat callback with the shared heartbeat worker for the namespace.
+func (m *heartbeatManager) registerWorker(
 	worker *AggregatedWorker,
 ) error {
 	m.mu.Lock()
@@ -82,9 +82,9 @@ func (m *HeartbeatManager) RegisterWorker(
 	return nil
 }
 
-// UnregisterWorker removes a worker's heartbeat callback. If no callbacks remain for the namespace,
+// unregisterWorker removes a worker's heartbeat callback. If no callbacks remain for the namespace,
 // the shared heartbeat worker is stopped.
-func (m *HeartbeatManager) UnregisterWorker(worker *AggregatedWorker) {
+func (m *heartbeatManager) unregisterWorker(worker *AggregatedWorker) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -204,7 +204,7 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	_, err := hw.client.RecordWorkerHeartbeat(ctx, &workflowservice.RecordWorkerHeartbeatRequest{
+	_, err := hw.client.RecordWorkerHeartbeat(context.Background(), &workflowservice.RecordWorkerHeartbeatRequest{
 		Namespace:       hw.namespace,
 		WorkerHeartbeat: heartbeats,
 	})
