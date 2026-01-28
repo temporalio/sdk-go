@@ -19,7 +19,7 @@ require (
 	go.temporal.io/sdk v1.29.1
 	go.temporal.io/sdk/contrib/opentelemetry v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
-	go.temporal.io/sdk/contrib/resourcetuner v0.0.0-00010101000000-000000000000
+	go.temporal.io/sdk/contrib/resourcetuner v0.0.0-20260112203102-5b6df8e02dcf
 	go.temporal.io/sdk/contrib/tally v0.0.0-00010101000000-000000000000
 	go.uber.org/goleak v1.1.12
 	google.golang.org/grpc v1.67.1

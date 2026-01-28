@@ -5,8 +5,6 @@ go 1.23.0
 toolchain go1.23.6
 
 require (
-	github.com/containerd/cgroups/v3 v3.0.3
-	github.com/shirou/gopsutil/v4 v4.24.8
 	github.com/stretchr/testify v1.10.0
 	go.einride.tech/pid v0.1.3
 	go.temporal.io/sdk v1.29.1
@@ -14,6 +12,7 @@ require (
 
 require (
 	github.com/cilium/ebpf v0.11.0 // indirect
+	github.com/containerd/cgroups/v3 v3.0.3 // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
@@ -30,6 +29,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
 	github.com/robfig/cron v1.2.0 // indirect
+	github.com/shirou/gopsutil/v4 v4.24.8 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
