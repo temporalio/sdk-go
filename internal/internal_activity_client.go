@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"iter"
-	"reflect"
 	"time"
 
 	"github.com/google/uuid"
@@ -77,6 +76,8 @@ type (
 		Cancel(ctx context.Context, options ClientCancelActivityOptions) error
 		// Terminate terminates the activity.
 		Terminate(ctx context.Context, options ClientTerminateActivityOptions) error
+
+		mustEmbedActivityHandleBase()
 	}
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
@@ -131,41 +132,27 @@ type (
 		failureConverter        converter.FailureConverter
 	}
 
-	activityHandleImpl struct {
+	ClientActivityHandleBase struct {
 		client *WorkflowClient
 		id     string
 		runID  string
 	}
 )
 
-// GetHeartbeatDetailsCount returns the number of heartbeat details. Does not perform data conversion.
-func (d *ClientActivityExecutionDescription) GetHeartbeatDetailsCount() int {
-	return len(d.RawExecutionInfo.GetHeartbeatDetails().GetPayloads())
+// HasHeartbeatDetailsCount returns whether heartbeat details are present. Use GetHeartbeatDetails to retrieve them.
+func (d *ClientActivityExecutionDescription) HasHeartbeatDetailsCount() bool {
+	return len(d.RawExecutionInfo.GetHeartbeatDetails().GetPayloads()) > 0
 }
 
-// GetHeartbeatDetails converts heartbeat details using DataConverter and stores them in a slice.
-// If successful, valuesPtr is set to the resulting slice.
-//
-// valuesPtr must be a pointer to slice (*[]T). The type of the slice is retrieved from valuesPtr using reflection;
-// heartbeat details are converted to that type.
-func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuesPtr any) error {
-	valuesPtrVal := reflect.ValueOf(valuesPtr)
-	if valuesPtrVal.Type().Kind() != reflect.Ptr || valuesPtrVal.Type().Elem().Kind() != reflect.Slice {
-		panic("valuesPtr is not a pointer to slice")
+// GetHeartbeatDetails retrieves heartbeat details. Returns ErrNoData if heartbeat details are not present.
+// The details are deserialized into provided pointers using the data converter of the client used to make the Describe call.
+// Returns error if data conversion fails.
+func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...any) error {
+	details := d.RawExecutionInfo.GetHeartbeatDetails()
+	if details == nil {
+		return ErrNoData
 	}
-
-	detailsCount := d.GetHeartbeatDetailsCount()
-	detailsSliceType := valuesPtrVal.Type().Elem()
-	detailsSlice := reflect.MakeSlice(detailsSliceType, detailsCount, detailsCount)
-	pointersSlice := make([]any, detailsCount)
-	for i := 0; i < detailsCount; i++ {
-		pointersSlice[i] = detailsSlice.Index(i).Addr().Interface()
-	}
-	if err := d.dataConverter.FromPayloads(d.RawExecutionInfo.GetHeartbeatDetails(), pointersSlice...); err != nil {
-		return err
-	}
-	valuesPtrVal.Set(detailsSlice)
-	return nil
+	return d.dataConverter.FromPayloads(details, valuePtrs...)
 }
 
 // GetLastFailure returns the last failure of the activity execution, using the failure converter of the client used to
@@ -193,15 +180,17 @@ func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 	return summary, nil
 }
 
-func (h *activityHandleImpl) GetID() string {
+func (h *ClientActivityHandleBase) mustEmbedActivityHandleBase() {}
+
+func (h *ClientActivityHandleBase) GetID() string {
 	return h.id
 }
 
-func (h *activityHandleImpl) GetRunID() string {
+func (h *ClientActivityHandleBase) GetRunID() string {
 	return h.runID
 }
 
-func (h *activityHandleImpl) Get(ctx context.Context, valuePtr any) error {
+func (h *ClientActivityHandleBase) Get(ctx context.Context, valuePtr any) error {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return err
 	}
@@ -225,7 +214,7 @@ func (h *activityHandleImpl) Get(ctx context.Context, valuePtr any) error {
 	}
 }
 
-func (h *activityHandleImpl) pollResult(ctx context.Context) (*workflowservice.PollActivityExecutionResponse, error) {
+func (h *ClientActivityHandleBase) pollResult(ctx context.Context) (*workflowservice.PollActivityExecutionResponse, error) {
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
@@ -238,7 +227,7 @@ func (h *activityHandleImpl) pollResult(ctx context.Context) (*workflowservice.P
 	return h.client.WorkflowService().PollActivityExecution(grpcCtx, request)
 }
 
-func (h *activityHandleImpl) Describe(ctx context.Context, options ClientDescribeActivityOptions) (*ClientActivityExecutionDescription, error) {
+func (h *ClientActivityHandleBase) Describe(ctx context.Context, options ClientDescribeActivityOptions) (*ClientActivityExecutionDescription, error) {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -298,7 +287,7 @@ func (h *activityHandleImpl) Describe(ctx context.Context, options ClientDescrib
 	}, nil
 }
 
-func (h *activityHandleImpl) Cancel(ctx context.Context, options ClientCancelActivityOptions) error {
+func (h *ClientActivityHandleBase) Cancel(ctx context.Context, options ClientCancelActivityOptions) error {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return err
 	}
@@ -318,7 +307,7 @@ func (h *activityHandleImpl) Cancel(ctx context.Context, options ClientCancelAct
 	return err
 }
 
-func (h *activityHandleImpl) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
+func (h *ClientActivityHandleBase) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return err
 	}
@@ -348,89 +337,18 @@ func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientSta
 		return nil, err
 	}
 
-	ctx = contextWithNewHeader(ctx)
-	dataConverter := WithContext(ctx, wc.dataConverter)
-	if dataConverter == nil {
-		dataConverter = converter.GetDefaultDataConverter()
-	}
-
-	request := &workflowservice.StartActivityExecutionRequest{
-		Namespace:    wc.namespace,
-		Identity:     wc.identity,
-		RequestId:    uuid.NewString(),
-		ActivityType: &commonpb.ActivityType{Name: activityType.Name},
-	}
-	if err = options.validateAndSetInRequest(request, dataConverter); err != nil {
-		return nil, err
-	}
-	if request.Input, err = encodeArgs(dataConverter, args); err != nil {
-		return nil, err
-	}
-	if request.Header, err = headerPropagated(ctx, wc.contextPropagators); err != nil {
-		return nil, err
-	}
-
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
-	defer cancel()
-
-	resp, err := wc.WorkflowService().StartActivityExecution(grpcCtx, request)
-	if err != nil {
-		return nil, err
-	}
-
-	return &activityHandleImpl{
-		client: wc,
-		id:     options.ID,
-		runID:  resp.RunId,
-	}, nil
-}
-
-func (options *ClientStartActivityOptions) validateAndSetInRequest(request *workflowservice.StartActivityExecutionRequest, dataConverter converter.DataConverter) error {
-	if options.ID == "" {
-		return errors.New("activity ID is required")
-	}
-	if options.TaskQueue == "" {
-		return errors.New("task queue is required")
-	}
-	if options.ScheduleToCloseTimeout < 0 {
-		return errors.New("negative ScheduleToCloseTimeout")
-	}
-	if options.StartToCloseTimeout < 0 {
-		return errors.New("negative StartToCloseTimeout")
-	}
-	if options.StartToCloseTimeout == 0 && options.ScheduleToCloseTimeout == 0 {
-		return errors.New("at least one of ScheduleToCloseTimeout and StartToCloseTimeout is required")
-	}
-	searchAttrs, err := serializeTypedSearchAttributes(options.TypedSearchAttributes.GetUntypedValues())
-	if err != nil {
-		return err
-	}
-	userMetadata, err := buildUserMetadata(options.Summary, "", dataConverter)
-	if err != nil {
-		return err
-	}
-
-	request.ActivityId = options.ID
-	request.TaskQueue = &taskqueuepb.TaskQueue{Name: options.TaskQueue}
-	request.ScheduleToCloseTimeout = durationpb.New(options.ScheduleToCloseTimeout)
-	request.ScheduleToStartTimeout = durationpb.New(options.ScheduleToStartTimeout)
-	request.StartToCloseTimeout = durationpb.New(options.StartToCloseTimeout)
-	request.HeartbeatTimeout = durationpb.New(options.HeartbeatTimeout)
-	request.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
-	request.IdReusePolicy = options.ActivityIDReusePolicy
-	request.IdConflictPolicy = options.ActivityIDConflictPolicy
-	request.SearchAttributes = searchAttrs
-	request.UserMetadata = userMetadata
-	request.Priority = convertToPBPriority(options.Priority)
-	return nil
+	return wc.interceptor.ExecuteActivity(ctx, &ClientExecuteActivityInput{
+		Options:      &options,
+		ActivityType: activityType,
+		Args:         args,
+	})
 }
 
 func (wc *WorkflowClient) GetActivityHandle(activityID string, runID string) ClientActivityHandle {
-	return &activityHandleImpl{
-		client: wc,
-		id:     activityID,
-		runID:  runID,
-	}
+	return wc.interceptor.GetActivityHandle(&ClientGetActivityHandleInput{
+		ActivityID: activityID,
+		RunID:      runID,
+	})
 }
 
 func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientListActivitiesOptions) iter.Seq2[*ClientActivityExecutionInfo, error] {
@@ -515,4 +433,96 @@ func (wc *WorkflowClient) CountActivities(ctx context.Context, options ClientCou
 		Count:  resp.Count,
 		Groups: groups,
 	}, nil
+}
+
+func (w *workflowClientInterceptor) ExecuteActivity(
+	ctx context.Context,
+	in *ClientExecuteActivityInput,
+) (ClientActivityHandle, error) {
+	ctx = contextWithNewHeader(ctx)
+	dataConverter := WithContext(ctx, w.client.dataConverter)
+	if dataConverter == nil {
+		dataConverter = converter.GetDefaultDataConverter()
+	}
+
+	request := &workflowservice.StartActivityExecutionRequest{
+		Namespace:    w.client.namespace,
+		Identity:     w.client.identity,
+		RequestId:    uuid.NewString(),
+		ActivityType: &commonpb.ActivityType{Name: in.ActivityType.Name},
+	}
+	var err error
+	if err = in.Options.validateAndSetInRequest(request, dataConverter); err != nil {
+		return nil, err
+	}
+	if request.Input, err = encodeArgs(dataConverter, in.Args); err != nil {
+		return nil, err
+	}
+	if request.Header, err = headerPropagated(ctx, w.client.contextPropagators); err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	resp, err := w.client.WorkflowService().StartActivityExecution(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ClientActivityHandleBase{
+		client: w.client,
+		id:     in.Options.ID,
+		runID:  resp.RunId,
+	}, nil
+}
+
+func (options *ClientStartActivityOptions) validateAndSetInRequest(request *workflowservice.StartActivityExecutionRequest, dataConverter converter.DataConverter) error {
+	if options.ID == "" {
+		return errors.New("activity ID is required")
+	}
+	if options.TaskQueue == "" {
+		return errors.New("task queue is required")
+	}
+	if options.ScheduleToCloseTimeout < 0 {
+		return errors.New("negative ScheduleToCloseTimeout")
+	}
+	if options.StartToCloseTimeout < 0 {
+		return errors.New("negative StartToCloseTimeout")
+	}
+	if options.StartToCloseTimeout == 0 && options.ScheduleToCloseTimeout == 0 {
+		return errors.New("at least one of ScheduleToCloseTimeout and StartToCloseTimeout is required")
+	}
+	searchAttrs, err := serializeTypedSearchAttributes(options.TypedSearchAttributes.GetUntypedValues())
+	if err != nil {
+		return err
+	}
+	userMetadata, err := buildUserMetadata(options.Summary, "", dataConverter)
+	if err != nil {
+		return err
+	}
+
+	request.ActivityId = options.ID
+	request.TaskQueue = &taskqueuepb.TaskQueue{Name: options.TaskQueue}
+	request.ScheduleToCloseTimeout = durationpb.New(options.ScheduleToCloseTimeout)
+	request.ScheduleToStartTimeout = durationpb.New(options.ScheduleToStartTimeout)
+	request.StartToCloseTimeout = durationpb.New(options.StartToCloseTimeout)
+	request.HeartbeatTimeout = durationpb.New(options.HeartbeatTimeout)
+	request.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
+	request.IdReusePolicy = options.ActivityIDReusePolicy
+	request.IdConflictPolicy = options.ActivityIDConflictPolicy
+	request.SearchAttributes = searchAttrs
+	request.UserMetadata = userMetadata
+	request.Priority = convertToPBPriority(options.Priority)
+	return nil
+}
+
+func (w *workflowClientInterceptor) GetActivityHandle(
+	in *ClientGetActivityHandleInput,
+) ClientActivityHandle {
+	return &ClientActivityHandleBase{
+		client: w.client,
+		id:     in.ActivityID,
+		runID:  in.RunID,
+	}
 }

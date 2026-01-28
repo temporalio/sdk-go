@@ -903,11 +903,15 @@ type (
 	CountActivitiesResult           = internal.ClientCountActivitiesResult
 	CountActivitiesAggregationGroup = internal.ClientCountActivitiesAggregationGroup
 	ActivityHandle                  = internal.ClientActivityHandle
-	ActivityExecutionInfo           = internal.ClientActivityExecutionInfo
-	ActivityExecutionDescription    = internal.ClientActivityExecutionDescription
-	DescribeActivityOptions         = internal.ClientDescribeActivityOptions
-	CancelActivityOptions           = internal.ClientCancelActivityOptions
-	TerminateActivityOptions        = internal.ClientTerminateActivityOptions
+	// ActivityHandleBase must be derived to create custom implementations of ActivityHandle. This can be used in conjunction with
+	// interceptor.ClientOutboundInterceptor methods ExecuteActivity and GetActivityHandle to intercept method calls on the handle,
+	// e.g. getting activity result.
+	ActivityHandleBase           = internal.ClientActivityHandleBase
+	ActivityExecutionInfo        = internal.ClientActivityExecutionInfo
+	ActivityExecutionDescription = internal.ClientActivityExecutionDescription
+	DescribeActivityOptions      = internal.ClientDescribeActivityOptions
+	CancelActivityOptions        = internal.ClientCancelActivityOptions
+	TerminateActivityOptions     = internal.ClientTerminateActivityOptions
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
