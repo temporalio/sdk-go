@@ -1065,6 +1065,64 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock_Panic_GetChildWorkfl
 	s.Equal("mock of testWorkflowHello has incorrect number of returns, expected 2, but actual is 3", err1.Error())
 }
 
+// Test_NestedChildWorkflow_RootWorkflowExecution verifies RootWorkflowExecution
+// is correctly propagated through nested child workflows.
+func (s *WorkflowTestSuiteUnitTest) Test_NestedChildWorkflow_RootWorkflowExecution() {
+	// Capture workflow execution info
+	captureInfo := func(ctx Context) WorkflowExecution {
+		info := GetWorkflowInfo(ctx)
+		if info.RootWorkflowExecution != nil {
+			return *info.RootWorkflowExecution
+		}
+		return WorkflowExecution{}
+	}
+
+	// Grandchild workflow
+	grandchildWF := func(ctx Context) (WorkflowExecution, error) {
+		return captureInfo(ctx), nil
+	}
+
+	// Child workflow that spawns grandchild
+	childWF := func(ctx Context) ([]WorkflowExecution, error) {
+		childRoot := captureInfo(ctx)
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{WorkflowRunTimeout: time.Minute})
+		var grandchildRoot WorkflowExecution
+		err := ExecuteChildWorkflow(ctx, grandchildWF).Get(ctx, &grandchildRoot)
+		return []WorkflowExecution{childRoot, grandchildRoot}, err
+	}
+
+	// Parent workflow that spawns child
+	parentWF := func(ctx Context) ([]WorkflowExecution, error) {
+		info := GetWorkflowInfo(ctx)
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{WorkflowRunTimeout: time.Minute})
+		var results []WorkflowExecution
+		err := ExecuteChildWorkflow(ctx, childWF).Get(ctx, &results)
+		// Prepend parent's execution for verification
+		return append([]WorkflowExecution{info.WorkflowExecution}, results...), err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(grandchildWF)
+	env.RegisterWorkflow(childWF)
+	env.RegisterWorkflow(parentWF)
+	env.ExecuteWorkflow(parentWF)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var results []WorkflowExecution
+	s.NoError(env.GetWorkflowResult(&results))
+	s.Len(results, 3)
+
+	parentExec := results[0]
+	childRoot := results[1]
+	grandchildRoot := results[2]
+
+	// Child and grandchild should both point to parent as root
+	s.Equal(parentExec.ID, childRoot.ID, "Child's RootWorkflowExecution should point to parent")
+	s.Equal(parentExec.ID, grandchildRoot.ID, "Grandchild's RootWorkflowExecution should point to root (parent), not child")
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_StartFailed() {
 	workflowFn := func(ctx Context) (string, error) {
 		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Minute}
