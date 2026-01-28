@@ -90,7 +90,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		return nil, nil
 	}
 
-	RecordPollSuccess(ntp.metricsHandler, metrics.PollerTypeNexusTask)
+	recordPollSuccessIfHeartbeat(ntp.metricsHandler, metrics.PollerTypeNexusTask)
 
 	return &nexusTask{task: response}, nil
 }

@@ -202,6 +202,9 @@ type (
 )
 
 func newNumPollerMetric(metricsHandler metrics.Handler, pollerType string) *numPollerMetric {
+	if heartbeatHandler, isHeartbeat := metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
+		metricsHandler = heartbeatHandler.forPoller(pollerType)
+	}
 	return &numPollerMetric{
 		gauge: metricsHandler.WithTags(metrics.PollerTags(pollerType)).Gauge(metrics.NumPoller),
 	}
@@ -970,9 +973,9 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	}
 
 	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_STICKY {
-		RecordPollSuccess(wtp.metricsHandler, metrics.PollerTypeWorkflowStickyTask)
+		recordPollSuccessIfHeartbeat(wtp.metricsHandler, metrics.PollerTypeWorkflowStickyTask)
 	} else {
-		RecordPollSuccess(wtp.metricsHandler, metrics.PollerTypeWorkflowTask)
+		recordPollSuccessIfHeartbeat(wtp.metricsHandler, metrics.PollerTypeWorkflowTask)
 	}
 
 	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
@@ -1173,7 +1176,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		return &activityTask{}, nil
 	}
 
-	RecordPollSuccess(atp.metricsHandler, metrics.PollerTypeActivityTask)
+	recordPollSuccessIfHeartbeat(atp.metricsHandler, metrics.PollerTypeActivityTask)
 
 	workflowType := response.WorkflowType.GetName()
 	activityType := response.ActivityType.GetName()

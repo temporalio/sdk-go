@@ -10,155 +10,101 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 )
 
-type heartbeatMetric int
+// Metrics we capture for heartbeat reporting.
+var (
+	capturedCounters = map[string]bool{
+		metrics.StickyCacheHit:                      true,
+		metrics.StickyCacheMiss:                     true,
+		metrics.WorkflowTaskExecutionFailureCounter: true,
+		metrics.ActivityExecutionFailedCounter:      true,
+		metrics.LocalActivityExecutionFailedCounter: true,
+		metrics.NexusTaskExecutionFailedCounter:     true,
+	}
 
-const (
-	metricStickyCacheHit heartbeatMetric = iota
-	metricStickyCacheMiss
-	metricStickyCacheSize
-
-	metricWorkflowTaskFailures
-	metricActivityTaskFailures
-	metricLocalActivityTaskFailures
-	metricNexusTaskFailures
-
-	metricWorkflowSlotsAvailable
-	metricWorkflowSlotsUsed
-	metricActivitySlotsAvailable
-	metricActivitySlotsUsed
-	metricLocalActivitySlotsAvailable
-	metricLocalActivitySlotsUsed
-	metricNexusSlotsAvailable
-	metricNexusSlotsUsed
-
-	metricWorkflowTasksProcessed
-	metricActivityTasksProcessed
-	metricLocalActivityTasksProcessed
-	metricNexusTasksProcessed
-
-	metricWorkflowPollerCount
-	metricWorkflowStickyPollerCount
-	metricActivityPollerCount
-	metricNexusPollerCount
-
-	metricWorkflowLastPoll
-	metricWorkflowStickyLastPoll
-	metricActivityLastPoll
-	metricNexusLastPoll
-
-	metricCount
+	// Timer recordings are counted (not their latencies) to track tasks processed.
+	capturedTimers = map[string]bool{
+		metrics.WorkflowTaskExecutionLatency:  true,
+		metrics.ActivityExecutionLatency:      true,
+		metrics.LocalActivityExecutionLatency: true,
+		metrics.NexusTaskExecutionLatency:     true,
+	}
 )
 
-var counterMetricMap = map[string]heartbeatMetric{
-	metrics.StickyCacheHit:                      metricStickyCacheHit,
-	metrics.StickyCacheMiss:                     metricStickyCacheMiss,
-	metrics.WorkflowTaskExecutionFailureCounter: metricWorkflowTaskFailures,
-	metrics.ActivityExecutionFailedCounter:      metricActivityTaskFailures,
-	metrics.LocalActivityExecutionFailedCounter: metricLocalActivityTaskFailures,
-	metrics.NexusTaskExecutionFailedCounter:     metricNexusTaskFailures,
-}
-
-var timerMetricMap = map[string]heartbeatMetric{
-	metrics.WorkflowTaskExecutionLatency:  metricWorkflowTasksProcessed,
-	metrics.ActivityExecutionLatency:      metricActivityTasksProcessed,
-	metrics.LocalActivityExecutionLatency: metricLocalActivityTasksProcessed,
-	metrics.NexusTaskExecutionLatency:     metricNexusTasksProcessed,
-}
-
-var slotsAvailableByWorkerType = map[string]heartbeatMetric{
-	"WorkflowWorker":      metricWorkflowSlotsAvailable,
-	"ActivityWorker":      metricActivitySlotsAvailable,
-	"LocalActivityWorker": metricLocalActivitySlotsAvailable,
-	"NexusWorker":         metricNexusSlotsAvailable,
-}
-
-var slotsUsedByWorkerType = map[string]heartbeatMetric{
-	"WorkflowWorker":      metricWorkflowSlotsUsed,
-	"ActivityWorker":      metricActivitySlotsUsed,
-	"LocalActivityWorker": metricLocalActivitySlotsUsed,
-	"NexusWorker":         metricNexusSlotsUsed,
-}
-
-var pollerCountByPollerType = map[string]heartbeatMetric{
-	metrics.PollerTypeWorkflowTask:       metricWorkflowPollerCount,
-	metrics.PollerTypeWorkflowStickyTask: metricWorkflowStickyPollerCount,
-	metrics.PollerTypeActivityTask:       metricActivityPollerCount,
-	metrics.PollerTypeNexusTask:          metricNexusPollerCount,
-}
-
-// HeartbeatMetricsHandler wraps a metrics handler and captures specific metrics
-// in memory that are needed for worker heartbeats
-type HeartbeatMetricsHandler struct {
+// heartbeatMetricsHandler wraps a metrics handler and captures specific metrics
+// in memory for worker heartbeats.
+type heartbeatMetricsHandler struct {
 	underlying metrics.Handler
 	workerType string
 	pollerType string
-	metrics    map[heartbeatMetric]*atomic.Uint64
+
+	// All instances share the same underlying map (set on creation, never replaced).
+	// Keys are metric names, or "metricName:workerType" / "metricName:pollerType" for typed metrics.
+	metrics map[string]*atomic.Int64
 }
 
-// NewHeartbeatMetricsHandler creates a new handler that captures specific metrics
+// newHeartbeatMetricsHandler creates a new handler that captures specific metrics
 // for worker heartbeats while passing all metrics to the underlying handler.
-func NewHeartbeatMetricsHandler(underlying metrics.Handler) *HeartbeatMetricsHandler {
-	m := make(map[heartbeatMetric]*atomic.Uint64, metricCount)
-	for i := range heartbeatMetric(metricCount) {
-		m[i] = new(atomic.Uint64)
-	}
-	return &HeartbeatMetricsHandler{
+func newHeartbeatMetricsHandler(underlying metrics.Handler) *heartbeatMetricsHandler {
+	return &heartbeatMetricsHandler{
 		underlying: underlying,
-		metrics:    m,
+		metrics:    make(map[string]*atomic.Int64),
 	}
 }
 
-func (h *HeartbeatMetricsHandler) WithTags(tags map[string]string) metrics.Handler {
+// forWorker creates a new handler that captures metrics specific to a worker type, for worker heartbeating.
+// This should be called explicitly before calling WithTags on the returned handler.
+func (h *heartbeatMetricsHandler) forWorker(workerType string) metrics.Handler {
 	cpy := *h
-	cpy.underlying = h.underlying.WithTags(tags)
-	if wt, ok := tags[metrics.WorkerTypeTagName]; ok {
-		cpy.workerType = wt
-	}
-	if pt, ok := tags[metrics.PollerTypeTagName]; ok {
-		cpy.pollerType = pt
-	}
+	cpy.workerType = workerType
 	return &cpy
 }
 
-func (h *HeartbeatMetricsHandler) Counter(name string) metrics.Counter {
+// forPoller creates a new handler that captures metrics specific to a poller type, for worker heartbeating.
+// This should be called explicitly before calling WithTags on the returned handler.
+func (h *heartbeatMetricsHandler) forPoller(pollerType string) metrics.Handler {
+	cpy := *h
+	cpy.pollerType = pollerType
+	return &cpy
+}
+
+func (h *heartbeatMetricsHandler) WithTags(tags map[string]string) metrics.Handler {
+	cpy := *h
+	cpy.underlying = h.underlying.WithTags(tags)
+	return &cpy
+}
+
+func (h *heartbeatMetricsHandler) Counter(name string) metrics.Counter {
 	underlying := h.underlying.Counter(name)
-	if metric, ok := counterMetricMap[name]; ok {
+	if capturedCounters[name] {
 		return &capturingCounter{
 			underlying: underlying,
-			value:      h.metrics[metric],
+			value:      h.getOrCreate(name),
 		}
 	}
 	return underlying
 }
 
-func (h *HeartbeatMetricsHandler) Gauge(name string) metrics.Gauge {
+func (h *heartbeatMetricsHandler) Gauge(name string) metrics.Gauge {
 	underlying := h.underlying.Gauge(name)
 
 	switch name {
 	case metrics.StickyCacheSize:
 		return &capturingGauge{
 			underlying: underlying,
-			value:      h.metrics[metricStickyCacheSize],
+			value:      h.getOrCreate(name),
 		}
-	case metrics.WorkerTaskSlotsAvailable:
-		if metric, ok := slotsAvailableByWorkerType[h.workerType]; ok {
+	case metrics.WorkerTaskSlotsAvailable, metrics.WorkerTaskSlotsUsed:
+		if h.workerType != "" {
 			return &capturingGauge{
 				underlying: underlying,
-				value:      h.metrics[metric],
-			}
-		}
-	case metrics.WorkerTaskSlotsUsed:
-		if metric, ok := slotsUsedByWorkerType[h.workerType]; ok {
-			return &capturingGauge{
-				underlying: underlying,
-				value:      h.metrics[metric],
+				value:      h.getOrCreate(name + ":" + h.workerType),
 			}
 		}
 	case metrics.NumPoller:
-		if metric, ok := pollerCountByPollerType[h.pollerType]; ok {
+		if h.pollerType != "" {
 			return &capturingGauge{
 				underlying: underlying,
-				value:      h.metrics[metric],
+				value:      h.getOrCreate(name + ":" + h.pollerType),
 			}
 		}
 	}
@@ -166,15 +112,31 @@ func (h *HeartbeatMetricsHandler) Gauge(name string) metrics.Gauge {
 	return underlying
 }
 
-func (h *HeartbeatMetricsHandler) Timer(name string) metrics.Timer {
+func (h *heartbeatMetricsHandler) Timer(name string) metrics.Timer {
 	underlying := h.underlying.Timer(name)
-	if metric, ok := timerMetricMap[name]; ok {
+	if capturedTimers[name] {
 		return &capturingTimer{
 			underlying: underlying,
-			counter:    h.metrics[metric],
+			counter:    h.getOrCreate(name),
 		}
 	}
 	return underlying
+}
+
+func (h *heartbeatMetricsHandler) getOrCreate(key string) *atomic.Int64 {
+	if v, ok := h.metrics[key]; ok {
+		return v
+	}
+	v := new(atomic.Int64)
+	h.metrics[key] = v
+	return v
+}
+
+func (h *heartbeatMetricsHandler) get(key string) int64 {
+	if v, ok := h.metrics[key]; ok {
+		return v.Load()
+	}
+	return 0
 }
 
 // PopulateHeartbeatOptions contains external dependencies needed to populate heartbeat metrics.
@@ -188,7 +150,7 @@ type PopulateHeartbeatOptions struct {
 	ActivityPollerBehavior PollerBehavior
 	NexusPollerBehavior    PollerBehavior
 
-	// For delta calculations between heartbeats (mutated by PopulateHeartbeat)
+	// For delta calculations between heartbeats (mutated by PopulateHeartbeat).
 	PrevWorkflowProcessed      *int64
 	PrevWorkflowFailed         *int64
 	PrevActivityProcessed      *int64
@@ -199,20 +161,19 @@ type PopulateHeartbeatOptions struct {
 	PrevNexusFailed            *int64
 }
 
-// PopulateHeartbeat fills in the metrics-related fields of the passed in WorkerHeartbeat proto, as well as updates
-// references in the PopulateHeartbeatOptions for future delta calculations.
-func (h *HeartbeatMetricsHandler) PopulateHeartbeat(hb *workerpb.WorkerHeartbeat, opts *PopulateHeartbeatOptions) {
-	hb.TotalStickyCacheHit = int32(h.metrics[metricStickyCacheHit].Load())
-	hb.TotalStickyCacheMiss = int32(h.metrics[metricStickyCacheMiss].Load())
-	hb.CurrentStickyCacheSize = int32(h.metrics[metricStickyCacheSize].Load())
+// PopulateHeartbeat fills in the metrics-related fields of the WorkerHeartbeat proto.
+func (h *heartbeatMetricsHandler) PopulateHeartbeat(hb *workerpb.WorkerHeartbeat, opts *PopulateHeartbeatOptions) {
+	hb.TotalStickyCacheHit = int32(h.get(metrics.StickyCacheHit))
+	hb.TotalStickyCacheMiss = int32(h.get(metrics.StickyCacheMiss))
+	hb.CurrentStickyCacheSize = int32(h.get(metrics.StickyCacheSize))
 
 	if opts.WorkflowSlotSupplierKind != "" {
 		hb.WorkflowTaskSlotsInfo = buildSlotsInfo(
 			opts.WorkflowSlotSupplierKind,
-			int32(h.metrics[metricWorkflowSlotsAvailable].Load()),
-			int32(h.metrics[metricWorkflowSlotsUsed].Load()),
-			int64(h.metrics[metricWorkflowTasksProcessed].Load()),
-			int64(h.metrics[metricWorkflowTaskFailures].Load()),
+			int32(h.get(metrics.WorkerTaskSlotsAvailable+":"+"WorkflowWorker")),
+			int32(h.get(metrics.WorkerTaskSlotsUsed+":"+"WorkflowWorker")),
+			h.get(metrics.WorkflowTaskExecutionLatency),
+			h.get(metrics.WorkflowTaskExecutionFailureCounter),
 			opts.PrevWorkflowProcessed,
 			opts.PrevWorkflowFailed,
 		)
@@ -221,10 +182,10 @@ func (h *HeartbeatMetricsHandler) PopulateHeartbeat(hb *workerpb.WorkerHeartbeat
 	if opts.ActivitySlotSupplierKind != "" {
 		hb.ActivityTaskSlotsInfo = buildSlotsInfo(
 			opts.ActivitySlotSupplierKind,
-			int32(h.metrics[metricActivitySlotsAvailable].Load()),
-			int32(h.metrics[metricActivitySlotsUsed].Load()),
-			int64(h.metrics[metricActivityTasksProcessed].Load()),
-			int64(h.metrics[metricActivityTaskFailures].Load()),
+			int32(h.get(metrics.WorkerTaskSlotsAvailable+":"+"ActivityWorker")),
+			int32(h.get(metrics.WorkerTaskSlotsUsed+":"+"ActivityWorker")),
+			h.get(metrics.ActivityExecutionLatency),
+			h.get(metrics.ActivityExecutionFailedCounter),
 			opts.PrevActivityProcessed,
 			opts.PrevActivityFailed,
 		)
@@ -233,10 +194,10 @@ func (h *HeartbeatMetricsHandler) PopulateHeartbeat(hb *workerpb.WorkerHeartbeat
 	if opts.LocalActivitySlotSupplierKind != "" {
 		hb.LocalActivitySlotsInfo = buildSlotsInfo(
 			opts.LocalActivitySlotSupplierKind,
-			int32(h.metrics[metricLocalActivitySlotsAvailable].Load()),
-			int32(h.metrics[metricLocalActivitySlotsUsed].Load()),
-			int64(h.metrics[metricLocalActivityTasksProcessed].Load()),
-			int64(h.metrics[metricLocalActivityTaskFailures].Load()),
+			int32(h.get(metrics.WorkerTaskSlotsAvailable+":"+"LocalActivityWorker")),
+			int32(h.get(metrics.WorkerTaskSlotsUsed+":"+"LocalActivityWorker")),
+			h.get(metrics.LocalActivityExecutionLatency),
+			h.get(metrics.LocalActivityExecutionFailedCounter),
 			opts.PrevLocalActivityProcessed,
 			opts.PrevLocalActivityFailed,
 		)
@@ -245,43 +206,43 @@ func (h *HeartbeatMetricsHandler) PopulateHeartbeat(hb *workerpb.WorkerHeartbeat
 	if opts.NexusSlotSupplierKind != "" {
 		hb.NexusTaskSlotsInfo = buildSlotsInfo(
 			opts.NexusSlotSupplierKind,
-			int32(h.metrics[metricNexusSlotsAvailable].Load()),
-			int32(h.metrics[metricNexusSlotsUsed].Load()),
-			int64(h.metrics[metricNexusTasksProcessed].Load()),
-			int64(h.metrics[metricNexusTaskFailures].Load()),
+			int32(h.get(metrics.WorkerTaskSlotsAvailable+":"+"NexusWorker")),
+			int32(h.get(metrics.WorkerTaskSlotsUsed+":"+"NexusWorker")),
+			h.get(metrics.NexusTaskExecutionLatency),
+			h.get(metrics.NexusTaskExecutionFailedCounter),
 			opts.PrevNexusProcessed,
 			opts.PrevNexusFailed,
 		)
 	}
 
 	hb.WorkflowPollerInfo = buildPollerInfo(
-		int32(h.metrics[metricWorkflowPollerCount].Load()),
-		h.getLastPollTime(metricWorkflowLastPoll),
+		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeWorkflowTask)),
+		h.getLastPollTime(metrics.PollerTypeWorkflowTask),
 		opts.WorkflowPollerBehavior,
 	)
 	hb.WorkflowStickyPollerInfo = buildPollerInfo(
-		int32(h.metrics[metricWorkflowStickyPollerCount].Load()),
-		h.getLastPollTime(metricWorkflowStickyLastPoll),
+		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeWorkflowStickyTask)),
+		h.getLastPollTime(metrics.PollerTypeWorkflowStickyTask),
 		opts.WorkflowPollerBehavior,
 	)
 	hb.ActivityPollerInfo = buildPollerInfo(
-		int32(h.metrics[metricActivityPollerCount].Load()),
-		h.getLastPollTime(metricActivityLastPoll),
+		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeActivityTask)),
+		h.getLastPollTime(metrics.PollerTypeActivityTask),
 		opts.ActivityPollerBehavior,
 	)
 	hb.NexusPollerInfo = buildPollerInfo(
-		int32(h.metrics[metricNexusPollerCount].Load()),
-		h.getLastPollTime(metricNexusLastPoll),
+		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeNexusTask)),
+		h.getLastPollTime(metrics.PollerTypeNexusTask),
 		opts.NexusPollerBehavior,
 	)
 }
 
-func (h *HeartbeatMetricsHandler) getLastPollTime(metric heartbeatMetric) time.Time {
-	nanos := h.metrics[metric].Load()
-	if nanos == 0 {
-		return time.Time{}
+func (h *heartbeatMetricsHandler) getLastPollTime(pollerType string) time.Time {
+	nanos := h.get(pollerType)
+	if nanos != 0 {
+		return time.Unix(0, nanos)
 	}
-	return time.Unix(0, int64(nanos))
+	return time.Time{}
 }
 
 func buildSlotsInfo(
@@ -324,74 +285,41 @@ func buildPollerInfo(currentPollers int32, lastSuccessfulPollTime time.Time, pol
 	}
 }
 
-// RecordWorkflowPollSuccess records a successful workflow task poll.
-func (h *HeartbeatMetricsHandler) RecordWorkflowPollSuccess() {
-	h.metrics[metricWorkflowLastPoll].Store(uint64(time.Now().UnixNano()))
-}
-
-// RecordWorkflowStickyPollSuccess records a successful workflow sticky task poll.
-func (h *HeartbeatMetricsHandler) RecordWorkflowStickyPollSuccess() {
-	h.metrics[metricWorkflowStickyLastPoll].Store(uint64(time.Now().UnixNano()))
-}
-
-// RecordActivityPollSuccess records a successful activity task poll.
-func (h *HeartbeatMetricsHandler) RecordActivityPollSuccess() {
-	h.metrics[metricActivityLastPoll].Store(uint64(time.Now().UnixNano()))
-}
-
-// RecordNexusPollSuccess records a successful nexus task poll.
-func (h *HeartbeatMetricsHandler) RecordNexusPollSuccess() {
-	h.metrics[metricNexusLastPoll].Store(uint64(time.Now().UnixNano()))
-}
-
-// RecordPollSuccess records a successful poll time if the handler is a *HeartbeatMetricsHandler.
-// pollerType should be one of PollerTypeWorkflowTask, PollerTypeWorkflowStickyTask,
-// PollerTypeActivityTask, or PollerTypeNexusTask.
-func RecordPollSuccess(h metrics.Handler, pollerType string) {
-	hm, ok := h.(*HeartbeatMetricsHandler)
-	if !ok {
-		return
-	}
-	switch pollerType {
-	case metrics.PollerTypeWorkflowTask:
-		hm.RecordWorkflowPollSuccess()
-	case metrics.PollerTypeWorkflowStickyTask:
-		hm.RecordWorkflowStickyPollSuccess()
-	case metrics.PollerTypeActivityTask:
-		hm.RecordActivityPollSuccess()
-	case metrics.PollerTypeNexusTask:
-		hm.RecordNexusPollSuccess()
+// recordPollSuccessIfHeartbeat records a successful poll time if the handler is a *heartbeatMetricsHandler.
+func recordPollSuccessIfHeartbeat(h metrics.Handler, pollerType string) {
+	if hm, ok := h.(*heartbeatMetricsHandler); ok {
+		hm.getOrCreate(pollerType).Store(time.Now().UnixNano())
 	}
 }
 
-// capturingCounter wraps a counter and captures its value in memory for heartbeat reporting.
+// capturingCounter wraps a counter and captures its value in memory.
 type capturingCounter struct {
 	underlying metrics.Counter
-	value      *atomic.Uint64
+	value      *atomic.Int64
 }
 
 func (c *capturingCounter) Inc(delta int64) {
 	c.underlying.Inc(delta)
 	if delta > 0 {
-		c.value.Add(uint64(delta))
+		c.value.Add(delta)
 	}
 }
 
-// capturingGauge wraps a gauge and captures its value in memory for heartbeat reporting.
+// capturingGauge wraps a gauge and captures its value in memory.
 type capturingGauge struct {
 	underlying metrics.Gauge
-	value      *atomic.Uint64
+	value      *atomic.Int64
 }
 
 func (g *capturingGauge) Update(f float64) {
 	g.underlying.Update(f)
-	g.value.Store(uint64(f))
+	g.value.Store(int64(f))
 }
 
 // capturingTimer wraps a timer and increments a counter each time Record is called.
 type capturingTimer struct {
 	underlying metrics.Timer
-	counter    *atomic.Uint64
+	counter    *atomic.Int64
 }
 
 func (t *capturingTimer) Record(d time.Duration) {

@@ -1160,7 +1160,7 @@ type AggregatedWorker struct {
 	plugins               []WorkerPlugin
 	pluginRegistryOptions *WorkerPluginConfigureWorkerRegistryOptions // Never nil
 
-	heartbeatMetrics  *HeartbeatMetricsHandler
+	heartbeatMetrics  *heartbeatMetricsHandler
 	heartbeatCallback func() *workerpb.WorkerHeartbeat
 }
 
@@ -2084,10 +2084,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
 	var metricsHandler metrics.Handler
-	var heartbeatMetrics *HeartbeatMetricsHandler
+	var heartbeatMetrics *heartbeatMetricsHandler
 
 	if client.workerHeartbeatInterval != 0 {
-		heartbeatMetrics = NewHeartbeatMetricsHandler(baseMetricsHandler)
+		heartbeatMetrics = newHeartbeatMetricsHandler(baseMetricsHandler)
 		metricsHandler = heartbeatMetrics
 	} else {
 		metricsHandler = baseMetricsHandler
