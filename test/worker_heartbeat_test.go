@@ -18,7 +18,6 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/contrib/resourcetuner"
 	"go.temporal.io/sdk/internal"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
@@ -850,7 +849,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskProcessed() {
 func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatResourceBasedTuner() {
 	ctx := context.Background()
 
-	tuner, err := resourcetuner.NewResourceBasedTuner(resourcetuner.ResourceBasedTunerOptions{
+	tuner, err := worker.NewResourceBasedTuner(worker.ResourceBasedTunerOptions{
 		TargetMem: 0.8,
 		TargetCpu: 0.9,
 	})

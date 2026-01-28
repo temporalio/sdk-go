@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nexus-rpc/sdk-go/nexus"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/log"
@@ -57,19 +56,12 @@ func (m *heartbeatManager) registerWorker(
 		hw = &sharedNamespaceWorker{
 			client:    m.client,
 			namespace: namespace,
-			taskQueue: fmt.Sprintf("temporal-sys/worker-commands/%s/%s", namespace, m.client.workerGroupingKey),
 			interval:  m.interval,
 			callbacks: make(map[string]func() *workerpb.WorkerHeartbeat),
 			stopC:     make(chan struct{}),
 			stoppedC:  make(chan struct{}),
 			logger:    m.logger,
 		}
-
-		nexusWorker, err := hw.createNexusWorker()
-		if err != nil {
-			return fmt.Errorf("failed to create nexus worker for heartbeating: %w", err)
-		}
-		hw.nexusWorker = nexusWorker
 
 		m.mu.Lock()
 		m.workers[namespace] = hw
@@ -107,16 +99,12 @@ func (m *heartbeatManager) unregisterWorker(worker *AggregatedWorker) {
 	}
 }
 
-// sharedNamespaceWorker is the background nexus worker that handles heartbeating for
-// all workers in a specific namespace for a specific client.
+// sharedNamespaceWorker handles heartbeating for all workers in a specific namespace for a specific client.
 type sharedNamespaceWorker struct {
 	client    *WorkflowClient
 	namespace string
-	taskQueue string // temporal-sys/worker-commands/{namespace}/{workerGroupingKey}
 	interval  time.Duration
 	logger    log.Logger
-
-	nexusWorker *nexusWorker
 
 	mu        sync.RWMutex
 	callbacks map[string]func() *workerpb.WorkerHeartbeat // workerInstanceKey -> callback
@@ -126,47 +114,10 @@ type sharedNamespaceWorker struct {
 	started  atomic.Bool
 }
 
-func (hw *sharedNamespaceWorker) createNexusWorker() (*nexusWorker, error) {
-	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
-		NumNexusSlots: 5})
-	if err != nil {
-		return nil, err
-	}
-
-	params := workerExecutionParameters{
-		Namespace:               hw.namespace,
-		TaskQueue:               hw.taskQueue,
-		Tuner:                   tuner,
-		NexusTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
-	}
-
-	reg := nexus.NewServiceRegistry()
-	handler, err := reg.NewHandler()
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO: Register worker commands here
-
-	nw, err := newNexusWorker(nexusWorkerOptions{
-		executionParameters: params,
-		client:              hw.client,
-		workflowService:     hw.client.workflowService,
-		handler:             handler,
-	})
-
-	return nw, err
-}
-
 func (hw *sharedNamespaceWorker) run() {
 	defer close(hw.stoppedC)
 
 	hw.started.Store(true)
-
-	if err := hw.nexusWorker.Start(); err != nil {
-		return
-	}
-	defer hw.nexusWorker.Stop()
 
 	ticker := time.NewTicker(hw.interval)
 	defer ticker.Stop()
@@ -174,14 +125,17 @@ func (hw *sharedNamespaceWorker) run() {
 	for {
 		select {
 		case <-ticker.C:
-			hw.sendHeartbeats()
+			if err := hw.sendHeartbeats(); err != nil {
+				hw.logger.Warn("Stopping heartbeat worker", "error", err)
+				return
+			}
 		case <-hw.stopC:
 			return
 		}
 	}
 }
 
-func (hw *sharedNamespaceWorker) sendHeartbeats() {
+func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 	hw.mu.RLock()
 	callbacks := make([]func() *workerpb.WorkerHeartbeat, 0, len(hw.callbacks))
 	for _, cb := range hw.callbacks {
@@ -190,7 +144,7 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() {
 	hw.mu.RUnlock()
 
 	if len(callbacks) == 0 {
-		return
+		return nil
 	}
 
 	heartbeats := make([]*workerpb.WorkerHeartbeat, 0, len(callbacks))
@@ -208,10 +162,10 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() {
 		if status.Code(err) == codes.Unimplemented {
 			// Server doesn't support heartbeats, shutdown worker
 			hw.stop()
-			return
 		}
 		hw.logger.Warn("Failed to send heartbeat", "Error", err)
 	}
+	return err
 }
 
 func (hw *sharedNamespaceWorker) stop() {

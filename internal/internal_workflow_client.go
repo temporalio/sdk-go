@@ -1385,12 +1385,12 @@ func (wc *WorkflowClient) loadNamespaceCapabilities(ctx context.Context) (*names
 	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
 	defer cancel()
 	resp, err := wc.workflowService.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: wc.namespace})
-	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
+	var unimplemented *serviceerror.Unimplemented
+	if err != nil && !errors.As(err, &unimplemented) {
 		return nil, fmt.Errorf("failed reaching server: %w", err)
 	}
-	if resp != nil && resp.NamespaceInfo.Capabilities != nil {
-		capabilities = resp.NamespaceInfo.Capabilities
-	} else {
+	capabilities = resp.GetNamespaceInfo().GetCapabilities()
+	if capabilities == nil {
 		capabilities = &namespacepb.NamespaceInfo_Capabilities{}
 	}
 

@@ -37,7 +37,6 @@ import (
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
-	"go.temporal.io/sdk/contrib/resourcetuner"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
 
@@ -242,7 +241,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MaxConcurrentLocalActivityExecutionSize = 2
 	}
 	if strings.Contains(ts.T().Name(), "ResourceBasedSlotSupplier") {
-		tuner, err := resourcetuner.NewResourceBasedTuner(resourcetuner.ResourceBasedTunerOptions{
+		tuner, err := worker.NewResourceBasedTuner(worker.ResourceBasedTunerOptions{
 			TargetMem: 0.9,
 			TargetCpu: 0.9,
 		})

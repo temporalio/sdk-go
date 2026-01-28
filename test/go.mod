@@ -19,7 +19,6 @@ require (
 	go.temporal.io/sdk v1.29.1
 	go.temporal.io/sdk/contrib/opentelemetry v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
-	go.temporal.io/sdk/contrib/resourcetuner v0.0.0-20260112203102-5b6df8e02dcf
 	go.temporal.io/sdk/contrib/tally v0.0.0-00010101000000-000000000000
 	go.uber.org/goleak v1.1.12
 	google.golang.org/grpc v1.67.1
@@ -28,7 +27,6 @@ require (
 
 require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
-	github.com/ebitengine/purego v0.9.1 // indirect
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
@@ -39,7 +37,6 @@ require (
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/twmb/murmur3 v1.1.5 // indirect
-	go.einride.tech/pid v0.1.3 // indirect
 	go.opentelemetry.io/otel/metric v1.28.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/net v0.39.0 // indirect
@@ -54,8 +51,8 @@ require (
 
 replace (
 	go.temporal.io/sdk => ../
+	go.temporal.io/sdk/contrib/hostinfo => ../contrib/hostinfo
 	go.temporal.io/sdk/contrib/opentelemetry => ../contrib/opentelemetry
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing
-	go.temporal.io/sdk/contrib/resourcetuner => ../contrib/resourcetuner
 	go.temporal.io/sdk/contrib/tally => ../contrib/tally
 )

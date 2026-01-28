@@ -2225,8 +2225,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	if client.workerHeartbeatInterval != 0 {
 		startTime := timestamppb.New(time.Now())
 		hostname, _ := os.Hostname()
+		pid := strconv.Itoa(os.Getpid())
 		previousHeartbeatTime := time.Now()
-
 		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
 
 		var prevWorkflowProcessed, prevWorkflowFailed int64
@@ -2248,18 +2248,35 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			PrevNexusFailed:            &prevNexusFailed,
 		}
 
+		var deploymentVersion *deploymentpb.WorkerDeploymentVersion
+		if options.DeploymentOptions.UseVersioning {
+			deploymentVersion = &deploymentpb.WorkerDeploymentVersion{
+				DeploymentName: options.DeploymentOptions.Version.DeploymentName,
+				BuildId:        options.DeploymentOptions.Version.BuildID,
+			}
+		}
+
+		// The callback can be invoked concurrently from the heartbeat worker goroutine and the shutdown path
+		var mu sync.Mutex
 		heartbeatCallback = func() *workerpb.WorkerHeartbeat {
+			cpuUsage := getCpuUsage(systemInfoSupplier, workerParams.Logger)
+			memUsage := getMemUsage(systemInfoSupplier, workerParams.Logger)
+			if aw.workflowWorker != nil {
+				populateOpts.WorkflowSlotSupplierKind = aw.workflowWorker.worker.slotSupplier.GetSlotSupplierKind()
+				populateOpts.LocalActivitySlotSupplierKind = aw.workflowWorker.localActivityWorker.slotSupplier.GetSlotSupplierKind()
+			}
+			if aw.activityWorker != nil {
+				populateOpts.ActivitySlotSupplierKind = aw.activityWorker.worker.slotSupplier.GetSlotSupplierKind()
+			}
+			if aw.nexusWorker != nil {
+				populateOpts.NexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
+			}
 			heartbeatTime := time.Now()
+
+			mu.Lock()
+			defer mu.Unlock()
 			elapsedSinceLastHeartbeat := heartbeatTime.Sub(previousHeartbeatTime)
 			previousHeartbeatTime = heartbeatTime
-
-			var deploymentVersion *deploymentpb.WorkerDeploymentVersion
-			if options.DeploymentOptions.UseVersioning {
-				deploymentVersion = &deploymentpb.WorkerDeploymentVersion{
-					DeploymentName: options.DeploymentOptions.Version.DeploymentName,
-					BuildId:        options.DeploymentOptions.Version.BuildID,
-				}
-			}
 
 			hb := &workerpb.WorkerHeartbeat{
 				WorkerInstanceKey: aw.workerInstanceKey,
@@ -2267,9 +2284,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				HostInfo: &workerpb.WorkerHostInfo{
 					HostName:            hostname,
 					WorkerGroupingKey:   aw.client.workerGroupingKey,
-					ProcessId:           strconv.Itoa(os.Getpid()),
-					CurrentHostCpuUsage: getCpuUsage(systemInfoSupplier, workerParams.Logger),
-					CurrentHostMemUsage: getMemUsage(systemInfoSupplier, workerParams.Logger),
+					ProcessId:           pid,
+					CurrentHostCpuUsage: cpuUsage,
+					CurrentHostMemUsage: memUsage,
 				},
 				TaskQueue:                 aw.executionParams.TaskQueue,
 				DeploymentVersion:         deploymentVersion,
@@ -2281,20 +2298,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				ElapsedSinceLastHeartbeat: durationpb.New(elapsedSinceLastHeartbeat),
 				Plugins:                   pluginInfos,
 			}
-
-			if aw.heartbeatMetrics != nil {
-				if aw.workflowWorker != nil {
-					populateOpts.WorkflowSlotSupplierKind = aw.workflowWorker.worker.slotSupplier.GetSlotSupplierKind()
-					populateOpts.LocalActivitySlotSupplierKind = aw.workflowWorker.localActivityWorker.slotSupplier.GetSlotSupplierKind()
-				}
-				if aw.activityWorker != nil {
-					populateOpts.ActivitySlotSupplierKind = aw.activityWorker.worker.slotSupplier.GetSlotSupplierKind()
-				}
-				if aw.nexusWorker != nil {
-					populateOpts.NexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
-				}
-				aw.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
-			}
+			aw.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
 
 			return hb
 		}
