@@ -1427,7 +1427,7 @@ func (wc *WorkflowClient) WorkerDeploymentClient() WorkerDeploymentClient {
 	}
 }
 
-func (wc *WorkflowClient) RecordWorkerHeartbeat(ctx context.Context, request *workflowservice.RecordWorkerHeartbeatRequest) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
+func (wc *WorkflowClient) recordWorkerHeartbeat(ctx context.Context, request *workflowservice.RecordWorkerHeartbeatRequest) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}

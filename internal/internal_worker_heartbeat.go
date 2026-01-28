@@ -40,10 +40,10 @@ func (m *heartbeatManager) registerWorker(
 	worker *AggregatedWorker,
 ) error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 
 	namespace := worker.executionParams.Namespace
 	hw, ok := m.workers[namespace]
+	m.mu.Unlock()
 	if !ok {
 		capabilities, err := m.client.loadNamespaceCapabilities(context.Background())
 		if err != nil {
@@ -71,7 +71,9 @@ func (m *heartbeatManager) registerWorker(
 		}
 		hw.nexusWorker = nexusWorker
 
+		m.mu.Lock()
 		m.workers[namespace] = hw
+		m.mu.Unlock()
 		go hw.run()
 	}
 
@@ -197,14 +199,7 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() {
 		heartbeats = append(heartbeats, hb)
 	}
 
-	if len(heartbeats) == 0 {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	_, err := hw.client.RecordWorkerHeartbeat(context.Background(), &workflowservice.RecordWorkerHeartbeatRequest{
+	_, err := hw.client.recordWorkerHeartbeat(context.Background(), &workflowservice.RecordWorkerHeartbeatRequest{
 		Namespace:       hw.namespace,
 		WorkerHeartbeat: heartbeats,
 	})

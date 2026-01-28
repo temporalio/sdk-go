@@ -284,23 +284,6 @@ func (params *workerExecutionParameters) isInternalWorker() bool {
 	return params.Namespace == "temporal-system" || params.TaskQueue == "temporal-sys-per-ns-tq"
 }
 
-// verifyNamespaceExist does a DescribeNamespace operation on the specified namespace with backoff/retry
-func verifyNamespaceExist(
-	client workflowservice.WorkflowServiceClient,
-	metricsHandler metrics.Handler,
-	namespace string,
-	logger log.Logger,
-) error {
-	ctx := context.Background()
-	if namespace == "" {
-		return errors.New("namespace cannot be empty")
-	}
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(metricsHandler), defaultGrpcRetryParameters(ctx))
-	defer cancel()
-	_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: namespace})
-	return err
-}
-
 func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
 	workerStopChannel := make(chan struct{})
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
@@ -426,10 +409,6 @@ func newWorkflowTaskWorkerInternal(
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
-	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.MetricsHandler, ww.executionParameters.Namespace, ww.worker.logger)
-	if err != nil {
-		return err
-	}
 	ww.localActivityWorker.Start()
 	ww.worker.Start()
 	return nil // TODO: propagate error
@@ -573,10 +552,6 @@ func newActivityWorker(
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
-	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.MetricsHandler, aw.executionParameters.Namespace, aw.worker.logger)
-	if err != nil {
-		return err
-	}
 	aw.worker.Start()
 	return nil // TODO: propagate errors
 }
@@ -1295,6 +1270,11 @@ func (aw *AggregatedWorker) start() error {
 		return err
 	}
 	proto.Merge(aw.capabilities, capabilities)
+
+	// Load namespace capabilities (also verifies namespace exists and caches the result)
+	if _, err := aw.client.loadNamespaceCapabilities(context.Background()); err != nil {
+		return err
+	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {
