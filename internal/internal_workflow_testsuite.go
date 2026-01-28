@@ -444,8 +444,10 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 		return nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Empty task queue name", "", "")
 	}
 
-	if params.WorkflowID == "" {
-		params.WorkflowID = env.workflowInfo.WorkflowExecution.RunID + "_" + getStringID(env.nextID())
+	// Tests set workflow ID slightly differently than prod, the test env doesn't set currentRunID,
+	// so we must detect and change ID to use RunID
+	if strings.HasPrefix(params.WorkflowID, "_") {
+		params.WorkflowID = env.workflowInfo.WorkflowExecution.RunID + params.WorkflowID
 	}
 	var cronSchedule string
 	if len(params.CronSchedule) > 0 {
@@ -651,6 +653,10 @@ func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 
 func (env *testWorkflowEnvironmentImpl) GetFlag(flag sdkFlag) bool {
 	return env.sdkFlags.getFlag(flag)
+}
+
+func (env *testWorkflowEnvironmentImpl) GenerateSequence() int64 {
+	return env.nextID()
 }
 
 func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
@@ -1236,12 +1242,7 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
 	ensureDefaultRetryPolicy(&parameters)
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
-	scheduleID := env.nextID()
-	if parameters.ActivityID == "" {
-		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
-	} else {
-		scheduleTaskAttr.ActivityId = parameters.ActivityID
-	}
+	scheduleTaskAttr.ActivityId = parameters.ActivityID
 	activityID := ActivityID{id: scheduleTaskAttr.GetActivityId()}
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
