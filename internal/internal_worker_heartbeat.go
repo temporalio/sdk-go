@@ -48,7 +48,7 @@ func (m *heartbeatManager) registerWorker(
 		if err != nil {
 			return fmt.Errorf("failed to get namespace capabilities: %w", err)
 		}
-		if !capabilities.WorkerHeartbeats {
+		if !capabilities.GetWorkerHeartbeats() {
 			m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
 			return nil
 		}
