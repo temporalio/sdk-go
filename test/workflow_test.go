@@ -591,6 +591,57 @@ func (w *Workflows) ContinueAsNewWithRetryPolicy(
 	)
 }
 
+func (w *Workflows) ContinueAsNewWithVersionUpgradeV1(
+	ctx workflow.Context,
+	attempt int,
+) (string, error) {
+	if attempt > 0 {
+		return "v1.0", nil
+	}
+
+	// Check continue-as-new-suggested periodically.
+	// Continue-as-new-suggested is refreshed after each WFT completes.
+	for {
+		// Trigger a WFT when timer expires, thereby refreshing the continue-as-new-suggested flag.
+		// Since this is just a test workflow, we aren't doing any real work. In a real workflow regularly
+		// doing non-sleep workflow tasks, you would not need to artificially trigger a WFT to refresh the
+		// continue-as-new-suggested flag. You could choose to check for the suggestion periodically, or you
+		// might want to check before accepting updates, starting activities, or starting child workflows.
+		err := workflow.Sleep(ctx, 10*time.Millisecond)
+		if err != nil {
+			return "", err
+		}
+		if info := workflow.GetInfo(ctx); info.GetContinueAsNewSuggested() {
+			for _, reason := range info.GetContinueAsNewSuggestedReasons() {
+				// Optionally confirm that one of the reasons for ContinueAsNewSuggested is TargetWorkerDeploymentVersionChanged.
+				// In most cases there will only be one reason in this list, but it is possible to have multiple reasons.
+				// For example, if the Target Version changes at the same time that the History becomes too large, both
+				// of those reasons will be listed.
+				if reason == workflow.ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged {
+					return "", workflow.NewContinueAsNewErrorWithOptions(
+						ctx,
+						workflow.ContinueAsNewErrorOptions{
+							// Pass InitialVersioningBehavior=workflow.ContinueAsNewVersioningBehaviorAutoUpgrade
+							// to make the new run start with AutoUpgrade behavior and use the Target Version of
+							// its Worker Deployment.
+							InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
+						},
+						"ContinueAsNewWithVersionUpgrade",
+						attempt+1,
+					)
+				}
+			}
+		}
+	}
+}
+
+func (w *Workflows) ContinueAsNewWithVersionUpgradeV2(
+	ctx workflow.Context,
+	attempt int,
+) (string, error) {
+	return "v2.0", nil
+}
+
 func (w *Workflows) ContinueAsNewWithChildWF(
 	ctx workflow.Context,
 	iterations int,
