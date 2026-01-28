@@ -1883,17 +1883,19 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 		useCompat := determineInheritBuildIdFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
+
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
-			WorkflowType:        &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
-			Input:               contErr.Input,
-			TaskQueue:           &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:  durationpb.New(contErr.WorkflowRunTimeout),
-			WorkflowTaskTimeout: durationpb.New(contErr.WorkflowTaskTimeout),
-			Header:              contErr.Header,
-			Memo:                workflowContext.workflowInfo.Memo,
-			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
-			RetryPolicy:         convertToPBRetryPolicy(retryPolicy),
-			InheritBuildId:      useCompat,
+			WorkflowType:              &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
+			Input:                     contErr.Input,
+			TaskQueue:                 &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+			WorkflowRunTimeout:        durationpb.New(contErr.WorkflowRunTimeout),
+			WorkflowTaskTimeout:       durationpb.New(contErr.WorkflowTaskTimeout),
+			Header:                    contErr.Header,
+			Memo:                      workflowContext.workflowInfo.Memo,
+			SearchAttributes:          workflowContext.workflowInfo.SearchAttributes,
+			RetryPolicy:               convertToPBRetryPolicy(retryPolicy),
+			InheritBuildId:            useCompat,
+			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures

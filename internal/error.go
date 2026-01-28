@@ -193,6 +193,10 @@ type (
 		// compatible build ID or not. See VersioningIntent.
 		VersioningIntent VersioningIntent
 
+		// InitialVersioningBehavior specifies the versioning behavior that the first task of the new run should use.
+		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
+		InitialVersioningBehavior ContinueAsNewVersioningBehavior
+
 		// This is by default nil but may be overridden using NewContinueAsNewErrorWithOptions.
 		// It specifies the retry policy which gets carried over to the next run.
 		// If not set, the current workflow's retry policy will be carried over automatically.
@@ -212,6 +216,10 @@ type (
 		// RetryPolicy specifies the retry policy to be used for the next run.
 		// If nil, the current workflow's retry policy will be used.
 		RetryPolicy *RetryPolicy
+
+		// InitialVersioningBehavior specifies the versioning behavior that the first task of the new run should use.
+		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
+		InitialVersioningBehavior ContinueAsNewVersioningBehavior
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -555,6 +563,9 @@ func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOpt
 		if options.RetryPolicy != nil {
 			continueAsNewErr.RetryPolicy = options.RetryPolicy
 		}
+		if options.InitialVersioningBehavior != ContinueAsNewVersioningBehaviorUnspecified {
+			continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
+		}
 	}
 
 	return err
@@ -582,15 +593,16 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 	}
 
 	return &ContinueAsNewError{
-		WorkflowType:             workflowType,
-		Input:                    input,
-		Header:                   header,
-		TaskQueueName:            options.TaskQueueName,
-		WorkflowExecutionTimeout: options.WorkflowExecutionTimeout,
-		WorkflowRunTimeout:       options.WorkflowRunTimeout,
-		WorkflowTaskTimeout:      options.WorkflowTaskTimeout,
-		VersioningIntent:         options.VersioningIntent,
-		RetryPolicy:              nil, // The retry policy can't be propagated like other options due to #676.
+		WorkflowType:              workflowType,
+		Input:                     input,
+		Header:                    header,
+		TaskQueueName:             options.TaskQueueName,
+		WorkflowExecutionTimeout:  options.WorkflowExecutionTimeout,
+		WorkflowRunTimeout:        options.WorkflowRunTimeout,
+		WorkflowTaskTimeout:       options.WorkflowTaskTimeout,
+		VersioningIntent:          options.VersioningIntent,
+		InitialVersioningBehavior: options.InitialVersioningBehavior,
+		RetryPolicy:               nil, // The retry policy can't be propagated like other options due to #676.
 	}
 }
 
