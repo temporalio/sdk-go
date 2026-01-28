@@ -216,6 +216,10 @@ type (
 		// RetryPolicy specifies the retry policy to be used for the next run.
 		// If nil, the current workflow's retry policy will be used.
 		RetryPolicy *RetryPolicy
+
+		// InitialVersioningBehavior specifies the versioning behavior that the first task of the new run should use.
+		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
+		InitialVersioningBehavior ContinueAsNewVersioningBehavior
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
@@ -558,6 +562,9 @@ func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOpt
 	if errors.As(err, &continueAsNewErr) {
 		if options.RetryPolicy != nil {
 			continueAsNewErr.RetryPolicy = options.RetryPolicy
+		}
+		if options.InitialVersioningBehavior != ContinueAsNewVersioningBehaviorUnspecified {
+			continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
 		}
 	}
 

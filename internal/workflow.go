@@ -3049,3 +3049,14 @@ func versioningBehaviorToProto(t VersioningBehavior) enumspb.VersioningBehavior 
 		panic("unknown versioning behavior type")
 	}
 }
+
+func continueAsNewVersioningBehaviorToProto(t ContinueAsNewVersioningBehavior) enumspb.ContinueAsNewVersioningBehavior {
+	switch t {
+	case ContinueAsNewVersioningBehaviorUnspecified:
+		return enumspb.CONTINUE_AS_NEW_VERSIONING_BEHAVIOR_UNSPECIFIED
+	case ContinueAsNewVersioningBehaviorAutoUpgrade:
+		return enumspb.CONTINUE_AS_NEW_VERSIONING_BEHAVIOR_AUTO_UPGRADE
+	default:
+		panic("unknown continue-as-new versioning behavior type")
+	}
+}
