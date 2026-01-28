@@ -418,6 +418,16 @@ type ClientOutboundInterceptor interface {
 	// DescribeWorkflow intercepts client.Client.DescribeWorkflow.
 	DescribeWorkflow(context.Context, *ClientDescribeWorkflowInput) (*ClientDescribeWorkflowOutput, error)
 
+	// ExecuteActivity intercepts client.Client.ExecuteActivity.
+	// The methods of the activity handle can be intercepted by returning a custom handle type that conforms to
+	// client.ActivityHandle interface. See client.ActivityHandleBase.
+	ExecuteActivity(context.Context, *ClientExecuteActivityInput) (ClientActivityHandle, error)
+
+	// GetActivityHandle intercepts client.Client.GetActivityHandle.
+	// While the interceptor is allowed to make network calls here, note that the base implementation does not - it only constructs
+	// the handle which is then used to make network calls. There is no context object provided and errors cannot be returned.
+	GetActivityHandle(*ClientGetActivityHandleInput) ClientActivityHandle
+
 	mustEmbedClientOutboundInterceptorBase()
 }
 
@@ -544,6 +554,25 @@ type ClientDescribeWorkflowInput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeWorkflowOutput]
 type ClientDescribeWorkflowOutput struct {
 	Response *WorkflowExecutionDescription
+}
+
+// ClientExecuteActivityInput is the input to
+// ClientOutboundInterceptor.ExecuteActivity.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientExecuteActivityInput]
+type ClientExecuteActivityInput struct {
+	Options      *ClientStartActivityOptions
+	ActivityType *ActivityType
+	Args         []interface{}
+}
+
+// ClientGetActivityHandleInput is the input to
+// ClientOutboundInterceptor.GetActivityHandle.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientGetActivityHandleInput]
+type ClientGetActivityHandleInput struct {
+	ActivityID string
+	RunID      string
 }
 
 // NexusOutboundInterceptor intercepts Nexus operation method invocations. See documentation in the interceptor package

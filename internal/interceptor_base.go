@@ -573,9 +573,24 @@ func (c *ClientOutboundInterceptorBase) DescribeWorkflow(
 	return c.Next.DescribeWorkflow(ctx, in)
 }
 
-// ExecuteWorkflow implements ClientOutboundInterceptor.CreateSchedule.
+// CreateSchedule implements ClientOutboundInterceptor.CreateSchedule.
 func (c *ClientOutboundInterceptorBase) CreateSchedule(ctx context.Context, in *ScheduleClientCreateInput) (ScheduleHandle, error) {
 	return c.Next.CreateSchedule(ctx, in)
+}
+
+// ExecuteActivity implements ClientOutboundInterceptor.ExecuteActivity.
+func (c *ClientOutboundInterceptorBase) ExecuteActivity(
+	ctx context.Context,
+	in *ClientExecuteActivityInput,
+) (ClientActivityHandle, error) {
+	return c.Next.ExecuteActivity(ctx, in)
+}
+
+// GetActivityHandle implements ClientOutboundInterceptor.GetActivityHandle.
+func (c *ClientOutboundInterceptorBase) GetActivityHandle(
+	in *ClientGetActivityHandleInput,
+) ClientActivityHandle {
+	return c.Next.GetActivityHandle(in)
 }
 
 func (*ClientOutboundInterceptorBase) mustEmbedClientOutboundInterceptorBase() {}
