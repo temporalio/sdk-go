@@ -38,9 +38,8 @@ func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger 
 func (m *heartbeatManager) registerWorker(
 	worker *AggregatedWorker,
 ) error {
-	m.mu.Lock()
-
 	namespace := worker.executionParams.Namespace
+	m.mu.Lock()
 	hw, ok := m.workers[namespace]
 	m.mu.Unlock()
 	if !ok {
@@ -53,7 +52,7 @@ func (m *heartbeatManager) registerWorker(
 			return nil
 		}
 
-		hw = &sharedNamespaceWorker{
+		newHw := &sharedNamespaceWorker{
 			client:    m.client,
 			namespace: namespace,
 			interval:  m.interval,
@@ -64,9 +63,16 @@ func (m *heartbeatManager) registerWorker(
 		}
 
 		m.mu.Lock()
-		m.workers[namespace] = hw
-		m.mu.Unlock()
-		go hw.run()
+		if existing, ok := m.workers[namespace]; ok {
+			m.mu.Unlock()
+			hw = existing
+		} else {
+			m.workers[namespace] = newHw
+			m.mu.Unlock()
+			hw = newHw
+			go hw.run()
+		}
+
 	}
 
 	hw.mu.Lock()
@@ -160,12 +166,13 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 
 	if err != nil {
 		if status.Code(err) == codes.Unimplemented {
-			// Server doesn't support heartbeats, shutdown worker
-			hw.stop()
+			// Server doesn't support heartbeats; return error to stop the worker.
+			return fmt.Errorf("server does not support worker heartbeats: %w", err)
 		}
+		// For other errors, log and continue heartbeating
 		hw.logger.Warn("Failed to send heartbeat", "Error", err)
 	}
-	return err
+	return nil
 }
 
 func (hw *sharedNamespaceWorker) stop() {

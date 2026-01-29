@@ -320,6 +320,9 @@ type ResourceController struct {
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewResourceController]
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
+	if options.InfoSupplier == nil {
+		panic("InfoSupplier is required - use contrib/hostinfo.NewSystemInfoSupplier() or provide your own")
+	}
 	return &ResourceController{
 		options:      options,
 		infoSupplier: options.InfoSupplier,

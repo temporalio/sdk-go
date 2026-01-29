@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go.temporal.io/sdk/contrib/hostinfo"
 	"math"
 	"math/rand"
 	"os"
@@ -242,8 +243,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	}
 	if strings.Contains(ts.T().Name(), "ResourceBasedSlotSupplier") {
 		tuner, err := worker.NewResourceBasedTuner(worker.ResourceBasedTunerOptions{
-			TargetMem: 0.9,
-			TargetCpu: 0.9,
+			TargetMem:    0.9,
+			TargetCpu:    0.9,
+			InfoSupplier: hostinfo.NewSystemInfoSupplier(),
 		})
 		ts.NoError(err)
 		options.Tuner = tuner

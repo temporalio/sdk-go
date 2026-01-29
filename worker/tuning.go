@@ -97,8 +97,12 @@ type ResourceControllerOptions = internal.ResourceControllerOptions
 type ResourceController = internal.ResourceController
 
 // NewResourceController creates a new ResourceController with the provided options.
-// WARNING: It is important that you do not create multiple ResourceController instances. Since
-// the controller looks at overall system resources, multiple instances with different configs can
+//
+// InfoSupplier is required - use contrib/hostinfo.NewSystemInfoSupplier() for a gopsutil-based
+// implementation, or provide your own.
+//
+// WARNING: It is important that you do not create multiple InfoSupplier instances. Since
+// InfoSupplier looks at overall system resources, multiple instances with different configs can
 // only conflict with one another.
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
 	return internal.NewResourceController(options)

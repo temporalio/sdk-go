@@ -2681,7 +2681,6 @@ func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin
 			set[name] = struct{}{}
 			result = append(result, &workerpb.PluginInfo{Name: name})
 		}
-		set[name] = struct{}{}
 	}
 	for _, plugin := range workerPlugins {
 		if _, found := set[plugin.Name()]; !found {
