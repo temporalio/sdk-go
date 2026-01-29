@@ -44,7 +44,7 @@ func (m *heartbeatManager) registerWorker(
 	hw, ok := m.workers[namespace]
 	m.mu.Unlock()
 	if !ok {
-		capabilities, err := m.client.loadNamespaceCapabilities(context.Background())
+		capabilities, err := m.client.loadNamespaceCapabilities(worker.heartbeatMetrics)
 		if err != nil {
 			return fmt.Errorf("failed to get namespace capabilities: %w", err)
 		}

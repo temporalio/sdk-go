@@ -81,6 +81,7 @@ type (
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     workflowservice.WorkflowServiceClient
+		client              *WorkflowClient
 		worker              *baseWorker
 		localActivityWorker *baseWorker
 		identity            string
@@ -94,6 +95,7 @@ type (
 	activityWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     workflowservice.WorkflowServiceClient
+		client              *WorkflowClient
 		poller              taskPoller
 		worker              *baseWorker
 		identity            string
@@ -398,6 +400,7 @@ func newWorkflowTaskWorkerInternal(
 	return &workflowWorker{
 		executionParameters: params,
 		workflowService:     service,
+		client:              client,
 		worker:              worker,
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
@@ -409,6 +412,11 @@ func newWorkflowTaskWorkerInternal(
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
+	if ww.client != nil {
+		if _, err := ww.client.loadNamespaceCapabilities(ww.executionParameters.MetricsHandler); err != nil {
+			return err
+		}
+	}
 	ww.localActivityWorker.Start()
 	ww.worker.Start()
 	return nil // TODO: propagate error
@@ -543,6 +551,7 @@ func newActivityWorker(
 	return &activityWorker{
 		executionParameters: params,
 		workflowService:     service,
+		client:              client,
 		worker:              base,
 		poller:              poller,
 		identity:            params.Identity,
@@ -552,6 +561,11 @@ func newActivityWorker(
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
+	if aw.client != nil {
+		if _, err := aw.client.loadNamespaceCapabilities(aw.executionParameters.MetricsHandler); err != nil {
+			return err
+		}
+	}
 	aw.worker.Start()
 	return nil // TODO: propagate errors
 }
@@ -1270,11 +1284,6 @@ func (aw *AggregatedWorker) start() error {
 		return err
 	}
 	proto.Merge(aw.capabilities, capabilities)
-
-	// Load namespace capabilities (also verifies namespace exists and caches the result)
-	if _, err := aw.client.loadNamespaceCapabilities(context.Background()); err != nil {
-		return err
-	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {

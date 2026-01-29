@@ -1374,7 +1374,8 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 }
 
 // Get namespace capabilities, lazily fetching from server if not already obtained.
-func (wc *WorkflowClient) loadNamespaceCapabilities(ctx context.Context) (*namespacepb.NamespaceInfo_Capabilities, error) {
+func (wc *WorkflowClient) loadNamespaceCapabilities(metricsHandler metrics.Handler) (*namespacepb.NamespaceInfo_Capabilities, error) {
+	ctx := contextWithNewHeader(context.Background())
 	wc.namespaceCapabilitiesLock.RLock()
 	capabilities := wc.namespaceCapabilities
 	wc.namespaceCapabilitiesLock.RUnlock()
@@ -1382,7 +1383,7 @@ func (wc *WorkflowClient) loadNamespaceCapabilities(ctx context.Context) (*names
 		return capabilities, nil
 	}
 
-	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(metricsHandler), defaultGrpcRetryParameters(ctx))
 	defer cancel()
 	resp, err := wc.workflowService.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: wc.namespace})
 	var unimplemented *serviceerror.Unimplemented

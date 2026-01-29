@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -37,9 +38,8 @@ type heartbeatMetricsHandler struct {
 	workerType string
 	pollerType string
 
-	// All instances share the same underlying map (set on creation, never replaced).
 	// Keys are metric names, or "metricName:workerType" / "metricName:pollerType" for typed metrics.
-	metrics map[string]*atomic.Int64
+	metrics *sync.Map
 }
 
 // newHeartbeatMetricsHandler creates a new handler that captures specific metrics
@@ -47,7 +47,7 @@ type heartbeatMetricsHandler struct {
 func newHeartbeatMetricsHandler(underlying metrics.Handler) *heartbeatMetricsHandler {
 	return &heartbeatMetricsHandler{
 		underlying: underlying,
-		metrics:    make(map[string]*atomic.Int64),
+		metrics:    &sync.Map{},
 	}
 }
 
@@ -124,17 +124,17 @@ func (h *heartbeatMetricsHandler) Timer(name string) metrics.Timer {
 }
 
 func (h *heartbeatMetricsHandler) getOrCreate(key string) *atomic.Int64 {
-	if v, ok := h.metrics[key]; ok {
-		return v
+	if v, ok := h.metrics.Load(key); ok {
+		return v.(*atomic.Int64)
 	}
 	v := new(atomic.Int64)
-	h.metrics[key] = v
-	return v
+	actual, _ := h.metrics.LoadOrStore(key, v)
+	return actual.(*atomic.Int64)
 }
 
 func (h *heartbeatMetricsHandler) get(key string) int64 {
-	if v, ok := h.metrics[key]; ok {
-		return v.Load()
+	if v, ok := h.metrics.Load(key); ok {
+		return v.(*atomic.Int64).Load()
 	}
 	return 0
 }

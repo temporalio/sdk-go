@@ -16,6 +16,7 @@ type nexusWorkerOptions struct {
 type nexusWorker struct {
 	executionParameters workerExecutionParameters
 	workflowService     workflowservice.WorkflowServiceClient
+	client              *WorkflowClient
 	worker              *baseWorker
 	stopC               chan struct{}
 }
@@ -68,9 +69,16 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 
 	baseWorker := newBaseWorker(bwo)
 
+	// Type assert to get the concrete client for namespace capabilities loading
+	var workflowClient *WorkflowClient
+	if wc, ok := opts.client.(*WorkflowClient); ok {
+		workflowClient = wc
+	}
+
 	return &nexusWorker{
 		executionParameters: opts.executionParameters,
 		workflowService:     opts.workflowService,
+		client:              workflowClient,
 		worker:              baseWorker,
 		stopC:               workerStopChannel,
 	}, nil
@@ -78,6 +86,11 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 
 // Start the worker.
 func (w *nexusWorker) Start() error {
+	if w.client != nil {
+		if _, err := w.client.loadNamespaceCapabilities(w.executionParameters.MetricsHandler); err != nil {
+			return err
+		}
+	}
 	w.worker.Start()
 	return nil
 }
