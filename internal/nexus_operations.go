@@ -712,7 +712,7 @@ func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context,
 	panic("unimplemented in the test environment")
 }
 
-func (t *testSuiteClientForNexusOperations) GetActivityHandle(activityID string, runID string) ClientActivityHandle {
+func (t *testSuiteClientForNexusOperations) GetActivityHandle(options ClientGetActivityHandleOptions) ClientActivityHandle {
 	panic("unimplemented in the test environment")
 }
 

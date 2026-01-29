@@ -1143,16 +1143,16 @@ func (_m *Client) ExecuteActivity(ctx context.Context, options client.StartActiv
 	return r0, r1
 }
 
-func (_m *Client) GetActivityHandle(activityID string, runID string) client.ActivityHandle {
-	ret := _m.Called(activityID, runID)
+func (_m *Client) GetActivityHandle(options client.GetActivityHandleOptions) client.ActivityHandle {
+	ret := _m.Called(options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetActivityHandle")
 	}
 
 	var r0 client.ActivityHandle
-	if rf, ok := ret.Get(0).(func(string, string) client.ActivityHandle); ok {
-		r0 = rf(activityID, runID)
+	if rf, ok := ret.Get(0).(func(client.GetActivityHandleOptions) client.ActivityHandle); ok {
+		r0 = rf(options)
 	} else {
 		r0 = ret.Get(0).(client.ActivityHandle)
 	}

@@ -435,7 +435,7 @@ type (
 
 		ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error)
 
-		GetActivityHandle(activityID string, runID string) ClientActivityHandle
+		GetActivityHandle(options ClientGetActivityHandleOptions) ClientActivityHandle
 
 		ListActivities(ctx context.Context, options ClientListActivitiesOptions) iter.Seq2[*ClientActivityExecutionInfo, error]
 

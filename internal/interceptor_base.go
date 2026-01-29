@@ -587,6 +587,8 @@ func (c *ClientOutboundInterceptorBase) ExecuteActivity(
 }
 
 // GetActivityHandle implements ClientOutboundInterceptor.GetActivityHandle.
+//
+// NOTE: Experimental
 func (c *ClientOutboundInterceptorBase) GetActivityHandle(
 	in *ClientGetActivityHandleInput,
 ) ClientActivityHandle {

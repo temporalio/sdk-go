@@ -24,4 +24,3 @@ go.work.sum
 *~
 internal/cmd/build/*.sqlite*
 .claude
-internal/cmd/build/build

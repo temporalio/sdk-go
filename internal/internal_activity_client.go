@@ -37,6 +37,15 @@ type (
 		Priority                 Priority
 	}
 
+	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
+	// ActivityID and RunID are required.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.GetActivityHandleInput]
+	ClientGetActivityHandleOptions struct {
+		ActivityID string
+		RunID      string
+	}
+
 	ClientListActivitiesOptions struct {
 		Query string
 	}
@@ -344,11 +353,8 @@ func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientSta
 	})
 }
 
-func (wc *WorkflowClient) GetActivityHandle(activityID string, runID string) ClientActivityHandle {
-	return wc.interceptor.GetActivityHandle(&ClientGetActivityHandleInput{
-		ActivityID: activityID,
-		RunID:      runID,
-	})
+func (wc *WorkflowClient) GetActivityHandle(options ClientGetActivityHandleOptions) ClientActivityHandle {
+	return wc.interceptor.GetActivityHandle((*ClientGetActivityHandleInput)(&options))
 }
 
 func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientListActivitiesOptions) iter.Seq2[*ClientActivityExecutionInfo, error] {

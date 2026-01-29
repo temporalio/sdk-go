@@ -8767,7 +8767,11 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		}
 
 		testGetHandle := func(ctx context.Context, runId string, expectedResult string) {
-			handle := ts.client.GetActivityHandle(options.ID, runId)
+			handleOptions := client.GetActivityHandleOptions{
+				ActivityID: options.ID,
+				RunID:      runId,
+			}
+			handle := ts.client.GetActivityHandle(handleOptions)
 			var result string
 			err := handle.Get(ctx, &result)
 			ts.NoError(err)

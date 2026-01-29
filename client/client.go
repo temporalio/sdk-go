@@ -898,6 +898,7 @@ type (
 	WorkflowUpdateServiceTimeoutOrCanceledError = internal.WorkflowUpdateServiceTimeoutOrCanceledError
 
 	StartActivityOptions            = internal.ClientStartActivityOptions
+	GetActivityHandleOptions        = internal.ClientGetActivityHandleOptions
 	ListActivitiesOptions           = internal.ClientListActivitiesOptions
 	CountActivitiesOptions          = internal.ClientCountActivitiesOptions
 	CountActivitiesResult           = internal.ClientCountActivitiesResult
@@ -1346,7 +1347,7 @@ type (
 
 		ExecuteActivity(ctx context.Context, options StartActivityOptions, activity any, args ...any) (ActivityHandle, error)
 
-		GetActivityHandle(activityID string, runID string) ActivityHandle
+		GetActivityHandle(options GetActivityHandleOptions) ActivityHandle
 
 		ListActivities(ctx context.Context, options ListActivitiesOptions) iter.Seq2[*ActivityExecutionInfo, error]
 
