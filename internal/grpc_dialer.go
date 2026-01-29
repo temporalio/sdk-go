@@ -7,6 +7,7 @@ import (
 	"time"
 
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
+	"go.temporal.io/api/proxy"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
@@ -17,6 +18,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 )
 
 type (
@@ -157,17 +159,21 @@ func requiredInterceptors(
 			interceptors = append(interceptors, interceptor)
 		}
 	}
-	// Add namespace provider interceptor
-	interceptors = append(interceptors, namespaceProviderInterceptor())
+	// Add temporal header interceptor (namespace + resource ID)
+	interceptors = append(interceptors, temporalHeaderInterceptor())
 	return interceptors
 }
 
-func namespaceProviderInterceptor() grpc.UnaryClientInterceptor {
+func temporalHeaderInterceptor() grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		if nsReq, ok := req.(interface{ GetNamespace() string }); ok {
-			// Only add namespace if it doesn't already exist
-			if md, _ := metadata.FromOutgoingContext(ctx); len(md.Get(temporalNamespaceHeaderKey)) == 0 {
-				ctx = metadata.AppendToOutgoingContext(ctx, temporalNamespaceHeaderKey, nsReq.GetNamespace())
+		var extractOpts proxy.ExtractHeadersOptions
+		extractOpts.Request, _ = req.(proto.Message)
+		extractOpts.ExistingMetadata, _ = metadata.FromOutgoingContext(ctx)
+		if extractOpts.Request != nil {
+			if headers, err := proxy.ExtractTemporalRequestHeaders(ctx, extractOpts); err != nil {
+				return err
+			} else if len(headers) > 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, headers...)
 			}
 		}
 		return invoker(ctx, method, req, reply, cc, opts...)
