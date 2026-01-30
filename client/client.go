@@ -897,22 +897,81 @@ type (
 	// Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
 	WorkflowUpdateServiceTimeoutOrCanceledError = internal.WorkflowUpdateServiceTimeoutOrCanceledError
 
-	StartActivityOptions            = internal.ClientStartActivityOptions
-	GetActivityHandleOptions        = internal.ClientGetActivityHandleOptions
-	ListActivitiesOptions           = internal.ClientListActivitiesOptions
-	CountActivitiesOptions          = internal.ClientCountActivitiesOptions
-	CountActivitiesResult           = internal.ClientCountActivitiesResult
+	// StartActivityOptions contains configuration parameters for starting an activity execution from the client.
+	// ID and TaskQueue are required. At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
+	// Other parameters are optional.
+	//
+	// NOTE: Experimental
+	StartActivityOptions = internal.ClientStartActivityOptions
+
+	// GetActivityHandleOptions contains input for GetActivityHandle call.
+	// ActivityID and RunID are required.
+	//
+	// NOTE: Experimental
+	GetActivityHandleOptions = internal.ClientGetActivityHandleOptions
+
+	// ListActivitiesOptions contains input for ListActivities call.
+	//
+	// NOTE: Experimental
+	ListActivitiesOptions = internal.ClientListActivitiesOptions
+
+	// CountActivitiesOptions contains input for CountActivities call.
+	//
+	// NOTE: Experimental
+	CountActivitiesOptions = internal.ClientCountActivitiesOptions
+
+	// CountActivitiesResult contains result of CountActivities call.
+	//
+	// NOTE: Experimental
+	CountActivitiesResult = internal.ClientCountActivitiesResult
+
+	// CountActivitiesAggregationGroup contains groups of activities if
+	// CountActivityExecutions is grouped by a field.
+	// The list might not be complete, and the counts of each group is approximate.
+	//
+	// NOTE: Experimental
 	CountActivitiesAggregationGroup = internal.ClientCountActivitiesAggregationGroup
-	ActivityHandle                  = internal.ClientActivityHandle
+
+	// ActivityHandle represents a running or completed standalone activity execution.
+	// It can be used to get the result, describe, cancel, or terminate the activity.
+	//
+	// NOTE: Experimental
+	ActivityHandle = internal.ClientActivityHandle
+
 	// ActivityHandleBase must be derived to create custom implementations of ActivityHandle. This can be used in conjunction with
 	// interceptor.ClientOutboundInterceptor methods ExecuteActivity and GetActivityHandle to intercept method calls on the handle,
 	// e.g. getting activity result.
-	ActivityHandleBase           = internal.ClientActivityHandleBase
-	ActivityExecutionInfo        = internal.ClientActivityExecutionInfo
+	//
+	// NOTE: Experimental
+	ActivityHandleBase = internal.ClientActivityHandleBase
+
+	// ActivityExecutionInfo contains information about an activity execution.
+	// This is returned by ListActivities and embedded in ClientActivityExecutionDescription.
+	//
+	// NOTE: Experimental
+	ActivityExecutionInfo = internal.ClientActivityExecutionInfo
+
+	// ActivityExecutionDescription contains detailed information about an activity execution.
+	// This is returned by ClientActivityHandle.Describe.
+	//
+	//	NOTE: Experimental
 	ActivityExecutionDescription = internal.ClientActivityExecutionDescription
-	DescribeActivityOptions      = internal.ClientDescribeActivityOptions
-	CancelActivityOptions        = internal.ClientCancelActivityOptions
-	TerminateActivityOptions     = internal.ClientTerminateActivityOptions
+
+	// DescribeActivityOptions contains options for ClientActivityHandle.Describe call.
+	// For future compatibility, currently unused.
+	//
+	// NOTE: Experimental
+	DescribeActivityOptions = internal.ClientDescribeActivityOptions
+
+	// CancelActivityOptions contains options for ClientActivityHandle.Cancel call.
+	//
+	// NOTE: Experimental
+	CancelActivityOptions = internal.ClientCancelActivityOptions
+
+	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
+	//
+	// NOTE: Experimental
+	TerminateActivityOptions = internal.ClientTerminateActivityOptions
 
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -1345,12 +1404,47 @@ type (
 		// if not specified the most recent runID will be used.
 		GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
+		// ExecuteActivity starts a standalone activity execution and returns an ActivityHandle.
+		// The user can use this to start using a function or activity type name.
+		// Either by
+		//     ExecuteActivity(ctx, options, "activityTypeName", arg1, arg2, arg3)
+		//     or
+		//     ExecuteActivity(ctx, options, activityFn, arg1, arg2, arg3)
+		//
+		// Returns an ActivityExecutionAlreadyStarted error if an activity with the same ID already exists
+		// in this namespace, unless permitted by the specified ID conflict policy.
+		//
+		// ActivityHandle has the following methods:
+		//  - GetID() string: returns the activity ID (same as ExecuteActivityOptions.ID)
+		//  - GetRunID() string: returns the run ID of the started activity execution
+		//  - Get(ctx context.Context, valuePtr interface{}) error: blocks until the activity completes
+		//    and fills the result into valuePtr, or returns the corresponding error
+		//  - Describe(ctx context.Context, options DescribeActivityOptions) (*ActivityExecutionDescription, error):
+		//    returns detailed information about the activity execution
+		//  - Cancel(ctx context.Context, options CancelActivityOptions) error: requests cancellation
+		//  - Terminate(ctx context.Context, options TerminateActivityOptions) error: terminates the activity
+		//
+		// NOTE: Standalone activities are not associated with a workflow execution.
+		// They are scheduled directly on a task queue and executed by a worker.
+		//
+		// NOTE: Experimental
 		ExecuteActivity(ctx context.Context, options StartActivityOptions, activity any, args ...any) (ActivityHandle, error)
 
+		// GetActivityHandle creates a handle to the referenced activity.
+		//
+		// NOTE: Experimental
 		GetActivityHandle(options GetActivityHandleOptions) ActivityHandle
 
+		// ListActivities lists activity executions based on query.
+		//
+		// NOTE: Experimental
 		ListActivities(ctx context.Context, options ListActivitiesOptions) iter.Seq2[*ActivityExecutionInfo, error]
 
+		// CountActivities counts activity executions based on query. The result
+		// includes the total count and optionally grouped counts if the query includes
+		// a GROUP BY clause.
+		//
+		// NOTE: Experimental
 		CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error)
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases

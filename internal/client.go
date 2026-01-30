@@ -433,12 +433,47 @@ type (
 		// if not specified the most recent runID will be used.
 		GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
 
+		// ExecuteActivity starts a standalone activity execution and returns an ActivityHandle.
+		// The user can use this to start using a function or activity type name.
+		// Either by
+		//     ExecuteActivity(ctx, options, "activityTypeName", arg1, arg2, arg3)
+		//     or
+		//     ExecuteActivity(ctx, options, activityFn, arg1, arg2, arg3)
+		//
+		// Returns an ActivityExecutionAlreadyStarted error if an activity with the same ID already exists
+		// in this namespace, unless permitted by the specified ID conflict policy.
+		//
+		// ActivityHandle has the following methods:
+		//  - GetID() string: returns the activity ID (same as ExecuteActivityOptions.ID)
+		//  - GetRunID() string: returns the run ID of the started activity execution
+		//  - Get(ctx context.Context, valuePtr interface{}) error: blocks until the activity completes
+		//    and fills the result into valuePtr, or returns the corresponding error
+		//  - Describe(ctx context.Context, options DescribeActivityOptions) (*ActivityExecutionDescription, error):
+		//    returns detailed information about the activity execution
+		//  - Cancel(ctx context.Context, options CancelActivityOptions) error: requests cancellation
+		//  - Terminate(ctx context.Context, options TerminateActivityOptions) error: terminates the activity
+		//
+		// NOTE: Standalone activities are not associated with a workflow execution.
+		// They are scheduled directly on a task queue and executed by a worker.
+		//
+		// NOTE: Experimental
 		ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error)
 
+		// GetActivityHandle creates a handle to the referenced activity.
+		//
+		// NOTE: Experimental
 		GetActivityHandle(options ClientGetActivityHandleOptions) ClientActivityHandle
 
+		// ListActivities lists activity executions based on query.
+		//
+		// NOTE: Experimental
 		ListActivities(ctx context.Context, options ClientListActivitiesOptions) iter.Seq2[*ClientActivityExecutionInfo, error]
 
+		// CountActivities counts activity executions based on query. The result
+		// includes the total count and optionally grouped counts if the query includes
+		// a GROUP BY clause.
+		//
+		// NOTE: Experimental
 		CountActivities(ctx context.Context, options ClientCountActivitiesOptions) (*ClientCountActivitiesResult, error)
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases

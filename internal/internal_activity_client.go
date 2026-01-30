@@ -21,7 +21,9 @@ type (
 	// ID and TaskQueue are required. At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
 	// Other parameters are optional.
 	//
-	// Exposed as: [go.temporal.io/sdk/client.ExecuteActivityOptions]
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.StartActivityOptions]
 	ClientStartActivityOptions struct {
 		ID                       string
 		TaskQueue                string
@@ -34,36 +36,67 @@ type (
 		RetryPolicy              *RetryPolicy
 		TypedSearchAttributes    SearchAttributes
 		Summary                  string
+		Details                  string
 		Priority                 Priority
 	}
 
 	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
 	// ActivityID and RunID are required.
 	//
-	// Exposed as: [go.temporal.io/sdk/client.GetActivityHandleInput]
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.GetActivityHandleOptions]
 	ClientGetActivityHandleOptions struct {
 		ActivityID string
 		RunID      string
 	}
 
+	// ClientListActivitiesOptions contains input for ListActivities call.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ListActivitiesOptions]
 	ClientListActivitiesOptions struct {
 		Query string
 	}
 
+	// ClientCountActivitiesOptions contains input for CountActivities call.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.CountActivitiesOptions]
 	ClientCountActivitiesOptions struct {
 		Query string
 	}
 
+	// ClientCountActivitiesResult contains result of CountActivities call.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.CountActivitiesResult]
 	ClientCountActivitiesResult struct {
 		Count  int64
 		Groups []ClientCountActivitiesAggregationGroup
 	}
 
+	// ClientCountActivitiesAggregationGroup contains groups of activities if
+	// CountActivityExecutions is grouped by a field.
+	// The list might not be complete, and the counts of each group is approximate.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.CountActivitiesAggregationGroup]
 	ClientCountActivitiesAggregationGroup struct {
 		GroupValues []any
 		Count       int64
 	}
 
+	// ClientActivityHandle represents a running or completed standalone activity execution.
+	// It can be used to get the result, describe, cancel, or terminate the activity.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ActivityHandle]
 	ClientActivityHandle interface {
 		// GetID returns the ID of the activity this handle points to.
 		GetID() string
@@ -91,20 +124,38 @@ type (
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
 	// For future compatibility, currently unused.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DescribeActivityOptions]
 	ClientDescribeActivityOptions struct{}
 
 	// ClientCancelActivityOptions contains options for ClientActivityHandle.Cancel call.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.CancelActivityOptions]
 	ClientCancelActivityOptions struct {
 		// Reason is optional description of the reason for cancellation.
 		Reason string
 	}
 
 	// ClientTerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.TerminateActivityOptions]
 	ClientTerminateActivityOptions struct {
 		// Reason is optional description of the reason for cancellation.
 		Reason string
 	}
 
+	// ClientActivityExecutionInfo contains information about an activity execution.
+	// This is returned by ListActivities and embedded in ClientActivityExecutionDescription.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionInfo]
 	ClientActivityExecutionInfo struct {
 		// Raw PB message this struct was built from. This field is nil in the result of ClientActivityHandle.Describe call - use
 		// ClientActivityExecutionDescription.RawExecutionInfo instead.
@@ -120,6 +171,12 @@ type (
 		ExecutionDuration     time.Duration
 	}
 
+	// ClientActivityExecutionDescription contains detailed information about an activity execution.
+	// This is returned by ClientActivityHandle.Describe.
+	//
+	//	NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionDescription]
 	ClientActivityExecutionDescription struct {
 		ClientActivityExecutionInfo
 		// Raw PB message this struct was built from.
@@ -141,6 +198,13 @@ type (
 		failureConverter        converter.FailureConverter
 	}
 
+	// ClientActivityHandleBase must be derived to create custom implementations of ActivityHandle. This can be used in conjunction with
+	// interceptor.ClientOutboundInterceptor methods ExecuteActivity and GetActivityHandle to intercept method calls on the handle,
+	// e.g. getting activity result.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ActivityHandleBase]
 	ClientActivityHandleBase struct {
 		client *WorkflowClient
 		id     string
@@ -174,7 +238,7 @@ func (d *ClientActivityExecutionDescription) GetLastFailure() error {
 	return d.failureConverter.FailureToError(failure)
 }
 
-// GetSummary returns summary of the activity. See ActivityOptions.Summary. Returns empty string if there is no summary.
+// GetSummary returns summary of the activity. See ClientStartActivityOptions.Summary. Returns empty string if there is no summary.
 // Uses the data converter of the client used to make the Describe call. Returns error if data conversion fails.
 func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 	payload := d.RawExecutionInfo.GetUserMetadata().GetSummary()
@@ -187,6 +251,21 @@ func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 		return "", err
 	}
 	return summary, nil
+}
+
+// GetDetails returns details of the activity. See ClientStartActivityOptions.Details. Returns empty string if there are no details.
+// Uses the data converter of the client used to make the Describe call. Returns error if data conversion fails.
+func (d *ClientActivityExecutionDescription) GetDetails() (string, error) {
+	payload := d.RawExecutionInfo.GetUserMetadata().GetDetails()
+	if payload == nil {
+		return "", nil
+	}
+	var details string
+	err := d.dataConverter.FromPayload(payload, &details)
+	if err != nil {
+		return "", err
+	}
+	return details, nil
 }
 
 func (h *ClientActivityHandleBase) mustEmbedActivityHandleBase() {}
@@ -224,7 +303,7 @@ func (h *ClientActivityHandleBase) Get(ctx context.Context, valuePtr any) error 
 }
 
 func (h *ClientActivityHandleBase) pollResult(ctx context.Context) (*workflowservice.PollActivityExecutionResponse, error) {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx), grpcLongPoll(true))
 	defer cancel()
 
 	request := &workflowservice.PollActivityExecutionRequest{
@@ -503,7 +582,7 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	if err != nil {
 		return err
 	}
-	userMetadata, err := buildUserMetadata(options.Summary, "", dataConverter)
+	userMetadata, err := buildUserMetadata(options.Summary, options.Details, dataConverter)
 	if err != nil {
 		return err
 	}

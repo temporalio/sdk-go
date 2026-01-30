@@ -198,10 +198,14 @@ type ClientDescribeWorkflowOutput = internal.ClientDescribeWorkflowOutput
 
 // ClientExecuteActivityInput is the input to
 // ClientOutboundInterceptor.ExecuteActivity.
+//
+// NOTE: Experimental
 type ClientExecuteActivityInput = internal.ClientExecuteActivityInput
 
 // ClientGetActivityHandleInput is the input to
 // ClientOutboundInterceptor.GetActivityHandle.
+//
+// NOTE: Experimental
 type ClientGetActivityHandleInput = internal.ClientGetActivityHandleInput
 
 // ScheduleClientCreateInput is input for
