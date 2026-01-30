@@ -10,6 +10,7 @@ import (
 	activitypb "go.temporal.io/api/activity/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
@@ -551,14 +552,21 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	defer cancel()
 
 	resp, err := w.client.WorkflowService().StartActivityExecution(grpcCtx, request)
-	if err != nil {
+
+	var runID string
+	if e, ok := err.(*serviceerror.ActivityExecutionAlreadyStarted); ok &&
+		in.Options.ActivityIDConflictPolicy == enumspb.ACTIVITY_ID_CONFLICT_POLICY_USE_EXISTING {
+		runID = e.RunId
+	} else if err != nil {
 		return nil, err
+	} else {
+		runID = resp.RunId
 	}
 
 	return &ClientActivityHandleBase{
 		client: w.client,
 		id:     in.Options.ID,
-		runID:  resp.RunId,
+		runID:  runID,
 	}, nil
 }
 
