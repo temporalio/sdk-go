@@ -64,7 +64,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeployment(ctx context.Context
 	ts.Eventually(func() bool {
 		_, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 		return err == nil
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
@@ -83,7 +83,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
 			}
 		}
 		return false
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropagation(
@@ -115,7 +115,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropaga
 			return false
 		}
 		return false
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context, handle client.WorkflowRun) {
@@ -124,7 +124,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context,
 		ts.NoError(err)
 		status := describeResp.WorkflowExecutionInfo.Status
 		return enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING == status
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunningOnVersion(ctx context.Context, handle client.WorkflowRun, expectedBuildID string) {
@@ -140,7 +140,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunningOnVersion(ctx context
 			return false
 		}
 		return true
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForDrainage(ctx context.Context, dHandle client.WorkerDeploymentHandle, buildID string, target client.WorkerDeploymentVersionDrainageStatus) {
@@ -840,7 +840,7 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 		}
 		sort.Strings(res)
 		return reflect.DeepEqual(res, []string{deploymentName1, deploymentName2})
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
@@ -1093,7 +1093,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	// very likely probability (1-2^33) of success
 	ts.Eventually(func() bool {
 		return !ts.runWorkflowAndCheckV1(ctx, uuid.NewString())
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) TestRampVersion_AllowNoPollers() {
