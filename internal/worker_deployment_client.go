@@ -5,7 +5,6 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
-	"go.temporal.io/sdk/client"
 )
 
 // WorkerDeploymentVersionDrainageStatus specifies the drainage status for a Worker
