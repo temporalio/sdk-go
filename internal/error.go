@@ -195,6 +195,7 @@ type (
 
 		// InitialVersioningBehavior specifies the versioning behavior that the first task of the new run should use.
 		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
+		// Note: Continue-as-new versioning is currently experimental.
 		InitialVersioningBehavior ContinueAsNewVersioningBehavior
 
 		// This is by default nil but may be overridden using NewContinueAsNewErrorWithOptions.
@@ -563,9 +564,7 @@ func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOpt
 		if options.RetryPolicy != nil {
 			continueAsNewErr.RetryPolicy = options.RetryPolicy
 		}
-		if options.InitialVersioningBehavior != ContinueAsNewVersioningBehaviorUnspecified {
-			continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
-		}
+		continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
 	}
 
 	return err

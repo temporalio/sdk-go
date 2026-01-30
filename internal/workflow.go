@@ -1515,6 +1515,7 @@ func (wInfo *WorkflowInfo) GetContinueAsNewSuggested() bool {
 // GetContinueAsNewSuggestedReasons returns a list of reasons why continue as new is suggested,
 // if the server is configured to suggest continue as new and it is suggested.
 // This value may change throughout the life of the workflow.
+// Note: Continue-as-new versioning is currently experimental.
 func (wInfo *WorkflowInfo) GetContinueAsNewSuggestedReasons() []ContinueAsNewSuggestedReason {
 	return wInfo.continueAsNewSuggestedReasons
 }

@@ -2169,7 +2169,7 @@ func (weh *workflowExecutionEventHandlerImpl) protocolConstructorForMessage(
 func convertContinueAsNewSuggestedReasonsFromProto(
 	reasons []enumspb.SuggestContinueAsNewReason,
 ) []ContinueAsNewSuggestedReason {
-	var converted []ContinueAsNewSuggestedReason
+	converted := make([]ContinueAsNewSuggestedReason, len(reasons))
 	for _, reason := range reasons {
 		converted = append(converted, ContinueAsNewSuggestedReason(reason))
 	}
