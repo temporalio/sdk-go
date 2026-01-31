@@ -1097,6 +1097,25 @@ func (w *Workflows) CancelTimerViaDeferAfterWFTFailure(ctx workflow.Context) err
 	return nil
 }
 
+func (w *Workflows) AwaitWithTimeoutCancelTimerOnCondition(ctx workflow.Context) (bool, error) {
+	conditionMet := false
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, 100*time.Millisecond)
+		conditionMet = true
+	})
+
+	return workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return conditionMet
+	})
+}
+
+func (w *Workflows) AwaitWithTimeoutConditionAlreadyTrue(ctx workflow.Context) (bool, error) {
+	return workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return true
+	})
+}
+
 func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) {
 	childCtx1, cancelFunc1 := workflow.WithCancel(ctx)
 	opts := workflow.ChildWorkflowOptions{
@@ -3327,14 +3346,19 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 
 func (w *Workflows) AwaitWithOptions(ctx workflow.Context) (bool, error) {
 	options := workflow.AwaitOptions{
-		Timeout:      1 * time.Millisecond,
+		Timeout:      10 * time.Second,
 		TimerOptions: workflow.TimerOptions{Summary: "await-timer"},
 	}
 
-	return workflow.AwaitWithOptions(ctx, options, func() bool {
-		return true
+	conditionMet := false
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
+		conditionMet = true
 	})
 
+	return workflow.AwaitWithOptions(ctx, options, func() bool {
+		return conditionMet
+	})
 }
 
 func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, numOfEachActKind int, actFailTimes int) error {
@@ -3585,6 +3609,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelTimer)
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
 	worker.RegisterWorkflow(w.CancelTimerViaDeferAfterWFTFailure)
+	worker.RegisterWorkflow(w.AwaitWithTimeoutCancelTimerOnCondition)
+	worker.RegisterWorkflow(w.AwaitWithTimeoutConditionAlreadyTrue)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.WaitForCancelWithDisconnectedContextWorkflow)
 	worker.RegisterWorkflow(w.ChildWorkflowWithRetryPolicy)

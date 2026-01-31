@@ -29,7 +29,11 @@ const (
 	// SDKFlagBlockedSelectorSignalReceive will cause a signal to not be lost
 	// when the Default path is blocked.
 	SDKFlagBlockedSelectorSignalReceive = 5
-	SDKFlagUnknown                      = math.MaxUint32
+	// SDKFlagCancelAwaitTimerOnCondition will cause AwaitWithTimeout and
+	// AwaitWithOptions to cancel the timer when the condition is satisfied
+	// before the timeout expires.
+	SDKFlagCancelAwaitTimerOnCondition = 6
+	SDKFlagUnknown                     = math.MaxUint32
 )
 
 // unblockSelectorSignal exists to allow us to configure the default behavior of
@@ -50,6 +54,8 @@ func sdkFlagFromUint(value uint32) sdkFlag {
 		return SDKPriorityUpdateHandling
 	case uint32(SDKFlagBlockedSelectorSignalReceive):
 		return SDKFlagBlockedSelectorSignalReceive
+	case uint32(SDKFlagCancelAwaitTimerOnCondition):
+		return SDKFlagCancelAwaitTimerOnCondition
 	default:
 		return SDKFlagUnknown
 	}
