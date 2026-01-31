@@ -391,6 +391,8 @@ type (
 		RampPercentage float32
 
 		// TaskQueuesInfos - List of task queues polled by workers in this Deployment Version.
+		//
+		// Deprecated: Use WorkerDeploymentVersionDescription.TaskQueueInfos instead.
 		TaskQueuesInfos []WorkerDeploymentTaskQueueInfo
 
 		// DrainageInfo - Drainage information for a Worker Deployment Version, enabling users to
