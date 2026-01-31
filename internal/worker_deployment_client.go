@@ -416,6 +416,7 @@ type (
 		Info WorkerDeploymentVersionInfo
 
 		// All the Task Queues that have ever polled from this Deployment version.
+		// Stats are only reported if explicitly requested.
 		TaskQueueInfos []WorkerDeploymentTaskQueueInfo
 	}
 
