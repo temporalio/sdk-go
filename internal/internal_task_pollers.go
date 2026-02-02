@@ -79,6 +79,8 @@ type (
 		workerDeploymentVersion WorkerDeploymentVersion
 		// Server's capabilities
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
+		// tracks timestamp for last poll request, for worker heartbeating
+		pollTimeTracker *pollTimeTracker
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -322,6 +324,7 @@ func newWorkflowTaskProcessor(
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			pollTimeTracker:         params.pollTimeTracker,
 		},
 		service:                      service,
 		namespace:                    params.Namespace,
@@ -972,10 +975,12 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		return &workflowTask{}, nil
 	}
 
-	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_STICKY {
-		recordPollSuccessIfHeartbeat(wtp.metricsHandler, metrics.PollerTypeWorkflowStickyTask)
-	} else {
-		recordPollSuccessIfHeartbeat(wtp.metricsHandler, metrics.PollerTypeWorkflowTask)
+	if wtp.pollTimeTracker != nil {
+		if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_STICKY {
+			wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowStickyTask)
+		} else {
+			wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowTask)
+		}
 	}
 
 	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
@@ -1125,6 +1130,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			pollTimeTracker:         params.pollTimeTracker,
 		},
 		taskHandler:         taskHandler,
 		service:             service,
@@ -1176,7 +1182,9 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		return &activityTask{}, nil
 	}
 
-	recordPollSuccessIfHeartbeat(atp.metricsHandler, metrics.PollerTypeActivityTask)
+	if atp.pollTimeTracker != nil {
+		atp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeActivityTask)
+	}
 
 	workflowType := response.WorkflowType.GetName()
 	activityType := response.ActivityType.GetName()

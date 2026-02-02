@@ -49,7 +49,7 @@ func (ts *WorkerHeartbeatTestSuite) TearDownSuite() {
 
 func (ts *WorkerHeartbeatTestSuite) SetupTest() {
 	var err error
-	heartbeatInterval := 100 * time.Millisecond
+	heartbeatInterval := 1 * time.Second
 
 	// Create a client with heartbeating enabled
 	ts.client, err = client.Dial(client.Options{
@@ -117,11 +117,9 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	// Wait for heartbeat to capture the in-flight activity
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
-	}, time.Second, 50*time.Millisecond, "Should find worker with activity slot used")
-	ts.logWorkerInfo(workerInfo)
+	}, 5*time.Second, 200*time.Millisecond, "Should find worker with activity slot used")
 
 	ts.Equal(enums.WORKER_STATUS_RUNNING, workerInfo.Status)
 
@@ -170,8 +168,8 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 
 	ts.NotNil(workerInfo.ElapsedSinceLastHeartbeat)
 	elapsed := workerInfo.ElapsedSinceLastHeartbeat.AsDuration()
-	ts.True(elapsed <= 500*time.Millisecond,
-		"ElapsedSinceLastHeartbeat should be <= 500ms (got %v)", elapsed)
+	ts.True(elapsed <= 5*time.Second,
+		"ElapsedSinceLastHeartbeat should be <= 5s (got %v)", elapsed)
 
 	ts.assertRecentTimestamp(workerInfo.WorkflowPollerInfo.LastSuccessfulPollTime, 5*time.Second,
 		"WorkflowPollerInfo.LastSuccessfulPollTime")
@@ -188,7 +186,6 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.NoError(run.Get(ctx, nil))
 	ts.worker.Stop()
 
-	workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
 
 	// After shutdown checks
@@ -287,13 +284,11 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatDeploymentVersion() {
 	ts.Eventually(func() bool {
 		workerInfo = ts.getWorkerInfo(ctx, taskQueue)
 		return workerInfo != nil && workerInfo.DeploymentVersion != nil
-	}, time.Second, 50*time.Millisecond, "Should find worker with deployment version")
+	}, 5*time.Second, 200*time.Millisecond, "Should find worker with deployment version")
 
 	ts.NotNil(workerInfo.DeploymentVersion)
 	ts.Equal("test_build_id", workerInfo.DeploymentVersion.BuildId)
 	ts.Equal("test-deployment", workerInfo.DeploymentVersion.DeploymentName)
-
-	ts.logWorkerInfo(workerInfo)
 }
 
 // TestWorkerHeartbeatDisabled verifies that when heartbeating is disabled,
@@ -322,7 +317,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatDisabled() {
 	defer workerNoHeartbeat.Stop()
 
 	// Wait a bit
-	time.Sleep(500 * time.Millisecond)
+	time.Sleep(2 * time.Second)
 
 	// Get the internal client
 	internalClient := clientNoHeartbeat.(internal.Client)
@@ -364,7 +359,6 @@ func (ts *WorkerHeartbeatTestSuite) getWorkerInfo(ctx context.Context, taskQueue
 	}
 
 	if len(listResp.WorkersInfo) == 0 {
-		ts.T().Logf("No workers found for task queue %s", taskQueue)
 		return nil
 	}
 
@@ -581,10 +575,9 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWithActivityInFlight() {
 
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
-	}, time.Second, 50*time.Millisecond, "Should have at least 1 activity slot used")
+	}, 5*time.Second, 200*time.Millisecond, "Should have at least 1 activity slot used")
 
 	ts.T().Logf("Activity slots used: %d, available: %d",
 		workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots,
@@ -599,10 +592,9 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWithActivityInFlight() {
 	ts.Equal("done", result)
 
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots == 0
-	}, time.Second, 50*time.Millisecond, "Activity slot should be released after completion")
+	}, 5*time.Second, 200*time.Millisecond, "Activity slot should be released after completion")
 
 	ts.T().Logf("After completion - Activity slots used: %d, available: %d",
 		workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots,
@@ -708,9 +700,8 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStickyCacheMiss() {
 	// Wait for heartbeat to capture sticky cache miss
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.TotalStickyCacheMiss >= 1
-	}, time.Second, 50*time.Millisecond, "Should have at least 1 sticky cache miss")
+	}, 5*time.Second, 200*time.Millisecond, "Should have at least 1 sticky cache miss")
 }
 
 // TestWorkerHeartbeatMultipleWorkers verifies that multiple workers can heartbeat
@@ -755,7 +746,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatMultipleWorkers() {
 		workerInfo1 = ts.getWorkerInfo(ctx, taskQueue1)
 		workerInfo2 = ts.getWorkerInfo(ctx, taskQueue2)
 		return workerInfo1 != nil && workerInfo2 != nil
-	}, time.Second, 50*time.Millisecond, "Should find both workers")
+	}, 5*time.Second, 200*time.Millisecond, "Should find both workers")
 
 	ts.NotEqual(workerInfo1.WorkerInstanceKey, workerInfo2.WorkerInstanceKey,
 		"Different workers should have different instance keys")
@@ -795,19 +786,17 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatFailureMetrics() {
 	// Wait for heartbeat to capture failure metrics
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.TotalFailedTasks >= 1
-	}, time.Second, 50*time.Millisecond, "Should have tracked at least 1 activity task failure")
+	}, 5*time.Second, 200*time.Millisecond, "Should have tracked at least 1 activity task failure")
 
 	ts.GreaterOrEqual(workerInfo.ActivityTaskSlotsInfo.LastIntervalFailureTasks, int32(1))
 
 	// Last interval should go back to 0 on next heartbeat
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.LastIntervalFailureTasks == 0
-	}, time.Second, 50*time.Millisecond, "Last interval failure count should reset to 0")
+	}, 5*time.Second, 200*time.Millisecond, "Last interval failure count should reset to 0")
 }
 
 func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskProcessed() {
@@ -832,19 +821,17 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskProcessed() {
 	// Wait for heartbeat to capture processed tasks
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
 			workerInfo.WorkflowTaskSlotsInfo.TotalProcessedTasks == int32(numWorkflows)
-	}, time.Second, 50*time.Millisecond, "Should have processed all workflow tasks")
+	}, 5*time.Second, 200*time.Millisecond, "Should have processed all workflow tasks")
 
 	ts.GreaterOrEqual(workerInfo.WorkflowTaskSlotsInfo.LastIntervalProcessedTasks, int32(1))
 
 	// Last interval should go back to 0 on next heartbeat
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
 			workerInfo.WorkflowTaskSlotsInfo.LastIntervalProcessedTasks == 0
-	}, time.Second, 50*time.Millisecond, "Last interval processed count should reset to 0")
+	}, 5*time.Second, 200*time.Millisecond, "Last interval processed count should reset to 0")
 }
 
 func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatResourceBasedTuner() {
@@ -898,10 +885,9 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatResourceBasedTuner() {
 	// Wait for heartbeat with resource-based tuner info
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
 			workerInfo.WorkflowTaskSlotsInfo.SlotSupplierKind == "ResourceBased"
-	}, time.Second, 50*time.Millisecond, "Should find worker with ResourceBased slot supplier")
+	}, 5*time.Second, 200*time.Millisecond, "Should find worker with ResourceBased slot supplier")
 
 	ts.NotNil(workerInfo.ActivityTaskSlotsInfo)
 	ts.Equal("ResourceBased", workerInfo.ActivityTaskSlotsInfo.SlotSupplierKind)
@@ -938,7 +924,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	ts.NoError(err)
 
 	// Create a new client with the plugin
-	heartbeatInterval := 100 * time.Millisecond
+	heartbeatInterval := 1 * time.Second
 	pluginClient, err := client.Dial(client.Options{
 		HostPort:                ts.config.ServiceAddr,
 		Namespace:               ts.config.Namespace,
@@ -969,9 +955,8 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	// Wait for heartbeat with plugin info
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
-		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && len(workerInfo.Plugins) == 2
-	}, time.Second, 50*time.Millisecond, "Should have 2 unique plugins (duplicates deduped)")
+	}, 5*time.Second, 200*time.Millisecond, "Should have 2 unique plugins (duplicates deduped)")
 
 	pluginNames := make(map[string]bool)
 	for _, plugin := range workerInfo.Plugins {

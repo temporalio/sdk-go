@@ -212,6 +212,8 @@ type (
 		eagerActivityExecutor *eagerActivityExecutor
 
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
+
+		pollTimeTracker *pollTimeTracker
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -2094,10 +2096,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
 	var metricsHandler metrics.Handler
 	var heartbeatMetrics *heartbeatMetricsHandler
+	var pollTracker *pollTimeTracker
 
 	if client.workerHeartbeatInterval != 0 {
 		heartbeatMetrics = newHeartbeatMetricsHandler(baseMetricsHandler)
 		metricsHandler = heartbeatMetrics
+		pollTracker = newPollTimeTracker()
 	} else {
 		metricsHandler = baseMetricsHandler
 	}
@@ -2135,7 +2139,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
-		capabilities: &capabilities,
+		capabilities:    &capabilities,
+		pollTimeTracker: pollTracker,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
@@ -2237,6 +2242,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pid := strconv.Itoa(os.Getpid())
 		previousHeartbeatTime := time.Now()
 		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
+		if pollTracker == nil {
+			panic("pollTracker must not be nil when heartbeats are enabled")
+		}
 
 		var prevWorkflowProcessed, prevWorkflowFailed int64
 		var prevActivityProcessed, prevActivityFailed int64
@@ -2255,6 +2263,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			prevLocalActivityFailed:    &prevLocalActivityFailed,
 			prevNexusProcessed:         &prevNexusProcessed,
 			prevNexusFailed:            &prevNexusFailed,
+			pollTimeTracker:            pollTracker,
 		}
 
 		var deploymentVersion *deploymentpb.WorkerDeploymentVersion
@@ -2270,6 +2279,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		heartbeatCallback = func() *workerpb.WorkerHeartbeat {
 			cpuUsage := getCpuUsage(systemInfoSupplier, workerParams.Logger)
 			memUsage := getMemUsage(systemInfoSupplier, workerParams.Logger)
+
+			mu.Lock()
+			defer mu.Unlock()
 			if aw.workflowWorker != nil {
 				populateOpts.workflowSlotSupplierKind = aw.workflowWorker.worker.slotSupplier.GetSlotSupplierKind()
 				populateOpts.localActivitySlotSupplierKind = aw.workflowWorker.localActivityWorker.slotSupplier.GetSlotSupplierKind()
@@ -2281,9 +2293,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
 			heartbeatTime := time.Now()
-
-			mu.Lock()
-			defer mu.Unlock()
 			elapsedSinceLastHeartbeat := heartbeatTime.Sub(previousHeartbeatTime)
 			previousHeartbeatTime = heartbeatTime
 

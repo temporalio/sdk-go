@@ -1165,7 +1165,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	} else if *options.WorkerHeartbeatInterval == 0 {
 		heartbeatInterval = 0
 	} else {
-		if heartbeatInterval < time.Second || heartbeatInterval > 60*time.Second {
+		if *options.WorkerHeartbeatInterval < time.Second || *options.WorkerHeartbeatInterval > 60*time.Second {
 			panic("WorkerHeartbeatInterval must be between 1 second and 60 seconds")
 		}
 		heartbeatInterval = *options.WorkerHeartbeatInterval

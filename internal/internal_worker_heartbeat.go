@@ -193,3 +193,23 @@ func (hw *sharedNamespaceWorker) stop() {
 	close(hw.stopC)
 	<-hw.stoppedC
 }
+
+// pollTimeTracker tracks the last successful poll time for each poller type.
+type pollTimeTracker struct {
+	times sync.Map // pollerType (string) -> time.Time (stored as int64 nanos)
+}
+
+func newPollTimeTracker() *pollTimeTracker {
+	return &pollTimeTracker{}
+}
+
+func (p *pollTimeTracker) recordPollSuccess(pollerType string) {
+	p.times.Store(pollerType, time.Now().UnixNano())
+}
+
+func (p *pollTimeTracker) getLastPollTime(pollerType string) time.Time {
+	if v, ok := p.times.Load(pollerType); ok {
+		return time.Unix(0, v.(int64))
+	}
+	return time.Time{}
+}

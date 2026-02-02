@@ -42,6 +42,7 @@ func newNexusTaskPoller(
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			pollTimeTracker:         params.pollTimeTracker,
 		},
 		taskHandler:     taskHandler,
 		service:         service,
@@ -90,7 +91,9 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		return nil, nil
 	}
 
-	recordPollSuccessIfHeartbeat(ntp.metricsHandler, metrics.PollerTypeNexusTask)
+	if ntp.pollTimeTracker != nil {
+		ntp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeNexusTask)
+	}
 
 	return &nexusTask{task: response}, nil
 }

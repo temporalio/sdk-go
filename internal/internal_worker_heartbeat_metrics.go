@@ -159,6 +159,8 @@ type populateHeartbeatOptions struct {
 	prevLocalActivityFailed    *int64
 	prevNexusProcessed         *int64
 	prevNexusFailed            *int64
+
+	pollTimeTracker *pollTimeTracker
 }
 
 // PopulateHeartbeat fills in the metrics-related fields of the WorkerHeartbeat proto.
@@ -217,32 +219,24 @@ func (h *heartbeatMetricsHandler) PopulateHeartbeat(hb *workerpb.WorkerHeartbeat
 
 	hb.WorkflowPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeWorkflowTask)),
-		h.getLastPollTime(metrics.PollerTypeWorkflowTask),
+		opts.pollTimeTracker.getLastPollTime(metrics.PollerTypeWorkflowTask),
 		opts.workflowPollerBehavior,
 	)
 	hb.WorkflowStickyPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeWorkflowStickyTask)),
-		h.getLastPollTime(metrics.PollerTypeWorkflowStickyTask),
+		opts.pollTimeTracker.getLastPollTime(metrics.PollerTypeWorkflowStickyTask),
 		opts.workflowPollerBehavior,
 	)
 	hb.ActivityPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeActivityTask)),
-		h.getLastPollTime(metrics.PollerTypeActivityTask),
+		opts.pollTimeTracker.getLastPollTime(metrics.PollerTypeActivityTask),
 		opts.activityPollerBehavior,
 	)
 	hb.NexusPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeNexusTask)),
-		h.getLastPollTime(metrics.PollerTypeNexusTask),
+		opts.pollTimeTracker.getLastPollTime(metrics.PollerTypeNexusTask),
 		opts.nexusPollerBehavior,
 	)
-}
-
-func (h *heartbeatMetricsHandler) getLastPollTime(pollerType string) time.Time {
-	nanos := h.get(pollerType)
-	if nanos != 0 {
-		return time.Unix(0, nanos)
-	}
-	return time.Time{}
 }
 
 func (h *heartbeatMetricsHandler) Unwrap() metrics.Handler {
@@ -286,13 +280,6 @@ func buildPollerInfo(currentPollers int32, lastSuccessfulPollTime time.Time, pol
 		CurrentPollers:         currentPollers,
 		LastSuccessfulPollTime: timestamppb.New(lastSuccessfulPollTime),
 		IsAutoscaling:          isAutoscaling,
-	}
-}
-
-// recordPollSuccessIfHeartbeat records a successful poll time if the handler is a *heartbeatMetricsHandler.
-func recordPollSuccessIfHeartbeat(h metrics.Handler, pollerType string) {
-	if hm, ok := h.(*heartbeatMetricsHandler); ok {
-		hm.getOrCreate(pollerType).Store(time.Now().UnixNano())
 	}
 }
 

@@ -1,4 +1,4 @@
-module go.temporal.io/sdk/contrib/hostinfo
+module go.temporal.io/sdk/contrib/sysinfo
 
 go 1.23.0
 
