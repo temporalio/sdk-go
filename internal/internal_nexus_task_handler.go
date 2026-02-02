@@ -239,6 +239,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 			case nexus.OperationStateCanceled:
 				tempoErr = NewCanceledErrorWithOptions(CanceledErrorOptions{
 					Message: unsuccessfulOperationErr.Message,
+					Cause:   unsuccessfulOperationErr.Cause,
 				})
 			case nexus.OperationStateFailed:
 				tempoErr = NewApplicationErrorWithOptions(
@@ -246,6 +247,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 					"OperationError",
 					ApplicationErrorOptions{
 						NonRetryable: true,
+						Cause:        unsuccessfulOperationErr.Cause,
 					},
 				)
 			default:

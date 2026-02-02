@@ -151,6 +151,7 @@ type (
 		Message string
 		// Details is a list of arbitrary values that can be used to provide additional context to the error.
 		Details []interface{}
+		Cause   error
 	}
 
 	// CanceledError returned when operation was canceled.
@@ -159,6 +160,7 @@ type (
 	CanceledError struct {
 		temporalError
 		msg     string
+		cause   error
 		details converter.EncodedValues
 	}
 
@@ -738,6 +740,10 @@ func (e *CanceledError) Error() string {
 
 func (e *CanceledError) message() string {
 	return e.msg
+}
+
+func (e *CanceledError) Unwrap() error {
+	return e.cause
 }
 
 // HasDetails return if this error has strong typed detail data.

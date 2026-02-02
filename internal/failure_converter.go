@@ -260,6 +260,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 			CanceledErrorOptions{
 				Message: message,
 				Details: []interface{}{details},
+				Cause:   dfc.FailureToError(failure.GetCause()),
 			},
 		)
 	} else if failure.GetTimeoutFailureInfo() != nil {
