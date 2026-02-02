@@ -166,12 +166,12 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
 	case *nexus.HandlerError:
-		// if err.OriginalFailure != nil {
-		// 	f, err := nexusFailureToAPIFailure(*err.OriginalFailure, true)
-		// 	if err == nil {
-		// 		return f
-		// 	}
-		// }
+		if err.OriginalFailure != nil {
+			f, err := nexusFailureToAPIFailure(*err.OriginalFailure, true)
+			if err == nil {
+				return f
+			}
+		}
 		var retryBehavior enumspb.NexusHandlerErrorRetryBehavior
 		switch err.RetryBehavior {
 		case nexus.HandlerErrorRetryBehaviorRetryable:
@@ -188,6 +188,17 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		if len(err.Message) > 0 {
 			failure.Message = err.Message
 		}
+	case *nexus.FailureError:
+		nf := err.Failure
+		appErr := NewApplicationErrorWithOptions(
+			nf.Message,
+			"NexusFailure",
+			ApplicationErrorOptions{
+				Details: []interface{}{err.Failure},
+				Cause:   err.Cause,
+			},
+		)
+		return dfc.ErrorToFailure(appErr)
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         getErrType(err),

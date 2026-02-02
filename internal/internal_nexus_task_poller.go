@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -178,9 +179,14 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
 	} else if f := res.Response.GetStartOperation().GetFailure(); f != nil {
-		if sf := f.GetNexusSdkOperationFailureInfo(); sf != nil {
+		if sf := f.GetApplicationFailureInfo(); sf != nil {
 			nctx.metricsHandler.
-				WithTags(metrics.NexusTaskFailureTags("operation_" + sf.GetState())).
+				WithTags(metrics.NexusTaskFailureTags("operation_" + string(nexus.OperationStateFailed))).
+				Counter(metrics.NexusTaskExecutionFailedCounter).
+				Inc(1)
+		} else if cf := f.GetCanceledFailureInfo(); cf != nil {
+			nctx.metricsHandler.
+				WithTags(metrics.NexusTaskFailureTags("operation_" + string(nexus.OperationStateCanceled))).
 				Counter(metrics.NexusTaskExecutionFailedCounter).
 				Inc(1)
 		}
