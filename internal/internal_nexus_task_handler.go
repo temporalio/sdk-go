@@ -233,11 +233,33 @@ func (h *nexusTaskHandler) handleStartOperation(
 		var unsuccessfulOperationErr *nexus.OperationError
 		err = convertKnownErrors(err)
 		if errors.As(err, &unsuccessfulOperationErr) {
+			// Convert OperationError to a Temporal failure
+			var tempoErr error
+			switch unsuccessfulOperationErr.State {
+			case nexus.OperationStateCanceled:
+				tempoErr = NewCanceledErrorWithOptions(CanceledErrorOptions{
+					Message: unsuccessfulOperationErr.Message,
+				})
+			case nexus.OperationStateFailed:
+				tempoErr = NewApplicationErrorWithOptions(
+					unsuccessfulOperationErr.Message,
+					"OperationError",
+					ApplicationErrorOptions{
+						NonRetryable: true,
+					},
+				)
+			default:
+				return nil, nexus.HandlerErrorf(
+					nexus.HandlerErrorTypeInternal,
+					"invalid operation state in OperationError: %s",
+					unsuccessfulOperationErr.State,
+				), nil
+			}
 			return &nexuspb.Response{
 				Variant: &nexuspb.Response_StartOperation{
 					StartOperation: &nexuspb.StartOperationResponse{
 						Variant: &nexuspb.StartOperationResponse_Failure{
-							Failure: h.failureConverter.ErrorToFailure(unsuccessfulOperationErr),
+							Failure: h.failureConverter.ErrorToFailure(tempoErr),
 						},
 					},
 				},
@@ -370,14 +392,6 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 	}, nil, nil
 }
 
-func (h *nexusTaskHandler) internalError(err error) (*nexuspb.HandlerError, error) {
-	failure, err := h.errorToFailure(err)
-	if err != nil {
-		return nil, err
-	}
-	return &nexuspb.HandlerError{ErrorType: string(nexus.HandlerErrorTypeInternal), Failure: failure}, nil
-}
-
 func (h *nexusTaskHandler) goContextForTask(nctx *NexusOperationContext, header nexus.Header) (context.Context, context.CancelFunc, *nexus.HandlerError) {
 	// Associate the NexusOperationContext with the context.Context used to invoke operations.
 	ctx := context.WithValue(context.Background(), nexusOperationContextKey, nctx)
@@ -428,16 +442,19 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 }
 
 func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response, failureReasonSupport bool) (*workflowservice.RespondNexusTaskCompletedRequest, error) {
+	// Handle conversion of Failure to OperationError for backwards compatibility with old servers.
 	if res.GetStartOperation().GetFailure() != nil && !failureReasonSupport {
 		// Convert to operation error for backwards compatibility.
 		f := res.GetStartOperation().GetFailure()
 		var state string
-		if of := f.GetNexusSdkOperationFailureInfo(); of != nil {
-			state = of.GetState()
+		if cf := f.GetCanceledFailureInfo(); cf != nil {
+			state = string(nexus.OperationStateCanceled)
+		} else if af := f.GetApplicationFailureInfo(); af != nil {
+			state = string(nexus.OperationStateFailed)
 		} else {
-			return nil, fmt.Errorf("cannot convert nexus operation failure without sdk info")
+			return nil, fmt.Errorf("cannot convert failure to operation error without failure reason support")
 		}
-		failure, err := h.temporalFailureToNexusFailure(f.GetCause())
+		failure, err := h.temporalFailureToNexusFailure(convertUnsupportedFailures(f.GetCause()))
 		if err != nil {
 			return nil, err
 		}
@@ -469,7 +486,7 @@ func (h *nexusTaskHandler) fillInFailure(taskToken []byte, handlerError *nexus.H
 	if failureReasonSupport {
 		r.Failure = h.failureConverter.ErrorToFailure(handlerError)
 	} else {
-		he, err := h.nexusHandlerErrorToProto(handlerError)
+		he, err := h.nexusHandlerErrorToProto(handlerError, failureReasonSupport)
 		if err != nil {
 			return nil, err
 		}
@@ -482,11 +499,74 @@ func (h *nexusTaskHandler) fillInFailure(taskToken []byte, handlerError *nexus.H
 var nexusFailureTypeString = string((&failurepb.Failure{}).ProtoReflect().Descriptor().FullName())
 var nexusFailureMetadata = map[string]string{"type": nexusFailureTypeString}
 
-func (h *nexusTaskHandler) errorToFailure(err error) (*nexuspb.Failure, error) {
+// convertUnsupportedFailures walks the failure chain and converts unsupported failure types
+// to ApplicationFailureInfo when failureReasonSupport is false.
+func convertUnsupportedFailures(failure *failurepb.Failure) *failurepb.Failure {
+	if failure == nil {
+		return nil
+	}
+
+	// Recursively process the cause chain first
+	if failure.Cause != nil {
+		failure.Cause = convertUnsupportedFailures(failure.Cause)
+	}
+
+	// If the current failure type is not supported, convert it to ApplicationFailureInfo
+	if !isSupportedFailureType(failure) {
+		failureType := deriveFailureType(failure)
+		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{
+			ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+				Type:         failureType,
+				NonRetryable: false,
+			},
+		}
+	}
+
+	return failure
+}
+
+// deriveFailureType derives a type string from the failure's FailureInfo type
+func deriveFailureType(failure *failurepb.Failure) string {
+	if failure == nil || failure.FailureInfo == nil {
+		return "UnknownFailure"
+	}
+
+	return string(failure.ProtoReflect().WhichOneof(failure.ProtoReflect().Descriptor().Oneofs().ByName("failure_info")).Name())
+}
+
+// isSupportedFailureType checks if a failure type is in the supported list
+func isSupportedFailureType(failure *failurepb.Failure) bool {
+	if failure == nil || failure.FailureInfo == nil {
+		return true
+	}
+
+	switch failure.FailureInfo.(type) {
+	case *failurepb.Failure_ApplicationFailureInfo,
+		*failurepb.Failure_TimeoutFailureInfo,
+		*failurepb.Failure_CanceledFailureInfo,
+		*failurepb.Failure_TerminatedFailureInfo,
+		*failurepb.Failure_ServerFailureInfo,
+		*failurepb.Failure_ResetWorkflowFailureInfo,
+		*failurepb.Failure_ActivityFailureInfo,
+		*failurepb.Failure_ChildWorkflowExecutionFailureInfo,
+		*failurepb.Failure_NexusOperationExecutionFailureInfo,
+		*failurepb.Failure_NexusHandlerFailureInfo:
+		return true
+	default:
+		return false
+	}
+}
+
+func (h *nexusTaskHandler) errorToFailure(err error, failureReasonSupport bool) (*nexuspb.Failure, error) {
 	failure := h.failureConverter.ErrorToFailure(err)
 	if failure == nil {
 		return nil, nil
 	}
+
+	if !failureReasonSupport {
+		failure = convertUnsupportedFailures(failure)
+	}
+
 	message := failure.Message
 	failure.Message = ""
 	b, err := protojson.Marshal(failure)
@@ -514,8 +594,8 @@ func (h *nexusTaskHandler) temporalFailureToNexusFailure(failure *failurepb.Fail
 	}, nil
 }
 
-func (h *nexusTaskHandler) nexusHandlerErrorToProto(handlerErr *nexus.HandlerError) (*nexuspb.HandlerError, error) {
-	failure, err := h.errorToFailure(handlerErr.Cause)
+func (h *nexusTaskHandler) nexusHandlerErrorToProto(handlerErr *nexus.HandlerError, failureReasonSupport bool) (*nexuspb.HandlerError, error) {
+	failure, err := h.errorToFailure(handlerErr.Cause, failureReasonSupport)
 	if err != nil {
 		return nil, err
 	}

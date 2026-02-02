@@ -300,6 +300,7 @@ func nexusFailureToAPIFailure(failure nexus.Failure, retryable bool) (*failurepb
 	}
 	// Ensure this always gets written.
 	apiFailure.Message = failure.Message
+	apiFailure.StackTrace = failure.StackTrace
 	return apiFailure, nil
 }
 
