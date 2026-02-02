@@ -1,6 +1,6 @@
 //go:build !linux
 
-package hostinfo
+package sysinfo
 
 import "errors"
 

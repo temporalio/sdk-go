@@ -17,7 +17,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.28.0
 	go.temporal.io/api v1.59.0
 	go.temporal.io/sdk v1.29.1
-	go.temporal.io/sdk/contrib/hostinfo v0.0.0-00010101000000-000000000000
+	go.temporal.io/sdk/contrib/sysinfo v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentelemetry v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/tally v0.0.0-00010101000000-000000000000
@@ -67,7 +67,7 @@ require (
 
 replace (
 	go.temporal.io/sdk => ../
-	go.temporal.io/sdk/contrib/hostinfo => ../contrib/hostinfo
+	go.temporal.io/sdk/contrib/sysinfo => ../contrib/sysinfo
 	go.temporal.io/sdk/contrib/opentelemetry => ../contrib/opentelemetry
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing
 	go.temporal.io/sdk/contrib/tally => ../contrib/tally

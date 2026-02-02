@@ -536,6 +536,7 @@ type (
 		Plugins []ClientPlugin
 
 		// WorkerHeartbeatInterval is the interval at which the worker will send heartbeats to the server.
+		// Interval must be between 1s and 60s, inclusive.
 		//
 		// default: 60s. To disable, set to 0.
 		//
@@ -1162,8 +1163,11 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	if options.WorkerHeartbeatInterval == nil {
 		heartbeatInterval = time.Second * 60
 	} else if *options.WorkerHeartbeatInterval == 0 {
-		heartbeatInterval = time.Second * 0
+		heartbeatInterval = 0
 	} else {
+		if heartbeatInterval < time.Second || heartbeatInterval > 60*time.Second {
+			panic("WorkerHeartbeatInterval must be between 1 second and 60 seconds")
+		}
 		heartbeatInterval = *options.WorkerHeartbeatInterval
 	}
 

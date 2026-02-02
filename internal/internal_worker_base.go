@@ -327,7 +327,7 @@ func newBaseWorker(
 	ctx, cancel := context.WithCancel(context.Background())
 	logger := log.With(options.logger, tagWorkerType, options.workerType)
 	if heartbeatHandler, isHeartbeat := options.metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
-		options.metricsHandler = heartbeatHandler.forWorker(options.workerType).WithTags(metrics.WorkerTags(options.workerType))
+		options.metricsHandler = heartbeatHandler.forWorker(options.workerType)
 	}
 	metricsHandler := options.metricsHandler.WithTags(metrics.WorkerTags(options.workerType))
 	tss := newTrackingSlotSupplier(options.slotSupplier, trackingSlotSupplierOptions{

@@ -1,4 +1,4 @@
-package hostinfo
+package sysinfo
 
 import (
 	"testing"
@@ -10,7 +10,7 @@ import (
 )
 
 func TestGetMemoryCpuUsage(t *testing.T) {
-	supplier := NewSystemInfoSupplier()
+	supplier := SysInfoProvider()
 	ctx := &worker.SystemInfoContext{Logger: log.NewNopLogger()}
 
 	usage, err := supplier.GetMemoryUsage(ctx)
@@ -25,7 +25,7 @@ func TestGetMemoryCpuUsage(t *testing.T) {
 }
 
 func TestMaybeRefreshRateLimiting(t *testing.T) {
-	supplier := NewSystemInfoSupplier().(*psUtilSystemInfoSupplier)
+	supplier := SysInfoProvider().(*psUtilSystemInfoSupplier)
 	ctx := &worker.SystemInfoContext{Logger: log.NewNopLogger()}
 
 	// First call should refresh

@@ -48,7 +48,7 @@ func NewFixedSizeSlotSupplier(numSlots int) (SlotSupplier, error) {
 }
 
 // SystemInfoSupplier implementations provide information about system resources.
-// Use contrib/hostinfo.NewSystemInfoSupplier() for a gopsutil-based implementation,
+// Use contrib/sysinfo.SysInfoProvider() for a gopsutil-based implementation,
 // or provide your own.
 type SystemInfoSupplier = internal.SystemInfoSupplier
 
@@ -65,7 +65,7 @@ type ResourceBasedTunerOptions = internal.ResourceBasedTunerOptions
 // NewResourceBasedTuner creates a WorkerTuner that dynamically adjusts the number of slots based
 // on system resources. Specify the target CPU and memory usage as a value between 0 and 1.
 //
-// InfoSupplier is required - use contrib/hostinfo.NewSystemInfoSupplier() for a gopsutil-based
+// InfoSupplier is required - use contrib/sysinfo.SysInfoProvider() for a gopsutil-based
 // implementation, or provide your own.
 func NewResourceBasedTuner(opts ResourceBasedTunerOptions) (WorkerTuner, error) {
 	return internal.NewResourceBasedTuner(opts)
@@ -98,7 +98,7 @@ type ResourceController = internal.ResourceController
 
 // NewResourceController creates a new ResourceController with the provided options.
 //
-// InfoSupplier is required - use contrib/hostinfo.NewSystemInfoSupplier() for a gopsutil-based
+// InfoSupplier is required - use contrib/sysinfo.SysInfoProvider() for a gopsutil-based
 // implementation, or provide your own.
 //
 // WARNING: It is important that you do not create multiple InfoSupplier instances. Since

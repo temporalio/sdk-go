@@ -139,101 +139,101 @@ func (h *heartbeatMetricsHandler) get(key string) int64 {
 	return 0
 }
 
-// PopulateHeartbeatOptions contains external dependencies needed to populate heartbeat metrics.
-type PopulateHeartbeatOptions struct {
-	WorkflowSlotSupplierKind      string
-	ActivitySlotSupplierKind      string
-	LocalActivitySlotSupplierKind string
-	NexusSlotSupplierKind         string
+// populateHeartbeatOptions contains external dependencies needed to populate heartbeat metrics.
+type populateHeartbeatOptions struct {
+	workflowSlotSupplierKind      string
+	activitySlotSupplierKind      string
+	localActivitySlotSupplierKind string
+	nexusSlotSupplierKind         string
 
-	WorkflowPollerBehavior PollerBehavior
-	ActivityPollerBehavior PollerBehavior
-	NexusPollerBehavior    PollerBehavior
+	workflowPollerBehavior PollerBehavior
+	activityPollerBehavior PollerBehavior
+	nexusPollerBehavior    PollerBehavior
 
 	// For delta calculations between heartbeats (mutated by PopulateHeartbeat).
-	PrevWorkflowProcessed      *int64
-	PrevWorkflowFailed         *int64
-	PrevActivityProcessed      *int64
-	PrevActivityFailed         *int64
-	PrevLocalActivityProcessed *int64
-	PrevLocalActivityFailed    *int64
-	PrevNexusProcessed         *int64
-	PrevNexusFailed            *int64
+	prevWorkflowProcessed      *int64
+	prevWorkflowFailed         *int64
+	prevActivityProcessed      *int64
+	prevActivityFailed         *int64
+	prevLocalActivityProcessed *int64
+	prevLocalActivityFailed    *int64
+	prevNexusProcessed         *int64
+	prevNexusFailed            *int64
 }
 
 // PopulateHeartbeat fills in the metrics-related fields of the WorkerHeartbeat proto.
-func (h *heartbeatMetricsHandler) PopulateHeartbeat(hb *workerpb.WorkerHeartbeat, opts *PopulateHeartbeatOptions) {
+func (h *heartbeatMetricsHandler) PopulateHeartbeat(hb *workerpb.WorkerHeartbeat, opts *populateHeartbeatOptions) {
 	hb.TotalStickyCacheHit = int32(h.get(metrics.StickyCacheHit))
 	hb.TotalStickyCacheMiss = int32(h.get(metrics.StickyCacheMiss))
 	hb.CurrentStickyCacheSize = int32(h.get(metrics.StickyCacheSize))
 
-	if opts.WorkflowSlotSupplierKind != "" {
+	if opts.workflowSlotSupplierKind != "" {
 		hb.WorkflowTaskSlotsInfo = buildSlotsInfo(
-			opts.WorkflowSlotSupplierKind,
+			opts.workflowSlotSupplierKind,
 			int32(h.get(metrics.WorkerTaskSlotsAvailable+":"+"WorkflowWorker")),
 			int32(h.get(metrics.WorkerTaskSlotsUsed+":"+"WorkflowWorker")),
 			h.get(metrics.WorkflowTaskExecutionLatency),
 			h.get(metrics.WorkflowTaskExecutionFailureCounter),
-			opts.PrevWorkflowProcessed,
-			opts.PrevWorkflowFailed,
+			opts.prevWorkflowProcessed,
+			opts.prevWorkflowFailed,
 		)
 	}
 
-	if opts.ActivitySlotSupplierKind != "" {
+	if opts.activitySlotSupplierKind != "" {
 		hb.ActivityTaskSlotsInfo = buildSlotsInfo(
-			opts.ActivitySlotSupplierKind,
+			opts.activitySlotSupplierKind,
 			int32(h.get(metrics.WorkerTaskSlotsAvailable+":"+"ActivityWorker")),
 			int32(h.get(metrics.WorkerTaskSlotsUsed+":"+"ActivityWorker")),
 			h.get(metrics.ActivityExecutionLatency),
 			h.get(metrics.ActivityExecutionFailedCounter),
-			opts.PrevActivityProcessed,
-			opts.PrevActivityFailed,
+			opts.prevActivityProcessed,
+			opts.prevActivityFailed,
 		)
 	}
 
-	if opts.LocalActivitySlotSupplierKind != "" {
+	if opts.localActivitySlotSupplierKind != "" {
 		hb.LocalActivitySlotsInfo = buildSlotsInfo(
-			opts.LocalActivitySlotSupplierKind,
+			opts.localActivitySlotSupplierKind,
 			int32(h.get(metrics.WorkerTaskSlotsAvailable+":"+"LocalActivityWorker")),
 			int32(h.get(metrics.WorkerTaskSlotsUsed+":"+"LocalActivityWorker")),
 			h.get(metrics.LocalActivityExecutionLatency),
 			h.get(metrics.LocalActivityExecutionFailedCounter),
-			opts.PrevLocalActivityProcessed,
-			opts.PrevLocalActivityFailed,
+			opts.prevLocalActivityProcessed,
+			opts.prevLocalActivityFailed,
 		)
 	}
 
-	if opts.NexusSlotSupplierKind != "" {
+	if opts.nexusSlotSupplierKind != "" {
 		hb.NexusTaskSlotsInfo = buildSlotsInfo(
-			opts.NexusSlotSupplierKind,
+			opts.nexusSlotSupplierKind,
 			int32(h.get(metrics.WorkerTaskSlotsAvailable+":"+"NexusWorker")),
 			int32(h.get(metrics.WorkerTaskSlotsUsed+":"+"NexusWorker")),
 			h.get(metrics.NexusTaskExecutionLatency),
 			h.get(metrics.NexusTaskExecutionFailedCounter),
-			opts.PrevNexusProcessed,
-			opts.PrevNexusFailed,
+			opts.prevNexusProcessed,
+			opts.prevNexusFailed,
 		)
 	}
 
 	hb.WorkflowPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeWorkflowTask)),
 		h.getLastPollTime(metrics.PollerTypeWorkflowTask),
-		opts.WorkflowPollerBehavior,
+		opts.workflowPollerBehavior,
 	)
 	hb.WorkflowStickyPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeWorkflowStickyTask)),
 		h.getLastPollTime(metrics.PollerTypeWorkflowStickyTask),
-		opts.WorkflowPollerBehavior,
+		opts.workflowPollerBehavior,
 	)
 	hb.ActivityPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeActivityTask)),
 		h.getLastPollTime(metrics.PollerTypeActivityTask),
-		opts.ActivityPollerBehavior,
+		opts.activityPollerBehavior,
 	)
 	hb.NexusPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeNexusTask)),
 		h.getLastPollTime(metrics.PollerTypeNexusTask),
-		opts.NexusPollerBehavior,
+		opts.nexusPollerBehavior,
 	)
 }
 
@@ -243,6 +243,10 @@ func (h *heartbeatMetricsHandler) getLastPollTime(pollerType string) time.Time {
 		return time.Unix(0, nanos)
 	}
 	return time.Time{}
+}
+
+func (h *heartbeatMetricsHandler) Unwrap() metrics.Handler {
+	return h.underlying
 }
 
 func buildSlotsInfo(

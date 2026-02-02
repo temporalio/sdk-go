@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/sdk/contrib/hostinfo"
+	"go.temporal.io/sdk/contrib/sysinfo"
 	"go.temporal.io/sdk/worker"
 )
 
@@ -60,7 +60,7 @@ func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
 	controllerOpts := worker.DefaultResourceControllerOptions()
 	controllerOpts.MemTargetPercent = 0.8
 	controllerOpts.CpuTargetPercent = 0.9
-	controllerOpts.InfoSupplier = hostinfo.NewSystemInfoSupplier()
+	controllerOpts.InfoSupplier = sysinfo.SysInfoProvider()
 	controller := worker.NewResourceController(controllerOpts)
 	actSS, err := worker.NewResourceBasedSlotSupplier(controller,
 		worker.ResourceBasedSlotSupplierOptions{
@@ -115,7 +115,7 @@ func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
 	controllerOpts := worker.DefaultResourceControllerOptions()
 	controllerOpts.MemTargetPercent = 0.8
 	controllerOpts.CpuTargetPercent = 0.9
-	controllerOpts.InfoSupplier = hostinfo.NewSystemInfoSupplier()
+	controllerOpts.InfoSupplier = sysinfo.SysInfoProvider()
 	controller := worker.NewResourceController(controllerOpts)
 	actSS, err := worker.NewResourceBasedSlotSupplier(controller,
 		worker.ResourceBasedSlotSupplierOptions{

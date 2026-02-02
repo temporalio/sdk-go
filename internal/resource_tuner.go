@@ -57,7 +57,7 @@ type ResourceBasedTunerOptions struct {
 	// attempt to maintain. Must be set nonzero.
 	TargetCpu float64
 	// InfoSupplier provides CPU and memory usage information. This is required.
-	// Use contrib/hostinfo.NewSystemInfoSupplier() for a gopsutil-based implementation.
+	// Use contrib/sysinfo.SysInfoProvider() for a gopsutil-based implementation.
 	InfoSupplier SystemInfoSupplier
 	// Passed to ResourceBasedSlotSupplierOptions.RampThrottle for activities.
 	// If not set, the default value is 50ms.
@@ -70,7 +70,7 @@ type ResourceBasedTunerOptions struct {
 // NewResourceBasedTuner creates a WorkerTuner that dynamically adjusts the number of slots based
 // on system resources. Specify the target CPU and memory usage as a value between 0 and 1.
 //
-// InfoSupplier is required - use contrib/hostinfo.NewSystemInfoSupplier() for a gopsutil-based
+// InfoSupplier is required - use contrib/sysinfo.SysInfoProvider() for a gopsutil-based
 // implementation, or provide your own.
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewResourceBasedTuner]
@@ -321,7 +321,7 @@ type ResourceController struct {
 // Exposed as: [go.temporal.io/sdk/worker.NewResourceController]
 func NewResourceController(options ResourceControllerOptions) *ResourceController {
 	if options.InfoSupplier == nil {
-		panic("InfoSupplier is required - use contrib/hostinfo.NewSystemInfoSupplier() or provide your own")
+		panic("InfoSupplier is required - use contrib/sysinfo.SysInfoProvider() or provide your own")
 	}
 	return &ResourceController{
 		options:      options,

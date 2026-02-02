@@ -5,7 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"go.temporal.io/sdk/contrib/hostinfo"
+	"go.temporal.io/sdk/contrib/sysinfo"
 	"math"
 	"math/rand"
 	"os"
@@ -245,7 +245,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		tuner, err := worker.NewResourceBasedTuner(worker.ResourceBasedTunerOptions{
 			TargetMem:    0.9,
 			TargetCpu:    0.9,
-			InfoSupplier: hostinfo.NewSystemInfoSupplier(),
+			InfoSupplier: sysinfo.SysInfoProvider(),
 		})
 		ts.NoError(err)
 		options.Tuner = tuner

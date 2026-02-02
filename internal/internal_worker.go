@@ -2243,18 +2243,18 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		var prevLocalActivityProcessed, prevLocalActivityFailed int64
 		var prevNexusProcessed, prevNexusFailed int64
 
-		populateOpts := &PopulateHeartbeatOptions{
-			WorkflowPollerBehavior:     options.WorkflowTaskPollerBehavior,
-			ActivityPollerBehavior:     options.ActivityTaskPollerBehavior,
-			NexusPollerBehavior:        options.NexusTaskPollerBehavior,
-			PrevWorkflowProcessed:      &prevWorkflowProcessed,
-			PrevWorkflowFailed:         &prevWorkflowFailed,
-			PrevActivityProcessed:      &prevActivityProcessed,
-			PrevActivityFailed:         &prevActivityFailed,
-			PrevLocalActivityProcessed: &prevLocalActivityProcessed,
-			PrevLocalActivityFailed:    &prevLocalActivityFailed,
-			PrevNexusProcessed:         &prevNexusProcessed,
-			PrevNexusFailed:            &prevNexusFailed,
+		populateOpts := &populateHeartbeatOptions{
+			workflowPollerBehavior:     options.WorkflowTaskPollerBehavior,
+			activityPollerBehavior:     options.ActivityTaskPollerBehavior,
+			nexusPollerBehavior:        options.NexusTaskPollerBehavior,
+			prevWorkflowProcessed:      &prevWorkflowProcessed,
+			prevWorkflowFailed:         &prevWorkflowFailed,
+			prevActivityProcessed:      &prevActivityProcessed,
+			prevActivityFailed:         &prevActivityFailed,
+			prevLocalActivityProcessed: &prevLocalActivityProcessed,
+			prevLocalActivityFailed:    &prevLocalActivityFailed,
+			prevNexusProcessed:         &prevNexusProcessed,
+			prevNexusFailed:            &prevNexusFailed,
 		}
 
 		var deploymentVersion *deploymentpb.WorkerDeploymentVersion
@@ -2271,14 +2271,14 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			cpuUsage := getCpuUsage(systemInfoSupplier, workerParams.Logger)
 			memUsage := getMemUsage(systemInfoSupplier, workerParams.Logger)
 			if aw.workflowWorker != nil {
-				populateOpts.WorkflowSlotSupplierKind = aw.workflowWorker.worker.slotSupplier.GetSlotSupplierKind()
-				populateOpts.LocalActivitySlotSupplierKind = aw.workflowWorker.localActivityWorker.slotSupplier.GetSlotSupplierKind()
+				populateOpts.workflowSlotSupplierKind = aw.workflowWorker.worker.slotSupplier.GetSlotSupplierKind()
+				populateOpts.localActivitySlotSupplierKind = aw.workflowWorker.localActivityWorker.slotSupplier.GetSlotSupplierKind()
 			}
 			if aw.activityWorker != nil {
-				populateOpts.ActivitySlotSupplierKind = aw.activityWorker.worker.slotSupplier.GetSlotSupplierKind()
+				populateOpts.activitySlotSupplierKind = aw.activityWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
 			if aw.nexusWorker != nil {
-				populateOpts.NexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
+				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
 			heartbeatTime := time.Now()
 

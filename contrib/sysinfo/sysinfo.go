@@ -1,4 +1,4 @@
-package hostinfo
+package sysinfo
 
 import (
 	"context"
@@ -11,17 +11,25 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
-// NewSystemInfoSupplier creates a SystemInfoSupplier using gopsutil.
+var (
+	sysInfoOnce     sync.Once
+	sysInfoInstance *psUtilSystemInfoSupplier
+)
+
+// SysInfoProvider returns a shared SystemInfoSupplier using gopsutil.
 // Supports cgroup metrics in containerized Linux environments.
-func NewSystemInfoSupplier() worker.SystemInfoSupplier {
-	return &psUtilSystemInfoSupplier{
-		cGroupInfo: newCGroupInfo(),
-	}
+func SysInfoProvider() worker.SystemInfoSupplier {
+	sysInfoOnce.Do(func() {
+		sysInfoInstance = &psUtilSystemInfoSupplier{
+			cGroupInfo: newCGroupInfo(),
+		}
+	})
+	return sysInfoInstance
 }
 
 // NewResourceBasedTuner creates a resource-based tuner with gopsutil-based system info.
 func NewResourceBasedTuner(opts worker.ResourceBasedTunerOptions) (worker.WorkerTuner, error) {
-	opts.InfoSupplier = NewSystemInfoSupplier()
+	opts.InfoSupplier = SysInfoProvider()
 	return worker.NewResourceBasedTuner(opts)
 }
 
