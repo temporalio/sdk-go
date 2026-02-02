@@ -151,7 +151,8 @@ type (
 		Message string
 		// Details is a list of arbitrary values that can be used to provide additional context to the error.
 		Details []interface{}
-		Cause   error
+		// Cause is the original error that caused this error.
+		Cause error
 	}
 
 	// CanceledError returned when operation was canceled.
@@ -470,12 +471,14 @@ func NewCanceledErrorWithOptions(options CanceledErrorOptions) error {
 			return &CanceledError{
 				msg:     msg,
 				details: d,
+				cause:   options.Cause,
 			}
 		}
 	}
 	return &CanceledError{
 		msg:     msg,
 		details: ErrorDetailsValues(options.Details),
+		cause:   options.Cause,
 	}
 }
 
