@@ -581,6 +581,9 @@ func (h *nexusTaskHandler) errorToFailure(err error, failureReasonSupport bool) 
 }
 
 func (h *nexusTaskHandler) temporalFailureToNexusFailure(failure *failurepb.Failure) (*nexuspb.Failure, error) {
+	if failure == nil {
+		return nil, nil
+	}
 	message := failure.Message
 	failure.Message = ""
 	b, err := protojson.Marshal(failure)
