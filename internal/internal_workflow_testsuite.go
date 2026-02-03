@@ -468,7 +468,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 	if env.workflowInfo.RootWorkflowExecution == nil {
 		childEnv.workflowInfo.RootWorkflowExecution = &env.workflowInfo.WorkflowExecution
 	} else {
-		childEnv.workflowInfo.ParentWorkflowExecution = env.workflowInfo.RootWorkflowExecution
+		childEnv.workflowInfo.RootWorkflowExecution = env.workflowInfo.RootWorkflowExecution
 	}
 
 	searchAttrs, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
