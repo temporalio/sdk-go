@@ -101,6 +101,13 @@ type (
 	// UpdateInfo information about a currently running update
 	UpdateInfo = internal.UpdateInfo
 
+	// OutboundInfo contains information about an outbound call being scheduled.
+	// This is available in workflow context when serializing activity input or
+	// child workflow input. Context-aware data converters
+	// can use this to vary their behavior based on the target ID, for example
+	// using the ID as associated data for encryption.
+	OutboundInfo = internal.OutboundInfo
+
 	// ContinueAsNewError can be returned by a workflow implementation function and indicates that
 	// the workflow should continue as new with the same WorkflowID, but new RunID and new history.
 	ContinueAsNewError = internal.ContinueAsNewError
@@ -294,6 +301,16 @@ func GetTypedSearchAttributes(ctx Context) temporal.SearchAttributes {
 // from the context.
 func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 	return internal.GetCurrentUpdateInfo(ctx)
+}
+
+// GetOutboundInfo returns outbound scheduling info from a workflow context.
+// Returns nil if not in an outbound scheduling context (i.e., when not
+// serializing activity input or child workflow input).
+//
+// This is useful for context-aware data converters that need to vary their
+// behavior based on the target activity or child workflow.
+func GetOutboundInfo(ctx Context) *OutboundInfo {
+	return internal.GetOutboundInfo(ctx)
 }
 
 // GetLogger returns a logger to be used in workflow's context.

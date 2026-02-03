@@ -51,6 +51,10 @@ type (
 		VersioningIntent       VersioningIntent
 		Summary                string
 		Priority               *commonpb.Priority
+		// ScheduleID must be generated before serialization to give
+		// codecs/converters access to ActivityID, while maintaining
+		// backwards compatibility with how ActivityID is generated.
+		ScheduleID int64
 	}
 
 	// ExecuteLocalActivityOptions options for executing a local activity

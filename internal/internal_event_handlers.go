@@ -537,9 +537,6 @@ func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
 ) {
-	if params.WorkflowID == "" {
-		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
-	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
@@ -722,13 +719,7 @@ func (wc *workflowEnvironmentImpl) CreateNewCommand(commandType enumspb.CommandT
 
 func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
-	scheduleID := wc.GenerateSequence()
-	if parameters.ActivityID == "" {
-		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
-	} else {
-		scheduleTaskAttr.ActivityId = parameters.ActivityID
-	}
-	activityID := scheduleTaskAttr.GetActivityId()
+	scheduleTaskAttr.ActivityId = parameters.ActivityID
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
@@ -752,7 +743,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		return ActivityID{}
 	}
 
-	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr, startMetadata)
+	command := wc.commandsHelper.scheduleActivityTask(parameters.ScheduleID, scheduleTaskAttr, startMetadata)
 	command.setData(&scheduledActivity{
 		callback:             callback,
 		waitForCancelRequest: parameters.WaitForCancellation,
@@ -760,10 +751,10 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	})
 
 	wc.logger.Debug("ExecuteActivity",
-		tagActivityID, activityID,
+		tagActivityID, parameters.ActivityID,
 		tagActivityType, scheduleTaskAttr.ActivityType.GetName())
 
-	return ActivityID{id: activityID}
+	return ActivityID{id: parameters.ActivityID}
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID ActivityID) {
