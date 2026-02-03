@@ -117,6 +117,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	// Wait for heartbeat to capture the in-flight activity
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
 	}, 5*time.Second, 200*time.Millisecond, "Should find worker with activity slot used")
@@ -186,6 +187,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.NoError(run.Get(ctx, nil))
 	ts.worker.Stop()
 
+	workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 	ts.NotNil(workerInfo, "Should find worker in ListWorkers/DescribeWorker")
 
 	// After shutdown checks
@@ -575,6 +577,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWithActivityInFlight() {
 
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
 	}, 5*time.Second, 200*time.Millisecond, "Should have at least 1 activity slot used")
@@ -592,6 +595,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWithActivityInFlight() {
 	ts.Equal("done", result)
 
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots == 0
 	}, 5*time.Second, 200*time.Millisecond, "Activity slot should be released after completion")
@@ -700,6 +704,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStickyCacheMiss() {
 	// Wait for heartbeat to capture sticky cache miss
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.TotalStickyCacheMiss >= 1
 	}, 5*time.Second, 200*time.Millisecond, "Should have at least 1 sticky cache miss")
 }
@@ -786,6 +791,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatFailureMetrics() {
 	// Wait for heartbeat to capture failure metrics
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.TotalFailedTasks >= 1
 	}, 5*time.Second, 200*time.Millisecond, "Should have tracked at least 1 activity task failure")
@@ -794,6 +800,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatFailureMetrics() {
 
 	// Last interval should go back to 0 on next heartbeat
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.LastIntervalFailureTasks == 0
 	}, 5*time.Second, 200*time.Millisecond, "Last interval failure count should reset to 0")
@@ -821,6 +828,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskProcessed() {
 	// Wait for heartbeat to capture processed tasks
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
 			workerInfo.WorkflowTaskSlotsInfo.TotalProcessedTasks == int32(numWorkflows)
 	}, 5*time.Second, 200*time.Millisecond, "Should have processed all workflow tasks")
@@ -829,6 +837,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskProcessed() {
 
 	// Last interval should go back to 0 on next heartbeat
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
 			workerInfo.WorkflowTaskSlotsInfo.LastIntervalProcessedTasks == 0
 	}, 5*time.Second, 200*time.Millisecond, "Last interval processed count should reset to 0")
@@ -885,6 +894,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatResourceBasedTuner() {
 	// Wait for heartbeat with resource-based tuner info
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
 			workerInfo.WorkflowTaskSlotsInfo.SlotSupplierKind == "ResourceBased"
 	}, 5*time.Second, 200*time.Millisecond, "Should find worker with ResourceBased slot supplier")
@@ -955,6 +965,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	// Wait for heartbeat with plugin info
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && len(workerInfo.Plugins) == 2
 	}, 5*time.Second, 200*time.Millisecond, "Should have 2 unique plugins (duplicates deduped)")
 
