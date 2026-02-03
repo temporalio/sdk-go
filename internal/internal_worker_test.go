@@ -2693,16 +2693,19 @@ func TestWorkerOptionDefaults(t *testing.T) {
 func TestWorkerOptionNonDefaults(t *testing.T) {
 	taskQueue := "worker-options-tq"
 
+	dataConverter := &converter.CompositeDataConverter{}
+
 	client := &WorkflowClient{
-		workflowService:    nil,
-		conn:               nil,
-		namespace:          "worker-options-test",
-		registry:           nil,
-		identity:           "143@worker-options-test-1",
-		dataConverter:      &converter.CompositeDataConverter{},
-		failureConverter:   GetDefaultFailureConverter(),
-		contextPropagators: nil,
-		logger:             ilog.NewNopLogger(),
+		workflowService:       nil,
+		conn:                  nil,
+		namespace:             "worker-options-test",
+		registry:              nil,
+		identity:              "143@worker-options-test-1",
+		originalDataConverter: dataConverter,
+		dataConverter:         dataConverter,
+		failureConverter:      GetDefaultFailureConverter(),
+		contextPropagators:    nil,
+		logger:                ilog.NewNopLogger(),
 	}
 
 	options := WorkerOptions{

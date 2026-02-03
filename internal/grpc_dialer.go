@@ -44,8 +44,11 @@ const (
 	// attemptSuffix is a suffix added to the metric name for individual call attempts made to the server, which includes retries.
 	attemptSuffix = "_attempt"
 
-	// mb is a number of bytes in a megabyte
-	mb = 1024 * 1024
+	// kb is the number of bytes in a kilobyte
+	kb = 1024
+
+	// mb is the number of bytes in a megabyte
+	mb = 1024 * kb
 
 	// defaultMaxPayloadSize is a maximum size of the payload that grpc client would allow.
 	defaultMaxPayloadSize = 128 * mb
