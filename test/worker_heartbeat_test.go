@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -68,9 +69,11 @@ func (ts *WorkerHeartbeatTestSuite) SetupTest() {
 func (ts *WorkerHeartbeatTestSuite) TearDownTest() {
 	if ts.worker != nil {
 		ts.worker.Stop()
+		ts.worker = nil
 	}
 	if ts.client != nil {
 		ts.client.Close()
+		ts.client = nil
 	}
 }
 
@@ -652,6 +655,8 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStickyCacheMiss() {
 		return result, err
 	}
 
+	// GC ensures previous worker's cache finalizer runs, allowing cache to be recreated with new size
+	runtime.GC()
 	worker.SetStickyWorkflowCacheSize(1)
 	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
 		MaxConcurrentWorkflowTaskExecutionSize: 2,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -31,7 +32,7 @@ func NewResourceBasedTuner(opts worker.ResourceBasedTunerOptions) (worker.Worker
 
 type psUtilSystemInfoSupplier struct {
 	mu          sync.Mutex
-	lastRefresh time.Time
+	lastRefresh atomic.Int64 // UnixNano, atomic for lock-free reads in maybeRefresh
 
 	lastMemStat  *mem.VirtualMemoryStat
 	lastCpuUsage float64
@@ -57,6 +58,8 @@ func (p *psUtilSystemInfoSupplier) GetMemoryUsage(infoContext *worker.SystemInfo
 	if err := p.maybeRefresh(infoContext); err != nil {
 		return 0, err
 	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	lastCGroupMem := p.cGroupInfo.GetLastMemUsage()
 	if lastCGroupMem != 0 {
 		return lastCGroupMem, nil
@@ -68,7 +71,8 @@ func (p *psUtilSystemInfoSupplier) GetCpuUsage(infoContext *worker.SystemInfoCon
 	if err := p.maybeRefresh(infoContext); err != nil {
 		return 0, err
 	}
-
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	lastCGroupCPU := p.cGroupInfo.GetLastCPUUsage()
 	if lastCGroupCPU != 0 {
 		return lastCGroupCPU, nil
@@ -77,13 +81,13 @@ func (p *psUtilSystemInfoSupplier) GetCpuUsage(infoContext *worker.SystemInfoCon
 }
 
 func (p *psUtilSystemInfoSupplier) maybeRefresh(infoContext *worker.SystemInfoContext) error {
-	if time.Since(p.lastRefresh) < 100*time.Millisecond {
+	if time.Since(time.Unix(0, p.lastRefresh.Load())) < 100*time.Millisecond {
 		return nil
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// Double check refresh is still needed
-	if time.Since(p.lastRefresh) < 100*time.Millisecond {
+	if time.Since(time.Unix(0, p.lastRefresh.Load())) < 100*time.Millisecond {
 		return nil
 	}
 	ctx, cancelFn := context.WithTimeout(context.Background(), 1*time.Second)
@@ -108,6 +112,6 @@ func (p *psUtilSystemInfoSupplier) maybeRefresh(infoContext *worker.SystemInfoCo
 		p.stopTryingToGetCGroupInfo = !continueUpdates
 	}
 
-	p.lastRefresh = time.Now()
+	p.lastRefresh.Store(time.Now().UnixNano())
 	return nil
 }

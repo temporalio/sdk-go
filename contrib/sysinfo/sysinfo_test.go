@@ -31,12 +31,12 @@ func TestMaybeRefreshRateLimiting(t *testing.T) {
 	// First call should refresh
 	firstUsage, err := supplier.GetMemoryUsage(ctx)
 	require.NoError(t, err)
-	firstRefresh := supplier.lastRefresh
+	firstRefresh := supplier.lastRefresh.Load()
 
 	// Immediate second call should not refresh (rate limited)
 	secondUsage, err := supplier.GetMemoryUsage(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, firstRefresh, supplier.lastRefresh)
+	assert.Equal(t, firstRefresh, supplier.lastRefresh.Load())
 
 	assert.Equal(t, firstUsage, secondUsage)
 }
