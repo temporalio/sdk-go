@@ -662,8 +662,21 @@ func (wc *workflowEnvironmentInterceptor) Await(ctx Context, condition func() bo
 func (wc *workflowEnvironmentInterceptor) awaitWithOptions(ctx Context, options AwaitOptions, condition func() bool, functionName string) (ok bool, err error) {
 	state := getState(ctx)
 	defer state.unblocked()
-	timer := NewTimerWithOptions(ctx, options.Timeout, options.TimerOptions)
-	for !condition() {
+
+	// TODO: Change GetFlag to TryUse in the next release to enable this flag by default.
+	cancelTimerOnCondition := wc.env.GetFlag(SDKFlagCancelAwaitTimerOnCondition)
+	if cancelTimerOnCondition && condition() {
+		return true, nil
+	}
+
+	timerCtx := ctx
+	var cancelTimer func()
+	if cancelTimerOnCondition {
+		timerCtx, cancelTimer = WithCancel(ctx)
+	}
+	timer := NewTimerWithOptions(timerCtx, options.Timeout, options.TimerOptions)
+
+	for {
 		doneCh := ctx.Done()
 		// TODO: Consider always returning a channel
 		if doneCh != nil {
@@ -675,6 +688,13 @@ func (wc *workflowEnvironmentInterceptor) awaitWithOptions(ctx Context, options 
 			return false, nil
 		}
 		state.yield(functionName)
+		if condition() {
+			break
+		}
+	}
+
+	if cancelTimer != nil {
+		cancelTimer()
 	}
 	return true, nil
 }

@@ -12,25 +12,28 @@ import (
 type sdkFlag uint32
 
 const (
-	SDKFlagUnset sdkFlag = iota
+	SDKFlagUnset sdkFlag = 0
 	// LimitChangeVersionSASize will limit the search attribute size of TemporalChangeVersion to 2048 when
 	// calling GetVersion. If the limit is exceeded the search attribute is not updated.
-	SDKFlagLimitChangeVersionSASize
+	SDKFlagLimitChangeVersionSASize = 1
 	// SDKFlagChildWorkflowErrorExecution return errors to child workflow execution future if the child workflow would
 	// fail in the synchronous path.
-	SDKFlagChildWorkflowErrorExecution
+	SDKFlagChildWorkflowErrorExecution = 2
 	// SDKFlagProtocolMessageCommand uses ProtocolMessageCommands inserted into
 	// a workflow task response's command set to order messages with respect to
 	// commands.
-	SDKFlagProtocolMessageCommand
+	SDKFlagProtocolMessageCommand = 3
 	// SDKPriorityUpdateHandling will cause update request to be handled before the main workflow method.
 	// It will also cause the SDK to immediately handle updates when a handler is registered.
-	SDKPriorityUpdateHandling
+	SDKPriorityUpdateHandling = 4
 	// SDKFlagBlockedSelectorSignalReceive will cause a signal to not be lost
 	// when the Default path is blocked.
-	SDKFlagBlockedSelectorSignalReceive
-	// SDKFlagUnknown must always be the last constant
-	SDKFlagUnknown
+	SDKFlagBlockedSelectorSignalReceive = 5
+	// SDKFlagCancelAwaitTimerOnCondition will cause AwaitWithTimeout and
+	// AwaitWithOptions to cancel the timer when the condition is satisfied
+	// before the timeout expires.
+	SDKFlagCancelAwaitTimerOnCondition = 6
+	SDKFlagUnknown                     = math.MaxUint32
 )
 
 // sdkFlagDefaults holds the default enabled state for each flag.
@@ -42,6 +45,7 @@ var sdkFlagDefaults = map[sdkFlag]bool{
 	SDKFlagProtocolMessageCommand:       true,
 	SDKPriorityUpdateHandling:           true,
 	SDKFlagBlockedSelectorSignalReceive: false,
+	SDKFlagCancelAwaitTimerOnCondition: false,
 }
 
 func init() {
