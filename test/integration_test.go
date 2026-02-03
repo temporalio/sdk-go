@@ -1187,7 +1187,6 @@ func (ts *IntegrationTestSuite) TestAwaitWithTimeoutCancelTimerOnCondition() {
 	// TODO: Remove this skip when SDKFlagCancelAwaitTimerOnCondition is enabled by default.
 	// This test verifies the timer cancellation behavior when the flag is ON.
 	// Currently the flag is OFF by default to allow a gradual rollout.
-	// See internal/workflow.go where GetFlag is used instead of TryUse.
 	ts.T().Skip("SDKFlagCancelAwaitTimerOnCondition is disabled by default. Enable this test when the flag is enabled by default.")
 
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)

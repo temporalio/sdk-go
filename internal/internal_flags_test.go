@@ -43,15 +43,15 @@ func TestLoadFlagOverridesFromEnv(t *testing.T) {
 
 func TestSet(t *testing.T) {
 	t.Run("metadata disabled drops flags", func(t *testing.T) {
-		flags := newSDKFlags(&metadataDisabled)
+		flags := newSDKFlagSet(&metadataDisabled)
 		flags.set(SDKFlagChildWorkflowErrorExecution)
-		require.False(t, flags.getFlag(SDKFlagChildWorkflowErrorExecution))
+		require.False(t, flags.currentFlags[SDKFlagChildWorkflowErrorExecution])
 	})
 
 	t.Run("metadata enabled keeps flags", func(t *testing.T) {
-		flags := newSDKFlags(&metadataEnabled)
+		flags := newSDKFlagSet(&metadataEnabled)
 		flags.set(SDKFlagChildWorkflowErrorExecution)
-		require.True(t, flags.getFlag(SDKFlagChildWorkflowErrorExecution))
+		require.True(t, flags.currentFlags[SDKFlagChildWorkflowErrorExecution])
 		require.Empty(t, flags.gatherNewSDKFlags(), "set() flags are not 'new'")
 	})
 }
@@ -101,12 +101,12 @@ func TestTryUse(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
-			defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+			orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+			defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
 
-			sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = tt.flagDefault
+			sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = tt.flagDefault
 
-			flags := newSDKFlags(&metadataEnabled)
+			flags := newSDKFlagSet(&metadataEnabled)
 			if tt.inHistory {
 				flags.set(SDKFlagBlockedSelectorSignalReceive)
 			}

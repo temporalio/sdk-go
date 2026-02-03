@@ -529,13 +529,13 @@ func TestBlockingSelect(t *testing.T) {
 }
 
 func TestSelectBlockingDefault(t *testing.T) {
-	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = false
-	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = false
+	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
 
 	var history []string
 	env := &workflowEnvironmentImpl{
-		sdkFlags:       newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
+		sdkFlags:       newSDKFlagSet(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
 		commandsHelper: newCommandsHelper(),
 		dataConverter:  converter.GetDefaultDataConverter(),
 		workflowInfo: &WorkflowInfo{
@@ -544,7 +544,7 @@ func TestSelectBlockingDefault(t *testing.T) {
 		},
 	}
 	// Verify that the flag is not set
-	require.False(t, env.GetFlag(SDKFlagBlockedSelectorSignalReceive))
+	require.False(t, sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive])
 
 	interceptor, ctx, err := newWorkflowContext(env, nil)
 	require.NoError(t, err, "newWorkflowContext failed")
@@ -603,13 +603,13 @@ func TestSelectBlockingDefault(t *testing.T) {
 }
 
 func TestSelectBlockingDefaultWithFlag(t *testing.T) {
-	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = true
-	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
+	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
 
 	var history []string
 	env := &workflowEnvironmentImpl{
-		sdkFlags:       newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
+		sdkFlags:       newSDKFlagSet(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
 		commandsHelper: newCommandsHelper(),
 		dataConverter:  converter.GetDefaultDataConverter(),
 		workflowInfo: &WorkflowInfo{

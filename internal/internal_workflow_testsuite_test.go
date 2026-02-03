@@ -4543,7 +4543,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutConditionMet_WithoutFla
 	})
 
 	// Disable SdkMetadata capability to simulate old behavior (flag will return false)
-	env.impl.sdkFlags = newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: false})
+	env.impl.sdkFlags = newSDKFlagSet(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: false})
 
 	env.ExecuteWorkflow(awaitWithTimeoutConditionMetWorkflow)
 	s.True(env.IsWorkflowCompleted())
@@ -4753,9 +4753,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
-	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = true
-	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
+	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
 
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
@@ -4791,9 +4791,9 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalLost() {
-	orig := sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = false
-	defer func() { sdkFlagDefaults[SDKFlagBlockedSelectorSignalReceive] = orig }()
+	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = false
+	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
 
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")

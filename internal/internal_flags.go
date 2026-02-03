@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"math"
 	"os"
 
 	"go.temporal.io/api/workflowservice/v1"
@@ -36,20 +37,22 @@ const (
 	SDKFlagUnknown                     = math.MaxUint32
 )
 
-// sdkFlagDefaults holds the default enabled state for each flag.
+// sdkFlagsAllowed holds the enabled state for each flag.
 // Env vars can override these at init time via TEMPORAL_SDK_FLAG_<ID>=1|0.
 // New flags should default to false until at least one release after introduction.
-var sdkFlagDefaults = map[sdkFlag]bool{
+//
+// NOTE: The only time this setting is superseded is if a flag is already being used in history.
+var sdkFlagsAllowed = map[sdkFlag]bool{
 	SDKFlagLimitChangeVersionSASize:     true,
 	SDKFlagChildWorkflowErrorExecution:  true,
 	SDKFlagProtocolMessageCommand:       true,
 	SDKPriorityUpdateHandling:           true,
 	SDKFlagBlockedSelectorSignalReceive: false,
-	SDKFlagCancelAwaitTimerOnCondition: false,
+	SDKFlagCancelAwaitTimerOnCondition:  false,
 }
 
 func init() {
-	loadFlagOverridesFromEnv(sdkFlagDefaults)
+	loadFlagOverridesFromEnv(sdkFlagsAllowed)
 }
 
 // loadFlagOverridesFromEnv loads flag overrides from environment variables into the provided map.
@@ -59,29 +62,31 @@ func init() {
 // NOTE: Using env vars to set flags is strongly discouraged, but this utility is built in
 // as an emergency mechanism in case there is an unanticipated bug with a flag flip, so
 // users would not have to wait until the next release to upgrade.
-func loadFlagOverridesFromEnv(overrides map[sdkFlag]bool) {
-	for flag := SDKFlagUnset + 1; flag < SDKFlagUnknown; flag++ {
+func loadFlagOverridesFromEnv(defaults map[sdkFlag]bool) {
+	for flag := range defaults {
 		envKey := fmt.Sprintf("TEMPORAL_SDK_FLAG_%d", flag)
 		if val := os.Getenv(envKey); val != "" {
 			switch val {
 			case "1":
-				overrides[flag] = true
+				defaults[flag] = true
 			case "0":
-				overrides[flag] = false
+				defaults[flag] = false
 			}
 		}
 	}
 }
 
 func sdkFlagFromUint(value uint32) sdkFlag {
-	if value > 0 && value < uint32(SDKFlagUnknown) {
-		return sdkFlag(value)
+	flag := sdkFlag(value)
+	if _, ok := sdkFlagsAllowed[flag]; ok {
+		return flag
 	}
 	return SDKFlagUnknown
 }
 
 func (f sdkFlag) isValid() bool {
-	return f > SDKFlagUnset && f < SDKFlagUnknown
+	_, ok := sdkFlagsAllowed[f]
+	return ok
 }
 
 // sdkFlags represents all the flags that are currently set in a workflow execution.
@@ -94,7 +99,7 @@ type sdkFlags struct {
 	newFlags map[sdkFlag]bool
 }
 
-func newSDKFlags(capabilities *workflowservice.GetSystemInfoResponse_Capabilities) *sdkFlags {
+func newSDKFlagSet(capabilities *workflowservice.GetSystemInfoResponse_Capabilities) *sdkFlags {
 	return &sdkFlags{
 		capabilities: capabilities,
 		currentFlags: make(map[sdkFlag]bool),
@@ -117,17 +122,12 @@ func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 		return false
 	}
 
-	if !sdkFlagDefaults[flag] {
+	if !sdkFlagsAllowed[flag] {
 		return false
 	}
 
 	sf.newFlags[flag] = true
 	return true
-}
-
-// getFlag returns true if the flag is currently set.
-func (sf *sdkFlags) getFlag(flag sdkFlag) bool {
-	return sf.currentFlags[flag] || sf.newFlags[flag]
 }
 
 // set marks a flag as in current use regardless of replay status.
@@ -148,7 +148,7 @@ func (sf *sdkFlags) markSDKFlagsSent() {
 	sf.newFlags = make(map[sdkFlag]bool)
 }
 
-// gatherNewSDKFlags returns all sdkFlags set since the last call to markSDKFlagsSent.
+// gatherNewSDKFlags returns all sdkFlagsAllowed set since the last call to markSDKFlagsSent.
 func (sf *sdkFlags) gatherNewSDKFlags() []sdkFlag {
 	flags := make([]sdkFlag, 0, len(sf.newFlags))
 	for flag := range sf.newFlags {
