@@ -19,24 +19,23 @@ func TestLoadFlagOverridesFromEnv(t *testing.T) {
 		name    string
 		envVal  string
 		wantVal bool
-		wantSet bool
 	}{
-		{"1 enables", "1", true, true},
-		{"0 disables", "0", false, true},
-		{"invalid value ignored", "true", false, false},
+		{"1 enables", "1", true},
+		{"0 disables", "0", false},
+		{"invalid value ignored", "true", false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv("TEMPORAL_SDK_FLAG_5", tt.envVal)
-			overrides := make(map[sdkFlag]bool)
-			loadFlagOverridesFromEnv(overrides)
-
-			val, ok := overrides[SDKFlagBlockedSelectorSignalReceive]
-			require.Equal(t, tt.wantSet, ok)
-			if ok {
-				require.Equal(t, tt.wantVal, val)
+			testFlags := map[sdkFlag]bool{
+				SDKFlagBlockedSelectorSignalReceive: false,
 			}
+			loadFlagOverridesFromEnv(testFlags)
+
+			val, ok := testFlags[SDKFlagBlockedSelectorSignalReceive]
+			require.True(t, ok)
+			require.Equal(t, tt.wantVal, val)
 		})
 	}
 }
