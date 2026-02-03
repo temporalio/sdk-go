@@ -232,7 +232,7 @@ func newWorkflowExecutionEventHandler(
 		deadlockDetectionTimeout:     deadlockDetectionTimeout,
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
-		sdkFlags:                     newSDKFlags(capabilities),
+		sdkFlags:                     newSDKFlagSet(capabilities),
 		bufferedUpdateRequests:       make(map[string][]func()),
 	}
 	// Attempt to skip 1 log level to remove the ReplayLogger from the stack.
@@ -973,10 +973,6 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 
 func (wc *workflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 	return wc.sdkFlags.tryUse(flag, !wc.isReplay)
-}
-
-func (wc *workflowEnvironmentImpl) GetFlag(flag sdkFlag) bool {
-	return wc.sdkFlags.getFlag(flag)
 }
 
 func (wc *workflowEnvironmentImpl) QueueUpdate(name string, f func()) {

@@ -325,7 +325,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		failureConverter:       GetDefaultFailureConverter(),
 		runTimeout:             maxWorkflowTimeout,
 		bufferedUpdateRequests: make(map[string][]func()),
-		sdkFlags:               newSDKFlags(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
+		sdkFlags:               newSDKFlagSet(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
 	}
 
 	if debugMode {
@@ -647,10 +647,6 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 
 func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 	return env.sdkFlags.tryUse(flag, true)
-}
-
-func (env *testWorkflowEnvironmentImpl) GetFlag(flag sdkFlag) bool {
-	return env.sdkFlags.getFlag(flag)
 }
 
 func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
