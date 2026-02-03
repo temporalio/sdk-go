@@ -230,6 +230,7 @@ func (ts *ConfigAndClientSuiteBase) InitClient() error {
 }
 
 func (ts *ConfigAndClientSuiteBase) newClient() (client.Client, error) {
+	disableHeartbeat := time.Duration(0)
 	return client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: ts.config.Namespace,
@@ -238,6 +239,7 @@ func (ts *ConfigAndClientSuiteBase) newClient() (client.Client, error) {
 			TLS:                  ts.config.TLS,
 			GetSystemInfoTimeout: ctxTimeout,
 		},
+		WorkerHeartbeatInterval: &disableHeartbeat,
 	})
 }
 
