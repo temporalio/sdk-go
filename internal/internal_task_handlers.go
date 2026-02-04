@@ -632,6 +632,8 @@ func (w *workflowExecutionContextImpl) getEventHandler() *workflowExecutionEvent
 }
 
 func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payloads, err error) {
+	fmt.Printf("ZZZ %+v\n", err)
+
 	w.isWorkflowCompleted = true
 	w.result = result
 	w.err = err
@@ -1025,6 +1027,18 @@ processWorkflowLoop:
 			break processWorkflowLoop
 		}
 	}
+
+	if workflowContext.err != nil {
+		wth.logger.Warn("Workflow context held error after processing.",
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, workflowID,
+			tagRunID, runID,
+			tagAttempt, task.Attempt,
+			tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
+			tagError, workflowContext.err,
+		)
+	}
+
 	errRet = err
 	taskCompletion = response
 	return
