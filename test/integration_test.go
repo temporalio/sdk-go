@@ -2895,6 +2895,81 @@ func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
 	ts.True(foundHandleSignal)
 }
 
+func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	immediateActivity := func() (string, error) { return "result", nil }
+	ts.worker.RegisterActivityWithOptions(immediateActivity, activity.RegisterOptions{Name: "interceptorTestActivityImmediate"})
+
+	activityStarted := make(chan struct{}, 2)
+	waitActivity := func(ctx context.Context) error {
+		activityStarted <- struct{}{}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	ts.worker.RegisterActivityWithOptions(waitActivity, activity.RegisterOptions{Name: "interceptorTestActivityWait"})
+
+	makeOptions := func() client.StartActivityOptions {
+		return client.StartActivityOptions{
+			ID:                     "interceptor-test-" + uuid.NewString(),
+			TaskQueue:              ts.taskQueueName,
+			ScheduleToCloseTimeout: 30 * time.Second,
+		}
+	}
+
+	// ExecuteActivity + Describe
+	handle1, err := ts.client.ExecuteActivity(ctx, makeOptions(), "interceptorTestActivityImmediate")
+	ts.NoError(err)
+	_, err = handle1.Describe(ctx, client.DescribeActivityOptions{})
+	ts.NoError(err)
+
+	// GetActivityHandle
+	_ = ts.client.GetActivityHandle(client.GetActivityHandleOptions{
+		ActivityID: handle1.GetID(),
+		RunID:      handle1.GetRunID(),
+	})
+
+	// Get (PollActivityResult)
+	var result string
+	err = handle1.Get(ctx, &result)
+	ts.NoError(err)
+	ts.Equal("result", result)
+
+	// Cancel
+	handle2, err := ts.client.ExecuteActivity(ctx, makeOptions(), "interceptorTestActivityWait")
+	ts.NoError(err)
+	<-activityStarted
+	err = handle2.Cancel(ctx, client.CancelActivityOptions{Reason: "test cancel"})
+	ts.NoError(err)
+
+	// Terminate
+	handle3, err := ts.client.ExecuteActivity(ctx, makeOptions(), "interceptorTestActivityWait")
+	ts.NoError(err)
+	<-activityStarted
+	err = handle3.Terminate(ctx, client.TerminateActivityOptions{Reason: "test terminate"})
+	ts.NoError(err)
+
+	// Verify all 6 interceptor methods were called
+	expectedCalls := []string{
+		"ClientOutboundInterceptor.ExecuteActivity",
+		"ClientOutboundInterceptor.GetActivityHandle",
+		"ClientOutboundInterceptor.DescribeActivity",
+		"ClientOutboundInterceptor.CancelActivity",
+		"ClientOutboundInterceptor.TerminateActivity",
+		"ClientOutboundInterceptor.PollActivityResult",
+	}
+
+	recordedCalls := make(map[string]bool)
+	for _, call := range ts.interceptorCallRecorder.Calls() {
+		recordedCalls[call.Interface.Name()+"."+call.Method.Name] = true
+	}
+
+	for _, expectedCall := range expectedCalls {
+		ts.True(recordedCalls[expectedCall], "Expected interceptor call %s was not recorded", expectedCall)
+	}
+}
+
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
 	ts.T().Skip("issue-1650: Otel Tracing intergation tests are flaky")
 	ts.testOpenTelemetryTracing(true, false)

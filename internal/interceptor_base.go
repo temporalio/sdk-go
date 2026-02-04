@@ -595,6 +595,46 @@ func (c *ClientOutboundInterceptorBase) GetActivityHandle(
 	return c.Next.GetActivityHandle(in)
 }
 
+// CancelActivity implements ClientOutboundInterceptor.CancelActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) CancelActivity(
+	ctx context.Context,
+	in *ClientCancelActivityInput,
+) error {
+	return c.Next.CancelActivity(ctx, in)
+}
+
+// TerminateActivity implements ClientOutboundInterceptor.TerminateActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) TerminateActivity(
+	ctx context.Context,
+	in *ClientTerminateActivityInput,
+) error {
+	return c.Next.TerminateActivity(ctx, in)
+}
+
+// DescribeActivity implements ClientOutboundInterceptor.DescribeActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) DescribeActivity(
+	ctx context.Context,
+	in *ClientDescribeActivityInput,
+) (*ClientDescribeActivityOutput, error) {
+	return c.Next.DescribeActivity(ctx, in)
+}
+
+// PollActivityResult implements ClientOutboundInterceptor.PollActivityResult.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) PollActivityResult(
+	ctx context.Context,
+	in *ClientPollActivityResultInput,
+) (*ClientPollActivityResultOutput, error) {
+	return c.Next.PollActivityResult(ctx, in)
+}
+
 func (*ClientOutboundInterceptorBase) mustEmbedClientOutboundInterceptorBase() {}
 
 // NexusOperationInboundInterceptorBase is a default implementation of [NexusOperationInboundInterceptor] that

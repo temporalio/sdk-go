@@ -95,6 +95,8 @@ type (
 	// ClientActivityHandle represents a running or completed standalone activity execution.
 	// It can be used to get the result, describe, cancel, or terminate the activity.
 	//
+	// Methods may be added to this interface; implementing it directly is discouraged.
+	//
 	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ActivityHandle]
@@ -119,8 +121,6 @@ type (
 		Cancel(ctx context.Context, options ClientCancelActivityOptions) error
 		// Terminate terminates the activity.
 		Terminate(ctx context.Context, options ClientTerminateActivityOptions) error
-
-		mustEmbedActivityHandleBase()
 	}
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
@@ -199,14 +199,8 @@ type (
 		failureConverter        converter.FailureConverter
 	}
 
-	// ClientActivityHandleBase must be derived to create custom implementations of ActivityHandle. This can be used in conjunction with
-	// interceptor.ClientOutboundInterceptor methods ExecuteActivity and GetActivityHandle to intercept method calls on the handle,
-	// e.g. getting activity result.
-	//
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/client.ActivityHandleBase]
-	ClientActivityHandleBase struct {
+	// clientActivityHandleImpl is the default implementation of ClientActivityHandle.
+	clientActivityHandleImpl struct {
 		client *WorkflowClient
 		id     string
 		runID  string
@@ -269,151 +263,74 @@ func (d *ClientActivityExecutionDescription) GetDetails() (string, error) {
 	return details, nil
 }
 
-func (h *ClientActivityHandleBase) mustEmbedActivityHandleBase() {}
-
-func (h *ClientActivityHandleBase) GetID() string {
+func (h *clientActivityHandleImpl) GetID() string {
 	return h.id
 }
 
-func (h *ClientActivityHandleBase) GetRunID() string {
+func (h *clientActivityHandleImpl) GetRunID() string {
 	return h.runID
 }
 
-func (h *ClientActivityHandleBase) Get(ctx context.Context, valuePtr any) error {
+func (h *clientActivityHandleImpl) Get(ctx context.Context, valuePtr any) error {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return err
 	}
 
-	// repeatedly poll the loop repeats until there's an outcome
+	// repeatedly poll, the loop repeats until there's an outcome
 	for {
-		resp, err := h.pollResult(ctx)
+		resp, err := h.client.interceptor.PollActivityResult(ctx, &ClientPollActivityResultInput{
+			ActivityID: h.id,
+			RunID:      h.runID,
+		})
 		if err != nil {
 			return err
 		}
-		if failure := resp.GetOutcome().GetFailure(); failure != nil {
-			return h.client.failureConverter.FailureToError(failure)
+		if resp.Failure != nil {
+			return h.client.failureConverter.FailureToError(resp.Failure)
 		}
-		if result := resp.GetOutcome().GetResult(); result != nil {
+		if resp.Result != nil {
 			if valuePtr == nil {
 				return nil
-			} else {
-				return h.client.dataConverter.FromPayloads(result, valuePtr)
 			}
+			return h.client.dataConverter.FromPayloads(resp.Result, valuePtr)
 		}
 	}
 }
 
-func (h *ClientActivityHandleBase) pollResult(ctx context.Context) (*workflowservice.PollActivityExecutionResponse, error) {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx), grpcLongPoll(true))
-	defer cancel()
-
-	request := &workflowservice.PollActivityExecutionRequest{
-		Namespace:  h.client.namespace,
-		ActivityId: h.id,
-		RunId:      h.runID,
-	}
-
-	return h.client.WorkflowService().PollActivityExecution(grpcCtx, request)
-}
-
-func (h *ClientActivityHandleBase) Describe(ctx context.Context, options ClientDescribeActivityOptions) (*ClientActivityExecutionDescription, error) {
+func (h *clientActivityHandleImpl) Describe(ctx context.Context, options ClientDescribeActivityOptions) (*ClientActivityExecutionDescription, error) {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
-
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
-	defer cancel()
-
-	request := &workflowservice.DescribeActivityExecutionRequest{
-		Namespace:  h.client.namespace,
-		ActivityId: h.id,
-		RunId:      h.runID,
-	}
-	resp, err := h.client.WorkflowService().DescribeActivityExecution(grpcCtx, request)
+	out, err := h.client.interceptor.DescribeActivity(ctx, &ClientDescribeActivityInput{
+		ActivityID: h.id,
+		RunID:      h.runID,
+	})
 	if err != nil {
 		return nil, err
 	}
-	info := resp.GetInfo()
-	if info == nil {
-		return nil, errors.New("DescribeActivityExecution response doesn't contain info")
-	}
-
-	var lastDeploymentVersion *WorkerDeploymentVersion = nil
-	if info.LastDeploymentVersion != nil {
-		v := workerDeploymentVersionFromProto(info.LastDeploymentVersion)
-		lastDeploymentVersion = &v
-	}
-
-	return &ClientActivityExecutionDescription{
-		ClientActivityExecutionInfo: ClientActivityExecutionInfo{
-			RawExecutionListInfo:  nil,
-			ActivityID:            info.ActivityId,
-			ActivityRunID:         info.RunId,
-			ActivityType:          info.ActivityType.GetName(),
-			ScheduleTime:          info.ScheduleTime.AsTime(),
-			CloseTime:             info.CloseTime.AsTime(),
-			Status:                info.Status,
-			TypedSearchAttributes: convertToTypedSearchAttributes(h.client.logger, info.SearchAttributes.IndexedFields),
-			TaskQueue:             info.TaskQueue,
-			ExecutionDuration:     info.ExecutionDuration.AsDuration(),
-		},
-		RawExecutionInfo:        info,
-		RunState:                info.RunState,
-		LastHeartbeatTime:       info.LastHeartbeatTime.AsTime(),
-		LastStartedTime:         info.LastStartedTime.AsTime(),
-		Attempt:                 info.Attempt,
-		RetryPolicy:             convertFromPBRetryPolicy(info.RetryPolicy),
-		ExpirationTime:          info.ExpirationTime.AsTime(),
-		LastWorkerIdentity:      info.LastWorkerIdentity,
-		CurrentRetryInterval:    info.CurrentRetryInterval.AsDuration(),
-		LastAttemptCompleteTime: info.LastAttemptCompleteTime.AsTime(),
-		NextAttemptScheduleTime: info.NextAttemptScheduleTime.AsTime(),
-		LastDeploymentVersion:   lastDeploymentVersion,
-		Priority:                convertFromPBPriority(info.Priority),
-		CanceledReason:          info.CanceledReason,
-		dataConverter:           WithContext(ctx, h.client.dataConverter),
-		failureConverter:        h.client.failureConverter,
-	}, nil
+	return out.Description, nil
 }
 
-func (h *ClientActivityHandleBase) Cancel(ctx context.Context, options ClientCancelActivityOptions) error {
+func (h *clientActivityHandleImpl) Cancel(ctx context.Context, options ClientCancelActivityOptions) error {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return err
 	}
-
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
-	defer cancel()
-
-	request := &workflowservice.RequestCancelActivityExecutionRequest{
-		Namespace:  h.client.namespace,
-		ActivityId: h.id,
-		RunId:      h.runID,
-		Identity:   h.client.identity,
-		RequestId:  uuid.NewString(),
+	return h.client.interceptor.CancelActivity(ctx, &ClientCancelActivityInput{
+		ActivityID: h.id,
+		RunID:      h.runID,
 		Reason:     options.Reason,
-	}
-	_, err := h.client.WorkflowService().RequestCancelActivityExecution(grpcCtx, request)
-	return err
+	})
 }
 
-func (h *ClientActivityHandleBase) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
+func (h *clientActivityHandleImpl) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return err
 	}
-
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
-	defer cancel()
-
-	request := &workflowservice.TerminateActivityExecutionRequest{
-		Namespace:  h.client.namespace,
-		ActivityId: h.id,
-		RunId:      h.runID,
-		Identity:   h.client.identity,
-		RequestId:  uuid.NewString(),
+	return h.client.interceptor.TerminateActivity(ctx, &ClientTerminateActivityInput{
+		ActivityID: h.id,
+		RunID:      h.runID,
 		Reason:     options.Reason,
-	}
-	_, err := h.client.WorkflowService().TerminateActivityExecution(grpcCtx, request)
-	return err
+	})
 }
 
 func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
@@ -563,7 +480,7 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		runID = resp.RunId
 	}
 
-	return &ClientActivityHandleBase{
+	return &clientActivityHandleImpl{
 		client: w.client,
 		id:     in.Options.ID,
 		runID:  runID,
@@ -613,9 +530,132 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 func (w *workflowClientInterceptor) GetActivityHandle(
 	in *ClientGetActivityHandleInput,
 ) ClientActivityHandle {
-	return &ClientActivityHandleBase{
+	return &clientActivityHandleImpl{
 		client: w.client,
 		id:     in.ActivityID,
 		runID:  in.RunID,
 	}
+}
+
+func (w *workflowClientInterceptor) PollActivityResult(
+	ctx context.Context,
+	in *ClientPollActivityResultInput,
+) (*ClientPollActivityResultOutput, error) {
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx), grpcLongPoll(true))
+	defer cancel()
+
+	request := &workflowservice.PollActivityExecutionRequest{
+		Namespace:  w.client.namespace,
+		ActivityId: in.ActivityID,
+		RunId:      in.RunID,
+	}
+
+	resp, err := w.client.WorkflowService().PollActivityExecution(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ClientPollActivityResultOutput{
+		Result:  resp.GetOutcome().GetResult(),
+		Failure: resp.GetOutcome().GetFailure(),
+	}, nil
+}
+
+func (w *workflowClientInterceptor) DescribeActivity(
+	ctx context.Context,
+	in *ClientDescribeActivityInput,
+) (*ClientDescribeActivityOutput, error) {
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.DescribeActivityExecutionRequest{
+		Namespace:  w.client.namespace,
+		ActivityId: in.ActivityID,
+		RunId:      in.RunID,
+	}
+	resp, err := w.client.WorkflowService().DescribeActivityExecution(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	info := resp.GetInfo()
+	if info == nil {
+		return nil, errors.New("DescribeActivityExecution response doesn't contain info")
+	}
+
+	var lastDeploymentVersion *WorkerDeploymentVersion
+	if info.LastDeploymentVersion != nil {
+		v := workerDeploymentVersionFromProto(info.LastDeploymentVersion)
+		lastDeploymentVersion = &v
+	}
+
+	return &ClientDescribeActivityOutput{
+		Description: &ClientActivityExecutionDescription{
+			ClientActivityExecutionInfo: ClientActivityExecutionInfo{
+				RawExecutionListInfo:  nil,
+				ActivityID:            info.ActivityId,
+				ActivityRunID:         info.RunId,
+				ActivityType:          info.ActivityType.GetName(),
+				ScheduleTime:          info.ScheduleTime.AsTime(),
+				CloseTime:             info.CloseTime.AsTime(),
+				Status:                info.Status,
+				TypedSearchAttributes: convertToTypedSearchAttributes(w.client.logger, info.SearchAttributes.IndexedFields),
+				TaskQueue:             info.TaskQueue,
+				ExecutionDuration:     info.ExecutionDuration.AsDuration(),
+			},
+			RawExecutionInfo:        info,
+			RunState:                info.RunState,
+			LastHeartbeatTime:       info.LastHeartbeatTime.AsTime(),
+			LastStartedTime:         info.LastStartedTime.AsTime(),
+			Attempt:                 info.Attempt,
+			RetryPolicy:             convertFromPBRetryPolicy(info.RetryPolicy),
+			ExpirationTime:          info.ExpirationTime.AsTime(),
+			LastWorkerIdentity:      info.LastWorkerIdentity,
+			CurrentRetryInterval:    info.CurrentRetryInterval.AsDuration(),
+			LastAttemptCompleteTime: info.LastAttemptCompleteTime.AsTime(),
+			NextAttemptScheduleTime: info.NextAttemptScheduleTime.AsTime(),
+			LastDeploymentVersion:   lastDeploymentVersion,
+			Priority:                convertFromPBPriority(info.Priority),
+			CanceledReason:          info.CanceledReason,
+			dataConverter:           WithContext(ctx, w.client.dataConverter),
+			failureConverter:        w.client.failureConverter,
+		},
+	}, nil
+}
+
+func (w *workflowClientInterceptor) CancelActivity(
+	ctx context.Context,
+	in *ClientCancelActivityInput,
+) error {
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.RequestCancelActivityExecutionRequest{
+		Namespace:  w.client.namespace,
+		ActivityId: in.ActivityID,
+		RunId:      in.RunID,
+		Identity:   w.client.identity,
+		RequestId:  uuid.NewString(),
+		Reason:     in.Reason,
+	}
+	_, err := w.client.WorkflowService().RequestCancelActivityExecution(grpcCtx, request)
+	return err
+}
+
+func (w *workflowClientInterceptor) TerminateActivity(
+	ctx context.Context,
+	in *ClientTerminateActivityInput,
+) error {
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.TerminateActivityExecutionRequest{
+		Namespace:  w.client.namespace,
+		ActivityId: in.ActivityID,
+		RunId:      in.RunID,
+		Identity:   w.client.identity,
+		RequestId:  uuid.NewString(),
+		Reason:     in.Reason,
+	}
+	_, err := w.client.WorkflowService().TerminateActivityExecution(grpcCtx, request)
+	return err
 }

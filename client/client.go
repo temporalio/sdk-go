@@ -938,13 +938,6 @@ type (
 	// NOTE: Experimental
 	ActivityHandle = internal.ClientActivityHandle
 
-	// ActivityHandleBase must be derived to create custom implementations of ActivityHandle. This can be used in conjunction with
-	// interceptor.ClientOutboundInterceptor methods ExecuteActivity and GetActivityHandle to intercept method calls on the handle,
-	// e.g. getting activity result.
-	//
-	// NOTE: Experimental
-	ActivityHandleBase = internal.ClientActivityHandleBase
-
 	// ActivityExecutionInfo contains information about an activity execution.
 	// This is returned by ListActivities and embedded in ClientActivityExecutionDescription.
 	//

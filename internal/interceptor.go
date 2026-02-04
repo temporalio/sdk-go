@@ -7,6 +7,7 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -419,8 +420,6 @@ type ClientOutboundInterceptor interface {
 	DescribeWorkflow(context.Context, *ClientDescribeWorkflowInput) (*ClientDescribeWorkflowOutput, error)
 
 	// ExecuteActivity intercepts client.Client.ExecuteActivity.
-	// The methods of the activity handle can be intercepted by returning a custom handle type that conforms to
-	// client.ActivityHandle interface. See client.ActivityHandleBase.
 	//
 	// NOTE: Experimental
 	ExecuteActivity(context.Context, *ClientExecuteActivityInput) (ClientActivityHandle, error)
@@ -431,6 +430,26 @@ type ClientOutboundInterceptor interface {
 	//
 	// NOTE: Experimental
 	GetActivityHandle(*ClientGetActivityHandleInput) ClientActivityHandle
+
+	// CancelActivity intercepts client.ActivityHandle.Cancel.
+	//
+	// NOTE: Experimental
+	CancelActivity(context.Context, *ClientCancelActivityInput) error
+
+	// TerminateActivity intercepts client.ActivityHandle.Terminate.
+	//
+	// NOTE: Experimental
+	TerminateActivity(context.Context, *ClientTerminateActivityInput) error
+
+	// DescribeActivity intercepts client.ActivityHandle.Describe.
+	//
+	// NOTE: Experimental
+	DescribeActivity(context.Context, *ClientDescribeActivityInput) (*ClientDescribeActivityOutput, error)
+
+	// PollActivityResult intercepts client.ActivityHandle.Get.
+	//
+	// NOTE: Experimental
+	PollActivityResult(context.Context, *ClientPollActivityResultInput) (*ClientPollActivityResultOutput, error)
 
 	mustEmbedClientOutboundInterceptorBase()
 }
@@ -552,7 +571,7 @@ type ClientDescribeWorkflowInput struct {
 	RunID      string
 }
 
-// ClientDescribeWorkflowInput is the output to
+// ClientDescribeWorkflowOutput is the output to
 // ClientOutboundInterceptor.DescribeWorkflow.
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeWorkflowOutput]
@@ -581,6 +600,73 @@ type ClientExecuteActivityInput struct {
 type ClientGetActivityHandleInput struct {
 	ActivityID string
 	RunID      string
+}
+
+// ClientCancelActivityInput is the input to
+// ClientOutboundInterceptor.CancelActivity.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientCancelActivityInput]
+type ClientCancelActivityInput struct {
+	ActivityID string
+	RunID      string
+	Reason     string
+}
+
+// ClientTerminateActivityInput is the input to
+// ClientOutboundInterceptor.TerminateActivity.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientTerminateActivityInput]
+type ClientTerminateActivityInput struct {
+	ActivityID string
+	RunID      string
+	Reason     string
+}
+
+// ClientDescribeActivityInput is the input to
+// ClientOutboundInterceptor.DescribeActivity.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeActivityInput]
+type ClientDescribeActivityInput struct {
+	ActivityID string
+	RunID      string
+}
+
+// ClientDescribeActivityOutput is the output of
+// ClientOutboundInterceptor.DescribeActivity.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeActivityOutput]
+type ClientDescribeActivityOutput struct {
+	Description *ClientActivityExecutionDescription
+}
+
+// ClientPollActivityResultInput is the input to
+// ClientOutboundInterceptor.PollActivityResult.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientPollActivityResultInput]
+type ClientPollActivityResultInput struct {
+	ActivityID string
+	RunID      string
+}
+
+// ClientPollActivityResultOutput is the output of
+// ClientOutboundInterceptor.PollActivityResult.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientPollActivityResultOutput]
+type ClientPollActivityResultOutput struct {
+	Result  *commonpb.Payloads
+	Failure *failurepb.Failure
 }
 
 // NexusOutboundInterceptor intercepts Nexus operation method invocations. See documentation in the interceptor package
