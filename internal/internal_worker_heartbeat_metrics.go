@@ -275,10 +275,14 @@ func buildPollerInfo(currentPollers int32, lastSuccessfulPollTime time.Time, pol
 	case *pollerBehaviorAutoscaling:
 		isAutoscaling = true
 	}
+	var pollTime *timestamppb.Timestamp
+	if !lastSuccessfulPollTime.IsZero() {
+		pollTime = timestamppb.New(lastSuccessfulPollTime)
+	}
 
 	return &workerpb.WorkerPollerInfo{
 		CurrentPollers:         currentPollers,
-		LastSuccessfulPollTime: timestamppb.New(lastSuccessfulPollTime),
+		LastSuccessfulPollTime: pollTime,
 		IsAutoscaling:          isAutoscaling,
 	}
 }

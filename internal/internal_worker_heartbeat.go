@@ -77,23 +77,20 @@ func (m *heartbeatManager) unregisterWorker(worker *AggregatedWorker) {
 }
 
 func (m *heartbeatManager) getOrCreateSharedNamespaceWorker(worker *AggregatedWorker) (*sharedNamespaceWorker, error) {
+	capabilities, err := m.client.loadNamespaceCapabilities(worker.heartbeatMetrics)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get namespace capabilities: %w", err)
+	}
+	if !capabilities.GetWorkerHeartbeats() {
+		m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
+		return nil, nil
+	}
 	namespace := worker.executionParams.Namespace
 	m.workersMutex.Lock()
+	defer m.workersMutex.Unlock()
 	hw, ok := m.workers[namespace]
-	m.workersMutex.Unlock()
 	if !ok {
-		capabilities, err := m.client.loadNamespaceCapabilities(worker.heartbeatMetrics)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get namespace capabilities: %w", err)
-		}
-		if !capabilities.GetWorkerHeartbeats() {
-			m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
-			return nil, nil
-		}
-
-		m.workersMutex.Lock()
 		if existing, ok := m.workers[namespace]; ok {
-			m.workersMutex.Unlock()
 			hw = existing
 		} else {
 			newHw := &sharedNamespaceWorker{
@@ -106,7 +103,6 @@ func (m *heartbeatManager) getOrCreateSharedNamespaceWorker(worker *AggregatedWo
 				logger:    m.logger,
 			}
 			m.workers[namespace] = newHw
-			m.workersMutex.Unlock()
 			hw = newHw
 			if hw.started.Swap(true) {
 				panic("heartbeat worker already started")
@@ -197,10 +193,6 @@ func (hw *sharedNamespaceWorker) stop() {
 // pollTimeTracker tracks the last successful poll time for each poller type.
 type pollTimeTracker struct {
 	times sync.Map // pollerType (string) -> time.Time (stored as int64 nanos)
-}
-
-func newPollTimeTracker() *pollTimeTracker {
-	return &pollTimeTracker{}
 }
 
 func (p *pollTimeTracker) recordPollSuccess(pollerType string) {

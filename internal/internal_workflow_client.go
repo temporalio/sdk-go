@@ -1390,7 +1390,9 @@ func (wc *WorkflowClient) loadNamespaceCapabilities(metricsHandler metrics.Handl
 	if err != nil && !errors.As(err, &unimplemented) {
 		return nil, fmt.Errorf("failed reaching server: %w", err)
 	}
-	capabilities = resp.GetNamespaceInfo().GetCapabilities()
+	if resp != nil {
+		capabilities = resp.GetNamespaceInfo().GetCapabilities()
+	}
 	if capabilities == nil {
 		capabilities = &namespacepb.NamespaceInfo_Capabilities{}
 	}

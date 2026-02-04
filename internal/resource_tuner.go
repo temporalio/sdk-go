@@ -16,34 +16,32 @@ const (
 	resourceSlotsMemUsage = "temporal_resource_slots_mem_usage"
 )
 
-// SystemInfoSupplier implementations provide information about system resources.
+// SysInfoProvider implementations provide information about system resources.
 //
-// Exposed as: [go.temporal.io/sdk/worker.SystemInfoSupplier]
-type SystemInfoSupplier interface {
-	// GetMemoryUsage returns the current system memory usage as a fraction of total memory between
+// Exposed as: [go.temporal.io/sdk/worker.SysInfoProvider]
+type SysInfoProvider interface {
+	// MemoryUsage returns the current system memory usage as a fraction of total memory between
 	// 0 and 1.
-	GetMemoryUsage(infoContext *SystemInfoContext) (float64, error)
-	// GetCpuUsage returns the current system CPU usage as a fraction of total CPU usage between 0
+	MemoryUsage(infoContext *SysInfoContext) (float64, error)
+	// CpuUsage returns the current system CPU usage as a fraction of total CPU usage between 0
 	// and 1.
-	GetCpuUsage(infoContext *SystemInfoContext) (float64, error)
+	CpuUsage(infoContext *SysInfoContext) (float64, error)
 }
 
-// SystemInfoContext provides context for SystemInfoSupplier calls.
+// SysInfoContext provides context for SysInfoProvider calls.
 //
-// Exposed as: [go.temporal.io/sdk/worker.SystemInfoContext]
-type SystemInfoContext struct {
+// Exposed as: [go.temporal.io/sdk/worker.SysInfoContext]
+type SysInfoContext struct {
 	Logger log.Logger
 }
 
-// TODO: Worried this is too invisible for custom slot suppliers to know to implement
-//
-// HasSystemInfoSupplier is an optional interface that SlotSupplier implementations can implement
-// to expose their SystemInfoSupplier. This allows the SDK to access system metrics (CPU/memory)
+// HasSysInfoProvider is an optional interface that SlotSupplier implementations can implement
+// to expose their SysInfoProvider. This allows the SDK to access system metrics (CPU/memory)
 // for features like worker heartbeats without coupling to specific SlotSupplier implementations.
 //
-// Exposed as: [go.temporal.io/sdk/worker.HasSystemInfoSupplier]
-type HasSystemInfoSupplier interface {
-	GetSystemInfoSupplier() SystemInfoSupplier
+// Exposed as: [go.temporal.io/sdk/worker.HasSysInfoProvider]
+type HasSysInfoProvider interface {
+	SysInfoProvider() SysInfoProvider
 }
 
 // ResourceBasedTunerOptions configures a resource-based tuner.
@@ -58,7 +56,7 @@ type ResourceBasedTunerOptions struct {
 	TargetCpu float64
 	// InfoSupplier provides CPU and memory usage information. This is required.
 	// Use contrib/sysinfo.SysInfoProvider() for a gopsutil-based implementation.
-	InfoSupplier SystemInfoSupplier
+	InfoSupplier SysInfoProvider
 	// Passed to ResourceBasedSlotSupplierOptions.RampThrottle for activities.
 	// If not set, the default value is 50ms.
 	ActivityRampThrottle time.Duration
@@ -232,8 +230,8 @@ func (r *ResourceBasedSlotSupplier) MaxSlots() int {
 	return 0
 }
 
-// GetSystemInfoSupplier returns the SystemInfoSupplier used by this slot supplier's controller.
-func (r *ResourceBasedSlotSupplier) GetSystemInfoSupplier() SystemInfoSupplier {
+// GetSysInfoProvider returns the SysInfoProvider used by this slot supplier's controller.
+func (r *ResourceBasedSlotSupplier) SysInfoProvider() SysInfoProvider {
 	return r.controller.infoSupplier
 }
 
@@ -250,7 +248,7 @@ type ResourceControllerOptions struct {
 	// will attempt to maintain.
 	CpuTargetPercent float64
 	// InfoSupplier is the supplier that the controller will use to get system resources.
-	InfoSupplier SystemInfoSupplier
+	InfoSupplier SysInfoProvider
 
 	MemOutputThreshold float64
 	CpuOutputThreshold float64
@@ -307,7 +305,7 @@ type ResourceController struct {
 	options ResourceControllerOptions
 
 	mu           sync.Mutex
-	infoSupplier SystemInfoSupplier
+	infoSupplier SysInfoProvider
 	lastRefresh  time.Time
 	memPid       *pidController
 	cpuPid       *pidController
@@ -343,11 +341,11 @@ func (rc *ResourceController) pidDecision(logger log.Logger, metricsHandler metr
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 
-	memUsage, err := rc.infoSupplier.GetMemoryUsage(&SystemInfoContext{Logger: logger})
+	memUsage, err := rc.infoSupplier.MemoryUsage(&SysInfoContext{Logger: logger})
 	if err != nil {
 		return false, err
 	}
-	cpuUsage, err := rc.infoSupplier.GetCpuUsage(&SystemInfoContext{Logger: logger})
+	cpuUsage, err := rc.infoSupplier.CpuUsage(&SysInfoContext{Logger: logger})
 	if err != nil {
 		return false, err
 	}

@@ -47,17 +47,17 @@ func NewFixedSizeSlotSupplier(numSlots int) (SlotSupplier, error) {
 	return internal.NewFixedSizeSlotSupplier(numSlots)
 }
 
-// SystemInfoSupplier implementations provide information about system resources.
+// SysInfoProvider implementations provide information about system resources.
 // Use contrib/sysinfo.SysInfoProvider() for a gopsutil-based implementation,
 // or provide your own.
-type SystemInfoSupplier = internal.SystemInfoSupplier
+type SysInfoProvider = internal.SysInfoProvider
 
-// SystemInfoContext provides context for SystemInfoSupplier calls.
-type SystemInfoContext = internal.SystemInfoContext
+// SysInfoContext provides context for SysInfoProvider calls.
+type SysInfoContext = internal.SysInfoContext
 
-// HasSystemInfoSupplier is an optional interface that SlotSupplier implementations can implement
-// to expose their SystemInfoSupplier.
-type HasSystemInfoSupplier = internal.HasSystemInfoSupplier
+// HasSysInfoProvider is an optional interface that SlotSupplier implementations can implement
+// to expose their SysInfoProvider.
+type HasSysInfoProvider = internal.HasSysInfoProvider
 
 // ResourceBasedTunerOptions configures a resource-based tuner.
 type ResourceBasedTunerOptions = internal.ResourceBasedTunerOptions

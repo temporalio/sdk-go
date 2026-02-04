@@ -2,7 +2,6 @@ package test_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"runtime"
 	"sync"
@@ -537,12 +536,14 @@ func workflowWithFailingActivity(ctx workflow.Context) error {
 	return workflow.ExecuteActivity(ctx, failingActivity).Get(ctx, nil)
 }
 
-// Workflow that panics (simulates workflow task failure)
+// Workflow that panics to simulate a workflow task failure. The flag controls
+// whether it panics, allowing tests to toggle it off so the workflow can
+// eventually complete after the server retries the task.
 var failingWorkflowShouldFail atomic.Bool
 
 func failingWorkflow(ctx workflow.Context) (string, error) {
 	if failingWorkflowShouldFail.Load() {
-		return "", errors.New("intentional workflow failure")
+		panic("intentional workflow task failure")
 	}
 	return "success", nil
 }
@@ -808,6 +809,51 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatFailureMetrics() {
 		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
 			workerInfo.ActivityTaskSlotsInfo.LastIntervalFailureTasks == 0
+	}, 5*time.Second, 200*time.Millisecond, "Last interval failure count should reset to 0")
+}
+
+func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskFailureMetrics() {
+	ctx := context.Background()
+
+	failingWorkflowShouldFail.Store(true)
+	defer failingWorkflowShouldFail.Store(false)
+
+	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.worker.RegisterWorkflow(failingWorkflow)
+	ts.NoError(ts.worker.Start())
+
+	workflowOptions := client.StartWorkflowOptions{
+		ID:        "test-wf-task-failure-" + uuid.NewString(),
+		TaskQueue: ts.taskQueueName,
+	}
+
+	_, err := ts.client.ExecuteWorkflow(ctx, workflowOptions, failingWorkflow)
+	ts.NoError(err)
+
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
+			workerInfo.WorkflowTaskSlotsInfo.TotalFailedTasks >= 1
+	}, 5*time.Second, 200*time.Millisecond, "Should have tracked at least 1 workflow task failure")
+
+	ts.GreaterOrEqual(workerInfo.WorkflowTaskSlotsInfo.TotalFailedTasks, int32(1))
+	ts.GreaterOrEqual(workerInfo.WorkflowTaskSlotsInfo.LastIntervalFailureTasks, int32(1))
+
+	// Stop panicking so the workflow can complete on the next retry
+	failingWorkflowShouldFail.Store(false)
+
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
+			workerInfo.WorkflowTaskSlotsInfo.TotalProcessedTasks >= 1
+	}, 5*time.Second, 200*time.Millisecond, "Should have processed at least 1 workflow task after recovery")
+
+	// Last interval failure count should reset to 0 on a subsequent heartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.WorkflowTaskSlotsInfo != nil &&
+			workerInfo.WorkflowTaskSlotsInfo.LastIntervalFailureTasks == 0
 	}, 5*time.Second, 200*time.Millisecond, "Last interval failure count should reset to 0")
 }
 

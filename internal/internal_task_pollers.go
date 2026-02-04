@@ -975,12 +975,10 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		return &workflowTask{}, nil
 	}
 
-	if wtp.pollTimeTracker != nil {
-		if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_STICKY {
-			wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowStickyTask)
-		} else {
-			wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowTask)
-		}
+	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_STICKY {
+		wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowStickyTask)
+	} else {
+		wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowTask)
 	}
 
 	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
@@ -1182,9 +1180,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		return &activityTask{}, nil
 	}
 
-	if atp.pollTimeTracker != nil {
-		atp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeActivityTask)
-	}
+	atp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeActivityTask)
 
 	workflowType := response.WorkflowType.GetName()
 	activityType := response.ActivityType.GetName()

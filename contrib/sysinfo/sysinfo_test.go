@@ -11,14 +11,14 @@ import (
 
 func TestGetMemoryCpuUsage(t *testing.T) {
 	supplier := SysInfoProvider()
-	ctx := &worker.SystemInfoContext{Logger: log.NewNopLogger()}
+	ctx := &worker.SysInfoContext{Logger: log.NewNopLogger()}
 
-	usage, err := supplier.GetMemoryUsage(ctx)
+	usage, err := supplier.MemoryUsage(ctx)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, usage, 0.0)
 	assert.LessOrEqual(t, usage, 1.0)
 
-	usage, err = supplier.GetCpuUsage(ctx)
+	usage, err = supplier.CpuUsage(ctx)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, usage, 0.0)
 	assert.LessOrEqual(t, usage, 1.0)
@@ -26,26 +26,17 @@ func TestGetMemoryCpuUsage(t *testing.T) {
 
 func TestMaybeRefreshRateLimiting(t *testing.T) {
 	supplier := SysInfoProvider().(*psUtilSystemInfoSupplier)
-	ctx := &worker.SystemInfoContext{Logger: log.NewNopLogger()}
+	ctx := &worker.SysInfoContext{Logger: log.NewNopLogger()}
 
 	// First call should refresh
-	firstUsage, err := supplier.GetMemoryUsage(ctx)
+	firstUsage, err := supplier.MemoryUsage(ctx)
 	require.NoError(t, err)
 	firstRefresh := supplier.lastRefresh.Load()
 
 	// Immediate second call should not refresh (rate limited)
-	secondUsage, err := supplier.GetMemoryUsage(ctx)
+	secondUsage, err := supplier.MemoryUsage(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, firstRefresh, supplier.lastRefresh.Load())
 
 	assert.Equal(t, firstUsage, secondUsage)
-}
-
-func TestNewResourceBasedTuner(t *testing.T) {
-	tuner, err := NewResourceBasedTuner(worker.ResourceBasedTunerOptions{
-		TargetMem: 0.8,
-		TargetCpu: 0.9,
-	})
-	require.NoError(t, err)
-	require.NotNil(t, tuner)
 }

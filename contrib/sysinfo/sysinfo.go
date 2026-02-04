@@ -18,16 +18,10 @@ var sysInfoProvider = sync.OnceValue(func() *psUtilSystemInfoSupplier {
 	}
 })
 
-// SysInfoProvider returns a shared SystemInfoSupplier using gopsutil.
+// SysInfoProvider returns a shared SysInfoProvider using gopsutil.
 // Supports cgroup metrics in containerized Linux environments.
-func SysInfoProvider() worker.SystemInfoSupplier {
+func SysInfoProvider() worker.SysInfoProvider {
 	return sysInfoProvider()
-}
-
-// NewResourceBasedTuner creates a resource-based tuner with gopsutil-based system info.
-func NewResourceBasedTuner(opts worker.ResourceBasedTunerOptions) (worker.WorkerTuner, error) {
-	opts.InfoSupplier = SysInfoProvider()
-	return worker.NewResourceBasedTuner(opts)
 }
 
 type psUtilSystemInfoSupplier struct {
@@ -54,7 +48,7 @@ type cGroupInfo interface {
 	GetLastCPUUsage() float64
 }
 
-func (p *psUtilSystemInfoSupplier) GetMemoryUsage(infoContext *worker.SystemInfoContext) (float64, error) {
+func (p *psUtilSystemInfoSupplier) MemoryUsage(infoContext *worker.SysInfoContext) (float64, error) {
 	if err := p.maybeRefresh(infoContext); err != nil {
 		return 0, err
 	}
@@ -67,7 +61,7 @@ func (p *psUtilSystemInfoSupplier) GetMemoryUsage(infoContext *worker.SystemInfo
 	return p.lastMemStat.UsedPercent / 100, nil
 }
 
-func (p *psUtilSystemInfoSupplier) GetCpuUsage(infoContext *worker.SystemInfoContext) (float64, error) {
+func (p *psUtilSystemInfoSupplier) CpuUsage(infoContext *worker.SysInfoContext) (float64, error) {
 	if err := p.maybeRefresh(infoContext); err != nil {
 		return 0, err
 	}
@@ -80,7 +74,7 @@ func (p *psUtilSystemInfoSupplier) GetCpuUsage(infoContext *worker.SystemInfoCon
 	return p.lastCpuUsage / 100, nil
 }
 
-func (p *psUtilSystemInfoSupplier) maybeRefresh(infoContext *worker.SystemInfoContext) error {
+func (p *psUtilSystemInfoSupplier) maybeRefresh(infoContext *worker.SysInfoContext) error {
 	if time.Since(time.Unix(0, p.lastRefresh.Load())) < 100*time.Millisecond {
 		return nil
 	}

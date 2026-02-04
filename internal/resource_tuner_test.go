@@ -12,11 +12,11 @@ type FakeSystemInfoSupplier struct {
 	cpuUse float64
 }
 
-func (f FakeSystemInfoSupplier) GetMemoryUsage(_ *SystemInfoContext) (float64, error) {
+func (f FakeSystemInfoSupplier) MemoryUsage(_ *SysInfoContext) (float64, error) {
 	return f.memUse, nil
 }
 
-func (f FakeSystemInfoSupplier) GetCpuUsage(_ *SystemInfoContext) (float64, error) {
+func (f FakeSystemInfoSupplier) CpuUsage(_ *SysInfoContext) (float64, error) {
 	return f.cpuUse, nil
 }
 

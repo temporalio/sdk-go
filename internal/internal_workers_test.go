@@ -73,7 +73,6 @@ func TestWorkersTestSuite(t *testing.T) {
 }
 
 func (s *WorkersTestSuite) TestWorkflowWorker() {
-	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
@@ -156,7 +155,6 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 
 		unblockPollCh := make(chan struct{})
 		pollRespondedCh := make(chan struct{})
-		s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 		s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 			Do(func(ctx, in interface{}, opts ...interface{}) {
 				<-unblockPollCh
@@ -221,7 +219,6 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 
 		unblockPollCh := make(chan struct{})
 		pollRespondedCh := make(chan struct{})
-		s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 		s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 			Do(func(ctx, in interface{}, opts ...interface{}) {
 				<-unblockPollCh
@@ -301,7 +298,6 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 
 	unblockPollCh := make(chan struct{})
 	pollRespondedCh := make(chan struct{})
-	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		Do(func(ctx, in interface{}, opts ...interface{}) {
 			<-unblockPollCh
@@ -346,7 +342,6 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 }
 
 func (s *WorkersTestSuite) TestActivityWorker() {
-	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
@@ -392,7 +387,6 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		WorkflowNamespace: "namespace",
 	}
 
-	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(pats, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
@@ -440,7 +434,6 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 }
 
 func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
-	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	executionParameters := workerExecutionParameters{

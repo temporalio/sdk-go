@@ -91,9 +91,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		return nil, nil
 	}
 
-	if ntp.pollTimeTracker != nil {
-		ntp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeNexusTask)
-	}
+	ntp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeNexusTask)
 
 	return &nexusTask{task: response}, nil
 }
