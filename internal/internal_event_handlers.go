@@ -1203,6 +1203,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		// Update workflow info fields
 		weh.workflowInfo.currentHistoryLength = int(event.EventId)
 		weh.workflowInfo.continueAsNewSuggested = event.GetWorkflowTaskStartedEventAttributes().GetSuggestContinueAsNew()
+		weh.workflowInfo.continueAsNewSuggestedReasons = convertContinueAsNewSuggestedReasonsFromProto(
+			event.GetWorkflowTaskStartedEventAttributes().GetSuggestContinueAsNewReasons(),
+		)
 		weh.workflowInfo.currentHistorySize = int(event.GetWorkflowTaskStartedEventAttributes().GetHistorySizeBytes())
 		// Reset the counter on command helper used for generating ID for commands
 		weh.commandsHelper.setCurrentWorkflowTaskStartedEventID(event.GetEventId())
@@ -2157,4 +2160,14 @@ func (weh *workflowExecutionEventHandlerImpl) protocolConstructorForMessage(
 		}, nil
 	}
 	return nil, fmt.Errorf("unsupported protocol: %v", protoName)
+}
+
+func convertContinueAsNewSuggestedReasonsFromProto(
+	reasons []enumspb.SuggestContinueAsNewReason,
+) []ContinueAsNewSuggestedReason {
+	converted := make([]ContinueAsNewSuggestedReason, 0, len(reasons))
+	for _, reason := range reasons {
+		converted = append(converted, ContinueAsNewSuggestedReason(reason))
+	}
+	return converted
 }

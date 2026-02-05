@@ -210,8 +210,9 @@ type (
 		queryHandlers            map[string]*queryHandler
 		updateHandlers           map[string]*updateHandler
 		// runningUpdatesHandles is a map of update handlers that are currently running.
-		runningUpdatesHandles map[string]UpdateInfo
-		VersioningIntent      VersioningIntent
+		runningUpdatesHandles     map[string]UpdateInfo
+		VersioningIntent          VersioningIntent
+		InitialVersioningBehavior ContinueAsNewVersioningBehavior
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
 		currentDetails string

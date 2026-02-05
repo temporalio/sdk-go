@@ -69,6 +69,67 @@ const (
 	VersioningBehaviorAutoUpgrade
 )
 
+// ContinueAsNewVersioningBehavior specifies how the new workflow run after ContinueAsNew should change its Build ID.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehavior]
+type ContinueAsNewVersioningBehavior int
+
+const (
+	// ContinueAsNewVersioningBehaviorUnspecified - Workflow versioning policy unknown.
+	// If the source workflow was AutoUpgrade, the new workflow will start as AutoUpgrade.
+	// If the source workflow was Pinned, the new workflow will start Pinned to the same Build ID.
+	// If the source workflow had a Pinned Versioning Override, the new workflow will inherit that Versioning Override.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehaviorUnspecified]
+	ContinueAsNewVersioningBehaviorUnspecified = iota
+
+	// ContinueAsNewVersioningBehaviorAutoUpgrade - Start the new workflow with AutoUpgrade versioning behavior.
+	// Like all AutoUpgrade workflows, use the Target Version of the workflow's task queue at start-time. After the
+	// first workflow task completes, use whatever Versioning Behavior the workflow is annotated with in the workflow
+	// code.
+	//
+	// Note that if the previous workflow had a Pinned override, that override will be inherited by the new workflow
+	// run regardless of the ContinueAsNewVersioningBehavior specified in the continue-as-new command.
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehaviorAutoUpgrade]
+	ContinueAsNewVersioningBehaviorAutoUpgrade = 1
+)
+
+// ContinueAsNewSuggestedReason specifies why ContinueAsNewSuggested is true. Multiple reasons can be true at the same time.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReason]
+type ContinueAsNewSuggestedReason int
+
+const (
+	// ContinueAsNewSuggestedReasonUnspecified - The reason is unknown.
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonUnspecified]
+	ContinueAsNewSuggestedReasonUnspecified = iota
+
+	// ContinueAsNewSuggestedReasonHistorySizeTooLarge - Workflow History size is getting too large.
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonHistorySizeTooLarge]
+	ContinueAsNewSuggestedReasonHistorySizeTooLarge = 1
+
+	// ContinueAsNewSuggestedReasonTooManyHistoryEvents - Workflow History size is getting too large.
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonTooManyHistoryEvents]
+	ContinueAsNewSuggestedReasonTooManyHistoryEvents = 2
+
+	// ContinueAsNewSuggestedReasonTooManyUpdates - Workflow's count of completed plus in-flight updates is too large.
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonTooManyUpdates]
+	ContinueAsNewSuggestedReasonTooManyUpdates = 3
+
+	// ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged - Workflow's Target Worker Deployment Version
+	// is different from its Current Version and the workflow is versioned.
+	//
+	// The workflow's Target Version is the Current Version of its Task Queue, or, if the Task Queue has a Ramping
+	// Version with non-zero Ramp Percentage `P`, the workflow's Target Version has a P% chance of being the Ramping
+	// Version. Whether a workflow falls into the Ramping group depends on its Workflow ID and the Ramp Percentage.
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged]
+	ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged = 4
+)
+
 // NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
 // caller is cancelled.
 //
@@ -1395,9 +1456,10 @@ type WorkflowInfo struct {
 	// this worker
 	currentTaskBuildID string
 
-	continueAsNewSuggested bool
-	currentHistorySize     int
-	currentHistoryLength   int
+	continueAsNewSuggested        bool
+	continueAsNewSuggestedReasons []ContinueAsNewSuggestedReason
+	currentHistorySize            int
+	currentHistoryLength          int
 	// currentRunID is the current run ID of the workflow task, deterministic over reset
 	currentRunID string
 }
@@ -1447,6 +1509,14 @@ func (wInfo *WorkflowInfo) GetCurrentHistorySize() int {
 // This value may change throughout the life of the workflow.
 func (wInfo *WorkflowInfo) GetContinueAsNewSuggested() bool {
 	return wInfo.continueAsNewSuggested
+}
+
+// GetContinueAsNewSuggestedReasons returns a list of reasons why continue as new is suggested,
+// if the server is configured to suggest continue as new and it is suggested.
+// This value may change throughout the life of the workflow.
+// Note: Continue-as-new versioning is currently experimental.
+func (wInfo *WorkflowInfo) GetContinueAsNewSuggestedReasons() []ContinueAsNewSuggestedReason {
+	return wInfo.continueAsNewSuggestedReasons
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.
@@ -2997,5 +3067,16 @@ func versioningBehaviorToProto(t VersioningBehavior) enumspb.VersioningBehavior 
 		return enumspb.VERSIONING_BEHAVIOR_AUTO_UPGRADE
 	default:
 		panic("unknown versioning behavior type")
+	}
+}
+
+func continueAsNewVersioningBehaviorToProto(t ContinueAsNewVersioningBehavior) enumspb.ContinueAsNewVersioningBehavior {
+	switch t {
+	case ContinueAsNewVersioningBehaviorUnspecified:
+		return enumspb.CONTINUE_AS_NEW_VERSIONING_BEHAVIOR_UNSPECIFIED
+	case ContinueAsNewVersioningBehaviorAutoUpgrade:
+		return enumspb.CONTINUE_AS_NEW_VERSIONING_BEHAVIOR_AUTO_UPGRADE
+	default:
+		panic("unknown continue-as-new versioning behavior type")
 	}
 }

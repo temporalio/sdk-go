@@ -64,7 +64,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeployment(ctx context.Context
 	ts.Eventually(func() bool {
 		_, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 		return err == nil
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
@@ -83,7 +83,39 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
 			}
 		}
 		return false
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
+}
+
+func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropagation(
+	ctx context.Context,
+	deploymentName string,
+	expectedCurrentBuildID string,
+	expectedRampingBuildID string,
+) {
+	ts.Eventually(func() bool {
+		resp, err := ts.client.WorkflowService().DescribeWorkerDeployment(ctx, &workflowservice.DescribeWorkerDeploymentRequest{
+			Namespace:      ts.config.Namespace,
+			DeploymentName: deploymentName,
+		})
+		if err != nil {
+			return false
+		}
+		if resp.GetWorkerDeploymentInfo().GetRoutingConfig().GetCurrentDeploymentVersion().GetBuildId() != expectedCurrentBuildID {
+			return false
+		}
+		if resp.GetWorkerDeploymentInfo().GetRoutingConfig().GetRampingDeploymentVersion().GetBuildId() != expectedRampingBuildID {
+			return false
+		}
+		switch resp.GetWorkerDeploymentInfo().GetRoutingConfigUpdateState() {
+		case enumspb.ROUTING_CONFIG_UPDATE_STATE_COMPLETED:
+			return true
+		case enumspb.ROUTING_CONFIG_UPDATE_STATE_UNSPECIFIED:
+			return true // not implemented
+		case enumspb.ROUTING_CONFIG_UPDATE_STATE_IN_PROGRESS:
+			return false
+		}
+		return false
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context, handle client.WorkflowRun) {
@@ -92,7 +124,23 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context,
 		ts.NoError(err)
 		status := describeResp.WorkflowExecutionInfo.Status
 		return enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING == status
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
+}
+
+func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunningOnVersion(ctx context.Context, handle client.WorkflowRun, expectedBuildID string) {
+	ts.Eventually(func() bool {
+		describeResp, err := ts.client.DescribeWorkflowExecution(ctx, handle.GetID(), handle.GetRunID())
+		ts.NoError(err)
+		if status := describeResp.WorkflowExecutionInfo.Status; status != enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING {
+			ts.T().Logf("workflow status: %v", status)
+			return false
+		}
+		if describeResp.WorkflowExecutionInfo.GetVersioningInfo().GetDeploymentVersion().GetBuildId() != expectedBuildID {
+			ts.T().Logf("workflow version build id: %v", describeResp.WorkflowExecutionInfo.GetVersioningInfo().GetDeploymentVersion().GetBuildId())
+			return false
+		}
+		return true
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForDrainage(ctx context.Context, dHandle client.WorkerDeploymentHandle, buildID string, target client.WorkerDeploymentVersionDrainageStatus) {
@@ -792,7 +840,7 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 		}
 		sort.Strings(res)
 		return reflect.DeepEqual(res, []string{deploymentName1, deploymentName2})
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
@@ -1045,7 +1093,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	// very likely probability (1-2^33) of success
 	ts.Eventually(func() bool {
 		return !ts.runWorkflowAndCheckV1(ctx, uuid.NewString())
-	}, 10*time.Second, 300*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) TestRampVersion_AllowNoPollers() {
@@ -1281,4 +1329,104 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 		}
 		return true
 	}, 305*time.Second, 1000*time.Millisecond)
+}
+
+func (ts *WorkerDeploymentTestSuite) TestContinueAsNewWithVersionUpgrade() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	v1 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "1.0",
+	}
+	v2 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "2.0",
+	}
+
+	// Two workers:
+	// 1.0) and 2.0) both with no default versioning behavior
+	// SetCurrent to 1.0
+	// Workflow (annotated as Pinned):
+	// - Start and wait for continue-as-new-suggested boolean
+	// - If continue-as-new-suggested is true and the reason is version-changed, continue as new with AutoUpgrade behavior
+	// Verify workflow returns 2.0.
+
+	// Define v1.0 of the workflow and start polling
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       v1,
+		},
+	})
+	worker1.RegisterWorkflowWithOptions(ts.workflows.ContinueAsNewWithVersionUpgradeV1, workflow.RegisterOptions{
+		Name:               "ContinueAsNewWithVersionUpgrade",
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	// Define v2.0 of the workflow and start polling
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       v2,
+		},
+	})
+	worker2.RegisterWorkflowWithOptions(ts.workflows.ContinueAsNewWithVersionUpgradeV2, workflow.RegisterOptions{
+		Name:               "ContinueAsNewWithVersionUpgrade",
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	// Wait for the deployment to be ready
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+	ts.waitForWorkerDeployment(ctx, dHandle)
+	response1, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+
+	// Wait for version 1.0 to be ready
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
+
+	// Set version 1.0 as current
+	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		BuildID:       v1.BuildID,
+		ConflictToken: response1.ConflictToken,
+	})
+	ts.NoError(err)
+
+	// Wait for v1.0-as-Current Deployment Routing Config to be propagated to all task queues
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
+
+	// Start workflow
+	wfHandle, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions("test-continueasnew-with-version-upgrade"),
+		"ContinueAsNewWithVersionUpgrade",
+		0,
+	)
+	ts.NoError(err)
+
+	// Wait for workflow to complete one WFT on v1.0
+	ts.waitForWorkflowRunningOnVersion(ctx, wfHandle, v1.BuildID)
+
+	// Wait for version 2.0 to be ready
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
+
+	// Set version 2.0 as current
+	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		BuildID:       v2.BuildID,
+		ConflictToken: response2.ConflictToken,
+	})
+	ts.NoError(err)
+
+	// Wait for v2.0-as-Current Deployment Routing Config to be propagated to all task queues
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v2.BuildID, "")
+
+	// Expect workflow to return "v2.0", indicating that it continued-as-new and completed on v2
+	var result string
+	ts.NoError(wfHandle.Get(ctx, &result))
+	ts.Equal("v2.0", result)
 }
