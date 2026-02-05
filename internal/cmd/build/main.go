@@ -121,7 +121,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.5.0-rc",
+				Version: "v1.5.2-standalone-activity-server",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
@@ -155,6 +155,9 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
 				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
 				"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
+				"--dynamic-config-value", "activity.enableStandalone=true",
+				"--dynamic-config-value", "history.enableChasm=true",
+				"--dynamic-config-value", "history.enableTransitionHistory=true",
 			},
 		})
 		if err != nil {

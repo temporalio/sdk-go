@@ -1233,3 +1233,49 @@ func TestDynamicWorkflows(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "dynamic-activity - grape - cherry", result)
 }
+
+func checkActivityInfo(ctx context.Context, isWorkflowActivity bool) error {
+	info := GetActivityInfo(ctx)
+	if isWorkflowActivity {
+		if !info.IsWorkflowActivity() {
+			return fmt.Errorf("expected IsWorkflowActivity to be true")
+		}
+		if info.ActivityRunID != "" {
+			return fmt.Errorf("expected ActivityRunID to be empty")
+		}
+	} else {
+		if info.IsWorkflowActivity() {
+			return fmt.Errorf("expected IsWorkflowActivity to be false")
+		}
+		if info.ActivityRunID == "" {
+			return fmt.Errorf("expected ActivityRunID to be non-empty")
+		}
+	}
+	return nil
+}
+
+func TestExecuteActivitiesInWorkflow(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestActivityEnvironment()
+	env.RegisterActivity(checkActivityInfo)
+
+	// Default true
+	_, err := env.ExecuteActivity(checkActivityInfo, true)
+	require.NoError(t, err)
+	_, err = env.ExecuteActivity(checkActivityInfo, false)
+	require.Error(t, err)
+
+	// Setting to false
+	env.SetExecuteActivitiesInWorkflow(false)
+	_, err = env.ExecuteActivity(checkActivityInfo, true)
+	require.Error(t, err)
+	_, err = env.ExecuteActivity(checkActivityInfo, false)
+	require.NoError(t, err)
+
+	// Explicitly setting to true
+	env.SetExecuteActivitiesInWorkflow(true)
+	_, err = env.ExecuteActivity(checkActivityInfo, false)
+	require.Error(t, err)
+	_, err = env.ExecuteActivity(checkActivityInfo, true)
+	require.NoError(t, err)
+}
