@@ -661,7 +661,7 @@ func (w *workflowClientInterceptor) PollActivityResult(
 	}
 
 	var resp *workflowservice.PollActivityExecutionResponse
-	for resp.GetOutcome() != nil {
+	for resp.GetOutcome() == nil {
 		var err error
 		resp, err = w.client.WorkflowService().PollActivityExecution(grpcCtx, request)
 		if err != nil {
