@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"iter"
 	"strconv"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -716,7 +715,7 @@ func (t *testSuiteClientForNexusOperations) GetActivityHandle(options ClientGetA
 	panic("unimplemented in the test environment")
 }
 
-func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) iter.Seq2[*ClientActivityExecutionInfo, error] {
+func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) ClientListActivitiesResult {
 	panic("unimplemented in the test environment")
 }
 

@@ -6,8 +6,6 @@ package mocks
 
 import (
 	"context"
-	"iter"
-
 	"go.temporal.io/sdk/client"
 
 	"go.temporal.io/api/enums/v1"
@@ -1160,18 +1158,18 @@ func (_m *Client) GetActivityHandle(options client.GetActivityHandleOptions) cli
 	return r0
 }
 
-func (_m *Client) ListActivities(ctx context.Context, options client.ListActivitiesOptions) iter.Seq2[*client.ActivityExecutionInfo, error] {
+func (_m *Client) ListActivities(ctx context.Context, options client.ListActivitiesOptions) client.ListActivitiesResult {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListActivities")
 	}
 
-	var r0 iter.Seq2[*client.ActivityExecutionInfo, error]
-	if rf, ok := ret.Get(0).(func(context.Context, client.ListActivitiesOptions) iter.Seq2[*client.ActivityExecutionInfo, error]); ok {
+	var r0 client.ListActivitiesResult
+	if rf, ok := ret.Get(0).(func(context.Context, client.ListActivitiesOptions) client.ListActivitiesResult); ok {
 		r0 = rf(ctx, options)
 	} else {
-		r0 = ret.Get(0).(iter.Seq2[*client.ActivityExecutionInfo, error])
+		r0 = ret.Get(0).(client.ListActivitiesResult)
 	}
 
 	return r0

@@ -7,7 +7,6 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	failurepb "go.temporal.io/api/failure/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -587,7 +586,7 @@ type ClientDescribeWorkflowOutput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientExecuteActivityInput]
 type ClientExecuteActivityInput struct {
 	Options      *ClientStartActivityOptions
-	ActivityType *ActivityType
+	ActivityType string
 	Args         []interface{}
 }
 
@@ -665,8 +664,10 @@ type ClientPollActivityResultInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientPollActivityResultOutput]
 type ClientPollActivityResultOutput struct {
-	Result  *commonpb.Payloads
-	Failure *failurepb.Failure
+	// Result is the result of the update, if it has completed successfully.
+	Result converter.EncodedValue
+	// Error is the result of a failed update.
+	Error error
 }
 
 // NexusOutboundInterceptor intercepts Nexus operation method invocations. See documentation in the interceptor package
