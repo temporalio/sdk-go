@@ -15,8 +15,6 @@ import (
 
 type (
 	// UpdateWorkflowExecutionOptionsRequest is a request for [Client.UpdateWorkflowExecutionOptions].
-	//
-	// NOTE: Experimental
 	UpdateWorkflowExecutionOptionsRequest struct {
 		// ID of the workflow.
 		WorkflowId string
@@ -27,8 +25,6 @@ type (
 	}
 
 	// WorkflowExecutionOptions describes options for a workflow execution.
-	//
-	// NOTE: Experimental
 	WorkflowExecutionOptions struct {
 		// If set, it takes precedence over the Versioning Behavior provided with code annotations.
 		VersioningOverride VersioningOverride
@@ -36,8 +32,6 @@ type (
 
 	// WorkflowExecutionOptionsChanges describes changes to the options of a workflow execution in
 	// [WorkflowExecutionOptions]. An entry with a `nil` pointer means do not change.
-	//
-	// NOTE: Experimental
 	WorkflowExecutionOptionsChanges struct {
 		// If non-nil, change the versioning override.
 		VersioningOverride *VersioningOverrideChange
@@ -45,8 +39,6 @@ type (
 
 	// VersioningOverrideChange sets or removes a versioning override when used with
 	// [WorkflowExecutionOptionsChanges].
-	//
-	// NOTE: Experimental
 	VersioningOverrideChange struct {
 		// Set the override entry if non-nil. If nil, remove any previously set override.
 		Value VersioningOverride
@@ -59,23 +51,17 @@ type (
 	// To remove the override, the [UpdateWorkflowExecutionOptionsRequest] should include a pointer
 	// to an empty [VersioningOverride] value in [WorkflowExecutionOptionsChanges]. See
 	// [WorkflowExecutionOptionsChanges] for details.
-	//
-	// NOTE: Experimental
 	VersioningOverride interface {
 		behavior() VersioningBehavior
 	}
 
 	// PinnedVersioningOverride means the workflow will be pinned to a specific deployment version.
-	//
-	// NOTE: Experimental
 	PinnedVersioningOverride struct {
 		Version WorkerDeploymentVersion
 	}
 
 	// AutoUpgradeVersioningOverride means the workflow will auto-upgrade to the current deployment
 	// version on the next workflow task.
-	//
-	// NOTE: Experimental
 	AutoUpgradeVersioningOverride struct {
 	}
 

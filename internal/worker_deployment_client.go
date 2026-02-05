@@ -11,15 +11,11 @@ import (
 // Deployment Version enabling users to decide when they can safely decommission this
 // Version.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionDrainageStatus]
 type WorkerDeploymentVersionDrainageStatus int
 
 const (
 	// WorkerDeploymentVersionDrainageStatusUnspecified - Drainage status not specified.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionDrainageStatusUnspecified]
 	WorkerDeploymentVersionDrainageStatusUnspecified = iota
@@ -27,8 +23,6 @@ const (
 	// WorkerDeploymentVersionDrainageStatusDraining - The Worker Deployment Version is not
 	// used by new workflows, but it is still used by open pinned workflows.
 	// This Version cannot be decommissioned safely.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionDrainageStatusDraining]
 	WorkerDeploymentVersionDrainageStatusDraining
@@ -39,8 +33,6 @@ const (
 	// does not expect to query closed workflows. In some cases this requires waiting for some
 	// time after it is drained to guarantee no pending queries.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionDrainageStatusDrained]
 	WorkerDeploymentVersionDrainageStatusDrained
 )
@@ -49,15 +41,11 @@ type (
 
 	// WorkerDeploymentDescribeOptions provides options for [WorkerDeploymentHandle.Describe].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDescribeOptions]
 	WorkerDeploymentDescribeOptions struct {
 	}
 
 	// WorkerDeploymentVersionSummary provides a brief description of a Version.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionSummary]
 	WorkerDeploymentVersionSummary struct {
@@ -73,8 +61,6 @@ type (
 	}
 
 	// WorkerDeploymentInfo provides information about a Worker Deployment.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentInfo]
 	WorkerDeploymentInfo struct {
@@ -108,8 +94,6 @@ type (
 
 	// WorkerDeploymentDescribeResponse is the response type for [WorkerDeploymentHandle.Describe].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDescribeResponse]
 	WorkerDeploymentDescribeResponse struct {
 		// ConflictToken - Token to serialize Worker Deployment operations.
@@ -121,8 +105,6 @@ type (
 
 	// WorkerDeploymentSetCurrentVersionOptions provides options for
 	// [WorkerDeploymentHandle.SetCurrentVersion].
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetCurrentVersionOptions]
 	WorkerDeploymentSetCurrentVersionOptions struct {
@@ -172,8 +154,6 @@ type (
 	// WorkerDeploymentSetCurrentVersionResponse is the response for
 	// [WorkerDeploymentHandle.SetCurrentVersion].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetCurrentVersionResponse]
 	WorkerDeploymentSetCurrentVersionResponse struct {
 		// ConflictToken - Token to serialize Worker Deployment operations.
@@ -188,8 +168,6 @@ type (
 
 	// WorkerDeploymentSetRampingVersionOptions provides options for
 	// [WorkerDeploymentHandle.SetRampingVersion].
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetRampingVersionOptions]
 	WorkerDeploymentSetRampingVersionOptions struct {
@@ -242,8 +220,6 @@ type (
 	// WorkerDeploymentSetRampingVersionResponse is the response for
 	// [WorkerDeploymentHandle.SetRampingVersion].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetRampingVersionResponse]
 	WorkerDeploymentSetRampingVersionResponse struct {
 		// ConflictToken - Token to serialize Worker Deployment operations.
@@ -264,8 +240,6 @@ type (
 
 	// WorkerDeploymentSetManagerIdentityOptions provides options for
 	// [WorkerDeploymentHandle.SetManagerIdentity].
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityOptions]
 	WorkerDeploymentSetManagerIdentityOptions struct {
@@ -299,8 +273,6 @@ type (
 	// WorkerDeploymentSetManagerIdentityResponse is the response for
 	// [WorkerDeploymentHandle.SetManagerIdentity].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentSetManagerIdentityResponse]
 	WorkerDeploymentSetManagerIdentityResponse struct {
 		// ConflictToken - Token to serialize Worker Deployment operations.
@@ -316,8 +288,6 @@ type (
 	// WorkerDeploymentDescribeVersionOptions provides options for
 	// [WorkerDeploymentHandle.DescribeVersion].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDescribeVersionOptions]
 	WorkerDeploymentDescribeVersionOptions struct {
 		// BuildID - A Build ID within this deployment to describe.
@@ -326,8 +296,6 @@ type (
 
 	// WorkerDeploymentTaskQueueInfo describes properties of the Task Queues involved
 	// in a Deployment Version.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentTaskQueueInfo]
 	WorkerDeploymentTaskQueueInfo struct {
@@ -340,8 +308,6 @@ type (
 
 	// WorkerDeploymentVersionDrainageInfo describes drainage properties of a Deployment Version.
 	// This enables users to safely decide when they can decommission a Version.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionDrainageInfo]
 	WorkerDeploymentVersionDrainageInfo struct {
@@ -358,8 +324,6 @@ type (
 	}
 
 	// WorkerDeploymentVersionInfo provides information about a Worker Deployment Version.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionInfo]
 	WorkerDeploymentVersionInfo struct {
@@ -397,8 +361,6 @@ type (
 	// WorkerDeploymentVersionDescription is the response for
 	// [WorkerDeploymentHandle.DescribeVersion].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentVersionDescription]
 	WorkerDeploymentVersionDescription struct {
 		// Info - Information about this Version.
@@ -407,8 +369,6 @@ type (
 
 	// WorkerDeploymentDeleteVersionOptions provides options for
 	// [WorkerDeploymentHandle.DeleteVersion].
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDeleteVersionOptions]
 	WorkerDeploymentDeleteVersionOptions struct {
@@ -429,16 +389,12 @@ type (
 	// WorkerDeploymentDeleteVersionResponse is the response for
 	// [WorkerDeploymentHandle.DeleteVersion].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDeleteVersionResponse]
 	WorkerDeploymentDeleteVersionResponse struct {
 	}
 
 	// WorkerDeploymentMetadataUpdate modifies user-defined metadata entries that describe
 	// a Version.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentMetadataUpdate]
 	WorkerDeploymentMetadataUpdate struct {
@@ -454,8 +410,6 @@ type (
 	// WorkerDeploymentUpdateVersionMetadataOptions provides options for
 	// [WorkerDeploymentHandle.UpdateVersionMetadata].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentUpdateVersionMetadataOptions]
 	WorkerDeploymentUpdateVersionMetadataOptions struct {
 		// Version - the deployment version to target.
@@ -468,8 +422,6 @@ type (
 	// WorkerDeploymentUpdateVersionMetadataResponse is the response for
 	// [WorkerDeploymentHandle.UpdateVersionMetadata].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentUpdateVersionMetadataResponse]
 	WorkerDeploymentUpdateVersionMetadataResponse struct {
 		// Metadata - A user-defined set of key-values after the update.
@@ -478,36 +430,24 @@ type (
 
 	// WorkerDeploymentHandle is a handle to a Worker Deployment.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentHandle]
 	WorkerDeploymentHandle interface {
 		// Describe returns a description of this Worker Deployment.
-		//
-		// NOTE: Experimental
 		Describe(ctx context.Context, options WorkerDeploymentDescribeOptions) (WorkerDeploymentDescribeResponse, error)
 
 		// SetCurrentVersion changes the Current Version for this Worker Deployment.
 		//
 		// It also unsets the Ramping Version when it matches the Version being set as Current.
-		//
-		// NOTE: Experimental
 		SetCurrentVersion(ctx context.Context, options WorkerDeploymentSetCurrentVersionOptions) (WorkerDeploymentSetCurrentVersionResponse, error)
 
 		// SetRampingVersion changes the Ramping Version of this Worker Deployment and its ramp
 		// percentage.
-		//
-		// NOTE: Experimental
 		SetRampingVersion(ctx context.Context, options WorkerDeploymentSetRampingVersionOptions) (WorkerDeploymentSetRampingVersionResponse, error)
 
 		// SetManagerIdentity changes the Manager Identity of this Worker Deployment.
-		//
-		// NOTE: Experimental
 		SetManagerIdentity(ctx context.Context, options WorkerDeploymentSetManagerIdentityOptions) (WorkerDeploymentSetManagerIdentityResponse, error)
 
 		// DescribeVersion gives a description of one the Versions in this Worker Deployment.
-		//
-		// NOTE: Experimental
 		DescribeVersion(ctx context.Context, options WorkerDeploymentDescribeVersionOptions) (WorkerDeploymentVersionDescription, error)
 
 		// DeleteVersion manually removes a Version. This is rarely needed during normal operation
@@ -516,20 +456,14 @@ type (
 		//  - It is not the Current or Ramping Version for this Deployment.
 		//  - It has no active pollers, i.e., none of the task queues in the Version have pollers.
 		//  - It is not draining. This requirement can be ignored with the option SkipDrainage.
-		//
-		// NOTE: Experimental
 		DeleteVersion(ctx context.Context, options WorkerDeploymentDeleteVersionOptions) (WorkerDeploymentDeleteVersionResponse, error)
 
 		// UpdateVersionMetadata changes the metadata associated with a Worker Version in this
 		// Deployment.
-		//
-		// NOTE: Experimental
 		UpdateVersionMetadata(ctx context.Context, options WorkerDeploymentUpdateVersionMetadataOptions) (WorkerDeploymentUpdateVersionMetadataResponse, error)
 	}
 
 	// DeploymentListOptions are the parameters for configuring listing Worker Deployments.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentListOptions]
 	WorkerDeploymentListOptions struct {
@@ -541,8 +475,6 @@ type (
 
 	// WorkerDeploymentRoutingConfig describes when new or existing Workflow Tasks are
 	// executed with this Worker Deployment.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentRoutingConfig]
 	WorkerDeploymentRoutingConfig struct {
@@ -582,8 +514,6 @@ type (
 
 	// WorkerDeploymentListEntry is a subset of fields from [WorkerDeploymentInfo].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentListEntry]
 	WorkerDeploymentListEntry struct {
 		// Name - The deployment name.
@@ -598,8 +528,6 @@ type (
 
 	// WorkerDeploymentListIterator is an iterator for deployments.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentListIterator]
 	WorkerDeploymentListIterator interface {
 		// HasNext - Return whether this iterator has next value.
@@ -610,8 +538,6 @@ type (
 	}
 
 	// WorkerDeploymentDeleteOptions provides options for [WorkerDeploymentClient.Delete].
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDeleteOptions]
 	WorkerDeploymentDeleteOptions struct {
@@ -626,21 +552,15 @@ type (
 
 	// WorkerDeploymentDeleteResponse is the response for [WorkerDeploymentClient.Delete].
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentDeleteResponse]
 	WorkerDeploymentDeleteResponse struct {
 	}
 
 	// WorkerDeploymentClient is the client that manages Worker Deployments.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentClient]
 	WorkerDeploymentClient interface {
 		// List returns an iterator to enumerate Worker Deployments in the client's namespace.
-		//
-		// NOTE: Experimental
 		List(ctx context.Context, options WorkerDeploymentListOptions) (WorkerDeploymentListIterator, error)
 
 		// GetHandle returns a handle to a Worker Deployment.
@@ -648,14 +568,10 @@ type (
 		// This method does not validate the Worker Deployment Name. If there is no deployment
 		// with that name in this namespace, methods like WorkerDeploymentHandle.Describe()
 		// will return an error.
-		//
-		// NOTE: Experimental
 		GetHandle(name string) WorkerDeploymentHandle
 
 		// Delete removes the records of a Worker Deployment. A Deployment can only be
 		// deleted if it has no Version in it.
-		//
-		// NOTE: Experimental
 		Delete(ctx context.Context, options WorkerDeploymentDeleteOptions) (WorkerDeploymentDeleteResponse, error)
 	}
 )

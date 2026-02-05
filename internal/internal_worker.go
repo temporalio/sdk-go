@@ -214,8 +214,6 @@ type (
 
 	// Represents the version of a specific worker deployment.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/worker.WorkerDeploymentVersion]
 	WorkerDeploymentVersion struct {
 		// The name of the deployment this worker version belongs to

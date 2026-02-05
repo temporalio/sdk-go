@@ -332,8 +332,6 @@ type (
 		// UpdateWorkflowExecutionOptions partially overrides the [WorkflowExecutionOptions] of an existing workflow execution
 		// and returns the new [WorkflowExecutionOptions] after applying the changes.
 		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
-		//
-		// NOTE: Experimental
 		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
 
 		// DescribeTaskQueue returns information about the target taskqueue, right now this API returns the
@@ -353,12 +351,21 @@ type (
 		// UpdateWorkerBuildIdCompatibility allows you to update the worker-build-id based version sets for a particular
 		// task queue. This is used in conjunction with workers who specify their build id and thus opt into the
 		// feature.
+		//
+		// Deprecated: Build-ID based versioning is deprecated. Use Worker Deployment based versioning instead.
+		// See https://docs.temporal.io/worker-versioning for more information.
 		UpdateWorkerBuildIdCompatibility(ctx context.Context, options *UpdateWorkerBuildIdCompatibilityOptions) error
 
 		// GetWorkerBuildIdCompatibility returns the worker-build-id based version sets for a particular task queue.
+		//
+		// Deprecated: Build-ID based versioning is deprecated. Use Worker Deployment based versioning instead.
+		// See https://docs.temporal.io/worker-versioning for more information.
 		GetWorkerBuildIdCompatibility(ctx context.Context, options *GetWorkerBuildIdCompatibilityOptions) (*WorkerBuildIDVersionSets, error)
 
 		// GetWorkerTaskReachability returns which versions are is still in use by open or closed workflows.
+		//
+		// Deprecated: Build-ID based versioning is deprecated. Use Worker Deployment based versioning instead.
+		// See https://docs.temporal.io/worker-versioning for more information.
 		GetWorkerTaskReachability(ctx context.Context, options *GetWorkerTaskReachabilityOptions) (*WorkerTaskReachability, error)
 
 		// DescribeTaskQueueEnhanced returns information about the target task queue, broken down by Build Id:
@@ -369,18 +376,24 @@ type (
 		// about the task queue, or an error when the response identifies an unsupported server.
 		// Note that using a sticky queue as target is not supported.
 		// Also, workflow reachability status is eventually consistent, and it could take a few minutes to update.
-		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
+		//
+		// Deprecated: Build-ID based versioning is deprecated. Use Worker Deployment based versioning instead.
+		// See https://docs.temporal.io/worker-versioning for more information.
 		DescribeTaskQueueEnhanced(ctx context.Context, options DescribeTaskQueueEnhancedOptions) (TaskQueueDescription, error)
 
 		// UpdateWorkerVersioningRules allows updating the worker-build-id based assignment and redirect rules for a given
 		// task queue. This is used in conjunction with workers who specify their build id and thus opt into the feature.
 		// The errors it can return:
 		//  - serviceerror.FailedPrecondition when the conflict token is invalid
-		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
+		//
+		// Deprecated: Build-ID based versioning is deprecated. Use Worker Deployment based versioning instead.
+		// See https://docs.temporal.io/worker-versioning for more information.
 		UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error)
 
 		// GetWorkerVersioningRules returns the worker-build-id assignment and redirect rules for a task queue.
-		// WARNING: Worker versioning is currently experimental, and requires server 1.24+
+		//
+		// Deprecated: Build-ID based versioning is deprecated. Use Worker Deployment based versioning instead.
+		// See https://docs.temporal.io/worker-versioning for more information.
 		GetWorkerVersioningRules(ctx context.Context, options GetWorkerVersioningOptions) (*WorkerVersioningRules, error)
 
 		// CheckHealth performs a server health check using the gRPC health check
@@ -765,8 +778,6 @@ type (
 		// To unset the override after the workflow is running, use [UpdateWorkflowExecutionOptions].
 		//
 		// Optional: defaults to no override.
-		//
-		// NOTE: Experimental
 		VersioningOverride VersioningOverride
 
 		// Priority - Optional priority settings that control relative ordering of

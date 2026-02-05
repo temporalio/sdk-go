@@ -59,21 +59,15 @@ const (
 // WorkerDeploymentVersionDrainageStatus specifies the drainage status for a Worker
 // Deployment Version enabling users to decide when they can safely decommission this
 // Version.
-//
-// NOTE: Experimental
 type WorkerDeploymentVersionDrainageStatus = internal.WorkerDeploymentVersionDrainageStatus
 
 const (
 	// WorkerDeploymentVersionDrainageStatusUnspecified - Drainage status not specified.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentVersionDrainageStatusUnspecified = internal.WorkerDeploymentVersionDrainageStatusUnspecified
 
 	// WorkerDeploymentVersionDrainageStatusDraining - The Worker Deployment Version is not
 	// used by new workflows, but it is still used by open pinned workflows.
 	// This Version cannot be decommissioned safely.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentVersionDrainageStatusDraining = internal.WorkerDeploymentVersionDrainageStatusDraining
 
 	// WorkerDeploymentVersionDrainageStatusDrained - The Worker Deployment Version is not
@@ -81,29 +75,21 @@ const (
 	// Queries sent to closed workflows. This Version can be decommissioned safely if the user
 	// does not expect to query closed workflows. In some cases this requires waiting for some
 	// time after it is drained to guarantee no pending queries.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentVersionDrainageStatusDrained = internal.WorkerDeploymentVersionDrainageStatusDrained
 )
 
 // WorkerVersioningMode specifies whether the workflows processed by this
 // worker use the worker's Version. The Temporal Server will use this worker's
 // choice when dispatching tasks to it.
-//
-// NOTE: Experimental
 type WorkerVersioningMode = internal.WorkerVersioningMode
 
 const (
 	// WorkerVersioningModeUnspecified - Versioning mode not reported.
-	//
-	// NOTE: Experimental
 	WorkerVersioningModeUnspecified = internal.WorkerVersioningModeUnspecified
 
 	// WorkerVersioningModeUnversioned - Workers with this mode are not
 	// distinguished from each other for task routing, even if they
 	// have different versions.
-	//
-	// NOTE: Experimental
 	WorkerVersioningModeUnversioned = internal.WorkerVersioningModeUnversioned
 
 	// WorkerVersioningModeVersioned - Workers with this mode are part of a
@@ -113,8 +99,6 @@ const (
 	// Each Deployment Version is distinguished from other Versions for task
 	// routing, and users can configure the Temporal Server to send tasks to a
 	// particular Version.
-	//
-	// NOTE: Experimental
 	WorkerVersioningModeVersioned = internal.WorkerVersioningModeVersioned
 )
 
@@ -346,159 +330,103 @@ type (
 	UpdateWithStartWorkflowOptions = internal.UpdateWithStartWorkflowOptions
 
 	// WorkerDeploymentDescribeOptions provides options for [WorkerDeploymentHandle.Describe].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentDescribeOptions = internal.WorkerDeploymentDescribeOptions
 
 	// WorkerDeploymentVersionSummary provides a brief description of a Version.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentVersionSummary = internal.WorkerDeploymentVersionSummary
 
 	// WorkerDeploymentInfo provides information about a Worker Deployment.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentInfo = internal.WorkerDeploymentInfo
 
 	// WorkerDeploymentDescribeResponse is the response type for [WorkerDeploymentHandle.Describe].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentDescribeResponse = internal.WorkerDeploymentDescribeResponse
 
 	// WorkerDeploymentSetCurrentVersionOptions provides options for
 	// [WorkerDeploymentHandle.SetCurrentVersion].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentSetCurrentVersionOptions = internal.WorkerDeploymentSetCurrentVersionOptions
 
 	// WorkerDeploymentSetCurrentVersionResponse is the response for
 	// [WorkerDeploymentHandle.SetCurrentVersion].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentSetCurrentVersionResponse = internal.WorkerDeploymentSetCurrentVersionResponse
 
 	// WorkerDeploymentSetRampingVersionOptions provides options for
 	// [WorkerDeploymentHandle.SetRampingVersion].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentSetRampingVersionOptions = internal.WorkerDeploymentSetRampingVersionOptions
 
 	// WorkerDeploymentSetRampingVersionResponse is the response for
 	// [WorkerDeploymentHandle.SetRampingVersion].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentSetRampingVersionResponse = internal.WorkerDeploymentSetRampingVersionResponse
 
 	// WorkerDeploymentSetManagerIdentityOptions provides options for
 	// [WorkerDeploymentHandle.SetManagerIdentity].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentSetManagerIdentityOptions = internal.WorkerDeploymentSetManagerIdentityOptions
 
 	// WorkerDeploymentSetManagerIdentityResponse is the response for
 	// [WorkerDeploymentHandle.SetManagerIdentity].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentSetManagerIdentityResponse = internal.WorkerDeploymentSetManagerIdentityResponse
 
 	// WorkerDeploymentDescribeVersionOptions provides options for
 	// [WorkerDeploymentHandle.DescribeVersion].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentDescribeVersionOptions = internal.WorkerDeploymentDescribeVersionOptions
 
 	// WorkerDeploymentTaskQueueInfo describes properties of the Task Queues involved
 	// in a Deployment Version.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentTaskQueueInfo = internal.WorkerDeploymentTaskQueueInfo
 
 	// WorkerDeploymentVersionDrainageInfo describes drainage properties of a Deployment Version.
 	// This enables users to safely decide when they can decommission a Version.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentVersionDrainageInfo = internal.WorkerDeploymentVersionDrainageInfo
 
 	// WorkerDeploymentVersionInfo provides information about a Worker Deployment Version.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentVersionInfo = internal.WorkerDeploymentVersionInfo
 
 	// WorkerDeploymentVersionDescription is the response for
 	// [WorkerDeploymentHandle.DescribeVersion].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentVersionDescription = internal.WorkerDeploymentVersionDescription
 
 	// WorkerDeploymentDeleteVersionOptions provides options for
 	// [WorkerDeploymentHandle.DeleteVersion].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentDeleteVersionOptions = internal.WorkerDeploymentDeleteVersionOptions
 
 	// WorkerDeploymentDeleteVersionResponse is the response for
 	// [WorkerDeploymentHandle.DeleteVersion].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentDeleteVersionResponse = internal.WorkerDeploymentDeleteVersionResponse
 
 	// WorkerDeploymentMetadataUpdate modifies user-defined metadata entries that describe
 	// a Version.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentMetadataUpdate = internal.WorkerDeploymentMetadataUpdate
 
 	// WorkerDeploymentUpdateVersionMetadataOptions provides options for
 	// [WorkerDeploymentHandle.UpdateVersionMetadata].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentUpdateVersionMetadataOptions = internal.WorkerDeploymentUpdateVersionMetadataOptions
 
 	// WorkerDeploymentUpdateVersionMetadataResponse is the response for
 	// [WorkerDeploymentHandle.UpdateVersionMetadata].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentUpdateVersionMetadataResponse = internal.WorkerDeploymentUpdateVersionMetadataResponse
 
 	// WorkerDeploymentHandle is a handle to a Worker Deployment.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentHandle = internal.WorkerDeploymentHandle
 
 	// DeploymentListOptions are the parameters for configuring listing Worker Deployments.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentListOptions = internal.WorkerDeploymentListOptions
 
 	// WorkerDeploymentRoutingConfig describes when new or existing Workflow Tasks are
 	// executed with this Worker Deployment.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentRoutingConfig = internal.WorkerDeploymentRoutingConfig
 
 	// WorkerDeploymentListEntry is a subset of fields from [WorkerDeploymentInfo].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentListEntry = internal.WorkerDeploymentListEntry
 
 	// WorkerDeploymentListIterator is an iterator for deployments.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentListIterator = internal.WorkerDeploymentListIterator
 
 	// WorkerDeploymentDeleteOptions provides options for [WorkerDeploymentClient.Delete].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentDeleteOptions = internal.WorkerDeploymentDeleteOptions
 
 	// WorkerDeploymentDeleteResponse is the response for [WorkerDeploymentClient.Delete].
-	//
-	// NOTE: Experimental
 	WorkerDeploymentDeleteResponse = internal.WorkerDeploymentDeleteResponse
 
 	// WorkerDeploymentClient is the client that manages Worker Deployments.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentClient = internal.WorkerDeploymentClient
 
 	// Deployment identifies a set of workers. This identifier combines
@@ -588,26 +516,18 @@ type (
 	DeploymentClient = internal.DeploymentClient
 
 	// UpdateWorkflowExecutionOptionsRequest is a request for [client.Client.UpdateWorkflowExecutionOptions].
-	//
-	// NOTE: Experimental
 	UpdateWorkflowExecutionOptionsRequest = internal.UpdateWorkflowExecutionOptionsRequest
 
 	// WorkflowExecutionOptions contains a set of properties of an existing workflow
 	// that can be overriden using [client.Client.UpdateWorkflowExecutionOptions].
-	//
-	// NOTE: Experimental
 	WorkflowExecutionOptions = internal.WorkflowExecutionOptions
 
 	// WorkflowExecutionOptionsChanges describes changes to [WorkflowExecutionOptions]
 	// in the [client.Client.UpdateWorkflowExecutionOptions] API.
-	//
-	// NOTE: Experimental
 	WorkflowExecutionOptionsChanges = internal.WorkflowExecutionOptionsChanges
 
 	// VersioningOverrideChange sets or removes a versioning override when used with
 	// [WorkflowExecutionOptionsChanges].
-	//
-	// NOTE: Experimental
 	VersioningOverrideChange = internal.VersioningOverrideChange
 
 	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
@@ -615,19 +535,13 @@ type (
 	//
 	// If set, it takes precedence over the Versioning Behavior provided with workflow type
 	// registration, or default worker options.
-	//
-	// NOTE: Experimental
 	VersioningOverride = internal.VersioningOverride
 
 	// PinnedVersioningOverride means the workflow will be pinned to a specific deployment version.
-	//
-	// NOTE: Experimental
 	PinnedVersioningOverride = internal.PinnedVersioningOverride
 
 	// AutoUpgradeVersioningOverride means the workflow will auto-upgrade to the current deployment
 	// version on the next workflow task.
-	//
-	// NOTE: Experimental
 	AutoUpgradeVersioningOverride = internal.AutoUpgradeVersioningOverride
 
 	// WorkflowUpdateHandle represents a running or completed workflow
@@ -717,8 +631,6 @@ type (
 	// TaskQueueVersioningInfo provides worker deployment configuration for this
 	// task queue.
 	// It is part of [Client.TaskQueueDescription].
-	//
-	// NOTE: Experimental
 	TaskQueueVersioningInfo = internal.TaskQueueVersioningInfo
 
 	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
@@ -1284,8 +1196,6 @@ type (
 		// and returns the new [WorkflowExecutionOptions] after applying the changes.
 		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
 		// Use [DescribeWorkflowExecution] to get similar information without modifying options.
-		//
-		// NOTE: Experimental
 		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
 
 		// UpdateWithStartWorkflow issues an update-with-start request. A
@@ -1323,8 +1233,6 @@ type (
 		DeploymentClient() DeploymentClient
 
 		// WorkerDeploymentClient create a new worker deployment client with the same gRPC connections as this client.
-		//
-		// NOTE: Experimental
 		WorkerDeploymentClient() WorkerDeploymentClient
 
 		// Close client and clean up underlying resources.
