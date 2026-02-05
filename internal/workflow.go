@@ -724,8 +724,7 @@ func (wc *workflowEnvironmentInterceptor) awaitWithOptions(ctx Context, options 
 	state := getState(ctx)
 	defer state.unblocked()
 
-	// TODO: Change GetFlag to TryUse in the next release to enable this flag by default.
-	cancelTimerOnCondition := wc.env.GetFlag(SDKFlagCancelAwaitTimerOnCondition)
+	cancelTimerOnCondition := wc.env.TryUse(SDKFlagCancelAwaitTimerOnCondition)
 	if cancelTimerOnCondition && condition() {
 		return true, nil
 	}

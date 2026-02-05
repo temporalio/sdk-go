@@ -60,7 +60,7 @@ var runOnCallingThread = &testUpdateScheduler{
 	YieldImpl: func(Context, string) {},
 }
 
-var testSDKFlags = newSDKFlags(
+var testSDKFlags = newSDKFlagSet(
 	&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true},
 )
 

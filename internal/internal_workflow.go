@@ -1410,12 +1410,7 @@ func (s *selectorImpl) Select(ctx Context) {
 					// readyBranch is not executed when AddDefault is specified,
 					// setting the value here prevents the signal from being dropped
 					env := getWorkflowEnvironment(ctx)
-					var dropSignalFlag bool
-					if unblockSelectorSignal {
-						dropSignalFlag = env.TryUse(SDKFlagBlockedSelectorSignalReceive)
-					} else {
-						dropSignalFlag = env.GetFlag(SDKFlagBlockedSelectorSignalReceive)
-					}
+					dropSignalFlag := env.TryUse(SDKFlagBlockedSelectorSignalReceive)
 
 					if dropSignalFlag {
 						c.recValue = &v
