@@ -1113,6 +1113,7 @@ func TestMockCallWrapperNotBefore(t *testing.T) {
 		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
 			ScheduleToCloseTimeout: time.Hour,
 			StartToCloseTimeout:    time.Hour,
+			RetryPolicy:            &RetryPolicy{MaximumAttempts: 1},
 		})
 		var result string
 		return ExecuteLocalActivity(ctx, "namedActivity", "call2").Get(ctx, &result)

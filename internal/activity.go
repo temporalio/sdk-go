@@ -155,7 +155,8 @@ type (
 
 		// VersioningIntent - Specifies whether this activity should run on a worker with a compatible
 		// build ID or not. See temporal.VersioningIntent.
-		// WARNING: Worker versioning is currently experimental
+		//
+		// Deprecated: Use Worker Deployment Versioning instead. See https://docs.temporal.io/worker-versioning
 		VersioningIntent VersioningIntent
 
 		// Summary is a single-line summary for this activity that will appear in UI/CLI. This can be
