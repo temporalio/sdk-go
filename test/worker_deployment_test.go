@@ -1331,7 +1331,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 	}, 305*time.Second, 1000*time.Millisecond)
 }
 
-func (ts *WorkerDeploymentTestSuite) TestContinueAsNewWithWithVersionUpgrade() {
+func (ts *WorkerDeploymentTestSuite) TestContinueAsNewWithVersionUpgrade() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
