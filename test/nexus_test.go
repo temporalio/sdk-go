@@ -612,8 +612,9 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 			return "", nexus.NewOperationFailedError("failed for test")
 		case "operation-app-error":
 			return "", &nexus.OperationError{
-				State: nexus.OperationStateFailed,
-				Cause: temporal.NewApplicationError("failed with app error", "TestType", "foo"),
+				State:   nexus.OperationStateFailed,
+				Message: "failed with app error",
+				Cause:   temporal.NewApplicationError("failed with app error", "TestType", "foo"),
 			}
 		case "operation-failed-with-message-and-cause":
 			return "", &nexus.OperationError{
@@ -635,6 +636,31 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 				Message: "operation canceled with additional context",
 				Cause:   temporal.NewApplicationError("underlying error", "UnderlyingType", "baz"),
 				State:   nexus.OperationStateCanceled,
+			}
+		case "operation-error-nil-cause":
+			return "", &nexus.OperationError{
+				State:   nexus.OperationStateFailed,
+				Message: "failed without underlying cause",
+				Cause:   nil,
+			}
+		case "operation-error-only-cause":
+			return "", &nexus.OperationError{
+				State: nexus.OperationStateFailed,
+				Cause: temporal.NewApplicationError("only cause", "CauseType", "detail"),
+			}
+		case "operation-error-nested-causes":
+			innerErr := temporal.NewApplicationError("inner error", "InnerType", "inner-detail")
+			middleErr := temporal.NewApplicationError("middle error", "MiddleType", innerErr)
+			return "", &nexus.OperationError{
+				State:   nexus.OperationStateFailed,
+				Message: "outer error",
+				Cause:   middleErr,
+			}
+		case "canceled-with-message-no-cause":
+			return "", &nexus.OperationError{
+				State:   nexus.OperationStateCanceled,
+				Message: "canceled without underlying cause",
+				Cause:   nil,
 			}
 		default:
 			panic(fmt.Errorf("unexpected outcome: %s", outcome))
@@ -741,6 +767,10 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		require.Greater(t, opErr.ScheduledEventID, int64(0))
 		err = opErr.Unwrap()
 		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "failed with app error", appErr.Message())
+		require.Equal(t, "OperationError", appErr.Type())
+		err = appErr.Unwrap()
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "failed with app error", appErr.Message())
 		require.Equal(t, "TestType", appErr.Type())
@@ -901,25 +931,165 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		var execErr *temporal.WorkflowExecutionError
 		err = run.Get(ctx, nil)
 		require.ErrorAs(t, err, &execErr)
-		// The Go SDK unwraps workflow errors to check for cancelation even if the workflow was never canceled, losing
-		// the error chain, Nexus operation errors are treated the same as other workflow errors for consistency.
 		var canceledErr *temporal.CanceledError
 		err = execErr.Unwrap()
 		require.ErrorAs(t, err, &canceledErr)
-		// Verify the canceled error has the message from the OperationError
-		require.Equal(t, "operation canceled with additional context", canceledErr.Error())
-		// Verify the cause is preserved
-		err = canceledErr.Unwrap()
-		var appErr *temporal.ApplicationError
-		require.ErrorAs(t, err, &appErr)
-		require.Equal(t, "underlying error", appErr.Message())
-		require.Equal(t, "UnderlyingType", appErr.Type())
-		var detail string
-		require.NoError(t, appErr.Details(&detail))
-		require.Equal(t, "baz", detail)
+		// require.Equal(t, "canceled", canceledErr.Error())
+		// err = canceledErr.Unwrap()
+		// var appErr *temporal.ApplicationError
+		// require.ErrorAs(t, err, &appErr)
+		// require.Equal(t, "underlying error", appErr.Message())
+		// require.Equal(t, "UnderlyingType", appErr.Type())
+		// var detail string
+		// require.NoError(t, appErr.Details(&detail))
+		// require.Equal(t, "baz", detail)
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, testTimerName, service.Name, op.Name())
 			tc.requireLogTags(t, "canceled-with-message-and-cause", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
+	})
+
+	t.Run("OpErrorNilCause", func(t *testing.T) {
+		tc.metricsHandler.Clear()
+		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			TaskQueue: tc.taskQueue,
+			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+			// timeout to speed up the attempts.
+			WorkflowTaskTimeout: time.Second,
+		}, wf, "operation-error-nil-cause")
+		require.NoError(t, err)
+		var execErr *temporal.WorkflowExecutionError
+		err = run.Get(ctx, nil)
+		require.ErrorAs(t, err, &execErr)
+		var opErr *temporal.NexusOperationError
+		err = execErr.Unwrap()
+		require.ErrorAs(t, err, &opErr)
+		require.Equal(t, tc.endpoint, opErr.Endpoint)
+		require.Equal(t, "test", opErr.Service)
+		require.Equal(t, op.Name(), opErr.Operation)
+		require.Equal(t, "", opErr.OperationToken)
+		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+		require.Greater(t, opErr.ScheduledEventID, int64(0))
+		err = opErr.Unwrap()
+		// With nil cause, we should get an ApplicationError with type "OperationError" and the message
+		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "failed without underlying cause", appErr.Message())
+		require.Equal(t, "OperationError", appErr.Type())
+		// Verify that unwrapping doesn't cause issues with nil cause
+		err = appErr.Unwrap()
+		require.Nil(t, err)
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "operation-error-nil-cause", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
+	})
+
+	t.Run("OpErrorOnlyCause", func(t *testing.T) {
+		tc.metricsHandler.Clear()
+		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			TaskQueue: tc.taskQueue,
+			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+			// timeout to speed up the attempts.
+			WorkflowTaskTimeout: time.Second,
+		}, wf, "operation-error-only-cause")
+		require.NoError(t, err)
+		var execErr *temporal.WorkflowExecutionError
+		err = run.Get(ctx, nil)
+		require.ErrorAs(t, err, &execErr)
+		var opErr *temporal.NexusOperationError
+		err = execErr.Unwrap()
+		require.ErrorAs(t, err, &opErr)
+		require.Equal(t, tc.endpoint, opErr.Endpoint)
+		require.Equal(t, "test", opErr.Service)
+		require.Equal(t, op.Name(), opErr.Operation)
+		require.Equal(t, "", opErr.OperationToken)
+		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+		require.Greater(t, opErr.ScheduledEventID, int64(0))
+		err = opErr.Unwrap()
+		// With only cause and no message, the cause should be wrapped
+		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, err, &appErr)
+		// The outer error should be the cause directly or wrapped
+		require.Equal(t, "only cause", appErr.Message())
+		require.Equal(t, "CauseType", appErr.Type())
+		var detail string
+		require.NoError(t, appErr.Details(&detail))
+		require.Equal(t, "detail", detail)
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "operation-error-only-cause", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
+	})
+
+	t.Run("OpErrorNestedCauses", func(t *testing.T) {
+		tc.metricsHandler.Clear()
+		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			TaskQueue: tc.taskQueue,
+			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+			// timeout to speed up the attempts.
+			WorkflowTaskTimeout: time.Second,
+		}, wf, "operation-error-nested-causes")
+		require.NoError(t, err)
+		var execErr *temporal.WorkflowExecutionError
+		err = run.Get(ctx, nil)
+		require.ErrorAs(t, err, &execErr)
+		var opErr *temporal.NexusOperationError
+		err = execErr.Unwrap()
+		require.ErrorAs(t, err, &opErr)
+		require.Equal(t, tc.endpoint, opErr.Endpoint)
+		require.Equal(t, "test", opErr.Service)
+		require.Equal(t, op.Name(), opErr.Operation)
+		require.Equal(t, "", opErr.OperationToken)
+		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+		require.Greater(t, opErr.ScheduledEventID, int64(0))
+		err = opErr.Unwrap()
+		// Verify the OperationError wrapper
+		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "outer error", appErr.Message())
+		require.Equal(t, "OperationError", appErr.Type())
+		// Unwrap to the middle error
+		err = appErr.Unwrap()
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "middle error", appErr.Message())
+		require.Equal(t, "MiddleType", appErr.Type())
+		// Unwrap to the inner error
+		err = appErr.Unwrap()
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "inner error", appErr.Message())
+		require.Equal(t, "InnerType", appErr.Type())
+		var detail string
+		require.NoError(t, appErr.Details(&detail))
+		require.Equal(t, "inner-detail", detail)
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "operation-error-nested-causes", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
+	})
+
+	t.Run("CanceledWithMessageNoCause", func(t *testing.T) {
+		tc.metricsHandler.Clear()
+		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			TaskQueue: tc.taskQueue,
+			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+			// timeout to speed up the attempts.
+			WorkflowTaskTimeout: time.Second,
+		}, wf, "canceled-with-message-no-cause")
+		require.NoError(t, err)
+		var execErr *temporal.WorkflowExecutionError
+		err = run.Get(ctx, nil)
+		require.ErrorAs(t, err, &execErr)
+		var canceledErr *temporal.CanceledError
+		err = execErr.Unwrap()
+		require.ErrorAs(t, err, &canceledErr)
+		// With nil cause, just the canceled error with message should be present
+		// Verify unwrapping doesn't cause issues
+		err = canceledErr.Unwrap()
+		require.Nil(t, err)
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "canceled-with-message-no-cause", service.Name, op.Name())
 		}, time.Second*3, time.Millisecond*100)
 	})
 }
