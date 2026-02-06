@@ -43,18 +43,24 @@ type (
 		client        client.Client
 		taskQueueName string
 	}
+	ConfigureConfigCallback func(*Config)
+	ConfigureClientOptions  func(*client.Options)
+	ConfigureWorkerOptions  func(*worker.Options)
 )
 
 var taskQueuePrefix = "tq-" + uuid.NewString()
 
 // NewConfig creates new Config instance
-func NewConfig() Config {
+func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 	cfg := Config{
 		ServiceAddr:             client.DefaultHostPort,
 		ServiceHTTPAddr:         "localhost:7243",
 		maxWorkflowCacheSize:    10000,
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
+	}
+	for _, configure := range configCallbacks {
+		configure(&cfg)
 	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
@@ -86,6 +92,18 @@ func NewConfig() Config {
 		cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
 	}
 	return cfg
+}
+
+func WithNamespace(ns string) ConfigureConfigCallback {
+	return func(c *Config) { c.Namespace = ns }
+}
+
+func WithServiceAddr(addr string) ConfigureConfigCallback {
+	return func(c *Config) { c.ServiceAddr = addr }
+}
+
+func WithServiceHTTPAddr(addr string) ConfigureConfigCallback {
+	return func(c *Config) { c.ServiceHTTPAddr = addr }
 }
 
 func getEnvServiceAddr() string {
@@ -220,25 +238,31 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 	return nil
 }
 
-func (ts *ConfigAndClientSuiteBase) InitClient() error {
+func (ts *ConfigAndClientSuiteBase) InitClient(clientOpts ...ConfigureClientOptions) error {
 	var err error
 	if ts.client != nil {
 		return nil
 	}
-	ts.client, err = ts.newClient()
+	ts.client, err = ts.newClient(clientOpts...)
 	return err
 }
 
-func (ts *ConfigAndClientSuiteBase) newClient() (client.Client, error) {
-	return client.Dial(client.Options{
+func (ts *ConfigAndClientSuiteBase) newClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
+	options := client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: ts.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
 		ConnectionOptions: client.ConnectionOptions{
 			TLS:                  ts.config.TLS,
 			GetSystemInfoTimeout: ctxTimeout,
 		},
-	})
+	}
+	for _, opt := range clientOpts {
+		opt(&options)
+	}
+	if options.Logger == nil {
+		options.Logger = ilog.NewDefaultLogger()
+	}
+	return client.Dial(options)
 }
 
 func SimplestWorkflow(_ workflow.Context) error {

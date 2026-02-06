@@ -24,6 +24,7 @@ import (
 	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/temporalproto"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
@@ -208,6 +209,8 @@ type (
 		eagerActivityExecutor *eagerActivityExecutor
 
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
+
+		SetPayloadErrorLimits func(*PayloadErrorLimits)
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -250,7 +253,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger.Info("No metrics handler configured for temporal worker. Use NopHandler as default.")
 	}
 	if params.DataConverter == nil {
-		params.DataConverter = converter.GetDefaultDataConverter()
+		params.DataConverter, params.SetPayloadErrorLimits = NewPayloadLimitDataConverter(converter.GetDefaultDataConverter(), params.Logger)
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
 	if params.FailureConverter == nil {
@@ -287,16 +290,21 @@ func verifyNamespaceExist(
 	client workflowservice.WorkflowServiceClient,
 	metricsHandler metrics.Handler,
 	namespace string,
-	logger log.Logger,
-) error {
+) (*namespace.NamespaceInfo_Limits, error) {
 	ctx := context.Background()
 	if namespace == "" {
-		return errors.New("namespace cannot be empty")
+		return nil, errors.New("namespace cannot be empty")
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(metricsHandler), defaultGrpcRetryParameters(ctx))
 	defer cancel()
-	_, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: namespace})
-	return err
+	response, err := client.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: namespace})
+	if err != nil {
+		return nil, err
+	}
+	if response != nil && response.NamespaceInfo != nil {
+		return response.NamespaceInfo.Limits, nil
+	}
+	return nil, nil
 }
 
 func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
@@ -421,10 +429,6 @@ func newWorkflowTaskWorkerInternal(
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
-	err := verifyNamespaceExist(ww.workflowService, ww.executionParameters.MetricsHandler, ww.executionParameters.Namespace, ww.worker.logger)
-	if err != nil {
-		return err
-	}
 	ww.localActivityWorker.Start()
 	ww.worker.Start()
 	return nil // TODO: propagate error
@@ -568,10 +572,6 @@ func newActivityWorker(
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
-	err := verifyNamespaceExist(aw.workflowService, aw.executionParameters.MetricsHandler, aw.executionParameters.Namespace, aw.worker.logger)
-	if err != nil {
-		return err
-	}
 	aw.worker.Start()
 	return nil // TODO: propagate errors
 }
@@ -1288,6 +1288,17 @@ func (aw *AggregatedWorker) start() error {
 	}
 	proto.Merge(aw.capabilities, capabilities)
 
+	limits, err := verifyNamespaceExist(aw.client.workflowService, aw.executionParams.MetricsHandler, aw.executionParams.Namespace)
+	if err != nil {
+		return err
+	}
+
+	if limits != nil && aw.executionParams.SetPayloadErrorLimits != nil {
+		aw.executionParams.SetPayloadErrorLimits(&PayloadErrorLimits{
+			PayloadSizeError: limits.BlobSizeLimitError,
+		})
+	}
+
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
@@ -1793,6 +1804,13 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		service:       service,
 		taskQueue:     taskQueue,
 	}
+
+	innerConverter := aw.dataConverter
+	if innerConverter == nil {
+		innerConverter = converter.GetDefaultDataConverter()
+	}
+	dataConverter, errorLimitsCallback := NewPayloadLimitDataConverter(innerConverter, logger)
+
 	cache := NewWorkerCache()
 	params := workerExecutionParameters{
 		Namespace:             namespace,
@@ -1800,7 +1818,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		Identity:              "replayID",
 		Logger:                logger,
 		cache:                 cache,
-		DataConverter:         aw.dataConverter,
+		DataConverter:         dataConverter,
 		FailureConverter:      aw.failureConverter,
 		ContextPropagators:    aw.contextPropagators,
 		EnableLoggingInReplay: aw.enableLoggingInReplay,
@@ -1817,6 +1835,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 			EagerWorkflowStart:              true,
 			SdkMetadata:                     true,
 		},
+		SetPayloadErrorLimits: errorLimitsCallback,
 	}
 	if aw.disableDeadlockDetection {
 		params.DeadlockDetectionTimeout = math.MaxInt64
@@ -2028,6 +2047,33 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 
+	identity := client.identity
+	if options.Identity != "" {
+		identity = options.Identity
+	}
+
+	logger := client.logger
+	if logger == nil {
+		// create default logger if user does not supply one (should happen in tests only).
+		logger = ilog.NewDefaultLogger()
+		logger.Info("No logger configured for temporal worker. Created default one.")
+	}
+	logger = log.With(logger,
+		tagNamespace, client.namespace,
+		tagTaskQueue, taskQueue,
+		tagWorkerID, identity,
+	)
+	if options.BuildID != "" {
+		// Add worker build ID to the logs if it's set by user
+		logger = log.With(logger,
+			tagBuildID, options.BuildID,
+		)
+	}
+
+	// Create a PayloadLimitDataConveter separate from the client's instance so that error limits
+	// can be initialized seprately for the worker.
+	dataConverter, errorLimitsCallback := NewPayloadLimitDataConverterWithOptions(client.originalDataConverter, logger, client.payloadLimits)
+
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
@@ -2035,19 +2081,19 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		Tuner:                            options.Tuner,
 		WorkerActivitiesPerSecond:        options.WorkerActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:   options.WorkerLocalActivitiesPerSecond,
-		Identity:                         client.identity,
+		Identity:                         identity,
 		WorkerBuildID:                    options.BuildID,
 		UseBuildIDForVersioning:          options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
 		DeploymentOptions:                options.DeploymentOptions,
 		MetricsHandler:                   client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue)),
-		Logger:                           client.logger,
+		Logger:                           logger,
 		EnableLoggingInReplay:            options.EnableLoggingInReplay,
 		BackgroundContext:                backgroundActivityContext,
 		BackgroundContextCancel:          backgroundActivityContextCancel,
 		StickyScheduleToStartTimeout:     options.StickyScheduleToStartTimeout,
 		TaskQueueActivitiesPerSecond:     options.TaskQueueActivitiesPerSecond,
 		WorkflowPanicPolicy:              options.WorkflowPanicPolicy,
-		DataConverter:                    client.dataConverter,
+		DataConverter:                    dataConverter,
 		FailureConverter:                 client.failureConverter,
 		WorkerStopTimeout:                options.WorkerStopTimeout,
 		WorkerFatalErrorCallback:         fatalErrorCallback,
@@ -2062,6 +2108,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
 		capabilities: &capabilities,
+		SetPayloadErrorLimits: func(limits *PayloadErrorLimits) {
+			if !options.DisablePayloadErrorLimit {
+				errorLimitsCallback(limits)
+			}
+		},
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
@@ -2094,22 +2145,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("must set either MaxConcurrentNexusTaskPollers or NexusTaskPollerBehavior")
 	}
 
-	if options.Identity != "" {
-		workerParams.Identity = options.Identity
-	}
-
 	ensureRequiredParams(&workerParams)
-	workerParams.Logger = log.With(workerParams.Logger,
-		tagNamespace, client.namespace,
-		tagTaskQueue, taskQueue,
-		tagWorkerID, workerParams.Identity,
-	)
-	if workerParams.WorkerBuildID != "" {
-		// Add worker build ID to the logs if it's set by user
-		workerParams.Logger = log.With(workerParams.Logger,
-			tagBuildID, workerParams.WorkerBuildID,
-		)
-	}
 
 	processTestTags(&options, &workerParams)
 
@@ -2363,8 +2399,9 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 
 // setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
-	if client.dataConverter == nil {
-		client.dataConverter = converter.GetDefaultDataConverter()
+	if client.originalDataConverter == nil {
+		client.originalDataConverter = converter.GetDefaultDataConverter()
+		client.dataConverter, _ = NewPayloadLimitDataConverter(client.originalDataConverter, client.logger)
 	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace

@@ -533,6 +533,9 @@ type (
 		//
 		// NOTE: Experimental
 		Plugins []ClientPlugin
+
+		// Configuration for when payload sizes exceed limits.
+		PayloadLimits PayloadLimitOptions
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -1144,6 +1147,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		}
 	}
 
+	dataConverter, _ := NewPayloadLimitDataConverterWithOptions(options.DataConverter, options.Logger, options.PayloadLimits)
+
 	client := &WorkflowClient{
 		workflowService:          workflowServiceClient,
 		conn:                     conn,
@@ -1152,7 +1157,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		metricsHandler:           options.MetricsHandler,
 		logger:                   options.Logger,
 		identity:                 options.Identity,
-		dataConverter:            options.DataConverter,
+		dataConverter:            dataConverter,
+		originalDataConverter:    options.DataConverter,
 		failureConverter:         options.FailureConverter,
 		contextPropagators:       options.ContextPropagators,
 		workerPlugins:            workerPlugins,
@@ -1162,6 +1168,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 			workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
 		},
 		getSystemInfoTimeout: options.ConnectionOptions.GetSystemInfoTimeout,
+		payloadLimits:        options.PayloadLimits,
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain

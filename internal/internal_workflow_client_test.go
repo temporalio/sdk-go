@@ -1528,7 +1528,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.Equal(converter.GetDefaultDataConverter(), client.originalDataConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
@@ -1568,7 +1568,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNotSupported() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.Equal(converter.GetDefaultDataConverter(), client.originalDataConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.False(processTask)
@@ -1607,7 +1607,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNoWorker() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.Equal(converter.GetDefaultDataConverter(), client.originalDataConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.False(processTask)
@@ -1645,7 +1645,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflow() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.Equal(converter.GetDefaultDataConverter(), client.originalDataConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.True(processTask)
@@ -1717,7 +1717,7 @@ func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
 		})
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, input)
-	s.Equal(iconverter.NewTestDataConverter(), client.dataConverter)
+	s.Equal(iconverter.NewTestDataConverter(), client.originalDataConverter)
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }

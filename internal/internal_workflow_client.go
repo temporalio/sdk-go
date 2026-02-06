@@ -67,6 +67,7 @@ type (
 		metricsHandler           metrics.Handler
 		identity                 string
 		dataConverter            converter.DataConverter
+		originalDataConverter    converter.DataConverter
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		workerPlugins            []WorkerPlugin
@@ -81,6 +82,7 @@ type (
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
 		unclosedClients *int32
+		payloadLimits   PayloadLimitOptions
 	}
 
 	// namespaceClient is the client for managing namespaces.

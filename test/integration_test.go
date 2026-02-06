@@ -181,6 +181,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		TrafficController: trafficController,
 		Interceptors:      clientInterceptors,
 		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		PayloadLimits: internal.PayloadLimitOptions{
+			PayloadSizeWarning: 128,
+		},
 	})
 	ts.NoError(err)
 
@@ -8581,4 +8584,46 @@ func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
 	ts.NoError(err)
 	ts.NoError(run.Get(context.Background(), &res))
 	ts.Equal("workflow-success", res)
+}
+
+func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	logger := ilog.NewMemoryLogger()
+	client, err := client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		Logger:            logger,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		MetricsHandler:    ts.metricsHandler,
+	})
+	ts.NoError(err)
+	defer client.Close()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	testWorker := worker.New(client, ts.taskQueueName, worker.Options{})
+	wfname := "payload-size-warning-workflow-result"
+	testWorker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) (string, error) { return strings.Repeat("a", 1024*1024), nil },
+		workflow.RegisterOptions{Name: wfname},
+	)
+	err = testWorker.Start()
+	ts.NoError(err)
+	defer testWorker.Stop()
+
+	run, err := client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions(ts.T().Name()),
+		wfname,
+	)
+	ts.NoError(err)
+
+	var res string
+	ts.NoError(run.Get(ctx, &res))
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.HasPrefix(line, "WARN  [TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
+	}))
 }
