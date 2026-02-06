@@ -934,6 +934,11 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		var canceledErr *temporal.CanceledError
 		err = execErr.Unwrap()
 		require.ErrorAs(t, err, &canceledErr)
+		// The Go SDK doesn't preserve the error chain for canceled errors, so we can't check the message or cause,
+		// but we can check that it's a canceled error.
+		//
+		// See: https://github.com/temporalio/sdk-go/issues/1496
+		//
 		// require.Equal(t, "canceled", canceledErr.Error())
 		// err = canceledErr.Unwrap()
 		// var appErr *temporal.ApplicationError
