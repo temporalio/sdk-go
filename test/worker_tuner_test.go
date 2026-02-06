@@ -4,11 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"go.temporal.io/sdk/worker"
-
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/sdk/contrib/resourcetuner"
+	"go.temporal.io/sdk/contrib/sysinfo"
+	"go.temporal.io/sdk/worker"
 )
 
 type WorkerTunerTestSuite struct {
@@ -58,12 +57,13 @@ func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
 
 	wfSS, err := worker.NewFixedSizeSlotSupplier(10)
 	ts.NoError(err)
-	controllerOpts := resourcetuner.DefaultResourceControllerOptions()
+	controllerOpts := worker.DefaultResourceControllerOptions()
 	controllerOpts.MemTargetPercent = 0.8
 	controllerOpts.CpuTargetPercent = 0.9
-	controller := resourcetuner.NewResourceController(controllerOpts)
-	actSS, err := resourcetuner.NewResourceBasedSlotSupplier(controller,
-		resourcetuner.ResourceBasedSlotSupplierOptions{
+	controllerOpts.InfoSupplier = sysinfo.SysInfoProvider()
+	controller := worker.NewResourceController(controllerOpts)
+	actSS, err := worker.NewResourceBasedSlotSupplier(controller,
+		worker.ResourceBasedSlotSupplierOptions{
 			MinSlots:     10,
 			MaxSlots:     20,
 			RampThrottle: 0,
@@ -112,12 +112,13 @@ func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
 
 	wfSS, err := worker.NewFixedSizeSlotSupplier(10)
 	ts.NoError(err)
-	controllerOpts := resourcetuner.DefaultResourceControllerOptions()
+	controllerOpts := worker.DefaultResourceControllerOptions()
 	controllerOpts.MemTargetPercent = 0.8
 	controllerOpts.CpuTargetPercent = 0.9
-	controller := resourcetuner.NewResourceController(controllerOpts)
-	actSS, err := resourcetuner.NewResourceBasedSlotSupplier(controller,
-		resourcetuner.ResourceBasedSlotSupplierOptions{
+	controllerOpts.InfoSupplier = sysinfo.SysInfoProvider()
+	controller := worker.NewResourceController(controllerOpts)
+	actSS, err := worker.NewResourceBasedSlotSupplier(controller,
+		worker.ResourceBasedSlotSupplierOptions{
 			MinSlots:     1,
 			MaxSlots:     4,
 			RampThrottle: 0,

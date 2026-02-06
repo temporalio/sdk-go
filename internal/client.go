@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"github.com/google/uuid"
 	"sync/atomic"
 	"time"
 
@@ -533,6 +534,14 @@ type (
 		//
 		// NOTE: Experimental
 		Plugins []ClientPlugin
+
+		// WorkerHeartbeatInterval is the interval at which the worker will send heartbeats to the server.
+		// Interval must be between 1s and 60s, inclusive.
+		//
+		// default: 60s. To disable, set to 0.
+		//
+		// NOTE: Experimental
+		WorkerHeartbeatInterval *time.Duration
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -1130,9 +1139,15 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.ConnectionOptions.GetSystemInfoTimeout = defaultGetSystemInfoTimeout
 	}
 
+	if options.Logger == nil {
+		options.Logger = ilog.NewDefaultLogger()
+	}
+
 	// Collect set of applicable worker plugins and interceptors
 	var workerPlugins []WorkerPlugin
+	var clientPluginNames []string
 	for _, plugin := range options.Plugins {
+		clientPluginNames = append(clientPluginNames, plugin.Name())
 		if workerPlugin, _ := plugin.(WorkerPlugin); workerPlugin != nil {
 			workerPlugins = append(workerPlugins, workerPlugin)
 		}
@@ -1142,6 +1157,18 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		if workerInterceptor, _ := interceptor.(WorkerInterceptor); workerInterceptor != nil {
 			workerInterceptors = append(workerInterceptors, workerInterceptor)
 		}
+	}
+
+	var heartbeatInterval time.Duration
+	if options.WorkerHeartbeatInterval == nil {
+		heartbeatInterval = time.Second * 60
+	} else if *options.WorkerHeartbeatInterval == 0 {
+		heartbeatInterval = 0
+	} else {
+		if *options.WorkerHeartbeatInterval < time.Second || *options.WorkerHeartbeatInterval > 60*time.Second {
+			panic("WorkerHeartbeatInterval must be between 1 second and 60 seconds")
+		}
+		heartbeatInterval = *options.WorkerHeartbeatInterval
 	}
 
 	client := &WorkflowClient{
@@ -1157,11 +1184,18 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		contextPropagators:       options.ContextPropagators,
 		workerPlugins:            workerPlugins,
 		workerInterceptors:       workerInterceptors,
+		clientPluginNames:        clientPluginNames,
 		excludeInternalFromRetry: options.ConnectionOptions.excludeInternalFromRetry,
 		eagerDispatcher: &eagerWorkflowDispatcher{
 			workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
 		},
-		getSystemInfoTimeout: options.ConnectionOptions.GetSystemInfoTimeout,
+		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
+		workerHeartbeatInterval: heartbeatInterval,
+		workerGroupingKey:       uuid.NewString(),
+	}
+
+	if heartbeatInterval > 0 {
+		client.heartbeatManager = newHeartbeatManager(client, heartbeatInterval, client.logger)
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"go.temporal.io/sdk/contrib/sysinfo"
 	"math"
 	"math/rand"
 	"os"
@@ -37,7 +38,6 @@ import (
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	sdkopentracing "go.temporal.io/sdk/contrib/opentracing"
-	"go.temporal.io/sdk/contrib/resourcetuner"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/test"
 
@@ -169,6 +169,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	var err error
 	trafficController := test.NewSimpleTrafficController()
+	disableHeartbeat := time.Duration(0)
 	ts.client, err = client.Dial(client.Options{
 		HostPort:  ts.config.ServiceAddr,
 		Namespace: ts.config.Namespace,
@@ -177,10 +178,11 @@ func (ts *IntegrationTestSuite) SetupTest() {
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
 		},
-		MetricsHandler:    metricsHandler,
-		TrafficController: trafficController,
-		Interceptors:      clientInterceptors,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		MetricsHandler:          metricsHandler,
+		TrafficController:       trafficController,
+		Interceptors:            clientInterceptors,
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
+		WorkerHeartbeatInterval: &disableHeartbeat,
 	})
 	ts.NoError(err)
 
@@ -242,9 +244,10 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MaxConcurrentLocalActivityExecutionSize = 2
 	}
 	if strings.Contains(ts.T().Name(), "ResourceBasedSlotSupplier") {
-		tuner, err := resourcetuner.NewResourceBasedTuner(resourcetuner.ResourceBasedTunerOptions{
-			TargetMem: 0.9,
-			TargetCpu: 0.9,
+		tuner, err := worker.NewResourceBasedTuner(worker.ResourceBasedTunerOptions{
+			TargetMem:    0.9,
+			TargetCpu:    0.9,
+			InfoSupplier: sysinfo.SysInfoProvider(),
 		})
 		ts.NoError(err)
 		options.Tuner = tuner
@@ -3494,7 +3497,6 @@ func (ts *IntegrationTestSuite) TestSlotSupplierWFTFailMetrics() {
 	run, err := ts.client.ExecuteWorkflow(ctx, wfOptions, waitsToProceedWorkflow)
 	ts.NoError(err)
 	ts.NotNil(run)
-	ts.NoError(err)
 
 	<-actStarted
 	// The workflow task will fail once and then pass

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/google/uuid"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -97,7 +98,7 @@ func TestWFTRacePrevention(t *testing.T) {
 			return &workflowservice.RespondWorkflowTaskFailedResponse{}, nil
 		})
 
-	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params)
+	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params, uuid.NewString())
 
 	t.Log("Issue task0")
 	go func() { resultsChan <- poller.processWorkflowTask(&task0) }()
@@ -188,7 +189,7 @@ func TestWFTCorruption(t *testing.T) {
 			return nil, errors.New("Failure responding to workflow task")
 		})
 
-	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params)
+	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params, uuid.NewString())
 	processTaskDone := make(chan struct{})
 	go func() {
 		require.Error(t, poller.processWorkflowTask(&task0))
@@ -329,7 +330,7 @@ func TestWFTReset(t *testing.T) {
 	client.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any()).
 		Return(&workflowservice.RespondWorkflowTaskCompletedResponse{}, nil)
 
-	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params)
+	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params, uuid.NewString())
 	// Send a full history as part of the speculative WFT
 	require.NoError(t, poller.processWorkflowTask(&task0))
 	originalCachedExecution := cache.getWorkflowContext(runID)
@@ -403,7 +404,7 @@ func TestWFTPanicInTaskHandler(t *testing.T) {
 		task0 = workflowTask{task: &pollResp0}
 	)
 
-	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params)
+	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params, uuid.NewString())
 	require.Error(t, poller.processWorkflowTask(&task0))
 	// Workflow should not be in cache
 	require.Nil(t, cache.getWorkflowContext(runID))

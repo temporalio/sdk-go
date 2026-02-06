@@ -1,12 +1,10 @@
-package resourcetuner
+package internal
 
 import (
-	"testing"
-
 	"github.com/stretchr/testify/assert"
-	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/log"
+	"testing"
 )
 
 type FakeSystemInfoSupplier struct {
@@ -14,17 +12,17 @@ type FakeSystemInfoSupplier struct {
 	cpuUse float64
 }
 
-func (f FakeSystemInfoSupplier) GetMemoryUsage(_ *SystemInfoContext) (float64, error) {
+func (f FakeSystemInfoSupplier) MemoryUsage(_ *SysInfoContext) (float64, error) {
 	return f.memUse, nil
 }
 
-func (f FakeSystemInfoSupplier) GetCpuUsage(_ *SystemInfoContext) (float64, error) {
+func (f FakeSystemInfoSupplier) CpuUsage(_ *SysInfoContext) (float64, error) {
 	return f.cpuUse, nil
 }
 
 func TestPidDecisions(t *testing.T) {
 	logger := &log.NoopLogger{}
-	metricsHandler := client.MetricsNopHandler
+	metricsHandler := metrics.NopHandler
 	fakeSupplier := &FakeSystemInfoSupplier{memUse: 0.5, cpuUse: 0.5}
 	rcOpts := DefaultResourceControllerOptions()
 	rcOpts.MemTargetPercent = 0.8
@@ -37,8 +35,8 @@ func TestPidDecisions(t *testing.T) {
 		assert.NoError(t, err)
 		assert.True(t, decision)
 
-		assert.InDelta(t, 1.5, rc.memPid.State.ControlSignal, 0.001)
-		assert.InDelta(t, 2.0, rc.cpuPid.State.ControlSignal, 0.001)
+		assert.InDelta(t, 1.5, rc.memPid.controlSignal, 0.001)
+		assert.InDelta(t, 2.0, rc.cpuPid.controlSignal, 0.001)
 	}
 
 	fakeSupplier.memUse = 0.8

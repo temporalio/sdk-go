@@ -13,13 +13,10 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"github.com/google/uuid"
-
 	commonpb "go.temporal.io/api/common/v1"
 	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
@@ -53,9 +50,6 @@ type (
 	taskPoller interface {
 		// PollTask polls for one new task
 		PollTask() (taskForWorker, error)
-		// Called when the poller will no longer be polled. Presently only useful for
-		// workflow workers.
-		Cleanup() error
 	}
 
 	// taskProcessor interface to process tasks
@@ -85,6 +79,8 @@ type (
 		workerDeploymentVersion WorkerDeploymentVersion
 		// Server's capabilities
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
+		// tracks timestamp for last poll request, for worker heartbeating
+		pollTimeTracker *pollTimeTracker
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -208,6 +204,9 @@ type (
 )
 
 func newNumPollerMetric(metricsHandler metrics.Handler, pollerType string) *numPollerMetric {
+	if heartbeatHandler, isHeartbeat := metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
+		metricsHandler = heartbeatHandler.forPoller(pollerType)
+	}
 	return &numPollerMetric{
 		gauge: metricsHandler.WithTags(metrics.PollerTags(pollerType)).Gauge(metrics.NumPoller),
 	}
@@ -315,6 +314,7 @@ func newWorkflowTaskProcessor(
 	contextManager WorkflowContextManager,
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
+	stickyUUID string,
 ) *workflowTaskProcessor {
 	return &workflowTaskProcessor{
 		basePoller: basePoller{
@@ -324,6 +324,7 @@ func newWorkflowTaskProcessor(
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			pollTimeTracker:         params.pollTimeTracker,
 		},
 		service:                      service,
 		namespace:                    params.Namespace,
@@ -334,43 +335,13 @@ func newWorkflowTaskProcessor(
 		logger:                       params.Logger,
 		dataConverter:                params.DataConverter,
 		failureConverter:             params.FailureConverter,
-		stickyUUID:                   uuid.NewString(),
+		stickyUUID:                   stickyUUID,
 		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
 		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
 		eagerActivityExecutor:        params.eagerActivityExecutor,
 		numNormalPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
 		numStickyPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
 	}
-}
-
-// Best-effort attempt to indicate to Matching service that this workflow task
-// poller's sticky queue will no longer be polled. Should be called when the
-// poller is stopping. Failure to call ShutdownWorker is logged, but otherwise
-// ignored.
-func (wtp *workflowTaskPoller) Cleanup() error {
-	ctx := context.Background()
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(wtp.metricsHandler))
-	defer cancel()
-
-	_, err := wtp.service.ShutdownWorker(grpcCtx, &workflowservice.ShutdownWorkerRequest{
-		Namespace:       wtp.namespace,
-		StickyTaskQueue: getWorkerTaskQueue(wtp.stickyUUID),
-		Identity:        wtp.identity,
-		Reason:          "graceful shutdown",
-	})
-
-	// we ignore unimplemented
-	if _, isUnimplemented := err.(*serviceerror.Unimplemented); isUnimplemented {
-		return nil
-	}
-
-	if err != nil {
-		traceLog(func() {
-			wtp.logger.Debug("ShutdownWorker failed.", tagError, err)
-		})
-	}
-
-	return err
 }
 
 // PollTask polls a new task
@@ -737,10 +708,6 @@ func newLocalActivityPoller(
 	}
 }
 
-func (latp *localActivityTaskPoller) Cleanup() error {
-	return nil
-}
-
 func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
 	return latp.laTunnel.getTask(), nil
 }
@@ -1008,6 +975,12 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		return &workflowTask{}, nil
 	}
 
+	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_STICKY {
+		wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowStickyTask)
+	} else {
+		wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowTask)
+	}
+
 	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
 
 	task := wtp.toWorkflowTask(response)
@@ -1155,6 +1128,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			pollTimeTracker:         params.pollTimeTracker,
 		},
 		taskHandler:         taskHandler,
 		service:             service,
@@ -1206,6 +1180,8 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		return &activityTask{}, nil
 	}
 
+	atp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeActivityTask)
+
 	workflowType := response.WorkflowType.GetName()
 	activityType := response.ActivityType.GetName()
 	metricsHandler := atp.metricsHandler.WithTags(metrics.ActivityTags(workflowType, activityType, atp.taskQueueName))
@@ -1214,10 +1190,6 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	metricsHandler.Timer(metrics.ActivityScheduleToStartLatency).Record(scheduleToStartLatency)
 
 	return &activityTask{task: response}, nil
-}
-
-func (atp *activityTaskPoller) Cleanup() error {
-	return nil
 }
 
 // PollTask polls a new task
