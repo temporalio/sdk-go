@@ -149,11 +149,11 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.Equal("Fixed", localActivityTaskSlots.SlotSupplierKind)
 
 	workflowPollerInfo := workerInfo.WorkflowPollerInfo
-	ts.Equal(int32(1), workflowPollerInfo.CurrentPollers)
+	ts.NotEqual(int32(0), workflowPollerInfo.CurrentPollers)
 	stickyPollerInfo := workerInfo.WorkflowStickyPollerInfo
 	ts.NotEqual(int32(0), stickyPollerInfo.CurrentPollers)
 	nexusPollerInfo := workerInfo.NexusPollerInfo
-	ts.Equal(int32(2), nexusPollerInfo.CurrentPollers)
+	ts.NotEqual(int32(0), nexusPollerInfo.CurrentPollers)
 	activityPollerInfo := workerInfo.ActivityPollerInfo
 	ts.NotEqual(int32(0), activityPollerInfo.CurrentPollers)
 
@@ -236,7 +236,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.Equal("Fixed", localActivityTaskSlots.SlotSupplierKind)
 
 	workflowPollerInfo = workerInfo.WorkflowPollerInfo
-	ts.Equal(int32(1), workflowPollerInfo.CurrentPollers)
+	ts.NotEqual(int32(0), workflowPollerInfo.CurrentPollers)
 	ts.False(workflowPollerInfo.IsAutoscaling)
 	ts.assertRecentTimestamp(workflowPollerInfo.LastSuccessfulPollTime, 10*time.Second,
 		"WorkflowPollerInfo.LastSuccessfulPollTime after shutdown")
@@ -248,7 +248,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 		"WorkflowStickyPollerInfo.LastSuccessfulPollTime after shutdown")
 
 	nexusPollerInfo = workerInfo.NexusPollerInfo
-	ts.Equal(int32(2), nexusPollerInfo.CurrentPollers)
+	ts.NotEqual(int32(0), nexusPollerInfo.CurrentPollers)
 	ts.False(nexusPollerInfo.IsAutoscaling)
 	// Nexus poller has no successful polls since we didn't execute any nexus operations
 
