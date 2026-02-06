@@ -1270,6 +1270,8 @@ type (
 		// and returns the new [WorkflowExecutionOptions] after applying the changes.
 		// It is intended for building tools that can selectively apply ad-hoc workflow configuration changes.
 		// Use [DescribeWorkflowExecution] to get similar information without modifying options.
+		//
+		// NOTE: Experimental
 		UpdateWorkflowExecutionOptions(ctx context.Context, options UpdateWorkflowExecutionOptionsRequest) (WorkflowExecutionOptions, error)
 
 		// UpdateWithStartWorkflow issues an update-with-start request. A
