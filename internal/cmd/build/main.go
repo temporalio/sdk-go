@@ -121,7 +121,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.5.2-standalone-activity-server",
+				Version: "v1.6.1-server-1.31.0-150.0",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
@@ -158,7 +158,8 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "activity.enableStandalone=true",
 				"--dynamic-config-value", "history.enableChasm=true",
 				"--dynamic-config-value", "history.enableTransitionHistory=true",
-			},
+				"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
+				"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`},
 		})
 		if err != nil {
 			return fmt.Errorf("failed starting dev server: %w", err)
