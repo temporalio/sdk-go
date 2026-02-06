@@ -615,6 +615,12 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 				State: nexus.OperationStateFailed,
 				Cause: temporal.NewApplicationError("failed with app error", "TestType", "foo"),
 			}
+		case "operation-failed-with-message-and-cause":
+			return "", &nexus.OperationError{
+				Message: "operation failed with additional context",
+				Cause:   temporal.NewApplicationError("underlying error", "UnderlyingType", "bar"),
+				State:   nexus.OperationStateFailed,
+			}
 		case "handler-plain-error":
 			return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "bad request")
 		case "handler-app-error":
@@ -624,6 +630,12 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 			}
 		case "canceled":
 			return "", nexus.NewOperationCanceledError("canceled for test")
+		case "canceled-with-message-and-cause":
+			return "", &nexus.OperationError{
+				Message: "operation canceled with additional context",
+				Cause:   temporal.NewApplicationError("underlying error", "UnderlyingType", "baz"),
+				State:   nexus.OperationStateCanceled,
+			}
 		default:
 			panic(fmt.Errorf("unexpected outcome: %s", outcome))
 		}
@@ -833,6 +845,81 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, testTimerName, service.Name, op.Name())
 			tc.requireLogTags(t, "canceled", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
+	})
+
+	t.Run("OpFailedWithMessageAndCause", func(t *testing.T) {
+		tc.metricsHandler.Clear()
+		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			TaskQueue: tc.taskQueue,
+			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+			// timeout to speed up the attempts.
+			WorkflowTaskTimeout: time.Second,
+		}, wf, "operation-failed-with-message-and-cause")
+		require.NoError(t, err)
+		var execErr *temporal.WorkflowExecutionError
+		err = run.Get(ctx, nil)
+		require.ErrorAs(t, err, &execErr)
+		var opErr *temporal.NexusOperationError
+		err = execErr.Unwrap()
+		require.ErrorAs(t, err, &opErr)
+		require.Equal(t, tc.endpoint, opErr.Endpoint)
+		require.Equal(t, "test", opErr.Service)
+		require.Equal(t, op.Name(), opErr.Operation)
+		require.Equal(t, "", opErr.OperationToken)
+		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+		require.Greater(t, opErr.ScheduledEventID, int64(0))
+		err = opErr.Unwrap()
+		// The OperationError is converted to an ApplicationError with type "OperationError"
+		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "operation failed with additional context", appErr.Message())
+		require.Equal(t, "OperationError", appErr.Type())
+		// The cause should be the underlying ApplicationError
+		err = appErr.Unwrap()
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "underlying error", appErr.Message())
+		require.Equal(t, "UnderlyingType", appErr.Type())
+		var detail string
+		require.NoError(t, appErr.Details(&detail))
+		require.Equal(t, "bar", detail)
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "operation-failed-with-message-and-cause", service.Name, op.Name())
+		}, time.Second*3, time.Millisecond*100)
+	})
+
+	t.Run("OpCanceledWithMessageAndCause", func(t *testing.T) {
+		tc.metricsHandler.Clear()
+		run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			TaskQueue: tc.taskQueue,
+			// The endpoint registry may take a bit to propagate to the history service, use a shorter workflow task
+			// timeout to speed up the attempts.
+			WorkflowTaskTimeout: time.Second,
+		}, wf, "canceled-with-message-and-cause")
+		require.NoError(t, err)
+		var execErr *temporal.WorkflowExecutionError
+		err = run.Get(ctx, nil)
+		require.ErrorAs(t, err, &execErr)
+		// The Go SDK unwraps workflow errors to check for cancelation even if the workflow was never canceled, losing
+		// the error chain, Nexus operation errors are treated the same as other workflow errors for consistency.
+		var canceledErr *temporal.CanceledError
+		err = execErr.Unwrap()
+		require.ErrorAs(t, err, &canceledErr)
+		// Verify the canceled error has the message from the OperationError
+		require.Equal(t, "operation canceled with additional context", canceledErr.Error())
+		// Verify the cause is preserved
+		err = canceledErr.Unwrap()
+		var appErr *temporal.ApplicationError
+		require.ErrorAs(t, err, &appErr)
+		require.Equal(t, "underlying error", appErr.Message())
+		require.Equal(t, "UnderlyingType", appErr.Type())
+		var detail string
+		require.NoError(t, appErr.Details(&detail))
+		require.Equal(t, "baz", detail)
+		require.EventuallyWithT(t, func(t *assert.CollectT) {
+			tc.requireTimer(t, testTimerName, service.Name, op.Name())
+			tc.requireLogTags(t, "canceled-with-message-and-cause", service.Name, op.Name())
 		}, time.Second*3, time.Millisecond*100)
 	})
 }
