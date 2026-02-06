@@ -1768,8 +1768,22 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 		switch outcome {
 		case "ok":
 			return outcome, nil
-		case "operation-error":
+		case "operation-failed":
 			return "", nexus.NewOperationFailedError("test operation failed")
+		case "operation-failed-cause":
+			return "", &nexus.OperationError{
+				Message: "test operation failed with cause",
+				Cause:   temporal.NewApplicationError("test application error", "AppError"),
+				State:   nexus.OperationStateFailed,
+			}
+		case "operation-canceled":
+			return "", nexus.NewOperationCanceledError("test operation canceled")
+		case "operation-canceled-cause":
+			return "", &nexus.OperationError{
+				Message: "test operation canceled with cause",
+				Cause:   temporal.NewApplicationError("test application error", "AppError"),
+				State:   nexus.OperationStateCanceled,
+			}
 		case "handler-error":
 			return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "test operation failed")
 		}
@@ -1807,7 +1821,7 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 			},
 		},
 		{
-			outcome: "operation-error",
+			outcome: "operation-failed",
 			checkError: func(t *testing.T, err error) {
 				var execErr *temporal.WorkflowExecutionError
 				require.ErrorAs(t, err, &execErr)
@@ -1823,6 +1837,73 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 				var appErr *temporal.ApplicationError
 				require.ErrorAs(t, err, &appErr)
 				require.Equal(t, "test operation failed", appErr.Message())
+			},
+		},
+		{
+			outcome: "operation-failed-cause",
+			checkError: func(t *testing.T, err error) {
+				var execErr *temporal.WorkflowExecutionError
+				require.ErrorAs(t, err, &execErr)
+				var opErr *temporal.NexusOperationError
+				err = execErr.Unwrap()
+				require.ErrorAs(t, err, &opErr)
+				require.Equal(t, "endpoint", opErr.Endpoint)
+				require.Equal(t, "test", opErr.Service)
+				require.Equal(t, op.Name(), opErr.Operation)
+				require.Empty(t, opErr.OperationToken)
+				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+				err = opErr.Unwrap()
+				var appErr *temporal.ApplicationError
+				require.ErrorAs(t, err, &appErr)
+				require.Equal(t, "test operation failed with cause", appErr.Message())
+				require.Equal(t, "OperationError", appErr.Type())
+				err = appErr.Unwrap()
+				require.ErrorAs(t, err, &appErr)
+				require.Equal(t, "test application error", appErr.Message())
+				require.Equal(t, "AppError", appErr.Type())
+			},
+		},
+		{
+			outcome: "operation-canceled",
+			checkError: func(t *testing.T, err error) {
+				var execErr *temporal.WorkflowExecutionError
+				require.ErrorAs(t, err, &execErr)
+				var opErr *temporal.NexusOperationError
+				err = execErr.Unwrap()
+				require.ErrorAs(t, err, &opErr)
+				require.Equal(t, "endpoint", opErr.Endpoint)
+				require.Equal(t, "test", opErr.Service)
+				require.Equal(t, op.Name(), opErr.Operation)
+				require.Empty(t, opErr.OperationToken)
+				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+				err = opErr.Unwrap()
+				var cancErr *temporal.CanceledError
+				require.ErrorAs(t, err, &cancErr)
+				require.Equal(t, "test operation canceled", cancErr.Error())
+			},
+		},
+		{
+			outcome: "operation-canceled-cause",
+			checkError: func(t *testing.T, err error) {
+				var execErr *temporal.WorkflowExecutionError
+				require.ErrorAs(t, err, &execErr)
+				var opErr *temporal.NexusOperationError
+				err = execErr.Unwrap()
+				require.ErrorAs(t, err, &opErr)
+				require.Equal(t, "endpoint", opErr.Endpoint)
+				require.Equal(t, "test", opErr.Service)
+				require.Equal(t, op.Name(), opErr.Operation)
+				require.Empty(t, opErr.OperationToken)
+				require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+				err = opErr.Unwrap()
+				var cancErr *temporal.CanceledError
+				require.ErrorAs(t, err, &cancErr)
+				require.Equal(t, "test operation canceled with cause", cancErr.Error())
+				err = cancErr.Unwrap()
+				var appErr *temporal.ApplicationError
+				require.ErrorAs(t, err, &appErr)
+				require.Equal(t, "test application error", appErr.Message())
+				require.Equal(t, "AppError", appErr.Type())
 			},
 		},
 		{

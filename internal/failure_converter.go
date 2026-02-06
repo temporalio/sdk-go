@@ -188,17 +188,6 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		if len(err.Message) > 0 {
 			failure.Message = err.Message
 		}
-	case *nexus.FailureError:
-		nf := err.Failure
-		appErr := NewApplicationErrorWithOptions(
-			nf.Message,
-			"NexusFailure",
-			ApplicationErrorOptions{
-				Details: []interface{}{err.Failure},
-				Cause:   err.Cause,
-			},
-		)
-		return dfc.ErrorToFailure(appErr)
 	default: // All unknown errors are considered to be retryable ApplicationFailureInfo.
 		failureInfo := &failurepb.ApplicationFailureInfo{
 			Type:         getErrType(err),

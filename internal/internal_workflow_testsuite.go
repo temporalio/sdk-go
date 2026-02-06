@@ -2504,9 +2504,15 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		if failure != nil {
 			// Convert to a nexus HandlerError first to simulate the flow in the server.
 			var handlerErr error
-			handlerErr, err = apiHandlerErrorToNexusHandlerError(failure.GetError(), env.failureConverter)
-			if err != nil {
-				handlerErr = fmt.Errorf("unexpected error while trying to reconstruct Nexus handler error: %w", err)
+			// With failureReasonSupport=true, the error is in the Failure field
+			if failure.GetFailure() != nil {
+				handlerErr = env.failureConverter.FailureToError(failure.GetFailure())
+			} else {
+				// Legacy path with Error field
+				handlerErr, err = apiHandlerErrorToNexusHandlerError(failure.GetError(), env.failureConverter)
+				if err != nil {
+					handlerErr = fmt.Errorf("unexpected error while trying to reconstruct Nexus handler error: %w", err)
+				}
 			}
 
 			// To simulate the server flow, convert to failure and then back to a Go error.
@@ -2537,6 +2543,14 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				} else if handle.isMocked {
 					env.scheduleNexusAsyncOperationCompletion(handle)
 				}
+			}, true)
+		case *nexuspb.StartOperationResponse_Failure:
+			err := env.failureConverter.FailureToError(
+				nexusOperationFailure(params, "", v.Failure),
+			)
+			env.postCallback(func() {
+				handle.startedCallback("", err)
+				handle.completedCallback(nil, err)
 			}, true)
 		case *nexuspb.StartOperationResponse_OperationError:
 			failure, err := operationErrorToTemporalFailure(apiOperationErrorToNexusOperationError(v.OperationError))
@@ -2705,7 +2719,7 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, token s
 		}
 		if err != nil {
 			failure := env.failureConverter.ErrorToFailure(err)
-			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure.GetCause()))
+			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure))
 		}
 		// Populate the token in case the operation completes before it marked as started.
 		// startedCallback is idempotent and will be a noop in case the operation has already been marked as started.
@@ -3212,6 +3226,9 @@ func (h *testNexusOperationHandle) newStartTask() *workflowservice.PollNexusTask
 		Request: &nexuspb.Request{
 			ScheduledTime: timestamppb.Now(),
 			Header:        h.params.nexusHeader,
+			Capabilities: &nexuspb.Request_Capabilities{
+				TemporalFailureResponses: true,
+			},
 			Variant: &nexuspb.Request_StartOperation{
 				StartOperation: &nexuspb.StartOperationRequest{
 					Service:   h.params.client.Service(),
