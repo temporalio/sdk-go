@@ -27,7 +27,7 @@ type cGroupInfoImpl struct {
 func (p *cGroupInfoImpl) Update() (bool, error) {
 	err := p.updateCGroupStats()
 	// Stop updates if not in a container. No need to return the error and log it.
-	if !errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	} else if err != nil {
 		return true, err
