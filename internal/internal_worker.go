@@ -208,6 +208,8 @@ type (
 		eagerActivityExecutor *eagerActivityExecutor
 
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
+
+		workerInstanceKey string
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -2061,7 +2063,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
-		capabilities: &capabilities,
+		capabilities:      &capabilities,
+		workerInstanceKey: workerInstanceKey,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {

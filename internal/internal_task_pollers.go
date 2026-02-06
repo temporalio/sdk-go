@@ -85,6 +85,8 @@ type (
 		workerDeploymentVersion WorkerDeploymentVersion
 		// Server's capabilities
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
+		// UUID identifier for the worker
+		workerInstanceKey string
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -324,6 +326,7 @@ func newWorkflowTaskProcessor(
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			workerInstanceKey:       params.workerInstanceKey,
 		},
 		service:                      service,
 		namespace:                    params.Namespace,
@@ -965,6 +968,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 			wtp.useBuildIDVersioning,
 			wtp.workerDeploymentVersion,
 		),
+		WorkerInstanceKey: wtp.workerInstanceKey,
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1155,6 +1159,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			workerInstanceKey:       params.workerInstanceKey,
 		},
 		taskHandler:         taskHandler,
 		service:             service,
@@ -1194,6 +1199,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 			atp.useBuildIDVersioning,
 			atp.workerDeploymentVersion,
 		),
+		WorkerInstanceKey: atp.workerInstanceKey,
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)

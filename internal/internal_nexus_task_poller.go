@@ -42,6 +42,7 @@ func newNexusTaskPoller(
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			workerInstanceKey:       params.workerInstanceKey,
 		},
 		taskHandler:     taskHandler,
 		service:         service,
@@ -78,6 +79,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 			ntp.useBuildIDVersioning,
 			ntp.workerDeploymentVersion,
 		),
+		WorkerInstanceKey: ntp.basePoller.workerInstanceKey,
 	}
 
 	response, err := ntp.pollNexusTaskQueue(ctx, request)

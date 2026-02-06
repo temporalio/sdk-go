@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 
 	"github.com/golang/mock/gomock"
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -1815,6 +1816,77 @@ func (s *internalWorkerTestSuite) TestStartWorkerAfterStopped() {
 	assert.False(s.T(), worker.activityWorker.worker.isWorkerStarted)
 	assert.False(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 	_ = worker.Start() // must panic
+}
+
+func (s *internalWorkerTestSuite) TestWorkerInstanceKeyPropagation() {
+	namespace := "testNamespace"
+	mockCtrl := gomock.NewController(s.T())
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:  namespace,
+			State: enumspb.NAMESPACE_STATE_REGISTERED,
+		},
+	}
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(namespaceDesc, nil).AnyTimes()
+
+	var capturedWfReq atomic.Pointer[workflowservice.PollWorkflowTaskQueueRequest]
+	var capturedActReq atomic.Pointer[workflowservice.PollActivityTaskQueueRequest]
+	var capturedNexusReq atomic.Pointer[workflowservice.PollNexusTaskQueueRequest]
+
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) {
+			capturedWfReq.CompareAndSwap(nil, req)
+		}).
+		Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ context.Context, req *workflowservice.PollActivityTaskQueueRequest, _ ...grpc.CallOption) {
+			capturedActReq.CompareAndSwap(nil, req)
+		}).
+		Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+
+	service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) {
+			capturedNexusReq.CompareAndSwap(nil, req)
+		}).
+		Return(&workflowservice.PollNexusTaskQueueResponse{}, nil).AnyTimes()
+
+	service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, nil).AnyTimes()
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: namespace})
+	worker := NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{})
+
+	// Register a nexus service so the nexus worker is started
+	nexusSvc := nexus.NewService("test")
+	nexusSvc.MustRegister(nexus.NewSyncOperation("op", func(ctx context.Context, s string, opts nexus.StartOperationOptions) (string, error) {
+		return s, nil
+	}))
+	worker.RegisterNexusService(nexusSvc)
+
+	require.NotEmpty(s.T(), worker.workerInstanceKey)
+
+	err := worker.Start()
+	require.NoError(s.T(), err)
+
+	require.Eventually(s.T(), func() bool {
+		return capturedWfReq.Load() != nil && capturedActReq.Load() != nil && capturedNexusReq.Load() != nil
+	}, 5*time.Second, 10*time.Millisecond)
+
+	worker.Stop()
+
+	assert.Equal(s.T(), worker.workerInstanceKey, capturedWfReq.Load().WorkerInstanceKey)
+	assert.Equal(s.T(), worker.workerInstanceKey, capturedActReq.Load().WorkerInstanceKey)
+	assert.Equal(s.T(), worker.workerInstanceKey, capturedNexusReq.Load().WorkerInstanceKey)
 }
 
 func ofPollActivityTaskQueueRequest(tps float64) gomock.Matcher {
