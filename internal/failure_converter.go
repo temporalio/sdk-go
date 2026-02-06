@@ -312,7 +312,8 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 		case enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE:
 			retryBehavior = nexus.HandlerErrorRetryBehaviorNonRetryable
 		}
-		// TODO(quinn): Check message for legacy format and not pass if so
+		// Check if the message is the default message or if it was set by the user. If it's the default message,
+		// we will replace it with an empty string to avoid confusion.
 		cause := dfc.FailureToError(failure.GetCause())
 		typ := nexus.HandlerErrorType(info.Type)
 		if strings.HasPrefix(message, fmt.Sprintf("handler error (%s)", typ)) {
