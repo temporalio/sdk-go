@@ -8,14 +8,14 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
-	github.com/nexus-rpc/sdk-go v0.5.1
+	github.com/nexus-rpc/sdk-go v0.5.2-0.20251217172131-63a8027ef960
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/stretchr/testify v1.10.0
 	github.com/uber-go/tally/v4 v4.1.1
 	go.opentelemetry.io/otel v1.28.0
 	go.opentelemetry.io/otel/sdk v1.28.0
 	go.opentelemetry.io/otel/trace v1.28.0
-	go.temporal.io/api v1.59.0
+	go.temporal.io/api v1.60.0
 	go.temporal.io/sdk v1.29.1
 	go.temporal.io/sdk/contrib/opentelemetry v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
@@ -73,3 +73,5 @@ replace (
 	go.temporal.io/sdk/contrib/resourcetuner => ../contrib/resourcetuner
 	go.temporal.io/sdk/contrib/tally => ../contrib/tally
 )
+
+replace go.temporal.io/api => ../../api-go

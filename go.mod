@@ -11,10 +11,10 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
-	github.com/nexus-rpc/sdk-go v0.5.1
+	github.com/nexus-rpc/sdk-go v0.5.2-0.20251217172131-63a8027ef960
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.59.0
+	go.temporal.io/api v1.60.0
 	golang.org/x/sync v0.13.0
 	golang.org/x/sys v0.32.0
 	golang.org/x/time v0.3.0
@@ -33,3 +33,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240827150818-7e3bb234dfed // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace go.temporal.io/api => ../api-go
