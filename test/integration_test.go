@@ -8772,13 +8772,29 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		ts.Equal(argument, result)
 	})
 
+	activityStarted := make(chan struct{}, 2)
+	heartbeatUntilStopped := func(ctx context.Context, heartbeatFreq time.Duration) error {
+		activityStarted <- struct{}{}
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(heartbeatFreq):
+				activity.RecordHeartbeat(ctx)
+			}
+		}
+	}
+	ts.worker.RegisterActivityWithOptions(heartbeatUntilStopped, activity.RegisterOptions{Name: "heartbeatUntilStopped"})
+
 	ts.Run("Cancel activity", func() {
 		reason := "cancellation reason"
 
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
-		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), activities.HeartbeatUntilCanceled, 50*time.Millisecond)
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "heartbeatUntilStopped", 50*time.Millisecond)
 		ts.NoError(err)
+
+		<-activityStarted
 
 		err = handle.Cancel(ctx, client.CancelActivityOptions{Reason: reason})
 		ts.NoError(err)
@@ -8798,8 +8814,10 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
-		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), activities.HeartbeatUntilCanceled, 50*time.Millisecond)
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "heartbeatUntilStopped", 50*time.Millisecond)
 		ts.NoError(err)
+
+		<-activityStarted
 
 		err = handle.Terminate(ctx, client.TerminateActivityOptions{Reason: reason})
 		ts.NoError(err)
