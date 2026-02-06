@@ -12,8 +12,6 @@ import (
 )
 
 // VersioningBehavior specifies when existing workflows could change their Build ID.
-//
-// NOTE: Experimental
 type VersioningBehavior = internal.VersioningBehavior
 
 const (

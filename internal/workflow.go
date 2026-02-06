@@ -44,8 +44,6 @@ const (
 
 // VersioningBehavior specifies when existing workflows could change their Build ID.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/workflow.VersioningBehavior]
 type VersioningBehavior int
 
@@ -487,8 +485,6 @@ type (
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
 		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
-		//
-		// NOTE: Experimental
 		VersioningBehavior VersioningBehavior
 	}
 
@@ -517,8 +513,6 @@ type (
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
 		// [DeploymentOptions.DeploymentSeriesName] is set, and [UseBuildIDForVersioning] is true.
-		//
-		// NOTE: Experimental
 		VersioningBehavior VersioningBehavior
 	}
 
