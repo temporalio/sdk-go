@@ -53,7 +53,7 @@ type (
 	// LocalActivityResultHandler that returns local activity result
 	LocalActivityResultHandler func(lar *LocalActivityResultWrapper)
 
-	// LocalActivityResultWrapper contains result of a local activity
+	// LocalActivityResultWrapper contains the result of a local activity
 	LocalActivityResultWrapper struct {
 		Err     error
 		Result  *commonpb.Payloads
