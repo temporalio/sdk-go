@@ -69,6 +69,34 @@ func (s *scheduleClientTestSuite) TestCreateScheduleClient() {
 	s.Equal(scheduleHandle.GetID(), scheduleID)
 }
 
+func (s *scheduleClientTestSuite) TestCreateScheduleWithKeepOriginalWorkflowIDPolicy() {
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	options := ScheduleOptions{
+		ID: scheduleID,
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: &ScheduleWorkflowAction{
+			Workflow:                 wf,
+			ID:                       workflowID,
+			TaskQueue:                taskqueue,
+			WorkflowExecutionTimeout: timeoutInSeconds,
+			WorkflowTaskTimeout:      timeoutInSeconds,
+		},
+		KeepOriginalWorkflowID: true,
+	}
+	createResp := &workflowservice.CreateScheduleResponse{}
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).
+		Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+			s.True(req.GetSchedule().GetPolicies().GetKeepOriginalWorkflowId())
+		}).Times(1)
+
+	_, err := s.client.ScheduleClient().Create(context.Background(), options)
+	s.NoError(err)
+}
+
 func (s *scheduleClientTestSuite) TestCreateScheduleNoID() {
 	wf := func(ctx Context) string {
 		panic("this is just a stub")

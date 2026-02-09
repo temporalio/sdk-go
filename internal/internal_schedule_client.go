@@ -114,9 +114,10 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 			Spec:   convertToPBScheduleSpec(&in.Options.Spec),
 			Action: action,
 			Policies: &schedulepb.SchedulePolicies{
-				OverlapPolicy:  in.Options.Overlap,
-				CatchupWindow:  catchupWindow,
-				PauseOnFailure: in.Options.PauseOnFailure,
+				OverlapPolicy:          in.Options.Overlap,
+				CatchupWindow:          catchupWindow,
+				PauseOnFailure:         in.Options.PauseOnFailure,
+				KeepOriginalWorkflowId: in.Options.KeepOriginalWorkflowID,
 			},
 			State: &schedulepb.ScheduleState{
 				Notes:            in.Options.Note,
@@ -487,9 +488,10 @@ func scheduleDescriptionFromPB(
 			Action: actionDescription,
 			Spec:   convertFromPBScheduleSpec(describeResponse.Schedule.Spec),
 			Policy: &SchedulePolicies{
-				Overlap:        describeResponse.Schedule.Policies.GetOverlapPolicy(),
-				CatchupWindow:  describeResponse.Schedule.Policies.GetCatchupWindow().AsDuration(),
-				PauseOnFailure: describeResponse.Schedule.Policies.GetPauseOnFailure(),
+				Overlap:                describeResponse.Schedule.Policies.GetOverlapPolicy(),
+				CatchupWindow:          describeResponse.Schedule.Policies.GetCatchupWindow().AsDuration(),
+				PauseOnFailure:         describeResponse.Schedule.Policies.GetPauseOnFailure(),
+				KeepOriginalWorkflowID: describeResponse.Schedule.Policies.GetKeepOriginalWorkflowId(),
 			},
 			State: &ScheduleState{
 				Note:             describeResponse.Schedule.State.GetNotes(),
@@ -533,9 +535,10 @@ func convertToPBSchedule(ctx context.Context, client *WorkflowClient, schedule *
 		Spec:   convertToPBScheduleSpec(schedule.Spec),
 		Action: action,
 		Policies: &schedulepb.SchedulePolicies{
-			OverlapPolicy:  schedule.Policy.Overlap,
-			CatchupWindow:  catchupWindow,
-			PauseOnFailure: schedule.Policy.PauseOnFailure,
+			OverlapPolicy:          schedule.Policy.Overlap,
+			CatchupWindow:          catchupWindow,
+			PauseOnFailure:         schedule.Policy.PauseOnFailure,
+			KeepOriginalWorkflowId: schedule.Policy.KeepOriginalWorkflowID,
 		},
 		State: &schedulepb.ScheduleState{
 			Notes:            schedule.State.Note,

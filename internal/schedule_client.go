@@ -349,6 +349,13 @@ type (
 		// Optional: defaulted to false
 		PauseOnFailure bool
 
+		// KeepOriginalWorkflowID - Whether to keep the Action's workflow ID exactly as configured.
+		//
+		// When false, Temporal Server may append a timestamp suffix for uniqueness.
+		//
+		// Optional: defaulted to false
+		KeepOriginalWorkflowID bool
+
 		// Note - Informative human-readable message with contextual notes, e.g. the reason
 		// a Schedule is paused. The system may overwrite this message on certain
 		// conditions, e.g. when pause-on-failure happens.
@@ -485,6 +492,9 @@ type (
 
 		// PauseOnFailure - When an Action times out or reaches the end of its Retry Policy.
 		PauseOnFailure bool
+
+		// KeepOriginalWorkflowID - Whether started workflow executions keep the Action workflow ID exactly as configured.
+		KeepOriginalWorkflowID bool
 	}
 
 	// ScheduleState describes the current state of a schedule.

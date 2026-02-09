@@ -6054,6 +6054,30 @@ func (ts *IntegrationTestSuite) TestScheduleDescribeState() {
 	}
 }
 
+func (ts *IntegrationTestSuite) TestScheduleCreateKeepOriginalWorkflowIDPolicy() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	scheduleID := "test-schedule-create-keep-original-workflow-id-policy-" + uuid.NewString()
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:                     scheduleID,
+		Spec:                   client.ScheduleSpec{},
+		Action:                 ts.createBasicScheduleWorkflowAction("test-schedule-create-keep-original-workflow-id-policy-workflow-"+uuid.NewString(), ts.workflows.SimplestWorkflow),
+		KeepOriginalWorkflowID: true,
+		Paused:                 true,
+	})
+	ts.NoError(err)
+	ts.EqualValues(scheduleID, handle.GetID())
+
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.True(description.Schedule.Policy.KeepOriginalWorkflowID)
+}
+
 func (ts *IntegrationTestSuite) TestSchedulePause() {
 	verifyState := func(ctx context.Context, handle client.ScheduleHandle, paused bool, note string) {
 		description, err := handle.Describe(ctx)
@@ -6615,6 +6639,57 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateAction() {
 	default:
 		ts.Fail("schedule action wrong type")
 	}
+}
+
+func (ts *IntegrationTestSuite) TestScheduleUpdateKeepOriginalWorkflowIDPolicy() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	scheduleID := "test-schedule-update-keep-original-workflow-id-policy-" + uuid.NewString()
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     scheduleID,
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-keep-original-workflow-id-policy-workflow-"+uuid.NewString(), ts.workflows.SimplestWorkflow),
+		Paused: true,
+	})
+	ts.NoError(err)
+	ts.EqualValues(scheduleID, handle.GetID())
+
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.False(description.Schedule.Policy.KeepOriginalWorkflowID)
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			input.Description.Schedule.Policy.KeepOriginalWorkflowID = true
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+			}, nil
+		},
+	})
+	ts.NoError(err)
+
+	description, err = handle.Describe(ctx)
+	ts.NoError(err)
+	ts.True(description.Schedule.Policy.KeepOriginalWorkflowID)
+
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			input.Description.Schedule.Policy.KeepOriginalWorkflowID = false
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+			}, nil
+		},
+	})
+	ts.NoError(err)
+
+	description, err = handle.Describe(ctx)
+	ts.NoError(err)
+	ts.False(description.Schedule.Policy.KeepOriginalWorkflowID)
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdateActionParameter() {
