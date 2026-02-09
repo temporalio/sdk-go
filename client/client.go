@@ -588,18 +588,26 @@ type (
 	DeploymentClient = internal.DeploymentClient
 
 	// UpdateWorkflowExecutionOptionsRequest is a request for [client.Client.UpdateWorkflowExecutionOptions].
+	//
+	// NOTE: Experimental
 	UpdateWorkflowExecutionOptionsRequest = internal.UpdateWorkflowExecutionOptionsRequest
 
 	// WorkflowExecutionOptions contains a set of properties of an existing workflow
 	// that can be overriden using [client.Client.UpdateWorkflowExecutionOptions].
+	//
+	// NOTE: Experimental
 	WorkflowExecutionOptions = internal.WorkflowExecutionOptions
 
 	// WorkflowExecutionOptionsChanges describes changes to [WorkflowExecutionOptions]
 	// in the [client.Client.UpdateWorkflowExecutionOptions] API.
+	//
+	// NOTE: Experimental
 	WorkflowExecutionOptionsChanges = internal.WorkflowExecutionOptionsChanges
 
 	// VersioningOverrideChange sets or removes a versioning override when used with
 	// [WorkflowExecutionOptionsChanges].
+	//
+	// NOTE: Experimental
 	VersioningOverrideChange = internal.VersioningOverrideChange
 
 	// VersioningOverride is a property in [WorkflowExecutionOptions] that changes the versioning
@@ -607,13 +615,19 @@ type (
 	//
 	// If set, it takes precedence over the Versioning Behavior provided with workflow type
 	// registration, or default worker options.
+	//
+	// NOTE: Experimental
 	VersioningOverride = internal.VersioningOverride
 
 	// PinnedVersioningOverride means the workflow will be pinned to a specific deployment version.
+	//
+	// NOTE: Experimental
 	PinnedVersioningOverride = internal.PinnedVersioningOverride
 
 	// AutoUpgradeVersioningOverride means the workflow will auto-upgrade to the current deployment
 	// version on the next workflow task.
+	//
+	// NOTE: Experimental
 	AutoUpgradeVersioningOverride = internal.AutoUpgradeVersioningOverride
 
 	// WorkflowUpdateHandle represents a running or completed workflow
