@@ -90,25 +90,20 @@ func (m *heartbeatManager) getOrCreateSharedNamespaceWorker(worker *AggregatedWo
 	defer m.workersMutex.Unlock()
 	hw, ok := m.workers[namespace]
 	if !ok {
-		if existing, ok := m.workers[namespace]; ok {
-			hw = existing
-		} else {
-			newHw := &sharedNamespaceWorker{
-				client:    m.client,
-				namespace: namespace,
-				interval:  m.interval,
-				callbacks: make(map[string]func() *workerpb.WorkerHeartbeat),
-				stopC:     make(chan struct{}),
-				stoppedC:  make(chan struct{}),
-				logger:    m.logger,
-			}
-			m.workers[namespace] = newHw
-			hw = newHw
-			if hw.started.Swap(true) {
-				panic("heartbeat worker already started")
-			}
-			go hw.run()
+		hw = &sharedNamespaceWorker{
+			client:    m.client,
+			namespace: namespace,
+			interval:  m.interval,
+			callbacks: make(map[string]func() *workerpb.WorkerHeartbeat),
+			stopC:     make(chan struct{}),
+			stoppedC:  make(chan struct{}),
+			logger:    m.logger,
 		}
+		m.workers[namespace] = hw
+		if hw.started.Swap(true) {
+			panic("heartbeat worker already started")
+		}
+		go hw.run()
 	}
 	return hw, nil
 }

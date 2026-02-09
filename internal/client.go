@@ -1139,10 +1139,6 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.ConnectionOptions.GetSystemInfoTimeout = defaultGetSystemInfoTimeout
 	}
 
-	if options.Logger == nil {
-		options.Logger = ilog.NewDefaultLogger()
-	}
-
 	// Collect set of applicable worker plugins and interceptors
 	var workerPlugins []WorkerPlugin
 	var clientPluginNames []string
