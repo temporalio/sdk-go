@@ -1865,7 +1865,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	var closeCommand *commandpb.Command
 	var canceledErr *CanceledError
 	var contErr *ContinueAsNewError
-	var payloadSizeErr PayloadSizeError
+	var payloadSizeErr payloadSizeError
 	var metricCounterToIncrement string
 
 	if errors.As(workflowContext.err, &canceledErr) {

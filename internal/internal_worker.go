@@ -210,7 +210,7 @@ type (
 
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 
-		SetPayloadErrorLimits func(*PayloadErrorLimits)
+		SetPayloadErrorLimits func(*payloadErrorLimits)
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -253,7 +253,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger.Info("No metrics handler configured for temporal worker. Use NopHandler as default.")
 	}
 	if params.DataConverter == nil {
-		params.DataConverter, params.SetPayloadErrorLimits = NewPayloadLimitDataConverter(converter.GetDefaultDataConverter(), params.Logger)
+		params.DataConverter, params.SetPayloadErrorLimits = newPayloadLimitDataConverter(converter.GetDefaultDataConverter(), params.Logger, PayloadLimitOptions{})
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
 	if params.FailureConverter == nil {
@@ -1294,7 +1294,7 @@ func (aw *AggregatedWorker) start() error {
 	}
 
 	if limits != nil && aw.executionParams.SetPayloadErrorLimits != nil {
-		aw.executionParams.SetPayloadErrorLimits(&PayloadErrorLimits{
+		aw.executionParams.SetPayloadErrorLimits(&payloadErrorLimits{
 			PayloadSizeError: limits.BlobSizeLimitError,
 		})
 	}
@@ -1809,7 +1809,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	if innerConverter == nil {
 		innerConverter = converter.GetDefaultDataConverter()
 	}
-	dataConverter, errorLimitsCallback := NewPayloadLimitDataConverter(innerConverter, logger)
+	dataConverter, errorLimitsCallback := newPayloadLimitDataConverter(innerConverter, logger, PayloadLimitOptions{})
 
 	cache := NewWorkerCache()
 	params := workerExecutionParameters{
@@ -2072,7 +2072,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	// Create a PayloadLimitDataConveter separate from the client's instance so that error limits
 	// can be initialized seprately for the worker.
-	dataConverter, errorLimitsCallback := NewPayloadLimitDataConverterWithOptions(client.originalDataConverter, logger, client.payloadLimits)
+	dataConverter, errorLimitsCallback := newPayloadLimitDataConverter(client.originalDataConverter, logger, client.payloadLimits)
 
 	cache := NewWorkerCache()
 	workerParams := workerExecutionParameters{
@@ -2108,7 +2108,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
 		capabilities: &capabilities,
-		SetPayloadErrorLimits: func(limits *PayloadErrorLimits) {
+		SetPayloadErrorLimits: func(limits *payloadErrorLimits) {
 			if !options.DisablePayloadErrorLimit {
 				errorLimitsCallback(limits)
 			}
@@ -2401,7 +2401,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 func setClientDefaults(client *WorkflowClient) {
 	if client.originalDataConverter == nil {
 		client.originalDataConverter = converter.GetDefaultDataConverter()
-		client.dataConverter, _ = NewPayloadLimitDataConverter(client.originalDataConverter, client.logger)
+		client.dataConverter, _ = newPayloadLimitDataConverter(client.originalDataConverter, client.logger, PayloadLimitOptions{})
 	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace
