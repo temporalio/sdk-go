@@ -8661,6 +8661,9 @@ func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
 }
 
 func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
+	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
+		ts.T().SkipNow()
+	}
 	makeOptions := func() client.StartActivityOptions {
 		return client.StartActivityOptions{
 			ID:                     uuid.NewString(),
