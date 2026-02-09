@@ -301,10 +301,7 @@ func verifyNamespaceExist(
 	if err != nil {
 		return nil, err
 	}
-	if response != nil && response.NamespaceInfo != nil {
-		return response.NamespaceInfo.Limits, nil
-	}
-	return nil, nil
+	return response.NamespaceInfo.GetLimits(), nil
 }
 
 func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
