@@ -455,7 +455,7 @@ func (wc *WorkflowClient) GetActivityHandle(options ClientGetActivityHandleOptio
 	return wc.interceptor.GetActivityHandle((*ClientGetActivityHandleInput)(&options))
 }
 
-func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientListActivitiesOptions) ClientListActivitiesResult {
+func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientListActivitiesOptions) (ClientListActivitiesResult, error) {
 	return ClientListActivitiesResult{
 		Results: func(yield func(*ClientActivityExecutionInfo, error) bool) {
 			if err := wc.ensureInitialized(ctx); err != nil {
@@ -499,7 +499,7 @@ func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientList
 				}
 			}
 		},
-	}
+	}, nil
 }
 
 func (wc *WorkflowClient) getListActivitiesPage(ctx context.Context, request *workflowservice.ListActivityExecutionsRequest) (*workflowservice.ListActivityExecutionsResponse, error) {

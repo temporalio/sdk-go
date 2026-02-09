@@ -1407,16 +1407,6 @@ type (
 		// Returns an ActivityExecutionAlreadyStarted error if an activity with the same ID already exists
 		// in this namespace, unless permitted by the specified ID conflict policy.
 		//
-		// ActivityHandle has the following methods:
-		//  - GetID() string: returns the activity ID (same as ExecuteActivityOptions.ID)
-		//  - GetRunID() string: returns the run ID of the started activity execution
-		//  - Get(ctx context.Context, valuePtr interface{}) error: blocks until the activity completes
-		//    and fills the result into valuePtr, or returns the corresponding error
-		//  - Describe(ctx context.Context, options DescribeActivityOptions) (*ActivityExecutionDescription, error):
-		//    returns detailed information about the activity execution
-		//  - Cancel(ctx context.Context, options CancelActivityOptions) error: requests cancellation
-		//  - Terminate(ctx context.Context, options TerminateActivityOptions) error: terminates the activity
-		//
 		// NOTE: Standalone activities are not associated with a workflow execution.
 		// They are scheduled directly on a task queue and executed by a worker.
 		//
@@ -1430,8 +1420,10 @@ type (
 
 		// ListActivities lists activity executions based on query.
 		//
+		// Currently, all errors are returned in the iterator and not the base level error.
+		//
 		// NOTE: Experimental
-		ListActivities(ctx context.Context, options ListActivitiesOptions) ListActivitiesResult
+		ListActivities(ctx context.Context, options ListActivitiesOptions) (ListActivitiesResult, error)
 
 		// CountActivities counts activity executions based on query. The result
 		// includes the total count and optionally grouped counts if the query includes

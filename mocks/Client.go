@@ -1158,7 +1158,7 @@ func (_m *Client) GetActivityHandle(options client.GetActivityHandleOptions) cli
 	return r0
 }
 
-func (_m *Client) ListActivities(ctx context.Context, options client.ListActivitiesOptions) client.ListActivitiesResult {
+func (_m *Client) ListActivities(ctx context.Context, options client.ListActivitiesOptions) (client.ListActivitiesResult, error) {
 	ret := _m.Called(ctx, options)
 
 	if len(ret) == 0 {
@@ -1172,7 +1172,7 @@ func (_m *Client) ListActivities(ctx context.Context, options client.ListActivit
 		r0 = ret.Get(0).(client.ListActivitiesResult)
 	}
 
-	return r0
+	return r0, nil
 }
 
 func (_m *Client) CountActivities(ctx context.Context, options client.CountActivitiesOptions) (*client.CountActivitiesResult, error) {

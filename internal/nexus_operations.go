@@ -715,7 +715,7 @@ func (t *testSuiteClientForNexusOperations) GetActivityHandle(options ClientGetA
 	panic("unimplemented in the test environment")
 }
 
-func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) ClientListActivitiesResult {
+func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) (ClientListActivitiesResult, error) {
 	panic("unimplemented in the test environment")
 }
 
