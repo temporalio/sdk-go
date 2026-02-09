@@ -11,7 +11,6 @@ import (
 	activitypb "go.temporal.io/api/activity/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
@@ -108,13 +107,6 @@ type (
 		//
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
-
-		// ActivityExecutionErrorWhenAlreadyStarted - when true, ExecuteActivity returns an error if the
-		// activity ID has already been used and ActivityIDReusePolicy or ActivityIDConflictPolicy would
-		// disallow a re-run. When false (default), a handle to the existing activity is returned instead.
-		//
-		// Optional: defaults to false
-		ActivityExecutionErrorWhenAlreadyStarted bool
 	}
 
 	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
@@ -582,9 +574,7 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	resp, err := w.client.WorkflowService().StartActivityExecution(grpcCtx, request)
 
 	var runID string
-	if e, ok := err.(*serviceerror.ActivityExecutionAlreadyStarted); ok && !in.Options.ActivityExecutionErrorWhenAlreadyStarted {
-		runID = e.RunId
-	} else if err != nil {
+	if err != nil {
 		return nil, err
 	} else {
 		runID = resp.RunId
