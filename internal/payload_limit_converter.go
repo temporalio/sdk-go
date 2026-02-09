@@ -8,6 +8,14 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
+// Options for when payload sizes exceed limits.
+//
+// Exposed as: [go.temporal.io/sdk/client.PayloadLimitOptions]
+type PayloadLimitOptions struct {
+	// The limit (in bytes) at which a payload size warning is logged.
+	PayloadSizeWarning int
+}
+
 type payloadLimitDataConverter struct {
 	innerConverter converter.DataConverter
 	errorLimits    *payloadErrorLimits
