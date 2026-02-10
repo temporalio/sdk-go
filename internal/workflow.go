@@ -985,10 +985,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
-		if _, ok := err.(payloadSizeError); ok {
-			settable.Set(nil, err)
-			return future
-		}
 		panic(err)
 	}
 

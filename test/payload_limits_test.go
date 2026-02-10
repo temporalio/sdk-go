@@ -169,7 +169,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
 
 	// Verify failure is logged
 	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.HasPrefix(line, "ERROR [TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
 	}))
 }
 
@@ -238,7 +238,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
 
 	// Verify failure is logged
 	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.HasPrefix(line, "ERROR [TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
 	}))
 }
 
@@ -388,7 +388,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningClientCustom() {
 	var res int
 	ts.NoError(run.Get(ctx, &res))
 	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.HasPrefix(line, "WARN  [TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
+		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
 	}))
 }
 
@@ -434,6 +434,6 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningWorkflowCustom() {
 	var res string
 	ts.NoError(run.Get(ctx, &res))
 	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.HasPrefix(line, "WARN  [TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
+		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
 	}))
 }

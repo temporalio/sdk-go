@@ -1856,16 +1856,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		return workflowTaskCompletion{rawRequest: queryCompletedRequest}
 	}
 
-	seriesName := ""
-	if (wth.workerDeploymentVersion != WorkerDeploymentVersion{}) {
-		seriesName = wth.workerDeploymentVersion.DeploymentName
-	}
-
 	// complete workflow task
 	var closeCommand *commandpb.Command
 	var canceledErr *CanceledError
 	var contErr *ContinueAsNewError
-	var payloadSizeErr payloadSizeError
 	var metricCounterToIncrement string
 
 	if errors.As(workflowContext.err, &canceledErr) {
@@ -1901,36 +1895,6 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			RetryPolicy:         convertToPBRetryPolicy(retryPolicy),
 			InheritBuildId:      useCompat,
 		}}
-	} else if errors.As(workflowContext.err, &payloadSizeErr) {
-		wth.logger.Error(payloadSizeErr.message,
-			tagWorkflowType, workflowContext.workflowInfo.WorkflowType.Name,
-			tagWorkflowID, workflowContext.workflowInfo.WorkflowExecution.ID,
-			tagRunID, workflowContext.workflowInfo.WorkflowExecution.RunID)
-		workflowTaskFailedRequest := &workflowservice.RespondWorkflowTaskFailedRequest{
-			TaskToken:      task.TaskToken,
-			Cause:          enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
-			Failure:        wth.failureConverter.ErrorToFailure(workflowContext.err),
-			Identity:       wth.identity,
-			BinaryChecksum: wth.workerBuildID,
-			Namespace:      wth.namespace,
-			WorkerVersion: &commonpb.WorkerVersionStamp{
-				BuildId:       wth.workerBuildID,
-				UseVersioning: wth.useBuildIDForVersioning,
-			},
-			Deployment: &deploymentpb.Deployment{
-				BuildId:    wth.workerBuildID,
-				SeriesName: seriesName,
-			},
-			DeploymentOptions: workerDeploymentOptionsToProto(
-				wth.useBuildIDForVersioning,
-				wth.workerDeploymentVersion,
-			),
-		}
-		if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
-			//lint:ignore SA1019 ignore deprecated versioning APIs
-			workflowTaskFailedRequest.BinaryChecksum = ""
-		}
-		return workflowTaskCompletion{rawRequest: workflowTaskFailedRequest}
 	} else if workflowContext.err != nil {
 		// Workflow failures
 		if !isBenignApplicationError(workflowContext.err) {
@@ -1980,6 +1944,11 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	langUsedFlags := make([]uint32, 0, len(sdkFlags))
 	for _, flag := range sdkFlags {
 		langUsedFlags = append(langUsedFlags, uint32(flag))
+	}
+
+	seriesName := ""
+	if (wth.workerDeploymentVersion != WorkerDeploymentVersion{}) {
+		seriesName = wth.workerDeploymentVersion.DeploymentName
 	}
 
 	builtRequest := &workflowservice.RespondWorkflowTaskCompletedRequest{
