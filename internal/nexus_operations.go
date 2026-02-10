@@ -445,6 +445,11 @@ func (t *testSuiteClientForNexusOperations) CompleteActivityByID(ctx context.Con
 	panic("not implemented in the test environment")
 }
 
+// CompleteActivityByID implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result interface{}, err error) error {
+	panic("not implemented in the test environment")
+}
+
 // CountWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
 	panic("not implemented in the test environment")
@@ -699,6 +704,22 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkerBuildIdCompatibility(ctx
 
 // UpdateWorkerVersioningRules implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error) {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) GetActivityHandle(options ClientGetActivityHandleOptions) ClientActivityHandle {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) (ClientListActivitiesResult, error) {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) CountActivities(ctx context.Context, options ClientCountActivitiesOptions) (*ClientCountActivitiesResult, error) {
 	panic("unimplemented in the test environment")
 }
 
