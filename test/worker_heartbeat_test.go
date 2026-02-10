@@ -116,13 +116,19 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 		ts.Fail("Timeout waiting for activity to start")
 	}
 
-	// Wait for heartbeat to capture the in-flight activity
+	// Wait for heartbeat to capture the in-flight activity and all pollers to be actively polling.
+	// Poller counts are only non-zero while a poll RPC is in-flight, so on slower CI machines
+	// the first heartbeat may fire before all pollers have entered their first long-poll.
 	var workerInfo *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
 		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
-			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
-	}, 5*time.Second, 200*time.Millisecond, "Should find worker with activity slot used")
+			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1 &&
+			workerInfo.WorkflowPollerInfo.GetCurrentPollers() > 0 &&
+			workerInfo.WorkflowStickyPollerInfo.GetCurrentPollers() > 0 &&
+			workerInfo.ActivityPollerInfo.GetCurrentPollers() > 0 &&
+			workerInfo.NexusPollerInfo.GetCurrentPollers() > 0
+	}, 5*time.Second, 200*time.Millisecond, "Should find worker with activity slot used and all pollers active")
 
 	ts.Equal(enums.WORKER_STATUS_RUNNING, workerInfo.Status)
 

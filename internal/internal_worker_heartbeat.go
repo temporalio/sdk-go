@@ -42,12 +42,37 @@ func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger 
 func (m *heartbeatManager) registerWorker(
 	worker *AggregatedWorker,
 ) error {
-	hw, err := m.getOrCreateSharedNamespaceWorker(worker)
+	capabilities, err := m.client.loadNamespaceCapabilities(worker.heartbeatMetrics)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get namespace capabilities: %w", err)
 	}
-	if hw == nil {
-		return nil // heartbeats not supported
+	if !capabilities.GetWorkerHeartbeats() {
+		if m.logger != nil {
+			m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
+		}
+		return nil
+	}
+
+	namespace := worker.executionParams.Namespace
+	m.workersMutex.Lock()
+	defer m.workersMutex.Unlock()
+
+	hw, ok := m.workers[namespace]
+	if !ok {
+		hw = &sharedNamespaceWorker{
+			client:    m.client,
+			namespace: namespace,
+			interval:  m.interval,
+			callbacks: make(map[string]func() *workerpb.WorkerHeartbeat),
+			stopC:     make(chan struct{}),
+			stoppedC:  make(chan struct{}),
+			logger:    m.logger,
+		}
+		m.workers[namespace] = hw
+		if hw.started.Swap(true) {
+			panic("heartbeat worker already started")
+		}
+		go hw.run()
 	}
 
 	hw.callbacksMutex.Lock()
@@ -80,40 +105,6 @@ func (m *heartbeatManager) unregisterWorker(worker *AggregatedWorker) {
 	}
 }
 
-func (m *heartbeatManager) getOrCreateSharedNamespaceWorker(worker *AggregatedWorker) (*sharedNamespaceWorker, error) {
-	capabilities, err := m.client.loadNamespaceCapabilities(worker.heartbeatMetrics)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get namespace capabilities: %w", err)
-	}
-	if !capabilities.GetWorkerHeartbeats() {
-		if m.logger != nil {
-			m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
-		}
-		return nil, nil
-	}
-	namespace := worker.executionParams.Namespace
-	m.workersMutex.Lock()
-	defer m.workersMutex.Unlock()
-	hw, ok := m.workers[namespace]
-	if !ok {
-		hw = &sharedNamespaceWorker{
-			client:    m.client,
-			namespace: namespace,
-			interval:  m.interval,
-			callbacks: make(map[string]func() *workerpb.WorkerHeartbeat),
-			stopC:     make(chan struct{}),
-			stoppedC:  make(chan struct{}),
-			logger:    m.logger,
-		}
-		m.workers[namespace] = hw
-		if hw.started.Swap(true) {
-			panic("heartbeat worker already started")
-		}
-		go hw.run()
-	}
-	return hw, nil
-}
-
 // sharedNamespaceWorker handles heartbeating for all workers in a specific namespace for a specific client.
 type sharedNamespaceWorker struct {
 	client    *WorkflowClient
@@ -121,6 +112,7 @@ type sharedNamespaceWorker struct {
 	interval  time.Duration
 	logger    log.Logger
 
+	// callbacksMutex should only be unlocked under
 	callbacksMutex sync.RWMutex
 	callbacks      map[string]func() *workerpb.WorkerHeartbeat // workerInstanceKey -> callback
 
