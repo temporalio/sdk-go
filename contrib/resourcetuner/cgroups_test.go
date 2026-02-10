@@ -20,7 +20,9 @@ func TestCGroupInfoUpdateOutsideContainer(t *testing.T) {
 
 	_, loadErr := cgroup2.Load("/")
 
+	fmt.Println("loadErr:")
 	if errors.Is(loadErr, fs.ErrNotExist) {
+		fmt.Println("cgroup2.Load() returned fs.ErrNotExist")
 		assert.False(t, continueUpdates, "should return false when cgroup files don't exist")
 		assert.NoError(t, err, "should not return error when cgroup files don't exist")
 	}
