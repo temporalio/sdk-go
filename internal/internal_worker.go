@@ -1142,7 +1142,7 @@ func getNamespaceFromActivityCtx(ctx context.Context) string {
 	if env == nil {
 		return ""
 	}
-	return env.workflowNamespace
+	return env.namespace
 }
 
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {

@@ -2278,12 +2278,22 @@ func newServiceInvoker(
 // Execute executes an implementation of the activity.
 func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result interface{}, err error) {
 	traceLog(func() {
-		ath.logger.Debug("Processing new activity task",
-			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
-			tagRunID, t.WorkflowExecution.GetRunId(),
-			tagActivityType, t.ActivityType.GetName(),
-			tagAttempt, t.Attempt,
-		)
+		if t.WorkflowExecution.GetWorkflowId() == "" {
+			ath.logger.Debug("Processing new standalone activity task",
+				tagActivityID, t.ActivityId,
+				tagActivityRunID, t.ActivityRunId,
+				tagActivityType, t.ActivityType.GetName(),
+				tagAttempt, t.Attempt,
+			)
+		} else {
+			ath.logger.Debug("Processing new workflow activity task",
+				tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+				tagRunID, t.WorkflowExecution.GetRunId(),
+				tagActivityID, t.ActivityId,
+				tagActivityType, t.ActivityType.GetName(),
+				tagAttempt, t.Attempt,
+			)
+		}
 	})
 	// The root context is only cancelled when the worker is finished shutting down.
 	rootCtx := ath.backgroundContext

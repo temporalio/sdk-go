@@ -8,13 +8,12 @@ package client
 import (
 	"context"
 	"crypto/tls"
-	"io"
-
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"io"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
@@ -899,6 +898,80 @@ type (
 	// Note, this is not related to any general concept of timing out or cancelling a running update, this is only related to the client call itself.
 	WorkflowUpdateServiceTimeoutOrCanceledError = internal.WorkflowUpdateServiceTimeoutOrCanceledError
 
+	// StartActivityOptions contains configuration parameters for starting an activity execution from the client.
+	// ID and TaskQueue are required. At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
+	// Other parameters are optional.
+	//
+	// NOTE: Experimental
+	StartActivityOptions = internal.ClientStartActivityOptions
+
+	// GetActivityHandleOptions contains input for GetActivityHandle call.
+	// ActivityID and RunID are required.
+	//
+	// NOTE: Experimental
+	GetActivityHandleOptions = internal.ClientGetActivityHandleOptions
+
+	// ListActivitiesOptions contains input for ListActivities call.
+	//
+	// NOTE: Experimental
+	ListActivitiesOptions = internal.ClientListActivitiesOptions
+
+	// ListActivitiesResult contains the result of the ListActivities call.
+	//
+	// NOTE: Experimental
+	ListActivitiesResult = internal.ClientListActivitiesResult
+
+	// CountActivitiesOptions contains input for CountActivities call.
+	//
+	// NOTE: Experimental
+	CountActivitiesOptions = internal.ClientCountActivitiesOptions
+
+	// CountActivitiesResult contains the result of the CountActivities call.
+	//
+	// NOTE: Experimental
+	CountActivitiesResult = internal.ClientCountActivitiesResult
+
+	// CountActivitiesAggregationGroup contains groups of activities if
+	// CountActivityExecutions is grouped by a field.
+	// The list might not be complete, and the counts of each group is approximate.
+	//
+	// NOTE: Experimental
+	CountActivitiesAggregationGroup = internal.ClientCountActivitiesAggregationGroup
+
+	// ActivityHandle represents a running or completed standalone activity execution.
+	// It can be used to get the result, describe, cancel, or terminate the activity.
+	//
+	// NOTE: Experimental
+	ActivityHandle = internal.ClientActivityHandle
+
+	// ActivityExecutionInfo contains information about an activity execution.
+	// This is returned by ListActivities and embedded in ClientActivityExecutionDescription.
+	//
+	// NOTE: Experimental
+	ActivityExecutionInfo = internal.ClientActivityExecutionInfo
+
+	// ActivityExecutionDescription contains detailed information about an activity execution.
+	// This is returned by ClientActivityHandle.Describe.
+	//
+	//	NOTE: Experimental
+	ActivityExecutionDescription = internal.ClientActivityExecutionDescription
+
+	// DescribeActivityOptions contains options for ClientActivityHandle.Describe call.
+	// For future compatibility, currently unused.
+	//
+	// NOTE: Experimental
+	DescribeActivityOptions = internal.ClientDescribeActivityOptions
+
+	// CancelActivityOptions contains options for ClientActivityHandle.Cancel call.
+	//
+	// NOTE: Experimental
+	CancelActivityOptions = internal.ClientCancelActivityOptions
+
+	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
+	//
+	// NOTE: Experimental
+	TerminateActivityOptions = internal.ClientTerminateActivityOptions
+
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
@@ -1025,11 +1098,10 @@ type (
 		GetWorkflowHistory(ctx context.Context, workflowID string, runID string, isLongPoll bool, filterType enumspb.HistoryEventFilterType) HistoryEventIterator
 
 		// CompleteActivity reports activity completed.
-		// activity Execute method can return activity.ErrResultPending to
-		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivity() method
-		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
-		// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
-		// activity task failed event will be reported.
+		// An activity's implementation can return activity.ErrResultPending to indicate it will be completed asynchronously.
+		// In that case, this CompleteActivity() method should be called when the activity is completed with the
+		// actual result and error. If err is nil, activity task completed event will be reported; if err is CanceledError,
+		// activity task canceled event will be reported; otherwise, activity task failed event will be reported.
 		// An activity implementation should use GetActivityInfo(ctx).TaskToken function to get task token to use for completion.
 		// Example:-
 		//  To complete with a result.
@@ -1040,19 +1112,38 @@ type (
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
 
 		// CompleteActivityByID reports activity completed.
-		// Similar to CompleteActivity, but may save user from keeping taskToken info.
-		// activity Execute method can return activity.ErrResultPending to
-		// indicate the activity is not completed when it's Execute method returns. In that case, this CompleteActivityById() method
-		// should be called when that activity is completed with the actual result and error. If err is nil, activity task
-		// completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
-		// activity task failed event will be reported.
+		// Similar to CompleteActivity, but may save the user from keeping taskToken info.
+		// This method works only for workflow activities. workflowID and runID must be set to the workflow ID and workflow run ID
+		// of the workflow that started the activity. To complete a standalone activity (not started by workflow),
+		// use CompleteActivityByActivityID.
+		//
+		// An activity's implementation can return activity.ErrResultPending to indicate it will be completed asynchronously.
+		// In that case, this CompleteActivityByID() method should be called when the activity is completed with the
+		// actual result and error. If err is nil, activity task completed event will be reported; if err is CanceledError,
+		// activity task canceled event will be reported; otherwise, activity task failed event will be reported.
 		// An activity implementation should use activityID provided in ActivityOption to use for completion.
-		// namespace name, workflowID, activityID are required, runID is optional.
+		// namespace, workflowID and activityID are required, runID is optional.
 		// The errors it can return:
 		//  - ApplicationError
 		//  - TimeoutError
 		//  - CanceledError
 		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result interface{}, err error) error
+
+		// CompleteActivityByActivityID reports activity completed.
+		// Similar to CompleteActivity, but may save the user from keeping taskToken info.
+		// This method works only for standalone activities. To complete a workflow activity, use CompleteActivityByID.
+		//
+		// An activity's implementation can return activity.ErrResultPending to indicate it will be completed asynchronously.
+		// In that case, this CompleteActivityByActivityID() method should be called when the activity is completed with the
+		// actual result and error. If err is nil, activity task completed event will be reported; if err is CanceledError,
+		// activity task canceled event will be reported; otherwise, activity task failed event will be reported.
+		// An activity implementation should use activityID provided in ActivityOption to use for completion.
+		// namespace and activityID are required, activityRunID is optional.
+		// The errors it can return:
+		//  - ApplicationError
+		//  - TimeoutError
+		//  - CanceledError
+		CompleteActivityByActivityID(ctx context.Context, namespace, activityID, activityRunID string, result interface{}, err error) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
@@ -1308,6 +1399,41 @@ type (
 		// which can be polled for an outcome. Note that runID is optional and
 		// if not specified the most recent runID will be used.
 		GetWorkflowUpdateHandle(ref GetWorkflowUpdateHandleOptions) WorkflowUpdateHandle
+
+		// ExecuteActivity starts a standalone activity execution and returns an ActivityHandle.
+		// The user can use this to start using a function or activity type name.
+		// Either by
+		//     ExecuteActivity(ctx, options, "activityTypeName", arg1, arg2, arg3)
+		//     or
+		//     ExecuteActivity(ctx, options, activityFn, arg1, arg2, arg3)
+		//
+		// Returns an ActivityExecutionAlreadyStarted error if an activity with the same ID already exists
+		// in this namespace, unless permitted by the specified ID conflict policy.
+		//
+		// NOTE: Standalone activities are not associated with a workflow execution.
+		// They are scheduled directly on a task queue and executed by a worker.
+		//
+		// NOTE: Experimental
+		ExecuteActivity(ctx context.Context, options StartActivityOptions, activity any, args ...any) (ActivityHandle, error)
+
+		// GetActivityHandle creates a handle to the referenced activity.
+		//
+		// NOTE: Experimental
+		GetActivityHandle(options GetActivityHandleOptions) ActivityHandle
+
+		// ListActivities lists activity executions based on query.
+		//
+		// Currently, all errors are returned in the iterator and not the base level error.
+		//
+		// NOTE: Experimental
+		ListActivities(ctx context.Context, options ListActivitiesOptions) (ListActivitiesResult, error)
+
+		// CountActivities counts activity executions based on query. The result
+		// includes the total count and optionally grouped counts if the query includes
+		// a GROUP BY clause.
+		//
+		// NOTE: Experimental
+		CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error)
 
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
