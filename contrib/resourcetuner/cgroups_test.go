@@ -1,28 +1,53 @@
-//go:build linux
-
 package resourcetuner
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"testing"
 
-	"github.com/containerd/cgroups/v3/cgroup2"
 	"github.com/stretchr/testify/assert"
 )
 
-// TestCGroupInfoUpdateOutsideContainer verifies that Update() gracefully handles
-// running outside a cgroup environment by returning (false, nil) instead of an error.
-// This exercises the errors.Is(err, fs.ErrNotExist) check in cGroupInfoImpl.Update().
-func TestCGroupInfoUpdateOutsideContainer(t *testing.T) {
-	info := newCGroupInfo().(*cGroupInfoImpl)
-	continueUpdates, err := info.Update()
-
-	_, loadErr := cgroup2.Load("/")
-
-	if errors.Is(loadErr, fs.ErrNotExist) {
-		assert.False(t, continueUpdates, "should return false when cgroup files don't exist")
-		assert.NoError(t, err, "should not return error when cgroup files don't exist")
+func TestHandleCGroupUpdateError(t *testing.T) {
+	tests := []struct {
+		name            string
+		err             error
+		wantContinue    bool
+		wantErrContains string
+	}{
+		{
+			name:         "not in cgroup - fs.ErrNotExist stops updates without error",
+			err:          fs.ErrNotExist,
+			wantContinue: false,
+		},
+		{
+			name:         "wrapped fs.ErrNotExist also stops updates without error",
+			err:          fmt.Errorf("failed to get cgroup mem stats %w", fs.ErrNotExist),
+			wantContinue: false,
+		},
+		{
+			name:         "success continues updates",
+			err:          nil,
+			wantContinue: true,
+		},
+		{
+			name:            "other errors continue updates and propagate",
+			err:             errors.New("something broke"),
+			wantContinue:    true,
+			wantErrContains: "something broke",
+		},
 	}
 
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			continueUpdates, err := handleCGroupUpdateError(tt.err)
+			assert.Equal(t, tt.wantContinue, continueUpdates)
+			if tt.wantErrContains != "" {
+				assert.ErrorContains(t, err, tt.wantErrContains)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
 }
