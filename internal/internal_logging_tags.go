@@ -34,4 +34,6 @@ const (
 	tagPanicStack                   = "PanicStack"
 	tagUpdateID                     = "UpdateID"
 	tagUpdateName                   = "UpdateName"
+	tagPayloadSize                  = "PayloadSize"
+	tagPayloadSizeLimit             = "PayloadSizeLimit"
 )

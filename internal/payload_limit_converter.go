@@ -30,6 +30,8 @@ type payloadLimitDataConverterOptions struct {
 
 type payloadSizeError struct {
 	message string
+	size    int64
+	limit   int64
 }
 
 func (e payloadSizeError) Error() string {
@@ -152,10 +154,18 @@ func (c *payloadLimitDataConverter) checkPayloadsSize(payloads []*commonpb.Paylo
 	}
 	errorLimits := c.errorLimits.Load()
 	if errorLimits != nil && errorLimits.PayloadSizeError > 0 && totalSize > errorLimits.PayloadSizeError {
-		return payloadSizeError{message: "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit."}
+		return payloadSizeError{
+			message: "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.",
+			size:    totalSize,
+			limit:   errorLimits.PayloadSizeError,
+		}
 	}
 	if c.options.PayloadSizeWarning > 0 && totalSize > int64(c.options.PayloadSizeWarning) && c.options.Logger != nil {
-		c.options.Logger.Warn("[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
+		c.options.Logger.Warn(
+			"[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.",
+			tagPayloadSize, totalSize,
+			tagPayloadSizeLimit, int64(c.options.PayloadSizeWarning),
+		)
 	}
 	return nil
 }
