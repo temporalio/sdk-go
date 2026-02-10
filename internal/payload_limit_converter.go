@@ -105,28 +105,15 @@ func (c *payloadLimitDataConverter) ToStrings(input *commonpb.Payloads) []string
 }
 
 func (c *payloadLimitDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
-	logger := c.options.Logger
-	if workflowEnvironmentAny := ctx.Value(workflowEnvironmentContextKey); workflowEnvironmentAny != nil {
-		workflowInfo := workflowEnvironmentAny.(WorkflowEnvironment).WorkflowInfo()
-		logger = log.With(logger,
-			tagWorkflowType, workflowInfo.WorkflowType.Name,
-			tagWorkflowID, workflowInfo.WorkflowExecution.ID,
-			tagRunID, workflowInfo.WorkflowExecution.RunID)
-	}
-
 	innerConverter := c.innerConverter
 	if contextAwareInnerConverter, ok := c.innerConverter.(ContextAware); ok {
 		innerConverter = contextAwareInnerConverter.WithWorkflowContext(ctx)
 	}
 
-	if logger == c.options.Logger && innerConverter == c.innerConverter {
-		return c
-	}
-
 	newConverter := &payloadLimitDataConverter{
 		innerConverter: innerConverter,
 		options: payloadLimitDataConverterOptions{
-			Logger:             logger,
+			Logger:             GetLogger(ctx),
 			PayloadSizeWarning: c.options.PayloadSizeWarning,
 		},
 	}
