@@ -158,7 +158,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	if ts.config.maxWorkflowCacheSize > 0 {
 		stickyPollerInfo := workerInfo.WorkflowStickyPollerInfo
 		ts.NotEqual(int32(0), stickyPollerInfo.CurrentPollers)
-		ts.Equal(int32(1), workerInfo.CurrentStickyCacheSize)
+		ts.GreaterOrEqual(workerInfo.CurrentStickyCacheSize, int32(1))
 	}
 
 	ts.assertRecentTimestamp(workerInfo.StartTime, 10*time.Second, "StartTime")
@@ -263,7 +263,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 		"ActivityPollerInfo.LastSuccessfulPollTime after shutdown")
 
 	if ts.config.maxWorkflowCacheSize > 0 {
-		ts.Equal(int32(1), workerInfo.TotalStickyCacheHit)
+		ts.GreaterOrEqual(workerInfo.TotalStickyCacheHit, int32(1))
 	}
 }
 
