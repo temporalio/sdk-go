@@ -116,19 +116,13 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 		ts.Fail("Timeout waiting for activity to start")
 	}
 
-	// Wait for heartbeat to capture the in-flight activity and all pollers to be actively polling.
-	// Poller counts are only non-zero while a poll RPC is in-flight, so on slower CI machines
-	// the first heartbeat may fire before all pollers have entered their first long-poll.
 	var workerInfo *workerpb.WorkerHeartbeat
+	// Wait for heartbeat to capture the in-flight activity
 	ts.Eventually(func() bool {
 		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
 		return workerInfo != nil && workerInfo.ActivityTaskSlotsInfo != nil &&
-			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1 &&
-			workerInfo.WorkflowPollerInfo.GetCurrentPollers() > 0 &&
-			workerInfo.WorkflowStickyPollerInfo.GetCurrentPollers() > 0 &&
-			workerInfo.ActivityPollerInfo.GetCurrentPollers() > 0 &&
-			workerInfo.NexusPollerInfo.GetCurrentPollers() > 0
-	}, 5*time.Second, 200*time.Millisecond, "Should find worker with activity slot used and all pollers active")
+			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
+	}, 5*time.Second, 200*time.Millisecond, "Should find worker with activity slot used")
 
 	ts.Equal(enums.WORKER_STATUS_RUNNING, workerInfo.Status)
 
@@ -156,14 +150,16 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 
 	workflowPollerInfo := workerInfo.WorkflowPollerInfo
 	ts.NotEqual(int32(0), workflowPollerInfo.CurrentPollers)
-	stickyPollerInfo := workerInfo.WorkflowStickyPollerInfo
-	ts.NotEqual(int32(0), stickyPollerInfo.CurrentPollers)
 	nexusPollerInfo := workerInfo.NexusPollerInfo
 	ts.NotEqual(int32(0), nexusPollerInfo.CurrentPollers)
 	activityPollerInfo := workerInfo.ActivityPollerInfo
 	ts.NotEqual(int32(0), activityPollerInfo.CurrentPollers)
 
-	ts.Equal(int32(1), workerInfo.CurrentStickyCacheSize)
+	if ts.config.maxWorkflowCacheSize > 0 {
+		stickyPollerInfo := workerInfo.WorkflowStickyPollerInfo
+		ts.NotEqual(int32(0), stickyPollerInfo.CurrentPollers)
+		ts.Equal(int32(1), workerInfo.CurrentStickyCacheSize)
+	}
 
 	ts.assertRecentTimestamp(workerInfo.StartTime, 10*time.Second, "StartTime")
 	ts.assertRecentTimestamp(workerInfo.HeartbeatTime, 5*time.Second, "HeartbeatTime")
@@ -247,11 +243,13 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.assertRecentTimestamp(workflowPollerInfo.LastSuccessfulPollTime, 10*time.Second,
 		"WorkflowPollerInfo.LastSuccessfulPollTime after shutdown")
 
-	stickyPollerInfo = workerInfo.WorkflowStickyPollerInfo
-	ts.NotEqual(int32(0), stickyPollerInfo.CurrentPollers)
-	ts.False(stickyPollerInfo.IsAutoscaling)
-	ts.assertRecentTimestamp(stickyPollerInfo.LastSuccessfulPollTime, 10*time.Second,
-		"WorkflowStickyPollerInfo.LastSuccessfulPollTime after shutdown")
+	if ts.config.maxWorkflowCacheSize > 0 {
+		stickyPollerInfo := workerInfo.WorkflowStickyPollerInfo
+		ts.NotEqual(int32(0), stickyPollerInfo.CurrentPollers)
+		ts.False(stickyPollerInfo.IsAutoscaling)
+		ts.assertRecentTimestamp(stickyPollerInfo.LastSuccessfulPollTime, 10*time.Second,
+			"WorkflowStickyPollerInfo.LastSuccessfulPollTime after shutdown")
+	}
 
 	nexusPollerInfo = workerInfo.NexusPollerInfo
 	ts.NotEqual(int32(0), nexusPollerInfo.CurrentPollers)
@@ -264,7 +262,9 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.assertRecentTimestamp(activityPollerInfo.LastSuccessfulPollTime, 10*time.Second,
 		"ActivityPollerInfo.LastSuccessfulPollTime after shutdown")
 
-	ts.Equal(int32(1), workerInfo.TotalStickyCacheHit)
+	if ts.config.maxWorkflowCacheSize > 0 {
+		ts.Equal(int32(1), workerInfo.TotalStickyCacheHit)
+	}
 }
 
 // TestWorkerHeartbeatDeploymentVersion verifies that deployment version info is
@@ -617,6 +617,9 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWithActivityInFlight() {
 }
 
 func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStickyCacheMiss() {
+	if ts.config.maxWorkflowCacheSize == 0 {
+		ts.T().Skip("Sticky cache disabled")
+	}
 	ctx := context.Background()
 
 	wf1ActivityStarted := make(chan struct{}, 1)
@@ -965,8 +968,10 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatResourceBasedTuner() {
 	ts.NotNil(workerInfo.WorkflowPollerInfo)
 	ts.True(workerInfo.WorkflowPollerInfo.IsAutoscaling)
 
-	ts.NotNil(workerInfo.WorkflowStickyPollerInfo)
-	ts.True(workerInfo.WorkflowStickyPollerInfo.IsAutoscaling)
+	if ts.config.maxWorkflowCacheSize > 0 {
+		ts.NotNil(workerInfo.WorkflowStickyPollerInfo)
+		ts.True(workerInfo.WorkflowStickyPollerInfo.IsAutoscaling)
+	}
 
 	ts.NotNil(workerInfo.ActivityPollerInfo)
 	ts.True(workerInfo.ActivityPollerInfo.IsAutoscaling)
