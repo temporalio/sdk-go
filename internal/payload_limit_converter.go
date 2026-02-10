@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"sync/atomic"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
@@ -18,7 +19,7 @@ type PayloadLimitOptions struct {
 
 type payloadLimitDataConverter struct {
 	innerConverter converter.DataConverter
-	errorLimits    *payloadErrorLimits
+	errorLimits    atomic.Pointer[payloadErrorLimits]
 	options        payloadLimitDataConverterOptions
 }
 
@@ -56,7 +57,7 @@ func newPayloadLimitDataConverter(innerConverter converter.DataConverter, logger
 }
 
 func (c *payloadLimitDataConverter) SetErrorLimits(errorLimits *payloadErrorLimits) {
-	c.errorLimits = errorLimits
+	c.errorLimits.Store(errorLimits)
 }
 
 func (c *payloadLimitDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
@@ -122,14 +123,15 @@ func (c *payloadLimitDataConverter) WithWorkflowContext(ctx Context) converter.D
 		return c
 	}
 
-	return &payloadLimitDataConverter{
+	newConverter := &payloadLimitDataConverter{
 		innerConverter: innerConverter,
-		errorLimits:    c.errorLimits,
 		options: payloadLimitDataConverterOptions{
 			Logger:             logger,
 			PayloadSizeWarning: c.options.PayloadSizeWarning,
 		},
 	}
+	newConverter.errorLimits.Store(c.errorLimits.Load())
+	return newConverter
 }
 
 func (c *payloadLimitDataConverter) WithContext(ctx context.Context) converter.DataConverter {
@@ -159,14 +161,15 @@ func (c *payloadLimitDataConverter) WithContext(ctx context.Context) converter.D
 		return c
 	}
 
-	return &payloadLimitDataConverter{
+	newConverter := &payloadLimitDataConverter{
 		innerConverter: innerConverter,
-		errorLimits:    c.errorLimits,
 		options: payloadLimitDataConverterOptions{
 			Logger:             logger,
 			PayloadSizeWarning: c.options.PayloadSizeWarning,
 		},
 	}
+	newConverter.errorLimits.Store(c.errorLimits.Load())
+	return newConverter
 }
 
 func (c *payloadLimitDataConverter) checkPayloadsSize(payloads []*commonpb.Payload) error {
@@ -176,7 +179,8 @@ func (c *payloadLimitDataConverter) checkPayloadsSize(payloads []*commonpb.Paylo
 			totalSize += int64(payload.Size())
 		}
 	}
-	if c.errorLimits != nil && c.errorLimits.PayloadSizeError > 0 && totalSize > c.errorLimits.PayloadSizeError {
+	errorLimits := c.errorLimits.Load()
+	if errorLimits != nil && errorLimits.PayloadSizeError > 0 && totalSize > errorLimits.PayloadSizeError {
 		return payloadSizeError{message: "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit."}
 	}
 	if c.options.PayloadSizeWarning > 0 && totalSize > int64(c.options.PayloadSizeWarning) && c.options.Logger != nil {
