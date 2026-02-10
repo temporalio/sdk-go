@@ -2243,9 +2243,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		var prevNexusProcessed, prevNexusFailed int64
 
 		populateOpts := &populateHeartbeatOptions{
-			workflowPollerBehavior:     options.WorkflowTaskPollerBehavior,
-			activityPollerBehavior:     options.ActivityTaskPollerBehavior,
-			nexusPollerBehavior:        options.NexusTaskPollerBehavior,
+			workflowPollerBehavior:     workerParams.WorkflowTaskPollerBehavior,
+			activityPollerBehavior:     workerParams.ActivityTaskPollerBehavior,
+			nexusPollerBehavior:        workerParams.NexusTaskPollerBehavior,
 			prevWorkflowProcessed:      &prevWorkflowProcessed,
 			prevWorkflowFailed:         &prevWorkflowFailed,
 			prevActivityProcessed:      &prevActivityProcessed,

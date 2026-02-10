@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	ilog "go.temporal.io/sdk/internal/log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,6 +27,9 @@ type heartbeatManager struct {
 
 // newHeartbeatManager creates a new heartbeatManager.
 func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger) *heartbeatManager {
+	if logger == nil {
+		logger = ilog.NewDefaultLogger()
+	}
 	return &heartbeatManager{
 		client:   client,
 		interval: interval,
@@ -82,7 +86,9 @@ func (m *heartbeatManager) getOrCreateSharedNamespaceWorker(worker *AggregatedWo
 		return nil, fmt.Errorf("failed to get namespace capabilities: %w", err)
 	}
 	if !capabilities.GetWorkerHeartbeats() {
-		m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
+		if m.logger != nil {
+			m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
+		}
 		return nil, nil
 	}
 	namespace := worker.executionParams.Namespace
