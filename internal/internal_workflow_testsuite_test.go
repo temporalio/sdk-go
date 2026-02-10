@@ -15,6 +15,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
@@ -1062,6 +1063,64 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock_Panic_GetChildWorkfl
 	var err1 *PanicError
 	s.True(errors.As(err, &err1))
 	s.Equal("mock of testWorkflowHello has incorrect number of returns, expected 2, but actual is 3", err1.Error())
+}
+
+// Test_NestedChildWorkflow_RootWorkflowExecution verifies RootWorkflowExecution
+// is correctly propagated through nested child workflows.
+func (s *WorkflowTestSuiteUnitTest) Test_NestedChildWorkflow_RootWorkflowExecution() {
+	// Capture workflow execution info
+	captureInfo := func(ctx Context) WorkflowExecution {
+		info := GetWorkflowInfo(ctx)
+		if info.RootWorkflowExecution != nil {
+			return *info.RootWorkflowExecution
+		}
+		return WorkflowExecution{}
+	}
+
+	// Grandchild workflow
+	grandchildWF := func(ctx Context) (WorkflowExecution, error) {
+		return captureInfo(ctx), nil
+	}
+
+	// Child workflow that spawns grandchild
+	childWF := func(ctx Context) ([]WorkflowExecution, error) {
+		childRoot := captureInfo(ctx)
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{WorkflowRunTimeout: time.Minute})
+		var grandchildRoot WorkflowExecution
+		err := ExecuteChildWorkflow(ctx, grandchildWF).Get(ctx, &grandchildRoot)
+		return []WorkflowExecution{childRoot, grandchildRoot}, err
+	}
+
+	// Parent workflow that spawns child
+	parentWF := func(ctx Context) ([]WorkflowExecution, error) {
+		info := GetWorkflowInfo(ctx)
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{WorkflowRunTimeout: time.Minute})
+		var results []WorkflowExecution
+		err := ExecuteChildWorkflow(ctx, childWF).Get(ctx, &results)
+		// Prepend parent's execution for verification
+		return append([]WorkflowExecution{info.WorkflowExecution}, results...), err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(grandchildWF)
+	env.RegisterWorkflow(childWF)
+	env.RegisterWorkflow(parentWF)
+	env.ExecuteWorkflow(parentWF)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var results []WorkflowExecution
+	s.NoError(env.GetWorkflowResult(&results))
+	s.Len(results, 3)
+
+	parentExec := results[0]
+	childRoot := results[1]
+	grandchildRoot := results[2]
+
+	// Child and grandchild should both point to parent as root
+	s.Equal(parentExec.ID, childRoot.ID, "Child's RootWorkflowExecution should point to parent")
+	s.Equal(parentExec.ID, grandchildRoot.ID, "Grandchild's RootWorkflowExecution should point to root (parent), not child")
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_StartFailed() {
@@ -4425,6 +4484,81 @@ func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	s.False(result)
 }
 
+// awaitWithTimeoutConditionMetWorkflow is used by tests to verify timer cancellation behavior.
+// Same logic as AwaitWithTimeoutNoTimerCancelWorkflow in test/replaytests/workflows.go.
+func awaitWithTimeoutConditionMetWorkflow(ctx Context) (bool, error) {
+	conditionMet := false
+
+	Go(ctx, func(ctx Context) {
+		_ = Sleep(ctx, 100*time.Millisecond)
+		conditionMet = true
+	})
+
+	return AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return conditionMet
+	})
+}
+
+// Test_AwaitWithTimeoutConditionMet_WithFlag verifies that when SDKFlagCancelAwaitTimerOnCondition
+// is enabled (new behavior), the timer IS cancelled when the condition becomes true.
+func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutConditionMet_WithFlag() {
+	env := s.NewTestWorkflowEnvironment()
+
+	// Track scheduled timers to identify the timeout timer
+	var timeoutTimerID string
+	env.SetOnTimerScheduledListener(func(timerID string, duration time.Duration) {
+		if duration == 10*time.Second {
+			timeoutTimerID = timerID
+		}
+	})
+
+	// Explicitly enable the flag (it's not auto-enabled by default for new workflows)
+	env.impl.sdkFlags.set(SDKFlagCancelAwaitTimerOnCondition)
+
+	env.ExecuteWorkflow(awaitWithTimeoutConditionMetWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	result := false
+	_ = env.GetWorkflowResult(&result)
+	s.True(result, "AwaitWithTimeout should return true when condition is met")
+
+	// With flag enabled, timer should be cancelled (removed from timers map)
+	s.NotEmpty(timeoutTimerID, "Timeout timer should have been scheduled")
+	_, timerExists := env.impl.timers[timeoutTimerID]
+	s.False(timerExists, "Timer SHOULD be cancelled (removed from map) when SDKFlagCancelAwaitTimerOnCondition is enabled")
+}
+
+// Test_AwaitWithTimeoutConditionMet_WithoutFlag verifies that when SDKFlagCancelAwaitTimerOnCondition
+// is disabled (old behavior), the timer is NOT cancelled when the condition becomes true.
+func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutConditionMet_WithoutFlag() {
+	env := s.NewTestWorkflowEnvironment()
+
+	// Track scheduled timers to identify the timeout timer
+	var timeoutTimerID string
+	env.SetOnTimerScheduledListener(func(timerID string, duration time.Duration) {
+		if duration == 10*time.Second {
+			timeoutTimerID = timerID
+		}
+	})
+
+	// Disable SdkMetadata capability to simulate old behavior (flag will return false)
+	env.impl.sdkFlags = newSDKFlagSet(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: false})
+
+	env.ExecuteWorkflow(awaitWithTimeoutConditionMetWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	result := false
+	_ = env.GetWorkflowResult(&result)
+	s.True(result, "AwaitWithTimeout should return true when condition is met")
+
+	// With flag disabled, timer should NOT be cancelled (still in timers map)
+	s.NotEmpty(timeoutTimerID, "Timeout timer should have been scheduled")
+	_, timerExists := env.impl.timers[timeoutTimerID]
+	s.True(timerExists, "Timer should NOT be cancelled (still in map) when SDKFlagCancelAwaitTimerOnCondition is disabled")
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_NoDetachedChildWait() {
 	// One cron+abandon and one request-cancel
 	childOptionSet := []ChildWorkflowOptions{
@@ -4619,6 +4753,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
+	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
+	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
@@ -4650,4 +4788,42 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
 	s.NoError(err)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SignalLost() {
+	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = false
+	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
+	workflowFn := func(ctx Context) error {
+		ch1 := GetSignalChannel(ctx, "test-signal")
+		ch2 := GetSignalChannel(ctx, "test-signal-2")
+		selector := NewSelector(ctx)
+		var v string
+		selector.AddReceive(ch1, func(c ReceiveChannel, more bool) {
+			c.Receive(ctx, &v)
+		})
+		selector.AddDefault(func() {
+			ch2.Receive(ctx, &v)
+		})
+		selector.Select(ctx)
+		s.Require().True(ch1.Len() == 0 && v == "s2")
+		selector.Select(ctx)
+
+		return nil
+	}
+
+	// send a signal after workflow has started
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("test-signal", "s1")
+		env.SignalWorkflow("test-signal-2", "s2")
+	}, 5*time.Second)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+	s.Equal("deadline exceeded (type: ScheduleToClose)", workflowErr.cause.Error())
 }

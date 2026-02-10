@@ -1186,6 +1186,124 @@ func (ts *IntegrationTestSuite) TestCancelTimerViaDeferAfterWFTFailure() {
 	ts.NoError(err)
 }
 
+func (ts *IntegrationTestSuite) TestAwaitWithTimeoutCancelTimerOnCondition() {
+	// TODO: Remove this skip when SDKFlagCancelAwaitTimerOnCondition is enabled by default.
+	// This test verifies the timer cancellation behavior when the flag is ON.
+	// Currently the flag is OFF by default to allow a gradual rollout.
+	ts.T().Skip("SDKFlagCancelAwaitTimerOnCondition is disabled by default. Enable this test when the flag is enabled by default.")
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Start workflow
+	opts := ts.startWorkflowOptions("test-await-cancel-timer-on-condition-" + uuid.NewString())
+	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.AwaitWithTimeoutCancelTimerOnCondition)
+	ts.NoError(err)
+
+	// Wait for workflow to complete
+	var result bool
+	ts.NoError(run.Get(ctx, &result))
+	ts.True(result)
+
+	// Verify timer was cancelled by checking history
+	iter := ts.client.GetWorkflowHistory(ctx, opts.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var timerStartedEvent *historypb.HistoryEvent
+	var timerCanceledEvent *historypb.HistoryEvent
+	var sdkFlags []uint32
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		ts.NoError(err1)
+		// Find the AwaitWithTimeout timer (10s timeout)
+		if attrs := event.GetTimerStartedEventAttributes(); attrs != nil {
+			if attrs.GetStartToFireTimeout().AsDuration() == 10*time.Second {
+				timerStartedEvent = event
+			}
+		}
+		// Find timer canceled event
+		if attrs := event.GetTimerCanceledEventAttributes(); attrs != nil {
+			if timerStartedEvent != nil && attrs.GetStartedEventId() == timerStartedEvent.GetEventId() {
+				timerCanceledEvent = event
+			}
+		}
+		// Capture SDK flags from workflow task completed
+		if attrs := event.GetWorkflowTaskCompletedEventAttributes(); attrs != nil {
+			if attrs.GetSdkMetadata() != nil {
+				sdkFlags = append(sdkFlags, attrs.GetSdkMetadata().GetLangUsedFlags()...)
+			}
+		}
+	}
+
+	// Verify timer was started
+	ts.NotNil(timerStartedEvent, "AwaitWithTimeout timer should be started")
+	// Verify timer was cancelled (new behavior with flag)
+	ts.NotNil(timerCanceledEvent, "AwaitWithTimeout timer should be cancelled when condition is satisfied")
+	// Verify the SDK flag was set
+	ts.Contains(sdkFlags, uint32(6), "SDKFlagCancelAwaitTimerOnCondition (flag 6) should be set")
+}
+
+// TestAwaitWithTimeoutTimerNotCancelledByDefault verifies that with SDKFlagCancelAwaitTimerOnCondition
+// disabled by default, the AwaitWithTimeout timer is NOT cancelled when the condition is satisfied
+// before the timeout expires. This is the current default behavior.
+// TODO: Remove this test when SDKFlagCancelAwaitTimerOnCondition is enabled by default.
+func (ts *IntegrationTestSuite) TestAwaitWithTimeoutTimerNotCancelledByDefault() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Start workflow
+	opts := ts.startWorkflowOptions("test-await-timer-not-cancelled-" + uuid.NewString())
+	run, err := ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.AwaitWithTimeoutCancelTimerOnCondition)
+	ts.NoError(err)
+
+	// Wait for workflow to complete
+	var result bool
+	ts.NoError(run.Get(ctx, &result))
+	ts.True(result)
+
+	// Verify timer was NOT cancelled by checking history
+	// With SDKFlagCancelAwaitTimerOnCondition disabled by default, the timer should fire normally
+	// (or workflow completes before timer fires, but timer is not explicitly cancelled)
+	iter := ts.client.GetWorkflowHistory(ctx, opts.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var timerStartedEvent *historypb.HistoryEvent
+	var timerCanceledEvent *historypb.HistoryEvent
+	var sdkFlags []uint32
+	for iter.HasNext() {
+		event, err1 := iter.Next()
+		ts.NoError(err1)
+		// Find the AwaitWithTimeout timer (10s timeout)
+		if attrs := event.GetTimerStartedEventAttributes(); attrs != nil {
+			if attrs.GetStartToFireTimeout().AsDuration() == 10*time.Second {
+				timerStartedEvent = event
+			}
+		}
+		// Find timer canceled event
+		if attrs := event.GetTimerCanceledEventAttributes(); attrs != nil {
+			if timerStartedEvent != nil && attrs.GetStartedEventId() == timerStartedEvent.GetEventId() {
+				timerCanceledEvent = event
+			}
+		}
+		// Capture SDK flags from workflow task completed
+		if attrs := event.GetWorkflowTaskCompletedEventAttributes(); attrs != nil {
+			if attrs.GetSdkMetadata() != nil {
+				sdkFlags = append(sdkFlags, attrs.GetSdkMetadata().GetLangUsedFlags()...)
+			}
+		}
+	}
+
+	// Verify timer was started
+	ts.NotNil(timerStartedEvent, "AwaitWithTimeout timer should be started")
+	// Verify timer was NOT cancelled (flag is off by default)
+	ts.Nil(timerCanceledEvent, "AwaitWithTimeout timer should NOT be cancelled when SDKFlagCancelAwaitTimerOnCondition is disabled")
+	// Verify the SDK flag was NOT set
+	ts.NotContains(sdkFlags, uint32(6), "SDKFlagCancelAwaitTimerOnCondition (flag 6) should NOT be set")
+}
+
+func (ts *IntegrationTestSuite) TestAwaitWithTimeoutConditionAlreadyTrue() {
+	var result bool
+	err := ts.executeWorkflow("test-await-condition-already-true", ts.workflows.AwaitWithTimeoutConditionAlreadyTrue, &result)
+	ts.NoError(err)
+	ts.True(result)
+}
+
 func (ts *IntegrationTestSuite) TestCancelTimerAfterActivity_Replay() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflowWithOptions(ts.workflows.CancelTimerAfterActivity, workflow.RegisterOptions{DisableAlreadyRegisteredCheck: true})
@@ -2777,6 +2895,84 @@ func (ts *IntegrationTestSuite) TestInterceptorStartWithSignal() {
 		}
 	}
 	ts.True(foundHandleSignal)
+}
+
+func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
+	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	immediateActivity := func() (string, error) { return "result", nil }
+	ts.worker.RegisterActivityWithOptions(immediateActivity, activity.RegisterOptions{Name: "interceptorTestActivityImmediate"})
+
+	activityStarted := make(chan struct{}, 2)
+	waitActivity := func(ctx context.Context) error {
+		activityStarted <- struct{}{}
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	ts.worker.RegisterActivityWithOptions(waitActivity, activity.RegisterOptions{Name: "interceptorTestActivityWait"})
+
+	makeOptions := func() client.StartActivityOptions {
+		return client.StartActivityOptions{
+			ID:                     "interceptor-test-" + uuid.NewString(),
+			TaskQueue:              ts.taskQueueName,
+			ScheduleToCloseTimeout: 30 * time.Second,
+		}
+	}
+
+	// ExecuteActivity + Describe
+	handle1, err := ts.client.ExecuteActivity(ctx, makeOptions(), "interceptorTestActivityImmediate")
+	ts.NoError(err)
+	_, err = handle1.Describe(ctx, client.DescribeActivityOptions{})
+	ts.NoError(err)
+
+	// GetActivityHandle
+	_ = ts.client.GetActivityHandle(client.GetActivityHandleOptions{
+		ActivityID: handle1.GetID(),
+		RunID:      handle1.GetRunID(),
+	})
+
+	// Get (PollActivityResult)
+	var result string
+	err = handle1.Get(ctx, &result)
+	ts.NoError(err)
+	ts.Equal("result", result)
+
+	// Cancel
+	handle2, err := ts.client.ExecuteActivity(ctx, makeOptions(), "interceptorTestActivityWait")
+	ts.NoError(err)
+	<-activityStarted
+	err = handle2.Cancel(ctx, client.CancelActivityOptions{Reason: "test cancel"})
+	ts.NoError(err)
+
+	// Terminate
+	handle3, err := ts.client.ExecuteActivity(ctx, makeOptions(), "interceptorTestActivityWait")
+	ts.NoError(err)
+	<-activityStarted
+	err = handle3.Terminate(ctx, client.TerminateActivityOptions{Reason: "test terminate"})
+	ts.NoError(err)
+
+	// Verify all 6 interceptor methods were called
+	expectedCalls := []string{
+		"ClientOutboundInterceptor.ExecuteActivity",
+		"ClientOutboundInterceptor.GetActivityHandle",
+		"ClientOutboundInterceptor.DescribeActivity",
+		"ClientOutboundInterceptor.CancelActivity",
+		"ClientOutboundInterceptor.TerminateActivity",
+		"ClientOutboundInterceptor.PollActivityResult",
+	}
+
+	recordedCalls := make(map[string]bool)
+	for _, call := range ts.interceptorCallRecorder.Calls() {
+		recordedCalls[call.Interface.Name()+"."+call.Method.Name] = true
+	}
+
+	for _, expectedCall := range expectedCalls {
+		ts.True(recordedCalls[expectedCall], "Expected interceptor call %s was not recorded", expectedCall)
+	}
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
@@ -6868,15 +7064,18 @@ func (ts *IntegrationTestSuite) TestAwaitWithOptionsTimeout() {
 	// Confirm workflow has completed
 	ts.NoError(run.Get(ctx, nil))
 
-	// Confirm AwaitWithOptions's underlying timer has fired properly
+	// Find the AwaitWithOptions timer by its Summary metadata
 	iter := ts.client.GetWorkflowHistory(ctx, opts.ID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var timerEvent *historypb.HistoryEvent
 	for iter.HasNext() {
 		event, err1 := iter.Next()
 		ts.NoError(err1)
-		if event.GetTimerStartedEventAttributes() != nil {
-			ts.Nil(timerEvent)
-			timerEvent = event
+		if event.GetTimerStartedEventAttributes() != nil && event.UserMetadata != nil {
+			var summary string
+			if err := converter.GetDefaultDataConverter().FromPayload(event.UserMetadata.Summary, &summary); err == nil && summary == "await-timer" {
+				timerEvent = event
+				break
+			}
 		}
 	}
 	ts.NotNil(timerEvent)
@@ -7146,13 +7345,11 @@ func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, ope
 	return count
 }
 
+// TODO: remove once SDKFlagBlockedSelectorSignalReceive is enabled by default
 func (ts *IntegrationTestSuite) TestSelectorBlock() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-selector-block")
-
-	internal.SetUnblockSelectorSignal(false)
-	defer internal.SetUnblockSelectorSignal(true)
 
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal)
 	ts.NoError(err)
@@ -7162,6 +7359,7 @@ func (ts *IntegrationTestSuite) TestSelectorBlock() {
 }
 
 func (ts *IntegrationTestSuite) TestSelectorNoBlock() {
+	ts.T().Skip("Skip until SDKFlagBlockedSelectorSignalReceive is enabled by default")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	options := ts.startWorkflowOptions("test-selector-block")
@@ -7865,6 +8063,8 @@ func (ts *IntegrationTestSuite) TestMutableSideEffectSummary() {
 }
 
 func (ts *IntegrationTestSuite) TestGrpcMessageTooLarge() {
+	ts.T().Skip("temporal server 1.30 has different behavior") // see https://github.com/temporalio/temporal/pull/8610
+
 	assertGrpcErrorInHistory := func(ctx context.Context, run client.WorkflowRun) {
 		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for iter.HasNext() {
@@ -8463,4 +8663,257 @@ func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
 	ts.NoError(err)
 	ts.NoError(run.Get(context.Background(), &res))
 	ts.Equal("workflow-success", res)
+}
+
+func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
+	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+	makeOptions := func() client.StartActivityOptions {
+		return client.StartActivityOptions{
+			ID:                     uuid.NewString(),
+			TaskQueue:              ts.taskQueueName,
+			ScheduleToCloseTimeout: 10 * time.Second,
+		}
+	}
+
+	var activities Activities
+
+	activityResultChan := make(chan string)
+	readFromChannelActivity := func() (string, error) {
+		return <-activityResultChan, nil
+	}
+	ts.worker.RegisterActivityWithOptions(readFromChannelActivity, activity.RegisterOptions{Name: "readFromChannelActivity"})
+	ts.Run("Describe activity", func() {
+		timeBeforeStart := time.Now().Add(-time.Millisecond)
+
+		options := makeOptions()
+		searchAttrKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+		searchAttrValue := "CustomValue"
+		options.TypedSearchAttributes = temporal.NewSearchAttributes(searchAttrKey.ValueSet(searchAttrValue))
+		options.Summary = "activity summary"
+		options.Details = "activity description"
+
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, options, "readFromChannelActivity")
+		ts.NoError(err)
+		ts.Equal(options.ID, handle.GetID())
+		ts.NotEmpty(handle.GetRunID())
+
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+		ts.NoError(err)
+		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_RUNNING, description.Status)
+		ts.Nil(description.RawExecutionListInfo)
+		ts.NotNil(description.RawExecutionInfo)
+		ts.Equal(options.ID, description.ActivityID)
+		ts.Equal(handle.GetRunID(), description.ActivityRunID)
+		ts.Equal("readFromChannelActivity", description.ActivityType)
+		ts.Equal(ts.taskQueueName, description.TaskQueue)
+		ts.EqualValues(1, description.Attempt)
+		ts.EqualValues(1, description.TypedSearchAttributes.Size())
+		attr, hasAttr := description.TypedSearchAttributes.GetString(searchAttrKey)
+		ts.True(hasAttr)
+		ts.Equal(searchAttrValue, attr)
+		summary, err := description.GetSummary()
+		ts.NoError(err)
+		ts.Equal(options.Summary, summary)
+		details, err := description.GetDetails()
+		ts.NoError(err)
+		ts.Equal(options.Details, details)
+
+		// ensure measurable amount of time passes, then complete activity
+		time.Sleep(100 * time.Millisecond)
+		activityResultChan <- ""
+		err = handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		description, err = handle.Describe(ctx, client.DescribeActivityOptions{})
+		ts.NoError(err)
+		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED, description.Status)
+		ts.Equal(options.ID, description.ActivityID)
+		ts.Equal(handle.GetRunID(), description.ActivityRunID)
+		ts.True(description.ScheduleTime.After(timeBeforeStart))
+		ts.True(description.CloseTime.After(description.ScheduleTime))
+		ts.Greater(description.ExecutionDuration, int64(0))
+		ts.True(description.LastStartedTime.After(timeBeforeStart))
+		ts.True(description.LastAttemptCompleteTime.After(description.ScheduleTime))
+	})
+
+	ts.Run("Wait for activity result", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "readFromChannelActivity")
+		ts.NoError(err)
+
+		receivedResultChan := make(chan string)
+		go func() {
+			var result string
+			err := handle.Get(ctx, &result)
+			ts.NoError(err)
+			receivedResultChan <- result
+		}()
+
+		select {
+		case <-receivedResultChan:
+			ts.Fail("received result too soon")
+		case <-time.After(time.Second):
+			// OK
+		}
+
+		result := "result"
+		activityResultChan <- result
+		ts.Equal(result, <-receivedResultChan)
+	})
+
+	ts.Run("Execute activity with argument", func() {
+		argument := "argument"
+
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), activities.EchoString, argument)
+		ts.NoError(err)
+
+		var result string
+		err = handle.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal(argument, result)
+	})
+
+	activityStarted := make(chan struct{}, 2)
+	heartbeatUntilStopped := func(ctx context.Context, heartbeatFreq time.Duration) error {
+		activityStarted <- struct{}{}
+		for {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(heartbeatFreq):
+				activity.RecordHeartbeat(ctx)
+			}
+		}
+	}
+	ts.worker.RegisterActivityWithOptions(heartbeatUntilStopped, activity.RegisterOptions{Name: "heartbeatUntilStopped"})
+
+	ts.Run("Cancel activity", func() {
+		reason := "cancellation reason"
+
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "heartbeatUntilStopped", 50*time.Millisecond)
+		ts.NoError(err)
+
+		<-activityStarted
+
+		err = handle.Cancel(ctx, client.CancelActivityOptions{Reason: reason})
+		ts.NoError(err)
+
+		var canceledErr *temporal.CanceledError
+		err = handle.Get(ctx, nil)
+		ts.ErrorAs(err, &canceledErr)
+
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+		ts.NoError(err)
+		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_CANCELED, description.Status)
+		ts.Equal(reason, description.CanceledReason)
+	})
+
+	ts.Run("Terminate activity", func() {
+		reason := "termination reason"
+
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "heartbeatUntilStopped", 50*time.Millisecond)
+		ts.NoError(err)
+
+		<-activityStarted
+
+		err = handle.Terminate(ctx, client.TerminateActivityOptions{Reason: reason})
+		ts.NoError(err)
+
+		var terminatedErr *temporal.TerminatedError
+		err = handle.Get(ctx, nil)
+		ts.ErrorAs(err, &terminatedErr)
+
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+		ts.NoError(err)
+		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_TERMINATED, description.Status)
+		ts.Empty(description.CanceledReason)
+	})
+
+	ts.Run("Inspect activity info", func() {
+		var w Workflows
+
+		options := makeOptions()
+		options.StartToCloseTimeout = 5 * time.Second
+		options.RetryPolicy = w.defaultRetryPolicy()
+
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, options, activities.InspectActivityInfoNoWorkflow, ts.config.Namespace,
+			options.ID, ts.taskQueueName, options.ScheduleToCloseTimeout, options.StartToCloseTimeout, options.RetryPolicy)
+		ts.NoError(err)
+		ts.NoError(handle.Get(ctx, nil))
+	})
+
+	ts.Run("GetActivityHandle", func() {
+		options := makeOptions()
+		options.ActivityIDReusePolicy = enumspb.ACTIVITY_ID_REUSE_POLICY_ALLOW_DUPLICATE
+
+		executeActivity := func(ctx context.Context, argument string) client.ActivityHandle {
+			handle, err := ts.client.ExecuteActivity(ctx, options, activities.EchoString, argument)
+			ts.NoError(err)
+			var result string
+			err = handle.Get(ctx, &result)
+			ts.NoError(err)
+			ts.Equal(argument, result)
+			return handle
+		}
+
+		testGetHandle := func(ctx context.Context, runId string, expectedResult string) {
+			handleOptions := client.GetActivityHandleOptions{
+				ActivityID: options.ID,
+				RunID:      runId,
+			}
+			handle := ts.client.GetActivityHandle(handleOptions)
+			var result string
+			err := handle.Get(ctx, &result)
+			ts.NoError(err)
+			ts.Equal(expectedResult, result)
+
+			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+			ts.NoError(err)
+			ts.Equal(options.ID, description.ActivityID)
+			if runId != "" {
+				ts.Equal(runId, description.ActivityRunID)
+			}
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+
+		argument1 := "argument1"
+		act1Handle := executeActivity(ctx, argument1)
+		testGetHandle(ctx, "", argument1)
+
+		argument2 := "argument2"
+		act2Handle := executeActivity(ctx, argument2)
+		testGetHandle(ctx, "", argument2)
+
+		testGetHandle(ctx, act1Handle.GetRunID(), argument1)
+		testGetHandle(ctx, act2Handle.GetRunID(), argument2)
+	})
+
+	ts.Run("Activity result timeout", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "readFromChannelActivity")
+		ts.NoError(err)
+
+		getCtx, getCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+		defer getCancel()
+		err = handle.Get(getCtx, nil)
+		var serviceErr *serviceerror.DeadlineExceeded
+		ts.True(errors.Is(err, context.DeadlineExceeded) || errors.As(err, &serviceErr))
+		activityResultChan <- "" // allow activity to complete
+	})
 }

@@ -507,6 +507,16 @@ func (s *replayTestSuite) TestCancelNexusOperation() {
 	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is completed")
 }
 
+func (s *replayTestSuite) TestAwaitWithTimeoutNoTimerCancel() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(AwaitWithTimeoutNoTimerCancelWorkflow)
+	// Verify we can still replay an old workflow that does not have
+	// the SDKFlagCancelAwaitTimerOnCondition flag (old behavior where
+	// timer is NOT cancelled when condition is satisfied).
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "await-with-timeout-no-timer-cancel.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}

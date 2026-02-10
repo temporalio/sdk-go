@@ -140,9 +140,13 @@ type (
 		Identity string
 
 		// The worker's build ID used for versioning, if one was set.
+		//
+		// Deprecated: use DeploymentOptions.Version for versioning instead.
 		WorkerBuildID string
 
 		// If true the worker is opting in to build ID based versioning.
+		//
+		// Deprecated: use DeploymentOptions.UseVersioning for versioning instead.
 		UseBuildIDForVersioning bool
 
 		// Worker deployment options containing all deployment versioning configuration.
@@ -1130,7 +1134,7 @@ func getNamespaceFromActivityCtx(ctx context.Context) string {
 	if env == nil {
 		return ""
 	}
-	return env.workflowNamespace
+	return env.namespace
 }
 
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
