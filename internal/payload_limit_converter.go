@@ -18,9 +18,9 @@ type PayloadLimitOptions struct {
 }
 
 type payloadLimitDataConverter struct {
-	innerConverter converter.DataConverter
-	errorLimits    atomic.Pointer[payloadErrorLimits]
-	options        payloadLimitDataConverterOptions
+	converter.DataConverter
+	errorLimits atomic.Pointer[payloadErrorLimits]
+	options     payloadLimitDataConverterOptions
 }
 
 type payloadLimitDataConverterOptions struct {
@@ -47,7 +47,7 @@ func newPayloadLimitDataConverter(innerConverter converter.DataConverter, logger
 		payloadSizeWarning = options.PayloadSizeWarning
 	}
 	dataConverter := &payloadLimitDataConverter{
-		innerConverter: innerConverter,
+		DataConverter: innerConverter,
 		options: payloadLimitDataConverterOptions{
 			Logger:             logger,
 			PayloadSizeWarning: payloadSizeWarning,
@@ -61,7 +61,7 @@ func (c *payloadLimitDataConverter) SetErrorLimits(errorLimits *payloadErrorLimi
 }
 
 func (c *payloadLimitDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
-	payload, err := c.innerConverter.ToPayload(value)
+	payload, err := c.DataConverter.ToPayload(value)
 	if err != nil {
 		return nil, err
 	}
@@ -74,12 +74,8 @@ func (c *payloadLimitDataConverter) ToPayload(value interface{}) (*commonpb.Payl
 	return payload, nil
 }
 
-func (c *payloadLimitDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
-	return c.innerConverter.FromPayload(payload, valuePtr)
-}
-
 func (c *payloadLimitDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
-	payloads, err := c.innerConverter.ToPayloads(value...)
+	payloads, err := c.DataConverter.ToPayloads(value...)
 	if err != nil {
 		return nil, err
 	}
@@ -92,26 +88,14 @@ func (c *payloadLimitDataConverter) ToPayloads(value ...interface{}) (*commonpb.
 	return payloads, nil
 }
 
-func (c *payloadLimitDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
-	return c.innerConverter.FromPayloads(payloads, valuePtrs...)
-}
-
-func (c *payloadLimitDataConverter) ToString(input *commonpb.Payload) string {
-	return c.innerConverter.ToString(input)
-}
-
-func (c *payloadLimitDataConverter) ToStrings(input *commonpb.Payloads) []string {
-	return c.innerConverter.ToStrings(input)
-}
-
 func (c *payloadLimitDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
-	innerConverter := c.innerConverter
-	if contextAwareInnerConverter, ok := c.innerConverter.(ContextAware); ok {
+	innerConverter := c.DataConverter
+	if contextAwareInnerConverter, ok := c.DataConverter.(ContextAware); ok {
 		innerConverter = contextAwareInnerConverter.WithWorkflowContext(ctx)
 	}
 
 	newConverter := &payloadLimitDataConverter{
-		innerConverter: innerConverter,
+		DataConverter: innerConverter,
 		options: payloadLimitDataConverterOptions{
 			Logger:             GetLogger(ctx),
 			PayloadSizeWarning: c.options.PayloadSizeWarning,
@@ -139,17 +123,17 @@ func (c *payloadLimitDataConverter) WithContext(ctx context.Context) converter.D
 		}
 	}
 
-	innerConverter := c.innerConverter
-	if contextAwareInnerConverter, ok := c.innerConverter.(ContextAware); ok {
+	innerConverter := c.DataConverter
+	if contextAwareInnerConverter, ok := c.DataConverter.(ContextAware); ok {
 		innerConverter = contextAwareInnerConverter.WithContext(ctx)
 	}
 
-	if logger == c.options.Logger && innerConverter == c.innerConverter {
+	if logger == c.options.Logger && innerConverter == c.DataConverter {
 		return c
 	}
 
 	newConverter := &payloadLimitDataConverter{
-		innerConverter: innerConverter,
+		DataConverter: innerConverter,
 		options: payloadLimitDataConverterOptions{
 			Logger:             logger,
 			PayloadSizeWarning: c.options.PayloadSizeWarning,
