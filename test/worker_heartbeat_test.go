@@ -3,7 +3,6 @@ package test_test
 import (
 	"context"
 	"fmt"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -622,99 +621,60 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStickyCacheMiss() {
 	}
 	ctx := context.Background()
 
-	wf1ActivityStarted := make(chan struct{}, 1)
-	wf1ActivityComplete := make(chan struct{}, 1)
-	wf2ActivityStarted := make(chan struct{}, 1)
-	wf2ActivityComplete := make(chan struct{}, 1)
+	activityStarted := make(chan struct{}, 1)
+	activityComplete := make(chan struct{}, 1)
 
-	stickyCacheMissActivity := func(ctx context.Context, marker string) (string, error) {
-		switch marker {
-		case "wf1":
-			select {
-			case wf1ActivityStarted <- struct{}{}:
-			default:
-			}
-			select {
-			case <-wf1ActivityComplete:
-				return marker, nil
-			case <-ctx.Done():
-				return "", ctx.Err()
-			}
-		case "wf2":
-			select {
-			case wf2ActivityStarted <- struct{}{}:
-			default:
-			}
-			select {
-			case <-wf2ActivityComplete:
-				return marker, nil
-			case <-ctx.Done():
-				return "", ctx.Err()
-			}
+	cacheMissActivity := func(ctx context.Context) (string, error) {
+		select {
+		case activityStarted <- struct{}{}:
+		default:
 		}
-		return marker, nil
+		select {
+		case <-activityComplete:
+			return "done", nil
+		case <-ctx.Done():
+			return "", ctx.Err()
+		}
 	}
 
-	stickyCacheMissWorkflow := func(ctx workflow.Context, marker string) (string, error) {
+	cacheMissWorkflow := func(ctx workflow.Context) (string, error) {
 		ao := workflow.ActivityOptions{
 			StartToCloseTimeout: 30 * time.Second,
 		}
 		ctx = workflow.WithActivityOptions(ctx, ao)
 		var result string
-		err := workflow.ExecuteActivity(ctx, stickyCacheMissActivity, marker).Get(ctx, &result)
+		err := workflow.ExecuteActivity(ctx, cacheMissActivity).Get(ctx, &result)
 		return result, err
 	}
 
-	// GC ensures previous worker's cache finalizer runs, allowing cache to be recreated with new size
-	runtime.GC()
-	worker.SetStickyWorkflowCacheSize(1)
 	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
-		MaxConcurrentWorkflowTaskExecutionSize: 2,
-		DisableEagerActivities:                 true,
+		DisableEagerActivities: true,
 	})
-	ts.worker.RegisterWorkflow(stickyCacheMissWorkflow)
-	ts.worker.RegisterActivity(stickyCacheMissActivity)
+	ts.worker.RegisterWorkflow(cacheMissWorkflow)
+	ts.worker.RegisterActivity(cacheMissActivity)
 	ts.NoError(ts.worker.Start())
 
-	wf1Options := client.StartWorkflowOptions{
-		ID:        "test-sticky-miss-wf1-" + uuid.NewString(),
+	wfOptions := client.StartWorkflowOptions{
+		ID:        "test-sticky-miss-" + uuid.NewString(),
 		TaskQueue: ts.taskQueueName,
 	}
-	run1, err := ts.client.ExecuteWorkflow(ctx, wf1Options, stickyCacheMissWorkflow, "wf1")
+	run, err := ts.client.ExecuteWorkflow(ctx, wfOptions, cacheMissWorkflow)
 	ts.NoError(err)
 
 	select {
-	case <-wf1ActivityStarted:
-		ts.T().Log("wf1 activity started")
+	case <-activityStarted:
+		ts.T().Log("Activity started")
 	case <-time.After(10 * time.Second):
-		ts.Fail("Timeout waiting for wf1 activity to start")
+		ts.Fail("Timeout waiting for activity to start")
 	}
 
-	// this should evict wf1 from the cache
-	wf2Options := client.StartWorkflowOptions{
-		ID:        "test-sticky-miss-wf2-" + uuid.NewString(),
-		TaskQueue: ts.taskQueueName,
-	}
-	run2, err := ts.client.ExecuteWorkflow(ctx, wf2Options, stickyCacheMissWorkflow, "wf2")
-	ts.NoError(err)
+	// Purge the cache so the workflow's sticky task triggers a cache miss on resume
+	worker.PurgeStickyWorkflowCache()
 
-	select {
-	case <-wf2ActivityStarted:
-		ts.T().Log("wf2 activity started")
-	case <-time.After(10 * time.Second):
-		ts.Fail("Timeout waiting for wf2 activity to start")
-	}
-
-	// wf1 should experience a cache miss when it resumes
-	wf1ActivityComplete <- struct{}{}
-	var result1 string
-	ts.NoError(run1.Get(ctx, &result1))
-	ts.Equal("wf1", result1)
-
-	wf2ActivityComplete <- struct{}{}
-	var result2 string
-	ts.NoError(run2.Get(ctx, &result2))
-	ts.Equal("wf2", result2)
+	activityComplete <- struct{}{}
+	var result string
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal("done", result)
 
 	// Wait for heartbeat to capture sticky cache miss
 	var workerInfo *workerpb.WorkerHeartbeat
