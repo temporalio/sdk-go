@@ -39,6 +39,7 @@ type payloadProcessingDataConverter struct {
 	errorLimits        atomic.Pointer[payloadErrorLimits]
 	logger             log.Logger
 	payloadSizeWarning int
+	errorBehavior      func(error) error
 }
 
 // NOTE: This func returns the data converter and a func callback allowing the setting of error limits after the converter has been created.
@@ -51,6 +52,7 @@ func newPayloadProcessingDataConverter(innerConverter converter.DataConverter, l
 		DataConverter:      innerConverter,
 		logger:             logger,
 		payloadSizeWarning: payloadSizeWarning,
+		errorBehavior:      func(err error) error { return err },
 	}
 	return dataConverter, dataConverter.SetErrorLimits
 }
@@ -103,6 +105,7 @@ func (c *payloadProcessingDataConverter) WithWorkflowContext(ctx Context) conver
 		DataConverter:      innerConverter,
 		logger:             GetLogger(ctx),
 		payloadSizeWarning: c.payloadSizeWarning,
+		errorBehavior:      func(err error) error { panic(err) },
 	}
 	newConverter.errorLimits.Store(c.errorLimits.Load())
 	return newConverter
@@ -135,6 +138,7 @@ func (c *payloadProcessingDataConverter) WithContext(ctx context.Context) conver
 		DataConverter:      innerConverter,
 		logger:             logger,
 		payloadSizeWarning: c.payloadSizeWarning,
+		errorBehavior:      c.errorBehavior,
 	}
 	newConverter.errorLimits.Store(c.errorLimits.Load())
 	return newConverter
@@ -149,11 +153,11 @@ func (c *payloadProcessingDataConverter) checkPayloadsSize(payloads []*commonpb.
 	}
 	errorLimits := c.errorLimits.Load()
 	if errorLimits != nil && errorLimits.PayloadSizeError > 0 && totalSize > errorLimits.PayloadSizeError {
-		return payloadSizeError{
+		return c.errorBehavior(payloadSizeError{
 			message: "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.",
 			size:    totalSize,
 			limit:   errorLimits.PayloadSizeError,
-		}
+		})
 	}
 	if c.payloadSizeWarning > 0 && totalSize > int64(c.payloadSizeWarning) && c.logger != nil {
 		c.logger.Warn(

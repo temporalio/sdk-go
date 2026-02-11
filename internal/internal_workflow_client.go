@@ -1664,8 +1664,7 @@ func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter) (
 
 	memo := make(map[string]*commonpb.Payload)
 	for k, v := range input {
-		// TODO (shtin): use dc here???
-		memoBytes, err := converter.GetDefaultDataConverter().ToPayload(v)
+		memoBytes, err := dc.ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
 		}

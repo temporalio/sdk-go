@@ -1059,9 +1059,6 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	if err == nil && result != nil {
 		serializedResult, err = encodeArg(dataConverter, result)
 	}
-	if errPayloadSize, payloadSize := err.(payloadSizeError); payloadSize {
-		panic(errPayloadSize)
-	}
 	return serializedResult, err
 }
 

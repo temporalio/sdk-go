@@ -173,6 +173,227 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
 	}))
 }
 
+func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	logger := ilog.NewMemoryLogger()
+	ts.ResetClientAndWorker(func(opts *client.Options) {
+		opts.Logger = logger
+	}, nil)
+
+	wfname := "payload-size-error-update-result"
+	updateName := "large-update"
+	ts.worker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) error {
+			err := workflow.SetUpdateHandler(ctx, updateName, func(ctx workflow.Context) (string, error) {
+				return strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000), nil
+			})
+			if err != nil {
+				return err
+			}
+			workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+			return nil
+		},
+		workflow.RegisterOptions{Name: wfname},
+	)
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions(ts.T().Name()),
+		wfname,
+	)
+	ts.NoError(err)
+
+	go func() {
+		// UpdateWorkflow blocks until the update is accepted, which never happens
+		// because the update handler doesn't complete. Run in a goroutine and monitor
+		// event history.
+		ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+			WorkflowID:   run.GetID(),
+			RunID:        run.GetRunID(),
+			UpdateName:   updateName,
+			WaitForStage: client.WorkflowUpdateStageAccepted,
+		})
+	}()
+
+	// Poll workflow history until we find the WORKFLOW_TASK_FAILED event
+	var lastWorkflowTaskFailedEvent *historypb.HistoryEvent
+	for range 100 {
+		time.Sleep(100 * time.Millisecond)
+		eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for eventIterator.HasNext() {
+			event, err := eventIterator.Next()
+			ts.NoError(err)
+			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
+				lastWorkflowTaskFailedEvent = event
+			}
+		}
+		if lastWorkflowTaskFailedEvent != nil {
+			break
+		}
+	}
+
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	// Verify the failure event
+	ts.NotNil(lastWorkflowTaskFailedEvent)
+	attributes := lastWorkflowTaskFailedEvent.GetWorkflowTaskFailedEventAttributes()
+	ts.NotNil(attributes)
+	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
+	ts.NotNil(attributes.Failure)
+	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+
+	// Verify failure is logged
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	}))
+}
+
+func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	logger := ilog.NewMemoryLogger()
+	ts.ResetClientAndWorker(func(opts *client.Options) {
+		opts.Logger = logger
+	}, nil)
+
+	childWfName := "child-workflow"
+	parentWfName := "payload-size-error-child-workflow-input"
+
+	ts.worker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context, input string) (string, error) {
+			return input, nil
+		},
+		workflow.RegisterOptions{Name: childWfName},
+	)
+	ts.worker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) error {
+			childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+				WorkflowExecutionTimeout: 10 * time.Second,
+			})
+			// Try to start child workflow with input that exceeds payload limit
+			largeInput := strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000)
+			return workflow.ExecuteChildWorkflow(childCtx, childWfName, largeInput).Get(ctx, nil)
+		},
+		workflow.RegisterOptions{Name: parentWfName},
+	)
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions(ts.T().Name()),
+		parentWfName,
+	)
+	ts.NoError(err)
+
+	// Poll workflow history until we find the WORKFLOW_TASK_FAILED event
+	var lastWorkflowTaskFailedEvent *historypb.HistoryEvent
+	for range 100 {
+		time.Sleep(100 * time.Millisecond)
+		eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for eventIterator.HasNext() {
+			event, err := eventIterator.Next()
+			ts.NoError(err)
+			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
+				lastWorkflowTaskFailedEvent = event
+			}
+		}
+		if lastWorkflowTaskFailedEvent != nil {
+			break
+		}
+	}
+
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	// Verify the failure event
+	ts.NotNil(lastWorkflowTaskFailedEvent)
+	attributes := lastWorkflowTaskFailedEvent.GetWorkflowTaskFailedEventAttributes()
+	ts.NotNil(attributes)
+	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
+	ts.NotNil(attributes.Failure)
+	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+
+	// Verify failure is logged
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	}))
+}
+
+func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowMemo() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	logger := ilog.NewMemoryLogger()
+	ts.ResetClientAndWorker(func(opts *client.Options) {
+		opts.Logger = logger
+	}, nil)
+
+	childWfName := "child-workflow-with-memo"
+	parentWfName := "payload-size-error-child-workflow-memo"
+
+	ts.worker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) error {
+			return nil
+		},
+		workflow.RegisterOptions{Name: childWfName},
+	)
+	ts.worker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) error {
+			largeMemoValue := strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000)
+			childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
+				WorkflowExecutionTimeout: 10 * time.Second,
+				Memo: map[string]interface{}{
+					"large-field": largeMemoValue,
+				},
+			})
+			return workflow.ExecuteChildWorkflow(childCtx, childWfName).Get(ctx, nil)
+		},
+		workflow.RegisterOptions{Name: parentWfName},
+	)
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions(ts.T().Name()),
+		parentWfName,
+	)
+	ts.NoError(err)
+
+	// Poll workflow history until we find the WORKFLOW_TASK_FAILED event
+	var lastWorkflowTaskFailedEvent *historypb.HistoryEvent
+	for range 100 {
+		time.Sleep(100 * time.Millisecond)
+		eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var eventTypes []string
+		for eventIterator.HasNext() {
+			event, err := eventIterator.Next()
+			ts.NoError(err)
+			eventTypes = append(eventTypes, event.EventType.String())
+			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
+				lastWorkflowTaskFailedEvent = event
+			}
+		}
+		if lastWorkflowTaskFailedEvent != nil {
+			break
+		}
+	}
+
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	// Verify the failure event
+	ts.NotNil(lastWorkflowTaskFailedEvent)
+	attributes := lastWorkflowTaskFailedEvent.GetWorkflowTaskFailedEventAttributes()
+	ts.NotNil(attributes)
+	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
+	ts.NotNil(attributes.Failure)
+	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+
+	// Verify failure is logged
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	}))
+}
+
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
