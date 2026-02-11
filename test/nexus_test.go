@@ -3063,8 +3063,6 @@ func TestNexusTimeoutInteraction(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			defer cancel()
 			tctx := newTestContext(t, ctx)
