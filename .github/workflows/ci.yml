@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
           - os: ubuntu-latest
@@ -23,6 +23,10 @@ jobs:
             uploadCoverage: true
             # We only want to check docker compose on a single target
             testDockerCompose: true
+          - os: macos-intel
+            runsOn: macos-15-intel
+          - os: macos-arm
+            runsOn: macos-14
     permissions:
       contents: read
       checks: write
@@ -46,3 +50,89 @@ jobs:
       - name: Unit test
         run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }}
         working-directory: ./internal/cmd/build
+
+      - name: Integration tests (without cache)
+        run: go run . integration-test -dev-server
+        working-directory: ./internal/cmd/build
+        env:
+          WORKFLOW_CACHE_SIZE: "0"
+          TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_zero_cache_cover.out' || '' }}
+
+      - name: Integration tests (with cache)
+        run: go run . integration-test -dev-server
+        working-directory: ./internal/cmd/build
+        env:
+          TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_normal_cache_cover.out' || '' }}
+
+      - name: Merge coverage files
+        if: ${{ matrix.uploadCoverage }}
+        run: go run . merge-coverage-files ../../../coverage.out
+        working-directory: ./internal/cmd/build
+
+      - name: Upload coverage
+        if: ${{ matrix.uploadCoverage }}
+        continue-on-error: true
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.out
+          format: golang
+
+      - name: Docker compose - checkout
+        if: ${{ matrix.testDockerCompose }}
+        uses: actions/checkout@v4
+        with:
+          repository: temporalio/samples-server
+          path: ./samples-server
+
+      - name: Docker compose - start
+        if: ${{ matrix.testDockerCompose }}
+        run: |
+          cp ./.github/workflows/docker/docker-compose.override.yaml ./samples-server/compose/docker-compose.override.yaml
+          cp ./.github/workflows/docker/dynamic-config-custom.yaml ./samples-server/compose/dynamicconfig/dynamic-config-custom.yaml
+          docker compose --project-directory ./samples-server/compose up &
+          go run ./.github/workflows/wait_for_server.go
+
+      - name: Docker compose - integration tests
+        if: ${{ matrix.testDockerCompose }}
+        run: go run . integration-test
+        env:
+          # TODO(antlai-temporal): Remove this flag once server 1.27 released.
+          DISABLE_SERVER_1_27_TESTS: "1"
+          DISABLE_PRIORITY_TESTS: "1"
+          DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
+        working-directory: ./internal/cmd/build
+
+  cloud-test:
+    strategy:
+      matrix:
+        go-version: ["oldstable", "stable"]
+        fips: [true, false]
+      # Try to avoid running tests in parallel to avoid workflow ID conflict
+      max-parallel: 1
+    # Only supported in non-fork runs, since secrets are not available in forks.
+    if: ${{ github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go' }}
+    runs-on: ubuntu-latest
+    env:
+      SERVICE_ADDR: sdk-ci.a2dd6.tmprl.cloud:7233
+      TEMPORAL_NAMESPACE: sdk-ci.a2dd6
+      TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
+      TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
+      GODEBUG: ${{ matrix.fips && 'fips140=on' || '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+      - name: Single integration test against cloud
+        run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
+        working-directory: test
+
+  features-test:
+    uses: temporalio/features/.github/workflows/go.yaml@main
+    with:
+      go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
+      version: ${{github.event.pull_request.head.ref}}
+      version-is-repo-ref: true
