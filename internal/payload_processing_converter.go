@@ -113,20 +113,8 @@ func (c *payloadProcessingDataConverter) WithWorkflowContext(ctx Context) conver
 
 func (c *payloadProcessingDataConverter) WithContext(ctx context.Context) converter.DataConverter {
 	logger := c.logger
-	if activityEnvInterceptorAny := ctx.Value(activityEnvInterceptorContextKey); activityEnvInterceptorAny != nil {
-		activityEnvInterceptorPtr := activityEnvInterceptorAny.(*activityEnvironmentInterceptor)
-		if activityEnvPtr := activityEnvInterceptorPtr.env; activityEnvPtr != nil {
-			if workflowType := activityEnvPtr.workflowType; workflowType != nil {
-				logger = log.With(logger,
-					tagWorkflowType, workflowType.Name)
-			}
-			logger = log.With(logger,
-				tagWorkflowID, activityEnvPtr.workflowExecution.ID,
-				tagRunID, activityEnvPtr.workflowExecution.RunID,
-				tagActivityID, activityEnvPtr.activityID,
-				tagAttempt, activityEnvPtr.attempt,
-				tagActivityType, activityEnvPtr.activityType.Name)
-		}
+	if IsActivity(ctx) {
+		logger = GetActivityLogger(ctx)
 	}
 
 	innerConverter := c.DataConverter
