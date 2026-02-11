@@ -315,8 +315,8 @@ func WithActivityTask(
 	interceptors []WorkerInterceptor,
 	client *WorkflowClient,
 ) (context.Context, error) {
-	scheduled := task.GetScheduledTime().AsTime()
-	started := task.GetStartedTime().AsTime()
+	scheduled := safeAsTime(task.GetScheduledTime())
+	started := safeAsTime(task.GetStartedTime())
 	scheduleToCloseTimeout := task.GetScheduleToCloseTimeout().AsDuration()
 	startToCloseTimeout := task.GetStartToCloseTimeout().AsDuration()
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
