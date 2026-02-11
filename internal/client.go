@@ -1200,7 +1200,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		}
 	}
 
-	dataConverter, _ := newPayloadLimitDataConverter(options.DataConverter, options.Logger, options.PayloadLimits)
+	dataConverter, _ := newPayloadProcessingDataConverter(options.DataConverter, options.Logger, options.PayloadLimits)
 
 	client := &WorkflowClient{
 		workflowService:          workflowServiceClient,

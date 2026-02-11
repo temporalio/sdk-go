@@ -17,17 +17,6 @@ type PayloadLimitOptions struct {
 	PayloadSizeWarning int
 }
 
-type payloadLimitDataConverter struct {
-	converter.DataConverter
-	errorLimits atomic.Pointer[payloadErrorLimits]
-	options     payloadLimitDataConverterOptions
-}
-
-type payloadLimitDataConverterOptions struct {
-	Logger             log.Logger
-	PayloadSizeWarning int
-}
-
 type payloadSizeError struct {
 	message string
 	size    int64
@@ -42,31 +31,42 @@ type payloadErrorLimits struct {
 	PayloadSizeError int64
 }
 
+// payloadProcessingDataConverter is a converter that wraps another data converter and applies post conversion operations
+// to payloads, such as payload size limit logging and enforcement. Future operations may be added to create an internal
+// centralized pipeline of transformations and validations in one converter.
+type payloadProcessingDataConverter struct {
+	converter.DataConverter
+	errorLimits        atomic.Pointer[payloadErrorLimits]
+	logger             log.Logger
+	payloadSizeWarning int
+}
+
 // NOTE: This func returns the data converter and a func callback allowing the setting of error limits after the converter has been created.
-func newPayloadLimitDataConverter(innerConverter converter.DataConverter, logger log.Logger, options PayloadLimitOptions) (converter.DataConverter, func(*payloadErrorLimits)) {
+func newPayloadProcessingDataConverter(innerConverter converter.DataConverter, logger log.Logger, options PayloadLimitOptions) (converter.DataConverter, func(*payloadErrorLimits)) {
 	payloadSizeWarning := 512 * kb
 	if options.PayloadSizeWarning != 0 {
 		payloadSizeWarning = options.PayloadSizeWarning
 	}
-	dataConverter := &payloadLimitDataConverter{
-		DataConverter: innerConverter,
-		options: payloadLimitDataConverterOptions{
-			Logger:             logger,
-			PayloadSizeWarning: payloadSizeWarning,
-		},
+	dataConverter := &payloadProcessingDataConverter{
+		DataConverter:      innerConverter,
+		logger:             logger,
+		payloadSizeWarning: payloadSizeWarning,
 	}
 	return dataConverter, dataConverter.SetErrorLimits
 }
 
-func (c *payloadLimitDataConverter) SetErrorLimits(errorLimits *payloadErrorLimits) {
+func (c *payloadProcessingDataConverter) SetErrorLimits(errorLimits *payloadErrorLimits) {
 	c.errorLimits.Store(errorLimits)
 }
 
-func (c *payloadLimitDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (c *payloadProcessingDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	payload, err := c.DataConverter.ToPayload(value)
 	if err != nil {
 		return nil, err
 	}
+	// Other operations can be inserted here.
+
+	// Size limit checks should remain the last operation before returning
 	if payload != nil {
 		err = c.checkPayloadsSize([]*commonpb.Payload{payload})
 		if err != nil {
@@ -76,11 +76,14 @@ func (c *payloadLimitDataConverter) ToPayload(value interface{}) (*commonpb.Payl
 	return payload, nil
 }
 
-func (c *payloadLimitDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
+func (c *payloadProcessingDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
 	payloads, err := c.DataConverter.ToPayloads(value...)
 	if err != nil {
 		return nil, err
 	}
+	// Other operations can be inserted here.
+
+	// Size limit checks should remain the last operation before returning
 	if payloads != nil {
 		err = c.checkPayloadsSize(payloads.Payloads)
 		if err != nil {
@@ -90,25 +93,23 @@ func (c *payloadLimitDataConverter) ToPayloads(value ...interface{}) (*commonpb.
 	return payloads, nil
 }
 
-func (c *payloadLimitDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
+func (c *payloadProcessingDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
 	innerConverter := c.DataConverter
 	if contextAwareInnerConverter, ok := c.DataConverter.(ContextAware); ok {
 		innerConverter = contextAwareInnerConverter.WithWorkflowContext(ctx)
 	}
 
-	newConverter := &payloadLimitDataConverter{
-		DataConverter: innerConverter,
-		options: payloadLimitDataConverterOptions{
-			Logger:             GetLogger(ctx),
-			PayloadSizeWarning: c.options.PayloadSizeWarning,
-		},
+	newConverter := &payloadProcessingDataConverter{
+		DataConverter:      innerConverter,
+		logger:             GetLogger(ctx),
+		payloadSizeWarning: c.payloadSizeWarning,
 	}
 	newConverter.errorLimits.Store(c.errorLimits.Load())
 	return newConverter
 }
 
-func (c *payloadLimitDataConverter) WithContext(ctx context.Context) converter.DataConverter {
-	logger := c.options.Logger
+func (c *payloadProcessingDataConverter) WithContext(ctx context.Context) converter.DataConverter {
+	logger := c.logger
 	if activityEnvInterceptorAny := ctx.Value(activityEnvInterceptorContextKey); activityEnvInterceptorAny != nil {
 		activityEnvInterceptorPtr := activityEnvInterceptorAny.(*activityEnvironmentInterceptor)
 		if activityEnvPtr := activityEnvInterceptorPtr.env; activityEnvPtr != nil {
@@ -130,22 +131,16 @@ func (c *payloadLimitDataConverter) WithContext(ctx context.Context) converter.D
 		innerConverter = contextAwareInnerConverter.WithContext(ctx)
 	}
 
-	if logger == c.options.Logger && innerConverter == c.DataConverter {
-		return c
-	}
-
-	newConverter := &payloadLimitDataConverter{
-		DataConverter: innerConverter,
-		options: payloadLimitDataConverterOptions{
-			Logger:             logger,
-			PayloadSizeWarning: c.options.PayloadSizeWarning,
-		},
+	newConverter := &payloadProcessingDataConverter{
+		DataConverter:      innerConverter,
+		logger:             logger,
+		payloadSizeWarning: c.payloadSizeWarning,
 	}
 	newConverter.errorLimits.Store(c.errorLimits.Load())
 	return newConverter
 }
 
-func (c *payloadLimitDataConverter) checkPayloadsSize(payloads []*commonpb.Payload) error {
+func (c *payloadProcessingDataConverter) checkPayloadsSize(payloads []*commonpb.Payload) error {
 	var totalSize int64
 	for _, payload := range payloads {
 		if payload != nil {
@@ -160,11 +155,11 @@ func (c *payloadLimitDataConverter) checkPayloadsSize(payloads []*commonpb.Paylo
 			limit:   errorLimits.PayloadSizeError,
 		}
 	}
-	if c.options.PayloadSizeWarning > 0 && totalSize > int64(c.options.PayloadSizeWarning) && c.options.Logger != nil {
-		c.options.Logger.Warn(
+	if c.payloadSizeWarning > 0 && totalSize > int64(c.payloadSizeWarning) && c.logger != nil {
+		c.logger.Warn(
 			"[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.",
 			tagPayloadSize, totalSize,
-			tagPayloadSizeLimit, int64(c.options.PayloadSizeWarning),
+			tagPayloadSizeLimit, int64(c.payloadSizeWarning),
 		)
 	}
 	return nil
