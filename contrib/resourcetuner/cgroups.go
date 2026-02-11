@@ -5,7 +5,6 @@ package resourcetuner
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -27,12 +26,7 @@ type cGroupInfoImpl struct {
 func (p *cGroupInfoImpl) Update() (bool, error) {
 	err := p.updateCGroupStats()
 	// Stop updates if not in a container. No need to return the error and log it.
-	if !errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	} else if err != nil {
-		return true, err
-	}
-	return true, nil
+	return handleCGroupUpdateError(err)
 }
 
 func (p *cGroupInfoImpl) GetLastMemUsage() float64 {
