@@ -13,6 +13,10 @@ var DefaultIdentRefs = IdentRefs{
 	"os.Stdout":  true,
 	"time.Now":   true,
 	"time.Sleep": true,
+	// We mark these as deterministic since the non-determinism is captured at the
+	// variable access level (os.Stdout etc.), not the method itself. Flagging the
+	// method would false-positive on any *os.File including user-opened files.
+	"(*os.File).Write": false,
 	// We mark these as deterministic since they give so many false positives
 	"(reflect.Value).Interface": false,
 	"runtime.Caller":            false,
