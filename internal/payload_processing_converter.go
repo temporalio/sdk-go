@@ -13,6 +13,8 @@ import (
 //
 // Exposed as: [go.temporal.io/sdk/client.PayloadLimitOptions]
 type PayloadLimitOptions struct {
+	// The limit (in bytes) at which a memo size warning is logged.
+	MemoSizeWarning int
 	// The limit (in bytes) at which a payload size warning is logged.
 	PayloadSizeWarning int
 }
@@ -28,6 +30,7 @@ func (e payloadSizeError) Error() string {
 }
 
 type payloadErrorLimits struct {
+	MemoSizeError    int64
 	PayloadSizeError int64
 }
 
@@ -38,11 +41,16 @@ type payloadProcessingDataConverter struct {
 	converter.DataConverter
 	errorLimits        atomic.Pointer[payloadErrorLimits]
 	logger             log.Logger
+	memoSizeWarning    int
 	payloadSizeWarning int
 	panicOnError       bool
 }
 
 func newPayloadProcessingDataConverter(innerConverter converter.DataConverter, logger log.Logger, options PayloadLimitOptions) (converter.DataConverter, func(*payloadErrorLimits)) {
+	memoSizeWarning := 2 * kb
+	if options.MemoSizeWarning != 0 {
+		memoSizeWarning = options.MemoSizeWarning
+	}
 	payloadSizeWarning := 512 * kb
 	if options.PayloadSizeWarning != 0 {
 		payloadSizeWarning = options.PayloadSizeWarning
@@ -50,6 +58,7 @@ func newPayloadProcessingDataConverter(innerConverter converter.DataConverter, l
 	dataConverter := &payloadProcessingDataConverter{
 		DataConverter:      innerConverter,
 		logger:             logger,
+		memoSizeWarning:    memoSizeWarning,
 		payloadSizeWarning: payloadSizeWarning,
 		panicOnError:       false,
 	}
@@ -103,6 +112,7 @@ func (c *payloadProcessingDataConverter) WithWorkflowContext(ctx Context) conver
 	newConverter := &payloadProcessingDataConverter{
 		DataConverter:      innerConverter,
 		logger:             GetLogger(ctx),
+		memoSizeWarning:    c.memoSizeWarning,
 		payloadSizeWarning: c.payloadSizeWarning,
 		panicOnError:       true,
 	}
@@ -124,11 +134,41 @@ func (c *payloadProcessingDataConverter) WithContext(ctx context.Context) conver
 	newConverter := &payloadProcessingDataConverter{
 		DataConverter:      innerConverter,
 		logger:             logger,
+		memoSizeWarning:    c.memoSizeWarning,
 		payloadSizeWarning: c.payloadSizeWarning,
 		panicOnError:       c.panicOnError,
 	}
 	newConverter.errorLimits.Store(c.errorLimits.Load())
 	return newConverter
+}
+
+func (c *payloadProcessingDataConverter) CheckMemoSize(memo map[string]*commonpb.Payload) error {
+	var totalSize int64
+	for _, payload := range memo {
+		if payload != nil {
+			totalSize += int64(payload.Size())
+		}
+	}
+	errorLimits := c.errorLimits.Load()
+	if errorLimits != nil && errorLimits.MemoSizeError > 0 && totalSize > errorLimits.MemoSizeError {
+		err := payloadSizeError{
+			message: "[TMPRL1103] Attempted to upload memo with size that exceeded the error limit.",
+			size:    totalSize,
+			limit:   errorLimits.MemoSizeError,
+		}
+		if c.panicOnError {
+			panic(err)
+		}
+		return err
+	}
+	if c.memoSizeWarning > 0 && totalSize > int64(c.memoSizeWarning) && c.logger != nil {
+		c.logger.Warn(
+			"[TMPRL1103] Attempted to upload memo with size that exceeded the warning limit.",
+			tagPayloadSize, totalSize,
+			tagPayloadSizeLimit, int64(c.memoSizeWarning),
+		)
+	}
+	return nil
 }
 
 func (c *payloadProcessingDataConverter) checkPayloadsSize(payloads []*commonpb.Payload) error {

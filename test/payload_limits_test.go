@@ -15,6 +15,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
@@ -34,7 +35,15 @@ func TestPayloadLimitsTestSuite(t *testing.T) {
 	suite.Run(t, new(PayloadLimitsTestSuite))
 }
 
-const PAYLOAD_SIZE_ERROR_LIMIT = 10 * 1024 // 10 KiB
+const MEMO_SIZE_ERROR_LIMIT = 5 * 1024      // 5 KiB
+const MEMO_SIZE_WARNING_LIMIT = 1024        // 1 KiB
+const PAYLOAD_SIZE_ERROR_LIMIT = 10 * 1024  // 10 KiB
+const PAYLOAD_SIZE_WARNING_LIMIT = 2 * 1024 // 2 KiB
+
+const MEMO_ERROR_MESSAGE = "[TMPRL1103] Attempted to upload memo with size that exceeded the error limit."
+const MEMO_WARNING_MESSAGE = "[TMPRL1103] Attempted to upload memo with size that exceeded the warning limit."
+const PAYLOAD_ERROR_MESSAGE = "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit."
+const PAYLOAD_WARNING_MESSAGE = "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit."
 
 func (ts *PayloadLimitsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
@@ -59,8 +68,10 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 		LogLevel: "warn",
 		ExtraArgs: []string{
 			"--http-port", httpPort,
+			"--dynamic-config-value", fmt.Sprintf("limit.memoSize.error=%d", MEMO_SIZE_ERROR_LIMIT),
 			"--dynamic-config-value", fmt.Sprintf("limit.blobSize.error=%d", PAYLOAD_SIZE_ERROR_LIMIT),
-			"--dynamic-config-value", "limit.blobSize.warn=2048", // 2 KiB
+			"--dynamic-config-value", fmt.Sprintf("limit.memoSize.warn=%d", MEMO_SIZE_WARNING_LIMIT),
+			"--dynamic-config-value", fmt.Sprintf("limit.blobSize.warn=%d", PAYLOAD_SIZE_WARNING_LIMIT),
 		},
 	})
 	ts.NoError(err)
@@ -145,13 +156,13 @@ func (ts *PayloadLimitsTestSuite) pollForHistoryEvent(
 
 // assertWorkflowTaskFailedWithPayloadLimit verifies that the event is a WORKFLOW_TASK_FAILED
 // event with the expected payload limit failure attributes.
-func (ts *PayloadLimitsTestSuite) assertWorkflowTaskFailedWithPayloadLimit(event *historypb.HistoryEvent) {
+func (ts *PayloadLimitsTestSuite) assertWorkflowTaskFailedWithPayloadLimit(event *historypb.HistoryEvent, message string) {
 	ts.NotNil(event)
 	attributes := event.GetWorkflowTaskFailedEventAttributes()
 	ts.NotNil(attributes)
 	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
 	ts.NotNil(attributes.Failure)
-	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+	ts.Equal(message, attributes.Failure.Message)
 }
 
 // assertLogContains verifies that the logger contains a line with the specified message.
@@ -188,9 +199,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, PAYLOAD_ERROR_MESSAGE)
 
-	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
@@ -241,9 +252,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, PAYLOAD_ERROR_MESSAGE)
 
-	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
@@ -287,9 +298,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, PAYLOAD_ERROR_MESSAGE)
 
-	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowMemo() {
@@ -312,11 +323,15 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowMemo() {
 	)
 	ts.worker.RegisterWorkflowWithOptions(
 		func(ctx workflow.Context) error {
-			largeMemoValue := strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000)
+			// Intent is to create a memo whose individual payloads are within the payload
+			// size error limit but the aggregate is over the memo size error limit.
+			memoValue := strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT/3)
 			childCtx := workflow.WithChildOptions(ctx, workflow.ChildWorkflowOptions{
 				WorkflowExecutionTimeout: 10 * time.Second,
 				Memo: map[string]interface{}{
-					"large-field": largeMemoValue,
+					"field1": memoValue,
+					"field2": memoValue,
+					"field3": memoValue,
 				},
 			})
 			return workflow.ExecuteChildWorkflow(childCtx, childWfName).Get(ctx, nil)
@@ -335,9 +350,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowMemo() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, MEMO_ERROR_MESSAGE)
 
-	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	ts.assertLogContains(logger, MEMO_ERROR_MESSAGE)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
@@ -380,9 +395,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, PAYLOAD_ERROR_MESSAGE)
 
-	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
@@ -445,10 +460,10 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
 	attributes := lastActivityTaskFailedEvent.GetActivityTaskFailedEventAttributes()
 	ts.NotNil(attributes)
 	ts.NotNil(attributes.Failure)
-	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+	ts.Equal(PAYLOAD_ERROR_MESSAGE, attributes.Failure.Message)
 
 	// Verify failure is logged
-	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
+	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
@@ -528,7 +543,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningClientCustom() {
 
 	var res int
 	ts.NoError(run.Get(ctx, &res))
-	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
+	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningWorkflowCustom() {
@@ -572,5 +587,56 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningWorkflowCustom() {
 
 	var res string
 	ts.NoError(run.Get(ctx, &res))
-	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
+	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
+}
+
+func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningScheduleWorkflowMemo() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	logger := ilog.NewMemoryLogger()
+	ts.ResetClientAndWorker(func(opts *client.Options) {
+		opts.Logger = logger
+		opts.PayloadLimits = internal.PayloadLimitOptions{
+			MemoSizeWarning: MEMO_SIZE_WARNING_LIMIT,
+		}
+	}, nil)
+
+	wfName := "schedule-workflow"
+	ts.worker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) error {
+			return nil
+		},
+		workflow.RegisterOptions{Name: wfName},
+	)
+
+	// Intent is to create a schedule action with a memo whose individual payloads
+	// are within the payload size error limit but the aggregate is over the memo
+	// size error limit.
+	memoValue := strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT/3)
+
+	_, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID: "schedule-" + ts.T().Name(),
+		Spec: client.ScheduleSpec{
+			Intervals: []client.ScheduleIntervalSpec{
+				{Every: 24 * time.Hour},
+			},
+		},
+		Action: &client.ScheduleWorkflowAction{
+			Workflow:  wfName,
+			TaskQueue: ts.taskQueueName,
+			Memo: map[string]interface{}{
+				"field1": memoValue,
+				"field2": memoValue,
+				"field3": memoValue,
+			},
+		},
+	})
+
+	// Server will reject the schedule due to the memo size being larger than the limit.
+	ts.Error(err)
+	ts.Contains(err.Error(), "Blob data size exceeds limit.")
+	// Client should log a warning message but not an error message because the client
+	// does not have error limits.
+	ts.assertLogContains(logger, MEMO_WARNING_MESSAGE)
 }

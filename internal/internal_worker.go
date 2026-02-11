@@ -1292,6 +1292,7 @@ func (aw *AggregatedWorker) start() error {
 
 	if limits != nil && aw.executionParams.SetPayloadErrorLimits != nil {
 		aw.executionParams.SetPayloadErrorLimits(&payloadErrorLimits{
+			MemoSizeError:    limits.MemoSizeLimitError,
 			PayloadSizeError: limits.BlobSizeLimitError,
 		})
 	}
