@@ -117,6 +117,50 @@ func (ts *PayloadLimitsTestSuite) ResetClientAndWorker(
 	ts.NoError(ts.worker.Start())
 }
 
+// pollForHistoryEvent polls the workflow history until an event of the specified type is found.
+// Returns the last event of the specified type, or nil if not found within the polling period.
+func (ts *PayloadLimitsTestSuite) pollForHistoryEvent(
+	ctx context.Context,
+	workflowID string,
+	runID string,
+	eventType enumspb.EventType,
+) *historypb.HistoryEvent {
+	var lastEvent *historypb.HistoryEvent
+	for range 100 {
+		time.Sleep(100 * time.Millisecond)
+		eventIterator := ts.client.GetWorkflowHistory(ctx, workflowID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for eventIterator.HasNext() {
+			event, err := eventIterator.Next()
+			ts.NoError(err)
+			if event.EventType == eventType {
+				lastEvent = event
+			}
+		}
+		if lastEvent != nil {
+			break
+		}
+	}
+	return lastEvent
+}
+
+// assertWorkflowTaskFailedWithPayloadLimit verifies that the event is a WORKFLOW_TASK_FAILED
+// event with the expected payload limit failure attributes.
+func (ts *PayloadLimitsTestSuite) assertWorkflowTaskFailedWithPayloadLimit(event *historypb.HistoryEvent) {
+	ts.NotNil(event)
+	attributes := event.GetWorkflowTaskFailedEventAttributes()
+	ts.NotNil(attributes)
+	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
+	ts.NotNil(attributes.Failure)
+	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+}
+
+// assertLogContains verifies that the logger contains a line with the specified message.
+func (ts *PayloadLimitsTestSuite) assertLogContains(logger *ilog.MemoryLogger, message string) {
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.Contains(line, message)
+	}))
+}
+
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -140,37 +184,13 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
 	)
 	ts.NoError(err)
 
-	// Poll workflow history until we find the WORKFLOW_TASK_FAILED event
-	var lastWorkflowTaskFailedEvent *historypb.HistoryEvent
-	for range 100 {
-		time.Sleep(100 * time.Millisecond)
-		eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for eventIterator.HasNext() {
-			event, err := eventIterator.Next()
-			ts.NoError(err)
-			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
-				lastWorkflowTaskFailedEvent = event
-			}
-		}
-		if lastWorkflowTaskFailedEvent != nil {
-			break
-		}
-	}
+	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	// Verify the failure event
-	ts.NotNil(lastWorkflowTaskFailedEvent)
-	attributes := lastWorkflowTaskFailedEvent.GetWorkflowTaskFailedEventAttributes()
-	ts.NotNil(attributes)
-	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
-	ts.NotNil(attributes.Failure)
-	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
 
-	// Verify failure is logged
-	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
-	}))
+	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
@@ -217,37 +237,13 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
 		})
 	}()
 
-	// Poll workflow history until we find the WORKFLOW_TASK_FAILED event
-	var lastWorkflowTaskFailedEvent *historypb.HistoryEvent
-	for range 100 {
-		time.Sleep(100 * time.Millisecond)
-		eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for eventIterator.HasNext() {
-			event, err := eventIterator.Next()
-			ts.NoError(err)
-			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
-				lastWorkflowTaskFailedEvent = event
-			}
-		}
-		if lastWorkflowTaskFailedEvent != nil {
-			break
-		}
-	}
+	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	// Verify the failure event
-	ts.NotNil(lastWorkflowTaskFailedEvent)
-	attributes := lastWorkflowTaskFailedEvent.GetWorkflowTaskFailedEventAttributes()
-	ts.NotNil(attributes)
-	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
-	ts.NotNil(attributes.Failure)
-	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
 
-	// Verify failure is logged
-	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
-	}))
+	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
@@ -287,37 +283,13 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
 	)
 	ts.NoError(err)
 
-	// Poll workflow history until we find the WORKFLOW_TASK_FAILED event
-	var lastWorkflowTaskFailedEvent *historypb.HistoryEvent
-	for range 100 {
-		time.Sleep(100 * time.Millisecond)
-		eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for eventIterator.HasNext() {
-			event, err := eventIterator.Next()
-			ts.NoError(err)
-			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
-				lastWorkflowTaskFailedEvent = event
-			}
-		}
-		if lastWorkflowTaskFailedEvent != nil {
-			break
-		}
-	}
+	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	// Verify the failure event
-	ts.NotNil(lastWorkflowTaskFailedEvent)
-	attributes := lastWorkflowTaskFailedEvent.GetWorkflowTaskFailedEventAttributes()
-	ts.NotNil(attributes)
-	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
-	ts.NotNil(attributes.Failure)
-	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
 
-	// Verify failure is logged
-	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
-	}))
+	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowMemo() {
@@ -359,39 +331,13 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowMemo() {
 	)
 	ts.NoError(err)
 
-	// Poll workflow history until we find the WORKFLOW_TASK_FAILED event
-	var lastWorkflowTaskFailedEvent *historypb.HistoryEvent
-	for range 100 {
-		time.Sleep(100 * time.Millisecond)
-		eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		var eventTypes []string
-		for eventIterator.HasNext() {
-			event, err := eventIterator.Next()
-			ts.NoError(err)
-			eventTypes = append(eventTypes, event.EventType.String())
-			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
-				lastWorkflowTaskFailedEvent = event
-			}
-		}
-		if lastWorkflowTaskFailedEvent != nil {
-			break
-		}
-	}
+	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	// Verify the failure event
-	ts.NotNil(lastWorkflowTaskFailedEvent)
-	attributes := lastWorkflowTaskFailedEvent.GetWorkflowTaskFailedEventAttributes()
-	ts.NotNil(attributes)
-	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
-	ts.NotNil(attributes.Failure)
-	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
 
-	// Verify failure is logged
-	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
-	}))
+	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
@@ -430,37 +376,13 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
 	)
 	ts.NoError(err)
 
-	// Poll workflow history until we find the WORKFLOW_TASK_FAILED event
-	var lastWorkflowTaskFailedEvent *historypb.HistoryEvent
-	for range 100 {
-		time.Sleep(100 * time.Millisecond)
-		eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for eventIterator.HasNext() {
-			event, err := eventIterator.Next()
-			ts.NoError(err)
-			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
-				lastWorkflowTaskFailedEvent = event
-			}
-		}
-		if lastWorkflowTaskFailedEvent != nil {
-			break
-		}
-	}
+	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	// Verify the failure event
-	ts.NotNil(lastWorkflowTaskFailedEvent)
-	attributes := lastWorkflowTaskFailedEvent.GetWorkflowTaskFailedEventAttributes()
-	ts.NotNil(attributes)
-	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
-	ts.NotNil(attributes.Failure)
-	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent)
 
-	// Verify failure is logged
-	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
-	}))
+	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
@@ -526,9 +448,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
 	ts.Equal("[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.", attributes.Failure.Message)
 
 	// Verify failure is logged
-	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
-	}))
+	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.")
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
@@ -608,9 +528,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningClientCustom() {
 
 	var res int
 	ts.NoError(run.Get(ctx, &res))
-	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
-	}))
+	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningWorkflowCustom() {
@@ -654,7 +572,5 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningWorkflowCustom() {
 
 	var res string
 	ts.NoError(run.Get(ctx, &res))
-	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
-	}))
+	ts.assertLogContains(logger, "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
 }
