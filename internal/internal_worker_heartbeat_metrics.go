@@ -13,21 +13,21 @@ import (
 
 // Metrics we capture for heartbeat reporting.
 var (
-	capturedCounters = map[string]bool{
-		metrics.StickyCacheHit:                      true,
-		metrics.StickyCacheMiss:                     true,
-		metrics.WorkflowTaskExecutionFailureCounter: true,
-		metrics.ActivityExecutionFailedCounter:      true,
-		metrics.LocalActivityExecutionFailedCounter: true,
-		metrics.NexusTaskExecutionFailedCounter:     true,
+	capturedCounters = map[string]struct{}{
+		metrics.StickyCacheHit:                      {},
+		metrics.StickyCacheMiss:                     {},
+		metrics.WorkflowTaskExecutionFailureCounter: {},
+		metrics.ActivityExecutionFailedCounter:      {},
+		metrics.LocalActivityExecutionFailedCounter: {},
+		metrics.NexusTaskExecutionFailedCounter:     {},
 	}
 
 	// Timer recordings are counted (not their latencies) to track tasks processed.
-	capturedTimers = map[string]bool{
-		metrics.WorkflowTaskExecutionLatency:  true,
-		metrics.ActivityExecutionLatency:      true,
-		metrics.LocalActivityExecutionLatency: true,
-		metrics.NexusTaskExecutionLatency:     true,
+	capturedTimers = map[string]struct{}{
+		metrics.WorkflowTaskExecutionLatency:  {},
+		metrics.ActivityExecutionLatency:      {},
+		metrics.LocalActivityExecutionLatency: {},
+		metrics.NexusTaskExecutionLatency:     {},
 	}
 )
 
@@ -75,7 +75,7 @@ func (h *heartbeatMetricsHandler) WithTags(tags map[string]string) metrics.Handl
 
 func (h *heartbeatMetricsHandler) Counter(name string) metrics.Counter {
 	underlying := h.underlying.Counter(name)
-	if capturedCounters[name] {
+	if _, ok := capturedCounters[name]; ok {
 		return &capturingCounter{
 			underlying: underlying,
 			value:      h.getOrCreate(name),
@@ -114,7 +114,7 @@ func (h *heartbeatMetricsHandler) Gauge(name string) metrics.Gauge {
 
 func (h *heartbeatMetricsHandler) Timer(name string) metrics.Timer {
 	underlying := h.underlying.Timer(name)
-	if capturedTimers[name] {
+	if _, ok := capturedTimers[name]; ok {
 		return &capturingTimer{
 			underlying: underlying,
 			counter:    h.getOrCreate(name),

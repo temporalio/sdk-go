@@ -1522,11 +1522,8 @@ func (aw *AggregatedWorker) shutdownWorker() {
 		WorkerHeartbeat: heartbeat,
 	})
 
-	// Ignore unimplemented (server doesn't support it) and unavailable (server shutting down)
+	// Ignore unimplemented (server doesn't support it)
 	if _, isUnimplemented := err.(*serviceerror.Unimplemented); isUnimplemented {
-		return
-	}
-	if _, isUnavailable := err.(*serviceerror.Unavailable); isUnavailable {
 		return
 	}
 

@@ -58,6 +58,7 @@ func (m *heartbeatManager) registerWorker(
 	defer m.workersMutex.Unlock()
 
 	hw, ok := m.workers[namespace]
+	// If this is the first worker on the namespace, start a new shared namespace worker.
 	if !ok {
 		hw = &sharedNamespaceWorker{
 			client:    m.client,
