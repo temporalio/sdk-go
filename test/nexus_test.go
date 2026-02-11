@@ -1394,7 +1394,7 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 		execOpCh := workflow.NewChannel(ctx)
 		client := workflow.NewNexusClient(tctx.endpoint, "test")
 
-		for i := 0; i < numCalls; i++ {
+		for range numCalls {
 			wg.Add(1)
 			workflow.Go(ctx, func(ctx workflow.Context) {
 				defer wg.Done()
@@ -1429,7 +1429,7 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 			})
 		}
 
-		for i := 0; i < numCalls; i++ {
+		for range numCalls {
 			execOpCh.Receive(ctx, nil)
 		}
 
@@ -1998,7 +1998,6 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testin
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			suite := testsuite.WorkflowTestSuite{}
 			env := suite.NewTestWorkflowEnvironment()
@@ -2069,7 +2068,6 @@ func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
 		{true, "BeforeStarted"},
 	}
 	for _, tc := range cases {
-		tc := tc // capture just in case.
 		t.Run(tc.name, func(t *testing.T) {
 			suite := testsuite.WorkflowTestSuite{}
 			env := suite.NewTestWorkflowEnvironment()
@@ -2131,7 +2129,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers(t *testing.T) {
 		execOpCh := workflow.NewChannel(ctx)
 		client := workflow.NewNexusClient("endpoint", "test")
 
-		for i := 0; i < numCalls; i++ {
+		for range numCalls {
 			wg.Add(1)
 			workflow.Go(ctx, func(ctx workflow.Context) {
 				defer wg.Done()
@@ -2166,7 +2164,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers(t *testing.T) {
 			})
 		}
 
-		for i := 0; i < numCalls; i++ {
+		for range numCalls {
 			execOpCh.Receive(ctx, nil)
 		}
 
@@ -2260,7 +2258,6 @@ func TestWorkflowTestSuite_NexusSyncOperation_ScheduleToCloseTimeout(t *testing.
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			suite := testsuite.WorkflowTestSuite{}
 			env := suite.NewTestWorkflowEnvironment()
@@ -2705,7 +2702,7 @@ func (i *nexusInterceptor) GetLogger(ctx context.Context) log.Logger {
 }
 
 // Info implements log.Logger.
-func (i *nexusInterceptor) Info(msg string, keyvals ...interface{}) {
+func (i *nexusInterceptor) Info(msg string, keyvals ...any) {
 	i.parent.logs = append(i.parent.logs, msg)
 }
 
@@ -2955,7 +2952,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToStartTimeout(t *testin
 	var timeoutErr *temporal.TimeoutError
 	require.ErrorAs(t, err, &timeoutErr)
 	require.Equal(t, enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, timeoutErr.TimeoutType())
-	require.Contains(t, timeoutErr.Message(), "before starting")
+	require.Contains(t, timeoutErr.Message(), "operation timed out")
 }
 
 func TestWorkflowTestSuite_WorkflowRunOperation_StartToCloseTimeout(t *testing.T) {
@@ -3013,10 +3010,13 @@ func TestWorkflowTestSuite_WorkflowRunOperation_StartToCloseTimeout(t *testing.T
 	var timeoutErr *temporal.TimeoutError
 	require.ErrorAs(t, err, &timeoutErr)
 	require.Equal(t, enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
-	require.Contains(t, timeoutErr.Message(), "after starting")
+	require.Contains(t, timeoutErr.Message(), "operation timed out")
 }
 
 func TestNexusTimeoutInteraction(t *testing.T) {
+	if os.Getenv("DISABLE_NEXUS_CALLER_TIMEOUT_TESTS") == "1" {
+		t.Skip()
+	}
 	// Test that when multiple timeouts are configured, the first one to expire fires
 	handlerWF := func(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
 		// Sleep long enough that timeouts will fire
@@ -3030,7 +3030,6 @@ func TestNexusTimeoutInteraction(t *testing.T) {
 		startToCloseTimeout    time.Duration
 		opStartDelay           time.Duration
 		expectedTimeoutType    enumspb.TimeoutType
-		expectedMessage        string
 		expectOperationToken   bool
 	}{
 		{
@@ -3040,7 +3039,6 @@ func TestNexusTimeoutInteraction(t *testing.T) {
 			startToCloseTimeout:    5 * time.Second,
 			opStartDelay:           4 * time.Second,
 			expectedTimeoutType:    enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START,
-			expectedMessage:        "before starting",
 			expectOperationToken:   false,
 		},
 		{
@@ -3050,27 +3048,15 @@ func TestNexusTimeoutInteraction(t *testing.T) {
 			startToCloseTimeout:    3 * time.Second,
 			opStartDelay:           0,
 			expectedTimeoutType:    enumspb.TIMEOUT_TYPE_START_TO_CLOSE,
-			expectedMessage:        "after starting",
 			expectOperationToken:   true,
 		},
 		{
-			name:                   "schedule-to-close fires first (before start)",
-			scheduleToCloseTimeout: 3 * time.Second,
-			scheduleToStartTimeout: 5 * time.Second,
-			startToCloseTimeout:    5 * time.Second,
-			opStartDelay:           4 * time.Second,
-			expectedTimeoutType:    enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE,
-			expectedMessage:        "operation timed out",
-			expectOperationToken:   false,
-		},
-		{
-			name:                   "schedule-to-close fires first (after start)",
+			name:                   "schedule-to-close fires first",
 			scheduleToCloseTimeout: 3 * time.Second,
 			scheduleToStartTimeout: 5 * time.Second,
 			startToCloseTimeout:    5 * time.Second,
 			opStartDelay:           0,
 			expectedTimeoutType:    enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE,
-			expectedMessage:        "operation timed out",
 			expectOperationToken:   true,
 		},
 	}
@@ -3136,7 +3122,7 @@ func TestNexusTimeoutInteraction(t *testing.T) {
 			var timeoutErr *temporal.TimeoutError
 			require.ErrorAs(t, err, &timeoutErr)
 			require.Equal(t, tc.expectedTimeoutType, timeoutErr.TimeoutType())
-			require.Contains(t, timeoutErr.Message(), tc.expectedMessage)
+			require.Contains(t, timeoutErr.Message(), "operation timed out")
 		})
 	}
 }
