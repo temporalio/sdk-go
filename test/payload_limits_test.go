@@ -257,6 +257,69 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
 	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
 }
 
+func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	logger := ilog.NewMemoryLogger()
+	ts.ResetClientAndWorker(func(opts *client.Options) {
+		opts.Logger = logger
+	}, nil)
+
+	wfname := "payload-size-error-query-result"
+	queryName := "large-query"
+
+	// Buffered channel to avoid blocking the query handler
+	largeQueryInvoked := make(chan bool, 1)
+
+	ts.worker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) error {
+			err := workflow.SetQueryHandler(ctx, queryName, func() (string, error) {
+				largeQueryInvoked <- true
+				return strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000), nil
+			})
+			if err != nil {
+				return err
+			}
+
+			workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
+			return nil
+		},
+		workflow.RegisterOptions{Name: wfname},
+	)
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions(ts.T().Name()),
+		wfname,
+	)
+	ts.NoError(err)
+
+	queryCtx, queryCancel := context.WithCancel(ctx)
+	defer queryCancel()
+
+	go func() {
+		// This will block until query completes, but it will not complete
+		// because the result payload is too large.
+		ts.client.QueryWorkflow(queryCtx, run.GetID(), run.GetRunID(), queryName)
+	}()
+
+	// Wait twice to ensure that the query was invoked repeatedly
+	for range 2 {
+		select {
+		case <-largeQueryInvoked:
+		case <-ctx.Done():
+			ts.Fail("Context cancelled before query handler was invoked")
+		}
+	}
+
+	queryCancel()
+
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
+}
+
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
