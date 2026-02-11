@@ -81,15 +81,15 @@ jobs:
         if: ${{ matrix.testDockerCompose }}
         uses: actions/checkout@v4
         with:
-          repository: temporalio/docker-compose
-          path: ./docker-compose
+          repository: temporalio/samples-server
+          path: ./samples-server
 
       - name: Docker compose - start
         if: ${{ matrix.testDockerCompose }}
         run: |
-          cp ./.github/workflows/docker/docker-compose.override.yaml ./docker-compose/docker-compose.override.yaml
-          cp ./.github/workflows/docker/dynamic-config-custom.yaml ./docker-compose/dynamicconfig/dynamic-config-custom.yaml
-          docker compose --project-directory ./docker-compose up &
+          cp ./.github/workflows/docker/docker-compose.override.yaml ./samples-server/compose/docker-compose.override.yaml
+          cp ./.github/workflows/docker/dynamic-config-custom.yaml ./samples-server/compose/dynamicconfig/dynamic-config-custom.yaml
+          docker compose --project-directory ./samples-server/compose up &
           go run ./.github/workflows/wait_for_server.go
 
       - name: Docker compose - integration tests
