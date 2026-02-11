@@ -42,7 +42,6 @@ type payloadProcessingDataConverter struct {
 	panicOnError       bool
 }
 
-// NOTE: This func returns the data converter and a func callback allowing the setting of error limits after the converter has been created.
 func newPayloadProcessingDataConverter(innerConverter converter.DataConverter, logger log.Logger, options PayloadLimitOptions) (converter.DataConverter, func(*payloadErrorLimits)) {
 	payloadSizeWarning := 512 * kb
 	if options.PayloadSizeWarning != 0 {
