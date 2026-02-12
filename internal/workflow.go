@@ -2766,6 +2766,23 @@ type NexusOperationOptions struct {
 	// Optional: defaults to the maximum allowed by the Temporal server.
 	ScheduleToCloseTimeout time.Duration
 
+	// ScheduleToStartTimeout - Maximum time to wait for an operation to be started (or completed if synchronous) by the handler.
+	//
+	// Optional: If not set or zero, no schedule-to-start timeout is enforced.
+	// Requires Temporal Server 1.31.0 or later.
+	//
+	// NOTE: Experimental
+	ScheduleToStartTimeout time.Duration
+
+	// StartToCloseTimeout - Maximum time to wait for an asynchronous operation to complete after it has been started.
+	// Only applies to asynchronous operations. Ignored for synchronous operations.
+	//
+	// Optional: If not set or zero, no start-to-close timeout is enforced.
+	// Requires Temporal Server 1.31.0 or later.
+	//
+	// NOTE: Experimental
+	StartToCloseTimeout time.Duration
+
 	// CancellationType - Indicates what action should be taken when the caller is cancelled.
 	//
 	// Optional: defaults to NexusOperationCancellationTypeWaitCompleted.

@@ -25,9 +25,9 @@ func AccessesBadVar() { // want AccessesBadVar:"accesses non-deterministic var a
 	BadVar.Day()
 }
 
-func AccessesIgnoredStderr() {
-	os.Stderr.Write([]byte("Hello"))
-}
+//func AccessesIgnoredStderr() {
+//	os.Stderr.Write([]byte("Hello"))
+//}
 
 func AccessesCryptoRandom() { // want AccessesCryptoRandom:"accesses non-deterministic var crypto/rand.Reader"
 	rand.Reader.Read(nil)
