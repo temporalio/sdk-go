@@ -6,7 +6,6 @@ package mocks
 
 import (
 	"context"
-
 	"go.temporal.io/sdk/client"
 
 	"go.temporal.io/api/enums/v1"
@@ -106,6 +105,24 @@ func (_m *Client) CompleteActivityByID(ctx context.Context, namespace string, wo
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, interface{}, error) error); ok {
 		r0 = rf(ctx, namespace, workflowID, runID, activityID, result, err)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// CompleteActivityByID provides a mock function with given fields: ctx, namespace, activityID, activityRunID, result, err
+func (_m *Client) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result interface{}, err error) error {
+	ret := _m.Called(ctx, namespace, activityID, activityRunID, result, err)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteActivityByActivityID")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, interface{}, error) error); ok {
+		r0 = rf(ctx, namespace, activityID, activityRunID, result, err)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -1085,6 +1102,101 @@ func (_m *Client) DescribeWorkflow(ctx context.Context, workflowID string, runID
 
 	if rf, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
 		r1 = rf(ctx, workflowID, runID)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+func (_m *Client) ExecuteActivity(ctx context.Context, options client.StartActivityOptions, activity any, args ...any) (client.ActivityHandle, error) {
+	var _ca []interface{}
+	_ca = append(_ca, ctx, options, activity)
+	_ca = append(_ca, args...)
+	ret := _m.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExecuteActivity")
+	}
+
+	var r0 client.ActivityHandle
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.StartActivityOptions, interface{}, ...interface{}) (client.ActivityHandle, error)); ok {
+		return rf(ctx, options, activity, args...)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, client.StartActivityOptions, interface{}, ...interface{}) client.ActivityHandle); ok {
+		r0 = rf(ctx, options, activity, args...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.ActivityHandle)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, client.StartActivityOptions, interface{}, ...interface{}) error); ok {
+		r1 = rf(ctx, options, activity, args...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+func (_m *Client) GetActivityHandle(options client.GetActivityHandleOptions) client.ActivityHandle {
+	ret := _m.Called(options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetActivityHandle")
+	}
+
+	var r0 client.ActivityHandle
+	if rf, ok := ret.Get(0).(func(client.GetActivityHandleOptions) client.ActivityHandle); ok {
+		r0 = rf(options)
+	} else {
+		r0 = ret.Get(0).(client.ActivityHandle)
+	}
+
+	return r0
+}
+
+func (_m *Client) ListActivities(ctx context.Context, options client.ListActivitiesOptions) (client.ListActivitiesResult, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListActivities")
+	}
+
+	var r0 client.ListActivitiesResult
+	if rf, ok := ret.Get(0).(func(context.Context, client.ListActivitiesOptions) client.ListActivitiesResult); ok {
+		r0 = rf(ctx, options)
+	} else {
+		r0 = ret.Get(0).(client.ListActivitiesResult)
+	}
+
+	return r0, nil
+}
+
+func (_m *Client) CountActivities(ctx context.Context, options client.CountActivitiesOptions) (*client.CountActivitiesResult, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountActivities")
+	}
+
+	var r0 *client.CountActivitiesResult
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CountActivitiesOptions) (*client.CountActivitiesResult, error)); ok {
+		return rf(ctx, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, client.CountActivitiesOptions) *client.CountActivitiesResult); ok {
+		r0 = rf(ctx, options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.CountActivitiesResult)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, client.CountActivitiesOptions) error); ok {
+		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)
 	}

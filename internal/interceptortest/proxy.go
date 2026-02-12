@@ -400,6 +400,15 @@ func (p *proxyWorkflowOutbound) SideEffect(
 	return
 }
 
+func (p *proxyWorkflowOutbound) SideEffectWithOptions(
+	ctx workflow.Context,
+	options workflow.SideEffectOptions,
+	f func(ctx workflow.Context) interface{},
+) (ret converter.EncodedValue) {
+	ret, _ = p.invoke(ctx, options, f)[0].Interface().(converter.EncodedValue)
+	return
+}
+
 func (p *proxyWorkflowOutbound) MutableSideEffect(
 	ctx workflow.Context,
 	id string,
@@ -407,6 +416,17 @@ func (p *proxyWorkflowOutbound) MutableSideEffect(
 	equals func(a, b interface{}) bool,
 ) (ret converter.EncodedValue) {
 	ret, _ = p.invoke(ctx, id, f, equals)[0].Interface().(converter.EncodedValue)
+	return
+}
+
+func (p *proxyWorkflowOutbound) MutableSideEffectWithOptions(
+	ctx workflow.Context,
+	id string,
+	options workflow.MutableSideEffectOptions,
+	f func(ctx workflow.Context) interface{},
+	equals func(a, b interface{}) bool,
+) (ret converter.EncodedValue) {
+	ret, _ = p.invoke(ctx, id, options, f, equals)[0].Interface().(converter.EncodedValue)
 	return
 }
 
@@ -513,6 +533,59 @@ func (p *proxyClientOutbound) QueryWorkflow(
 ) (ret converter.EncodedValue, err error) {
 	vals := p.invoke(ctx, in)
 	ret, _ = vals[0].Interface().(converter.EncodedValue)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) ExecuteActivity(
+	ctx context.Context,
+	in *interceptor.ClientExecuteActivityInput,
+) (ret client.ActivityHandle, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(client.ActivityHandle)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) GetActivityHandle(
+	in *interceptor.ClientGetActivityHandleInput,
+) (ret client.ActivityHandle) {
+	ret, _ = p.invoke(in)[0].Interface().(client.ActivityHandle)
+	return
+}
+
+func (p *proxyClientOutbound) CancelActivity(
+	ctx context.Context,
+	in *interceptor.ClientCancelActivityInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) TerminateActivity(
+	ctx context.Context,
+	in *interceptor.ClientTerminateActivityInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) DescribeActivity(
+	ctx context.Context,
+	in *interceptor.ClientDescribeActivityInput,
+) (ret *interceptor.ClientDescribeActivityOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientDescribeActivityOutput)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) PollActivityResult(
+	ctx context.Context,
+	in *interceptor.ClientPollActivityResultInput,
+) (ret *interceptor.ClientPollActivityResultOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientPollActivityResultOutput)
 	err, _ = vals[1].Interface().(error)
 	return
 }

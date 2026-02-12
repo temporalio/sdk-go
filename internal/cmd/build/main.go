@@ -121,7 +121,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.5.0-rc",
+				Version: "v1.6.1-server-1.31.0-150.0",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
@@ -155,7 +155,11 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
 				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
 				"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
-			},
+				"--dynamic-config-value", "activity.enableStandalone=true",
+				"--dynamic-config-value", "history.enableChasm=true",
+				"--dynamic-config-value", "history.enableTransitionHistory=true",
+				"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
+				"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`},
 		})
 		if err != nil {
 			return fmt.Errorf("failed starting dev server: %w", err)
@@ -172,11 +176,11 @@ func (b *builder) integrationTest() error {
 	if *coverageFileFlag != "" {
 		args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, *coverageFileFlag), "-coverpkg=./...")
 	}
+	args = append(args, "./...")
 	if *devServerFlag {
-		args = append(args, "-using-cli-dev-server")
+		args = append(args, "--", "-using-cli-dev-server")
 		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
 	}
-	args = append(args, "./...")
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")

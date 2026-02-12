@@ -15,6 +15,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
@@ -745,6 +746,61 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 	s.Nil(env.GetWorkflowError())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_OnSideEffectAndActivityMock() {
+	workflowFn := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, s.activityOptions)
+		se := SideEffectWithOptions(ctx, SideEffectOptions{Summary: "side-effect"}, func(ctx Context) interface{} {
+			return "real-side-effect"
+		})
+		var seVal string
+		if err := se.Get(&seVal); err != nil {
+			return "", err
+		}
+		var actVal string
+		if err := ExecuteActivity(ctx, testActivityHello, "msg1").Get(ctx, &actVal); err != nil {
+			return "", err
+		}
+		return seVal + ":" + actVal, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(testActivityHello)
+
+	env.OnSideEffect().Return("mock-side-effect").Once()
+	env.OnActivity(testActivityHello, mock.Anything, "msg1").Return("mock-activity", nil).Once()
+
+	env.ExecuteWorkflow(workflowFn)
+
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("mock-side-effect:mock-activity", result)
+	env.AssertExpectations(s.T())
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_OnMutableSideEffect() {
+	workflowFn := func(ctx Context) (string, error) {
+		equals := func(a, b interface{}) bool { return a == b }
+		me := MutableSideEffect(ctx, "config-id", func(ctx Context) interface{} {
+			return "real-config"
+		}, equals)
+		var val string
+		if err := me.Get(&val); err != nil {
+			return "", err
+		}
+		return val, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.OnMutableSideEffect("config-id").Return("mock-config").Once()
+
+	env.ExecuteWorkflow(workflowFn)
+
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("mock-config", result)
+	env.AssertExpectations(s.T())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_LongRunningSideEffect() {
 	workflowFn := func(ctx Context) error {
 		// Sleep for 2 seconds would trigger deadlock detection timeout if we wouldn't override it below.
@@ -1007,6 +1063,64 @@ func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_Mock_Panic_GetChildWorkfl
 	var err1 *PanicError
 	s.True(errors.As(err, &err1))
 	s.Equal("mock of testWorkflowHello has incorrect number of returns, expected 2, but actual is 3", err1.Error())
+}
+
+// Test_NestedChildWorkflow_RootWorkflowExecution verifies RootWorkflowExecution
+// is correctly propagated through nested child workflows.
+func (s *WorkflowTestSuiteUnitTest) Test_NestedChildWorkflow_RootWorkflowExecution() {
+	// Capture workflow execution info
+	captureInfo := func(ctx Context) WorkflowExecution {
+		info := GetWorkflowInfo(ctx)
+		if info.RootWorkflowExecution != nil {
+			return *info.RootWorkflowExecution
+		}
+		return WorkflowExecution{}
+	}
+
+	// Grandchild workflow
+	grandchildWF := func(ctx Context) (WorkflowExecution, error) {
+		return captureInfo(ctx), nil
+	}
+
+	// Child workflow that spawns grandchild
+	childWF := func(ctx Context) ([]WorkflowExecution, error) {
+		childRoot := captureInfo(ctx)
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{WorkflowRunTimeout: time.Minute})
+		var grandchildRoot WorkflowExecution
+		err := ExecuteChildWorkflow(ctx, grandchildWF).Get(ctx, &grandchildRoot)
+		return []WorkflowExecution{childRoot, grandchildRoot}, err
+	}
+
+	// Parent workflow that spawns child
+	parentWF := func(ctx Context) ([]WorkflowExecution, error) {
+		info := GetWorkflowInfo(ctx)
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{WorkflowRunTimeout: time.Minute})
+		var results []WorkflowExecution
+		err := ExecuteChildWorkflow(ctx, childWF).Get(ctx, &results)
+		// Prepend parent's execution for verification
+		return append([]WorkflowExecution{info.WorkflowExecution}, results...), err
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(grandchildWF)
+	env.RegisterWorkflow(childWF)
+	env.RegisterWorkflow(parentWF)
+	env.ExecuteWorkflow(parentWF)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var results []WorkflowExecution
+	s.NoError(env.GetWorkflowResult(&results))
+	s.Len(results, 3)
+
+	parentExec := results[0]
+	childRoot := results[1]
+	grandchildRoot := results[2]
+
+	// Child and grandchild should both point to parent as root
+	s.Equal(parentExec.ID, childRoot.ID, "Child's RootWorkflowExecution should point to parent")
+	s.Equal(parentExec.ID, grandchildRoot.ID, "Grandchild's RootWorkflowExecution should point to root (parent), not child")
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_ChildWorkflow_StartFailed() {
@@ -4011,6 +4125,352 @@ func (s *WorkflowTestSuiteUnitTest) Test_ActivityDeadlineExceeded() {
 	s.Equal("context deadline exceeded", timeoutErr.cause.Error())
 }
 
+// Test_ActivityHeartbeatTimeout tests that an activity that doesn't heartbeat
+// within the heartbeat timeout period will fail with a heartbeat timeout error.
+// This is a regression test for https://github.com/temporalio/sdk-go/issues/1282
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatTimeout() {
+	// Activity that sleeps without heartbeating
+	noHeartbeatFn := func(ctx context.Context, sleepDuration time.Duration) error {
+		time.Sleep(sleepDuration)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 10 * time.Second,
+			HeartbeatTimeout:    500 * time.Millisecond, // Short timeout for testing
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1, // No retries
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		// Activity sleeps for 2 seconds without heartbeating, should timeout after 500ms
+		return ExecuteActivity(ctx, noHeartbeatFn, 2*time.Second).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(noHeartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+}
+
+// Test_ActivityHeartbeatTimeout_WithHeartbeat tests that an activity that heartbeats
+// regularly does NOT timeout, even if the heartbeat timeout is set.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatTimeout_WithHeartbeat() {
+	// Activity that heartbeats regularly
+	heartbeatFn := func(ctx context.Context, sleepDuration time.Duration) error {
+		// Heartbeat every 200ms
+		ticker := time.NewTicker(200 * time.Millisecond)
+		defer ticker.Stop()
+		deadline := time.Now().Add(sleepDuration)
+		for time.Now().Before(deadline) {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-ticker.C:
+				RecordActivityHeartbeat(ctx, "still alive")
+			}
+		}
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 10 * time.Second,
+			HeartbeatTimeout:    500 * time.Millisecond,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		// Activity runs for 1 second but heartbeats every 200ms
+		return ExecuteActivity(ctx, heartbeatFn, 1*time.Second).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(heartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+// Test_ActivityHeartbeatTimeout_WithDetails tests that heartbeat details are
+// preserved when a heartbeat timeout occurs.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityHeartbeatTimeout_WithDetails() {
+	// Activity that sends one heartbeat with details then stops heartbeating
+	partialHeartbeatFn := func(ctx context.Context) error {
+		// Send one heartbeat with details
+		RecordActivityHeartbeat(ctx, "last-heartbeat-data")
+		// Then sleep without heartbeating
+		time.Sleep(2 * time.Second)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 10 * time.Second,
+			HeartbeatTimeout:    500 * time.Millisecond,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, partialHeartbeatFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(partialHeartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+
+	// Verify heartbeat details are preserved
+	s.True(timeoutErr.HasLastHeartbeatDetails())
+	var details string
+	err = timeoutErr.LastHeartbeatDetails(&details)
+	s.NoError(err)
+	s.Equal("last-heartbeat-data", details)
+}
+
+// Test_ActivityStartToCloseTimeout tests that an activity that exceeds its
+// StartToCloseTimeout will fail with a start-to-close timeout error, even if
+// the activity ignores context cancellation.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout() {
+	// Activity that ignores context cancellation and runs longer than timeout
+	longRunningFn := func(ctx context.Context, sleepDuration time.Duration) error {
+		// Intentionally ignoring ctx.Done() to test external timeout enforcement
+		time.Sleep(sleepDuration)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 500 * time.Millisecond, // Short timeout for testing
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1, // No retries
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		// Activity sleeps for 2 seconds, should timeout after 500ms
+		return ExecuteActivity(ctx, longRunningFn, 2*time.Second).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(longRunningFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+}
+
+// Test_ActivityStartToCloseTimeout_Respects tests that an activity that completes
+// within its StartToCloseTimeout does NOT timeout.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_Respects() {
+	// Activity that completes quickly
+	quickFn := func(ctx context.Context) error {
+		time.Sleep(100 * time.Millisecond)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 2 * time.Second,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, quickFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(quickFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+// Test_ActivityStartToCloseTimeout_HeartbeatPriority tests that when both
+// HeartbeatTimeout and StartToCloseTimeout are set, the one that fires first wins.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_HeartbeatPriority() {
+	// Activity that doesn't heartbeat - heartbeat timeout should fire first
+	noHeartbeatFn := func(ctx context.Context) error {
+		time.Sleep(2 * time.Second)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 5 * time.Second,        // Longer timeout
+			HeartbeatTimeout:    500 * time.Millisecond, // Shorter timeout - should fire first
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, noHeartbeatFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(noHeartbeatFn)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	// Heartbeat timeout should fire first since it's shorter
+	s.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType())
+}
+
+// Test_ActivityStartToCloseTimeout_GracePeriod tests that SetActivityTimeoutGracePeriod
+// delays when the monitoring goroutine forcibly times out activities. Activities that
+// exceed the timeout but return within the grace period will still get a timeout error
+// (via context.DeadlineExceeded), but the error path is through normal activity completion
+// rather than the monitoring goroutine's forced timeout.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_GracePeriod() {
+	// Activity that ignores context but completes within timeout + grace period
+	slowButFinishesFn := func(ctx context.Context) error {
+		// Takes 600ms total, exceeds 500ms timeout but within 500ms grace period
+		time.Sleep(600 * time.Millisecond)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 500 * time.Millisecond,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, slowButFinishesFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(slowButFinishesFn)
+	// Set grace period - monitoring won't fire until 1000ms (500ms + 500ms)
+	// Activity finishes at 600ms, so it completes before monitoring fires
+	env.SetActivityTimeoutGracePeriod(500 * time.Millisecond)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	// Activity still times out because it exceeded StartToCloseTimeout,
+	// but via context.DeadlineExceeded path (not monitoring's forced timeout)
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+}
+
+// Test_ActivityStartToCloseTimeout_GracePeriodExceeded tests that activities are still
+// timed out if they exceed both the timeout and the grace period.
+func (s *WorkflowTestSuiteUnitTest) Test_ActivityStartToCloseTimeout_GracePeriodExceeded() {
+	// Activity that ignores context cancellation entirely
+	misbehavingFn := func(ctx context.Context) error {
+		// Ignore ctx.Done() and sleep for a long time
+		time.Sleep(2 * time.Second)
+		return nil
+	}
+
+	workflowFn := func(ctx Context) error {
+		ao := ActivityOptions{
+			StartToCloseTimeout: 500 * time.Millisecond,
+			RetryPolicy: &RetryPolicy{
+				MaximumAttempts: 1,
+			},
+		}
+		ctx = WithActivityOptions(ctx, ao)
+		return ExecuteActivity(ctx, misbehavingFn).Get(ctx, nil)
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterActivity(misbehavingFn)
+	// Set a short grace period - activity will still exceed it
+	env.SetActivityTimeoutGracePeriod(200 * time.Millisecond)
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+
+	err = errors.Unwrap(workflowErr)
+	var activityErr *ActivityError
+	s.True(errors.As(err, &activityErr))
+
+	err = errors.Unwrap(activityErr)
+	var timeoutErr *TimeoutError
+	s.True(errors.As(err, &timeoutErr))
+	s.Equal(enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	workflowFn := func(ctx Context) (bool, error) {
 		return AwaitWithTimeout(ctx, time.Second, func() bool { return false })
@@ -4023,6 +4483,81 @@ func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutTimeout() {
 	result := true
 	_ = env.GetWorkflowResult(&result)
 	s.False(result)
+}
+
+// awaitWithTimeoutConditionMetWorkflow is used by tests to verify timer cancellation behavior.
+// Same logic as AwaitWithTimeoutNoTimerCancelWorkflow in test/replaytests/workflows.go.
+func awaitWithTimeoutConditionMetWorkflow(ctx Context) (bool, error) {
+	conditionMet := false
+
+	Go(ctx, func(ctx Context) {
+		_ = Sleep(ctx, 100*time.Millisecond)
+		conditionMet = true
+	})
+
+	return AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return conditionMet
+	})
+}
+
+// Test_AwaitWithTimeoutConditionMet_WithFlag verifies that when SDKFlagCancelAwaitTimerOnCondition
+// is enabled (new behavior), the timer IS cancelled when the condition becomes true.
+func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutConditionMet_WithFlag() {
+	env := s.NewTestWorkflowEnvironment()
+
+	// Track scheduled timers to identify the timeout timer
+	var timeoutTimerID string
+	env.SetOnTimerScheduledListener(func(timerID string, duration time.Duration) {
+		if duration == 10*time.Second {
+			timeoutTimerID = timerID
+		}
+	})
+
+	// Explicitly enable the flag (it's not auto-enabled by default for new workflows)
+	env.impl.sdkFlags.set(SDKFlagCancelAwaitTimerOnCondition)
+
+	env.ExecuteWorkflow(awaitWithTimeoutConditionMetWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	result := false
+	_ = env.GetWorkflowResult(&result)
+	s.True(result, "AwaitWithTimeout should return true when condition is met")
+
+	// With flag enabled, timer should be cancelled (removed from timers map)
+	s.NotEmpty(timeoutTimerID, "Timeout timer should have been scheduled")
+	_, timerExists := env.impl.timers[timeoutTimerID]
+	s.False(timerExists, "Timer SHOULD be cancelled (removed from map) when SDKFlagCancelAwaitTimerOnCondition is enabled")
+}
+
+// Test_AwaitWithTimeoutConditionMet_WithoutFlag verifies that when SDKFlagCancelAwaitTimerOnCondition
+// is disabled (old behavior), the timer is NOT cancelled when the condition becomes true.
+func (s *WorkflowTestSuiteUnitTest) Test_AwaitWithTimeoutConditionMet_WithoutFlag() {
+	env := s.NewTestWorkflowEnvironment()
+
+	// Track scheduled timers to identify the timeout timer
+	var timeoutTimerID string
+	env.SetOnTimerScheduledListener(func(timerID string, duration time.Duration) {
+		if duration == 10*time.Second {
+			timeoutTimerID = timerID
+		}
+	})
+
+	// Disable SdkMetadata capability to simulate old behavior (flag will return false)
+	env.impl.sdkFlags = newSDKFlagSet(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: false})
+
+	env.ExecuteWorkflow(awaitWithTimeoutConditionMetWorkflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	result := false
+	_ = env.GetWorkflowResult(&result)
+	s.True(result, "AwaitWithTimeout should return true when condition is met")
+
+	// With flag disabled, timer should NOT be cancelled (still in timers map)
+	s.NotEmpty(timeoutTimerID, "Timeout timer should have been scheduled")
+	_, timerExists := env.impl.timers[timeoutTimerID]
+	s.True(timerExists, "Timer should NOT be cancelled (still in map) when SDKFlagCancelAwaitTimerOnCondition is disabled")
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_NoDetachedChildWait() {
@@ -4219,6 +4754,10 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
+	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
+	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
@@ -4250,4 +4789,42 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
 	s.True(env.IsWorkflowCompleted())
 	err := env.GetWorkflowError()
 	s.NoError(err)
+}
+
+func (s *WorkflowTestSuiteUnitTest) Test_SignalLost() {
+	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = false
+	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
+	workflowFn := func(ctx Context) error {
+		ch1 := GetSignalChannel(ctx, "test-signal")
+		ch2 := GetSignalChannel(ctx, "test-signal-2")
+		selector := NewSelector(ctx)
+		var v string
+		selector.AddReceive(ch1, func(c ReceiveChannel, more bool) {
+			c.Receive(ctx, &v)
+		})
+		selector.AddDefault(func() {
+			ch2.Receive(ctx, &v)
+		})
+		selector.Select(ctx)
+		s.Require().True(ch1.Len() == 0 && v == "s2")
+		selector.Select(ctx)
+
+		return nil
+	}
+
+	// send a signal after workflow has started
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterDelayedCallback(func() {
+		env.SignalWorkflow("test-signal", "s1")
+		env.SignalWorkflow("test-signal-2", "s2")
+	}, 5*time.Second)
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	s.Error(err)
+	var workflowErr *WorkflowExecutionError
+	s.True(errors.As(err, &workflowErr))
+	s.Equal("deadline exceeded (type: ScheduleToClose)", workflowErr.cause.Error())
 }

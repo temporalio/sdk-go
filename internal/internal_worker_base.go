@@ -53,7 +53,7 @@ type (
 	// LocalActivityResultHandler that returns local activity result
 	LocalActivityResultHandler func(lar *LocalActivityResultWrapper)
 
-	// LocalActivityResultWrapper contains result of a local activity
+	// LocalActivityResultWrapper contains the result of a local activity
 	LocalActivityResultWrapper struct {
 		Err     error
 		Result  *commonpb.Payloads
@@ -79,7 +79,7 @@ type (
 		AsyncActivityClient
 		LocalActivityClient
 		WorkflowTimerClient
-		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler)
+		SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string)
 		GetVersion(changeID string, minSupported, maxSupported Version) Version
 		WorkflowInfo() *WorkflowInfo
 		TypedSearchAttributes() SearchAttributes
@@ -114,7 +114,7 @@ type (
 			handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 		)
 		IsReplaying() bool
-		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue
+		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool, summary string) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
 		GetFailureConverter() converter.FailureConverter
 		AddSession(sessionInfo *SessionInfo)
@@ -134,8 +134,6 @@ type (
 		DrainUnhandledUpdates() bool
 		// TryUse returns true if this flag may currently be used.
 		TryUse(flag sdkFlag) bool
-		// GetFlag returns if the flag is currently used.
-		GetFlag(flag sdkFlag) bool
 	}
 
 	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.

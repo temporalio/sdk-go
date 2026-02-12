@@ -69,6 +69,7 @@ type (
 		dataConverter            converter.DataConverter
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
+		workerPlugins            []WorkerPlugin
 		workerInterceptors       []WorkerInterceptor
 		interceptor              ClientOutboundInterceptor
 		excludeInternalFromRetry *atomic.Bool
@@ -480,7 +481,7 @@ func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
-// CompleteActivityByID reports activity completed. Similar to CompleteActivity
+// CompleteActivityByID reports workflow activity completed. Similar to CompleteActivity
 // It takes namespace name, workflowID, runID, activityID as arguments.
 func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string,
 	result interface{}, err error,
@@ -502,6 +503,31 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID,
+		data, err, wc.dataConverter, wc.failureConverter, cancelAllowed)
+	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
+}
+
+// CompleteActivityByActivityID reports standalone activity completed. Similar to CompleteActivity
+func (wc *WorkflowClient) CompleteActivityByActivityID(ctx context.Context, namespace, activityID, activityRunID string,
+	result interface{}, err error,
+) error {
+	if activityID == "" || namespace == "" {
+		return errors.New("empty activity id or namespace")
+	}
+
+	dataConverter := WithContext(ctx, wc.dataConverter)
+	var data *commonpb.Payloads
+	if result != nil {
+		var err0 error
+		data, err0 = encodeArg(dataConverter, result)
+		if err0 != nil {
+			return err0
+		}
+	}
+
+	// We do allow canceled error to be passed here
+	cancelAllowed := true
+	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, "", activityRunID, activityID,
 		data, err, wc.dataConverter, wc.failureConverter, cancelAllowed)
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
 }
