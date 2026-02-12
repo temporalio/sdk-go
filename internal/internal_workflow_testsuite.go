@@ -2704,6 +2704,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		if failure != nil {
 			// Convert to a nexus HandlerError first to simulate the flow in the server.
 			var handlerErr error
+			//lint:ignore SA1019 transitioning to Failure field.
 			handlerErr, err = apiHandlerErrorToNexusHandlerError(failure.GetError(), env.failureConverter)
 			if err != nil {
 				handlerErr = fmt.Errorf("unexpected error while trying to reconstruct Nexus handler error: %w", err)
@@ -2739,6 +2740,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				}
 			}, true)
 		case *nexuspb.StartOperationResponse_OperationError:
+			//lint:ignore SA1019 transitioning to Failure field.
 			failure, err := operationErrorToTemporalFailure(apiOperationErrorToNexusOperationError(v.OperationError))
 			if err != nil {
 				err = fmt.Errorf("unexpected error while trying to reconstruct Nexus operation error: %w", err)
@@ -3597,6 +3599,7 @@ func (h *testNexusOperationHandle) cancel() {
 				h.completedCallback(nil, fmt.Errorf("operation cancelation handler failed: %w", err))
 			} else if failure != nil {
 				// No retries in the test env, fail the operation immediately.
+				//lint:ignore SA1019 transitioning to Failure field.
 				h.completedCallback(nil, fmt.Errorf("operation cancelation handler failed: %v", failure.GetError().GetFailure().GetMessage()))
 			}
 			h.env.runningCount--
