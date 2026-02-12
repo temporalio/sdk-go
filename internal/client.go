@@ -604,12 +604,12 @@ type (
 		Plugins []ClientPlugin
 
 		// WorkerHeartbeatInterval is the interval at which the worker will send heartbeats to the server.
-		// Interval must be between 1s and 60s, inclusive.
+		// Interval must be between 1s and 60s, inclusive, or a negative value to disable.
 		//
-		// default: 60s. To disable, set to 0.
+		// default: 0 defaults to 60s interval.
 		//
 		// NOTE: Experimental
-		WorkerHeartbeatInterval *time.Duration
+		WorkerHeartbeatInterval time.Duration
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -1222,15 +1222,15 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	var heartbeatInterval time.Duration
-	if options.WorkerHeartbeatInterval == nil {
-		heartbeatInterval = time.Second * 60
-	} else if *options.WorkerHeartbeatInterval == 0 {
+	if options.WorkerHeartbeatInterval < 0 {
 		heartbeatInterval = 0
+	} else if options.WorkerHeartbeatInterval == 0 {
+		heartbeatInterval = 60 * time.Second
 	} else {
-		if *options.WorkerHeartbeatInterval < time.Second || *options.WorkerHeartbeatInterval > 60*time.Second {
+		if options.WorkerHeartbeatInterval < time.Second || options.WorkerHeartbeatInterval > 60*time.Second {
 			panic("WorkerHeartbeatInterval must be between 1 second and 60 seconds")
 		}
-		heartbeatInterval = *options.WorkerHeartbeatInterval
+		heartbeatInterval = options.WorkerHeartbeatInterval
 	}
 
 	client := &WorkflowClient{

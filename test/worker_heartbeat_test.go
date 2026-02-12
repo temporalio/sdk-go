@@ -48,14 +48,12 @@ func (ts *WorkerHeartbeatTestSuite) TearDownSuite() {
 
 func (ts *WorkerHeartbeatTestSuite) SetupTest() {
 	var err error
-	heartbeatInterval := 1 * time.Second
-
 	// Create a client with heartbeating enabled
 	ts.client, err = client.Dial(client.Options{
 		HostPort:                ts.config.ServiceAddr,
 		Namespace:               ts.config.Namespace,
 		Logger:                  ilog.NewDefaultLogger(),
-		WorkerHeartbeatInterval: &heartbeatInterval,
+		WorkerHeartbeatInterval: 1 * time.Second,
 		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 		Identity:                "WorkerHeartbeatTest",
 	})
@@ -306,12 +304,11 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatDisabled() {
 	ctx := context.Background()
 
 	// Create a separate client with heartbeating disabled
-	heartbeatInterval := time.Duration(0)
 	clientNoHeartbeat, err := client.Dial(client.Options{
 		HostPort:                ts.config.ServiceAddr,
 		Namespace:               ts.config.Namespace,
 		Logger:                  ilog.NewDefaultLogger(),
-		WorkerHeartbeatInterval: &heartbeatInterval,
+		WorkerHeartbeatInterval: -1,
 		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 	})
 	ts.NoError(err)
@@ -956,12 +953,11 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	ts.NoError(err)
 
 	// Create a new client with the plugin
-	heartbeatInterval := 1 * time.Second
 	pluginClient, err := client.Dial(client.Options{
 		HostPort:                ts.config.ServiceAddr,
 		Namespace:               ts.config.Namespace,
 		Logger:                  ilog.NewDefaultLogger(),
-		WorkerHeartbeatInterval: &heartbeatInterval,
+		WorkerHeartbeatInterval: 1 * time.Second,
 		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 		Identity:                "PluginTest",
 		Plugins:                 []client.Plugin{clientPlugin},

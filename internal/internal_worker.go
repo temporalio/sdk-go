@@ -216,6 +216,8 @@ type (
 		capabilities *workflowservice.GetSystemInfoResponse_Capabilities
 
 		pollTimeTracker *pollTimeTracker
+
+		workerInstanceKey string
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -1158,6 +1160,7 @@ type AggregatedWorker struct {
 	registry       *registry
 	// Stores a boolean indicating whether the worker has already been started.
 	started      atomic.Bool
+	shuttingDown atomic.Bool
 	stopC        chan struct{}
 	fatalErr     error
 	fatalErrLock sync.Mutex
@@ -1499,6 +1502,8 @@ func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
 //
 // NOTE: errors are logged but don't fail the shutdown.
 func (aw *AggregatedWorker) shutdownWorker() {
+	aw.shuttingDown.Store(true)
+
 	ctx := context.Background()
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(aw.executionParams.MetricsHandler))
 	defer cancel()
@@ -1506,7 +1511,6 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	var heartbeat *workerpb.WorkerHeartbeat
 	if aw.heartbeatCallback != nil {
 		heartbeat = aw.heartbeatCallback()
-		heartbeat.Status = enumspb.WORKER_STATUS_SHUTTING_DOWN
 	}
 
 	var stickyTaskQueue string
@@ -2129,7 +2133,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
-		capabilities: &capabilities,
+		capabilities:      &capabilities,
+		pollTimeTracker:   &pollTimeTracker{},
+		workerInstanceKey: workerInstanceKey,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
@@ -2282,6 +2288,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			elapsedSinceLastHeartbeat := heartbeatTime.Sub(previousHeartbeatTime)
 			previousHeartbeatTime = heartbeatTime
 
+			status := enumspb.WORKER_STATUS_RUNNING
+			if aw.shuttingDown.Load() {
+				status = enumspb.WORKER_STATUS_SHUTTING_DOWN
+			}
+
 			hb := &workerpb.WorkerHeartbeat{
 				WorkerInstanceKey: aw.workerInstanceKey,
 				WorkerIdentity:    aw.client.identity,
@@ -2296,7 +2307,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				DeploymentVersion:         deploymentVersion,
 				SdkName:                   SDKName,
 				SdkVersion:                SDKVersion,
-				Status:                    enumspb.WORKER_STATUS_RUNNING,
+				Status:                    status,
 				StartTime:                 startTime,
 				HeartbeatTime:             timestamppb.New(heartbeatTime),
 				ElapsedSinceLastHeartbeat: durationpb.New(elapsedSinceLastHeartbeat),
