@@ -1901,29 +1901,147 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 
 func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	var input1 map[string]interface{}
-	result1, err := getWorkflowMemo(input1, s.dataConverter)
+	result1, err := getWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.Nil(result1)
 
 	input1 = make(map[string]interface{})
-	result2, err := getWorkflowMemo(input1, s.dataConverter)
+	result2, err := getWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.NotNil(result2)
 	s.Equal(0, len(result2.Fields))
 
 	input1["t1"] = "v1"
-	result3, err := getWorkflowMemo(input1, s.dataConverter)
+	result3, err := getWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.NotNil(result3)
 	s.Equal(1, len(result3.Fields))
 	var resultString string
-	// TODO (shtin): use s.DataConverter here???
 	_ = converter.GetDefaultDataConverter().FromPayload(result3.Fields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)
-	_, err = getWorkflowMemo(input1, s.dataConverter)
+	_, err = getWorkflowMemo(input1, s.dataConverter, false)
 	s.Error(err)
+}
+
+func (s *workflowClientTestSuite) TestStartWorkflowWithMemoDataConverter() {
+	testFn := func() {
+		// User data converter uses binary/gob encoding
+		dc := iconverter.NewTestDataConverter()
+		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+		memo := map[string]interface{}{
+			"testMemo": "memo value",
+		}
+		options := StartWorkflowOptions{
+			ID:                       workflowID,
+			TaskQueue:                taskqueue,
+			WorkflowExecutionTimeout: timeoutInSeconds,
+			WorkflowTaskTimeout:      timeoutInSeconds,
+			Memo:                     memo,
+		}
+		wf := func(ctx Context) string { return "" }
+
+		startResp := &workflowservice.StartWorkflowExecutionResponse{}
+		s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+			Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+				encoding := string(req.Memo.Fields["testMemo"].Metadata[converter.MetadataEncoding])
+				if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
+					s.Equal("binary/gob", encoding)
+				} else {
+					s.Equal("json/plain", encoding)
+				}
+			})
+
+		_, err := s.client.ExecuteWorkflow(context.Background(), options, wf)
+		s.NoError(err)
+	}
+
+	s.T().Run("old behavior", func(t *testing.T) {
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = false
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+		testFn()
+	})
+	s.T().Run("new behavior", func(t *testing.T) {
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+		testFn()
+	})
+}
+
+type failingMemoDataConverter struct {
+	delegate converter.DataConverter
+}
+
+func (f failingMemoDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+	return nil, fmt.Errorf("failingMemoDataConverter memo encoding failed")
+}
+
+func (f failingMemoDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+	return f.delegate.FromPayload(payload, valuePtr)
+}
+
+func (f failingMemoDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
+	return f.delegate.ToPayloads(values...)
+}
+
+func (f failingMemoDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+	return f.delegate.FromPayloads(payloads, valuePtrs...)
+}
+
+func (f failingMemoDataConverter) ToString(input *commonpb.Payload) string {
+	return f.delegate.ToString(input)
+}
+
+func (f failingMemoDataConverter) ToStrings(input *commonpb.Payloads) []string {
+	return f.delegate.ToStrings(input)
+}
+
+func (s *workflowClientTestSuite) TestStartWorkflowWithMemoUserAndDefaultConverterFail() {
+	testFn := func() {
+		dc := failingMemoDataConverter{
+			delegate: converter.GetDefaultDataConverter(),
+		}
+		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+		memo := map[string]interface{}{
+			"testMemo": make(chan int),
+		}
+		options := StartWorkflowOptions{
+			ID:                       workflowID,
+			TaskQueue:                taskqueue,
+			WorkflowExecutionTimeout: timeoutInSeconds,
+			WorkflowTaskTimeout:      timeoutInSeconds,
+			Memo:                     memo,
+		}
+		wf := func(ctx Context) string { return "" }
+
+		s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		_, err := s.client.ExecuteWorkflow(context.Background(), options, wf)
+		s.Error(err)
+		if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
+			s.ErrorContains(err, "failingMemoDataConverter memo encoding failed")
+		} else {
+			s.ErrorContains(err, "unsupported type: chan int")
+		}
+	}
+
+	s.T().Run("old behavior", func(t *testing.T) {
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = false
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+		testFn()
+	})
+	s.T().Run("new behavior", func(t *testing.T) {
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+		testFn()
+	})
 }
 
 func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
