@@ -50,5 +50,7 @@ history.enableTransitionHistory:
   - value: true
 component.nexusoperations.useSystemCallbackURL:
   - value: false
+frontend.WorkerHeartbeatsEnabled:
+  - value: true
 frontend.ListWorkersEnabled:
   - value: true
