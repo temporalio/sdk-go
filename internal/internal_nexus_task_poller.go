@@ -128,7 +128,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
 		// context wasn't propagated to us, use a background context.
-		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, response.GetRequest().GetCapabilities().GetTemporalFailureResponses())
+		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()))
 		if err != nil {
 			return err
 		}
