@@ -442,10 +442,15 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				}
 			}
 
+			data := bw.options.slotReservationData
+			if wtp, ok := taskWorker.taskPoller.(*workflowTaskPoller); ok && wtp.mode == Sticky {
+				data.isSticky = true
+			}
+
 			bw.stopWG.Add(1)
 			go func() {
 				defer bw.stopWG.Done()
-				s, err := bw.slotSupplier.ReserveSlot(ctx, &bw.options.slotReservationData)
+				s, err := bw.slotSupplier.ReserveSlot(ctx, &data)
 				if err != nil {
 					if !errors.Is(err, context.Canceled) {
 						bw.logger.Error("Error while trying to reserve slot", "error", err)

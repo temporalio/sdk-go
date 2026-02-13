@@ -58,6 +58,12 @@ type SlotReservationInfo interface {
 	// MetricsHandler returns an appropriately tagged metrics handler that can be used to record
 	// custom metrics.
 	MetricsHandler() metrics.Handler
+	// IsSticky returns true if the slot being reserved will be used to poll a sticky task queue.
+	// This is only meaningful for workflow task slots. For activity and local activity slots,
+	// this will always return false. When the worker is configured with a mixed-mode poller
+	// (the default when not using autoscaling), this will also return false because the
+	// sticky-vs-normal decision is made after the slot is reserved.
+	IsSticky() bool
 }
 
 // SlotMarkUsedInfo contains information that SlotSupplier instances can use during
@@ -287,6 +293,7 @@ func (f *FixedSizeSlotSupplier) MaxSlots() int {
 
 type slotReservationData struct {
 	taskQueue string
+	isSticky  bool
 }
 
 type slotReserveInfoImpl struct {
@@ -296,6 +303,7 @@ type slotReserveInfoImpl struct {
 	issuedSlots    *atomic.Int32
 	logger         log.Logger
 	metrics        metrics.Handler
+	sticky         bool
 }
 
 func (s slotReserveInfoImpl) TaskQueue() string {
@@ -320,6 +328,10 @@ func (s slotReserveInfoImpl) Logger() log.Logger {
 
 func (s slotReserveInfoImpl) MetricsHandler() metrics.Handler {
 	return s.metrics
+}
+
+func (s slotReserveInfoImpl) IsSticky() bool {
+	return s.sticky
 }
 
 type slotMarkUsedContextImpl struct {
@@ -410,6 +422,7 @@ func (t *trackingSlotSupplier) ReserveSlot(
 		issuedSlots:    &t.issuedSlotsAtomic,
 		logger:         t.logger,
 		metrics:        t.metrics,
+		sticky:         data.isSticky,
 	})
 	if err != nil {
 		return nil, err
@@ -433,6 +446,7 @@ func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPe
 		issuedSlots:    &t.issuedSlotsAtomic,
 		logger:         t.logger,
 		metrics:        t.metrics,
+		sticky:         data.isSticky,
 	})
 	if permit != nil {
 		t.issuedSlotsAtomic.Add(1)
