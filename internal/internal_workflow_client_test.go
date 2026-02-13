@@ -1901,18 +1901,18 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 
 func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	var input1 map[string]interface{}
-	result1, err := getWorkflowMemo(input1, s.dataConverter, nil)
+	result1, err := getWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.Nil(result1)
 
 	input1 = make(map[string]interface{})
-	result2, err := getWorkflowMemo(input1, s.dataConverter, nil)
+	result2, err := getWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.NotNil(result2)
 	s.Equal(0, len(result2.Fields))
 
 	input1["t1"] = "v1"
-	result3, err := getWorkflowMemo(input1, s.dataConverter, nil)
+	result3, err := getWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.NotNil(result3)
 	s.Equal(1, len(result3.Fields))
@@ -1921,7 +1921,7 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)
-	_, err = getWorkflowMemo(input1, s.dataConverter, nil)
+	_, err = getWorkflowMemo(input1, s.dataConverter, false)
 	s.Error(err)
 }
 
@@ -1947,12 +1947,11 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoDataConverter() {
 		s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
 			Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 				encoding := string(req.Memo.Fields["testMemo"].Metadata[converter.MetadataEncoding])
-				if memoUserDCEncode {
+				if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
 					s.Equal("binary/gob", encoding)
 				} else {
 					s.Equal("json/plain", encoding)
 				}
-
 			})
 
 		_, err := s.client.ExecuteWorkflow(context.Background(), options, wf)
@@ -1960,15 +1959,15 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoDataConverter() {
 	}
 
 	s.T().Run("old behavior", func(t *testing.T) {
-		previousFlag := memoUserDCEncode
-		SetMemoUserDCEncode(false)
-		defer SetMemoUserDCEncode(previousFlag)
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = false
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
 	s.T().Run("new behavior", func(t *testing.T) {
-		previousFlag := memoUserDCEncode
-		SetMemoUserDCEncode(true)
-		defer SetMemoUserDCEncode(previousFlag)
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
 }
@@ -2024,7 +2023,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoUserAndDefaultConvert
 
 		_, err := s.client.ExecuteWorkflow(context.Background(), options, wf)
 		s.Error(err)
-		if memoUserDCEncode {
+		if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
 			s.ErrorContains(err, "failingMemoDataConverter memo encoding failed")
 		} else {
 			s.ErrorContains(err, "unsupported type: chan int")
@@ -2032,15 +2031,15 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoUserAndDefaultConvert
 	}
 
 	s.T().Run("old behavior", func(t *testing.T) {
-		previousFlag := memoUserDCEncode
-		SetMemoUserDCEncode(false)
-		defer SetMemoUserDCEncode(previousFlag)
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = false
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
 	s.T().Run("new behavior", func(t *testing.T) {
-		previousFlag := memoUserDCEncode
-		SetMemoUserDCEncode(true)
-		defer SetMemoUserDCEncode(previousFlag)
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
 }

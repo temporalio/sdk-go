@@ -484,7 +484,7 @@ func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*c
 
 func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{}) error {
 	// This has to be used in WorkflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
-	memo, err := validateAndSerializeMemo(memoMap, wc.dataConverter, wc)
+	memo, err := validateAndSerializeMemo(memoMap, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		return err
 	}
@@ -520,11 +520,11 @@ func mergeMemo(current, upsert *commonpb.Memo) *commonpb.Memo {
 	return current
 }
 
-func validateAndSerializeMemo(memoMap map[string]interface{}, dc converter.DataConverter, accessor memoFlagAccessor) (*commonpb.Memo, error) {
+func validateAndSerializeMemo(memoMap map[string]interface{}, dc converter.DataConverter, useUserDC bool) (*commonpb.Memo, error) {
 	if len(memoMap) == 0 {
 		return nil, errMemoNotSet
 	}
-	return getWorkflowMemo(memoMap, dc, accessor)
+	return getWorkflowMemo(memoMap, dc, useUserDC)
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
@@ -540,7 +540,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if params.WorkflowID == "" {
 		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
 	}
-	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter, wc)
+	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})

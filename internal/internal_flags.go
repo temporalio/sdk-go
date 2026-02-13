@@ -37,7 +37,7 @@ const (
 	// SDKFlagMemoUserDCEncode will use the user data converter when encoding a memo. If user data converter fails,
 	// we will fallback onto the default data converter. If the default DC fails, the user DC error will be returned.
 	SDKFlagMemoUserDCEncode = 7
-	SDKFlagUnknown                     = math.MaxUint32
+	SDKFlagUnknown          = math.MaxUint32
 )
 
 // sdkFlagsAllowed holds the enabled state for each flag.
@@ -52,7 +52,7 @@ var sdkFlagsAllowed = map[sdkFlag]bool{
 	SDKPriorityUpdateHandling:           true,
 	SDKFlagBlockedSelectorSignalReceive: false,
 	SDKFlagCancelAwaitTimerOnCondition:  false,
-	SDKFlagMemoUserDCEncode: false,
+	SDKFlagMemoUserDCEncode:             false,
 }
 
 func init() {

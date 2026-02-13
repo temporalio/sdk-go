@@ -876,3 +876,55 @@ func MemoEncodingWorkflowJSON(ctx workflow.Context, memoValue string) (string, e
 
 	return childResult, nil
 }
+
+// ScheduleMemoWorkflowJSON is a workflow that validates memo passed from a schedule
+// can be decoded with JSON. This is used to test backward compatibility for
+// workflows started by schedules before the SDKFlagMemoUserDCEncode flag.
+func ScheduleMemoWorkflowJSON(ctx workflow.Context) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["schedule-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'schedule-memo-key' not found")
+	}
+
+	// will fail if memo is gob-encoded
+	var memoValue string
+	dc := converter.NewJSONPayloadConverter()
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with JSON converter: %w", err)
+	}
+
+	return fmt.Sprintf("schedule-read-memo: %s", memoValue), nil
+}
+
+// ScheduleMemoWorkflowGob is a workflow that validates memo passed from a schedule
+// can be decoded with gob. This is used to test workflows started by schedules
+// with the SDKFlagMemoUserDCEncode flag enabled.
+func ScheduleMemoWorkflowGob(ctx workflow.Context) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["schedule-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'schedule-memo-key' not found")
+	}
+
+	// Will fail if memo is JSON-encoded (when using gob data converter)
+	dc := iconverter.NewTestDataConverter()
+	var memoValue string
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with data converter: %w", err)
+	}
+
+	// Upsert memo so the SDKFlagMemoUserDCEncode flag is naturally recorded in history
+	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+		"schedule-upsert-key": memoValue,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("schedule-read-memo: %s", memoValue), nil
+}

@@ -250,7 +250,7 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoDataConverter() 
 			Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
 				startWorkflow := req.Schedule.Action.GetStartWorkflow()
 				encoding := string(startWorkflow.Memo.Fields["testMemo"].Metadata[converter.MetadataEncoding])
-				if memoUserDCEncode {
+				if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
 					s.Equal("binary/gob", encoding)
 				} else {
 					s.Equal("json/plain", encoding)
@@ -261,18 +261,17 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoDataConverter() 
 		s.NoError(err)
 	}
 	s.T().Run("old behavior", func(t *testing.T) {
-		previousFlag := memoUserDCEncode
-		SetMemoUserDCEncode(false)
-		defer SetMemoUserDCEncode(previousFlag)
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = false
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
 	s.T().Run("new behavior", func(t *testing.T) {
-		previousFlag := memoUserDCEncode
-		SetMemoUserDCEncode(true)
-		defer SetMemoUserDCEncode(previousFlag)
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
-
 }
 
 func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultConverterFail() {
@@ -306,7 +305,7 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultCo
 
 		_, err := s.client.ScheduleClient().Create(context.Background(), options)
 		s.Error(err)
-		if memoUserDCEncode {
+		if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
 			s.ErrorContains(err, "failingMemoDataConverter memo encoding failed")
 		} else {
 			s.ErrorContains(err, "unsupported type: chan int")
@@ -314,15 +313,15 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultCo
 	}
 
 	s.T().Run("old behavior", func(t *testing.T) {
-		previousFlag := memoUserDCEncode
-		SetMemoUserDCEncode(false)
-		defer SetMemoUserDCEncode(previousFlag)
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = false
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
 	s.T().Run("new behavior", func(t *testing.T) {
-		previousFlag := memoUserDCEncode
-		SetMemoUserDCEncode(true)
-		defer SetMemoUserDCEncode(previousFlag)
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
 }

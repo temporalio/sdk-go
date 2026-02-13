@@ -2,19 +2,18 @@ package replaytests
 
 import (
 	"context"
-	iconverter "go.temporal.io/sdk/internal/converter"
-	"reflect"
-	"testing"
-
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"reflect"
+	"testing"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 )
@@ -538,20 +537,6 @@ func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs .
 	return err
 }
 
-func (s *replayTestSuite) TestMemoUserDCEncodeFlag() {
-	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
-		DataConverter: iconverter.NewTestDataConverter(),
-	})
-	s.NoError(err)
-	replayer.RegisterWorkflow(MemoChildWorkflowGob)
-	replayer.RegisterWorkflow(MemoEncodingWorkflowGob)
-	// Verify we can replay the new workflow that has the
-	// SDKFlagMemoUserDCEncode flag
-	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "memo-gob.json")
-	s.NoError(err)
-	require.NoError(s.T(), err)
-}
-
 func (s *replayTestSuite) TestMemoUserDCEncodeNoFlag() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(MemoChildWorkflowJSON)
@@ -559,6 +544,16 @@ func (s *replayTestSuite) TestMemoUserDCEncodeNoFlag() {
 	// Verify we can still replay an old workflow that does not
 	// have the SDKFlagMemoUserDCEncode flag
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "memo-json.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestScheduleMemoUserDCEncodeNoFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ScheduleMemoWorkflowJSON)
+	// Verify we can still replay a workflow started by a schedule
+	// that does not have the SDKFlagMemoUserDCEncode flag
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "memo-schedule-json.json")
 	s.NoError(err)
 	require.NoError(s.T(), err)
 }

@@ -70,7 +70,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter, nil)
+	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 	if err != nil {
 		return nil, err
 	}
@@ -879,12 +879,12 @@ func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]int
 		dc = converter.GetDefaultDataConverter()
 	}
 
-	useUserDC := shouldUseMemoUserDataConverter(nil)
 	for k, v := range input {
 		if enc, ok := v.(*commonpb.Payload); ok {
 			memo[k] = enc
 		} else {
-			memoBytes, err := encodeMemoValue(v, dc, useUserDC)
+
+			memoBytes, err := encodeMemoValue(v, dc, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 			if err != nil {
 				return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
 			}
