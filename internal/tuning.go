@@ -60,9 +60,7 @@ type SlotReservationInfo interface {
 	MetricsHandler() metrics.Handler
 	// IsSticky returns true if the slot being reserved will be used to poll a sticky task queue.
 	// This is only meaningful for workflow task slots. For activity and local activity slots,
-	// this will always return false. When the worker is configured with a mixed-mode poller
-	// (the default when not using autoscaling), this will also return false because the
-	// sticky-vs-normal decision is made after the slot is reserved.
+	// this will always return false.
 	IsSticky() bool
 }
 

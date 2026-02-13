@@ -98,7 +98,7 @@ func (ntp *nexusTaskPoller) Cleanup() error {
 }
 
 // PollTask polls a new task
-func (ntp *nexusTaskPoller) PollTask() (taskForWorker, error) {
+func (ntp *nexusTaskPoller) PollTask(_ *pollHint) (taskForWorker, error) {
 	return ntp.doPoll(ntp.poll)
 }
 
