@@ -1519,11 +1519,12 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	}
 
 	_, err := aw.client.workflowService.ShutdownWorker(grpcCtx, &workflowservice.ShutdownWorkerRequest{
-		Namespace:       aw.executionParams.Namespace,
-		StickyTaskQueue: stickyTaskQueue,
-		Identity:        aw.executionParams.Identity,
-		Reason:          "graceful shutdown",
-		WorkerHeartbeat: heartbeat,
+		Namespace:         aw.executionParams.Namespace,
+		StickyTaskQueue:   stickyTaskQueue,
+		Identity:          aw.executionParams.Identity,
+		Reason:            "graceful shutdown",
+		WorkerHeartbeat:   heartbeat,
+		WorkerInstanceKey: aw.workerInstanceKey,
 	})
 
 	// Ignore unimplemented (server doesn't support it)

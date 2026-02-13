@@ -139,7 +139,7 @@ func (h *heartbeatMetricsHandler) get(key string) int64 {
 	return 0
 }
 
-// populateHeartbeatOptions contains external dependencies needed to populate heartbeat metrics.
+// populateHeartbeatOptions contains extra information needed to populate heartbeats.
 type populateHeartbeatOptions struct {
 	workflowSlotSupplierKind      string
 	activitySlotSupplierKind      string

@@ -1394,7 +1394,7 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 		execOpCh := workflow.NewChannel(ctx)
 		client := workflow.NewNexusClient(tctx.endpoint, "test")
 
-		for i := 0; i < numCalls; i++ {
+		for range numCalls {
 			wg.Add(1)
 			workflow.Go(ctx, func(ctx workflow.Context) {
 				defer wg.Done()
@@ -1429,7 +1429,7 @@ func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
 			})
 		}
 
-		for i := 0; i < numCalls; i++ {
+		for range numCalls {
 			execOpCh.Receive(ctx, nil)
 		}
 
@@ -1998,7 +1998,6 @@ func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testin
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			suite := testsuite.WorkflowTestSuite{}
 			env := suite.NewTestWorkflowEnvironment()
@@ -2069,7 +2068,6 @@ func TestWorkflowTestSuite_WorkflowRunOperation_WithCancel(t *testing.T) {
 		{true, "BeforeStarted"},
 	}
 	for _, tc := range cases {
-		tc := tc // capture just in case.
 		t.Run(tc.name, func(t *testing.T) {
 			suite := testsuite.WorkflowTestSuite{}
 			env := suite.NewTestWorkflowEnvironment()
@@ -2131,7 +2129,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers(t *testing.T) {
 		execOpCh := workflow.NewChannel(ctx)
 		client := workflow.NewNexusClient("endpoint", "test")
 
-		for i := 0; i < numCalls; i++ {
+		for range numCalls {
 			wg.Add(1)
 			workflow.Go(ctx, func(ctx workflow.Context) {
 				defer wg.Done()
@@ -2166,7 +2164,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers(t *testing.T) {
 			})
 		}
 
-		for i := 0; i < numCalls; i++ {
+		for range numCalls {
 			execOpCh.Receive(ctx, nil)
 		}
 
@@ -2260,7 +2258,6 @@ func TestWorkflowTestSuite_NexusSyncOperation_ScheduleToCloseTimeout(t *testing.
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			suite := testsuite.WorkflowTestSuite{}
 			env := suite.NewTestWorkflowEnvironment()
@@ -2705,7 +2702,7 @@ func (i *nexusInterceptor) GetLogger(ctx context.Context) log.Logger {
 }
 
 // Info implements log.Logger.
-func (i *nexusInterceptor) Info(msg string, keyvals ...interface{}) {
+func (i *nexusInterceptor) Info(msg string, keyvals ...any) {
 	i.parent.logs = append(i.parent.logs, msg)
 }
 
@@ -2903,6 +2900,227 @@ func TestNexusTracingInterceptor(t *testing.T) {
 				// reminder.
 				interceptortest.Span("RunCancelNexusOperationHandler:test/workflow-op"),
 			}, tracer.FinishedSpans())
+		})
+	}
+}
+
+func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToStartTimeout(t *testing.T) {
+	handlerWF := func(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
+		return nil, nil
+	}
+
+	opStartDelay := 250 * time.Millisecond
+	op := temporalnexus.NewWorkflowRunOperation(
+		"op",
+		handlerWF,
+		func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			time.Sleep(opStartDelay)
+			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
+		})
+
+	callerWF := func(ctx workflow.Context) error {
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(ctx, op, nil, workflow.NexusOperationOptions{
+			ScheduleToStartTimeout: opStartDelay - 100*time.Millisecond,
+			ScheduleToCloseTimeout: 10 * time.Second, // Long enough to not interfere
+		})
+		return fut.Get(ctx, nil)
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(handlerWF)
+	env.RegisterNexusService(service)
+	env.ExecuteWorkflow(callerWF)
+	require.True(t, env.IsWorkflowCompleted())
+
+	var execErr *temporal.WorkflowExecutionError
+	err := env.GetWorkflowError()
+	require.ErrorAs(t, err, &execErr)
+	var opErr *temporal.NexusOperationError
+	err = execErr.Unwrap()
+	require.ErrorAs(t, err, &opErr)
+	require.Equal(t, "endpoint", opErr.Endpoint)
+	require.Equal(t, "test", opErr.Service)
+	require.Equal(t, op.Name(), opErr.Operation)
+	require.Empty(t, opErr.OperationToken)
+	require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+	err = opErr.Unwrap()
+	var timeoutErr *temporal.TimeoutError
+	require.ErrorAs(t, err, &timeoutErr)
+	require.Equal(t, enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START, timeoutErr.TimeoutType())
+	require.Contains(t, timeoutErr.Message(), "operation timed out")
+}
+
+func TestWorkflowTestSuite_WorkflowRunOperation_StartToCloseTimeout(t *testing.T) {
+	handlerSleepDuration := 500 * time.Millisecond
+	handlerWF := func(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
+		return nil, workflow.Sleep(ctx, handlerSleepDuration)
+	}
+
+	op := temporalnexus.NewWorkflowRunOperation(
+		"op",
+		handlerWF,
+		func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			// Start quickly, no delay
+			return client.StartWorkflowOptions{ID: opts.RequestID}, nil
+		})
+
+	callerWF := func(ctx workflow.Context) error {
+		client := workflow.NewNexusClient("endpoint", "test")
+		fut := client.ExecuteOperation(ctx, op, nil, workflow.NexusOperationOptions{
+			StartToCloseTimeout:    handlerSleepDuration - 300*time.Millisecond,
+			ScheduleToCloseTimeout: 10 * time.Second, // Long enough to not interfere
+		})
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return err
+		}
+		if exec.OperationToken == "" {
+			return errors.New("got empty operation ID")
+		}
+		return fut.Get(ctx, nil)
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(handlerWF)
+	env.RegisterNexusService(service)
+	env.ExecuteWorkflow(callerWF)
+	require.True(t, env.IsWorkflowCompleted())
+
+	var execErr *temporal.WorkflowExecutionError
+	err := env.GetWorkflowError()
+	require.ErrorAs(t, err, &execErr)
+	var opErr *temporal.NexusOperationError
+	err = execErr.Unwrap()
+	require.ErrorAs(t, err, &opErr)
+	require.Equal(t, "endpoint", opErr.Endpoint)
+	require.Equal(t, "test", opErr.Service)
+	require.Equal(t, op.Name(), opErr.Operation)
+	require.NotEmpty(t, opErr.OperationToken)
+	require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+	err = opErr.Unwrap()
+	var timeoutErr *temporal.TimeoutError
+	require.ErrorAs(t, err, &timeoutErr)
+	require.Equal(t, enumspb.TIMEOUT_TYPE_START_TO_CLOSE, timeoutErr.TimeoutType())
+	require.Contains(t, timeoutErr.Message(), "operation timed out")
+}
+
+func TestNexusTimeoutInteraction(t *testing.T) {
+	if os.Getenv("DISABLE_NEXUS_CALLER_TIMEOUT_TESTS") == "1" {
+		t.Skip()
+	}
+	// Test that when multiple timeouts are configured, the first one to expire fires
+	handlerWF := func(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {
+		// Sleep long enough that timeouts will fire
+		return nil, workflow.Sleep(ctx, 10*time.Second)
+	}
+
+	testCases := []struct {
+		name                   string
+		scheduleToCloseTimeout time.Duration
+		scheduleToStartTimeout time.Duration
+		startToCloseTimeout    time.Duration
+		opStartDelay           time.Duration
+		expectedTimeoutType    enumspb.TimeoutType
+		expectOperationToken   bool
+	}{
+		{
+			name:                   "schedule-to-start fires first",
+			scheduleToCloseTimeout: 10 * time.Second,
+			scheduleToStartTimeout: 3 * time.Second,
+			startToCloseTimeout:    5 * time.Second,
+			opStartDelay:           4 * time.Second,
+			expectedTimeoutType:    enumspb.TIMEOUT_TYPE_SCHEDULE_TO_START,
+			expectOperationToken:   false,
+		},
+		{
+			name:                   "start-to-close fires first",
+			scheduleToCloseTimeout: 10 * time.Second,
+			scheduleToStartTimeout: 5 * time.Second,
+			startToCloseTimeout:    3 * time.Second,
+			opStartDelay:           0,
+			expectedTimeoutType:    enumspb.TIMEOUT_TYPE_START_TO_CLOSE,
+			expectOperationToken:   true,
+		},
+		{
+			name:                   "schedule-to-close fires first",
+			scheduleToCloseTimeout: 3 * time.Second,
+			scheduleToStartTimeout: 5 * time.Second,
+			startToCloseTimeout:    5 * time.Second,
+			opStartDelay:           0,
+			expectedTimeoutType:    enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE,
+			expectOperationToken:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			tctx := newTestContext(t, ctx)
+
+			op := temporalnexus.NewWorkflowRunOperation(
+				"op",
+				handlerWF,
+				func(ctx context.Context, _ nexus.NoValue, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+					if tc.opStartDelay > 0 {
+						time.Sleep(tc.opStartDelay)
+					}
+					return client.StartWorkflowOptions{ID: opts.RequestID}, nil
+				})
+
+			callerWF := func(ctx workflow.Context) error {
+				client := workflow.NewNexusClient(tctx.endpoint, "test")
+				fut := client.ExecuteOperation(ctx, op, nil, workflow.NexusOperationOptions{
+					ScheduleToCloseTimeout: tc.scheduleToCloseTimeout,
+					ScheduleToStartTimeout: tc.scheduleToStartTimeout,
+					StartToCloseTimeout:    tc.startToCloseTimeout,
+				})
+				return fut.Get(ctx, nil)
+			}
+
+			service := nexus.NewService("test")
+			service.MustRegister(op)
+
+			w := worker.New(tctx.client, tctx.taskQueue, worker.Options{})
+			w.RegisterWorkflow(handlerWF)
+			w.RegisterWorkflow(callerWF)
+			w.RegisterNexusService(service)
+			w.Start()
+			defer w.Stop()
+			run, err := tctx.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+				ID:        t.Name(),
+				TaskQueue: tctx.taskQueue,
+			}, callerWF)
+			require.NoError(t, err)
+			err = run.Get(ctx, nil)
+			var execErr *temporal.WorkflowExecutionError
+			require.ErrorAs(t, err, &execErr)
+			var opErr *temporal.NexusOperationError
+			err = execErr.Unwrap()
+			require.ErrorAs(t, err, &opErr)
+			require.Equal(t, tctx.endpoint, opErr.Endpoint)
+			require.Equal(t, "test", opErr.Service)
+			require.Equal(t, op.Name(), opErr.Operation)
+			if tc.expectOperationToken {
+				require.NotEmpty(t, opErr.OperationToken)
+			} else {
+				require.Empty(t, opErr.OperationToken)
+			}
+			require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
+			err = opErr.Unwrap()
+			var timeoutErr *temporal.TimeoutError
+			require.ErrorAs(t, err, &timeoutErr)
+			require.Equal(t, tc.expectedTimeoutType, timeoutErr.TimeoutType())
+			require.Contains(t, timeoutErr.Message(), "operation timed out")
 		})
 	}
 }
