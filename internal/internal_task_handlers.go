@@ -1292,22 +1292,22 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 	}
 
 	if workflowError != nil {
-		if panicErr, ok := w.err.(*workflowPanicError); ok {
-			w.wth.logger.Error("Workflow panic",
-				tagWorkflowType, task.WorkflowType.GetName(),
-				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-				tagRunID, task.WorkflowExecution.GetRunId(),
-				tagAttempt, task.Attempt,
-				tagError, workflowError,
-				tagStackTrace, panicErr.StackTrace())
-		} else {
-			w.wth.logger.Error("Workflow panic",
-				tagWorkflowType, task.WorkflowType.GetName(),
-				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-				tagRunID, task.WorkflowExecution.GetRunId(),
-				tagAttempt, task.Attempt,
-				tagError, workflowError)
+		keyvals := []any{
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+			tagAttempt, task.Attempt,
+			tagError, workflowError,
 		}
+		if panicErr, ok := w.err.(*workflowPanicError); ok {
+			if errPayloadSize, payloadSize := panicErr.value.(payloadSizeError); payloadSize {
+				keyvals = append(keyvals,
+					tagPayloadSize, errPayloadSize.size,
+					tagPayloadSizeLimit, errPayloadSize.limit)
+			}
+			keyvals = append(keyvals, tagStackTrace, panicErr.StackTrace())
+		}
+		w.wth.logger.Error("Workflow panic", keyvals...)
 
 		switch w.wth.workflowPanicPolicy {
 		case FailWorkflow:
@@ -1950,6 +1950,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	if (wth.workerDeploymentVersion != WorkerDeploymentVersion{}) {
 		seriesName = wth.workerDeploymentVersion.DeploymentName
 	}
+
 	builtRequest := &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
@@ -2355,13 +2356,19 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		if isBenignApplicationError(err) {
 			logFunc = ath.logger.Debug // Downgrade to Debug for benign application errors
 		}
-		logFunc("Activity error.",
+		keyvals := []any{
 			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 			tagRunID, t.WorkflowExecution.GetRunId(),
 			tagActivityType, activityType,
 			tagAttempt, t.Attempt,
 			tagError, err,
-		)
+		}
+		if errPayloadSize, payloadSize := err.(payloadSizeError); payloadSize {
+			keyvals = append(keyvals,
+				tagPayloadSize, errPayloadSize.size,
+				tagPayloadSizeLimit, errPayloadSize.limit)
+		}
+		logFunc("Activity error.", keyvals...)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
 		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil

@@ -67,6 +67,7 @@ type (
 		metricsHandler           metrics.Handler
 		identity                 string
 		dataConverter            converter.DataConverter
+		originalDataConverter    converter.DataConverter
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		workerPlugins            []WorkerPlugin
@@ -81,6 +82,7 @@ type (
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
 		unclosedClients *int32
+		payloadLimits   PayloadLimitOptions
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -1669,6 +1671,15 @@ func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter) (
 		}
 		memo[k] = memoBytes
 	}
+
+	// Validate memo size if able.
+	if payloadProcessingDataConverter, ok := dc.(*payloadProcessingDataConverter); ok {
+		err := payloadProcessingDataConverter.CheckMemoSize(memo)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &commonpb.Memo{Fields: memo}, nil
 }
 

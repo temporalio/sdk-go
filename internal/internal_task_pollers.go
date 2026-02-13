@@ -672,10 +672,15 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
 			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 		}
+		if _, payloadSize := panicErr.value.(payloadSizeError); payloadSize {
+			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
+		}
 	} else if _, mismatch := err.(historyMismatchError); mismatch {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 	} else if _, unknown := err.(unknownSdkFlagError); unknown {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	} else if _, payloadSize := err.(payloadSizeError); payloadSize {
+		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
 	}
 
 	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, cause)

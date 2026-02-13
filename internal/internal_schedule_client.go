@@ -886,5 +886,14 @@ func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]int
 			memo[k] = memoBytes
 		}
 	}
+
+	// Validate memo size if able.
+	if payloadProcessingDataConverter, ok := dc.(*payloadProcessingDataConverter); ok {
+		err := payloadProcessingDataConverter.CheckMemoSize(memo)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return &commonpb.Memo{Fields: memo}, nil
 }

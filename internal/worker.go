@@ -392,6 +392,16 @@ type (
 		//
 		// NOTE: Experimental
 		Plugins []WorkerPlugin
+
+		// Optional: Disable payload size error limit enforcement in the worker.
+		//
+		// When false, the worker will validate the payload size before submitting
+		// to the Temporal server, and cause a task failure if the size limit is
+		// exceeded. When true, the worker will not perform this validation.
+		//
+		// See https://docs.temporal.io/troubleshooting/blob-size-limit-error for more
+		// details.
+		DisablePayloadErrorLimit bool
 	}
 )
 

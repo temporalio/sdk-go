@@ -218,6 +218,9 @@ type (
 	// ConnectionOptions are optional parameters that can be specified in ClientOptions
 	ConnectionOptions = internal.ConnectionOptions
 
+	// PayloadLimitOptions are optional payload size limits that can be specified in ClientOptions.
+	PayloadLimitOptions = internal.PayloadLimitOptions
+
 	// Credentials are optional credentials that can be specified in ClientOptions.
 	Credentials = internal.Credentials
 
