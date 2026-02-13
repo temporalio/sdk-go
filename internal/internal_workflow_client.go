@@ -1707,15 +1707,46 @@ func (workflowRun *workflowRunImpl) follow(
 	return workflowRun.GetWithOptions(ctx, valuePtr, options)
 }
 
-func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter) (*commonpb.Memo, error) {
+// encodeMemoValue encodes a single memo value. useUserDC controls whether the user's data converter
+// is attempted first. Client-side callers should pass sdkFlagsAllowed[SDKFlagMemoUserDCEncode];
+// workflow-side callers should pass the result of TryUse(SDKFlagMemoUserDCEncode) for replay safety.
+func encodeMemoValue(value interface{}, dc converter.DataConverter, useUserDC bool) (*commonpb.Payload, error) {
+	if useUserDC {
+		payload, dcErr := dc.ToPayload(value)
+		if dcErr == nil {
+			return payload, nil
+		}
+
+		payload, err := converter.GetDefaultDataConverter().ToPayload(value)
+
+		// If fallback default data converter fails, return original user data converter error
+		if err != nil {
+			return nil, dcErr
+		}
+		return payload, nil
+	}
+	payload, err := converter.GetDefaultDataConverter().ToPayload(value)
+	if err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+// getWorkflowMemo encodes a memo map into a proto Memo. useUserDC controls whether the user's
+// data converter is attempted first. Client-side callers should pass sdkFlagsAllowed[SDKFlagMemoUserDCEncode];
+// workflow-side callers should pass the result of TryUse(SDKFlagMemoUserDCEncode) for replay safety.
+func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter, useUserDC bool) (*commonpb.Memo, error) {
 	if input == nil {
 		return nil, nil
 	}
 
-	memo := make(map[string]*commonpb.Payload)
+	if dc == nil {
+		dc = converter.GetDefaultDataConverter()
+	}
+
+	memo := make(map[string]*commonpb.Payload, len(input))
 	for k, v := range input {
-		// TODO (shtin): use dc here???
-		memoBytes, err := converter.GetDefaultDataConverter().ToPayload(v)
+		memoBytes, err := encodeMemoValue(v, dc, useUserDC)
 		if err != nil {
 			return nil, fmt.Errorf("encode workflow memo error: %v", err.Error())
 		}
@@ -1777,7 +1808,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter)
+	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 	if err != nil {
 		return nil, err
 	}
@@ -2158,7 +2189,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter)
+	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 	if err != nil {
 		return nil, err
 	}

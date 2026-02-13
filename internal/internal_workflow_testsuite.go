@@ -3085,7 +3085,7 @@ func (env *testWorkflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes S
 }
 
 func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{}) error {
-	memo, err := validateAndSerializeMemo(memoMap, env.dataConverter)
+	memo, err := validateAndSerializeMemo(memoMap, env.dataConverter, env.TryUse(SDKFlagMemoUserDCEncode))
 
 	env.workflowInfo.Memo = mergeMemo(env.workflowInfo.Memo, memo)
 

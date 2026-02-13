@@ -1239,7 +1239,7 @@ func (e *TestWorkflowEnvironment) SetLastError(err error) {
 
 // SetMemoOnStart sets the memo when start workflow.
 func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]interface{}) error {
-	memoStruct, err := getWorkflowMemo(memo, e.impl.GetDataConverter())
+	memoStruct, err := getWorkflowMemo(memo, e.impl.GetDataConverter(), e.impl.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		return err
 	}
