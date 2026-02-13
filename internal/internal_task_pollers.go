@@ -48,11 +48,19 @@ const (
 	Sticky
 )
 
+// pollHint carries a pre-decided sticky/normal decision from runPoller to PollTask.
+// When non-nil, the workflow task poller uses the hint instead of re-deciding.
+type pollHint struct {
+	isSticky bool
+}
+
 type (
 	// taskPoller interface to poll for tasks
 	taskPoller interface {
-		// PollTask polls for one new task
-		PollTask() (taskForWorker, error)
+		// PollTask polls for one new task. The hint, when non-nil, carries a
+		// pre-decided sticky/normal choice for workflow task pollers. Non-workflow
+		// pollers should ignore it.
+		PollTask(hint *pollHint) (taskForWorker, error)
 		// Called when the poller will no longer be polled. Presently only useful for
 		// workflow workers.
 		Cleanup() error
@@ -373,10 +381,13 @@ func (wtp *workflowTaskPoller) Cleanup() error {
 	return err
 }
 
-// PollTask polls a new task
-func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
+// PollTask polls a new task. If hint is non-nil, the pre-decided sticky/normal
+// choice is used instead of re-deciding in getNextPollRequest.
+func (wtp *workflowTaskPoller) PollTask(hint *pollHint) (taskForWorker, error) {
 	// Get the task.
-	workflowTask, err := wtp.doPoll(wtp.poll)
+	workflowTask, err := wtp.doPoll(func(ctx context.Context) (taskForWorker, error) {
+		return wtp.poll(ctx, hint)
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +752,7 @@ func (latp *localActivityTaskPoller) Cleanup() error {
 	return nil
 }
 
-func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
+func (latp *localActivityTaskPoller) PollTask(_ *pollHint) (taskForWorker, error) {
 	return latp.laTunnel.getTask(), nil
 }
 
@@ -915,16 +926,50 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 	wtp.requestLock.Unlock()
 }
 
+// decideNextPollKind commits to a sticky/normal decision for the next poll.
+// It increments the appropriate pending counter and returns whether the poll
+// should target the sticky queue. Only meaningful in Mixed mode; for Sticky and
+// NonSticky modes the answer is deterministic and no counter is changed.
+func (wtp *workflowTaskPoller) decideNextPollKind() (isSticky bool) {
+	if wtp.mode != Mixed || wtp.stickyCacheSize <= 0 {
+		return wtp.mode == Sticky
+	}
+	wtp.requestLock.Lock()
+	defer wtp.requestLock.Unlock()
+	if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
+		wtp.pendingStickyPollCount++
+		return true
+	}
+	wtp.pendingRegularPollCount++
+	return false
+}
+
+// undoPollDecision reverses the counter increment made by decideNextPollKind.
+// Call this when a pre-decided poll will not happen (e.g. slot reservation
+// was cancelled or failed).
+func (wtp *workflowTaskPoller) undoPollDecision(isSticky bool) {
+	if wtp.mode != Mixed || wtp.stickyCacheSize <= 0 {
+		return
+	}
+	if isSticky {
+		wtp.release(enumspb.TASK_QUEUE_KIND_STICKY)
+	} else {
+		wtp.release(enumspb.TASK_QUEUE_KIND_NORMAL)
+	}
+}
+
 // getNextPollRequest returns appropriate next poll request based on poller configuration and mode.
 // Simple rules:
 //  1. if mode is NonSticky, always poll from regular task queue
 //  2. if mode is Sticky, always poll from sticky task queue
 //  3. if mode is Mixed
 //     3.1. if sticky execution is disabled, always poll for regular task queue
-//     3.2. otherwise:
-//     3.2.1) if sticky task queue has backlog, always prefer to process sticky task first
-//     3.2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
-func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
+//     3.2. otherwise, if a hint is provided, use the pre-decided kind (counter
+//     was already incremented by decideNextPollKind)
+//     3.3. otherwise (no hint / nil hint):
+//     3.3.1) if sticky task queue has backlog, always prefer to process sticky task first
+//     3.3.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
+func (wtp *workflowTaskPoller) getNextPollRequest(hint *pollHint) (request *workflowservice.PollWorkflowTaskQueueRequest) {
 	taskQueue := &taskqueuepb.TaskQueue{
 		Name: wtp.taskQueueName,
 		Kind: enumspb.TASK_QUEUE_KIND_NORMAL,
@@ -937,16 +982,27 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
 		taskQueue.NormalName = wtp.taskQueueName
 	} else if wtp.mode == Mixed {
-		wtp.requestLock.Lock()
-		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
-			wtp.pendingStickyPollCount++
-			taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
-			taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
-			taskQueue.NormalName = wtp.taskQueueName
+		if hint != nil {
+			// Use the pre-decided kind; counter was already incremented
+			// by decideNextPollKind.
+			if hint.isSticky {
+				taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
+				taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
+				taskQueue.NormalName = wtp.taskQueueName
+			}
 		} else {
-			wtp.pendingRegularPollCount++
+			// Fallback: decide inline (original behavior).
+			wtp.requestLock.Lock()
+			if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
+				wtp.pendingStickyPollCount++
+				taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
+				taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
+				taskQueue.NormalName = wtp.taskQueueName
+			} else {
+				wtp.pendingRegularPollCount++
+			}
+			wtp.requestLock.Unlock()
 		}
-		wtp.requestLock.Unlock()
 	} else {
 		panic("unknown workflow task poller mode")
 	}
@@ -987,12 +1043,12 @@ func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, reques
 }
 
 // Poll for a single workflow task from the service
-func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
+func (wtp *workflowTaskPoller) poll(ctx context.Context, hint *pollHint) (taskForWorker, error) {
 	traceLog(func() {
 		wtp.logger.Debug("workflowTaskPoller::Poll")
 	})
 
-	request := wtp.getNextPollRequest()
+	request := wtp.getNextPollRequest(hint)
 	defer wtp.release(request.TaskQueue.GetKind())
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
@@ -1221,7 +1277,7 @@ func (atp *activityTaskPoller) Cleanup() error {
 }
 
 // PollTask polls a new task
-func (atp *activityTaskPoller) PollTask() (taskForWorker, error) {
+func (atp *activityTaskPoller) PollTask(_ *pollHint) (taskForWorker, error) {
 	// Get the task.
 	activityTask, err := atp.doPoll(atp.poll)
 	if err != nil {

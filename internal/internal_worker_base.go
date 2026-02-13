@@ -442,11 +442,26 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				}
 			}
 
+			// Pre-decide sticky/normal for workflow task pollers so that
+			// IsSticky() is accurate at slot reservation time.
+			data := bw.options.slotReservationData
+			var hint *pollHint
+			wtp, isWorkflowPoller := taskWorker.taskPoller.(*workflowTaskPoller)
+			if isWorkflowPoller {
+				isSticky := wtp.decideNextPollKind()
+				data.isSticky = isSticky
+				hint = &pollHint{isSticky: isSticky}
+			}
+
 			bw.stopWG.Add(1)
 			go func() {
 				defer bw.stopWG.Done()
-				s, err := bw.slotSupplier.ReserveSlot(ctx, &bw.options.slotReservationData)
+				s, err := bw.slotSupplier.ReserveSlot(ctx, &data)
 				if err != nil {
+					// Undo pre-decided counter since the poll will not happen.
+					if isWorkflowPoller {
+						wtp.undoPollDecision(hint.isSticky)
+					}
 					if !errors.Is(err, context.Canceled) {
 						bw.logger.Error("Error while trying to reserve slot", "error", err)
 						select {
@@ -460,6 +475,10 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				select {
 				case reserveChan <- s:
 				case <-ctx.Done():
+					// Worker stopped: undo pre-decided counter and release the slot.
+					if isWorkflowPoller {
+						wtp.undoPollDecision(hint.isSticky)
+					}
 					bw.releaseSlot(s, SlotReleaseReasonUnused)
 				}
 			}()
@@ -481,7 +500,7 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				if bw.pollerBalancer != nil {
 					bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
 				}
-				bw.pollTask(taskWorker, permit)
+				bw.pollTask(taskWorker, permit, hint)
 				if bw.pollerBalancer != nil {
 					bw.pollerBalancer.decrementPoller(taskWorker.taskPollerType)
 				}
@@ -588,7 +607,7 @@ func (bw *baseWorker) runEagerTaskDispatcher() {
 	}
 }
 
-func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPermit) {
+func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPermit, hint *pollHint) {
 	var err error
 	var task taskForWorker
 	didSendTask := false
@@ -600,7 +619,7 @@ func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPe
 
 	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
-		task, err = taskWorker.taskPoller.PollTask()
+		task, err = taskWorker.taskPoller.PollTask(hint)
 		bw.logPollTaskError(err)
 		if err != nil {
 			// We retry "non retriable" errors while long polling for a while, because some proxies return
