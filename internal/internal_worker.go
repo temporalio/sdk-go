@@ -2296,7 +2296,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 			hb := &workerpb.WorkerHeartbeat{
 				WorkerInstanceKey: aw.workerInstanceKey,
-				WorkerIdentity:    aw.client.identity,
+				WorkerIdentity:    aw.executionParams.Identity,
 				HostInfo: &workerpb.WorkerHostInfo{
 					HostName:            hostname,
 					WorkerGroupingKey:   aw.client.workerGroupingKey,
