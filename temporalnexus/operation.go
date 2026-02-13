@@ -176,7 +176,7 @@ func (o *workflowRunOperation[I, O]) Start(
 
 	_, ok := internal.NexusOperationContextFromGoContext(ctx)
 	if !ok {
-		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
 	if o.options.Handler != nil {
@@ -290,7 +290,7 @@ func ExecuteUntypedWorkflow[R any](
 ) (WorkflowHandle[R], error) {
 	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
 	if !ok {
-		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
 	workflowType, err := nctx.ResolveWorkflowName(workflow)
