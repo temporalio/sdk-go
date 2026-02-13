@@ -234,7 +234,7 @@ func newSemaphoreProbeTaskPoller() *semaphoreProbeTaskPoller {
 }
 
 // PollTask implements taskPoller and blocks until a signal is provided so the semaphore permits stay acquired.
-func (p *semaphoreProbeTaskPoller) PollTask() (taskForWorker, error) {
+func (p *semaphoreProbeTaskPoller) PollTask(_ *pollHint) (taskForWorker, error) {
 	_, ok := <-p.signals
 	if !ok {
 		return nil, nil
