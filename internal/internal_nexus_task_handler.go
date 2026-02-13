@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"reflect"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -30,6 +31,27 @@ import (
 // It is used instead of context.DeadlineExceeded to allow the poller to differentiate between Nexus task handler
 // timeout and other errors.
 var errNexusTaskTimeout = errors.New("nexus task timeout")
+
+// debugDisableTemporalFailureResponses is an internal debug switch to force the SDK
+// to treat GetTemporalFailureResponses() as always returning false.
+// This is only intended for testing purposes.
+var debugDisableTemporalFailureResponses atomic.Bool
+
+// SetDebugDisableTemporalFailureResponses sets the internal debug flag to disable
+// temporal failure response support. This forces the SDK to use legacy error handling.
+// This is only intended for testing purposes.
+func SetDebugDisableTemporalFailureResponses(disable bool) {
+	debugDisableTemporalFailureResponses.Store(disable)
+}
+
+// getEffectiveTemporalFailureResponses returns the effective value of the
+// TemporalFailureResponses capability, taking into account any debug overrides.
+func getEffectiveTemporalFailureResponses(serverValue bool) bool {
+	if debugDisableTemporalFailureResponses.Load() {
+		return false
+	}
+	return serverValue
+}
 
 type nexusTaskHandler struct {
 	nexusHandler     nexus.Handler
@@ -71,7 +93,7 @@ func newNexusTaskHandler(
 }
 
 func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueResponse) (*workflowservice.RespondNexusTaskCompletedRequest, *workflowservice.RespondNexusTaskFailedRequest, error) {
-	failureReasonSupport := task.GetRequest().GetCapabilities().GetTemporalFailureResponses()
+	failureReasonSupport := getEffectiveTemporalFailureResponses(task.GetRequest().GetCapabilities().GetTemporalFailureResponses())
 	nctx, handlerErr := h.newNexusOperationContext(task)
 	if handlerErr != nil {
 		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
@@ -99,7 +121,7 @@ func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueRespo
 }
 
 func (h *nexusTaskHandler) ExecuteContext(nctx *NexusOperationContext, task *workflowservice.PollNexusTaskQueueResponse) (*workflowservice.RespondNexusTaskCompletedRequest, *workflowservice.RespondNexusTaskFailedRequest, error) {
-	failureReasonSupport := task.GetRequest().GetCapabilities().GetTemporalFailureResponses()
+	failureReasonSupport := getEffectiveTemporalFailureResponses(task.GetRequest().GetCapabilities().GetTemporalFailureResponses())
 	res, handlerErr, err := h.execute(nctx, task)
 	if err != nil {
 		return nil, nil, err
