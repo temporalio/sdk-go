@@ -72,5 +72,3 @@ replace (
 	go.temporal.io/sdk/contrib/sysinfo => ../contrib/sysinfo
 	go.temporal.io/sdk/contrib/tally => ../contrib/tally
 )
-
-replace go.temporal.io/api => ../../api-go
