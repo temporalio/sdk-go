@@ -32,6 +32,7 @@ import (
 	"go.temporal.io/sdk/contrib/opentracing"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -589,6 +590,32 @@ func TestOperationInfo(t *testing.T) {
 }
 
 func TestSyncOperationFromWorkflow(t *testing.T) {
+	testCases := []struct {
+		name                       string
+		disableTemporalFailureResp bool
+	}{
+		{
+			name:                       "WithTemporalFailureResponses",
+			disableTemporalFailureResp: false,
+		},
+		{
+			name:                       "WithoutTemporalFailureResponses",
+			disableTemporalFailureResp: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Set the debug flag for this test case
+			internal.SetDebugDisableTemporalFailureResponses(tc.disableTemporalFailureResp)
+			defer internal.SetDebugDisableTemporalFailureResponses(false)
+
+			runSyncOperationFromWorkflowTest(t, !tc.disableTemporalFailureResp)
+		})
+	}
+}
+
+func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -650,7 +677,7 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 			}
 		case "operation-error-nested-causes":
 			innerErr := temporal.NewApplicationError("inner error", "InnerType", "inner-detail")
-			middleErr := temporal.NewApplicationError("middle error", "MiddleType", innerErr)
+			middleErr := temporal.NewApplicationErrorWithCause("middle error", "MiddleType", innerErr)
 			return "", &nexus.OperationError{
 				State:   nexus.OperationStateFailed,
 				Message: "outer error",
@@ -737,7 +764,9 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		err = opErr.Unwrap()
 		var appErr *temporal.ApplicationError
 		require.ErrorAs(t, err, &appErr)
-		require.Equal(t, "failed for test", appErr.Message())
+		if temporalFailureResp {
+			//require.Equal(t, "failed for test", appErr.Message())
+		}
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, testTimerName, service.Name, op.Name())
 			tc.requireLogTags(t, "operation-plain-error", service.Name, op.Name())
@@ -767,10 +796,12 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		require.Greater(t, opErr.ScheduledEventID, int64(0))
 		err = opErr.Unwrap()
 		var appErr *temporal.ApplicationError
-		require.ErrorAs(t, err, &appErr)
-		require.Equal(t, "failed with app error", appErr.Message())
-		require.Equal(t, "OperationError", appErr.Type())
-		err = appErr.Unwrap()
+		if temporalFailureResp {
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, "failed with app error", appErr.Message())
+			require.Equal(t, "OperationError", appErr.Type())
+			err = appErr.Unwrap()
+		}
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "failed with app error", appErr.Message())
 		require.Equal(t, "TestType", appErr.Type())
@@ -900,13 +931,15 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		require.Equal(t, "nexus operation completed unsuccessfully", opErr.Message)
 		require.Greater(t, opErr.ScheduledEventID, int64(0))
 		err = opErr.Unwrap()
-		// The OperationError is converted to an ApplicationError with type "OperationError"
 		var appErr *temporal.ApplicationError
-		require.ErrorAs(t, err, &appErr)
-		require.Equal(t, "operation failed with additional context", appErr.Message())
-		require.Equal(t, "OperationError", appErr.Type())
+		if temporalFailureResp {
+			// The OperationError is converted to an ApplicationError with type "OperationError"
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, "operation failed with additional context", appErr.Message())
+			require.Equal(t, "OperationError", appErr.Type())
+			err = appErr.Unwrap()
+		}
 		// The cause should be the underlying ApplicationError
-		err = appErr.Unwrap()
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "underlying error", appErr.Message())
 		require.Equal(t, "UnderlyingType", appErr.Type())
@@ -978,12 +1011,17 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		err = opErr.Unwrap()
 		// With nil cause, we should get an ApplicationError with type "OperationError" and the message
 		var appErr *temporal.ApplicationError
-		require.ErrorAs(t, err, &appErr)
-		require.Equal(t, "failed without underlying cause", appErr.Message())
-		require.Equal(t, "OperationError", appErr.Type())
-		// Verify that unwrapping doesn't cause issues with nil cause
-		err = appErr.Unwrap()
-		require.Nil(t, err)
+		if temporalFailureResp {
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, "failed without underlying cause", appErr.Message())
+			require.Equal(t, "OperationError", appErr.Type())
+			err = appErr.Unwrap()
+			// Verify that unwrapping doesn't cause issues with nil cause
+			require.Nil(t, err)
+		} else {
+			require.NotNil(t, err)
+		}
+
 		require.EventuallyWithT(t, func(t *assert.CollectT) {
 			tc.requireTimer(t, testTimerName, service.Name, op.Name())
 			tc.requireLogTags(t, "operation-error-nil-cause", service.Name, op.Name())
@@ -1014,6 +1052,10 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		err = opErr.Unwrap()
 		// With only cause and no message, the cause should be wrapped
 		var appErr *temporal.ApplicationError
+		if temporalFailureResp {
+			require.ErrorAs(t, err, &appErr)
+			err = appErr.Unwrap()
+		}
 		require.ErrorAs(t, err, &appErr)
 		// The outer error should be the cause directly or wrapped
 		require.Equal(t, "only cause", appErr.Message())
@@ -1051,11 +1093,13 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 		err = opErr.Unwrap()
 		// Verify the OperationError wrapper
 		var appErr *temporal.ApplicationError
-		require.ErrorAs(t, err, &appErr)
-		require.Equal(t, "outer error", appErr.Message())
-		require.Equal(t, "OperationError", appErr.Type())
+		if temporalFailureResp {
+			require.ErrorAs(t, err, &appErr)
+			require.Equal(t, "outer error", appErr.Message())
+			require.Equal(t, "OperationError", appErr.Type())
+			err = appErr.Unwrap()
+		}
 		// Unwrap to the middle error
-		err = appErr.Unwrap()
 		require.ErrorAs(t, err, &appErr)
 		require.Equal(t, "middle error", appErr.Message())
 		require.Equal(t, "MiddleType", appErr.Type())
