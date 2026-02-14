@@ -238,6 +238,7 @@ func (ts *ConfigAndClientSuiteBase) newClient() (client.Client, error) {
 			TLS:                  ts.config.TLS,
 			GetSystemInfoTimeout: ctxTimeout,
 		},
+		WorkerHeartbeatInterval: -1,
 	})
 }
 

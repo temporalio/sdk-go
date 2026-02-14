@@ -42,6 +42,7 @@ func newNexusTaskPoller(
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
 			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			pollTimeTracker:         params.pollTimeTracker,
 		},
 		taskHandler:     taskHandler,
 		service:         service,
@@ -90,11 +91,9 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		return nil, nil
 	}
 
-	return &nexusTask{task: response}, nil
-}
+	ntp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeNexusTask)
 
-func (ntp *nexusTaskPoller) Cleanup() error {
-	return nil
+	return &nexusTask{task: response}, nil
 }
 
 // PollTask polls a new task
