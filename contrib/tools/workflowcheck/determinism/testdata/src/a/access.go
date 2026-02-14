@@ -3,6 +3,7 @@ package a //want package:"\\d+ non-deterministic vars/funcs"
 import (
 	"crypto/rand"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 )
@@ -25,9 +26,13 @@ func AccessesBadVar() { // want AccessesBadVar:"accesses non-deterministic var a
 	BadVar.Day()
 }
 
-//func AccessesIgnoredStderr() {
-//	os.Stderr.Write([]byte("Hello"))
-//}
+func AccessesIgnoredStderr() {
+	os.Stderr.Write([]byte("Hello"))
+}
+
+func CallsURLParse() {
+	_, _ = url.Parse("https://example.com")
+}
 
 func AccessesCryptoRandom() { // want AccessesCryptoRandom:"accesses non-deterministic var crypto/rand.Reader"
 	rand.Reader.Read(nil)

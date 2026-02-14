@@ -33,6 +33,12 @@ var DefaultIdentRefs = IdentRefs{
 	// Even though the global crypto rand reader var can be replaced, it's good
 	// to disallow it by default
 	"crypto/rand.Reader": true,
+	// Many stdlib types use finalizers that are otherwise deterministic,
+	// so we mark SetFinalizer as deterministic
+	"runtime.SetFinalizer": false,
+	// New Go versions sometimes add godebug settings to allow reverting
+	// behavior, and many stdlib functions check these settings
+	"(*internal/godebug.Setting).Value": false,
 }
 
 // IdentRefs is a map of whether the key, as a qualified type or var name, is
