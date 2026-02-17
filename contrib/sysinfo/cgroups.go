@@ -1,11 +1,10 @@
 //go:build linux
 
-package resourcetuner
+package sysinfo
 
 import (
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"strconv"
 	"strings"
@@ -27,12 +26,7 @@ type cGroupInfoImpl struct {
 func (p *cGroupInfoImpl) Update() (bool, error) {
 	err := p.updateCGroupStats()
 	// Stop updates if not in a container. No need to return the error and log it.
-	if !errors.Is(err, fs.ErrNotExist) {
-		return false, nil
-	} else if err != nil {
-		return true, err
-	}
-	return true, nil
+	return handleCGroupUpdateError(err)
 }
 
 func (p *cGroupInfoImpl) GetLastMemUsage() float64 {
@@ -49,11 +43,11 @@ func (p *cGroupInfoImpl) GetLastCPUUsage() float64 {
 func (p *cGroupInfoImpl) updateCGroupStats() error {
 	control, err := cgroup2.Load("/")
 	if err != nil {
-		return fmt.Errorf("failed to get cgroup mem stats %v", err)
+		return fmt.Errorf("failed to load cgroup: %w", err)
 	}
 	metrics, err := control.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to get cgroup mem stats %v", err)
+		return fmt.Errorf("failed to get cgroup stats: %w", err)
 	}
 	// Only update if a limit has been set
 	if metrics.Memory.UsageLimit != 0 {
@@ -62,7 +56,7 @@ func (p *cGroupInfoImpl) updateCGroupStats() error {
 
 	err = p.cgroupCpuCalc.updateCpuUsage(metrics)
 	if err != nil {
-		return fmt.Errorf("failed to get cgroup cpu usage %v", err)
+		return fmt.Errorf("failed to get cgroup cpu usage: %w", err)
 	}
 	return nil
 }

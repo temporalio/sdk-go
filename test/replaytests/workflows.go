@@ -3,6 +3,8 @@ package replaytests
 import (
 	"context"
 	"fmt"
+	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"math/rand"
 	"time"
 
@@ -739,4 +741,190 @@ func CancelNexusOperationAfterCompleteWorkflow(ctx workflow.Context) (string, er
 	_ = op.Get(opCtx, nil)
 	cancel()
 	return generateUUID(ctx, "nxs-cancel-after-complete-id")
+}
+
+// AwaitWithTimeoutNoTimerCancelWorkflow is used to test replay of old workflow histories
+// that were created before SDKFlagCancelAwaitTimerOnCondition was introduced.
+// In the old behavior, the timer is NOT cancelled when the condition becomes true.
+func AwaitWithTimeoutNoTimerCancelWorkflow(ctx workflow.Context) (bool, error) {
+	conditionMet := false
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, 100*time.Millisecond)
+		conditionMet = true
+	})
+
+	return workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return conditionMet
+	})
+}
+
+func MemoChildWorkflowGob(ctx workflow.Context, input string) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["test-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'test-memo-key' not found")
+	}
+
+	// Use strict gob converter - will fail if memo is JSON-encoded
+	var memoValue string
+	dc := iconverter.NewTestDataConverter()
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with gob converter: %w", err)
+	}
+
+	return fmt.Sprintf("child-read-memo: %s", memoValue), nil
+}
+
+func MemoEncodingWorkflowGob(ctx workflow.Context, memoValue string) (string, error) {
+	// Execute a child workflow with memo
+	cwo := workflow.ChildWorkflowOptions{
+		Memo: map[string]interface{}{
+			"test-memo-key": memoValue,
+		},
+	}
+	childCtx := workflow.WithChildOptions(ctx, cwo)
+
+	var childResult string
+	err := workflow.ExecuteChildWorkflow(childCtx, MemoChildWorkflowGob, memoValue).Get(ctx, &childResult)
+	if err != nil {
+		return "", err
+	}
+
+	// Also upsert memo in the parent workflow
+	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+		"parent-memo-key": "parent-" + memoValue,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	info := workflow.GetInfo(ctx)
+	memoPayload, ok := info.Memo.Fields["parent-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'parent-memo-key' not found")
+	}
+
+	// Use strict gob converter - will fail if memo is JSON-encoded
+	var parentMemoValue string
+	dc := iconverter.NewTestDataConverter()
+	err = dc.FromPayload(memoPayload, &parentMemoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with gob converter: %w", err)
+	}
+
+	return childResult, nil
+}
+
+func MemoChildWorkflowJSON(ctx workflow.Context) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["test-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'test-memo-key' not found")
+	}
+
+	// will fail if memo is gob-encoded
+	var memoValue string
+	dc := converter.NewJSONPayloadConverter()
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with JSON converter: %w", err)
+	}
+
+	return fmt.Sprintf("child-read-memo: %s", memoValue), nil
+}
+
+func MemoEncodingWorkflowJSON(ctx workflow.Context, memoValue string) (string, error) {
+	cwo := workflow.ChildWorkflowOptions{
+		Memo: map[string]interface{}{
+			"test-memo-key": memoValue,
+		},
+	}
+	childCtx := workflow.WithChildOptions(ctx, cwo)
+
+	var childResult string
+	err := workflow.ExecuteChildWorkflow(childCtx, MemoChildWorkflowJSON).Get(ctx, &childResult)
+	if err != nil {
+		return "", err
+	}
+
+	// Also upsert memo in the parent workflow
+	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+		"parent-memo-key": "parent-" + memoValue,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["parent-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'parent-memo-key' not found")
+	}
+
+	// will fail if memo is gob-encoded
+	var parentMemoValue string
+	dc := converter.NewJSONPayloadConverter()
+	err = dc.FromPayload(memoPayload, &parentMemoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with JSON converter: %w", err)
+	}
+
+	return childResult, nil
+}
+
+// ScheduleMemoWorkflowJSON is a workflow that validates memo passed from a schedule
+// can be decoded with JSON. This is used to test backward compatibility for
+// workflows started by schedules before the SDKFlagMemoUserDCEncode flag.
+func ScheduleMemoWorkflowJSON(ctx workflow.Context) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["schedule-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'schedule-memo-key' not found")
+	}
+
+	// will fail if memo is gob-encoded
+	var memoValue string
+	dc := converter.NewJSONPayloadConverter()
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with JSON converter: %w", err)
+	}
+
+	return fmt.Sprintf("schedule-read-memo: %s", memoValue), nil
+}
+
+// ScheduleMemoWorkflowGob is a workflow that validates memo passed from a schedule
+// can be decoded with gob. This is used to test workflows started by schedules
+// with the SDKFlagMemoUserDCEncode flag enabled.
+func ScheduleMemoWorkflowGob(ctx workflow.Context) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["schedule-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'schedule-memo-key' not found")
+	}
+
+	// Will fail if memo is JSON-encoded (when using gob data converter)
+	dc := iconverter.NewTestDataConverter()
+	var memoValue string
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with data converter: %w", err)
+	}
+
+	// Upsert memo so the SDKFlagMemoUserDCEncode flag is naturally recorded in history
+	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+		"schedule-upsert-key": memoValue,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("schedule-read-memo: %s", memoValue), nil
 }

@@ -242,12 +242,6 @@ func (p *semaphoreProbeTaskPoller) PollTask() (taskForWorker, error) {
 	return nil, nil
 }
 
-// Cleanup implements taskPoller.
-func (p *semaphoreProbeTaskPoller) Cleanup() error {
-	p.Close()
-	return nil
-}
-
 func (p *semaphoreProbeTaskPoller) Allow(n int) {
 	for range n {
 		for {

@@ -196,7 +196,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 			ScheduledEventId: 2,
 			StartedEventId:   3,
 			SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
-				LangUsedFlags: []uint32{SDKFlagLimitChangeVersionSASize},
+				LangUsedFlags: []uint32{uint32(SDKFlagLimitChangeVersionSASize)},
 				SdkName:       SDKName,
 				SdkVersion:    "1.0",
 			},

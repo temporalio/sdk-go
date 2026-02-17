@@ -15,11 +15,11 @@ require (
 	go.opentelemetry.io/otel v1.28.0
 	go.opentelemetry.io/otel/sdk v1.28.0
 	go.opentelemetry.io/otel/trace v1.28.0
-	go.temporal.io/api v1.59.0
+	go.temporal.io/api v1.62.1
 	go.temporal.io/sdk v1.29.1
+	go.temporal.io/sdk/contrib/sysinfo v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentelemetry v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
-	go.temporal.io/sdk/contrib/resourcetuner v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/tally v0.0.0-00010101000000-000000000000
 	go.uber.org/goleak v1.1.12
 	google.golang.org/grpc v1.67.1
@@ -52,7 +52,6 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/twmb/murmur3 v1.1.5 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	go.einride.tech/pid v0.1.3 // indirect
 	go.opentelemetry.io/otel/metric v1.28.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/exp v0.0.0-20240325151524-a685a6edb6d8 // indirect
@@ -68,8 +67,8 @@ require (
 
 replace (
 	go.temporal.io/sdk => ../
+	go.temporal.io/sdk/contrib/sysinfo => ../contrib/sysinfo
 	go.temporal.io/sdk/contrib/opentelemetry => ../contrib/opentelemetry
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing
-	go.temporal.io/sdk/contrib/resourcetuner => ../contrib/resourcetuner
 	go.temporal.io/sdk/contrib/tally => ../contrib/tally
 )

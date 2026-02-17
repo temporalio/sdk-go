@@ -8,10 +8,25 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// knownProfileKeys contains the TOML keys recognized for profile configuration.
+// This must be kept in sync with tomlClientConfigProfile's TOML tags.
+// See TestKnownProfileKeysInSync for validation.
+var knownProfileKeys = map[string]bool{
+	"address":   true,
+	"namespace": true,
+	"api_key":   true,
+	"tls":       true,
+	"codec":     true,
+	"grpc_meta": true,
+}
+
 // ClientConfigToTOMLOptions are options for [ClientConfig.ToTOML].
 type ClientConfigToTOMLOptions struct {
 	// Defaults to two-space indent.
 	OverrideIndent *string
+	// If non-nil, these additional fields will be serialized with each profile.
+	// Key is profile name, value is map of field name to field value.
+	AdditionalProfileFields map[string]map[string]any
 }
 
 // ToTOML converts the client config to TOML. Note, this may not be byte-for-byte exactly what may have been set in
@@ -19,38 +34,104 @@ type ClientConfigToTOMLOptions struct {
 func (c *ClientConfig) ToTOML(options ClientConfigToTOMLOptions) ([]byte, error) {
 	var conf tomlClientConfig
 	conf.fromClientConfig(c)
+
+	// Encode to TOML then decode to map for merging additional fields
 	var buf bytes.Buffer
-	enc := toml.NewEncoder(&buf)
+	if err := toml.NewEncoder(&buf).Encode(&conf); err != nil {
+		return nil, err
+	}
+	var rawConf map[string]any
+	if _, err := toml.Decode(buf.String(), &rawConf); err != nil {
+		return nil, err
+	}
+
+	// Merge additional fields into profiles
+	for profileName, additional := range options.AdditionalProfileFields {
+		profiles, _ := rawConf["profile"].(map[string]any)
+		if profiles == nil {
+			profiles = make(map[string]any)
+			rawConf["profile"] = profiles
+		}
+		profile, _ := profiles[profileName].(map[string]any)
+		if profile == nil {
+			profile = make(map[string]any)
+			profiles[profileName] = profile
+		}
+		for k, v := range additional {
+			if knownProfileKeys[k] {
+				return nil, fmt.Errorf("additional field %q in profile %q conflicts with known profile field", k, profileName)
+			}
+			profile[k] = v
+		}
+	}
+
+	// Re-encode with merged data
+	var out bytes.Buffer
+	enc := toml.NewEncoder(&out)
 	if options.OverrideIndent != nil {
 		enc.Indent = *options.OverrideIndent
 	}
-	if err := enc.Encode(&conf); err != nil {
+	if err := enc.Encode(rawConf); err != nil {
 		return nil, err
 	}
-	return buf.Bytes(), nil
+	return out.Bytes(), nil
 }
 
 type ClientConfigFromTOMLOptions struct {
 	// If true, will error if there are unrecognized keys.
 	Strict bool
+	// If non-nil, populated with additional (unrecognized) profile fields.
+	// Key is profile name, value is map of field name to field value.
+	// This allows callers to preserve custom profile fields without modifying
+	// this package. Note, if Strict is true the additional fields will cause an
+	// error before they can be captured here.
+	AdditionalProfileFields map[string]map[string]any
 }
 
 // FromTOML converts from TOML to the client config. This will replace all profiles within, it does not do any form of
 // merging.
 func (c *ClientConfig) FromTOML(b []byte, options ClientConfigFromTOMLOptions) error {
 	var conf tomlClientConfig
-	if md, err := toml.Decode(string(b), &conf); err != nil {
+	md, err := toml.Decode(string(b), &conf)
+	if err != nil {
 		return err
-	} else if options.Strict {
-		unknown := md.Undecoded()
-		if len(unknown) > 0 {
-			keys := make([]string, len(unknown))
-			for i, k := range unknown {
-				keys[i] = k.String()
+	}
+
+	undecoded := md.Undecoded()
+	if options.Strict && len(undecoded) > 0 {
+		keys := make([]string, len(undecoded))
+		for i, k := range undecoded {
+			keys[i] = k.String()
+		}
+		return fmt.Errorf("key(s) unrecognized: %v", strings.Join(keys, ", "))
+	}
+
+	// If AdditionalProfileFields is requested, extract unknown profile fields.
+	if options.AdditionalProfileFields != nil && len(undecoded) > 0 {
+		// Decode again into raw map to get additional field values
+		var rawConf struct {
+			Profiles map[string]map[string]any `toml:"profile"`
+		}
+		if _, err := toml.Decode(string(b), &rawConf); err != nil {
+			return err
+		}
+
+		for _, key := range undecoded {
+			// Skip non-profile undecoded keys (e.g., unknown top-level sections)
+			if len(key) < 3 || key[0] != "profile" {
+				continue
 			}
-			return fmt.Errorf("key(s) unrecognized: %v", strings.Join(keys, ", "))
+			profileName := key[1]
+			fieldKey := key[2]
+			if v, ok := rawConf.Profiles[profileName][fieldKey]; ok {
+				if options.AdditionalProfileFields[profileName] == nil {
+					options.AdditionalProfileFields[profileName] = make(map[string]any)
+				}
+				options.AdditionalProfileFields[profileName][fieldKey] = v
+			}
 		}
 	}
+
 	conf.applyToClientConfig(c)
 	return nil
 }

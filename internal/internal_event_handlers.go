@@ -232,7 +232,7 @@ func newWorkflowExecutionEventHandler(
 		deadlockDetectionTimeout:     deadlockDetectionTimeout,
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
-		sdkFlags:                     newSDKFlags(capabilities),
+		sdkFlags:                     newSDKFlagSet(capabilities),
 		bufferedUpdateRequests:       make(map[string][]func()),
 	}
 	// Attempt to skip 1 log level to remove the ReplayLogger from the stack.
@@ -484,7 +484,7 @@ func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*c
 
 func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{}) error {
 	// This has to be used in WorkflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
-	memo, err := validateAndSerializeMemo(memoMap, wc.dataConverter)
+	memo, err := validateAndSerializeMemo(memoMap, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		return err
 	}
@@ -520,11 +520,11 @@ func mergeMemo(current, upsert *commonpb.Memo) *commonpb.Memo {
 	return current
 }
 
-func validateAndSerializeMemo(memoMap map[string]interface{}, dc converter.DataConverter) (*commonpb.Memo, error) {
+func validateAndSerializeMemo(memoMap map[string]interface{}, dc converter.DataConverter, useUserDC bool) (*commonpb.Memo, error) {
 	if len(memoMap) == 0 {
 		return nil, errMemoNotSet
 	}
-	return getWorkflowMemo(memoMap, dc)
+	return getWorkflowMemo(memoMap, dc, useUserDC)
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
@@ -540,7 +540,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if params.WorkflowID == "" {
 		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
 	}
-	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter)
+	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -614,6 +614,8 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOper
 		Operation:              params.operation,
 		Input:                  params.input,
 		ScheduleToCloseTimeout: durationpb.New(params.options.ScheduleToCloseTimeout),
+		ScheduleToStartTimeout: durationpb.New(params.options.ScheduleToStartTimeout),
+		StartToCloseTimeout:    durationpb.New(params.options.StartToCloseTimeout),
 		NexusHeader:            params.nexusHeader,
 	}
 
@@ -932,7 +934,7 @@ func getChangeVersion(changeID string, version Version) string {
 	return fmt.Sprintf("%s-%v", changeID, version)
 }
 
-func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler) {
+func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string) {
 	sideEffectID := wc.getNextSideEffectID()
 	var result *commonpb.Payloads
 	if wc.isReplay {
@@ -961,7 +963,11 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 		}
 	}
 
-	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter)
+	userMetadata, err := buildUserMetadata(summary, "", wc.dataConverter)
+	if err != nil {
+		panic(fmt.Sprintf("failed to build user metadata for side effect: %v", err))
+	}
+	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter, userMetadata)
 
 	callback(result, nil)
 	wc.logger.Debug("SideEffect Marker added", tagSideEffectID, sideEffectID)
@@ -969,10 +975,6 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 
 func (wc *workflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 	return wc.sdkFlags.tryUse(flag, !wc.isReplay)
-}
-
-func (wc *workflowEnvironmentImpl) GetFlag(flag sdkFlag) bool {
-	return wc.sdkFlags.getFlag(flag)
 }
 
 func (wc *workflowEnvironmentImpl) QueueUpdate(name string, f func()) {
@@ -1033,7 +1035,7 @@ func (wc *workflowEnvironmentImpl) lookupMutableSideEffect(id string) *commonpb.
 	return payloads
 }
 
-func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool, summary string) converter.EncodedValue {
 	wc.mutableSideEffectCallCounter[id]++
 	callCount := wc.mutableSideEffectCallCounter[id]
 
@@ -1044,7 +1046,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 			// recorded on the next task. We have to append the current command
 			// counter to the user-provided ID to avoid duplicates.
 			if wc.mutableSideEffectsRecorded[fmt.Sprintf("%v_%v", id, wc.commandsHelper.getNextID())] {
-				return wc.recordMutableSideEffect(id, callCount, result)
+				return wc.recordMutableSideEffect(id, callCount, result, summary)
 			}
 			return encodedResult
 		}
@@ -1054,7 +1056,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 			return encodedResult
 		}
 
-		return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(newValue))
+		return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(newValue), summary)
 	}
 
 	if wc.isReplay {
@@ -1062,7 +1064,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
 	}
 
-	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()))
+	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()), summary)
 }
 
 func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOldValue *commonpb.Payloads, equals func(a, b interface{}) bool) bool {
@@ -1098,12 +1100,16 @@ func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) (*commonpb.Payload
 	return wc.GetDataConverter().ToPayloads(arg)
 }
 
-func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountHint int, data *commonpb.Payloads) converter.EncodedValue {
+func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountHint int, data *commonpb.Payloads, summary string) converter.EncodedValue {
 	details, err := encodeArgs(wc.GetDataConverter(), []interface{}{id, data})
 	if err != nil {
 		panic(err)
 	}
-	wc.commandsHelper.recordMutableSideEffectMarker(id, callCountHint, details, wc.dataConverter)
+	userMetadata, err := buildUserMetadata(summary, "", wc.dataConverter)
+	if err != nil {
+		panic(fmt.Sprintf("failed to build user metadata for mutable side effect: %v", err))
+	}
+	wc.commandsHelper.recordMutableSideEffectMarker(id, callCountHint, details, wc.dataConverter, userMetadata)
 	if wc.mutableSideEffect[id] == nil {
 		wc.mutableSideEffect[id] = make(map[int]*commonpb.Payloads)
 	}
