@@ -1533,7 +1533,7 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	}
 
 	if err != nil {
-		aw.logger.Debug("ShutdownWorker rpc errored during worker shutdown.", tagError, err)
+		aw.logger.Warn("ShutdownWorker rpc errored during worker shutdown.", tagError, err)
 	}
 }
 
