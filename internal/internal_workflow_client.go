@@ -21,6 +21,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	namespacepb "go.temporal.io/api/namespace/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	querypb "go.temporal.io/api/query/v1"
 	"go.temporal.io/api/sdk/v1"
@@ -59,24 +60,30 @@ const (
 type (
 	// WorkflowClient is the client for starting a workflow execution.
 	WorkflowClient struct {
-		workflowService          workflowservice.WorkflowServiceClient
-		conn                     *grpc.ClientConn
-		namespace                string
-		registry                 *registry
-		logger                   log.Logger
-		metricsHandler           metrics.Handler
-		identity                 string
-		dataConverter            converter.DataConverter
-		failureConverter         converter.FailureConverter
-		contextPropagators       []ContextPropagator
-		workerPlugins            []WorkerPlugin
-		workerInterceptors       []WorkerInterceptor
-		interceptor              ClientOutboundInterceptor
-		excludeInternalFromRetry *atomic.Bool
-		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
-		capabilitiesLock         sync.RWMutex
-		eagerDispatcher          *eagerWorkflowDispatcher
-		getSystemInfoTimeout     time.Duration
+		workflowService           workflowservice.WorkflowServiceClient
+		conn                      *grpc.ClientConn
+		namespace                 string
+		registry                  *registry
+		logger                    log.Logger
+		metricsHandler            metrics.Handler
+		identity                  string
+		dataConverter             converter.DataConverter
+		failureConverter          converter.FailureConverter
+		contextPropagators        []ContextPropagator
+		workerPlugins             []WorkerPlugin
+		workerInterceptors        []WorkerInterceptor
+		clientPluginNames         []string
+		interceptor               ClientOutboundInterceptor
+		excludeInternalFromRetry  *atomic.Bool
+		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
+		capabilitiesLock          sync.RWMutex
+		namespaceCapabilities     *namespacepb.NamespaceInfo_Capabilities
+		namespaceCapabilitiesLock sync.RWMutex
+		eagerDispatcher           *eagerWorkflowDispatcher
+		getSystemInfoTimeout      time.Duration
+		workerHeartbeatInterval   time.Duration
+		workerGroupingKey         string
+		heartbeatManager          *heartbeatManager
 
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
@@ -1391,6 +1398,36 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	return capabilities, nil
 }
 
+// Get namespace capabilities, lazily fetching from server if not already obtained.
+func (wc *WorkflowClient) loadNamespaceCapabilities(metricsHandler metrics.Handler) (*namespacepb.NamespaceInfo_Capabilities, error) {
+	ctx := contextWithNewHeader(context.Background())
+	wc.namespaceCapabilitiesLock.RLock()
+	capabilities := wc.namespaceCapabilities
+	wc.namespaceCapabilitiesLock.RUnlock()
+	if capabilities != nil {
+		return capabilities, nil
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(metricsHandler), defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: wc.namespace})
+	var unimplemented *serviceerror.Unimplemented
+	if err != nil && !errors.As(err, &unimplemented) {
+		return nil, fmt.Errorf("failed reaching server: %w", err)
+	}
+	if resp != nil {
+		capabilities = resp.GetNamespaceInfo().GetCapabilities()
+	}
+	if capabilities == nil {
+		capabilities = &namespacepb.NamespaceInfo_Capabilities{}
+	}
+
+	wc.namespaceCapabilitiesLock.Lock()
+	wc.namespaceCapabilities = capabilities
+	wc.namespaceCapabilitiesLock.Unlock()
+	return capabilities, nil
+}
+
 func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 	// Just loading the capabilities is enough
 	_, err := wc.loadCapabilities(ctx)
@@ -1416,6 +1453,21 @@ func (wc *WorkflowClient) WorkerDeploymentClient() WorkerDeploymentClient {
 	return &workerDeploymentClient{
 		workflowClient: wc,
 	}
+}
+
+func (wc *WorkflowClient) recordWorkerHeartbeat(ctx context.Context, request *workflowservice.RecordWorkerHeartbeatRequest) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+	resp, err := wc.workflowService.RecordWorkerHeartbeat(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
 // Close client and clean up underlying resources.

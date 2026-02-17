@@ -1,6 +1,6 @@
 //go:build linux
 
-package resourcetuner
+package sysinfo
 
 import (
 	"errors"
@@ -43,11 +43,11 @@ func (p *cGroupInfoImpl) GetLastCPUUsage() float64 {
 func (p *cGroupInfoImpl) updateCGroupStats() error {
 	control, err := cgroup2.Load("/")
 	if err != nil {
-		return fmt.Errorf("failed to get cgroup mem stats %w", err)
+		return fmt.Errorf("failed to load cgroup: %w", err)
 	}
 	metrics, err := control.Stat()
 	if err != nil {
-		return fmt.Errorf("failed to get cgroup mem stats %w", err)
+		return fmt.Errorf("failed to get cgroup stats: %w", err)
 	}
 	// Only update if a limit has been set
 	if metrics.Memory.UsageLimit != 0 {
@@ -56,7 +56,7 @@ func (p *cGroupInfoImpl) updateCGroupStats() error {
 
 	err = p.cgroupCpuCalc.updateCpuUsage(metrics)
 	if err != nil {
-		return fmt.Errorf("failed to get cgroup cpu usage %w", err)
+		return fmt.Errorf("failed to get cgroup cpu usage: %w", err)
 	}
 	return nil
 }

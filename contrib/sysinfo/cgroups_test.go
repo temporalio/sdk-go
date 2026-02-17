@@ -1,4 +1,4 @@
-package resourcetuner
+package sysinfo
 
 import (
 	"errors"
