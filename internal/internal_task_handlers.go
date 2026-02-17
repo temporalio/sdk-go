@@ -413,7 +413,7 @@ func (eh *history) getMoreEvents() (*historypb.History, error) {
 func (eh *history) verifyAllEventsProcessed() error {
 	if eh.lastEventID > 0 && eh.nextEventID <= eh.lastEventID {
 		return fmt.Errorf(
-			"[PREMEOS] history_events: premature end of stream, expectedLastEventID=%v but no more events after eventID=%v",
+			"history_events: premature end of stream, expectedLastEventID=%v but no more events after eventID=%v",
 			eh.lastEventID,
 			eh.nextEventID-1)
 	}
