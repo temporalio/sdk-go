@@ -269,7 +269,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 }
 
 func (ts *IntegrationTestSuite) TearDownTest() {
-	ts.client.Close()
+	if ts.client != nil {
+		ts.client.Close()
+	}
 	if !ts.workerStopped {
 		ts.worker.Stop()
 		ts.workerStopped = true
@@ -5124,8 +5126,9 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), client.QueryTypeStackTrace, nil)
 	ts.Error(err)
 
-	taskFailedMetric = fetchMetrics()
-	ts.True(taskFailedMetric >= 1)
+	ts.Eventually(func() bool {
+		return fetchMetrics() >= 1
+	}, 5*time.Second, 100*time.Millisecond, "expected NonDeterminismError metric to be emitted")
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
@@ -7322,6 +7325,18 @@ func (ts *IntegrationTestSuite) assertMetricCount(name string, value int64, tagF
 	ts.Equal(value, ts.metricCount(name, tagFilterKeyValue...))
 }
 
+func (ts *IntegrationTestSuite) assertMetricCountEventually(name string, value int64, tagFilterKeyValue ...string) {
+	var lastCount int64
+	for start := time.Now(); time.Since(start) <= 2*time.Second; {
+		lastCount = ts.metricCount(name, tagFilterKeyValue...)
+		if lastCount == value {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	ts.Equal(value, lastCount)
+}
+
 func (ts *IntegrationTestSuite) assertMetricCountAtLeast(name string, value int64, tagFilterKeyValue ...string) {
 	ts.GreaterOrEqual(ts.metricCount(name, tagFilterKeyValue...), value)
 }
@@ -7567,7 +7582,7 @@ func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMetric_BenignHandling() {
 
 	// Expect initial count to have incremented because the workflow failed with non-benign err.
 	currCount++
-	ts.assertMetricCount(metrics.WorkflowFailedCounter, currCount)
+	ts.assertMetricCountEventually(metrics.WorkflowFailedCounter, currCount)
 
 	runBenign, err := ts.client.ExecuteWorkflow(
 		context.Background(),
@@ -7583,7 +7598,7 @@ func (ts *IntegrationTestSuite) TestWorkflowTaskFailureMetric_BenignHandling() {
 	ts.True(errors.As(err, &appErr))
 	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
 	// Expect count to not have incremented because the workflow failed with benign err.
-	ts.assertMetricCount(metrics.WorkflowFailedCounter, currCount)
+	ts.assertMetricCountEventually(metrics.WorkflowFailedCounter, currCount)
 }
 
 func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
@@ -8184,32 +8199,31 @@ func (ts *IntegrationTestSuite) TestWorkflowCompletionMetrics() {
 	var cancelErr *temporal.CanceledError
 	ts.ErrorAs(run.Get(ctx, nil), &cancelErr)
 
-	// Check metrics
-	var compCount, failCount, contCount, cancelCount, latencyCount int
-	for _, cnt := range ts.metricsHandler.Counters() {
-		if cnt.Tags["workflow_type"] == "workflow-completion" {
-			switch cnt.Name {
-			case "temporal_workflow_completed":
-				compCount += int(cnt.Value())
-			case "temporal_workflow_failed":
-				failCount += int(cnt.Value())
-			case "temporal_workflow_continue_as_new":
-				contCount += int(cnt.Value())
-			case "temporal_workflow_canceled":
-				cancelCount += int(cnt.Value())
+	// Check metrics — use Eventually because applyCompletionMetrics runs
+	// after the RespondWorkflowTaskCompleted RPC returns.
+	ts.Eventually(func() bool {
+		var compCount, failCount, contCount, cancelCount, latencyCount int
+		for _, cnt := range ts.metricsHandler.Counters() {
+			if cnt.Tags["workflow_type"] == "workflow-completion" {
+				switch cnt.Name {
+				case "temporal_workflow_completed":
+					compCount += int(cnt.Value())
+				case "temporal_workflow_failed":
+					failCount += int(cnt.Value())
+				case "temporal_workflow_continue_as_new":
+					contCount += int(cnt.Value())
+				case "temporal_workflow_canceled":
+					cancelCount += int(cnt.Value())
+				}
 			}
 		}
-	}
-	ts.Equal(1, compCount)
-	ts.Equal(1, failCount)
-	ts.Equal(1, contCount)
-	ts.Equal(1, cancelCount)
-	for _, tim := range ts.metricsHandler.Timers() {
-		if tim.Tags["workflow_type"] == "workflow-completion" && tim.Name == "temporal_workflow_endtoend_latency" {
-			latencyCount += int(tim.Count())
+		for _, tim := range ts.metricsHandler.Timers() {
+			if tim.Tags["workflow_type"] == "workflow-completion" && tim.Name == "temporal_workflow_endtoend_latency" {
+				latencyCount += int(tim.Count())
+			}
 		}
-	}
-	ts.Equal(4, latencyCount)
+		return compCount == 1 && failCount == 1 && contCount == 1 && cancelCount == 1 && latencyCount == 4
+	}, 2*time.Second, 50*time.Millisecond, "workflow completion metrics not recorded in time")
 }
 
 func (ts *IntegrationTestSuite) TestUnhandledCommandAndMetrics() {
