@@ -1407,20 +1407,22 @@ func (s *selectorImpl) Select(ctx Context) {
 					if readyBranch != nil {
 						return false
 					}
-					// readyBranch is not executed when AddDefault is specified,
-					// setting the value here prevents the signal from being dropped
 					env := getWorkflowEnvironment(ctx)
 					dropSignalFlag := env.TryUse(SDKFlagBlockedSelectorSignalReceive)
+					channelLostMsgFlag := env.TryUse(SDKFlagWorkflowNewChannelLostMessages)
 
-					// Only store value immediately when default branch exists,
-					// otherwise store in readyBranch to avoid race when multiple
-					// selectors blocked on same channel
-					if dropSignalFlag && hasDefault {
+					// Pre-store c.recValue to prevent signal loss when AddDefault
+					// blocks. Without channelLostMsgFlag, always pre-store (original
+					// #1624 fix). With channelLostMsgFlag, only pre-store when a
+					// default branch exists to avoid overwriting c.recValue when
+					// multiple selectors are blocked on the same channel.
+					storeNow := dropSignalFlag && (!channelLostMsgFlag || hasDefault)
+					if storeNow {
 						c.recValue = &v
 					}
 
 					readyBranch = func() {
-						if !dropSignalFlag || !hasDefault {
+						if !storeNow {
 							c.recValue = &v
 						}
 						f(c, more)
