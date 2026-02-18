@@ -34,4 +34,12 @@ const (
 	tagPanicStack                   = "PanicStack"
 	tagUpdateID                     = "UpdateID"
 	tagUpdateName                   = "UpdateName"
+	tagExpectedLastEventID          = "ExpectedLastEventID"
+	tagNextEventID                  = "NextEventID"
+	tagLastHandledEventID           = "LastHandledEventID"
+	tagIsFullHistory                = "IsFullHistory"
+	tagHasMorePages                 = "HasMorePages"
+	tagEventsInPage                 = "EventsInPage"
+	tagHasNextPageToken             = "HasNextPageToken"
+	tagResetHistoryEventID          = "ResetHistoryEventID"
 )

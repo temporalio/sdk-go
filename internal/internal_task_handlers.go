@@ -234,6 +234,20 @@ func newHistory(lastHandledEventID int64, task *workflowTask, eventsHandler *wor
 	if len(result.loadedEvents) > 0 {
 		result.nextEventID = result.loadedEvents[0].GetEventId()
 	}
+	if eventsHandler != nil {
+		eventsHandler.logger.Warn("Processing workflow task history [WFTD]",
+			tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.task.WorkflowExecution.GetRunId(),
+			tagAttempt, task.task.Attempt,
+			tagLastHandledEventID, lastHandledEventID,
+			tagExpectedLastEventID, task.task.GetStartedEventId(),
+			tagPreviousStartedEventID, task.task.GetPreviousStartedEventId(),
+			"firstEventInPage", result.nextEventID,
+			"eventsInFirstPage", len(result.loadedEvents),
+			tagIsFullHistory, len(result.loadedEvents) > 0 &&
+				result.loadedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+		)
+	}
 	return result
 }
 
@@ -283,6 +297,16 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		nextEvent := eh.loadedEvents[nextIndex]
 		nextEventType := nextEvent.GetEventType()
 		isFailed := nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT || nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED
+		if isFailed && eh.eventsHandler != nil {
+			eh.eventsHandler.logger.Warn("Skipping failed/timed-out workflow task (transient task) [WFTD]",
+				tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
+				tagRunID, eh.workflowTask.task.WorkflowExecution.GetRunId(),
+				tagEventID, nextEvent.GetEventId(),
+				tagEventType, nextEvent.GetEventType().String(),
+				tagExpectedLastEventID, eh.lastEventID,
+				tagLastHandledEventID, eh.lastHandledEventID,
+			)
+		}
 		var binaryChecksum string
 		var flags []sdkFlag
 		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
@@ -412,6 +436,19 @@ func (eh *history) getMoreEvents() (*historypb.History, error) {
 
 func (eh *history) verifyAllEventsProcessed() error {
 	if eh.lastEventID > 0 && eh.nextEventID <= eh.lastEventID {
+		if eh.eventsHandler != nil {
+			eh.eventsHandler.logger.Warn("history_events: premature end of stream detected [WFTD]",
+				tagExpectedLastEventID, eh.lastEventID,
+				tagNextEventID, eh.nextEventID,
+				tagLastHandledEventID, eh.lastHandledEventID,
+				"loadedEventsRemaining", len(eh.loadedEvents)-eh.currentIndex,
+				tagHasMorePages, eh.hasMoreEvents(),
+				tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
+				tagRunID, eh.workflowTask.task.WorkflowExecution.GetRunId(),
+				tagAttempt, eh.workflowTask.task.Attempt,
+				tagPreviousStartedEventID, eh.workflowTask.task.GetPreviousStartedEventId(),
+			)
+		}
 		return fmt.Errorf(
 			"history_events: premature end of stream, expectedLastEventID=%v but no more events after eventID=%v",
 			eh.lastEventID,
@@ -806,17 +843,23 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 			if !workflowContext.IsDestroyed() {
 				// non query task and cached state is missing events, we need to discard the cached state and build a new one.
 				if len(history.Events) > 0 && history.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
-					wth.logger.Debug("Cached state staled, new task has unexpected events",
+					wth.logger.Warn("Cached state staled, new task has unexpected events [WFTD]",
 						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 						tagRunID, task.WorkflowExecution.GetRunId(),
 						tagAttempt, task.Attempt,
 						tagCachedPreviousStartedEventID, workflowContext.previousStartedEventID,
+						tagLastHandledEventID, workflowContext.lastHandledEventID,
 						tagTaskFirstEventID, task.History.Events[0].GetEventId(),
 						tagTaskStartedEventID, task.GetStartedEventId(),
 						tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
+						tagIsFullHistory, isFullHistory,
 					)
 				} else {
-					wth.logger.Debug("Cached state started on different worker, creating new context")
+					wth.logger.Warn("Cached state started on different worker, creating new context [WFTD]",
+						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+						tagRunID, task.WorkflowExecution.GetRunId(),
+						tagAttempt, task.Attempt,
+					)
 				}
 				wth.cache.removeWorkflowContext(runID)
 				workflowContext.clearState()
@@ -831,6 +874,18 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 			// we are getting partial history task, but cached state was already evicted.
 			// we need to reset history so we get events from beginning to replay/rebuild the state
 			metricsHandler.Counter(metrics.StickyCacheMiss).Inc(1)
+			var taskFirstEventID int64
+			if len(task.History.Events) > 0 {
+				taskFirstEventID = task.History.Events[0].GetEventId()
+			}
+			wth.logger.Warn("Workflow cache miss with partial history; fetching full history from start [WFTD]",
+				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+				tagRunID, task.WorkflowExecution.GetRunId(),
+				tagAttempt, task.Attempt,
+				tagTaskFirstEventID, taskFirstEventID,
+				tagTaskStartedEventID, task.GetStartedEventId(),
+				tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
+			)
 			if _, err = resetHistory(task, historyIterator); err != nil {
 				return
 			}
@@ -1490,7 +1545,7 @@ func (w *workflowExecutionContextImpl) SetPreviousStartedEventID(eventID int64) 
 
 func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) error {
 	if len(task.History.Events) > 0 && task.History.Events[0].GetEventId() != w.previousStartedEventID+1 {
-		w.wth.logger.Debug("Cached state staled, new task has unexpected events",
+		w.wth.logger.Warn("Cached state staled, new task has unexpected events [WFTD]",
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,

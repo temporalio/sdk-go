@@ -170,6 +170,7 @@ type (
 		maxEventID     int64
 		metricsHandler metrics.Handler
 		taskQueue      string
+		logger         log.Logger
 	}
 
 	localActivityTaskPoller struct {
@@ -476,6 +477,13 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 		}
 
 		if eventLevel := response.GetResetHistoryEventId(); eventLevel != 0 {
+			wtp.logger.Warn("Server dropped speculative workflow task; resetting history event ID [WFTD]",
+				tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
+				tagRunID, task.task.WorkflowExecution.GetRunId(),
+				tagAttempt, task.task.Attempt,
+				tagResetHistoryEventID, eventLevel,
+				tagCachedPreviousStartedEventID, wfctx.previousStartedEventID,
+			)
 			wfctx.SetPreviousStartedEventID(eventLevel)
 		}
 
@@ -1017,6 +1025,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 		maxEventID:     response.GetStartedEventId(),
 		metricsHandler: wtp.metricsHandler,
 		taskQueue:      wtp.taskQueueName,
+		logger:         wtp.logger,
 	}
 	task := &workflowTask{
 		task:            response,
@@ -1034,6 +1043,7 @@ func (wtp *workflowTaskProcessor) toWorkflowTask(response *workflowservice.PollW
 		maxEventID:     response.GetStartedEventId(),
 		metricsHandler: wtp.metricsHandler,
 		taskQueue:      wtp.taskQueueName,
+		logger:         wtp.logger,
 	}
 	task := &workflowTask{
 		task:            response,
@@ -1055,15 +1065,47 @@ func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 		)
 	}
 
+	isFirstPage := h.nextPageToken == nil
 	history, token, err := h.iteratorFunc(h.nextPageToken)
 	if err != nil {
+		if h.logger != nil {
+			h.logger.Warn("Failed to fetch workflow execution history page [WFTD]",
+				tagWorkflowID, h.execution.GetWorkflowId(),
+				tagRunID, h.execution.GetRunId(),
+				"isFirstPage", isFirstPage,
+				tagError, err,
+			)
+		}
 		return nil, err
 	}
 	h.nextPageToken = token
+	var lastFetchedEventID int64
+	eventsCount := 0
+	if history != nil && len(history.Events) > 0 {
+		lastFetchedEventID = history.Events[len(history.Events)-1].GetEventId()
+		eventsCount = len(history.Events)
+	}
+	if h.logger != nil {
+		h.logger.Warn("Fetched workflow execution history page [WFTD]",
+			tagWorkflowID, h.execution.GetWorkflowId(),
+			tagRunID, h.execution.GetRunId(),
+			"isFirstPage", isFirstPage,
+			tagExpectedLastEventID, h.maxEventID,
+			tagEventsInPage, eventsCount,
+			"lastEventIDInPage", lastFetchedEventID,
+			tagHasNextPageToken, token != nil,
+		)
+	}
 	return history, nil
 }
 
 func (h *historyIteratorImpl) Reset() {
+	if h.logger != nil {
+		h.logger.Warn("History iterator reset to fetch from beginning [WFTD]",
+			tagWorkflowID, h.execution.GetWorkflowId(),
+			tagRunID, h.execution.GetRunId(),
+		)
+	}
 	h.nextPageToken = nil
 }
 
