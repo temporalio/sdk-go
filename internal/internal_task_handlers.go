@@ -669,6 +669,25 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// error to indicate the close failure case. This should be a rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
 		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
+			var evictionReason string
+			switch {
+			case err != nil:
+				evictionReason = "task_error"
+			case w.err != nil:
+				evictionReason = "workflow_error"
+			case w.isWorkflowCompleted:
+				evictionReason = "workflow_completed"
+			default:
+				evictionReason = "cache_disabled"
+			}
+			w.wth.logger.Warn("Workflow cache eviction [WFTD]",
+				tagWorkflowID, w.workflowInfo.WorkflowExecution.ID,
+				tagRunID, w.workflowInfo.WorkflowExecution.RunID,
+				"evictionReason", evictionReason,
+				tagLastHandledEventID, w.lastHandledEventID,
+				"cachedPreviousStartedEventID", w.previousStartedEventID,
+				tagError, err,
+			)
 			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
 			w.cached = false
 		}
@@ -703,6 +722,12 @@ func (w *workflowExecutionContextImpl) onEviction() {
 	// Eviction on error or on workflow complete is normal and expected.
 	if w.err == nil && !w.isWorkflowCompleted {
 		w.wth.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
+		w.wth.logger.Warn("Workflow cache LRU forced eviction [WFTD]",
+			tagWorkflowID, w.workflowInfo.WorkflowExecution.ID,
+			tagRunID, w.workflowInfo.WorkflowExecution.RunID,
+			tagLastHandledEventID, w.lastHandledEventID,
+			"cachedPreviousStartedEventID", w.previousStartedEventID,
+		)
 	}
 
 	w.clearState()
