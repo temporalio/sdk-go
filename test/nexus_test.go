@@ -606,6 +606,9 @@ func TestSyncOperationFromWorkflow(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if !tc.disableTemporalFailureResp && os.Getenv("DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS") != "" {
+				t.SkipNow()
+			}
 			// Set the debug flag for this test case
 			internal.SetDebugDisableTemporalFailureResponses(tc.disableTemporalFailureResp)
 			defer internal.SetDebugDisableTemporalFailureResponses(false)
