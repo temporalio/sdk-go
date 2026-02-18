@@ -235,6 +235,8 @@ func newHistory(lastHandledEventID int64, task *workflowTask, eventsHandler *wor
 		result.nextEventID = result.loadedEvents[0].GetEventId()
 	}
 	if eventsHandler != nil {
+		isFullHistoryVal := len(result.loadedEvents) > 0 &&
+			result.loadedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED
 		eventsHandler.logger.Warn("Processing workflow task history [WFTD]",
 			tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.task.WorkflowExecution.GetRunId(),
@@ -244,9 +246,27 @@ func newHistory(lastHandledEventID int64, task *workflowTask, eventsHandler *wor
 			tagPreviousStartedEventID, task.task.GetPreviousStartedEventId(),
 			"firstEventInPage", result.nextEventID,
 			"eventsInFirstPage", len(result.loadedEvents),
-			tagIsFullHistory, len(result.loadedEvents) > 0 &&
-				result.loadedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED,
+			tagIsFullHistory, isFullHistoryVal,
+			tagHasNextPageToken, len(task.task.NextPageToken) > 0,
 		)
+		// Detect the case where the server sent partial history that ends before StartedEventId
+		// with no next-page token — the SDK has no way to fetch the missing events.
+		// This typically means the server omitted the transient WFT scheduled+started events
+		// from the poll response (gap of 2 = speculative task events not appended).
+		if !isFullHistoryVal && task.task.GetStartedEventId() > 0 &&
+			len(task.task.NextPageToken) == 0 && len(result.loadedEvents) > 0 {
+			lastLoaded := result.loadedEvents[len(result.loadedEvents)-1].GetEventId()
+			if gap := task.task.GetStartedEventId() - lastLoaded; gap > 0 {
+				eventsHandler.logger.Warn("History page ends before StartedEventId with no next page token; server may have omitted transient WFT events [WFTD]",
+					tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
+					tagRunID, task.task.WorkflowExecution.GetRunId(),
+					"lastLoadedEventID", lastLoaded,
+					tagExpectedLastEventID, task.task.GetStartedEventId(),
+					"gapSize", gap,
+					"likelySpeculativeGap", gap == 2,
+				)
+			}
+		}
 	}
 	return result
 }
@@ -885,6 +905,7 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 				tagTaskFirstEventID, taskFirstEventID,
 				tagTaskStartedEventID, task.GetStartedEventId(),
 				tagPreviousStartedEventID, task.GetPreviousStartedEventId(),
+				tagHasNextPageToken, len(task.NextPageToken) > 0,
 			)
 			if _, err = resetHistory(task, historyIterator); err != nil {
 				return
