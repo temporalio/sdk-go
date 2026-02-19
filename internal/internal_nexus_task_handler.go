@@ -286,8 +286,9 @@ func (h *nexusTaskHandler) handleStartOperation(
 		}
 		// Default to internal error.
 		return nil, &nexus.HandlerError{
-			Type:  nexus.HandlerErrorTypeInternal,
-			Cause: err,
+			Type:    nexus.HandlerErrorTypeInternal,
+			Message: err.Error(),
+			Cause:   err,
 		}, nil
 	}
 	switch t := opres.(type) {

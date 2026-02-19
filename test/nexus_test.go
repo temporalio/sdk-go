@@ -2078,7 +2078,7 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 		case "ok":
 			return outcome, nil
 		case "operation-failed":
-			return "", nexus.NewOperationFailedError("test operation failed")
+			return "", nexus.NewOperationFailedErrorf("test operation failed")
 		case "operation-failed-cause":
 			return "", &nexus.OperationError{
 				Message: "test operation failed with cause",
@@ -2086,7 +2086,7 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 				State:   nexus.OperationStateFailed,
 			}
 		case "operation-canceled":
-			return "", nexus.NewOperationCanceledError("test operation canceled")
+			return "", nexus.NewOperationCanceledErrorf("test operation canceled")
 		case "operation-canceled-cause":
 			return "", &nexus.OperationError{
 				Message: "test operation canceled with cause",
@@ -2094,7 +2094,7 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 				State:   nexus.OperationStateCanceled,
 			}
 		case "handler-error":
-			return "", nexus.HandlerErrorf(nexus.HandlerErrorTypeBadRequest, "test operation failed")
+			return "", nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "test operation failed")
 		}
 		panic(fmt.Errorf("invalid outcome: %q", outcome))
 	})
@@ -2232,10 +2232,7 @@ func TestWorkflowTestSuite_NexusSyncOperation(t *testing.T) {
 				var handlerErr *nexus.HandlerError
 				require.ErrorAs(t, err, &handlerErr)
 				require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
-				err = handlerErr.Unwrap()
-				var appErr *temporal.ApplicationError
-				require.ErrorAs(t, err, &appErr)
-				require.Equal(t, "test operation failed", appErr.Message())
+				require.Equal(t, "test operation failed", handlerErr.Message)
 			},
 		},
 	}
