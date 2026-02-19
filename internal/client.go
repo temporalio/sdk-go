@@ -501,6 +501,9 @@ type (
 
 		// Close client and clean up underlying resources.
 		Close()
+
+		// Namespace returns the configured namespace of the Temporal client
+		Namespace() string
 	}
 
 	// ClientOptions are optional parameters for Client creation.
