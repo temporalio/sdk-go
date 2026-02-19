@@ -470,7 +470,7 @@ func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Respo
 		} else {
 			return nil, fmt.Errorf("cannot convert failure to operation error without failure reason support")
 		}
-		failure, err := h.temporalFailureToNexusFailure(convertUnsupportedFailures(f.GetCause()))
+		failure, err := h.temporalFailureToNexusFailure(f.GetCause())
 		if err != nil {
 			return nil, err
 		}
@@ -515,72 +515,10 @@ func (h *nexusTaskHandler) fillInFailure(taskToken []byte, handlerError *nexus.H
 var nexusFailureTypeString = string((&failurepb.Failure{}).ProtoReflect().Descriptor().FullName())
 var nexusFailureMetadata = map[string]string{"type": nexusFailureTypeString}
 
-// convertUnsupportedFailures walks the failure chain and converts unsupported failure types
-// to ApplicationFailureInfo when failureReasonSupport is false.
-func convertUnsupportedFailures(failure *failurepb.Failure) *failurepb.Failure {
-	if failure == nil {
-		return nil
-	}
-
-	// Recursively process the cause chain first
-	if failure.Cause != nil {
-		failure.Cause = convertUnsupportedFailures(failure.Cause)
-	}
-
-	// If the current failure type is not supported, convert it to ApplicationFailureInfo
-	if !isSupportedFailureType(failure) {
-		failureType := deriveFailureType(failure)
-		failure.FailureInfo = &failurepb.Failure_ApplicationFailureInfo{
-			ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
-				Type:         failureType,
-				NonRetryable: false,
-			},
-		}
-	}
-
-	return failure
-}
-
-// deriveFailureType derives a type string from the failure's FailureInfo type
-func deriveFailureType(failure *failurepb.Failure) string {
-	if failure == nil || failure.FailureInfo == nil {
-		return "UnknownFailure"
-	}
-
-	return string(failure.ProtoReflect().WhichOneof(failure.ProtoReflect().Descriptor().Oneofs().ByName("failure_info")).Name())
-}
-
-// isSupportedFailureType checks if a failure type is in the supported list
-func isSupportedFailureType(failure *failurepb.Failure) bool {
-	if failure == nil || failure.FailureInfo == nil {
-		return true
-	}
-
-	switch failure.FailureInfo.(type) {
-	case *failurepb.Failure_ApplicationFailureInfo,
-		*failurepb.Failure_TimeoutFailureInfo,
-		*failurepb.Failure_CanceledFailureInfo,
-		*failurepb.Failure_TerminatedFailureInfo,
-		*failurepb.Failure_ServerFailureInfo,
-		*failurepb.Failure_ResetWorkflowFailureInfo,
-		*failurepb.Failure_ActivityFailureInfo,
-		*failurepb.Failure_ChildWorkflowExecutionFailureInfo,
-		*failurepb.Failure_NexusOperationExecutionFailureInfo,
-		*failurepb.Failure_NexusHandlerFailureInfo:
-		return true
-	default:
-		return false
-	}
-}
-
 func (h *nexusTaskHandler) errorToFailure(err error, failureReasonSupport bool) (*nexuspb.Failure, error) {
 	failure := h.failureConverter.ErrorToFailure(err)
 	if failure == nil {
 		return nil, nil
-	}
-
-	if !failureReasonSupport {
-		failure = convertUnsupportedFailures(failure)
 	}
 
 	message := failure.Message
