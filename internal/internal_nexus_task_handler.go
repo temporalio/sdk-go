@@ -502,7 +502,7 @@ func (h *nexusTaskHandler) fillInFailure(taskToken []byte, handlerError *nexus.H
 	if failureReasonSupport {
 		r.Failure = h.failureConverter.ErrorToFailure(handlerError)
 	} else {
-		he, err := h.nexusHandlerErrorToProto(handlerError, failureReasonSupport)
+		he, err := h.nexusHandlerErrorToProto(handlerError)
 		if err != nil {
 			return nil, err
 		}
@@ -515,7 +515,7 @@ func (h *nexusTaskHandler) fillInFailure(taskToken []byte, handlerError *nexus.H
 var nexusFailureTypeString = string((&failurepb.Failure{}).ProtoReflect().Descriptor().FullName())
 var nexusFailureMetadata = map[string]string{"type": nexusFailureTypeString}
 
-func (h *nexusTaskHandler) errorToFailure(err error, failureReasonSupport bool) (*nexuspb.Failure, error) {
+func (h *nexusTaskHandler) errorToFailure(err error) (*nexuspb.Failure, error) {
 	failure := h.failureConverter.ErrorToFailure(err)
 	if failure == nil {
 		return nil, nil
@@ -551,8 +551,8 @@ func (h *nexusTaskHandler) temporalFailureToNexusFailure(failure *failurepb.Fail
 	}, nil
 }
 
-func (h *nexusTaskHandler) nexusHandlerErrorToProto(handlerErr *nexus.HandlerError, failureReasonSupport bool) (*nexuspb.HandlerError, error) {
-	failure, err := h.errorToFailure(handlerErr.Cause, failureReasonSupport)
+func (h *nexusTaskHandler) nexusHandlerErrorToProto(handlerErr *nexus.HandlerError) (*nexuspb.HandlerError, error) {
+	failure, err := h.errorToFailure(handlerErr.Cause)
 	if err != nil {
 		return nil, err
 	}
