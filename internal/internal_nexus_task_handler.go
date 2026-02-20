@@ -593,6 +593,7 @@ func convertKnownErrors(err error) error {
 	if appErr, ok := err.(*ApplicationError); ok && appErr.NonRetryable() {
 		return &nexus.HandlerError{
 			Type:          nexus.HandlerErrorTypeInternal,
+			Message:       "Handler failed with non-retryable application error",
 			Cause:         appErr,
 			RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable,
 		}
