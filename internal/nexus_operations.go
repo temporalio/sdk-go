@@ -289,9 +289,10 @@ func temporalFailureToNexusFailure(failure *failurepb.Failure) (*nexus.Failure, 
 	failure.Message = message
 	failure.StackTrace = stackTrack
 	return &nexus.Failure{
-		Message:  message,
-		Metadata: nexusFailureMetadata,
-		Details:  b,
+		Message:    message,
+		StackTrace: stackTrack,
+		Metadata:   nexusFailureMetadata,
+		Details:    b,
 	}, nil
 
 }
