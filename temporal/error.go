@@ -189,7 +189,7 @@ func NewNonRetryableApplicationError(message, errType string, cause error, detai
 }
 
 // CanceledErrorOptions should be used to set all the desired attributes of a new CanceledError
-// To get a new instance use CanceledErrorAttributes function
+// To get a new instance use CanceledErrorAttributes function.
 type CanceledErrorOptions = internal.CanceledErrorOptions
 
 // NewCanceledError creates CanceledError instance.
