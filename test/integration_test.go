@@ -5119,14 +5119,18 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
 
-	// Increase the determinism counter and query to trigger replay non-determinism.
+	// Increase the determinism counter and send a tick to trigger replay
+	// non-determinism
 	forcedNonDeterminismCounter++
-	var queryErr error
+
+	// Sleep a little, to hopefully reduce race of querying before the worker has fully started
+	time.Sleep(100 * time.Millisecond)
+	_, err = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), client.QueryTypeStackTrace, nil)
+	ts.Error(err)
+
 	ts.Eventually(func() bool {
-		_, queryErr = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), client.QueryTypeStackTrace, nil)
 		return fetchMetrics() >= 1
 	}, 5*time.Second, 100*time.Millisecond, "expected NonDeterminismError metric to be emitted")
-	ts.Error(queryErr)
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
