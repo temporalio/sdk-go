@@ -8695,7 +8695,8 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 	var activities Activities
 
 	activityResultChan := make(chan string)
-	readFromChannelActivity := func() (string, error) {
+	readFromChannelActivity := func(delay time.Duration) (string, error) {
+		time.Sleep(delay)
 		return <-activityResultChan, nil
 	}
 	ts.worker.RegisterActivityWithOptions(readFromChannelActivity, activity.RegisterOptions{Name: "readFromChannelActivity"})
@@ -8711,7 +8712,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
-		handle, err := ts.client.ExecuteActivity(ctx, options, "readFromChannelActivity")
+		handle, err := ts.client.ExecuteActivity(ctx, options, "readFromChannelActivity", 100*time.Millisecond)
 		ts.NoError(err)
 		ts.Equal(options.ID, handle.GetID())
 		ts.NotEmpty(handle.GetRunID())
@@ -8737,8 +8738,6 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		ts.NoError(err)
 		ts.Equal(options.Details, details)
 
-		// ensure measurable amount of time passes, then complete activity
-		time.Sleep(100 * time.Millisecond)
 		activityResultChan <- ""
 		err = handle.Get(ctx, nil)
 		ts.NoError(err)
@@ -8758,7 +8757,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 	ts.Run("Wait for activity result", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
-		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "readFromChannelActivity")
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "readFromChannelActivity", time.Duration(0))
 		ts.NoError(err)
 
 		receivedResultChan := make(chan string)
@@ -8921,7 +8920,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 	ts.Run("Activity result timeout", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
-		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "readFromChannelActivity")
+		handle, err := ts.client.ExecuteActivity(ctx, makeOptions(), "readFromChannelActivity", time.Duration(0))
 		ts.NoError(err)
 
 		getCtx, getCancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
@@ -8930,5 +8929,24 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		var serviceErr *serviceerror.DeadlineExceeded
 		ts.True(errors.Is(err, context.DeadlineExceeded) || errors.As(err, &serviceErr))
 		activityResultChan <- "" // allow activity to complete
+	})
+
+	// Verifies that handle.Get() can wait longer than the internal gRPC
+	// per-RPC timeout (defaultRPCTimeout = 10s).
+	ts.Run("Polling does not cease prematurely", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		options := makeOptions()
+		options.ScheduleToCloseTimeout = 60 * time.Second
+		handle, err := ts.client.ExecuteActivity(ctx, options, "readFromChannelActivity", 15*time.Second)
+		ts.NoError(err)
+
+		go func() { activityResultChan <- "done" }()
+
+		var result string
+		err = handle.Get(ctx, &result)
+		ts.NoError(err, "handle.Get() should survive beyond the 10s internal gRPC timeout")
+		ts.Equal("done", result)
 	})
 }
