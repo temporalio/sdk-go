@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.temporal.io/sdk/internal/common/retry"
@@ -82,7 +83,8 @@ type (
 		// tracks timestamp for last poll request, for worker heartbeating
 		pollTimeTracker *pollTimeTracker
 		// Unique identifier for worker
-		workerInstanceKey string
+		workerInstanceKey    string
+		gracefulPollShutdown *atomic.Bool
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -290,6 +292,18 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		close(doneC)
 	}()
 
+	if bp.gracefulPollShutdown != nil && bp.gracefulPollShutdown.Load() {
+		// Don't kill the gRPC stream. After ShutdownWorker, the server returns empty responses.
+		select {
+		case <-doneC:
+			return result, err
+		case <-bp.stopC:
+			<-doneC
+			return result, err
+		}
+	}
+
+	// Legacy: cancel in-flight polls immediately on shutdown
 	select {
 	case <-doneC:
 		return result, err
@@ -328,6 +342,7 @@ func newWorkflowTaskProcessor(
 			capabilities:            params.capabilities,
 			pollTimeTracker:         params.pollTimeTracker,
 			workerInstanceKey:       params.workerInstanceKey,
+			gracefulPollShutdown:    params.gracefulPollShutdown,
 		},
 		service:                      service,
 		namespace:                    params.Namespace,
@@ -1134,6 +1149,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			capabilities:            params.capabilities,
 			pollTimeTracker:         params.pollTimeTracker,
 			workerInstanceKey:       params.workerInstanceKey,
+			gracefulPollShutdown:    params.gracefulPollShutdown,
 		},
 		taskHandler:         taskHandler,
 		service:             service,
