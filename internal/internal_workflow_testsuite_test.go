@@ -4828,3 +4828,90 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLost() {
 	s.True(errors.As(err, &workflowErr))
 	s.Equal("deadline exceeded (type: ScheduleToClose)", workflowErr.cause.Error())
 }
+
+func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
+	origBlockedSelectorSignalReceive := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
+	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = origBlockedSelectorSignalReceive }()
+
+	// Two workers listening on the same channel with multiple items sent quickly.
+	workflowFn := func(ctx Context) ([]int, error) {
+		ch := NewChannel(ctx)
+		var received []int
+
+		Go(ctx, func(ctx Context) {
+			ch.Send(ctx, 1)
+			ch.Send(ctx, 2)
+			ch.Send(ctx, 3)
+			ch.Close()
+		})
+
+		// Two workers both selecting on the same channel
+		wg := NewWaitGroup(ctx)
+		wg.Add(2)
+		for i := 0; i < 2; i++ {
+			Go(ctx, func(ctx Context) {
+				defer wg.Done()
+				for {
+					selector := NewSelector(ctx)
+					done := false
+					selector.AddReceive(ch, func(c ReceiveChannel, more bool) {
+						if more {
+							var v int
+							c.Receive(ctx, &v)
+							received = append(received, v)
+						} else {
+							done = true
+						}
+					})
+					selector.Select(ctx)
+					if done {
+						break
+					}
+				}
+			})
+		}
+
+		wg.Wait(ctx)
+
+		return received, nil
+	}
+
+	s.Run("BuggyBehavior", func() {
+		origChannelLostMsg := sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages]
+		sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = false
+		defer func() { sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg }()
+
+		env := s.NewTestWorkflowEnvironment()
+		env.ExecuteWorkflow(workflowFn)
+
+		s.True(env.IsWorkflowCompleted())
+		s.NoError(env.GetWorkflowError())
+		var received []int
+		s.NoError(env.GetWorkflowResult(&received))
+		// Without the fix: when multiple selector callbacks fire for the same
+		// channel, each sets c.recValue immediately, overwriting the previous
+		// value. The overwritten callback's readyBranch then finds c.recValue
+		// already consumed, falls through to the closed channel, and receives
+		// a zero value instead of the original item.
+		s.Len(received, 3)
+		s.ElementsMatch([]int{1, 3, 0}, received)
+	})
+
+	s.Run("FixedBehavior", func() {
+		origChannelLostMsg := sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages]
+		sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = true
+		defer func() { sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg }()
+
+		env := s.NewTestWorkflowEnvironment()
+		env.ExecuteWorkflow(workflowFn)
+
+		s.True(env.IsWorkflowCompleted())
+		s.NoError(env.GetWorkflowError())
+		var received []int
+		s.NoError(env.GetWorkflowResult(&received))
+		// With the fix: each callback's value is stored in its own readyBranch closure
+		s.Len(received, 3)
+		s.ElementsMatch([]int{1, 2, 3}, received)
+	})
+}
