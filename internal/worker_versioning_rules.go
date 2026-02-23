@@ -370,10 +370,13 @@ func versioningAssignmentRuleToProto(rule *VersioningAssignmentRule) *taskqueuep
 
 	switch r := rule.Ramp.(type) {
 	case *VersioningRampByPercentage:
-		result.Ramp = &taskqueuepb.BuildIdAssignmentRule_PercentageRamp{
-			PercentageRamp: &taskqueuepb.RampByPercentage{
-				RampPercentage: r.Percentage,
-			},
+		// Ramp is optional, checking for typed `nil`
+		if r != nil {
+			result.Ramp = &taskqueuepb.BuildIdAssignmentRule_PercentageRamp{
+				PercentageRamp: &taskqueuepb.RampByPercentage{
+					RampPercentage: r.Percentage,
+				},
+			}
 		}
 	}
 
@@ -481,8 +484,10 @@ func (r *VersioningAssignmentRule) validateRule() error {
 	}
 	switch ramp := r.Ramp.(type) {
 	case *VersioningRampByPercentage:
-		if err := ramp.validateRamp(); err != nil {
-			return err
+		if ramp != nil {
+			if err := ramp.validateRamp(); err != nil {
+				return err
+			}
 		}
 		// Ramp is optional, defaults to "nothing to validate"
 	}
