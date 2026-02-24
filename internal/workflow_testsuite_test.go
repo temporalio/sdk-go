@@ -1266,6 +1266,8 @@ func TestRequestCancelExternalWorkflowInSelector(t *testing.T) {
 	env.ExecuteWorkflow(SleepThenCancel)
 	require.NoError(t, env.GetWorkflowError())
 	env.IsWorkflowCompleted()
+}
+
 func checkActivityInfo(ctx context.Context, isWorkflowActivity bool) error {
 	info := GetActivityInfo(ctx)
 	if isWorkflowActivity {
