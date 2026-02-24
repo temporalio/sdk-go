@@ -297,10 +297,10 @@ func temporalFailureToNexusFailure(failure *failurepb.Failure) (*nexus.Failure, 
 
 }
 
-// nexusFailureToAPIFailure converts a Nexus Failure to an API proto Failure.
+// nexusFailureToTemporalFailure converts a Nexus Failure to an API proto Failure.
 // If the failure metadata "type" field is set to the fullname of the temporal API Failure message, the failure is
 // reconstructed using protojson.Unmarshal on the failure details field.
-func nexusFailureToAPIFailure(failure nexus.Failure, retryable bool) (*failurepb.Failure, error) {
+func nexusFailureToTemporalFailure(failure nexus.Failure, retryable bool) (*failurepb.Failure, error) {
 	apiFailure := &failurepb.Failure{}
 
 	if failure.Metadata != nil && failure.Metadata["type"] == failureTypeString {
@@ -373,7 +373,7 @@ func apiHandlerErrorToNexusHandlerError(apiErr *nexuspb.HandlerError, failureCon
 		RetryBehavior: retryBehavior,
 	}
 
-	failure, err := nexusFailureToAPIFailure(protoFailureToNexusFailure(apiErr.GetFailure()), nexusErr.Retryable())
+	failure, err := nexusFailureToTemporalFailure(protoFailureToNexusFailure(apiErr.GetFailure()), nexusErr.Retryable())
 	if err != nil {
 		return nil, err
 	}
@@ -393,7 +393,7 @@ func operationErrorToTemporalFailure(opErr *nexus.OperationError) (*failurepb.Fa
 	// Canceled must be translated into a CanceledFailure to match the SDK expectation.
 	if opErr.State == nexus.OperationStateCanceled {
 		if nexusFailure.Metadata != nil && nexusFailure.Metadata["type"] == failureTypeString {
-			temporalFailure, err := nexusFailureToAPIFailure(nexusFailure, false)
+			temporalFailure, err := nexusFailureToTemporalFailure(nexusFailure, false)
 			if err != nil {
 				return nil, err
 			}
@@ -418,7 +418,7 @@ func operationErrorToTemporalFailure(opErr *nexus.OperationError) (*failurepb.Fa
 		}, nil
 	}
 
-	return nexusFailureToAPIFailure(nexusFailure, false)
+	return nexusFailureToTemporalFailure(nexusFailure, false)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////

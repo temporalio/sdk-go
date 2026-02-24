@@ -464,7 +464,7 @@ func Test_CanceledErrorWithOptions(t *testing.T) {
 
 	// Test with details
 	err = NewCanceledErrorWithOptions(CanceledErrorOptions{
-		Details: []interface{}{testErrorDetails1, testErrorDetails2},
+		Details: []any{testErrorDetails1, testErrorDetails2},
 	})
 	require.True(t, errors.As(err, &canceledErr))
 	require.True(t, canceledErr.HasDetails())
@@ -1109,10 +1109,11 @@ func Test_convertErrorToFailure_NexusHandlerError(t *testing.T) {
 
 	f := fc.ErrorToFailure(&nexus.HandlerError{
 		Type:          nexus.HandlerErrorTypeInternal,
+		Message:       "custom message",
 		Cause:         errors.New("custom cause"),
 		RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable,
 	})
-	require.Equal("handler error (INTERNAL)", f.GetMessage())
+	require.Equal("custom message", f.GetMessage())
 	require.Equal(string(nexus.HandlerErrorTypeInternal), f.GetNexusHandlerFailureInfo().Type)
 	require.Equal(enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE, f.GetNexusHandlerFailureInfo().RetryBehavior)
 	require.Equal("", f.Cause.GetApplicationFailureInfo().Type)
@@ -1123,7 +1124,7 @@ func Test_convertErrorToFailure_NexusHandlerError(t *testing.T) {
 	require.ErrorAs(err, &handlerErr)
 	require.Equal(nexus.HandlerErrorTypeInternal, handlerErr.Type)
 	require.Equal(nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
-	require.Equal("handler error (INTERNAL)", handlerErr.Error())
+	require.Equal("handler error (INTERNAL): custom message", handlerErr.Error())
 
 	var applicationErr *ApplicationError
 	require.ErrorAs(handlerErr.Cause, &applicationErr)
@@ -1483,11 +1484,11 @@ func TestHandlerError_EncodeCommonAttributes_MultipleRoundTrips(t *testing.T) {
 	require.Equal(t, "Encoded failure", failure1.GetMessage(), "Round 1: message should be encoded")
 	require.Equal(t, "", failure1.GetStackTrace(), "Round 1: stack trace should be cleared")
 
-	// Round 2: Failure -> HandlerError (with decoding)
+	// Round 2: Failure -> HandlerError (without decoding)
 	err2 := middleConverter.FailureToError(failure1)
 	require.NotNil(t, err2)
-	he2, ok := err2.(*nexus.HandlerError)
-	require.True(t, ok, "Round 2: should be HandlerError")
+	var he2 *nexus.HandlerError
+	require.ErrorAs(t, err2, &he2)
 	require.Equal(t, "Encoded failure", he2.Message, "Round 2: message should stay encoded")
 	require.Empty(t, he2.StackTrace, "Round 2: stack trace should be empty")
 	require.NotNil(t, he2.OriginalFailure)
@@ -1503,8 +1504,8 @@ func TestHandlerError_EncodeCommonAttributes_MultipleRoundTrips(t *testing.T) {
 	// Round 4: Failure -> HandlerError (with decoding)
 	err4 := encodingConverter.FailureToError(failure3)
 	require.NotNil(t, err4)
-	he4, ok := err4.(*nexus.HandlerError)
-	require.True(t, ok, "Round 4: should be HandlerError")
+	var he4 *nexus.HandlerError
+	require.ErrorAs(t, err4, &he4)
 	require.Equal(t, "original message", he4.Message, "Round 4: message should be decoded")
 	require.Equal(t, "original stack trace", he4.StackTrace, "Round 4: stack trace should be decoded")
 	require.Equal(t, nexus.HandlerErrorType("user"), he4.Type)

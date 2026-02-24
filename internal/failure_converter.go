@@ -166,7 +166,9 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
 	case *nexus.HandlerError:
 		if err.OriginalFailure != nil {
-			f, err := nexusFailureToAPIFailure(*err.OriginalFailure, true)
+			f, err := nexusFailureToTemporalFailure(*err.OriginalFailure, true)
+			// If there was an error converting the original failure, we will ignore it 
+			// since we don't want to fail the entire conversion just because we couldn't convert the original failure. 
 			if err == nil {
 				return f
 			}
@@ -184,6 +186,7 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusHandlerFailureInfo{NexusHandlerFailureInfo: failureInfo}
 		failure.StackTrace = err.StackTrace
+		// Copy the message if present, if not we will keep the default message set above
 		if len(err.Message) > 0 {
 			failure.Message = err.Message
 		}

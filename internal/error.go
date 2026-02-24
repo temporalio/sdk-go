@@ -150,7 +150,7 @@ type (
 		// Defaults to "canceled" if not set.
 		Message string
 		// Details is a list of arbitrary values that can be used to provide additional context to the error.
-		Details []interface{}
+		Details []any
 		// Cause is the original error that caused this error.
 		Cause error
 	}
