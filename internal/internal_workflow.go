@@ -549,6 +549,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			state.unblocked()
 
 			r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
+			fmt.Printf("HERE %+v\n", r.error)
 			rpp := getWorkflowResultPointerPointer(ctx)
 			*rpp = r
 		}, getWorkflowEnvironment(rootCtx).DrainUnhandledUpdates)
@@ -718,6 +719,7 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 		env.GetLogger().Warn(unhandledUpdateWarningMessage, "Updates", updatesToWarn)
 	}
 
+	fmt.Printf("XXX %+v\n", rp.error)
 	env.Complete(rp.workflowResult, rp.error)
 }
 
