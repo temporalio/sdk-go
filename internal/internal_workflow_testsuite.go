@@ -2465,9 +2465,11 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 		// the workflowCancelHandler. A larger refactor would be needed to handle this similar to non-test code.
 		// Maybe worth doing when https://github.com/temporalio/go-sdk/issues/50 is tackled.
 		if sd, ok := env.workflowDef.(*syncWorkflowDefinition); ok && env.isChildWorkflow() {
-			sd.dispatcher.NewCoroutine(sd.rootCtx, "cancel-self", true, func(ctx Context) {
-				cancelFunc()
-			})
+			if !sd.dispatcher.IsClosed() {
+				sd.dispatcher.NewCoroutine(sd.rootCtx, "cancel-self", true, func(ctx Context) {
+					cancelFunc()
+				})
+			}
 		} else {
 			cancelFunc()
 		}
