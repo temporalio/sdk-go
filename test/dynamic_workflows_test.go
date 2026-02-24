@@ -158,7 +158,7 @@ func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivityWithVersioni
 	deploymentName := "deploy-test-" + uuid.NewString()
 	v1 := worker.WorkerDeploymentVersion{
 		DeploymentName: deploymentName,
-		BuildId:        "1.0",
+		BuildID:        "1.0",
 	}
 	w := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
@@ -195,7 +195,7 @@ func (ts *DynamicWorkflowTestSuite) TestBasicDynamicWorkflowActivityWithVersioni
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
-		BuildID:       v1.BuildId,
+		BuildID:       v1.BuildID,
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)

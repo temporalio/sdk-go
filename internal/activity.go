@@ -25,13 +25,22 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/activity.Info]
 	ActivityInfo struct {
-		TaskToken              []byte
-		WorkflowType           *WorkflowType
-		WorkflowNamespace      string
+		TaskToken    []byte
+		WorkflowType *WorkflowType
+		// Namespace of the workflow that started this activity. Empty if this activity was not started by a workflow.
+		// If present, the value is always the same as Namespace since workflows can only run activities in their own
+		// namespace.
+		//
+		// Deprecated: use Namespace instead.
+		WorkflowNamespace string
+		// Execution details of the workflow that started this activity. All fields are empty if this activity was not
+		// started by a workflow.
 		WorkflowExecution      WorkflowExecution
 		ActivityID             string
+		ActivityRunID          string // Run ID of the activity. Empty if the activity was started by a workflow.
 		ActivityType           ActivityType
 		TaskQueue              string
+		Namespace              string        // Namespace of this activity.
 		HeartbeatTimeout       time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
 		ScheduleToCloseTimeout time.Duration // Schedule to close timeout set by the activity options.
 		StartToCloseTimeout    time.Duration // Start to close timeout set by the activity options.
@@ -45,6 +54,10 @@ type (
 		//
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
+		// Retry policy for the activity. Note that the server may have set a different policy than the one provided
+		// when scheduling the activity. If the value is nil, it means the server didn't send information about
+		// retry policy (e.g. due to old server version), but it may still be defined server-side.
+		RetryPolicy *RetryPolicy
 	}
 
 	// RegisterActivityOptions consists of options for registering an activity.
@@ -142,7 +155,8 @@ type (
 
 		// VersioningIntent - Specifies whether this activity should run on a worker with a compatible
 		// build ID or not. See temporal.VersioningIntent.
-		// WARNING: Worker versioning is currently experimental
+		//
+		// Deprecated: Use Worker Deployment Versioning instead. See https://docs.temporal.io/worker-versioning
 		VersioningIntent VersioningIntent
 
 		// Summary is a single-line summary for this activity that will appear in UI/CLI. This can be
@@ -189,6 +203,11 @@ type (
 		Summary string
 	}
 )
+
+// IsWorkflowActivity returns true if this activity was started by a workflow.
+func (i *ActivityInfo) IsWorkflowActivity() bool {
+	return i.WorkflowExecution.ID != ""
+}
 
 // GetActivityInfo returns information about the currently executing activity.
 //
@@ -303,24 +322,11 @@ func WithActivityTask(
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
 	deadline := calculateActivityDeadline(scheduled, scheduleToCloseTimeout, startToCloseTimeout)
 
-	logger = log.With(logger,
-		tagActivityID, task.ActivityId,
-		tagActivityType, task.ActivityType.GetName(),
-		tagAttempt, task.Attempt,
-		tagWorkflowType, task.WorkflowType.GetName(),
-		tagWorkflowID, task.WorkflowExecution.WorkflowId,
-		tagRunID, task.WorkflowExecution.RunId,
-	)
-
-	return newActivityContext(ctx, interceptors, &activityEnvironment{
-		taskToken:      task.TaskToken,
-		serviceInvoker: invoker,
-		activityType:   ActivityType{Name: task.ActivityType.GetName()},
-		activityID:     task.ActivityId,
-		workflowExecution: WorkflowExecution{
-			RunID: task.WorkflowExecution.RunId,
-			ID:    task.WorkflowExecution.WorkflowId},
-		logger:                 logger,
+	env := &activityEnvironment{
+		taskToken:              task.TaskToken,
+		serviceInvoker:         invoker,
+		activityType:           ActivityType{Name: task.ActivityType.GetName()},
+		activityID:             task.ActivityId,
 		metricsHandler:         metricsHandler,
 		deadline:               deadline,
 		heartbeatTimeout:       heartbeatTimeout,
@@ -333,14 +339,40 @@ func WithActivityTask(
 		attempt:                task.GetAttempt(),
 		priority:               task.GetPriority(),
 		heartbeatDetails:       task.HeartbeatDetails,
-		workflowType: &WorkflowType{
+		namespace:              task.WorkflowNamespace,
+		retryPolicy:            convertFromPBRetryPolicy(task.RetryPolicy),
+		workerStopChannel:      workerStopChannel,
+		contextPropagators:     contextPropagators,
+		client:                 client,
+	}
+
+	if task.WorkflowExecution.GetWorkflowId() == "" {
+		env.activityRunID = task.ActivityRunId
+		env.logger = log.With(logger,
+			tagActivityID, task.ActivityId,
+			tagActivityRunID, task.ActivityRunId,
+			tagActivityType, task.ActivityType.GetName(),
+			tagAttempt, task.Attempt,
+		)
+	} else {
+		env.workflowExecution = WorkflowExecution{
+			ID:    task.WorkflowExecution.GetWorkflowId(),
+			RunID: task.WorkflowExecution.GetRunId(),
+		}
+		env.workflowType = &WorkflowType{
 			Name: task.WorkflowType.GetName(),
-		},
-		workflowNamespace:  task.WorkflowNamespace,
-		workerStopChannel:  workerStopChannel,
-		contextPropagators: contextPropagators,
-		client:             client,
-	})
+		}
+		env.logger = log.With(logger,
+			tagActivityID, task.ActivityId,
+			tagActivityType, task.ActivityType.GetName(),
+			tagAttempt, task.Attempt,
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+		)
+	}
+
+	return newActivityContext(ctx, interceptors, env)
 }
 
 // WithLocalActivityTask adds local activity specific information into context.
@@ -385,7 +417,7 @@ func WithLocalActivityTask(
 	}
 	return newActivityContext(ctx, interceptors, &activityEnvironment{
 		workflowType:           &workflowTypeLocal,
-		workflowNamespace:      task.params.WorkflowInfo.Namespace,
+		namespace:              task.params.WorkflowInfo.Namespace,
 		taskQueue:              task.params.WorkflowInfo.TaskQueueName,
 		activityType:           ActivityType{Name: activityType},
 		activityID:             fmt.Sprintf("%v", task.activityID),
@@ -400,6 +432,7 @@ func WithLocalActivityTask(
 		startedTime:            startedTime,
 		dataConverter:          dataConverter,
 		attempt:                task.attempt,
+		retryPolicy:            task.retryPolicy,
 		client:                 client,
 		workerStopChannel:      workerStopChannel,
 	})

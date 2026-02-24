@@ -34,6 +34,11 @@ var ErrResultPending = internal.ErrActivityResultPending
 // WARNING: Activity pause is currently experimental
 var ErrActivityPaused = internal.ErrActivityPaused
 
+// ErrActivityReset is returned from an activity heartbeat or the cause of an activity's context to indicate that the activity has been reset.
+//
+// WARNING: Activity reset is currently experimental
+var ErrActivityReset = internal.ErrActivityReset
+
 // GetInfo returns information about the currently executing activity.
 func GetInfo(ctx context.Context) Info {
 	return internal.GetActivityInfo(ctx)

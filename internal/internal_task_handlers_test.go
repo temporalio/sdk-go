@@ -544,7 +544,7 @@ func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(p
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(1, len(response.Commands))
@@ -588,7 +588,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 
 	t.NoError(err)
 	t.NotNil(response)
@@ -619,7 +619,7 @@ func (t *TaskHandlersTestSuite) TestRespondsToWFTWithWorkerBinaryID() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 	//lint:ignore SA1019 ignore for SDK test
@@ -680,7 +680,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 
 	t.NoError(err)
 	t.NotNil(response)
@@ -694,7 +694,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_ActivityTaskScheduled() {
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response = request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response = request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(1, len(response.Commands))
@@ -733,7 +733,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_Sticky() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(1, len(response.Commands))
@@ -814,15 +814,15 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	response, _ = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
 	t.NotNil(response)
-	queryResp, ok := response.(*workflowservice.RespondQueryTaskCompletedRequest)
+	queryResp, ok := response.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
 	t.True(ok)
 	t.NotNil(queryResp.ErrorMessage)
 	t.Contains(queryResp.ErrorMessage, "unknown queryType")
 }
 
-func (t *TaskHandlersTestSuite) verifyQueryResult(response interface{}, expectedResult string) {
+func (t *TaskHandlersTestSuite) verifyQueryResult(response *workflowTaskCompletion, expectedResult string) {
 	t.NotNil(response)
-	queryResp, ok := response.(*workflowservice.RespondQueryTaskCompletedRequest)
+	queryResp, ok := response.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
 	t.True(ok)
 	t.Empty(queryResp.ErrorMessage)
 	t.NotNil(queryResp.QueryResult)
@@ -1046,7 +1046,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	// there should be no error as the history events matched the commands.
 	t.NoError(err)
 	t.NotNil(response)
@@ -1078,7 +1078,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_NondeterministicDetection() {
 	// because it will indicate non determinism in the request.
 	t.NoError(err)
 	// Verify that request is a RespondWorkflowTaskCompleteRequest
-	response, ok := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response, ok := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.True(ok)
 	// Verify there's at least 1 command
 	// and the last last command is to fail workflow
@@ -1117,7 +1117,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowReturnsPanicError() {
 	wfctx.Unlock(err)
 	t.NoError(err)
 	t.NotNil(request)
-	r, ok := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	r, ok := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.True(ok)
 	t.EqualValues(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION, r.Commands[0].GetCommandType())
 	attr := r.Commands[0].GetFailWorkflowExecutionCommandAttributes()
@@ -1190,7 +1190,7 @@ func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
 	wfctx.Unlock(err)
 	t.NoError(err)
 	t.NotNil(request)
-	r, ok := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	r, ok := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.True(ok)
 	t.EqualValues(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION, r.Commands[0].GetCommandType())
 	attr := r.Commands[0].GetCompleteWorkflowExecutionCommandAttributes()
@@ -1272,7 +1272,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Commands, 0)
@@ -1295,7 +1295,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response = request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response = request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Commands, 1)
@@ -1341,7 +1341,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CancelActivityBeforeSent() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 	t.Equal(3, len(response.Commands))
@@ -1376,7 +1376,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_PageToken() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 }
@@ -1539,7 +1539,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Messages() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 }
@@ -1649,7 +1649,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Message_Mixed_Types() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 	t.Len(response.Commands, 6)
@@ -1764,7 +1764,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Message_Admitted_Paged() {
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
-	response := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	response := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	t.NoError(err)
 	t.NotNil(response)
 }
@@ -1848,7 +1848,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	response, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	t.NotNil(response)
 	t.NoError(err)
-	asWFTComplete := response.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	asWFTComplete := response.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	// There should be no non-first LA attempts since all the retries happen in one WFT
 	t.Equal(uint32(0), asWFTComplete.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
 	// wait long enough for wf to complete
@@ -1929,7 +1929,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	response, err := taskHandler.ProcessWorkflowTask(
 		&wftask,
 		wfctx,
-		func(response interface{}, startTime time.Time) (*workflowTask, error) {
+		func(response *workflowTaskCompletion, startTime time.Time) (*workflowTask, error) {
 			return nil, serviceerror.NewNotFound("Intentional wft heartbeat error")
 		})
 	wfctx.Unlock(err)
@@ -1994,7 +1994,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
 
 	temporalInvoker := newServiceInvoker(
 		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func(err error) {}, 0,
-		make(chan struct{}), t.namespace)
+		make(chan struct{}), t.namespace, &atomic.Bool{})
 
 	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
 	t.NoError(err)
@@ -2015,7 +2015,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithNamespaceNotActiveE
 
 	temporalInvoker := newServiceInvoker(
 		nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, cancelHandler,
-		0, make(chan struct{}), t.namespace)
+		0, make(chan struct{}), t.namespace, &atomic.Bool{})
 
 	ctx, err := newActivityContext(context.Background(), nil, &activityEnvironment{serviceInvoker: temporalInvoker, logger: t.logger})
 	t.NoError(err)
@@ -2165,6 +2165,58 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 	r, err := activityHandler.Execute(taskqueue, pats)
 	t.NoError(err)
 	t.NotNil(r)
+}
+
+func (t *TaskHandlersTestSuite) TestActivityCancellationUsesIsCanceledError() {
+	activityName := "activityCancellationIsCanceledError"
+	cancelContextActivity := func(ctx context.Context) error {
+		env := getActivityEnv(ctx)
+		invoker, ok := env.serviceInvoker.(*temporalInvoker)
+		t.Require().True(ok, "expected temporalInvoker")
+		invoker.cancelHandler(NewCanceledError())
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	t.registry.RegisterActivityWithOptions(
+		cancelContextActivity,
+		RegisterActivityOptions{Name: activityName, DisableAlreadyRegisteredCheck: true},
+	)
+
+	mockCtrl := gomock.NewController(t.T())
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	client := WorkflowClient{workflowService: mockService}
+	wep := t.getTestWorkerExecutionParams()
+	activityHandler := newActivityTaskHandler(&client, wep, t.registry)
+	now := time.Now()
+	pats := &workflowservice.PollActivityTaskQueueResponse{
+		Attempt:   1,
+		TaskToken: []byte("token"),
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "wID",
+			RunId:      "rID",
+		},
+		ActivityType:           &commonpb.ActivityType{Name: activityName},
+		ActivityId:             uuid.NewString(),
+		ScheduledTime:          timestamppb.New(now),
+		ScheduleToCloseTimeout: durationpb.New(time.Second),
+		StartedTime:            timestamppb.New(now),
+		StartToCloseTimeout:    durationpb.New(time.Second),
+		HeartbeatTimeout:       durationpb.New(time.Second),
+		WorkflowType: &commonpb.WorkflowType{
+			Name: "wType",
+		},
+		WorkflowNamespace: wep.Namespace,
+	}
+
+	result, err := activityHandler.Execute(taskqueue, pats)
+	t.Require().NoError(err)
+
+	canceledReq, ok := result.(*workflowservice.RespondActivityTaskCanceledRequest)
+	t.Require().True(ok, "expected cancel response")
+	t.Equal(pats.TaskToken, canceledReq.TaskToken)
+	t.Equal(wep.Identity, canceledReq.Identity)
+	t.Equal(wep.Namespace, canceledReq.Namespace)
 }
 
 func Test_NonDeterministicCheck(t *testing.T) {

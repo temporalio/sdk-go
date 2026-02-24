@@ -363,6 +363,15 @@ func (w *WorkflowOutboundInterceptorBase) SideEffect(
 	return w.Next.SideEffect(ctx, f)
 }
 
+// SideEffectWithOptions implements WorkflowOutboundInterceptor.SideEffectWithOptions.
+func (w *WorkflowOutboundInterceptorBase) SideEffectWithOptions(
+	ctx Context,
+	options SideEffectOptions,
+	f func(ctx Context) interface{},
+) converter.EncodedValue {
+	return w.Next.SideEffectWithOptions(ctx, options, f)
+}
+
 // MutableSideEffect implements WorkflowOutboundInterceptor.MutableSideEffect.
 func (w *WorkflowOutboundInterceptorBase) MutableSideEffect(
 	ctx Context,
@@ -371,6 +380,17 @@ func (w *WorkflowOutboundInterceptorBase) MutableSideEffect(
 	equals func(a, b interface{}) bool,
 ) converter.EncodedValue {
 	return w.Next.MutableSideEffect(ctx, id, f, equals)
+}
+
+// MutableSideEffectWithOptions implements WorkflowOutboundInterceptor.MutableSideEffectWithOptions.
+func (w *WorkflowOutboundInterceptorBase) MutableSideEffectWithOptions(
+	ctx Context,
+	id string,
+	options MutableSideEffectOptions,
+	f func(ctx Context) interface{},
+	equals func(a, b interface{}) bool,
+) converter.EncodedValue {
+	return w.Next.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }
 
 // GetVersion implements WorkflowOutboundInterceptor.GetVersion.
@@ -553,9 +573,66 @@ func (c *ClientOutboundInterceptorBase) DescribeWorkflow(
 	return c.Next.DescribeWorkflow(ctx, in)
 }
 
-// ExecuteWorkflow implements ClientOutboundInterceptor.CreateSchedule.
+// CreateSchedule implements ClientOutboundInterceptor.CreateSchedule.
 func (c *ClientOutboundInterceptorBase) CreateSchedule(ctx context.Context, in *ScheduleClientCreateInput) (ScheduleHandle, error) {
 	return c.Next.CreateSchedule(ctx, in)
+}
+
+// ExecuteActivity implements ClientOutboundInterceptor.ExecuteActivity.
+func (c *ClientOutboundInterceptorBase) ExecuteActivity(
+	ctx context.Context,
+	in *ClientExecuteActivityInput,
+) (ClientActivityHandle, error) {
+	return c.Next.ExecuteActivity(ctx, in)
+}
+
+// GetActivityHandle implements ClientOutboundInterceptor.GetActivityHandle.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) GetActivityHandle(
+	in *ClientGetActivityHandleInput,
+) ClientActivityHandle {
+	return c.Next.GetActivityHandle(in)
+}
+
+// CancelActivity implements ClientOutboundInterceptor.CancelActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) CancelActivity(
+	ctx context.Context,
+	in *ClientCancelActivityInput,
+) error {
+	return c.Next.CancelActivity(ctx, in)
+}
+
+// TerminateActivity implements ClientOutboundInterceptor.TerminateActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) TerminateActivity(
+	ctx context.Context,
+	in *ClientTerminateActivityInput,
+) error {
+	return c.Next.TerminateActivity(ctx, in)
+}
+
+// DescribeActivity implements ClientOutboundInterceptor.DescribeActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) DescribeActivity(
+	ctx context.Context,
+	in *ClientDescribeActivityInput,
+) (*ClientDescribeActivityOutput, error) {
+	return c.Next.DescribeActivity(ctx, in)
+}
+
+// PollActivityResult implements ClientOutboundInterceptor.PollActivityResult.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) PollActivityResult(
+	ctx context.Context,
+	in *ClientPollActivityResultInput,
+) (*ClientPollActivityResultOutput, error) {
+	return c.Next.PollActivityResult(ctx, in)
 }
 
 func (*ClientOutboundInterceptorBase) mustEmbedClientOutboundInterceptorBase() {}
@@ -594,6 +671,11 @@ var _ NexusOperationInboundInterceptor = &NexusOperationInboundInterceptorBase{}
 // Note: Experimental
 type NexusOperationOutboundInterceptorBase struct {
 	Next NexusOperationOutboundInterceptor
+}
+
+// GetOperationInfo implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) GetOperationInfo(ctx context.Context) NexusOperationInfo {
+	return n.Next.GetOperationInfo(ctx)
 }
 
 // GetClient implements NexusOperationOutboundInterceptor.

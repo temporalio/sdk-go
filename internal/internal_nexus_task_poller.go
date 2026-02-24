@@ -40,8 +40,9 @@ func newNexusTaskPoller(
 			stopC:                   params.WorkerStopChannel,
 			workerBuildID:           params.getBuildID(),
 			useBuildIDVersioning:    params.UseBuildIDForVersioning,
-			workerDeploymentVersion: params.WorkerDeploymentVersion,
+			workerDeploymentVersion: params.DeploymentOptions.Version,
 			capabilities:            params.capabilities,
+			pollTimeTracker:         params.pollTimeTracker,
 		},
 		taskHandler:     taskHandler,
 		service:         service,
@@ -90,11 +91,9 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		return nil, nil
 	}
 
-	return &nexusTask{task: response}, nil
-}
+	ntp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeNexusTask)
 
-func (ntp *nexusTaskPoller) Cleanup() error {
-	return nil
+	return &nexusTask{task: response}, nil
 }
 
 // PollTask polls a new task
@@ -157,9 +156,11 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 			Inc(1)
 	} else if failure != nil {
 		nctx.metricsHandler.
+			//lint:ignore SA1019 transitioning to Failure field.
 			WithTags(metrics.NexusTaskFailureTags("handler_error_" + failure.GetError().GetErrorType())).
 			Counter(metrics.NexusTaskExecutionFailedCounter).
 			Inc(1)
+		//lint:ignore SA1019 transitioning to Failure field.
 	} else if e := res.Response.GetStartOperation().GetOperationError(); e != nil {
 		nctx.metricsHandler.
 			WithTags(metrics.NexusTaskFailureTags("operation_" + e.GetOperationState())).

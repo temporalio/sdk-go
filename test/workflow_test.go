@@ -469,7 +469,7 @@ func (w *Workflows) ActivityHeartbeatWithRetry(ctx workflow.Context) (heartbeatC
 	return
 }
 
-func (w *Workflows) ActivityHeartbeat(ctx workflow.Context) (string, error) {
+func (w *Workflows) ActivityHeartbeatPause(ctx workflow.Context) (string, error) {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: 4 * time.Second,
 		HeartbeatTimeout:    2 * time.Second,
@@ -484,6 +484,23 @@ func (w *Workflows) ActivityHeartbeat(ctx workflow.Context) (string, error) {
 	var result string
 	err = workflow.ExecuteActivity(ctx, activities.ActivityToBePaused, true).Get(ctx, &result)
 	return result, err
+}
+
+func (w *Workflows) ActivityHeartbeatReset(ctx workflow.Context) ([]string, error) {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 4 * time.Second,
+		HeartbeatTimeout:    2 * time.Second,
+	})
+
+	var activities *Activities
+	var result string
+	err := workflow.ExecuteActivity(ctx, activities.ActivityToBeReset, false).Get(ctx, &result)
+	if err != nil {
+		return []string{}, err
+	}
+	var result2 string
+	err = workflow.ExecuteActivity(ctx, activities.ActivityToBeReset, true).Get(ctx, &result2)
+	return []string{result, result2}, err
 }
 
 func (w *Workflows) ContinueAsNew(ctx workflow.Context, count int, taskQueue string) (int, error) {
@@ -1080,6 +1097,25 @@ func (w *Workflows) CancelTimerViaDeferAfterWFTFailure(ctx workflow.Context) err
 	return nil
 }
 
+func (w *Workflows) AwaitWithTimeoutCancelTimerOnCondition(ctx workflow.Context) (bool, error) {
+	conditionMet := false
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, 100*time.Millisecond)
+		conditionMet = true
+	})
+
+	return workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return conditionMet
+	})
+}
+
+func (w *Workflows) AwaitWithTimeoutConditionAlreadyTrue(ctx workflow.Context) (bool, error) {
+	return workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return true
+	})
+}
+
 func (w *Workflows) CancelChildWorkflow(ctx workflow.Context) ([]string, error) {
 	childCtx1, cancelFunc1 := workflow.WithCancel(ctx)
 	opts := workflow.ChildWorkflowOptions{
@@ -1216,8 +1252,8 @@ func (w *Workflows) SimplestWorkflow(_ workflow.Context) (string, error) {
 	return "hello", nil
 }
 
-func (w *Workflows) PriorityChildWorkflow(ctx workflow.Context) (int, error) {
-	return workflow.GetInfo(ctx).Priority.PriorityKey, nil
+func (w *Workflows) PriorityChildWorkflow(ctx workflow.Context) (temporal.Priority, error) {
+	return workflow.GetInfo(ctx).Priority, nil
 }
 
 func (w *Workflows) TwoParameterWorkflow(_ workflow.Context, _ string, _ string) (string, error) {
@@ -1493,8 +1529,8 @@ func (w *Workflows) InspectActivityInfo(ctx workflow.Context) error {
 	namespace := info.Namespace
 	wfType := info.WorkflowType.Name
 	taskQueue := info.TaskQueueName
-	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
-	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", namespace, taskQueue, wfType, false, 5*time.Second, 5*time.Second).Get(ctx, nil)
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptionsWithRetry())
+	return workflow.ExecuteActivity(ctx, "inspectActivityInfo", namespace, taskQueue, wfType, false, 5*time.Second, 5*time.Second, w.defaultRetryPolicy()).Get(ctx, nil)
 }
 
 func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
@@ -1502,10 +1538,10 @@ func (w *Workflows) InspectLocalActivityInfo(ctx workflow.Context) error {
 	namespace := info.Namespace
 	wfType := info.WorkflowType.Name
 	taskQueue := info.TaskQueueName
-	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptions())
+	ctx = workflow.WithLocalActivityOptions(ctx, w.defaultLocalActivityOptionsWithRetry())
 	var activities *Activities
 	return workflow.ExecuteLocalActivity(
-		ctx, activities.InspectActivityInfo, namespace, taskQueue, wfType, true, 5*time.Second, 5*time.Second).Get(ctx, nil)
+		ctx, activities.InspectActivityInfo, namespace, taskQueue, wfType, true, 5*time.Second, 5*time.Second, w.defaultRetryPolicy()).Get(ctx, nil)
 }
 
 func (w *Workflows) WorkflowWithLocalActivityCtxPropagation(ctx workflow.Context) (string, error) {
@@ -3242,18 +3278,25 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 		StartToCloseTimeout:   time.Minute,
 		DisableEagerExecution: true,
 		Priority: temporal.Priority{
-			PriorityKey: 5,
+			PriorityKey:    5,
+			FairnessKey:    "fair-activity",
+			FairnessWeight: 4.2,
 		},
 	}
 	ctx = workflow.WithActivityOptions(ctx, ao)
-	var result int
+	var result temporal.Priority
 	err := workflow.ExecuteActivity(ctx, activities.PriorityActivity).Get(ctx, &result)
 	if err != nil {
 		return 0, err
 	}
-	// Verify the activity returned the expected priority
-	if result != 5 {
-		return 0, fmt.Errorf("activity did not return expected value %d != %d", 5, result)
+	if result.PriorityKey != 5 {
+		return 0, fmt.Errorf("activity did not return expected priority %d != %d", 5, result.PriorityKey)
+	}
+	if result.FairnessKey != "fair-activity" {
+		return 0, fmt.Errorf("activity did not return expected fairness key %s != %s", "fair-activity", result.FairnessKey)
+	}
+	if result.FairnessWeight != 4.20 {
+		return 0, fmt.Errorf("activity did not return expected fairness weight %f != %f", 4.20, result.FairnessWeight)
 	}
 	// Clear the activity priority
 	ctx = workflow.WithPriority(ctx, temporal.Priority{})
@@ -3261,15 +3304,16 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Verify the activity returned the expected priority
-	if result != workflowPriority {
-		return 0, fmt.Errorf("activity did not return expected value %d != %d", workflowPriority, result)
+	if result.PriorityKey != workflowPriority {
+		return 0, fmt.Errorf("activity did not return expected priority %d != %d", workflowPriority, result.PriorityKey)
 	}
 
 	// Start a child workflow with a priority
 	cwo := workflow.ChildWorkflowOptions{
 		Priority: temporal.Priority{
-			PriorityKey: 3,
+			PriorityKey:    3,
+			FairnessKey:    "fair-child",
+			FairnessWeight: 1.1,
 		},
 	}
 	ctx = workflow.WithChildOptions(ctx, cwo)
@@ -3277,9 +3321,14 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Verify the child workflow returned the expected priority
-	if result != 3 {
-		return 0, fmt.Errorf("child workflow did not return expected value %d != %d", 3, result)
+	if result.PriorityKey != 3 {
+		return 0, fmt.Errorf("child workflow did not return expected priority %d != %d", 3, result.PriorityKey)
+	}
+	if result.FairnessKey != "fair-child" {
+		return 0, fmt.Errorf("child workflow did not return expected fairness key %s != %s", "fair-child", result.FairnessKey)
+	}
+	if result.FairnessWeight != 1.1 {
+		return 0, fmt.Errorf("child workflow did not return expected fairness weight %f != %f", 1.1, result.FairnessWeight)
 	}
 	// Clear the child workflow priority
 	ctx = workflow.WithWorkflowPriority(ctx, temporal.Priority{})
@@ -3287,9 +3336,8 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	// Verify the child workflow returned the expected priority
-	if result != workflowPriority {
-		return 0, fmt.Errorf("child workflow did not return expected value %d != %d", workflowPriority, result)
+	if result.PriorityKey != workflowPriority {
+		return 0, fmt.Errorf("child workflow did not return expected priority %d != %d", workflowPriority, result.PriorityKey)
 	}
 
 	// Run a short timer with a summary and return
@@ -3298,14 +3346,19 @@ func (w *Workflows) PriorityWorkflow(ctx workflow.Context) (int, error) {
 
 func (w *Workflows) AwaitWithOptions(ctx workflow.Context) (bool, error) {
 	options := workflow.AwaitOptions{
-		Timeout:      1 * time.Millisecond,
+		Timeout:      10 * time.Second,
 		TimerOptions: workflow.TimerOptions{Summary: "await-timer"},
 	}
 
-	return workflow.AwaitWithOptions(ctx, options, func() bool {
-		return true
+	conditionMet := false
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, 1*time.Millisecond)
+		conditionMet = true
 	})
 
+	return workflow.AwaitWithOptions(ctx, options, func() bool {
+		return conditionMet
+	})
 }
 
 func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, numOfEachActKind int, actFailTimes int) error {
@@ -3533,7 +3586,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
 	worker.RegisterWorkflow(w.ActivityHeartbeatWithRetry)
-	worker.RegisterWorkflow(w.ActivityHeartbeat)
+	worker.RegisterWorkflow(w.ActivityHeartbeatPause)
+	worker.RegisterWorkflow(w.ActivityHeartbeatReset)
 	worker.RegisterWorkflow(w.ActivityRetryOnError)
 	worker.RegisterWorkflow(w.CallUnregisteredActivityRetry)
 	worker.RegisterWorkflow(w.ActivityRetryOnHBTimeout)
@@ -3555,6 +3609,8 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.CancelTimer)
 	worker.RegisterWorkflow(w.CancelTimerAfterActivity)
 	worker.RegisterWorkflow(w.CancelTimerViaDeferAfterWFTFailure)
+	worker.RegisterWorkflow(w.AwaitWithTimeoutCancelTimerOnCondition)
+	worker.RegisterWorkflow(w.AwaitWithTimeoutConditionAlreadyTrue)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.WaitForCancelWithDisconnectedContextWorkflow)
 	worker.RegisterWorkflow(w.ChildWorkflowWithRetryPolicy)
@@ -3695,15 +3751,22 @@ func (w *Workflows) defaultLocalActivityOptions() workflow.LocalActivityOptions 
 }
 
 func (w *Workflows) defaultActivityOptionsWithRetry() workflow.ActivityOptions {
-	return workflow.ActivityOptions{
-		ScheduleToStartTimeout: 5 * time.Second,
-		ScheduleToCloseTimeout: 5 * time.Second,
-		StartToCloseTimeout:    9 * time.Second,
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval:    time.Second,
-			BackoffCoefficient: 2.0,
-			MaximumInterval:    time.Second,
-			MaximumAttempts:    3,
-		},
+	options := w.defaultActivityOptions()
+	options.RetryPolicy = w.defaultRetryPolicy()
+	return options
+}
+
+func (w *Workflows) defaultLocalActivityOptionsWithRetry() workflow.LocalActivityOptions {
+	options := w.defaultLocalActivityOptions()
+	options.RetryPolicy = w.defaultRetryPolicy()
+	return options
+}
+
+func (w *Workflows) defaultRetryPolicy() *temporal.RetryPolicy {
+	return &temporal.RetryPolicy{
+		InitialInterval:    time.Second,
+		BackoffCoefficient: 2.0,
+		MaximumInterval:    time.Second,
+		MaximumAttempts:    3,
 	}
 }

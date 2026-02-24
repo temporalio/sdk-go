@@ -42,3 +42,15 @@ component.nexusoperations.recordCancelRequestCompletionEvents:
   - value: true
 frontend.activityAPIsEnabled:
   - value: true
+activity.enableStandalone:
+  - value: true
+history.enableChasm:
+  - value: true
+history.enableTransitionHistory:
+  - value: true
+component.nexusoperations.useSystemCallbackURL:
+  - value: false
+frontend.WorkerHeartbeatsEnabled:
+  - value: true
+frontend.ListWorkersEnabled:
+  - value: true

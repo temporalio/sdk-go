@@ -191,6 +191,8 @@ type (
 
 		// VersioningIntent specifies whether the continued workflow should run on a worker with a
 		// compatible build ID or not. See VersioningIntent.
+		//
+		// Deprecated: Use Worker Deployment Versioning instead. See https://docs.temporal.io/worker-versioning
 		VersioningIntent VersioningIntent
 
 		// This is by default nil but may be overridden using NewContinueAsNewErrorWithOptions.

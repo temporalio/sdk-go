@@ -5,6 +5,10 @@ on:
     branches:
       - master
 
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   build-and-test:
     strategy:
@@ -20,9 +24,13 @@ jobs:
             # We only want to check docker compose on a single target
             testDockerCompose: true
           - os: macos-intel
-            runsOn: macos-13
+            runsOn: macos-15-intel
           - os: macos-arm
             runsOn: macos-14
+    permissions:
+      contents: read
+      checks: write
+      statuses: write
     runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
@@ -73,15 +81,15 @@ jobs:
         if: ${{ matrix.testDockerCompose }}
         uses: actions/checkout@v4
         with:
-          repository: temporalio/docker-compose
-          path: ./docker-compose
+          repository: temporalio/samples-server
+          path: ./samples-server
 
       - name: Docker compose - start
         if: ${{ matrix.testDockerCompose }}
         run: |
-          cp ./.github/workflows/docker/docker-compose.override.yaml ./docker-compose/docker-compose.override.yaml
-          cp ./.github/workflows/docker/dynamic-config-custom.yaml ./docker-compose/dynamicconfig/dynamic-config-custom.yaml
-          docker compose --project-directory ./docker-compose up &
+          cp ./.github/workflows/docker/docker-compose.override.yaml ./samples-server/compose/docker-compose.override.yaml
+          cp ./.github/workflows/docker/dynamic-config-custom.yaml ./samples-server/compose/dynamicconfig/dynamic-config-custom.yaml
+          docker compose --project-directory ./samples-server/compose up &
           go run ./.github/workflows/wait_for_server.go
 
       - name: Docker compose - integration tests
@@ -91,6 +99,8 @@ jobs:
           # TODO(antlai-temporal): Remove this flag once server 1.27 released.
           DISABLE_SERVER_1_27_TESTS: "1"
           DISABLE_PRIORITY_TESTS: "1"
+          DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
+          DISABLE_NEXUS_CALLER_TIMEOUT_TESTS: "1"
         working-directory: ./internal/cmd/build
 
   cloud-test:
@@ -108,7 +118,7 @@ jobs:
       TEMPORAL_NAMESPACE: sdk-ci.a2dd6
       TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
       TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
-      GODEBUG: ${{ matrix.fips && 'fips140=only' || '' }}
+      GODEBUG: ${{ matrix.fips && 'fips140=on' || '' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -124,8 +134,6 @@ jobs:
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main
     with:
-      # TODO: Set back once https://github.com/temporalio/features/pull/631 is merged
-      features-repo-ref: "versioning-breaking-changes"
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true

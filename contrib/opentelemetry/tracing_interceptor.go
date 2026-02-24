@@ -14,6 +14,8 @@ import (
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/workflow"
 )
 
 // DefaultTextMapPropagator is the default OpenTelemetry TextMapPropagator used
@@ -173,6 +175,21 @@ func (t *tracer) ContextWithSpan(ctx context.Context, span interceptor.TracerSpa
 	return trace.ContextWithSpan(ctx, span.(*tracerSpan).Span)
 }
 
+// SpanFromWorkflowContext extracts an OpenTelemetry span from the given
+// workflow context.  If no span is found, a no-op span is returned.
+func SpanFromWorkflowContext(ctx workflow.Context) (trace.Span, bool) {
+	val := ctx.Value(spanContextKey{})
+
+	if val != nil {
+		if span, ok := val.(*tracerSpan); ok {
+			return span.Span, true
+		}
+	}
+
+	// Fallback to OpenTelemetry span extraction behavior
+	return trace.SpanFromContext(nil), false
+}
+
 func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
 	// Create context with parent
 	var parent trace.SpanContext
@@ -196,8 +213,17 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 		}
 	}
 
+	if opts.ToHeader && opts.FromHeader {
+		return nil, fmt.Errorf("cannot set both ToHeader and FromHeader for span")
+	}
+
+	spanKind := trace.SpanKindServer
+	if opts.ToHeader {
+		spanKind = trace.SpanKindClient
+	}
+
 	// Create span
-	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, trace.WithTimestamp(opts.Time))
+	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, trace.WithTimestamp(opts.Time), trace.WithSpanKind(spanKind))
 
 	// Set tags
 	if len(opts.Tags) > 0 {
@@ -241,10 +267,17 @@ type tracerSpan struct {
 }
 
 func (t *tracerSpan) Finish(opts *interceptor.TracerFinishSpanOptions) {
-	if opts.Error != nil {
+	t.RecordError(opts.Error)
+
+	if opts.Error != nil && !isBenignApplicationError(opts.Error) {
 		t.SetStatus(codes.Error, opts.Error.Error())
 	}
 	t.End()
+}
+
+func isBenignApplicationError(err error) bool {
+	appError, _ := err.(*temporal.ApplicationError)
+	return appError != nil && appError.Category() == temporal.ApplicationErrorCategoryBenign
 }
 
 type textMapCarrier map[string]string

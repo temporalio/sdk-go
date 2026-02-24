@@ -56,7 +56,11 @@ func (cb *grpcContextBuilder) Build() (context.Context, context.CancelFunc) {
 		ctx = context.Background()
 	}
 	if cb.Headers != nil {
-		ctx = metadata.NewOutgoingContext(ctx, cb.Headers)
+		if existingMD, ok := metadata.FromOutgoingContext(ctx); ok {
+			ctx = metadata.NewOutgoingContext(ctx, metadata.Join(existingMD, cb.Headers))
+		} else {
+			ctx = metadata.NewOutgoingContext(ctx, cb.Headers)
+		}
 	}
 	if cb.MetricsHandler != nil {
 		ctx = context.WithValue(ctx, metrics.HandlerContextKey{}, cb.MetricsHandler)
@@ -188,4 +192,16 @@ func InterruptCh() <-chan interface{} {
 
 func getStringID(intID int64) string {
 	return fmt.Sprintf("%d", intID)
+}
+
+type PollerAutoscaleBehavior struct {
+	// Minimum is the minimum number of poll calls that will always be attempted (assuming slots are available).
+	//
+	// Cannot be less than two for workflow tasks, or one for other tasks.
+	Minimum int
+	// Maximum is the maximum number of poll calls that will ever be open at once. Must be >= `minimum`.
+	Maximum int
+	// Initial is the number of polls that will be attempted initially before scaling kicks in. Must be between
+	// `minimum` and `maximum`.
+	Initial int
 }

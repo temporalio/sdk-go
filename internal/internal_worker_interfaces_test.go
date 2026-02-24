@@ -182,11 +182,19 @@ func (s *InterfacesTestSuite) TestInterface() {
 	namespace := "testNamespace"
 	// Workflow execution parameters.
 	workflowExecutionParameters := workerExecutionParameters{
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentActivityTaskQueuePollers: 4,
-		MaxConcurrentWorkflowTaskQueuePollers: 4,
-		Logger:                                ilog.NewDefaultLogger(),
-		Namespace:                             namespace,
+		TaskQueue: "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: 4,
+			},
+		),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: 4,
+			},
+		),
+		Logger:    ilog.NewDefaultLogger(),
+		Namespace: namespace,
 	}
 
 	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
@@ -204,7 +212,6 @@ func (s *InterfacesTestSuite) TestInterface() {
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.StartWorkflowExecutionResponse{}, nil).AnyTimes()
-	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 	registry := newRegistry()
 	// Launch worker.
@@ -215,11 +222,19 @@ func (s *InterfacesTestSuite) TestInterface() {
 
 	// Create activity execution parameters.
 	activityExecutionParameters := workerExecutionParameters{
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentActivityTaskQueuePollers: 10,
-		MaxConcurrentWorkflowTaskQueuePollers: 10,
-		Logger:                                ilog.NewDefaultLogger(),
-		Namespace:                             namespace,
+		TaskQueue: "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: 10,
+			},
+		),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: 10,
+			},
+		),
+		Logger:    ilog.NewDefaultLogger(),
+		Namespace: namespace,
 	}
 
 	// Register activity instances and launch the worker.

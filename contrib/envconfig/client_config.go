@@ -1,6 +1,4 @@
 // Package envconfig contains utilities to load configuration from files and/or environment variables.
-//
-// WARNING: Environment configuration is currently experimental.
 package envconfig
 
 import (
@@ -17,16 +15,12 @@ import (
 )
 
 // ClientConfig represents a client config file.
-//
-// WARNING: Environment configuration is currently experimental.
 type ClientConfig struct {
 	// Profiles, keyed by profile name.
 	Profiles map[string]*ClientConfigProfile
 }
 
 // ClientConfigProfile is profile-level configuration for a client.
-//
-// WARNING: Environment configuration is currently experimental.
 type ClientConfigProfile struct {
 	// Client address.
 	Address string
@@ -46,8 +40,6 @@ type ClientConfigProfile struct {
 }
 
 // ClientConfigTLS is TLS configuration for a client.
-//
-// WARNING: Environment configuration is currently experimental.
 type ClientConfigTLS struct {
 	// If true, TLS is explicitly disabled. If false/unset, whether TLS is enabled or not depends on other factors such
 	// as whether this struct is present or nil, and whether API key exists (which enables TLS by default).
@@ -71,8 +63,6 @@ type ClientConfigTLS struct {
 }
 
 // ClientConfigCodec is codec configuration for a client.
-//
-// WARNING: Environment configuration is currently experimental.
 type ClientConfigCodec struct {
 	// Remote endpoint for the codec.
 	Endpoint string
@@ -168,7 +158,7 @@ func (c *ClientConfigTLS) toTLSConfig() (*tls.Config, error) {
 			if serverCAData, err = os.ReadFile(c.ServerCACertPath); err != nil {
 				return nil, fmt.Errorf("failed reading server CA cert path: %w", err)
 			}
-		} else if c.ServerCACertPath == "" {
+		} else if c.ServerCACertPath != "" {
 			return nil, fmt.Errorf("cannot have server CA cert path with data")
 		}
 		if !pool.AppendCertsFromPEM(serverCAData) {

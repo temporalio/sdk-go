@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"go.opentelemetry.io/otel/baggage"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -78,7 +79,7 @@ func (a *Activities) ActivityToBePaused(ctx context.Context, completeOnPause boo
 	go func() {
 		// Pause the activity
 		activity.GetClient(ctx).WorkflowService().PauseActivity(context.Background(), &workflowservice.PauseActivityRequest{
-			Namespace: info.WorkflowNamespace,
+			Namespace: info.Namespace,
 			Execution: &commonpb.WorkflowExecution{
 				WorkflowId: info.WorkflowExecution.ID,
 				RunId:      info.WorkflowExecution.RunID,
@@ -105,14 +106,57 @@ func (a *Activities) ActivityToBePaused(ctx context.Context, completeOnPause boo
 	}
 }
 
+func (a *Activities) ActivityToBeReset(ctx context.Context, completeOnReset bool) (string, error) {
+	a.append("ActivityToBeReset")
+	info := activity.GetInfo(ctx)
+	// Activity only has heartbeat details past attempt 1 (i.e. it has retried).
+	if activity.HasHeartbeatDetails(ctx) {
+		var hbDetails string
+		activity.GetHeartbeatDetails(ctx, &hbDetails)
+		return fmt.Sprintf("hb details? %t, attempts: %d, details: %s",
+			activity.HasHeartbeatDetails(ctx),
+			activity.GetInfo(ctx).Attempt,
+			hbDetails,
+		), nil
+	}
+
+	go func() {
+		// Reset the activity
+		activity.GetClient(ctx).WorkflowService().ResetActivity(context.Background(), &workflowservice.ResetActivityRequest{
+			Namespace: info.Namespace,
+			Execution: &commonpb.WorkflowExecution{
+				WorkflowId: info.WorkflowExecution.ID,
+				RunId:      info.WorkflowExecution.RunID,
+			},
+			Activity: &workflowservice.ResetActivityRequest_Id{
+				Id: info.ActivityID,
+			},
+		})
+	}()
+	for {
+		select {
+		case <-time.After(1 * time.Second):
+			activity.RecordHeartbeat(ctx, "heartbeat-details")
+		case <-ctx.Done():
+			if errors.Is(context.Cause(ctx), activity.ErrActivityReset) {
+				if completeOnReset {
+					return "I am canceled by Reset", nil
+				}
+				return "", context.Cause(ctx)
+			}
+			return "I am canceled by Done", nil
+		}
+	}
+}
+
 func (a *Activities) EmptyActivity(ctx context.Context) error {
 	a.append("EmptyActivity")
 	return nil
 }
 
-func (a *Activities) PriorityActivity(ctx context.Context) (int, error) {
+func (a *Activities) PriorityActivity(ctx context.Context) (temporal.Priority, error) {
 	a.append("PriorityActivity")
-	return activity.GetInfo(ctx).Priority.PriorityKey, nil
+	return activity.GetInfo(ctx).Priority, nil
 }
 
 func (a *Activities) HeartbeatAndSleep(ctx context.Context, seq int, delay time.Duration) (int, error) {
@@ -192,18 +236,24 @@ func (a *Activities) failNTimes(_ context.Context, times int, id int) error {
 	return errFailOnPurpose
 }
 
-func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool, scheduleToCloseTimeout, startToCloseTimeout time.Duration) error {
+func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQueue, wfType string, isLocalActivity bool, scheduleToCloseTimeout, startToCloseTimeout time.Duration, retryPolicy *temporal.RetryPolicy) error {
 	a.append("inspectActivityInfo")
 	if !activity.IsActivity(ctx) {
-		return fmt.Errorf("expected InActivity to return %v but got %v", true, activity.IsActivity(ctx))
+		return fmt.Errorf("expected IsActivity to be true")
 	}
 
 	info := activity.GetInfo(ctx)
+	if info.Namespace != namespace {
+		return fmt.Errorf("expected namespace %v but got %v", namespace, info.Namespace)
+	}
 	if info.WorkflowNamespace != namespace {
-		return fmt.Errorf("expected namespace %v but got %v", namespace, info.WorkflowNamespace)
+		return fmt.Errorf("expected WorkflowNamespace %v but got %v", namespace, info.WorkflowNamespace)
 	}
 	if info.WorkflowType == nil || info.WorkflowType.Name != wfType {
 		return fmt.Errorf("expected workflowType %v but got %v", wfType, info.WorkflowType)
+	}
+	if info.ActivityID == "" {
+		return fmt.Errorf("expected ActivityID to be non-empty")
 	}
 	if info.TaskQueue != taskQueue {
 		return fmt.Errorf("expected taskQueue %v but got %v", taskQueue, info.TaskQueue)
@@ -226,6 +276,83 @@ func (a *Activities) InspectActivityInfo(ctx context.Context, namespace, taskQue
 	if info.StartToCloseTimeout != startToCloseTimeout {
 		return fmt.Errorf("expected StartToCloseTimeout %v but got %v", startToCloseTimeout, info.StartToCloseTimeout)
 	}
+	if !cmp.Equal(info.RetryPolicy, retryPolicy) {
+		return fmt.Errorf("expected RetryPolicy %v but got %v", retryPolicy, info.RetryPolicy)
+	}
+
+	if !info.IsWorkflowActivity() {
+		return fmt.Errorf("expected IsWorkflowActivity to return true")
+	}
+	if info.WorkflowExecution.ID == "" {
+		return fmt.Errorf("expected WorkflowExecution.ID to be non-empty")
+	}
+	if info.WorkflowExecution.RunID == "" {
+		return fmt.Errorf("expected WorkflowExecution.RunID to be non-empty")
+	}
+	if info.ActivityRunID != "" {
+		return fmt.Errorf("expected ActivityRunID to be empty but got %v", info.ActivityRunID)
+	}
+
+	return nil
+}
+
+func (a *Activities) InspectActivityInfoNoWorkflow(ctx context.Context, namespace, activityID, taskQueue string, scheduleToCloseTimeout, startToCloseTimeout time.Duration, retryPolicy *temporal.RetryPolicy) error {
+	a.append("inspectActivityInfoNoWorkflow")
+	if !activity.IsActivity(ctx) {
+		return fmt.Errorf("expected IsActivity to be true")
+	}
+
+	info := activity.GetInfo(ctx)
+	if info.Namespace != namespace {
+		return fmt.Errorf("expected namespace %v but got %v", namespace, info.Namespace)
+	}
+	if info.ActivityID != activityID {
+		return fmt.Errorf("expected ActivityID %v but got %v", activityID, info.ActivityID)
+	}
+	if info.ActivityRunID == "" {
+		return fmt.Errorf("expected ActivityRunID to be non-empty")
+	}
+	if info.TaskQueue != taskQueue {
+		return fmt.Errorf("expected taskQueue %v but got %v", taskQueue, info.TaskQueue)
+	}
+	if info.Deadline.IsZero() {
+		return errors.New("expected non zero deadline")
+	}
+	if info.StartedTime.IsZero() {
+		return errors.New("expected non zero started time")
+	}
+	if info.ScheduledTime.IsZero() {
+		return errors.New("expected non zero scheduled time")
+	}
+	if info.ScheduleToCloseTimeout != scheduleToCloseTimeout {
+		return fmt.Errorf("expected ScheduleToCloseTimeout %v but got %v", scheduleToCloseTimeout, info.ScheduleToCloseTimeout)
+	}
+	if info.StartToCloseTimeout != startToCloseTimeout {
+		return fmt.Errorf("expected StartToCloseTimeout %v but got %v", startToCloseTimeout, info.StartToCloseTimeout)
+	}
+	if !cmp.Equal(info.RetryPolicy, retryPolicy) {
+		return fmt.Errorf("expected RetryPolicy %v but got %v", retryPolicy, info.RetryPolicy)
+	}
+
+	if info.IsWorkflowActivity() {
+		return fmt.Errorf("expected IsWorkflowActivity to return false")
+	}
+	if info.WorkflowNamespace != "" {
+		return fmt.Errorf("expected WorkflowNamespace to be empty but got %v", info.WorkflowNamespace)
+	}
+	if info.WorkflowType != nil {
+		return fmt.Errorf("expected workflowType to be nil but got %v", info.WorkflowType)
+	}
+	if info.WorkflowExecution.ID != "" {
+		return fmt.Errorf("expected WorkflowExecution.ID to be empty but got %v", info.WorkflowExecution.ID)
+	}
+	if info.WorkflowExecution.RunID != "" {
+		return fmt.Errorf("expected WorkflowExecution.RunID to be empty but got %v", info.WorkflowExecution.RunID)
+	}
+	if info.IsLocalActivity {
+		return fmt.Errorf("expected IsLocalActivity to be false")
+	}
+
 	return nil
 }
 
@@ -451,7 +578,7 @@ func (a *Activities) register(worker worker.Worker) {
 func (a *Activities) ClientFromActivity(ctx context.Context) error {
 	activityClient := activity.GetClient(ctx)
 	info := activity.GetInfo(ctx)
-	request := workflowservice.ListWorkflowExecutionsRequest{Namespace: info.WorkflowNamespace}
+	request := workflowservice.ListWorkflowExecutionsRequest{Namespace: info.Namespace}
 	resp, err := activityClient.ListWorkflow(ctx, &request)
 	if err != nil {
 		return err

@@ -31,6 +31,19 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+// OperationInfo contains information about a currently executing Nexus operation.
+type OperationInfo = internal.NexusOperationInfo
+
+// IsNexusOperation checks if the context is a Nexus operation context.
+func IsNexusOperation(ctx context.Context) bool {
+	return internal.IsNexusOperation(ctx)
+}
+
+// GetOperationInfo returns information about the currently executing Nexus operation.
+func GetOperationInfo(ctx context.Context) OperationInfo {
+	return internal.GetNexusOperationInfo(ctx)
+}
+
 // GetMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
 func GetMetricsHandler(ctx context.Context) metrics.Handler {
 	return internal.GetNexusOperationMetricsHandler(ctx)
@@ -174,7 +187,6 @@ func (o *workflowRunOperation[I, O]) Start(
 		nexus.AddHandlerLinks(ctx, handle.link())
 		return &nexus.HandlerStartOperationResultAsync{
 			OperationToken: handle.token(),
-			OperationID:    handle.token(),
 		}, nil
 	}
 
@@ -191,7 +203,6 @@ func (o *workflowRunOperation[I, O]) Start(
 	nexus.AddHandlerLinks(ctx, handle.link())
 	return &nexus.HandlerStartOperationResultAsync{
 		OperationToken: handle.token(),
-		OperationID:    handle.token(),
 	}, nil
 }
 
@@ -208,6 +219,9 @@ type WorkflowHandle[T any] interface {
 	// Link to the WorkflowExecutionStarted event of the workflow represented by this handle.
 	link() nexus.Link
 	token() string // Cached operation token
+
+	// typeMarker is a no-op method to associate the generic type T with the interface.
+	typeMarker(T)
 }
 
 type workflowHandle[T any] struct {
@@ -247,6 +261,8 @@ func (h workflowHandle[T]) link() nexus.Link {
 func (h workflowHandle[T]) token() string {
 	return h.cachedToken
 }
+
+func (h workflowHandle[T]) typeMarker(T) {}
 
 // ExecuteWorkflow starts a workflow run for a [WorkflowRunOperationOptions] Handler, linking the execution chain to a
 // Nexus operation (subsequent runs started from continue-as-new and retries).
@@ -301,18 +317,17 @@ func ExecuteUntypedWorkflow[R any](
 		}
 	}
 
-	var encodedToken string
+	encodedToken, err := generateWorkflowRunOperationToken(nctx.Namespace, startWorkflowOptions.ID)
+	if err != nil {
+		return nil, err
+	}
 	if nexusOptions.CallbackURL != "" {
 		if nexusOptions.CallbackHeader == nil {
 			nexusOptions.CallbackHeader = make(nexus.Header)
 		}
-		encodedToken, err = generateWorkflowRunOperationToken(nctx.Namespace, startWorkflowOptions.ID)
-		if err != nil {
-			return nil, err
-		}
 
-		//lint:ignore SA1019 this field is expected to be populated by servers older than 1.27.0.
-		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationID, encodedToken)
+		// This field is expected to be populated by servers older than 1.27.0.
+		nexusOptions.CallbackHeader.Set("nexus-operation-id", encodedToken)
 		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, encodedToken)
 		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
 			{

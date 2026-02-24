@@ -20,6 +20,7 @@ import (
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 )
 
@@ -109,23 +110,29 @@ func (b *builder) integrationTest() error {
 		}
 	}
 
+	customKeyField := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	customStringField := temporal.NewSearchAttributeKeyString("CustomStringField")
+	searchAttributes := temporal.NewSearchAttributes(
+		customKeyField.ValueSet("Keyword"),
+		customStringField.ValueSet("Text"),
+	)
+
 	// Start dev server if wanted
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.3.1-nexus-links.0",
+				Version: "v1.6.1-server-1.31.0-150.0",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
-			DBFilename: "temporal.sqlite",
-			LogLevel:   "warn",
+			DBFilename:       "temporal.sqlite",
+			LogLevel:         "warn",
+			SearchAttributes: searchAttributes,
 			ExtraArgs: []string{
 				"--sqlite-pragma", "journal_mode=WAL",
 				"--sqlite-pragma", "synchronous=OFF",
-				"--search-attribute", "CustomKeywordField=Keyword",
-				"--search-attribute", "CustomStringField=Text",
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
@@ -148,6 +155,12 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
 				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
 				"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
+				"--dynamic-config-value", "activity.enableStandalone=true",
+				"--dynamic-config-value", "history.enableChasm=true",
+				"--dynamic-config-value", "history.enableTransitionHistory=true",
+				"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
+				"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`,
+				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
 			},
 		})
 		if err != nil {
@@ -165,11 +178,11 @@ func (b *builder) integrationTest() error {
 	if *coverageFileFlag != "" {
 		args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, *coverageFileFlag), "-coverpkg=./...")
 	}
+	args = append(args, "./...")
 	if *devServerFlag {
-		args = append(args, "-using-cli-dev-server")
+		args = append(args, "--", "-using-cli-dev-server")
 		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
 	}
-	args = append(args, "./...")
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
@@ -230,7 +243,7 @@ func (b *builder) unitTest() error {
 	testDirMap := map[string]struct{}{}
 	var testDirs []string
 	err := fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
-		if !strings.HasPrefix(p, "test") && strings.HasSuffix(p, "_test.go") {
+		if (!strings.HasPrefix(p, "test") || strings.HasPrefix(p, "testsuite")) && strings.HasSuffix(p, "_test.go") {
 			dir := path.Dir(p)
 			if _, ok := testDirMap[dir]; !ok {
 				testDirMap[dir] = struct{}{}

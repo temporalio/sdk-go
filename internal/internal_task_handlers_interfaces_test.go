@@ -32,10 +32,10 @@ func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
 	_ *workflowExecutionContextImpl,
 	_ workflowTaskHeartbeatFunc,
-) (interface{}, error) {
-	return &workflowservice.RespondWorkflowTaskCompletedRequest{
+) (*workflowTaskCompletion, error) {
+	return &workflowTaskCompletion{rawRequest: &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken: workflowTask.task.TaskToken,
-	}, nil
+	}}, nil
 }
 
 func (wth sampleWorkflowTaskHandler) GetOrCreateWorkflowContext(
@@ -111,7 +111,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	// Process task and respond to the service.
 	taskHandler := newSampleWorkflowTaskHandler()
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response}, nil, nil)
-	completionRequest := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	completionRequest := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	s.NoError(err)
 
 	_, err = s.service.RespondWorkflowTaskCompleted(ctx, completionRequest)
@@ -196,7 +196,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 			ScheduledEventId: 2,
 			StartedEventId:   3,
 			SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
-				LangUsedFlags: []uint32{SDKFlagLimitChangeVersionSASize},
+				LangUsedFlags: []uint32{uint32(SDKFlagLimitChangeVersionSASize)},
 				SdkName:       SDKName,
 				SdkVersion:    "1.0",
 			},

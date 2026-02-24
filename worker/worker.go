@@ -162,6 +162,9 @@ type (
 		// RegisterWorkflowWithOptions registers workflow that is going to be replayed with user provided name
 		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
 
+		// RegisterDynamicWorkflow registers dynamic workflow that is going to be replayed
+		RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions)
+
 		// ReplayWorkflowHistory executes a single workflow task for the given json history file.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
@@ -200,17 +203,22 @@ type (
 	}
 
 	// DeploymentOptions provides configuration to enable Worker Versioning.
-	//
-	// NOTE: Experimental
 	DeploymentOptions = internal.WorkerDeploymentOptions
 
 	// WorkerDeploymentVersion represents a specific version of a worker in a deployment.
-	//
-	// NOTE: Experimental
 	WorkerDeploymentVersion = internal.WorkerDeploymentVersion
 
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
+
+	// PollerBehavior is used to configure the behavior of the poller.
+	PollerBehavior = internal.PollerBehavior
+
+	// PollerBehaviorAutoscalingOptions is the options for NewPollerBehaviorAutoscaling.
+	PollerBehaviorAutoscalingOptions = internal.PollerBehaviorAutoscalingOptions
+
+	// PollerBehaviorSimpleMaximumOptions is the options for NewPollerBehaviorSimpleMaximum.
+	PollerBehaviorSimpleMaximumOptions = internal.PollerBehaviorSimpleMaximumOptions
 
 	// WorkflowPanicPolicy is used for configuring how worker deals with workflow
 	// code panicking which includes non backwards compatible changes to the workflow code without appropriate
@@ -225,6 +233,8 @@ type (
 	// ReplayWorkflowHistoryOptions are options for replaying a workflow.
 	ReplayWorkflowHistoryOptions = internal.ReplayWorkflowHistoryOptions
 )
+
+var _ WorkflowRegistry = (WorkflowReplayer)(nil)
 
 const (
 	// BlockWorkflow is the default WorkflowPanicPolicy policy for handling workflow panics and detected non-determinism.
@@ -302,4 +312,19 @@ func SetBinaryChecksum(checksum string) {
 // InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
 func InterruptCh() <-chan interface{} {
 	return internal.InterruptCh()
+}
+
+// NewPollerBehaviorSimpleMaximum creates a PollerBehavior that allows the worker to start up to a maximum number of pollers.
+func NewPollerBehaviorSimpleMaximum(
+	options PollerBehaviorSimpleMaximumOptions,
+) PollerBehavior {
+	return internal.NewPollerBehaviorSimpleMaximum(options)
+}
+
+// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
+// based on the workflow and feedback from the server.
+func NewPollerBehaviorAutoscaling(
+	options PollerBehaviorAutoscalingOptions,
+) PollerBehavior {
+	return internal.NewPollerBehaviorAutoscaling(options)
 }

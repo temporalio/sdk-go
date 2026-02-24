@@ -20,6 +20,16 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
+// NexusOperationInfo contains information about a currently executing Nexus operation.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.OperationInfo]
+type NexusOperationInfo struct {
+	// The namespace of the worker handling this Nexus operation.
+	Namespace string
+	// The task queue of the worker handling this Nexus operation.
+	TaskQueue string
+}
+
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
 	client         Client
@@ -36,6 +46,17 @@ func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
 
 type nexusOperationEnvironment struct {
 	NexusOperationOutboundInterceptorBase
+}
+
+func (nc *nexusOperationEnvironment) GetOperationInfo(ctx context.Context) NexusOperationInfo {
+	nctx, ok := NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetInfo: Not a valid Nexus context")
+	}
+	return NexusOperationInfo{
+		Namespace: nctx.Namespace,
+		TaskQueue: nctx.TaskQueue,
+	}
 }
 
 func (nc *nexusOperationEnvironment) GetMetricsHandler(ctx context.Context) metrics.Handler {
@@ -74,6 +95,25 @@ var nexusOperationOutboundInterceptorKey = nexusOperationOutboundInterceptorKeyT
 func nexusOperationOutboundInterceptorFromGoContext(ctx context.Context) (nctx NexusOperationOutboundInterceptor, ok bool) {
 	nctx, ok = ctx.Value(nexusOperationOutboundInterceptorKey).(NexusOperationOutboundInterceptor)
 	return
+}
+
+// IsNexusOperation checks if the provided context is a Nexus operation context.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.IsNexusOperation]
+func IsNexusOperation(ctx context.Context) bool {
+	_, ok := NexusOperationContextFromGoContext(ctx)
+	return ok
+}
+
+// GetNexusOperationInfo returns information about the currently executing Nexus operation.
+//
+// Exposed as: [go.temporal.io/sdk/temporalnexus.GetOperationInfo]
+func GetNexusOperationInfo(ctx context.Context) NexusOperationInfo {
+	interceptor, ok := nexusOperationOutboundInterceptorFromGoContext(ctx)
+	if !ok {
+		panic("temporalnexus GetOperationInfo: Not a valid Nexus context")
+	}
+	return interceptor.GetOperationInfo(ctx)
 }
 
 // GetNexusOperationMetricsHandler returns a metrics handler to be used in a Nexus operation's context.
@@ -405,6 +445,11 @@ func (t *testSuiteClientForNexusOperations) CompleteActivityByID(ctx context.Con
 	panic("not implemented in the test environment")
 }
 
+// CompleteActivityByID implements Client.
+func (t *testSuiteClientForNexusOperations) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result interface{}, err error) error {
+	panic("not implemented in the test environment")
+}
+
 // CountWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) CountWorkflow(ctx context.Context, request *workflowservice.CountWorkflowExecutionsRequest) (*workflowservice.CountWorkflowExecutionsResponse, error) {
 	panic("not implemented in the test environment")
@@ -659,6 +704,22 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkerBuildIdCompatibility(ctx
 
 // UpdateWorkerVersioningRules implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkerVersioningRules(ctx context.Context, options UpdateWorkerVersioningRulesOptions) (*WorkerVersioningRules, error) {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) GetActivityHandle(options ClientGetActivityHandleOptions) ClientActivityHandle {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) (ClientListActivitiesResult, error) {
+	panic("unimplemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) CountActivities(ctx context.Context, options ClientCountActivitiesOptions) (*ClientCountActivitiesResult, error) {
 	panic("unimplemented in the test environment")
 }
 

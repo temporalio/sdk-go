@@ -42,25 +42,31 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		params,
 	)
 
-	baseWorker := newBaseWorker(baseWorkerOptions{
-		pollerCount:      params.MaxConcurrentNexusTaskQueuePollers,
+	bwo := baseWorkerOptions{
 		pollerRate:       defaultPollerRate,
 		slotSupplier:     params.Tuner.GetNexusSlotSupplier(),
 		maxTaskPerSecond: defaultWorkerTaskExecutionRate,
-		taskWorker:       poller,
-		workerType:       "NexusWorker",
-		identity:         params.Identity,
-		buildId:          params.getBuildID(),
-		logger:           params.Logger,
-		stopTimeout:      params.WorkerStopTimeout,
-		fatalErrCb:       params.WorkerFatalErrorCallback,
-		metricsHandler:   params.MetricsHandler,
+		taskPollers: []scalableTaskPoller{
+			newScalableTaskPoller(
+				poller,
+				opts.executionParameters.Logger,
+				params.NexusTaskPollerBehavior),
+		},
+		taskProcessor:  poller,
+		workerType:     "NexusWorker",
+		identity:       params.Identity,
+		buildId:        params.getBuildID(),
+		logger:         params.Logger,
+		stopTimeout:    params.WorkerStopTimeout,
+		fatalErrCb:     params.WorkerFatalErrorCallback,
+		metricsHandler: params.MetricsHandler,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
 		isInternalWorker: params.isInternalWorker(),
-	},
-	)
+	}
+
+	baseWorker := newBaseWorker(bwo)
 
 	return &nexusWorker{
 		executionParameters: opts.executionParameters,
@@ -72,10 +78,6 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 
 // Start the worker.
 func (w *nexusWorker) Start() error {
-	err := verifyNamespaceExist(w.workflowService, w.executionParameters.MetricsHandler, w.executionParameters.Namespace, w.worker.logger)
-	if err != nil {
-		return err
-	}
 	w.worker.Start()
 	return nil
 }

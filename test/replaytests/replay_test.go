@@ -2,14 +2,13 @@ package replaytests
 
 import (
 	"context"
-	"reflect"
-	"testing"
-
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"reflect"
+	"testing"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -71,8 +70,8 @@ func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 	_ = we2.Get(context.Background(), &res2)
 
 	// Now run:
-	// tctl workflow show --workflow_id replay-tests-workflow1 --of workflow1.json
-	// tctl workflow show --workflow_id replay-tests-workflow2 --of workflow2.json
+	// temporal workflow show --workflow-id replay-tests-workflow1 --output json > workflow1.json
+	// temporal workflow show --workflow-id replay-tests-workflow2 --output json > workflow2.json
 }
 
 func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
@@ -460,6 +459,16 @@ func (s *replayTestSuite) TestSelectorNonBlocking() {
 	require.NoError(s.T(), err)
 }
 
+func (s *replayTestSuite) TestChannelWorkerWithBlockedSelectorFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ChannelWorkerWorkflow)
+	// Verify we can replay a history generated with SDKFlagBlockedSelectorSignalReceive
+	// but without SDKFlagWorkflowNewChannelLostMessages. The old c.recValue
+	// overwrite behavior must be preserved during replay.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "channel-worker-blocked-selector.json")
+	s.NoError(err)
+}
+
 func (s *replayTestSuite) TestPartialReplayNonCommandEvent() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(TripWorkflow)
@@ -507,6 +516,16 @@ func (s *replayTestSuite) TestCancelNexusOperation() {
 	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is completed")
 }
 
+func (s *replayTestSuite) TestAwaitWithTimeoutNoTimerCancel() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(AwaitWithTimeoutNoTimerCancelWorkflow)
+	// Verify we can still replay an old workflow that does not have
+	// the SDKFlagCancelAwaitTimerOnCondition flag (old behavior where
+	// timer is NOT cancelled when condition is satisfied).
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "await-with-timeout-no-timer-cancel.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}
@@ -525,4 +544,25 @@ func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs .
 		c.fromPayloads = append(c.fromPayloads, reflect.ValueOf(v).Elem().Interface())
 	}
 	return err
+}
+
+func (s *replayTestSuite) TestMemoUserDCEncodeNoFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MemoChildWorkflowJSON)
+	replayer.RegisterWorkflow(MemoEncodingWorkflowJSON)
+	// Verify we can still replay an old workflow that does not
+	// have the SDKFlagMemoUserDCEncode flag
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "memo-json.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestScheduleMemoUserDCEncodeNoFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ScheduleMemoWorkflowJSON)
+	// Verify we can still replay a workflow started by a schedule
+	// that does not have the SDKFlagMemoUserDCEncode flag
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "memo-schedule-json.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
 }
