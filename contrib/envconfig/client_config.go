@@ -101,12 +101,8 @@ func (c *ClientConfigProfile) ToClientOptions(options ToClientOptionsRequest) (c
 		opts.Credentials = client.NewAPIKeyStaticCredentials(c.APIKey)
 	}
 	if c.TLS != nil {
-		var err error
-		if opts.ConnectionOptions.TLS, err = c.TLS.toTLSConfig(); err != nil {
+		if err := c.TLS.applyToConnectionOptions(&opts.ConnectionOptions); err != nil {
 			return client.Options{}, fmt.Errorf("invalid TLS config: %w", err)
-		}
-		if c.TLS.Disabled {
-			opts.ConnectionOptions.TLSDisabled = true
 		}
 	} else if c.APIKey != "" {
 		opts.ConnectionOptions.TLS = &tls.Config{}
@@ -123,56 +119,56 @@ func (c *ClientConfigProfile) ToClientOptions(options ToClientOptionsRequest) (c
 	return opts, nil
 }
 
-func (c *ClientConfigTLS) toTLSConfig() (*tls.Config, error) {
+func (c *ClientConfigTLS) applyToConnectionOptions(connOpts *client.ConnectionOptions) error {
 	if c.Disabled {
-		return nil, nil
+		connOpts.TLSDisabled = true
+		return nil
 	}
 	conf := &tls.Config{}
 
-	// Client cert
 	if len(c.ClientCertData) > 0 || len(c.ClientKeyData) > 0 {
 		if len(c.ClientCertData) == 0 || len(c.ClientKeyData) == 0 {
-			return nil, fmt.Errorf("if either client cert or key data is present, other must be present too")
+			return fmt.Errorf("if either client cert or key data is present, other must be present too")
 		} else if c.ClientCertPath != "" || c.ClientKeyPath != "" {
-			return nil, fmt.Errorf("cannot have client key/cert path with data")
+			return fmt.Errorf("cannot have client key/cert path with data")
 		}
 		cert, err := tls.X509KeyPair(c.ClientCertData, c.ClientKeyData)
 		if err != nil {
-			return nil, fmt.Errorf("failed loading client cert/key data: %w", err)
+			return fmt.Errorf("failed loading client cert/key data: %w", err)
 		}
 		conf.Certificates = append(conf.Certificates, cert)
 	} else if c.ClientCertPath != "" || c.ClientKeyPath != "" {
 		if c.ClientCertPath == "" || c.ClientKeyPath == "" {
-			return nil, fmt.Errorf("if either client cert or key path is present, other must be present too")
+			return fmt.Errorf("if either client cert or key path is present, other must be present too")
 		}
 		cert, err := tls.LoadX509KeyPair(c.ClientCertPath, c.ClientKeyPath)
 		if err != nil {
-			return nil, fmt.Errorf("failed loading client cert/key path: %w", err)
+			return fmt.Errorf("failed loading client cert/key path: %w", err)
 		}
 		conf.Certificates = append(conf.Certificates, cert)
 	}
 
-	// Server CA cert
 	if len(c.ServerCACertData) > 0 || c.ServerCACertPath != "" {
 		pool := x509.NewCertPool()
 		serverCAData := c.ServerCACertData
 		if len(serverCAData) == 0 {
 			var err error
 			if serverCAData, err = os.ReadFile(c.ServerCACertPath); err != nil {
-				return nil, fmt.Errorf("failed reading server CA cert path: %w", err)
+				return fmt.Errorf("failed reading server CA cert path: %w", err)
 			}
 		} else if c.ServerCACertPath != "" {
-			return nil, fmt.Errorf("cannot have server CA cert path with data")
+			return fmt.Errorf("cannot have server CA cert path with data")
 		}
 		if !pool.AppendCertsFromPEM(serverCAData) {
-			return nil, fmt.Errorf("failed adding server CA to CA pool")
+			return fmt.Errorf("failed adding server CA to CA pool")
 		}
 		conf.RootCAs = pool
 	}
 
 	conf.ServerName = c.ServerName
 	conf.InsecureSkipVerify = c.DisableHostVerification
-	return conf, nil
+	connOpts.TLS = conf
+	return nil
 }
 
 func (c *ClientConfigCodec) toDataConverter(namespace string) (converter.DataConverter, error) {
