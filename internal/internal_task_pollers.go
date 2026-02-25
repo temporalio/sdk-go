@@ -171,6 +171,7 @@ type (
 		metricsHandler metrics.Handler
 		taskQueue      string
 		logger         log.Logger
+		lastCalledAPI  string // tracks which gRPC API last provided history events
 	}
 
 	localActivityTaskPoller struct {
@@ -1026,6 +1027,7 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 		metricsHandler: wtp.metricsHandler,
 		taskQueue:      wtp.taskQueueName,
 		logger:         wtp.logger,
+		lastCalledAPI:  "PollWorkflowTaskQueue",
 	}
 	task := &workflowTask{
 		task:            response,
@@ -1044,6 +1046,7 @@ func (wtp *workflowTaskProcessor) toWorkflowTask(response *workflowservice.PollW
 		metricsHandler: wtp.metricsHandler,
 		taskQueue:      wtp.taskQueueName,
 		logger:         wtp.logger,
+		lastCalledAPI:  "PollWorkflowTaskQueue",
 	}
 	task := &workflowTask{
 		task:            response,
@@ -1053,6 +1056,7 @@ func (wtp *workflowTaskProcessor) toWorkflowTask(response *workflowservice.PollW
 }
 
 func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
+	h.lastCalledAPI = "GetWorkflowExecutionHistory"
 	if h.iteratorFunc == nil {
 		h.iteratorFunc = newGetHistoryPageFunc(
 			context.Background(),

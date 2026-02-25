@@ -457,6 +457,11 @@ func (eh *history) getMoreEvents() (*historypb.History, error) {
 func (eh *history) verifyAllEventsProcessed() error {
 	if eh.lastEventID > 0 && eh.nextEventID <= eh.lastEventID {
 		if eh.eventsHandler != nil {
+			if iter, ok := eh.workflowTask.historyIterator.(*historyIteratorImpl); ok {
+				eh.eventsHandler.logger.Warn("premature end of stream",
+					"grpc_api", iter.lastCalledAPI,
+				)
+			}
 			eh.eventsHandler.logger.Warn("history_events: premature end of stream detected [WFTD]",
 				tagExpectedLastEventID, eh.lastEventID,
 				tagNextEventID, eh.nextEventID,
