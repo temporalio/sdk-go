@@ -36,8 +36,9 @@ const (
 	SDKFlagCancelAwaitTimerOnCondition = 6
 	// SDKFlagMemoUserDCEncode will use the user data converter when encoding a memo. If user data converter fails,
 	// we will fallback onto the default data converter. If the default DC fails, the user DC error will be returned.
-	SDKFlagMemoUserDCEncode = 7
-	SDKFlagUnknown          = math.MaxUint32
+	SDKFlagMemoUserDCEncode               = 7
+	SDKFlagWorkflowNewChannelLostMessages = 8
+	SDKFlagUnknown                        = math.MaxUint32
 )
 
 // sdkFlagsAllowed holds the enabled state for each flag.
@@ -46,13 +47,14 @@ const (
 //
 // NOTE: The only time this setting is superseded is if a flag is already being used in history.
 var sdkFlagsAllowed = map[sdkFlag]bool{
-	SDKFlagLimitChangeVersionSASize:     true,
-	SDKFlagChildWorkflowErrorExecution:  true,
-	SDKFlagProtocolMessageCommand:       true,
-	SDKPriorityUpdateHandling:           true,
-	SDKFlagBlockedSelectorSignalReceive: false,
-	SDKFlagCancelAwaitTimerOnCondition:  false,
-	SDKFlagMemoUserDCEncode:             false,
+	SDKFlagLimitChangeVersionSASize:       true,
+	SDKFlagChildWorkflowErrorExecution:    true,
+	SDKFlagProtocolMessageCommand:         true,
+	SDKPriorityUpdateHandling:             true,
+	SDKFlagBlockedSelectorSignalReceive:   false,
+	SDKFlagCancelAwaitTimerOnCondition:    false,
+	SDKFlagMemoUserDCEncode:               false,
+	SDKFlagWorkflowNewChannelLostMessages: false,
 }
 
 func init() {

@@ -899,32 +899,54 @@ func ScheduleMemoWorkflowJSON(ctx workflow.Context) (string, error) {
 	return fmt.Sprintf("schedule-read-memo: %s", memoValue), nil
 }
 
-// ScheduleMemoWorkflowGob is a workflow that validates memo passed from a schedule
-// can be decoded with gob. This is used to test workflows started by schedules
-// with the SDKFlagMemoUserDCEncode flag enabled.
-func ScheduleMemoWorkflowGob(ctx workflow.Context) (string, error) {
-	info := workflow.GetInfo(ctx)
+func ChannelWorkerWorkflow(ctx workflow.Context) error {
+	ch := workflow.NewChannel(ctx)
+	var received []string
 
-	memoPayload, ok := info.Memo.Fields["schedule-memo-key"]
-	if !ok {
-		return "", fmt.Errorf("memo key 'schedule-memo-key' not found")
-	}
-
-	// Will fail if memo is JSON-encoded (when using gob data converter)
-	dc := iconverter.NewTestDataConverter()
-	var memoValue string
-	err := dc.FromPayload(memoPayload, &memoValue)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode memo with data converter: %w", err)
-	}
-
-	// Upsert memo so the SDKFlagMemoUserDCEncode flag is naturally recorded in history
-	err = workflow.UpsertMemo(ctx, map[string]interface{}{
-		"schedule-upsert-key": memoValue,
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		ch.Send(ctx, "item-1")
+		ch.Send(ctx, "item-2")
+		ch.Close()
 	})
-	if err != nil {
-		return "", err
+
+	wg := workflow.NewWaitGroup(ctx)
+	wg.Add(2)
+	for i := 0; i < 2; i++ {
+		workflow.Go(ctx, func(ctx workflow.Context) {
+			defer wg.Done()
+			for {
+				selector := workflow.NewSelector(ctx)
+				done := false
+				selector.AddReceive(ch, func(c workflow.ReceiveChannel, more bool) {
+					if more {
+						var v string
+						c.Receive(ctx, &v)
+						received = append(received, v)
+					} else {
+						done = true
+					}
+				})
+				selector.Select(ctx)
+				if done {
+					break
+				}
+			}
+		})
 	}
 
-	return fmt.Sprintf("schedule-read-memo: %s", memoValue), nil
+	wg.Wait(ctx)
+
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Second,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	for _, item := range received {
+		if item == "" {
+			continue
+		}
+		if err := workflow.ExecuteActivity(ctx, helloworldActivity, item).Get(ctx, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }
