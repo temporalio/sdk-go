@@ -50,6 +50,20 @@ func TestLoadClientOptionsAPIKeyTLS(t *testing.T) {
 	require.NotNil(t, opts.Credentials)
 	require.NotNil(t, opts.ConnectionOptions.TLS)
 
+	// API key present but TLS explicitly disabled
+	opts, err = envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
+		ConfigFileData: []byte(`
+		[profile.default]
+		api_key = "my-api-key"
+		[profile.default.tls]
+		disabled = true`),
+		EnvLookup: EnvLookupMap{},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, opts.Credentials)
+	require.Nil(t, opts.ConnectionOptions.TLS)
+	require.True(t, opts.ConnectionOptions.TLSDisabled)
+
 	// But when API key is not present, neither should TLS be
 	opts, err = envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
 		ConfigFileData: []byte(`
