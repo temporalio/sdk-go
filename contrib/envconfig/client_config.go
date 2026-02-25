@@ -105,7 +105,10 @@ func (c *ClientConfigProfile) ToClientOptions(options ToClientOptionsRequest) (c
 		if opts.ConnectionOptions.TLS, err = c.TLS.toTLSConfig(); err != nil {
 			return client.Options{}, fmt.Errorf("invalid TLS config: %w", err)
 		}
-	} else if c.APIKey != "" && (c.TLS == nil || !c.TLS.Disabled) {
+		if c.TLS.Disabled {
+			opts.ConnectionOptions.TLSDisabled = true
+		}
+	} else if c.APIKey != "" {
 		opts.ConnectionOptions.TLS = &tls.Config{}
 	}
 	if c.Codec != nil && options.IncludeRemoteCodec {
