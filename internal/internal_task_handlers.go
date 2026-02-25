@@ -237,7 +237,7 @@ func newHistory(lastHandledEventID int64, task *workflowTask, eventsHandler *wor
 	if eventsHandler != nil {
 		isFullHistoryVal := len(result.loadedEvents) > 0 &&
 			result.loadedEvents[0].GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED
-		eventsHandler.logger.Warn("Processing workflow task history [WFTD]",
+		eventsHandler.logger.Warn("PREMATURE-EOS: Processing workflow task history",
 			tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.task.Attempt,
@@ -257,7 +257,7 @@ func newHistory(lastHandledEventID int64, task *workflowTask, eventsHandler *wor
 			len(task.task.NextPageToken) == 0 && len(result.loadedEvents) > 0 {
 			lastLoaded := result.loadedEvents[len(result.loadedEvents)-1].GetEventId()
 			if gap := task.task.GetStartedEventId() - lastLoaded; gap > 0 {
-				eventsHandler.logger.Warn("History page ends before StartedEventId with no next page token; server may have omitted transient WFT events [WFTD]",
+				eventsHandler.logger.Warn("PREMATURE-EOS: History page ends before StartedEventId with no next page token; server may have omitted transient WFT events",
 					tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
 					tagRunID, task.task.WorkflowExecution.GetRunId(),
 					"lastLoadedEventID", lastLoaded,
@@ -318,7 +318,7 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		nextEventType := nextEvent.GetEventType()
 		isFailed := nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT || nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED
 		if isFailed && eh.eventsHandler != nil {
-			eh.eventsHandler.logger.Warn("Skipping failed/timed-out workflow task (transient task) [WFTD]",
+			eh.eventsHandler.logger.Warn("PREMATURE-EOS: Skipping failed/timed-out workflow task (transient task)",
 				tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
 				tagRunID, eh.workflowTask.task.WorkflowExecution.GetRunId(),
 				tagEventID, nextEvent.GetEventId(),
@@ -458,11 +458,13 @@ func (eh *history) verifyAllEventsProcessed() error {
 	if eh.lastEventID > 0 && eh.nextEventID <= eh.lastEventID {
 		if eh.eventsHandler != nil {
 			if iter, ok := eh.workflowTask.historyIterator.(*historyIteratorImpl); ok {
-				eh.eventsHandler.logger.Warn("premature end of stream",
+				eh.eventsHandler.logger.Warn("PREMATURE-EOS: premature end of stream",
 					"grpc_api", iter.lastCalledAPI,
+					tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
+					tagRunID, eh.workflowTask.task.WorkflowExecution.GetRunId(),
 				)
 			}
-			eh.eventsHandler.logger.Warn("history_events: premature end of stream detected [WFTD]",
+			eh.eventsHandler.logger.Warn("PREMATURE-EOS: history_events: premature end of stream detected",
 				tagExpectedLastEventID, eh.lastEventID,
 				tagNextEventID, eh.nextEventID,
 				tagLastHandledEventID, eh.lastHandledEventID,
@@ -483,7 +485,9 @@ func (eh *history) verifyAllEventsProcessed() error {
 		eh.eventsHandler.logger.Warn(
 			"history_events: processed events past the expected lastEventID",
 			"expectedLastEventID", eh.lastEventID,
-			"processedLastEventID", eh.nextEventID-1)
+			"processedLastEventID", eh.nextEventID-1,
+			tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, eh.workflowTask.task.WorkflowExecution.GetRunId())
 	}
 	return nil
 }
@@ -685,7 +689,7 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 			default:
 				evictionReason = "cache_disabled"
 			}
-			w.wth.logger.Warn("Workflow cache eviction [WFTD]",
+			w.wth.logger.Warn("PREMATURE-EOS: Workflow cache eviction",
 				tagWorkflowID, w.workflowInfo.WorkflowExecution.ID,
 				tagRunID, w.workflowInfo.WorkflowExecution.RunID,
 				"evictionReason", evictionReason,
@@ -727,7 +731,7 @@ func (w *workflowExecutionContextImpl) onEviction() {
 	// Eviction on error or on workflow complete is normal and expected.
 	if w.err == nil && !w.isWorkflowCompleted {
 		w.wth.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
-		w.wth.logger.Warn("Workflow cache LRU forced eviction [WFTD]",
+		w.wth.logger.Warn("PREMATURE-EOS: Workflow cache LRU forced eviction",
 			tagWorkflowID, w.workflowInfo.WorkflowExecution.ID,
 			tagRunID, w.workflowInfo.WorkflowExecution.RunID,
 			tagLastHandledEventID, w.lastHandledEventID,
@@ -893,7 +897,7 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 			if !workflowContext.IsDestroyed() {
 				// non query task and cached state is missing events, we need to discard the cached state and build a new one.
 				if len(history.Events) > 0 && history.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
-					wth.logger.Warn("Cached state staled, new task has unexpected events [WFTD]",
+					wth.logger.Warn("PREMATURE-EOS: Cached state staled, new task has unexpected events",
 						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 						tagRunID, task.WorkflowExecution.GetRunId(),
 						tagAttempt, task.Attempt,
@@ -905,7 +909,7 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 						tagIsFullHistory, isFullHistory,
 					)
 				} else {
-					wth.logger.Warn("Cached state started on different worker, creating new context [WFTD]",
+					wth.logger.Warn("PREMATURE-EOS: Cached state started on different worker, creating new context",
 						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 						tagRunID, task.WorkflowExecution.GetRunId(),
 						tagAttempt, task.Attempt,
@@ -928,7 +932,7 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 			if len(task.History.Events) > 0 {
 				taskFirstEventID = task.History.Events[0].GetEventId()
 			}
-			wth.logger.Warn("Workflow cache miss with partial history; fetching full history from start [WFTD]",
+			wth.logger.Warn("PREMATURE-EOS: Workflow cache miss with partial history; fetching full history from start",
 				tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 				tagRunID, task.WorkflowExecution.GetRunId(),
 				tagAttempt, task.Attempt,
@@ -1596,7 +1600,7 @@ func (w *workflowExecutionContextImpl) SetPreviousStartedEventID(eventID int64) 
 
 func (w *workflowExecutionContextImpl) ResetIfStale(task *workflowservice.PollWorkflowTaskQueueResponse, historyIterator HistoryIterator) error {
 	if len(task.History.Events) > 0 && task.History.Events[0].GetEventId() != w.previousStartedEventID+1 {
-		w.wth.logger.Warn("Cached state staled, new task has unexpected events [WFTD]",
+		w.wth.logger.Warn("PREMATURE-EOS: Cached state staled, new task has unexpected events",
 			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,

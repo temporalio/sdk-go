@@ -478,7 +478,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 		}
 
 		if eventLevel := response.GetResetHistoryEventId(); eventLevel != 0 {
-			wtp.logger.Warn("Server dropped speculative workflow task; resetting history event ID [WFTD]",
+			wtp.logger.Warn("PREMATURE-EOS: Server dropped speculative workflow task; resetting history event ID",
 				tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
 				tagRunID, task.task.WorkflowExecution.GetRunId(),
 				tagAttempt, task.task.Attempt,
@@ -1073,7 +1073,7 @@ func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 	history, token, err := h.iteratorFunc(h.nextPageToken)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Warn("Failed to fetch workflow execution history page [WFTD]",
+			h.logger.Warn("PREMATURE-EOS: Failed to fetch workflow execution history page",
 				tagWorkflowID, h.execution.GetWorkflowId(),
 				tagRunID, h.execution.GetRunId(),
 				"isFirstPage", isFirstPage,
@@ -1090,7 +1090,7 @@ func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 		eventsCount = len(history.Events)
 	}
 	if h.logger != nil {
-		h.logger.Warn("Fetched workflow execution history page [WFTD]",
+		h.logger.Warn("PREMATURE-EOS: Fetched workflow execution history page",
 			tagWorkflowID, h.execution.GetWorkflowId(),
 			tagRunID, h.execution.GetRunId(),
 			"isFirstPage", isFirstPage,
@@ -1105,7 +1105,7 @@ func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 
 func (h *historyIteratorImpl) Reset() {
 	if h.logger != nil {
-		h.logger.Warn("History iterator reset to fetch from beginning [WFTD]",
+		h.logger.Warn("PREMATURE-EOS: History iterator reset to fetch from beginning",
 			tagWorkflowID, h.execution.GetWorkflowId(),
 			tagRunID, h.execution.GetRunId(),
 		)
