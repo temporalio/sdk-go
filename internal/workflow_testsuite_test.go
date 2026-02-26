@@ -1235,7 +1235,8 @@ func TestDynamicWorkflows(t *testing.T) {
 }
 
 func SleepHour(ctx Context) error {
-	// Sleep to ensure the workflow is still running by the time the parent workflow requests cancellation
+	// We need to specifically have a timer that's cancelled, so that the
+	// timer's underlying channel is closed when the workflow is cancelled
 	return Sleep(ctx, time.Hour)
 }
 
@@ -1254,9 +1255,10 @@ func SleepThenCancel(ctx Context) error {
 		return err
 	}
 
-	// Sleep is required to exercise the bug: the timer's context cancellation
-	// triggers the "illegal access from outside of workflow context" panic
-	// when the child workflow's cancel propagates without the fix.
+	// This Sleep yields control back to startMainLoop, allowing it to process the
+	// child's cancel callback. Without it, the parent completes before the cancel
+	// propagates. The cancel callback then calls workflowCancelHandler,
+	// which would previously cause a panic.
 	return Sleep(ctx, time.Second)
 }
 
