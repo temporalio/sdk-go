@@ -1235,6 +1235,7 @@ func TestDynamicWorkflows(t *testing.T) {
 }
 
 func SleepHour(ctx Context) error {
+	// Sleep to ensure the workflow is still running by the time the parent workflow requests cancellation
 	return Sleep(ctx, time.Hour)
 }
 
@@ -1248,8 +1249,6 @@ func SleepThenCancel(ctx Context) error {
 		return err
 	}
 
-	// Canceling an external workflow that causes a timer to cancel used to fail due to
-	// "illegal access from outside of workflow context"
 	err := RequestCancelExternalWorkflow(ctx, res.ID, res.RunID).Get(ctx, nil)
 	if err != nil {
 		return err
