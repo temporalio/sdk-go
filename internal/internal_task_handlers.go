@@ -463,6 +463,11 @@ func (eh *history) verifyAllEventsProcessed() error {
 					tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
 					tagRunID, eh.workflowTask.task.WorkflowExecution.GetRunId(),
 				)
+			} else {
+				eh.eventsHandler.logger.Warn("PREMATURE-EOS: premature end of stream (no grpc_api info)",
+					tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
+					tagRunID, eh.workflowTask.task.WorkflowExecution.GetRunId(),
+				)
 			}
 			eh.eventsHandler.logger.Warn("PREMATURE-EOS: history_events: premature end of stream detected",
 				tagExpectedLastEventID, eh.lastEventID,
@@ -477,13 +482,13 @@ func (eh *history) verifyAllEventsProcessed() error {
 			)
 		}
 		return fmt.Errorf(
-			"history_events: premature end of stream, expectedLastEventID=%v but no more events after eventID=%v",
+			"PREMATURE-EOS: history_events: premature end of stream, expectedLastEventID=%v but no more events after eventID=%v",
 			eh.lastEventID,
 			eh.nextEventID-1)
 	}
 	if eh.lastEventID > 0 && eh.nextEventID != (eh.lastEventID+1) {
 		eh.eventsHandler.logger.Warn(
-			"history_events: processed events past the expected lastEventID",
+			"PREMATURE-EOS: history_events: processed events past the expected lastEventID",
 			"expectedLastEventID", eh.lastEventID,
 			"processedLastEventID", eh.nextEventID-1,
 			tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
@@ -521,7 +526,7 @@ OrderEvents:
 		eventID := event.GetEventId()
 		if eventID != eh.nextEventID {
 			err := fmt.Errorf(
-				"missing history events, expectedNextEventID=%v but receivedNextEventID=%v",
+				"PREMATURE-EOS: missing history events, expectedNextEventID=%v but receivedNextEventID=%v",
 				eh.nextEventID, eventID)
 			return nil, err
 		}
