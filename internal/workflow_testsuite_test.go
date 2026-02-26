@@ -1255,8 +1255,10 @@ func SleepThenCancel(ctx Context) error {
 		return err
 	}
 
-	// Give the workflow time to finish canceling the child workflow
-	return Sleep(ctx, 1*time.Second)
+	// Sleep is required to exercise the bug: the timer's context cancellation
+	// triggers the "illegal access from outside of workflow context" panic
+	// when the child workflow's cancel propagates without the fix.
+	return Sleep(ctx, time.Second)
 }
 
 func TestRequestCancelExternalWorkflowInSelector(t *testing.T) {
