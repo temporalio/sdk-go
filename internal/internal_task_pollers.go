@@ -963,6 +963,7 @@ func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, reques
 		defer wtp.numStickyPollerMetric.decrement()
 	}
 
+	wtp.logger.Info("CONFIRMING THAT SEANS CHANGES ARE ACTUALLY RUNNING")
 	return wtp.service.PollWorkflowTaskQueue(ctx, request)
 }
 
@@ -1057,6 +1058,9 @@ func (wtp *workflowTaskProcessor) toWorkflowTask(response *workflowservice.PollW
 
 func (h *historyIteratorImpl) GetNextPage() (*historypb.History, error) {
 	h.lastCalledAPI = "GetWorkflowExecutionHistory"
+	if h.logger != nil {
+		h.logger.Info("CONFIRMING THAT SEANS CHANGES ARE ACTUALLY RUNNING")
+	}
 	if h.iteratorFunc == nil {
 		h.iteratorFunc = newGetHistoryPageFunc(
 			context.Background(),
