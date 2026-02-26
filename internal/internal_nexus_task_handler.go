@@ -266,7 +266,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 			default:
 				return nil, nexus.NewHandlerErrorf(
 					nexus.HandlerErrorTypeInternal,
-					"invalid operation state in OperationError: %s",
+					"handler returned an invalid operation error type: %s",
 					unsuccessfulOperationErr.State,
 				), nil
 			}
@@ -287,7 +287,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		// Default to internal error.
 		return nil, &nexus.HandlerError{
 			Type:    nexus.HandlerErrorTypeInternal,
-			Message: err.Error(),
+			Message: "internal handler error",
 			Cause:   err,
 		}, nil
 	}
@@ -396,8 +396,9 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 		}
 		// Default to internal error.
 		return nil, &nexus.HandlerError{
-			Type:  nexus.HandlerErrorTypeInternal,
-			Cause: err,
+			Type:    nexus.HandlerErrorTypeInternal,
+			Message: "internal handler error",
+			Cause:   err,
 		}, nil
 	}
 
@@ -593,7 +594,7 @@ func convertKnownErrors(err error) error {
 	if appErr, ok := err.(*ApplicationError); ok && appErr.NonRetryable() {
 		return &nexus.HandlerError{
 			Type:          nexus.HandlerErrorTypeInternal,
-			Message:       "Handler failed with non-retryable application error",
+			Message:       "handler failed with non-retryable application error",
 			Cause:         appErr,
 			RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable,
 		}
