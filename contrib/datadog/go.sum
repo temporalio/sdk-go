@@ -112,8 +112,8 @@ github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd/go.mod h1:6dJ
 github.com/modern-go/reflect2 v1.0.2/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
 github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee h1:W5t00kpgFdJifH4BDsTlE89Zl93FEloxaWZfGcifgq8=
 github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee/go.mod h1:yWuevngMOJpCy52FWWMvUC8ws7m/LJsjYzDa0/r8luk=
-github.com/nexus-rpc/sdk-go v0.5.2-0.20260211051645-26b0b4c584e5 h1:Van9KGGs8lcDgxzSNFbDhEMNeJ80TbBxwZ45f9iBk9U=
-github.com/nexus-rpc/sdk-go v0.5.2-0.20260211051645-26b0b4c584e5/go.mod h1:FHdPfVQwRuJFZFTF0Y2GOAxCrbIBNrcPna9slkGKPYk=
+github.com/nexus-rpc/sdk-go v0.6.0 h1:QRgnP2zTbxEbiyWG/aXH8uSC5LV/Mg1fqb19jb4DBlo=
+github.com/nexus-rpc/sdk-go v0.6.0/go.mod h1:FHdPfVQwRuJFZFTF0Y2GOAxCrbIBNrcPna9slkGKPYk=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/sampling v0.133.0 h1:iPei+89a2EK4LuN4HeIRzZNE6XxCyrKfBKG3BkK/ViU=
 github.com/open-telemetry/opentelemetry-collector-contrib/pkg/sampling v0.133.0/go.mod h1:asV77TgnGfc7A+a9jggdsnlLlW5dnJT8RroVuf5slko=
 github.com/open-telemetry/opentelemetry-collector-contrib/processor/probabilisticsamplerprocessor v0.133.0 h1:4ca2pM3+xDMB9H3UnhjAiNg7EpIydZ7HdohOexU8xb8=
