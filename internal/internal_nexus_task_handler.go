@@ -287,7 +287,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		// Default to internal error.
 		return nil, &nexus.HandlerError{
 			Type:    nexus.HandlerErrorTypeInternal,
-			Message: "internal handler error",
+			Message: err.Error(),
 			Cause:   err,
 		}, nil
 	}
@@ -397,7 +397,7 @@ func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *Nexu
 		// Default to internal error.
 		return nil, &nexus.HandlerError{
 			Type:    nexus.HandlerErrorTypeInternal,
-			Message: "internal handler error",
+			Message: err.Error(),
 			Cause:   err,
 		}, nil
 	}
