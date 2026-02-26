@@ -1244,6 +1244,26 @@ func (_m *Client) WorkflowService() workflowservice.WorkflowServiceClient {
 	return r0
 }
 
+// Namespace provides a mock function with given fields:
+func (_m *Client) Namespace() string {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for Namespace")
+	}
+
+	var r0 string
+	if rf, ok := ret.Get(0).(func() string); ok {
+		r0 = rf()
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(string)
+		}
+	}
+
+	return r0
+}
+
 // NewClient creates a new instance of Client. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
 // The first argument is typically a *testing.T value.
 func NewClient(t interface {

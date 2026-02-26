@@ -743,6 +743,11 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkflowExecutionOptions(ctx c
 	panic("not implemented in the test environment")
 }
 
+// Namespace returns the default testing namespace, ie. "default-test-namespace"
+func (t *testSuiteClientForNexusOperations) Namespace() string {
+	return t.env.workflowInfo.Namespace
+}
+
 var _ Client = &testSuiteClientForNexusOperations{}
 
 // testEnvWorkflowRunForNexusOperations is a partial [WorkflowRun] implementation for the test workflow environment used
