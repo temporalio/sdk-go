@@ -2854,7 +2854,7 @@ func TestWorkflowTestSuite_MockNexusOperation(t *testing.T) {
 
 		env.ExecuteWorkflow(wf, "Temporal")
 		require.True(t, env.IsWorkflowCompleted())
-		require.ErrorContains(t, env.GetWorkflowError(), "workflow operation failed")
+		require.ErrorContains(t, env.GetWorkflowError(), "internal handler error")
 	})
 
 	t.Run("mock error handler", func(t *testing.T) {
