@@ -2653,7 +2653,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func (s *workflowClientTestSuite) TestPollActivityResultUsesPerIterationContext() {
-	var prevDeadline time.Time
+	var prevCtx context.Context
 	callCount := 0
 	s.service.EXPECT().
 		PollActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -2663,13 +2663,12 @@ func (s *workflowClientTestSuite) TestPollActivityResultUsesPerIterationContext(
 			_ ...grpc.CallOption,
 		) (*workflowservice.PollActivityExecutionResponse, error) {
 			callCount++
-			deadline, ok := ctx.Deadline()
+			_, ok := ctx.Deadline()
 			s.True(ok)
 			if callCount > 1 {
-				s.Greater(deadline, prevDeadline,
-					"each call should get a fresh context, not share one")
+				s.True(prevCtx != ctx, "each call should get a fresh context, not share one")
 			}
-			prevDeadline = deadline
+			prevCtx = ctx
 
 			if callCount < 3 {
 				return &workflowservice.PollActivityExecutionResponse{}, nil
