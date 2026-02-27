@@ -1938,9 +1938,9 @@ func TestAsyncOperationCompletionCustomFailureConverter(t *testing.T) {
 	require.ErrorAs(t, err, &appErr)
 	require.Equal(t, "async failure", appErr.Message())
 	if os.Getenv("DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS") != "" {
-		require.Equal(t, "", appErr.Type())
-	} else {
 		require.Equal(t, "NexusFailure", appErr.Type())
+	} else {
+		require.Equal(t, "", appErr.Type())
 	}
 	var details nexus.Failure
 	require.NoError(t, appErr.Details(&details))
