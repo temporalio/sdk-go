@@ -447,6 +447,98 @@ func Test_IsCanceledError(t *testing.T) {
 	}
 }
 
+func Test_CanceledErrorWithOptions(t *testing.T) {
+	// Test with custom message
+	err := NewCanceledErrorWithOptions(CanceledErrorOptions{
+		Message: "custom cancellation message",
+	})
+	var canceledErr *CanceledError
+	require.True(t, errors.As(err, &canceledErr))
+	require.Equal(t, "custom cancellation message", canceledErr.Error())
+	require.False(t, canceledErr.HasDetails())
+
+	// Test with default message (empty string)
+	err = NewCanceledErrorWithOptions(CanceledErrorOptions{})
+	require.True(t, errors.As(err, &canceledErr))
+	require.Equal(t, "canceled", canceledErr.Error())
+
+	// Test with details
+	err = NewCanceledErrorWithOptions(CanceledErrorOptions{
+		Details: []any{testErrorDetails1, testErrorDetails2},
+	})
+	require.True(t, errors.As(err, &canceledErr))
+	require.True(t, canceledErr.HasDetails())
+	var d1 string
+	var d2 int
+	require.NoError(t, canceledErr.Details(&d1, &d2))
+	require.Equal(t, testErrorDetails1, d1)
+	require.Equal(t, testErrorDetails2, d2)
+
+	// Test with cause
+	causeErr := errors.New("underlying cause")
+	err = NewCanceledErrorWithOptions(CanceledErrorOptions{
+		Message: "operation canceled",
+		Cause:   causeErr,
+	})
+	require.True(t, errors.As(err, &canceledErr))
+	require.Equal(t, "operation canceled", canceledErr.Error())
+	require.Equal(t, causeErr, errors.Unwrap(canceledErr))
+
+	// Test with all options
+	err = NewCanceledErrorWithOptions(CanceledErrorOptions{
+		Message: "full cancellation",
+		Details: []interface{}{testErrorDetails3},
+		Cause:   causeErr,
+	})
+	require.True(t, errors.As(err, &canceledErr))
+	require.Equal(t, "full cancellation", canceledErr.Error())
+	require.True(t, canceledErr.HasDetails())
+	var d3 testStruct
+	require.NoError(t, canceledErr.Details(&d3))
+	require.Equal(t, testErrorDetails3, d3)
+	require.Equal(t, causeErr, errors.Unwrap(canceledErr))
+}
+
+func Test_CanceledErrorWithOptions_RoundTrip(t *testing.T) {
+	fc := GetDefaultFailureConverter()
+
+	// Create error with all options
+	causeErr := NewApplicationError("app error", "TestError", false, nil)
+	err := NewCanceledErrorWithOptions(CanceledErrorOptions{
+		Message: "operation was canceled",
+		Details: []interface{}{testErrorDetails1, testErrorDetails2, testErrorDetails3},
+		Cause:   causeErr,
+	})
+
+	// Convert to failure
+	failure := fc.ErrorToFailure(err)
+	require.NotNil(t, failure)
+	require.NotNil(t, failure.GetCanceledFailureInfo())
+	require.Equal(t, "operation was canceled", failure.GetMessage())
+	require.NotNil(t, failure.GetCause())
+
+	// Convert back to error
+	err2 := fc.FailureToError(failure)
+	var canceledErr *CanceledError
+	require.True(t, errors.As(err2, &canceledErr))
+	require.Equal(t, "operation was canceled", canceledErr.Error())
+	require.True(t, canceledErr.HasDetails())
+
+	var d1 string
+	var d2 int
+	var d3 testStruct
+	require.NoError(t, canceledErr.Details(&d1, &d2, &d3))
+	require.Equal(t, testErrorDetails1, d1)
+	require.Equal(t, testErrorDetails2, d2)
+	require.Equal(t, testErrorDetails3, d3)
+
+	// Verify cause
+	unwrapped := errors.Unwrap(canceledErr)
+	var appErr *ApplicationError
+	require.True(t, errors.As(unwrapped, &appErr))
+	require.Equal(t, "app error", appErr.Message())
+}
+
 func TestErrorDetailsValues(t *testing.T) {
 	e := ErrorDetailsValues{}
 	require.Equal(t, ErrNoData, e.Get())
@@ -1017,10 +1109,11 @@ func Test_convertErrorToFailure_NexusHandlerError(t *testing.T) {
 
 	f := fc.ErrorToFailure(&nexus.HandlerError{
 		Type:          nexus.HandlerErrorTypeInternal,
+		Message:       "custom message",
 		Cause:         errors.New("custom cause"),
 		RetryBehavior: nexus.HandlerErrorRetryBehaviorNonRetryable,
 	})
-	require.Equal("handler error (INTERNAL): custom cause", f.GetMessage())
+	require.Equal("custom message", f.GetMessage())
 	require.Equal(string(nexus.HandlerErrorTypeInternal), f.GetNexusHandlerFailureInfo().Type)
 	require.Equal(enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_NON_RETRYABLE, f.GetNexusHandlerFailureInfo().RetryBehavior)
 	require.Equal("", f.Cause.GetApplicationFailureInfo().Type)
@@ -1031,7 +1124,7 @@ func Test_convertErrorToFailure_NexusHandlerError(t *testing.T) {
 	require.ErrorAs(err, &handlerErr)
 	require.Equal(nexus.HandlerErrorTypeInternal, handlerErr.Type)
 	require.Equal(nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
-	require.Equal("handler error (INTERNAL): custom cause", handlerErr.Error())
+	require.Equal("handler error (INTERNAL): custom message", handlerErr.Error())
 
 	var applicationErr *ApplicationError
 	require.ErrorAs(handlerErr.Cause, &applicationErr)
@@ -1265,4 +1358,156 @@ func Test_convertFailureToError_SaveFailure(t *testing.T) {
 	require.Equal("JavaSDK", f2.GetCause().GetSource())
 	require.Equal("SomeJavaException", f2.GetCause().GetApplicationFailureInfo().GetType())
 	require.Equal(true, f2.GetCause().GetApplicationFailureInfo().GetNonRetryable())
+}
+
+func TestErrorToFailure_NexusOperationError_SetsTokenAndId(t *testing.T) {
+	dfc := NewDefaultFailureConverter(DefaultFailureConverterOptions{})
+
+	err := &NexusOperationError{
+		Message:          "operation failed",
+		ScheduledEventID: 42,
+		Endpoint:         "endpoint",
+		Service:          "service",
+		Operation:        "op",
+		OperationToken:   "tok123",
+	}
+
+	failure := dfc.ErrorToFailure(err)
+	require.NotNil(t, failure)
+	require.Equal(t, "GoSDK", failure.Source)
+
+	info := failure.GetNexusOperationExecutionFailureInfo()
+	require.NotNil(t, info)
+	require.Equal(t, int64(42), info.GetScheduledEventId())
+	require.Equal(t, "endpoint", info.GetEndpoint())
+	require.Equal(t, "service", info.GetService())
+	require.Equal(t, "op", info.GetOperation())
+	require.Equal(t, "tok123", info.GetOperationToken())
+	//lint:ignore SA1019 ignore deprecated old operation id
+	require.Equal(t, "tok123", info.GetOperationId())
+}
+
+func TestFailureToError_NexusOperationExecution_TokenFallbackToId(t *testing.T) {
+	dfc := NewDefaultFailureConverter(DefaultFailureConverterOptions{})
+
+	failure := &failurepb.Failure{
+		Source: "GoSDK",
+		FailureInfo: &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: &failurepb.NexusOperationFailureInfo{
+			ScheduledEventId: 99,
+			Endpoint:         "ep",
+			Service:          "svc",
+			Operation:        "op",
+			OperationId:      "legacy-id",
+			OperationToken:   "",
+		}},
+		Message: "failed",
+	}
+
+	err := dfc.FailureToError(failure)
+	require.NotNil(t, err)
+
+	opErr, ok := err.(*NexusOperationError)
+	require.True(t, ok, "expected NexusOperationError")
+	require.Equal(t, int64(99), opErr.ScheduledEventID)
+	require.Equal(t, "ep", opErr.Endpoint)
+	require.Equal(t, "svc", opErr.Service)
+	require.Equal(t, "op", opErr.Operation)
+	require.Equal(t, "legacy-id", opErr.OperationToken, "should fallback to OperationId when token empty")
+	require.Equal(t, "failed", opErr.Message)
+	require.Nil(t, opErr.Cause)
+	require.NotNil(t, opErr.Failure, "original failure should be attached")
+}
+
+func TestHandlerError_EncodeCommonAttributes_RoundTrip(t *testing.T) {
+	dfc := NewDefaultFailureConverter(DefaultFailureConverterOptions{EncodeCommonAttributes: true})
+
+	srcErr := &nexus.HandlerError{
+		Type:          nexus.HandlerErrorType("user"),
+		Message:       "handler failed",
+		StackTrace:    "stacktrace",
+		RetryBehavior: nexus.HandlerErrorRetryBehaviorRetryable,
+	}
+
+	failure := dfc.ErrorToFailure(srcErr)
+	require.NotNil(t, failure)
+
+	// Common attributes should be encoded into EncodedAttributes
+	require.NotNil(t, failure.GetEncodedAttributes())
+	require.Equal(t, "Encoded failure", failure.GetMessage())
+	require.Equal(t, "", failure.GetStackTrace())
+
+	info := failure.GetNexusHandlerFailureInfo()
+	require.NotNil(t, info)
+	require.Equal(t, "user", info.GetType())
+	require.Equal(t, enumspb.NEXUS_HANDLER_ERROR_RETRY_BEHAVIOR_RETRYABLE, info.GetRetryBehavior())
+
+	// Round-trip back to error should decode common attributes and map fields
+	rtErr := dfc.FailureToError(failure)
+	require.NotNil(t, rtErr)
+	he, ok := rtErr.(*nexus.HandlerError)
+	require.True(t, ok, "expected nexus.HandlerError")
+	require.Equal(t, nexus.HandlerErrorType("user"), he.Type)
+	require.Equal(t, "handler failed", he.Message)
+	require.Equal(t, "stacktrace", he.StackTrace)
+	require.Equal(t, nexus.HandlerErrorRetryBehaviorRetryable, he.RetryBehavior)
+}
+
+func TestHandlerError_EncodeCommonAttributes_MultipleRoundTrips(t *testing.T) {
+	// This test verifies that common attributes (message, stack trace) are preserved
+	// even when passing through a converter that doesn't doesn't have the right codec
+
+	// Create a converter that encodes common attributes
+	encodingConverter := NewDefaultFailureConverter(DefaultFailureConverterOptions{
+		DataConverter: converter.NewCodecDataConverter(
+			converter.GetDefaultDataConverter(),
+			converter.NewZlibCodec(converter.ZlibCodecOptions{}),
+		),
+		EncodeCommonAttributes: true,
+	})
+
+	// Create a converter that doesn't have the codec to decode the encoded attributes,
+	// but will preserve them in the original failure for future converters to decode
+	middleConverter := NewDefaultFailureConverter(DefaultFailureConverterOptions{})
+
+	// Start with a HandlerError with specific message and stack trace
+	originalErr := &nexus.HandlerError{
+		Type:          nexus.HandlerErrorType("user"),
+		Message:       "original message",
+		StackTrace:    "original stack trace",
+		RetryBehavior: nexus.HandlerErrorRetryBehaviorRetryable,
+	}
+
+	// Round 1: HandlerError -> Failure (with encoding)
+	failure1 := encodingConverter.ErrorToFailure(originalErr)
+	require.NotNil(t, failure1)
+	require.NotNil(t, failure1.GetEncodedAttributes(), "Round 1: encoded attributes should be present")
+	require.Equal(t, "Encoded failure", failure1.GetMessage(), "Round 1: message should be encoded")
+	require.Equal(t, "", failure1.GetStackTrace(), "Round 1: stack trace should be cleared")
+
+	// Round 2: Failure -> HandlerError (without decoding)
+	err2 := middleConverter.FailureToError(failure1)
+	require.NotNil(t, err2)
+	var he2 *nexus.HandlerError
+	require.ErrorAs(t, err2, &he2)
+	require.Equal(t, "Encoded failure", he2.Message, "Round 2: message should stay encoded")
+	require.Empty(t, he2.StackTrace, "Round 2: stack trace should be empty")
+	require.NotNil(t, he2.OriginalFailure)
+
+	// Round 3: HandlerError -> Failure (without encoding, but preserves original failure)
+	failure3 := middleConverter.ErrorToFailure(he2)
+	require.NotNil(t, failure3)
+	// The EncodedAttributes should still be preserved because the original failure is returned
+	require.Equal(t, "Encoded failure", failure3.GetMessage(), "Round 3: message should stay encoded")
+	require.Empty(t, failure3.GetStackTrace())
+	require.NotNil(t, failure3.GetEncodedAttributes(), "Round 3: encoded attributes should still be present")
+
+	// Round 4: Failure -> HandlerError (with decoding)
+	err4 := encodingConverter.FailureToError(failure3)
+	require.NotNil(t, err4)
+	var he4 *nexus.HandlerError
+	require.ErrorAs(t, err4, &he4)
+	require.Equal(t, "original message", he4.Message, "Round 4: message should be decoded")
+	require.Equal(t, "original stack trace", he4.StackTrace, "Round 4: stack trace should be decoded")
+	require.Equal(t, nexus.HandlerErrorType("user"), he4.Type)
+	require.Equal(t, nexus.HandlerErrorRetryBehaviorRetryable, he4.RetryBehavior)
 }

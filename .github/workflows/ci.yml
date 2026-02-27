@@ -101,6 +101,7 @@ jobs:
           DISABLE_PRIORITY_TESTS: "1"
           DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
           DISABLE_NEXUS_CALLER_TIMEOUT_TESTS: "1"
+          DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS: "1"
         working-directory: ./internal/cmd/build
 
   cloud-test:

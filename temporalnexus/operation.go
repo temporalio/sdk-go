@@ -149,8 +149,9 @@ func (*workflowRunOperation[I, O]) Cancel(ctx context.Context, token string, opt
 	workflowRunToken, err := loadWorkflowRunOperationToken(token)
 	if err != nil {
 		return &nexus.HandlerError{
-			Type:  nexus.HandlerErrorTypeBadRequest,
-			Cause: err,
+			Type:    nexus.HandlerErrorTypeBadRequest,
+			Message: "invalid operation token",
+			Cause:   err,
 		}
 	} else {
 		workflowID = workflowRunToken.WorkflowID
@@ -176,7 +177,7 @@ func (o *workflowRunOperation[I, O]) Start(
 
 	_, ok := internal.NexusOperationContextFromGoContext(ctx)
 	if !ok {
-		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
 	if o.options.Handler != nil {
@@ -290,7 +291,7 @@ func ExecuteUntypedWorkflow[R any](
 ) (WorkflowHandle[R], error) {
 	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
 	if !ok {
-		return nil, nexus.HandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
 	workflowType, err := nctx.ResolveWorkflowName(workflow)
@@ -312,8 +313,9 @@ func ExecuteUntypedWorkflow[R any](
 	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
 	if err != nil {
 		return nil, &nexus.HandlerError{
-			Type:  nexus.HandlerErrorTypeBadRequest,
-			Cause: err,
+			Type:    nexus.HandlerErrorTypeBadRequest,
+			Message: "could not convert links for workflow start",
+			Cause:   err,
 		}
 	}
 
