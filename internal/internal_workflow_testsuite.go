@@ -236,6 +236,7 @@ type (
 		testResult          converter.EncodedValue
 		testError           error
 		doneChannel         chan struct{}
+		doneChannelOnce     sync.Once
 		workerOptions       WorkerOptions
 		dataConverter       converter.DataConverter
 		failureConverter    converter.FailureConverter
@@ -830,7 +831,11 @@ func (env *testWorkflowEnvironmentImpl) startWorkflowTask() {
 func (env *testWorkflowEnvironmentImpl) isChildWorkflow() bool {
 	return env.parentEnv != nil
 }
-
+func (env *testWorkflowEnvironmentImpl) closeDoneChannel() {
+	env.doneChannelOnce.Do(func() {
+		close(env.doneChannel)
+	})
+}
 func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 	if env.isChildWorkflow() {
 		// child workflow rely on parent workflow's main loop to process events
@@ -839,7 +844,7 @@ func (env *testWorkflowEnvironmentImpl) startMainLoop() {
 	}
 
 	// notify all child workflows to exit their main loop
-	defer close(env.doneChannel)
+	defer env.closeDoneChannel()
 
 	for !env.shouldStopEventLoop() {
 		// use non-blocking-select to check if there is anything pending in the main thread.
@@ -1100,6 +1105,7 @@ func (env *testWorkflowEnvironmentImpl) Complete(result *commonpb.Payloads, err 
 
 	// properly handle child workflows based on their ParentClosePolicy
 	env.handleParentClosePolicy()
+	env.closeDoneChannel()
 }
 
 func (env *testWorkflowEnvironmentImpl) handleParentClosePolicy() {
