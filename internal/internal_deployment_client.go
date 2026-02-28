@@ -73,7 +73,7 @@ func deploymentToProto(deploymentID Deployment) *deployment.Deployment {
 func deploymentListEntryFromProto(deployment *deployment.DeploymentListInfo) *DeploymentListEntry {
 	return &DeploymentListEntry{
 		Deployment: deploymentFromProto(deployment.GetDeployment()),
-		CreateTime: deployment.GetCreateTime().AsTime(),
+		CreateTime: safeAsTime(deployment.GetCreateTime()),
 		IsCurrent:  deployment.GetIsCurrent(),
 	}
 }
@@ -84,7 +84,7 @@ func deploymentTaskQueuesInfoFromProto(tqsInfo []*deployment.DeploymentInfo_Task
 		result = append(result, DeploymentTaskQueueInfo{
 			Name:            info.GetName(),
 			Type:            TaskQueueType(info.GetType()),
-			FirstPollerTime: info.GetFirstPollerTime().AsTime(),
+			FirstPollerTime: safeAsTime(info.GetFirstPollerTime()),
 		})
 	}
 	return result
@@ -93,7 +93,7 @@ func deploymentTaskQueuesInfoFromProto(tqsInfo []*deployment.DeploymentInfo_Task
 func deploymentInfoFromProto(deploymentInfo *deployment.DeploymentInfo) DeploymentInfo {
 	return DeploymentInfo{
 		Deployment:      deploymentFromProto(deploymentInfo.GetDeployment()),
-		CreateTime:      deploymentInfo.GetCreateTime().AsTime(),
+		CreateTime:      safeAsTime(deploymentInfo.GetCreateTime()),
 		IsCurrent:       deploymentInfo.GetIsCurrent(),
 		TaskQueuesInfos: deploymentTaskQueuesInfoFromProto(deploymentInfo.GetTaskQueueInfos()),
 		Metadata:        deploymentInfo.GetMetadata(),
@@ -110,7 +110,7 @@ func deploymentReachabilityInfoFromProto(response *workflowservice.GetDeployment
 	return DeploymentReachabilityInfo{
 		DeploymentInfo: deploymentInfoFromProto(response.GetDeploymentInfo()),
 		Reachability:   DeploymentReachability(response.GetReachability()),
-		LastUpdateTime: response.GetLastUpdateTime().AsTime(),
+		LastUpdateTime: safeAsTime(response.GetLastUpdateTime()),
 	}
 }
 

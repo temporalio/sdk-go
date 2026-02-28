@@ -2370,7 +2370,7 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 		Status:                  info.GetStatus(),
 		ParentWorkflowExecution: parentWorkflowExecution,
 		RootWorkflowExecution:   rootWorkflowExecution,
-		WorkflowStartTime:       info.GetStartTime().AsTime(),
+		WorkflowStartTime:       safeAsTime(info.GetStartTime()),
 		ExecutionTime:           executionTime,
 		WorkflowCloseTime:       closeTime,
 		HistoryLength:           int(info.GetHistoryLength()),

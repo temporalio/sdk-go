@@ -750,7 +750,7 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		WorkflowTaskTimeout:      attributes.GetWorkflowTaskTimeout().AsDuration(),
 		Namespace:                wth.namespace,
 		Attempt:                  attributes.GetAttempt(),
-		WorkflowStartTime:        startedEvent.GetEventTime().AsTime(),
+		WorkflowStartTime:        safeAsTime(startedEvent.GetEventTime()),
 		lastCompletionResult:     attributes.LastCompletionResult,
 		lastFailure:              attributes.ContinuedFailure,
 		CronSchedule:             attributes.CronSchedule,
