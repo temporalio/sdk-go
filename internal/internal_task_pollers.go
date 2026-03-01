@@ -146,7 +146,7 @@ type (
 		numStickyPollerMetric *numPollerMetric
 	}
 
-	// activityTaskPoller implements polling/processing a workflow task
+	// activityTaskPoller implements polling/processing an activity task
 	activityTaskPoller struct {
 		basePoller
 		namespace           string
@@ -157,6 +157,7 @@ type (
 		logger              log.Logger
 		activitiesPerSecond float64
 		numPollerMetric     *numPollerMetric
+		pollerGroupTracker  *pollerGroupTracker
 	}
 
 	historyIteratorImpl struct {
@@ -1143,6 +1144,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		logger:              params.Logger,
 		activitiesPerSecond: params.TaskQueueActivitiesPerSecond,
 		numPollerMetric:     newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeActivityTask),
+		pollerGroupTracker:  newPollerGroupTracker(),
 	}
 }
 
@@ -1159,6 +1161,10 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	traceLog(func() {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
+
+	groupId := atp.pollerGroupTracker.getNextGroupId()
+	defer atp.pollerGroupTracker.release(groupId)
+
 	request := &workflowservice.PollActivityTaskQueueRequest{
 		Namespace:         atp.namespace,
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -1174,12 +1180,14 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 			atp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey: atp.workerInstanceKey,
+		PollerGroupId:     groupId,
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)
 	if err != nil {
 		return nil, err
 	}
+	atp.pollerGroupTracker.updateGroups(response.GetPollerGroupInfos())
 	if response == nil || len(response.TaskToken) == 0 {
 		// No activity info is available on empty poll.  Emit using base scope.
 		atp.metricsHandler.Counter(metrics.ActivityPollNoTaskCounter).Inc(1)
