@@ -218,6 +218,8 @@ type (
 		pollTimeTracker *pollTimeTracker
 
 		workerInstanceKey string
+
+		gracefulPollShutdown *atomic.Bool
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -1170,8 +1172,9 @@ type AggregatedWorker struct {
 	plugins               []WorkerPlugin
 	pluginRegistryOptions *WorkerPluginConfigureWorkerRegistryOptions // Never nil
 
-	heartbeatMetrics  *heartbeatMetricsHandler
-	heartbeatCallback func() *workerpb.WorkerHeartbeat
+	heartbeatMetrics     *heartbeatMetricsHandler
+	heartbeatCallback    func() *workerpb.WorkerHeartbeat
+	gracefulPollShutdown *atomic.Bool
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1281,8 +1284,12 @@ func (aw *AggregatedWorker) start() error {
 	}
 	proto.Merge(aw.capabilities, capabilities)
 
-	if _, err := aw.client.loadNamespaceCapabilities(aw.executionParams.MetricsHandler); err != nil {
+	nsCapabilities, err := aw.client.loadNamespaceCapabilities(aw.executionParams.MetricsHandler)
+	if err != nil {
 		return err
+	}
+	if nsCapabilities.GetWorkerPollCompleteOnShutdown() {
+		aw.gracefulPollShutdown.Store(true)
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1525,6 +1532,8 @@ func (aw *AggregatedWorker) shutdownWorker() {
 		Reason:            "graceful shutdown",
 		WorkerHeartbeat:   heartbeat,
 		WorkerInstanceKey: aw.workerInstanceKey,
+		TaskQueue:         aw.executionParams.TaskQueue,
+		TaskQueueTypes:    aw.activeTaskQueueTypes(),
 	})
 
 	// Ignore unimplemented (server doesn't support it)
@@ -1535,6 +1544,20 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	if err != nil {
 		aw.logger.Warn("ShutdownWorker rpc errored during worker shutdown.", tagError, err)
 	}
+}
+
+func (aw *AggregatedWorker) activeTaskQueueTypes() []enumspb.TaskQueueType {
+	var types []enumspb.TaskQueueType
+	if !util.IsInterfaceNil(aw.workflowWorker) {
+		types = append(types, enumspb.TASK_QUEUE_TYPE_WORKFLOW)
+	}
+	if !util.IsInterfaceNil(aw.activityWorker) {
+		types = append(types, enumspb.TASK_QUEUE_TYPE_ACTIVITY)
+	}
+	if !util.IsInterfaceNil(aw.nexusWorker) {
+		types = append(types, enumspb.TASK_QUEUE_TYPE_NEXUS)
+	}
+	return types
 }
 
 // WorkflowReplayer is used to replay workflow code from an event history
@@ -2102,6 +2125,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	cache := NewWorkerCache()
+	gracefulPollShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
 		TaskQueue:                        taskQueue,
@@ -2134,9 +2158,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
-		capabilities:      &capabilities,
-		pollTimeTracker:   &pollTimeTracker{},
-		workerInstanceKey: workerInstanceKey,
+		capabilities:         &capabilities,
+		pollTimeTracker:      &pollTimeTracker{},
+		workerInstanceKey:    workerInstanceKey,
+		gracefulPollShutdown: gracefulPollShutdown,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
@@ -2335,6 +2360,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pluginRegistryOptions: &pluginRegistryOptions,
 		heartbeatMetrics:      heartbeatMetrics,
 		heartbeatCallback:     heartbeatCallback,
+		gracefulPollShutdown:  gracefulPollShutdown,
 	}
 
 	// Set memoized start as a once-value that invokes plugins first

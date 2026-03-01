@@ -409,3 +409,83 @@ func TestWFTPanicInTaskHandler(t *testing.T) {
 	// Workflow should not be in cache
 	require.Nil(t, cache.getWorkflowContext(runID))
 }
+
+type mockTask struct{}
+
+func (mockTask) scaleDecision() (pollerScaleDecision, bool) { return pollerScaleDecision{}, false }
+func (mockTask) isEmpty() bool                              { return false }
+
+func TestDoPollGracefulShutdown(t *testing.T) {
+	tests := []struct {
+		name            string
+		gracefulEnabled bool
+		wantErrStop     bool
+	}{
+		{
+			name:            "graceful enabled, waits for poll completion",
+			gracefulEnabled: true,
+		},
+		{
+			name:            "graceful disabled, returns errStop",
+			gracefulEnabled: false,
+			wantErrStop:     true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			stopC := make(chan struct{})
+			graceful := &atomic.Bool{}
+			graceful.Store(tc.gracefulEnabled)
+
+			bp := basePoller{
+				stopC:                stopC,
+				gracefulPollShutdown: graceful,
+			}
+
+			pollStarted := make(chan struct{})
+			pollRelease := make(chan struct{})
+			expectedTask := &mockTask{}
+
+			pollFunc := func(ctx context.Context) (taskForWorker, error) {
+				close(pollStarted)
+				select {
+				case <-pollRelease:
+					return expectedTask, nil
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+
+			type pollResult struct {
+				task taskForWorker
+				err  error
+			}
+			resultC := make(chan pollResult, 1)
+
+			go func() {
+				task, err := bp.doPoll(pollFunc)
+				resultC <- pollResult{task, err}
+			}()
+
+			<-pollStarted
+			close(stopC)
+			if tc.gracefulEnabled {
+				// Graceful mode: doPoll waits for poll to finish
+				close(pollRelease)
+			}
+			// Legacy mode: doPoll cancels context and returns immediately;
+			// goroutine exits via ctx.Done()
+
+			r := <-resultC
+
+			if tc.wantErrStop {
+				require.ErrorIs(t, r.err, errStop)
+				require.Nil(t, r.task)
+			} else {
+				require.NoError(t, r.err)
+				require.Equal(t, expectedTask, r.task)
+			}
+		})
+	}
+}
