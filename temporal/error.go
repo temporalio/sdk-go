@@ -188,10 +188,20 @@ func NewNonRetryableApplicationError(message, errType string, cause error, detai
 	)
 }
 
+// CanceledErrorOptions should be used to set all the desired attributes of a new CanceledError
+// To get a new instance use CanceledErrorAttributes function.
+type CanceledErrorOptions = internal.CanceledErrorOptions
+
 // NewCanceledError creates CanceledError instance.
 // Return this error from activity or child workflow to indicate that it was successfully canceled.
 func NewCanceledError(details ...interface{}) error {
 	return internal.NewCanceledError(details...)
+}
+
+// NewCanceledErrorWithOptions creates CanceledError instance.
+// Return this error from activity or child workflow to indicate that it was successfully canceled.
+func NewCanceledErrorWithOptions(options CanceledErrorOptions) error {
+	return internal.NewCanceledErrorWithOptions(options)
 }
 
 // IsApplicationError return if the err is a ApplicationError
