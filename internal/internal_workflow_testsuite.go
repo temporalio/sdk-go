@@ -2038,6 +2038,11 @@ func (w *workflowExecutorWrapper) Execute(ctx Context, input *commonpb.Payloads)
 	if err != nil {
 		return nil, err
 	}
+	// Ensure ctxCopy matches real execution: apply header propagation to the context
+	ctxCopy, err = workflowContextWithHeaderPropagated(ctxCopy, w.env.header, w.env.GetContextPropagators())
+	if err != nil {
+		return nil, err
+	}
 	go func() {
 		// getWorkflowMockReturn could block if mock is configured to wait. The returned mockRet is what has been configured
 		// for the mock by using MockCallWrapper.Return(). The mockRet could be mock values or mock function. We process
