@@ -171,9 +171,10 @@ type (
 		eventsHandler      *workflowExecutionEventHandlerImpl
 		loadedEvents       []*historypb.HistoryEvent
 		currentIndex       int
-		nextEventID        int64 // next expected eventID for sanity
-		lastEventID        int64 // last expected eventID, zero indicates read until end of stream
-		lastHandledEventID int64 // last event ID that was processed
+		nextEventID        int64                     // next expected eventID for sanity
+		lastEventID        int64                     // last expected eventID, zero indicates read until end of stream
+		lastHandledEventID int64                     // last event ID that was processed
+		recentEvents       []*historypb.HistoryEvent // ring buffer of last 10 seen events, for PREMATURE-EOS debugging
 		next               []*historypb.HistoryEvent
 		nextMessages       []*protocolpb.Message
 		nextFlags          []sdkFlag
@@ -480,6 +481,21 @@ func (eh *history) verifyAllEventsProcessed() error {
 				tagAttempt, eh.workflowTask.task.Attempt,
 				tagPreviousStartedEventID, eh.workflowTask.task.GetPreviousStartedEventId(),
 			)
+			if len(eh.recentEvents) == 0 {
+				eh.eventsHandler.logger.Warn("PREMATURE-EOS: no recent events seen before end of stream",
+					tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
+					tagRunID, eh.workflowTask.task.WorkflowExecution.GetRunId(),
+				)
+			}
+			for i, evt := range eh.recentEvents {
+				eh.eventsHandler.logger.Warn("PREMATURE-EOS: last seen history event before stream end",
+					"recentEventIndex", i,
+					tagEventID, evt.GetEventId(),
+					tagEventType, evt.GetEventType().String(),
+					tagWorkflowID, eh.workflowTask.task.WorkflowExecution.GetWorkflowId(),
+					tagRunID, eh.workflowTask.task.WorkflowExecution.GetRunId(),
+				)
+			}
 		}
 		return fmt.Errorf(
 			"PREMATURE-EOS: history_events: premature end of stream, expectedLastEventID=%v but no more events after eventID=%v",
@@ -532,6 +548,10 @@ OrderEvents:
 		}
 
 		eh.nextEventID++
+		eh.recentEvents = append(eh.recentEvents, event)
+		if len(eh.recentEvents) > 10 {
+			eh.recentEvents = eh.recentEvents[len(eh.recentEvents)-10:]
+		}
 		if eventID <= eh.lastHandledEventID {
 			eh.currentIndex++
 			continue
