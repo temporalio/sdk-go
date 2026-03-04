@@ -12,6 +12,7 @@ import (
 	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/protocol"
+	"go.temporal.io/sdk/log"
 )
 
 type updateState string
@@ -73,6 +74,8 @@ type (
 	updateEnv interface {
 		GetFailureConverter() converter.FailureConverter
 		GetDataConverter() converter.DataConverter
+		GetLogger() log.Logger
+		GetWorkflowInfo() *WorkflowInfo
 		Send(*protocolpb.Message, ...msgSendOpt)
 	}
 
@@ -139,6 +142,15 @@ func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 	input := up.initialRequest.GetInput()
 	up.scheduleUpdate(input.GetName(), up.initialRequest.GetMeta().GetUpdateId(), input.GetArgs(), input.GetHeader(), up)
 	up.state = updateStateRequestInitiated
+	if logger := up.env.GetLogger(); logger != nil {
+		info := up.env.GetWorkflowInfo()
+		logger.Warn("PREMATURE-EOS: update request received",
+			tagWorkflowID, info.WorkflowExecution.ID,
+			tagRunID, info.WorkflowExecution.RunID,
+			tagUpdateID, up.protoInstanceID,
+			tagUpdateName, input.GetName(),
+		)
+	}
 	return nil
 }
 
@@ -146,6 +158,14 @@ func (up *updateProtocol) HandleMessage(msg *protocolpb.Message) error {
 // before execution has started.
 func (up *updateProtocol) Accept() {
 	up.requireState("accept", updateStateRequestInitiated)
+	if logger := up.env.GetLogger(); logger != nil {
+		info := up.env.GetWorkflowInfo()
+		logger.Warn("PREMATURE-EOS: update accepted",
+			tagWorkflowID, info.WorkflowExecution.ID,
+			tagRunID, info.WorkflowExecution.RunID,
+			tagUpdateID, up.protoInstanceID,
+		)
+	}
 	up.env.Send(&protocolpb.Message{
 		Id:                 up.protoInstanceID + "/accept",
 		ProtocolInstanceId: up.protoInstanceID,
@@ -163,6 +183,15 @@ func (up *updateProtocol) Accept() {
 // Reject is called for an update if validation fails.
 func (up *updateProtocol) Reject(err error) {
 	up.requireState("reject", updateStateNew, updateStateRequestInitiated)
+	if logger := up.env.GetLogger(); logger != nil {
+		info := up.env.GetWorkflowInfo()
+		logger.Warn("PREMATURE-EOS: update rejected",
+			tagWorkflowID, info.WorkflowExecution.ID,
+			tagRunID, info.WorkflowExecution.RunID,
+			tagUpdateID, up.protoInstanceID,
+			tagError, err,
+		)
+	}
 	up.env.Send(&protocolpb.Message{
 		Id:                 up.protoInstanceID + "/reject",
 		ProtocolInstanceId: up.protoInstanceID,
@@ -192,6 +221,23 @@ func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
 		}
 		outcome.Value = &updatepb.Outcome_Success{
 			Success: success,
+		}
+	}
+	if logger := up.env.GetLogger(); logger != nil {
+		info := up.env.GetWorkflowInfo()
+		if outcomeErr != nil {
+			logger.Warn("PREMATURE-EOS: update completed with failure",
+				tagWorkflowID, info.WorkflowExecution.ID,
+				tagRunID, info.WorkflowExecution.RunID,
+				tagUpdateID, up.protoInstanceID,
+				tagError, outcomeErr,
+			)
+		} else {
+			logger.Warn("PREMATURE-EOS: update completed with success",
+				tagWorkflowID, info.WorkflowExecution.ID,
+				tagRunID, info.WorkflowExecution.RunID,
+				tagUpdateID, up.protoInstanceID,
+			)
 		}
 	}
 	up.env.Send(&protocolpb.Message{

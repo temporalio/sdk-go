@@ -688,6 +688,10 @@ func (wc *workflowEnvironmentImpl) GetLogger() log.Logger {
 	return wc.logger
 }
 
+func (wc *workflowEnvironmentImpl) GetWorkflowInfo() *WorkflowInfo {
+	return wc.workflowInfo
+}
+
 func (wc *workflowEnvironmentImpl) GetMetricsHandler() metrics.Handler {
 	return wc.metricsHandler
 }
