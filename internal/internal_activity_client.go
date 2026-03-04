@@ -276,6 +276,7 @@ type (
 		CanceledReason          string
 		dataConverter           converter.DataConverter
 		failureConverter        converter.FailureConverter
+		inboundPayloadVisitor   PayloadVisitor
 		summary                 string
 		details                 string
 	}
@@ -302,6 +303,9 @@ func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...an
 	if details == nil {
 		return ErrNoData
 	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, details); err != nil {
+		return err
+	}
 	return d.dataConverter.FromPayloads(details, valuePtrs...)
 }
 
@@ -311,6 +315,9 @@ func (d *ClientActivityExecutionDescription) GetLastFailure() error {
 	failure := d.RawExecutionInfo.GetLastFailure()
 	if failure == nil {
 		return nil
+	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, failure); err != nil {
+		return err
 	}
 	return d.failureConverter.FailureToError(failure)
 }
@@ -325,8 +332,12 @@ func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 	if payload == nil {
 		return "", nil
 	}
+	var err error
+	if payload, err = visitPayload(context.Background(), d.inboundPayloadVisitor, payload); err != nil {
+		return "", err
+	}
 	var summary string
-	err := d.dataConverter.FromPayload(payload, &summary)
+	err = d.dataConverter.FromPayload(payload, &summary)
 	if err != nil {
 		return "", err
 	}
@@ -344,8 +355,12 @@ func (d *ClientActivityExecutionDescription) GetDetails() (string, error) {
 	if payload == nil {
 		return "", nil
 	}
+	var err error
+	if payload, err = visitPayload(context.Background(), d.inboundPayloadVisitor, payload); err != nil {
+		return "", err
+	}
 	var details string
-	err := d.dataConverter.FromPayload(payload, &details)
+	err = d.dataConverter.FromPayload(payload, &details)
 	if err != nil {
 		return "", err
 	}
@@ -570,6 +585,10 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		return nil, err
 	}
 
+	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, request); err != nil {
+		return nil, err
+	}
+
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
@@ -660,6 +679,10 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		}
 	}
 
+	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, resp); err != nil {
+		return nil, err
+	}
+
 	switch v := resp.GetOutcome().GetValue().(type) {
 	case *activitypb.ActivityExecutionOutcome_Result:
 		return &ClientPollActivityResultOutput{Result: newEncodedValue(v.Result, w.client.dataConverter)}, nil
@@ -727,6 +750,7 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			CanceledReason:          info.CanceledReason,
 			dataConverter:           WithContext(ctx, w.client.dataConverter),
 			failureConverter:        w.client.failureConverter,
+			inboundPayloadVisitor:   w.client.inboundPayloadVisitor,
 		},
 	}, nil
 }
