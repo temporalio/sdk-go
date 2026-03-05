@@ -28,7 +28,7 @@ const (
 
 // ContinueAsNewVersioningBehavior specifies how the new workflow run after ContinueAsNew should change its Build ID.
 //
-// NOTE: Experimental
+// NOTE: Upgrade-on-Continue-as-New is currently experimental.
 type ContinueAsNewVersioningBehavior = internal.ContinueAsNewVersioningBehavior
 
 const (
@@ -53,7 +53,7 @@ const (
 
 // ContinueAsNewSuggestedReason specifies why ContinueAsNewSuggested is true. Multiple reasons can be true at the same time.
 //
-// NOTE: Experimental
+// NOTE: ContinueAsNewSuggestedReasons are currently experimental.
 type ContinueAsNewSuggestedReason = internal.ContinueAsNewSuggestedReason
 
 const (

@@ -69,7 +69,7 @@ const (
 
 // ContinueAsNewVersioningBehavior specifies how the new workflow run after ContinueAsNew should change its Build ID.
 //
-// NOTE: Experimental
+// NOTE: Upgrade-on-Continue-as-New is currently experimental.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehavior]
 type ContinueAsNewVersioningBehavior int
@@ -96,7 +96,7 @@ const (
 
 // ContinueAsNewSuggestedReason specifies why ContinueAsNewSuggested is true. Multiple reasons can be true at the same time.
 //
-// NOTE: Experimental
+// NOTE: ContinueAsNewSuggestedReasons are currently experimental.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReason]
 type ContinueAsNewSuggestedReason int
@@ -1502,14 +1502,14 @@ func (wInfo *WorkflowInfo) GetContinueAsNewSuggested() bool {
 // GetContinueAsNewSuggestedReasons returns a list of reasons why continue as new is suggested,
 // if the server is configured to suggest continue as new and it is suggested.
 // This value may change throughout the life of the workflow.
-// Note: Continue-as-new versioning is currently experimental.
+// Note: ContinueAsNewSuggestedReasons are currently experimental.
 func (wInfo *WorkflowInfo) GetContinueAsNewSuggestedReasons() []ContinueAsNewSuggestedReason {
 	return wInfo.continueAsNewSuggestedReasons
 }
 
 // GetTargetWorkflowDeploymentVersionChanged returns whether the target workflow deployment
 // version has changed.
-// Note: Continue-as-new versioning is currently experimental.
+// Note: Upgrade-on-Continue-as-New is currently experimental.
 func (wInfo *WorkflowInfo) GetTargetWorkflowDeploymentVersionChanged() bool {
 	return wInfo.targetWorkflowDeploymentVersionChanged
 }
