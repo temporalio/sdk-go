@@ -464,7 +464,7 @@ type (
 	// NOTE: Experimental
 	WorkerDeploymentHandle = internal.WorkerDeploymentHandle
 
-	// DeploymentListOptions are the parameters for configuring listing Worker Deployments.
+	// WorkerDeploymentListOptions are the parameters for configuring listing Worker Deployments.
 	//
 	// NOTE: Experimental
 	WorkerDeploymentListOptions = internal.WorkerDeploymentListOptions
@@ -781,7 +781,7 @@ type (
 	// WARNING: Worker versioning is currently experimental.
 	VersioningAssignmentRuleWithTimestamp = internal.VersioningAssignmentRuleWithTimestamp //lint:ignore SA1019 transitioning to Worker Deployments
 
-	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
+	// VersioningRedirectRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
 	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
