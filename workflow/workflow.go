@@ -68,14 +68,6 @@ const (
 
 	// ContinueAsNewSuggestedReasonTooManyUpdates - Workflow's count of completed plus in-flight updates is too large.
 	ContinueAsNewSuggestedReasonTooManyUpdates = internal.ContinueAsNewSuggestedReasonTooManyUpdates
-
-	// ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged - Workflow's Target Worker Deployment Version
-	// is different from its Current Version and the workflow is versioned.
-	//
-	// The workflow's Target Version is the Current Version of its Task Queue, or, if the Task Queue has a Ramping
-	// Version with non-zero Ramp Percentage `P`, the workflow's Target Version has a P% chance of being the Ramping
-	// Version. Whether a workflow falls into the Ramping group depends on its Workflow ID and the Ramp Percentage.
-	ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged = internal.ContinueAsNewSuggestedReasonTargetWorkerDeploymentVersionChanged
 )
 
 // HandlerUnfinishedPolicy defines the actions taken when a workflow exits while update handlers are
