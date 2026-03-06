@@ -1444,7 +1444,7 @@ type WorkflowInfo struct {
 	continueAsNewSuggested        bool
 	continueAsNewSuggestedReasons []ContinueAsNewSuggestedReason
 
-	targetWorkflowDeploymentVersionChanged bool
+	targetWorkerDeploymentVersionChanged bool
 
 	currentHistorySize   int
 	currentHistoryLength int
@@ -1507,11 +1507,11 @@ func (wInfo *WorkflowInfo) GetContinueAsNewSuggestedReasons() []ContinueAsNewSug
 	return wInfo.continueAsNewSuggestedReasons
 }
 
-// GetTargetWorkflowDeploymentVersionChanged returns whether the target workflow deployment
+// GetTargetWorkerDeploymentVersionChanged returns whether the target worker deployment
 // version has changed.
 // Note: Upgrade-on-Continue-as-New is currently experimental.
-func (wInfo *WorkflowInfo) GetTargetWorkflowDeploymentVersionChanged() bool {
-	return wInfo.targetWorkflowDeploymentVersionChanged
+func (wInfo *WorkflowInfo) GetTargetWorkerDeploymentVersionChanged() bool {
+	return wInfo.targetWorkerDeploymentVersionChanged
 }
 
 // GetWorkflowInfo extracts info of a current workflow from a context.

@@ -1208,7 +1208,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		weh.workflowInfo.continueAsNewSuggestedReasons = convertContinueAsNewSuggestedReasonsFromProto(
 			event.GetWorkflowTaskStartedEventAttributes().GetSuggestContinueAsNewReasons(),
 		)
-		weh.workflowInfo.targetWorkflowDeploymentVersionChanged = event.GetWorkflowTaskStartedEventAttributes().GetTargetWorkerDeploymentVersionChanged()
+		weh.workflowInfo.targetWorkerDeploymentVersionChanged = event.GetWorkflowTaskStartedEventAttributes().GetTargetWorkerDeploymentVersionChanged()
 		weh.workflowInfo.currentHistorySize = int(event.GetWorkflowTaskStartedEventAttributes().GetHistorySizeBytes())
 		// Reset the counter on command helper used for generating ID for commands
 		weh.commandsHelper.setCurrentWorkflowTaskStartedEventID(event.GetEventId())

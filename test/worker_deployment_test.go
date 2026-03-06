@@ -1349,7 +1349,7 @@ func (ts *WorkerDeploymentTestSuite) TestContinueAsNewWithVersionUpgrade() {
 	// 1.0) and 2.0) both with no default versioning behavior
 	// SetCurrent to 1.0
 	// Workflow (annotated as Pinned):
-	// - Start and poll for GetTargetWorkflowDeploymentVersionChanged()
+	// - Start and poll for GetTargetWorkerDeploymentVersionChanged()
 	// - If target version changed, continue as new with AutoUpgrade behavior
 	// Verify workflow returns 2.0.
 

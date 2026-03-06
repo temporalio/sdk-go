@@ -434,8 +434,8 @@ func (env *testWorkflowEnvironmentImpl) setContinueAsNewSuggestedReasons(reasons
 	env.workflowInfo.continueAsNewSuggestedReasons = reasons
 }
 
-func (env *testWorkflowEnvironmentImpl) setTargetWorkflowDeploymentVersionChanged(changed bool) {
-	env.workflowInfo.targetWorkflowDeploymentVersionChanged = changed
+func (env *testWorkflowEnvironmentImpl) setTargetWorkerDeploymentVersionChanged(changed bool) {
+	env.workflowInfo.targetWorkerDeploymentVersionChanged = changed
 }
 
 func (env *testWorkflowEnvironmentImpl) setContinuedExecutionRunID(rid string) {

@@ -369,12 +369,12 @@ func (e *TestWorkflowEnvironment) SetContinueAsNewSuggestedReasons(reasons []Con
 	e.impl.setContinueAsNewSuggestedReasons(reasons)
 }
 
-// SetTargetWorkflowDeploymentVersionChanged sets the value that is returned from
-// GetInfo(ctx).GetTargetWorkflowDeploymentVersionChanged.
+// SetTargetWorkerDeploymentVersionChanged sets the value that is returned from
+// GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged.
 //
 // Note: this value may not be up to date if accessed inside a query.
-func (e *TestWorkflowEnvironment) SetTargetWorkflowDeploymentVersionChanged(changed bool) {
-	e.impl.setTargetWorkflowDeploymentVersionChanged(changed)
+func (e *TestWorkflowEnvironment) SetTargetWorkerDeploymentVersionChanged(changed bool) {
+	e.impl.setTargetWorkerDeploymentVersionChanged(changed)
 }
 
 // SetContinuedExecutionRunID sets the value that is returned from
