@@ -90,6 +90,7 @@ const (
 	//
 	// Note that if the previous workflow had a Pinned override, that override will be inherited by the new workflow
 	// run regardless of the ContinueAsNewVersioningBehavior specified in the continue-as-new command.
+	//
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehaviorAutoUpgrade]
 	ContinueAsNewVersioningBehaviorAutoUpgrade = 1
 )
@@ -103,18 +104,22 @@ type ContinueAsNewSuggestedReason int
 
 const (
 	// ContinueAsNewSuggestedReasonUnspecified - The reason is unknown.
+	//
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonUnspecified]
 	ContinueAsNewSuggestedReasonUnspecified = iota
 
 	// ContinueAsNewSuggestedReasonHistorySizeTooLarge - Workflow History size is getting too large.
+	//
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonHistorySizeTooLarge]
 	ContinueAsNewSuggestedReasonHistorySizeTooLarge = 1
 
 	// ContinueAsNewSuggestedReasonTooManyHistoryEvents - Workflow History size is getting too large.
+	//
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonTooManyHistoryEvents]
 	ContinueAsNewSuggestedReasonTooManyHistoryEvents = 2
 
 	// ContinueAsNewSuggestedReasonTooManyUpdates - Workflow's count of completed plus in-flight updates is too large.
+	//
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonTooManyUpdates]
 	ContinueAsNewSuggestedReasonTooManyUpdates = 3
 )
@@ -1502,6 +1507,7 @@ func (wInfo *WorkflowInfo) GetContinueAsNewSuggested() bool {
 // GetContinueAsNewSuggestedReasons returns a list of reasons why continue as new is suggested,
 // if the server is configured to suggest continue as new and it is suggested.
 // This value may change throughout the life of the workflow.
+//
 // Note: ContinueAsNewSuggestedReasons are currently experimental.
 func (wInfo *WorkflowInfo) GetContinueAsNewSuggestedReasons() []ContinueAsNewSuggestedReason {
 	return wInfo.continueAsNewSuggestedReasons
@@ -1509,6 +1515,7 @@ func (wInfo *WorkflowInfo) GetContinueAsNewSuggestedReasons() []ContinueAsNewSug
 
 // GetTargetWorkerDeploymentVersionChanged returns whether the target worker deployment
 // version has changed.
+//
 // Note: Upgrade-on-Continue-as-New is currently experimental.
 func (wInfo *WorkflowInfo) GetTargetWorkerDeploymentVersionChanged() bool {
 	return wInfo.targetWorkerDeploymentVersionChanged
@@ -1526,6 +1533,7 @@ func (wc *workflowEnvironmentInterceptor) GetInfo(ctx Context) *WorkflowInfo {
 	return wc.env.WorkflowInfo()
 }
 
+//
 // Exposed as: [go.temporal.io/sdk/workflow.GetTypedSearchAttributes]
 func GetTypedSearchAttributes(ctx Context) SearchAttributes {
 	i := getWorkflowOutboundInterceptor(ctx)

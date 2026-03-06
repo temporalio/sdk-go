@@ -36,8 +36,6 @@ const (
 	// If the source workflow was AutoUpgrade, the new workflow will start as AutoUpgrade.
 	// If the source workflow was Pinned, the new workflow will start Pinned to the same Build ID.
 	// If the source workflow had a Pinned Versioning Override, the new workflow will inherit that Versioning Override.
-	//
-	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehaviorUnspecified]
 	ContinueAsNewVersioningBehaviorUnspecified = internal.ContinueAsNewVersioningBehaviorUnspecified
 
 	// ContinueAsNewVersioningBehaviorAutoUpgrade - Start the new workflow with AutoUpgrade versioning behavior.
@@ -47,7 +45,6 @@ const (
 	//
 	// Note that if the previous workflow had a Pinned override, that override will be inherited by the new workflow
 	// run regardless of the ContinueAsNewVersioningBehavior specified in the continue-as-new command.
-	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehaviorAutoUpgrade]
 	ContinueAsNewVersioningBehaviorAutoUpgrade = internal.ContinueAsNewVersioningBehaviorAutoUpgrade
 )
 
