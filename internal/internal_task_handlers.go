@@ -497,6 +497,7 @@ func (eh *history) verifyAllEventsProcessed() error {
 				)
 			}
 		}
+		eh.eventsHandler.metricsHandler.Counter(metrics.UpdatePrematureEOSCounter).Inc(1)
 		return fmt.Errorf(
 			"PREMATURE-EOS: history_events: premature end of stream, expectedLastEventID=%v but no more events after eventID=%v",
 			eh.lastEventID,

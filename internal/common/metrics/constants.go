@@ -37,6 +37,8 @@ const (
 
 	CorruptedSignalsCounter = TemporalMetricsPrefix + "corrupted_signals"
 
+	UpdatePrematureEOSCounter = TemporalMetricsPrefix + "update_premature_eos"
+
 	WorkerStartCounter       = TemporalMetricsPrefix + "worker_start"
 	WorkerTaskSlotsAvailable = TemporalMetricsPrefix + "worker_task_slots_available"
 	WorkerTaskSlotsUsed      = TemporalMetricsPrefix + "worker_task_slots_used"
