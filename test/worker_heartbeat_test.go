@@ -3,6 +3,7 @@ package test_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,7 +13,7 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/api/enums/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
@@ -23,6 +24,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -121,7 +123,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
 	}, 5*time.Second, 200*time.Millisecond, "Should find worker with activity slot used")
 
-	ts.Equal(enums.WORKER_STATUS_RUNNING, workerInfo.Status)
+	ts.Equal(enumspb.WORKER_STATUS_RUNNING, workerInfo.Status)
 
 	workflowTaskSlots := workerInfo.WorkflowTaskSlotsInfo
 	ts.Equal(int32(1), workflowTaskSlots.TotalProcessedTasks)
@@ -204,7 +206,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.Equal(ts.taskQueueName, workerInfo.TaskQueue)
 	ts.Equal(internal.SDKName, workerInfo.SdkName)
 	ts.Equal(internal.SDKVersion, workerInfo.SdkVersion)
-	ts.Equal(enums.WORKER_STATUS_SHUTTING_DOWN, workerInfo.Status)
+	ts.Equal(enumspb.WORKER_STATUS_SHUTTING_DOWN, workerInfo.Status)
 
 	// Timestamp validations - second heartbeat check (after shutdown)
 	// StartTime should be unchanged
@@ -912,4 +914,105 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	}
 	ts.True(pluginNames["test-client-plugin"])
 	ts.True(pluginNames["test-worker-plugin"])
+}
+
+func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
+	taskQueue := taskQueuePrefix + "-graceful-shutdown-" + ts.T().Name()
+
+	type pollCompletion struct {
+		method string
+		err    error
+	}
+
+	var (
+		mu                       sync.Mutex
+		shutdownReq              *workflowservice.ShutdownWorkerRequest
+		pollCompletionsAfterStop []pollCompletion
+		pollsInFlight            atomic.Int32
+		stopCalled               atomic.Bool
+	)
+
+	c, err := client.Dial(client.Options{
+		HostPort:                ts.config.ServiceAddr,
+		Namespace:               ts.config.Namespace,
+		Logger:                  ilog.NewDefaultLogger(),
+		WorkerHeartbeatInterval: 1 * time.Second,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS: ts.config.TLS,
+			DialOptions: []grpc.DialOption{
+				grpc.WithUnaryInterceptor(func(
+					ctx context.Context,
+					method string,
+					req any,
+					reply any,
+					cc *grpc.ClientConn,
+					invoker grpc.UnaryInvoker,
+					opts ...grpc.CallOption,
+				) error {
+					isPoll := strings.HasSuffix(method, "/PollWorkflowTaskQueue") ||
+						strings.HasSuffix(method, "/PollActivityTaskQueue") ||
+						strings.HasSuffix(method, "/PollNexusTaskQueue")
+
+					if isPoll {
+						pollsInFlight.Add(1)
+					}
+
+					err := invoker(ctx, method, req, reply, cc, opts...)
+
+					if isPoll {
+						pollsInFlight.Add(-1)
+					}
+
+					if method == "/temporal.api.workflowservice.v1.WorkflowService/ShutdownWorker" {
+						mu.Lock()
+						shutdownReq = req.(*workflowservice.ShutdownWorkerRequest)
+						mu.Unlock()
+					}
+
+					// Capture poll completions that happen after Stop is called.
+					// These are the polls that should drain gracefully.
+					if isPoll && stopCalled.Load() {
+						mu.Lock()
+						pollCompletionsAfterStop = append(pollCompletionsAfterStop, pollCompletion{
+							method: method,
+							err:    err,
+						})
+						mu.Unlock()
+					}
+
+					return err
+				}),
+			},
+		},
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	w := worker.New(c, taskQueue, worker.Options{})
+	w.RegisterWorkflow(simpleWorkflow)
+	ts.NoError(w.Start())
+
+	ts.Eventually(func() bool {
+		return pollsInFlight.Load() > 0
+	}, 10*time.Second, 200*time.Millisecond, "Should have at least one poll in flight")
+
+	stopCalled.Store(true)
+	w.Stop()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	ts.NotNil(shutdownReq, "ShutdownWorker RPC should have been called")
+	ts.Equal(taskQueue, shutdownReq.TaskQueue, "ShutdownWorker should include TaskQueue")
+	ts.NotEmpty(shutdownReq.TaskQueueTypes, "ShutdownWorker should include TaskQueueTypes")
+	ts.Contains(shutdownReq.TaskQueueTypes, enumspb.TASK_QUEUE_TYPE_WORKFLOW,
+		"ShutdownWorker should include WORKFLOW task queue type")
+
+	// Verify that polls outstanding at shutdown completed gracefully: the server
+	// should have returned empty responses instead of the SDK canceling them.
+	ts.NotEmpty(pollCompletionsAfterStop, "At least one poll should have completed after shutdown")
+	for _, completion := range pollCompletionsAfterStop {
+		ts.NoError(completion.err,
+			"Poll %s should complete without error after shutdown (graceful drain)", completion.method)
+	}
 }
