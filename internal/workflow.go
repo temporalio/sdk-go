@@ -113,7 +113,7 @@ const (
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonHistorySizeTooLarge]
 	ContinueAsNewSuggestedReasonHistorySizeTooLarge = 1
 
-	// ContinueAsNewSuggestedReasonTooManyHistoryEvents - Workflow History size is getting too large.
+	// ContinueAsNewSuggestedReasonTooManyHistoryEvents - Workflow History is getting too long.
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewSuggestedReasonTooManyHistoryEvents]
 	ContinueAsNewSuggestedReasonTooManyHistoryEvents = 2
