@@ -1332,6 +1332,9 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestContinueAsNewWithVersionUpgrade() {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
