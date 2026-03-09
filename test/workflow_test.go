@@ -591,6 +591,50 @@ func (w *Workflows) ContinueAsNewWithRetryPolicy(
 	)
 }
 
+func (w *Workflows) ContinueAsNewWithVersionUpgradeV1(
+	ctx workflow.Context,
+	attempt int,
+) (string, error) {
+	if attempt > 0 {
+		return "v1.0", nil
+	}
+
+	// Check GetTargetWorkerDeploymentVersionChanged periodically.
+	// TargetWorkerDeploymentVersionChanged is refreshed after each WFT completes.
+	for {
+		// Trigger a WFT when timer expires, thereby refreshing the TargetWorkerDeploymentVersionChanged flag.
+		// Since this is just a test workflow, we aren't doing any real work. In a real workflow regularly
+		// doing non-sleep workflow tasks, you would not need to artificially trigger a WFT to refresh the
+		// TargetWorkerDeploymentVersionChanged flag. You could choose to check the field periodically, or you
+		// might want to check before accepting updates, starting activities, or starting child workflows.
+		err := workflow.Sleep(ctx, 10*time.Millisecond)
+		if err != nil {
+			return "", err
+		}
+		info := workflow.GetInfo(ctx)
+		if info.GetTargetWorkerDeploymentVersionChanged() {
+			return "", workflow.NewContinueAsNewErrorWithOptions(
+				ctx,
+				workflow.ContinueAsNewErrorOptions{
+					// Pass InitialVersioningBehavior=workflow.ContinueAsNewVersioningBehaviorAutoUpgrade
+					// to make the new run start with AutoUpgrade behavior and use the Target Version of
+					// its Worker Deployment.
+					InitialVersioningBehavior: workflow.ContinueAsNewVersioningBehaviorAutoUpgrade,
+				},
+				"ContinueAsNewWithVersionUpgrade",
+				attempt+1,
+			)
+		}
+	}
+}
+
+func (w *Workflows) ContinueAsNewWithVersionUpgradeV2(
+	ctx workflow.Context,
+	attempt int,
+) (string, error) {
+	return "v2.0", nil
+}
+
 func (w *Workflows) ContinueAsNewWithChildWF(
 	ctx workflow.Context,
 	iterations int,
