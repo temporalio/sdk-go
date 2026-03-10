@@ -28,6 +28,8 @@ type testStorageDriver struct {
 	retrieveCount int
 	storeErr      error
 	retrieveErr   error
+	storeDelay    time.Duration
+	retrieveDelay time.Duration
 }
 
 func newTestDriver(name string) *testStorageDriver {
@@ -41,6 +43,9 @@ func (d *testStorageDriver) Store(_ converter.StorageDriverContext, payloads []*
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.storeCount++
+	if d.storeDelay > 0 {
+		time.Sleep(d.storeDelay)
+	}
 	if d.storeErr != nil {
 		return nil, d.storeErr
 	}
@@ -57,6 +62,9 @@ func (d *testStorageDriver) Retrieve(_ converter.StorageDriverContext, claims []
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.retrieveCount++
+	if d.retrieveDelay > 0 {
+		time.Sleep(d.retrieveDelay)
+	}
 	if d.retrieveErr != nil {
 		return nil, d.retrieveErr
 	}
@@ -514,6 +522,7 @@ func TestStoreVisitor_CodecEncodeError(t *testing.T) {
 
 func TestStoreVisitor_Callback(t *testing.T) {
 	driver := newTestDriver("d")
+	driver.storeDelay = time.Millisecond
 	params, err := StorageOptionsToParams(converter.StorageOptions{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
@@ -790,6 +799,7 @@ func TestRetrievalVisitor_CodecDecodeError(t *testing.T) {
 
 func TestRetrievalVisitor_Callback(t *testing.T) {
 	driver := newTestDriver("d")
+	driver.retrieveDelay = time.Millisecond
 	params, err := StorageOptionsToParams(converter.StorageOptions{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
