@@ -599,6 +599,15 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	if wInfo.WorkflowTaskTimeout == 0 {
 		wInfo.WorkflowTaskTimeout = 1 * time.Second
 	}
+	if wInfo.currentRunID == "" {
+		wInfo.currentRunID = wInfo.WorkflowExecution.RunID
+	}
+	wfCtx := converter.WorkflowSerializationContext{
+		Namespace:  wInfo.Namespace,
+		WorkflowID: wInfo.WorkflowExecution.ID,
+	}
+	env.dataConverter = converter.WithSerializationContext(env.dataConverter, wfCtx)
+	env.failureConverter = converter.WithFailureConverterSerializationContext(env.failureConverter, wfCtx)
 	env.locker.Unlock()
 
 	workflowDefinition, err := env.getWorkflowDefinition(wInfo.WorkflowType)
@@ -656,6 +665,10 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 
 func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 	return env.sdkFlags.tryUse(flag, true)
+}
+
+func (env *testWorkflowEnvironmentImpl) GenerateSequence() int64 {
+	return env.nextID()
 }
 
 func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
@@ -1247,11 +1260,7 @@ func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropaga
 func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
 	ensureDefaultRetryPolicy(&parameters)
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
-	if parameters.ActivityID == "" {
-		scheduleTaskAttr.ActivityId = getStringID(env.nextID())
-	} else {
-		scheduleTaskAttr.ActivityId = parameters.ActivityID
-	}
+	scheduleTaskAttr.ActivityId = parameters.ActivityID
 	activityID := ActivityID{id: scheduleTaskAttr.GetActivityId()}
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}

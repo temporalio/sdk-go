@@ -941,7 +941,6 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 
 func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName string, args ...interface{}) Future {
 	// Validate type and its arguments.
-	dataConverter := getDataConverterFromWorkflowContext(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
 	future, settable := newDecodeFuture(ctx, typeName)
 	activityType, err := getValidatedActivityFunction(typeName, args, registry)
@@ -977,6 +976,30 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		return future
 	}
 
+	env := getWorkflowEnvironment(ctx)
+	// Generate activity ID before serialization so it's available to context-aware data converters
+	scheduleID := env.GenerateSequence()
+	var activityID string
+	if options.ActivityID != "" {
+		activityID = options.ActivityID
+	} else {
+		activityID = getStringID(scheduleID)
+	}
+	wfInfo := env.WorkflowInfo()
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    wfInfo.Namespace,
+		WorkflowID:   wfInfo.WorkflowExecution.ID,
+		WorkflowType: wfInfo.WorkflowType.Name,
+		ActivityType: activityType.Name,
+		TaskQueue:    cmp.Or(options.TaskQueueName, wfInfo.TaskQueueName),
+		IsLocal:      false,
+	}
+	dataConverter := converter.WithSerializationContext(
+		getDataConverterFromWorkflowContext(ctx),
+		actCtx,
+	)
+	future.(*decodeFutureImpl).dataConverter = dataConverter
+
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		panic(err)
@@ -987,8 +1010,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		ActivityType:           *activityType,
 		Input:                  input,
 		DataConverter:          dataConverter,
+		FailureConverter:       converter.WithFailureConverterSerializationContext(wc.env.GetFailureConverter(), actCtx),
 		Header:                 header,
 	}
+	params.ActivityID = activityID
+	params.ScheduleID = scheduleID
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
@@ -1141,13 +1167,25 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		return future
 	}
 
+	env := getWorkflowEnvironment(ctx)
+	wfInfo := env.WorkflowInfo()
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    wfInfo.Namespace,
+		WorkflowID:   wfInfo.WorkflowExecution.ID,
+		WorkflowType: wfInfo.WorkflowType.Name,
+		ActivityType: typeName,
+		TaskQueue:    wfInfo.TaskQueueName,
+		IsLocal:      true,
+	}
+
 	params := &ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: *options,
 		ActivityFn:                  activityFn,
 		ActivityType:                typeName,
 		InputArgs:                   args,
-		WorkflowInfo:                GetWorkflowInfo(ctx),
-		DataConverter:               getDataConverterFromWorkflowContext(ctx),
+		WorkflowInfo:                wfInfo,
+		DataConverter:               converter.WithSerializationContext(getDataConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:            converter.WithFailureConverterSerializationContext(wc.env.GetFailureConverter(), actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
 		Attempt:                     1, // Attempts always start at one
@@ -1274,8 +1312,23 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	}
 
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
-	dc := WithWorkflowContext(ctx, workflowOptionsFromCtx.DataConverter)
 	env := getWorkflowEnvironment(ctx)
+
+	// Generate child workflow ID before serialization so it's available to context-aware data converters
+	var childWorkflowID string
+	if workflowOptionsFromCtx.WorkflowID != "" {
+		childWorkflowID = workflowOptionsFromCtx.WorkflowID
+	} else {
+		childWorkflowID = env.WorkflowInfo().currentRunID + "_" + getStringID(env.GenerateSequence())
+	}
+	wfInfo := env.WorkflowInfo()
+	childWfCtx := converter.WorkflowSerializationContext{
+		Namespace:  wfInfo.Namespace,
+		WorkflowID: childWorkflowID,
+	}
+	dc := converter.WithSerializationContext(getDataConverterFromWorkflowContext(ctx), childWfCtx)
+	result.decodeFutureImpl.dataConverter = dc
+
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
 	if err != nil {
 		executionSettable.Set(nil, err)
@@ -1299,14 +1352,21 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		return result
 	}
 
+	failureConverter := converter.WithFailureConverterSerializationContext(
+		wc.env.GetFailureConverter(),
+		childWfCtx,
+	)
+
 	params := ExecuteWorkflowParams{
-		WorkflowOptions: *options,
-		Input:           input,
-		WorkflowType:    wfType,
-		Header:          header,
-		scheduledTime:   Now(ctx), /* this is needed for test framework, and is not send to server */
-		attempt:         1,
+		WorkflowOptions:  *options,
+		Input:            input,
+		WorkflowType:     wfType,
+		Header:           header,
+		scheduledTime:    Now(ctx), /* this is needed for test framework, and is not send to server */
+		attempt:          1,
+		failureConverter: failureConverter,
 	}
+	params.WorkflowID = childWorkflowID
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
@@ -1696,7 +1756,12 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
-	dataConverter := getDataConverterFromWorkflowContext(ctx)
+	dataConverter := converter.WithSerializationContext(
+		getDataConverterFromWorkflowContext(ctx),
+		converter.WorkflowSerializationContext{
+			Namespace:  options.Namespace,
+			WorkflowID: workflowID,
+		})
 	input, err := encodeArg(dataConverter, arg)
 	if err != nil {
 		settable.Set(nil, err)
@@ -2938,6 +3003,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
+
 	params, err := wc.prepareNexusOperationParams(ctx, input)
 	if err != nil {
 		executionSettable.Set(nil, err)

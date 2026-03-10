@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"reflect"
@@ -80,14 +81,16 @@ type (
 	// implement the UpdateCallbacks abstraction. It handles callbacks by
 	// sending protocol messages.
 	updateProtocol struct {
-		protoInstanceID string
-		clientIdentity  string
-		initialRequest  *updatepb.Request
-		requestMsgID    string
-		requestSeqID    int64
-		scheduleUpdate  func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
-		env             updateEnv
-		state           updateState
+		protoInstanceID  string
+		clientIdentity   string
+		initialRequest   *updatepb.Request
+		requestMsgID     string
+		requestSeqID     int64
+		scheduleUpdate   func(name string, id string, args *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks)
+		env              updateEnv
+		state            updateState
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
 	}
 
 	// updateHandler is the underlying type that is registered into a workflow
@@ -100,6 +103,8 @@ type (
 		name             string
 		unfinishedPolicy HandlerUnfinishedPolicy
 		description      string
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
 	}
 )
 
@@ -170,7 +175,7 @@ func (up *updateProtocol) Reject(err error) {
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
 			RejectedRequest:                  up.initialRequest,
-			Failure:                          up.env.GetFailureConverter().ErrorToFailure(err),
+			Failure:                          cmp.Or(up.failureConverter, up.env.GetFailureConverter()).ErrorToFailure(err),
 		}),
 	})
 	up.state = updateStateCompleted
@@ -183,10 +188,11 @@ func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
 	outcome := &updatepb.Outcome{}
 	if outcomeErr != nil {
 		outcome.Value = &updatepb.Outcome_Failure{
-			Failure: up.env.GetFailureConverter().ErrorToFailure(outcomeErr),
+			Failure: cmp.Or(up.failureConverter, up.env.GetFailureConverter()).ErrorToFailure(outcomeErr),
 		}
 	} else {
-		success, err := up.env.GetDataConverter().ToPayloads(success)
+		dc := cmp.Or(up.dataConverter, up.env.GetDataConverter())
+		success, err := dc.ToPayloads(success)
 		if err != nil {
 			panic(err)
 		}
@@ -272,8 +278,13 @@ func defaultUpdateHandler(
 			return
 		}
 
+		if up, ok := callbacks.(*updateProtocol); ok {
+			up.dataConverter = handler.dataConverter
+			up.failureConverter = handler.failureConverter
+		}
+
 		args, err := decodeArgsToRawValues(
-			env.GetDataConverter(),
+			handler.dataConverter,
 			reflect.TypeOf(handler.fn),
 			serializedArgs,
 		)

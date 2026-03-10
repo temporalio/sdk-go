@@ -261,13 +261,17 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 		runIDCell = util.PopulatedOnceCell(runID)
 	}
 
+	gwCtx := converter.WorkflowSerializationContext{
+		Namespace:  wc.namespace,
+		WorkflowID: workflowID,
+	}
 	return &workflowRunImpl{
 		workflowID:       workflowID,
 		firstRunID:       runID,
 		currentRunID:     &runIDCell,
 		iterFn:           iterFn,
-		dataConverter:    wc.dataConverter,
-		failureConverter: wc.failureConverter,
+		dataConverter:    converter.WithSerializationContext(wc.dataConverter, gwCtx),
+		failureConverter: converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
 		registry:         wc.registry,
 	}
 }
@@ -497,7 +501,12 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 		return errors.New("empty activity or workflow id or namespace")
 	}
 
-	dataConverter := WithContext(ctx, wc.dataConverter)
+	wfCtx := converter.WorkflowSerializationContext{
+		Namespace:  namespace,
+		WorkflowID: workflowID,
+	}
+	dataConverter := converter.WithSerializationContext(WithContext(ctx, wc.dataConverter), wfCtx)
+	failureConverter := converter.WithFailureConverterSerializationContext(wc.failureConverter, wfCtx)
 	var data *commonpb.Payloads
 	if result != nil {
 		var err0 error
@@ -510,7 +519,7 @@ func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, w
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequestByID(wc.identity, namespace, workflowID, runID, activityID,
-		data, err, wc.dataConverter, wc.failureConverter, cancelAllowed)
+		data, err, dataConverter, failureConverter, cancelAllowed)
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -561,7 +570,10 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
 		return err
 	}
 
-	dataConverter := WithContext(ctx, wc.dataConverter)
+	dataConverter := converter.WithSerializationContext(WithContext(ctx, wc.dataConverter), converter.WorkflowSerializationContext{
+		Namespace:  namespace,
+		WorkflowID: workflowID,
+	})
 	data, err := encodeArgs(dataConverter, details)
 	if err != nil {
 		return err
@@ -1801,6 +1813,10 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = converter.WithSerializationContext(dataConverter, converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: workflowID,
+	})
 
 	// Encode input
 	input, err := encodeArgs(dataConverter, in.Args)
@@ -1917,6 +1933,10 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler)
 	}
 
+	wfCtx := converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: workflowID,
+	}
 	curRunIDCell := util.PopulatedOnceCell(runID)
 	return &workflowRunImpl{
 		workflowType:     in.WorkflowType,
@@ -1924,8 +1944,8 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		firstRunID:       runID,
 		currentRunID:     &curRunIDCell,
 		iterFn:           iterFn,
-		dataConverter:    w.client.dataConverter,
-		failureConverter: w.client.failureConverter,
+		dataConverter:    converter.WithSerializationContext(w.client.dataConverter, wfCtx),
+		failureConverter: converter.WithFailureConverterSerializationContext(w.client.failureConverter, wfCtx),
 		registry:         w.client.registry,
 	}, nil
 }
@@ -1971,6 +1991,10 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		return w.client.getWorkflowHistory(fnCtx, startOp.input.Options.ID, fnRunID, true,
 			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler)
 	}
+	startWfCtx := converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: startOp.input.Options.ID,
+	}
 	onStart := func(startResp *workflowservice.StartWorkflowExecutionResponse) {
 		runIDCell := util.PopulatedOnceCell(startResp.RunId)
 		startOp.set(&workflowRunImpl{
@@ -1979,8 +2003,8 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 			firstRunID:       startResp.RunId,
 			currentRunID:     &runIDCell,
 			iterFn:           iterFn,
-			dataConverter:    w.client.dataConverter,
-			failureConverter: w.client.failureConverter,
+			dataConverter:    converter.WithSerializationContext(w.client.dataConverter, startWfCtx),
+			failureConverter: converter.WithFailureConverterSerializationContext(w.client.failureConverter, startWfCtx),
 			registry:         w.client.registry,
 		}, nil)
 	}
@@ -2131,6 +2155,10 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 
 func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *ClientSignalWorkflowInput) error {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
+	dataConverter = converter.WithSerializationContext(dataConverter, converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+	})
 	input, err := encodeArg(dataConverter, in.Arg)
 	if err != nil {
 		return err
@@ -2174,6 +2202,10 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	in *ClientSignalWithStartWorkflowInput,
 ) (WorkflowRun, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
+	dataConverter = converter.WithSerializationContext(dataConverter, converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.Options.ID,
+	})
 	signalInput, err := encodeArg(dataConverter, in.SignalArg)
 	if err != nil {
 		return nil, err
@@ -2256,6 +2288,10 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 			enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT, metricsHandler)
 	}
 
+	swsCtx := converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.Options.ID,
+	}
 	curRunIDCell := util.PopulatedOnceCell(response.GetRunId())
 	return &workflowRunImpl{
 		workflowType:     in.WorkflowType,
@@ -2263,8 +2299,8 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		firstRunID:       response.GetRunId(),
 		currentRunID:     &curRunIDCell,
 		iterFn:           iterFn,
-		dataConverter:    w.client.dataConverter,
-		failureConverter: w.client.failureConverter,
+		dataConverter:    converter.WithSerializationContext(w.client.dataConverter, swsCtx),
+		failureConverter: converter.WithFailureConverterSerializationContext(w.client.failureConverter, swsCtx),
 		registry:         w.client.registry,
 	}, nil
 }
@@ -2286,7 +2322,11 @@ func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *Clie
 }
 
 func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *ClientTerminateWorkflowInput) error {
-	datailsPayload, err := w.client.dataConverter.ToPayloads(in.Details...)
+	dc := converter.WithSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+	})
+	datailsPayload, err := dc.ToPayloads(in.Details...)
 	if err != nil {
 		return err
 	}
@@ -2377,9 +2417,12 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 	}
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
-		dc:                        w.client.dataConverter,
-		staticSummaryPayload:      resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
-		staticDetailsPayload:      resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
+		dc: converter.WithSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+			Namespace:  w.client.namespace,
+			WorkflowID: in.WorkflowID,
+		}),
+		staticSummaryPayload: resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
+		staticDetailsPayload: resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
 	}
 
 	return &ClientDescribeWorkflowOutput{
@@ -2391,6 +2434,11 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	ctx context.Context,
 	in *ClientQueryWorkflowInput,
 ) (converter.EncodedValue, error) {
+	dc := converter.WithSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+	})
+
 	// get workflow headers from the context
 	header, err := headerPropagated(ctx, w.client.contextPropagators)
 	if err != nil {
@@ -2400,7 +2448,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	var input *commonpb.Payloads
 	if len(in.Args) > 0 {
 		var err error
-		if input, err = encodeArgs(w.client.dataConverter, in.Args); err != nil {
+		if input, err = encodeArgs(dc, in.Args); err != nil {
 			return nil, err
 		}
 	}
@@ -2430,7 +2478,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 			queryRejected: resp.QueryRejected,
 		}
 	}
-	return newEncodedValue(resp.QueryResult, w.client.dataConverter), nil
+	return newEncodedValue(resp.QueryResult, dc), nil
 }
 
 func (w *workflowClientInterceptor) UpdateWorkflow(
@@ -2511,6 +2559,10 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = converter.WithSerializationContext(dataConverter, converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+	})
 	argPayloads, err := dataConverter.ToPayloads(in.Args...)
 	if err != nil {
 		return nil, err
@@ -2550,6 +2602,13 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 	// header, _ = headerPropagated(ctx, w.client.contextPropagators)
 	// todo header not in PollWorkflowUpdate
 
+	wfCtx := converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.UpdateRef.GetWorkflowExecution().GetWorkflowId(),
+	}
+	dc := converter.WithSerializationContext(w.client.dataConverter, wfCtx)
+	fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, wfCtx)
+
 	pollReq := workflowservice.PollWorkflowExecutionUpdateRequest{
 		Namespace: w.client.namespace,
 		UpdateRef: in.UpdateRef,
@@ -2586,11 +2645,11 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 		switch v := resp.GetOutcome().GetValue().(type) {
 		case *updatepb.Outcome_Failure:
 			return &ClientPollWorkflowUpdateOutput{
-				Error: w.client.failureConverter.FailureToError(v.Failure),
+				Error: fc.FailureToError(v.Failure),
 			}, nil
 		case *updatepb.Outcome_Success:
 			return &ClientPollWorkflowUpdateOutput{
-				Result: newEncodedValue(v.Success, w.client.dataConverter),
+				Result: newEncodedValue(v.Success, dc),
 			}, nil
 		default:
 			return nil, fmt.Errorf("unsupported outcome type %T", v)
@@ -2626,6 +2685,13 @@ func (w *workflowClientInterceptor) updateHandleFromResponse(
 		}
 	}
 
+	uhCtx := converter.WorkflowSerializationContext{
+		Namespace:  w.client.namespace,
+		WorkflowID: resp.GetUpdateRef().GetWorkflowExecution().GetWorkflowId(),
+	}
+	dc := converter.WithSerializationContext(w.client.dataConverter, uhCtx)
+	fc := converter.WithFailureConverterSerializationContext(w.client.failureConverter, uhCtx)
+
 	switch v := resp.GetOutcome().GetValue().(type) {
 	case nil:
 		return &lazyUpdateHandle{
@@ -2634,12 +2700,12 @@ func (w *workflowClientInterceptor) updateHandleFromResponse(
 		}, nil
 	case *updatepb.Outcome_Failure:
 		return &completedUpdateHandle{
-			err:              w.client.failureConverter.FailureToError(v.Failure),
+			err:              fc.FailureToError(v.Failure),
 			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
 		}, nil
 	case *updatepb.Outcome_Success:
 		return &completedUpdateHandle{
-			value:            newEncodedValue(v.Success, w.client.dataConverter),
+			value:            newEncodedValue(v.Success, dc),
 			baseUpdateHandle: baseUpdateHandle{ref: resp.GetUpdateRef()},
 		}, nil
 	}
