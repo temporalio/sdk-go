@@ -582,16 +582,8 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	options.VersioningOverride = &client.PinnedVersioningOverride{
 		Version: v2,
 	}
-	// Retry until the pinned version is present in the task queue, since the
-	// deployment version may be registered before the poller is visible to
-	// the matching engine.
-	var handle1 client.WorkflowRun
-	ts.Eventually(func() bool {
-		var startErr error
-		handle1, startErr = ts.client.ExecuteWorkflow(ctx, options, "WaitSignalToStartVersioned")
-		return startErr == nil
-	}, 5*time.Second, 200*time.Millisecond)
-	ts.Require().NotNil(handle1)
+	handle1, err := ts.client.ExecuteWorkflow(ctx, options, "WaitSignalToStartVersioned")
+	ts.NoError(err)
 	// No override
 	handle2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
