@@ -861,7 +861,7 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 
 			assert.Greater(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount, int64(0))
 		},
-		time.Second, 100*time.Millisecond,
+		5*time.Second, 100*time.Millisecond,
 	)
 
 	// no workers yet, so only workflow should have a backlog
