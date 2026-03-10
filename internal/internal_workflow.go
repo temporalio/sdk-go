@@ -1024,8 +1024,8 @@ func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
 // to hide frames internal to the framework.
 func (s *coroutineState) initialYield(stackDepth int, status string) {
 	if s.blocked.Swap(true) {
-		panic("trying to block on a coroutine which is already blocked: most likely an incorrect Context was used to do a blocking " +
-			"call, such as Future.Get() or Channel.Receive()")
+		panic("trying to block on coroutine which is already blocked, most likely a wrong Context is used to do blocking" +
+			" call (like Future.Get() or Channel.Receive()")
 	}
 	keepBlocked := true
 	for keepBlocked {
