@@ -42,13 +42,7 @@ func TestWorkerHeartbeatSuite(t *testing.T) {
 func (ts *WorkerHeartbeatTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
 	ts.NoError(ts.InitConfigAndNamespace())
-}
 
-func (ts *WorkerHeartbeatTestSuite) TearDownSuite() {
-	ts.Assertions = require.New(ts.T())
-}
-
-func (ts *WorkerHeartbeatTestSuite) SetupTest() {
 	var err error
 	// Create a client with heartbeating enabled
 	ts.client, err = client.Dial(client.Options{
@@ -60,7 +54,17 @@ func (ts *WorkerHeartbeatTestSuite) SetupTest() {
 		Identity:                "WorkerHeartbeatTest",
 	})
 	ts.NoError(err)
+}
 
+func (ts *WorkerHeartbeatTestSuite) TearDownSuite() {
+	ts.Assertions = require.New(ts.T())
+	if ts.client != nil {
+		ts.client.Close()
+		ts.client = nil
+	}
+}
+
+func (ts *WorkerHeartbeatTestSuite) SetupTest() {
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 
@@ -68,10 +72,6 @@ func (ts *WorkerHeartbeatTestSuite) TearDownTest() {
 	if ts.worker != nil {
 		ts.worker.Stop()
 		ts.worker = nil
-	}
-	if ts.client != nil {
-		ts.client.Close()
-		ts.client = nil
 	}
 }
 
