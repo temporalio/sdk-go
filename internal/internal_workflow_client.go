@@ -154,14 +154,15 @@ type (
 
 	// workflowRunImpl is an implementation of WorkflowRun
 	workflowRunImpl struct {
-		workflowType     string
-		workflowID       string
-		firstRunID       string
-		currentRunID     *util.OnceCell
-		iterFn           func(ctx context.Context, runID string) HistoryEventIterator
-		dataConverter    converter.DataConverter
-		failureConverter converter.FailureConverter
-		registry         *registry
+		workflowType          string
+		workflowID            string
+		firstRunID            string
+		currentRunID          *util.OnceCell
+		iterFn                func(ctx context.Context, runID string) HistoryEventIterator
+		dataConverter         converter.DataConverter
+		failureConverter      converter.FailureConverter
+		registry              *registry
+		inboundPayloadVisitor PayloadVisitor
 	}
 
 	// HistoryEventIterator represents the interface for
@@ -264,13 +265,14 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 	}
 
 	return &workflowRunImpl{
-		workflowID:       workflowID,
-		firstRunID:       runID,
-		currentRunID:     &runIDCell,
-		iterFn:           iterFn,
-		dataConverter:    wc.dataConverter,
-		failureConverter: wc.failureConverter,
-		registry:         wc.registry,
+		workflowID:            workflowID,
+		firstRunID:            runID,
+		currentRunID:          &runIDCell,
+		iterFn:                iterFn,
+		dataConverter:         wc.dataConverter,
+		failureConverter:      wc.failureConverter,
+		registry:              wc.registry,
+		inboundPayloadVisitor: wc.inboundPayloadVisitor,
 	}
 }
 
@@ -1673,6 +1675,10 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		return err
 	}
 
+	if err := visitProtoPayloads(ctx, workflowRun.inboundPayloadVisitor, closeEvent); err != nil {
+		return err
+	}
+
 	switch closeEvent.GetEventType() {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		attributes := closeEvent.GetWorkflowExecutionCompletedEventAttributes()
@@ -1967,14 +1973,15 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 
 	curRunIDCell := util.PopulatedOnceCell(runID)
 	return &workflowRunImpl{
-		workflowType:     in.WorkflowType,
-		workflowID:       workflowID,
-		firstRunID:       runID,
-		currentRunID:     &curRunIDCell,
-		iterFn:           iterFn,
-		dataConverter:    w.client.dataConverter,
-		failureConverter: w.client.failureConverter,
-		registry:         w.client.registry,
+		workflowType:          in.WorkflowType,
+		workflowID:            workflowID,
+		firstRunID:            runID,
+		currentRunID:          &curRunIDCell,
+		iterFn:                iterFn,
+		dataConverter:         w.client.dataConverter,
+		failureConverter:      w.client.failureConverter,
+		registry:              w.client.registry,
+		inboundPayloadVisitor: w.client.inboundPayloadVisitor,
 	}, nil
 }
 
@@ -2321,14 +2328,15 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 
 	curRunIDCell := util.PopulatedOnceCell(response.GetRunId())
 	return &workflowRunImpl{
-		workflowType:     in.WorkflowType,
-		workflowID:       in.Options.ID,
-		firstRunID:       response.GetRunId(),
-		currentRunID:     &curRunIDCell,
-		iterFn:           iterFn,
-		dataConverter:    w.client.dataConverter,
-		failureConverter: w.client.failureConverter,
-		registry:         w.client.registry,
+		workflowType:          in.WorkflowType,
+		workflowID:            in.Options.ID,
+		firstRunID:            response.GetRunId(),
+		currentRunID:          &curRunIDCell,
+		iterFn:                iterFn,
+		dataConverter:         w.client.dataConverter,
+		failureConverter:      w.client.failureConverter,
+		registry:              w.client.registry,
+		inboundPayloadVisitor: w.client.inboundPayloadVisitor,
 	}, nil
 }
 
