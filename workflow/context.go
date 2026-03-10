@@ -28,7 +28,7 @@ var ErrCanceled = internal.ErrCanceled
 // deadline passes.
 var ErrDeadlineExceeded = internal.ErrDeadlineExceeded
 
-// A CancelFunc tells an operation to abandon its work.
+// CancelFunc tells an operation to abandon its work.
 // A CancelFunc does not wait for the work to stop.
 // After the first call, subsequent calls to a CancelFunc do nothing.
 type CancelFunc = internal.CancelFunc
