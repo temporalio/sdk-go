@@ -17,9 +17,6 @@ jobs:
         os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: ubuntu-latest
-            go-version: "stable"
-            uploadCoverage: true
           - os: macos-intel
             runsOn: macos-15-intel
           - os: macos-arm
@@ -45,16 +42,8 @@ jobs:
         working-directory: ./internal/cmd/build
 
       - name: Unit test
-        run: go run . unit-test -coverage=${{ matrix.uploadCoverage && 'true' || 'false' }}
+        run: go run . unit-test
         working-directory: ./internal/cmd/build
-
-      - name: Upload unit test coverage
-        if: ${{ matrix.uploadCoverage }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: unit-test-coverage
-          path: .build/coverage/
-          if-no-files-found: ignore
 
   integration-test-no-cache:
     strategy:
@@ -63,9 +52,6 @@ jobs:
         os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: ubuntu-latest
-            go-version: "stable"
-            uploadCoverage: true
           - os: macos-intel
             runsOn: macos-15-intel
           - os: macos-arm
@@ -91,15 +77,6 @@ jobs:
         working-directory: ./internal/cmd/build
         env:
           WORKFLOW_CACHE_SIZE: "0"
-          TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_zero_cache_cover.out' || '' }}
-
-      - name: Upload integration test (no cache) coverage
-        if: ${{ matrix.uploadCoverage }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: integ-test-no-cache-coverage
-          path: .build/coverage/
-          if-no-files-found: ignore
 
   integration-test-with-cache:
     strategy:
@@ -108,9 +85,6 @@ jobs:
         os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
         include:
-          - os: ubuntu-latest
-            go-version: "stable"
-            uploadCoverage: true
           - os: macos-intel
             runsOn: macos-15-intel
           - os: macos-arm
@@ -134,16 +108,6 @@ jobs:
       - name: Integration tests (with cache)
         run: go run . integration-test -dev-server
         working-directory: ./internal/cmd/build
-        env:
-          TEMPORAL_COVERAGE_FILE: ${{ matrix.uploadCoverage && 'integ_test_normal_cache_cover.out' || '' }}
-
-      - name: Upload integration test (with cache) coverage
-        if: ${{ matrix.uploadCoverage }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: integ-test-with-cache-coverage
-          path: .build/coverage/
-          if-no-files-found: ignore
 
   docker-compose-test:
     runs-on: ubuntu-latest
@@ -185,39 +149,6 @@ jobs:
           DISABLE_NEXUS_CALLER_TIMEOUT_TESTS: "1"
           DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS: "1"
         working-directory: ./internal/cmd/build
-
-  upload-coverage:
-    needs: [unit-test, integration-test-no-cache, integration-test-with-cache]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: stable
-
-      - name: Download all coverage artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: .build/coverage
-          merge-multiple: true
-
-      - name: Merge coverage files
-        run: go run . merge-coverage-files ../../../coverage.out
-        working-directory: ./internal/cmd/build
-
-      - name: Upload coverage
-        continue-on-error: true
-        uses: coverallsapp/github-action@v2
-        with:
-          file: coverage.out
-          format: golang
 
   cloud-test:
     strategy:
