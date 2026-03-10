@@ -24,15 +24,6 @@ Temporal GO SDK uses go modules, there is no dependency on `$GOPATH` variable. C
 git clone https://github.com/temporalio/sdk-go.git
 ```
 
-## License headers
-
-This project is Open Source Software, and requires a header at the beginning of
-all source files. To verify that all files contain the header execute:
-
-```bash
-go run ./internal/cmd/tools/copyright/licensegen.go
-```
-
 ## Commit Messages And Titles of Pull Requests
 
 Overcommit adds some requirements to your commit messages. At Temporal, we follow the
@@ -65,4 +56,13 @@ Run the unit tests:
 ```bash
 cd ./internal/cmd/build
 go run . unit-test
+```
+
+## Updating go mod files
+
+Sometimes all go.mod files need to be tidied. For an easy way to do this on linux or (probably) mac,
+run:
+
+```bash
+find . -name go.mod -execdir go mod tidy \;
 ```

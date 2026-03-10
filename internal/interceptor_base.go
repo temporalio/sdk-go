@@ -1,31 +1,10 @@
-// The MIT License
-//
-// Copyright (c) 2021 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
 	"context"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
@@ -33,6 +12,8 @@ import (
 
 // InterceptorBase is a default implementation of Interceptor meant for
 // embedding. See documentation in the interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.InterceptorBase]
 type InterceptorBase struct {
 	ClientInterceptorBase
 	WorkerInterceptorBase
@@ -40,8 +21,11 @@ type InterceptorBase struct {
 
 // WorkerInterceptorBase is a default implementation of WorkerInterceptor meant
 // for embedding. See documentation in the interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkerInterceptorBase]
 type WorkerInterceptorBase struct{}
 
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkerInterceptor]
 var _ WorkerInterceptor = &WorkerInterceptorBase{}
 
 // InterceptActivity implements WorkerInterceptor.InterceptActivity.
@@ -60,15 +44,23 @@ func (*WorkerInterceptorBase) InterceptWorkflow(
 	return &WorkflowInboundInterceptorBase{Next: next}
 }
 
+// InterceptNexusOperation implements WorkerInterceptor.
+func (w *WorkerInterceptorBase) InterceptNexusOperation(ctx context.Context, next NexusOperationInboundInterceptor) NexusOperationInboundInterceptor {
+	return &NexusOperationInboundInterceptorBase{Next: next}
+}
+
 func (*WorkerInterceptorBase) mustEmbedWorkerInterceptorBase() {}
 
 // ActivityInboundInterceptorBase is a default implementation of
 // ActivityInboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityInboundInterceptorBase]
 type ActivityInboundInterceptorBase struct {
 	Next ActivityInboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityInboundInterceptor]
 var _ ActivityInboundInterceptor = &ActivityInboundInterceptorBase{}
 
 // Init implements ActivityInboundInterceptor.Init.
@@ -89,10 +81,13 @@ func (*ActivityInboundInterceptorBase) mustEmbedActivityInboundInterceptorBase()
 // ActivityOutboundInterceptorBase is a default implementation of
 // ActivityOutboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityOutboundInterceptorBase]
 type ActivityOutboundInterceptorBase struct {
 	Next ActivityOutboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.ActivityOutboundInterceptor]
 var _ ActivityOutboundInterceptor = &ActivityOutboundInterceptorBase{}
 
 // GetInfo implements ActivityOutboundInterceptor.GetInfo.
@@ -133,15 +128,24 @@ func (a *ActivityOutboundInterceptorBase) GetWorkerStopChannel(ctx context.Conte
 	return a.Next.GetWorkerStopChannel(ctx)
 }
 
+// GetClient implements
+// ActivityOutboundInterceptor.GetClient
+func (a *ActivityOutboundInterceptorBase) GetClient(ctx context.Context) Client {
+	return a.Next.GetClient(ctx)
+}
+
 func (*ActivityOutboundInterceptorBase) mustEmbedActivityOutboundInterceptorBase() {}
 
 // WorkflowInboundInterceptorBase is a default implementation of
 // WorkflowInboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowInboundInterceptorBase]
 type WorkflowInboundInterceptorBase struct {
 	Next WorkflowInboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowInboundInterceptor]
 var _ WorkflowInboundInterceptor = &WorkflowInboundInterceptorBase{}
 
 // Init implements WorkflowInboundInterceptor.Init.
@@ -179,10 +183,13 @@ func (*WorkflowInboundInterceptorBase) mustEmbedWorkflowInboundInterceptorBase()
 // WorkflowOutboundInterceptorBase is a default implementation of
 // WorkflowOutboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptorBase]
 type WorkflowOutboundInterceptorBase struct {
 	Next WorkflowOutboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptor]
 var _ WorkflowOutboundInterceptor = &WorkflowOutboundInterceptorBase{}
 
 // Go implements WorkflowOutboundInterceptor.Go.
@@ -203,6 +210,13 @@ func (w *WorkflowOutboundInterceptorBase) Await(ctx Context, condition func() bo
 // AwaitWithTimeout implements WorkflowOutboundInterceptor.AwaitWithTimeout.
 func (w *WorkflowOutboundInterceptorBase) AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (bool, error) {
 	return w.Next.AwaitWithTimeout(ctx, timeout, condition)
+}
+
+// AwaitWithOptions implements WorkflowOutboundInterceptor.AwaitWithOptions.
+//
+// NOTE: Experimental
+func (w *WorkflowOutboundInterceptorBase) AwaitWithOptions(ctx Context, options AwaitOptions, condition func() bool) (bool, error) {
+	return w.Next.AwaitWithOptions(ctx, options, condition)
 }
 
 // ExecuteLocalActivity implements WorkflowOutboundInterceptor.ExecuteLocalActivity.
@@ -256,6 +270,17 @@ func (w *WorkflowOutboundInterceptorBase) Now(ctx Context) time.Time {
 // NewTimer implements WorkflowOutboundInterceptor.NewTimer.
 func (w *WorkflowOutboundInterceptorBase) NewTimer(ctx Context, d time.Duration) Future {
 	return w.Next.NewTimer(ctx, d)
+}
+
+// NewTimerWithOptions implements WorkflowOutboundInterceptor.NewTimerWithOptions.
+//
+// NOTE: Experimental
+func (w *WorkflowOutboundInterceptorBase) NewTimerWithOptions(
+	ctx Context,
+	d time.Duration,
+	options TimerOptions,
+) Future {
+	return w.Next.NewTimerWithOptions(ctx, d, options)
 }
 
 // Sleep implements WorkflowOutboundInterceptor.Sleep.
@@ -319,12 +344,32 @@ func (w *WorkflowOutboundInterceptorBase) GetSignalChannel(ctx Context, signalNa
 	return w.Next.GetSignalChannel(ctx, signalName)
 }
 
+// GetSignalChannelWithOptions implements WorkflowOutboundInterceptor.GetSignalChannelWithOptions.
+//
+// NOTE: Experimental
+func (w *WorkflowOutboundInterceptorBase) GetSignalChannelWithOptions(
+	ctx Context,
+	signalName string,
+	options SignalChannelOptions,
+) ReceiveChannel {
+	return w.Next.GetSignalChannelWithOptions(ctx, signalName, options)
+}
+
 // SideEffect implements WorkflowOutboundInterceptor.SideEffect.
 func (w *WorkflowOutboundInterceptorBase) SideEffect(
 	ctx Context,
 	f func(ctx Context) interface{},
 ) converter.EncodedValue {
 	return w.Next.SideEffect(ctx, f)
+}
+
+// SideEffectWithOptions implements WorkflowOutboundInterceptor.SideEffectWithOptions.
+func (w *WorkflowOutboundInterceptorBase) SideEffectWithOptions(
+	ctx Context,
+	options SideEffectOptions,
+	f func(ctx Context) interface{},
+) converter.EncodedValue {
+	return w.Next.SideEffectWithOptions(ctx, options, f)
 }
 
 // MutableSideEffect implements WorkflowOutboundInterceptor.MutableSideEffect.
@@ -335,6 +380,17 @@ func (w *WorkflowOutboundInterceptorBase) MutableSideEffect(
 	equals func(a, b interface{}) bool,
 ) converter.EncodedValue {
 	return w.Next.MutableSideEffect(ctx, id, f, equals)
+}
+
+// MutableSideEffectWithOptions implements WorkflowOutboundInterceptor.MutableSideEffectWithOptions.
+func (w *WorkflowOutboundInterceptorBase) MutableSideEffectWithOptions(
+	ctx Context,
+	id string,
+	options MutableSideEffectOptions,
+	f func(ctx Context) interface{},
+	equals func(a, b interface{}) bool,
+) converter.EncodedValue {
+	return w.Next.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }
 
 // GetVersion implements WorkflowOutboundInterceptor.GetVersion.
@@ -350,6 +406,18 @@ func (w *WorkflowOutboundInterceptorBase) GetVersion(
 // SetQueryHandler implements WorkflowOutboundInterceptor.SetQueryHandler.
 func (w *WorkflowOutboundInterceptorBase) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return w.Next.SetQueryHandler(ctx, queryType, handler)
+}
+
+// SetQueryHandlerWithOptions implements WorkflowOutboundInterceptor.SetQueryHandlerWithOptions.
+//
+// NOTE: Experimental
+func (w *WorkflowOutboundInterceptorBase) SetQueryHandlerWithOptions(
+	ctx Context,
+	queryType string,
+	handler interface{},
+	options QueryHandlerOptions,
+) error {
+	return w.Next.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
 }
 
 // SetUpdateHandler implements WorkflowOutboundInterceptor.SetUpdateHandler.
@@ -389,12 +457,30 @@ func (w *WorkflowOutboundInterceptorBase) NewContinueAsNewError(
 	return w.Next.NewContinueAsNewError(ctx, wfn, args...)
 }
 
+// ExecuteNexusOperation implements
+// WorkflowOutboundInterceptor.ExecuteNexusOperation.
+func (w *WorkflowOutboundInterceptorBase) ExecuteNexusOperation(
+	ctx Context,
+	input ExecuteNexusOperationInput,
+) NexusOperationFuture {
+	return w.Next.ExecuteNexusOperation(ctx, input)
+}
+
+// RequestCancelNexusOperation implements
+// WorkflowOutboundInterceptor.RequestCancelNexusOperation.
+func (w *WorkflowOutboundInterceptorBase) RequestCancelNexusOperation(ctx Context, input RequestCancelNexusOperationInput) {
+	w.Next.RequestCancelNexusOperation(ctx, input)
+}
+
 func (*WorkflowOutboundInterceptorBase) mustEmbedWorkflowOutboundInterceptorBase() {}
 
 // ClientInterceptorBase is a default implementation of ClientInterceptor meant
 // for embedding. See documentation in the interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientInterceptorBase]
 type ClientInterceptorBase struct{}
 
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientInterceptor]
 var _ ClientInterceptor = &ClientInterceptorBase{}
 
 // InterceptClient implements ClientInterceptor.InterceptClient.
@@ -409,10 +495,13 @@ func (*ClientInterceptorBase) mustEmbedClientInterceptorBase() {}
 // ClientOutboundInterceptorBase is a default implementation of
 // ClientOutboundInterceptor meant for embedding. See documentation in the
 // interceptor package for more details.
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientOutboundInterceptorBase]
 type ClientOutboundInterceptorBase struct {
 	Next ClientOutboundInterceptor
 }
 
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientOutboundInterceptor]
 var _ ClientOutboundInterceptor = &ClientOutboundInterceptorBase{}
 
 func (c *ClientOutboundInterceptorBase) UpdateWorkflow(
@@ -427,6 +516,13 @@ func (c *ClientOutboundInterceptorBase) PollWorkflowUpdate(
 	in *ClientPollWorkflowUpdateInput,
 ) (*ClientPollWorkflowUpdateOutput, error) {
 	return c.Next.PollWorkflowUpdate(ctx, in)
+}
+
+func (c *ClientOutboundInterceptorBase) UpdateWithStartWorkflow(
+	ctx context.Context,
+	in *ClientUpdateWithStartWorkflowInput,
+) (WorkflowUpdateHandle, error) {
+	return c.Next.UpdateWithStartWorkflow(ctx, in)
 }
 
 // ExecuteWorkflow implements ClientOutboundInterceptor.ExecuteWorkflow.
@@ -469,9 +565,135 @@ func (c *ClientOutboundInterceptorBase) QueryWorkflow(
 	return c.Next.QueryWorkflow(ctx, in)
 }
 
-// ExecuteWorkflow implements ClientOutboundInterceptor.CreateSchedule.
+// DescribeWorkflow implements ClientOutboundInterceptor.DescribeWorkflow.
+func (c *ClientOutboundInterceptorBase) DescribeWorkflow(
+	ctx context.Context,
+	in *ClientDescribeWorkflowInput,
+) (*ClientDescribeWorkflowOutput, error) {
+	return c.Next.DescribeWorkflow(ctx, in)
+}
+
+// CreateSchedule implements ClientOutboundInterceptor.CreateSchedule.
 func (c *ClientOutboundInterceptorBase) CreateSchedule(ctx context.Context, in *ScheduleClientCreateInput) (ScheduleHandle, error) {
 	return c.Next.CreateSchedule(ctx, in)
 }
 
+// ExecuteActivity implements ClientOutboundInterceptor.ExecuteActivity.
+func (c *ClientOutboundInterceptorBase) ExecuteActivity(
+	ctx context.Context,
+	in *ClientExecuteActivityInput,
+) (ClientActivityHandle, error) {
+	return c.Next.ExecuteActivity(ctx, in)
+}
+
+// GetActivityHandle implements ClientOutboundInterceptor.GetActivityHandle.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) GetActivityHandle(
+	in *ClientGetActivityHandleInput,
+) ClientActivityHandle {
+	return c.Next.GetActivityHandle(in)
+}
+
+// CancelActivity implements ClientOutboundInterceptor.CancelActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) CancelActivity(
+	ctx context.Context,
+	in *ClientCancelActivityInput,
+) error {
+	return c.Next.CancelActivity(ctx, in)
+}
+
+// TerminateActivity implements ClientOutboundInterceptor.TerminateActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) TerminateActivity(
+	ctx context.Context,
+	in *ClientTerminateActivityInput,
+) error {
+	return c.Next.TerminateActivity(ctx, in)
+}
+
+// DescribeActivity implements ClientOutboundInterceptor.DescribeActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) DescribeActivity(
+	ctx context.Context,
+	in *ClientDescribeActivityInput,
+) (*ClientDescribeActivityOutput, error) {
+	return c.Next.DescribeActivity(ctx, in)
+}
+
+// PollActivityResult implements ClientOutboundInterceptor.PollActivityResult.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) PollActivityResult(
+	ctx context.Context,
+	in *ClientPollActivityResultInput,
+) (*ClientPollActivityResultOutput, error) {
+	return c.Next.PollActivityResult(ctx, in)
+}
+
 func (*ClientOutboundInterceptorBase) mustEmbedClientOutboundInterceptorBase() {}
+
+// NexusOperationInboundInterceptorBase is a default implementation of [NexusOperationInboundInterceptor] that
+// forwards calls to the next inbound interceptor.
+//
+// Note: Experimental
+type NexusOperationInboundInterceptorBase struct {
+	Next NexusOperationInboundInterceptor
+}
+
+// CancelOperation implements NexusOperationInboundInterceptor.
+func (n *NexusOperationInboundInterceptorBase) CancelOperation(ctx context.Context, input NexusCancelOperationInput) error {
+	return n.Next.CancelOperation(ctx, input)
+}
+
+// Init implements NexusOperationInboundInterceptor.
+func (n *NexusOperationInboundInterceptorBase) Init(ctx context.Context, outbound NexusOperationOutboundInterceptor) error {
+	return n.Next.Init(ctx, outbound)
+}
+
+// StartOperation implements NexusOperationInboundInterceptor.
+func (n *NexusOperationInboundInterceptorBase) StartOperation(ctx context.Context, input NexusStartOperationInput) (nexus.HandlerStartOperationResult[any], error) {
+	return n.Next.StartOperation(ctx, input)
+}
+
+// mustEmbedNexusOperationInboundInterceptorBase implements NexusOperationInboundInterceptor.
+func (n *NexusOperationInboundInterceptorBase) mustEmbedNexusOperationInboundInterceptorBase() {}
+
+var _ NexusOperationInboundInterceptor = &NexusOperationInboundInterceptorBase{}
+
+// NexusOperationOutboundInterceptorBase is a default implementation of [NexusOperationOutboundInterceptor] that
+// forwards calls to the next outbound interceptor.
+//
+// Note: Experimental
+type NexusOperationOutboundInterceptorBase struct {
+	Next NexusOperationOutboundInterceptor
+}
+
+// GetOperationInfo implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) GetOperationInfo(ctx context.Context) NexusOperationInfo {
+	return n.Next.GetOperationInfo(ctx)
+}
+
+// GetClient implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) GetClient(ctx context.Context) Client {
+	return n.Next.GetClient(ctx)
+}
+
+// GetLogger implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) GetLogger(ctx context.Context) log.Logger {
+	return n.Next.GetLogger(ctx)
+}
+
+// GetMetricsHandler implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) GetMetricsHandler(ctx context.Context) metrics.Handler {
+	return n.Next.GetMetricsHandler(ctx)
+}
+
+// mustEmbedNexusOperationOutboundInterceptorBase implements NexusOperationOutboundInterceptor.
+func (n *NexusOperationOutboundInterceptorBase) mustEmbedNexusOperationOutboundInterceptorBase() {}
+
+var _ NexusOperationOutboundInterceptor = &NexusOperationOutboundInterceptorBase{}

@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package test_test
 
 import (
@@ -35,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	enumspb "go.temporal.io/api/enums/v1"
@@ -45,6 +21,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -52,6 +29,7 @@ type (
 	// Config contains the integration test configuration
 	Config struct {
 		ServiceAddr             string
+		ServiceHTTPAddr         string
 		maxWorkflowCacheSize    int
 		Debug                   bool
 		Namespace               string
@@ -67,18 +45,22 @@ type (
 	}
 )
 
-var taskQueuePrefix = "tq-" + uuid.New()
+var taskQueuePrefix = "tq-" + uuid.NewString()
 
 // NewConfig creates new Config instance
 func NewConfig() Config {
 	cfg := Config{
 		ServiceAddr:             client.DefaultHostPort,
+		ServiceHTTPAddr:         "localhost:7243",
 		maxWorkflowCacheSize:    10000,
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
+	}
+	if addr := strings.TrimSpace(os.Getenv("SERVICE_HTTP_ADDR")); addr != "" {
+		cfg.ServiceHTTPAddr = addr
 	}
 	if siz := getEnvCacheSize(); siz != "" {
 		asInt, err := strconv.Atoi(siz)
@@ -87,6 +69,7 @@ func NewConfig() Config {
 		}
 		cfg.maxWorkflowCacheSize = asInt
 	}
+	worker.SetStickyWorkflowCacheSize(cfg.maxWorkflowCacheSize)
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
@@ -229,9 +212,9 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 	}
 	if ts.config.ShouldRegisterNamespace {
 		if err = ts.registerNamespace(); err != nil {
-			return err
+			return fmt.Errorf("unable to register namespace: %w", err)
 		} else if err = ts.ensureSearchAttributes(); err != nil {
-			return err
+			return fmt.Errorf("unable to ensure search attributes: %w", err)
 		}
 	}
 	return nil
@@ -248,10 +231,14 @@ func (ts *ConfigAndClientSuiteBase) InitClient() error {
 
 func (ts *ConfigAndClientSuiteBase) newClient() (client.Client, error) {
 	return client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		Logger:    ilog.NewDefaultLogger(),
+		ConnectionOptions: client.ConnectionOptions{
+			TLS:                  ts.config.TLS,
+			GetSystemInfoTimeout: ctxTimeout,
+		},
+		WorkerHeartbeatInterval: -1,
 	})
 }
 
@@ -265,7 +252,7 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to create namespace client: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
@@ -278,12 +265,12 @@ func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 		return nil
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to call register namespace: %w", err)
 	}
 	time.Sleep(namespaceCacheRefreshInterval) // wait for namespace cache refresh on temporal-server
 	err = ts.InitClient()
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to create client: %w", err)
 	}
 	// below is used to guarantee namespace is ready
 	var dummyReturn string
@@ -310,7 +297,7 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 	// goroutine leak detector.
 	client, err := ts.newClient()
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to create client: %w", err)
 	}
 	defer client.Close()
 

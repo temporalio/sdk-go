@@ -1,0 +1,163 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2024-01-01T00:00:00.000000Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1048580",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "AwaitWithTimeoutNoTimerCancelWorkflow"
+        },
+        "taskQueue": {
+          "name": "test-task-queue",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowExecutionTimeout": "0s",
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "test-run-id",
+        "identity": "test@localhost",
+        "firstExecutionRunId": "test-run-id",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {}
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2024-01-01T00:00:00.000001Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1048581",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "test-task-queue",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2024-01-01T00:00:00.000002Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1048582",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "test@localhost",
+        "requestId": "test-request-id"
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2024-01-01T00:00:00.000003Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1048583",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "test@localhost",
+        "sdkMetadata": {
+          "langUsedFlags": [3],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.25.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2024-01-01T00:00:00.000004Z",
+      "eventType": "EVENT_TYPE_TIMER_STARTED",
+      "taskId": "1048584",
+      "timerStartedEventAttributes": {
+        "timerId": "5",
+        "startToFireTimeout": "0.100s",
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "6",
+      "eventTime": "2024-01-01T00:00:00.000005Z",
+      "eventType": "EVENT_TYPE_TIMER_STARTED",
+      "taskId": "1048585",
+      "timerStartedEventAttributes": {
+        "timerId": "6",
+        "startToFireTimeout": "10s",
+        "workflowTaskCompletedEventId": "4"
+      }
+    },
+    {
+      "eventId": "7",
+      "eventTime": "2024-01-01T00:00:00.100000Z",
+      "eventType": "EVENT_TYPE_TIMER_FIRED",
+      "taskId": "1048586",
+      "timerFiredEventAttributes": {
+        "timerId": "5",
+        "startedEventId": "5"
+      }
+    },
+    {
+      "eventId": "8",
+      "eventTime": "2024-01-01T00:00:00.100001Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1048587",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "test-task-queue",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "9",
+      "eventTime": "2024-01-01T00:00:00.100002Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1048588",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "8",
+        "identity": "test@localhost",
+        "requestId": "test-request-id-2"
+      }
+    },
+    {
+      "eventId": "10",
+      "eventTime": "2024-01-01T00:00:00.100003Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1048589",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "8",
+        "startedEventId": "9",
+        "identity": "test@localhost",
+        "sdkMetadata": {
+          "langUsedFlags": [],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.25.0"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "11",
+      "eventTime": "2024-01-01T00:00:00.100004Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId": "1048590",
+      "workflowExecutionCompletedEventAttributes": {
+        "result": {
+          "payloads": [
+            {
+              "metadata": {
+                "encoding": "anNvbi9wbGFpbg=="
+              },
+              "data": "dHJ1ZQ=="
+            }
+          ]
+        },
+        "workflowTaskCompletedEventId": "10"
+      }
+    }
+  ]
+}

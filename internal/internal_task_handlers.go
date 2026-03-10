@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 // All code in this file is private to the package.
@@ -34,10 +10,12 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
@@ -46,7 +24,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
@@ -65,6 +43,18 @@ const (
 
 	defaultDefaultHeartbeatThrottleInterval = 30 * time.Second
 	defaultMaxHeartbeatThrottleInterval     = 60 * time.Second
+)
+
+var (
+	// ErrActivityPaused is returned from an activity heartbeat or the cause of an activity's context to indicate that the activity is paused.
+	//
+	// WARNING: Activity pause is currently experimental
+	ErrActivityPaused = errors.New("activity paused")
+
+	// ErrActivityReset is returned from an activity heartbeat or the cause of an activity's context to indicate that the activity has been reset.
+	//
+	// WARNING: Activity reset is currently experimental
+	ErrActivityReset = errors.New("activity reset")
 )
 
 type (
@@ -101,7 +91,8 @@ type (
 
 	// activityTask wraps a activity task.
 	activityTask struct {
-		task *workflowservice.PollActivityTaskQueueResponse
+		task   *workflowservice.PollActivityTaskQueueResponse
+		permit *SlotPermit
 	}
 
 	// workflowExecutionContextImpl is the cached workflow state for sticky execution
@@ -129,23 +120,25 @@ type (
 
 	// workflowTaskHandlerImpl is the implementation of WorkflowTaskHandler
 	workflowTaskHandlerImpl struct {
-		namespace                string
-		metricsHandler           metrics.Handler
-		ppMgr                    pressurePointMgr
-		logger                   log.Logger
-		identity                 string
-		workerBuildID            string
-		useBuildIDForVersioning  bool
-		enableLoggingInReplay    bool
-		registry                 *registry
-		laTunnel                 *localActivityTunnel
-		workflowPanicPolicy      WorkflowPanicPolicy
-		dataConverter            converter.DataConverter
-		failureConverter         converter.FailureConverter
-		contextPropagators       []ContextPropagator
-		cache                    *WorkerCache
-		deadlockDetectionTimeout time.Duration
-		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
+		namespace                 string
+		metricsHandler            metrics.Handler
+		ppMgr                     pressurePointMgr
+		logger                    log.Logger
+		identity                  string
+		workerBuildID             string
+		useBuildIDForVersioning   bool
+		workerDeploymentVersion   WorkerDeploymentVersion
+		defaultVersioningBehavior VersioningBehavior
+		enableLoggingInReplay     bool
+		registry                  *registry
+		laTunnel                  *localActivityTunnel
+		workflowPanicPolicy       WorkflowPanicPolicy
+		dataConverter             converter.DataConverter
+		failureConverter          converter.FailureConverter
+		contextPropagators        []ContextPropagator
+		cache                     *WorkerCache
+		deadlockDetectionTimeout  time.Duration
+		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
 	}
 
 	activityProvider func(name string) activity
@@ -154,10 +147,10 @@ type (
 	activityTaskHandlerImpl struct {
 		taskQueueName                    string
 		identity                         string
-		service                          workflowservice.WorkflowServiceClient
+		client                           *WorkflowClient
 		metricsHandler                   metrics.Handler
 		logger                           log.Logger
-		userContext                      context.Context
+		backgroundContext                context.Context
 		registry                         *registry
 		activityProvider                 activityProvider
 		dataConverter                    converter.DataConverter
@@ -168,6 +161,8 @@ type (
 		defaultHeartbeatThrottleInterval time.Duration
 		maxHeartbeatThrottleInterval     time.Duration
 		versionStamp                     *commonpb.WorkerVersionStamp
+		deployment                       *deploymentpb.Deployment
+		workerDeploymentOptions          *deploymentpb.WorkerDeploymentOptions
 	}
 
 	// history wrapper method to help information about events.
@@ -219,6 +214,11 @@ type (
 		flags          []sdkFlag
 		sdkVersion     string
 		sdkName        string
+	}
+
+	workflowTaskCompletion struct {
+		rawRequest             proto.Message
+		applyCompletionMetrics func()
 	}
 )
 
@@ -287,6 +287,7 @@ func (eh *history) isNextWorkflowTaskFailed() (task finishedTask, err error) {
 		var flags []sdkFlag
 		if nextEventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
 			completedAttrs := nextEvent.GetWorkflowTaskCompletedEventAttributes()
+			//lint:ignore SA1019 ignore deprecated versioning APIs
 			binaryChecksum = completedAttrs.BinaryChecksum
 			for _, flag := range completedAttrs.GetSdkMetadata().GetLangUsedFlags() {
 				f := sdkFlagFromUint(flag)
@@ -340,7 +341,9 @@ func isCommandEvent(eventType enumspb.EventType) bool {
 		enumspb.EVENT_TYPE_WORKFLOW_PROPERTIES_MODIFIED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_ACCEPTED,
 		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED,
-		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED:
+		enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_REJECTED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED,
+		enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED:
 		return true
 	default:
 		return false
@@ -485,13 +488,24 @@ OrderEvents:
 				break OrderEvents
 			}
 		case enumspb.EVENT_TYPE_WORKFLOW_TASK_SCHEDULED,
-			enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
-			enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED:
+			enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
 			// Skip
 		default:
 			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED {
 				bidStr := event.GetWorkflowTaskCompletedEventAttributes().
-					GetWorkerVersion().GetBuildId()
+					GetDeploymentVersion().GetBuildId()
+				if bidStr == "" {
+					//lint:ignore SA1019 ignore deprecated versioning APIs
+					version := event.GetWorkflowTaskCompletedEventAttributes().GetWorkerDeploymentVersion()
+					if splitVersion := strings.SplitN(version, ".", 2); len(splitVersion) == 2 {
+						bidStr = splitVersion[1]
+					}
+				}
+				if bidStr == "" {
+					//lint:ignore SA1019 ignore deprecated versioning APIs
+					bidStr = event.GetWorkflowTaskCompletedEventAttributes().
+						GetWorkerVersion().GetBuildId()
+				}
 				taskEvents.buildID = &bidStr
 			} else if isPreloadMarkerEvent(event) {
 				taskEvents.markers = append(taskEvents.markers, event)
@@ -546,22 +560,24 @@ func inferMessageFromAcceptedEvent(attrs *historypb.WorkflowExecutionUpdateAccep
 func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePointMgr, registry *registry) WorkflowTaskHandler {
 	ensureRequiredParams(&params)
 	return &workflowTaskHandlerImpl{
-		namespace:                params.Namespace,
-		logger:                   params.Logger,
-		ppMgr:                    ppMgr,
-		metricsHandler:           params.MetricsHandler,
-		identity:                 params.Identity,
-		workerBuildID:            params.getBuildID(),
-		useBuildIDForVersioning:  params.UseBuildIDForVersioning,
-		enableLoggingInReplay:    params.EnableLoggingInReplay,
-		registry:                 registry,
-		workflowPanicPolicy:      params.WorkflowPanicPolicy,
-		dataConverter:            params.DataConverter,
-		failureConverter:         params.FailureConverter,
-		contextPropagators:       params.ContextPropagators,
-		cache:                    params.cache,
-		deadlockDetectionTimeout: params.DeadlockDetectionTimeout,
-		capabilities:             params.capabilities,
+		namespace:                 params.Namespace,
+		logger:                    params.Logger,
+		ppMgr:                     ppMgr,
+		metricsHandler:            params.MetricsHandler,
+		identity:                  params.Identity,
+		workerBuildID:             params.getBuildID(),
+		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
+		workerDeploymentVersion:   params.DeploymentOptions.Version,
+		defaultVersioningBehavior: params.DeploymentOptions.DefaultVersioningBehavior,
+		enableLoggingInReplay:     params.EnableLoggingInReplay,
+		registry:                  registry,
+		workflowPanicPolicy:       params.WorkflowPanicPolicy,
+		dataConverter:             params.DataConverter,
+		failureConverter:          params.FailureConverter,
+		contextPropagators:        params.ContextPropagators,
+		cache:                     params.cache,
+		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
+		capabilities:              params.capabilities,
 	}
 }
 
@@ -583,7 +599,7 @@ func (w *workflowExecutionContextImpl) Lock() {
 	w.mutex.Lock()
 }
 
-// Unlock cleans up after the provided error and it's own internal view of the
+// Unlock cleans up after the provided error and its own internal view of the
 // workflow error state by clearing itself and removing itself from cache as
 // needed. It is an error to call this function without having called the Lock
 // function first and the behavior is undefined. Regardless of the error
@@ -593,7 +609,7 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 	if err != nil || w.err != nil || w.isWorkflowCompleted ||
 		(w.wth.cache.MaxWorkflowCacheSize() <= 0 && !w.hasPendingLocalActivityWork()) {
 		// TODO: in case of closed, it assumes the close command always succeed. need server side change to return
-		// error to indicate the close failure case. This should be rare case. For now, always remove the cache, and
+		// error to indicate the close failure case. This should be a rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
 		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
 			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
@@ -711,6 +727,15 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 			RunID: attributes.ParentWorkflowExecution.GetRunId(),
 		}
 	}
+
+	var rootWorkflowExecution *WorkflowExecution
+	if attributes.RootWorkflowExecution != nil {
+		rootWorkflowExecution = &WorkflowExecution{
+			ID:    attributes.RootWorkflowExecution.GetWorkflowId(),
+			RunID: attributes.RootWorkflowExecution.GetRunId(),
+		}
+	}
+
 	workflowInfo := &WorkflowInfo{
 		WorkflowExecution: WorkflowExecution{
 			ID:    workflowID,
@@ -732,9 +757,15 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		ContinuedExecutionRunID:  attributes.ContinuedExecutionRunId,
 		ParentWorkflowNamespace:  attributes.ParentWorkflowNamespace,
 		ParentWorkflowExecution:  parentWorkflowExecution,
+		RootWorkflowExecution:    rootWorkflowExecution,
 		Memo:                     attributes.Memo,
 		SearchAttributes:         attributes.SearchAttributes,
 		RetryPolicy:              convertFromPBRetryPolicy(attributes.RetryPolicy),
+		// Use the original execution run ID from the start event as the initial seed.
+		// Original execution run ID stays the same for the entire chain of workflow resets.
+		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
+		currentRunID: attributes.GetOriginalExecutionRunId(),
+		Priority:     convertFromPBPriority(attributes.Priority),
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
@@ -767,14 +798,14 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 		if task.Query != nil && !isFullHistory && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
 			// query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
-		} else if history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
+		} else if len(history.Events) > 0 && history.Events[0].GetEventId() == workflowContext.previousStartedEventID+1 && wth == workflowContext.wth && !workflowContext.IsDestroyed() {
 			// non query task and we have a valid cached state
 			metricsHandler.Counter(metrics.StickyCacheHit).Inc(1)
 		} else {
 			// possible another task already destroyed this context.
 			if !workflowContext.IsDestroyed() {
 				// non query task and cached state is missing events, we need to discard the cached state and build a new one.
-				if history.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
+				if len(history.Events) > 0 && history.Events[0].GetEventId() != workflowContext.previousStartedEventID+1 {
 					wth.logger.Debug("Cached state staled, new task has unexpected events",
 						tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 						tagRunID, task.WorkflowExecution.GetRunId(),
@@ -867,7 +898,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	workflowTask *workflowTask,
 	workflowContext *workflowExecutionContextImpl,
 	heartbeatFunc workflowTaskHeartbeatFunc,
-) (completeRequest interface{}, errRet error) {
+) (taskCompletion *workflowTaskCompletion, errRet error) {
 	if workflowTask == nil || workflowTask.task == nil {
 		return nil, errors.New("nil workflow task provided")
 	}
@@ -897,7 +928,7 @@ func (wth *workflowTaskHandlerImpl) ProcessWorkflowTask(
 	})
 
 	var (
-		response       interface{}
+		response       *workflowTaskCompletion
 		err            error
 		heartbeatTimer *time.Timer
 	)
@@ -926,17 +957,27 @@ processWorkflowLoop:
 							heartbeatTimer = nil
 						}
 
-						// force complete, call the workflow task heartbeat function
-						workflowTask, err = heartbeatFunc(
-							workflowContext.CompleteWorkflowTask(workflowTask, false),
-							startTime,
-						)
-						if err != nil {
-							errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+						// For non-graceful shutdown, the LA worker stops before this function, so there
+						// is no need to continue heartbeating. Instead, we can exit early, giving up
+						// the slot this function takes, a little sooner.
+						select {
+						case <-workflowContext.laTunnel.stopCh:
+							// stopCh closed means worker is shutting down and there's
+							// no need for LA heartbeat
 							return
-						}
-						if workflowTask == nil {
-							return
+						default:
+							// force complete, call the workflow task heartbeat function
+							workflowTask, err = heartbeatFunc(
+								workflowContext.CompleteWorkflowTask(workflowTask, false),
+								startTime,
+							)
+							if err != nil {
+								errRet = &workflowTaskHeartbeatError{Message: fmt.Sprintf("error sending workflow task heartbeat %v", err)}
+								return
+							}
+							if workflowTask == nil {
+								return
+							}
 						}
 
 						continue processWorkflowLoop
@@ -985,11 +1026,11 @@ processWorkflowLoop:
 		}
 	}
 	errRet = err
-	completeRequest = response
+	taskCompletion = response
 	return
 }
 
-func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (interface{}, error) {
+func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflowTask) (*workflowTaskCompletion, error) {
 	task := workflowTask.task
 	historyIterator := workflowTask.historyIterator
 	if err := w.ResetIfStale(task, historyIterator); err != nil {
@@ -1009,16 +1050,19 @@ func (w *workflowExecutionContextImpl) ProcessWorkflowTask(workflowTask *workflo
 	var replayOutbox []outboxEntry
 	var replayCommands []*commandpb.Command
 	var respondEvents []*historypb.HistoryEvent
+	var partialHistory bool
 
 	taskMessages := workflowTask.task.GetMessages()
 	skipReplayCheck := w.skipReplayCheck()
+	isInReplayer := IsReplayNamespace(w.wth.namespace)
 	shouldForceReplayCheck := func() bool {
-		isInReplayer := IsReplayNamespace(w.wth.namespace)
 		// If we are in the replayer we should always check the history replay, even if the workflow is completed
 		// Skip if the workflow panicked to avoid potentially breaking old histories
 		_, wfPanicked := w.err.(*workflowPanicError)
 		return !wfPanicked && isInReplayer
 	}
+
+	curReplayCmdsIndex := -1
 
 	metricsHandler := w.wth.metricsHandler.WithTags(metrics.WorkflowTags(task.WorkflowType.GetName()))
 	start := time.Now()
@@ -1042,6 +1086,17 @@ ProcessEvents:
 		binaryChecksum := nextTask.binaryChecksum
 		nextTaskBuildId := nextTask.buildID
 		admittedUpdates := nextTask.admittedMsgs
+
+		// Peak ahead to confirm there are no more events
+		isLastWFTForPartialWFE := len(reorderedEvents) > 0 &&
+			reorderedEvents[len(reorderedEvents)-1].EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED &&
+			len(reorderedHistory.next) == 0 &&
+			isInReplayer
+		if isLastWFTForPartialWFE {
+			partialHistory = true
+			break ProcessEvents
+		}
+
 		// Check if we are replaying so we know if we should use the messages in the WFT or the history
 		isReplay := len(reorderedEvents) > 0 && reorderedHistory.IsReplayEvent(reorderedEvents[len(reorderedEvents)-1])
 		var msgs *eventMsgIndex
@@ -1083,6 +1138,10 @@ ProcessEvents:
 		if len(reorderedEvents) == 0 {
 			break ProcessEvents
 		}
+		// Since replayCommands updates a loop early, keep track of index before the
+		// early update to handle replaying incomplete WFE
+		curReplayCmdsIndex = len(replayCommands)
+
 		if binaryChecksum == "" {
 			w.workflowInfo.BinaryChecksum = w.wth.workerBuildID
 		} else {
@@ -1187,6 +1246,10 @@ ProcessEvents:
 		}
 	}
 
+	if partialHistory && curReplayCmdsIndex != -1 {
+		replayCommands = replayCommands[:curReplayCmdsIndex]
+	}
+
 	if metricsTimer != nil {
 		metricsTimer.Record(time.Since(start))
 		metricsTimer = nil
@@ -1211,7 +1274,7 @@ ProcessEvents:
 	return w.applyWorkflowPanicPolicy(workflowTask, workflowError)
 }
 
-func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *workflowTask, lar *localActivityResult) (interface{}, error) {
+func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *workflowTask, lar *localActivityResult) (*workflowTaskCompletion, error) {
 	if lar.err != nil && w.retryLocalActivity(lar) {
 		return nil, nil // nothing to do here as we are retrying...
 	}
@@ -1219,7 +1282,7 @@ func (w *workflowExecutionContextImpl) ProcessLocalActivityResult(workflowTask *
 	return w.applyWorkflowPanicPolicy(workflowTask, w.getEventHandler().ProcessLocalActivityResult(lar))
 }
 
-func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *workflowTask, workflowError error) (interface{}, error) {
+func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *workflowTask, workflowError error) (*workflowTaskCompletion, error) {
 	task := workflowTask.task
 
 	if workflowError == nil && w.err != nil {
@@ -1341,7 +1404,7 @@ func getRetryBackoffWithNowTime(p *RetryPolicy, attempt int32, err error, now, e
 	return backoffInterval
 }
 
-func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workflowTask, waitLocalActivities bool) interface{} {
+func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workflowTask, waitLocalActivities bool) *workflowTaskCompletion {
 	if w.currentWorkflowTask == nil {
 		return nil
 	}
@@ -1385,7 +1448,7 @@ func (w *workflowExecutionContextImpl) CompleteWorkflowTask(workflowTask *workfl
 	completeRequest := w.wth.completeWorkflow(eventHandler, w.currentWorkflowTask, w, w.newCommands, w.newMessages, !waitLocalActivities)
 	w.clearCurrentTask()
 
-	return completeRequest
+	return &completeRequest
 }
 
 func (w *workflowExecutionContextImpl) hasPendingLocalActivityWork() bool {
@@ -1709,6 +1772,26 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 			return false
 		}
 		return true
+
+	case enumspb.COMMAND_TYPE_SCHEDULE_NEXUS_OPERATION:
+		if e.GetEventType() != enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED {
+			return false
+		}
+		eventAttributes := e.GetNexusOperationScheduledEventAttributes()
+		commandAttributes := d.GetScheduleNexusOperationCommandAttributes()
+
+		return eventAttributes.GetService() == commandAttributes.GetService() &&
+			eventAttributes.GetOperation() == commandAttributes.GetOperation()
+
+	case enumspb.COMMAND_TYPE_REQUEST_CANCEL_NEXUS_OPERATION:
+		if e.GetEventType() != enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED {
+			return false
+		}
+
+		eventAttributes := e.GetNexusOperationCancelRequestedEventAttributes()
+		commandAttributes := d.GetRequestCancelNexusOperationCommandAttributes()
+
+		return eventAttributes.GetScheduledEventId() == commandAttributes.GetScheduledEventId()
 	}
 
 	return false
@@ -1747,7 +1830,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	commands []*commandpb.Command,
 	messages []*protocolpb.Message,
 	forceNewWorkflowTask bool,
-) interface{} {
+) workflowTaskCompletion {
 	// for query task
 	if task.Query != nil {
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{
@@ -1758,38 +1841,37 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		if errors.As(workflowContext.err, &panicErr) {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
 			queryCompletedRequest.ErrorMessage = "Workflow panic: " + panicErr.Error()
-			return queryCompletedRequest
+			return workflowTaskCompletion{rawRequest: queryCompletedRequest}
 		}
 
 		result, err := eventHandler.ProcessQuery(task.Query.GetQueryType(), task.Query.QueryArgs, task.Query.Header)
 		if err != nil {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
 			queryCompletedRequest.ErrorMessage = err.Error()
+			queryCompletedRequest.Failure = wth.failureConverter.ErrorToFailure(err)
 		} else {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_ANSWERED
 			queryCompletedRequest.QueryResult = result
 		}
-		return queryCompletedRequest
+		return workflowTaskCompletion{rawRequest: queryCompletedRequest}
 	}
-
-	metricsHandler := wth.metricsHandler.WithTags(metrics.WorkflowTags(
-		eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name))
 
 	// complete workflow task
 	var closeCommand *commandpb.Command
 	var canceledErr *CanceledError
 	var contErr *ContinueAsNewError
+	var metricCounterToIncrement string
 
 	if errors.As(workflowContext.err, &canceledErr) {
 		// Workflow canceled
-		metricsHandler.Counter(metrics.WorkflowCanceledCounter).Inc(1)
+		metricCounterToIncrement = metrics.WorkflowCanceledCounter
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CANCEL_WORKFLOW_EXECUTION)
 		closeCommand.Attributes = &commandpb.Command_CancelWorkflowExecutionCommandAttributes{CancelWorkflowExecutionCommandAttributes: &commandpb.CancelWorkflowExecutionCommandAttributes{
 			Details: convertErrDetailsToPayloads(canceledErr.details, wth.dataConverter),
 		}}
 	} else if errors.As(workflowContext.err, &contErr) {
 		// Continue as new error.
-		metricsHandler.Counter(metrics.WorkflowContinueAsNewCounter).Inc(1)
+		metricCounterToIncrement = metrics.WorkflowContinueAsNewCounter
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CONTINUE_AS_NEW_WORKFLOW_EXECUTION)
 
 		// ContinueAsNewError.RetryPolicy is optional.
@@ -1802,20 +1884,23 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		useCompat := determineInheritBuildIdFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
-			WorkflowType:        &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
-			Input:               contErr.Input,
-			TaskQueue:           &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:  durationpb.New(contErr.WorkflowRunTimeout),
-			WorkflowTaskTimeout: durationpb.New(contErr.WorkflowTaskTimeout),
-			Header:              contErr.Header,
-			Memo:                workflowContext.workflowInfo.Memo,
-			SearchAttributes:    workflowContext.workflowInfo.SearchAttributes,
-			RetryPolicy:         convertToPBRetryPolicy(retryPolicy),
-			InheritBuildId:      useCompat,
+			WorkflowType:              &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
+			Input:                     contErr.Input,
+			TaskQueue:                 &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+			WorkflowRunTimeout:        durationpb.New(contErr.WorkflowRunTimeout),
+			WorkflowTaskTimeout:       durationpb.New(contErr.WorkflowTaskTimeout),
+			Header:                    contErr.Header,
+			Memo:                      workflowContext.workflowInfo.Memo,
+			SearchAttributes:          workflowContext.workflowInfo.SearchAttributes,
+			RetryPolicy:               convertToPBRetryPolicy(retryPolicy),
+			InheritBuildId:            useCompat,
+			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),
 		}}
 	} else if workflowContext.err != nil {
 		// Workflow failures
-		metricsHandler.Counter(metrics.WorkflowFailedCounter).Inc(1)
+		if !isBenignApplicationError(workflowContext.err) {
+			metricCounterToIncrement = metrics.WorkflowFailedCounter
+		}
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
 		failure := wth.failureConverter.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
@@ -1823,7 +1908,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		}}
 	} else if workflowContext.isWorkflowCompleted {
 		// Workflow completion
-		metricsHandler.Counter(metrics.WorkflowCompletedCounter).Inc(1)
+		metricCounterToIncrement = metrics.WorkflowCompletedCounter
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_COMPLETE_WORKFLOW_EXECUTION)
 		closeCommand.Attributes = &commandpb.Command_CompleteWorkflowExecutionCommandAttributes{CompleteWorkflowExecutionCommandAttributes: &commandpb.CompleteWorkflowExecutionCommandAttributes{
 			Result: workflowContext.result,
@@ -1832,8 +1917,6 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 	if closeCommand != nil {
 		commands = append(commands, closeCommand)
-		elapsed := time.Since(workflowContext.workflowInfo.WorkflowStartTime)
-		metricsHandler.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
 		forceNewWorkflowTask = false
 	}
 
@@ -1864,6 +1947,10 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		langUsedFlags = append(langUsedFlags, uint32(flag))
 	}
 
+	seriesName := ""
+	if (wth.workerDeploymentVersion != WorkerDeploymentVersion{}) {
+		seriesName = wth.workerDeploymentVersion.DeploymentName
+	}
 	builtRequest := &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken:                  task.TaskToken,
 		Commands:                   commands,
@@ -1884,11 +1971,46 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			BuildId:       wth.workerBuildID,
 			UseVersioning: wth.useBuildIDForVersioning,
 		},
+		Capabilities: &workflowservice.RespondWorkflowTaskCompletedRequest_Capabilities{
+			DiscardSpeculativeWorkflowTaskWithEvents: true,
+		},
+		Deployment: &deploymentpb.Deployment{
+			BuildId:    wth.workerBuildID,
+			SeriesName: seriesName,
+		},
+		DeploymentOptions: workerDeploymentOptionsToProto(
+			wth.useBuildIDForVersioning,
+			wth.workerDeploymentVersion,
+		),
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
 		builtRequest.BinaryChecksum = ""
 	}
-	return builtRequest
+	if wth.useBuildIDForVersioning || (wth.workerDeploymentVersion != WorkerDeploymentVersion{}) {
+		workflowType := workflowContext.workflowInfo.WorkflowType
+		if behavior, ok := wth.registry.getWorkflowVersioningBehavior(workflowType); ok {
+			builtRequest.VersioningBehavior = versioningBehaviorToProto(behavior)
+		} else {
+			builtRequest.VersioningBehavior = versioningBehaviorToProto(wth.defaultVersioningBehavior)
+		}
+	}
+
+	// Return request and a function that will update certain metrics
+	metricsHandler := wth.metricsHandler.WithTags(metrics.WorkflowTags(
+		eventHandler.workflowEnvironmentImpl.workflowInfo.WorkflowType.Name))
+	return workflowTaskCompletion{
+		rawRequest: builtRequest,
+		applyCompletionMetrics: func() {
+			if metricCounterToIncrement != "" {
+				metricsHandler.Counter(metricCounterToIncrement).Inc(1)
+			}
+			if closeCommand != nil {
+				elapsed := time.Since(workflowContext.workflowInfo.WorkflowStartTime)
+				metricsHandler.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
+			}
+		},
+	}
 }
 
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.HistoryEvent, isInReplay bool) error {
@@ -1908,26 +2030,30 @@ func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.Hi
 }
 
 func newActivityTaskHandler(
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	registry *registry,
 ) ActivityTaskHandler {
-	return newActivityTaskHandlerWithCustomProvider(service, params, registry, nil)
+	return newActivityTaskHandlerWithCustomProvider(client, params, registry, nil)
 }
 
 func newActivityTaskHandlerWithCustomProvider(
-	service workflowservice.WorkflowServiceClient,
+	client *WorkflowClient,
 	params workerExecutionParameters,
 	registry *registry,
 	activityProvider activityProvider,
 ) ActivityTaskHandler {
+	seriesName := ""
+	if (params.DeploymentOptions.Version != WorkerDeploymentVersion{}) {
+		seriesName = params.DeploymentOptions.Version.DeploymentName
+	}
 	return &activityTaskHandlerImpl{
 		taskQueueName:                    params.TaskQueue,
 		identity:                         params.Identity,
-		service:                          service,
+		client:                           client,
 		logger:                           params.Logger,
 		metricsHandler:                   params.MetricsHandler,
-		userContext:                      params.UserContext,
+		backgroundContext:                params.BackgroundContext,
 		registry:                         registry,
 		activityProvider:                 activityProvider,
 		dataConverter:                    params.DataConverter,
@@ -1941,6 +2067,14 @@ func newActivityTaskHandlerWithCustomProvider(
 			BuildId:       params.getBuildID(),
 			UseVersioning: params.UseBuildIDForVersioning,
 		},
+		deployment: &deploymentpb.Deployment{
+			BuildId:    params.getBuildID(),
+			SeriesName: seriesName,
+		},
+		workerDeploymentOptions: workerDeploymentOptionsToProto(
+			params.UseBuildIDForVersioning,
+			params.DeploymentOptions.Version,
+		),
 	}
 }
 
@@ -1950,7 +2084,8 @@ type temporalInvoker struct {
 	service        workflowservice.WorkflowServiceClient
 	metricsHandler metrics.Handler
 	taskToken      []byte
-	cancelHandler  func()
+	// cancelHandler is called when the activity is canceled by a heartbeat request.
+	cancelHandler context.CancelCauseFunc
 	// Amount of time to wait between each pending heartbeat send
 	heartbeatThrottleInterval time.Duration
 	hbBatchEndTimer           *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
@@ -1958,6 +2093,7 @@ type temporalInvoker struct {
 	closeCh                   chan struct{}
 	workerStopChannel         <-chan struct{}
 	namespace                 string
+	excludeInternalFromRetry  *atomic.Bool // borrowed from client in order to tell if internal errors are retriable
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
@@ -2033,23 +2169,26 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	switch err.(type) {
 	case *CanceledError:
 		// We are asked to cancel. inform the activity about cancellation through context.
-		i.cancelHandler()
+		i.cancelHandler(err)
 		isActivityCanceled = true
-
 	case *serviceerror.NotFound, *serviceerror.NamespaceNotActive, *serviceerror.NamespaceNotFound:
 		// We will pass these through as cancellation for now but something we can change
 		// later when we have setter on cancel handler.
-		i.cancelHandler()
+		i.cancelHandler(err)
 		isActivityCanceled = true
 	case nil:
 		// No error, do nothing.
 	default:
+		if errors.Is(err, ErrActivityPaused) || errors.Is(err, ErrActivityReset) {
+			// We are asked to pause/reset. inform the activity about cancellation through context.
+			i.cancelHandler(err)
+			isActivityCanceled = true
+		}
 		// Transient errors are getting retried for the duration of the heartbeat timeout.
 		// The fact that error has been returned means that activity should now be timed out, hence we should
 		// propagate cancellation to the handler.
-		err, _ := status.FromError(err)
-		if retry.IsStatusCodeRetryable(err) {
-			i.cancelHandler()
+		if retry.IsRetryable(err, i.excludeInternalFromRetry) {
+			i.cancelHandler(err)
 			isActivityCanceled = true
 		}
 	}
@@ -2085,10 +2224,11 @@ func newServiceInvoker(
 	identity string,
 	service workflowservice.WorkflowServiceClient,
 	metricsHandler metrics.Handler,
-	cancelHandler func(),
+	cancelHandler context.CancelCauseFunc,
 	heartbeatThrottleInterval time.Duration,
 	workerStopChannel <-chan struct{},
 	namespace string,
+	excludeInternalFromRetry *atomic.Bool,
 ) ServiceInvoker {
 	return &temporalInvoker{
 		taskToken:                 taskToken,
@@ -2100,37 +2240,48 @@ func newServiceInvoker(
 		closeCh:                   make(chan struct{}),
 		workerStopChannel:         workerStopChannel,
 		namespace:                 namespace,
+		excludeInternalFromRetry:  excludeInternalFromRetry,
 	}
 }
 
 // Execute executes an implementation of the activity.
 func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result interface{}, err error) {
 	traceLog(func() {
-		ath.logger.Debug("Processing new activity task",
-			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
-			tagRunID, t.WorkflowExecution.GetRunId(),
-			tagActivityType, t.ActivityType.GetName(),
-			tagAttempt, t.Attempt,
-		)
+		if t.WorkflowExecution.GetWorkflowId() == "" {
+			ath.logger.Debug("Processing new standalone activity task",
+				tagActivityID, t.ActivityId,
+				tagActivityRunID, t.ActivityRunId,
+				tagActivityType, t.ActivityType.GetName(),
+				tagAttempt, t.Attempt,
+			)
+		} else {
+			ath.logger.Debug("Processing new workflow activity task",
+				tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+				tagRunID, t.WorkflowExecution.GetRunId(),
+				tagActivityID, t.ActivityId,
+				tagActivityType, t.ActivityType.GetName(),
+				tagAttempt, t.Attempt,
+			)
+		}
 	})
-
-	rootCtx := ath.userContext
+	// The root context is only cancelled when the worker is finished shutting down.
+	rootCtx := ath.backgroundContext
 	if rootCtx == nil {
 		rootCtx = context.Background()
 	}
-	canCtx, cancel := context.WithCancel(rootCtx)
-	defer cancel()
+	canCtx, cancel := context.WithCancelCause(rootCtx)
+	defer cancel(nil)
 
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
-		t.TaskToken, ath.identity, ath.service, ath.metricsHandler, cancel, heartbeatThrottleInterval,
-		ath.workerStopCh, ath.namespace)
+		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
+		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry)
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
 	metricsHandler := ath.metricsHandler.WithTags(metrics.ActivityTags(workflowType, activityType, ath.taskQueueName))
 	ctx, err := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, metricsHandler,
-		ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.registry.interceptors)
+		ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.registry.interceptors, ath.client)
 	if err != nil {
 		return nil, err
 	}
@@ -2149,7 +2300,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp), nil
+			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
 	}
 
 	// panic handler
@@ -2167,7 +2318,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp)
+				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
 		}
 	}()
 
@@ -2183,7 +2334,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 	// Check if context canceled at a higher level before we cancel it ourselves
-	isActivityCancel := ctx.Err() == context.Canceled
+
+	// Cancels that don't originate from the server will have separate cancel reasons, like
+	// ErrWorkerShutdown or ErrActivityPaused
+	isActivityCanceled := ctx.Err() == context.Canceled && IsCanceledError(context.Cause(ctx))
 
 	dlCancelFunc()
 	if <-ctx.Done(); ctx.Err() == context.DeadlineExceeded {
@@ -2198,7 +2352,11 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		return nil, ctx.Err()
 	}
 	if err != nil && err != ErrActivityResultPending {
-		ath.logger.Error("Activity error.",
+		logFunc := ath.logger.Error // Default to Error
+		if isBenignApplicationError(err) {
+			logFunc = ath.logger.Debug // Downgrade to Debug for benign application errors
+		}
+		logFunc("Activity error.",
 			tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
 			tagRunID, t.WorkflowExecution.GetRunId(),
 			tagActivityType, activityType,
@@ -2207,7 +2365,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCancel, ath.versionStamp), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
@@ -2260,6 +2418,13 @@ func createNewCommand(commandType enumspb.CommandType) *commandpb.Command {
 	}
 }
 
+func createNewCommandWithMetadata(commandType enumspb.CommandType, metadata *sdk.UserMetadata) *commandpb.Command {
+	return &commandpb.Command{
+		CommandType:  commandType,
+		UserMetadata: metadata,
+	}
+}
+
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
 	identity string, taskToken []byte, details *commonpb.Payloads,
 ) error {
@@ -2278,8 +2443,14 @@ func recordActivityHeartbeat(ctx context.Context, service workflowservice.Workfl
 	defer cancel()
 
 	heartbeatResponse, err := service.RecordActivityTaskHeartbeat(grpcCtx, request)
-	if err == nil && heartbeatResponse != nil && heartbeatResponse.GetCancelRequested() {
-		return NewCanceledError()
+	if err == nil && heartbeatResponse != nil {
+		if heartbeatResponse.GetCancelRequested() {
+			return NewCanceledError()
+		} else if heartbeatResponse.GetActivityPaused() {
+			return ErrActivityPaused
+		} else if heartbeatResponse.GetActivityReset() {
+			return ErrActivityReset
+		}
 	}
 	return err
 }

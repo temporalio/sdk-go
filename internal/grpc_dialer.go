@@ -1,35 +1,12 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
@@ -54,6 +31,8 @@ type (
 
 const (
 	// LocalHostPort is a default host:port for worker and client to connect to.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DefaultHostPort]
 	LocalHostPort = "localhost:7233"
 
 	// defaultServiceConfig is a default gRPC connection service config which enables DNS round-robin between IPs.
@@ -76,6 +55,9 @@ const (
 
 	// defaultKeepAliveTimeout is the keep alive timeout if one is not specified.
 	defaultKeepAliveTimeout = 15 * time.Second
+
+	// temporalNamespaceHeaderKey is the header key that should contain the target namespace of the request.
+	temporalNamespaceHeaderKey = "temporal-namespace"
 )
 
 func dial(params dialParameters) (*grpc.ClientConn, error) {
@@ -157,6 +139,8 @@ func requiredInterceptors(
 		retry.NewRetryOptionsInterceptor(excludeInternalFromRetry),
 		// Performs retries *IF* retry options are set for the call.
 		grpc_retry.UnaryClientInterceptor(),
+		// Prevents retrying grpc message too large errors, while allowing retries of other resource exhausted errors.
+		retry.GrpcMessageTooLargeErrorInterceptor,
 		// Report metrics for every call made to the server.
 		metrics.NewGRPCInterceptor(clientOptions.MetricsHandler, attemptSuffix, clientOptions.DisableErrorCodeMetricTags),
 	}
@@ -173,7 +157,21 @@ func requiredInterceptors(
 			interceptors = append(interceptors, interceptor)
 		}
 	}
+	// Add namespace provider interceptor
+	interceptors = append(interceptors, namespaceProviderInterceptor())
 	return interceptors
+}
+
+func namespaceProviderInterceptor() grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if nsReq, ok := req.(interface{ GetNamespace() string }); ok {
+			// Only add namespace if it doesn't already exist
+			if md, _ := metadata.FromOutgoingContext(ctx); len(md.Get(temporalNamespaceHeaderKey)) == 0 {
+				ctx = metadata.AppendToOutgoingContext(ctx, temporalNamespaceHeaderKey, nsReq.GetNamespace())
+			}
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
 
 func trafficControllerInterceptor(controller TrafficController) grpc.UnaryClientInterceptor {
@@ -202,6 +200,9 @@ func headersProviderInterceptor(headersProvider HeadersProvider) grpc.UnaryClien
 
 func errorInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	err := invoker(ctx, method, req, reply, cc, opts...)
-	err = serviceerror.FromStatus(status.Convert(err))
+	var grpcMessageTooLargeErr *retry.GrpcMessageTooLargeError
+	if !errors.As(err, &grpcMessageTooLargeErr) {
+		err = serviceerror.FromStatus(status.Convert(err))
+	}
 	return err
 }

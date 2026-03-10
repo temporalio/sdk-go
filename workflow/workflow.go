@@ -1,30 +1,7 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package workflow
 
 import (
+	"cmp"
 	"errors"
 
 	"go.temporal.io/sdk/converter"
@@ -32,7 +9,62 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
-	"golang.org/x/exp/constraints"
+)
+
+// VersioningBehavior specifies when existing workflows could change their Build ID.
+type VersioningBehavior = internal.VersioningBehavior
+
+const (
+	// Workflow versioning policy unknown.
+	VersioningBehaviorUnspecified = internal.VersioningBehaviorUnspecified
+
+	// Workflow should be pinned to the current Build ID until manually moved.
+	VersioningBehaviorPinned = internal.VersioningBehaviorPinned
+
+	// Workflow automatically moves to the latest version (default Build ID of the task queue)
+	// when the next task is dispatched.
+	VersioningBehaviorAutoUpgrade = internal.VersioningBehaviorAutoUpgrade
+)
+
+// ContinueAsNewVersioningBehavior specifies how the new workflow run after ContinueAsNew should change its Build ID.
+//
+// NOTE: Upgrade-on-Continue-as-New is currently experimental.
+type ContinueAsNewVersioningBehavior = internal.ContinueAsNewVersioningBehavior
+
+const (
+	// ContinueAsNewVersioningBehaviorUnspecified - Workflow versioning policy unknown.
+	// If the source workflow was AutoUpgrade, the new workflow will start as AutoUpgrade.
+	// If the source workflow was Pinned, the new workflow will start Pinned to the same Build ID.
+	// If the source workflow had a Pinned Versioning Override, the new workflow will inherit that Versioning Override.
+	ContinueAsNewVersioningBehaviorUnspecified = internal.ContinueAsNewVersioningBehaviorUnspecified
+
+	// ContinueAsNewVersioningBehaviorAutoUpgrade - Start the new workflow with AutoUpgrade versioning behavior.
+	// Like all AutoUpgrade workflows, use the Target Version of the workflow's task queue at start-time. After the
+	// first workflow task completes, use whatever Versioning Behavior the workflow is annotated with in the workflow
+	// code.
+	//
+	// Note that if the previous workflow had a Pinned override, that override will be inherited by the new workflow
+	// run regardless of the ContinueAsNewVersioningBehavior specified in the continue-as-new command.
+	ContinueAsNewVersioningBehaviorAutoUpgrade = internal.ContinueAsNewVersioningBehaviorAutoUpgrade
+)
+
+// ContinueAsNewSuggestedReason specifies why ContinueAsNewSuggested is true. Multiple reasons can be true at the same time.
+//
+// NOTE: ContinueAsNewSuggestedReasons are currently experimental.
+type ContinueAsNewSuggestedReason = internal.ContinueAsNewSuggestedReason
+
+const (
+	// ContinueAsNewSuggestedReasonUnspecified - The reason is unknown.
+	ContinueAsNewSuggestedReasonUnspecified = internal.ContinueAsNewSuggestedReasonUnspecified
+
+	// ContinueAsNewSuggestedReasonHistorySizeTooLarge - Workflow History size is getting too large.
+	ContinueAsNewSuggestedReasonHistorySizeTooLarge = internal.ContinueAsNewSuggestedReasonHistorySizeTooLarge
+
+	// ContinueAsNewSuggestedReasonTooManyHistoryEvents - Workflow History size is getting too large.
+	ContinueAsNewSuggestedReasonTooManyHistoryEvents = internal.ContinueAsNewSuggestedReasonTooManyHistoryEvents
+
+	// ContinueAsNewSuggestedReasonTooManyUpdates - Workflow's count of completed plus in-flight updates is too large.
+	ContinueAsNewSuggestedReasonTooManyUpdates = internal.ContinueAsNewSuggestedReasonTooManyUpdates
 )
 
 // HandlerUnfinishedPolicy defines the actions taken when a workflow exits while update handlers are
@@ -48,6 +80,28 @@ const (
 	// In the case of an update handler this means that the client will receive an error rather
 	// than the update result.
 	HandlerUnfinishedPolicyAbandon = internal.HandlerUnfinishedPolicyAbandon
+)
+
+// NexusOperationCancellationType specifies what action should be taken for a Nexus operation when the
+// caller is cancelled.
+type NexusOperationCancellationType = internal.NexusOperationCancellationType
+
+const (
+	// Nexus operation cancellation type is unknown.
+	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
+
+	// Do not request cancellation of the Nexus operation.
+	NexusOperationCancellationTypeAbandon
+
+	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
+	// to the caller.
+	NexusOperationCancellationTypeTryCancel
+
+	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
+	NexusOperationCancellationTypeWaitRequested
+
+	// Wait for the Nexus operation to complete. Default.
+	NexusOperationCancellationTypeWaitCompleted
 )
 
 type (
@@ -70,12 +124,20 @@ type (
 	// RegisterOptions consists of options for registering a workflow
 	RegisterOptions = internal.RegisterWorkflowOptions
 
+	// LoadDynamicRuntimeOptionsDetails is used as input to the LoadDynamicRuntimeOptions callback for dynamic workflows
+	LoadDynamicRuntimeOptionsDetails = internal.LoadDynamicRuntimeOptionsDetails
+
+	// DynamicRegisterOptions consists of options for registering a dynamic workflow
+	DynamicRegisterOptions = internal.DynamicRegisterWorkflowOptions
+
+	// DynamicRuntimeOptions consists of options for a dynamic workflow that
+	// are decided on a per-workflow type basis.
+	DynamicRuntimeOptions = internal.DynamicRuntimeWorkflowOptions
+
 	// Info information about currently executing workflow
 	Info = internal.WorkflowInfo
 
 	// UpdateInfo information about a currently running update
-	//
-	// NOTE: Experimental
 	UpdateInfo = internal.UpdateInfo
 
 	// ContinueAsNewError can be returned by a workflow implementation function and indicates that
@@ -85,7 +147,49 @@ type (
 	// ContinueAsNewErrorOptions specifies optional attributes to be carried over to the next run.
 	ContinueAsNewErrorOptions = internal.ContinueAsNewErrorOptions
 
+	// SignalChannelOptions consists of options for a signal channel.
+	//
+	// NOTE: Experimental
+	SignalChannelOptions = internal.SignalChannelOptions
+
+	// QueryHandlerOptions consists of options for a query handler.
+	//
+	// NOTE: Experimental
+	QueryHandlerOptions = internal.QueryHandlerOptions
+
+	// UpdateHandlerOptions consists of options for executing a named workflow update.
+	//
+	// NOTE: Experimental
 	UpdateHandlerOptions = internal.UpdateHandlerOptions
+
+	// SideEffectOptions are options for executing a side effect.
+	SideEffectOptions = internal.SideEffectOptions
+
+	// MutableSideEffectOptions are options for executing a mutable side effect.
+	MutableSideEffectOptions = internal.MutableSideEffectOptions
+
+	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
+
+	// NexusClient is a client for executing Nexus Operations from a workflow.
+	NexusClient interface {
+		// The endpoint name this client uses.
+		Endpoint() string
+		// The service name this client uses.
+		Service() string
+
+		// ExecuteOperation executes a Nexus Operation.
+		// The operation argument can be a string, a [nexus.Operation] or a [nexus.OperationReference].
+		ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture
+	}
+
+	// NexusOperationOptions are options for starting a Nexus Operation from a Workflow.
+	NexusOperationOptions = internal.NexusOperationOptions
+
+	// NexusOperationFuture represents the result of a Nexus Operation.
+	NexusOperationFuture = internal.NexusOperationFuture
+
+	// NexusOperationExecution is the result of [internal.NexusOperationFuture.GetNexusOperationExecution].
+	NexusOperationExecution = internal.NexusOperationExecution
 )
 
 // ExecuteActivity requests activity execution in the context of a workflow.
@@ -128,7 +232,7 @@ type (
 //
 // If the activity failed to complete then the future get error would indicate the failure.
 // The error will be of type *ActivityError. It will have important activity information and actual error that caused
-// activity failure. Use errors.Unwrap to get this error or errors.As to check it type which can be one of
+// activity failure. Use errors.Unwrap to get this error or errors.As to check its type which can be one of
 // *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
 //
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
@@ -153,6 +257,9 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 // • Local activity is for short living activities (usually finishes within seconds).
 //
 // • Local activity cannot heartbeat.
+//
+// WARNING: Technically, an anonymous function can be used as a local activity, but this is not recommended as their name
+// is generated by the Go runtime and is not deterministic. This is only allowed for backward compatibility.
 //
 // Context can be used to pass the settings for this local activity.
 // For now there is only one setting for timeout to be set:
@@ -224,13 +331,15 @@ func GetTypedSearchAttributes(ctx Context) temporal.SearchAttributes {
 
 // GetCurrentUpdateInfo returns information about the currently running update if any
 // from the context.
-//
-// NOTE: Experimental
 func GetCurrentUpdateInfo(ctx Context) *UpdateInfo {
 	return internal.GetCurrentUpdateInfo(ctx)
 }
 
-// GetLogger returns a logger to be used in workflow's context
+// GetLogger returns a logger to be used in workflow's context.
+// This logger does not record logs during replay.
+//
+// The logger may also extract additional fields from the context, such as update info
+// if used in an update handler.
 func GetLogger(ctx Context) log.Logger {
 	return internal.GetLogger(ctx)
 }
@@ -279,6 +388,14 @@ func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return internal.GetSignalChannel(ctx, signalName)
 }
 
+// GetSignalChannelWithOptions returns channel corresponding to the signal name.
+// Options will only apply to the first signal channel.
+//
+// NOTE: Experimental
+func GetSignalChannelWithOptions(ctx Context, signalName string, options SignalChannelOptions) ReceiveChannel {
+	return internal.GetSignalChannelWithOptions(ctx, signalName, options)
+}
+
 // SideEffect executes the provided function once, records its result into the workflow history. The recorded result on
 // history will be returned without executing the provided function during replay. This guarantees the deterministic
 // requirement for workflow as the exact same result will be returned in replay.
@@ -322,6 +439,15 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 	return internal.SideEffect(ctx, f)
 }
 
+// SideEffectWithOptions executes the provided function once, records its result into the workflow history.
+// The recorded result on history will be returned without executing the provided function during replay.
+// This guarantees the deterministic requirement for workflow as the exact same result will be returned in replay.
+//
+// The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
+func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
+	return internal.SideEffectWithOptions(ctx, options, f)
+}
+
 // MutableSideEffect executes the provided function once, then it looks up the history for the value with the given id.
 // If there is no existing value, then it records the function result as a value with the given id on history;
 // otherwise, it compares whether the existing value from history has changed from the new function result by calling
@@ -339,6 +465,12 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
 func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
 	return internal.MutableSideEffect(ctx, id, f, equals)
+}
+
+// MutableSideEffectWithOptions is like MutableSideEffect but allows specifying additional options
+// like a summary that will be displayed in UI/CLI.
+func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+	return internal.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before
@@ -452,30 +584,36 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 //	  currentState = "done"
 //	  return nil
 //	}
+//
+// See [SetQueryHandlerWithOptions] to set additional options.
 func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 	return internal.SetQueryHandler(ctx, queryType, handler)
+}
+
+// SetQueryHandlerWithOptions is [SetQueryHandler] with extra options. See
+// [SetQueryHandler] documentation for details.
+//
+// NOTE: Experimental
+func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+	return internal.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
 }
 
 // SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an
 // zero-initialized UpdateHandlerOptions struct. See SetUpdateHandlerWithOptions
 // for more details.
-//
-// NOTE: Experimental
 func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error {
 	return SetUpdateHandlerWithOptions(ctx, updateName, handler, UpdateHandlerOptions{})
 }
 
-// SetUpdateHandlerWithOptions binds an update handler function to the specified
-// name such that update invocations specifying that name will invoke the
-// handler.  The handler function can take as input any number of parameters so
-// long as they can be serialized/deserialized by the system. The handler can
-// take a [workflow.Context] as its first parameter but this is not required. The
-// update handler must return either a single error or a single serializable
-// object along with a single error. The update handler function is invoked in
-// the context of the workflow and thus is subject to the same restrictions as
-// workflow code, namely, the update handler must be deterministic. As with
-// other workflow code, update code is free to invoke and wait on the results of
-// activities. Update handler code is free to mutate workflow state.
+// SetUpdateHandlerWithOptions binds an update handler function to the specified name such that
+// update invocations specifying that name will invoke the handler. The handler function can take as
+// input any number of parameters so long as they can be serialized/deserialized by the system. The
+// handler must take a [workflow.Context] as its first parameter. The update handler must return
+// either a single error or a single serializable object along with a single error. The update
+// handler function is invoked in the context of the workflow and thus is subject to the same
+// restrictions as workflow code, namely, the update handler must be deterministic. As with other
+// workflow code, update code is free to invoke and wait on the results of activities. Update
+// handler code is free to mutate workflow state.
 //
 // This registration can optionally specify (through UpdateHandlerOptions) an
 // update validation function. If provided, this function will be invoked before
@@ -495,7 +633,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		err := workflow.SetUpdateHandlerWithOptions(
 //			ctx,
 //			"add",
-//			func(val int) (int, error) { // Calls
+//			func(ctx workflow.Context, val int) (int, error) { // Calls
 //				counter += val // note that this mutates workflow state
 //				return counter, nil
 //			},
@@ -513,10 +651,26 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		_ = ctx.Done().Receive(ctx, nil)
 //		return counter, nil
 //	}
-//
-// NOTE: Experimental
 func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
 	return internal.SetUpdateHandler(ctx, updateName, handler, opts)
+}
+
+// GetCurrentDetails gets the current details for this workflow. This is simply
+// the value set by [SetCurrentDetails] or empty if never set. See that function
+// for more details.
+//
+// NOTE: Experimental
+func GetCurrentDetails(ctx Context) string {
+	return internal.GetCurrentDetails(ctx)
+}
+
+// SetCurrentDetails sets the current details for this workflow. This is
+// typically an arbitrary string in Temporal markdown format may be displayed in
+// the UI or CLI.
+//
+// NOTE: Experimental
+func SetCurrentDetails(ctx Context, details string) {
+	internal.SetCurrentDetails(ctx, details)
 }
 
 // IsReplaying returns whether the current workflow code is replaying.
@@ -611,7 +765,7 @@ func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) erro
 //
 //	var intKey = temporal.NewSearchAttributeKeyInt64("CustomIntField")
 //	var boolKey = temporal.NewSearchAttributeKeyBool("CustomBoolField")
-//	var keywordKey = temporal.NewSearchAttributeKeyBool("CustomKeywordField")
+//	var keywordKey = temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
 //
 //	func MyWorkflow(ctx workflow.Context, input string) error {
 //		err = workflow.UpsertTypedSearchAttributes(ctx, intAttrKey.ValueSet(1), boolAttrKey.ValueSet(true))
@@ -696,7 +850,7 @@ func DataConverterWithoutDeadlockDetection(c converter.DataConverter) converter.
 
 // DeterministicKeys returns the keys of a map in deterministic (sorted) order. To be used in for
 // loops in workflows for deterministic iteration.
-func DeterministicKeys[K constraints.Ordered, V any](m map[K]V) []K {
+func DeterministicKeys[K cmp.Ordered, V any](m map[K]V) []K {
 	return internal.DeterministicKeys(m)
 }
 
@@ -715,4 +869,9 @@ func DeterministicKeysFunc[K comparable, V any](m map[K]V, cmp func(K, K) int) [
 //	workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) })
 func AllHandlersFinished(ctx Context) bool {
 	return internal.AllHandlersFinished(ctx)
+}
+
+// Create a [NexusClient] from an endpoint name and a service name.
+func NewNexusClient(endpoint, service string) NexusClient {
+	return internal.NewNexusClient(endpoint, service)
 }

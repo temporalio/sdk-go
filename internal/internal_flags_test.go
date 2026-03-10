@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2023 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -36,26 +14,107 @@ var (
 	}
 )
 
-const testFlag = SDKFlagChildWorkflowErrorExecution
+func TestLoadFlagOverridesFromEnv(t *testing.T) {
+	tests := []struct {
+		name    string
+		envVal  string
+		wantVal bool
+	}{
+		{"1 enables", "1", true},
+		{"0 disables", "0", false},
+		{"invalid value ignored", "true", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("TEMPORAL_SDK_FLAG_5", tt.envVal)
+			testFlags := map[sdkFlag]bool{
+				SDKFlagBlockedSelectorSignalReceive: false,
+			}
+			loadFlagOverridesFromEnv(testFlags)
+
+			val, ok := testFlags[SDKFlagBlockedSelectorSignalReceive]
+			require.True(t, ok)
+			require.Equal(t, tt.wantVal, val)
+		})
+	}
+}
 
 func TestSet(t *testing.T) {
-	t.Parallel()
-
-	t.Run("no server sdk metadata support", func(t *testing.T) {
-		flags := newSDKFlags(&metadataDisabled)
-		flags.set(testFlag)
-		require.Empty(t, flags.gatherNewSDKFlags(),
-			"flags assigned when servier does not support metadata are dropped")
-		require.False(t, flags.tryUse(testFlag, false),
-			"flags assigned when servier does not support metadata are dropped")
+	t.Run("metadata disabled drops flags", func(t *testing.T) {
+		flags := newSDKFlagSet(&metadataDisabled)
+		flags.set(SDKFlagChildWorkflowErrorExecution)
+		require.False(t, flags.currentFlags[SDKFlagChildWorkflowErrorExecution])
 	})
 
-	t.Run("with server sdk metadata support", func(t *testing.T) {
-		flags := newSDKFlags(&metadataEnabled)
-		flags.set(testFlag)
-		require.Empty(t, flags.gatherNewSDKFlags(),
-			"flag set via sdkFlags.set is not 'new'")
-		require.True(t, flags.tryUse(testFlag, false),
-			"flag set via sdkFlags.set should be immediately visible")
+	t.Run("metadata enabled keeps flags", func(t *testing.T) {
+		flags := newSDKFlagSet(&metadataEnabled)
+		flags.set(SDKFlagChildWorkflowErrorExecution)
+		require.True(t, flags.currentFlags[SDKFlagChildWorkflowErrorExecution])
+		require.Empty(t, flags.gatherNewSDKFlags(), "set() flags are not 'new'")
 	})
+}
+
+func TestTryUse(t *testing.T) {
+	tests := []struct {
+		name        string
+		inHistory   bool
+		record      bool
+		flagDefault bool
+		wantResult  bool
+		wantNewFlag bool
+	}{
+		{
+			name:        "in history returns true regardless of default or record",
+			inHistory:   true,
+			record:      false,
+			flagDefault: false,
+			wantResult:  true,
+			wantNewFlag: false,
+		},
+		{
+			name:        "default=true record=true enables and records flag",
+			inHistory:   false,
+			record:      true,
+			flagDefault: true,
+			wantResult:  true,
+			wantNewFlag: true,
+		},
+		{
+			name:        "default=true record=false returns false",
+			inHistory:   false,
+			record:      false,
+			flagDefault: true,
+			wantResult:  false,
+			wantNewFlag: false,
+		},
+		{
+			name:        "default=false record=true returns false",
+			inHistory:   false,
+			record:      true,
+			flagDefault: false,
+			wantResult:  false,
+			wantNewFlag: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
+			defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
+
+			sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = tt.flagDefault
+
+			flags := newSDKFlagSet(&metadataEnabled)
+			if tt.inHistory {
+				flags.set(SDKFlagBlockedSelectorSignalReceive)
+			}
+
+			result := flags.tryUse(SDKFlagBlockedSelectorSignalReceive, tt.record)
+
+			require.Equal(t, tt.wantResult, result)
+			_, isNew := flags.newFlags[SDKFlagBlockedSelectorSignalReceive]
+			require.Equal(t, tt.wantNewFlag, isNew)
+		})
+	}
 }

@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -32,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 
 	"go.temporal.io/sdk/internal/common/backoff"
 )
@@ -43,6 +19,8 @@ type (
 	// SessionID is a uuid generated when CreateSession() or RecreateSession()
 	// is called and can be used to uniquely identify a session.
 	// HostName specifies which host is executing the session
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionInfo]
 	SessionInfo struct {
 		SessionID         string
 		HostName          string
@@ -61,6 +39,8 @@ type (
 	// HeartbeatTimeout: optional, default 20s
 	//     Specifies the heartbeat timeout. If heartbeat is not received by server
 	//     within the timeout, the session will be declared as failed
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionOptions]
 	SessionOptions struct {
 		ExecutionTimeout time.Duration
 		CreationTimeout  time.Duration
@@ -104,8 +84,14 @@ type (
 
 // Session State enum
 const (
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionStateOpen]
 	SessionStateOpen SessionState = iota
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionStateFailed]
 	SessionStateFailed
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionStateClosed]
 	SessionStateClosed
 )
 
@@ -125,6 +111,8 @@ const (
 var (
 	// ErrSessionFailed is the error returned when user tries to execute an activity but the
 	// session it belongs to has already failed
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ErrSessionFailed]
 	ErrSessionFailed            = errors.New("session has failed")
 	errFoundExistingOpenSession = errors.New("found exisiting open session in the context")
 )
@@ -181,6 +169,8 @@ var (
 //	       // Handle activity error
 //	   }
 //	   ... // execute more activities using sessionCtx
+//
+// Exposed as: [go.temporal.io/sdk/workflow.CreateSession]
 func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error) {
 	options := getActivityOptions(ctx)
 	baseTaskqueue := options.TaskQueueName
@@ -198,6 +188,8 @@ func CreateSession(ctx Context, sessionOptions *SessionOptions) (Context, error)
 // The main usage of RecreateSession is for long sessions that are split into multiple runs. At the end of
 // one run, complete the current session, get recreateToken from sessionInfo by calling SessionInfo.GetRecreateToken()
 // and pass the token to the next run. In the new run, session can be recreated using that token.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.RecreateSession]
 func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionOptions) (Context, error) {
 	recreateParams, err := deserializeRecreateToken(recreateToken)
 	if err != nil {
@@ -213,6 +205,8 @@ func RecreateSession(ctx Context, recreateToken []byte, sessionOptions *SessionO
 // After a session has completed, user can continue to use the context, but the activities will be scheduled
 // on the normal taskQueue (as user specified in ActivityOptions) and may be picked up by another worker since
 // it's not in a session.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.CompleteSession]
 func CompleteSession(ctx Context) {
 	sessionInfo := getSessionInfo(ctx)
 	if sessionInfo == nil || sessionInfo.SessionState != SessionStateOpen {
@@ -248,6 +242,8 @@ func CompleteSession(ctx Context) {
 // session has failed, and created a new one on it), the most recent sessionInfo will be returned.
 //
 // This API will return nil if there's no sessionInfo in the context.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.GetSessionInfo]
 func GetSessionInfo(ctx Context) *SessionInfo {
 	info := getSessionInfo(ctx)
 	if info == nil {
@@ -290,7 +286,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 
 	taskqueueChan := GetSignalChannel(ctx, sessionID) // use sessionID as channel name
 	// Retry is only needed when creating new session and the error returned is
-	// NewApplicationError(errTooManySessionsMsg). Therefore we make sure to
+	// NewApplicationError(errTooManySessionsMsg). Therefore, we make sure to
 	// disable retrying for start-to-close and heartbeat timeouts which can occur
 	// when attempting to retry a create-session on a different worker.
 	retryPolicy := &RetryPolicy{
@@ -375,7 +371,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 func generateSessionID(ctx Context) (string, error) {
 	var sessionID string
 	err := SideEffect(ctx, func(ctx Context) interface{} {
-		return uuid.New()
+		return uuid.NewString()
 	}).Get(&sessionID)
 	return sessionID, err
 }
@@ -421,6 +417,14 @@ func sessionCreationActivity(ctx context.Context, sessionID string) error {
 		select {
 		case <-ctx.Done():
 			sessionEnv.CompleteSession(sessionID)
+			// Because of how session creation configures retryPolicy, we need to wrap context cancels that don't
+			// originate from the server as non-retryable errors. See retrypolicy in createSession() above.
+			if !(ctx.Err() == context.Canceled && IsCanceledError(context.Cause(ctx))) {
+				return NewApplicationErrorWithOptions(
+					"session failed due to worker shutdown", "SessionWorkerShutdown",
+					ApplicationErrorOptions{NonRetryable: true, Cause: ctx.Err()})
+
+			}
 			return ctx.Err()
 		case <-ticker.C:
 			heartbeatOp := func() error {
@@ -545,7 +549,7 @@ func (env *sessionEnvironmentImpl) AddSessionToken() {
 
 func (env *sessionEnvironmentImpl) SignalCreationResponse(ctx context.Context, sessionID string) error {
 	activityEnv := getActivityEnv(ctx)
-	client := activityEnv.serviceInvoker.GetClient(ClientOptions{Namespace: activityEnv.workflowNamespace})
+	client := activityEnv.serviceInvoker.GetClient(ClientOptions{Namespace: activityEnv.namespace})
 	return client.SignalWorkflow(ctx, activityEnv.workflowExecution.ID, activityEnv.workflowExecution.RunID,
 		sessionID, env.getCreationResponse())
 }

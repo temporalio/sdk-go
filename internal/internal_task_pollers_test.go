@@ -1,33 +1,10 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"github.com/google/uuid"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -54,7 +31,7 @@ func (wth *countingTaskHandler) ProcessWorkflowTask(
 	task *workflowTask,
 	wfctx *workflowExecutionContextImpl,
 	hb workflowTaskHeartbeatFunc,
-) (interface{}, error) {
+) (*workflowTaskCompletion, error) {
 	wth.ProcessWorkflowTaskInvocationCount.Add(1)
 	return wth.WorkflowTaskHandler.ProcessWorkflowTask(task, wfctx, hb)
 }
@@ -121,7 +98,7 @@ func TestWFTRacePrevention(t *testing.T) {
 			return &workflowservice.RespondWorkflowTaskFailedResponse{}, nil
 		})
 
-	poller := newWorkflowTaskPoller(taskHandler, contextManager, client, params)
+	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params, uuid.NewString())
 
 	t.Log("Issue task0")
 	go func() { resultsChan <- poller.processWorkflowTask(&task0) }()
@@ -212,7 +189,7 @@ func TestWFTCorruption(t *testing.T) {
 			return nil, errors.New("Failure responding to workflow task")
 		})
 
-	poller := newWorkflowTaskPoller(taskHandler, contextManager, client, params)
+	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params, uuid.NewString())
 	processTaskDone := make(chan struct{})
 	go func() {
 		require.Error(t, poller.processWorkflowTask(&task0))
@@ -353,7 +330,7 @@ func TestWFTReset(t *testing.T) {
 	client.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any()).
 		Return(&workflowservice.RespondWorkflowTaskCompletedResponse{}, nil)
 
-	poller := newWorkflowTaskPoller(taskHandler, contextManager, client, params)
+	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params, uuid.NewString())
 	// Send a full history as part of the speculative WFT
 	require.NoError(t, poller.processWorkflowTask(&task0))
 	originalCachedExecution := cache.getWorkflowContext(runID)
@@ -376,4 +353,59 @@ func TestWFTReset(t *testing.T) {
 	require.NoError(t, poller.processWorkflowTask(&task2))
 	cachedExecution = cache.getWorkflowContext(runID)
 	require.True(t, originalCachedExecution == cachedExecution)
+}
+
+type panickingTaskHandler struct {
+	WorkflowTaskHandler
+}
+
+func (wth *panickingTaskHandler) ProcessWorkflowTask(
+	task *workflowTask,
+	wfctx *workflowExecutionContextImpl,
+	hb workflowTaskHeartbeatFunc,
+) (*workflowTaskCompletion, error) {
+	panic("panickingTaskHandler")
+}
+
+func TestWFTPanicInTaskHandler(t *testing.T) {
+	cache := NewWorkerCache()
+	params := workerExecutionParameters{cache: cache}
+	ensureRequiredParams(&params)
+	wfType := commonpb.WorkflowType{Name: t.Name() + "-workflow-type"}
+	reg := newRegistry()
+	reg.RegisterWorkflowWithOptions(func(ctx Context) error {
+		return nil
+	}, RegisterWorkflowOptions{
+		Name: wfType.Name,
+	})
+	var (
+		taskQueue    = taskqueuepb.TaskQueue{Name: t.Name() + "task-queue"}
+		startedAttrs = historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskQueue,
+		}
+		startedEvent     = createTestEventWorkflowExecutionStarted(1, &startedAttrs)
+		history          = historypb.History{Events: []*historypb.HistoryEvent{startedEvent}}
+		runID            = t.Name() + "-run-id"
+		wfID             = t.Name() + "-workflow-id"
+		wfe              = commonpb.WorkflowExecution{RunId: runID, WorkflowId: wfID}
+		ctrl             = gomock.NewController(t)
+		client           = workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+		innerTaskHandler = newWorkflowTaskHandler(params, nil, newRegistry())
+		taskHandler      = &panickingTaskHandler{WorkflowTaskHandler: innerTaskHandler}
+		contextManager   = taskHandler
+		codec            = binary.LittleEndian
+		pollResp0        = workflowservice.PollWorkflowTaskQueueResponse{
+			Attempt:           1,
+			WorkflowExecution: &wfe,
+			WorkflowType:      &wfType,
+			History:           &history,
+			TaskToken:         codec.AppendUint32(nil, 0),
+		}
+		task0 = workflowTask{task: &pollResp0}
+	)
+
+	poller := newWorkflowTaskProcessor(taskHandler, contextManager, client, params, uuid.NewString())
+	require.Error(t, poller.processWorkflowTask(&task0))
+	// Workflow should not be in cache
+	require.Nil(t, cache.getWorkflowContext(runID))
 }

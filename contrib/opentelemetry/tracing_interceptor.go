@@ -1,31 +1,10 @@
-// The MIT License
-//
-// Copyright (c) 2021 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 // Package opentelemetry provides OpenTelemetry utilities.
 package opentelemetry
 
 import (
 	"context"
 	"fmt"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
@@ -35,6 +14,8 @@ import (
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
+	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/workflow"
 )
 
 // DefaultTextMapPropagator is the default OpenTelemetry TextMapPropagator used
@@ -55,6 +36,9 @@ type TracerOptions struct {
 
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
+
+	// DisableUpdateTracing can be set to disable update tracing.
+	DisableUpdateTracing bool
 
 	// DisableBaggage can be set to disable baggage propagation.
 	DisableBaggage bool
@@ -138,11 +122,17 @@ func (t *tracer) Options() interceptor.TracerOptions {
 		HeaderKey:               t.options.HeaderKey,
 		DisableSignalTracing:    t.options.DisableSignalTracing,
 		DisableQueryTracing:     t.options.DisableQueryTracing,
+		DisableUpdateTracing:    t.options.DisableUpdateTracing,
 		AllowInvalidParentSpans: t.options.AllowInvalidParentSpans,
 	}
 }
 
 func (t *tracer) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanRef, error) {
+	if _, ok := m["traceparent"]; !ok {
+		// If there is no span, return nothing, but don't error out. This is
+		// a legitimate place where a span does not exist in the headers
+		return nil, nil
+	}
 	ctx := t.options.TextMapPropagator.Extract(context.Background(), textMapCarrier(m))
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if !spanCtx.IsValid() {
@@ -185,6 +175,21 @@ func (t *tracer) ContextWithSpan(ctx context.Context, span interceptor.TracerSpa
 	return trace.ContextWithSpan(ctx, span.(*tracerSpan).Span)
 }
 
+// SpanFromWorkflowContext extracts an OpenTelemetry span from the given
+// workflow context.  If no span is found, a no-op span is returned.
+func SpanFromWorkflowContext(ctx workflow.Context) (trace.Span, bool) {
+	val := ctx.Value(spanContextKey{})
+
+	if val != nil {
+		if span, ok := val.(*tracerSpan); ok {
+			return span.Span, true
+		}
+	}
+
+	// Fallback to OpenTelemetry span extraction behavior
+	return trace.SpanFromContext(nil), false
+}
+
 func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
 	// Create context with parent
 	var parent trace.SpanContext
@@ -208,8 +213,17 @@ func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (intercepto
 		}
 	}
 
+	if opts.ToHeader && opts.FromHeader {
+		return nil, fmt.Errorf("cannot set both ToHeader and FromHeader for span")
+	}
+
+	spanKind := trace.SpanKindServer
+	if opts.ToHeader {
+		spanKind = trace.SpanKindClient
+	}
+
 	// Create span
-	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, trace.WithTimestamp(opts.Time))
+	span := t.options.SpanStarter(ctx, t.options.Tracer, opts.Operation+":"+opts.Name, trace.WithTimestamp(opts.Time), trace.WithSpanKind(spanKind))
 
 	// Set tags
 	if len(opts.Tags) > 0 {
@@ -253,10 +267,17 @@ type tracerSpan struct {
 }
 
 func (t *tracerSpan) Finish(opts *interceptor.TracerFinishSpanOptions) {
-	if opts.Error != nil {
+	t.RecordError(opts.Error)
+
+	if opts.Error != nil && !isBenignApplicationError(opts.Error) {
 		t.SetStatus(codes.Error, opts.Error.Error())
 	}
 	t.End()
+}
+
+func isBenignApplicationError(err error) bool {
+	appError, _ := err.(*temporal.ApplicationError)
+	return appError != nil && appError.Category() == temporal.ApplicationErrorCategoryBenign
 }
 
 type textMapCarrier map[string]string

@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2024 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -27,6 +5,7 @@ import (
 	"time"
 
 	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/deployment/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
@@ -49,7 +28,7 @@ const (
 
 // BuildIDTaskReachability specifies which category of tasks may reach a versioned worker of a certain Build ID.
 //
-// Note: future activities who inherit their workflow's Build ID but not its task queue will not be
+// NOTE: future activities who inherit their workflow's Build ID but not its task queue will not be
 // accounted for reachability as server cannot know if they'll happen as they do not use
 // assignment rules of their task queue. Same goes for Child Workflows or Continue-As-New Workflows
 // who inherit the parent/previous workflow's Build ID but not its task queue. In those cases, make
@@ -71,6 +50,46 @@ const (
 	BuildIDTaskReachabilityUnreachable
 )
 
+// WorkerVersioningMode specifies whether the workflows processed by this
+// worker use the worker's Version. The Temporal Server will use this worker's
+// choice when dispatching tasks to it.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/client.WorkerVersioningMode]
+type WorkerVersioningMode int
+
+const (
+	// WorkerVersioningModeUnspecified - Versioning mode not reported.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerVersioningModeUnspecified]
+	WorkerVersioningModeUnspecified = iota
+
+	// WorkerVersioningModeUnversioned - Workers with this mode are not
+	// distinguished from each other for task routing, even if they
+	// have different versions.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerVersioningModeUnversioned]
+	WorkerVersioningModeUnversioned
+
+	// WorkerVersioningModeVersioned - Workers with this mode are part of a
+	// Worker Deployment Version which is a combination of a deployment name
+	// and a build id.
+	//
+	// Each Deployment Version is distinguished from other Versions for task
+	// routing, and users can configure the Temporal Server to send tasks to a
+	// particular Version.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerVersioningModeVersioned]
+	WorkerVersioningModeVersioned
+)
+
 type (
 	// TaskQueueVersionSelection is a task queue filter based on versioning.
 	// It is an optional component of [DescribeTaskQueueEnhancedOptions].
@@ -79,8 +98,8 @@ type (
 		BuildIDs []string
 		// Include the unversioned queue.
 		Unversioned bool
-		// Include all active versions. A version is active if it has had new
-		// tasks or polls recently.
+		// Include all active versions. A version is considered active if, in the last few minutes,
+		// it has had new tasks or polls, or it has been the subject of certain task queue API calls.
 		AllActive bool
 	}
 
@@ -101,6 +120,8 @@ type (
 		// Include task reachability for the requested versions and all task types
 		// (task reachability is not reported per task type).
 		ReportTaskReachability bool
+		// Include task queue stats for requested task queue types and versions.
+		ReportStats bool
 	}
 
 	// WorkerVersionCapabilities includes a worker's build identifier
@@ -111,6 +132,22 @@ type (
 		BuildID string
 		// Whether the worker is using the versioning feature.
 		UseVersioning bool
+		// An identifier to group task queues based on Build ID.
+		DeploymentSeriesName string
+	}
+
+	// WorkerDeploymentPollerOptions are Worker initialization settings
+	// related to Worker Deployment Versioning, which are propagated to the
+	// Temporal Server during polling.
+	//
+	// NOTE: Experimental
+	WorkerDeploymentPollerOptions struct {
+		// DeploymentName - The name of the Worker Deployment.
+		DeploymentName string
+		// BuildID - The Build ID of the worker.
+		BuildID string
+		// WorkerVersioningMode - Versioning Mode for this worker.
+		WorkerVersioningMode WorkerVersioningMode
 	}
 
 	// TaskQueuePollerInfo provides information about a worker/client polling a task queue.
@@ -122,8 +159,67 @@ type (
 		Identity string
 		// Polling rate. A value of zero means it was not set.
 		RatePerSecond float64
-		// Optional poller versioning capabilities. Available when a worker has opted into the worker versioning feature.
+		// Optional poller versioning capabilities. Available when a worker has opted into the
+		// worker versioning feature.
+		//
+		// Deprecated: Use [WorkerDeploymentPollerOptions]
 		WorkerVersionCapabilities *WorkerVersionCapabilities
+		// Optional poller worker deployment versioning options.
+		WorkerDeploymentPollerOptions *WorkerDeploymentPollerOptions
+	}
+
+	// TaskQueueStats contains statistics about task queue backlog and activity.
+	//
+	// For workflow task queue type, this result is partial because tasks sent to sticky queues are not included. Read
+	// comments above each metric to understand the impact of sticky queue exclusion on that metric accuracy.
+	TaskQueueStats struct {
+		// The approximate number of tasks backlogged in this task queue. May count expired tasks but eventually
+		// converges to the right value. Can be relied upon for scaling decisions.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. However, because
+		// those tasks only remain valid for a few seconds, the inaccuracy becomes less significant as the backlog size
+		// grows.
+		ApproximateBacklogCount int64
+		// Approximate age of the oldest task in the backlog based on the creation time of the task at the head of
+		// the queue. Can be relied upon for scaling decisions.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. However, because
+		// those tasks only remain valid for a few seconds, they should not affect the result when backlog is older than
+		// few seconds.
+		ApproximateBacklogAge time.Duration
+		// Approximate *net* tasks per second added to the backlog, averaging the last 30 seconds. This is calculated as
+		// `TasksAddRate - TasksDispatchRate`.
+		// A positive value of `X` means the backlog is growing by about `X` tasks per second. A negative `-X` value means the
+		// backlog is shrinking by about `X` tasks per second.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. However, because
+		// those tasks only remain valid for a few seconds, the inaccuracy becomes less significant as the backlog size
+		// or age grow.
+		BacklogIncreaseRate float32
+		// Approximate tasks per second added to the task queue, averaging the last 30 seconds. This includes both
+		// backlogged and sync-matched tasks, but excludes the Eagerly dispatched workflow and activity tasks (see
+		// documentation for `client.StartWorkflowOptions.EnableEagerStart` and `worker.Options.DisableEagerActivities`.)
+		//
+		// The difference between `TasksAddRate` and `TasksDispatchRate` is a reliable metric for the rate at which
+		// backlog grows/shrinks. See `BacklogIncreaseRate`.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. Hence, the reported
+		// value may be significantly lower than the actual number of workflow tasks added. Note that typically, only
+		// the first workflow task of each workflow goes to a normal queue, and the rest workflow tasks go to the sticky
+		// queue associated with a specific worker instance. Activity tasks always go to normal queues.
+		TasksAddRate float32
+		// Approximate tasks per second dispatched to workers, averaging the last 30 seconds. This includes both
+		// backlogged and sync-matched tasks, but excludes the Eagerly dispatched workflow and activity tasks (see
+		// documentation for `client.StartWorkflowOptions.EnableEagerStart` and `worker.Options.DisableEagerActivities`.)
+		//
+		// The difference between `TasksAddRate` and `TasksDispatchRate` is a reliable metric for the rate at which
+		// backlog grows/shrinks. See `BacklogIncreaseRate`.
+		//
+		// Special note for workflow task queue type: this metric does not count sticky queue tasks. Hence, the reported
+		// value may be significantly lower than the actual number of workflow tasks dispatched. Note that typically, only
+		// the first workflow task of each workflow goes to a normal queue, and the rest workflow tasks go to the sticky
+		// queue associated with a specific worker instance. Activity tasks always go to normal queues.
+		TasksDispatchRate float32
 	}
 
 	// TaskQueueTypeInfo specifies task queue information per task type and Build ID.
@@ -131,6 +227,7 @@ type (
 	TaskQueueTypeInfo struct {
 		// Poller details for this task queue category.
 		Pollers []TaskQueuePollerInfo
+		Stats   *TaskQueueStats
 	}
 
 	// TaskQueueVersionInfo includes task queue information per Build ID.
@@ -142,10 +239,52 @@ type (
 		TaskReachability BuildIDTaskReachability
 	}
 
+	// TaskQueueVersioningInfo provides worker deployment configuration for this
+	// task queue.
+	// It is part of [TaskQueueDescription].
+	//
+	// NOTE: Experimental
+	TaskQueueVersioningInfo struct {
+		// CurrentVersion - Specifies which Deployment Version should receive new workflow
+		// executions, and tasks of existing non-pinned workflows. If nil, all unversioned workers
+		// are the target.
+		//
+		// NOTE: Experimental
+		CurrentVersion *WorkerDeploymentVersion
+
+		// RampingVersion - When present, it means the traffic is being shifted from the Current
+		// Version to the Ramping Version. If nil, all unversioned workers are the target, if the
+		// percentage is nonzero.
+		//
+		// Note that it is possible to ramp from one Version to another Version, or from unversioned
+		// workers to a particular Version, or from a particular Version to unversioned workers.
+		//
+		// NOTE: Experimental
+		RampingVersion *WorkerDeploymentVersion
+
+		// RampingVersionPercentage - Percentage of tasks that are routed to the Ramping Version instead
+		// of the Current Version.
+		// Valid range: [0, 100]. A 100% value means the Ramping Version is receiving full traffic but
+		// not yet "promoted" to be the Current Version, likely due to pending validations.
+		//
+		// NOTE: Experimental
+		RampingVersionPercentage float32
+
+		// UpdateTime - The last time versioning information of this Task Queue changed.
+		//
+		// NOTE: Experimental
+		UpdateTime time.Time
+	}
+
 	// TaskQueueDescription is the response to [Client.DescribeTaskQueueEnhanced].
 	TaskQueueDescription struct {
 		// Task queue information for each Build ID. Empty string as key value means unversioned.
+		//
+		// Deprecated: Use [VersioningInfo]
 		VersionsInfo map[string]TaskQueueVersionInfo
+		// Specifies which Worker Deployment Version(s) Server routes this Task Queue's tasks to.
+		// When not present, it means the tasks are routed to unversioned workers.
+		VersioningInfo *TaskQueueVersioningInfo
 	}
 )
 
@@ -174,6 +313,7 @@ func (o *DescribeTaskQueueEnhancedOptions) validateAndConvertToProto(namespace s
 		TaskQueueTypes:         taskQueueTypes,
 		ReportPollers:          o.ReportPollers,
 		ReportTaskReachability: o.ReportTaskReachability,
+		ReportStats:            o.ReportStats,
 	}
 
 	return opt, nil
@@ -185,8 +325,21 @@ func workerVersionCapabilitiesFromResponse(response *common.WorkerVersionCapabil
 	}
 
 	return &WorkerVersionCapabilities{
-		BuildID:       response.GetBuildId(),
-		UseVersioning: response.GetUseVersioning(),
+		BuildID:              response.GetBuildId(),
+		UseVersioning:        response.GetUseVersioning(),
+		DeploymentSeriesName: response.GetDeploymentSeriesName(),
+	}
+}
+
+func workerDeploymentPollerOptionsFromResponse(options *deployment.WorkerDeploymentOptions) *WorkerDeploymentPollerOptions {
+	if options == nil {
+		return nil
+	}
+
+	return &WorkerDeploymentPollerOptions{
+		DeploymentName:       options.DeploymentName,
+		BuildID:              options.BuildId,
+		WorkerVersioningMode: WorkerVersioningMode(options.WorkerVersioningMode),
 	}
 }
 
@@ -201,10 +354,12 @@ func pollerInfoFromResponse(response *taskqueuepb.PollerInfo) TaskQueuePollerInf
 	}
 
 	return TaskQueuePollerInfo{
-		LastAccessTime:            lastAccessTime,
-		Identity:                  response.GetIdentity(),
-		RatePerSecond:             response.GetRatePerSecond(),
-		WorkerVersionCapabilities: workerVersionCapabilitiesFromResponse(response.GetWorkerVersionCapabilities()),
+		LastAccessTime: lastAccessTime,
+		Identity:       response.GetIdentity(),
+		RatePerSecond:  response.GetRatePerSecond(),
+		//lint:ignore SA1019 ignore deprecated versioning APIs
+		WorkerVersionCapabilities:     workerVersionCapabilitiesFromResponse(response.GetWorkerVersionCapabilities()),
+		WorkerDeploymentPollerOptions: workerDeploymentPollerOptionsFromResponse(response.GetDeploymentOptions()),
 	}
 }
 
@@ -220,6 +375,21 @@ func taskQueueTypeInfoFromResponse(response *taskqueuepb.TaskQueueTypeInfo) Task
 
 	return TaskQueueTypeInfo{
 		Pollers: pollers,
+		Stats:   statsFromResponse(response.Stats),
+	}
+}
+
+func statsFromResponse(stats *taskqueuepb.TaskQueueStats) *TaskQueueStats {
+	if stats == nil {
+		return nil
+	}
+
+	return &TaskQueueStats{
+		ApproximateBacklogCount: stats.GetApproximateBacklogCount(),
+		ApproximateBacklogAge:   stats.GetApproximateBacklogAge().AsDuration(),
+		TasksAddRate:            stats.TasksAddRate,
+		TasksDispatchRate:       stats.TasksDispatchRate,
+		BacklogIncreaseRate:     stats.TasksAddRate - stats.TasksDispatchRate,
 	}
 }
 
@@ -241,11 +411,45 @@ func taskQueueVersionInfoFromResponse(response *taskqueuepb.TaskQueueVersionInfo
 
 func detectTaskQueueEnhancedNotSupported(response *workflowservice.DescribeTaskQueueResponse) error {
 	// A server before 1.24 returns a non-enhanced proto, which only fills `pollers` and `taskQueueStatus` fields
+	//lint:ignore SA1019 ignore deprecated old versioning APIs
 	if len(response.GetVersionsInfo()) == 0 &&
+		//lint:ignore SA1019 ignore deprecated old versioning APIs
 		(len(response.GetPollers()) > 0 || response.GetTaskQueueStatus() != nil) {
 		return errors.New("server does not support `DescribeTaskQueueEnhanced`")
 	}
 	return nil
+}
+
+func taskQueueVersioningInfoFromResponse(info *taskqueuepb.TaskQueueVersioningInfo) *TaskQueueVersioningInfo {
+	if info == nil {
+		return nil
+	}
+	var currentVersion *WorkerDeploymentVersion
+	if info.GetCurrentDeploymentVersion() != nil {
+		p := workerDeploymentVersionFromProto(info.GetCurrentDeploymentVersion())
+		currentVersion = &p
+	}
+	if currentVersion == nil {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
+		currentVersion = workerDeploymentVersionFromString(info.CurrentVersion)
+	}
+
+	var rampingVersion *WorkerDeploymentVersion
+	if info.GetRampingDeploymentVersion() != nil {
+		p := workerDeploymentVersionFromProto(info.GetRampingDeploymentVersion())
+		rampingVersion = &p
+	}
+	if rampingVersion == nil {
+		//lint:ignore SA1019 ignore deprecated versioning APIs
+		rampingVersion = workerDeploymentVersionFromString(info.RampingVersion)
+	}
+
+	return &TaskQueueVersioningInfo{
+		CurrentVersion:           currentVersion,
+		RampingVersion:           rampingVersion,
+		RampingVersionPercentage: info.RampingVersionPercentage,
+		UpdateTime:               info.UpdateTime.AsTime(),
+	}
 }
 
 func taskQueueDescriptionFromResponse(response *workflowservice.DescribeTaskQueueResponse) TaskQueueDescription {
@@ -253,13 +457,16 @@ func taskQueueDescriptionFromResponse(response *workflowservice.DescribeTaskQueu
 		return TaskQueueDescription{}
 	}
 
+	//lint:ignore SA1019 ignore deprecated old versioning APIs
 	versionsInfo := make(map[string]TaskQueueVersionInfo, len(response.GetVersionsInfo()))
+	//lint:ignore SA1019 ignore deprecated old versioning APIs
 	for buildID, vInfo := range response.GetVersionsInfo() {
 		versionsInfo[buildID] = taskQueueVersionInfoFromResponse(vInfo)
 	}
 
 	return TaskQueueDescription{
-		VersionsInfo: versionsInfo,
+		VersionsInfo:   versionsInfo,
+		VersioningInfo: taskQueueVersioningInfoFromResponse(response.GetVersioningInfo()),
 	}
 }
 

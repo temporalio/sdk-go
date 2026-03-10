@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 // All code in this file is private to the package.
@@ -32,19 +8,21 @@ import (
 	"fmt"
 	"reflect"
 	"runtime"
+	"slices"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unicode"
 
-	"golang.org/x/exp/slices"
-
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/log"
 )
 
 const (
@@ -52,7 +30,7 @@ const (
 	defaultCoroutineExitTimeout = 100 * time.Millisecond
 
 	panicIllegalAccessCoroutineState = "getState: illegal access from outside of workflow context"
-	unhandledUpdateWarningMessage    = "Workflow finished while update handlers are still running. This may have interrupted work that the" +
+	unhandledUpdateWarningMessage    = "[TMPRL1102] Workflow finished while update handlers are still running. This may have interrupted work that the" +
 		" update handler was doing, and the client that sent the update will receive a 'workflow execution" +
 		" already completed' RPCError instead of the update result. You can wait for all update" +
 		" handlers to complete by using `workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) })`. Alternatively, if both you and the clients sending the update" +
@@ -191,6 +169,7 @@ type (
 		mutex            sync.Mutex // used to synchronize executing
 		closed           bool
 		interceptor      WorkflowOutboundInterceptor
+		logger           log.Logger
 		deadlockDetector *deadlockDetector
 		readOnly         bool
 		// allBlockedCallback is called when all coroutines are blocked,
@@ -211,20 +190,32 @@ type (
 		WorkflowID               string
 		WaitForCancellation      bool
 		WorkflowIDReusePolicy    enumspb.WorkflowIdReusePolicy
+		// WorkflowIDConflictPolicy and OnConflictOptions are only used in test environment for
+		// running Nexus operations as child workflow.
+		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
+		OnConflictOptions        *OnConflictOptions
 		DataConverter            converter.DataConverter
 		RetryPolicy              *commonpb.RetryPolicy
+		Priority                 *commonpb.Priority
 		CronSchedule             string
 		ContextPropagators       []ContextPropagator
 		Memo                     map[string]interface{}
 		SearchAttributes         map[string]interface{}
 		TypedSearchAttributes    SearchAttributes
 		ParentClosePolicy        enumspb.ParentClosePolicy
+		StaticSummary            string
+		StaticDetails            string
 		signalChannels           map[string]Channel
+		requestedSignalChannels  map[string]*requestedSignalChannel
 		queryHandlers            map[string]*queryHandler
 		updateHandlers           map[string]*updateHandler
 		// runningUpdatesHandles is a map of update handlers that are currently running.
-		runningUpdatesHandles map[string]UpdateInfo
-		VersioningIntent      VersioningIntent
+		runningUpdatesHandles     map[string]UpdateInfo
+		VersioningIntent          VersioningIntent
+		InitialVersioningBehavior ContinueAsNewVersioningBehavior
+		// currentDetails is the user-set string returned on metadata query as
+		// WorkflowMetadata.current_details
+		currentDetails string
 	}
 
 	// ExecuteWorkflowParams parameters of the workflow invocation
@@ -249,6 +240,11 @@ type (
 		executionFuture   *futureImpl // for child workflow execution future
 	}
 
+	nexusOperationFutureImpl struct {
+		*decodeFutureImpl             // for the result
+		executionFuture   *futureImpl // for the NexusOperationExecution
+	}
+
 	asyncFuture interface {
 		Future
 		// Used by selectorImpl
@@ -269,10 +265,15 @@ type (
 		Set(value interface{}, err error)
 	}
 
+	requestedSignalChannel struct {
+		options SignalChannelOptions
+	}
+
 	queryHandler struct {
 		fn            interface{}
 		queryType     string
 		dataConverter converter.DataConverter
+		options       QueryHandlerOptions
 	}
 
 	// updateSchedulerImpl adapts the coro dispatcher to the UpdateScheduler interface
@@ -486,6 +487,10 @@ func (f *childWorkflowFutureImpl) SignalChildWorkflow(ctx Context, signalName st
 	return i.SignalChildWorkflow(ctx, childExec.ID, signalName, data)
 }
 
+func (f *nexusOperationFutureImpl) GetNexusOperationExecution() Future {
+	return f.executionFuture
+}
+
 func newWorkflowContext(
 	env WorkflowEnvironment,
 	interceptors []WorkerInterceptor,
@@ -589,12 +594,29 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 				return nil, err
 			}
 
+			// As a special case, we handle __temporal_workflow_metadata query
+			// here instead of in workflowExecutionEventHandlerImpl.ProcessQuery
+			// because we need the context environment to do so.
+			if queryType == QueryTypeWorkflowMetadata {
+				if result, err := getWorkflowMetadata(rootCtx); err != nil {
+					return nil, err
+				} else {
+					// Use raw value built from default converter because we don't want to use
+					// user-conversion
+					resultPayload, err := converter.GetDefaultDataConverter().ToPayload(result)
+					if err != nil {
+						return nil, err
+					}
+					return encodeArg(getDataConverterFromWorkflowContext(rootCtx), converter.NewRawValue(resultPayload))
+				}
+			}
+
 			eo := getWorkflowEnvOptions(rootCtx)
 			// A handler must be present since it is needed for argument decoding,
 			// even if the interceptor intercepts query handling
 			handler, ok := eo.queryHandlers[queryType]
 			if !ok {
-				keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions}
+				keys := []string{QueryTypeStackTrace, QueryTypeOpenSessions, QueryTypeWorkflowMetadata}
 				for k := range eo.queryHandlers {
 					keys = append(keys, k)
 				}
@@ -641,8 +663,11 @@ func (d *syncWorkflowDefinition) Close() {
 // Context passed to the root function is child of the passed rootCtx.
 // This way rootCtx can be used to pass values to the coroutine code.
 func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context), allBlockedCallback func() bool) (*dispatcherImpl, Context) {
+	env := getWorkflowEnvironment(rootCtx)
+
 	result := &dispatcherImpl{
 		interceptor:        interceptor.outboundInterceptor,
+		logger:             env.GetLogger(),
 		deadlockDetector:   newDeadlockDetector(),
 		allBlockedCallback: allBlockedCallback,
 	}
@@ -672,7 +697,7 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 	if len(us) > 0 {
 		env.GetLogger().Warn("Workflow has unhandled signals", "SignalNames", us)
 	}
-	//
+	// Warn if there are any update handlers still running
 	type warnUpdate struct {
 		Name string `json:"name"`
 		ID   string `json:"id"`
@@ -686,7 +711,11 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 			})
 		}
 	}
-	if len(updatesToWarn) > 0 {
+
+	// Verify that the workflow did not fail. If it did we will not warn about unhandled updates.
+	var canceledErr *CanceledError
+	var contErr *ContinueAsNewError
+	if len(updatesToWarn) > 0 && (rp.error == nil || errors.As(rp.error, &canceledErr) || errors.As(rp.error, &contErr)) {
 		env.GetLogger().Warn(unhandledUpdateWarningMessage, "Updates", updatesToWarn)
 	}
 
@@ -1119,21 +1148,31 @@ func (s *coroutineState) close() {
 }
 
 // exit tries to run Goexit on the coroutine and wait for it to exit
-// within timeout.
-func (s *coroutineState) exit(timeout time.Duration) {
+// within timeout. If it doesn't exit within timeout, it will log a warning.
+func (s *coroutineState) exit(logger log.Logger, warnTimeout time.Duration) {
 	if !s.closed.Load() {
 		s.unblock <- func(status string, stackDepth int) bool {
 			runtime.Goexit()
 			return true
 		}
 
-		timer := time.NewTimer(timeout)
+		timer := time.NewTimer(warnTimeout)
 		defer timer.Stop()
 
 		select {
 		case <-s.aboutToBlock:
+			return
 		case <-timer.C:
+			st, err := getCoroStackTrace(s, "running", 0)
+			if err != nil {
+				st = fmt.Sprintf("<%s>", err)
+			}
+
+			logger.Warn(fmt.Sprintf("Workflow coroutine %q didn't exit within %v", s.name, warnTimeout), "stackTrace", st)
 		}
+		// We need to make sure the coroutine is closed, otherwise we risk concurrent coroutines running
+		// at the same time causing a race condition.
+		<-s.aboutToBlock
 	}
 }
 
@@ -1293,7 +1332,7 @@ func (d *dispatcherImpl) Close() {
 	// 	* On exit the coroutines defers will still run and that may block.
 	go func() {
 		for _, c := range d.coroutines {
-			c.exit(defaultCoroutineExitTimeout)
+			c.exit(d.logger, defaultDeadlockDetectionTimeout)
 		}
 	}()
 }
@@ -1363,13 +1402,30 @@ func (s *selectorImpl) Select(ctx Context) {
 		if pair.receiveFunc != nil {
 			f := *pair.receiveFunc
 			c := pair.channel
+			hasDefault := s.defaultFunc != nil
 			callback := &receiveCallback{
 				fn: func(v interface{}, more bool) bool {
 					if readyBranch != nil {
 						return false
 					}
-					readyBranch = func() {
+					env := getWorkflowEnvironment(ctx)
+					dropSignalFlag := env.TryUse(SDKFlagBlockedSelectorSignalReceive)
+					channelLostMsgFlag := env.TryUse(SDKFlagWorkflowNewChannelLostMessages)
+
+					// Pre-store c.recValue to prevent signal loss when AddDefault
+					// blocks. Without channelLostMsgFlag, always pre-store (original
+					// #1624 fix). With channelLostMsgFlag, only pre-store when a
+					// default branch exists to avoid overwriting c.recValue when
+					// multiple selectors are blocked on the same channel.
+					storeNow := dropSignalFlag && (!channelLostMsgFlag || hasDefault)
+					if storeNow {
 						c.recValue = &v
+					}
+
+					readyBranch = func() {
+						if !storeNow {
+							c.recValue = &v
+						}
 						f(c, more)
 					}
 					return true
@@ -1513,6 +1569,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions = *options
 	} else {
 		newOptions.signalChannels = make(map[string]Channel)
+		newOptions.requestedSignalChannels = make(map[string]*requestedSignalChannel)
 		newOptions.queryHandlers = make(map[string]*queryHandler)
 		newOptions.updateHandlers = make(map[string]*updateHandler)
 		newOptions.runningUpdatesHandles = make(map[string]UpdateInfo)
@@ -1555,6 +1612,75 @@ func (w *WorkflowOptions) getSignalChannel(ctx Context, signalName string) Recei
 // GetUnhandledSignalNames returns signal names that have unconsumed signals.
 func GetUnhandledSignalNames(ctx Context) []string {
 	return getWorkflowEnvOptions(ctx).getUnhandledSignalNames()
+}
+
+// GetCurrentDetails gets the previously-set current details.
+//
+// NOTE: Experimental
+func GetCurrentDetails(ctx Context) string {
+	return getWorkflowEnvOptions(ctx).currentDetails
+}
+
+// SetCurrentDetails sets the current details.
+//
+// NOTE: Experimental
+func SetCurrentDetails(ctx Context, details string) {
+	getWorkflowEnvOptions(ctx).currentDetails = details
+}
+
+func getWorkflowMetadata(ctx Context) (*sdk.WorkflowMetadata, error) {
+	info := GetWorkflowInfo(ctx)
+	eo := getWorkflowEnvOptions(ctx)
+	ret := &sdk.WorkflowMetadata{
+		Definition: &sdk.WorkflowDefinition{
+			Type: info.WorkflowType.Name,
+			QueryDefinitions: []*sdk.WorkflowInteractionDefinition{
+				{
+					Name:        QueryTypeStackTrace,
+					Description: "Current stack trace",
+				},
+				{
+					Name:        QueryTypeOpenSessions,
+					Description: "Open sessions on the workflow",
+				},
+				{
+					Name:        QueryTypeWorkflowMetadata,
+					Description: "Metadata about the workflow",
+				},
+			},
+		},
+		CurrentDetails: eo.currentDetails,
+	}
+	// Queries
+	for k, v := range eo.queryHandlers {
+		ret.Definition.QueryDefinitions = append(ret.Definition.QueryDefinitions, &sdk.WorkflowInteractionDefinition{
+			Name:        k,
+			Description: v.options.Description,
+		})
+	}
+	// Signals
+	for k, v := range eo.requestedSignalChannels {
+		ret.Definition.SignalDefinitions = append(ret.Definition.SignalDefinitions, &sdk.WorkflowInteractionDefinition{
+			Name:        k,
+			Description: v.options.Description,
+		})
+	}
+	// Updates
+	for k, v := range eo.updateHandlers {
+		ret.Definition.UpdateDefinitions = append(ret.Definition.UpdateDefinitions, &sdk.WorkflowInteractionDefinition{
+			Name:        k,
+			Description: v.description,
+		})
+	}
+	// Sort interaction definitions
+	sortWorkflowInteractionDefinitions(ret.Definition.QueryDefinitions)
+	sortWorkflowInteractionDefinitions(ret.Definition.SignalDefinitions)
+	sortWorkflowInteractionDefinitions(ret.Definition.UpdateDefinitions)
+	return ret, nil
+}
+
+func sortWorkflowInteractionDefinitions(defns []*sdk.WorkflowInteractionDefinition) {
+	sort.Slice(defns, func(i, j int) bool { return defns[i].Name < defns[j].Name })
 }
 
 // getUnhandledSignalNames returns signal names that have unconsumed signals.
@@ -1607,8 +1733,13 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 }
 
 // setQueryHandler sets query handler for given queryType.
-func setQueryHandler(ctx Context, queryType string, handler interface{}) error {
-	qh := &queryHandler{fn: handler, queryType: queryType, dataConverter: getDataConverterFromWorkflowContext(ctx)}
+func setQueryHandler(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+	qh := &queryHandler{
+		fn:            handler,
+		queryType:     queryType,
+		dataConverter: getDataConverterFromWorkflowContext(ctx),
+		options:       options,
+	}
 	err := validateQueryHandlerFn(qh.fn)
 	if err != nil {
 		return err
@@ -1778,6 +1909,14 @@ func (wg *waitGroupImpl) Wait(ctx Context) {
 	wg.future, wg.settable = NewFuture(ctx)
 }
 
+func (wg *waitGroupImpl) Go(ctx Context, f func(Context)) {
+	wg.Add(1)
+	Go(ctx, func(ctx Context) {
+		defer wg.Done()
+		f(ctx)
+	})
+}
+
 // Spawn starts a new coroutine with Dispatcher.NewCoroutine
 func (us updateSchedulerImpl) Spawn(ctx Context, name string, highPriority bool, f func(Context)) Context {
 	return us.dispatcher.NewCoroutine(ctx, name, highPriority, f)
@@ -1845,4 +1984,8 @@ func (s *semaphoreImpl) Release(n int64) {
 	if s.cur < 0 {
 		panic("Semaphore.Release() released more than held")
 	}
+}
+
+func incrementWorkflowTaskFailureCounter(metricsHandler metrics.Handler, failureReason string) {
+	metricsHandler.WithTags(metrics.WorkflowTaskFailedTags(failureReason)).Counter(metrics.WorkflowTaskExecutionFailureCounter).Inc(1)
 }

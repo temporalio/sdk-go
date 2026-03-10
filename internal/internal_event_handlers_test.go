@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -237,13 +213,13 @@ func Test_MergeSearchAttributes(t *testing.T) {
 
 func Test_ValidateAndSerializeMemo(t *testing.T) {
 	t.Parallel()
-	_, err := validateAndSerializeMemo(nil, nil)
+	_, err := validateAndSerializeMemo(nil, nil, false)
 	require.EqualError(t, err, "memo is empty")
 
 	attr := map[string]interface{}{
 		"JustKey": make(chan int),
 	}
-	_, err = validateAndSerializeMemo(attr, nil)
+	_, err = validateAndSerializeMemo(attr, nil, false)
 	require.EqualError(
 		t,
 		err,
@@ -253,7 +229,7 @@ func Test_ValidateAndSerializeMemo(t *testing.T) {
 	attr = map[string]interface{}{
 		"key": 1,
 	}
-	memo, err := validateAndSerializeMemo(attr, nil)
+	memo, err := validateAndSerializeMemo(attr, nil, false)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(memo.Fields))
 	var resp int
@@ -268,6 +244,8 @@ func Test_UpsertMemo(t *testing.T) {
 	env := &workflowEnvironmentImpl{
 		commandsHelper: helper,
 		workflowInfo:   GetWorkflowInfo(ctx),
+		sdkFlags:       newSDKFlagSet(nil),
+		dataConverter:  converter.GetDefaultDataConverter(),
 	}
 	helper.setCurrentWorkflowTaskStartedEventID(4)
 	err := env.UpsertMemo(nil)

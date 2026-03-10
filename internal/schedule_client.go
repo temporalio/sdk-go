@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -35,15 +13,19 @@ type (
 	// time in StructuredCalendarSpec. If end < start, then end is interpreted as
 	// equal to start. This means you can use a Range with start set to a value, and
 	// end and step unset (defaulting to 0) to represent a single value.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleRange]
 	ScheduleRange struct {
 		// Start of the range (inclusive)
 		Start int
 
 		// End of the range (inclusive)
+		//
 		// Optional: defaulted to Start
 		End int
 
 		// Step to be take between each value
+		//
 		// Optional: defaulted to 1
 		Step int
 	}
@@ -52,6 +34,8 @@ type (
 	// A timestamp matches if at least one range of each field matches the
 	// corresponding fields of the timestamp, except for year: if year is missing,
 	// that means all years match. For all fields besides year, at least one Range must be present to match anything.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleCalendarSpec]
 	ScheduleCalendarSpec struct {
 		// Second range to match (0-59).
 		//
@@ -93,6 +77,8 @@ type (
 	}
 
 	// ScheduleBackfill desribes a time periods and policy and takes Actions as if that time passed by right now, all at once.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleBackfill]
 	ScheduleBackfill struct {
 		// Start - start of the range to evaluate schedule in.
 		Start time.Time
@@ -114,11 +100,14 @@ type (
 	// of 19 minutes would match every `xx:19:00`. An `every` of 28 days with `offset` zero would match `2022-02-17T00:00:00Z`
 	// (among other times). The same `every` with `offset` of 3 days, 5 hours, and 23 minutes would match `2022-02-20T05:23:00Z`
 	// instead.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleIntervalSpec]
 	ScheduleIntervalSpec struct {
 		// Every - describes the period to repeat the interval.
 		Every time.Duration
 
 		// Offset - is a fixed offset added to the intervals period.
+		//
 		// Optional: Defaulted to 0
 		Offset time.Duration
 	}
@@ -127,6 +116,8 @@ type (
 	// The times are the union of Calendars, Intervals, and CronExpressions, minus the Skip times. These times
 	// never change, except that the definition of a time zone can change over time (most commonly, when daylight saving
 	// time policy changes for an area). To create a totally self-contained ScheduleSpec, use UTC.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleSpec]
 	ScheduleSpec struct {
 		// Calendars - Calendar-based specifications of times
 		Calendars []ScheduleCalendarSpec
@@ -198,15 +189,18 @@ type (
 		Skip []ScheduleCalendarSpec
 
 		// StartAt - Any times before `startAt` will be skipped. Together, `startAt` and `endAt` make an inclusive interval.
+		//
 		// Optional: Defaulted to the beginning of time
 		StartAt time.Time
 
 		// EndAt - Any times after `endAt` will be skipped.
+		//
 		// Optional: Defaulted to the end of time
 		EndAt time.Time
 
 		// Jitter - All times will be incremented by a random value from 0 to this amount of jitter, capped
 		// by the time until the next schedule.
+		//
 		// Optional: Defaulted to 0
 		Jitter time.Duration
 
@@ -221,6 +215,7 @@ type (
 		// fires at 1:30am will be triggered twice on the day that has two 1:30s.
 		//
 		// Note: No actions are taken on leap-seconds (e.g. 23:59:60 UTC).
+		//
 		// Optional: Defaulted to UTC
 		TimeZoneName string
 	}
@@ -231,10 +226,13 @@ type (
 	}
 
 	// ScheduleWorkflowAction implements ScheduleAction to launch a workflow.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleWorkflowAction]
 	ScheduleWorkflowAction struct {
 		// ID - The business identifier of the workflow execution.
 		// The workflow ID of the started workflow may not match this exactly,
 		// it may have a timestamp appended for uniqueness.
+		//
 		// Optional: defaulted to a uuid.
 		ID string
 
@@ -281,9 +279,41 @@ type (
 		//
 		// Deprecated - This is only for update of older search attributes. This may be removed in a future version.
 		UntypedSearchAttributes map[string]*commonpb.Payload
+
+		// VersioningOverride - Sets the versioning configuration of a specific workflow execution, ignoring current
+		// server or worker default policies. This enables running canary tests without affecting existing workflows.
+		// To unset the override after the workflow is running, use [Client.UpdateWorkflowExecutionOptions].
+		//
+		// Optional: defaults to no override.
+		//
+		// NOTE: Experimental
+		VersioningOverride VersioningOverride
+
+		// StaticSummary is a single-line fixed summary for this child workflow execution that will appear in UI/CLI. This can be
+		// in single-line Temporal Markdown format.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		StaticSummary string
+
+		// Details - General fixed details for this child workflow execution that will appear in UI/CLI. This can be in
+		// Temporal markdown format and can span multiple lines. This is a fixed value on the workflow that cannot be
+		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
+		//
+		// Optional: defaults to none/empty.
+		//
+		// NOTE: Experimental
+		StaticDetails string
+
+		// Priority - Optional priority settings that control relative ordering of
+		// task processing when tasks are backed up in a queue.
+		Priority Priority
 	}
 
 	// ScheduleOptions configure the parameters for creating a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleOptions]
 	ScheduleOptions struct {
 		// ID - The business identifier of the schedule.
 		ID string
@@ -306,6 +336,7 @@ type (
 		// minute, which means that the Schedule attempts to take any Actions that wouldn't be more than one minute late. It
 		// takes those Actions according to the Overlap. An outage that lasts longer than the Catchup
 		// Window could lead to missed Actions.
+		//
 		// Optional: defaulted to 1 minute
 		CatchupWindow time.Duration
 
@@ -314,6 +345,7 @@ type (
 		// With SCHEDULE_OVERLAP_POLICY_ALLOW_ALL, this pause might not apply to the next Action, because the next Action
 		// might have already started previous to the failed one finishing. Pausing applies only to Actions that are scheduled
 		// to start after the failed one finishes.
+		//
 		// Optional: defaulted to false
 		PauseOnFailure bool
 
@@ -323,6 +355,7 @@ type (
 		Note string
 
 		// Paused - Start in paused state.
+		//
 		// Optional: defaulted to false
 		Paused bool
 
@@ -335,6 +368,7 @@ type (
 		RemainingActions int
 
 		// TriggerImmediately - Trigger one Action immediately on creating the schedule.
+		//
 		// Optional: defaulted to false
 		TriggerImmediately bool
 
@@ -366,6 +400,8 @@ type (
 	}
 
 	// ScheduleWorkflowExecution contains details on a workflows execution stared by a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleWorkflowExecution]
 	ScheduleWorkflowExecution struct {
 		// WorkflowID - The ID of the workflow execution
 		WorkflowID string
@@ -376,6 +412,8 @@ type (
 	}
 
 	// ScheduleInfo describes other information about a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleInfo]
 	ScheduleInfo struct {
 		// NumActions - Number of actions taken by this schedule.
 		NumActions int
@@ -406,6 +444,8 @@ type (
 	}
 
 	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleDescription]
 	ScheduleDescription struct {
 		// Schedule - Describes the modifiable fields of a schedule.
 		Schedule Schedule
@@ -416,15 +456,24 @@ type (
 		// Memo - Non-indexed user supplied information.
 		Memo *commonpb.Memo
 
-		// SearchAttributes - Indexed info that can be used in query of List schedules APIs. The key and value type must be registered on Temporal server side.
-		// Use GetSearchAttributes API to get valid key and corresponding value type.
+		// SearchAttributes - Additional indexed information used for search and visibility. The key and its value type
+		// are registered on Temporal server side.
 		// For supported operations on different server versions see [Visibility].
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
 		SearchAttributes *commonpb.SearchAttributes
+
+		// TypedSearchAttributes - Additional indexed information used for search and visibility. The key and its value
+		// type are registered on Temporal server side.
+		// For supported operations on different server versions see [Visibility].
+		//
+		// [Visibility]: https://docs.temporal.io/visibility
+		TypedSearchAttributes SearchAttributes
 	}
 
 	// SchedulePolicies describes the current polcies of a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.SchedulePolicies]
 	SchedulePolicies struct {
 		// Overlap - Controls what happens when an Action would be started by a Schedule at the same time that an older Action is still
 		// running.
@@ -439,6 +488,8 @@ type (
 	}
 
 	// ScheduleState describes the current state of a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleState]
 	ScheduleState struct {
 		// Note - Informative human-readable message with contextual notes, e.g. the reason
 		// a Schedule is paused. The system may overwrite this message on certain
@@ -458,6 +509,8 @@ type (
 	}
 
 	// Schedule describes a created schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.Schedule]
 	Schedule struct {
 		// Action - Which Action to take
 		Action ScheduleAction
@@ -473,18 +526,33 @@ type (
 	}
 
 	// ScheduleUpdate describes the desired new schedule from ScheduleHandle.Update.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleUpdate]
 	ScheduleUpdate struct {
 		// Schedule - New schedule to replace the existing schedule with
 		Schedule *Schedule
+
+		// TypedSearchAttributes - Optional indexed info that can be used for querying via the List schedules APIs.
+		// The key and value type must be registered on Temporal server side.
+		//
+		// nil: leave any pre-existing assigned search attributes intact
+		// empty: remove any and all pre-existing assigned search attributes
+		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
+		//                     attributes, i.e. upsert
+		TypedSearchAttributes *SearchAttributes
 	}
 
 	// ScheduleUpdateInput describes the current state of the schedule to be updated.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleUpdateInput]
 	ScheduleUpdateInput struct {
 		// Description - current description of the schedule
 		Description ScheduleDescription
 	}
 
 	// ScheduleUpdateOptions configure the parameters for updating a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleUpdateOptions]
 	ScheduleUpdateOptions struct {
 		// DoUpdate - Takes a description of the schedule and returns the new desired schedule.
 		// If update returns ErrSkipScheduleUpdate response and no update will occur.
@@ -493,26 +561,36 @@ type (
 	}
 
 	// ScheduleTriggerOptions configure the parameters for triggering a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleTriggerOptions]
 	ScheduleTriggerOptions struct {
 		// Overlap - If specified, policy to override the schedules default overlap policy.
 		Overlap enumspb.ScheduleOverlapPolicy
 	}
 
 	// SchedulePauseOptions configure the parameters for pausing a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.SchedulePauseOptions]
 	SchedulePauseOptions struct {
 		// Note - Informative human-readable message with contextual notes.
+		//
 		// Optional: defaulted to 'Paused via Go SDK'
 		Note string
 	}
 
 	// ScheduleUnpauseOptions configure the parameters for unpausing a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleUnpauseOptions]
 	ScheduleUnpauseOptions struct {
 		// Note - Informative human-readable message with contextual notes.
+		//
 		// Optional: defaulted to 'Unpaused via Go SDK'
 		Note string
 	}
 
 	// ScheduleBackfillOptions configure the parameters for backfilling a schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleBackfillOptions]
 	ScheduleBackfillOptions struct {
 		// Backfill  - Time periods to backfill the schedule.
 		Backfill []ScheduleBackfill
@@ -551,6 +629,8 @@ type (
 	}
 
 	// ScheduleActionResult describes when a schedule action took place
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleActionResult]
 	ScheduleActionResult struct {
 		// ScheduleTime - Time that the Action was scheduled for, including jitter.
 		ScheduleTime time.Time
@@ -564,6 +644,8 @@ type (
 	}
 
 	// ScheduleListEntry
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleListEntry]
 	ScheduleListEntry struct {
 		// ID - The business identifier of the schedule.
 		ID string
@@ -603,10 +685,17 @@ type (
 	}
 
 	// ScheduleListOptions are the parameters for configuring listing schedules
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleListOptions]
 	ScheduleListOptions struct {
 		// PageSize - How many results to fetch from the Server at a time.
+		//
 		// Optional: defaulted to 1000
 		PageSize int
+
+		// Query - Filter results using a SQL-like query.
+		// Optional
+		Query string
 	}
 
 	// ScheduleListIterator represents the interface for

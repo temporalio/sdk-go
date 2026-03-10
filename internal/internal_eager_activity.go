@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -55,9 +33,10 @@ func newEagerActivityExecutor(options eagerActivityExecutorOptions) *eagerActivi
 
 func (e *eagerActivityExecutor) applyToRequest(
 	req *workflowservice.RespondWorkflowTaskCompletedRequest,
-) (amountActivitySlotsReserved int) {
+) []*SlotPermit {
 	// Don't allow more than this hardcoded amount per workflow task for now
 	const maxPerTask = 3
+	reservedPermits := make([]*SlotPermit, 0)
 
 	// Go over every command checking for activities that can be eagerly executed
 	eagerRequestsThisTask := 0
@@ -76,75 +55,73 @@ func (e *eagerActivityExecutor) applyToRequest(
 				attrs.RequestEagerExecution = false
 			} else {
 				// If it has been requested, attempt to reserve one pending
-				attrs.RequestEagerExecution = e.reserveOnePendingSlot()
-				if attrs.RequestEagerExecution {
-					amountActivitySlotsReserved++
+				maybePermit := e.reserveOnePendingSlot()
+				if maybePermit != nil {
+					reservedPermits = append(reservedPermits, maybePermit)
+					attrs.RequestEagerExecution = true
 					eagerRequestsThisTask++
+				} else {
+					attrs.RequestEagerExecution = false
 				}
 			}
 		}
 	}
-	return
+	return reservedPermits
 }
 
-func (e *eagerActivityExecutor) reserveOnePendingSlot() bool {
-	// Lock during count checks. Nothing in here blocks including the channel
-	// receive to serve a slot.
+func (e *eagerActivityExecutor) reserveOnePendingSlot() *SlotPermit {
+	// Confirm that, if we have a max, issued count isn't already there
 	e.countLock.Lock()
 	defer e.countLock.Unlock()
 	// Confirm that, if we have a max, held count isn't already there
 	if e.maxConcurrent > 0 && e.heldSlotCount >= e.maxConcurrent {
 		// No more room
-		return false
+		return nil
 	}
 	// Reserve a spot for our request via a non-blocking attempt
-	if !e.activityWorker.tryReserveSlot() {
-		return false
+	maybePermit := e.activityWorker.tryReserveSlot()
+	if maybePermit != nil {
+		// Ensure that on release we decrement the held count
+		maybePermit.extraReleaseCallback = func() {
+			e.countLock.Lock()
+			defer e.countLock.Unlock()
+			e.heldSlotCount--
+		}
+		e.heldSlotCount++
 	}
-
-	// We can request, so increase the held count
-	e.heldSlotCount++
-	return true
+	return maybePermit
 }
 
 func (e *eagerActivityExecutor) handleResponse(
 	resp *workflowservice.RespondWorkflowTaskCompletedResponse,
-	amountActivitySlotsReserved int,
+	reservedPermits []*SlotPermit,
 ) {
 	// Ignore disabled or none present
-	if e == nil || e.activityWorker == nil || e.disabled || (len(resp.GetActivityTasks()) == 0 && amountActivitySlotsReserved == 0) {
+	amountSlotsReserved := len(reservedPermits)
+	if e == nil || e.activityWorker == nil || e.disabled ||
+		(len(resp.GetActivityTasks()) == 0 && amountSlotsReserved == 0) {
 		return
-	} else if len(resp.GetActivityTasks()) > amountActivitySlotsReserved {
+	} else if len(resp.GetActivityTasks()) > amountSlotsReserved {
 		panic(fmt.Sprintf("Unexpectedly received %v eager activities though we only requested %v",
-			len(resp.GetActivityTasks()), amountActivitySlotsReserved))
+			len(resp.GetActivityTasks()), amountSlotsReserved))
 	}
 
-	// Update counts under lock
-	e.countLock.Lock()
 	// Give back unfulfilled slots and record for later use
-	unfulfilledSlots := amountActivitySlotsReserved - len(resp.GetActivityTasks())
-	e.heldSlotCount -= unfulfilledSlots
-	e.countLock.Unlock()
-
-	// Put every unfulfilled slot back on the poller channel
+	unfulfilledSlots := amountSlotsReserved - len(resp.GetActivityTasks())
+	// Release unneeded permits
 	for i := 0; i < unfulfilledSlots; i++ {
-		e.activityWorker.releaseSlot()
+		unneededPermit := reservedPermits[len(reservedPermits)-1]
+		reservedPermits = reservedPermits[:len(reservedPermits)-1]
+		e.activityWorker.releaseSlot(unneededPermit, SlotReleaseReasonUnused)
 	}
 
 	// Start each activity asynchronously
-	for _, activity := range resp.GetActivityTasks() {
+	for i, activity := range resp.GetActivityTasks() {
 		// Asynchronously execute
 		e.activityWorker.pushEagerTask(
 			eagerTask{
-				task: &activityTask{activity},
-				callback: func() {
-					// The processTaskAsync does not do this itself because our task is *activityTask, not *polledTask.
-					e.activityWorker.releaseSlot()
-					// Decrement executing count
-					e.countLock.Lock()
-					e.heldSlotCount--
-					e.countLock.Unlock()
-				},
+				task:   &activityTask{task: activity, permit: reservedPermits[i]},
+				permit: reservedPermits[i],
 			})
 	}
 }

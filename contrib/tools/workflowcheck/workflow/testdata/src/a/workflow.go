@@ -5,6 +5,7 @@ import (
 	"text/template"
 	"time"
 
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -65,4 +66,9 @@ func WorkflowWithUnnamedArgument(workflow.Context) error { // want "a.WorkflowWi
 
 func NotWorkflow(ctx context.Context) {
 	time.Now()
+}
+
+func WorkflowWithSearchAttributes(workflow.Context) {
+	sa := temporal.SearchAttributes{}
+	_ = sa.Copy()
 }

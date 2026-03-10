@@ -1,35 +1,15 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package testsuite_test
 
 import (
 	"context"
-	"testing"
-
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
+	"testing"
+	"time"
 )
 
 func TestStartDevServer_Defaults(t *testing.T) {
@@ -69,4 +49,67 @@ func TestStartDevServer_FrontendHostPort(t *testing.T) {
 	info, err := client.WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, info.Capabilities)
+}
+
+func TestStartDevServer_SearchAttributes(t *testing.T) {
+	attrBool := temporal.NewSearchAttributeKeyBool("GoTemporalTestBool")
+	attrTime := temporal.NewSearchAttributeKeyTime("GoTemporalTestTime")
+	attrFloat := temporal.NewSearchAttributeKeyFloat64("GoTemporalTestFloat")
+	attrString := temporal.NewSearchAttributeKeyString("GoTemporalTestString")
+	attrInt := temporal.NewSearchAttributeKeyInt64("GoTemporalTestInt")
+	attrKeyword := temporal.NewSearchAttributeKeyKeyword("GoTemporalTestKeyword")
+	attrKeywordList := temporal.NewSearchAttributeKeyKeywordList("GoTemporalTestKeywordList")
+	now := time.Now()
+	sa := temporal.NewSearchAttributes(
+		attrBool.ValueSet(true),
+		attrTime.ValueSet(now),
+		attrFloat.ValueSet(5.4),
+		attrString.ValueSet("string"),
+		attrInt.ValueSet(10),
+		attrKeyword.ValueSet("keyword"),
+		attrKeywordList.ValueSet([]string{"value1", "value2"}),
+	)
+
+	opts := testsuite.DevServerOptions{
+		SearchAttributes: sa,
+	}
+
+	// Confirm that when used in env without SAs it fails
+	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{})
+	require.NoError(t, err)
+	defer func() { _ = server.Stop() }()
+
+	_, err = server.Client().ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{
+		TypedSearchAttributes: sa,
+	}, func(ctx workflow.Context) error { return nil })
+	require.Error(t, err)
+
+	// Confirm that when used in env with SAs it succeeds
+	server1, err := testsuite.StartDevServer(context.Background(), opts)
+	require.NoError(t, err)
+	defer func() { _ = server1.Stop() }()
+
+	c := server1.Client()
+
+	run, err := c.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{
+		TypedSearchAttributes: sa,
+		TaskQueue:             "dev-server-search-attributes-test",
+	}, func(ctx workflow.Context) error { return nil })
+	require.NoError(t, err)
+
+	describe, err := c.DescribeWorkflow(context.Background(), run.GetID(), run.GetRunID())
+	require.NoError(t, err)
+	saTime, found := sa.GetTime(attrTime)
+	require.True(t, found)
+	describeTime, found := describe.TypedSearchAttributes.GetTime(attrTime)
+	require.True(t, found)
+	// Time in Go must be compared with time.Equal to accurately compare time equality
+	require.True(t, saTime.Equal(describeTime))
+
+	untypedSa := sa.GetUntypedValues()
+	for key, val := range describe.TypedSearchAttributes.GetUntypedValues() {
+		if key != attrTime {
+			require.Equal(t, untypedSa[key], val)
+		}
+	}
 }

@@ -2,3 +2,7 @@ services:
   temporal:
     environment:
       - DYNAMIC_CONFIG_FILE_PATH=config/dynamicconfig/dynamic-config-custom.yaml
+      - FRONTEND_HTTP_PORT=7243
+    ports:
+      - 7233:7233
+      - 7243:7243

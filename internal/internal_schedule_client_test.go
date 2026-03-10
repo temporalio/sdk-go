@@ -1,29 +1,8 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
 	"context"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -240,4 +219,109 @@ func (s *scheduleClientTestSuite) TestIteratorError() {
 	event, err = iter.Next()
 	s.Nil(event)
 	s.NotNil(err)
+}
+
+func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoDataConverter() {
+	testFn := func() {
+		dc := iconverter.NewTestDataConverter()
+		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+		memo := map[string]interface{}{
+			"testMemo": "memo value",
+		}
+		wf := func(ctx Context) string { panic("this is just a stub") }
+
+		options := ScheduleOptions{
+			ID: scheduleID,
+			Spec: ScheduleSpec{
+				CronExpressions: []string{"*"},
+			},
+			Action: &ScheduleWorkflowAction{
+				Workflow:                 wf,
+				ID:                       workflowID,
+				TaskQueue:                taskqueue,
+				WorkflowExecutionTimeout: timeoutInSeconds,
+				WorkflowTaskTimeout:      timeoutInSeconds,
+				Memo:                     memo,
+			},
+		}
+		createResp := &workflowservice.CreateScheduleResponse{}
+		s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).
+			Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+				startWorkflow := req.Schedule.Action.GetStartWorkflow()
+				encoding := string(startWorkflow.Memo.Fields["testMemo"].Metadata[converter.MetadataEncoding])
+				if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
+					s.Equal("binary/gob", encoding)
+				} else {
+					s.Equal("json/plain", encoding)
+				}
+			})
+
+		_, err := s.client.ScheduleClient().Create(context.Background(), options)
+		s.NoError(err)
+	}
+	s.T().Run("old behavior", func(t *testing.T) {
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = false
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+		testFn()
+	})
+	s.T().Run("new behavior", func(t *testing.T) {
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+		testFn()
+	})
+}
+
+func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultConverterFail() {
+	testFn := func() {
+		dc := failingMemoDataConverter{
+			delegate: converter.GetDefaultDataConverter(),
+		}
+		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+		memo := map[string]interface{}{
+			"testMemo": make(chan int),
+		}
+		wf := func(ctx Context) string { panic("this is just a stub") }
+
+		options := ScheduleOptions{
+			ID: scheduleID,
+			Spec: ScheduleSpec{
+				CronExpressions: []string{"*"},
+			},
+			Action: &ScheduleWorkflowAction{
+				Workflow:                 wf,
+				ID:                       workflowID,
+				TaskQueue:                taskqueue,
+				WorkflowExecutionTimeout: timeoutInSeconds,
+				WorkflowTaskTimeout:      timeoutInSeconds,
+				Memo:                     memo,
+			},
+		}
+
+		s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Times(0)
+
+		_, err := s.client.ScheduleClient().Create(context.Background(), options)
+		s.Error(err)
+		if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
+			s.ErrorContains(err, "failingMemoDataConverter memo encoding failed")
+		} else {
+			s.ErrorContains(err, "unsupported type: chan int")
+		}
+	}
+
+	s.T().Run("old behavior", func(t *testing.T) {
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = false
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+		testFn()
+	})
+	s.T().Run("new behavior", func(t *testing.T) {
+		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
+		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
+		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+		testFn()
+	})
 }

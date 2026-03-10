@@ -7,6 +7,8 @@ frontend.enableUpdateWorkflowExecution:
   - value: true
 frontend.enableUpdateWorkflowExecutionAsyncAccepted:
   - value: true
+frontend.enableExecuteMultiOperation:
+  - value: true
 system.enableEagerWorkflowStart:
   - value: true
 frontend.workerVersioningRuleAPIs:
@@ -15,7 +17,40 @@ frontend.workerVersioningDataAPIs:
   - value: true
 frontend.workerVersioningWorkflowAPIs:
   - value: true
+system.enableDeployments:
+  - value: true
+system.enableDeploymentVersions:
+  - value: true
+matching.wv.VersionDrainageStatusVisibilityGracePeriod:
+  - value: 10
+matching.wv.VersionDrainageStatusRefreshInterval:
+  - value: 1    
 worker.buildIdScavengerEnabled:
   - value: true
 worker.removableBuildIdDurationSinceDefault:
   - value: 1
+system.enableNexus:
+  - value: true
+component.nexusoperations.callback.endpoint.template:
+  - value: http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback
+# SDK tests use arbitrary callback URLs, permit that on the server.
+component.callbacks.allowedAddresses:
+  - value:
+    - Pattern: "*"
+      AllowInsecure: true
+component.nexusoperations.recordCancelRequestCompletionEvents:
+  - value: true
+frontend.activityAPIsEnabled:
+  - value: true
+activity.enableStandalone:
+  - value: true
+history.enableChasm:
+  - value: true
+history.enableTransitionHistory:
+  - value: true
+component.nexusoperations.useSystemCallbackURL:
+  - value: false
+frontend.WorkerHeartbeatsEnabled:
+  - value: true
+frontend.ListWorkersEnabled:
+  - value: true

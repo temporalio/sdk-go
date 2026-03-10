@@ -1,36 +1,14 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
-	"github.com/pborman/uuid"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -95,43 +73,294 @@ func TestWorkersTestSuite(t *testing.T) {
 }
 
 func (s *WorkersTestSuite) TestWorkflowWorker() {
-	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
 	executionParameters := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentWorkflowTaskQueuePollers: 5,
-		Logger:                                ilog.NewDefaultLogger(),
-		UserContext:                           ctx,
-		UserContextCancel:                     cancel,
+		Namespace: DefaultNamespace,
+		TaskQueue: "testTaskQueue",
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: 5,
+			},
+		),
+		Logger:                  ilog.NewDefaultLogger(),
+		BackgroundContext:       ctx,
+		BackgroundContextCancel: cancel,
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
+	client := &WorkflowClient{workflowService: s.service}
+	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 
 	s.NoError(ctx.Err())
+
 }
 
-func (s *WorkersTestSuite) TestActivityWorker() {
-	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
-	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+type CountingSlotSupplier struct {
+	reserves, releases, uses atomic.Int32
+}
 
+func (c *CountingSlotSupplier) ReserveSlot(ctx context.Context, _ SlotReservationInfo) (*SlotPermit, error) {
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	c.reserves.Add(1)
+	return &SlotPermit{}, nil
+}
+
+func (c *CountingSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
+	c.reserves.Add(1)
+	return &SlotPermit{}
+}
+
+func (c *CountingSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {
+	c.uses.Add(1)
+}
+
+func (c *CountingSlotSupplier) ReleaseSlot(SlotReleaseInfo) {
+	c.releases.Add(1)
+}
+
+func (c *CountingSlotSupplier) MaxSlots() int {
+	return 5
+}
+
+func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
+	// Run this a bunch of times since releases/reserves are sensitive to shutdown conditions
+	// and we want to make sure they always line up
+	for i := 0; i < 50; i++ {
+		s.SetupTest()
+		taskQueue := "testTaskQueue"
+		testEvents := []*historypb.HistoryEvent{
+			createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+				TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue},
+			}),
+			createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+			createTestEventWorkflowTaskStarted(3),
+		}
+		workflowType := "testReplayWorkflow"
+		workflowID := "testID"
+		runID := "testRunID"
+
+		task := &workflowservice.PollWorkflowTaskQueueResponse{
+			TaskToken:              []byte("test-token"),
+			WorkflowExecution:      &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+			WorkflowType:           &commonpb.WorkflowType{Name: workflowType},
+			History:                &historypb.History{Events: testEvents},
+			PreviousStartedEventId: 0,
+		}
+
+		unblockPollCh := make(chan struct{})
+		pollRespondedCh := make(chan struct{})
+		s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+			Do(func(ctx, in interface{}, opts ...interface{}) {
+				<-unblockPollCh
+			}).
+			Return(task, nil).AnyTimes()
+		s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+			Do(func(ctx, in interface{}, opts ...interface{}) {
+				pollRespondedCh <- struct{}{}
+			}).
+			Return(nil, nil).AnyTimes()
+
+		ctx, cancel := context.WithCancelCause(context.Background())
+		wfCss := &CountingSlotSupplier{}
+		laCss := &CountingSlotSupplier{}
+		tuner, err := NewCompositeTuner(CompositeTunerOptions{
+			WorkflowSlotSupplier:      wfCss,
+			ActivitySlotSupplier:      nil,
+			LocalActivitySlotSupplier: laCss})
+		s.NoError(err)
+		executionParameters := workerExecutionParameters{
+			Namespace: DefaultNamespace,
+			TaskQueue: taskQueue,
+			WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+				PollerBehaviorSimpleMaximumOptions{
+					MaximumNumberOfPollers: 5,
+				},
+			),
+			Logger:                  ilog.NewDefaultLogger(),
+			BackgroundContext:       ctx,
+			BackgroundContextCancel: cancel,
+			Tuner:                   tuner,
+			WorkerStopTimeout:       time.Second,
+		}
+		overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
+		client := &WorkflowClient{workflowService: s.service}
+		workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
+		_ = workflowWorker.Start()
+		unblockPollCh <- struct{}{}
+		<-pollRespondedCh
+		workflowWorker.Stop()
+
+		s.Equal(int32(1), wfCss.uses.Load())
+		// The number of reserves and releases should be equal
+		s.Equal(wfCss.reserves.Load(), wfCss.releases.Load())
+		s.NoError(ctx.Err())
+	}
+}
+
+func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
+	// Run this a bunch of times since releases/reserves are sensitive to shutdown conditions
+	// and we want to make sure they always line up
+	for i := 0; i < 50; i++ {
+		s.SetupTest()
+
+		task := &workflowservice.PollActivityTaskQueueResponse{
+			TaskToken:         []byte("test-token"),
+			WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+			WorkflowType:      &commonpb.WorkflowType{Name: workflowType},
+			ActivityId:        "activityID",
+			ActivityType:      &commonpb.ActivityType{Name: "activityType"},
+		}
+
+		unblockPollCh := make(chan struct{})
+		pollRespondedCh := make(chan struct{})
+		s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+			Do(func(ctx, in interface{}, opts ...interface{}) {
+				<-unblockPollCh
+			}).
+			Return(task, nil).AnyTimes()
+		s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+			Do(func(ctx, in interface{}, opts ...interface{}) {
+				pollRespondedCh <- struct{}{}
+			}).
+			Return(nil, nil).AnyTimes()
+
+		actCss := &CountingSlotSupplier{}
+		tuner, err := NewCompositeTuner(CompositeTunerOptions{
+			WorkflowSlotSupplier:      nil,
+			ActivitySlotSupplier:      actCss,
+			LocalActivitySlotSupplier: nil})
+		s.NoError(err)
+		executionParameters := workerExecutionParameters{
+			Namespace: DefaultNamespace,
+			TaskQueue: "testTaskQueue",
+			ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+				PollerBehaviorSimpleMaximumOptions{
+					MaximumNumberOfPollers: 5,
+				},
+			),
+			Logger:            ilog.NewDefaultLogger(),
+			Tuner:             tuner,
+			WorkerStopTimeout: time.Second,
+		}
+		overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
+		a := &greeterActivity{}
+		registry := newRegistry()
+		registry.addActivityWithLock(a.ActivityType().Name, a)
+		client := WorkflowClient{workflowService: s.service}
+		activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
+		_ = activityWorker.Start()
+		unblockPollCh <- struct{}{}
+		<-pollRespondedCh
+		activityWorker.Stop()
+
+		s.Equal(int32(1), actCss.uses.Load())
+		// The number of reserves and releases should be equal
+		s.Equal(actCss.reserves.Load(), actCss.releases.Load())
+	}
+}
+
+type SometimesFailSlotSupplier struct {
+	failEveryN  int
+	currentSlot atomic.Int32
+}
+
+func (s *SometimesFailSlotSupplier) ReserveSlot(_ context.Context, info SlotReservationInfo) (*SlotPermit, error) {
+	if int(s.currentSlot.Load())%s.failEveryN == 0 {
+		s.currentSlot.Add(1)
+		return nil, errors.New("ahhhhh fail")
+	}
+	return s.TryReserveSlot(info), nil
+}
+func (s *SometimesFailSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
+	s.currentSlot.Add(1)
+	return &SlotPermit{}
+}
+func (s *SometimesFailSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+func (s *SometimesFailSlotSupplier) ReleaseSlot(SlotReleaseInfo)   {}
+func (s *SometimesFailSlotSupplier) MaxSlots() int                 { return 0 }
+
+func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
+	s.SetupTest()
+
+	task := &workflowservice.PollActivityTaskQueueResponse{
+		TaskToken:         []byte("test-token"),
+		WorkflowExecution: &commonpb.WorkflowExecution{WorkflowId: workflowID, RunId: runID},
+		WorkflowType:      &commonpb.WorkflowType{Name: workflowType},
+		ActivityId:        "activityID",
+		ActivityType:      &commonpb.ActivityType{Name: "activityType"},
+	}
+
+	unblockPollCh := make(chan struct{})
+	pollRespondedCh := make(chan struct{})
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(ctx, in interface{}, opts ...interface{}) {
+			<-unblockPollCh
+		}).
+		Return(task, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(ctx, in interface{}, opts ...interface{}) {
+			pollRespondedCh <- struct{}{}
+		}).
+		Return(nil, nil).AnyTimes()
+
+	actCss := &SometimesFailSlotSupplier{failEveryN: 5}
+	tuner, err := NewCompositeTuner(CompositeTunerOptions{
+		WorkflowSlotSupplier:      nil,
+		ActivitySlotSupplier:      actCss,
+		LocalActivitySlotSupplier: nil})
+	s.NoError(err)
 	executionParameters := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentActivityTaskQueuePollers: 5,
-		Logger:                                ilog.NewDefaultLogger(),
+		Namespace: DefaultNamespace,
+		TaskQueue: "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: 5,
+			},
+		),
+		Logger:            ilog.NewDefaultLogger(),
+		Tuner:             tuner,
+		WorkerStopTimeout: time.Second,
 	}
 	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	activityWorker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	client := WorkflowClient{workflowService: s.service}
+	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
+	_ = activityWorker.Start()
+	for i := 0; i < 25; i++ {
+		unblockPollCh <- struct{}{}
+		<-pollRespondedCh
+	}
+	activityWorker.Stop()
+}
+
+func (s *WorkersTestSuite) TestActivityWorker() {
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+
+	executionParameters := workerExecutionParameters{
+		Namespace: DefaultNamespace,
+		TaskQueue: "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: 5,
+			},
+		),
+		Logger: ilog.NewDefaultLogger(),
+	}
+	overrides := &workerOverrides{activityTaskHandler: newSampleActivityTaskHandler()}
+	a := &greeterActivity{}
+	registry := newRegistry()
+	registry.addActivityWithLock(a.ActivityType().Name, a)
+	client := WorkflowClient{workflowService: s.service}
+	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = activityWorker.Start()
 	activityWorker.Stop()
 }
@@ -147,7 +376,7 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 			RunId:      "rID",
 		},
 		ActivityType:           &commonpb.ActivityType{Name: "test"},
-		ActivityId:             uuid.New(),
+		ActivityId:             uuid.NewString(),
 		ScheduledTime:          timestamppb.New(now),
 		ScheduleToCloseTimeout: durationpb.New(1 * time.Second),
 		StartedTime:            timestamppb.New(now),
@@ -158,54 +387,68 @@ func (s *WorkersTestSuite) TestActivityWorkerStop() {
 		WorkflowNamespace: "namespace",
 	}
 
-	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(pats, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 
 	stopC := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancelCause(context.Background())
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      2,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	s.NoError(err)
 	executionParameters := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             "testTaskQueue",
-		MaxConcurrentActivityTaskQueuePollers: 5,
-		ConcurrentActivityExecutionSize:       2,
-		Logger:                                ilog.NewDefaultLogger(),
-		UserContext:                           ctx,
-		UserContextCancel:                     cancel,
-		WorkerStopTimeout:                     time.Second * 2,
-		WorkerStopChannel:                     stopC,
+		Namespace: DefaultNamespace,
+		TaskQueue: "testTaskQueue",
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: 5,
+			},
+		),
+		Tuner:                   tuner,
+		Logger:                  ilog.NewDefaultLogger(),
+		BackgroundContext:       ctx,
+		BackgroundContextCancel: cancel,
+		WorkerStopTimeout:       time.Second * 2,
+		WorkerStopChannel:       stopC,
 	}
 	activityTaskHandler := newNoResponseActivityTaskHandler()
 	overrides := &workerOverrides{activityTaskHandler: activityTaskHandler}
 	a := &greeterActivity{}
 	registry := newRegistry()
 	registry.addActivityWithLock(a.ActivityType().Name, a)
-	worker := newActivityWorker(s.service, executionParameters, overrides, registry, nil)
+	client := WorkflowClient{workflowService: s.service}
+	worker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = worker.Start()
 	_ = activityTaskHandler.BlockedOnExecuteCalled()
 	go worker.Stop()
 
 	<-worker.worker.stopCh
-	err := ctx.Err()
+	err = ctx.Err()
 	s.NoError(err)
 
 	<-ctx.Done()
 	err = ctx.Err()
 	s.Error(err)
+	s.ErrorIs(context.Cause(ctx), ErrWorkerShutdown)
 }
 
 func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
-	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil)
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, serviceerror.NewInternal("")).AnyTimes()
 
 	executionParameters := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             "testWorkflowTaskQueue",
-		MaxConcurrentWorkflowTaskQueuePollers: 5,
-		Logger:                                ilog.NewNopLogger(),
+		Namespace: DefaultNamespace,
+		TaskQueue: "testWorkflowTaskQueue",
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: 5,
+			},
+		),
+		Logger: ilog.NewNopLogger(),
 	}
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
-	workflowWorker := newWorkflowWorkerInternal(s.service, executionParameters, nil, overrides, newRegistry())
+	client := &WorkflowClient{workflowService: s.service}
+	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
 	workflowWorker.Stop()
 }
@@ -322,6 +565,9 @@ func (s *WorkersTestSuite) TestLongRunningWorkflowTask() {
 			panic("unexpected RespondWorkflowTaskCompleted")
 		}
 	}).Times(2)
+
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 	clientOptions := ClientOptions{
 		Identity: "test-worker-identity",
@@ -452,6 +698,9 @@ func (s *WorkersTestSuite) TestMultipleLocalActivities() {
 		}
 	}).Times(1)
 
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+
 	clientOptions := ClientOptions{
 		Identity: "test-worker-identity",
 	}
@@ -483,10 +732,15 @@ func (s *WorkersTestSuite) TestWorkerMultipleStop() {
 		Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+
 	client := NewServiceClient(s.service, nil, ClientOptions{Identity: "multi-stop-identity"})
 	worker := NewAggregatedWorker(client, "multi-stop-tq", WorkerOptions{})
 	s.NoError(worker.Start())
 	worker.Stop()
+	// Verify stopping the worker removes it from the eager dispatcher
+	s.Empty(client.eagerDispatcher.workersByTaskQueue["multi-stop-tq"])
 	worker.Stop()
 }
 

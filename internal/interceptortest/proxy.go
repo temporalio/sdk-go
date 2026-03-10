@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2021 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 // Package interceptortest contains internal utilities for testing interceptors.
 package interceptortest
 
@@ -422,6 +400,15 @@ func (p *proxyWorkflowOutbound) SideEffect(
 	return
 }
 
+func (p *proxyWorkflowOutbound) SideEffectWithOptions(
+	ctx workflow.Context,
+	options workflow.SideEffectOptions,
+	f func(ctx workflow.Context) interface{},
+) (ret converter.EncodedValue) {
+	ret, _ = p.invoke(ctx, options, f)[0].Interface().(converter.EncodedValue)
+	return
+}
+
 func (p *proxyWorkflowOutbound) MutableSideEffect(
 	ctx workflow.Context,
 	id string,
@@ -429,6 +416,17 @@ func (p *proxyWorkflowOutbound) MutableSideEffect(
 	equals func(a, b interface{}) bool,
 ) (ret converter.EncodedValue) {
 	ret, _ = p.invoke(ctx, id, f, equals)[0].Interface().(converter.EncodedValue)
+	return
+}
+
+func (p *proxyWorkflowOutbound) MutableSideEffectWithOptions(
+	ctx workflow.Context,
+	id string,
+	options workflow.MutableSideEffectOptions,
+	f func(ctx workflow.Context) interface{},
+	equals func(a, b interface{}) bool,
+) (ret converter.EncodedValue) {
+	ret, _ = p.invoke(ctx, id, options, f, equals)[0].Interface().(converter.EncodedValue)
 	return
 }
 
@@ -535,6 +533,59 @@ func (p *proxyClientOutbound) QueryWorkflow(
 ) (ret converter.EncodedValue, err error) {
 	vals := p.invoke(ctx, in)
 	ret, _ = vals[0].Interface().(converter.EncodedValue)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) ExecuteActivity(
+	ctx context.Context,
+	in *interceptor.ClientExecuteActivityInput,
+) (ret client.ActivityHandle, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(client.ActivityHandle)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) GetActivityHandle(
+	in *interceptor.ClientGetActivityHandleInput,
+) (ret client.ActivityHandle) {
+	ret, _ = p.invoke(in)[0].Interface().(client.ActivityHandle)
+	return
+}
+
+func (p *proxyClientOutbound) CancelActivity(
+	ctx context.Context,
+	in *interceptor.ClientCancelActivityInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) TerminateActivity(
+	ctx context.Context,
+	in *interceptor.ClientTerminateActivityInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) DescribeActivity(
+	ctx context.Context,
+	in *interceptor.ClientDescribeActivityInput,
+) (ret *interceptor.ClientDescribeActivityOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientDescribeActivityOutput)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) PollActivityResult(
+	ctx context.Context,
+	in *interceptor.ClientPollActivityResultInput,
+) (ret *interceptor.ClientPollActivityResultOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientPollActivityResultOutput)
 	err, _ = vals[1].Interface().(error)
 	return
 }

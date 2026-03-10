@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2021 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 // Package interceptor contains interceptors for client and worker calls.
 package interceptor
 
@@ -127,9 +105,17 @@ type HandleQueryInput = internal.HandleQueryInput
 
 // UpdateInput is input for WorkflowInboundInterceptor.ExecuteUpdate
 // and WorkflowInboundInterceptor.ValidateUpdate.
+type UpdateInput = internal.UpdateInput
+
+// ExecuteNexusOperationInput is the input to WorkflowOutboundInterceptor.ExecuteNexusOperation.
 //
 // NOTE: Experimental
-type UpdateInput = internal.UpdateInput
+type ExecuteNexusOperationInput = internal.ExecuteNexusOperationInput
+
+// RequestCancelNexusOperationInput is the input to WorkflowOutboundInterceptor.RequestCancelNexusOperation.
+//
+// NOTE: Experimental
+type RequestCancelNexusOperationInput = internal.RequestCancelNexusOperationInput
 
 // WorkflowOutboundInterceptor is an interface for all workflow calls
 // originating from the SDK.
@@ -202,6 +188,62 @@ type ClientTerminateWorkflowInput = internal.ClientTerminateWorkflowInput
 // ClientOutboundInterceptor.QueryWorkflow.
 type ClientQueryWorkflowInput = internal.ClientQueryWorkflowInput
 
+// ClientDescribeWorkflowInput is input for
+// ClientOutboundInterceptor.DescribeWorkflow.
+type ClientDescribeWorkflowInput = internal.ClientDescribeWorkflowInput
+
+// ClientDescribeWorkflowOutput is output for
+// ClientOutboundInterceptor.DescribeWorkflow.
+type ClientDescribeWorkflowOutput = internal.ClientDescribeWorkflowOutput
+
+// ClientExecuteActivityInput is the input to
+// ClientOutboundInterceptor.ExecuteActivity.
+//
+// NOTE: Experimental
+type ClientExecuteActivityInput = internal.ClientExecuteActivityInput
+
+// ClientGetActivityHandleInput is the input to
+// ClientOutboundInterceptor.GetActivityHandle.
+//
+// NOTE: Experimental
+type ClientGetActivityHandleInput = internal.ClientGetActivityHandleInput
+
+// ClientCancelActivityInput is the input to
+// ClientOutboundInterceptor.CancelActivity.
+//
+// NOTE: Experimental
+type ClientCancelActivityInput = internal.ClientCancelActivityInput
+
+// ClientTerminateActivityInput is the input to
+// ClientOutboundInterceptor.TerminateActivity.
+//
+// NOTE: Experimental
+type ClientTerminateActivityInput = internal.ClientTerminateActivityInput
+
+// ClientDescribeActivityInput is the input to
+// ClientOutboundInterceptor.DescribeActivity.
+//
+// NOTE: Experimental
+type ClientDescribeActivityInput = internal.ClientDescribeActivityInput
+
+// ClientDescribeActivityOutput is the output of
+// ClientOutboundInterceptor.DescribeActivity.
+//
+// NOTE: Experimental
+type ClientDescribeActivityOutput = internal.ClientDescribeActivityOutput
+
+// ClientPollActivityResultInput is the input to
+// ClientOutboundInterceptor.PollActivityResult.
+//
+// NOTE: Experimental
+type ClientPollActivityResultInput = internal.ClientPollActivityResultInput
+
+// ClientPollActivityResultOutput is the output of
+// ClientOutboundInterceptor.PollActivityResult.
+//
+// NOTE: Experimental
+type ClientPollActivityResultOutput = internal.ClientPollActivityResultOutput
+
 // ScheduleClientCreateInput is input for
 // ScheduleClientInterceptor.CreateSchedule.
 type ScheduleClientCreateInput = internal.ScheduleClientCreateInput
@@ -209,6 +251,51 @@ type ScheduleClientCreateInput = internal.ScheduleClientCreateInput
 // ClientUpdateWorkflowInput is input for
 // ClientOutoundInterceptor.UpdateWorkflow.
 type ClientUpdateWorkflowInput = internal.ClientUpdateWorkflowInput
+
+// ClientUpdateWithStartWorkflowInput is input for
+// ClientOutboundInterceptor.UpdateWithStartWorkflow.
+type ClientUpdateWithStartWorkflowInput = internal.ClientUpdateWithStartWorkflowInput
+
+// NexusOperationInboundInterceptor is an interface for intercepting Nexus operation method invocations.
+//
+// All implementations must embed [NexusOperationInboundInterceptorBase] to safely handle future changes.
+//
+// Note: Experimental
+type NexusOperationInboundInterceptor = internal.NexusOperationInboundInterceptor
+
+// NexusOperationInboundInterceptorBase is a default implementation of [NexusOperationInboundInterceptor] that
+// forwards calls to the next inbound interceptor and uses a [NexusOperationOutboundInterceptorBase] on Init.
+//
+// This must be embedded into all [NexusOperationInboundInterceptor] implementations to safely handle future changes.
+//
+// Note: Experimental
+type NexusOperationInboundInterceptorBase = internal.NexusOperationInboundInterceptorBase
+
+// NexusOperationOutboundInterceptor is an interface for intercepting methods in the temporalnexus package when called
+// from within a Nexus Operation handler.
+//
+// All implementations must embed [NexusOperationOutboundInterceptorBase] to safely handle future changes.
+//
+// Note: Experimental
+type NexusOperationOutboundInterceptor = internal.NexusOperationOutboundInterceptor
+
+// NexusOperationOutboundInterceptorBase is a default implementation of [NexusOperationOutboundInterceptor] that
+// forwards calls to the next outbound interceptor.
+//
+// This must be embedded into all [NexusOperationOutboundInterceptor] implementations to safely handle future changes.
+//
+// Note: Experimental
+type NexusOperationOutboundInterceptorBase = internal.NexusOperationOutboundInterceptorBase
+
+// NexusStartOperationInput is the input to NexusOperationInboundInterceptor.StartOperation.
+//
+// Note: Experimental
+type NexusStartOperationInput = internal.NexusStartOperationInput
+
+// NexusCancelOperationInput is the input to NexusOperationInboundInterceptor.CancelOperation.
+//
+// Note: Experimental
+type NexusCancelOperationInput = internal.NexusCancelOperationInput
 
 // Header provides Temporal header information from the context for reading or
 // writing during specific interceptor calls.

@@ -1,26 +1,18 @@
-// The MIT License
+// Package tracing provides Datadog tracing utilities for Temporal workflows.
 //
-// Copyright (c) 2021 Temporal Technologies Inc.  All rights reserved.
+// # Breaking Changes in v0.5.0
 //
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
+// This release upgrades from dd-trace-go v1 to v2. Most users will not be affected,
+// but there are two breaking changes:
 //
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
+//   - TracerOptions.OnFinish: If you provide a custom OnFinish function, update
+//     your import from gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer to
+//     github.com/DataDog/dd-trace-go/v2/ddtrace/tracer. The [tracer.FinishOption]
+//     type is source-compatible, so no other changes are needed.
 //
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
-// Package tracing provides Datadog tracing utilities
+//   - SpanFromWorkflowContext: The return type changed from ddtrace.Span to
+//     *tracer.Span. If you pass the returned span to code that expects the old
+//     type, you will need to update that code.
 package tracing
 
 import (
@@ -28,11 +20,9 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"strconv"
 	"strings"
 
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace"
-	"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer"
+	"github.com/DataDog/dd-trace-go/v2/ddtrace/tracer"
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
@@ -46,6 +36,9 @@ type TracerOptions struct {
 
 	// DisableQueryTracing can be set to disable query tracing.
 	DisableQueryTracing bool
+
+	// DisableUpdateTracing can be set to disable update tracing.
+	DisableUpdateTracing bool
 
 	// OnFinish sets finish options.
 	// If unset, this will use [tracer.WithError]
@@ -78,6 +71,7 @@ func NewTracer(opts TracerOptions) interceptor.Tracer {
 		opts: TracerOptions{
 			DisableSignalTracing: opts.DisableSignalTracing,
 			DisableQueryTracing:  opts.DisableQueryTracing,
+			DisableUpdateTracing: opts.DisableUpdateTracing,
 			OnFinish:             opts.OnFinish,
 		},
 	}
@@ -121,7 +115,7 @@ func (t *tracerImpl) UnmarshalSpan(m map[string]string) (interceptor.TracerSpanR
 
 func (t *tracerImpl) MarshalSpan(span interceptor.TracerSpan) (map[string]string, error) {
 	carrier := tracer.TextMapCarrier{}
-	if err := tracer.Inject(span.(*tracerSpan).Context(), carrier); err != nil {
+	if err := tracer.Inject(span.(*tracerSpan).Span.Context(), carrier); err != nil {
 		return nil, err
 	}
 	return carrier, nil
@@ -137,6 +131,20 @@ func (t *tracerImpl) SpanFromContext(ctx context.Context) interceptor.TracerSpan
 
 func (t *tracerImpl) ContextWithSpan(ctx context.Context, span interceptor.TracerSpan) context.Context {
 	return tracer.ContextWithSpan(ctx, span.(*tracerSpan).Span)
+}
+
+// SpanFromWorkflowContext extracts the DataDog Span object from the workflow context.
+func SpanFromWorkflowContext(ctx workflow.Context) (*tracer.Span, bool) {
+	val := ctx.Value(activeSpanContextKey)
+	if val == nil {
+		return tracer.SpanFromContext(nil)
+	}
+
+	if span, ok := val.(*tracerSpan); ok {
+		return span.Span, true
+	}
+
+	return tracer.SpanFromContext(nil)
 }
 
 func genSpanID(idempotencyKey string) uint64 {
@@ -156,42 +164,32 @@ func (t *tracerImpl) StartSpan(options *interceptor.TracerStartSpanOptions) (int
 		startOpts = append(startOpts, tracer.WithSpanID(genSpanID(options.IdempotencyKey)))
 	}
 
-	// Add parent span to start options
-	var parent ddtrace.SpanContext
+	// Add tags to start options.
+	for k, v := range options.Tags {
+		// Display Temporal tags in a nested group in Datadog APM.
+		tagKey := "temporal." + strings.TrimPrefix(k, "temporal")
+		startOpts = append(startOpts, tracer.Tag(tagKey, v))
+	}
+
+	var s *tracer.Span
 	switch opParent := options.Parent.(type) {
 	case nil:
 	case *tracerSpan:
-		parent = opParent.Context()
+		s = opParent.Span.StartChild(t.SpanName(options), startOpts...)
 	case *tracerSpanCtx:
-		parent = opParent
+		startOpts = append(startOpts, tracer.WithStartSpanConfig(&tracer.StartSpanConfig{
+			Parent: opParent.SpanContext,
+		}))
 	default:
 		// This should be considered an error, because something unexpected is
 		// in the place where only a parent trace should be. In this case, we don't
 		// set up the parent, so we will be creating a new top-level span
 	}
-	if parent != nil {
-		// Convert the parent context into a full trace.
-		// This is required, otherwise the implementation of StartSpan()
-		// will NOT respect ChildOf().
-		// The runtime type of parentTrace will be tracer.spanContext (note the
-		// starting lowercase on "spanContext", that's an internal struct)
-		parentTrace, err := tracer.Extract(newSpanContextReader(parent))
-		if err != nil {
-			return nil, err
-		}
-		startOpts = append(startOpts, tracer.ChildOf(parentTrace))
+
+	if s == nil {
+		s = tracer.StartSpan(t.SpanName(options), startOpts...)
 	}
 
-	// Add tags to start options
-	for k, v := range options.Tags {
-		// TODO when custom span support is added we might have to revisit this
-		// Display Temporal tags in a nested group in Datadog APM
-		tagKey := "temporal." + strings.TrimPrefix(k, "temporal")
-		startOpts = append(startOpts, tracer.Tag(tagKey, v))
-	}
-
-	// Start and return span
-	s := tracer.StartSpan(t.SpanName(options), startOpts...)
 	return &tracerSpan{OnFinish: t.opts.OnFinish, Span: s}, nil
 }
 
@@ -208,43 +206,12 @@ func (t *tracerImpl) SpanName(options *interceptor.TracerStartSpanOptions) strin
 	return fmt.Sprintf("temporal.%s", options.Operation)
 }
 
-func newSpanContextReader(parent ddtrace.SpanContext) spanContextReader {
-	carrier := map[string]string{
-		tracer.DefaultTraceIDHeader:  strconv.FormatUint(parent.TraceID(), 10),
-		tracer.DefaultParentIDHeader: strconv.FormatUint(parent.SpanID(), 10),
-	}
-
-	// attach baggage items
-	parent.ForeachBaggageItem(func(k, v string) bool {
-		carrier[tracer.DefaultBaggageHeaderPrefix+k] = v
-		return true
-	})
-
-	return spanContextReader{
-		keyMap: carrier,
-	}
-}
-
-type spanContextReader struct {
-	keyMap map[string]string
-}
-
-// ForeachKey implements tracer.TextMapReader
-func (r spanContextReader) ForeachKey(handler func(key string, value string) error) error {
-	for k, v := range r.keyMap {
-		if err := handler(k, v); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 type tracerSpan struct {
-	ddtrace.Span
+	Span     *tracer.Span
 	OnFinish func(options *interceptor.TracerFinishSpanOptions) []tracer.FinishOption
 }
 type tracerSpanCtx struct {
-	ddtrace.SpanContext
+	*tracer.SpanContext
 }
 
 func (t *tracerSpan) SpanID() uint64 {
@@ -252,7 +219,7 @@ func (t *tracerSpan) SpanID() uint64 {
 }
 
 func (t *tracerSpan) TraceID() uint64 {
-	return t.Span.Context().TraceID()
+	return t.Span.Context().TraceIDLower()
 }
 
 func (t *tracerSpan) ForeachBaggageItem(handler func(k string, v string) bool) {

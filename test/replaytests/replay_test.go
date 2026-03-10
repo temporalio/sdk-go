@@ -1,39 +1,14 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package replaytests
 
 import (
 	"context"
-	"reflect"
-	"testing"
-
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"reflect"
+	"testing"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -95,8 +70,8 @@ func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 	_ = we2.Get(context.Background(), &res2)
 
 	// Now run:
-	// tctl workflow show --workflow_id replay-tests-workflow1 --of workflow1.json
-	// tctl workflow show --workflow_id replay-tests-workflow2 --of workflow2.json
+	// temporal workflow show --workflow-id replay-tests-workflow1 --output json > workflow1.json
+	// temporal workflow show --workflow-id replay-tests-workflow2 --output json > workflow2.json
 }
 
 func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
@@ -464,6 +439,93 @@ func (s *replayTestSuite) TestGogoprotoPayloadWorkflow() {
 	s.NoError(err)
 }
 
+func (s *replayTestSuite) TestSelectorBlockingDefault() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(SelectorBlockingDefaultWorkflow)
+	// Verify we can still replay an old workflow that does
+	// not have the SDKFlagBlockedSelectorSignalReceive flag
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "selector-blocking-default.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestSelectorNonBlocking() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(SelectorBlockingDefaultWorkflow)
+	// Verify we can replay the new workflow that has the
+	// SDKFlagBlockedSelectorSignalReceive flag
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "selector-non-blocking.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestChannelWorkerWithBlockedSelectorFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ChannelWorkerWorkflow)
+	// Verify we can replay a history generated with SDKFlagBlockedSelectorSignalReceive
+	// but without SDKFlagWorkflowNewChannelLostMessages. The old c.recValue
+	// overwrite behavior must be preserved during replay.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "channel-worker-blocked-selector.json")
+	s.NoError(err)
+}
+
+func (s *replayTestSuite) TestPartialReplayNonCommandEvent() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(TripWorkflow)
+	// Verify we can replay partial history that has ended on a non-command event
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "partial-replay-non-command-event.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestResetWorkflowBeforeChildInit() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ResetWorkflowWithChild)
+	// Verify we can replay workflow history containing a reset before StartChildWorkflowExecutionInitiated & ChildWorkflowExecutionCompleted events.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "reset-workflow-before-child-init.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestResetWorkflowAfterChildComplete() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ResetWorkflowWithChild)
+	// Verify we can replay workflow history containing a reset event after StartChildWorkflowExecutionInitiated & ChildWorkflowExecutionCompleted events.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "reset-workflow-after-child-complete.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestCancelNexusOperation() {
+	replayer := worker.NewWorkflowReplayer()
+
+	replayer.RegisterWorkflow(CancelNexusOperationBeforeSentWorkflow)
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-before-sent.json")
+	s.NoErrorf(err, "Encountered error replaying cancel before schedule Nexus operation command is sent")
+
+	replayer.RegisterWorkflow(CancelNexusOperationBeforeStartWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-before-start.json")
+	s.NoErrorf(err, "Encountered error replaying cancel before Nexus operation is started")
+
+	replayer.RegisterWorkflow(CancelNexusOperationAfterStartWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-after-start.json")
+	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is started")
+
+	replayer.RegisterWorkflow(CancelNexusOperationAfterCompleteWorkflow)
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-after-complete.json")
+	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is completed")
+}
+
+func (s *replayTestSuite) TestAwaitWithTimeoutNoTimerCancel() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(AwaitWithTimeoutNoTimerCancelWorkflow)
+	// Verify we can still replay an old workflow that does not have
+	// the SDKFlagCancelAwaitTimerOnCondition flag (old behavior where
+	// timer is NOT cancelled when condition is satisfied).
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "await-with-timeout-no-timer-cancel.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []interface{}
@@ -482,4 +544,25 @@ func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs .
 		c.fromPayloads = append(c.fromPayloads, reflect.ValueOf(v).Elem().Interface())
 	}
 	return err
+}
+
+func (s *replayTestSuite) TestMemoUserDCEncodeNoFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(MemoChildWorkflowJSON)
+	replayer.RegisterWorkflow(MemoEncodingWorkflowJSON)
+	// Verify we can still replay an old workflow that does not
+	// have the SDKFlagMemoUserDCEncode flag
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "memo-json.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
+}
+
+func (s *replayTestSuite) TestScheduleMemoUserDCEncodeNoFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ScheduleMemoWorkflowJSON)
+	// Verify we can still replay a workflow started by a schedule
+	// that does not have the SDKFlagMemoUserDCEncode flag
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "memo-schedule-json.json")
+	s.NoError(err)
+	require.NoError(s.T(), err)
 }

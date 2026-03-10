@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package temporal
 
 import (
@@ -131,6 +107,11 @@ type (
 	// ChildWorkflowExecutionError returned from workflow when child workflow returned an error.
 	ChildWorkflowExecutionError = internal.ChildWorkflowExecutionError
 
+	// NexusOperationError is an error returned when a Nexus Operation has failed.
+	//
+	// NOTE: Experimental
+	NexusOperationError = internal.NexusOperationError
+
 	// ChildWorkflowExecutionAlreadyStartedError is set as the cause of
 	// ChildWorkflowExecutionError when failure is due the child workflow having
 	// already started.
@@ -153,6 +134,10 @@ type (
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
 	UnknownExternalWorkflowExecutionError = internal.UnknownExternalWorkflowExecutionError
+
+	// QueryRejectedError is a possible error that can be returned by
+	// ClientOutboundInterceptor.QueryWorkflow to indicate that the query was rejected by the server.
+	QueryRejectedError = internal.QueryRejectedError
 )
 
 var (
@@ -203,10 +188,20 @@ func NewNonRetryableApplicationError(message, errType string, cause error, detai
 	)
 }
 
+// CanceledErrorOptions should be used to set all the desired attributes of a new CanceledError
+// To get a new instance use CanceledErrorAttributes function.
+type CanceledErrorOptions = internal.CanceledErrorOptions
+
 // NewCanceledError creates CanceledError instance.
 // Return this error from activity or child workflow to indicate that it was successfully canceled.
 func NewCanceledError(details ...interface{}) error {
 	return internal.NewCanceledError(details...)
+}
+
+// NewCanceledErrorWithOptions creates CanceledError instance.
+// Return this error from activity or child workflow to indicate that it was successfully canceled.
+func NewCanceledErrorWithOptions(options CanceledErrorOptions) error {
+	return internal.NewCanceledErrorWithOptions(options)
 }
 
 // IsApplicationError return if the err is a ApplicationError
@@ -264,3 +259,14 @@ func NewTimeoutError(timeoutType enumspb.TimeoutType, lastErr error, details ...
 func NewHeartbeatTimeoutError(details ...interface{}) error {
 	return internal.NewHeartbeatTimeoutError(details...)
 }
+
+// ApplicationErrorCategory sets the category of the error. The category of the error
+// maps to logging/metrics SDK behaviors and does not impact server-side logging/metrics.
+type ApplicationErrorCategory = internal.ApplicationErrorCategory
+
+const (
+	// ApplicationErrorCategoryUnspecified represents an error with an unspecified category.
+	ApplicationErrorCategoryUnspecified = internal.ApplicationErrorCategoryUnspecified
+	// ApplicationErrorCategoryBenign indicates an error that is expected under normal operation and should not trigger alerts.
+	ApplicationErrorCategoryBenign = internal.ApplicationErrorCategoryBenign
+)

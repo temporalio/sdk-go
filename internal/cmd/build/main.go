@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package main
 
 import (
@@ -41,9 +17,11 @@ import (
 
 	_ "github.com/BurntSushi/toml"
 	_ "github.com/kisielk/errcheck/errcheck"
-	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/testsuite"
 	_ "honnef.co/go/tools/staticcheck"
+
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/testsuite"
 )
 
 func main() {
@@ -88,7 +66,7 @@ func (b *builder) run() error {
 
 func (b *builder) check() error {
 	// Run go vet
-	if err := b.runCmd(b.cmdFromRoot("go", "vet", "-tags", "protolegacy", "./...")); err != nil {
+	if err := b.runCmd(b.cmdFromRoot("go", "vet", "./...")); err != nil {
 		return fmt.Errorf("go vet failed: %w", err)
 	}
 	// Run errcheck
@@ -103,9 +81,9 @@ func (b *builder) check() error {
 	} else if err := b.runCmd(b.cmdFromRoot(staticCheck, "./...")); err != nil {
 		return fmt.Errorf("staticcheck failed: %w", err)
 	}
-	// Run copyright check
-	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/copyright/licensegen.go", "--verifyOnly")); err != nil {
-		return fmt.Errorf("copyright check failed: %w", err)
+	// Run doclink check
+	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/doclink/doclink.go")); err != nil {
+		return fmt.Errorf("doclink check failed: %w", err)
 	}
 	return nil
 }
@@ -132,15 +110,30 @@ func (b *builder) integrationTest() error {
 		}
 	}
 
+	customKeyField := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	customStringField := temporal.NewSearchAttributeKeyString("CustomStringField")
+	searchAttributes := temporal.NewSearchAttributes(
+		customKeyField.ValueSet("Keyword"),
+		customStringField.ValueSet("Text"),
+	)
+
 	// Start dev server if wanted
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
+			CachedDownload: testsuite.CachedDownload{
+				Version: "v1.6.1-server-1.31.0-151.0",
+			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
 			},
-			LogLevel: "warn",
+			DBFilename:       "temporal.sqlite",
+			LogLevel:         "warn",
+			SearchAttributes: searchAttributes,
 			ExtraArgs: []string{
+				"--sqlite-pragma", "journal_mode=WAL",
+				"--sqlite-pragma", "synchronous=OFF",
+				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
 				"--dynamic-config-value", "frontend.workerVersioningRuleAPIs=true",
@@ -151,6 +144,23 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "system.forceSearchAttributesCacheRefreshOnRead=true",
 				"--dynamic-config-value", "worker.buildIdScavengerEnabled=true",
 				"--dynamic-config-value", "worker.removableBuildIdDurationSinceDefault=1",
+				"--dynamic-config-value", "system.enableDeployments=true",
+				"--dynamic-config-value", "system.enableDeploymentVersions=true",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusVisibilityGracePeriod=10",
+				"--dynamic-config-value", "matching.wv.VersionDrainageStatusRefreshInterval=1",
+				"--dynamic-config-value", "matching.useNewMatcher=true",
+				"--dynamic-config-value", "frontend.activityAPIsEnabled=true",
+				"--http-port", "7243", // Nexus tests use the HTTP port directly
+				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
+				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
+				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
+				"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
+				"--dynamic-config-value", "activity.enableStandalone=true",
+				"--dynamic-config-value", "history.enableChasm=true",
+				"--dynamic-config-value", "history.enableTransitionHistory=true",
+				"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
+				"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`,
+				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
 			},
 		})
 		if err != nil {
@@ -160,20 +170,23 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
+	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
 	if *coverageFileFlag != "" {
 		args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, *coverageFileFlag), "-coverpkg=./...")
 	}
-	if *devServerFlag {
-		args = append(args, "-using-cli-dev-server")
-	}
 	args = append(args, "./...")
+	if *devServerFlag {
+		args = append(args, "--", "-using-cli-dev-server")
+		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
+	}
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
+	cmd.Env = env
 	if err := b.runCmd(cmd); err != nil {
 		return fmt.Errorf("integration test failed: %w", err)
 	}
@@ -230,7 +243,7 @@ func (b *builder) unitTest() error {
 	testDirMap := map[string]struct{}{}
 	var testDirs []string
 	err := fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
-		if !strings.HasPrefix(p, "test") && strings.HasSuffix(p, "_test.go") {
+		if (!strings.HasPrefix(p, "test") || strings.HasPrefix(p, "testsuite")) && strings.HasSuffix(p, "_test.go") {
 			dir := path.Dir(p)
 			if _, ok := testDirMap[dir]; !ok {
 				testDirMap[dir] = struct{}{}
@@ -255,7 +268,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-tags", "protolegacy", "-count", "1", "-race", "-v", "-timeout", "10m"}
+		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}

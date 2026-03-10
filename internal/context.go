@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -38,6 +14,8 @@ import (
 // API boundaries.
 //
 // Context's methods may be called by multiple goroutines simultaneously.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.Context]
 type Context interface {
 	// Deadline returns the time when work done on behalf of this context
 	// should be canceled.  Deadline returns ok==false when no deadline is
@@ -173,15 +151,21 @@ func Background() Context {
 }
 
 // ErrCanceled is the error returned by Context.Err when the context is canceled.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.ErrCanceled]
 var ErrCanceled = NewCanceledError()
 
 // ErrDeadlineExceeded is the error returned by Context.Err when the context's
 // deadline passes.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.ErrDeadlineExceeded]
 var ErrDeadlineExceeded = NewTimeoutError("deadline exceeded", enumspb.TIMEOUT_TYPE_SCHEDULE_TO_CLOSE, nil)
 
 // A CancelFunc tells an operation to abandon its work.
 // A CancelFunc does not wait for the work to stop.
 // After the first call, subsequent calls to a CancelFunc do nothing.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.CancelFunc]
 type CancelFunc func()
 
 // WithCancel returns a copy of parent with a new Done channel. The returned
@@ -190,6 +174,8 @@ type CancelFunc func()
 //
 // Canceling this context releases resources associated with it, so code should
 // call cancel as soon as the operations running in this Context complete.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.WithCancel]
 func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 	c := newCancelCtx(parent)
 	propagateCancel(parent, c)
@@ -206,6 +192,8 @@ func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 //	  workflow.ExecuteActivity(disconnectedCtx, handleCancellationActivity).Get(disconnectedCtx, nil)
 //	  return err // workflow return CanceledError
 //	}
+//
+// Exposed as: [go.temporal.io/sdk/workflow.NewDisconnectedContext]
 func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 	c := newCancelCtx(parent)
 	return c, func() { c.cancel(true, ErrCanceled) }
@@ -341,6 +329,8 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 //
 // Use context Values only for request-scoped data that transits processes and
 // APIs, not for passing optional parameters to functions.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.WithValue]
 func WithValue(parent Context, key interface{}, val interface{}) Context {
 	return &valueCtx{parent, key, val}
 }

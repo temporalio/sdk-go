@@ -1,31 +1,8 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -55,17 +32,27 @@ func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
 	_ *workflowExecutionContextImpl,
 	_ workflowTaskHeartbeatFunc,
-) (interface{}, error) {
-	return &workflowservice.RespondWorkflowTaskCompletedRequest{
+) (*workflowTaskCompletion, error) {
+	return &workflowTaskCompletion{rawRequest: &workflowservice.RespondWorkflowTaskCompletedRequest{
 		TaskToken: workflowTask.task.TaskToken,
-	}, nil
+	}}, nil
 }
 
 func (wth sampleWorkflowTaskHandler) GetOrCreateWorkflowContext(
-	task *workflowservice.PollWorkflowTaskQueueResponse,
-	historyIterator HistoryIterator,
+	_ *workflowservice.PollWorkflowTaskQueueResponse,
+	_ HistoryIterator,
 ) (*workflowExecutionContextImpl, error) {
-	return nil, nil
+	// This does the absolute bare minimum to avoid nil pointer dereferences in some unit tests.
+	retme := &workflowExecutionContextImpl{
+		mutex: sync.Mutex{},
+		wth: &workflowTaskHandlerImpl{
+			cache: NewWorkerCache(),
+		},
+	}
+	// The mutex is expected to already be locked in situations where unlock on the execution
+	// context is called.
+	retme.mutex.Lock()
+	return retme, nil
 }
 
 func newSampleWorkflowTaskHandler() *sampleWorkflowTaskHandler {
@@ -124,7 +111,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	// Process task and respond to the service.
 	taskHandler := newSampleWorkflowTaskHandler()
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response}, nil, nil)
-	completionRequest := request.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	completionRequest := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	s.NoError(err)
 
 	_, err = s.service.RespondWorkflowTaskCompleted(ctx, completionRequest)
@@ -165,7 +152,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommands() {
 		createTestEventWorkflowTaskStarted(3),
 		{
 			EventId:   4,
-			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
 		},
 		{
 			EventId:   5,
@@ -209,7 +196,7 @@ func (s *PollLayerInterfacesTestSuite) TestGetNextCommandsSdkFlags() {
 			ScheduledEventId: 2,
 			StartedEventId:   3,
 			SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
-				LangUsedFlags: []uint32{SDKFlagLimitChangeVersionSASize},
+				LangUsedFlags: []uint32{uint32(SDKFlagLimitChangeVersionSASize)},
 				SdkName:       SDKName,
 				SdkVersion:    "1.0",
 			},
@@ -267,7 +254,7 @@ func (s *PollLayerInterfacesTestSuite) TestMessageCommands() {
 		createTestEventWorkflowTaskStarted(3),
 		{
 			EventId:   4,
-			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED,
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT,
 		},
 		createTestEventWorkflowTaskScheduled(5, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskStarted(6),

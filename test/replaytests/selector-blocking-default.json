@@ -1,0 +1,89 @@
+{
+  "events": [
+    {
+      "eventId": "1",
+      "eventTime": "2024-10-21T23:39:08.991521Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_STARTED",
+      "taskId": "1048587",
+      "workflowExecutionStartedEventAttributes": {
+        "workflowType": {
+          "name": "SelectorBlockingDefaultWorkflow"
+        },
+        "taskQueue": {
+          "name": "hello-world",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "workflowExecutionTimeout": "0s",
+        "workflowRunTimeout": "0s",
+        "workflowTaskTimeout": "10s",
+        "originalExecutionRunId": "dde5f879-0e59-47e8-8048-ac0f164866fd",
+        "identity": "47182@Andrews-MacBook-Pro.local@",
+        "firstExecutionRunId": "dde5f879-0e59-47e8-8048-ac0f164866fd",
+        "attempt": 1,
+        "firstWorkflowTaskBackoff": "0s",
+        "header": {},
+        "workflowId": "hello_world_workflowID"
+      }
+    },
+    {
+      "eventId": "2",
+      "eventTime": "2024-10-21T23:39:08.991569Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_SCHEDULED",
+      "taskId": "1048588",
+      "workflowTaskScheduledEventAttributes": {
+        "taskQueue": {
+          "name": "hello-world",
+          "kind": "TASK_QUEUE_KIND_NORMAL"
+        },
+        "startToCloseTimeout": "10s",
+        "attempt": 1
+      }
+    },
+    {
+      "eventId": "3",
+      "eventTime": "2024-10-21T23:39:08.994898Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_STARTED",
+      "taskId": "1048593",
+      "workflowTaskStartedEventAttributes": {
+        "scheduledEventId": "2",
+        "identity": "47139@Andrews-MacBook-Pro.local@",
+        "requestId": "a7a50c99-1d0d-449c-9d75-09458ac1e7af",
+        "historySizeBytes": "282",
+        "workerVersion": {
+          "buildId": "e15e79cbae5f5acc33774a930eed2f97"
+        }
+      }
+    },
+    {
+      "eventId": "4",
+      "eventTime": "2024-10-21T23:39:08.999006Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_TASK_COMPLETED",
+      "taskId": "1048597",
+      "workflowTaskCompletedEventAttributes": {
+        "scheduledEventId": "2",
+        "startedEventId": "3",
+        "identity": "47139@Andrews-MacBook-Pro.local@",
+        "workerVersion": {
+          "buildId": "e15e79cbae5f5acc33774a930eed2f97"
+        },
+        "sdkMetadata": {
+          "langUsedFlags": [
+            3
+          ],
+          "sdkName": "temporal-go",
+          "sdkVersion": "1.29.1"
+        },
+        "meteringMetadata": {}
+      }
+    },
+    {
+      "eventId": "5",
+      "eventTime": "2024-10-21T23:39:08.999055Z",
+      "eventType": "EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED",
+      "taskId": "1048598",
+      "workflowExecutionCompletedEventAttributes": {
+        "workflowTaskCompletedEventId": "4"
+      }
+    }
+  ]
+}

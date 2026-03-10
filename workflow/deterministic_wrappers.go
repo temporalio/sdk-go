@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package workflow
 
 import (
@@ -67,6 +43,16 @@ type (
 	// Semaphore is a counting semaphore.
 	// Use [workflow.NewSemaphore] method to create a Semaphore instance.
 	Semaphore = internal.Semaphore
+
+	// TimerOptions are options for [NewTimerWithOptions]
+	//
+	// NOTE: Experimental
+	TimerOptions = internal.TimerOptions
+
+	// AwaitOptions are options for [AwaitWithOptions]
+	//
+	// NOTE: Experimental
+	AwaitOptions = internal.AwaitOptions
 )
 
 // Await blocks the calling thread until condition() returns true.
@@ -104,6 +90,21 @@ func Await(ctx Context, condition func() bool) error {
 //	})
 func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool) (ok bool, err error) {
 	return internal.AwaitWithTimeout(ctx, timeout, condition)
+}
+
+// AwaitWithOptions blocks the calling thread until condition() returns true
+// or blocking time exceeds the passed timeout value.
+// Returns ok=false if timed out, and err CanceledError if the ctx is canceled.
+// The following code will block until the captured count
+// variable is set to 5, or one hour passes.
+//
+//	workflow.AwaitWithOptions(ctx, AwaitOptions{Timeout: time.Hour, TimerOptions: TimerOptions{Summary:"Example"}}, func() bool {
+//	  return count == 5
+//	})
+//
+// NOTE: Experimental
+func AwaitWithOptions(ctx Context, options AwaitOptions, condition func() bool) (ok bool, err error) {
+	return internal.AwaitWithOptions(ctx, options, condition)
 }
 
 // NewChannel creates a new Channel instance
@@ -186,8 +187,20 @@ func Now(ctx Context) time.Time {
 // this NewTimer() to get the timer, instead of Go's timer.NewTimer(). You can cancel the pending
 // timer by canceling the Context (using the context from workflow.WithCancel(ctx)) and that will cancel the timer. After the timer
 // is canceled, the returned Future becomes ready, and Future.Get() will return *CanceledError.
+//
+// To be able to set options like timer summary, use [NewTimerWithOptions].
 func NewTimer(ctx Context, d time.Duration) Future {
 	return internal.NewTimer(ctx, d)
+}
+
+// NewTimerWithOptions returns immediately and the future becomes ready after the specified duration d. Workflows must
+// use this NewTimerWithOptions() to get the timer, instead of Go's timer.NewTimer(). You can cancel the pending timer
+// by canceling the Context (using the context from workflow.WithCancel(ctx)) and that will cancel the timer. After the
+// timer is canceled, the returned Future becomes ready, and Future.Get() will return *CanceledError.
+//
+// NOTE: Experimental
+func NewTimerWithOptions(ctx Context, d time.Duration, options TimerOptions) Future {
+	return internal.NewTimerWithOptions(ctx, d, options)
 }
 
 // Sleep pauses the current workflow for at least the duration d. A negative or zero duration causes Sleep to return
@@ -196,6 +209,8 @@ func NewTimer(ctx Context, d time.Duration) Future {
 // Sleep() returns nil if the duration d is passed, or *CanceledError if the ctx is canceled. There are two
 // reasons the ctx might be canceled: 1) your workflow code canceled the ctx (with workflow.WithCancel(ctx));
 // 2) your workflow itself was canceled by external request.
+//
+// To be able to set options like timer summary, use [NewTimerWithOptions] and wait on the future.
 func Sleep(ctx Context, d time.Duration) (err error) {
 	return internal.Sleep(ctx, d)
 }

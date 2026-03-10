@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -34,6 +10,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/sdk/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/util"
@@ -78,8 +55,9 @@ type (
 
 	activityCommandStateMachine struct {
 		*commandStateMachineBase
-		scheduleID int64
-		attributes *commandpb.ScheduleActivityTaskCommandAttributes
+		scheduleID    int64
+		attributes    *commandpb.ScheduleActivityTaskCommandAttributes
+		startMetadata *sdk.UserMetadata
 	}
 
 	cancelActivityStateMachine struct {
@@ -89,7 +67,8 @@ type (
 
 	timerCommandStateMachine struct {
 		*commandStateMachineBase
-		attributes *commandpb.StartTimerCommandAttributes
+		attributes    *commandpb.StartTimerCommandAttributes
+		startMetadata *sdk.UserMetadata
 	}
 
 	cancelTimerCommandStateMachine struct {
@@ -99,7 +78,8 @@ type (
 
 	childWorkflowCommandStateMachine struct {
 		*commandStateMachineBase
-		attributes *commandpb.StartChildWorkflowExecutionCommandAttributes
+		attributes    *commandpb.StartChildWorkflowExecutionCommandAttributes
+		startMetadata *sdk.UserMetadata
 	}
 
 	naiveCommandStateMachine struct {
@@ -132,6 +112,37 @@ type (
 		*naiveCommandStateMachine
 	}
 
+	// nexusOperationStateMachine is the state machine for the NexusOperation lifecycle.
+	// It may never transition to the started state if the operation completes synchronously.
+	// Valid transitions:
+	// commandStateCreated -> commandStateCommandSent
+	// commandStateCommandSent - (NexusOperationScheduled) -> commandStateInitiated
+	// commandStateInitiated - (NexusOperationStarted) -> commandStateStarted
+	// commandStateInitiated - (NexusOperation(Completed|Failed|Canceled|TimedOut)) -> commandStateCompleted
+	// commandStateStarted - (NexusOperation(Completed|Failed|Canceled|TimedOut)) -> commandStateCompleted
+	nexusOperationStateMachine struct {
+		*commandStateMachineBase
+		// Unique sequence number for identifying this machine SDK side.
+		seq int64
+		// Event ID of the NexusOperationScheduled event for correlating progress events with this machine.
+		scheduledEventID int64
+		attributes       *commandpb.ScheduleNexusOperationCommandAttributes
+		// Instead of tracking cancelation as a state, we track it as a separate dimension with the request-cancel state
+		// machine.
+		cancelation   *requestCancelNexusOperationStateMachine
+		startMetadata *sdk.UserMetadata
+	}
+
+	// requestCancelNexusOperationStateMachine is the state machine for the RequestCancelNexusOperation command.
+	// Valid transitions:
+	// commandStateCreated -> commandStateCommandSent
+	// commandStateCommandSent - (NexusOperationCancelRequested) -> commandStateInitiated
+	// commandStateInitiated - (NexusOperationCancelRequest(Completed|Failed)) -> commandStateCompleted
+	requestCancelNexusOperationStateMachine struct {
+		*commandStateMachineBase
+		attributes *commandpb.RequestCancelNexusOperationCommandAttributes
+	}
+
 	versionMarker struct {
 		changeID          string
 		searchAttrUpdated bool
@@ -146,6 +157,15 @@ type (
 		scheduledEventIDToCancellationID map[int64]string
 		scheduledEventIDToSignalID       map[int64]string
 		versionMarkerLookup              map[int64]versionMarker
+
+		// A mapping of scheduled event ID to a sequence.
+		scheduledEventIDToNexusSeq map[int64]int64
+		// A list containing all nexus operation machines that have not yet been assigned a scheduled event ID.
+		// Every new operation state machine is added to this list on creation and deleted once the scheduled event is
+		// seen or the operation was deleted before sending the command.
+		// This mechanism is based on Core SDK
+		// (https://github.com/temporalio/sdk-core/blob/16c7a33dc1aec8fafb33c9ad6f77569a3dacc8ea/core/src/worker/workflow/machines/workflow_machines.rs#L837).
+		nexusOperationsWithoutScheduledID *list.List
 	}
 
 	// panic when command or message state machine is in illegal state
@@ -176,20 +196,22 @@ const (
 )
 
 const (
-	commandTypeActivity                  commandType = 0
-	commandTypeChildWorkflow             commandType = 1
-	commandTypeCancellation              commandType = 2
-	commandTypeMarker                    commandType = 3
-	commandTypeTimer                     commandType = 4
-	commandTypeSignal                    commandType = 5
-	commandTypeUpsertSearchAttributes    commandType = 6
-	commandTypeCancelTimer               commandType = 7
-	commandTypeRequestCancelActivityTask commandType = 8
-	commandTypeAcceptWorkflowUpdate      commandType = 9
-	commandTypeCompleteWorkflowUpdate    commandType = 10
-	commandTypeModifyProperties          commandType = 11
-	commandTypeRejectWorkflowUpdate      commandType = 12
-	commandTypeProtocolMessage           commandType = 13
+	commandTypeActivity                    commandType = 0
+	commandTypeChildWorkflow               commandType = 1
+	commandTypeCancellation                commandType = 2
+	commandTypeMarker                      commandType = 3
+	commandTypeTimer                       commandType = 4
+	commandTypeSignal                      commandType = 5
+	commandTypeUpsertSearchAttributes      commandType = 6
+	commandTypeCancelTimer                 commandType = 7
+	commandTypeRequestCancelActivityTask   commandType = 8
+	commandTypeAcceptWorkflowUpdate        commandType = 9
+	commandTypeCompleteWorkflowUpdate      commandType = 10
+	commandTypeModifyProperties            commandType = 11
+	commandTypeRejectWorkflowUpdate        commandType = 12
+	commandTypeProtocolMessage             commandType = 13
+	commandTypeNexusOperation              commandType = 14
+	commandTypeRequestCancelNexusOperation commandType = 15
 )
 
 const (
@@ -276,6 +298,10 @@ func (d commandType) String() string {
 		return "CompleteWorkflowUpdate"
 	case commandTypeRejectWorkflowUpdate:
 		return "RejectWorkflowUpdate"
+	case commandTypeNexusOperation:
+		return "NexusOperation"
+	case commandTypeRequestCancelNexusOperation:
+		return "RequestCancelNexusOperation"
 	default:
 		return "Unknown"
 	}
@@ -301,12 +327,14 @@ func (h *commandsHelper) newCommandStateMachineBase(commandType commandType, id 
 func (h *commandsHelper) newActivityCommandStateMachine(
 	scheduleID int64,
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
+	startMetadata *sdk.UserMetadata,
 ) *activityCommandStateMachine {
 	base := h.newCommandStateMachineBase(commandTypeActivity, attributes.GetActivityId())
 	return &activityCommandStateMachine{
 		commandStateMachineBase: base,
 		scheduleID:              scheduleID,
 		attributes:              attributes,
+		startMetadata:           startMetadata,
 	}
 }
 
@@ -318,11 +346,40 @@ func (h *commandsHelper) newCancelActivityStateMachine(attributes *commandpb.Req
 	}
 }
 
-func (h *commandsHelper) newTimerCommandStateMachine(attributes *commandpb.StartTimerCommandAttributes) *timerCommandStateMachine {
+func (h *commandsHelper) newNexusOperationStateMachine(
+	seq int64,
+	attributes *commandpb.ScheduleNexusOperationCommandAttributes,
+	startMetadata *sdk.UserMetadata,
+) *nexusOperationStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeNexusOperation, strconv.FormatInt(seq, 10))
+	sm := &nexusOperationStateMachine{
+		commandStateMachineBase: base,
+		attributes:              attributes,
+		seq:                     seq,
+		// scheduledEventID will be assigned by the server when the corresponding event comes in.
+		startMetadata: startMetadata,
+	}
+	h.nexusOperationsWithoutScheduledID.PushBack(sm)
+	return sm
+}
+
+func (h *commandsHelper) newRequestCancelNexusOperationStateMachine(attributes *commandpb.RequestCancelNexusOperationCommandAttributes) *requestCancelNexusOperationStateMachine {
+	base := h.newCommandStateMachineBase(commandTypeRequestCancelNexusOperation, strconv.FormatInt(attributes.GetScheduledEventId(), 10))
+	return &requestCancelNexusOperationStateMachine{
+		commandStateMachineBase: base,
+		attributes:              attributes,
+	}
+}
+
+func (h *commandsHelper) newTimerCommandStateMachine(
+	attributes *commandpb.StartTimerCommandAttributes,
+	startMetadata *sdk.UserMetadata,
+) *timerCommandStateMachine {
 	base := h.newCommandStateMachineBase(commandTypeTimer, attributes.GetTimerId())
 	return &timerCommandStateMachine{
 		commandStateMachineBase: base,
 		attributes:              attributes,
+		startMetadata:           startMetadata,
 	}
 }
 
@@ -334,11 +391,15 @@ func (h *commandsHelper) newCancelTimerCommandStateMachine(attributes *commandpb
 	}
 }
 
-func (h *commandsHelper) newChildWorkflowCommandStateMachine(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) *childWorkflowCommandStateMachine {
+func (h *commandsHelper) newChildWorkflowCommandStateMachine(
+	attributes *commandpb.StartChildWorkflowExecutionCommandAttributes,
+	startMetadata *sdk.UserMetadata,
+) *childWorkflowCommandStateMachine {
 	base := h.newCommandStateMachineBase(commandTypeChildWorkflow, attributes.GetWorkflowId())
 	return &childWorkflowCommandStateMachine{
 		commandStateMachineBase: base,
 		attributes:              attributes,
+		startMetadata:           startMetadata,
 	}
 }
 
@@ -350,8 +411,8 @@ func (h *commandsHelper) newNaiveCommandStateMachine(commandType commandType, id
 	}
 }
 
-func (h *commandsHelper) newMarkerCommandStateMachine(id string, attributes *commandpb.RecordMarkerCommandAttributes) *markerCommandStateMachine {
-	d := createNewCommand(enumspb.COMMAND_TYPE_RECORD_MARKER)
+func (h *commandsHelper) newMarkerCommandStateMachine(id string, attributes *commandpb.RecordMarkerCommandAttributes, userMetadata *sdk.UserMetadata) *markerCommandStateMachine {
+	d := createNewCommandWithMetadata(enumspb.COMMAND_TYPE_RECORD_MARKER, userMetadata)
 	d.Attributes = &commandpb.Command_RecordMarkerCommandAttributes{RecordMarkerCommandAttributes: attributes}
 	return &markerCommandStateMachine{
 		naiveCommandStateMachine: h.newNaiveCommandStateMachine(commandTypeMarker, id, d),
@@ -540,6 +601,7 @@ func (d *activityCommandStateMachine) getCommand() *commandpb.Command {
 	case commandStateCreated, commandStateCanceledBeforeSent:
 		command := createNewCommand(enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK)
 		command.Attributes = &commandpb.Command_ScheduleActivityTaskCommandAttributes{ScheduleActivityTaskCommandAttributes: d.attributes}
+		command.UserMetadata = d.startMetadata
 		return command
 	default:
 		return nil
@@ -625,6 +687,7 @@ func (d *timerCommandStateMachine) getCommand() *commandpb.Command {
 	case commandStateCreated, commandStateCanceledBeforeSent:
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_TIMER)
 		command.Attributes = &commandpb.Command_StartTimerCommandAttributes{StartTimerCommandAttributes: d.attributes}
+		command.UserMetadata = d.startMetadata
 		return command
 	default:
 		return nil
@@ -647,6 +710,7 @@ func (d *childWorkflowCommandStateMachine) getCommand() *commandpb.Command {
 	case commandStateCreated:
 		command := createNewCommand(enumspb.COMMAND_TYPE_START_CHILD_WORKFLOW_EXECUTION)
 		command.Attributes = &commandpb.Command_StartChildWorkflowExecutionCommandAttributes{StartChildWorkflowExecutionCommandAttributes: d.attributes}
+		command.UserMetadata = d.startMetadata
 		return command
 	case commandStateCanceledAfterStarted:
 		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_EXTERNAL_WORKFLOW_EXECUTION)
@@ -853,15 +917,98 @@ func (d *modifyPropertiesCommandStateMachine) handleCommandSent() {
 	}
 }
 
+func (sm *nexusOperationStateMachine) getCommand() *commandpb.Command {
+	if sm.state == commandStateCreated && sm.cancelation == nil {
+		// Only create the command in this state unlike other machines that also create it if canceled before sent.
+		return &commandpb.Command{
+			CommandType:  enumspb.COMMAND_TYPE_SCHEDULE_NEXUS_OPERATION,
+			UserMetadata: sm.startMetadata,
+			Attributes: &commandpb.Command_ScheduleNexusOperationCommandAttributes{
+				ScheduleNexusOperationCommandAttributes: sm.attributes,
+			},
+		}
+	}
+	return nil
+}
+
+func (sm *nexusOperationStateMachine) handleStartedEvent() {
+	switch sm.state {
+	case commandStateInitiated:
+		sm.moveState(commandStateStarted, eventStarted)
+	default:
+		sm.failStateTransition(eventStarted)
+	}
+}
+
+func (sm *nexusOperationStateMachine) handleCompletionEvent() {
+	switch sm.state {
+	case commandStateInitiated,
+		commandStateStarted:
+		sm.moveState(commandStateCompleted, eventCompletion)
+	default:
+		sm.failStateTransition(eventCompletion)
+	}
+}
+
+func (sm *nexusOperationStateMachine) cancel() {
+	// Already canceled or already completed.
+	if sm.cancelation != nil || sm.state == commandStateCompleted {
+		return
+	}
+
+	attribs := &commandpb.RequestCancelNexusOperationCommandAttributes{
+		ScheduledEventId: sm.scheduledEventID,
+	}
+	cancelCmd := sm.helper.newRequestCancelNexusOperationStateMachine(attribs)
+	sm.cancelation = cancelCmd
+	sm.helper.addCommand(cancelCmd)
+
+	// No need to actually send the cancelation, mark the state machine as completed.
+	if sm.state == commandStateCreated {
+		cancelCmd.handleCompletionEvent()
+	}
+}
+
+func (d *requestCancelNexusOperationStateMachine) getCommand() *commandpb.Command {
+	switch d.state {
+	case commandStateCreated:
+		command := createNewCommand(enumspb.COMMAND_TYPE_REQUEST_CANCEL_NEXUS_OPERATION)
+		command.Attributes = &commandpb.Command_RequestCancelNexusOperationCommandAttributes{RequestCancelNexusOperationCommandAttributes: d.attributes}
+		return command
+	default:
+		return nil
+	}
+}
+
+func (d *requestCancelNexusOperationStateMachine) handleInitiatedEvent() {
+	switch d.state {
+	case commandStateCommandSent:
+		d.moveState(commandStateInitiated, eventInitiated)
+	default:
+		d.failStateTransition(eventInitiated)
+	}
+}
+
+func (d *requestCancelNexusOperationStateMachine) handleCompletionEvent() {
+	switch d.state {
+	case commandStateCreated, commandStateInitiated:
+		d.moveState(commandStateCompleted, eventCompletion)
+	default:
+		d.failStateTransition(eventCompletion)
+	}
+}
+
 func newCommandsHelper() *commandsHelper {
 	return &commandsHelper{
 		orderedCommands: list.New(),
 		commands:        make(map[commandID]*list.Element),
 
-		scheduledEventIDToActivityID:     make(map[int64]string),
-		scheduledEventIDToCancellationID: make(map[int64]string),
-		scheduledEventIDToSignalID:       make(map[int64]string),
-		versionMarkerLookup:              make(map[int64]versionMarker),
+		scheduledEventIDToActivityID:      make(map[int64]string),
+		scheduledEventIDToCancellationID:  make(map[int64]string),
+		scheduledEventIDToSignalID:        make(map[int64]string),
+		versionMarkerLookup:               make(map[int64]versionMarker),
+		scheduledEventIDToNexusSeq:        make(map[int64]int64),
+		nexusOperationsWithoutScheduledID: list.New(),
 	}
 }
 
@@ -918,8 +1065,9 @@ func (h *commandsHelper) incrementNextCommandEventIDIfVersionMarker() {
 func (h *commandsHelper) getCommand(id commandID) commandStateMachine {
 	command, ok := h.commands[id]
 	if !ok {
-		panicMsg := fmt.Sprintf("[TMPRL1100] unknown command %v, possible causes are nondeterministic workflow definition code"+
-			" or incompatible change in the workflow definition", id)
+		panicMsg := fmt.Sprintf(
+			"[TMPRL1100] During replay, a matching %v command was expected in history event position %s. However, the replayed code did not produce that. "+
+				"Possible causes are nondeterministic workflow definition code, or an incompatible change in the workflow definition.", id.commandType, id.id)
 		panicIllegalState(panicMsg)
 	}
 	return command.Value.(commandStateMachine)
@@ -966,9 +1114,10 @@ func (h *commandsHelper) moveCommandToBack(command commandStateMachine) {
 func (h *commandsHelper) scheduleActivityTask(
 	scheduleID int64,
 	attributes *commandpb.ScheduleActivityTaskCommandAttributes,
+	metadata *sdk.UserMetadata,
 ) commandStateMachine {
 	h.scheduledEventIDToActivityID[scheduleID] = attributes.GetActivityId()
-	command := h.newActivityCommandStateMachine(scheduleID, attributes)
+	command := h.newActivityCommandStateMachine(scheduleID, attributes, metadata)
 	h.addCommand(command)
 	return command
 }
@@ -1040,6 +1189,89 @@ func (h *commandsHelper) getActivityAndScheduledEventIDs(event *historypb.Histor
 	return activityID, scheduledEventID
 }
 
+func (h *commandsHelper) scheduleNexusOperation(
+	seq int64,
+	attributes *commandpb.ScheduleNexusOperationCommandAttributes,
+	startMetadata *sdk.UserMetadata,
+) *nexusOperationStateMachine {
+	command := h.newNexusOperationStateMachine(seq, attributes, startMetadata)
+	h.addCommand(command)
+	return command
+}
+
+func (h *commandsHelper) handleNexusOperationScheduled(event *historypb.HistoryEvent) {
+	elem := h.nexusOperationsWithoutScheduledID.Front()
+	if elem == nil {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event: %v", util.HistoryEventToString(event)))
+	}
+	command := h.nexusOperationsWithoutScheduledID.Remove(elem).(*nexusOperationStateMachine)
+
+	command.scheduledEventID = event.EventId
+	h.scheduledEventIDToNexusSeq[event.EventId] = command.seq
+	command.handleInitiatedEvent()
+}
+
+func (h *commandsHelper) handleNexusOperationStarted(scheduledEventID int64) commandStateMachine {
+	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+	}
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command.handleStartedEvent()
+	return command
+}
+
+func (h *commandsHelper) handleNexusOperationCompleted(scheduledEventID int64) commandStateMachine {
+	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+	}
+	// We don't need this anymore, the state will not transition after completion.
+	delete(h.scheduledEventIDToNexusSeq, scheduledEventID)
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command.handleCompletionEvent()
+	return command
+}
+
+func (h *commandsHelper) handleNexusOperationCancelRequested(scheduledEventID int64) commandStateMachine {
+	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+	}
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	sm := command.(*nexusOperationStateMachine)
+	sm.cancelation.handleInitiatedEvent()
+	return command
+}
+
+func (h *commandsHelper) handleNexusOperationCancelRequestDelivered(scheduledEventID int64) commandStateMachine {
+	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
+	if !ok {
+		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
+	}
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	sm := command.(*nexusOperationStateMachine)
+	sm.cancelation.handleCompletionEvent()
+	return command
+}
+
+func (h *commandsHelper) requestCancelNexusOperation(seq int64) commandStateMachine {
+	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command.cancel()
+	// If we haven't sent the command yet, ensure that it doesn't get mapped to the wrong scheduledEventID.
+	if command.getState() != commandStateCanceledBeforeSent {
+		return command
+	}
+	for elem := h.nexusOperationsWithoutScheduledID.Front(); elem != nil; elem = elem.Next() {
+		sm := elem.Value.(*nexusOperationStateMachine)
+		if sm.seq == seq {
+			h.nexusOperationsWithoutScheduledID.Remove(elem)
+			break
+		}
+	}
+	return command
+}
+
 func (h *commandsHelper) recordVersionMarker(changeID string, version Version, dc converter.DataConverter, searchAttributeWasUpdated bool) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", versionMarkerName, changeID)
 
@@ -1069,7 +1301,7 @@ func (h *commandsHelper) recordVersionMarker(changeID string, version Version, d
 		recordMarker.Details[versionSearchAttributeUpdatedName] = searchAttributeWasUpdatedPayload
 	}
 
-	command := h.newMarkerCommandStateMachine(markerID, recordMarker)
+	command := h.newMarkerCommandStateMachine(markerID, recordMarker, nil)
 	h.addCommand(command)
 	return command
 }
@@ -1090,7 +1322,7 @@ func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string, sea
 	}
 }
 
-func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
+func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter, userMetadata *sdk.UserMetadata) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)
 	sideEffectIDPayload, err := dc.ToPayloads(sideEffectID)
 	if err != nil {
@@ -1104,19 +1336,19 @@ func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *common
 			sideEffectMarkerDataName: data,
 		},
 	}
-	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	command := h.newMarkerCommandStateMachine(markerID, attributes, userMetadata)
 	h.addCommand(command)
 	return command
 }
 
-func (h *commandsHelper) recordLocalActivityMarker(activityID string, details map[string]*commonpb.Payloads, failure *failurepb.Failure) commandStateMachine {
+func (h *commandsHelper) recordLocalActivityMarker(activityID string, details map[string]*commonpb.Payloads, failure *failurepb.Failure, metadata *sdk.UserMetadata) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", localActivityMarkerName, activityID)
 	attributes := &commandpb.RecordMarkerCommandAttributes{
 		MarkerName: localActivityMarkerName,
 		Failure:    failure,
 		Details:    details,
 	}
-	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	command := h.newMarkerCommandStateMachine(markerID, attributes, metadata)
 	// LocalActivity marker is added only when it completes and schedule logic never relies on GenerateSequence to
 	// create a unique activity id like in the case of ExecuteActivity.  This causes the problem as we only perform
 	// the check to increment counter to account for GetVersion special handling as part of it.  This will result
@@ -1127,7 +1359,7 @@ func (h *commandsHelper) recordLocalActivityMarker(activityID string, details ma
 	return command
 }
 
-func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, callCountHint int, data *commonpb.Payloads, dc converter.DataConverter) commandStateMachine {
+func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID string, callCountHint int, data *commonpb.Payloads, dc converter.DataConverter, userMetadata *sdk.UserMetadata) commandStateMachine {
 	// In order to avoid duplicate marker IDs, we must append the counter to the
 	// user-provided ID
 	mutableSideEffectID = fmt.Sprintf("%v_%v", mutableSideEffectID, h.getNextID())
@@ -1151,7 +1383,7 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 			mutableSideEffectCallCounterName: mutableSideEffectCounterPayload,
 		},
 	}
-	command := h.newMarkerCommandStateMachine(markerID, attributes)
+	command := h.newMarkerCommandStateMachine(markerID, attributes, userMetadata)
 	h.addCommand(command)
 	return command
 }
@@ -1161,8 +1393,11 @@ func (h *commandsHelper) recordMutableSideEffectMarker(mutableSideEffectID strin
 // to server, and have it reject it - but here the command ID is exactly equal to the child's wf ID,
 // and changing that without potentially blowing up backwards compatability is difficult. So we
 // return the error eagerly locally, which is at least an improvement on panicking.
-func (h *commandsHelper) startChildWorkflowExecution(attributes *commandpb.StartChildWorkflowExecutionCommandAttributes) (commandStateMachine, error) {
-	command := h.newChildWorkflowCommandStateMachine(attributes)
+func (h *commandsHelper) startChildWorkflowExecution(
+	attributes *commandpb.StartChildWorkflowExecutionCommandAttributes,
+	startMetadata *sdk.UserMetadata,
+) (commandStateMachine, error) {
+	command := h.newChildWorkflowCommandStateMachine(attributes, startMetadata)
 	if h.commands[command.getID()] != nil {
 		return nil, &childWorkflowExistsWithId{id: attributes.WorkflowId}
 	}
@@ -1352,8 +1587,16 @@ func (h *commandsHelper) getSignalID(initiatedEventID int64) string {
 	return signalID
 }
 
-func (h *commandsHelper) startTimer(attributes *commandpb.StartTimerCommandAttributes) commandStateMachine {
-	command := h.newTimerCommandStateMachine(attributes)
+func (h *commandsHelper) startTimer(
+	attributes *commandpb.StartTimerCommandAttributes,
+	options TimerOptions,
+	dc converter.DataConverter,
+) commandStateMachine {
+	startMetadata, err := buildUserMetadata(options.Summary, "", dc)
+	if err != nil {
+		panic(err)
+	}
+	command := h.newTimerCommandStateMachine(attributes, startMetadata)
 	h.addCommand(command)
 	return command
 }

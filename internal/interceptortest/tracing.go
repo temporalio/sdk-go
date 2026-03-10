@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2021 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package interceptortest
 
 import (
@@ -29,15 +7,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
 
 var testWorkflowStartTime = time.Date(1969, 7, 20, 20, 17, 0, 0, time.UTC)
+
+type testUpdateCallbacks struct {
+	AcceptImpl   func()
+	RejectImpl   func(err error)
+	CompleteImpl func(success interface{}, err error)
+}
+
+// Accept implements internal.UpdateCallbacks.
+func (t *testUpdateCallbacks) Accept() {
+}
+
+// Complete implements internal.UpdateCallbacks.
+func (t *testUpdateCallbacks) Complete(success interface{}, err error) {
+}
+
+// Reject implements internal.UpdateCallbacks.
+func (t *testUpdateCallbacks) Reject(err error) {
+}
 
 // TestTracer is an interceptor.Tracer that returns finished spans.
 type TestTracer interface {
@@ -65,6 +65,15 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 	env.RegisterActivity(testActivityLocal)
 	env.RegisterWorkflow(testWorkflow)
 	env.RegisterWorkflow(testWorkflowChild)
+	env.RegisterWorkflow(testWaitForCancelWorkflow)
+	op := temporalnexus.NewWorkflowRunOperation("op", testWaitForCancelWorkflow, func(ctx context.Context, input nexus.NoValue, options nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+		return client.StartWorkflowOptions{
+			ID: options.RequestID,
+		}, nil
+	})
+	service := nexus.NewService("test")
+	service.MustRegister(op)
+	env.RegisterNexusService(service)
 
 	// Set tracer interceptor
 	env.SetWorkerOptions(worker.Options{
@@ -72,6 +81,18 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 	})
 
 	env.SetStartTime(testWorkflowStartTime)
+
+	// Send an update
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow("testUpdate", "updateID", &testUpdateCallbacks{
+			RejectImpl: func(err error) {
+			},
+			AcceptImpl: func() {
+			},
+			CompleteImpl: func(interface{}, error) {
+			},
+		})
+	}, 0*time.Second)
 
 	// Exec
 	env.ExecuteWorkflow(testWorkflow)
@@ -81,7 +102,7 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 	require.NoError(t, env.GetWorkflowError())
 	var result []string
 	require.NoError(t, env.GetWorkflowResult(&result))
-	require.Equal(t, []string{"work", "act", "act-local", "work-child", "act", "act-local"}, result)
+	require.Equal(t, []string{"work", "act", "act-local", "work-child", "act", "act-local", "nexus-op"}, result)
 
 	// Query workflow
 	val, err := env.QueryWorkflow("my-query", nil)
@@ -115,6 +136,14 @@ func RunTestWorkflowWithError(t *testing.T, tracer interceptor.Tracer) {
 func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 
 	require.Equal(t, []*SpanInfo{
+		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "ValidateUpdate", Name: "testUpdate"})),
+		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleUpdate", Name: "testUpdate"}),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivityLocal"})))),
+		// This is the workflow that gets started from the nexus workflow run operation.
+		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWaitForCancelWorkflow"})),
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunWorkflow", Name: "testWorkflow"}),
 			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
 				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivity"}))),
@@ -127,7 +156,11 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 					Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivityLocal"}),
 						Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunActivity", Name: "testActivityLocal"}))))),
 			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "SignalChildWorkflow", Name: "my-signal"}),
-				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleSignal", Name: "my-signal"})))),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleSignal", Name: "my-signal"}))),
+			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartNexusOperation", Name: "test/op"}),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunStartNexusOperationHandler", Name: "test/op"})),
+				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunCancelNexusOperationHandler", Name: "test/op"})),
+			)),
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleQuery", Name: "my-query"})),
 	}, tracer.FinishedSpans())
 }
@@ -137,6 +170,22 @@ func testWorkflowWithError(_ workflow.Context) error {
 }
 
 func testWorkflow(ctx workflow.Context) ([]string, error) {
+	var updateRan bool
+	err := workflow.SetUpdateHandler(ctx, "testUpdate", func(ctx workflow.Context) (string, error) {
+		defer func() { updateRan = true }()
+		_, err := workflowInternal(ctx, false)
+		if err != nil {
+			return "", err
+		}
+		return "updateID", nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	err = workflow.Await(ctx, func() bool { return updateRan })
+	if err != nil {
+		return nil, err
+	}
 	// Run code
 	ret, err := workflowInternal(ctx, false)
 	if err != nil {
@@ -157,7 +206,25 @@ func testWorkflow(ctx workflow.Context) ([]string, error) {
 		ret = append(ret, temp...)
 	}
 
+	nc := workflow.NewNexusClient("test-endpoint", "test")
+	opCtx, cancel := workflow.WithCancel(ctx)
+	defer cancel()
+	fut := nc.ExecuteOperation(opCtx, "op", nil, workflow.NexusOperationOptions{})
+	if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
+		return nil, fmt.Errorf("failed starting nexus operation: %w", err)
+	}
+
+	cancel()
+	if err := fut.Get(ctx, nil); err == nil || !errors.As(err, new(*temporal.CanceledError)) {
+		return nil, fmt.Errorf("expected nexus operation to fail with a canceled error, got: %w", err)
+	}
+	ret = append(ret, "nexus-op")
+
 	return append([]string{"work"}, ret...), nil
+}
+
+func testWaitForCancelWorkflow(ctx workflow.Context, input nexus.NoValue) (nexus.NoValue, error) {
+	return nil, workflow.Await(ctx, func() bool { return false })
 }
 
 func testWorkflowChild(ctx workflow.Context) (ret []string, err error) {

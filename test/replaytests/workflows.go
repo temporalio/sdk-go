@@ -1,36 +1,17 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package replaytests
 
 import (
 	"context"
 	"fmt"
+	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"math/rand"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nexus-rpc/sdk-go/nexus"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/temporalnexus"
 
 	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -409,7 +390,7 @@ func VersionAndMutableSideEffectWorkflow(ctx workflow.Context, name string) (str
 	v := workflow.GetVersion(ctx, "mutable-side-effect-bug", workflow.DefaultVersion, 1)
 	if v == 1 {
 		var err error
-		uid, err = generateUUID(ctx)
+		uid, err = generateUUID(ctx, "generate-random-uuid")
 		if err != nil {
 			logger.Error("failed to generated uuid", "Error", err)
 			return "", err
@@ -432,10 +413,10 @@ func VersionAndMutableSideEffectWorkflow(ctx workflow.Context, name string) (str
 	return uid, nil
 }
 
-func generateUUID(ctx workflow.Context) (string, error) {
+func generateUUID(ctx workflow.Context, sideEffectID string) (string, error) {
 	var generatedUUID string
 
-	err := workflow.MutableSideEffect(ctx, "generate-random-uuid", func(ctx workflow.Context) interface{} {
+	err := workflow.MutableSideEffect(ctx, sideEffectID, func(ctx workflow.Context) interface{} {
 		return uuid.NewString()
 	}, func(a, b interface{}) bool {
 		return a.(string) == b.(string)
@@ -609,4 +590,363 @@ func ListAndDescribeWorkflow(ctx workflow.Context) (int, error) {
 		}
 	}
 	return len(result.Executions), nil
+}
+
+func SelectorBlockingDefaultWorkflow(ctx workflow.Context) error {
+	logger := workflow.GetLogger(ctx)
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Second,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+
+	ch1 := workflow.NewChannel(ctx)
+	ch2 := workflow.NewChannel(ctx)
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		ch1.Send(ctx, "one")
+
+	})
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		ch2.Send(ctx, "two")
+	})
+
+	selector := workflow.NewSelector(ctx)
+	var s string
+	selector.AddReceive(ch1, func(c workflow.ReceiveChannel, more bool) {
+		c.Receive(ctx, &s)
+	})
+	selector.AddDefault(func() {
+		ch2.Receive(ctx, &s)
+	})
+	selector.Select(ctx)
+	if selector.HasPending() {
+		var result string
+		activity := workflow.ExecuteActivity(ctx, SelectorBlockingDefaultActivity, "Signal not lost")
+		activity.Get(ctx, &result)
+		logger.Info("Result", result)
+	} else {
+		logger.Info("Signal in ch1 lost")
+		return nil
+	}
+	return nil
+}
+
+func SelectorBlockingDefaultActivity(ctx context.Context, value string) (string, error) {
+	logger := activity.GetLogger(ctx)
+	logger.Info("Activity", "value", value)
+	return value + " was logged!", nil
+}
+
+func TripWorkflow(ctx workflow.Context, tripCounter int) error {
+	logger := workflow.GetLogger(ctx)
+	workflowID := workflow.GetInfo(ctx).WorkflowExecution.ID
+	logger.Info("Trip Workflow Started for User.",
+		"User", workflowID,
+		"TripCounter", tripCounter)
+
+	// TripCh to wait on trip completed event signals
+	tripCh := workflow.GetSignalChannel(ctx, "trip_event")
+	for i := 0; i < 10; i++ {
+		var trip int
+		tripCh.Receive(ctx, &trip)
+		logger.Info("Trip complete event received.", "Total", trip)
+		tripCounter++
+	}
+
+	logger.Info("Starting a new run.", "TripCounter", tripCounter)
+	return workflow.NewContinueAsNewError(ctx, "TripWorkflow", tripCounter)
+}
+
+// TestWorkflowWithChild is a test workflow that executes a child workflow and returns the result from it.
+func ResetWorkflowWithChild(ctx workflow.Context) (string, error) {
+	logger := workflow.GetLogger(ctx)
+
+	logger.Info("Starting workflow with child...")
+	cwo := workflow.ChildWorkflowOptions{
+		ParentClosePolicy:     enums.PARENT_CLOSE_POLICY_TERMINATE,
+		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+	}
+	ctx = workflow.WithChildOptions(ctx, cwo)
+	child := workflow.ExecuteChildWorkflow(ctx, "TestChildWorkflow", "CHILD INPUT")
+
+	var result string
+	if err := child.Get(ctx, &result); err != nil {
+		logger.Error("Child execution failed: " + err.Error())
+		return "", err
+	}
+
+	logger.Info("Child execution completed with result: " + result)
+	return result, nil
+}
+
+func NexusCancelHandlerWorkflow(ctx workflow.Context, action string) (nexus.NoValue, error) {
+	if action == "succeed" {
+		return nil, nil
+	}
+	return nil, workflow.Await(ctx, func() bool { return false })
+}
+
+var CancelOp = temporalnexus.NewWorkflowRunOperation(
+	"wait-on-signal-op",
+	NexusCancelHandlerWorkflow,
+	func(ctx context.Context, action string, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+		if action == "delay-start" {
+			time.Sleep(1 * time.Second)
+		}
+		return client.StartWorkflowOptions{
+			ID: "nexus-handler-wait-for-cancel",
+		}, nil
+	},
+)
+
+func CancelNexusOperationBeforeSentWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.NewDisconnectedContext(ctx)
+	cancel()
+	op := nc.ExecuteOperation(opCtx, CancelOp, "fail-to-send", workflow.NexusOperationOptions{})
+	_ = op.Get(ctx, nil)
+	return generateUUID(ctx, "nxs-cancel-before-sent-id")
+}
+
+func CancelNexusOperationBeforeStartWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.NewDisconnectedContext(ctx)
+	op := nc.ExecuteOperation(opCtx, CancelOp, "delay-start", workflow.NexusOperationOptions{})
+	if err := workflow.Sleep(ctx, 200*time.Millisecond); err != nil {
+		// Wait for scheduled event to be recorded
+		return "", err
+	}
+	cancel()
+	_ = op.Get(ctx, nil)
+	return generateUUID(ctx, "nxs-cancel-before-start-id")
+}
+
+func CancelNexusOperationAfterStartWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.WithCancel(ctx)
+	op := nc.ExecuteOperation(opCtx, CancelOp, "wait-for-cancel", workflow.NexusOperationOptions{})
+	if err := op.GetNexusOperationExecution().Get(opCtx, nil); err != nil {
+		return "", err
+	}
+	cancel()
+	_ = op.Get(ctx, nil)
+	return generateUUID(ctx, "nxs-cancel-after-start-id")
+}
+
+func CancelNexusOperationAfterCompleteWorkflow(ctx workflow.Context) (string, error) {
+	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
+	opCtx, cancel := workflow.WithCancel(ctx)
+	op := nc.ExecuteOperation(opCtx, CancelOp, "succeed", workflow.NexusOperationOptions{})
+	_ = op.Get(opCtx, nil)
+	cancel()
+	return generateUUID(ctx, "nxs-cancel-after-complete-id")
+}
+
+// AwaitWithTimeoutNoTimerCancelWorkflow is used to test replay of old workflow histories
+// that were created before SDKFlagCancelAwaitTimerOnCondition was introduced.
+// In the old behavior, the timer is NOT cancelled when the condition becomes true.
+func AwaitWithTimeoutNoTimerCancelWorkflow(ctx workflow.Context) (bool, error) {
+	conditionMet := false
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		_ = workflow.Sleep(ctx, 100*time.Millisecond)
+		conditionMet = true
+	})
+
+	return workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return conditionMet
+	})
+}
+
+func MemoChildWorkflowGob(ctx workflow.Context, input string) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["test-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'test-memo-key' not found")
+	}
+
+	// Use strict gob converter - will fail if memo is JSON-encoded
+	var memoValue string
+	dc := iconverter.NewTestDataConverter()
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with gob converter: %w", err)
+	}
+
+	return fmt.Sprintf("child-read-memo: %s", memoValue), nil
+}
+
+func MemoEncodingWorkflowGob(ctx workflow.Context, memoValue string) (string, error) {
+	// Execute a child workflow with memo
+	cwo := workflow.ChildWorkflowOptions{
+		Memo: map[string]interface{}{
+			"test-memo-key": memoValue,
+		},
+	}
+	childCtx := workflow.WithChildOptions(ctx, cwo)
+
+	var childResult string
+	err := workflow.ExecuteChildWorkflow(childCtx, MemoChildWorkflowGob, memoValue).Get(ctx, &childResult)
+	if err != nil {
+		return "", err
+	}
+
+	// Also upsert memo in the parent workflow
+	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+		"parent-memo-key": "parent-" + memoValue,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	info := workflow.GetInfo(ctx)
+	memoPayload, ok := info.Memo.Fields["parent-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'parent-memo-key' not found")
+	}
+
+	// Use strict gob converter - will fail if memo is JSON-encoded
+	var parentMemoValue string
+	dc := iconverter.NewTestDataConverter()
+	err = dc.FromPayload(memoPayload, &parentMemoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with gob converter: %w", err)
+	}
+
+	return childResult, nil
+}
+
+func MemoChildWorkflowJSON(ctx workflow.Context) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["test-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'test-memo-key' not found")
+	}
+
+	// will fail if memo is gob-encoded
+	var memoValue string
+	dc := converter.NewJSONPayloadConverter()
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with JSON converter: %w", err)
+	}
+
+	return fmt.Sprintf("child-read-memo: %s", memoValue), nil
+}
+
+func MemoEncodingWorkflowJSON(ctx workflow.Context, memoValue string) (string, error) {
+	cwo := workflow.ChildWorkflowOptions{
+		Memo: map[string]interface{}{
+			"test-memo-key": memoValue,
+		},
+	}
+	childCtx := workflow.WithChildOptions(ctx, cwo)
+
+	var childResult string
+	err := workflow.ExecuteChildWorkflow(childCtx, MemoChildWorkflowJSON).Get(ctx, &childResult)
+	if err != nil {
+		return "", err
+	}
+
+	// Also upsert memo in the parent workflow
+	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+		"parent-memo-key": "parent-" + memoValue,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["parent-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'parent-memo-key' not found")
+	}
+
+	// will fail if memo is gob-encoded
+	var parentMemoValue string
+	dc := converter.NewJSONPayloadConverter()
+	err = dc.FromPayload(memoPayload, &parentMemoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with JSON converter: %w", err)
+	}
+
+	return childResult, nil
+}
+
+// ScheduleMemoWorkflowJSON is a workflow that validates memo passed from a schedule
+// can be decoded with JSON. This is used to test backward compatibility for
+// workflows started by schedules before the SDKFlagMemoUserDCEncode flag.
+func ScheduleMemoWorkflowJSON(ctx workflow.Context) (string, error) {
+	info := workflow.GetInfo(ctx)
+
+	memoPayload, ok := info.Memo.Fields["schedule-memo-key"]
+	if !ok {
+		return "", fmt.Errorf("memo key 'schedule-memo-key' not found")
+	}
+
+	// will fail if memo is gob-encoded
+	var memoValue string
+	dc := converter.NewJSONPayloadConverter()
+	err := dc.FromPayload(memoPayload, &memoValue)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode memo with JSON converter: %w", err)
+	}
+
+	return fmt.Sprintf("schedule-read-memo: %s", memoValue), nil
+}
+
+func ChannelWorkerWorkflow(ctx workflow.Context) error {
+	ch := workflow.NewChannel(ctx)
+	var received []string
+
+	workflow.Go(ctx, func(ctx workflow.Context) {
+		ch.Send(ctx, "item-1")
+		ch.Send(ctx, "item-2")
+		ch.Close()
+	})
+
+	wg := workflow.NewWaitGroup(ctx)
+	wg.Add(2)
+	for i := 0; i < 2; i++ {
+		workflow.Go(ctx, func(ctx workflow.Context) {
+			defer wg.Done()
+			for {
+				selector := workflow.NewSelector(ctx)
+				done := false
+				selector.AddReceive(ch, func(c workflow.ReceiveChannel, more bool) {
+					if more {
+						var v string
+						c.Receive(ctx, &v)
+						received = append(received, v)
+					} else {
+						done = true
+					}
+				})
+				selector.Select(ctx)
+				if done {
+					break
+				}
+			}
+		})
+	}
+
+	wg.Wait(ctx)
+
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Second,
+	}
+	ctx = workflow.WithActivityOptions(ctx, ao)
+	for _, item := range received {
+		if item == "" {
+			continue
+		}
+		if err := workflow.ExecuteActivity(ctx, helloworldActivity, item).Get(ctx, nil); err != nil {
+			return err
+		}
+	}
+	return nil
 }

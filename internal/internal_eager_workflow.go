@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -27,20 +5,33 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go.temporal.io/api/deployment/v1"
+	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 )
 
 // eagerWorkflowDispatcher is responsible for finding an available worker for an eager workflow task.
 type eagerWorkflowDispatcher struct {
 	lock               sync.RWMutex
-	workersByTaskQueue map[string][]eagerWorker
+	workersByTaskQueue map[string]map[eagerWorker]struct{}
 }
 
 // registerWorker registers a worker that can be used for eager workflow dispatch
 func (e *eagerWorkflowDispatcher) registerWorker(worker *workflowWorker) {
 	e.lock.Lock()
 	defer e.lock.Unlock()
-	e.workersByTaskQueue[worker.executionParameters.TaskQueue] = append(e.workersByTaskQueue[worker.executionParameters.TaskQueue], worker.worker)
+	taskQueue := worker.executionParameters.TaskQueue
+	if e.workersByTaskQueue[taskQueue] == nil {
+		e.workersByTaskQueue[taskQueue] = make(map[eagerWorker]struct{})
+	}
+	e.workersByTaskQueue[taskQueue][worker.worker] = struct{}{}
+}
+
+// deregisterWorker deregister a worker so that it will not be used for eager workflow dispatch
+func (e *eagerWorkflowDispatcher) deregisterWorker(worker *workflowWorker) {
+	e.lock.Lock()
+	defer e.lock.Unlock()
+	delete(e.workersByTaskQueue[worker.executionParameters.TaskQueue], worker.worker)
 }
 
 // applyToRequest updates request if eager workflow dispatch is possible and returns the eagerWorkflowExecutor to use
@@ -48,16 +39,33 @@ func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartW
 	// Try every worker that is assigned to the desired task queue.
 	e.lock.RLock()
 	workers := e.workersByTaskQueue[request.GetTaskQueue().Name]
-	randWorkers := make([]eagerWorker, len(workers))
-	// Copy the slice so we can release the lock.
-	copy(randWorkers, workers)
+	randWorkers := make([]eagerWorker, 0, len(workers))
+	// Copy the workers so we can release the lock.
+	for worker := range workers {
+		randWorkers = append(randWorkers, worker)
+	}
 	e.lock.RUnlock()
 	rand.Shuffle(len(randWorkers), func(i, j int) { randWorkers[i], randWorkers[j] = randWorkers[j], randWorkers[i] })
 	for _, worker := range randWorkers {
-		if worker.tryReserveSlot() {
+		maybePermit := worker.tryReserveSlot()
+		if maybePermit != nil {
 			request.RequestEagerExecution = true
+			// Attach deployment options if worker has deployment versioning enabled
+			deploymentOpts := worker.getDeploymentOptions()
+			if (deploymentOpts.Version != WorkerDeploymentVersion{}) {
+				wvMode := enums.WORKER_VERSIONING_MODE_UNVERSIONED
+				if deploymentOpts.UseVersioning {
+					wvMode = enums.WORKER_VERSIONING_MODE_VERSIONED
+				}
+				request.EagerWorkerDeploymentOptions = &deployment.WorkerDeploymentOptions{
+					DeploymentName:       deploymentOpts.Version.DeploymentName,
+					BuildId:              deploymentOpts.Version.BuildID,
+					WorkerVersioningMode: wvMode,
+				}
+			}
 			return &eagerWorkflowExecutor{
 				worker: worker,
+				permit: maybePermit,
 			}
 		}
 	}
@@ -68,6 +76,7 @@ func (e *eagerWorkflowDispatcher) applyToRequest(request *workflowservice.StartW
 type eagerWorkflowExecutor struct {
 	handledResponse atomic.Bool
 	worker          eagerWorker
+	permit          *SlotPermit
 }
 
 // handleResponse of an eager workflow task from a StartWorkflowExecution request.
@@ -81,20 +90,16 @@ func (e *eagerWorkflowExecutor) handleResponse(response *workflowservice.PollWor
 			task: &eagerWorkflowTask{
 				task: response,
 			},
-			// The processTaskAsync does not do this itself because our task is *eagerWorkflowTask, not *polledTask.
-			callback: e.worker.releaseSlot,
+			permit: e.permit,
 		})
 }
 
-// release the executor task slot this eagerWorkflowExecutor was holding.
-// If it is currently handling a responses or has already released the task slot
-// then do nothing.
-func (e *eagerWorkflowExecutor) release() {
+// releaseUnused should be called if the executor cannot be used because no eager task was received.
+// It will error if handleResponse was already called, as this would indicate misuse.
+func (e *eagerWorkflowExecutor) releaseUnused() {
 	if e.handledResponse.CompareAndSwap(false, true) {
-		// Assume there is room because it is reserved on creation, so we make a blocking send.
-		// The processTask does not do this itself because our task is not *polledTask.
-		e.worker.releaseSlot()
+		e.worker.releaseSlot(e.permit, SlotReleaseReasonUnused)
 	} else {
-		panic("trying to release an eagerWorkflowExecutor that has already been released")
+		panic("trying to release an eagerWorkflowExecutor that was used")
 	}
 }

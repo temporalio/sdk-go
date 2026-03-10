@@ -1,25 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2022 Temporal Technologies Inc.  All rights reserved.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package workflow
 
 import (
@@ -125,7 +103,7 @@ func (c *Checker) debugf(f string, v ...interface{}) {
 func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 	a := &analysis.Analyzer{
 		Name:      "workflowcheck",
-		Doc:       "Analyzes all RegisterWorkflow functions for non-determinism",
+		Doc:       "Analyzes all Workflow functions for non-determinism",
 		Run:       func(p *analysis.Pass) (interface{}, error) { return nil, c.Run(p) },
 		FactTypes: []analysis.Fact{&determinism.PackageNonDeterminisms{}, &determinism.NonDeterminisms{}},
 	}
@@ -197,17 +175,24 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 }
 
 // isWorkflowFunc checks if f has workflow.Context as a first parameter.
-func isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) bool {
+func isWorkflowFunc(f *ast.FuncDecl, pass *analysis.Pass) (b bool) {
 	if f.Type.Params == nil || len(f.Type.Params.List) == 0 {
 		return false
 	}
 	firstParam := f.Type.Params.List[0]
 	typeInfo := pass.TypesInfo.TypeOf(firstParam.Type)
 	named, _ := typeInfo.(*types.Named)
-	if named == nil {
+	alias, _ := typeInfo.(*types.Alias)
+	if named == nil && alias == nil {
 		return false
 	}
-	obj := named.Obj()
+	var obj *types.TypeName
+	if named != nil {
+		obj = named.Obj()
+	}
+	if alias != nil {
+		obj = alias.Obj()
+	}
 	if obj.Pkg() == nil || obj.Name() != "Context" {
 		return false
 	}

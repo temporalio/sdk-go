@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 // WARNING! WARNING! WARNING! WARNING! WARNING! WARNING! WARNING! WARNING! WARNING!
@@ -39,7 +15,7 @@ import (
 )
 
 type (
-	workflowTaskHeartbeatFunc func(response interface{}, startTime time.Time) (*workflowTask, error)
+	workflowTaskHeartbeatFunc func(taskCompletion *workflowTaskCompletion, startTime time.Time) (*workflowTask, error)
 
 	// HistoryIterator iterator through history events
 	HistoryIterator interface {
@@ -56,17 +32,17 @@ type (
 	WorkflowExecutionContext interface {
 		Lock()
 		Unlock(err error)
-		ProcessWorkflowTask(workflowTask *workflowTask) (completeRequest interface{}, err error)
-		ProcessLocalActivityResult(workflowTask *workflowTask, lar *localActivityResult) (interface{}, error)
+		ProcessWorkflowTask(workflowTask *workflowTask) (taskCompletion *workflowTaskCompletion, err error)
+		ProcessLocalActivityResult(workflowTask *workflowTask, lar *localActivityResult) (*workflowTaskCompletion, error)
 		// CompleteWorkflowTask try to complete current workflow task and get response that needs to be sent back to server.
 		// The waitLocalActivity is used to control if we should wait for outstanding local activities.
 		// If there is no outstanding local activities or if waitLocalActivity is false, the complete will return response
 		// which will be one of following:
-		// - RespondWorkflowTaskCompletedRequest
-		// - RespondWorkflowTaskFailedRequest
-		// - RespondQueryTaskCompletedRequest
+		//  - RespondWorkflowTaskCompletedRequest
+		//  - RespondWorkflowTaskFailedRequest
+		//  - RespondQueryTaskCompletedRequest
 		// If waitLocalActivity is true, and there is outstanding local activities, this call will return nil.
-		CompleteWorkflowTask(workflowTask *workflowTask, waitLocalActivity bool) interface{}
+		CompleteWorkflowTask(workflowTask *workflowTask, waitLocalActivity bool) workflowTaskCompletion
 		// GetWorkflowTaskTimeout returns the WorkflowTaskTimeout
 		GetWorkflowTaskTimeout() time.Duration
 		GetCurrentWorkflowTask() *workflowservice.PollWorkflowTaskQueueResponse
@@ -82,14 +58,14 @@ type (
 
 		// Processes the workflow task
 		// The response could be:
-		// - RespondWorkflowTaskCompletedRequest
-		// - RespondWorkflowTaskFailedRequest
-		// - RespondQueryTaskCompletedRequest
+		//  - RespondWorkflowTaskCompletedRequest
+		//  - RespondWorkflowTaskFailedRequest
+		//  - RespondQueryTaskCompletedRequest
 		ProcessWorkflowTask(
 			task *workflowTask,
 			ctx *workflowExecutionContextImpl,
 			f workflowTaskHeartbeatFunc,
-		) (response interface{}, err error)
+		) (taskCompletion *workflowTaskCompletion, err error)
 	}
 
 	WorkflowContextManager interface {
@@ -108,9 +84,9 @@ type (
 	ActivityTaskHandler interface {
 		// Executes the activity task
 		// The response is one of the types:
-		// - RespondActivityTaskCompletedRequest
-		// - RespondActivityTaskFailedRequest
-		// - RespondActivityTaskCanceledRequest
+		//  - RespondActivityTaskCompletedRequest
+		//  - RespondActivityTaskFailedRequest
+		//  - RespondActivityTaskCanceledRequest
 		Execute(taskQueue string, task *workflowservice.PollActivityTaskQueueResponse) (interface{}, error)
 	}
 )

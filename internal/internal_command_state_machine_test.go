@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -43,7 +19,7 @@ func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	h.cancelTimer(TimerID{timerID})
 	require.Equal(t, commandStateCanceledBeforeSent, d.getState())
@@ -60,7 +36,7 @@ func Test_TimerStateMachine_CancelAfterInitiated(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())
@@ -86,7 +62,7 @@ func Test_TimerStateMachine_CompletedAfterCancel(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())
@@ -114,7 +90,7 @@ func Test_TimerStateMachine_CompleteWithoutCancel(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())
@@ -135,7 +111,7 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 		TimerId: timerID,
 	}
 	h := newCommandsHelper()
-	d := h.startTimer(attributes)
+	d := h.startTimer(attributes, TimerOptions{}, converter.GetDefaultDataConverter())
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())
@@ -144,7 +120,7 @@ func Test_TimerCancelEventOrdering(t *testing.T) {
 	require.Equal(t, attributes, commands[0].GetStartTimerCommandAttributes())
 	h.handleTimerStarted(timerID)
 	require.Equal(t, commandStateInitiated, d.getState())
-	m := h.recordLocalActivityMarker(localActivityID, map[string]*commonpb.Payloads{}, nil)
+	m := h.recordLocalActivityMarker(localActivityID, map[string]*commonpb.Payloads{}, nil, nil)
 	require.Equal(t, commandStateCreated, m.getState())
 	h.cancelTimer(TimerID{timerID})
 	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
@@ -165,7 +141,7 @@ func Test_ActivityStateMachine_CompleteWithoutCancel(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, commandStateCommandSent, d.getState())
@@ -192,7 +168,7 @@ func Test_ActivityStateMachine_CancelBeforeSent(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 
 	// Cancel before command sent. We will send the command and the cancellation.
@@ -215,7 +191,7 @@ func Test_ActivityStateMachine_CancelAfterSent(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, 1, len(commands))
@@ -251,7 +227,7 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 	commands := h.getCommands(true)
 	require.Equal(t, 1, len(commands))
@@ -287,7 +263,7 @@ func Test_ActivityStateMachine_CancelInitiated_After_CanceledBeforeSent(t *testi
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes)
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
 	require.Equal(t, commandStateCreated, d.getState())
 
 	// cancel activity before sent
@@ -324,7 +300,7 @@ func Test_ActivityStateMachine_PanicInvalidStateTransition(t *testing.T) {
 
 	// schedule activity
 	scheduleID := h.getNextID()
-	h.scheduleActivityTask(scheduleID, attributes)
+	h.scheduleActivityTask(scheduleID, attributes, nil)
 
 	// verify that using invalid activity id will panic
 	err := runAndCatchPanic(func() {
@@ -353,7 +329,7 @@ func Test_ChildWorkflowStateMachine_Basic(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d, err := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	require.Equal(t, commandStateCreated, d.getState())
 
@@ -392,7 +368,7 @@ func Test_ChildWorkflowStateMachine_CancelSucceed(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d, err := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	// send command
 	_ = h.getCommands(true)
@@ -437,7 +413,7 @@ func Test_ChildWorkflowStateMachine_InvalidStates(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d, err := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	require.Equal(t, commandStateCreated, d.getState())
 
@@ -514,7 +490,7 @@ func Test_ChildWorkflow_UnusualCancelationOrdering(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	_, err := h.startChildWorkflowExecution(attributes)
+	_, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	// send command
 	h.getCommands(true)
@@ -548,7 +524,7 @@ func Test_ChildWorkflowStateMachine_CancelFailed(t *testing.T) {
 	h := newCommandsHelper()
 
 	// start child workflow
-	d, err := h.startChildWorkflowExecution(attributes)
+	d, err := h.startChildWorkflowExecution(attributes, nil)
 	require.NoError(t, err)
 	// send command
 	h.getCommands(true)
@@ -577,7 +553,7 @@ func Test_MarkerStateMachine(t *testing.T) {
 	h := newCommandsHelper()
 
 	// record marker for side effect
-	d := h.recordSideEffectMarker(1, nil, converter.GetDefaultDataConverter())
+	d := h.recordSideEffectMarker(1, nil, converter.GetDefaultDataConverter(), nil)
 	require.Equal(t, commandStateCreated, d.getState())
 
 	// send commands

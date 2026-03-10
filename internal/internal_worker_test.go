@@ -1,27 +1,3 @@
-// The MIT License
-//
-// Copyright (c) 2020 Temporal Technologies Inc.  All rights reserved.
-//
-// Copyright (c) 2020 Uber Technologies, Inc.
-//
-// Permission is hereby granted, free of charge, to any person obtaining a copy
-// of this software and associated documentation files (the "Software"), to deal
-// in the Software without restriction, including without limitation the rights
-// to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-// copies of the Software, and to permit persons to whom the Software is
-// furnished to do so, subject to the following conditions:
-//
-// The above copyright notice and this permission notice shall be included in
-// all copies or substantial portions of the Software.
-//
-// THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-// THE SOFTWARE.
-
 package internal
 
 import (
@@ -32,8 +8,11 @@ import (
 	"reflect"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.temporal.io/sdk/internal/common/metrics"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
@@ -300,6 +279,27 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 		createTestEventWorkflowExecutionCompleted(11, &historypb.WorkflowExecutionCompletedEventAttributes{
 			WorkflowTaskCompletedEventId: 10,
 		}),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayWorkflow)
+	err = replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflow"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
 	}
 
 	history := &historypb.History{Events: testEvents}
@@ -1694,6 +1694,45 @@ func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 	worker.Stop()
 }
 
+type throwsOneErrSlotSupplier struct {
+	didThrow atomic.Bool
+}
+
+func (t *throwsOneErrSlotSupplier) ReserveSlot(context.Context, SlotReservationInfo) (*SlotPermit, error) {
+	if t.didThrow.CompareAndSwap(false, true) {
+		return nil, errors.New("error")
+	}
+	return &SlotPermit{}, nil
+}
+func (t *throwsOneErrSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
+	return &SlotPermit{}
+}
+func (t *throwsOneErrSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+func (t *throwsOneErrSlotSupplier) ReleaseSlot(SlotReleaseInfo)   {}
+func (t *throwsOneErrSlotSupplier) MaxSlots() int                 { return 100 }
+
+func (s *internalWorkerTestSuite) TestSlotSupplierReturnsErrorCanContinue() {
+	// Create service endpoint
+	mockCtrl := gomock.NewController(s.T())
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+	worker := createWorker(service)
+	worker.RegisterActivity(testActivityNoResult)
+	worker.RegisterWorkflow(testWorkflowReturnStruct)
+	throwingSlotSupplier := &throwsOneErrSlotSupplier{}
+	worker.workflowWorker.worker.slotSupplier = newTrackingSlotSupplier(throwingSlotSupplier,
+		trackingSlotSupplierOptions{
+			logger:         getLogger(),
+			metricsHandler: metrics.NopHandler,
+		})
+	err := worker.Start()
+	require.NoError(s.T(), err)
+	time.Sleep(time.Millisecond * 200)
+	worker.Stop()
+	assert.True(s.T(), throwingSlotSupplier.didThrow.Load())
+}
+
 func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	// Windows doesn't support signalling interrupt.
 	if runtime.GOOS == "windows" {
@@ -1731,6 +1770,31 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.NoError(t, w.Start())
 	assert.True(t, w.activityWorker.worker.isWorkerStarted)
 	assert.True(t, w.workflowWorker.worker.isWorkerStarted)
+	w.Stop()
+}
+
+func (s *internalWorkerTestSuite) TestCleanupIsBestEffort() {
+	namespace := "testNamespace"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+
+	// set usual startup and polling mocks
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	setupPollingMocks(namespace, service, 0.0)
+
+	// ShutdownWorker will fail, but we expect Stop() to complete cleanly
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, &serviceerror.Internal{}).Times(1)
+
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace: namespace,
+	})
+	worker := NewAggregatedWorker(client, "testGroupName2", WorkerOptions{})
+	worker.registry = newRegistry()
+
+	assert.NoError(s.T(), worker.Start())
+	assert.True(s.T(), worker.workflowWorker.worker.isWorkerStarted)
+	assert.NotPanics(s.T(), func() { worker.Stop() })
 }
 
 func (s *internalWorkerTestSuite) TestStartWorkerAfterStopped() {
@@ -1786,32 +1850,11 @@ func createWorkerWithThrottle(
 	service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64, dc converter.DataConverter,
 ) *AggregatedWorker {
 	namespace := "testNamespace"
-	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
-	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
-		NamespaceInfo: &namespacepb.NamespaceInfo{
-			Name:  namespace,
-			State: namespaceState,
-		},
-	}
-	// mocks
-	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).Do(
-		func(ctx context.Context, request *workflowservice.DescribeNamespaceRequest, opts ...grpc.CallOption) {
-			// log
-		}).AnyTimes()
 
-	activityTask := &workflowservice.PollActivityTaskQueueResponse{}
-	expectedActivitiesPerSecond := activitiesPerSecond
-	if expectedActivitiesPerSecond == 0.0 {
-		expectedActivitiesPerSecond = defaultTaskQueueActivitiesPerSecond
-	}
-	service.EXPECT().PollActivityTaskQueue(
-		gomock.Any(), ofPollActivityTaskQueueRequest(expectedActivitiesPerSecond), gomock.Any(),
-	).Return(activityTask, nil).AnyTimes()
-	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	setupPollingMocks(namespace, service, activitiesPerSecond)
 
-	workflowTask := &workflowservice.PollWorkflowTaskQueueResponse{}
-	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(workflowTask, nil).AnyTimes()
-	service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{
@@ -1830,6 +1873,35 @@ func createWorkerWithThrottle(
 	client := NewServiceClient(service, nil, clientOptions)
 	worker := NewAggregatedWorker(client, "testGroupName2", workerOptions)
 	return worker
+}
+
+func setupPollingMocks(namespace string, service *workflowservicemock.MockWorkflowServiceClient, activitiesPerSecond float64) {
+	namespaceState := enumspb.NAMESPACE_STATE_REGISTERED
+	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:  namespace,
+			State: namespaceState,
+		},
+	}
+
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).Do(
+		func(ctx context.Context, request *workflowservice.DescribeNamespaceRequest, opts ...grpc.CallOption) {
+			// log
+		}).AnyTimes()
+
+	activityTask := &workflowservice.PollActivityTaskQueueResponse{}
+	expectedActivitiesPerSecond := activitiesPerSecond
+	if expectedActivitiesPerSecond == 0.0 {
+		expectedActivitiesPerSecond = defaultTaskQueueActivitiesPerSecond
+	}
+	service.EXPECT().PollActivityTaskQueue(
+		gomock.Any(), ofPollActivityTaskQueueRequest(expectedActivitiesPerSecond), gomock.Any(),
+	).Return(activityTask, nil).AnyTimes()
+	service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+
+	workflowTask := &workflowservice.PollWorkflowTaskQueueResponse{}
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(workflowTask, nil).AnyTimes()
+	service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 }
 
 func createWorkerWithDataConverter(service *workflowservicemock.MockWorkflowServiceClient) *AggregatedWorker {
@@ -2578,23 +2650,34 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
 	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	expected := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             taskQueue,
-		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		ConcurrentLocalActivityExecutionSize:  defaultMaxConcurrentLocalActivityExecutionSize,
-		ConcurrentActivityExecutionSize:       defaultMaxConcurrentActivityExecutionSize,
-		ConcurrentWorkflowTaskExecutionSize:   defaultMaxConcurrentTaskExecutionSize,
-		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
-		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                         converter.GetDefaultDataConverter(),
-		Logger:                                workflowWorker.executionParameters.Logger,
-		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
-		Identity:                              workflowWorker.executionParameters.Identity,
-		UserContext:                           workflowWorker.executionParameters.UserContext,
+		Namespace: DefaultNamespace,
+		TaskQueue: taskQueue,
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: defaultConcurrentPollRoutineSize,
+			},
+		),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: defaultConcurrentPollRoutineSize,
+			},
+		),
+		Tuner:                          tuner,
+		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond: defaultWorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:   stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
+		DataConverter:                  converter.GetDefaultDataConverter(),
+		Logger:                         workflowWorker.executionParameters.Logger,
+		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
+		Identity:                       workflowWorker.executionParameters.Identity,
+		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2641,22 +2724,29 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	workflowWorker := aggWorker.workflowWorker
 	require.Len(t, workflowWorker.executionParameters.ContextPropagators, 0)
 
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      options.MaxConcurrentWorkflowTaskExecutionSize,
+		NumActivitySlots:      options.MaxConcurrentActivityExecutionSize,
+		NumLocalActivitySlots: options.MaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	expected := workerExecutionParameters{
-		TaskQueue:                             taskQueue,
-		MaxConcurrentActivityTaskQueuePollers: options.MaxConcurrentActivityTaskPollers,
-		MaxConcurrentWorkflowTaskQueuePollers: options.MaxConcurrentWorkflowTaskPollers,
-		ConcurrentLocalActivityExecutionSize:  options.MaxConcurrentLocalActivityExecutionSize,
-		ConcurrentActivityExecutionSize:       options.MaxConcurrentActivityExecutionSize,
-		ConcurrentWorkflowTaskExecutionSize:   options.MaxConcurrentWorkflowTaskExecutionSize,
-		WorkerActivitiesPerSecond:             options.WorkerActivitiesPerSecond,
-		TaskQueueActivitiesPerSecond:          options.TaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond:        options.WorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:          options.StickyScheduleToStartTimeout,
-		DataConverter:                         client.dataConverter,
-		FailureConverter:                      client.failureConverter,
-		Logger:                                client.logger,
-		MetricsHandler:                        client.metricsHandler,
-		Identity:                              client.identity,
+		TaskQueue: taskQueue,
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: options.MaxConcurrentActivityTaskPollers,
+		}),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: options.MaxConcurrentWorkflowTaskPollers,
+		}),
+		Tuner:                          tuner,
+		WorkerActivitiesPerSecond:      options.WorkerActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:   options.TaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond: options.WorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:   options.StickyScheduleToStartTimeout,
+		DataConverter:                  client.dataConverter,
+		FailureConverter:               client.failureConverter,
+		Logger:                         client.logger,
+		MetricsHandler:                 client.metricsHandler,
+		Identity:                       client.identity,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2677,24 +2767,35 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
 	require.Nil(t, workflowWorker.executionParameters.ContextPropagators)
 
+	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
+		NumActivitySlots:      defaultMaxConcurrentActivityExecutionSize,
+		NumLocalActivitySlots: defaultMaxConcurrentLocalActivityExecutionSize})
+	require.NoError(t, err)
 	expected := workerExecutionParameters{
-		Namespace:                             DefaultNamespace,
-		TaskQueue:                             taskQueue,
-		MaxConcurrentActivityTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		MaxConcurrentWorkflowTaskQueuePollers: defaultConcurrentPollRoutineSize,
-		ConcurrentLocalActivityExecutionSize:  defaultMaxConcurrentLocalActivityExecutionSize,
-		ConcurrentActivityExecutionSize:       defaultMaxConcurrentActivityExecutionSize,
-		ConcurrentWorkflowTaskExecutionSize:   defaultMaxConcurrentTaskExecutionSize,
-		WorkerActivitiesPerSecond:             defaultTaskQueueActivitiesPerSecond,
-		TaskQueueActivitiesPerSecond:          defaultTaskQueueActivitiesPerSecond,
-		WorkerLocalActivitiesPerSecond:        defaultWorkerLocalActivitiesPerSecond,
-		StickyScheduleToStartTimeout:          stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
-		DataConverter:                         converter.GetDefaultDataConverter(),
-		FailureConverter:                      GetDefaultFailureConverter(),
-		Logger:                                workflowWorker.executionParameters.Logger,
-		MetricsHandler:                        workflowWorker.executionParameters.MetricsHandler,
-		Identity:                              workflowWorker.executionParameters.Identity,
-		UserContext:                           workflowWorker.executionParameters.UserContext,
+		Namespace: DefaultNamespace,
+		TaskQueue: taskQueue,
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: defaultConcurrentPollRoutineSize,
+			},
+		),
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(
+			PollerBehaviorSimpleMaximumOptions{
+				MaximumNumberOfPollers: defaultConcurrentPollRoutineSize,
+			},
+		),
+		Tuner:                          tuner,
+		WorkerActivitiesPerSecond:      defaultTaskQueueActivitiesPerSecond,
+		TaskQueueActivitiesPerSecond:   defaultTaskQueueActivitiesPerSecond,
+		WorkerLocalActivitiesPerSecond: defaultWorkerLocalActivitiesPerSecond,
+		StickyScheduleToStartTimeout:   stickyWorkflowTaskScheduleToStartTimeoutSeconds * time.Second,
+		DataConverter:                  converter.GetDefaultDataConverter(),
+		FailureConverter:               GetDefaultFailureConverter(),
+		Logger:                         workflowWorker.executionParameters.Logger,
+		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
+		Identity:                       workflowWorker.executionParameters.Identity,
+		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2709,14 +2810,12 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.TaskQueue, paramsA.TaskQueue)
 	require.Equal(t, paramsA.Identity, paramsB.Identity)
 	require.Equal(t, paramsA.DataConverter, paramsB.DataConverter)
-	require.Equal(t, paramsA.ConcurrentLocalActivityExecutionSize, paramsB.ConcurrentLocalActivityExecutionSize)
-	require.Equal(t, paramsA.ConcurrentActivityExecutionSize, paramsB.ConcurrentActivityExecutionSize)
-	require.Equal(t, paramsA.ConcurrentWorkflowTaskExecutionSize, paramsB.ConcurrentWorkflowTaskExecutionSize)
+	require.Equal(t, paramsA.Tuner, paramsB.Tuner)
 	require.Equal(t, paramsA.WorkerActivitiesPerSecond, paramsB.WorkerActivitiesPerSecond)
 	require.Equal(t, paramsA.TaskQueueActivitiesPerSecond, paramsB.TaskQueueActivitiesPerSecond)
 	require.Equal(t, paramsA.StickyScheduleToStartTimeout, paramsB.StickyScheduleToStartTimeout)
-	require.Equal(t, paramsA.MaxConcurrentWorkflowTaskQueuePollers, paramsB.MaxConcurrentWorkflowTaskQueuePollers)
-	require.Equal(t, paramsA.MaxConcurrentActivityTaskQueuePollers, paramsB.MaxConcurrentActivityTaskQueuePollers)
+	require.Equal(t, paramsA.WorkflowTaskPollerBehavior, paramsB.WorkflowTaskPollerBehavior)
+	require.Equal(t, paramsA.ActivityTaskPollerBehavior, paramsB.ActivityTaskPollerBehavior)
 	require.Equal(t, paramsA.WorkflowPanicPolicy, paramsB.WorkflowPanicPolicy)
 	require.Equal(t, paramsA.EnableLoggingInReplay, paramsB.EnableLoggingInReplay)
 }
@@ -2783,7 +2882,10 @@ func TestWorkerBuildIDAndSessionPanic(t *testing.T) {
 	var recovered interface{}
 	func() {
 		defer func() { recovered = recover() }()
-		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{EnableSessionWorker: true, UseBuildIDForVersioning: true})
+		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{
+			EnableSessionWorker:     true,
+			UseBuildIDForVersioning: true,
+		})
 		worker.RegisterWorkflow(testReplayWorkflow)
 	}()
 	require.Equal(t, "cannot set both EnableSessionWorker and UseBuildIDForVersioning", recovered)
@@ -2863,4 +2965,68 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	// never want called. But with disabling alias, no problem.
 	require.Equal(t, "func3", executeWorkflow(false))
 	require.Equal(t, "func1", executeWorkflow(true))
+}
+
+func (s *internalWorkerTestSuite) TestReservedTemporalName() {
+	// workflow
+	worker := createWorker(s.service)
+	workflowFn := func(ctx Context) error { return nil }
+	err := runAndCatchPanic(func() {
+		worker.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{Name: "__temporal_workflow"})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+
+	// activity
+	activityFn := func() error {
+		return nil
+	}
+	err = runAndCatchPanic(func() {
+		worker.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "__temporal_workflow"})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+
+	err = worker.Start()
+	require.NoError(s.T(), err)
+	worker.Stop()
+
+	// task queue
+	namespace := "testNamespace"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace: namespace,
+	})
+	err = runAndCatchPanic(func() {
+		_ = NewAggregatedWorker(client, "__temporal_task_queue", WorkerOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), temporalPrefixError)
+}
+
+func (s *internalWorkerTestSuite) TestRegisterMultipleDynamicWorkflow() {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	workflowFn1 := func(ctx Context, values converter.EncodedValues) error { return nil }
+	workflowFn2 := func(ctx Context, values converter.EncodedValues) error { return nil }
+	env.RegisterDynamicWorkflow(workflowFn1, DynamicRegisterWorkflowOptions{})
+	err := runAndCatchPanic(func() {
+		env.RegisterDynamicWorkflow(workflowFn2, DynamicRegisterWorkflowOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "dynamic workflow already registered")
+
+	// activity
+	activityFn1 := func(ctx context.Context, values converter.EncodedValues) error {
+		return nil
+	}
+	activityFn2 := func(ctx context.Context, values converter.EncodedValues) error {
+		return nil
+	}
+	env.RegisterDynamicActivity(activityFn1, DynamicRegisterActivityOptions{})
+	err = runAndCatchPanic(func() {
+		env.RegisterDynamicActivity(activityFn2, DynamicRegisterActivityOptions{})
+	})
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "dynamic activity already registered")
 }
