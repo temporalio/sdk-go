@@ -6443,9 +6443,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		returnedKeyword, _ := d.TypedSearchAttributes.GetKeyword(keywordKey)
 		expectedKeyword, _ := sa.GetKeyword(keywordKey)
 		assert.Equal(c, expectedKeyword, returnedKeyword)
-		if assert.NotNil(c, d.SearchAttributes) {
-			assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
-		}
+		assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
 	}, time.Second, 100*time.Millisecond)
 
 	// nil search attributes should leave current search attributes untouched
@@ -6470,9 +6468,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		returnedKeyword, _ := d.TypedSearchAttributes.GetKeyword(keywordKey)
 		expectedKeyword, _ := sa.GetKeyword(keywordKey)
 		assert.Equal(c, expectedKeyword, returnedKeyword)
-		if assert.NotNil(c, d.SearchAttributes) {
-			assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
-		}
+		assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
 	}, time.Second, 100*time.Millisecond)
 
 	// Updating an attribute without affecting the others
@@ -6502,9 +6498,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		returnedKeyword, _ := d.TypedSearchAttributes.GetKeyword(keywordKey)
 		expectedKeyword, _ := sa.GetKeyword(keywordKey)
 		assert.Equal(c, expectedKeyword, returnedKeyword)
-		if assert.NotNil(c, d.SearchAttributes) {
-			assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
-		}
+		assert.Equal(c, 2, len(d.SearchAttributes.IndexedFields))
 	}, time.Second, 100*time.Millisecond)
 
 	// updating a single search attribute on an existing collection acts as an upsert on the entire collection
@@ -6528,9 +6522,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdate() {
 		returnedString, _ := d.TypedSearchAttributes.GetString(stringKey)
 		expectedString, _ := newSa.GetString(stringKey)
 		assert.Equal(c, expectedString, returnedString)
-		if assert.NotNil(c, d.SearchAttributes) {
-			assert.Equal(c, 1, len(d.SearchAttributes.IndexedFields))
-		}
+		assert.Equal(c, 1, len(d.SearchAttributes.IndexedFields))
 	}, time.Second, 100*time.Millisecond)
 
 	// empty search attributes should remove pre-existing search attributes
