@@ -1834,8 +1834,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	// for query task
 	if task.Query != nil {
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{
-			TaskToken: task.TaskToken,
-			Namespace: wth.namespace,
+			TaskToken:  task.TaskToken,
+			Namespace:  wth.namespace,
+			ResourceId: task.WorkflowExecution.WorkflowId,
 		}
 		var panicErr *PanicError
 		if errors.As(workflowContext.err, &panicErr) {
@@ -1961,6 +1962,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		BinaryChecksum:             wth.workerBuildID,
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
+		ResourceId:                 task.WorkflowExecution.WorkflowId,
 		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,
@@ -2300,7 +2302,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions, 
+			t.WorkflowExecution.GetWorkflowId(), t.ActivityId), nil
 	}
 
 	// panic handler
@@ -2318,7 +2321,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
+				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+				t.WorkflowExecution.GetWorkflowId(), t.ActivityId)
 		}
 	}()
 
@@ -2365,7 +2369,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+		t.WorkflowExecution.GetWorkflowId(), t.ActivityId), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
@@ -2425,15 +2430,28 @@ func createNewCommandWithMetadata(commandType enumspb.CommandType, metadata *sdk
 	}
 }
 
+func getActivityResourceIdFromCtx(ctx context.Context) string {
+	env := getActivityEnvironmentFromCtx(ctx)
+	if env == nil {
+		return ""
+	}
+	// Check if this is a workflow activity or standalone activity
+	if env.workflowExecution.ID != "" {
+		return env.workflowExecution.ID
+	}
+	return env.activityID
+}
+
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
 	identity string, taskToken []byte, details *commonpb.Payloads,
 ) error {
 	namespace := getNamespaceFromActivityCtx(ctx)
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
-		TaskToken: taskToken,
-		Details:   details,
-		Identity:  identity,
-		Namespace: namespace,
+		TaskToken:  taskToken,
+		Details:    details,
+		Identity:   identity,
+		Namespace:  namespace,
+		ResourceId: getActivityResourceIdFromCtx(ctx),
 	}
 
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
@@ -2465,6 +2483,7 @@ func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.Wo
 		ActivityId: activityID,
 		Details:    details,
 		Identity:   identity,
+		ResourceId: getActivityResourceId(workflowID, activityID),
 	}
 
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
