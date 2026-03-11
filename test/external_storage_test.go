@@ -3,7 +3,6 @@ package test_test
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -337,9 +336,10 @@ func (s *ExternalStorageTestSuite) TestQuery() {
 // TestMixedSizes — only oversized payloads are stored; small ones are inline
 // ---------------------------------------------------------------------------
 
-func extStoreMixedWorkflow(ctx workflow.Context, small, large string) (string, error) {
-	// Concatenate to prove both were received correctly.
-	return small + "|" + large, nil
+func extStoreMixedWorkflow(_ workflow.Context, small, large string) (string, error) {
+	// Return small arg and length of large arg to confirm both were received
+	// without producing an oversized result that would trigger an extra store call.
+	return fmt.Sprintf("%s|%d", small, len(large)), nil
 }
 
 func (s *ExternalStorageTestSuite) TestMixedSizes() {
@@ -357,8 +357,7 @@ func (s *ExternalStorageTestSuite) TestMixedSizes() {
 
 	var result string
 	s.NoError(run.Get(ctx, &result))
-	s.True(strings.HasPrefix(result, small+"|"))
-	s.True(strings.HasSuffix(result, large))
+	s.Equal(fmt.Sprintf("%s|%d", small, len(large)), result)
 
 	storeCount, _ := s.driver.getStoreCounts()
 	// Only the large arg should have been stored (the small arg is inline).
@@ -369,8 +368,10 @@ func (s *ExternalStorageTestSuite) TestMixedSizes() {
 // TestDriverSelector — selector routes payloads to two drivers by size
 // ---------------------------------------------------------------------------
 
-func extStoreSelectorWorkflow(ctx workflow.Context, a, b string) (string, error) {
-	return a + b, nil
+func extStoreSelectorWorkflow(_ workflow.Context, a, b string) (string, error) {
+	// Return only the lengths to confirm both args were received without
+	// producing an oversized result that would trigger an extra store call.
+	return fmt.Sprintf("%d:%d", len(a), len(b)), nil
 }
 
 func (s *ExternalStorageTestSuite) TestDriverSelector() {
@@ -412,7 +413,7 @@ func (s *ExternalStorageTestSuite) TestDriverSelector() {
 
 	var result string
 	s.NoError(run.Get(ctx, &result))
-	s.Equal(a+b, result)
+	s.Equal(fmt.Sprintf("%d:%d", len(a), len(b)), result)
 
 	d1Store, _ := d1.getStoreCounts()
 	d2Store, _ := d2.getStoreCounts()
