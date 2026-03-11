@@ -577,6 +577,9 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	})
 	ts.NoError(err)
 
+	// Wait for v2 to appear in the deployment before starting a workflow pinned to it.
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
+
 	// start workflow1 with 2.0, WaitSignalToStartVersionedTwo
 	options := ts.startWorkflowOptions("1")
 	options.VersioningOverride = &client.PinnedVersioningOverride{
@@ -695,6 +698,9 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	ts.NoError(err)
 
 	ts.waitForWorkflowRunning(ctx, handle4)
+
+	// Wait for v2 to appear in the deployment before pinning a workflow to it.
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
 
 	v2Override := client.PinnedVersioningOverride{Version: v2}
 
