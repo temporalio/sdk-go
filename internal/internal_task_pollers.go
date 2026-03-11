@@ -566,30 +566,31 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 
 	response, err = wtp.sendTaskCompletedRequest(taskCompletion, task)
 
-	if taskDuration > 5*time.Second {
-		fields := []interface{}{
-			tagEventID, task.GetStartedEventId(),
-			tagWorkflowTaskDuration, taskDuration,
-		}
-		if downloadPayloadMetrics.PayloadCount > 0 {
-			fields = append(fields,
-				tagPayloadDownloadCount, downloadPayloadMetrics.PayloadCount,
-				tagPayloadDownloadSize, downloadPayloadMetrics.TotalSize,
-				tagPayloadDownloadDuration, downloadPayloadMetrics.TotalDuration,
-			)
-		}
-		if uploadPayloadMetrics.PayloadCount > 0 {
-			fields = append(fields,
-				tagPayloadUploadCount, uploadPayloadMetrics.PayloadCount,
-				tagPayloadUploadSize, uploadPayloadMetrics.TotalSize,
-				tagPayloadUploadDuration, uploadPayloadMetrics.TotalDuration,
-			)
-		}
-		if taskDuration > 10*time.Second {
-			wtp.logger.Warn("[TMPRL1104] Workflow task exceeded 10s", fields...)
-		} else {
-			wtp.logger.Info("[TMPRL1104] Workflow task exceeded 5s", fields...)
-		}
+	loggerDurationKeyVals := []interface{}{
+		tagEventID, task.GetStartedEventId(),
+		tagWorkflowTaskDuration, taskDuration,
+	}
+	if downloadPayloadMetrics.PayloadCount > 0 {
+		loggerDurationKeyVals = append(loggerDurationKeyVals,
+			tagPayloadDownloadCount, downloadPayloadMetrics.PayloadCount,
+			tagPayloadDownloadSize, downloadPayloadMetrics.TotalSize,
+			tagPayloadDownloadDuration, downloadPayloadMetrics.TotalDuration,
+		)
+	}
+	if uploadPayloadMetrics.PayloadCount > 0 {
+		loggerDurationKeyVals = append(loggerDurationKeyVals,
+			tagPayloadUploadCount, uploadPayloadMetrics.PayloadCount,
+			tagPayloadUploadSize, uploadPayloadMetrics.TotalSize,
+			tagPayloadUploadDuration, uploadPayloadMetrics.TotalDuration,
+		)
+	}
+
+	if taskDuration > 10*time.Second {
+		wtp.logger.Warn("[TMPRL1104] Workflow task exceeded 10 seconds.", loggerDurationKeyVals...)
+	} else if taskDuration > 5*time.Second {
+		wtp.logger.Info("[TMPRL1104] Workflow task exceeded 5 seconds.", loggerDurationKeyVals...)
+	} else {
+		wtp.logger.Debug("[TMPRL1104] Workflow task duration information.", loggerDurationKeyVals...)
 	}
 
 	var grpcMessageTooLargeErr *retry.GrpcMessageTooLargeError
