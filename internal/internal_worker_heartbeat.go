@@ -223,6 +223,7 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 	_, err := hw.client.recordWorkerHeartbeat(hw.workerCtx, &workflowservice.RecordWorkerHeartbeatRequest{
 		Namespace:       hw.namespace,
 		WorkerHeartbeat: heartbeats,
+		ResourceId:      hw.client.workerGroupingKey,
 	})
 
 	if err != nil {
