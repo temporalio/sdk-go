@@ -539,6 +539,27 @@ func TestStoreVisitor_Callback(t *testing.T) {
 	require.Greater(t, cb.duration, time.Duration(0))
 }
 
+func TestStoreVisitor_Callback_ExternalCountOnly(t *testing.T) {
+	const threshold = 50
+	driver := newTestDriver("d")
+	params, err := StorageOptionsToParams(converter.StorageOptions{
+		Drivers:              []converter.StorageDriver{driver},
+		PayloadSizeThreshold: threshold,
+	})
+	require.NoError(t, err)
+	visitor := NewStorageStoreVisitor(params)
+
+	small := makePayload(t, "x")
+	big1 := makeOversizedPayload(t, threshold)
+	big2 := makeOversizedPayload(t, threshold)
+
+	cb := &testCallback{}
+	ctx := context.WithValue(context.Background(), storageOperationCallbackContextKey, cb)
+	_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{small, big1, big2})
+	require.NoError(t, err)
+	require.Equal(t, 2, cb.count)
+}
+
 // ---------------------------------------------------------------------------
 // storageRetrievalVisitor
 // ---------------------------------------------------------------------------
@@ -816,6 +837,32 @@ func TestRetrievalVisitor_Callback(t *testing.T) {
 	_, err = visitPayloads(ctx, retrieveVisitor, refs)
 	require.NoError(t, err)
 	require.Greater(t, cb.duration, time.Duration(0))
+}
+
+func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {
+	const threshold = 50
+	driver := newTestDriver("d")
+	params, err := StorageOptionsToParams(converter.StorageOptions{
+		Drivers:              []converter.StorageDriver{driver},
+		PayloadSizeThreshold: threshold,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewStorageStoreVisitor(params)
+	retrieveVisitor := NewStorageRetrievalVisitor(params)
+
+	big1 := makeOversizedPayload(t, threshold)
+	big2 := makeOversizedPayload(t, threshold)
+	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{big1, big2})
+	require.NoError(t, err)
+
+	inline := makePayload(t, "inline")
+	batch := []*commonpb.Payload{inline, refs[0], refs[1]}
+
+	cb := &testCallback{}
+	ctx := context.WithValue(context.Background(), storageOperationCallbackContextKey, cb)
+	_, err = visitPayloads(ctx, retrieveVisitor, batch)
+	require.NoError(t, err)
+	require.Equal(t, 2, cb.count)
 }
 
 // ---------------------------------------------------------------------------

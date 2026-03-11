@@ -115,7 +115,6 @@ func (v *storageRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payload
 	driverBatches := map[string]*driverBatch{}
 
 	result := make([]*commonpb.Payload, len(payloads))
-	totalSize := int64(0)
 
 	for i, p := range payloads {
 		if len(p.GetExternalPayloads()) == 0 {
@@ -159,8 +158,10 @@ func (v *storageRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payload
 	driverCtx := converter.StorageDriverContext{Context: egCtx}
 	sizes := make([]int64, len(driverOrder))
 
+	externalCount := 0
 	for i, name := range driverOrder {
 		batch := driverBatches[name]
+		externalCount += len(batch.claims)
 		eg.Go(func() error {
 			retrieved, err := callDriverRetrieve(batch.driver, driverCtx, batch.claims)
 			if err != nil {
@@ -186,13 +187,15 @@ func (v *storageRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payload
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+
+	externalTotalSize := int64(0)
 	for _, s := range sizes {
-		totalSize += s
+		externalTotalSize += s
 	}
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
 		if callback, isCallback := callbackValue.(storageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(len(payloads), totalSize, time.Since(startTime))
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime))
 		}
 	}
 	return result, nil
@@ -223,7 +226,6 @@ func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []
 	driverBatches := map[string]*driverBatch{}
 
 	result := make([]*commonpb.Payload, len(payloads))
-	totalSize := int64(0)
 	driverCtx := converter.StorageDriverContext{Context: ctx.Context}
 
 	for i, p := range payloads {
@@ -271,8 +273,10 @@ func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []
 	storeDrCtx := converter.StorageDriverContext{Context: egCtx}
 	sizes := make([]int64, len(driverOrder))
 
+	externalCount := 0
 	for i, name := range driverOrder {
 		batch := driverBatches[name]
+		externalCount += len(batch.payloads)
 		eg.Go(func() error {
 			payloadsToStore := batch.payloads
 			for k := len(v.params.codecs) - 1; k >= 0; k-- {
@@ -309,13 +313,15 @@ func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []
 	if err := eg.Wait(); err != nil {
 		return nil, err
 	}
+
+	externalTotalSize := int64(0)
 	for _, s := range sizes {
-		totalSize += s
+		externalTotalSize += s
 	}
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
 		if callback, isCallback := callbackValue.(storageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(len(payloads), totalSize, time.Since(startTime))
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime))
 		}
 	}
 	return result, nil
