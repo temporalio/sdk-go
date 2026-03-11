@@ -96,17 +96,25 @@ type panicMemDriver struct {
 }
 
 func (d *panicMemDriver) Store(ctx converter.StorageDriverContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
+	claims, err := d.memStorageDriver.Store(ctx, payloads)
+	if err != nil {
+		return nil, err
+	}
 	if d.panicOnStore {
 		panic("store panic")
 	}
-	return d.memStorageDriver.Store(ctx, payloads)
+	return claims, nil
 }
 
 func (d *panicMemDriver) Retrieve(ctx converter.StorageDriverContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
+	payloads, err := d.memStorageDriver.Retrieve(ctx, claims)
+	if err != nil {
+		return nil, err
+	}
 	if d.panicOnRetrieve {
 		panic("retrieve panic")
 	}
-	return d.memStorageDriver.Retrieve(ctx, claims)
+	return payloads, nil
 }
 
 // ---------------------------------------------------------------------------
