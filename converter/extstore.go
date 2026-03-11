@@ -6,10 +6,22 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 )
 
-// StorageDriverContext carries context passed to StorageDriver operations.
+// StorageDriverStoreContext carries context passed to StorageDriver.Store and
+// StorageDriverSelector.SelectDriver operations.
 //
 // NOTE: Experimental
-type StorageDriverContext struct {
+type StorageDriverStoreContext struct {
+	// Context is the context of the operation that triggered the driver call.
+	// Drivers should use it to respect cancellation and to propagate deadlines
+	// and trace information to downstream calls (e.g. cloud storage SDKs).
+	Context context.Context
+}
+
+// StorageDriverRetrieveContext carries context passed to StorageDriver.Retrieve
+// operations.
+//
+// NOTE: Experimental
+type StorageDriverRetrieveContext struct {
 	// Context is the context of the operation that triggered the driver call.
 	// Drivers should use it to respect cancellation and to propagate deadlines
 	// and trace information to downstream calls (e.g. cloud storage SDKs).
@@ -54,12 +66,12 @@ type StorageDriver interface {
 	// payload in the same order. The returned claims are serialized into the
 	// Temporal event and must contain enough information for Retrieve to locate
 	// the data. Store must not modify the input payloads.
-	Store(ctx StorageDriverContext, payloads []*commonpb.Payload) ([]StorageClaim, error)
+	Store(ctx StorageDriverStoreContext, payloads []*commonpb.Payload) ([]StorageClaim, error)
 
 	// Retrieve fetches the payloads identified by the given claims, returning
 	// one payload per claim in the same order. It must not modify the input
 	// claims.
-	Retrieve(ctx StorageDriverContext, claims []StorageClaim) ([]*commonpb.Payload, error)
+	Retrieve(ctx StorageDriverRetrieveContext, claims []StorageClaim) ([]*commonpb.Payload, error)
 }
 
 // StorageDriverSelector chooses which StorageDriver should store a given
@@ -72,7 +84,7 @@ type StorageDriver interface {
 //
 // NOTE: Experimental
 type StorageDriverSelector interface {
-	SelectDriver(StorageDriverContext, *commonpb.Payload) (StorageDriver, error)
+	SelectDriver(ctx StorageDriverStoreContext, payloads *commonpb.Payload) (StorageDriver, error)
 }
 
 // StorageOptions configures external payload storage for a Temporal client or

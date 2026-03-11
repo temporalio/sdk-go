@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -153,9 +154,12 @@ func (v *storageRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payload
 	}
 
 	// Fan out to each driver concurrently. The errgroup context is used as the
-	// StorageDriverContext so a failing driver cancels in-flight siblings.
-	eg, egCtx := errgroup.WithContext(ctx.Context)
-	driverCtx := converter.StorageDriverContext{Context: egCtx}
+	// StorageDriverRetrieveContext so a failing driver cancels in-flight siblings.
+	// Intentionally creating an empty context so the retrieval path cannot use ambient
+	// information for determing how to retrieve payloads. Drivers should only use information
+	// from the StorageClaim to retrieve payloads.
+	eg, egCtx := errgroup.WithContext(context.Background())
+	driverCtx := converter.StorageDriverRetrieveContext{Context: egCtx}
 	sizes := make([]int64, len(driverOrder))
 
 	externalCount := 0
@@ -226,7 +230,7 @@ func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []
 	driverBatches := map[string]*driverBatch{}
 
 	result := make([]*commonpb.Payload, len(payloads))
-	driverCtx := converter.StorageDriverContext{Context: ctx.Context}
+	driverCtx := converter.StorageDriverStoreContext{Context: ctx.Context}
 
 	for i, p := range payloads {
 		if proto.Size(p) < v.params.payloadSizeThreshold {
@@ -268,9 +272,9 @@ func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []
 	}
 
 	// Fan out to each driver concurrently. The errgroup context is used as the
-	// StorageDriverContext so a failing driver cancels in-flight siblings.
+	// StorageDriverStoreContext so a failing driver cancels in-flight siblings.
 	eg, egCtx := errgroup.WithContext(ctx.Context)
-	storeDrCtx := converter.StorageDriverContext{Context: egCtx}
+	storeDrCtx := converter.StorageDriverStoreContext{Context: egCtx}
 	sizes := make([]int64, len(driverOrder))
 
 	externalCount := 0
@@ -331,7 +335,7 @@ func NewStorageStoreVisitor(params storageParameters) PayloadVisitor {
 	return &storageStoreVisitor{params: params}
 }
 
-func callDriverSelector(s converter.StorageDriverSelector, ctx converter.StorageDriverContext, p *commonpb.Payload) (driver converter.StorageDriver, err error) {
+func callDriverSelector(s converter.StorageDriverSelector, ctx converter.StorageDriverStoreContext, p *commonpb.Payload) (driver converter.StorageDriver, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)
@@ -340,7 +344,7 @@ func callDriverSelector(s converter.StorageDriverSelector, ctx converter.Storage
 	return s.SelectDriver(ctx, p)
 }
 
-func callDriverStore(d converter.StorageDriver, ctx converter.StorageDriverContext, payloads []*commonpb.Payload) (claims []converter.StorageClaim, err error) {
+func callDriverStore(d converter.StorageDriver, ctx converter.StorageDriverStoreContext, payloads []*commonpb.Payload) (claims []converter.StorageClaim, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)
@@ -349,7 +353,7 @@ func callDriverStore(d converter.StorageDriver, ctx converter.StorageDriverConte
 	return d.Store(ctx, payloads)
 }
 
-func callDriverRetrieve(d converter.StorageDriver, ctx converter.StorageDriverContext, claims []converter.StorageClaim) (payloads []*commonpb.Payload, err error) {
+func callDriverRetrieve(d converter.StorageDriver, ctx converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) (payloads []*commonpb.Payload, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)

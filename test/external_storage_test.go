@@ -41,7 +41,7 @@ func newMemDriver(name string) *memStorageDriver {
 func (d *memStorageDriver) Name() string { return d.name }
 func (d *memStorageDriver) Type() string { return "mem" }
 
-func (d *memStorageDriver) Store(_ converter.StorageDriverContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
+func (d *memStorageDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.storeCount++
@@ -54,7 +54,7 @@ func (d *memStorageDriver) Store(_ converter.StorageDriverContext, payloads []*c
 	return claims, nil
 }
 
-func (d *memStorageDriver) Retrieve(_ converter.StorageDriverContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d *memStorageDriver) Retrieve(_ converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.retrieveCount++
@@ -94,7 +94,7 @@ type panicMemDriver struct {
 	panicOnRetrieve bool
 }
 
-func (d *panicMemDriver) Store(ctx converter.StorageDriverContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
+func (d *panicMemDriver) Store(ctx converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
 	claims, err := d.memStorageDriver.Store(ctx, payloads)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (d *panicMemDriver) Store(ctx converter.StorageDriverContext, payloads []*c
 	return claims, nil
 }
 
-func (d *panicMemDriver) Retrieve(ctx converter.StorageDriverContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d *panicMemDriver) Retrieve(ctx converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
 	payloads, err := d.memStorageDriver.Retrieve(ctx, claims)
 	if err != nil {
 		return nil, err
@@ -428,7 +428,7 @@ type roundRobinSelector struct {
 	idx     *int
 }
 
-func (r *roundRobinSelector) SelectDriver(_ converter.StorageDriverContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+func (r *roundRobinSelector) SelectDriver(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	d := r.drivers[*r.idx%len(r.drivers)]
