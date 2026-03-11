@@ -60,14 +60,17 @@ func (m *heartbeatManager) registerWorker(
 	hw, ok := m.workers[namespace]
 	// If this is the first worker on the namespace, start a new shared namespace worker.
 	if !ok {
+		heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
 		hw = &sharedNamespaceWorker{
-			client:    m.client,
-			namespace: namespace,
-			interval:  m.interval,
-			callbacks: make(map[string]func() *workerpb.WorkerHeartbeat),
-			stopC:     make(chan struct{}),
-			stoppedC:  make(chan struct{}),
-			logger:    m.logger,
+			client:          m.client,
+			namespace:       namespace,
+			interval:        m.interval,
+			heartbeatCtx:    heartbeatCtx,
+			heartbeatCancel: heartbeatCancel,
+			callbacks:       make(map[string]func() *workerpb.WorkerHeartbeat),
+			stopC:           make(chan struct{}),
+			stoppedC:        make(chan struct{}),
+			logger:          m.logger,
 		}
 		m.workers[namespace] = hw
 		if hw.started.Swap(true) {
@@ -112,6 +115,9 @@ type sharedNamespaceWorker struct {
 	namespace string
 	interval  time.Duration
 	logger    log.Logger
+
+	heartbeatCtx    context.Context
+	heartbeatCancel context.CancelFunc
 
 	// callbacksMutex should only be unlocked under
 	callbacksMutex sync.RWMutex
@@ -159,7 +165,7 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 		heartbeats = append(heartbeats, hb)
 	}
 
-	_, err := hw.client.recordWorkerHeartbeat(context.Background(), &workflowservice.RecordWorkerHeartbeatRequest{
+	_, err := hw.client.recordWorkerHeartbeat(hw.heartbeatCtx, &workflowservice.RecordWorkerHeartbeatRequest{
 		Namespace:       hw.namespace,
 		WorkerHeartbeat: heartbeats,
 	})
@@ -178,6 +184,9 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 func (hw *sharedNamespaceWorker) stop() {
 	if !hw.started.CompareAndSwap(true, false) {
 		return
+	}
+	if hw.heartbeatCancel != nil {
+		hw.heartbeatCancel()
 	}
 
 	close(hw.stopC)

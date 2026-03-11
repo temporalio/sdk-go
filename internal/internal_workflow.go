@@ -90,8 +90,8 @@ type (
 		Close()             // Destroys all coroutines without waiting for their completion
 		StackTrace() string // Stack trace of all coroutines owned by the Dispatcher instance
 
-		// Create coroutine. To be called from within other coroutine.
-		// Used by the interceptors
+		// NewCoroutine creates a new coroutine. To be called from within another coroutine.
+		// Used by the interceptors.
 		NewCoroutine(ctx Context, name string, highPriority bool, f func(ctx Context)) Context
 	}
 
@@ -210,8 +210,9 @@ type (
 		queryHandlers            map[string]*queryHandler
 		updateHandlers           map[string]*updateHandler
 		// runningUpdatesHandles is a map of update handlers that are currently running.
-		runningUpdatesHandles map[string]UpdateInfo
-		VersioningIntent      VersioningIntent
+		runningUpdatesHandles     map[string]UpdateInfo
+		VersioningIntent          VersioningIntent
+		InitialVersioningBehavior ContinueAsNewVersioningBehavior
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
 		currentDetails string
@@ -1018,8 +1019,8 @@ func (c *channelImpl) assignValue(from interface{}, to interface{}) error {
 	return err
 }
 
-// initialYield called at the beginning of the coroutine execution
-// stackDepth is the depth of top of the stack to omit when stack trace is generated
+// initialYield is called at the beginning of coroutine execution.
+// stackDepth is the depth of the top of the stack to omit when a stack trace is generated,
 // to hide frames internal to the framework.
 func (s *coroutineState) initialYield(stackDepth int, status string) {
 	if s.blocked.Swap(true) {
