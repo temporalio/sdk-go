@@ -2,6 +2,7 @@ package test_test
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"os"
 	"testing"
@@ -866,6 +867,9 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 			if !assert.NotNil(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats) {
 				return
 			}
+			fmt.Println("taskQueueInfo: ", taskQueueInfo)
+			fmt.Println("taskQueueInfo.VersionsInfo[\"\"]: ", taskQueueInfo.VersionsInfo[""])
+			fmt.Println("taskQueueInfo.VersionsInfo[\"\"].TypesInfo[client.TaskQueueTypeWorkflow]: ", taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow])
 
 			assert.Greater(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount, int64(0))
 		},
