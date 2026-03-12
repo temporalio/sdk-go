@@ -867,9 +867,8 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 			if !assert.NotNil(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats) {
 				return
 			}
-			fmt.Println("taskQueueInfo: ", taskQueueInfo)
-			fmt.Println("taskQueueInfo.VersionsInfo[\"\"]: ", taskQueueInfo.VersionsInfo[""])
-			fmt.Println("taskQueueInfo.VersionsInfo[\"\"].TypesInfo[client.TaskQueueTypeWorkflow]: ", taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow])
+			fmt.Printf("workflow stats: %+v\n", *taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
+			fmt.Printf("activity stats: %+v\n", *taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
 
 			assert.Greater(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount, int64(0))
 		},
