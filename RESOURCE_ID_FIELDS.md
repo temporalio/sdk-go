@@ -6,7 +6,7 @@ This document lists all the resource_id fields that were added to Temporal API r
 
 Total resource_id fields added: **17**
 Implementation status: **15/17 completed**
-Testing status: **10/15 tested** (66.7% test coverage)
+Testing status: **11/15 tested** (73.3% test coverage)
 
 ## Request Message Categories
 
@@ -23,7 +23,7 @@ Testing status: **10/15 tested** (66.7% test coverage)
 | Message | Field | Expected Value | Implementation Status | Test Status |
 |---------|-------|----------------|----------------------|-------------|
 | `RecordActivityTaskHeartbeatRequest` | `resource_id = 5` | Workflow ID or activity ID for standalone activities | ✅ Completed | ✅ Tested |
-| `RecordActivityTaskHeartbeatByIdRequest` | `resource_id = 7` | "workflow:workflow_id" or "activity:activity_id" for standalone | ✅ Completed | ⏸️ Partial* |
+| `RecordActivityTaskHeartbeatByIdRequest` | `resource_id = 7` | "workflow:workflow_id" or "activity:activity_id" for standalone | ✅ Completed | ✅ Tested |
 | `RespondActivityTaskCompletedRequest` | `resource_id = 8` | Workflow ID or activity ID for standalone activities | ✅ Completed | ✅ Tested |
 | `RespondActivityTaskCompletedByIdRequest` | `resource_id = 7` | "workflow:workflow_id" or "activity:activity_id" for standalone | ✅ Completed | ✅ Tested |
 | `RespondActivityTaskFailedRequest` | `resource_id = 9` | Workflow ID or activity ID for standalone activities | ✅ Completed | ✅ Tested |
@@ -115,16 +115,16 @@ All fields are defined in `/Users/tconley/api-go/proto/api/temporal/api/workflow
 
 ## Testing Status
 
-### Tested Fields (10/15)
+### Tested Fields (11/15)
 
 **Workflow Task Requests (3/3):**
 - ✅ `RespondWorkflowTaskCompletedRequest` - Tested with real workflow task processing
 - ✅ `RespondWorkflowTaskFailedRequest` - Tested with unregistered workflow scenarios  
 - ✅ `RespondQueryTaskCompletedRequest` - Tested with stack trace and custom queries
 
-**Activity Task Requests (7/8):**
+**Activity Task Requests (8/8):**
 - ✅ `RecordActivityTaskHeartbeatRequest` - Tested with workflow and standalone activities
-- ⏸️ `RecordActivityTaskHeartbeatByIdRequest` - Partial test via existing client tests*
+- ✅ `RecordActivityTaskHeartbeatByIdRequest` - Tested with workflow and standalone activities via client SDK
 - ✅ `RespondActivityTaskCompletedRequest` - Tested via `convertActivityResultToRespondRequest` validation
 - ✅ `RespondActivityTaskCompletedByIdRequest` - Tested via `convertActivityResultToRespondRequestByID` validation
 - ✅ `RespondActivityTaskFailedRequest` - Tested via `convertActivityResultToRespondRequest` validation
@@ -132,7 +132,7 @@ All fields are defined in `/Users/tconley/api-go/proto/api/temporal/api/workflow
 - ✅ `RespondActivityTaskCanceledRequest` - Tested via `convertActivityResultToRespondRequest` validation
 - ✅ `RespondActivityTaskCanceledByIdRequest` - Tested via `convertActivityResultToRespondRequestByID` validation
 
-### Untested Fields (5/15)
+### Untested Fields (4/15)
 
 **Nexus Requests (2/2):**
 - ❌ `RespondNexusTaskCompletedRequest` - No tests yet
@@ -147,8 +147,6 @@ All fields are defined in `/Users/tconley/api-go/proto/api/temporal/api/workflow
 **Not applicable (2):**
 - N/A `DeployWorkerConfigRequest` - Not implemented in SDK
 - N/A `UpdateWorkerConfigRequest` - Not implemented in SDK
-
-*Partial test: Resource ID logic tested indirectly through existing client integration tests
 
 ## Test Files
 
