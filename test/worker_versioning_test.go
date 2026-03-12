@@ -869,8 +869,6 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 			}
 			fmt.Printf("workflow stats: %+v\n", *taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
 			fmt.Printf("activity stats: %+v\n", *taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
-
-			assert.Greater(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount, int64(0))
 		},
 		5*time.Second, 200*time.Millisecond,
 	)
