@@ -2,7 +2,6 @@ package test_test
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"os"
 	"testing"
@@ -867,10 +866,8 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 			if !assert.NotNil(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats) {
 				return
 			}
-			fmt.Printf("workflow stats: %+v\n", *taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
-			fmt.Printf("activity stats: %+v\n", *taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
 		},
-		5*time.Second, 200*time.Millisecond,
+		time.Second, 100*time.Millisecond,
 	)
 
 	// no workers yet, so only workflow should have a backlog
