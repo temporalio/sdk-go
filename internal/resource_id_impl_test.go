@@ -341,6 +341,9 @@ func testQueryTaskCompletedResourceID(t *testing.T) {
 
 // Test activity task request resource_id population using actual SDK code paths
 func testActivityTaskRequestsResourceID(t *testing.T) {
+	t.Run("ActivityTaskHeartbeatById", func(t *testing.T) {
+		testActivityTaskHeartbeatByIdResourceID(t)
+	})
 	t.Run("ConvertActivityResultValidation", func(t *testing.T) {
 		testConvertActivityResultValidation(t)
 	})
@@ -645,4 +648,68 @@ func createTestQueryTask(workflowID, runID, queryType string) *workflowservice.P
 		QueryType: queryType,
 	}
 	return task
+}
+
+// Test RecordActivityTaskHeartbeatByIdRequest resource_id field (resource_id = 7)
+// Expected: Workflow ID or activity ID for standalone activities
+func testActivityTaskHeartbeatByIdResourceID(t *testing.T) {
+	testCases := []struct {
+		name               string
+		workflowID         string
+		activityID         string
+		expectedResourceID string
+		description        string
+	}{
+		{
+			name:               "WithWorkflowExecution",
+			workflowID:         "test-workflow-heartbeat-by-id-123",
+			activityID:         "test-activity-heartbeat-by-id-456",
+			expectedResourceID: "test-workflow-heartbeat-by-id-123",
+			description:        "Should use workflow ID when present",
+		},
+		{
+			name:               "StandaloneActivity",
+			workflowID:         "",
+			activityID:         "standalone-activity-heartbeat-by-id-789",
+			expectedResourceID: "standalone-activity-heartbeat-by-id-789",
+			description:        "Should use activity ID for standalone activities",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+
+			// Mock GetSystemInfo which is called during client initialization
+			service.EXPECT().
+				GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(&workflowservice.GetSystemInfoResponse{}, nil).
+				AnyTimes()
+
+			var capturedRequest *workflowservice.RecordActivityTaskHeartbeatByIdRequest
+			service.EXPECT().
+				RecordActivityTaskHeartbeatById(gomock.Any(), gomock.Any(), gomock.Any()).
+				Do(func(ctx context.Context, req *workflowservice.RecordActivityTaskHeartbeatByIdRequest, opts ...interface{}) {
+					capturedRequest = req
+				}).
+				Return(&workflowservice.RecordActivityTaskHeartbeatByIdResponse{}, nil).
+				Times(1)
+
+			// Create workflow client and call heartbeat by ID
+			client := NewServiceClient(service, nil, ClientOptions{Namespace: "test-namespace"})
+
+			ctx := context.Background()
+			err := client.RecordActivityHeartbeatByID(ctx, "test-namespace", tc.workflowID, "", tc.activityID, "heartbeat-details")
+
+			// Validate call succeeded
+			require.NoError(t, err)
+
+			// Validate the captured request
+			require.NotNil(t, capturedRequest, "Request should have been captured")
+			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId, tc.description)
+		})
+	}
 }
