@@ -3,6 +3,7 @@ package internal
 // All code in this file is private to the package.
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"reflect"
@@ -58,6 +59,7 @@ type (
 		waitForCancelRequest bool
 		handled              bool
 		activityType         ActivityType
+		failureConverter     converter.FailureConverter
 	}
 
 	scheduledNexusOperation struct {
@@ -74,6 +76,7 @@ type (
 		startedCallback     func(r WorkflowExecution, e error)
 		waitForCancellation bool
 		handled             bool
+		failureConverter    converter.FailureConverter
 	}
 
 	scheduledCancellation struct {
@@ -214,6 +217,13 @@ func newWorkflowExecutionEventHandler(
 	deadlockDetectionTimeout time.Duration,
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities,
 ) workflowExecutionEventHandler {
+	wfCtx := converter.WorkflowSerializationContext{
+		Namespace:  workflowInfo.Namespace,
+		WorkflowID: workflowInfo.WorkflowExecution.ID,
+	}
+	dataConverter = converter.WithSerializationContext(dataConverter, wfCtx)
+	failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, wfCtx)
+
 	context := &workflowEnvironmentImpl{
 		workflowInfo:                 workflowInfo,
 		commandsHelper:               newCommandsHelper(),
@@ -537,9 +547,6 @@ func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
 ) {
-	if params.WorkflowID == "" {
-		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
-	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
@@ -599,6 +606,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		resultCallback:      callback,
 		startedCallback:     startedHandler,
 		waitForCancellation: params.WaitForCancellation,
+		failureConverter:    params.failureConverter,
 	})
 
 	wc.logger.Debug("ExecuteChildWorkflow",
@@ -724,13 +732,7 @@ func (wc *workflowEnvironmentImpl) CreateNewCommand(commandType enumspb.CommandT
 
 func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
-	scheduleID := wc.GenerateSequence()
-	if parameters.ActivityID == "" {
-		scheduleTaskAttr.ActivityId = getStringID(scheduleID)
-	} else {
-		scheduleTaskAttr.ActivityId = parameters.ActivityID
-	}
-	activityID := scheduleTaskAttr.GetActivityId()
+	scheduleTaskAttr.ActivityId = parameters.ActivityID
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}
 	scheduleTaskAttr.TaskQueue = &taskqueuepb.TaskQueue{Name: parameters.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	scheduleTaskAttr.Input = parameters.Input
@@ -754,18 +756,19 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		return ActivityID{}
 	}
 
-	command := wc.commandsHelper.scheduleActivityTask(scheduleID, scheduleTaskAttr, startMetadata)
+	command := wc.commandsHelper.scheduleActivityTask(parameters.ScheduleID, scheduleTaskAttr, startMetadata)
 	command.setData(&scheduledActivity{
 		callback:             callback,
 		waitForCancelRequest: parameters.WaitForCancellation,
 		activityType:         parameters.ActivityType,
+		failureConverter:     parameters.FailureConverter,
 	})
 
 	wc.logger.Debug("ExecuteActivity",
-		tagActivityID, activityID,
+		tagActivityID, parameters.ActivityID,
 		tagActivityType, scheduleTaskAttr.ActivityType.GetName())
 
-	return ActivityID{id: activityID}
+	return ActivityID{id: parameters.ActivityID}
 }
 
 func (wc *workflowEnvironmentImpl) RequestCancelActivity(activityID ActivityID) {
@@ -1495,7 +1498,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *hi
 		&commonpb.ActivityType{Name: activity.activityType.Name},
 		activityID,
 		attributes.GetRetryState(),
-		weh.GetFailureConverter().FailureToError(attributes.GetFailure()),
+		cmp.Or(activity.failureConverter, weh.GetFailureConverter()).FailureToError(attributes.GetFailure()),
 	)
 
 	activity.handle(nil, activityTaskErr)
@@ -1511,7 +1514,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	}
 
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
-	timeoutError := weh.GetFailureConverter().FailureToError(attributes.GetFailure())
+	timeoutError := cmp.Or(activity.failureConverter, weh.GetFailureConverter()).FailureToError(attributes.GetFailure())
 
 	activityTaskErr := NewActivityError(
 		attributes.GetScheduledEventId(),
@@ -1704,7 +1707,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 		if failure != nil {
 			lar.Attempt = lamd.Attempt
 			lar.Backoff = lamd.Backoff
-			lar.Err = weh.GetFailureConverter().FailureToError(failure)
+			lar.Err = cmp.Or(la.params.FailureConverter, weh.GetFailureConverter()).FailureToError(failure)
 		} else {
 			// Result might not be there if local activity doesn't have return value.
 			lar.Result = details[localActivityResultName]
@@ -1749,7 +1752,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
 		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 			MarkerName: localActivityMarkerName,
-			Failure:    weh.GetFailureConverter().ErrorToFailure(lar.err),
+			Failure:    cmp.Or(lar.task.params.FailureConverter, weh.GetFailureConverter()).ErrorToFailure(lar.err),
 			Details:    details,
 		}},
 	}
@@ -1846,7 +1849,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetRetryState(),
-		weh.GetFailureConverter().FailureToError(attributes.GetFailure()),
+		cmp.Or(childWorkflow.failureConverter, weh.GetFailureConverter()).FailureToError(attributes.GetFailure()),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil

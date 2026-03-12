@@ -321,6 +321,15 @@ func WithActivityTask(
 	heartbeatTimeout := task.GetHeartbeatTimeout().AsDuration()
 	deadline := calculateActivityDeadline(scheduled, scheduleToCloseTimeout, startToCloseTimeout)
 
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    task.WorkflowNamespace,
+		WorkflowID:   task.WorkflowExecution.GetWorkflowId(),
+		WorkflowType: task.WorkflowType.GetName(),
+		ActivityType: task.ActivityType.GetName(),
+		TaskQueue:    taskQueue,
+	}
+	dataConverter = converter.WithSerializationContext(dataConverter, actCtx)
+
 	env := &activityEnvironment{
 		taskToken:              task.TaskToken,
 		serviceInvoker:         invoker,

@@ -224,15 +224,17 @@ type (
 		WorkflowType         *WorkflowType
 		Input                *commonpb.Payloads
 		Header               *commonpb.Header
-		attempt              int32              // used by test framework to support child workflow retry
-		scheduledTime        time.Time          // used by test framework to support child workflow retry
-		lastCompletionResult *commonpb.Payloads // used by test framework to support cron
+		failureConverter     converter.FailureConverter // context-aware FC from ExecuteChildWorkflow
+		attempt              int32                      // used by test framework to support child workflow retry
+		scheduledTime        time.Time                  // used by test framework to support child workflow retry
+		lastCompletionResult *commonpb.Payloads         // used by test framework to support cron
 	}
 
 	// decodeFutureImpl
 	decodeFutureImpl struct {
 		*futureImpl
-		fn interface{}
+		fn            interface{}
+		dataConverter converter.DataConverter // optional: if set, used instead of ctx DC
 	}
 
 	childWorkflowFutureImpl struct {
@@ -1591,7 +1593,13 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
 
-	return WithWorkflowContext(ctx, dataConverter)
+	dataConverter = WithWorkflowContext(ctx, dataConverter)
+
+	wfInfo := getWorkflowEnvironment(ctx).WorkflowInfo()
+	return converter.WithSerializationContext(dataConverter, converter.WorkflowSerializationContext{
+		Namespace:  wfInfo.Namespace,
+		WorkflowID: wfInfo.WorkflowExecution.ID,
+	})
 }
 
 func getRegistryFromWorkflowContext(ctx Context) *registry {
@@ -1716,7 +1724,10 @@ func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
 	if rf.Type().Kind() != reflect.Ptr {
 		return errors.New("valuePtr parameter is not a pointer")
 	}
-	dataConverter := getDataConverterFromWorkflowContext(ctx)
+	dataConverter := d.dataConverter
+	if dataConverter == nil {
+		dataConverter = getDataConverterFromWorkflowContext(ctx)
+	}
 	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), valuePtr)
 	if err != nil {
 		return err
@@ -1728,16 +1739,21 @@ func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
 // fn - the decoded value needs to be validated against a function.
 func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 	impl := &decodeFutureImpl{
-		&futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn}
+		&futureImpl{channel: NewChannel(ctx).(*channelImpl)}, fn, nil}
 	return impl, impl
 }
 
 // setQueryHandler sets query handler for given queryType.
 func setQueryHandler(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+	eo := getWorkflowEnvOptions(ctx)
+	dataConverter := converter.WithSerializationContext(getDataConverterFromWorkflowContext(ctx), converter.WorkflowSerializationContext{
+		Namespace:  eo.Namespace,
+		WorkflowID: eo.WorkflowID,
+	})
 	qh := &queryHandler{
 		fn:            handler,
 		queryType:     queryType,
-		dataConverter: getDataConverterFromWorkflowContext(ctx),
+		dataConverter: dataConverter,
 		options:       options,
 	}
 	err := validateQueryHandlerFn(qh.fn)
@@ -1745,7 +1761,7 @@ func setQueryHandler(ctx Context, queryType string, handler interface{}, options
 		return err
 	}
 
-	getWorkflowEnvOptions(ctx).queryHandlers[queryType] = qh
+	eo.queryHandlers[queryType] = qh
 	return nil
 }
 
@@ -1755,7 +1771,16 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 	if err != nil {
 		return err
 	}
-	getWorkflowEnvOptions(ctx).updateHandlers[updateName] = uh
+	eo := getWorkflowEnvOptions(ctx)
+	wfCtx := converter.WorkflowSerializationContext{
+		Namespace:  eo.Namespace,
+		WorkflowID: eo.WorkflowID,
+	}
+	uh.dataConverter = converter.WithSerializationContext(
+		getDataConverterFromWorkflowContext(ctx), wfCtx)
+	uh.failureConverter = converter.WithFailureConverterSerializationContext(
+		getWorkflowEnvironment(ctx).GetFailureConverter(), wfCtx)
+	eo.updateHandlers[updateName] = uh
 	if getWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
 		getWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
 		state := getState(ctx)
