@@ -4,19 +4,18 @@ This document lists all the resource_id fields that were added to Temporal API r
 
 ## Summary
 
-Total resource_id fields added: **17**
-Implementation status: **15/17 completed**
-Testing status: **11/15 tested** (73.3% test coverage)
+Total resource_id fields added: **14**
+Implementation status: **12/14 completed**
+Testing status: **11/12 tested** (91.7% test coverage)
 
 ## Request Message Categories
 
-### 1. Workflow Task Requests (3/3 completed)
+### 1. Workflow Task Requests (2/2 completed)
 
 | Message | Field | Expected Value | Implementation Status | Test Status |
 |---------|-------|----------------|----------------------|-------------|
 | `RespondWorkflowTaskCompletedRequest` | `resource_id = 18` | Workflow ID from original task | ✅ Completed | ✅ Tested |
 | `RespondWorkflowTaskFailedRequest` | `resource_id = 11` | Workflow ID from original task | ✅ Completed | ✅ Tested |
-| `RespondQueryTaskCompletedRequest` | `resource_id = 9` | Workflow ID from original task | ✅ Completed | ✅ Tested |
 
 ### 2. Activity Task Requests (8/8 completed)
 
@@ -31,32 +30,19 @@ Testing status: **11/15 tested** (73.3% test coverage)
 | `RespondActivityTaskCanceledRequest` | `resource_id = 8` | Workflow ID or activity ID for standalone activities | ✅ Completed | ✅ Tested |
 | `RespondActivityTaskCanceledByIdRequest` | `resource_id = 8` | "workflow:workflow_id" or "activity:activity_id" for standalone | ✅ Completed | ✅ Tested |
 
-### 3. Nexus Requests (2/2 completed)
+### 3. Batch Operation Requests (1/1 completed)
 
 | Message | Field | Expected Value | Implementation Status | Test Status |
 |---------|-------|----------------|----------------------|-------------|
-| `RespondNexusTaskCompletedRequest` | `resource_id = 5` | Should match value from `PollNexusTaskQueueResponse` | ✅ Completed | ❌ Not tested |
-| `RespondNexusTaskFailedRequest` | `resource_id = 6` | Should match value from `PollNexusTaskQueueResponse` | ✅ Completed | ❌ Not tested |
+| `ExecuteMultiOperationRequest` | `resource_id = 3` | Should match `operations[0].start_workflow.workflow_id` | ✅ Completed | ✅ Tested |
 
-### 4. Batch Operation Requests (1/1 completed)
-
-| Message | Field | Expected Value | Implementation Status | Test Status |
-|---------|-------|----------------|----------------------|-------------|
-| `ExecuteMultiOperationRequest` | `resource_id = 3` | Should match `operations[0].start_workflow.workflow_id` | ✅ Completed | ❌ Not tested |
-
-### 5. Worker Requests (1/3 partial)
+### 4. Worker Requests (1/3 partial)
 
 | Message | Field | Expected Value | Implementation Status | Test Status |
 |---------|-------|----------------|----------------------|-------------|
 | `RecordWorkerHeartbeatRequest` | `resource_id = 4` | Contains the worker grouping key | ✅ Completed | ❌ Not tested |
-| `DeployWorkerConfigRequest` | `resource_id = 7` | Contains the worker grouping key | ❌ Not in SDK yet | N/A |
-| `UpdateWorkerConfigRequest` | `resource_id = 7` | Contains the worker grouping key | ❌ Not in SDK yet | N/A |
-
-### 6. Poll Response (for reference)
-
-| Message | Field | Expected Value | Implementation Status | Test Status |
-|---------|-------|----------------|----------------------|-------------|
-| `PollNexusTaskQueueResponse` | `resource_id = 4` | Workers should pass this value in response requests | N/A (Response message) | N/A |
+| `FetchWorkerConfigRequest` | `resource_id = 7` | Contains the worker grouping key | ❌ Not implemented in SDK | N/A |
+| `UpdateWorkerConfigRequest` | `resource_id = 7` | Contains the worker grouping key | ❌ Not implemented in SDK | N/A |
 
 ## Resource ID Patterns
 
@@ -73,9 +59,6 @@ Testing status: **11/15 tested** (73.3% test coverage)
 - **Worker heartbeats and config**: Use worker grouping key
 - **Pattern**: `client.workerGroupingKey`
 
-### Nexus Operations
-- **Nexus task responses**: Pass through resource ID from poll response
-- **Pattern**: `task.ResourceId` from `PollNexusTaskQueueResponse`
 
 ### Batch Operations
 - **Multi-operation requests**: Use workflow ID from first operation
@@ -115,12 +98,11 @@ All fields are defined in `/Users/tconley/api-go/proto/api/temporal/api/workflow
 
 ## Testing Status
 
-### Tested Fields (11/15)
+### Tested Fields (11/12)
 
-**Workflow Task Requests (3/3):**
+**Workflow Task Requests (2/2):**
 - ✅ `RespondWorkflowTaskCompletedRequest` - Tested with real workflow task processing
-- ✅ `RespondWorkflowTaskFailedRequest` - Tested with unregistered workflow scenarios  
-- ✅ `RespondQueryTaskCompletedRequest` - Tested with stack trace and custom queries
+- ✅ `RespondWorkflowTaskFailedRequest` - Tested with unregistered workflow scenarios
 
 **Activity Task Requests (8/8):**
 - ✅ `RecordActivityTaskHeartbeatRequest` - Tested with workflow and standalone activities
@@ -132,20 +114,16 @@ All fields are defined in `/Users/tconley/api-go/proto/api/temporal/api/workflow
 - ✅ `RespondActivityTaskCanceledRequest` - Tested via `convertActivityResultToRespondRequest` validation
 - ✅ `RespondActivityTaskCanceledByIdRequest` - Tested via `convertActivityResultToRespondRequestByID` validation
 
-### Untested Fields (4/15)
-
-**Nexus Requests (2/2):**
-- ❌ `RespondNexusTaskCompletedRequest` - No tests yet
-- ❌ `RespondNexusTaskFailedRequest` - No tests yet
-
 **Batch Operation Requests (1/1):**
-- ❌ `ExecuteMultiOperationRequest` - No tests yet
+- ✅ `ExecuteMultiOperationRequest` - Tested via UpdateWithStartWorkflow operation
+
+### Untested Fields (1/12)
 
 **Worker Requests (1/1):**
 - ❌ `RecordWorkerHeartbeatRequest` - No tests yet
 
-**Not applicable (2):**
-- N/A `DeployWorkerConfigRequest` - Not implemented in SDK
+**Not implemented in SDK (2):**
+- N/A `FetchWorkerConfigRequest` - Not implemented in SDK
 - N/A `UpdateWorkerConfigRequest` - Not implemented in SDK
 
 ## Test Files
