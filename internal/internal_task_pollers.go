@@ -627,7 +627,6 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 			CompletedType: enumspb.QUERY_RESULT_TYPE_FAILED,
 			ErrorMessage:  sendErr.Error(),
 			Namespace:     wtp.namespace,
-			ResourceId:    task.WorkflowExecution.GetWorkflowId(),
 			Failure:       wtp.failureConverter.ErrorToFailure(sendErr),
 			Cause:         enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE,
 		}

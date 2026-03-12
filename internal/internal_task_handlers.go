@@ -1834,9 +1834,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	// for query task
 	if task.Query != nil {
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{
-			TaskToken:  task.TaskToken,
-			Namespace:  wth.namespace,
-			ResourceId: task.WorkflowExecution.WorkflowId,
+			TaskToken: task.TaskToken,
+			Namespace: wth.namespace,
 		}
 		var panicErr *PanicError
 		if errors.As(workflowContext.err, &panicErr) {

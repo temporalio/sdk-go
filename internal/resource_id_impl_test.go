@@ -34,6 +34,9 @@ func TestResourceIDImplementation(t *testing.T) {
 	t.Run("ActivityTaskRequests", func(t *testing.T) {
 		testActivityTaskRequestsResourceID(t)
 	})
+	t.Run("BatchOperationRequest", func(t *testing.T) {
+		testExecuteMultiOperationResourceID(t)
+	})
 }
 
 // Test activity heartbeat resource_id population using actual SDK code path
@@ -112,9 +115,6 @@ func testWorkflowTaskResourceID(t *testing.T) {
 	})
 	t.Run("WorkflowTaskFailed", func(t *testing.T) {
 		testWorkflowTaskFailedResourceID(t)
-	})
-	t.Run("QueryTaskCompleted", func(t *testing.T) {
-		testQueryTaskCompletedResourceID(t)
 	})
 }
 
@@ -263,81 +263,6 @@ func testWorkflowTaskFailedResourceID(t *testing.T) {
 	}
 }
 
-// Test RespondQueryTaskCompletedRequest resource_id field (resource_id = 9)
-// Expected: Workflow ID from original task
-func testQueryTaskCompletedResourceID(t *testing.T) {
-	testCases := []struct {
-		name               string
-		workflowID         string
-		runID              string
-		queryType          string
-		expectedResourceID string
-	}{
-		{
-			name:               "StandardQuery",
-			workflowID:         "test-workflow-query-123",
-			runID:              "test-run-query-456",
-			queryType:          "__stack_trace",
-			expectedResourceID: "test-workflow-query-123",
-		},
-		{
-			name:               "CustomQuery",
-			workflowID:         "custom-query-workflow-789",
-			runID:              "custom-query-run-999",
-			queryType:          "custom_query",
-			expectedResourceID: "custom-query-workflow-789",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
-
-			service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-
-			var capturedRequest *workflowservice.RespondQueryTaskCompletedRequest
-			service.EXPECT().
-				RespondQueryTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-				Do(func(ctx context.Context, req *workflowservice.RespondQueryTaskCompletedRequest, opts ...interface{}) {
-					capturedRequest = req
-				}).
-				Return(&workflowservice.RespondQueryTaskCompletedResponse{}, nil).
-				Times(1)
-
-			// Create a query task
-			task := createTestQueryTask(tc.workflowID, tc.runID, tc.queryType)
-
-			// Create workflow task handler with a registered workflow
-			params := workerExecutionParameters{
-				Namespace: "test-namespace",
-				Identity:  "test-identity",
-				cache:     NewWorkerCache(),
-			}
-			ensureRequiredParams(&params)
-			registry := newRegistry()
-			registry.RegisterWorkflowWithOptions(
-				helloWorldWorkflowFunc,
-				RegisterWorkflowOptions{Name: "HelloWorld_Workflow"},
-			)
-
-			handler := newWorkflowTaskHandler(params, nil, registry)
-
-			// Process the query task through the poller
-			poller := newWorkflowTaskProcessor(handler, handler, service, params, uuid.NewString())
-
-			wt := &workflowTask{task: task}
-			err := poller.processWorkflowTask(wt)
-
-			// Query processing should succeed
-			require.NoError(t, err)
-
-			// Validate the captured request
-			require.NotNil(t, capturedRequest)
-			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId)
-		})
-	}
-}
 
 // Test activity task request resource_id population using actual SDK code paths
 func testActivityTaskRequestsResourceID(t *testing.T) {
@@ -710,6 +635,109 @@ func testActivityTaskHeartbeatByIdResourceID(t *testing.T) {
 			// Validate the captured request
 			require.NotNil(t, capturedRequest, "Request should have been captured")
 			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId, tc.description)
+		})
+	}
+}
+
+// Test ExecuteMultiOperationRequest resource_id field (resource_id = 3)
+// Expected: Should match operations[0].start_workflow.workflow_id
+func testExecuteMultiOperationResourceID(t *testing.T) {
+	testCases := []struct {
+		name               string
+		workflowID         string
+		expectedResourceID string
+	}{
+		{
+			name:               "StartUpdateWorkflow",
+			workflowID:         "test-workflow-batch-123", 
+			expectedResourceID: "test-workflow-batch-123",
+		},
+		{
+			name:               "MultiOpWithDifferentID",
+			workflowID:         "batch-operation-workflow-456",
+			expectedResourceID: "batch-operation-workflow-456",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+			
+			// Mock GetSystemInfo which gets called during client operations
+			service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+			var capturedRequest *workflowservice.ExecuteMultiOperationRequest
+			service.EXPECT().
+				ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+				Do(func(ctx context.Context, req *workflowservice.ExecuteMultiOperationRequest, opts ...interface{}) {
+					capturedRequest = req
+				}).
+				Return(&workflowservice.ExecuteMultiOperationResponse{
+					Responses: []*workflowservice.ExecuteMultiOperationResponse_Response{
+						{
+							Response: &workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow{
+								StartWorkflow: &workflowservice.StartWorkflowExecutionResponse{
+									RunId: "test-run-id",
+								},
+							},
+						},
+						{
+							Response: &workflowservice.ExecuteMultiOperationResponse_Response_UpdateWorkflow{
+								UpdateWorkflow: &workflowservice.UpdateWorkflowExecutionResponse{
+									Stage: enumspb.UPDATE_WORKFLOW_EXECUTION_LIFECYCLE_STAGE_COMPLETED,
+								},
+							},
+						},
+					},
+				}, nil).
+				Times(1)
+
+			// Create a client to trigger ExecuteMultiOperation via UpdateWithStartWorkflow
+			client := NewServiceClient(service, nil, ClientOptions{
+				Namespace: "test-namespace",
+			})
+			
+			// Create start operation with workflow options
+			startOp := client.NewWithStartWorkflowOperation(
+				StartWorkflowOptions{
+					ID:                        tc.workflowID,
+					TaskQueue:                 "test-task-queue",
+					WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+				},
+				"TestWorkflow",
+			)
+
+			// Execute the update with start workflow operation
+			ctx := context.Background()
+			_, err := client.UpdateWithStartWorkflow(ctx, UpdateWithStartWorkflowOptions{
+				StartWorkflowOperation: startOp,
+				UpdateOptions: UpdateWorkflowOptions{
+					UpdateName:   "TestUpdate",
+					Args:         []any{},
+					WaitForStage: WorkflowUpdateStageAccepted,
+				},
+			})
+
+			// The operation should succeed
+			require.NoError(t, err)
+
+			// Validate the captured request
+			require.NotNil(t, capturedRequest, "ExecuteMultiOperationRequest should have been captured")
+			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId, 
+				"ResourceId should match the workflow ID from the start operation")
+			
+			// Additional validation: ensure we have the expected operations
+			require.Len(t, capturedRequest.Operations, 2, "Should have start and update operations")
+			
+			// Verify the first operation is a start workflow operation with the expected workflow ID  
+			startWorkflowOp := capturedRequest.Operations[0].GetStartWorkflow()
+			require.NotNil(t, startWorkflowOp, "First operation should be StartWorkflow")
+			assert.Equal(t, tc.workflowID, startWorkflowOp.WorkflowId, 
+				"Start workflow operation should have the expected workflow ID")
 		})
 	}
 }

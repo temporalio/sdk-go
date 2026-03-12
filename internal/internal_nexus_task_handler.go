@@ -96,7 +96,7 @@ func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueRespo
 	failureReasonSupport := getEffectiveTemporalFailureResponses(task.GetRequest().GetCapabilities().GetTemporalFailureResponses())
 	nctx, handlerErr := h.newNexusOperationContext(task)
 	if handlerErr != nil {
-		failureRequest, err := h.fillInFailure(task.TaskToken, task.ResourceId, handlerErr, failureReasonSupport)
+		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -107,13 +107,13 @@ func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueRespo
 		return nil, nil, err
 	}
 	if handlerErr != nil {
-		failureRequest, err := h.fillInFailure(task.TaskToken, task.ResourceId, handlerErr, failureReasonSupport)
+		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
 		if err != nil {
 			return nil, nil, err
 		}
 		return nil, failureRequest, nil
 	}
-	completedRequest, err := h.fillInCompletion(task.TaskToken, task.ResourceId, res, failureReasonSupport)
+	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -127,13 +127,13 @@ func (h *nexusTaskHandler) ExecuteContext(nctx *NexusOperationContext, task *wor
 		return nil, nil, err
 	}
 	if handlerErr != nil {
-		failureRequest, err := h.fillInFailure(task.TaskToken, task.ResourceId, handlerErr, failureReasonSupport)
+		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
 		if err != nil {
 			return nil, nil, err
 		}
 		return nil, failureRequest, nil
 	}
-	completedRequest, err := h.fillInCompletion(task.TaskToken, task.ResourceId, res, failureReasonSupport)
+	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -458,7 +458,7 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 	}, nil
 }
 
-func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, resourceId string, res *nexuspb.Response, failureReasonSupport bool) (*workflowservice.RespondNexusTaskCompletedRequest, error) {
+func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response, failureReasonSupport bool) (*workflowservice.RespondNexusTaskCompletedRequest, error) {
 	// Handle conversion of Failure to OperationError for backwards compatibility with old servers.
 	if res.GetStartOperation().GetFailure() != nil && !failureReasonSupport {
 		// Convert to operation error for backwards compatibility.
@@ -487,20 +487,18 @@ func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, resourceId string,
 		}
 	}
 	return &workflowservice.RespondNexusTaskCompletedRequest{
-		Identity:   h.identity,
-		Namespace:  h.namespace,
-		TaskToken:  taskToken,
-		Response:   res,
-		ResourceId: resourceId,
+		Identity:  h.identity,
+		Namespace: h.namespace,
+		TaskToken: taskToken,
+		Response:  res,
 	}, nil
 }
 
-func (h *nexusTaskHandler) fillInFailure(taskToken []byte, resourceId string, handlerError *nexus.HandlerError, failureReasonSupport bool) (*workflowservice.RespondNexusTaskFailedRequest, error) {
+func (h *nexusTaskHandler) fillInFailure(taskToken []byte, handlerError *nexus.HandlerError, failureReasonSupport bool) (*workflowservice.RespondNexusTaskFailedRequest, error) {
 	r := &workflowservice.RespondNexusTaskFailedRequest{
-		Identity:   h.identity,
-		Namespace:  h.namespace,
-		TaskToken:  taskToken,
-		ResourceId: resourceId,
+		Identity:  h.identity,
+		Namespace: h.namespace,
+		TaskToken: taskToken,
 	}
 	if failureReasonSupport {
 		r.Failure = h.failureConverter.ErrorToFailure(handlerError)
