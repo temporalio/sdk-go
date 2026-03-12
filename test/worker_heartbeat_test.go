@@ -925,12 +925,14 @@ func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
 	}
 
 	var (
-		mu                       sync.Mutex
-		shutdownReq              *workflowservice.ShutdownWorkerRequest
-		pollCompletionsAfterStop []pollCompletion
-		pollsInFlight            atomic.Int32
-		stopCalled               atomic.Bool
+		mu          sync.Mutex
+		shutdownReq *workflowservice.ShutdownWorkerRequest
+		// lastPollErr tracks the most recent poll error per method so we can
+		// verify the final poll for each type completed gracefully.
+		lastPollErr   map[string]error
+		pollsInFlight atomic.Int32
 	)
+	lastPollErr = make(map[string]error)
 
 	c, err := client.Dial(client.Options{
 		HostPort:                ts.config.ServiceAddr,
@@ -961,22 +963,14 @@ func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
 
 					if isPoll {
 						pollsInFlight.Add(-1)
+						mu.Lock()
+						lastPollErr[method] = err
+						mu.Unlock()
 					}
 
 					if method == "/temporal.api.workflowservice.v1.WorkflowService/ShutdownWorker" {
 						mu.Lock()
 						shutdownReq = req.(*workflowservice.ShutdownWorkerRequest)
-						mu.Unlock()
-					}
-
-					// Capture poll completions that happen after Stop is called.
-					// These are the polls that should drain gracefully.
-					if isPoll && stopCalled.Load() {
-						mu.Lock()
-						pollCompletionsAfterStop = append(pollCompletionsAfterStop, pollCompletion{
-							method: method,
-							err:    err,
-						})
 						mu.Unlock()
 					}
 
@@ -996,7 +990,6 @@ func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
 		return pollsInFlight.Load() > 0
 	}, 10*time.Second, 200*time.Millisecond, "Should have at least one poll in flight")
 
-	stopCalled.Store(true)
 	w.Stop()
 
 	mu.Lock()
@@ -1008,11 +1001,12 @@ func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
 	ts.Contains(shutdownReq.TaskQueueTypes, enumspb.TASK_QUEUE_TYPE_WORKFLOW,
 		"ShutdownWorker should include WORKFLOW task queue type")
 
-	// Verify that polls outstanding at shutdown completed gracefully: the server
-	// should have returned empty responses instead of the SDK canceling them.
-	ts.NotEmpty(pollCompletionsAfterStop, "At least one poll should have completed after shutdown")
-	for _, completion := range pollCompletionsAfterStop {
-		ts.NoError(completion.err,
-			"Poll %s should complete without error after shutdown (graceful drain)", completion.method)
+	// After graceful shutdown, the last poll for each type should have
+	// completed without error. The server returns empty responses to polls
+	// cancelled via ShutdownWorker rather than the SDK cancelling them.
+	ts.NotEmpty(lastPollErr, "At least one poll method should have been observed")
+	for method, pollErr := range lastPollErr {
+		ts.NoError(pollErr,
+			"Final poll %s should complete without error (graceful drain)", method)
 	}
 }

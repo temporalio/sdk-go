@@ -161,7 +161,7 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
 				"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`,
 				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
-				"--dynamic-config-value", "matching.EnableCancelWorkerPollsOnShutdown=true",
+				"--dynamic-config-value", "frontend.enableCancelWorkerPollsOnShutdown=true",
 			},
 		})
 		if err != nil {
