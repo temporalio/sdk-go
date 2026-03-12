@@ -16,6 +16,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	querypb "go.temporal.io/api/query/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
@@ -36,6 +37,9 @@ func TestResourceIDImplementation(t *testing.T) {
 	})
 	t.Run("BatchOperationRequest", func(t *testing.T) {
 		testExecuteMultiOperationResourceID(t)
+	})
+	t.Run("WorkerHeartbeatRequest", func(t *testing.T) {
+		testRecordWorkerHeartbeatResourceID(t)
 	})
 }
 
@@ -738,6 +742,87 @@ func testExecuteMultiOperationResourceID(t *testing.T) {
 			require.NotNil(t, startWorkflowOp, "First operation should be StartWorkflow")
 			assert.Equal(t, tc.workflowID, startWorkflowOp.WorkflowId, 
 				"Start workflow operation should have the expected workflow ID")
+		})
+	}
+}
+
+// Test RecordWorkerHeartbeatRequest resource_id field (resource_id = 4)
+// Expected: Contains the worker grouping key
+func testRecordWorkerHeartbeatResourceID(t *testing.T) {
+	testCases := []struct {
+		name               string
+		expectedResourceID string
+	}{
+		{
+			name:               "WorkerHeartbeat",
+			expectedResourceID: "test-worker-grouping-key-123",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockCtrl := gomock.NewController(t)
+			defer mockCtrl.Finish()
+
+			service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+			
+			// Mock GetSystemInfo which gets called during client operations
+			service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+				Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+			var capturedRequest *workflowservice.RecordWorkerHeartbeatRequest
+			service.EXPECT().
+				RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+				Do(func(ctx context.Context, req *workflowservice.RecordWorkerHeartbeatRequest, opts ...interface{}) {
+					capturedRequest = req
+				}).
+				Return(&workflowservice.RecordWorkerHeartbeatResponse{}, nil).
+				Times(1)
+
+			// Create a client with a specific workerGroupingKey
+			wfClient := NewServiceClient(service, nil, ClientOptions{
+				Namespace: "test-namespace",
+			})
+			
+			// Set the workerGroupingKey to our test value
+			wfClient.workerGroupingKey = tc.expectedResourceID
+
+			// Create a sharedNamespaceWorker and call sendHeartbeats
+			heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+			defer heartbeatCancel()
+			
+			hw := &sharedNamespaceWorker{
+				client:          wfClient,
+				namespace:       "test-namespace",
+				heartbeatCtx:    heartbeatCtx,
+				heartbeatCancel: heartbeatCancel,
+				callbacks: map[string]func() *workerpb.WorkerHeartbeat{
+					"test-worker": func() *workerpb.WorkerHeartbeat {
+						return &workerpb.WorkerHeartbeat{
+							WorkerIdentity: "test-worker-identity",
+						}
+					},
+				},
+			}
+
+			// Call sendHeartbeats which should construct and send the request
+			err := hw.sendHeartbeats()
+
+			// The operation should succeed
+			require.NoError(t, err)
+
+			// Validate the captured request
+			require.NotNil(t, capturedRequest, "RecordWorkerHeartbeatRequest should have been captured")
+			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId, 
+				"ResourceId should match the worker grouping key")
+			
+			// Additional validation
+			assert.Equal(t, "test-namespace", capturedRequest.Namespace, 
+				"Namespace should be set correctly")
+			require.Len(t, capturedRequest.WorkerHeartbeat, 1, 
+				"Should have one worker heartbeat")
+			assert.Equal(t, "test-worker-identity", capturedRequest.WorkerHeartbeat[0].WorkerIdentity,
+				"Worker identity should be set correctly")
 		})
 	}
 }
