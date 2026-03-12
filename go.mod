@@ -4,6 +4,8 @@ go 1.23.0
 
 toolchain go1.23.6
 
+replace go.temporal.io/api => ../api-go
+
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/gogo/protobuf v1.3.2
