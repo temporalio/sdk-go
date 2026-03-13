@@ -159,8 +159,7 @@ func TestExternalStorageToParams_DuplicateDriverNames(t *testing.T) {
 	_, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers: []converter.StorageDriver{newTestDriver("same"), newTestDriver("same")},
 	})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "same")
+	require.EqualError(t, err, `duplicate storage driver name: "same"`)
 }
 
 func TestExternalStorageToParams_PointerAndValueReceiverDrivers(t *testing.T) {
