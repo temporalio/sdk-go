@@ -9047,3 +9047,67 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 		ts.Contains(err.Error(), ": canceled", "workflow should end as cancelled")
 	}
 }
+
+// TestPanicWithDeferredYield reproduces the core yield-during-panic bug from
+// https://github.com/temporalio/sdk-go/issues/2206 without needing sessions
+// or a poison DataConverter.
+//
+// A workflow panics on its first WFT attempt. During panic unwinding, a
+// deferred function schedules an activity (which yields the coroutine).
+// Without the fix, this yield freezes the panic, the WFT completes with
+// the defer's activity command, and the second attempt (which doesn't panic)
+// takes a different code path — causing a permanent TMPRL1100 NDE.
+func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
+	// Stop any existing worker
+	ts.worker.Stop()
+
+	var panicWithDeferYieldCounter atomic.Int32
+	panicWithDeferYieldCounter.Store(0)
+	panicWithDeferYieldWorkflow := func(ctx workflow.Context) error {
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+
+		defer func() {
+			// Use a disconnected context so the activity can run even during
+			// cancellation/panic unwinding.
+			dctx, _ := workflow.NewDisconnectedContext(ctx)
+			dctx = workflow.WithActivityOptions(dctx, workflow.ActivityOptions{
+				ScheduleToCloseTimeout: 10 * time.Second,
+			})
+			// This yield during panic unwinding is the crux of the bug:
+			// it freezes the panic and lets the WFT complete with the
+			// activity command from this defer.
+			_ = workflow.ExecuteActivity(dctx, "Prefix_ToUpper", "cleanup").Get(dctx, nil)
+		}()
+
+		if panicWithDeferYieldCounter.Add(1) == 1 {
+			panic("transient failure on first attempt")
+		}
+
+		_ = workflow.ExecuteActivity(ctx, "EmptyActivity").Get(ctx, nil)
+
+		return nil
+	}
+
+	wrk := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	wrk.RegisterWorkflowWithOptions(panicWithDeferYieldWorkflow, workflow.RegisterOptions{
+		Name: "PanicWithDeferYield",
+	})
+	ts.activities.register(wrk)
+	ts.NoError(wrk.Start())
+	defer wrk.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                       "test-panic-with-defer-yield",
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 15 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+	}, "PanicWithDeferYield")
+	ts.NoError(err)
+
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
+}
