@@ -163,6 +163,24 @@ func TestStorageOptionsToParams_DuplicateDriverNames(t *testing.T) {
 	require.Contains(t, err.Error(), "same")
 }
 
+func TestStorageOptionsToParams_PointerAndValueReceiverDrivers(t *testing.T) {
+	// ptrDriver satisfies StorageDriver via pointer receivers (*testStorageDriver).
+	ptrDriver := newTestDriver("ptr-driver")
+	// valDriver satisfies StorageDriver via value receivers (valueReceiverDriver).
+	// Both the plain value and a pointer to it implement the interface; here we
+	// register the plain value to confirm that path works too.
+	//valDriver := valueReceiverDriver{name: "val-driver"}
+	valDriver := newValDriver("val-driver")
+
+	params, err := StorageOptionsToParams(converter.StorageOptions{
+		Drivers:              []converter.StorageDriver{ptrDriver, valDriver},
+		PayloadSizeThreshold: 1, // store everything
+	})
+	require.NoError(t, err)
+	require.True(t, driversEqual(params.driverMap["ptr-driver"], ptrDriver), "pointer receiver driver should be in the registered set")
+	require.True(t, driversEqual(params.driverMap["val-driver"], valDriver), "value receiver driver should be in the registered set")
+}
+
 func TestStorageOptionsToParams_EmptyDrivers(t *testing.T) {
 	params, err := StorageOptionsToParams(converter.StorageOptions{})
 	require.NoError(t, err)
@@ -912,6 +930,51 @@ func TestStoreRetrieveRoundTrip_MixedInline(t *testing.T) {
 	require.True(t, proto.Equal(big, restored[1]), "stored payload restored")
 }
 
+func TestStoreRetrieveRoundTrip_PointerAndValueReceiverDrivers(t *testing.T) {
+	ptrDriver := newTestDriver("ptr-driver") // pointer receivers (*testStorageDriver)
+	valDriver := newValDriver("val-driver")  // value receivers (valueReceiverDriver)
+
+	// Route the first payload to ptrDriver and the second to valDriver.
+	i := 0
+	selector := &funcDriverSelector{fn: func(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+		defer func() { i++ }()
+		if i == 0 {
+			return ptrDriver, nil
+		}
+		return valDriver, nil
+	}}
+
+	params, err := StorageOptionsToParams(converter.StorageOptions{
+		Drivers:              []converter.StorageDriver{ptrDriver, valDriver},
+		DriverSelector:       selector,
+		PayloadSizeThreshold: 1, // store everything
+	})
+	require.NoError(t, err)
+	storeVisitor := NewStorageStoreVisitor(params)
+	retrieveVisitor := NewStorageRetrievalVisitor(params)
+
+	p1 := makePayload(t, "via-ptr-driver")
+	p2 := makePayload(t, "via-val-driver")
+
+	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{p1, p2})
+	require.NoError(t, err)
+
+	// Confirm each payload was routed to the expected driver.
+	ref0, err := payloadToStorageReference(refs[0])
+	require.NoError(t, err)
+	require.Equal(t, "ptr-driver", ref0.DriverName)
+
+	ref1, err := payloadToStorageReference(refs[1])
+	require.NoError(t, err)
+	require.Equal(t, "val-driver", ref1.DriverName)
+
+	// Both payloads should round-trip back to their original values.
+	result, err := visitPayloads(context.Background(), retrieveVisitor, refs)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(p1, result[0]))
+	require.True(t, proto.Equal(p2, result[1]))
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers (error/bad-count drivers, codecs, callback)
 // ---------------------------------------------------------------------------
@@ -1008,6 +1071,42 @@ func (c *errCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, er
 		return nil, c.decErr
 	}
 	return payloads, nil
+}
+
+// valueReceiverDriver implements StorageDriver entirely with value receivers.
+// NewValDriver returns *valueReceiverDriver, so the interface holds a pointer
+// (always comparable as a map key). Value receivers share the same underlying
+// map reference, so Store/Retrieve mutations on the data map persist correctly.
+type valueReceiverDriver struct {
+	name string
+	data map[string]*commonpb.Payload
+}
+
+func (d valueReceiverDriver) Name() string { return d.name }
+func (d valueReceiverDriver) Type() string { return "value" }
+func (d valueReceiverDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
+	claims := make([]converter.StorageClaim, len(payloads))
+	for i, p := range payloads {
+		key := uuid.NewString()
+		d.data[key] = proto.Clone(p).(*commonpb.Payload)
+		claims[i] = converter.StorageClaim{Data: map[string]string{"key": key}}
+	}
+	return claims, nil
+}
+func (d valueReceiverDriver) Retrieve(_ converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
+	payloads := make([]*commonpb.Payload, len(claims))
+	for i, c := range claims {
+		p, ok := d.data[c.Data["key"]]
+		if !ok {
+			return nil, fmt.Errorf("key not found: %q", c.Data["key"])
+		}
+		payloads[i] = proto.Clone(p).(*commonpb.Payload)
+	}
+	return payloads, nil
+}
+
+func newValDriver(name string) converter.StorageDriver {
+	return valueReceiverDriver{name: name, data: map[string]*commonpb.Payload{}}
 }
 
 type testCallback struct {

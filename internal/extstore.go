@@ -55,6 +55,19 @@ func StorageOptionsToParams(options converter.StorageOptions) (storageParameters
 	}, nil
 }
 
+// driversEqual compares two StorageDriver interface values. It uses == when
+// the dynamic type is comparable (pointer types, simple value types) and
+// falls back to name equality for non-comparable value types (e.g. structs
+// with map fields).
+func driversEqual(a, b converter.StorageDriver) (equal bool) {
+	defer func() {
+		if recover() != nil {
+			equal = a.Name() == b.Name()
+		}
+	}()
+	return a == b
+}
+
 type storageOperationCallback interface {
 	PayloadBatchCompleted(count int, size int64, duration time.Duration)
 	UnconfiguredStorageReference()
@@ -246,10 +259,10 @@ func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []
 			}
 			if selected != nil {
 				registered, ok := v.params.driverMap[selected.Name()]
-				if !ok {
+				if !ok || !driversEqual(registered, selected) {
 					return nil, fmt.Errorf("storage driver selector returned unregistered driver %q", selected.Name())
 				}
-				driver = registered
+				driver = selected
 			}
 		} else {
 			driver = v.params.firstDriver
