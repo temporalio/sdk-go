@@ -697,6 +697,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 		request := wtp.errorToFailWorkflowTask(task.TaskToken, sendErr)
 		request.Cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE
 		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request); err != nil {
+			wtp.logger.Error("Failed to visit payloads for GRPC message too large failure response.", tagError, err)
 			return
 		}
 		_, err = wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: request}, task)
@@ -710,6 +711,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 			Cause:         enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE,
 		}
 		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request); err != nil {
+			wtp.logger.Error("Failed to visit payloads for GRPC message too large query failure response.", tagError, err)
 			return
 		}
 		_, err = wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: request}, task)
