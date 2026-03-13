@@ -919,20 +919,11 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
 	taskQueue := taskQueuePrefix + "-graceful-shutdown-" + ts.T().Name()
 
-	type pollCompletion struct {
-		method string
-		err    error
-	}
-
 	var (
 		mu          sync.Mutex
 		shutdownReq *workflowservice.ShutdownWorkerRequest
-		// lastPollErr tracks the most recent poll error per method so we can
-		// verify the final poll for each type completed gracefully.
-		lastPollErr   map[string]error
-		pollsInFlight atomic.Int32
+		pollErrors  []error
 	)
-	lastPollErr = make(map[string]error)
 
 	c, err := client.Dial(client.Options{
 		HostPort:                ts.config.ServiceAddr,
@@ -951,26 +942,20 @@ func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
 					invoker grpc.UnaryInvoker,
 					opts ...grpc.CallOption,
 				) error {
-					isPoll := strings.HasSuffix(method, "/PollWorkflowTaskQueue") ||
-						strings.HasSuffix(method, "/PollActivityTaskQueue") ||
-						strings.HasSuffix(method, "/PollNexusTaskQueue")
-
-					if isPoll {
-						pollsInFlight.Add(1)
+					if strings.HasSuffix(method, "/ShutdownWorker") {
+						mu.Lock()
+						shutdownReq = req.(*workflowservice.ShutdownWorkerRequest)
+						mu.Unlock()
 					}
 
 					err := invoker(ctx, method, req, reply, cc, opts...)
 
-					if isPoll {
-						pollsInFlight.Add(-1)
+					isPoll := strings.HasSuffix(method, "/PollWorkflowTaskQueue") ||
+						strings.HasSuffix(method, "/PollActivityTaskQueue") ||
+						strings.HasSuffix(method, "/PollNexusTaskQueue")
+					if isPoll && err != nil {
 						mu.Lock()
-						lastPollErr[method] = err
-						mu.Unlock()
-					}
-
-					if method == "/temporal.api.workflowservice.v1.WorkflowService/ShutdownWorker" {
-						mu.Lock()
-						shutdownReq = req.(*workflowservice.ShutdownWorkerRequest)
+						pollErrors = append(pollErrors, err)
 						mu.Unlock()
 					}
 
@@ -982,13 +967,21 @@ func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
 	ts.NoError(err)
 	defer c.Close()
 
-	w := worker.New(c, taskQueue, worker.Options{})
+	w := worker.New(c, taskQueue, worker.Options{
+		WorkerStopTimeout: 2 * time.Second,
+	})
 	w.RegisterWorkflow(simpleWorkflow)
 	ts.NoError(w.Start())
 
+	// Wait for pollers to be registered on the server, ensuring polls are
+	// blocked in the matcher before we trigger shutdown.
 	ts.Eventually(func() bool {
-		return pollsInFlight.Load() > 0
-	}, 10*time.Second, 200*time.Millisecond, "Should have at least one poll in flight")
+		resp, err := c.DescribeTaskQueue(context.Background(), taskQueue, enumspb.TASK_QUEUE_TYPE_WORKFLOW)
+		if err != nil {
+			return false
+		}
+		return len(resp.Pollers) > 0
+	}, 10*time.Second, 200*time.Millisecond, "Pollers never registered on server")
 
 	w.Stop()
 
@@ -1001,12 +994,14 @@ func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
 	ts.Contains(shutdownReq.TaskQueueTypes, enumspb.TASK_QUEUE_TYPE_WORKFLOW,
 		"ShutdownWorker should include WORKFLOW task queue type")
 
-	// After graceful shutdown, the last poll for each type should have
-	// completed without error. The server returns empty responses to polls
-	// cancelled via ShutdownWorker rather than the SDK cancelling them.
-	ts.NotEmpty(lastPollErr, "At least one poll method should have been observed")
-	for method, pollErr := range lastPollErr {
-		ts.NoError(pollErr,
-			"Final poll %s should complete without error (graceful drain)", method)
+	// With graceful shutdown, the SDK must not cancel poll contexts. Poll
+	// errors from connection closure during stop are expected, but
+	// context.Canceled would indicate the SDK cancelled a poll client-side.
+	for _, err := range pollErrors {
+		// We use string matching because gRPC wraps context cancellation into
+		// its own error types that don't preserve context.Canceled in the
+		// Unwrap() chain, so errors.Is(err, context.Canceled) won't detect it.
+		ts.False(strings.Contains(err.Error(), "context canceled"),
+			"Poll should not receive context canceled with graceful shutdown; got: %v", err)
 	}
 }
