@@ -613,14 +613,14 @@ type (
 		WorkerHeartbeatInterval time.Duration
 
 		// ExternalStorage configures external payload storage for this client.
-		// When set, payloads that exceed StorageOptions.PayloadSizeThreshold
+		// When set, payloads that exceed ExternalStorage.PayloadSizeThreshold
 		// are offloaded to an external store (e.g. S3, GCS) by the configured
 		// driver(s), and a storage reference is substituted into the history event.
 		// References are resolved back to the original payloads transparently before
 		// they reach the data converter or application code.
 		//
 		// NOTE: Experimental
-		ExternalStorage converter.StorageOptions
+		ExternalStorage converter.ExternalStorage
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -1244,7 +1244,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		heartbeatInterval = options.WorkerHeartbeatInterval
 	}
 
-	storageParams, err := StorageOptionsToParams(options.ExternalStorage)
+	storageParams, err := ExternalStorageToParams(options.ExternalStorage)
 	if err != nil {
 		panic(fmt.Sprintf("invalid ExternalStorage options: %v", err))
 	}

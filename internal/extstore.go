@@ -23,7 +23,7 @@ type storageParameters struct {
 	codecs               []converter.PayloadCodec
 }
 
-func StorageOptionsToParams(options converter.StorageOptions) (storageParameters, error) {
+func ExternalStorageToParams(options converter.ExternalStorage) (storageParameters, error) {
 	if options.PayloadSizeThreshold < 0 {
 		return storageParameters{}, fmt.Errorf("PayloadSizeThreshold must not be negative")
 	}

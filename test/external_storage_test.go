@@ -148,7 +148,7 @@ func (s *ExternalStorageTestSuite) SetupTest() {
 		HostPort:  s.config.ServiceAddr,
 		Namespace: s.config.Namespace,
 		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.StorageOptions{
+		ExternalStorage: converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{s.driver},
 			PayloadSizeThreshold: extStoreThreshold,
 		},
@@ -388,7 +388,7 @@ func (s *ExternalStorageTestSuite) TestDriverSelector() {
 		HostPort:  s.config.ServiceAddr,
 		Namespace: s.config.Namespace,
 		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.StorageOptions{
+		ExternalStorage: converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{d1, d2},
 			DriverSelector:       selector,
 			PayloadSizeThreshold: extStoreThreshold,
@@ -513,7 +513,7 @@ func (s *ExternalStorageTestSuite) TestDriverPanicOnRetrieve() {
 		HostPort:  s.config.ServiceAddr,
 		Namespace: s.config.Namespace,
 		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.StorageOptions{
+		ExternalStorage: converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{pd},
 			PayloadSizeThreshold: extStoreThreshold,
 		},
@@ -562,7 +562,7 @@ func (s *ExternalStorageTestSuite) TestDriverPanicOnStore() {
 		HostPort:  s.config.ServiceAddr,
 		Namespace: s.config.Namespace,
 		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.StorageOptions{
+		ExternalStorage: converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{pd},
 			PayloadSizeThreshold: extStoreThreshold,
 		},
@@ -619,7 +619,7 @@ func (s *ExternalStorageTestSuite) TestReplayWithExternalStorage() {
 
 	// Replay using the same driver instance so stored payloads can be resolved.
 	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
-		ExternalStorage: converter.StorageOptions{
+		ExternalStorage: converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{s.driver},
 			PayloadSizeThreshold: extStoreThreshold,
 		},

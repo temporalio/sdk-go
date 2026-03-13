@@ -1621,12 +1621,12 @@ type WorkflowReplayerOptions struct {
 	Plugins []WorkerPlugin
 
 	// ExternalStorage configures external payload storage for replay.
-	// Set this to the same StorageOptions used by the original worker so that
+	// Set this to the same ExternalStorage used by the original worker so that
 	// externally stored payloads in the history are resolved before being
 	// passed to the workflow code.
 	//
 	// NOTE: Experimental
-	ExternalStorage converter.StorageOptions
+	ExternalStorage converter.ExternalStorage
 }
 
 // ReplayWorkflowHistoryOptions are options for replaying a workflow.
@@ -1651,7 +1651,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		}
 	}
 
-	storageParams, err := StorageOptionsToParams(options.ExternalStorage)
+	storageParams, err := ExternalStorageToParams(options.ExternalStorage)
 	if err != nil {
 		return nil, fmt.Errorf("invalid ExternalStorage options: %w", err)
 	}

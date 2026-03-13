@@ -126,11 +126,11 @@ func visitPayloads(ctx context.Context, visitor PayloadVisitor, payloads []*comm
 }
 
 // ---------------------------------------------------------------------------
-// StorageOptionsToParams
+// ExternalStorageToParams
 // ---------------------------------------------------------------------------
 
-func TestStorageOptionsToParams_NegativeThreshold(t *testing.T) {
-	_, err := StorageOptionsToParams(converter.StorageOptions{
+func TestExternalStorageToParams_NegativeThreshold(t *testing.T) {
+	_, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{newTestDriver("d")},
 		PayloadSizeThreshold: -1,
 	})
@@ -138,16 +138,16 @@ func TestStorageOptionsToParams_NegativeThreshold(t *testing.T) {
 	require.Contains(t, err.Error(), "PayloadSizeThreshold")
 }
 
-func TestStorageOptionsToParams_ZeroThresholdUsesDefault(t *testing.T) {
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+func TestExternalStorageToParams_ZeroThresholdUsesDefault(t *testing.T) {
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers: []converter.StorageDriver{newTestDriver("d")},
 	})
 	require.NoError(t, err)
 	require.Equal(t, defaultPayloadSizeThreshold, params.payloadSizeThreshold)
 }
 
-func TestStorageOptionsToParams_ExplicitThreshold(t *testing.T) {
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+func TestExternalStorageToParams_ExplicitThreshold(t *testing.T) {
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{newTestDriver("d")},
 		PayloadSizeThreshold: 1024,
 	})
@@ -155,15 +155,15 @@ func TestStorageOptionsToParams_ExplicitThreshold(t *testing.T) {
 	require.Equal(t, 1024, params.payloadSizeThreshold)
 }
 
-func TestStorageOptionsToParams_DuplicateDriverNames(t *testing.T) {
-	_, err := StorageOptionsToParams(converter.StorageOptions{
+func TestExternalStorageToParams_DuplicateDriverNames(t *testing.T) {
+	_, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers: []converter.StorageDriver{newTestDriver("same"), newTestDriver("same")},
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "same")
 }
 
-func TestStorageOptionsToParams_PointerAndValueReceiverDrivers(t *testing.T) {
+func TestExternalStorageToParams_PointerAndValueReceiverDrivers(t *testing.T) {
 	// ptrDriver satisfies StorageDriver via pointer receivers (*testStorageDriver).
 	ptrDriver := newTestDriver("ptr-driver")
 	// valDriver satisfies StorageDriver via value receivers (valueReceiverDriver).
@@ -172,7 +172,7 @@ func TestStorageOptionsToParams_PointerAndValueReceiverDrivers(t *testing.T) {
 	//valDriver := valueReceiverDriver{name: "val-driver"}
 	valDriver := newValDriver("val-driver")
 
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{ptrDriver, valDriver},
 		PayloadSizeThreshold: 1, // store everything
 	})
@@ -181,8 +181,8 @@ func TestStorageOptionsToParams_PointerAndValueReceiverDrivers(t *testing.T) {
 	require.True(t, driversEqual(params.driverMap["val-driver"], valDriver), "value receiver driver should be in the registered set")
 }
 
-func TestStorageOptionsToParams_EmptyDrivers(t *testing.T) {
-	params, err := StorageOptionsToParams(converter.StorageOptions{})
+func TestExternalStorageToParams_EmptyDrivers(t *testing.T) {
+	params, err := ExternalStorageToParams(converter.ExternalStorage{})
 	require.NoError(t, err)
 	require.Nil(t, params.firstDriver)
 }
@@ -231,7 +231,7 @@ func TestPayloadToStorageReference_CorruptJSON(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestStoreVisitor_NoDriverNoop(t *testing.T) {
-	params, err := StorageOptionsToParams(converter.StorageOptions{})
+	params, err := ExternalStorageToParams(converter.ExternalStorage{})
 	require.NoError(t, err)
 	visitor := NewStorageStoreVisitor(params)
 
@@ -244,7 +244,7 @@ func TestStoreVisitor_NoDriverNoop(t *testing.T) {
 func TestStoreVisitor_BelowThreshold_NotStored(t *testing.T) {
 	driver := newTestDriver("d")
 	// Use a large threshold so the payload stays inline.
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1 << 20, // 1 MiB
 	})
@@ -261,7 +261,7 @@ func TestStoreVisitor_BelowThreshold_NotStored(t *testing.T) {
 func TestStoreVisitor_AtThreshold_Stored(t *testing.T) {
 	const threshold = 100
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: threshold,
 	})
@@ -280,7 +280,7 @@ func TestStoreVisitor_AtThreshold_Stored(t *testing.T) {
 func TestStoreVisitor_AboveThreshold_Stored(t *testing.T) {
 	const threshold = 10
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: threshold,
 	})
@@ -297,7 +297,7 @@ func TestStoreVisitor_AboveThreshold_Stored(t *testing.T) {
 func TestStoreVisitor_MultiplePayloads_Batched(t *testing.T) {
 	const threshold = 500
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: threshold,
 	})
@@ -324,7 +324,7 @@ func TestStoreVisitor_SelectorNil_PayloadInline(t *testing.T) {
 	selector := &funcDriverSelector{fn: func(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
 		return nil, nil
 	}}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:        []converter.StorageDriver{driver},
 		DriverSelector: selector,
 	})
@@ -345,7 +345,7 @@ func TestStoreVisitor_SelectorBelowThreshold_NotCalled(t *testing.T) {
 		selectorCalled = true
 		return driver, nil
 	}}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		DriverSelector:       selector,
 		PayloadSizeThreshold: 1 << 20, // 1 MiB
@@ -372,7 +372,7 @@ func TestStoreVisitor_SelectorRoutes_TwoDrivers(t *testing.T) {
 		}
 		return d2, nil
 	}}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{d1, d2},
 		DriverSelector:       selector,
 		PayloadSizeThreshold: 1,
@@ -393,7 +393,7 @@ func TestStoreVisitor_SelectorUnregisteredDriver(t *testing.T) {
 	selector := &funcDriverSelector{fn: func(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
 		return unregistered, nil
 	}}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{newTestDriver("registered")},
 		DriverSelector:       selector,
 		PayloadSizeThreshold: 1,
@@ -410,7 +410,7 @@ func TestStoreVisitor_SelectorError(t *testing.T) {
 	selector := &funcDriverSelector{fn: func(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
 		return nil, errors.New("selector error")
 	}}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{newTestDriver("d")},
 		DriverSelector:       selector,
 		PayloadSizeThreshold: 1,
@@ -430,7 +430,7 @@ func TestStoreVisitor_CodecOrderReversed(t *testing.T) {
 	codecB := &trackingCodec{id: "B", encOrder: &encOrder, decOrder: &decOrder}
 
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadCodecs:        []converter.PayloadCodec{codecA, codecB},
 		PayloadSizeThreshold: 1, // store everything
@@ -446,7 +446,7 @@ func TestStoreVisitor_CodecOrderReversed(t *testing.T) {
 
 func TestStoreVisitor_WrongClaimCount(t *testing.T) {
 	driver := &badCountDriver{name: "my-bad-count-driver"}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
 	})
@@ -461,7 +461,7 @@ func TestStoreVisitor_WrongClaimCount(t *testing.T) {
 func TestStoreVisitor_StoreError(t *testing.T) {
 	driver := newTestDriver("my-bad-error-driver")
 	driver.storeErr = errors.New("store failed")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
 	})
@@ -476,7 +476,7 @@ func TestStoreVisitor_StoreError(t *testing.T) {
 
 func TestStoreVisitor_StorePanic(t *testing.T) {
 	driver := &panicDriver{name: "my-panic-store-driver", panicOnStore: true}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
 	})
@@ -502,7 +502,7 @@ func TestStoreVisitor_CancelOnError(t *testing.T) {
 		}
 		return blockD, nil
 	}}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{errD, blockD},
 		DriverSelector:       selector,
 		PayloadSizeThreshold: 1,
@@ -525,7 +525,7 @@ func TestStoreVisitor_CancelOnError(t *testing.T) {
 func TestStoreVisitor_CodecEncodeError(t *testing.T) {
 	codec := &errCodec{encErr: errors.New("encode error")}
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadCodecs:        []converter.PayloadCodec{codec},
 		PayloadSizeThreshold: 1,
@@ -541,7 +541,7 @@ func TestStoreVisitor_CodecEncodeError(t *testing.T) {
 func TestStoreVisitor_Callback(t *testing.T) {
 	driver := newTestDriver("d")
 	driver.storeDelay = time.Millisecond
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
 	})
@@ -560,7 +560,7 @@ func TestStoreVisitor_Callback(t *testing.T) {
 func TestStoreVisitor_Callback_ExternalCountOnly(t *testing.T) {
 	const threshold = 50
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: threshold,
 	})
@@ -584,7 +584,7 @@ func TestStoreVisitor_Callback_ExternalCountOnly(t *testing.T) {
 
 func TestRetrievalVisitor_InlinePassthrough(t *testing.T) {
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers: []converter.StorageDriver{driver},
 	})
 	require.NoError(t, err)
@@ -599,7 +599,7 @@ func TestRetrievalVisitor_InlinePassthrough(t *testing.T) {
 
 func TestRetrievalVisitor_Mixed(t *testing.T) {
 	driver := newTestDriver("d")
-	storeParams, err := StorageOptionsToParams(converter.StorageOptions{
+	storeParams, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
 	})
@@ -622,7 +622,7 @@ func TestRetrievalVisitor_Mixed(t *testing.T) {
 
 func TestRetrievalVisitor_BatchedByDriver(t *testing.T) {
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
 	})
@@ -653,7 +653,7 @@ func TestRetrievalVisitor_MultiDriver(t *testing.T) {
 		}
 		return d2, nil
 	}}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{d1, d2},
 		DriverSelector:       selector,
 		PayloadSizeThreshold: 1,
@@ -675,7 +675,7 @@ func TestRetrievalVisitor_MultiDriver(t *testing.T) {
 }
 
 func TestRetrievalVisitor_UnknownDriver(t *testing.T) {
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers: []converter.StorageDriver{newTestDriver("registered")},
 	})
 	require.NoError(t, err)
@@ -695,7 +695,7 @@ func TestRetrievalVisitor_UnknownDriver(t *testing.T) {
 func TestRetrievalVisitor_RetrieveError(t *testing.T) {
 	driver := newTestDriver("my-bad-error-driver")
 	driver.retrieveErr = errors.New("retrieve error")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
 	})
@@ -714,7 +714,7 @@ func TestRetrievalVisitor_RetrieveError(t *testing.T) {
 
 func TestRetrievalVisitor_RetrievePanic(t *testing.T) {
 	driver := &panicDriver{name: "my-panic-retrieve-driver", panicOnRetrieve: true}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers: []converter.StorageDriver{driver},
 	})
 	require.NoError(t, err)
@@ -739,7 +739,7 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 
 	// Store via errD so we get a real reference for errD, then hand-craft a
 	// reference for blockD.
-	storeParams, err := StorageOptionsToParams(converter.StorageOptions{
+	storeParams, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{errD},
 		PayloadSizeThreshold: 1,
 	})
@@ -755,7 +755,7 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 	}, 10)
 	require.NoError(t, err)
 
-	retrieveParams, err := StorageOptionsToParams(converter.StorageOptions{
+	retrieveParams, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers: []converter.StorageDriver{errD, blockD},
 	})
 	require.NoError(t, err)
@@ -774,7 +774,7 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 
 func TestRetrievalVisitor_WrongPayloadCount(t *testing.T) {
 	driver := &badCountRetrieveDriver{name: "my-bad-count-driver"}
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers: []converter.StorageDriver{driver},
 	})
 	require.NoError(t, err)
@@ -798,7 +798,7 @@ func TestRetrievalVisitor_CodecOrderForward(t *testing.T) {
 	codecB := &trackingCodec{id: "B", encOrder: &encOrder, decOrder: &decOrder}
 
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadCodecs:        []converter.PayloadCodec{codecA, codecB},
 		PayloadSizeThreshold: 1,
@@ -819,7 +819,7 @@ func TestRetrievalVisitor_CodecOrderForward(t *testing.T) {
 func TestRetrievalVisitor_CodecDecodeError(t *testing.T) {
 	codec := &errCodec{decErr: errors.New("decode error")}
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadCodecs:        []converter.PayloadCodec{codec},
 		PayloadSizeThreshold: 1,
@@ -839,7 +839,7 @@ func TestRetrievalVisitor_CodecDecodeError(t *testing.T) {
 func TestRetrievalVisitor_Callback(t *testing.T) {
 	driver := newTestDriver("d")
 	driver.retrieveDelay = time.Millisecond
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
 	})
@@ -860,7 +860,7 @@ func TestRetrievalVisitor_Callback(t *testing.T) {
 func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {
 	const threshold = 50
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: threshold,
 	})
@@ -889,7 +889,7 @@ func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {
 
 func TestStoreRetrieveRoundTrip_Single(t *testing.T) {
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: 1,
 	})
@@ -910,7 +910,7 @@ func TestStoreRetrieveRoundTrip_Single(t *testing.T) {
 func TestStoreRetrieveRoundTrip_MixedInline(t *testing.T) {
 	const threshold = 50
 	driver := newTestDriver("d")
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{driver},
 		PayloadSizeThreshold: threshold,
 	})
@@ -944,7 +944,7 @@ func TestStoreRetrieveRoundTrip_PointerAndValueReceiverDrivers(t *testing.T) {
 		return valDriver, nil
 	}}
 
-	params, err := StorageOptionsToParams(converter.StorageOptions{
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{ptrDriver, valDriver},
 		DriverSelector:       selector,
 		PayloadSizeThreshold: 1, // store everything

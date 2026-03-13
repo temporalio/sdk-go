@@ -79,7 +79,7 @@ type StorageDriver interface {
 // Use this when different payloads should be routed to different backends. For
 // example, routing large binary blobs to object storage while keeping small
 // JSON payloads inline. If no selector is set, the first driver in
-// StorageOptions.Drivers is used for every payload that exceeds the size
+// ExternalStorage.Drivers is used for every payload that exceeds the size
 // threshold.
 //
 // NOTE: Experimental
@@ -87,7 +87,7 @@ type StorageDriverSelector interface {
 	SelectDriver(ctx StorageDriverStoreContext, payloads *commonpb.Payload) (StorageDriver, error)
 }
 
-// StorageOptions configures external payload storage for a Temporal client or
+// ExternalStorage configures external payload storage for a Temporal client or
 // worker. When set, the SDK intercepts payloads on the way to and from the
 // Temporal server: payloads that exceed PayloadSizeThreshold are offloaded to
 // an external store by the configured driver(s), and storage references are
@@ -95,7 +95,7 @@ type StorageDriverSelector interface {
 // original payloads before they reach the data converter or application code.
 //
 // NOTE: Experimental
-type StorageOptions struct {
+type ExternalStorage struct {
 	// Drivers is the list of available storage drivers. At least one driver
 	// must be provided. If no DriverSelector is set, the first driver is used
 	// for all payloads that exceed the size threshold. All drivers listed here
