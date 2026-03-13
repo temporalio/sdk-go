@@ -3632,7 +3632,7 @@ func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bo
 // the defer'd CompleteSession runs during panic unwinding and cancels the session
 // creation activity. With FailWorkflow panic policy, these commands are sent.
 // On replay, the ActivityTaskCancelRequested for the creation activity hits the
-// state machine while it's still in Initiated state, causing a permanent TMPRL1100 NDE.
+// state machine while it's still in Initiated state, causing an NDE.
 func (w *Workflows) SessionCancelNDE(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 
@@ -3645,8 +3645,7 @@ func (w *Workflows) SessionCancelNDE(ctx workflow.Context) error {
 	}
 	defer workflow.CompleteSession(sessionCtx)
 
-	// The DataConverter is configured to fail when encoding "FAIL_ENCODE_NOW",
-	// triggering a panic at workflow.go:943 (encodeArgs panics on error).
+	// The DataConverter is configured to panic when encoding "FAIL_ENCODE_NOW"
 	var result string
 	err = workflow.ExecuteActivity(sessionCtx, "Prefix_ToUpper", "FAIL_ENCODE_NOW").Get(sessionCtx, &result)
 	return err

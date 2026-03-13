@@ -689,10 +689,7 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 // When a session workflow's creation activity receives an ActivityTaskCancelRequested event
 // during replay while its state machine is still in "Initiated" state (before the workflow
 // code has re-executed CompleteSession to transition to CancellationCommandSent), the
-// handleCancelInitiatedEvent call causes a [TMPRL1100] non-determinism panic.
-//
-// The valid state transitions for handleCancelInitiatedEvent should include commandStateInitiated,
-// as the cancel request can arrive while the activity is in Initiated state during replay.
+// handleCancelInitiatedEvent call causes an NDE.
 func Test_ActivityStateMachine_CancelInitiated_WhileInInitiatedState(t *testing.T) {
 	t.Parallel()
 	activityID := "test-activity-1"
@@ -720,9 +717,6 @@ func Test_ActivityStateMachine_CancelInitiated_WhileInInitiatedState(t *testing.
 	// state machine is still in Initiated state. This happens when the cancel
 	// command was sent in a previous workflow task but during replay the workflow
 	// code hasn't re-executed the cancel yet.
-	//
-	// BUG: This currently panics with [TMPRL1100] because handleCancelInitiatedEvent
-	// only accepts commandStateCancellationCommandSent and commandStateCanceledAfterInitiated.
 	err := runAndCatchPanic(func() {
 		h.handleActivityTaskCancelRequested(scheduleID)
 	})

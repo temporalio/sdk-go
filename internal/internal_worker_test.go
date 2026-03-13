@@ -852,12 +852,7 @@ func createHistoryForCancelActivityTests(workflowType string) []*historypb.Histo
 // This test constructs a history where the ActivityTaskCancelRequested event arrives
 // while the activity's state machine is still in Initiated state during replay. This
 // can happen when the server delivers the cancel event before the workflow task that
-// sends the cancel command, similar to the unusual child workflow event ordering
-// tested in TestReplayWorkflowHistory_ChildWorkflowCancellation_Unusual_Ordering
-// (which was fixed in PR #323).
-//
-// The state machine's handleCancelInitiatedEvent does not accept commandStateInitiated,
-// causing a [TMPRL1100] non-determinism panic that permanently bricks the workflow.
+// sends the cancel command.
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelActivity_Unusual_Ordering() {
 	taskQueue := "taskQueue1"
 	// This history is the same as createHistoryForCancelActivityTests but with
@@ -924,9 +919,10 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelActivity_Unusu
 	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowCancelActivity)
 	err = replayer.ReplayWorkflowHistory(logger, history)
-	// The replay may still produce other NDE errors due to the unusual event
-	// ordering affecting command matching, but the critical assertion is that
-	// the permanent-bricking handleCancelInitiatedEvent panic no longer occurs.
+	// The unusual event ordering means the replay commands won't perfectly
+	// match the history (the cancel event appears before the workflow code
+	// generates it). The important thing is that handleCancelInitiatedEvent
+	// no longer panics when the activity is in Initiated state.
 	if err != nil {
 		require.NotContains(s.T(), err.Error(), "handleCancelInitiatedEvent",
 			"state machine should accept cancel in Initiated state")
