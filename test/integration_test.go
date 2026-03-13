@@ -9028,12 +9028,17 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 	ts.True(hasCancelRequested,
 		"history should contain ActivityTaskCancelRequested for the session creation activity")
 
-	// Replay the history with a normal DataConverter. This should trigger the
-	// TMPRL1100 NDE because handleCancelInitiatedEvent rejects Initiated state.
+	// Replay the history with a normal DataConverter. Before the fix, this
+	// would trigger a permanent TMPRL1100 NDE because handleCancelInitiatedEvent
+	// rejected Initiated state. With the fix, the state machine accepts the
+	// transition. The replay may still fail with a different (non-bricking) NDE
+	// because the workflow code diverges (encodeArgs succeeds with normal DC),
+	// but the critical permanent-bricking panic is gone.
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(ts.workflows.SessionCancelNDE)
 	replayErr := replayer.ReplayWorkflowHistory(ilog.NewDefaultLogger(), history)
-	ts.Error(replayErr, "replay should fail with TMPRL1100 NDE")
-	ts.Contains(replayErr.Error(), "handleCancelInitiatedEvent",
-		"replay error should be the state machine transition failure")
+	if replayErr != nil {
+		ts.NotContains(replayErr.Error(), "handleCancelInitiatedEvent",
+			"state machine should accept cancel in Initiated state")
+	}
 }

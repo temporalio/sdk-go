@@ -726,12 +726,8 @@ func Test_ActivityStateMachine_CancelInitiated_WhileInInitiatedState(t *testing.
 	err := runAndCatchPanic(func() {
 		h.handleActivityTaskCancelRequested(scheduleID)
 	})
-	// This assertion documents the current buggy behavior: the state machine
-	// panics with a non-determinism error when receiving a cancel event in
-	// Initiated state. Once the bug is fixed, this should be changed to:
-	//   require.NoError(t, err)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "handleCancelInitiatedEvent")
+	require.NoError(t, err)
+	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
 }
 
 func runAndCatchPanic(f func()) (err error) {
