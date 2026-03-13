@@ -158,6 +158,11 @@ type (
 		closed       atomic.Bool      // indicates that owning coroutine has finished execution
 		blocked      atomic.Bool
 		panicError   error // non nil if coroutine had unhandled panic
+		// panickedValue is set before a panic is raised within the coroutine.
+		// When set, yield() re-panics instead of blocking, preventing defers
+		// from yielding the coroutine and inadvertently committing commands
+		// as part of the current workflow task response.
+		panickedValue interface{}
 	}
 
 	dispatcherImpl struct {
@@ -1038,6 +1043,12 @@ func (s *coroutineState) initialYield(stackDepth int, status string) {
 // yield indicates that coroutine cannot make progress and should sleep
 // this call blocks
 func (s *coroutineState) yield(status string) {
+	if s.panickedValue != nil {
+		// A panic is being unwound. Re-panic to prevent defers from
+		// yielding the coroutine, which would commit their commands
+		// as part of the current workflow task response.
+		panic(s.panickedValue)
+	}
 	s.aboutToBlock <- true
 	s.initialYield(3, status) // omit three levels of stack. To adjust change to 0 and count the lines to remove.
 	s.keptBlocked = true

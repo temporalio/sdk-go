@@ -9004,9 +9004,9 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 	}, ts.workflows.SessionCancelNDE)
 	ts.NoError(err)
 
-	// Wait for a workflow task failure to appear. The first WFT succeeds
-	// (commands from defer CompleteSession are committed), but the second WFT
-	// fails when the same panic recurs during replay of the new events.
+	// Wait for a workflow task failure to appear. The first WFT succeeds (commands from defer
+	// CompleteSession are committed), but the second WFT fails when the same panic recurs during
+	// replay of the new events.
 	ts.Eventually(func() bool {
 		history, err := ts.getHistory(run.GetID(), run.GetRunID())
 		if err != nil {
@@ -9022,7 +9022,7 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 
 	// Stop the poison worker and restart with a normal DataConverter.
 	// This simulates the transient DC failure resolving. The new worker
-	// should be able to pick up the workflow and complete it.
+	// picks up the workflow from where the last successful WFT left off.
 	wrk.Stop()
 
 	wrk2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
@@ -9033,5 +9033,17 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 	ts.NoError(wrk2.Start())
 	defer wrk2.Stop()
 
-	ts.NoError(run.Get(ctx, nil))
+	// The workflow may complete with a session error because the first worker's session creation
+	// activity fails on shutdown. What matters is that it completes at all — without the fix, the
+	// panicking WFT would commit invalid commands and cause an NDE.
+	err = run.Get(ctx, nil)
+	if err != nil {
+		ts.NotContains(err.Error(), "TMPRL1100",
+			"workflow should not be stuck in a permanent NDE")
+		// The actual error here is that the workflow ends as cancelled, because the activity that
+		// wants to use the session can't proceed, because the internal session creation activity
+		// fails. I can't really see any compatible way around this and CreateSession is already
+		// documented to behave this way.
+		ts.Contains(err.Error(), ": canceled", "workflow should end as cancelled")
+	}
 }
