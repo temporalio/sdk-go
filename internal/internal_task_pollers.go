@@ -570,18 +570,18 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		tagEventID, task.GetStartedEventId(),
 		tagWorkflowTaskDuration, taskDuration,
 	}
-	if downloadPayloadMetrics.PayloadCount > 0 {
+	if downloadPayloadMetrics.payloadCount > 0 {
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
-			tagPayloadDownloadCount, downloadPayloadMetrics.PayloadCount,
-			tagPayloadDownloadSize, downloadPayloadMetrics.TotalSize,
-			tagPayloadDownloadDuration, downloadPayloadMetrics.TotalDuration,
+			tagPayloadDownloadCount, downloadPayloadMetrics.payloadCount,
+			tagPayloadDownloadSize, downloadPayloadMetrics.totalSize,
+			tagPayloadDownloadDuration, downloadPayloadMetrics.totalDuration,
 		)
 	}
-	if uploadPayloadMetrics.PayloadCount > 0 {
+	if uploadPayloadMetrics.payloadCount > 0 {
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
-			tagPayloadUploadCount, uploadPayloadMetrics.PayloadCount,
-			tagPayloadUploadSize, uploadPayloadMetrics.TotalSize,
-			tagPayloadUploadDuration, uploadPayloadMetrics.TotalDuration,
+			tagPayloadUploadCount, uploadPayloadMetrics.payloadCount,
+			tagPayloadUploadSize, uploadPayloadMetrics.totalSize,
+			tagPayloadUploadDuration, uploadPayloadMetrics.totalDuration,
 		)
 	}
 
@@ -771,9 +771,9 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 
 type workflowTaskStorageMetrics struct {
 	mu                 sync.Mutex
-	PayloadCount       int
-	TotalSize          int64
-	TotalDuration      time.Duration
+	payloadCount       int
+	totalSize          int64
+	totalDuration      time.Duration
 	logger             log.Logger
 	warnedUnconfigured bool
 }
@@ -781,9 +781,9 @@ type workflowTaskStorageMetrics struct {
 func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, duration time.Duration) {
 	callback.mu.Lock()
 	defer callback.mu.Unlock()
-	callback.PayloadCount += count
-	callback.TotalSize += size
-	callback.TotalDuration += duration
+	callback.payloadCount += count
+	callback.totalSize += size
+	callback.totalDuration += duration
 }
 
 func (callback *workflowTaskStorageMetrics) UnconfiguredStorageReference() {

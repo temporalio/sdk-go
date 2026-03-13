@@ -1542,18 +1542,18 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	}
 }
 
-// replayStorageCallback is a storageOperationCallback used by WorkflowReplayer.
+// replayStorageMetrics is a storageOperationCallback used by WorkflowReplayer.
 // It logs a warning once when storage references are encountered but no driver
 // is configured, and is otherwise a no-op.
-type replayStorageCallback struct {
+type replayStorageMetrics struct {
 	mu                 sync.Mutex
 	logger             log.Logger
 	warnedUnconfigured bool
 }
 
-func (c *replayStorageCallback) PayloadBatchCompleted(_ int, _ int64, _ time.Duration) {}
+func (c *replayStorageMetrics) PayloadBatchCompleted(_ int, _ int64, _ time.Duration) {}
 
-func (c *replayStorageCallback) UnconfiguredStorageReference() {
+func (c *replayStorageMetrics) UnconfiguredStorageReference() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if !c.warnedUnconfigured && c.logger != nil {
@@ -1928,7 +1928,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	}
 	// Resolve externally stored payloads in the history before passing to the
 	// task handler. This mirrors what processWorkflowTask does for live workers.
-	replayStorageCb := &replayStorageCallback{logger: logger}
+	replayStorageCb := &replayStorageMetrics{logger: logger}
 	inboundPayloadVisitorCtx := context.WithValue(context.Background(), storageOperationCallbackContextKey, replayStorageCb)
 	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task); err != nil {
 		return err
