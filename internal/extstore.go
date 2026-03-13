@@ -18,7 +18,7 @@ const defaultPayloadSizeThreshold = 256 * 1024
 type storageParameters struct {
 	driverMap            map[string]converter.StorageDriver
 	driverSelector       converter.StorageDriverSelector
-	firstDriver          converter.StorageDriver
+	defaultDriver        converter.StorageDriver
 	payloadSizeThreshold int
 	codecs               []converter.PayloadCodec
 }
@@ -36,9 +36,9 @@ func ExternalStorageToParams(options converter.ExternalStorage) (storageParamete
 		driverMap[d.Name()] = d
 	}
 
-	var firstDriver converter.StorageDriver
+	var defaultDriver converter.StorageDriver
 	if len(options.Drivers) > 0 {
-		firstDriver = options.Drivers[0]
+		defaultDriver = options.Drivers[0]
 	}
 
 	sizeThreshold := options.PayloadSizeThreshold
@@ -49,7 +49,7 @@ func ExternalStorageToParams(options converter.ExternalStorage) (storageParamete
 	return storageParameters{
 		driverMap:            driverMap,
 		driverSelector:       options.DriverSelector,
-		firstDriver:          firstDriver,
+		defaultDriver:        defaultDriver,
 		payloadSizeThreshold: sizeThreshold,
 		codecs:               options.PayloadCodecs,
 	}, nil
@@ -229,7 +229,7 @@ type storageStoreVisitor struct {
 func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	startTime := time.Now()
 
-	if v.params.driverSelector == nil && v.params.firstDriver == nil {
+	if v.params.driverSelector == nil && v.params.defaultDriver == nil {
 		return payloads, nil
 	}
 
@@ -265,7 +265,7 @@ func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []
 				driver = selected
 			}
 		} else {
-			driver = v.params.firstDriver
+			driver = v.params.defaultDriver
 		}
 
 		if driver == nil {

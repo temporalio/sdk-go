@@ -184,7 +184,7 @@ func TestExternalStorageToParams_PointerAndValueReceiverDrivers(t *testing.T) {
 func TestExternalStorageToParams_EmptyDrivers(t *testing.T) {
 	params, err := ExternalStorageToParams(converter.ExternalStorage{})
 	require.NoError(t, err)
-	require.Nil(t, params.firstDriver)
+	require.Nil(t, params.defaultDriver)
 }
 
 // ---------------------------------------------------------------------------
