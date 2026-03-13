@@ -3626,6 +3626,32 @@ func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bo
 	return nil
 }
 
+// SessionCancelNDE is a regression test workflow for
+// https://github.com/temporalio/sdk-go/issues/2206.
+// When a DataConverter failure causes encodeArgs to panic inside ExecuteActivity,
+// the defer'd CompleteSession runs during panic unwinding and cancels the session
+// creation activity. With FailWorkflow panic policy, these commands are sent.
+// On replay, the ActivityTaskCancelRequested for the creation activity hits the
+// state machine while it's still in Initiated state, causing a permanent TMPRL1100 NDE.
+func (w *Workflows) SessionCancelNDE(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+
+	sessionCtx, err := workflow.CreateSession(ctx, &workflow.SessionOptions{
+		CreationTimeout:  time.Minute,
+		ExecutionTimeout: time.Minute,
+	})
+	if err != nil {
+		return err
+	}
+	defer workflow.CompleteSession(sessionCtx)
+
+	// The DataConverter is configured to fail when encoding "FAIL_ENCODE_NOW",
+	// triggering a panic at workflow.go:943 (encodeArgs panics on error).
+	var result string
+	err = workflow.ExecuteActivity(sessionCtx, "Prefix_ToUpper", "FAIL_ENCODE_NOW").Get(sessionCtx, &result)
+	return err
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3645,6 +3671,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Panicked)
 	worker.RegisterWorkflow(w.PanickedActivity)
 	worker.RegisterWorkflow(w.BasicSession)
+	worker.RegisterWorkflow(w.SessionCancelNDE)
 	worker.RegisterWorkflow(w.AdvancedSession)
 	worker.RegisterWorkflow(w.CancelActivity)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)

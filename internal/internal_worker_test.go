@@ -846,6 +846,92 @@ func createHistoryForCancelActivityTests(workflowType string) []*historypb.Histo
 	}
 }
 
+// TestReplayWorkflowHistory_CancelActivity_Unusual_Ordering is a regression test for
+// https://github.com/temporalio/sdk-go/issues/2206
+//
+// This test constructs a history where the ActivityTaskCancelRequested event arrives
+// while the activity's state machine is still in Initiated state during replay. This
+// can happen when the server delivers the cancel event before the workflow task that
+// sends the cancel command, similar to the unusual child workflow event ordering
+// tested in TestReplayWorkflowHistory_ChildWorkflowCancellation_Unusual_Ordering
+// (which was fixed in PR #323).
+//
+// The state machine's handleCancelInitiatedEvent does not accept commandStateInitiated,
+// causing a [TMPRL1100] non-determinism panic that permanently bricks the workflow.
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelActivity_Unusual_Ordering() {
+	taskQueue := "taskQueue1"
+	// This history is the same as createHistoryForCancelActivityTests but with
+	// ActivityTaskCancelRequested moved before the workflow task that sends the
+	// cancel command. This reordering can occur in practice (see issue #2206)
+	// and is analogous to the child workflow cancel unusual ordering in PR #323.
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowCancelActivity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "5",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity1"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventTimerStarted(6, 6),
+		createTestEventActivityTaskStarted(7, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 5,
+		}),
+		createTestEventTimerFired(8, 6),
+		// Unusual ordering: ActivityTaskCancelRequested appears here, before the
+		// workflow task that sends the cancel command. During replay, the activity
+		// state machine is in Initiated state at this point because the workflow
+		// code that calls cancelFunc1() hasn't re-executed yet (it runs at the
+		// WFTaskStarted event below).
+		createTestEventActivityTaskCancelRequested(9, &historypb.ActivityTaskCancelRequestedEventAttributes{
+			ScheduledEventId:             5,
+			WorkflowTaskCompletedEventId: 11,
+		}),
+		createTestEventWorkflowTaskScheduled(10, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(11),
+		createTestEventWorkflowTaskCompleted(12, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskScheduled(13, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "13",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity2"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskStarted(14, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 13,
+		}),
+		createTestEventActivityTaskCompleted(15, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 13,
+			StartedEventId:   14,
+		}),
+		createTestEventWorkflowTaskScheduled(16, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(17),
+		createTestEventWorkflowTaskCompleted(18, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 16,
+			StartedEventId:   17,
+		}),
+		createTestEventWorkflowExecutionCompleted(19, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 18,
+		}),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayWorkflowCancelActivity)
+	err = replayer.ReplayWorkflowHistory(logger, history)
+	// BUG: This replay fails with [TMPRL1100] because handleCancelInitiatedEvent
+	// rejects the Initiated state. Once the state machine is fixed to accept
+	// commandStateInitiated in handleCancelInitiatedEvent, this should pass:
+	//   require.NoError(s.T(), err)
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "handleCancelInitiatedEvent")
+}
+
 func testReplayWorkflowCancelTimer(ctx Context) error {
 	ctx1, cancelFunc1 := WithCancel(ctx)
 

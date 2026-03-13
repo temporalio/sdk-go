@@ -8932,3 +8932,108 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		activityResultChan <- "" // allow activity to complete
 	})
 }
+
+// poisonDataConverter wraps a DataConverter and fails ToPayloads when any of the
+// values matches the poison string. Used by TestSessionCancelNDE to reproduce
+// https://github.com/temporalio/sdk-go/issues/2206.
+type poisonDataConverter struct {
+	converter.DataConverter
+	poison string
+}
+
+func (f *poisonDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
+	for _, v := range values {
+		if s, ok := v.(string); ok && s == f.poison {
+			return nil, fmt.Errorf("simulated codec server timeout: DeadlineExceeded")
+		}
+	}
+	return f.DataConverter.ToPayloads(values...)
+}
+
+func (f *poisonDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+	if s, ok := value.(string); ok && s == f.poison {
+		return nil, fmt.Errorf("simulated codec server timeout: DeadlineExceeded")
+	}
+	return f.DataConverter.ToPayload(value)
+}
+
+// TestSessionCancelNDE is a regression test for
+// https://github.com/temporalio/sdk-go/issues/2206.
+//
+// When a DataConverter failure causes encodeArgs to panic inside ExecuteActivity
+// in a session workflow, the defer'd CompleteSession cancels the session creation
+// activity. On replay, the ActivityTaskCancelRequested event for that activity
+// hits the state machine in Initiated state, causing a permanent TMPRL1100 NDE.
+func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
+	// Stop the default worker — we need our own with a failing DataConverter.
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Create a DataConverter that fails when encoding the poison value.
+	// Session creation encodes a session ID (UUID), so it succeeds. The
+	// workflow's ExecuteActivity encodes the poison string, triggering the panic.
+	const poison = "FAIL_ENCODE_NOW"
+	dc := &poisonDataConverter{
+		DataConverter: converter.GetDefaultDataConverter(),
+		poison:        poison,
+	}
+
+	cl, err := client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		DataConverter:     dc,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	})
+	ts.NoError(err)
+	defer cl.Close()
+
+	wrk := worker.New(cl, ts.taskQueueName, worker.Options{
+		EnableSessionWorker: true,
+		WorkflowPanicPolicy: worker.FailWorkflow,
+	})
+	wrk.RegisterWorkflow(ts.workflows.SessionCancelNDE)
+	ts.activities.register(wrk)
+	ts.NoError(wrk.Start())
+	defer wrk.Stop()
+
+	// Execute the workflow. The FailWorkflow panic policy catches the
+	// encodeArgs panic and completes the workflow with an error, while
+	// still sending the cancel and completion activity commands from the
+	// deferred CompleteSession.
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := cl.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                       "test-session-cancel-nde",
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 15 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+	}, ts.workflows.SessionCancelNDE)
+	ts.NoError(err)
+	err = run.Get(ctx, nil)
+	ts.Error(err, "workflow should have failed due to DataConverter-induced panic")
+
+	// Fetch the history using the normal client (default DataConverter).
+	history, err := ts.getHistory(run.GetID(), run.GetRunID())
+	ts.NoError(err)
+
+	// Verify the history contains an ActivityTaskCancelRequested event for
+	// the session creation activity — this is the precondition for the bug.
+	var hasCancelRequested bool
+	for _, event := range history.Events {
+		if event.GetEventType() == enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED {
+			hasCancelRequested = true
+			break
+		}
+	}
+	ts.True(hasCancelRequested,
+		"history should contain ActivityTaskCancelRequested for the session creation activity")
+
+	// Replay the history with a normal DataConverter. This should trigger the
+	// TMPRL1100 NDE because handleCancelInitiatedEvent rejects Initiated state.
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ts.workflows.SessionCancelNDE)
+	replayErr := replayer.ReplayWorkflowHistory(ilog.NewDefaultLogger(), history)
+	ts.Error(replayErr, "replay should fail with TMPRL1100 NDE")
+	ts.Contains(replayErr.Error(), "handleCancelInitiatedEvent",
+		"replay error should be the state machine transition failure")
+}
