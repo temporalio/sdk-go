@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"go.temporal.io/sdk/contrib/sysinfo"
 	"math"
 	"math/rand"
 	"os"
@@ -32,6 +31,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/contrib/sysinfo"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -8989,56 +8989,49 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 
 	wrk := worker.New(cl, ts.taskQueueName, worker.Options{
 		EnableSessionWorker: true,
-		WorkflowPanicPolicy: worker.FailWorkflow,
 	})
 	wrk.RegisterWorkflow(ts.workflows.SessionCancelNDE)
 	ts.activities.register(wrk)
 	ts.NoError(wrk.Start())
-	defer wrk.Stop()
 
-	// Execute the workflow. The FailWorkflow panic policy catches the
-	// encodeArgs panic and completes the workflow with an error, while
-	// still sending the cancel and completion activity commands from the
-	// deferred CompleteSession.
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	run, err := cl.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                       "test-session-cancel-nde",
 		TaskQueue:                ts.taskQueueName,
-		WorkflowExecutionTimeout: 15 * time.Second,
+		WorkflowExecutionTimeout: 30 * time.Second,
 		WorkflowTaskTimeout:      5 * time.Second,
 	}, ts.workflows.SessionCancelNDE)
 	ts.NoError(err)
-	err = run.Get(ctx, nil)
-	ts.Error(err, "workflow should have failed due to DataConverter-induced panic")
 
-	// Fetch the history using the normal client (default DataConverter).
-	history, err := ts.getHistory(run.GetID(), run.GetRunID())
-	ts.NoError(err)
-
-	// Verify the history contains an ActivityTaskCancelRequested event for
-	// the session creation activity — this is the precondition for the bug.
-	var hasCancelRequested bool
-	for _, event := range history.Events {
-		if event.GetEventType() == enumspb.EVENT_TYPE_ACTIVITY_TASK_CANCEL_REQUESTED {
-			hasCancelRequested = true
-			break
+	// Wait for a workflow task failure to appear. The first WFT succeeds
+	// (commands from defer CompleteSession are committed), but the second WFT
+	// fails when the same panic recurs during replay of the new events.
+	ts.Eventually(func() bool {
+		history, err := ts.getHistory(run.GetID(), run.GetRunID())
+		if err != nil {
+			return false
 		}
-	}
-	ts.True(hasCancelRequested,
-		"history should contain ActivityTaskCancelRequested for the session creation activity")
+		for _, event := range history.Events {
+			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 200*time.Millisecond, "timed out waiting for workflow task failure")
 
-	// Replay the history with a normal DataConverter. Before the fix, this
-	// would trigger a permanent TMPRL1100 NDE because handleCancelInitiatedEvent
-	// rejected Initiated state. With the fix, the state machine accepts the
-	// transition. The replay may still fail with a different (non-bricking) NDE
-	// because the workflow code diverges (encodeArgs succeeds with normal DC),
-	// but the critical permanent-bricking panic is gone.
-	replayer := worker.NewWorkflowReplayer()
-	replayer.RegisterWorkflow(ts.workflows.SessionCancelNDE)
-	replayErr := replayer.ReplayWorkflowHistory(ilog.NewDefaultLogger(), history)
-	if replayErr != nil {
-		ts.NotContains(replayErr.Error(), "handleCancelInitiatedEvent",
-			"state machine should accept cancel in Initiated state")
-	}
+	// Stop the poison worker and restart with a normal DataConverter.
+	// This simulates the transient DC failure resolving. The new worker
+	// should be able to pick up the workflow and complete it.
+	wrk.Stop()
+
+	wrk2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		EnableSessionWorker: true,
+	})
+	wrk2.RegisterWorkflow(ts.workflows.SessionCancelNDE)
+	ts.activities.register(wrk2)
+	ts.NoError(wrk2.Start())
+	defer wrk2.Stop()
+
+	ts.NoError(run.Get(ctx, nil))
 }
