@@ -112,11 +112,11 @@ func payloadToStorageReference(p *commonpb.Payload) (storageReference, error) {
 	return ref, nil
 }
 
-type storageRetrievalVisitor struct {
+type externalRetrievalVisitor struct {
 	params storageParameters
 }
 
-func (v *storageRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	startTime := time.Now()
 
 	// Identify which payloads are storage references and group them by driver.
@@ -218,15 +218,15 @@ func (v *storageRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payload
 	return result, nil
 }
 
-func NewStorageRetrievalVisitor(params storageParameters) PayloadVisitor {
-	return &storageRetrievalVisitor{params: params}
+func NewExternalRetrievalVisitor(params storageParameters) PayloadVisitor {
+	return &externalRetrievalVisitor{params: params}
 }
 
-type storageStoreVisitor struct {
+type externalStorageVisitor struct {
 	params storageParameters
 }
 
-func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	startTime := time.Now()
 
 	if v.params.driverSelector == nil && v.params.defaultDriver == nil {
@@ -344,8 +344,8 @@ func (v *storageStoreVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []
 	return result, nil
 }
 
-func NewStorageStoreVisitor(params storageParameters) PayloadVisitor {
-	return &storageStoreVisitor{params: params}
+func NewExternalStorageVisitor(params storageParameters) PayloadVisitor {
+	return &externalStorageVisitor{params: params}
 }
 
 func callDriverSelector(s converter.StorageDriverSelector, ctx converter.StorageDriverStoreContext, p *commonpb.Payload) (driver converter.StorageDriver, err error) {

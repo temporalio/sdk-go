@@ -1269,9 +1269,9 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		},
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
-		workerGroupingKey:      uuid.NewString(),
-		inboundPayloadVisitor:  NewStorageRetrievalVisitor(storageParams),
-		outboundPayloadVisitor: NewStorageStoreVisitor(storageParams),
+		workerGroupingKey:       uuid.NewString(),
+		inboundPayloadVisitor:   NewExternalRetrievalVisitor(storageParams),
+		outboundPayloadVisitor:  NewExternalStorageVisitor(storageParams),
 	}
 
 	if heartbeatInterval > 0 {

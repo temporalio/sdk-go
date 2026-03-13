@@ -233,7 +233,7 @@ func TestPayloadToStorageReference_CorruptJSON(t *testing.T) {
 func TestStoreVisitor_NoDriverNoop(t *testing.T) {
 	params, err := ExternalStorageToParams(converter.ExternalStorage{})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	p := makePayload(t, "hello")
 	result, err := visitPayloads(context.Background(), visitor, []*commonpb.Payload{p})
@@ -249,7 +249,7 @@ func TestStoreVisitor_BelowThreshold_NotStored(t *testing.T) {
 		PayloadSizeThreshold: 1 << 20, // 1 MiB
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	p := makePayload(t, "small")
 	result, err := visitPayloads(context.Background(), visitor, []*commonpb.Payload{p})
@@ -266,7 +266,7 @@ func TestStoreVisitor_AtThreshold_Stored(t *testing.T) {
 		PayloadSizeThreshold: threshold,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	p := makeOversizedPayload(t, threshold)
 	require.GreaterOrEqual(t, proto.Size(p), threshold)
@@ -285,7 +285,7 @@ func TestStoreVisitor_AboveThreshold_Stored(t *testing.T) {
 		PayloadSizeThreshold: threshold,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	p := makeOversizedPayload(t, threshold+1)
 	result, err := visitPayloads(context.Background(), visitor, []*commonpb.Payload{p})
@@ -302,7 +302,7 @@ func TestStoreVisitor_MultiplePayloads_Batched(t *testing.T) {
 		PayloadSizeThreshold: threshold,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	big1 := makeOversizedPayload(t, threshold)
 	small := &commonpb.Payload{Data: []byte("x")} // proto.Size ≈ 3, well below threshold
@@ -329,7 +329,7 @@ func TestStoreVisitor_SelectorNil_PayloadInline(t *testing.T) {
 		DriverSelector: selector,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	p := makeOversizedPayload(t, defaultPayloadSizeThreshold+1)
 	result, err := visitPayloads(context.Background(), visitor, []*commonpb.Payload{p})
@@ -351,7 +351,7 @@ func TestStoreVisitor_SelectorBelowThreshold_NotCalled(t *testing.T) {
 		PayloadSizeThreshold: 1 << 20, // 1 MiB
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	p := makePayload(t, "small")
 	result, err := visitPayloads(context.Background(), visitor, []*commonpb.Payload{p})
@@ -378,7 +378,7 @@ func TestStoreVisitor_SelectorRoutes_TwoDrivers(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	p1 := makePayload(t, "a")
 	p2 := makePayload(t, "b")
@@ -399,7 +399,7 @@ func TestStoreVisitor_SelectorUnregisteredDriver(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.Error(t, err)
@@ -416,7 +416,7 @@ func TestStoreVisitor_SelectorError(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.Error(t, err)
@@ -436,7 +436,7 @@ func TestStoreVisitor_CodecOrderReversed(t *testing.T) {
 		PayloadSizeThreshold: 1, // store everything
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.NoError(t, err)
@@ -451,7 +451,7 @@ func TestStoreVisitor_WrongClaimCount(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.Error(t, err)
@@ -466,7 +466,7 @@ func TestStoreVisitor_StoreError(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.Error(t, err)
@@ -481,7 +481,7 @@ func TestStoreVisitor_StorePanic(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.Error(t, err)
@@ -508,7 +508,7 @@ func TestStoreVisitor_CancelOnError(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	p1, p2 := makePayload(t, "a"), makePayload(t, "b")
 	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{p1, p2})
@@ -531,7 +531,7 @@ func TestStoreVisitor_CodecEncodeError(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.Error(t, err)
@@ -546,7 +546,7 @@ func TestStoreVisitor_Callback(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	cb := &testCallback{}
 	ctx := context.WithValue(context.Background(), storageOperationCallbackContextKey, cb)
@@ -565,7 +565,7 @@ func TestStoreVisitor_Callback_ExternalCountOnly(t *testing.T) {
 		PayloadSizeThreshold: threshold,
 	})
 	require.NoError(t, err)
-	visitor := NewStorageStoreVisitor(params)
+	visitor := NewExternalStorageVisitor(params)
 
 	small := makePayload(t, "x")
 	big1 := makeOversizedPayload(t, threshold)
@@ -588,7 +588,7 @@ func TestRetrievalVisitor_InlinePassthrough(t *testing.T) {
 		Drivers: []converter.StorageDriver{driver},
 	})
 	require.NoError(t, err)
-	visitor := NewStorageRetrievalVisitor(params)
+	visitor := NewExternalRetrievalVisitor(params)
 
 	p := makePayload(t, "inline")
 	result, err := visitPayloads(context.Background(), visitor, []*commonpb.Payload{p})
@@ -604,7 +604,7 @@ func TestRetrievalVisitor_Mixed(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(storeParams)
+	storeVisitor := NewExternalStorageVisitor(storeParams)
 
 	inline := makePayload(t, "inline")
 	big := makeOversizedPayload(t, 100)
@@ -613,7 +613,7 @@ func TestRetrievalVisitor_Mixed(t *testing.T) {
 	require.NoError(t, err)
 	ref := stored[0]
 
-	retrieveVisitor := NewStorageRetrievalVisitor(storeParams)
+	retrieveVisitor := NewExternalRetrievalVisitor(storeParams)
 	result, err := visitPayloads(context.Background(), retrieveVisitor, []*commonpb.Payload{inline, ref})
 	require.NoError(t, err)
 	require.True(t, proto.Equal(inline, result[0]))
@@ -627,8 +627,8 @@ func TestRetrievalVisitor_BatchedByDriver(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	p1, p2 := makePayload(t, "first"), makePayload(t, "second")
 	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{p1, p2})
@@ -659,8 +659,8 @@ func TestRetrievalVisitor_MultiDriver(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	p1, p2 := makePayload(t, "a"), makePayload(t, "b")
 	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{p1, p2})
@@ -679,7 +679,7 @@ func TestRetrievalVisitor_UnknownDriver(t *testing.T) {
 		Drivers: []converter.StorageDriver{newTestDriver("registered")},
 	})
 	require.NoError(t, err)
-	visitor := NewStorageRetrievalVisitor(params)
+	visitor := NewExternalRetrievalVisitor(params)
 
 	ref, err := storageReferenceToPayload(storageReference{
 		DriverName:  "unregistered-driver",
@@ -700,8 +700,8 @@ func TestRetrievalVisitor_RetrieveError(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.NoError(t, err)
@@ -718,7 +718,7 @@ func TestRetrievalVisitor_RetrievePanic(t *testing.T) {
 		Drivers: []converter.StorageDriver{driver},
 	})
 	require.NoError(t, err)
-	visitor := NewStorageRetrievalVisitor(params)
+	visitor := NewExternalRetrievalVisitor(params)
 
 	ref, err := storageReferenceToPayload(storageReference{
 		DriverName:  "my-panic-retrieve-driver",
@@ -744,7 +744,7 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(storeParams)
+	storeVisitor := NewExternalStorageVisitor(storeParams)
 	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.NoError(t, err)
 	errRef := refs[0]
@@ -759,7 +759,7 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 		Drivers: []converter.StorageDriver{errD, blockD},
 	})
 	require.NoError(t, err)
-	visitor := NewStorageRetrievalVisitor(retrieveParams)
+	visitor := NewExternalRetrievalVisitor(retrieveParams)
 
 	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{errRef, blockRef})
 	require.Error(t, err)
@@ -778,7 +778,7 @@ func TestRetrievalVisitor_WrongPayloadCount(t *testing.T) {
 		Drivers: []converter.StorageDriver{driver},
 	})
 	require.NoError(t, err)
-	visitor := NewStorageRetrievalVisitor(params)
+	visitor := NewExternalRetrievalVisitor(params)
 
 	ref, err := storageReferenceToPayload(storageReference{
 		DriverName:  "my-bad-count-driver",
@@ -804,8 +804,8 @@ func TestRetrievalVisitor_CodecOrderForward(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.NoError(t, err)
@@ -825,8 +825,8 @@ func TestRetrievalVisitor_CodecDecodeError(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.NoError(t, err)
@@ -844,8 +844,8 @@ func TestRetrievalVisitor_Callback(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
 	require.NoError(t, err)
@@ -865,8 +865,8 @@ func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {
 		PayloadSizeThreshold: threshold,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	big1 := makeOversizedPayload(t, threshold)
 	big2 := makeOversizedPayload(t, threshold)
@@ -894,8 +894,8 @@ func TestStoreRetrieveRoundTrip_Single(t *testing.T) {
 		PayloadSizeThreshold: 1,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	original := makePayload(t, "round-trip value")
 	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{original})
@@ -915,8 +915,8 @@ func TestStoreRetrieveRoundTrip_MixedInline(t *testing.T) {
 		PayloadSizeThreshold: threshold,
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	small := makePayload(t, "s")
 	big := makeOversizedPayload(t, threshold+1)
@@ -950,8 +950,8 @@ func TestStoreRetrieveRoundTrip_PointerAndValueReceiverDrivers(t *testing.T) {
 		PayloadSizeThreshold: 1, // store everything
 	})
 	require.NoError(t, err)
-	storeVisitor := NewStorageStoreVisitor(params)
-	retrieveVisitor := NewStorageRetrievalVisitor(params)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
 
 	p1 := makePayload(t, "via-ptr-driver")
 	p2 := makePayload(t, "via-val-driver")
