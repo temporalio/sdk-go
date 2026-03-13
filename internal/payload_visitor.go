@@ -35,5 +35,8 @@ func visitPayload(ctx context.Context, visitor PayloadVisitor, p *commonpb.Paylo
 	if err != nil {
 		return nil, err
 	}
+	if len(visited) == 0 {
+		return nil, nil
+	}
 	return visited[0], nil
 }
