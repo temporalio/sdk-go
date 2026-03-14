@@ -158,11 +158,6 @@ type (
 		closed       atomic.Bool      // indicates that owning coroutine has finished execution
 		blocked      atomic.Bool
 		panicError   error // non nil if coroutine had unhandled panic
-		// panickedValue is set before a panic is raised within the coroutine.
-		// When set, yield() re-panics instead of blocking, preventing defers
-		// from yielding the coroutine and inadvertently committing commands
-		// as part of the current workflow task response.
-		panickedValue interface{}
 	}
 
 	dispatcherImpl struct {
@@ -1040,14 +1035,35 @@ func (s *coroutineState) initialYield(stackDepth int, status string) {
 	s.blocked.Swap(false)
 }
 
+// isPanicking reports whether the current goroutine is executing a deferred function during panic
+// unwinding. It checks for runtime.gopanic on the call stack via runtime.Callers(). If user code
+// has already recover()'d the panic, runtime.gopanic will not be on the stack and this returns
+// false.
+func isPanicking() bool {
+	var pcs [20]uintptr
+	n := runtime.Callers(1, pcs[:])
+	frames := runtime.CallersFrames(pcs[:n])
+	for {
+		frame, more := frames.Next()
+		if frame.Function == "runtime.gopanic" {
+			return true
+		}
+		if !more {
+			break
+		}
+	}
+	return false
+}
+
 // yield indicates that coroutine cannot make progress and should sleep
 // this call blocks
 func (s *coroutineState) yield(status string) {
-	if s.panickedValue != nil {
-		// A panic is being unwound. Re-panic to prevent defers from
-		// yielding the coroutine, which would commit their commands
-		// as part of the current workflow task response.
-		panic(s.panickedValue)
+	if isPanicking() {
+		// Unfortunately we lose the real panic message here, but the stack trace will still contain
+		// the right lines.
+		panic(errors.New(
+			"yield during panic unwinding: a deferred function attempted to block " +
+				"the coroutine while a panic was in progress"))
 	}
 	s.aboutToBlock <- true
 	s.initialYield(3, status) // omit three levels of stack. To adjust change to 0 and count the lines to remove.

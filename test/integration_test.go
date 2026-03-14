@@ -9048,15 +9048,10 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 	}
 }
 
-// TestPanicWithDeferredYield reproduces the core yield-during-panic bug from
-// https://github.com/temporalio/sdk-go/issues/2206 without needing sessions
-// or a poison DataConverter.
-//
-// A workflow panics on its first WFT attempt. During panic unwinding, a
-// deferred function schedules an activity (which yields the coroutine).
-// Without the fix, this yield freezes the panic, the WFT completes with
-// the defer's activity command, and the second attempt (which doesn't panic)
-// takes a different code path — causing a permanent TMPRL1100 NDE.
+// A workflow panics on its first WFT attempt. During panic unwinding, a deferred function schedules
+// an activity (which yields the coroutine). Without the fix, this yield freezes the panic, the WFT
+// completes with the defer's activity command, and the second attempt (which doesn't panic) takes a
+// different code path causing an NDE.
 func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
 	// Stop any existing worker
 	ts.worker.Stop()
