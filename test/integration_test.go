@@ -5,7 +5,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"go.temporal.io/sdk/contrib/sysinfo"
 	"math"
 	"math/rand"
 	"os"
@@ -32,6 +31,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/contrib/sysinfo"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -8931,4 +8931,178 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		ts.True(errors.Is(err, context.DeadlineExceeded) || errors.As(err, &serviceErr))
 		activityResultChan <- "" // allow activity to complete
 	})
+}
+
+// poisonDataConverter wraps a DataConverter and fails ToPayloads when any of the
+// values matches the poison string. Used by TestSessionCancelNDE to reproduce
+// https://github.com/temporalio/sdk-go/issues/2206.
+type poisonDataConverter struct {
+	converter.DataConverter
+	poison string
+}
+
+func (f *poisonDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
+	for _, v := range values {
+		if s, ok := v.(string); ok && s == f.poison {
+			return nil, fmt.Errorf("simulated codec server timeout: DeadlineExceeded")
+		}
+	}
+	return f.DataConverter.ToPayloads(values...)
+}
+
+func (f *poisonDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+	if s, ok := value.(string); ok && s == f.poison {
+		return nil, fmt.Errorf("simulated codec server timeout: DeadlineExceeded")
+	}
+	return f.DataConverter.ToPayload(value)
+}
+
+// TestSessionCancelNDE is a regression test for
+// https://github.com/temporalio/sdk-go/issues/2206.
+//
+// When a DataConverter failure causes encodeArgs to panic inside ExecuteActivity
+// in a session workflow, the defer'd CompleteSession cancels the session creation
+// activity. On replay, the ActivityTaskCancelRequested event for that activity
+// hits the state machine in Initiated state, causing a permanent TMPRL1100 NDE.
+func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
+	// Stop the default worker — we need our own with a failing DataConverter.
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	// Create a DataConverter that fails when encoding the poison value.
+	// Session creation encodes a session ID (UUID), so it succeeds. The
+	// workflow's ExecuteActivity encodes the poison string, triggering the panic.
+	const poison = "FAIL_ENCODE_NOW"
+	dc := &poisonDataConverter{
+		DataConverter: converter.GetDefaultDataConverter(),
+		poison:        poison,
+	}
+
+	cl, err := client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		DataConverter:     dc,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	})
+	ts.NoError(err)
+	defer cl.Close()
+
+	wrk := worker.New(cl, ts.taskQueueName, worker.Options{
+		EnableSessionWorker: true,
+	})
+	wrk.RegisterWorkflow(ts.workflows.SessionCancelNDE)
+	ts.activities.register(wrk)
+	ts.NoError(wrk.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := cl.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                       "test-session-cancel-nde",
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 30 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+	}, ts.workflows.SessionCancelNDE)
+	ts.NoError(err)
+
+	// Wait for a workflow task failure to appear. The first WFT succeeds (commands from defer
+	// CompleteSession are committed), but the second WFT fails when the same panic recurs during
+	// replay of the new events.
+	ts.Eventually(func() bool {
+		history, err := ts.getHistory(run.GetID(), run.GetRunID())
+		if err != nil {
+			return false
+		}
+		for _, event := range history.Events {
+			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 200*time.Millisecond, "timed out waiting for workflow task failure")
+
+	// Stop the poison worker and restart with a normal DataConverter.
+	// This simulates the transient DC failure resolving. The new worker
+	// picks up the workflow from where the last successful WFT left off.
+	wrk.Stop()
+
+	wrk2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		EnableSessionWorker: true,
+	})
+	wrk2.RegisterWorkflow(ts.workflows.SessionCancelNDE)
+	ts.activities.register(wrk2)
+	ts.NoError(wrk2.Start())
+	defer wrk2.Stop()
+
+	// The workflow may complete with a session error because the first worker's session creation
+	// activity fails on shutdown. What matters is that it completes at all — without the fix, the
+	// panicking WFT would commit invalid commands and cause an NDE.
+	err = run.Get(ctx, nil)
+	if err != nil {
+		ts.NotContains(err.Error(), "TMPRL1100",
+			"workflow should not be stuck in a permanent NDE")
+		// The actual error here is that the workflow ends as cancelled, because the activity that
+		// wants to use the session can't proceed, because the internal session creation activity
+		// fails. I can't really see any compatible way around this and CreateSession is already
+		// documented to behave this way.
+		ts.Contains(err.Error(), ": canceled", "workflow should end as cancelled")
+	}
+}
+
+// A workflow panics on its first WFT attempt. During panic unwinding, a deferred function schedules
+// an activity (which yields the coroutine). Without the fix, this yield freezes the panic, the WFT
+// completes with the defer's activity command, and the second attempt (which doesn't panic) takes a
+// different code path causing an NDE.
+func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
+	// Stop any existing worker
+	ts.worker.Stop()
+
+	var panicWithDeferYieldCounter atomic.Int32
+	panicWithDeferYieldCounter.Store(0)
+	panicWithDeferYieldWorkflow := func(ctx workflow.Context) error {
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+
+		defer func() {
+			// Use a disconnected context so the activity can run even during
+			// cancellation/panic unwinding.
+			dctx, _ := workflow.NewDisconnectedContext(ctx)
+			dctx = workflow.WithActivityOptions(dctx, workflow.ActivityOptions{
+				ScheduleToCloseTimeout: 10 * time.Second,
+			})
+			// This yield during panic unwinding is the crux of the bug:
+			// it freezes the panic and lets the WFT complete with the
+			// activity command from this defer.
+			_ = workflow.ExecuteActivity(dctx, "Prefix_ToUpper", "cleanup").Get(dctx, nil)
+		}()
+
+		if panicWithDeferYieldCounter.Add(1) == 1 {
+			panic("transient failure on first attempt")
+		}
+
+		_ = workflow.ExecuteActivity(ctx, "EmptyActivity").Get(ctx, nil)
+
+		return nil
+	}
+
+	wrk := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	wrk.RegisterWorkflowWithOptions(panicWithDeferYieldWorkflow, workflow.RegisterOptions{
+		Name: "PanicWithDeferYield",
+	})
+	ts.activities.register(wrk)
+	ts.NoError(wrk.Start())
+	defer wrk.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                       "test-panic-with-defer-yield",
+		TaskQueue:                ts.taskQueueName,
+		WorkflowExecutionTimeout: 15 * time.Second,
+		WorkflowTaskTimeout:      5 * time.Second,
+	}, "PanicWithDeferYield")
+	ts.NoError(err)
+
+	err = run.Get(ctx, nil)
+	ts.NoError(err)
 }
