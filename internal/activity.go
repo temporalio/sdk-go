@@ -18,6 +18,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/activity.Type]
 	ActivityType struct {
+		// Name is the name of the activity type.
 		Name string
 	}
 
@@ -25,7 +26,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/activity.Info]
 	ActivityInfo struct {
+		// TaskToken is the token that identifies the activity task.
 		TaskToken    []byte
+		// WorkflowType is the type of the workflow that started this activity.
 		WorkflowType *WorkflowType
 		// Namespace of the workflow that started this activity. Empty if this activity was not started by a workflow.
 		// If present, the value is always the same as Namespace since workflows can only run activities in their own
@@ -36,9 +39,13 @@ type (
 		// Execution details of the workflow that started this activity. All fields are empty if this activity was not
 		// started by a workflow.
 		WorkflowExecution      WorkflowExecution
+		// ActivityID is the ID of the activity.
 		ActivityID             string
+		// ActivityRunID is the run ID of the activity. Empty if the activity was started by a workflow.
 		ActivityRunID          string // Run ID of the activity. Empty if the activity was started by a workflow.
+		// ActivityType is the type of the activity.
 		ActivityType           ActivityType
+		// TaskQueue is the name of the task queue that the activity needs to be scheduled on.
 		TaskQueue              string
 		Namespace              string        // Namespace of this activity.
 		HeartbeatTimeout       time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
@@ -73,6 +80,7 @@ type (
 		// ambiguity between string names and function references. Also users should
 		// always use this string name when executing this activity.
 		Name                          string
+		// DisableAlreadyRegisteredCheck disables the check for already registered activities.
 		DisableAlreadyRegisteredCheck bool
 
 		// When registering a struct with activities, skip functions that are not valid activities. If false,

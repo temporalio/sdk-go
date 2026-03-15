@@ -61,6 +61,7 @@ type ActivityInboundInterceptor interface {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ExecuteActivityInput]
 type ExecuteActivityInput struct {
+	// Args is the arguments of the activity.
 	Args []interface{}
 }
 
@@ -140,6 +141,7 @@ type WorkflowInboundInterceptor interface {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ExecuteWorkflowInput]
 type ExecuteWorkflowInput struct {
+	// Args is the arguments of the workflow.
 	Args []interface{}
 }
 
@@ -147,6 +149,7 @@ type ExecuteWorkflowInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.HandleSignalInput]
 type HandleSignalInput struct {
+	// SignalName is the name of the signal.
 	SignalName string
 	// Arg is the signal argument. It is presented as a primitive payload since
 	// the type needed for decode is not available at the time of interception.
@@ -157,7 +160,9 @@ type HandleSignalInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.UpdateInput]
 type UpdateInput struct {
+	// Name is the name of the update.
 	Name string
+	// Args is the arguments of the update.
 	Args []interface{}
 }
 
@@ -165,7 +170,9 @@ type UpdateInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.HandleQueryInput]
 type HandleQueryInput struct {
+	// QueryType is the type of the query.
 	QueryType string
+	// Args is the arguments of the query.
 	Args      []interface{}
 }
 
@@ -458,18 +465,27 @@ type ClientOutboundInterceptor interface {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateWorkflowInput]
 type ClientUpdateWorkflowInput struct {
+	// UpdateID is the ID of the update.
 	UpdateID            string
+	// WorkflowID is the ID of the workflow.
 	WorkflowID          string
+	// UpdateName is the name of the update.
 	UpdateName          string
+	// Args is the arguments of the update.
 	Args                []interface{}
+	// RunID is the run ID of the workflow.
 	RunID               string
+	// FirstExecutionRunID is the run ID of the first execution.
 	FirstExecutionRunID string
+	// WaitForStage is the stage to wait for.
 	WaitForStage        WorkflowUpdateStage
 }
 
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateWithStartWorkflowInput]
 type ClientUpdateWithStartWorkflowInput struct {
+	// UpdateOptions is the options for the update.
 	UpdateOptions          *UpdateWorkflowOptions
+	// StartWorkflowOperation is the operation to start the workflow.
 	StartWorkflowOperation WithStartWorkflowOperation
 }
 
@@ -493,6 +509,7 @@ type ClientPollWorkflowUpdateOutput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ScheduleClientCreateInput]
 type ScheduleClientCreateInput struct {
+	// Options is the options for creating the schedule.
 	Options *ScheduleOptions
 }
 
@@ -501,8 +518,11 @@ type ScheduleClientCreateInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientExecuteWorkflowInput]
 type ClientExecuteWorkflowInput struct {
+	// Options is the options for starting the workflow.
 	Options      *StartWorkflowOptions
+	// WorkflowType is the type of the workflow.
 	WorkflowType string
+	// Args is the arguments of the workflow.
 	Args         []interface{}
 }
 
@@ -511,9 +531,13 @@ type ClientExecuteWorkflowInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientSignalWorkflowInput]
 type ClientSignalWorkflowInput struct {
+	// WorkflowID is the ID of the workflow.
 	WorkflowID string
+	// RunID is the run ID of the workflow.
 	RunID      string
+	// SignalName is the name of the signal.
 	SignalName string
+	// Arg is the signal argument.
 	Arg        interface{}
 }
 
@@ -522,10 +546,15 @@ type ClientSignalWorkflowInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientSignalWithStartWorkflowInput]
 type ClientSignalWithStartWorkflowInput struct {
+	// SignalName is the name of the signal.
 	SignalName   string
+	// SignalArg is the signal argument.
 	SignalArg    interface{}
+	// Options is the options for starting the workflow.
 	Options      *StartWorkflowOptions
+	// WorkflowType is the type of the workflow.
 	WorkflowType string
+	// Args is the arguments of the workflow.
 	Args         []interface{}
 }
 
@@ -534,7 +563,9 @@ type ClientSignalWithStartWorkflowInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientCancelWorkflowInput]
 type ClientCancelWorkflowInput struct {
+	// WorkflowID is the ID of the workflow.
 	WorkflowID string
+	// RunID is the run ID of the workflow.
 	RunID      string
 }
 
@@ -543,9 +574,13 @@ type ClientCancelWorkflowInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientTerminateWorkflowInput]
 type ClientTerminateWorkflowInput struct {
+	// WorkflowID is the ID of the workflow.
 	WorkflowID string
+	// RunID is the run ID of the workflow.
 	RunID      string
+	// Reason is the reason for termination.
 	Reason     string
+	// Details is the details of termination.
 	Details    []interface{}
 }
 
@@ -554,10 +589,15 @@ type ClientTerminateWorkflowInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientQueryWorkflowInput]
 type ClientQueryWorkflowInput struct {
+	// WorkflowID is the ID of the workflow.
 	WorkflowID           string
+	// RunID is the run ID of the workflow.
 	RunID                string
+	// QueryType is the type of the query.
 	QueryType            string
+	// Args is the arguments of the query.
 	Args                 []interface{}
+	// QueryRejectCondition is the query reject condition.
 	QueryRejectCondition enumspb.QueryRejectCondition
 }
 
@@ -566,7 +606,9 @@ type ClientQueryWorkflowInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeWorkflowInput]
 type ClientDescribeWorkflowInput struct {
+	// WorkflowID is the ID of the workflow.
 	WorkflowID string
+	// RunID is the run ID of the workflow.
 	RunID      string
 }
 
@@ -575,6 +617,7 @@ type ClientDescribeWorkflowInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeWorkflowOutput]
 type ClientDescribeWorkflowOutput struct {
+	// Response is the response.
 	Response *WorkflowExecutionDescription
 }
 
@@ -585,8 +628,11 @@ type ClientDescribeWorkflowOutput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientExecuteActivityInput]
 type ClientExecuteActivityInput struct {
+	// Options is the options for starting the activity.
 	Options      *ClientStartActivityOptions
+	// ActivityType is the type of the activity.
 	ActivityType string
+	// Args is the arguments of the activity.
 	Args         []interface{}
 }
 
@@ -597,7 +643,9 @@ type ClientExecuteActivityInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientGetActivityHandleInput]
 type ClientGetActivityHandleInput struct {
+	// ActivityID is the ID of the activity.
 	ActivityID string
+	// RunID is the run ID of the activity.
 	RunID      string
 }
 
@@ -608,8 +656,11 @@ type ClientGetActivityHandleInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientCancelActivityInput]
 type ClientCancelActivityInput struct {
+	// ActivityID is the ID of the activity.
 	ActivityID string
+	// RunID is the run ID of the activity.
 	RunID      string
+	// Reason is the reason for cancellation.
 	Reason     string
 }
 
@@ -620,8 +671,11 @@ type ClientCancelActivityInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientTerminateActivityInput]
 type ClientTerminateActivityInput struct {
+	// ActivityID is the ID of the activity.
 	ActivityID string
+	// RunID is the run ID of the activity.
 	RunID      string
+	// Reason is the reason for termination.
 	Reason     string
 }
 
@@ -632,7 +686,9 @@ type ClientTerminateActivityInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeActivityInput]
 type ClientDescribeActivityInput struct {
+	// ActivityID is the ID of the activity.
 	ActivityID string
+	// RunID is the run ID of the activity.
 	RunID      string
 }
 
@@ -643,6 +699,7 @@ type ClientDescribeActivityInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeActivityOutput]
 type ClientDescribeActivityOutput struct {
+	// Description is the description of the activity.
 	Description *ClientActivityExecutionDescription
 }
 
@@ -653,7 +710,9 @@ type ClientDescribeActivityOutput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientPollActivityResultInput]
 type ClientPollActivityResultInput struct {
+	// ActivityID is the ID of the activity.
 	ActivityID string
+	// RunID is the run ID of the activity.
 	RunID      string
 }
 
@@ -714,7 +773,9 @@ type NexusOperationOutboundInterceptor interface {
 //
 // Note: Experimental
 type NexusStartOperationInput struct {
+	// Input is the input to the operation.
 	Input   any
+	// Options is the options for starting the operation.
 	Options nexus.StartOperationOptions
 }
 
@@ -724,6 +785,8 @@ type NexusStartOperationInput struct {
 //
 // Note: Experimental
 type NexusCancelOperationInput struct {
+	// Token is the token for the operation to cancel.
 	Token   string
+	// Options is the options for cancelling the operation.
 	Options nexus.CancelOperationOptions
 }

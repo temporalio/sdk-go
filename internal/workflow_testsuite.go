@@ -77,8 +77,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/testsuite.TestUpdateCallback]
 	TestUpdateCallback struct {
+		// OnAccept is called when the update is accepted.
 		OnAccept   func()
+		// OnReject is called when the update is rejected.
 		OnReject   func(error)
+		// OnComplete is called when the update completes.
 		OnComplete func(interface{}, error)
 	}
 )

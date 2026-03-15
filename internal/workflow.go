@@ -376,6 +376,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.Type]
 	WorkflowType struct {
+		// Name is the name of the workflow type.
 		Name string
 	}
 
@@ -383,7 +384,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.Execution]
 	WorkflowExecution struct {
+		// ID of the workflow execution.
 		ID    string
+		// RunID of the workflow execution.
 		RunID string
 	}
 
@@ -537,6 +540,7 @@ type (
 		// always use this string name when executing this workflow from a client or
 		// inside a workflow as a child workflow.
 		Name                          string
+		// DisableAlreadyRegisteredCheck disables the check for already registered workflows.
 		DisableAlreadyRegisteredCheck bool
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
@@ -548,6 +552,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.LoadDynamicRuntimeOptionsDetails]
 	LoadDynamicRuntimeOptionsDetails struct {
+		// WorkflowType is the type of the workflow.
 		WorkflowType WorkflowType
 	}
 
@@ -1404,16 +1409,23 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 //
 // Exposed as: [go.temporal.io/sdk/workflow.Info]
 type WorkflowInfo struct {
+	// WorkflowExecution is the execution of the workflow.
 	WorkflowExecution WorkflowExecution
 	// The original runID before resetting. Using it instead of current runID can make workflow decision deterministic after reset. See also FirstRunId
 	OriginalRunID string
 	// The very first original RunId of the current Workflow Execution preserved along the chain of ContinueAsNew, Retry, Cron and Reset. Identifies the whole Runs chain of Workflow Execution.
 	FirstRunID               string
+	// WorkflowType is the type of the workflow.
 	WorkflowType             WorkflowType
+	// TaskQueueName is the name of the task queue.
 	TaskQueueName            string
+	// WorkflowExecutionTimeout is the timeout for the workflow execution.
 	WorkflowExecutionTimeout time.Duration
+	// WorkflowRunTimeout is the timeout for the workflow run.
 	WorkflowRunTimeout       time.Duration
+	// WorkflowTaskTimeout is the timeout for the workflow task.
 	WorkflowTaskTimeout      time.Duration
+	// Namespace is the namespace of the workflow.
 	Namespace                string
 	Attempt                  int32 // Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
 	// Time of the workflow start.
@@ -1421,15 +1433,20 @@ type WorkflowInfo struct {
 	WorkflowStartTime       time.Time
 	lastCompletionResult    *commonpb.Payloads
 	lastFailure             *failurepb.Failure
+	// CronSchedule is the cron schedule for the workflow.
 	CronSchedule            string
+	// ContinuedExecutionRunID is the run ID of the continued execution.
 	ContinuedExecutionRunID string
+	// ParentWorkflowNamespace is the namespace of the parent workflow.
 	ParentWorkflowNamespace string
+	// ParentWorkflowExecution is the execution of the parent workflow.
 	ParentWorkflowExecution *WorkflowExecution
 	// RootWorkflowExecution is the first workflow execution in the chain of workflows. If a workflow is itself a root workflow, then this field is nil.
 	RootWorkflowExecution *WorkflowExecution
 	Memo                  *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
 	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
+	// RetryPolicy is the retry policy of the workflow.
 	RetryPolicy      *RetryPolicy
 	// Priority settings that control relative ordering of task processing when workflow tasks are backed up in a queue.
 	// If no priority is set, the default value is the zero value.

@@ -32,6 +32,7 @@ type SysInfoProvider interface {
 //
 // Exposed as: [go.temporal.io/sdk/worker.SysInfoContext]
 type SysInfoContext struct {
+	// Logger is the logger to use for the SysInfoContext calls.
 	Logger log.Logger
 }
 
@@ -250,14 +251,22 @@ type ResourceControllerOptions struct {
 	// InfoSupplier is the supplier that the controller will use to get system resources.
 	InfoSupplier SysInfoProvider
 
+	// MemOutputThreshold is the memory output threshold limit.
 	MemOutputThreshold float64
+	// CpuOutputThreshold is the cpu output threshold limit.
 	CpuOutputThreshold float64
 
+	// MemPGain is the memory P gain limit threshold.
 	MemPGain float64
+	// MemIGain is the memory I gain limit threshold.
 	MemIGain float64
+	// MemDGain is the memory D gain limit threshold.
 	MemDGain float64
+	// CpuPGain is the cpu P gain limit threshold.
 	CpuPGain float64
+	// CpuIGain is the cpu I gain limit threshold.
 	CpuIGain float64
+	// CpuDGain is the cpu D gain limit threshold.
 	CpuDGain float64
 }
 

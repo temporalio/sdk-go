@@ -127,6 +127,11 @@ func run() error {
 			if err != nil {
 				return fmt.Errorf("error while parsing internal files: %v", err)
 			}
+
+			err = checkInternalDocs(path, file, publicToInternal)
+			if err != nil {
+				return fmt.Errorf("error while checking internal docs: %v", err)
+			}
 		}
 		return nil
 	})
@@ -586,4 +591,85 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 		}
 	}
 	return false
+}
+
+func checkInternalDocs(path string, file *os.File, pairs map[string]map[string]string) error {
+	fs := token.NewFileSet()
+
+	// Reset file pointer to start
+	_, err := file.Seek(0, 0)
+	if err != nil {
+		return fmt.Errorf("failed to seek: %v", err)
+	}
+
+	node, err := parser.ParseFile(fs, path, file, parser.ParseComments)
+	if err != nil {
+		return fmt.Errorf("failed to parse file %s: %v", path, err)
+	}
+
+	exposedTypes := make(map[string]bool)
+	for _, pair := range pairs {
+		for _, private := range pair {
+			exposedTypes[private] = true
+		}
+	}
+
+	ast.Inspect(node, func(n ast.Node) bool {
+		if genDecl, ok := n.(*ast.GenDecl); ok && genDecl.Tok == token.TYPE {
+			for _, spec := range genDecl.Specs {
+				if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+					if !exposedTypes[typeSpec.Name.Name] {
+						continue
+					}
+					if structType, ok := typeSpec.Type.(*ast.StructType); ok {
+						for _, field := range structType.Fields.List {
+							isExported := false
+							var fieldName string
+							if len(field.Names) > 0 {
+								for _, name := range field.Names {
+									if ast.IsExported(name.Name) {
+										isExported = true
+										fieldName = name.Name
+										break
+									}
+								}
+							} else {
+								// Check anonymous field
+								if ident, ok := field.Type.(*ast.Ident); ok {
+									if ast.IsExported(ident.Name) {
+										isExported = true
+										fieldName = ident.Name
+									}
+								} else if sel, ok := field.Type.(*ast.SelectorExpr); ok {
+									if ast.IsExported(sel.Sel.Name) {
+										isExported = true
+										fieldName = sel.Sel.Name
+									}
+								} else if star, ok := field.Type.(*ast.StarExpr); ok {
+									if ident, ok := star.X.(*ast.Ident); ok {
+										if ast.IsExported(ident.Name) {
+											isExported = true
+											fieldName = ident.Name
+										}
+									} else if sel, ok := star.X.(*ast.SelectorExpr); ok {
+										if ast.IsExported(sel.Sel.Name) {
+											isExported = true
+											fieldName = sel.Sel.Name
+										}
+									}
+								}
+							}
+
+							if isExported && field.Doc == nil && field.Comment == nil {
+								changesNeeded = true
+								fmt.Printf("Missing doc for exposed struct %s field %s in %s\n", typeSpec.Name.Name, fieldName, path)
+							}
+						}
+					}
+				}
+			}
+		}
+		return true
+	})
+	return nil
 }

@@ -22,8 +22,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.SessionInfo]
 	SessionInfo struct {
+		// SessionID is the unique identifier for the session.
 		SessionID         string
+		// HostName is the host executing the session.
 		HostName          string
+		// SessionState is the current state of the session.
 		SessionState      SessionState
 		resourceID        string     // hide from user for now
 		taskqueue         string     // resource specific taskqueue
@@ -42,8 +45,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.SessionOptions]
 	SessionOptions struct {
+		// ExecutionTimeout specifies the maximum amount of time the session can run.
 		ExecutionTimeout time.Duration
+		// CreationTimeout specifies how long session creation can take before returning an error.
 		CreationTimeout  time.Duration
+		// HeartbeatTimeout specifies the heartbeat timeout. 如果 heartbeat is not received by server within the timeout, the session will be declared as failed.
 		HeartbeatTimeout time.Duration
 	}
 
