@@ -1498,6 +1498,17 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *hi
 		weh.GetFailureConverter().FailureToError(attributes.GetFailure()),
 	)
 
+	var panicErr *PanicError
+	if errors.As(activityTaskErr, &panicErr) {
+		weh.logger.Error("Activity panic.",
+			tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID,
+			tagRunID, weh.workflowInfo.WorkflowExecution.RunID,
+			tagActivityType, activity.activityType.Name,
+			tagActivityID, activityID,
+			tagPanicError, panicErr.Error(),
+			tagPanicStack, panicErr.StackTrace())
+	}
+
 	activity.handle(nil, activityTaskErr)
 	return nil
 }
@@ -1705,6 +1716,17 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			lar.Attempt = lamd.Attempt
 			lar.Backoff = lamd.Backoff
 			lar.Err = weh.GetFailureConverter().FailureToError(failure)
+
+			var panicErr *PanicError
+			if errors.As(lar.Err, &panicErr) {
+				weh.logger.Error("LocalActivity panic.",
+					tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID,
+					tagRunID, weh.workflowInfo.WorkflowExecution.RunID,
+					tagActivityType, la.params.ActivityType,
+					tagActivityID, lamd.ActivityID,
+					tagPanicError, panicErr.Error(),
+					tagPanicStack, panicErr.StackTrace())
+			}
 		} else {
 			// Result might not be there if local activity doesn't have return value.
 			lar.Result = details[localActivityResultName]

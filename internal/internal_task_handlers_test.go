@@ -21,6 +21,7 @@ import (
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	querypb "go.temporal.io/api/query/v1"
@@ -1143,6 +1144,57 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowPanics() {
 	t.Error(err)
 	_, ok := err.(*workflowPanicError)
 	t.True(ok)
+}
+
+func (t *TaskHandlersTestSuite) TestActivityTask_ActivityPanics() {
+	taskQueue := "taskQueue"
+	workflowType := "HelloWorld_Workflow"
+	activityType := "Greeter_Activity"
+	activityID := "0"
+	
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue},
+			WorkflowType: &commonpb.WorkflowType{Name: workflowType},
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   activityID,
+			ActivityType: &commonpb.ActivityType{Name: activityType},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskStarted(6, &historypb.ActivityTaskStartedEventAttributes{}),
+		{
+			EventId:   7,
+			EventType: enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED,
+			Attributes: &historypb.HistoryEvent_ActivityTaskFailedEventAttributes{
+				ActivityTaskFailedEventAttributes: &historypb.ActivityTaskFailedEventAttributes{
+					ScheduledEventId: 5,
+					StartedEventId:   6,
+					Failure: &failurepb.Failure{
+						Message: "panicError",
+						FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
+							ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+								Type: "PanicError",
+							},
+						},
+						StackTrace: "stackTrace",
+					},
+				},
+			},
+		},
+	}
+	task := createWorkflowTask(testEvents, 4, workflowType)
+	params := t.getTestWorkerExecutionParams()
+
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	wftask := workflowTask{task: task}
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+	_, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+	wfctx.Unlock(err)
+	t.NoError(err)
 }
 
 func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
