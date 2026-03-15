@@ -237,3 +237,65 @@ func (t *testGRPCServer) PollActivityTaskQueue(
 		Input: encodedPayloads(),
 	}, nil
 }
+
+type delayCodec struct {
+	delay time.Duration
+}
+
+func (d *delayCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	time.Sleep(d.delay)
+	return payloads, nil
+}
+
+func (d *delayCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	time.Sleep(d.delay)
+	return payloads, nil
+}
+
+func TestPayloadCodecGRPCClientInterceptor_Concurrency(t *testing.T) {
+	require := require.New(t)
+
+	server, err := startTestGRPCServer()
+	require.NoError(err)
+
+	delay := 100 * time.Millisecond
+	interceptor, err := NewPayloadCodecGRPCClientInterceptor(
+		PayloadCodecGRPCClientInterceptorOptions{
+			Codecs:      []PayloadCodec{&delayCodec{delay: delay}},
+			Concurrency: 5,
+		},
+	)
+	require.NoError(err)
+
+	c, err := grpc.NewClient(
+		server.addr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithChainUnaryInterceptor(interceptor),
+	)
+	require.NoError(err)
+
+	client := workflowservice.NewWorkflowServiceClient(c)
+
+	// Create a payload with 5 payloads
+	payloads := &commonpb.Payloads{
+		Payloads: make([]*commonpb.Payload, 5),
+	}
+	for i := 0; i < 5; i++ {
+		payloads.Payloads[i] = &commonpb.Payload{Data: []byte(fmt.Sprintf("test%d", i))}
+	}
+
+	start := time.Now()
+	_, err = client.StartWorkflowExecution(
+		context.Background(),
+		&workflowservice.StartWorkflowExecutionRequest{
+			Input: payloads,
+		},
+	)
+	require.NoError(err)
+	elapsed := time.Since(start)
+
+	// If it was sequential, it would take 5 * 100ms = 500ms.
+	// We allow some overhead, but it should be strictly less than 400ms.
+	require.Less(elapsed, 400*time.Millisecond, "Expected concurrent execution to be much faster than sequential")
+}
+
