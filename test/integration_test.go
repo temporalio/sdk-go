@@ -5004,32 +5004,20 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
 
+	// Give the new worker time to start polling before sending the signal.
+	time.Sleep(100 * time.Millisecond)
+
 	// Increase the determinism counter and send a tick to trigger replay
 	// non-determinism
 	forcedNonDeterminismCounter++
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "tick", nil))
 
-	// Now let's try to get history until we see a task failure
-	var histErr error
-	var taskFailed *historypb.WorkflowTaskFailedEventAttributes
+	// Verify via metrics that the non-determinism was detected. With newer
+	// server versions (PR #9138), signal-triggered workflow task failures may
+	// remain speculative and not appear in committed history.
 	ts.Eventually(func() bool {
-		iter := ts.client.GetWorkflowHistory(
-			ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for iter.HasNext() {
-			event, err := iter.Next()
-			taskFailed, histErr = event.GetWorkflowTaskFailedEventAttributes(), err
-			if taskFailed != nil || histErr != nil {
-				return true
-			}
-		}
-		return false
-	}, 10*time.Second, 300*time.Millisecond)
-
-	// Check the task has the expected cause
-	ts.NoError(histErr)
-	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR, taskFailed.Cause)
-	taskFailedMetric = fetchMetrics()
-	ts.True(taskFailedMetric >= 1)
+		return fetchMetrics() >= 1
+	}, 10*time.Second, 100*time.Millisecond, "expected NonDeterminismError metric to be emitted")
 }
 
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseCommandNotFound() {

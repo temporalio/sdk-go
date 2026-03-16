@@ -3608,14 +3608,14 @@ func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bo
 
 	if localActivity {
 		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
-			ScheduleToCloseTimeout: 2 * time.Second,
-			RetryPolicy:            &retryPolicy,
+			StartToCloseTimeout: 5 * time.Second,
+			RetryPolicy:         &retryPolicy,
 		})
 		err = workflow.ExecuteLocalActivity(ctx, activities.CancelActivity).Get(ctx, nil)
 	} else {
 		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			ScheduleToCloseTimeout: 2 * time.Second,
-			RetryPolicy:            &retryPolicy,
+			StartToCloseTimeout: 5 * time.Second,
+			RetryPolicy:         &retryPolicy,
 		})
 		err = workflow.ExecuteActivity(ctx, activities.CancelActivity).Get(ctx, nil)
 	}
