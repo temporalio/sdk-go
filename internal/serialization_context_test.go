@@ -404,7 +404,7 @@ func (s *SerializationContextTestSuite) TestSignalExternalWorkflow_CapturingDC()
 	s.True(foundTargetCtx, "should have captured WorkflowSerializationContext with target workflow ID")
 }
 
-// --- Query Test ---
+// --- Query Tests ---
 
 func (s *SerializationContextTestSuite) TestQueryResult_CapturingDC() {
 	env := s.NewTestWorkflowEnvironment()
@@ -446,7 +446,36 @@ func (s *SerializationContextTestSuite) TestQueryResult_CapturingDC() {
 	s.True(foundWfCtx, "should have captured WorkflowSerializationContext for query")
 }
 
-// --- Update Test ---
+func (s *SerializationContextTestSuite) TestQueryRoundTrip_SigningCodec() {
+	env := s.NewTestWorkflowEnvironment()
+	codecDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+	env.SetDataConverter(codecDC)
+
+	workflowFn := func(ctx Context) error {
+		err := SetQueryHandler(ctx, queryType, func() (string, error) {
+			return "query-result", nil
+		})
+		if err != nil {
+			return err
+		}
+		_ = Sleep(ctx, time.Minute)
+		return nil
+	}
+
+	env.RegisterDelayedCallback(func() {
+		result, err := env.QueryWorkflow(queryType)
+		s.NoError(err)
+		var str string
+		s.NoError(result.Get(&str))
+		s.Equal("query-result", str)
+	}, time.Second)
+
+	env.ExecuteWorkflow(workflowFn)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+}
+
+// --- Update Tests ---
 
 func (s *SerializationContextTestSuite) TestUpdateResult_CapturingDC() {
 	env := s.NewTestWorkflowEnvironment()
@@ -486,4 +515,38 @@ func (s *SerializationContextTestSuite) TestUpdateResult_CapturingDC() {
 		}
 	}
 	s.True(foundWfCtx, "should have captured WorkflowSerializationContext for update")
+}
+
+func (s *SerializationContextTestSuite) TestUpdateRoundTrip_SigningCodec() {
+	env := s.NewTestWorkflowEnvironment()
+	codecDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+	env.SetDataConverter(codecDC)
+
+	updateName := "test-update"
+	workflow := func(ctx Context) error {
+		err := SetUpdateHandler(ctx, updateName, func(ctx Context, input string) (string, error) {
+			return "updated:" + input, nil
+		}, UpdateHandlerOptions{})
+		if err != nil {
+			return err
+		}
+		_ = Sleep(ctx, time.Minute)
+		return nil
+	}
+
+	var updateResult interface{}
+	var updateErr error
+	env.RegisterDelayedCallback(func() {
+		env.UpdateWorkflow(updateName, "update-id", &TestUpdateCallback{
+			OnAccept:   func() {},
+			OnReject:   func(err error) { updateErr = err },
+			OnComplete: func(result interface{}, err error) { updateResult = result; updateErr = err },
+		}, "hello")
+	}, time.Second)
+
+	env.ExecuteWorkflow(workflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.NoError(updateErr)
+	s.NotNil(updateResult)
 }

@@ -1739,10 +1739,7 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 // setQueryHandler sets query handler for given queryType.
 func setQueryHandler(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
 	eo := getWorkflowEnvOptions(ctx)
-	dataConverter := converter.WithSerializationContext(getDataConverterFromWorkflowContext(ctx), converter.WorkflowSerializationContext{
-		Namespace:  eo.Namespace,
-		WorkflowID: eo.WorkflowID,
-	})
+	dataConverter := getDataConverterFromWorkflowContext(ctx)
 	qh := &queryHandler{
 		fn:            handler,
 		queryType:     queryType,
@@ -1765,12 +1762,12 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 		return err
 	}
 	eo := getWorkflowEnvOptions(ctx)
+	uh.dataConverter = getDataConverterFromWorkflowContext(ctx)
+	wfInfo := getWorkflowEnvironment(ctx).WorkflowInfo()
 	wfCtx := converter.WorkflowSerializationContext{
-		Namespace:  eo.Namespace,
-		WorkflowID: eo.WorkflowID,
+		Namespace:  wfInfo.Namespace,
+		WorkflowID: wfInfo.WorkflowExecution.ID,
 	}
-	uh.dataConverter = converter.WithSerializationContext(
-		getDataConverterFromWorkflowContext(ctx), wfCtx)
 	uh.failureConverter = converter.WithFailureConverterSerializationContext(
 		getWorkflowEnvironment(ctx).GetFailureConverter(), wfCtx)
 	eo.updateHandlers[updateName] = uh
