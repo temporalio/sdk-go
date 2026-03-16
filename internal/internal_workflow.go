@@ -1035,10 +1035,8 @@ func (s *coroutineState) initialYield(stackDepth int, status string) {
 	s.blocked.Swap(false)
 }
 
-// isPanicking reports whether the current goroutine is executing a deferred function during panic
-// unwinding. It checks for runtime.gopanic on the call stack via runtime.Callers(). If user code
-// has already recover()'d the panic, runtime.gopanic will not be on the stack and this returns
-// false.
+// isPanicking reports whether the current goroutine is executing during panic unwinding. It checks
+// for runtime.gopanic on the call stack via runtime.Callers().
 func isPanicking() bool {
 	var pcs [20]uintptr
 	n := runtime.Callers(1, pcs[:])

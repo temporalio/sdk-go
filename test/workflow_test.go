@@ -3626,13 +3626,6 @@ func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bo
 	return nil
 }
 
-// SessionCancelNDE is a regression test workflow for
-// https://github.com/temporalio/sdk-go/issues/2206.
-// When a DataConverter failure causes encodeArgs to panic inside ExecuteActivity,
-// the defer'd CompleteSession runs during panic unwinding and cancels the session
-// creation activity. With FailWorkflow panic policy, these commands are sent.
-// On replay, the ActivityTaskCancelRequested for the creation activity hits the
-// state machine while it's still in Initiated state, causing an NDE.
 func (w *Workflows) SessionCancelNDE(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 

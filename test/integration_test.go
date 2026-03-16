@@ -8934,8 +8934,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 }
 
 // poisonDataConverter wraps a DataConverter and fails ToPayloads when any of the
-// values matches the poison string. Used by TestSessionCancelNDE to reproduce
-// https://github.com/temporalio/sdk-go/issues/2206.
+// values matches the poison string.
 type poisonDataConverter struct {
 	converter.DataConverter
 	poison string
@@ -8957,21 +8956,16 @@ func (f *poisonDataConverter) ToPayload(value interface{}) (*commonpb.Payload, e
 	return f.DataConverter.ToPayload(value)
 }
 
-// TestSessionCancelNDE is a regression test for
-// https://github.com/temporalio/sdk-go/issues/2206.
-//
 // When a DataConverter failure causes encodeArgs to panic inside ExecuteActivity
 // in a session workflow, the defer'd CompleteSession cancels the session creation
 // activity. On replay, the ActivityTaskCancelRequested event for that activity
-// hits the state machine in Initiated state, causing a permanent TMPRL1100 NDE.
+// hits the state machine in Initiated state, causing a permanent NDE.
 func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 	// Stop the default worker — we need our own with a failing DataConverter.
 	ts.worker.Stop()
 	ts.workerStopped = true
 
 	// Create a DataConverter that fails when encoding the poison value.
-	// Session creation encodes a session ID (UUID), so it succeeds. The
-	// workflow's ExecuteActivity encodes the poison string, triggering the panic.
 	const poison = "FAIL_ENCODE_NOW"
 	dc := &poisonDataConverter{
 		DataConverter: converter.GetDefaultDataConverter(),
@@ -9055,6 +9049,7 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
 	// Stop any existing worker
 	ts.worker.Stop()
+	ts.workerStopped = true
 
 	var panicWithDeferYieldCounter atomic.Int32
 	panicWithDeferYieldCounter.Store(0)
