@@ -18,10 +18,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	workerpb "go.temporal.io/api/worker/v1"
-	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
-
 	"github.com/golang/mock/gomock"
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
