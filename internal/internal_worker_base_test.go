@@ -224,44 +224,40 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 
 type semaphoreProbeTaskPoller struct {
 	signals chan struct{}
+	done    chan struct{}
 	closed  atomic.Bool
 }
 
 func newSemaphoreProbeTaskPoller() *semaphoreProbeTaskPoller {
 	return &semaphoreProbeTaskPoller{
 		signals: make(chan struct{}, 32),
+		done:    make(chan struct{}),
 	}
 }
 
 // PollTask implements taskPoller and blocks until a signal is provided so the semaphore permits stay acquired.
 func (p *semaphoreProbeTaskPoller) PollTask() (taskForWorker, error) {
-	_, ok := <-p.signals
-	if !ok {
+	select {
+	case <-p.signals:
+		return nil, nil
+	case <-p.done:
 		return nil, nil
 	}
-	return nil, nil
 }
 
 func (p *semaphoreProbeTaskPoller) Allow(n int) {
 	for range n {
-		for {
-			if p.closed.Load() {
-				return
-			}
-			select {
-			case p.signals <- struct{}{}:
-				goto next
-			default:
-				time.Sleep(1 * time.Millisecond)
-			}
+		select {
+		case p.signals <- struct{}{}:
+		case <-p.done:
+			return
 		}
-	next:
 	}
 }
 
 func (p *semaphoreProbeTaskPoller) Close() {
 	if p.closed.CompareAndSwap(false, true) {
-		close(p.signals)
+		close(p.done)
 	}
 }
 

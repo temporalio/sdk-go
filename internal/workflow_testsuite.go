@@ -353,12 +353,28 @@ func (e *TestWorkflowEnvironment) SetCurrentHistorySize(length int) {
 	e.impl.setCurrentHistorySize(length)
 }
 
-// SetContinueAsNewSuggested set sets the value that is returned from
+// SetContinueAsNewSuggested sets the value that is returned from
 // GetInfo(ctx).GetContinueAsNewSuggested().
 //
 // Note: this value may not be up to date if accessed inside a query.
 func (e *TestWorkflowEnvironment) SetContinueAsNewSuggested(suggest bool) {
 	e.impl.setContinueAsNewSuggested(suggest)
+}
+
+// SetContinueAsNewSuggestedReasons sets the value that is returned from
+// GetInfo(ctx).GetContinueAsNewSuggestedReasons().
+//
+// Note: this value may not be up to date if accessed inside a query.
+func (e *TestWorkflowEnvironment) SetContinueAsNewSuggestedReasons(reasons []ContinueAsNewSuggestedReason) {
+	e.impl.setContinueAsNewSuggestedReasons(reasons)
+}
+
+// SetTargetWorkerDeploymentVersionChanged sets the value that is returned from
+// GetInfo(ctx).GetTargetWorkerDeploymentVersionChanged.
+//
+// Note: this value may not be up to date if accessed inside a query.
+func (e *TestWorkflowEnvironment) SetTargetWorkerDeploymentVersionChanged(changed bool) {
+	e.impl.setTargetWorkerDeploymentVersionChanged(changed)
 }
 
 // SetContinuedExecutionRunID sets the value that is returned from

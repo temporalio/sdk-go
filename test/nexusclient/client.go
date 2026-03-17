@@ -32,7 +32,7 @@ type HTTPClientOptions struct {
 	Serializer nexus.Serializer
 	// A [FailureConverter] to convert a [Failure] instance to and from an [error]. Defaults to
 	// [DefaultFailureConverter].
-	FailureConverter nexus.FailureConverter
+	FailureConverter failureConverter
 }
 
 // User-Agent header set on HTTP requests.
@@ -117,7 +117,7 @@ func NewHTTPClient(options HTTPClientOptions) (*HTTPClient, error) {
 		options.Serializer = nexus.DefaultSerializer()
 	}
 	if options.FailureConverter == nil {
-		options.FailureConverter = nexus.DefaultFailureConverter()
+		options.FailureConverter = failureErrorFailureConverter{}
 	}
 
 	return &HTTPClient{
@@ -293,10 +293,9 @@ func (c *HTTPClient) StartOperation(
 			return nil, err
 		}
 
-		failureErr := c.options.FailureConverter.FailureToError(failure)
 		return nil, &nexus.OperationError{
 			State: state,
-			Cause: failureErr,
+			Cause: c.options.FailureConverter.FailureToError(failure),
 		}
 	default:
 		return nil, c.bestEffortHandlerErrorFromResponse(response, body)
@@ -367,8 +366,7 @@ func (c *HTTPClient) failureFromResponseOrDefault(response *http.Response, body 
 
 func (c *HTTPClient) failureErrorFromResponseOrDefault(response *http.Response, body []byte, defaultMessage string) error {
 	failure := c.failureFromResponseOrDefault(response, body, defaultMessage)
-	failureErr := c.options.FailureConverter.FailureToError(failure)
-	return failureErr
+	return c.options.FailureConverter.FailureToError(failure)
 }
 
 func (c *HTTPClient) bestEffortHandlerErrorFromResponse(response *http.Response, body []byte) error {
@@ -504,4 +502,36 @@ func ExecuteOperation[I, O any](ctx context.Context, client *HTTPClient, operati
 		panic("ExecuteOperation does not support asynchronous operations")
 	}
 	return response.Successful, nil
+}
+
+type failureConverter interface {
+	// ErrorToFailure converts an [error] to a [Failure].
+	// Implementors should take a best-effort approach and never fail this method.
+	// Note that the provided error may be nil.
+	ErrorToFailure(error) nexus.Failure
+	// ErrorToFailure converts a [Failure] to an [error].
+	// Implementors should take a best-effort approach and never fail this method.
+	FailureToError(nexus.Failure) error
+}
+
+type failureErrorFailureConverter struct{}
+
+// ErrorToFailure implements FailureConverter.
+func (e failureErrorFailureConverter) ErrorToFailure(err error) nexus.Failure {
+	if err == nil {
+		return nexus.Failure{}
+	}
+	if fe, ok := err.(*nexus.FailureError); ok {
+		return fe.Failure
+	}
+	return nexus.Failure{
+		Message: err.Error(),
+	}
+}
+
+// FailureToError implements FailureConverter.
+func (e failureErrorFailureConverter) FailureToError(f nexus.Failure) error {
+	return &nexus.FailureError{
+		Failure: f,
+	}
 }

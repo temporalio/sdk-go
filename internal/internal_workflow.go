@@ -210,8 +210,9 @@ type (
 		queryHandlers            map[string]*queryHandler
 		updateHandlers           map[string]*updateHandler
 		// runningUpdatesHandles is a map of update handlers that are currently running.
-		runningUpdatesHandles map[string]UpdateInfo
-		VersioningIntent      VersioningIntent
+		runningUpdatesHandles     map[string]UpdateInfo
+		VersioningIntent          VersioningIntent
+		InitialVersioningBehavior ContinueAsNewVersioningBehavior
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
 		currentDetails string
@@ -1403,22 +1404,28 @@ func (s *selectorImpl) Select(ctx Context) {
 		if pair.receiveFunc != nil {
 			f := *pair.receiveFunc
 			c := pair.channel
+			hasDefault := s.defaultFunc != nil
 			callback := &receiveCallback{
 				fn: func(v interface{}, more bool) bool {
 					if readyBranch != nil {
 						return false
 					}
-					// readyBranch is not executed when AddDefault is specified,
-					// setting the value here prevents the signal from being dropped
 					env := getWorkflowEnvironment(ctx)
 					dropSignalFlag := env.TryUse(SDKFlagBlockedSelectorSignalReceive)
+					channelLostMsgFlag := env.TryUse(SDKFlagWorkflowNewChannelLostMessages)
 
-					if dropSignalFlag {
+					// Pre-store c.recValue to prevent signal loss when AddDefault
+					// blocks. Without channelLostMsgFlag, always pre-store (original
+					// #1624 fix). With channelLostMsgFlag, only pre-store when a
+					// default branch exists to avoid overwriting c.recValue when
+					// multiple selectors are blocked on the same channel.
+					storeNow := dropSignalFlag && (!channelLostMsgFlag || hasDefault)
+					if storeNow {
 						c.recValue = &v
 					}
 
 					readyBranch = func() {
-						if !dropSignalFlag {
+						if !storeNow {
 							c.recValue = &v
 						}
 						f(c, more)
