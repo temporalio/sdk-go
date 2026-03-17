@@ -18,7 +18,6 @@ const defaultPayloadSizeThreshold = 256 * 1024
 type storageParameters struct {
 	driverMap            map[string]converter.StorageDriver
 	driverSelector       converter.StorageDriverSelector
-	defaultDriver        converter.StorageDriver
 	payloadSizeThreshold int
 }
 
@@ -39,9 +38,9 @@ func ExternalStorageToParams(options converter.ExternalStorage) (storageParamete
 		driverMap[d.Name()] = d
 	}
 
-	var defaultDriver converter.StorageDriver
-	if len(options.Drivers) > 0 {
-		defaultDriver = options.Drivers[0]
+	selector := options.DriverSelector
+	if selector == nil && len(options.Drivers) > 0 {
+		selector = singleDriverSelector{driver: options.Drivers[0]}
 	}
 
 	sizeThreshold := options.PayloadSizeThreshold
@@ -51,10 +50,18 @@ func ExternalStorageToParams(options converter.ExternalStorage) (storageParamete
 
 	return storageParameters{
 		driverMap:            driverMap,
-		driverSelector:       options.DriverSelector,
-		defaultDriver:        defaultDriver,
+		driverSelector:       selector,
 		payloadSizeThreshold: sizeThreshold,
 	}, nil
+}
+
+// singleDriverSelector is a StorageDriverSelector that always returns the same driver.
+type singleDriverSelector struct {
+	driver converter.StorageDriver
+}
+
+func (s singleDriverSelector) SelectDriver(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+	return s.driver, nil
 }
 
 // driversEqual compares two StorageDriver interface values. It uses == when
@@ -226,7 +233,7 @@ type externalStorageVisitor struct {
 func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	startTime := time.Now()
 
-	if v.params.driverSelector == nil && v.params.defaultDriver == nil {
+	if v.params.driverSelector == nil {
 		return payloads, nil
 	}
 
@@ -248,21 +255,17 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 			continue
 		}
 
+		selected, err := callDriverSelector(v.params.driverSelector, driverCtx, p)
+		if err != nil {
+			return nil, fmt.Errorf("storage driver selector failed: %w", err)
+		}
 		var driver converter.StorageDriver
-		if v.params.driverSelector != nil {
-			selected, err := callDriverSelector(v.params.driverSelector, driverCtx, p)
-			if err != nil {
-				return nil, fmt.Errorf("storage driver selector failed: %w", err)
+		if selected != nil {
+			registered, ok := v.params.driverMap[selected.Name()]
+			if !ok || !driversEqual(registered, selected) {
+				return nil, fmt.Errorf("storage driver selector returned unregistered driver %q", selected.Name())
 			}
-			if selected != nil {
-				registered, ok := v.params.driverMap[selected.Name()]
-				if !ok || !driversEqual(registered, selected) {
-					return nil, fmt.Errorf("storage driver selector returned unregistered driver %q", selected.Name())
-				}
-				driver = selected
-			}
-		} else {
-			driver = v.params.defaultDriver
+			driver = selected
 		}
 
 		if driver == nil {

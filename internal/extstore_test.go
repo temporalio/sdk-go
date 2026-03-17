@@ -174,7 +174,19 @@ func TestExternalStorageToParams_PointerAndValueReceiverDrivers(t *testing.T) {
 func TestExternalStorageToParams_EmptyDrivers(t *testing.T) {
 	params, err := ExternalStorageToParams(converter.ExternalStorage{})
 	require.NoError(t, err)
-	require.Nil(t, params.defaultDriver)
+	require.Nil(t, params.driverSelector)
+}
+
+func TestExternalStorageToParams_SingleDriverSynthesizesSelector(t *testing.T) {
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(converter.ExternalStorage{
+		Drivers: []converter.StorageDriver{driver},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, params.driverSelector)
+	selected, err := params.driverSelector.SelectDriver(converter.StorageDriverStoreContext{Context: context.Background()}, nil)
+	require.NoError(t, err)
+	require.Equal(t, driver, selected)
 }
 
 // ---------------------------------------------------------------------------
