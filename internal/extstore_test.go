@@ -30,6 +30,8 @@ type testStorageDriver struct {
 	retrieveErr   error
 	storeDelay    time.Duration
 	retrieveDelay time.Duration
+	storeGate     <-chan struct{} // if non-nil, Store waits for this before proceeding
+	retrieveGate  <-chan struct{} // if non-nil, Retrieve waits for this before proceeding
 }
 
 func newTestDriver(name string) *testStorageDriver {
@@ -45,6 +47,11 @@ func (d *testStorageDriver) Store(_ converter.StorageDriverStoreContext, payload
 	d.storeCount++
 	if d.storeDelay > 0 {
 		time.Sleep(d.storeDelay)
+	}
+	if d.storeGate != nil {
+		d.mu.Unlock()
+		<-d.storeGate
+		d.mu.Lock()
 	}
 	if d.storeErr != nil {
 		return nil, d.storeErr
@@ -64,6 +71,11 @@ func (d *testStorageDriver) Retrieve(_ converter.StorageDriverRetrieveContext, c
 	d.retrieveCount++
 	if d.retrieveDelay > 0 {
 		time.Sleep(d.retrieveDelay)
+	}
+	if d.retrieveGate != nil {
+		d.mu.Unlock()
+		<-d.retrieveGate
+		d.mu.Lock()
 	}
 	if d.retrieveErr != nil {
 		return nil, d.retrieveErr
@@ -473,7 +485,8 @@ func TestStoreVisitor_StorePanic(t *testing.T) {
 func TestStoreVisitor_CancelOnError(t *testing.T) {
 	errD := newTestDriver("err-driver")
 	errD.storeErr = errors.New("store error")
-	blockD := &blockingDriver{name: "block-driver", cancelledCh: make(chan struct{})}
+	blockD := &blockingDriver{name: "block-driver", startedCh: make(chan struct{}), cancelledCh: make(chan struct{})}
+	errD.storeGate = blockD.startedCh
 
 	i := 0
 	selector := &funcDriverSelector{fn: func(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
@@ -700,7 +713,8 @@ func TestRetrievalVisitor_RetrievePanic(t *testing.T) {
 func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 	errD := newTestDriver("err-driver")
 	errD.retrieveErr = errors.New("retrieve error")
-	blockD := &blockingDriver{name: "block-driver", cancelledCh: make(chan struct{})}
+	blockD := &blockingDriver{name: "block-driver", startedCh: make(chan struct{}), cancelledCh: make(chan struct{})}
+	errD.retrieveGate = blockD.startedCh
 
 	// Store via errD so we get a real reference for errD, then hand-craft a
 	// reference for blockD.
@@ -721,7 +735,10 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 	require.NoError(t, err)
 
 	retrieveParams, err := ExternalStorageToParams(converter.ExternalStorage{
-		Drivers: []converter.StorageDriver{errD, blockD},
+		Drivers:        []converter.StorageDriver{errD, blockD},
+		DriverSelector: &funcDriverSelector{fn: func(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+			return errD, nil
+		}},
 	})
 	require.NoError(t, err)
 	visitor := NewExternalRetrievalVisitor(retrieveParams)
@@ -922,20 +939,27 @@ func (d *panicDriver) Retrieve(_ converter.StorageDriverRetrieveContext, _ []con
 }
 
 // blockingDriver blocks its Store/Retrieve call until the supplied context is
-// cancelled, then records the cancellation on cancelledCh.
+// cancelled, then records the cancellation on cancelledCh. startedCh is closed
+// as soon as the call is entered, before blocking, so callers can synchronize
+// on the driver being in-flight.
 type blockingDriver struct {
 	name        string
+	startedCh   chan struct{}
 	cancelledCh chan struct{}
 }
 
 func (d *blockingDriver) Name() string { return d.name }
 func (d *blockingDriver) Type() string { return "blocking" }
 func (d *blockingDriver) Store(ctx converter.StorageDriverStoreContext, _ []*commonpb.Payload) ([]converter.StorageClaim, error) {
+	if d.startedCh != nil {
+		close(d.startedCh)
+	}
 	<-ctx.Context.Done()
 	close(d.cancelledCh)
 	return nil, ctx.Context.Err()
 }
 func (d *blockingDriver) Retrieve(ctx converter.StorageDriverRetrieveContext, _ []converter.StorageClaim) ([]*commonpb.Payload, error) {
+	close(d.startedCh)
 	<-ctx.Context.Done()
 	close(d.cancelledCh)
 	return nil, ctx.Context.Err()
