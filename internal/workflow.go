@@ -1393,7 +1393,11 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		return result
 	}
 
-	options := getWorkflowEnvOptions(ctx)
+	// Copy workflow options so we don't mutate the shared pointer on ctx,
+	// which would cause subsequent child workflow launches from the same ctx
+	// to reuse this child's WorkflowID instead of generating a new one.
+	optionsCopy := *getWorkflowEnvOptions(ctx)
+	options := &optionsCopy
 	options.DataConverter = dc
 	options.ContextPropagators = workflowOptionsFromCtx.ContextPropagators
 	options.Memo = workflowOptionsFromCtx.Memo
@@ -1593,7 +1597,6 @@ func (wc *workflowEnvironmentInterceptor) GetInfo(ctx Context) *WorkflowInfo {
 	return wc.env.WorkflowInfo()
 }
 
-//
 // Exposed as: [go.temporal.io/sdk/workflow.GetTypedSearchAttributes]
 func GetTypedSearchAttributes(ctx Context) SearchAttributes {
 	i := getWorkflowOutboundInterceptor(ctx)
