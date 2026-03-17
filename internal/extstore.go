@@ -78,8 +78,8 @@ const storageOperationCallbackContextKey contextKey = "storageOperationCallback"
 const metadataEncodingStorageRef = "json/external-storage-reference"
 
 type storageReference struct {
-	DriverName  string
-	DriverClaim converter.StorageClaim
+	DriverName  string                 `json:"driver_name"`
+	DriverClaim converter.StorageClaim `json:"driver_claim"`
 }
 
 func storageReferenceToPayload(ref storageReference, storedSizeBytes int64) (*commonpb.Payload, error) {

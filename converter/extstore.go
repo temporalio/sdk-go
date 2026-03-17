@@ -36,7 +36,7 @@ type StorageDriverRetrieveContext struct {
 //
 // NOTE: Experimental
 type StorageClaim struct {
-	Data map[string]string
+	ClaimData map[string]string `json:"claim_data"`
 }
 
 // StorageDriver is the interface that must be implemented to back external

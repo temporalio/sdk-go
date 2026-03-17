@@ -49,7 +49,7 @@ func (d *memStorageDriver) Store(_ converter.StorageDriverStoreContext, payloads
 	for i, p := range payloads {
 		key := uuid.NewString()
 		d.data[key] = proto.Clone(p).(*commonpb.Payload)
-		claims[i] = converter.StorageClaim{Data: map[string]string{"key": key}}
+		claims[i] = converter.StorageClaim{ClaimData: map[string]string{"key": key}}
 	}
 	return claims, nil
 }
@@ -63,9 +63,9 @@ func (d *memStorageDriver) Retrieve(_ converter.StorageDriverRetrieveContext, cl
 	}
 	payloads := make([]*commonpb.Payload, len(claims))
 	for i, c := range claims {
-		p, ok := d.data[c.Data["key"]]
+		p, ok := d.data[c.ClaimData["key"]]
 		if !ok {
-			return nil, fmt.Errorf("key not found: %q", c.Data["key"])
+			return nil, fmt.Errorf("key not found: %q", c.ClaimData["key"])
 		}
 		payloads[i] = proto.Clone(p).(*commonpb.Payload)
 	}

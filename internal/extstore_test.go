@@ -53,7 +53,7 @@ func (d *testStorageDriver) Store(_ converter.StorageDriverStoreContext, payload
 	for i, p := range payloads {
 		key := uuid.NewString()
 		d.data[key] = proto.Clone(p).(*commonpb.Payload)
-		claims[i] = converter.StorageClaim{Data: map[string]string{"key": key}}
+		claims[i] = converter.StorageClaim{ClaimData: map[string]string{"key": key}}
 	}
 	return claims, nil
 }
@@ -70,9 +70,9 @@ func (d *testStorageDriver) Retrieve(_ converter.StorageDriverRetrieveContext, c
 	}
 	payloads := make([]*commonpb.Payload, len(claims))
 	for i, c := range claims {
-		p, ok := d.data[c.Data["key"]]
+		p, ok := d.data[c.ClaimData["key"]]
 		if !ok {
-			return nil, fmt.Errorf("key not found: %q", c.Data["key"])
+			return nil, fmt.Errorf("key not found: %q", c.ClaimData["key"])
 		}
 		payloads[i] = proto.Clone(p).(*commonpb.Payload)
 	}
@@ -173,7 +173,7 @@ func TestExternalStorageToParams_EmptyDrivers(t *testing.T) {
 func TestStorageReferenceRoundTrip(t *testing.T) {
 	ref := storageReference{
 		DriverName:  "mydriver",
-		DriverClaim: converter.StorageClaim{Data: map[string]string{"key": "abc123"}},
+		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "abc123"}},
 	}
 	p, err := storageReferenceToPayload(ref, 512)
 	require.NoError(t, err)
@@ -184,7 +184,7 @@ func TestStorageReferenceRoundTrip(t *testing.T) {
 	decoded, err := payloadToStorageReference(p)
 	require.NoError(t, err)
 	require.Equal(t, ref.DriverName, decoded.DriverName)
-	require.Equal(t, ref.DriverClaim.Data, decoded.DriverClaim.Data)
+	require.Equal(t, ref.DriverClaim.ClaimData, decoded.DriverClaim.ClaimData)
 }
 
 func TestPayloadToStorageReference_WrongEncoding(t *testing.T) {
@@ -625,7 +625,7 @@ func TestRetrievalVisitor_UnknownDriver(t *testing.T) {
 
 	ref, err := storageReferenceToPayload(storageReference{
 		DriverName:  "unregistered-driver",
-		DriverClaim: converter.StorageClaim{Data: map[string]string{"key": "k"}},
+		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "k"}},
 	}, 10)
 	require.NoError(t, err)
 
@@ -664,7 +664,7 @@ func TestRetrievalVisitor_RetrievePanic(t *testing.T) {
 
 	ref, err := storageReferenceToPayload(storageReference{
 		DriverName:  "my-panic-retrieve-driver",
-		DriverClaim: converter.StorageClaim{Data: map[string]string{"key": "k"}},
+		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "k"}},
 	}, 10)
 	require.NoError(t, err)
 
@@ -693,7 +693,7 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 
 	blockRef, err := storageReferenceToPayload(storageReference{
 		DriverName:  "block-driver",
-		DriverClaim: converter.StorageClaim{Data: map[string]string{"key": "k"}},
+		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "k"}},
 	}, 10)
 	require.NoError(t, err)
 
@@ -724,7 +724,7 @@ func TestRetrievalVisitor_WrongPayloadCount(t *testing.T) {
 
 	ref, err := storageReferenceToPayload(storageReference{
 		DriverName:  "my-bad-count-driver",
-		DriverClaim: converter.StorageClaim{Data: map[string]string{"key": "k"}},
+		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "k"}},
 	}, 10)
 	require.NoError(t, err)
 
@@ -944,7 +944,7 @@ func (d *badCountRetrieveDriver) Type() string { return "bad" }
 func (d *badCountRetrieveDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
 	claims := make([]converter.StorageClaim, len(payloads))
 	for i := range claims {
-		claims[i] = converter.StorageClaim{Data: map[string]string{"key": "k"}}
+		claims[i] = converter.StorageClaim{ClaimData: map[string]string{"key": "k"}}
 	}
 	return claims, nil
 }
@@ -968,16 +968,16 @@ func (d valueReceiverDriver) Store(_ converter.StorageDriverStoreContext, payloa
 	for i, p := range payloads {
 		key := uuid.NewString()
 		d.data[key] = proto.Clone(p).(*commonpb.Payload)
-		claims[i] = converter.StorageClaim{Data: map[string]string{"key": key}}
+		claims[i] = converter.StorageClaim{ClaimData: map[string]string{"key": key}}
 	}
 	return claims, nil
 }
 func (d valueReceiverDriver) Retrieve(_ converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
 	payloads := make([]*commonpb.Payload, len(claims))
 	for i, c := range claims {
-		p, ok := d.data[c.Data["key"]]
+		p, ok := d.data[c.ClaimData["key"]]
 		if !ok {
-			return nil, fmt.Errorf("key not found: %q", c.Data["key"])
+			return nil, fmt.Errorf("key not found: %q", c.ClaimData["key"])
 		}
 		payloads[i] = proto.Clone(p).(*commonpb.Payload)
 	}
