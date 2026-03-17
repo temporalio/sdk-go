@@ -129,7 +129,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	result := make([]*commonpb.Payload, len(payloads))
 
 	for i, p := range payloads {
-		if len(p.GetExternalPayloads()) == 0 {
+		if string(p.GetMetadata()[converter.MetadataEncoding]) != metadataEncodingStorageRef {
 			result[i] = p
 			continue
 		}
