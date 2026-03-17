@@ -577,13 +577,24 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 	})
 	ts.NoError(err)
 
+	// Wait for v2 to appear in the deployment before starting a workflow pinned to it.
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
+
 	// start workflow1 with 2.0, WaitSignalToStartVersionedTwo
 	options := ts.startWorkflowOptions("1")
 	options.VersioningOverride = &client.PinnedVersioningOverride{
 		Version: v2,
 	}
-	handle1, err := ts.client.ExecuteWorkflow(ctx, options, "WaitSignalToStartVersioned")
-	ts.NoError(err)
+	// Retry until the pinned version is present in the task queue, since the
+	// deployment version may be registered before the poller is visible to
+	// the matching engine.
+	var handle1 client.WorkflowRun
+	ts.Eventually(func() bool {
+		var startErr error
+		handle1, startErr = ts.client.ExecuteWorkflow(ctx, options, "WaitSignalToStartVersioned")
+		return startErr == nil
+	}, 5*time.Second, 200*time.Millisecond)
+	ts.Require().NotNil(handle1)
 	// No override
 	handle2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
@@ -688,16 +699,26 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 
 	ts.waitForWorkflowRunning(ctx, handle4)
 
+	// Wait for v2 to appear in the deployment before pinning a workflow to it.
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
+
 	v2Override := client.PinnedVersioningOverride{Version: v2}
 
-	options, err := ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
-		WorkflowId: handle1.GetID(),
-		RunId:      handle1.GetRunID(),
-		WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
-			VersioningOverride: &client.VersioningOverrideChange{Value: &v2Override},
-		},
-	})
-	ts.NoError(err)
+	// Retry until the pinned version is present in the task queue, since the
+	// deployment version may be registered before the poller is visible to
+	// the matching engine.
+	var options client.WorkflowExecutionOptions
+	ts.Eventually(func() bool {
+		var updateErr error
+		options, updateErr = ts.client.UpdateWorkflowExecutionOptions(ctx, client.UpdateWorkflowExecutionOptionsRequest{
+			WorkflowId: handle1.GetID(),
+			RunId:      handle1.GetRunID(),
+			WorkflowExecutionOptionsChanges: client.WorkflowExecutionOptionsChanges{
+				VersioningOverride: &client.VersioningOverrideChange{Value: &v2Override},
+			},
+		})
+		return updateErr == nil
+	}, 5*time.Second, 200*time.Millisecond)
 	ts.Equal(options.VersioningOverride, &v2Override)
 
 	// Add and remove override to handle2
