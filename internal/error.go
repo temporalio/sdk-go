@@ -578,7 +578,7 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		Namespace:  wfInfo.Namespace,
 		WorkflowID: wfInfo.WorkflowExecution.ID,
 	}
-	dc := converter.WithSerializationContext(getDataConverterFromWorkflowContext(ctx), wfCtx)
+	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), wfCtx)
 	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, dc, env.GetRegistry())
 	if err != nil {
 		panic(err)

@@ -606,7 +606,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 		Namespace:  wInfo.Namespace,
 		WorkflowID: wInfo.WorkflowExecution.ID,
 	}
-	env.dataConverter = converter.WithSerializationContext(env.dataConverter, wfCtx)
+	env.dataConverter = converter.WithDataConverterSerializationContext(env.dataConverter, wfCtx)
 	env.failureConverter = converter.WithFailureConverterSerializationContext(env.failureConverter, wfCtx)
 	env.locker.Unlock()
 

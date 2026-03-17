@@ -2281,7 +2281,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		ActivityType: t.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
 	}
-	dataConverter := converter.WithSerializationContext(ath.dataConverter, actCtx)
+	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, actCtx)
 	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, actCtx)
 
 	// The root context is only cancelled when the worker is finished shutting down.

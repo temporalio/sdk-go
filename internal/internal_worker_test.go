@@ -34,6 +34,20 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
+// contextCapturingDC records every SerializationContext it receives.
+type contextCapturingDC struct {
+	converter.DataConverter
+	contexts *[]converter.SerializationContext
+}
+
+func (dc *contextCapturingDC) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
+	*dc.contexts = append(*dc.contexts, ctx)
+	return &contextCapturingDC{
+		DataConverter: dc.DataConverter,
+		contexts:      dc.contexts,
+	}
+}
+
 func testInternalWorkerRegister(r *registry) {
 	r.RegisterWorkflowWithOptions(
 		sampleWorkflowExecute,
@@ -2013,6 +2027,209 @@ func (s *internalWorkerTestSuite) TestCompleteActivityByIDWithContextAwareDataCo
 		})
 
 	_ = client.CompleteActivityByID(ctx, DefaultNamespace, "wid", "", "aid", "test", nil)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityByIDWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
+	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
+
+	err := client.CompleteActivityByIDWithOptions(context.Background(), CompleteActivityByIDOptions{
+		Namespace:    DefaultNamespace,
+		WorkflowID:   "wid",
+		RunID:        "rid",
+		ActivityID:   "aid",
+		Result:       "test",
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("wid", actCtx.WorkflowID)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityByID_DelegatesToWithOptions() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: DefaultNamespace})
+
+	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
+	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...interface{}) {
+			s.Equal(DefaultNamespace, req.Namespace)
+			s.Equal("wid", req.WorkflowId)
+			s.Equal("rid", req.RunId)
+			s.Equal("aid", req.ActivityId)
+		})
+
+	err := client.CompleteActivityByID(context.Background(), DefaultNamespace, "wid", "rid", "aid", "result", nil)
+	s.NoError(err)
+}
+
+func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByIDWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatByIdResponse{CancelRequested: false}
+	s.service.EXPECT().RecordActivityTaskHeartbeatById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+
+	err := client.RecordActivityHeartbeatByIDWithOptions(context.Background(), RecordActivityHeartbeatByIDOptions{
+		Namespace:    DefaultNamespace,
+		WorkflowID:   "wid",
+		RunID:        "rid",
+		ActivityID:   "aid",
+		Details:      []interface{}{"progress"},
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("wid", actCtx.WorkflowID)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	response := &workflowservice.RespondActivityTaskCompletedResponse{}
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
+
+	err := client.CompleteActivityWithOptions(context.Background(), CompleteActivityOptions{
+		TaskToken:    []byte("token"),
+		Result:       "test",
+		Namespace:    DefaultNamespace,
+		WorkflowID:   "wid",
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("wid", actCtx.WorkflowID)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+	s.False(actCtx.IsLocal)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivity_DelegatesToWithOptions() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: DefaultNamespace})
+
+	response := &workflowservice.RespondActivityTaskCompletedResponse{}
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...interface{}) {
+			s.Equal([]byte("token"), req.TaskToken)
+		})
+
+	err := client.CompleteActivity(context.Background(), []byte("token"), "result", nil)
+	s.NoError(err)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityByActivityIDWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
+	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
+
+	err := client.CompleteActivityByActivityIDWithOptions(context.Background(), CompleteActivityByActivityIDOptions{
+		Namespace:    DefaultNamespace,
+		ActivityID:   "aid",
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+	s.False(actCtx.IsLocal)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityByActivityID_DelegatesToWithOptions() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: DefaultNamespace})
+
+	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
+	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...interface{}) {
+			s.Equal(DefaultNamespace, req.Namespace)
+			s.Equal("aid", req.ActivityId)
+		})
+
+	err := client.CompleteActivityByActivityID(context.Background(), DefaultNamespace, "aid", "", "result", nil)
+	s.NoError(err)
+}
+
+func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+
+	err := client.RecordActivityHeartbeatWithOptions(context.Background(), RecordActivityHeartbeatOptions{
+		TaskToken:    []byte("token"),
+		Details:      []interface{}{"progress"},
+		Namespace:    DefaultNamespace,
+		WorkflowID:   "wid",
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("wid", actCtx.WorkflowID)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+	s.False(actCtx.IsLocal)
+}
+
+func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_DelegatesToWithOptions() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: DefaultNamespace})
+
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
+		Do(func(_ interface{}, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...interface{}) {
+			s.Equal([]byte("token"), req.TaskToken)
+		})
+
+	err := client.RecordActivityHeartbeat(context.Background(), []byte("token"), "progress")
+	s.NoError(err)
 }
 
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {

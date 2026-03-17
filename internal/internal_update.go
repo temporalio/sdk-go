@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"reflect"
@@ -116,10 +115,12 @@ func newUpdateProtocol(
 	env updateEnv,
 ) *updateProtocol {
 	return &updateProtocol{
-		protoInstanceID: protoInstanceID,
-		env:             env,
-		scheduleUpdate:  scheduleUpdate,
-		state:           updateStateNew,
+		protoInstanceID:  protoInstanceID,
+		env:              env,
+		scheduleUpdate:   scheduleUpdate,
+		state:            updateStateNew,
+		dataConverter:    env.GetDataConverter(),
+		failureConverter: env.GetFailureConverter(),
 	}
 }
 
@@ -175,7 +176,7 @@ func (up *updateProtocol) Reject(err error) {
 			RejectedRequestMessageId:         up.requestMsgID,
 			RejectedRequestSequencingEventId: up.requestSeqID,
 			RejectedRequest:                  up.initialRequest,
-			Failure:                          cmp.Or(up.failureConverter, up.env.GetFailureConverter()).ErrorToFailure(err),
+			Failure:                          up.failureConverter.ErrorToFailure(err),
 		}),
 	})
 	up.state = updateStateCompleted
@@ -188,10 +189,10 @@ func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
 	outcome := &updatepb.Outcome{}
 	if outcomeErr != nil {
 		outcome.Value = &updatepb.Outcome_Failure{
-			Failure: cmp.Or(up.failureConverter, up.env.GetFailureConverter()).ErrorToFailure(outcomeErr),
+			Failure: up.failureConverter.ErrorToFailure(outcomeErr),
 		}
 	} else {
-		dc := cmp.Or(up.dataConverter, up.env.GetDataConverter())
+		dc := up.dataConverter
 		success, err := dc.ToPayloads(success)
 		if err != nil {
 			panic(err)

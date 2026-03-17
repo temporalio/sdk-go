@@ -3,7 +3,6 @@ package internal
 // All code in this file is private to the package.
 
 import (
-	"cmp"
 	"errors"
 	"fmt"
 	"reflect"
@@ -221,7 +220,7 @@ func newWorkflowExecutionEventHandler(
 		Namespace:  workflowInfo.Namespace,
 		WorkflowID: workflowInfo.WorkflowExecution.ID,
 	}
-	dataConverter = converter.WithSerializationContext(dataConverter, wfCtx)
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, wfCtx)
 	failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, wfCtx)
 
 	context := &workflowEnvironmentImpl{
@@ -1494,7 +1493,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskFailed(event *hi
 		&commonpb.ActivityType{Name: activity.activityType.Name},
 		activityID,
 		attributes.GetRetryState(),
-		cmp.Or(activity.failureConverter, weh.GetFailureConverter()).FailureToError(attributes.GetFailure()),
+		activity.failureConverter.FailureToError(attributes.GetFailure()),
 	)
 
 	activity.handle(nil, activityTaskErr)
@@ -1510,7 +1509,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskTimedOut(event *
 	}
 
 	attributes := event.GetActivityTaskTimedOutEventAttributes()
-	timeoutError := cmp.Or(activity.failureConverter, weh.GetFailureConverter()).FailureToError(attributes.GetFailure())
+	timeoutError := activity.failureConverter.FailureToError(attributes.GetFailure())
 
 	activityTaskErr := NewActivityError(
 		attributes.GetScheduledEventId(),
@@ -1703,7 +1702,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 		if failure != nil {
 			lar.Attempt = lamd.Attempt
 			lar.Backoff = lamd.Backoff
-			lar.Err = cmp.Or(la.params.FailureConverter, weh.GetFailureConverter()).FailureToError(failure)
+			lar.Err = la.params.FailureConverter.FailureToError(failure)
 		} else {
 			// Result might not be there if local activity doesn't have return value.
 			lar.Result = details[localActivityResultName]
@@ -1748,7 +1747,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessLocalActivityResult(lar *lo
 		EventType: enumspb.EVENT_TYPE_MARKER_RECORDED,
 		Attributes: &historypb.HistoryEvent_MarkerRecordedEventAttributes{MarkerRecordedEventAttributes: &historypb.MarkerRecordedEventAttributes{
 			MarkerName: localActivityMarkerName,
-			Failure:    cmp.Or(lar.task.params.FailureConverter, weh.GetFailureConverter()).ErrorToFailure(lar.err),
+			Failure:    lar.task.params.FailureConverter.ErrorToFailure(lar.err),
 			Details:    details,
 		}},
 	}
@@ -1845,7 +1844,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionFailed
 		attributes.GetInitiatedEventId(),
 		attributes.GetStartedEventId(),
 		attributes.GetRetryState(),
-		cmp.Or(childWorkflow.failureConverter, weh.GetFailureConverter()).FailureToError(attributes.GetFailure()),
+		childWorkflow.failureConverter.FailureToError(attributes.GetFailure()),
 	)
 	childWorkflow.handle(nil, childWorkflowExecutionError)
 	return nil

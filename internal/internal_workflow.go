@@ -1589,7 +1589,7 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	dataConverter = WithWorkflowContext(ctx, dataConverter)
 
 	wfInfo := getWorkflowEnvironment(ctx).WorkflowInfo()
-	return converter.WithSerializationContext(dataConverter, converter.WorkflowSerializationContext{
+	return converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  wfInfo.Namespace,
 		WorkflowID: wfInfo.WorkflowExecution.ID,
 	})

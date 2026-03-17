@@ -95,7 +95,7 @@ func TestCodecDataConverter_PropagatesBothDCAndCodec(t *testing.T) {
 	cdc := NewCodecDataConverter(parentDC, codec)
 
 	ctx := WorkflowSerializationContext{Namespace: "ns", WorkflowID: "wf-1"}
-	wrapped := WithSerializationContext(cdc, ctx)
+	wrapped := WithDataConverterSerializationContext(cdc, ctx)
 
 	require.NotSame(cdc, wrapped)
 
@@ -120,7 +120,7 @@ func TestCodecDataConverter_PropagatesCodecOnly(t *testing.T) {
 	cdc := NewCodecDataConverter(parentDC, codec)
 
 	ctx := WorkflowSerializationContext{WorkflowID: "wf-2"}
-	wrapped := WithSerializationContext(cdc, ctx)
+	wrapped := WithDataConverterSerializationContext(cdc, ctx)
 
 	require.NotSame(cdc, wrapped)
 
@@ -140,7 +140,7 @@ func TestCodecDataConverter_PropagatesDCOnly(t *testing.T) {
 	cdc := NewCodecDataConverter(parentDC, codec)
 
 	ctx := WorkflowSerializationContext{WorkflowID: "wf-3"}
-	wrapped := WithSerializationContext(cdc, ctx)
+	wrapped := WithDataConverterSerializationContext(cdc, ctx)
 
 	require.NotSame(cdc, wrapped)
 
@@ -156,17 +156,17 @@ func TestCodecDataConverter_NeitherImplements(t *testing.T) {
 	cdc := NewCodecDataConverter(parentDC, codec)
 
 	ctx := WorkflowSerializationContext{WorkflowID: "wf-4"}
-	wrapped := WithSerializationContext(cdc, ctx)
+	wrapped := WithDataConverterSerializationContext(cdc, ctx)
 
 	require.Same(cdc, wrapped)
 }
 
-func TestCodecDataConverter_SigningRoundTrip(t *testing.T) {
+func TestCodecDataConverter_SigningMismatchFailsDecode_WorkflowContext(t *testing.T) {
 	require := require.New(t)
 	codec := &signingCodec{}
 	cdc := NewCodecDataConverter(GetDefaultDataConverter(), codec)
 
-	wrapped1 := WithSerializationContext(cdc, WorkflowSerializationContext{WorkflowID: "wf-A"})
+	wrapped1 := WithDataConverterSerializationContext(cdc, WorkflowSerializationContext{WorkflowID: "wf-A"})
 	payload, err := wrapped1.ToPayload("hello")
 	require.NoError(err)
 
@@ -176,19 +176,19 @@ func TestCodecDataConverter_SigningRoundTrip(t *testing.T) {
 	require.Equal("hello", result)
 
 	// Different context fails to decode
-	wrapped2 := WithSerializationContext(cdc, WorkflowSerializationContext{WorkflowID: "wf-B"})
+	wrapped2 := WithDataConverterSerializationContext(cdc, WorkflowSerializationContext{WorkflowID: "wf-B"})
 	err = wrapped2.FromPayload(payload, &result)
 	require.Error(err)
 	require.Contains(err.Error(), "signature mismatch")
 }
 
-func TestCodecDataConverter_SigningRoundTrip_ActivityContext(t *testing.T) {
+func TestCodecDataConverter_SigningMismatchFailsDecode_ActivityContext(t *testing.T) {
 	require := require.New(t)
 	codec := &signingCodec{}
 	cdc := NewCodecDataConverter(GetDefaultDataConverter(), codec)
 
 	actCtx := ActivitySerializationContext{WorkflowID: "wf-1", ActivityType: "MyActivity"}
-	wrapped := WithSerializationContext(cdc, actCtx)
+	wrapped := WithDataConverterSerializationContext(cdc, actCtx)
 	payload, err := wrapped.ToPayload("data")
 	require.NoError(err)
 	require.Equal("wf-1:MyActivity", string(payload.Metadata["ctx-signature"]))
@@ -199,22 +199,56 @@ func TestCodecDataConverter_SigningRoundTrip_ActivityContext(t *testing.T) {
 
 	// Different activity type fails
 	otherCtx := ActivitySerializationContext{WorkflowID: "wf-1", ActivityType: "OtherActivity"}
-	wrapped2 := WithSerializationContext(cdc, otherCtx)
+	wrapped2 := WithDataConverterSerializationContext(cdc, otherCtx)
 	err = wrapped2.FromPayload(payload, &result)
 	require.Error(err)
 	require.Contains(err.Error(), "signature mismatch")
 }
 
-func TestWithSerializationContextHelper_NoOp(t *testing.T) {
+// nilReturningDC implements DataConverterWithSerializationContext but returns nil.
+type nilReturningDC struct {
+	DataConverter
+}
+
+func (dc *nilReturningDC) WithSerializationContext(SerializationContext) DataConverter {
+	return nil
+}
+
+func TestWithSerializationContext_NilReturnPanics(t *testing.T) {
+	dc := &nilReturningDC{DataConverter: GetDefaultDataConverter()}
+	ctx := WorkflowSerializationContext{WorkflowID: "wf"}
+	require.PanicsWithValue(t, "DataConverterWithSerializationContext.WithSerializationContext must not return nil", func() {
+		WithDataConverterSerializationContext(dc, ctx)
+	})
+}
+
+// nilReturningFC implements FailureConverterWithSerializationContext but returns nil.
+type nilReturningFC struct {
+	FailureConverter
+}
+
+func (fc *nilReturningFC) WithSerializationContext(SerializationContext) FailureConverter {
+	return nil
+}
+
+func TestWithFailureConverterSerializationContext_NilReturnPanics(t *testing.T) {
+	fc := &nilReturningFC{}
+	ctx := WorkflowSerializationContext{WorkflowID: "wf"}
+	require.PanicsWithValue(t, "FailureConverterWithSerializationContext.WithSerializationContext must not return nil", func() {
+		WithFailureConverterSerializationContext(fc, ctx)
+	})
+}
+
+func TestDefaultDataConverter_NotSerializationContextAware(t *testing.T) {
 	dc := GetDefaultDataConverter()
-	result := WithSerializationContext(dc, WorkflowSerializationContext{WorkflowID: "wf"})
+	result := WithDataConverterSerializationContext(dc, WorkflowSerializationContext{WorkflowID: "wf"})
 	require.Same(t, dc, result)
 }
 
 func TestWithSerializationContextHelper_Wraps(t *testing.T) {
 	dc := newCapturingDC()
 	ctx := WorkflowSerializationContext{WorkflowID: "wf"}
-	result := WithSerializationContext(dc, ctx)
+	result := WithDataConverterSerializationContext(dc, ctx)
 	require.NotSame(t, dc, result)
 
 	captured := dc.getCapturedContexts()

@@ -37,12 +37,12 @@ func (ActivitySerializationContext) isSerializationContext() {}
 // DataConverterWithSerializationContext is an optional interface that [DataConverter]
 // implementations can implement to receive serialization context.
 //
-// When implemented, the SDK calls WithSerializationContext before serializing/deserializing
+// When implemented, the SDK calls WithDataConverterSerializationContext before serializing/deserializing
 // payloads. The returned DataConverter should use the context to vary its behavior
 // (e.g. using workflow ID as associated data for encryption).
 //
 // Implementations must work correctly without context — the SDK and user code may use
-// the DataConverter directly without calling WithSerializationContext first.
+// the DataConverter directly without calling WithDataConverterSerializationContext first.
 //
 // This method should be cheap and fast. The SDK does not cache returned instances
 // and may call this method frequently. Avoid recreating expensive objects on every call.
@@ -53,12 +53,12 @@ type DataConverterWithSerializationContext interface {
 // PayloadCodecWithSerializationContext is an optional interface that [PayloadCodec]
 // implementations can implement to receive serialization context.
 //
-// When implemented, the SDK calls WithSerializationContext before encoding/decoding payloads.
+// When implemented, the SDK calls WithDataConverterSerializationContext before encoding/decoding payloads.
 // The returned PayloadCodec should use the context to vary its behavior
 // (e.g. using workflow ID as associated data for encoding).
 //
 // Implementations must work correctly without context — the SDK and user code may use
-// the PayloadCodec directly without calling WithSerializationContext first.
+// the PayloadCodec directly without calling WithDataConverterSerializationContext first.
 //
 // This method should be cheap and fast. The SDK does not cache returned instances
 // and may call this method frequently. Avoid recreating expensive objects on every call.
@@ -69,12 +69,12 @@ type PayloadCodecWithSerializationContext interface {
 // FailureConverterWithSerializationContext is an optional interface that [FailureConverter]
 // implementations can implement to receive serialization context.
 //
-// When implemented, the SDK calls WithSerializationContext before converting errors to/from
+// When implemented, the SDK calls WithDataConverterSerializationContext before converting errors to/from
 // failures. The returned FailureConverter should use the context to vary its behavior
 // (e.g. encrypting failure details using a workflow-ID-derived key).
 //
 // Implementations must work correctly without context — the SDK and user code may use
-// the FailureConverter directly without calling WithSerializationContext first.
+// the FailureConverter directly without calling WithDataConverterSerializationContext first.
 //
 // This method should be cheap and fast. The SDK does not cache returned instances
 // and may call this method frequently. Avoid recreating expensive objects on every call.
@@ -82,13 +82,17 @@ type FailureConverterWithSerializationContext interface {
 	WithSerializationContext(SerializationContext) FailureConverter
 }
 
-// WithSerializationContext returns a DataConverter that is aware of the given
+// WithDataConverterSerializationContext returns a DataConverter that is aware of the given
 // serialization context. If the DataConverter implements
 // [DataConverterWithSerializationContext], it delegates to that implementation;
 // otherwise it returns the original DataConverter unchanged.
-func WithSerializationContext(dc DataConverter, ctx SerializationContext) DataConverter {
+func WithDataConverterSerializationContext(dc DataConverter, ctx SerializationContext) DataConverter {
 	if sc, ok := dc.(DataConverterWithSerializationContext); ok {
-		return sc.WithSerializationContext(ctx)
+		result := sc.WithSerializationContext(ctx)
+		if result == nil {
+			panic("DataConverterWithSerializationContext.WithSerializationContext must not return nil")
+		}
+		return result
 	}
 	return dc
 }
@@ -99,7 +103,11 @@ func WithSerializationContext(dc DataConverter, ctx SerializationContext) DataCo
 // otherwise it returns the original FailureConverter unchanged.
 func WithFailureConverterSerializationContext(fc FailureConverter, ctx SerializationContext) FailureConverter {
 	if sc, ok := fc.(FailureConverterWithSerializationContext); ok {
-		return sc.WithSerializationContext(ctx)
+		result := sc.WithSerializationContext(ctx)
+		if result == nil {
+			panic("FailureConverterWithSerializationContext.WithSerializationContext must not return nil")
+		}
+		return result
 	}
 	return fc
 }

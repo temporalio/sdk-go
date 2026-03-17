@@ -994,7 +994,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		TaskQueue:    cmp.Or(options.TaskQueueName, wfInfo.TaskQueueName),
 		IsLocal:      false,
 	}
-	dataConverter := converter.WithSerializationContext(
+	dataConverter := converter.WithDataConverterSerializationContext(
 		getDataConverterFromWorkflowContext(ctx),
 		actCtx,
 	)
@@ -1184,7 +1184,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                wfInfo,
-		DataConverter:               converter.WithSerializationContext(getDataConverterFromWorkflowContext(ctx), actCtx),
+		DataConverter:               converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), actCtx),
 		FailureConverter:            converter.WithFailureConverterSerializationContext(wc.env.GetFailureConverter(), actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
@@ -1326,7 +1326,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		Namespace:  wfInfo.Namespace,
 		WorkflowID: childWorkflowID,
 	}
-	dc := converter.WithSerializationContext(getDataConverterFromWorkflowContext(ctx), childWfCtx)
+	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), childWfCtx)
 	result.decodeFutureImpl.dataConverter = dc
 
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
@@ -1345,6 +1345,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	options.VersioningIntent = workflowOptionsFromCtx.VersioningIntent
 	options.StaticDetails = workflowOptionsFromCtx.StaticDetails
 	options.StaticSummary = workflowOptionsFromCtx.StaticSummary
+	options.WorkflowID = childWorkflowID
 	header, err := workflowHeaderPropagated(ctx, options.ContextPropagators)
 	if err != nil {
 		executionSettable.Set(nil, err)
@@ -1366,7 +1367,6 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		attempt:          1,
 		failureConverter: failureConverter,
 	}
-	params.WorkflowID = childWorkflowID
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
@@ -1756,7 +1756,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
-	dataConverter := converter.WithSerializationContext(
+	dataConverter := converter.WithDataConverterSerializationContext(
 		getDataConverterFromWorkflowContext(ctx),
 		converter.WorkflowSerializationContext{
 			Namespace:  options.Namespace,

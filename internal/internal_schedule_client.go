@@ -587,7 +587,7 @@ func convertToPBScheduleAction(
 			action.ID = uuid.NewString()
 		}
 
-		dataConverter = converter.WithSerializationContext(dataConverter, converter.WorkflowSerializationContext{
+		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 			Namespace:  client.namespace,
 			WorkflowID: action.ID,
 		})
@@ -672,7 +672,7 @@ func convertFromPBScheduleAction(
 	case *schedulepb.ScheduleAction_StartWorkflow:
 		workflow := action.StartWorkflow
 		if workflow.GetWorkflowId() != "" {
-			dc = converter.WithSerializationContext(dc, converter.WorkflowSerializationContext{
+			dc = converter.WithDataConverterSerializationContext(dc, converter.WorkflowSerializationContext{
 				Namespace:  namespace,
 				WorkflowID: workflow.GetWorkflowId(),
 			})

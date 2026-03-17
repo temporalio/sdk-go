@@ -1031,7 +1031,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 		Namespace:  wfInfo.Namespace,
 		WorkflowID: wfInfo.WorkflowExecution.ID,
 	}
-	dataConverter = converter.WithSerializationContext(dataConverter, wfCtx)
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, wfCtx)
 	fnType := reflect.TypeOf(we.fn)
 
 	var args []interface{}

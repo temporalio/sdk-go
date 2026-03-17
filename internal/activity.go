@@ -329,7 +329,7 @@ func WithActivityTask(
 		ActivityType: task.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
 	}
-	dataConverter = converter.WithSerializationContext(dataConverter, actCtx)
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, actCtx)
 
 	env := &activityEnvironment{
 		taskToken:              task.TaskToken,
