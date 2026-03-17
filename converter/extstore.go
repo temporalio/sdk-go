@@ -116,11 +116,4 @@ type ExternalStorage struct {
 	// threshold of 256 KiB. Negative values are rejected at client/worker
 	// construction time.
 	PayloadSizeThreshold int
-
-	// PayloadCodecs are applied to payloads after serialization but before they
-	// are handed to the storage driver (encode), and after retrieval but before
-	// the payload is passed to the data converter (decode). This allows
-	// encryption or compression of data at rest in the external store
-	// independently of any codecs configured on the data converter.
-	PayloadCodecs []PayloadCodec
 }

@@ -20,7 +20,6 @@ type storageParameters struct {
 	driverSelector       converter.StorageDriverSelector
 	defaultDriver        converter.StorageDriver
 	payloadSizeThreshold int
-	codecs               []converter.PayloadCodec
 }
 
 func ExternalStorageToParams(options converter.ExternalStorage) (storageParameters, error) {
@@ -51,7 +50,6 @@ func ExternalStorageToParams(options converter.ExternalStorage) (storageParamete
 		driverSelector:       options.DriverSelector,
 		defaultDriver:        defaultDriver,
 		payloadSizeThreshold: sizeThreshold,
-		codecs:               options.PayloadCodecs,
 	}, nil
 }
 
@@ -187,11 +185,6 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 			if len(retrieved) != len(batch.claims) {
 				return fmt.Errorf("storage driver %q returned %d payloads for %d claims", name, len(retrieved), len(batch.claims))
 			}
-			for _, codec := range v.params.codecs {
-				if retrieved, err = codec.Decode(retrieved); err != nil {
-					return fmt.Errorf("storage driver %q codec decode failed: %w", name, err)
-				}
-			}
 			var batchSize int64
 			for j, p := range retrieved {
 				batchSize += int64(len(p.GetData()))
@@ -295,14 +288,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 		batch := driverBatches[name]
 		externalCount += len(batch.payloads)
 		eg.Go(func() error {
-			payloadsToStore := batch.payloads
-			for k := len(v.params.codecs) - 1; k >= 0; k-- {
-				var err error
-				if payloadsToStore, err = v.params.codecs[k].Encode(payloadsToStore); err != nil {
-					return fmt.Errorf("storage driver %q codec encode failed: %w", name, err)
-				}
-			}
-			claims, err := callDriverStore(batch.driver, storeDrCtx, payloadsToStore)
+			claims, err := callDriverStore(batch.driver, storeDrCtx, batch.payloads)
 			if err != nil {
 				return fmt.Errorf("storage driver %q store failed: %w", name, err)
 			}
@@ -315,7 +301,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 					DriverName:  name,
 					DriverClaim: claim,
 				}
-				storedSize := int64(payloadsToStore[j].Size())
+				storedSize := int64(batch.payloads[j].Size())
 				batchSize += storedSize
 				refPayload, err := storageReferenceToPayload(ref, storedSize)
 				if err != nil {

@@ -80,26 +80,6 @@ func (d *testStorageDriver) Retrieve(_ converter.StorageDriverRetrieveContext, c
 }
 
 // ---------------------------------------------------------------------------
-// Tracking codecs for ordering tests
-// ---------------------------------------------------------------------------
-
-type trackingCodec struct {
-	id       string
-	encOrder *[]string
-	decOrder *[]string
-}
-
-func (c *trackingCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	*c.encOrder = append(*c.encOrder, c.id)
-	return payloads, nil
-}
-
-func (c *trackingCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	*c.decOrder = append(*c.decOrder, c.id)
-	return payloads, nil
-}
-
-// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -422,27 +402,6 @@ func TestStoreVisitor_SelectorError(t *testing.T) {
 	require.Contains(t, err.Error(), "selector error")
 }
 
-func TestStoreVisitor_CodecOrderReversed(t *testing.T) {
-	var encOrder []string
-	var decOrder []string
-	codecA := &trackingCodec{id: "A", encOrder: &encOrder, decOrder: &decOrder}
-	codecB := &trackingCodec{id: "B", encOrder: &encOrder, decOrder: &decOrder}
-
-	driver := newTestDriver("d")
-	params, err := ExternalStorageToParams(converter.ExternalStorage{
-		Drivers:              []converter.StorageDriver{driver},
-		PayloadCodecs:        []converter.PayloadCodec{codecA, codecB},
-		PayloadSizeThreshold: 1, // store everything
-	})
-	require.NoError(t, err)
-	visitor := NewExternalStorageVisitor(params)
-
-	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{makePayload(t, "x")})
-	require.NoError(t, err)
-	// Codecs applied in reverse: B then A
-	require.Equal(t, []string{"B", "A"}, encOrder)
-}
-
 func TestStoreVisitor_WrongClaimCount(t *testing.T) {
 	driver := &badCountDriver{name: "my-bad-count-driver"}
 	params, err := ExternalStorageToParams(converter.ExternalStorage{
@@ -519,22 +478,6 @@ func TestStoreVisitor_CancelOnError(t *testing.T) {
 	default:
 		t.Fatal("blocking driver context was not cancelled after sibling driver error")
 	}
-}
-
-func TestStoreVisitor_CodecEncodeError(t *testing.T) {
-	codec := &errCodec{encErr: errors.New("encode error")}
-	driver := newTestDriver("d")
-	params, err := ExternalStorageToParams(converter.ExternalStorage{
-		Drivers:              []converter.StorageDriver{driver},
-		PayloadCodecs:        []converter.PayloadCodec{codec},
-		PayloadSizeThreshold: 1,
-	})
-	require.NoError(t, err)
-	visitor := NewExternalStorageVisitor(params)
-
-	_, err = visitPayloads(context.Background(), visitor, []*commonpb.Payload{makePayload(t, "x")})
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "encode error")
 }
 
 func TestStoreVisitor_Callback(t *testing.T) {
@@ -790,51 +733,6 @@ func TestRetrievalVisitor_WrongPayloadCount(t *testing.T) {
 	require.Contains(t, err.Error(), "my-bad-count-driver")
 }
 
-func TestRetrievalVisitor_CodecOrderForward(t *testing.T) {
-	var encOrder []string
-	var decOrder []string
-	codecA := &trackingCodec{id: "A", encOrder: &encOrder, decOrder: &decOrder}
-	codecB := &trackingCodec{id: "B", encOrder: &encOrder, decOrder: &decOrder}
-
-	driver := newTestDriver("d")
-	params, err := ExternalStorageToParams(converter.ExternalStorage{
-		Drivers:              []converter.StorageDriver{driver},
-		PayloadCodecs:        []converter.PayloadCodec{codecA, codecB},
-		PayloadSizeThreshold: 1,
-	})
-	require.NoError(t, err)
-	storeVisitor := NewExternalStorageVisitor(params)
-	retrieveVisitor := NewExternalRetrievalVisitor(params)
-
-	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
-	require.NoError(t, err)
-
-	_, err = visitPayloads(context.Background(), retrieveVisitor, refs)
-	require.NoError(t, err)
-	// Decode should be A then B (forward order)
-	require.Equal(t, []string{"A", "B"}, decOrder)
-}
-
-func TestRetrievalVisitor_CodecDecodeError(t *testing.T) {
-	codec := &errCodec{decErr: errors.New("decode error")}
-	driver := newTestDriver("d")
-	params, err := ExternalStorageToParams(converter.ExternalStorage{
-		Drivers:              []converter.StorageDriver{driver},
-		PayloadCodecs:        []converter.PayloadCodec{codec},
-		PayloadSizeThreshold: 1,
-	})
-	require.NoError(t, err)
-	storeVisitor := NewExternalStorageVisitor(params)
-	retrieveVisitor := NewExternalRetrievalVisitor(params)
-
-	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
-	require.NoError(t, err)
-
-	_, err = visitPayloads(context.Background(), retrieveVisitor, refs)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "decode error")
-}
-
 func TestRetrievalVisitor_Callback(t *testing.T) {
 	driver := newTestDriver("d")
 	driver.retrieveDelay = time.Millisecond
@@ -1052,24 +950,6 @@ func (d *badCountRetrieveDriver) Store(_ converter.StorageDriverStoreContext, pa
 }
 func (d *badCountRetrieveDriver) Retrieve(_ converter.StorageDriverRetrieveContext, _ []converter.StorageClaim) ([]*commonpb.Payload, error) {
 	return []*commonpb.Payload{}, nil // returns 0 payloads instead of 1
-}
-
-type errCodec struct {
-	encErr error
-	decErr error
-}
-
-func (c *errCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	if c.encErr != nil {
-		return nil, c.encErr
-	}
-	return payloads, nil
-}
-func (c *errCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	if c.decErr != nil {
-		return nil, c.decErr
-	}
-	return payloads, nil
 }
 
 // valueReceiverDriver implements StorageDriver entirely with value receivers.
