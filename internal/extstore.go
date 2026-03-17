@@ -27,6 +27,10 @@ func ExternalStorageToParams(options converter.ExternalStorage) (storageParamete
 		return storageParameters{}, fmt.Errorf("PayloadSizeThreshold must not be negative")
 	}
 
+	if len(options.Drivers) > 1 && options.DriverSelector == nil {
+		return storageParameters{}, fmt.Errorf("DriverSelector must be set when more than one driver is provided")
+	}
+
 	driverMap := make(map[string]converter.StorageDriver, len(options.Drivers))
 	for _, d := range options.Drivers {
 		if _, exists := driverMap[d.Name()]; exists {

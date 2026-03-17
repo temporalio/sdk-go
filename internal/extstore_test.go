@@ -135,6 +135,13 @@ func TestExternalStorageToParams_ExplicitThreshold(t *testing.T) {
 	require.Equal(t, 1024, params.payloadSizeThreshold)
 }
 
+func TestExternalStorageToParams_MultipleDriversRequireSelector(t *testing.T) {
+	_, err := ExternalStorageToParams(converter.ExternalStorage{
+		Drivers: []converter.StorageDriver{newTestDriver("a"), newTestDriver("b")},
+	})
+	require.EqualError(t, err, "DriverSelector must be set when more than one driver is provided")
+}
+
 func TestExternalStorageToParams_DuplicateDriverNames(t *testing.T) {
 	_, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers: []converter.StorageDriver{newTestDriver("same"), newTestDriver("same")},
@@ -151,8 +158,12 @@ func TestExternalStorageToParams_PointerAndValueReceiverDrivers(t *testing.T) {
 	//valDriver := valueReceiverDriver{name: "val-driver"}
 	valDriver := newValDriver("val-driver")
 
+	selector := &funcDriverSelector{fn: func(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+		return ptrDriver, nil
+	}}
 	params, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{ptrDriver, valDriver},
+		DriverSelector:       selector,
 		PayloadSizeThreshold: 1, // store everything
 	})
 	require.NoError(t, err)
