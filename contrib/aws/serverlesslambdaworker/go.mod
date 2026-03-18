@@ -7,6 +7,7 @@ toolchain go1.23.6
 require (
 	github.com/aws/aws-lambda-go v1.47.0
 	github.com/nexus-rpc/sdk-go v0.6.0
+	github.com/stretchr/testify v1.10.0
 	go.temporal.io/sdk v1.33.0
 	go.temporal.io/sdk/contrib/envconfig v0.0.0
 )
@@ -23,7 +24,6 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	github.com/stretchr/testify v1.10.0 // indirect
 	go.temporal.io/api v1.62.2 // indirect
 	golang.org/x/net v0.39.0 // indirect
 	golang.org/x/sync v0.13.0 // indirect

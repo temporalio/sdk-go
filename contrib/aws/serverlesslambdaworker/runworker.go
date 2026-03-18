@@ -15,32 +15,33 @@ import (
 
 // workerDeps captures external dependencies for testability.
 type workerDeps struct {
-	dial        func(client.Options) (client.Client, error)
-	newWorker   func(client.Client, string, worker.Options) worker.Worker
-	startLambda func(handler interface{}, options ...lambda.Option)
-	loadConfig  func() (client.Options, error)
-	getenv      func(string) string
+	dial         func(client.Options) (client.Client, error)
+	newWorker    func(client.Client, string, worker.Options) worker.Worker
+	startLambda  func(handler interface{}, options ...lambda.Option)
+	loadConfig   func() (client.Options, error)
+	getenv       func(string) string
 	setCacheSize func(int)
-	exit        func(int)
+	exit         func(int)
 }
 
 func defaultDeps() workerDeps {
 	return workerDeps{
-		dial:        func(opts client.Options) (client.Client, error) { return client.Dial(opts) },
-		newWorker:   func(c client.Client, tq string, opts worker.Options) worker.Worker { return worker.New(c, tq, opts) },
-		startLambda: lambda.StartWithOptions,
-		loadConfig:  envconfig.LoadDefaultClientOptions,
-		getenv:      os.Getenv,
+		dial: func(opts client.Options) (client.Client, error) { return client.Dial(opts) },
+		newWorker: func(c client.Client, tq string, opts worker.Options) worker.Worker {
+			return worker.New(c, tq, opts)
+		},
+		startLambda:  lambda.StartWithOptions,
+		loadConfig:   envconfig.LoadDefaultClientOptions,
+		getenv:       os.Getenv,
 		setCacheSize: worker.SetStickyWorkflowCacheSize,
-		exit:        os.Exit,
+		exit:         os.Exit,
 	}
 }
 
-// RunWorker starts a Temporal worker inside an AWS Lambda execution environment.
-// It calls the configure callback to collect registrations and option overrides,
-// creates a Temporal client and worker with Lambda-appropriate defaults, and
-// delegates to the Lambda runtime. RunWorker does not return under normal
-// operation. On fatal initialization error, it logs to stderr and calls
+// RunWorker starts a Temporal worker inside an AWS Lambda execution environment. It calls the
+// configure callback to collect registrations and option overrides, creates a Temporal client and
+// worker with Lambda-appropriate defaults, and delegates to the Lambda runtime. RunWorker does not
+// return under normal operation. On fatal initialization error, it logs to stderr and calls
 // os.Exit(1).
 func RunWorker(configure func(ctx *ConfigureWorkerContext) error) {
 	deps := defaultDeps()
@@ -50,16 +51,14 @@ func RunWorker(configure func(ctx *ConfigureWorkerContext) error) {
 	}
 }
 
-// runWorkerInternal contains the core logic with injected dependencies for
-// testability. It returns an error instead of calling os.Exit.
+// runWorkerInternal contains the core logic with injected dependencies for testability. It returns
+// an error instead of calling os.Exit.
 func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps workerDeps) error {
-	// Phase 1: Collect registrations and option overrides.
 	ctx := &ConfigureWorkerContext{}
 	if err := configure(ctx); err != nil {
 		return fmt.Errorf("configure callback failed: %w", err)
 	}
 
-	// Phase 2: Build client options.
 	clientOpts, err := deps.loadConfig()
 	if err != nil {
 		return fmt.Errorf("loading client config: %w", err)
@@ -69,40 +68,33 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 		ctx.mutateClientOpts(&clientOpts)
 	}
 
-	// Phase 3: Dial Temporal server.
 	temporalClient, err := deps.dial(clientOpts)
 	if err != nil {
 		return fmt.Errorf("dialing Temporal server: %w", err)
 	}
+	defer temporalClient.Close()
 
-	// Phase 4: Resolve task queue.
 	taskQueue, err := resolveTaskQueue(ctx.taskQueue, deps.getenv)
 	if err != nil {
-		temporalClient.Close()
 		return err
 	}
 
-	// Phase 5: Build worker options with Lambda defaults.
 	var workerOpts worker.Options
 	applyLambdaWorkerDefaults(&workerOpts)
 	if ctx.mutateWorkerOpts != nil {
 		ctx.mutateWorkerOpts(&workerOpts)
 	}
 
-	// Phase 6: Set sticky cache size and create worker.
 	deps.setCacheSize(defaultStickyCacheSize)
 	w := deps.newWorker(temporalClient, taskQueue, workerOpts)
 	ctx.replayRegistrations(w)
 
-	// Phase 7: Start worker.
 	if err := w.Start(); err != nil {
-		temporalClient.Close()
 		return fmt.Errorf("starting worker: %w", err)
 	}
+	defer w.Stop()
 
-	// Phase 8: Start Lambda runtime.
 	stopTimeout := workerOpts.WorkerStopTimeout
-
 	handler := func(invocationCtx context.Context) error {
 		deadline, ok := invocationCtx.Deadline()
 		if !ok {
@@ -131,8 +123,5 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 		}),
 	)
 
-	// lambda.StartWithOptions does not normally return, but if it does:
-	w.Stop()
-	temporalClient.Close()
 	return nil
 }
