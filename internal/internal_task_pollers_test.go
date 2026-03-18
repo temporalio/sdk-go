@@ -439,8 +439,8 @@ func TestDoPollGracefulShutdown(t *testing.T) {
 			graceful.Store(tc.gracefulEnabled)
 
 			bp := basePoller{
-				stopC:                stopC,
-				gracefulPollShutdown: graceful,
+				stopC:                        stopC,
+				workerPollCompleteOnShutdown: graceful,
 			}
 
 			pollStarted := make(chan struct{})

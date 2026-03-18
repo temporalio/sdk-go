@@ -916,8 +916,8 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	ts.True(pluginNames["test-worker-plugin"])
 }
 
-func (ts *WorkerHeartbeatTestSuite) TestGracefulPollShutdown() {
-	taskQueue := taskQueuePrefix + "-graceful-shutdown-" + ts.T().Name()
+func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
+	taskQueue := taskQueuePrefix + "-worker-poll-complete-on-shutdown-" + ts.T().Name()
 
 	var (
 		mu          sync.Mutex
