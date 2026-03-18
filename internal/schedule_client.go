@@ -540,6 +540,12 @@ type (
 		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
 		//                     attributes, i.e. upsert
 		TypedSearchAttributes *SearchAttributes
+
+		// Memo - Optional non-indexed info attached to the schedule.
+		// Uses merge semantics matching workflow.UpsertMemo:
+		//   nil: leave existing memo unchanged
+		//   non-nil: merge with existing memo (nil values delete keys)
+		Memo map[string]interface{}
 	}
 
 	// ScheduleUpdateInput describes the current state of the schedule to be updated.

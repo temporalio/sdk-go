@@ -283,6 +283,14 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		}
 	}
 
+	var newMemo *commonpb.Memo
+	if newSchedule.Memo != nil {
+		newMemo, err = getWorkflowMemo(newSchedule.Memo, scheduleHandle.client.dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
+		if err != nil {
+			return err
+		}
+	}
+
 	_, err = scheduleHandle.client.workflowService.UpdateSchedule(grpcCtx, &workflowservice.UpdateScheduleRequest{
 		Namespace:        scheduleHandle.client.namespace,
 		ScheduleId:       scheduleHandle.ID,
@@ -291,6 +299,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		Identity:         scheduleHandle.client.identity,
 		RequestId:        uuid.NewString(),
 		SearchAttributes: newSA,
+		Memo:             newMemo,
 	})
 	return err
 }

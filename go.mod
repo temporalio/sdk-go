@@ -33,3 +33,5 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240827150818-7e3bb234dfed // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
+
+replace go.temporal.io/api => github.com/chaptersix/api-go v0.0.0-20260318135250-11b189328fd3
