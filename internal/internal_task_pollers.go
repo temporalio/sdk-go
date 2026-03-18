@@ -1337,9 +1337,9 @@ func reportActivityCompleteByID(
 func getActivityResourceId(workflowId, activityId string) string {
 	// Determine resource ID - if workflowId is empty, it's a standalone activity
 	if workflowId != "" {
-		return workflowId
+		return fmt.Sprintf("workflow:%s", workflowId)
 	}
-	return activityId
+	return fmt.Sprintf("activity:%s", activityId)
 }
 
 func convertActivityResultToRespondRequest(

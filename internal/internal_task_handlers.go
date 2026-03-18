@@ -2301,7 +2301,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions, 
+			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
 			t.WorkflowExecution.GetWorkflowId(), t.ActivityId), nil
 	}
 
@@ -2436,9 +2436,9 @@ func getActivityResourceIdFromCtx(ctx context.Context) string {
 	}
 	// Check if this is a workflow activity or standalone activity
 	if env.workflowExecution.ID != "" {
-		return env.workflowExecution.ID
+		return fmt.Sprintf("workflow:%s", env.workflowExecution.ID)
 	}
-	return env.activityID
+	return fmt.Sprintf("activity:%s", env.activityID)
 }
 
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,

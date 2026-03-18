@@ -62,7 +62,7 @@ func testActivityHeartbeatResourceID(t *testing.T) {
 					logger: getLogger(),
 				}
 			},
-			expectedResourceID: "test-workflow-123",
+			expectedResourceID: "workflow:test-workflow-123",
 		},
 		{
 			name: "StandaloneActivity",
@@ -73,7 +73,7 @@ func testActivityHeartbeatResourceID(t *testing.T) {
 					logger:         getLogger(),
 				}
 			},
-			expectedResourceID: "standalone-activity-999",
+			expectedResourceID: "activity:standalone-activity-999",
 		},
 	}
 
@@ -267,7 +267,6 @@ func testWorkflowTaskFailedResourceID(t *testing.T) {
 	}
 }
 
-
 // Test activity task request resource_id population using actual SDK code paths
 func testActivityTaskRequestsResourceID(t *testing.T) {
 	t.Run("ActivityTaskHeartbeatById", func(t *testing.T) {
@@ -284,7 +283,7 @@ func testActivityTaskRequestsResourceID(t *testing.T) {
 // Test convertActivityResultToRespondRequest validation
 // This tests all 4 activity task requests that use this function:
 // - RespondActivityTaskCompletedRequest (resource_id = 8)
-// - RespondActivityTaskFailedRequest (resource_id = 9) 
+// - RespondActivityTaskFailedRequest (resource_id = 9)
 // - RespondActivityTaskCanceledRequest (resource_id = 8)
 // - RecordActivityTaskHeartbeatRequest (resource_id = 5)
 func testConvertActivityResultValidation(t *testing.T) {
@@ -301,7 +300,7 @@ func testConvertActivityResultValidation(t *testing.T) {
 			name:               "CompletedWithWorkflow",
 			workflowID:         "test-workflow-completed-123",
 			activityID:         "test-activity-456",
-			expectedResourceID: "test-workflow-completed-123",
+			expectedResourceID: "workflow:test-workflow-completed-123",
 			testType:           "completed",
 			simulateError:      nil,
 			description:        "RespondActivityTaskCompletedRequest should use workflow ID when present",
@@ -310,7 +309,7 @@ func testConvertActivityResultValidation(t *testing.T) {
 			name:               "CompletedStandalone",
 			workflowID:         "",
 			activityID:         "standalone-activity-completed-789",
-			expectedResourceID: "standalone-activity-completed-789", 
+			expectedResourceID: "activity:standalone-activity-completed-789",
 			testType:           "completed",
 			simulateError:      nil,
 			description:        "RespondActivityTaskCompletedRequest should use activity ID for standalone activities",
@@ -319,7 +318,7 @@ func testConvertActivityResultValidation(t *testing.T) {
 			name:               "FailedWithWorkflow",
 			workflowID:         "test-workflow-failed-123",
 			activityID:         "test-activity-failed-456",
-			expectedResourceID: "test-workflow-failed-123",
+			expectedResourceID: "workflow:test-workflow-failed-123",
 			testType:           "failed",
 			simulateError:      errors.New("activity failed"),
 			description:        "RespondActivityTaskFailedRequest should use workflow ID when present",
@@ -328,7 +327,7 @@ func testConvertActivityResultValidation(t *testing.T) {
 			name:               "FailedStandalone",
 			workflowID:         "",
 			activityID:         "standalone-activity-failed-789",
-			expectedResourceID: "standalone-activity-failed-789",
+			expectedResourceID: "activity:standalone-activity-failed-789",
 			testType:           "failed",
 			simulateError:      errors.New("standalone activity failed"),
 			description:        "RespondActivityTaskFailedRequest should use activity ID for standalone activities",
@@ -336,8 +335,8 @@ func testConvertActivityResultValidation(t *testing.T) {
 		{
 			name:               "CanceledWithWorkflow",
 			workflowID:         "test-workflow-canceled-123",
-			activityID:         "test-activity-canceled-456", 
-			expectedResourceID: "test-workflow-canceled-123",
+			activityID:         "test-activity-canceled-456",
+			expectedResourceID: "workflow:test-workflow-canceled-123",
 			testType:           "canceled",
 			simulateError:      NewCanceledError(),
 			description:        "RespondActivityTaskCanceledRequest should use workflow ID when present",
@@ -346,8 +345,8 @@ func testConvertActivityResultValidation(t *testing.T) {
 			name:               "CanceledStandalone",
 			workflowID:         "",
 			activityID:         "standalone-activity-canceled-789",
-			expectedResourceID: "standalone-activity-canceled-789",
-			testType:           "canceled", 
+			expectedResourceID: "activity:standalone-activity-canceled-789",
+			testType:           "canceled",
 			simulateError:      NewCanceledError(),
 			description:        "RespondActivityTaskCanceledRequest should use activity ID for standalone activities",
 		},
@@ -362,7 +361,7 @@ func testConvertActivityResultValidation(t *testing.T) {
 				nil, // result payloads
 				tc.simulateError,
 				converter.GetDefaultDataConverter(), // data converter
-				GetDefaultFailureConverter(), // failure converter  
+				GetDefaultFailureConverter(),        // failure converter
 				"test-namespace",
 				true, // cancel allowed
 				nil,  // version stamp
@@ -401,11 +400,11 @@ func testConvertActivityResultValidation(t *testing.T) {
 	}
 }
 
-// Test convertActivityResultToRespondRequestByID validation  
+// Test convertActivityResultToRespondRequestByID validation
 // This tests all 4 ByID activity task requests that use this function:
 // - RespondActivityTaskCompletedByIdRequest (resource_id = 7)
 // - RespondActivityTaskFailedByIdRequest (resource_id = 8)
-// - RespondActivityTaskCanceledByIdRequest (resource_id = 8) 
+// - RespondActivityTaskCanceledByIdRequest (resource_id = 8)
 // - RecordActivityTaskHeartbeatByIdRequest (resource_id = 7)
 func testConvertActivityResultByIDValidation(t *testing.T) {
 	testCases := []struct {
@@ -421,7 +420,7 @@ func testConvertActivityResultByIDValidation(t *testing.T) {
 			name:               "CompletedByIDWithWorkflow",
 			workflowID:         "test-workflow-completed-by-id-123",
 			activityID:         "test-activity-by-id-456",
-			expectedResourceID: "test-workflow-completed-by-id-123",
+			expectedResourceID: "workflow:test-workflow-completed-by-id-123",
 			testType:           "completed",
 			simulateError:      nil,
 			description:        "RespondActivityTaskCompletedByIdRequest should use workflow ID when present",
@@ -430,16 +429,16 @@ func testConvertActivityResultByIDValidation(t *testing.T) {
 			name:               "CompletedByIDStandalone",
 			workflowID:         "",
 			activityID:         "standalone-activity-completed-by-id-789",
-			expectedResourceID: "standalone-activity-completed-by-id-789",
+			expectedResourceID: "activity:standalone-activity-completed-by-id-789",
 			testType:           "completed",
 			simulateError:      nil,
 			description:        "RespondActivityTaskCompletedByIdRequest should use activity ID for standalone activities",
 		},
 		{
-			name:               "FailedByIDWithWorkflow", 
+			name:               "FailedByIDWithWorkflow",
 			workflowID:         "test-workflow-failed-by-id-123",
 			activityID:         "test-activity-failed-by-id-456",
-			expectedResourceID: "test-workflow-failed-by-id-123",
+			expectedResourceID: "workflow:test-workflow-failed-by-id-123",
 			testType:           "failed",
 			simulateError:      errors.New("activity failed by ID"),
 			description:        "RespondActivityTaskFailedByIdRequest should use workflow ID when present",
@@ -447,8 +446,8 @@ func testConvertActivityResultByIDValidation(t *testing.T) {
 		{
 			name:               "FailedByIDStandalone",
 			workflowID:         "",
-			activityID:         "standalone-activity-failed-by-id-789", 
-			expectedResourceID: "standalone-activity-failed-by-id-789",
+			activityID:         "standalone-activity-failed-by-id-789",
+			expectedResourceID: "activity:standalone-activity-failed-by-id-789",
 			testType:           "failed",
 			simulateError:      errors.New("standalone activity failed by ID"),
 			description:        "RespondActivityTaskFailedByIdRequest should use activity ID for standalone activities",
@@ -457,7 +456,7 @@ func testConvertActivityResultByIDValidation(t *testing.T) {
 			name:               "CanceledByIDWithWorkflow",
 			workflowID:         "test-workflow-canceled-by-id-123",
 			activityID:         "test-activity-canceled-by-id-456",
-			expectedResourceID: "test-workflow-canceled-by-id-123",
+			expectedResourceID: "workflow:test-workflow-canceled-by-id-123",
 			testType:           "canceled",
 			simulateError:      NewCanceledError(),
 			description:        "RespondActivityTaskCanceledByIdRequest should use workflow ID when present",
@@ -466,7 +465,7 @@ func testConvertActivityResultByIDValidation(t *testing.T) {
 			name:               "CanceledByIDStandalone",
 			workflowID:         "",
 			activityID:         "standalone-activity-canceled-by-id-789",
-			expectedResourceID: "standalone-activity-canceled-by-id-789",
+			expectedResourceID: "activity:standalone-activity-canceled-by-id-789",
 			testType:           "canceled",
 			simulateError:      NewCanceledError(),
 			description:        "RespondActivityTaskCanceledByIdRequest should use activity ID for standalone activities",
@@ -478,15 +477,15 @@ func testConvertActivityResultByIDValidation(t *testing.T) {
 			// Call the conversion function directly to test resource ID population
 			result := convertActivityResultToRespondRequestByID(
 				"test-identity",
-				"test-namespace", 
+				"test-namespace",
 				tc.workflowID,
 				"test-run-id",
 				tc.activityID,
 				nil, // result payloads
 				tc.simulateError,
 				converter.GetDefaultDataConverter(), // data converter
-				GetDefaultFailureConverter(), // failure converter
-				true, // cancel allowed
+				GetDefaultFailureConverter(),        // failure converter
+				true,                                // cancel allowed
 			)
 
 			// Validate the result based on the test type
@@ -593,14 +592,14 @@ func testActivityTaskHeartbeatByIdResourceID(t *testing.T) {
 			name:               "WithWorkflowExecution",
 			workflowID:         "test-workflow-heartbeat-by-id-123",
 			activityID:         "test-activity-heartbeat-by-id-456",
-			expectedResourceID: "test-workflow-heartbeat-by-id-123",
+			expectedResourceID: "workflow:test-workflow-heartbeat-by-id-123",
 			description:        "Should use workflow ID when present",
 		},
 		{
 			name:               "StandaloneActivity",
 			workflowID:         "",
 			activityID:         "standalone-activity-heartbeat-by-id-789",
-			expectedResourceID: "standalone-activity-heartbeat-by-id-789",
+			expectedResourceID: "activity:standalone-activity-heartbeat-by-id-789",
 			description:        "Should use activity ID for standalone activities",
 		},
 	}
@@ -653,7 +652,7 @@ func testExecuteMultiOperationResourceID(t *testing.T) {
 	}{
 		{
 			name:               "StartUpdateWorkflow",
-			workflowID:         "test-workflow-batch-123", 
+			workflowID:         "test-workflow-batch-123",
 			expectedResourceID: "test-workflow-batch-123",
 		},
 		{
@@ -669,7 +668,7 @@ func testExecuteMultiOperationResourceID(t *testing.T) {
 			defer mockCtrl.Finish()
 
 			service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-			
+
 			// Mock GetSystemInfo which gets called during client operations
 			service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
@@ -704,12 +703,12 @@ func testExecuteMultiOperationResourceID(t *testing.T) {
 			client := NewServiceClient(service, nil, ClientOptions{
 				Namespace: "test-namespace",
 			})
-			
+
 			// Create start operation with workflow options
 			startOp := client.NewWithStartWorkflowOperation(
 				StartWorkflowOptions{
-					ID:                        tc.workflowID,
-					TaskQueue:                 "test-task-queue",
+					ID:                       tc.workflowID,
+					TaskQueue:                "test-task-queue",
 					WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
 				},
 				"TestWorkflow",
@@ -731,16 +730,16 @@ func testExecuteMultiOperationResourceID(t *testing.T) {
 
 			// Validate the captured request
 			require.NotNil(t, capturedRequest, "ExecuteMultiOperationRequest should have been captured")
-			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId, 
+			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId,
 				"ResourceId should match the workflow ID from the start operation")
-			
+
 			// Additional validation: ensure we have the expected operations
 			require.Len(t, capturedRequest.Operations, 2, "Should have start and update operations")
-			
-			// Verify the first operation is a start workflow operation with the expected workflow ID  
+
+			// Verify the first operation is a start workflow operation with the expected workflow ID
 			startWorkflowOp := capturedRequest.Operations[0].GetStartWorkflow()
 			require.NotNil(t, startWorkflowOp, "First operation should be StartWorkflow")
-			assert.Equal(t, tc.workflowID, startWorkflowOp.WorkflowId, 
+			assert.Equal(t, tc.workflowID, startWorkflowOp.WorkflowId,
 				"Start workflow operation should have the expected workflow ID")
 		})
 	}
@@ -765,7 +764,7 @@ func testRecordWorkerHeartbeatResourceID(t *testing.T) {
 			defer mockCtrl.Finish()
 
 			service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-			
+
 			// Mock GetSystemInfo which gets called during client operations
 			service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
 				Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
@@ -783,14 +782,14 @@ func testRecordWorkerHeartbeatResourceID(t *testing.T) {
 			wfClient := NewServiceClient(service, nil, ClientOptions{
 				Namespace: "test-namespace",
 			})
-			
+
 			// Set the workerGroupingKey to our test value
 			wfClient.workerGroupingKey = tc.expectedResourceID
 
 			// Create a sharedNamespaceWorker and call sendHeartbeats
 			heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
 			defer heartbeatCancel()
-			
+
 			hw := &sharedNamespaceWorker{
 				client:          wfClient,
 				namespace:       "test-namespace",
@@ -813,13 +812,13 @@ func testRecordWorkerHeartbeatResourceID(t *testing.T) {
 
 			// Validate the captured request
 			require.NotNil(t, capturedRequest, "RecordWorkerHeartbeatRequest should have been captured")
-			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId, 
+			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId,
 				"ResourceId should match the worker grouping key")
-			
+
 			// Additional validation
-			assert.Equal(t, "test-namespace", capturedRequest.Namespace, 
+			assert.Equal(t, "test-namespace", capturedRequest.Namespace,
 				"Namespace should be set correctly")
-			require.Len(t, capturedRequest.WorkerHeartbeat, 1, 
+			require.Len(t, capturedRequest.WorkerHeartbeat, 1,
 				"Should have one worker heartbeat")
 			assert.Equal(t, "test-worker-identity", capturedRequest.WorkerHeartbeat[0].WorkerIdentity,
 				"Worker identity should be set correctly")
