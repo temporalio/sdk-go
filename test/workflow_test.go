@@ -3626,6 +3626,24 @@ func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bo
 	return nil
 }
 
+func (w *Workflows) SessionCancelNDE(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+
+	sessionCtx, err := workflow.CreateSession(ctx, &workflow.SessionOptions{
+		CreationTimeout:  time.Minute,
+		ExecutionTimeout: time.Minute,
+	})
+	if err != nil {
+		return err
+	}
+	defer workflow.CompleteSession(sessionCtx)
+
+	// The DataConverter is configured to panic when encoding "FAIL_ENCODE_NOW"
+	var result string
+	err = workflow.ExecuteActivity(sessionCtx, "Prefix_ToUpper", "FAIL_ENCODE_NOW").Get(sessionCtx, &result)
+	return err
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
@@ -3645,6 +3663,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Panicked)
 	worker.RegisterWorkflow(w.PanickedActivity)
 	worker.RegisterWorkflow(w.BasicSession)
+	worker.RegisterWorkflow(w.SessionCancelNDE)
 	worker.RegisterWorkflow(w.AdvancedSession)
 	worker.RegisterWorkflow(w.CancelActivity)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
