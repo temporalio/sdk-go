@@ -13,23 +13,23 @@ import (
 
 const (
 	defaultMaxConcurrentActivityExecutionSize      = 10
-	defaultMaxConcurrentWorkflowTaskExecutionSize   = 10
-	defaultMaxConcurrentLocalActivityExecutionSize  = 10
-	defaultMaxConcurrentNexusTaskExecutionSize      = 5
-	defaultMaxConcurrentActivityTaskPollers         = 1
-	defaultMaxConcurrentWorkflowTaskPollers         = 2
-	defaultMaxConcurrentNexusTaskPollers            = 1
-	defaultWorkerStopTimeout                        = 5 * time.Second
-	defaultStickyCacheSize                          = 100
+	defaultMaxConcurrentWorkflowTaskExecutionSize  = 10
+	defaultMaxConcurrentLocalActivityExecutionSize = 10
+	defaultMaxConcurrentNexusTaskExecutionSize     = 5
+	defaultMaxConcurrentActivityTaskPollers        = 1
+	defaultMaxConcurrentWorkflowTaskPollers        = 2
+	defaultMaxConcurrentNexusTaskPollers           = 1
+	defaultWorkerStopTimeout                       = 5 * time.Second
+	defaultStickyCacheSize                         = 100
 
 	envTaskQueue       = "TEMPORAL_TASK_QUEUE"
 	envFunctionName    = "AWS_LAMBDA_FUNCTION_NAME"
 	envFunctionVersion = "AWS_LAMBDA_FUNCTION_VERSION"
 )
 
-// applyLambdaWorkerDefaults sets Lambda-appropriate defaults on the given
-// worker options. Zero-valued fields are set to Lambda defaults; non-zero
-// fields (previously set by envconfig or user) are left alone.
+// applyLambdaWorkerDefaults sets Lambda-appropriate defaults on the given worker options.
+// Zero-valued fields are set to Lambda defaults; non-zero fields (previously set by envconfig or
+// user) are left alone.
 func applyLambdaWorkerDefaults(opts *worker.Options) {
 	if opts.MaxConcurrentActivityExecutionSize == 0 {
 		opts.MaxConcurrentActivityExecutionSize = defaultMaxConcurrentActivityExecutionSize
@@ -58,8 +58,8 @@ func applyLambdaWorkerDefaults(opts *worker.Options) {
 	opts.DisableEagerActivities = true
 }
 
-// applyLambdaClientDefaults sets Lambda-appropriate defaults on the given
-// client options: JSON-structured logging and a Lambda-aware identity string.
+// applyLambdaClientDefaults sets Lambda-appropriate defaults on the given client options:
+// JSON-structured logging and a Lambda-aware identity string.
 func applyLambdaClientDefaults(opts *client.Options, getenv func(string) string) {
 	if opts.Logger == nil {
 		opts.Logger = log.NewStructuredLogger(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
@@ -69,8 +69,8 @@ func applyLambdaClientDefaults(opts *client.Options, getenv func(string) string)
 	}
 }
 
-// buildLambdaIdentity constructs an identity string from Lambda environment
-// variables in the form "lambda:<functionName>:<functionVersion>@<hostname>".
+// buildLambdaIdentity constructs an identity string from Lambda environment variables in the form
+// "lambda:<functionName>:<functionVersion>@<hostname>".
 func buildLambdaIdentity(getenv func(string) string) string {
 	functionName := getenv(envFunctionName)
 	if functionName == "" {
@@ -87,8 +87,8 @@ func buildLambdaIdentity(getenv func(string) string) string {
 	return fmt.Sprintf("lambda:%s:%s@%s", functionName, functionVersion, hostname)
 }
 
-// resolveTaskQueue determines the task queue name from user configuration or
-// environment variables. Returns an error if no task queue is configured.
+// resolveTaskQueue determines the task queue name from user configuration or environment variables.
+// Returns an error if no task queue is configured.
 func resolveTaskQueue(userTaskQueue string, getenv func(string) string) (string, error) {
 	if userTaskQueue != "" {
 		return userTaskQueue, nil

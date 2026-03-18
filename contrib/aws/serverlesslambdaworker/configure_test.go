@@ -18,11 +18,17 @@ type mockWorker struct {
 	mock.Mock
 }
 
+var _ worker.Worker = (*mockWorker)(nil)
+
 func (m *mockWorker) RegisterWorkflow(w interface{}) {
 	m.Called(w)
 }
 
 func (m *mockWorker) RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions) {
+	m.Called(w, options)
+}
+
+func (m *mockWorker) RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions) {
 	m.Called(w, options)
 }
 
@@ -32,6 +38,14 @@ func (m *mockWorker) RegisterActivity(a interface{}) {
 
 func (m *mockWorker) RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions) {
 	m.Called(a, options)
+}
+
+func (m *mockWorker) RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions) {
+	m.Called(a, options)
+}
+
+func (m *mockWorker) RegisterNexusService(s *nexus.Service) {
+	m.Called(s)
 }
 
 func (m *mockWorker) Start() error {
@@ -47,16 +61,9 @@ func (m *mockWorker) Stop() {
 	m.Called()
 }
 
-func (m *mockWorker) RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions) {
-	m.Called(w, options)
-}
-
-func (m *mockWorker) RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions) {
-	m.Called(a, options)
-}
-
-func (m *mockWorker) RegisterNexusService(s *nexus.Service) {
-	m.Called(s)
+func TestConfigureWorkerContext_ImplementsRegistry(t *testing.T) {
+	// Compile-time check is in configure.go; this just exercises it at test time.
+	var _ worker.Registry = (*ConfigureWorkerContext)(nil)
 }
 
 func TestConfigureWorkerContext_SetTaskQueue(t *testing.T) {
@@ -98,14 +105,18 @@ func TestConfigureWorkerContext_ReplayRegistrations(t *testing.T) {
 	ctx.RegisterWorkflowWithOptions(myWorkflow, workflow.RegisterOptions{Name: "custom-wf"})
 	ctx.RegisterActivity(myActivity)
 	ctx.RegisterActivityWithOptions(myActivity2, activity.RegisterOptions{Name: "custom-act"})
+	ctx.RegisterDynamicWorkflow(myWorkflow, workflow.DynamicRegisterOptions{})
+	ctx.RegisterDynamicActivity(myActivity, activity.DynamicRegisterOptions{})
 
-	assert.Len(t, ctx.registrations, 4)
+	assert.Len(t, ctx.registrations, 6)
 
 	w := &mockWorker{}
 	w.On("RegisterWorkflow", mock.Anything).Once()
 	w.On("RegisterWorkflowWithOptions", mock.Anything, workflow.RegisterOptions{Name: "custom-wf"}).Once()
 	w.On("RegisterActivity", mock.Anything).Once()
 	w.On("RegisterActivityWithOptions", mock.Anything, activity.RegisterOptions{Name: "custom-act"}).Once()
+	w.On("RegisterDynamicWorkflow", mock.Anything, workflow.DynamicRegisterOptions{}).Once()
+	w.On("RegisterDynamicActivity", mock.Anything, activity.DynamicRegisterOptions{}).Once()
 
 	ctx.replayRegistrations(w)
 	w.AssertExpectations(t)
