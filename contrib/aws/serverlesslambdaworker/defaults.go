@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	defaultMaxConcurrentActivityExecutionSize      = 10
+	defaultMaxConcurrentActivityExecutionSize      = 2
 	defaultMaxConcurrentWorkflowTaskExecutionSize  = 10
-	defaultMaxConcurrentLocalActivityExecutionSize = 10
+	defaultMaxConcurrentLocalActivityExecutionSize = 2
 	defaultMaxConcurrentNexusTaskExecutionSize     = 5
 	defaultMaxConcurrentActivityTaskPollers        = 1
 	defaultMaxConcurrentWorkflowTaskPollers        = 2
@@ -22,9 +22,7 @@ const (
 	defaultWorkerStopTimeout                       = 5 * time.Second
 	defaultStickyCacheSize                         = 100
 
-	envTaskQueue       = "TEMPORAL_TASK_QUEUE"
-	envFunctionName    = "AWS_LAMBDA_FUNCTION_NAME"
-	envFunctionVersion = "AWS_LAMBDA_FUNCTION_VERSION"
+	envTaskQueue = "TEMPORAL_TASK_QUEUE"
 )
 
 // applyLambdaWorkerDefaults sets Lambda-appropriate defaults on the given worker options.
@@ -58,33 +56,25 @@ func applyLambdaWorkerDefaults(opts *worker.Options) {
 	opts.DisableEagerActivities = true
 }
 
-// applyLambdaClientDefaults sets Lambda-appropriate defaults on the given client options:
-// JSON-structured logging and a Lambda-aware identity string.
-func applyLambdaClientDefaults(opts *client.Options, getenv func(string) string) {
+// applyLambdaClientDefaults sets Lambda-appropriate defaults on the given client options that are
+// available during the init phase (before any invocation). Identity is set later from the Lambda
+// invocation context via [buildLambdaIdentity].
+func applyLambdaClientDefaults(opts *client.Options) {
 	if opts.Logger == nil {
 		opts.Logger = log.NewStructuredLogger(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
 	}
-	if opts.Identity == "" {
-		opts.Identity = buildLambdaIdentity(getenv)
-	}
 }
 
-// buildLambdaIdentity constructs an identity string from Lambda environment variables in the form
-// "lambda:<functionName>:<functionVersion>@<hostname>".
-func buildLambdaIdentity(getenv func(string) string) string {
-	functionName := getenv(envFunctionName)
-	if functionName == "" {
-		functionName = "unknown"
+// buildLambdaIdentity constructs an identity string in the form "<requestID>@<functionARN>" from
+// the Lambda invocation context.
+func buildLambdaIdentity(requestID, functionARN string) string {
+	if requestID == "" {
+		requestID = "unknown"
 	}
-	functionVersion := getenv(envFunctionVersion)
-	if functionVersion == "" {
-		functionVersion = "unknown"
+	if functionARN == "" {
+		functionARN = "unknown"
 	}
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "unknown"
-	}
-	return fmt.Sprintf("lambda:%s:%s@%s", functionName, functionVersion, hostname)
+	return fmt.Sprintf("%s@%s", requestID, functionARN)
 }
 
 // resolveTaskQueue determines the task queue name from user configuration or environment variables.
