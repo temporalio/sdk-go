@@ -13,7 +13,6 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// mockWorker implements worker.Worker for testing registration replay.
 type mockWorker struct {
 	mock.Mock
 }
