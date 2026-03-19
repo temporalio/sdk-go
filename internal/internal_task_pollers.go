@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.temporal.io/sdk/internal/common/retry"
@@ -83,6 +84,8 @@ type (
 		pollTimeTracker *pollTimeTracker
 		// Unique identifier for worker
 		workerInstanceKey string
+		// Server cancels polls on shutdown
+		workerPollCompleteOnShutdown *atomic.Bool
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -290,6 +293,18 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		close(doneC)
 	}()
 
+	if bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load() {
+		// Don't kill the gRPC stream. After ShutdownWorker, the server returns empty responses.
+		select {
+		case <-doneC:
+			return result, err
+		case <-bp.stopC:
+			<-doneC
+			return result, err
+		}
+	}
+
+	// Legacy: cancel in-flight polls immediately on shutdown
 	select {
 	case <-doneC:
 		return result, err
@@ -320,14 +335,15 @@ func newWorkflowTaskProcessor(
 ) *workflowTaskProcessor {
 	return &workflowTaskProcessor{
 		basePoller: basePoller{
-			metricsHandler:          params.MetricsHandler,
-			stopC:                   params.WorkerStopChannel,
-			workerBuildID:           params.getBuildID(),
-			useBuildIDVersioning:    params.UseBuildIDForVersioning,
-			workerDeploymentVersion: params.DeploymentOptions.Version,
-			capabilities:            params.capabilities,
-			pollTimeTracker:         params.pollTimeTracker,
-			workerInstanceKey:       params.workerInstanceKey,
+			metricsHandler:               params.MetricsHandler,
+			stopC:                        params.WorkerStopChannel,
+			workerBuildID:                params.getBuildID(),
+			useBuildIDVersioning:         params.UseBuildIDForVersioning,
+			workerDeploymentVersion:      params.DeploymentOptions.Version,
+			capabilities:                 params.capabilities,
+			pollTimeTracker:              params.pollTimeTracker,
+			workerInstanceKey:            params.workerInstanceKey,
+			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		service:                      service,
 		namespace:                    params.Namespace,
@@ -1126,14 +1142,15 @@ func newGetHistoryPageFunc(
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
 		basePoller: basePoller{
-			metricsHandler:          params.MetricsHandler,
-			stopC:                   params.WorkerStopChannel,
-			workerBuildID:           params.getBuildID(),
-			useBuildIDVersioning:    params.UseBuildIDForVersioning,
-			workerDeploymentVersion: params.DeploymentOptions.Version,
-			capabilities:            params.capabilities,
-			pollTimeTracker:         params.pollTimeTracker,
-			workerInstanceKey:       params.workerInstanceKey,
+			metricsHandler:               params.MetricsHandler,
+			stopC:                        params.WorkerStopChannel,
+			workerBuildID:                params.getBuildID(),
+			useBuildIDVersioning:         params.UseBuildIDForVersioning,
+			workerDeploymentVersion:      params.DeploymentOptions.Version,
+			capabilities:                 params.capabilities,
+			pollTimeTracker:              params.pollTimeTracker,
+			workerInstanceKey:            params.workerInstanceKey,
+			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:         taskHandler,
 		service:             service,
