@@ -34,7 +34,11 @@ func defaultDeps() workerDeps {
 			return worker.New(c, tq, opts)
 		},
 		startLambda:  lambda.StartWithOptions,
-		loadConfig:   envconfig.LoadDefaultClientOptions,
+		loadConfig: func() (client.Options, error) {
+			return envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
+				ConfigFilePath: lambdaDefaultConfigFilePath(os.Getenv),
+			})
+		},
 		getenv:       os.Getenv,
 		setCacheSize: worker.SetStickyWorkflowCacheSize,
 		exit:         os.Exit,

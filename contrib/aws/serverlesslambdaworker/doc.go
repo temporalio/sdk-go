@@ -18,9 +18,23 @@
 // Lambda-appropriate defaults during the init phase, starts the worker on each invocation, and
 // shuts it down gracefully before the Lambda deadline expires.
 //
+// # Configuration
+//
 // Client connection options (address, namespace, TLS, API key) are loaded automatically from
-// environment variables and config files via
-// [go.temporal.io/sdk/contrib/envconfig.LoadDefaultClientOptions].
+// a TOML config file and environment variables via
+// [go.temporal.io/sdk/contrib/envconfig.LoadClientOptions].
+//
+// Because AWS Lambda does not set $HOME or $XDG_CONFIG_HOME, [RunWorker] does not use the
+// standard user config directory for the config file. Instead, it resolves the config file path
+// in the following order:
+//
+//  1. TEMPORAL_CONFIG_FILE environment variable, if set.
+//  2. temporal.toml in the Lambda code root ($LAMBDA_TASK_ROOT), which is typically /var/task.
+//  3. temporal.toml in the current working directory as a final fallback.
+//
+// The file is optional — if it does not exist, only environment variables are used. See
+// [go.temporal.io/sdk/contrib/envconfig] for the full list of supported environment variables
+// and TOML fields.
 //
 // Use [ConfigureWorkerContext.MutateClientOptions] and [ConfigureWorkerContext.MutateWorkerOptions]
 // to override any defaults. User overrides are applied after Lambda defaults, so they always win.
