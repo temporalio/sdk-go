@@ -13,6 +13,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
 	"go.temporal.io/sdk/converter"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -735,7 +736,7 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 	require.NoError(t, err)
 
 	retrieveParams, err := ExternalStorageToParams(converter.ExternalStorage{
-		Drivers:        []converter.StorageDriver{errD, blockD},
+		Drivers: []converter.StorageDriver{errD, blockD},
 		DriverSelector: &funcDriverSelector{fn: func(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
 			return errD, nil
 		}},
@@ -818,6 +819,42 @@ func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {
 	_, err = visitPayloads(ctx, retrieveVisitor, batch)
 	require.NoError(t, err)
 	require.Equal(t, 2, cb.count)
+}
+
+// ---------------------------------------------------------------------------
+// Claim Compatibility: fixed claim JSON produced by another SDK
+// ---------------------------------------------------------------------------
+
+// TestClaimDeserialization verifies that a full proto-JSON payload
+// produced by another language SDK (e.g. Python) is correctly parsed by
+// the Go SDK's payloadToStorageReference function, and that the retrieval
+// visitor successfully dispatches to the matching driver.
+func TestClaimDeserialization(t *testing.T) {
+	// Full proto-JSON representation of a storage-reference payload as another
+	// SDK would serialize it onto the wire.
+	const rawPayloadJSON = `{
+  "metadata": {
+    "encoding": "anNvbi9leHRlcm5hbC1zdG9yYWdlLXJlZmVyZW5jZQ=="
+  },
+  "data": "eyJkcml2ZXJfY2xhaW0iOnsiY2xhaW1fZGF0YSI6eyJidWNrZXQiOiJ0ZXN0LWJ1Y2tldCIsImtleSI6Ii9ucy9kZWZhdWx0L3dpLzEzZjNkOWNmLTE3MDUtNGNlMS1iM2NiLTM3MDk3NGE0ODJjNy9kL3NoYTI1Ni82Y2EyMmMzNDU2MGNmMzVhYzI0NDI3ZGM3NjE5YzlhYjQ3MmE4MmNmMThmMjg2ZjI3ODcxNjQ5YTJiNTYwOGM4In19LCJkcml2ZXJfbmFtZSI6InRlbXBvcmFsaW86ZHJpdmVyOnMzIn0=",
+  "external_payloads": [
+    {
+      "size_bytes": 385
+    }
+  ]
+}`
+
+	refPayload := &commonpb.Payload{}
+	require.NoError(t, protojson.Unmarshal([]byte(rawPayloadJSON), refPayload))
+
+	ref, err := payloadToStorageReference(refPayload)
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingStorageRef, string(refPayload.GetMetadata()[converter.MetadataEncoding]))
+	require.Equal(t, 1, len(refPayload.ExternalPayloads))
+	require.Equal(t, int64(385), refPayload.ExternalPayloads[0].SizeBytes)
+	require.Equal(t, "temporalio:driver:s3", ref.DriverName)
+	require.Equal(t, "test-bucket", ref.DriverClaim.ClaimData["bucket"])
+	require.Equal(t, "/ns/default/wi/13f3d9cf-1705-4ce1-b3cb-370974a482c7/d/sha256/6ca22c34560cf35ac24427dc7619c9ab472a82cf18f286f27871649a2b5608c8", ref.DriverClaim.ClaimData["key"])
 }
 
 // ---------------------------------------------------------------------------
