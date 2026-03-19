@@ -14,9 +14,7 @@ var _ worker.Registry = (*ConfigureWorkerContext)(nil)
 
 // ConfigureWorkerContext is passed to the configure callback of [RunWorker]. It implements
 // [worker.Registry] so that workflows, activities, and Nexus services can be registered directly on
-// it. Registrations are buffered and replayed onto the real worker after it is created.
-//
-// ConfigureWorkerContext has unexported fields for forward-compatibility.
+// it.
 type ConfigureWorkerContext struct {
 	taskQueue        string
 	mutateClientOpts func(*client.Options)
@@ -24,43 +22,43 @@ type ConfigureWorkerContext struct {
 	registrations    []func(worker.Registry)
 }
 
-// RegisterWorkflow buffers a workflow registration to be replayed onto the worker. See
+// RegisterWorkflow registers a workflow on the worker. See
 // [worker.WorkflowRegistry.RegisterWorkflow] for details.
 func (c *ConfigureWorkerContext) RegisterWorkflow(w interface{}) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterWorkflow(w) })
 }
 
-// RegisterWorkflowWithOptions buffers a workflow registration with options to be replayed onto the
-// worker. See [worker.WorkflowRegistry.RegisterWorkflowWithOptions] for details.
+// RegisterWorkflowWithOptions registers a workflow with options on the worker. See
+// [worker.WorkflowRegistry.RegisterWorkflowWithOptions] for details.
 func (c *ConfigureWorkerContext) RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterWorkflowWithOptions(w, options) })
 }
 
-// RegisterDynamicWorkflow buffers a dynamic workflow registration to be replayed onto the worker.
-// See [worker.WorkflowRegistry.RegisterDynamicWorkflow] for details.
+// RegisterDynamicWorkflow registers a dynamic workflow on the worker. See
+// [worker.WorkflowRegistry.RegisterDynamicWorkflow] for details.
 func (c *ConfigureWorkerContext) RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterDynamicWorkflow(w, options) })
 }
 
-// RegisterActivity buffers an activity registration to be replayed onto the worker. See
+// RegisterActivity registers an activity on the worker. See
 // [worker.ActivityRegistry.RegisterActivity] for details.
 func (c *ConfigureWorkerContext) RegisterActivity(a interface{}) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterActivity(a) })
 }
 
-// RegisterActivityWithOptions buffers an activity registration with options to be replayed onto the
-// worker. See [worker.ActivityRegistry.RegisterActivityWithOptions] for details.
+// RegisterActivityWithOptions registers an activity with options on the worker. See
+// [worker.ActivityRegistry.RegisterActivityWithOptions] for details.
 func (c *ConfigureWorkerContext) RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterActivityWithOptions(a, options) })
 }
 
-// RegisterDynamicActivity buffers a dynamic activity registration to be replayed onto the worker.
-// See [worker.ActivityRegistry.RegisterDynamicActivity] for details.
+// RegisterDynamicActivity registers a dynamic activity on the worker. See
+// [worker.ActivityRegistry.RegisterDynamicActivity] for details.
 func (c *ConfigureWorkerContext) RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterDynamicActivity(a, options) })
 }
 
-// RegisterNexusService buffers a Nexus service registration to be replayed onto the worker. See
+// RegisterNexusService registers a Nexus service on the worker. See
 // [worker.NexusServiceRegistry.RegisterNexusService] for details.
 func (c *ConfigureWorkerContext) RegisterNexusService(s *nexus.Service) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterNexusService(s) })

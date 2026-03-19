@@ -24,9 +24,8 @@
 // a TOML config file and environment variables via
 // [go.temporal.io/sdk/contrib/envconfig.LoadClientOptions].
 //
-// Because AWS Lambda does not set $HOME or $XDG_CONFIG_HOME, [RunWorker] does not use the
-// standard user config directory for the config file. Instead, it resolves the config file path
-// in the following order:
+// Because AWS Lambda does not have a standard config file directory, it resolves the config file
+// path in the following order:
 //
 //  1. TEMPORAL_CONFIG_FILE environment variable, if set.
 //  2. temporal.toml in the Lambda code root ($LAMBDA_TASK_ROOT), which is typically /var/task.

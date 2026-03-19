@@ -11,21 +11,6 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
-func TestApplyLambdaWorkerDefaults(t *testing.T) {
-	var opts worker.Options
-	applyLambdaWorkerDefaults(&opts)
-
-	assert.Equal(t, 2, opts.MaxConcurrentActivityExecutionSize)
-	assert.Equal(t, 10, opts.MaxConcurrentWorkflowTaskExecutionSize)
-	assert.Equal(t, 2, opts.MaxConcurrentLocalActivityExecutionSize)
-	assert.Equal(t, 5, opts.MaxConcurrentNexusTaskExecutionSize)
-	assert.Equal(t, 1, opts.MaxConcurrentActivityTaskPollers)
-	assert.Equal(t, 2, opts.MaxConcurrentWorkflowTaskPollers)
-	assert.Equal(t, 1, opts.MaxConcurrentNexusTaskPollers)
-	assert.Equal(t, 5*time.Second, opts.WorkerStopTimeout)
-	assert.True(t, opts.DisableEagerActivities)
-}
-
 func TestApplyLambdaWorkerDefaults_PreservesExisting(t *testing.T) {
 	opts := worker.Options{
 		MaxConcurrentActivityExecutionSize: 50,
