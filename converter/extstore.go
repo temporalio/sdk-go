@@ -28,14 +28,14 @@ type StorageDriverRetrieveContext struct {
 	Context context.Context
 }
 
-// StorageClaim is an opaque token returned by StorageDriver.Store that
+// StorageDriverClaim is an opaque token returned by StorageDriver.Store that
 // identifies where a payload was stored. The SDK serializes it alongside the
 // payload metadata so that StorageDriver.Retrieve can locate the data later.
 // Drivers encode their own addressing information (e.g. a bucket name and
 // object key) into the Data map.
 //
 // NOTE: Experimental
-type StorageClaim struct {
+type StorageDriverClaim struct {
 	ClaimData map[string]string `json:"claim_data"`
 }
 
@@ -62,16 +62,16 @@ type StorageDriver interface {
 	// they are configured or named.
 	Type() string
 
-	// Store persists the given payloads and returns one StorageClaim per
+	// Store persists the given payloads and returns one StorageDriverClaim per
 	// payload in the same order. The returned claims are serialized into the
 	// Temporal event and must contain enough information for Retrieve to locate
 	// the data. Store must not modify the input payloads.
-	Store(ctx StorageDriverStoreContext, payloads []*commonpb.Payload) ([]StorageClaim, error)
+	Store(ctx StorageDriverStoreContext, payloads []*commonpb.Payload) ([]StorageDriverClaim, error)
 
 	// Retrieve fetches the payloads identified by the given claims, returning
 	// one payload per claim in the same order. It must not modify the input
 	// claims.
-	Retrieve(ctx StorageDriverRetrieveContext, claims []StorageClaim) ([]*commonpb.Payload, error)
+	Retrieve(ctx StorageDriverRetrieveContext, claims []StorageDriverClaim) ([]*commonpb.Payload, error)
 }
 
 // StorageDriverSelector chooses which StorageDriver should store a given

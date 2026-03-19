@@ -42,7 +42,7 @@ func newTestDriver(name string) *testStorageDriver {
 func (d *testStorageDriver) Name() string { return d.name }
 func (d *testStorageDriver) Type() string { return "test" }
 
-func (d *testStorageDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
+func (d *testStorageDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.storeCount++
@@ -57,16 +57,16 @@ func (d *testStorageDriver) Store(_ converter.StorageDriverStoreContext, payload
 	if d.storeErr != nil {
 		return nil, d.storeErr
 	}
-	claims := make([]converter.StorageClaim, len(payloads))
+	claims := make([]converter.StorageDriverClaim, len(payloads))
 	for i, p := range payloads {
 		key := uuid.NewString()
 		d.data[key] = proto.Clone(p).(*commonpb.Payload)
-		claims[i] = converter.StorageClaim{ClaimData: map[string]string{"key": key}}
+		claims[i] = converter.StorageDriverClaim{ClaimData: map[string]string{"key": key}}
 	}
 	return claims, nil
 }
 
-func (d *testStorageDriver) Retrieve(_ converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d *testStorageDriver) Retrieve(_ converter.StorageDriverRetrieveContext, claims []converter.StorageDriverClaim) ([]*commonpb.Payload, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.retrieveCount++
@@ -209,7 +209,7 @@ func TestExternalStorageToParams_SingleDriverSynthesizesSelector(t *testing.T) {
 func TestStorageReferenceRoundTrip(t *testing.T) {
 	ref := storageReference{
 		DriverName:  "mydriver",
-		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "abc123"}},
+		DriverClaim: converter.StorageDriverClaim{ClaimData: map[string]string{"key": "abc123"}},
 	}
 	p, err := storageReferenceToPayload(ref, 512)
 	require.NoError(t, err)
@@ -662,7 +662,7 @@ func TestRetrievalVisitor_UnknownDriver(t *testing.T) {
 
 	ref, err := storageReferenceToPayload(storageReference{
 		DriverName:  "unregistered-driver",
-		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "k"}},
+		DriverClaim: converter.StorageDriverClaim{ClaimData: map[string]string{"key": "k"}},
 	}, 10)
 	require.NoError(t, err)
 
@@ -701,7 +701,7 @@ func TestRetrievalVisitor_RetrievePanic(t *testing.T) {
 
 	ref, err := storageReferenceToPayload(storageReference{
 		DriverName:  "my-panic-retrieve-driver",
-		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "k"}},
+		DriverClaim: converter.StorageDriverClaim{ClaimData: map[string]string{"key": "k"}},
 	}, 10)
 	require.NoError(t, err)
 
@@ -731,7 +731,7 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 
 	blockRef, err := storageReferenceToPayload(storageReference{
 		DriverName:  "block-driver",
-		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "k"}},
+		DriverClaim: converter.StorageDriverClaim{ClaimData: map[string]string{"key": "k"}},
 	}, 10)
 	require.NoError(t, err)
 
@@ -765,7 +765,7 @@ func TestRetrievalVisitor_WrongPayloadCount(t *testing.T) {
 
 	ref, err := storageReferenceToPayload(storageReference{
 		DriverName:  "my-bad-count-driver",
-		DriverClaim: converter.StorageClaim{ClaimData: map[string]string{"key": "k"}},
+		DriverClaim: converter.StorageDriverClaim{ClaimData: map[string]string{"key": "k"}},
 	}, 10)
 	require.NoError(t, err)
 
@@ -961,13 +961,13 @@ type panicDriver struct {
 
 func (d *panicDriver) Name() string { return d.name }
 func (d *panicDriver) Type() string { return "panic" }
-func (d *panicDriver) Store(_ converter.StorageDriverStoreContext, _ []*commonpb.Payload) ([]converter.StorageClaim, error) {
+func (d *panicDriver) Store(_ converter.StorageDriverStoreContext, _ []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
 	if d.panicOnStore {
 		panic("store panic")
 	}
 	return nil, nil
 }
-func (d *panicDriver) Retrieve(_ converter.StorageDriverRetrieveContext, _ []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d *panicDriver) Retrieve(_ converter.StorageDriverRetrieveContext, _ []converter.StorageDriverClaim) ([]*commonpb.Payload, error) {
 	if d.panicOnRetrieve {
 		panic("retrieve panic")
 	}
@@ -986,7 +986,7 @@ type blockingDriver struct {
 
 func (d *blockingDriver) Name() string { return d.name }
 func (d *blockingDriver) Type() string { return "blocking" }
-func (d *blockingDriver) Store(ctx converter.StorageDriverStoreContext, _ []*commonpb.Payload) ([]converter.StorageClaim, error) {
+func (d *blockingDriver) Store(ctx converter.StorageDriverStoreContext, _ []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
 	if d.startedCh != nil {
 		close(d.startedCh)
 	}
@@ -994,7 +994,7 @@ func (d *blockingDriver) Store(ctx converter.StorageDriverStoreContext, _ []*com
 	close(d.cancelledCh)
 	return nil, ctx.Context.Err()
 }
-func (d *blockingDriver) Retrieve(ctx converter.StorageDriverRetrieveContext, _ []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d *blockingDriver) Retrieve(ctx converter.StorageDriverRetrieveContext, _ []converter.StorageDriverClaim) ([]*commonpb.Payload, error) {
 	close(d.startedCh)
 	<-ctx.Context.Done()
 	close(d.cancelledCh)
@@ -1013,10 +1013,10 @@ type badCountDriver struct{ name string }
 
 func (d *badCountDriver) Name() string { return d.name }
 func (d *badCountDriver) Type() string { return "bad" }
-func (d *badCountDriver) Store(_ converter.StorageDriverStoreContext, _ []*commonpb.Payload) ([]converter.StorageClaim, error) {
-	return []converter.StorageClaim{}, nil // returns 0 claims instead of 1
+func (d *badCountDriver) Store(_ converter.StorageDriverStoreContext, _ []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
+	return []converter.StorageDriverClaim{}, nil // returns 0 claims instead of 1
 }
-func (d *badCountDriver) Retrieve(_ converter.StorageDriverRetrieveContext, _ []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d *badCountDriver) Retrieve(_ converter.StorageDriverRetrieveContext, _ []converter.StorageDriverClaim) ([]*commonpb.Payload, error) {
 	return nil, nil
 }
 
@@ -1024,14 +1024,14 @@ type badCountRetrieveDriver struct{ name string }
 
 func (d *badCountRetrieveDriver) Name() string { return d.name }
 func (d *badCountRetrieveDriver) Type() string { return "bad" }
-func (d *badCountRetrieveDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
-	claims := make([]converter.StorageClaim, len(payloads))
+func (d *badCountRetrieveDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
+	claims := make([]converter.StorageDriverClaim, len(payloads))
 	for i := range claims {
-		claims[i] = converter.StorageClaim{ClaimData: map[string]string{"key": "k"}}
+		claims[i] = converter.StorageDriverClaim{ClaimData: map[string]string{"key": "k"}}
 	}
 	return claims, nil
 }
-func (d *badCountRetrieveDriver) Retrieve(_ converter.StorageDriverRetrieveContext, _ []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d *badCountRetrieveDriver) Retrieve(_ converter.StorageDriverRetrieveContext, _ []converter.StorageDriverClaim) ([]*commonpb.Payload, error) {
 	return []*commonpb.Payload{}, nil // returns 0 payloads instead of 1
 }
 
@@ -1046,16 +1046,16 @@ type valueReceiverDriver struct {
 
 func (d valueReceiverDriver) Name() string { return d.name }
 func (d valueReceiverDriver) Type() string { return "value" }
-func (d valueReceiverDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
-	claims := make([]converter.StorageClaim, len(payloads))
+func (d valueReceiverDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
+	claims := make([]converter.StorageDriverClaim, len(payloads))
 	for i, p := range payloads {
 		key := uuid.NewString()
 		d.data[key] = proto.Clone(p).(*commonpb.Payload)
-		claims[i] = converter.StorageClaim{ClaimData: map[string]string{"key": key}}
+		claims[i] = converter.StorageDriverClaim{ClaimData: map[string]string{"key": key}}
 	}
 	return claims, nil
 }
-func (d valueReceiverDriver) Retrieve(_ converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d valueReceiverDriver) Retrieve(_ converter.StorageDriverRetrieveContext, claims []converter.StorageDriverClaim) ([]*commonpb.Payload, error) {
 	payloads := make([]*commonpb.Payload, len(claims))
 	for i, c := range claims {
 		p, ok := d.data[c.ClaimData["key"]]

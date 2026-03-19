@@ -90,7 +90,7 @@ const metadataEncodingStorageRef = "json/external-storage-reference"
 
 type storageReference struct {
 	DriverName  string                 `json:"driver_name"`
-	DriverClaim converter.StorageClaim `json:"driver_claim"`
+	DriverClaim converter.StorageDriverClaim `json:"driver_claim"`
 }
 
 func storageReferenceToPayload(ref storageReference, storedSizeBytes int64) (*commonpb.Payload, error) {
@@ -132,7 +132,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	type driverBatch struct {
 		driver  converter.StorageDriver
 		indices []int
-		claims  []converter.StorageClaim
+		claims  []converter.StorageDriverClaim
 	}
 	var driverOrder []string
 	driverBatches := map[string]*driverBatch{}
@@ -179,7 +179,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	// StorageDriverRetrieveContext so a failing driver cancels in-flight siblings.
 	// Intentionally creating an empty context so the retrieval path cannot use ambient
 	// information for determing how to retrieve payloads. Drivers should only use information
-	// from the StorageClaim to retrieve payloads.
+	// from the StorageDriverClaim to retrieve payloads.
 	eg, egCtx := errgroup.WithContext(context.Background())
 	driverCtx := converter.StorageDriverRetrieveContext{Context: egCtx}
 	sizes := make([]int64, len(driverOrder))
@@ -350,7 +350,7 @@ func callDriverSelector(s converter.StorageDriverSelector, ctx converter.Storage
 	return s.SelectDriver(ctx, p)
 }
 
-func callDriverStore(d converter.StorageDriver, ctx converter.StorageDriverStoreContext, payloads []*commonpb.Payload) (claims []converter.StorageClaim, err error) {
+func callDriverStore(d converter.StorageDriver, ctx converter.StorageDriverStoreContext, payloads []*commonpb.Payload) (claims []converter.StorageDriverClaim, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)
@@ -359,7 +359,7 @@ func callDriverStore(d converter.StorageDriver, ctx converter.StorageDriverStore
 	return d.Store(ctx, payloads)
 }
 
-func callDriverRetrieve(d converter.StorageDriver, ctx converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) (payloads []*commonpb.Payload, err error) {
+func callDriverRetrieve(d converter.StorageDriver, ctx converter.StorageDriverRetrieveContext, claims []converter.StorageDriverClaim) (payloads []*commonpb.Payload, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)

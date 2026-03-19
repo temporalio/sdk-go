@@ -41,20 +41,20 @@ func newMemDriver(name string) *memStorageDriver {
 func (d *memStorageDriver) Name() string { return d.name }
 func (d *memStorageDriver) Type() string { return "mem" }
 
-func (d *memStorageDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
+func (d *memStorageDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.storeCount++
-	claims := make([]converter.StorageClaim, len(payloads))
+	claims := make([]converter.StorageDriverClaim, len(payloads))
 	for i, p := range payloads {
 		key := uuid.NewString()
 		d.data[key] = proto.Clone(p).(*commonpb.Payload)
-		claims[i] = converter.StorageClaim{ClaimData: map[string]string{"key": key}}
+		claims[i] = converter.StorageDriverClaim{ClaimData: map[string]string{"key": key}}
 	}
 	return claims, nil
 }
 
-func (d *memStorageDriver) Retrieve(_ converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d *memStorageDriver) Retrieve(_ converter.StorageDriverRetrieveContext, claims []converter.StorageDriverClaim) ([]*commonpb.Payload, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.retrieveCount++
@@ -94,7 +94,7 @@ type panicMemDriver struct {
 	panicOnRetrieve bool
 }
 
-func (d *panicMemDriver) Store(ctx converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageClaim, error) {
+func (d *panicMemDriver) Store(ctx converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
 	claims, err := d.memStorageDriver.Store(ctx, payloads)
 	if err != nil {
 		return nil, err
@@ -105,7 +105,7 @@ func (d *panicMemDriver) Store(ctx converter.StorageDriverStoreContext, payloads
 	return claims, nil
 }
 
-func (d *panicMemDriver) Retrieve(ctx converter.StorageDriverRetrieveContext, claims []converter.StorageClaim) ([]*commonpb.Payload, error) {
+func (d *panicMemDriver) Retrieve(ctx converter.StorageDriverRetrieveContext, claims []converter.StorageDriverClaim) ([]*commonpb.Payload, error) {
 	payloads, err := d.memStorageDriver.Retrieve(ctx, claims)
 	if err != nil {
 		return nil, err
