@@ -1459,9 +1459,8 @@ func (aw *AggregatedWorker) Stop() {
 	}
 
 	// Prevent pollers from re-polling after ShutdownWorker cancels
-	// in-flight polls. Must be set before shutdownWorker() because the
-	// server cancels polls during the RPC — the poll goroutine can
-	// return and re-poll before shutdownWorker() returns to this goroutine.
+	// in-flight polls. The poll goroutine can return and re-poll
+	// before shutdownWorker() returns to this goroutine.
 	if !util.IsInterfaceNil(aw.activityWorker) {
 		aw.activityWorker.worker.noRepoll.Store(true)
 	}
