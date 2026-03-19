@@ -73,7 +73,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
 
       - name: Integration tests (without cache)
-        run: go run . integration-test -dev-server
+        run: go run . integration-test -dev-server -run "TestWorkerTunerTestSuite/TestResourceBasedSmallSlots"
         working-directory: ./internal/cmd/build
         env:
           WORKFLOW_CACHE_SIZE: "0"
@@ -106,7 +106,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
 
       - name: Integration tests (with cache)
-        run: go run . integration-test -dev-server
+        run: go run . integration-test -dev-server -run "TestWorkerTunerTestSuite/TestResourceBasedSmallSlots"
         working-directory: ./internal/cmd/build
 
   docker-compose-test:

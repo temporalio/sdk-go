@@ -322,6 +322,9 @@ func (s slotReserveInfoImpl) WorkerIdentity() string {
 }
 
 func (s slotReserveInfoImpl) NumIssuedSlots() int {
+	//slots := s.issuedSlots.Load()
+	////fmt.Println("slots", slots)
+	//return int(slots)
 	return int(s.issuedSlots.Load())
 }
 
