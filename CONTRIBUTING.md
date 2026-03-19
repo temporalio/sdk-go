@@ -37,6 +37,10 @@ All PR titles should start with Upper case.
 
 ## Testing
 
+Tests are managed through the build tool at `internal/cmd/build`. This tool handles starting an embedded Temporal dev
+server with the required dynamic configs and search attributes, enforces consistent test flags (`-race`, `-count 1`, no caching),
+and manages coverage collection — so you don't need to manually configure a server or remember the right flags.
+
 Run all static analysis tools:
 
 ```bash
@@ -44,18 +48,44 @@ cd ./internal/cmd/build
 go run . check
 ```
 
-Run the integration tests (requires local server running, or pass `-dev-server`):
+### Integration Tests
+
+Integration tests live in the `test/` directory and require a Temporal server by default. Use `-dev-server` to start an
+embedded server automatically:
 
 ```bash
 cd ./internal/cmd/build
-go run . integration-test
+go run . integration-test -dev-server
 ```
 
-Run the unit tests:
+Run a specific test with `-run` (uses the same syntax as `go test -run`):
+
+```bash
+# Run a single test within a suite
+cd ./internal/cmd/build
+go run . integration-test -dev-server -run "TestIntegrationSuite/TestMyTest"
+
+# Run all tests in a suite
+cd ./internal/cmd/build
+go run . integration-test -dev-server -run "TestWorkerTunerTestSuite"
+```
+
+Without `-dev-server`, the tests connect to a server already running on `localhost:7233`.
+
+### Unit Tests
+
+Unit tests cover all packages except `test/`:
 
 ```bash
 cd ./internal/cmd/build
 go run . unit-test
+```
+
+Run specific unit tests with `-run`:
+
+```bash
+cd ./internal/cmd/build
+go run . unit-test -run "TestMyFunction"
 ```
 
 ## Updating go mod files
