@@ -827,8 +827,7 @@ func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {
 
 // TestClaimDeserialization verifies that a full proto-JSON payload
 // produced by another language SDK (e.g. Python) is correctly parsed by
-// the Go SDK's payloadToStorageReference function, and that the retrieval
-// visitor successfully dispatches to the matching driver.
+// the Go SDK's payloadToStorageReference function.
 func TestClaimDeserialization(t *testing.T) {
 	// Full proto-JSON representation of a storage-reference payload as another
 	// SDK would serialize it onto the wire.
