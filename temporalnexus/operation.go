@@ -108,7 +108,7 @@ func NewWorkflowRunOperation[I, O any](
 	}
 }
 
-// NewWorkflowRunOperationWithOptions maps an operation to a workflow run with the given options.
+// NewWorkflowRunOperation map an operation to a workflow run with the given options.
 // Returns an error if invalid options are provided.
 func NewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOptions[I, O]) (nexus.Operation[I, O], error) {
 	if options.Name == "" {
@@ -131,7 +131,7 @@ func NewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOp
 	}, nil
 }
 
-// MustNewWorkflowRunOperationWithOptions maps an operation to a workflow run with the given options.
+// MustNewWorkflowRunOperation map an operation to a workflow run with the given options.
 // Panics if invalid options are provided.
 func MustNewWorkflowRunOperationWithOptions[I, O any](options WorkflowRunOperationOptions[I, O]) nexus.Operation[I, O] {
 	op, err := NewWorkflowRunOperationWithOptions(options)

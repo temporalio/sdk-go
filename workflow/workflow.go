@@ -15,13 +15,13 @@ import (
 type VersioningBehavior = internal.VersioningBehavior
 
 const (
-	// VersioningBehaviorUnspecified means the workflow versioning policy is unknown.
+	// Workflow versioning policy unknown.
 	VersioningBehaviorUnspecified = internal.VersioningBehaviorUnspecified
 
-	// VersioningBehaviorPinned means the workflow should be pinned to the current Build ID until manually moved.
+	// Workflow should be pinned to the current Build ID until manually moved.
 	VersioningBehaviorPinned = internal.VersioningBehaviorPinned
 
-	// VersioningBehaviorAutoUpgrade means the workflow automatically moves to the latest version (default Build ID of the task queue)
+	// Workflow automatically moves to the latest version (default Build ID of the task queue)
 	// when the next task is dispatched.
 	VersioningBehaviorAutoUpgrade = internal.VersioningBehaviorAutoUpgrade
 )
@@ -73,9 +73,9 @@ const (
 type HandlerUnfinishedPolicy = internal.HandlerUnfinishedPolicy
 
 const (
-	// HandlerUnfinishedPolicyWarnAndAbandon issues a warning in addition to abandoning.
+	// WarnAndAbandon issue a warning in addition to abandoning.
 	HandlerUnfinishedPolicyWarnAndAbandon = internal.HandlerUnfinishedPolicyWarnAndAbandon
-	// HandlerUnfinishedPolicyAbandon abandons the handler.
+	// ABANDON the handler.
 	//
 	// In the case of an update handler this means that the client will receive an error rather
 	// than the update result.
@@ -87,20 +87,20 @@ const (
 type NexusOperationCancellationType = internal.NexusOperationCancellationType
 
 const (
-	// NexusOperationCancellationTypeUnspecified means the Nexus operation cancellation type is unknown.
+	// Nexus operation cancellation type is unknown.
 	NexusOperationCancellationTypeUnspecified NexusOperationCancellationType = iota
 
-	// NexusOperationCancellationTypeAbandon means do not request cancellation of the Nexus operation.
+	// Do not request cancellation of the Nexus operation.
 	NexusOperationCancellationTypeAbandon
 
-	// NexusOperationCancellationTypeTryCancel initiates a cancellation request for the Nexus operation and immediately reports cancellation
+	// Initiate a cancellation request for the Nexus operation and immediately report cancellation
 	// to the caller.
 	NexusOperationCancellationTypeTryCancel
 
-	// NexusOperationCancellationTypeWaitRequested requests cancellation of the Nexus operation and waits for confirmation that the request was received.
+	// Request cancellation of the Nexus operation and wait for confirmation that the request was received.
 	NexusOperationCancellationTypeWaitRequested
 
-	// NexusOperationCancellationTypeWaitCompleted waits for the Nexus operation to complete. This is the default.
+	// Wait for the Nexus operation to complete. Default.
 	NexusOperationCancellationTypeWaitCompleted
 )
 
@@ -383,7 +383,7 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	return internal.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
-// GetSignalChannel returns the channel corresponding to the signal name.
+// GetSignalChannel returns channel corresponding to the signal name.
 func GetSignalChannel(ctx Context, signalName string) ReceiveChannel {
 	return internal.GetSignalChannel(ctx, signalName)
 }
@@ -871,7 +871,7 @@ func AllHandlersFinished(ctx Context) bool {
 	return internal.AllHandlersFinished(ctx)
 }
 
-// NewNexusClient creates a [NexusClient] from an endpoint name and a service name.
+// Create a [NexusClient] from an endpoint name and a service name.
 func NewNexusClient(endpoint, service string) NexusClient {
 	return internal.NewNexusClient(endpoint, service)
 }

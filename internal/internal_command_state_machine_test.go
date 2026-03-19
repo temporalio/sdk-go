@@ -683,47 +683,6 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	require.NotNil(t, err)
 }
 
-// Test_ActivityStateMachine_CancelInitiated_WhileInInitiatedState is a regression test for
-// https://github.com/temporalio/sdk-go/issues/2206
-//
-// When a session workflow's creation activity receives an ActivityTaskCancelRequested event
-// during replay while its state machine is still in "Initiated" state (before the workflow
-// code has re-executed CompleteSession to transition to CancellationCommandSent), the
-// handleCancelInitiatedEvent call causes an NDE.
-func Test_ActivityStateMachine_CancelInitiated_WhileInInitiatedState(t *testing.T) {
-	t.Parallel()
-	activityID := "test-activity-1"
-	attributes := &commandpb.ScheduleActivityTaskCommandAttributes{
-		ActivityId: activityID,
-	}
-	h := newCommandsHelper()
-	h.setCurrentWorkflowTaskStartedEventID(3)
-
-	// schedule activity
-	scheduleID := h.getNextID()
-	d := h.scheduleActivityTask(scheduleID, attributes, nil)
-	require.Equal(t, commandStateCreated, d.getState())
-
-	// send schedule command
-	commands := h.getCommands(true)
-	require.Equal(t, commandStateCommandSent, d.getState())
-	require.Equal(t, 1, len(commands))
-
-	// activity scheduled (server confirms)
-	h.handleActivityTaskScheduled(activityID, scheduleID)
-	require.Equal(t, commandStateInitiated, d.getState())
-
-	// During replay, an ActivityTaskCancelRequested event can arrive while the
-	// state machine is still in Initiated state. This happens when the cancel
-	// command was sent in a previous workflow task but during replay the workflow
-	// code hasn't re-executed the cancel yet.
-	err := runAndCatchPanic(func() {
-		h.handleActivityTaskCancelRequested(scheduleID)
-	})
-	require.NoError(t, err)
-	require.Equal(t, commandStateCanceledAfterInitiated, d.getState())
-}
-
 func runAndCatchPanic(f func()) (err error) {
 	// panic handler
 	defer func() {

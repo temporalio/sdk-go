@@ -18,7 +18,7 @@ func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFail
 	return internal.NewDefaultFailureConverter(opt)
 }
 
-// GetDefaultFailureConverter returns the default failure converter used by Temporal.
+// GetDefaultDataConverter returns the default failure converter used by Temporal.
 func GetDefaultFailureConverter() converter.FailureConverter {
 	return internal.GetDefaultFailureConverter()
 }

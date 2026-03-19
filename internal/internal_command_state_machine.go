@@ -517,8 +517,6 @@ func (d *commandStateMachineBase) cancel() {
 	switch d.state {
 	case commandStateCompleted, commandStateCompletedAfterCancellationCommandSent:
 		// No op. This is legit. People could cancel context after timer/activity is done.
-	case commandStateCanceledAfterInitiated, commandStateCancellationCommandSent:
-		// No op. Already canceled.
 	case commandStateCreated:
 		d.moveState(commandStateCanceledBeforeSent, eventCancel)
 	case commandStateCommandSent:
@@ -569,9 +567,7 @@ func (d *commandStateMachineBase) handleCancelInitiatedEvent() {
 	d.history = append(d.history, eventCancelInitiated)
 	switch d.state {
 	case commandStateCancellationCommandSent, commandStateCanceledAfterInitiated:
-		// No state change
-	case commandStateInitiated:
-		d.moveState(commandStateCanceledAfterInitiated, eventCancelInitiated)
+	// No state change
 	default:
 		d.failStateTransition(eventCancelInitiated)
 	}

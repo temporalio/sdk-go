@@ -6,7 +6,7 @@ type (
 	// SearchAttributes represents a collection of typed search attributes. Create with [NewSearchAttributes].
 	SearchAttributes = internal.SearchAttributes
 
-	// SearchAttributeUpdate represents a change to SearchAttributes.
+	// SearchAttributesUpdate represents a change to SearchAttributes.
 	SearchAttributeUpdate = internal.SearchAttributeUpdate
 
 	// SearchAttributeKey represents a typed search attribute key.
