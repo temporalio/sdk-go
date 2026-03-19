@@ -917,6 +917,17 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 }
 
 func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
+	ctx := context.Background()
+	internalClient := ts.client.(internal.Client)
+	workflowClient := internalClient.(*internal.WorkflowClient)
+	resp, err := workflowClient.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
+	}
+
 	taskQueue := taskQueuePrefix + "-worker-poll-complete-on-shutdown-" + ts.T().Name()
 
 	var (
