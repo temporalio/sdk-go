@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -54,9 +53,10 @@ func defaultDeps() workerDeps {
 
 // RunWorker starts a Temporal worker inside an AWS Lambda execution environment. It calls the
 // configure callback to collect registrations and option overrides, then delegates to the Lambda
-// runtime. On the first invocation, it dials the Temporal server and starts the worker using
-// identity information from the Lambda invocation context. RunWorker does not return under normal
-// operation. On fatal initialization error, it logs to stderr and calls os.Exit(1).
+// runtime. On each invocation, it dials the Temporal server, starts a worker, polls for tasks
+// until the invocation deadline approaches, and then gracefully shuts down the worker and closes
+// the client. RunWorker does not return under normal operation. On fatal configuration error, it
+// logs to stderr and calls os.Exit(1).
 func RunWorker(configure func(ctx *ConfigureWorkerContext) error) {
 	deps := defaultDeps()
 	if err := runWorkerInternal(configure, deps); err != nil {
@@ -94,61 +94,32 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 	}
 	deps.setCacheSize(defaultStickyCacheSize)
 
-	var (
-		temporalClient client.Client
-		w              worker.Worker
-		initOnce       sync.Once
-		initErr        error
-	)
-
-	cleanup := func() {
-		if w != nil {
-			w.Stop()
-		}
-		if temporalClient != nil {
-			temporalClient.Close()
-		}
-	}
-	defer cleanup()
-
-	deferredInit := func(invocationCtx context.Context) error {
-		initOnce.Do(func() {
-			// Set identity from Lambda context if not already set by user or envconfig.
-			// Identity is derived from the first invocation's request ID and function ARN.
-			if clientOpts.Identity == "" {
-				requestID, functionARN, ok := deps.extractLambdaCtx(invocationCtx)
-				if ok {
-					clientOpts.Identity = buildLambdaIdentity(requestID, functionARN)
-				}
-			}
-
-			c, err := deps.dial(clientOpts)
-			if err != nil {
-				initErr = fmt.Errorf("dialing Temporal server: %w", err)
-				return
-			}
-
-			wk := deps.newWorker(c, taskQueue, workerOpts)
-			configCtx.replayRegistrations(wk)
-
-			if err = wk.Start(); err != nil {
-				c.Close()
-				initErr = fmt.Errorf("starting worker: %w", err)
-				return
-			}
-
-			temporalClient = c
-			w = wk
-		})
-		return initErr
-	}
-
 	stopTimeout := workerOpts.WorkerStopTimeout
 
 	handler := func(invocationCtx context.Context) error {
-		if err := deferredInit(invocationCtx); err != nil {
-			return err
+		// Build per-invocation client options with identity from this invocation's
+		// Lambda context. A shallow copy is sufficient since only Identity is modified.
+		invocationOpts := clientOpts
+		if invocationOpts.Identity == "" {
+			requestID, functionARN, ok := deps.extractLambdaCtx(invocationCtx)
+			if ok {
+				invocationOpts.Identity = buildLambdaIdentity(requestID, functionARN)
+			}
 		}
+
+		c, err := deps.dial(invocationOpts)
+		if err != nil {
+			return fmt.Errorf("dialing Temporal server: %w", err)
+		}
+		defer c.Close()
+
+		w := deps.newWorker(c, taskQueue, workerOpts)
+		configCtx.replayRegistrations(w)
+
+		if err := w.Start(); err != nil {
+			return fmt.Errorf("starting worker: %w", err)
+		}
+		defer w.Stop()
 
 		deadline, ok := invocationCtx.Deadline()
 		if !ok {
@@ -168,6 +139,6 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 		return nil
 	}
 
-	deps.startLambda(handler, lambda.WithEnableSIGTERM(cleanup))
+	deps.startLambda(handler)
 	return nil
 }
