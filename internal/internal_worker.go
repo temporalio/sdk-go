@@ -218,6 +218,9 @@ type (
 		pollTimeTracker *pollTimeTracker
 
 		workerInstanceKey string
+
+		// Set to true during start() when the namespace has the poller_autoscaling capability.
+		serverSupportsAutoscaling *atomic.Bool
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -328,14 +331,14 @@ func newWorkflowTaskWorkerInternal(
 	switch params.WorkflowTaskPollerBehavior.(type) {
 	case *pollerBehaviorSimpleMaximum:
 		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior),
+			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior, params.serverSupportsAutoscaling),
 		}
 	case *pollerBehaviorAutoscaling:
 		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior),
+			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior, params.serverSupportsAutoscaling),
 		}
 		if taskProcessor.stickyCacheSize > 0 {
-			scalableTaskPollers = append(scalableTaskPollers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior))
+			scalableTaskPollers = append(scalableTaskPollers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior, params.serverSupportsAutoscaling))
 		}
 	}
 
@@ -385,7 +388,7 @@ func newWorkflowTaskWorkerInternal(
 				PollerBehaviorSimpleMaximumOptions{
 					MaximumNumberOfPollers: 2,
 				},
-			)),
+			), params.serverSupportsAutoscaling),
 		},
 		taskProcessor:  localActivityTaskPoller,
 		workerType:     "LocalActivityWorker",
@@ -531,7 +534,7 @@ func newActivityWorker(
 		slotSupplier:     slotSupplier,
 		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior),
+			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, params.serverSupportsAutoscaling),
 		},
 		taskProcessor:           poller,
 		workerType:              "ActivityWorker",
@@ -1281,8 +1284,12 @@ func (aw *AggregatedWorker) start() error {
 	}
 	proto.Merge(aw.capabilities, capabilities)
 
-	if _, err := aw.client.loadNamespaceCapabilities(aw.executionParams.MetricsHandler); err != nil {
+	nsCaps, err := aw.client.loadNamespaceCapabilities(aw.executionParams.MetricsHandler)
+	if err != nil {
 		return err
+	}
+	if nsCaps.GetPollerAutoscaling() {
+		aw.executionParams.serverSupportsAutoscaling.Store(true)
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -2134,9 +2141,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
-		capabilities:      &capabilities,
-		pollTimeTracker:   &pollTimeTracker{},
-		workerInstanceKey: workerInstanceKey,
+		capabilities:              &capabilities,
+		pollTimeTracker:           &pollTimeTracker{},
+		workerInstanceKey:         workerInstanceKey,
+		serverSupportsAutoscaling: &atomic.Bool{},
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
