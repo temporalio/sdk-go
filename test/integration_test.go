@@ -9008,7 +9008,7 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 			}
 		}
 		return false
-	}, 30*time.Second, 200*time.Millisecond, "timed out waiting for workflow task failure")
+	}, 20*time.Second, 200*time.Millisecond, "timed out waiting for workflow task failure")
 
 	// Stop the poison worker and restart with a normal DataConverter.
 	// This simulates the transient DC failure resolving. The new worker
@@ -9089,7 +9089,7 @@ func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
 	run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                       "test-panic-with-defer-yield",
 		TaskQueue:                ts.taskQueueName,
-		WorkflowExecutionTimeout: 60 * time.Second,
+		WorkflowExecutionTimeout: 20 * time.Second,
 		WorkflowTaskTimeout:      5 * time.Second,
 	}, "PanicWithDeferYield")
 	ts.NoError(err)
