@@ -1,8 +1,10 @@
 package serverlesslambdaworker
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/stretchr/testify/assert"
@@ -12,6 +14,14 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 )
+
+// testInvocationContext returns a context with an immediate deadline, simulating
+// a Lambda invocation that has already reached its shutdown window.
+func testInvocationContext() context.Context {
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now())
+	_ = cancel
+	return ctx
+}
 
 // mockClient implements client.Client for testing.
 type mockClient struct {
@@ -35,7 +45,10 @@ func newTestDeps() (workerDeps, *mockWorker, *mockClient) {
 			return w
 		},
 		startLambda: func(handler interface{}, options ...lambda.Option) {
-			// Simulate Lambda runtime returning immediately for tests.
+			// Invoke the handler once to trigger deferred init.
+			if h, ok := handler.(func(context.Context) error); ok {
+				_ = h(testInvocationContext())
+			}
 		},
 		loadConfig: func() (client.Options, error) {
 			return client.Options{}, nil
@@ -48,6 +61,9 @@ func newTestDeps() (workerDeps, *mockWorker, *mockClient) {
 		},
 		setCacheSize: func(int) {},
 		exit:         func(int) {},
+		extractLambdaCtx: func(context.Context) (string, string, bool) {
+			return "req-123", "arn:aws:lambda:us-east-1:123:function:my-func", true
+		},
 	}
 	return deps, w, c
 }
@@ -99,19 +115,40 @@ func TestRunWorkerInternal_DialError(t *testing.T) {
 	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
 		return nil
 	}, deps)
-	assert.ErrorContains(t, err, "dialing Temporal server")
+	// Dial error surfaces via the handler return, but startLambda swallows it.
+	// Verify no panic occurs.
+	assert.NoError(t, err)
+}
+
+func TestRunWorkerInternal_DialError_HandlerReturnsError(t *testing.T) {
+	deps, _, _ := newTestDeps()
+	deps.dial = func(client.Options) (client.Client, error) {
+		return nil, errors.New("connection refused")
+	}
+
+	var handlerErr error
+	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+		if h, ok := handler.(func(context.Context) error); ok {
+			handlerErr = h(testInvocationContext())
+		}
+	}
+
+	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
+		return nil
+	}, deps)
+
+	assert.NoError(t, err) // runWorkerInternal itself succeeds.
+	assert.ErrorContains(t, handlerErr, "dialing Temporal server")
 }
 
 func TestRunWorkerInternal_MissingTaskQueue(t *testing.T) {
-	deps, _, c := newTestDeps()
+	deps, _, _ := newTestDeps()
 	deps.getenv = func(string) string { return "" }
-	c.On("Close").Once()
 
 	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
 		return nil
 	}, deps)
 	assert.ErrorContains(t, err, "task queue not configured")
-	c.AssertExpectations(t)
 }
 
 func TestRunWorkerInternal_WorkerStartError(t *testing.T) {
@@ -119,10 +156,18 @@ func TestRunWorkerInternal_WorkerStartError(t *testing.T) {
 	w.On("Start").Return(errors.New("start failed")).Once()
 	c.On("Close").Once()
 
+	var handlerErr error
+	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+		if h, ok := handler.(func(context.Context) error); ok {
+			handlerErr = h(testInvocationContext())
+		}
+	}
+
 	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
 		return nil
 	}, deps)
-	assert.ErrorContains(t, err, "starting worker")
+	assert.NoError(t, err) // runWorkerInternal itself succeeds.
+	assert.ErrorContains(t, handlerErr, "starting worker")
 	w.AssertExpectations(t)
 	c.AssertExpectations(t)
 }
@@ -202,18 +247,10 @@ func TestRunWorkerInternal_SetsCacheSize(t *testing.T) {
 	assert.Equal(t, defaultStickyCacheSize, cacheSize)
 }
 
-func TestRunWorkerInternal_SIGTERMHandler(t *testing.T) {
+func TestRunWorkerInternal_CleanupAfterStartLambda(t *testing.T) {
 	deps, w, c := newTestDeps()
-	var sigtermHandler func()
 
-	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
-		// Extract the SIGTERM handler from options by using a known pattern:
-		// We can't inspect lambda.Option directly, so we capture it via the deps.
-	}
-	// Capture SIGTERM handler by overriding startLambda to inspect options.
-	// Since lambda.Option is opaque, we test SIGTERM behavior indirectly
-	// by verifying the worker and client are cleaned up after startLambda returns.
-
+	// Verify the worker Run completes and client is closed after startLambda returns.
 	w.On("Start").Return(nil).Once()
 	w.On("Stop").Once()
 	c.On("Close").Once()
@@ -225,7 +262,6 @@ func TestRunWorkerInternal_SIGTERMHandler(t *testing.T) {
 	require.NoError(t, err)
 	w.AssertExpectations(t)
 	c.AssertExpectations(t)
-	_ = sigtermHandler // SIGTERM handler tested indirectly via cleanup assertions.
 }
 
 func TestRunWorkerInternal_TaskQueueFromSetTaskQueue(t *testing.T) {
@@ -248,4 +284,102 @@ func TestRunWorkerInternal_TaskQueueFromSetTaskQueue(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, "explicit-queue", capturedTaskQueue)
+}
+
+func TestRunWorkerInternal_IdentityFromLambdaContext(t *testing.T) {
+	var capturedClientOpts client.Options
+	deps, w, c := newTestDeps()
+	deps.dial = func(opts client.Options) (client.Client, error) {
+		capturedClientOpts = opts
+		return c, nil
+	}
+	deps.extractLambdaCtx = func(context.Context) (string, string, bool) {
+		return "req-abc-123", "arn:aws:lambda:us-east-1:123456:function:my-func", true
+	}
+
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.Equal(t, "req-abc-123@arn:aws:lambda:us-east-1:123456:function:my-func", capturedClientOpts.Identity)
+}
+
+func TestRunWorkerInternal_IdentityUserOverrideWins(t *testing.T) {
+	var capturedClientOpts client.Options
+	deps, w, c := newTestDeps()
+	deps.dial = func(opts client.Options) (client.Client, error) {
+		capturedClientOpts = opts
+		return c, nil
+	}
+
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
+		ctx.MutateClientOptions(func(opts *client.Options) {
+			opts.Identity = "my-custom-identity"
+		})
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.Equal(t, "my-custom-identity", capturedClientOpts.Identity)
+}
+
+func TestRunWorkerInternal_IdentityNoLambdaContext(t *testing.T) {
+	var capturedClientOpts client.Options
+	deps, w, c := newTestDeps()
+	deps.dial = func(opts client.Options) (client.Client, error) {
+		capturedClientOpts = opts
+		return c, nil
+	}
+	deps.extractLambdaCtx = func(context.Context) (string, string, bool) {
+		return "", "", false
+	}
+
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	// Identity left empty for the SDK to fill with its default.
+	assert.Empty(t, capturedClientOpts.Identity)
+}
+
+func TestRunWorkerInternal_DeferredInitRunsOnce(t *testing.T) {
+	dialCount := 0
+	deps, w, c := newTestDeps()
+	deps.dial = func(opts client.Options) (client.Client, error) {
+		dialCount++
+		return c, nil
+	}
+	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+		if h, ok := handler.(func(context.Context) error); ok {
+			// Invoke handler multiple times to simulate warm starts.
+			_ = h(testInvocationContext())
+			_ = h(testInvocationContext())
+			_ = h(testInvocationContext())
+		}
+	}
+
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.Equal(t, 1, dialCount, "client.Dial should be called exactly once")
 }

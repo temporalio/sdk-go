@@ -53,8 +53,12 @@ func (m *mockWorker) Start() error {
 	return args.Error(0)
 }
 
-func (m *mockWorker) Run(<-chan interface{}) error {
-	return nil
+func (m *mockWorker) Run(interruptCh <-chan interface{}) error {
+	args := m.Called(interruptCh)
+	if interruptCh != nil {
+		<-interruptCh
+	}
+	return args.Error(0)
 }
 
 func (m *mockWorker) Stop() {

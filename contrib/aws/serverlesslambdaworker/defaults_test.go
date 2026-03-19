@@ -15,9 +15,9 @@ func TestApplyLambdaWorkerDefaults(t *testing.T) {
 	var opts worker.Options
 	applyLambdaWorkerDefaults(&opts)
 
-	assert.Equal(t, 10, opts.MaxConcurrentActivityExecutionSize)
+	assert.Equal(t, 2, opts.MaxConcurrentActivityExecutionSize)
 	assert.Equal(t, 10, opts.MaxConcurrentWorkflowTaskExecutionSize)
-	assert.Equal(t, 10, opts.MaxConcurrentLocalActivityExecutionSize)
+	assert.Equal(t, 2, opts.MaxConcurrentLocalActivityExecutionSize)
 	assert.Equal(t, 5, opts.MaxConcurrentNexusTaskExecutionSize)
 	assert.Equal(t, 1, opts.MaxConcurrentActivityTaskPollers)
 	assert.Equal(t, 2, opts.MaxConcurrentWorkflowTaskPollers)
@@ -43,56 +43,64 @@ func TestApplyLambdaWorkerDefaults_PreservesExisting(t *testing.T) {
 }
 
 func TestApplyLambdaClientDefaults(t *testing.T) {
-	env := map[string]string{
-		"AWS_LAMBDA_FUNCTION_NAME":    "my-func",
-		"AWS_LAMBDA_FUNCTION_VERSION": "$LATEST",
-	}
-	getenv := func(k string) string { return env[k] }
-
 	var opts client.Options
-	applyLambdaClientDefaults(&opts, getenv)
+	applyLambdaClientDefaults(&opts)
 
 	assert.NotNil(t, opts.Logger)
-	assert.Contains(t, opts.Identity, "lambda:my-func:$LATEST@")
+	// Identity is not set during init; it's set from the Lambda invocation context.
+	assert.Empty(t, opts.Identity)
 }
 
-func TestApplyLambdaClientDefaults_PreservesExisting(t *testing.T) {
-	getenv := func(string) string { return "" }
+func TestApplyLambdaClientDefaults_PreservesExistingLogger(t *testing.T) {
+	// Get a reference logger by applying defaults to a zero-value options.
+	var refOpts client.Options
+	applyLambdaClientDefaults(&refOpts)
+	originalLogger := refOpts.Logger
 
-	opts := client.Options{Identity: "custom-identity"}
-	applyLambdaClientDefaults(&opts, getenv)
+	// Applying defaults again should preserve the existing logger.
+	opts := client.Options{Logger: originalLogger}
+	applyLambdaClientDefaults(&opts)
 
-	assert.Equal(t, "custom-identity", opts.Identity)
+	assert.Equal(t, originalLogger, opts.Logger)
 }
 
 func TestBuildLambdaIdentity(t *testing.T) {
 	tests := []struct {
-		name     string
-		env      map[string]string
-		contains []string
+		name        string
+		requestID   string
+		functionARN string
+		expected    string
 	}{
 		{
-			name: "all env vars set",
-			env: map[string]string{
-				"AWS_LAMBDA_FUNCTION_NAME":    "my-func",
-				"AWS_LAMBDA_FUNCTION_VERSION": "42",
-			},
-			contains: []string{"lambda:", "my-func", "42"},
+			name:        "both set",
+			requestID:   "req-abc-123",
+			functionARN: "arn:aws:lambda:us-east-1:123456:function:my-func",
+			expected:    "req-abc-123@arn:aws:lambda:us-east-1:123456:function:my-func",
 		},
 		{
-			name:     "no env vars",
-			env:      map[string]string{},
-			contains: []string{"lambda:", "unknown"},
+			name:        "empty request ID",
+			requestID:   "",
+			functionARN: "arn:aws:lambda:us-east-1:123456:function:my-func",
+			expected:    "unknown@arn:aws:lambda:us-east-1:123456:function:my-func",
+		},
+		{
+			name:        "empty function ARN",
+			requestID:   "req-abc-123",
+			functionARN: "",
+			expected:    "req-abc-123@unknown",
+		},
+		{
+			name:        "both empty",
+			requestID:   "",
+			functionARN: "",
+			expected:    "unknown@unknown",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			getenv := func(k string) string { return tt.env[k] }
-			identity := buildLambdaIdentity(getenv)
-			for _, s := range tt.contains {
-				assert.Contains(t, identity, s)
-			}
+			identity := buildLambdaIdentity(tt.requestID, tt.functionARN)
+			assert.Equal(t, tt.expected, identity)
 		})
 	}
 }
