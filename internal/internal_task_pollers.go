@@ -293,6 +293,17 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		close(doneC)
 	}()
 
+	if bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load() {
+		// Don't kill the gRPC stream. After ShutdownWorker, the server returns empty responses.
+		select {
+		case <-doneC:
+			return result, err
+		case <-bp.stopC:
+			<-doneC
+			return result, err
+		}
+	}
+
 	// Legacy: cancel in-flight polls immediately on shutdown
 	select {
 	case <-doneC:
