@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"time"
 
 	"go.temporal.io/sdk/client"
@@ -22,7 +23,10 @@ const (
 	defaultWorkerStopTimeout                       = 5 * time.Second
 	defaultStickyCacheSize                         = 100
 
-	envTaskQueue = "TEMPORAL_TASK_QUEUE"
+	envTaskQueue       = "TEMPORAL_TASK_QUEUE"
+	envLambdaTaskRoot  = "LAMBDA_TASK_ROOT"
+	envConfigFile      = "TEMPORAL_CONFIG_FILE"
+	defaultConfigFile  = "temporal.toml"
 )
 
 // applyLambdaWorkerDefaults sets Lambda-appropriate defaults on the given worker options.
@@ -75,6 +79,21 @@ func buildLambdaIdentity(requestID, functionARN string) string {
 		functionARN = "unknown"
 	}
 	return fmt.Sprintf("%s@%s", requestID, functionARN)
+}
+
+// lambdaDefaultConfigFilePath returns the config file path to use in a Lambda environment. It
+// respects TEMPORAL_CONFIG_FILE if set, otherwise defaults to temporal.toml in the Lambda code root
+// (LAMBDA_TASK_ROOT). If LAMBDA_TASK_ROOT is not set, it falls back to temporal.toml in the current
+// working directory.
+func lambdaDefaultConfigFilePath(getenv func(string) string) string {
+	if f := getenv(envConfigFile); f != "" {
+		return f
+	}
+	root := getenv(envLambdaTaskRoot)
+	if root == "" {
+		root = "."
+	}
+	return filepath.Join(root, defaultConfigFile)
 }
 
 // resolveTaskQueue determines the task queue name from user configuration or environment variables.

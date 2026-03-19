@@ -105,6 +105,37 @@ func TestBuildLambdaIdentity(t *testing.T) {
 	}
 }
 
+func TestLambdaDefaultConfigFilePath(t *testing.T) {
+	tests := []struct {
+		name     string
+		env      map[string]string
+		expected string
+	}{
+		{
+			name:     "TEMPORAL_CONFIG_FILE takes priority",
+			env:      map[string]string{"TEMPORAL_CONFIG_FILE": "/custom/path.toml", "LAMBDA_TASK_ROOT": "/var/task"},
+			expected: "/custom/path.toml",
+		},
+		{
+			name:     "falls back to LAMBDA_TASK_ROOT",
+			env:      map[string]string{"LAMBDA_TASK_ROOT": "/var/task"},
+			expected: "/var/task/temporal.toml",
+		},
+		{
+			name:     "falls back to current directory",
+			env:      map[string]string{},
+			expected: "temporal.toml",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			getenv := func(k string) string { return tt.env[k] }
+			assert.Equal(t, tt.expected, lambdaDefaultConfigFilePath(getenv))
+		})
+	}
+}
+
 func TestResolveTaskQueue(t *testing.T) {
 	getenv := func(k string) string {
 		if k == "TEMPORAL_TASK_QUEUE" {
