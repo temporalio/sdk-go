@@ -214,6 +214,7 @@ type (
 		lastPollTaskErrStarted time.Time
 		lastPollTaskErrLock    sync.Mutex
 
+		noRepoll atomic.Bool
 	}
 
 	eagerOrPolledTask interface {
@@ -433,6 +434,9 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 
 	for {
 		if func() bool {
+			if bw.noRepoll.Load() {
+				return true
+			}
 			if taskWorker.pollerSemaphore != nil {
 				if taskWorker.pollerSemaphore.acquire(bw.limiterContext) != nil {
 					return true
