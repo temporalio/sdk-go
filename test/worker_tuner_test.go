@@ -110,27 +110,28 @@ func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
+	wfSS, err := worker.NewFixedSizeSlotSupplier(10)
+	ts.NoError(err)
+	controllerOpts := worker.DefaultResourceControllerOptions()
+	controllerOpts.MemTargetPercent = 0.8
+	controllerOpts.CpuTargetPercent = 0.9
+	controllerOpts.InfoSupplier = sysinfo.SysInfoProvider()
+	controller := worker.NewResourceController(controllerOpts)
+	actSS, err := worker.NewResourceBasedSlotSupplier(controller,
+		worker.ResourceBasedSlotSupplierOptions{
+			MinSlots:     1,
+			MaxSlots:     4,
+			RampThrottle: 0,
+		})
+	ts.NoError(err)
+	laCss, err := worker.NewFixedSizeSlotSupplier(5)
+	ts.NoError(err)
+	tuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
+		WorkflowSlotSupplier: wfSS, ActivitySlotSupplier: actSS, LocalActivitySlotSupplier: laCss})
+	ts.NoError(err)
+
 	// The bug this is verifying was triggered by a race, so run this a bunch to verify it's not hit
 	for i := 0; i < 10; i++ {
-		wfSS, err := worker.NewFixedSizeSlotSupplier(10)
-		ts.NoError(err)
-		controllerOpts := worker.DefaultResourceControllerOptions()
-		controllerOpts.MemTargetPercent = 0.8
-		controllerOpts.CpuTargetPercent = 0.9
-		controllerOpts.InfoSupplier = sysinfo.SysInfoProvider()
-		controller := worker.NewResourceController(controllerOpts)
-		actSS, err := worker.NewResourceBasedSlotSupplier(controller,
-			worker.ResourceBasedSlotSupplierOptions{
-				MinSlots:     1,
-				MaxSlots:     4,
-				RampThrottle: 0,
-			})
-		ts.NoError(err)
-		laCss, err := worker.NewFixedSizeSlotSupplier(5)
-		ts.NoError(err)
-		tuner, err := worker.NewCompositeTuner(worker.CompositeTunerOptions{
-			WorkflowSlotSupplier: wfSS, ActivitySlotSupplier: actSS, LocalActivitySlotSupplier: laCss})
-		ts.NoError(err)
 		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
 	}
 }

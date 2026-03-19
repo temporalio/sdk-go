@@ -646,6 +646,7 @@ func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPe
 
 func (bw *baseWorker) logPollTaskError(err error) {
 	// We do not want to log any errors after we were explicitly stopped
+	// TODO: is this important?
 	select {
 	case <-bw.stopCh:
 		return
