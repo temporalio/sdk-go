@@ -14,9 +14,10 @@
 //	    })
 //	}
 //
-// [RunWorker] handles the Lambda lifecycle: it creates a Temporal client and worker with
-// Lambda-appropriate defaults during the init phase, starts the worker on each invocation, and
-// shuts it down gracefully before the Lambda deadline expires.
+// [RunWorker] handles the Lambda lifecycle: on each invocation it dials the Temporal server,
+// creates and starts a worker with Lambda-appropriate defaults, polls for tasks until the
+// invocation deadline approaches, and then gracefully shuts down the worker and closes the client.
+// This per-invocation lifecycle ensures a clean worker state on every Lambda invocation.
 //
 // # Configuration
 //
@@ -37,6 +38,13 @@
 //
 // Use [ConfigureWorkerContext.MutateClientOptions] and [ConfigureWorkerContext.MutateWorkerOptions]
 // to override any defaults. User overrides are applied after Lambda defaults, so they always win.
+//
+// # Lambda Timeout
+//
+// The Lambda function timeout must be long enough for the worker to pick up a task, execute it,
+// and shut down gracefully. Set it to at least the longest expected activity StartToClose timeout
+// plus the worker stop timeout (default 5s). A minimum of 1 minute is recommended. If the timeout
+// is too short, the worker may be terminated before it can complete in-progress tasks.
 //
 // # Observability
 //

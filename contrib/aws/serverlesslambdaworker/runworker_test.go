@@ -45,7 +45,7 @@ func newTestDeps() (workerDeps, *mockWorker, *mockClient) {
 			return w
 		},
 		startLambda: func(handler interface{}, options ...lambda.Option) {
-			// Invoke the handler once to trigger deferred init.
+			// Invoke the handler once to simulate a single Lambda invocation.
 			if h, ok := handler.(func(context.Context) error); ok {
 				_ = h(testInvocationContext())
 			}
@@ -247,10 +247,10 @@ func TestRunWorkerInternal_SetsCacheSize(t *testing.T) {
 	assert.Equal(t, defaultStickyCacheSize, cacheSize)
 }
 
-func TestRunWorkerInternal_CleanupAfterStartLambda(t *testing.T) {
+func TestRunWorkerInternal_CleanupPerInvocation(t *testing.T) {
 	deps, w, c := newTestDeps()
 
-	// Verify the worker Run completes and client is closed after startLambda returns.
+	// Verify the worker is stopped and client is closed within each invocation.
 	w.On("Start").Return(nil).Once()
 	w.On("Stop").Once()
 	c.On("Close").Once()
@@ -356,7 +356,7 @@ func TestRunWorkerInternal_IdentityNoLambdaContext(t *testing.T) {
 	assert.Empty(t, capturedClientOpts.Identity)
 }
 
-func TestRunWorkerInternal_DeferredInitRunsOnce(t *testing.T) {
+func TestRunWorkerInternal_PerInvocationLifecycle(t *testing.T) {
 	dialCount := 0
 	deps, w, c := newTestDeps()
 	deps.dial = func(opts client.Options) (client.Client, error) {
@@ -365,21 +365,24 @@ func TestRunWorkerInternal_DeferredInitRunsOnce(t *testing.T) {
 	}
 	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
 		if h, ok := handler.(func(context.Context) error); ok {
-			// Invoke handler multiple times to simulate warm starts.
+			// Invoke handler multiple times to simulate sequential Lambda invocations.
 			_ = h(testInvocationContext())
 			_ = h(testInvocationContext())
 			_ = h(testInvocationContext())
 		}
 	}
 
-	w.On("Start").Return(nil).Once()
-	w.On("Stop").Once()
-	c.On("Close").Once()
+	// Each invocation creates and tears down its own worker and client.
+	w.On("Start").Return(nil).Times(3)
+	w.On("Stop").Times(3)
+	c.On("Close").Times(3)
 
 	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
 		return nil
 	}, deps)
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, dialCount, "client.Dial should be called exactly once")
+	assert.Equal(t, 3, dialCount, "client.Dial should be called once per invocation")
+	w.AssertExpectations(t)
+	c.AssertExpectations(t)
 }
