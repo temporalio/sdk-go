@@ -1551,6 +1551,8 @@ func (aw *AggregatedWorker) shutdownWorker() {
 		Reason:            "graceful shutdown",
 		WorkerHeartbeat:   heartbeat,
 		WorkerInstanceKey: aw.workerInstanceKey,
+		TaskQueue:         aw.executionParams.TaskQueue,
+		TaskQueueTypes:    aw.activeTaskQueueTypes(),
 	})
 
 	// Ignore unimplemented (server doesn't support it)
