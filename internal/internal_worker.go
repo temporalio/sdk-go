@@ -219,7 +219,7 @@ type (
 
 		workerInstanceKey string
 
-		gracefulPollShutdown *atomic.Bool
+		workerPollCompleteOnShutdown *atomic.Bool
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -435,6 +435,11 @@ func (ww *workflowWorker) Stop() {
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
+	// Session workers poll on resource-specific task queues not included in
+	// ShutdownWorker, so the server will never cancel their polls. Use the
+	// legacy immediate-cancel path instead of graceful shutdown.
+	params.workerPollCompleteOnShutdown = &atomic.Bool{}
+
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
@@ -1172,9 +1177,9 @@ type AggregatedWorker struct {
 	plugins               []WorkerPlugin
 	pluginRegistryOptions *WorkerPluginConfigureWorkerRegistryOptions // Never nil
 
-	heartbeatMetrics     *heartbeatMetricsHandler
-	heartbeatCallback    func() *workerpb.WorkerHeartbeat
-	gracefulPollShutdown *atomic.Bool
+	heartbeatMetrics             *heartbeatMetricsHandler
+	heartbeatCallback            func() *workerpb.WorkerHeartbeat
+	workerPollCompleteOnShutdown *atomic.Bool
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1289,7 +1294,7 @@ func (aw *AggregatedWorker) start() error {
 		return err
 	}
 	if nsCapabilities.GetWorkerPollCompleteOnShutdown() {
-		aw.gracefulPollShutdown.Store(true)
+		aw.workerPollCompleteOnShutdown.Store(true)
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -2139,7 +2144,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	cache := NewWorkerCache()
-	gracefulPollShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
 		TaskQueue:                        taskQueue,
@@ -2172,10 +2177,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
-		capabilities:         &capabilities,
-		pollTimeTracker:      &pollTimeTracker{},
-		workerInstanceKey:    workerInstanceKey,
-		gracefulPollShutdown: gracefulPollShutdown,
+		capabilities:                 &capabilities,
+		pollTimeTracker:              &pollTimeTracker{},
+		workerInstanceKey:            workerInstanceKey,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
@@ -2360,21 +2365,21 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	aw = &AggregatedWorker{
-		client:                client,
-		workflowWorker:        workflowWorker,
-		activityWorker:        activityWorker,
-		sessionWorker:         sessionWorker,
-		logger:                workerParams.Logger,
-		registry:              registry,
-		stopC:                 make(chan struct{}),
-		capabilities:          &capabilities,
-		executionParams:       workerParams,
-		workerInstanceKey:     workerInstanceKey,
-		plugins:               plugins,
-		pluginRegistryOptions: &pluginRegistryOptions,
-		heartbeatMetrics:      heartbeatMetrics,
-		heartbeatCallback:     heartbeatCallback,
-		gracefulPollShutdown:  gracefulPollShutdown,
+		client:                       client,
+		workflowWorker:               workflowWorker,
+		activityWorker:               activityWorker,
+		sessionWorker:                sessionWorker,
+		logger:                       workerParams.Logger,
+		registry:                     registry,
+		stopC:                        make(chan struct{}),
+		capabilities:                 &capabilities,
+		executionParams:              workerParams,
+		workerInstanceKey:            workerInstanceKey,
+		plugins:                      plugins,
+		pluginRegistryOptions:        &pluginRegistryOptions,
+		heartbeatMetrics:             heartbeatMetrics,
+		heartbeatCallback:            heartbeatCallback,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
 	}
 
 	// Set memoized start as a once-value that invokes plugins first
