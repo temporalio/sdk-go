@@ -135,13 +135,13 @@ func testWorkflowTaskCompletedResourceID(t *testing.T) {
 			name:               "StandardWorkflowTask",
 			workflowID:         "test-workflow-completed-123",
 			runID:              "test-run-completed-456",
-			expectedResourceID: "test-workflow-completed-123",
+			expectedResourceID: "workflow:test-workflow-completed-123",
 		},
 		{
 			name:               "DifferentWorkflowID",
 			workflowID:         "another-workflow-789",
 			runID:              "another-run-999",
-			expectedResourceID: "another-workflow-789",
+			expectedResourceID: "workflow:another-workflow-789",
 		},
 	}
 
@@ -209,14 +209,14 @@ func testWorkflowTaskFailedResourceID(t *testing.T) {
 			name:               "UnknownWorkflowType",
 			workflowID:         "test-workflow-failed-123",
 			runID:              "test-run-failed-456",
-			expectedResourceID: "test-workflow-failed-123",
+			expectedResourceID: "workflow:test-workflow-failed-123",
 			failureCause:       enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
 		},
 		{
 			name:               "NonDeterministicError",
 			workflowID:         "non-deterministic-workflow-789",
 			runID:              "non-deterministic-run-999",
-			expectedResourceID: "non-deterministic-workflow-789",
+			expectedResourceID: "workflow:non-deterministic-workflow-789",
 			failureCause:       enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
 		},
 	}
@@ -653,12 +653,12 @@ func testExecuteMultiOperationResourceID(t *testing.T) {
 		{
 			name:               "StartUpdateWorkflow",
 			workflowID:         "test-workflow-batch-123",
-			expectedResourceID: "test-workflow-batch-123",
+			expectedResourceID: "workflow:test-workflow-batch-123",
 		},
 		{
 			name:               "MultiOpWithDifferentID",
 			workflowID:         "batch-operation-workflow-456",
-			expectedResourceID: "batch-operation-workflow-456",
+			expectedResourceID: "workflow:batch-operation-workflow-456",
 		},
 	}
 
@@ -750,11 +750,13 @@ func testExecuteMultiOperationResourceID(t *testing.T) {
 func testRecordWorkerHeartbeatResourceID(t *testing.T) {
 	testCases := []struct {
 		name               string
+		groupingKey        string
 		expectedResourceID string
 	}{
 		{
 			name:               "WorkerHeartbeat",
-			expectedResourceID: "test-worker-grouping-key-123",
+			groupingKey:        "test-worker-grouping-key-123",
+			expectedResourceID: "worker:test-worker-grouping-key-123",
 		},
 	}
 
@@ -784,7 +786,7 @@ func testRecordWorkerHeartbeatResourceID(t *testing.T) {
 			})
 
 			// Set the workerGroupingKey to our test value
-			wfClient.workerGroupingKey = tc.expectedResourceID
+			wfClient.workerGroupingKey = tc.groupingKey
 
 			// Create a sharedNamespaceWorker and call sendHeartbeats
 			heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())

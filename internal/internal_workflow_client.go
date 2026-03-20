@@ -2028,7 +2028,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			startOp,
 			updateOp,
 		},
-		ResourceId: startRequest.WorkflowId,
+		ResourceId: fmt.Sprintf("workflow:%s", startRequest.WorkflowId),
 	}
 
 	var updateResp *workflowservice.UpdateWorkflowExecutionResponse

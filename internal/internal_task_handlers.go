@@ -1961,7 +1961,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		BinaryChecksum:             wth.workerBuildID,
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
-		ResourceId:                 task.WorkflowExecution.WorkflowId,
+		ResourceId:                 fmt.Sprintf("workflow:%s", task.WorkflowExecution.WorkflowId),
 		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,
@@ -2434,11 +2434,7 @@ func getActivityResourceIdFromCtx(ctx context.Context) string {
 	if env == nil {
 		return ""
 	}
-	// Check if this is a workflow activity or standalone activity
-	if env.workflowExecution.ID != "" {
-		return fmt.Sprintf("workflow:%s", env.workflowExecution.ID)
-	}
-	return fmt.Sprintf("activity:%s", env.activityID)
+	return getActivityResourceId(env.workflowExecution.ID, env.activityID)
 }
 
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
