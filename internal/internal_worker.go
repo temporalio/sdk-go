@@ -221,6 +221,10 @@ type (
 
 		// Set to true during start() when the namespace has the poller_autoscaling capability.
 		serverSupportsAutoscaling *atomic.Bool
+
+		inboundPayloadVisitor PayloadVisitor
+
+		outboundPayloadVisitor PayloadVisitor
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -1544,6 +1548,26 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	}
 }
 
+// replayStorageMetrics is a storageOperationCallback used by WorkflowReplayer.
+// It logs a warning once when storage references are encountered but no driver
+// is configured, and is otherwise a no-op.
+type replayStorageMetrics struct {
+	mu                 sync.Mutex
+	logger             log.Logger
+	warnedUnconfigured bool
+}
+
+func (c *replayStorageMetrics) PayloadBatchCompleted(_ int, _ int64, _ time.Duration) {}
+
+func (c *replayStorageMetrics) UnconfiguredStorageReference() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.warnedUnconfigured && c.logger != nil {
+		c.logger.Warn("[TMPRL1105] Detected externally stored payload(s) but no storage driver is configured.")
+		c.warnedUnconfigured = true
+	}
+}
+
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
 	registry                    *registry
@@ -1552,6 +1576,7 @@ type WorkflowReplayer struct {
 	contextPropagators          []ContextPropagator
 	enableLoggingInReplay       bool
 	disableDeadlockDetection    bool
+	inboundPayloadVisitor       PayloadVisitor
 	mu                          sync.Mutex
 	workflowExecutionResults    map[string]*commonpb.Payloads
 	workflowReplayerInstanceKey string
@@ -1600,6 +1625,14 @@ type WorkflowReplayerOptions struct {
 	//
 	// NOTE: Experimental
 	Plugins []WorkerPlugin
+
+	// ExternalStorage configures external payload storage for replay.
+	// Set this to the same ExternalStorage used by the original worker so that
+	// externally stored payloads in the history are resolved before being
+	// passed to the workflow code.
+	//
+	// NOTE: Experimental
+	ExternalStorage converter.ExternalStorage
 }
 
 // ReplayWorkflowHistoryOptions are options for replaying a workflow.
@@ -1624,6 +1657,11 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		}
 	}
 
+	storageParams, err := ExternalStorageToParams(options.ExternalStorage)
+	if err != nil {
+		return nil, fmt.Errorf("invalid ExternalStorage options: %w", err)
+	}
+
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
@@ -1633,6 +1671,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
 		disableDeadlockDetection:    options.DisableDeadlockDetection,
+		inboundPayloadVisitor:       NewExternalRetrievalVisitor(storageParams),
 		workflowExecutionResults:    make(map[string]*commonpb.Payloads),
 		workflowReplayerInstanceKey: workflowReplayerInstanceKey,
 		plugins:                     options.Plugins,
@@ -1855,12 +1894,15 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		PreviousStartedEventId: math.MaxInt64,
 	}
 
-	iterator := &historyIteratorImpl{
-		nextPageToken: task.NextPageToken,
-		execution:     task.WorkflowExecution,
-		namespace:     ReplayNamespace,
-		service:       service,
-		taskQueue:     taskQueue,
+	iterator := &retrievingHistoryIterator{
+		inner: &historyIteratorImpl{
+			nextPageToken: task.NextPageToken,
+			execution:     task.WorkflowExecution,
+			namespace:     ReplayNamespace,
+			service:       service,
+			taskQueue:     taskQueue,
+		},
+		inboundVisitor: aw.inboundPayloadVisitor,
 	}
 	cache := NewWorkerCache()
 	params := workerExecutionParameters{
@@ -1890,6 +1932,14 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	if aw.disableDeadlockDetection {
 		params.DeadlockDetectionTimeout = math.MaxInt64
 	}
+	// Resolve externally stored payloads in the history before passing to the
+	// task handler. This mirrors what processWorkflowTask does for live workers.
+	replayStorageCb := &replayStorageMetrics{logger: logger}
+	inboundPayloadVisitorCtx := context.WithValue(context.Background(), storageOperationCallbackContextKey, replayStorageCb)
+	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task); err != nil {
+		return err
+	}
+
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	wfctx, err := taskHandler.GetOrCreateWorkflowContext(task, iterator)
 	defer wfctx.Unlock(err)
@@ -2145,6 +2195,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:           &pollTimeTracker{},
 		workerInstanceKey:         workerInstanceKey,
 		serverSupportsAutoscaling: &atomic.Bool{},
+		inboundPayloadVisitor:     client.inboundPayloadVisitor,
+		outboundPayloadVisitor:    client.outboundPayloadVisitor,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
