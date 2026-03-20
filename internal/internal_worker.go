@@ -6,9 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	workerpb "go.temporal.io/api/worker/v1"
-	"google.golang.org/protobuf/types/known/durationpb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 	"io"
 	"math"
 	"os"
@@ -30,9 +27,12 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/temporalproto"
+	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -218,6 +218,13 @@ type (
 		pollTimeTracker *pollTimeTracker
 
 		workerInstanceKey string
+
+		// Set to true during start() when the namespace has the poller_autoscaling capability.
+		serverSupportsAutoscaling *atomic.Bool
+
+		inboundPayloadVisitor PayloadVisitor
+
+		outboundPayloadVisitor PayloadVisitor
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -328,14 +335,14 @@ func newWorkflowTaskWorkerInternal(
 	switch params.WorkflowTaskPollerBehavior.(type) {
 	case *pollerBehaviorSimpleMaximum:
 		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior),
+			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior, params.serverSupportsAutoscaling),
 		}
 	case *pollerBehaviorAutoscaling:
 		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior),
+			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior, params.serverSupportsAutoscaling),
 		}
 		if taskProcessor.stickyCacheSize > 0 {
-			scalableTaskPollers = append(scalableTaskPollers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior))
+			scalableTaskPollers = append(scalableTaskPollers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior, params.serverSupportsAutoscaling))
 		}
 	}
 
@@ -385,7 +392,7 @@ func newWorkflowTaskWorkerInternal(
 				PollerBehaviorSimpleMaximumOptions{
 					MaximumNumberOfPollers: 2,
 				},
-			)),
+			), params.serverSupportsAutoscaling),
 		},
 		taskProcessor:  localActivityTaskPoller,
 		workerType:     "LocalActivityWorker",
@@ -531,7 +538,7 @@ func newActivityWorker(
 		slotSupplier:     slotSupplier,
 		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior),
+			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, params.serverSupportsAutoscaling),
 		},
 		taskProcessor:           poller,
 		workerType:              "ActivityWorker",
@@ -1287,8 +1294,12 @@ func (aw *AggregatedWorker) start() error {
 	}
 	proto.Merge(aw.capabilities, capabilities)
 
-	if _, err := aw.client.loadNamespaceCapabilities(aw.executionParams.MetricsHandler); err != nil {
+	nsCaps, err := aw.client.loadNamespaceCapabilities(aw.executionParams.MetricsHandler)
+	if err != nil {
 		return err
+	}
+	if nsCaps.GetPollerAutoscaling() {
+		aw.executionParams.serverSupportsAutoscaling.Store(true)
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1543,6 +1554,26 @@ func (aw *AggregatedWorker) shutdownWorker() {
 	}
 }
 
+// replayStorageMetrics is a storageOperationCallback used by WorkflowReplayer.
+// It logs a warning once when storage references are encountered but no driver
+// is configured, and is otherwise a no-op.
+type replayStorageMetrics struct {
+	mu                 sync.Mutex
+	logger             log.Logger
+	warnedUnconfigured bool
+}
+
+func (c *replayStorageMetrics) PayloadBatchCompleted(_ int, _ int64, _ time.Duration) {}
+
+func (c *replayStorageMetrics) UnconfiguredStorageReference() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.warnedUnconfigured && c.logger != nil {
+		c.logger.Warn("[TMPRL1105] Detected externally stored payload(s) but no storage driver is configured.")
+		c.warnedUnconfigured = true
+	}
+}
+
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
 	registry                    *registry
@@ -1551,6 +1582,7 @@ type WorkflowReplayer struct {
 	contextPropagators          []ContextPropagator
 	enableLoggingInReplay       bool
 	disableDeadlockDetection    bool
+	inboundPayloadVisitor       PayloadVisitor
 	mu                          sync.Mutex
 	workflowExecutionResults    map[string]*commonpb.Payloads
 	workflowReplayerInstanceKey string
@@ -1599,6 +1631,14 @@ type WorkflowReplayerOptions struct {
 	//
 	// NOTE: Experimental
 	Plugins []WorkerPlugin
+
+	// ExternalStorage configures external payload storage for replay.
+	// Set this to the same ExternalStorage used by the original worker so that
+	// externally stored payloads in the history are resolved before being
+	// passed to the workflow code.
+	//
+	// NOTE: Experimental
+	ExternalStorage converter.ExternalStorage
 }
 
 // ReplayWorkflowHistoryOptions are options for replaying a workflow.
@@ -1623,6 +1663,11 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		}
 	}
 
+	storageParams, err := ExternalStorageToParams(options.ExternalStorage)
+	if err != nil {
+		return nil, fmt.Errorf("invalid ExternalStorage options: %w", err)
+	}
+
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
@@ -1632,6 +1677,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
 		disableDeadlockDetection:    options.DisableDeadlockDetection,
+		inboundPayloadVisitor:       NewExternalRetrievalVisitor(storageParams),
 		workflowExecutionResults:    make(map[string]*commonpb.Payloads),
 		workflowReplayerInstanceKey: workflowReplayerInstanceKey,
 		plugins:                     options.Plugins,
@@ -1854,12 +1900,15 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		PreviousStartedEventId: math.MaxInt64,
 	}
 
-	iterator := &historyIteratorImpl{
-		nextPageToken: task.NextPageToken,
-		execution:     task.WorkflowExecution,
-		namespace:     ReplayNamespace,
-		service:       service,
-		taskQueue:     taskQueue,
+	iterator := &retrievingHistoryIterator{
+		inner: &historyIteratorImpl{
+			nextPageToken: task.NextPageToken,
+			execution:     task.WorkflowExecution,
+			namespace:     ReplayNamespace,
+			service:       service,
+			taskQueue:     taskQueue,
+		},
+		inboundVisitor: aw.inboundPayloadVisitor,
 	}
 	cache := NewWorkerCache()
 	params := workerExecutionParameters{
@@ -1889,6 +1938,14 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	if aw.disableDeadlockDetection {
 		params.DeadlockDetectionTimeout = math.MaxInt64
 	}
+	// Resolve externally stored payloads in the history before passing to the
+	// task handler. This mirrors what processWorkflowTask does for live workers.
+	replayStorageCb := &replayStorageMetrics{logger: logger}
+	inboundPayloadVisitorCtx := context.WithValue(context.Background(), storageOperationCallbackContextKey, replayStorageCb)
+	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task); err != nil {
+		return err
+	}
+
 	taskHandler := newWorkflowTaskHandler(params, nil, aw.registry)
 	wfctx, err := taskHandler.GetOrCreateWorkflowContext(task, iterator)
 	defer wfctx.Unlock(err)
@@ -2140,9 +2197,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
-		capabilities:      &capabilities,
-		pollTimeTracker:   &pollTimeTracker{},
-		workerInstanceKey: workerInstanceKey,
+		capabilities:              &capabilities,
+		pollTimeTracker:           &pollTimeTracker{},
+		workerInstanceKey:         workerInstanceKey,
+		serverSupportsAutoscaling: &atomic.Bool{},
+		inboundPayloadVisitor:     client.inboundPayloadVisitor,
+		outboundPayloadVisitor:    client.outboundPayloadVisitor,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {

@@ -87,7 +87,9 @@ type (
 
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
-		unclosedClients *int32
+		unclosedClients        *int32
+		inboundPayloadVisitor  PayloadVisitor
+		outboundPayloadVisitor PayloadVisitor
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -152,14 +154,15 @@ type (
 
 	// workflowRunImpl is an implementation of WorkflowRun
 	workflowRunImpl struct {
-		workflowType     string
-		workflowID       string
-		firstRunID       string
-		currentRunID     *util.OnceCell
-		iterFn           func(ctx context.Context, runID string) HistoryEventIterator
-		dataConverter    converter.DataConverter
-		failureConverter converter.FailureConverter
-		registry         *registry
+		workflowType          string
+		workflowID            string
+		firstRunID            string
+		currentRunID          *util.OnceCell
+		iterFn                func(ctx context.Context, runID string) HistoryEventIterator
+		dataConverter         converter.DataConverter
+		failureConverter      converter.FailureConverter
+		registry              *registry
+		inboundPayloadVisitor PayloadVisitor
 	}
 
 	// HistoryEventIterator represents the interface for
@@ -266,13 +269,14 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 		WorkflowID: workflowID,
 	}
 	return &workflowRunImpl{
-		workflowID:       workflowID,
-		firstRunID:       runID,
-		currentRunID:     &runIDCell,
-		iterFn:           iterFn,
-		dataConverter:    converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
-		failureConverter: converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
-		registry:         wc.registry,
+		workflowID:            workflowID,
+		firstRunID:            runID,
+		currentRunID:          &runIDCell,
+		iterFn:                iterFn,
+		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
+		failureConverter:      converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
+		registry:              wc.registry,
+		inboundPayloadVisitor: wc.inboundPayloadVisitor,
 	}
 }
 
@@ -1055,33 +1059,75 @@ type WorkflowExecutionMetadata struct {
 // WorkflowExecutionDescription defines the response to DescribeWorkflow.
 type WorkflowExecutionDescription struct {
 	WorkflowExecutionMetadata
-	dc                   converter.DataConverter
-	staticSummaryPayload *commonpb.Payload
-	staticDetailsPayload *commonpb.Payload
+	dc                    converter.DataConverter
+	inboundPayloadVisitor PayloadVisitor
+	staticSummaryPayload  *commonpb.Payload
+	staticDetailsPayload  *commonpb.Payload
+	staticSummary         string
+	staticDetails         string
 }
 
 // GetStaticSummary returns the summary set on workflow start.
 //
 // NOTE: Experimental
 func (w *WorkflowExecutionDescription) GetStaticSummary() (string, error) {
+	if w.staticSummary != "" {
+		return w.staticSummary, nil
+	}
 	if w.staticSummaryPayload == nil {
 		return "", nil
 	}
+	payload, err := visitPayload(context.Background(), w.inboundPayloadVisitor, w.staticSummaryPayload)
+	if err != nil {
+		return "", err
+	}
 	var summary string
-	err := w.dc.FromPayload(w.staticSummaryPayload, &summary)
-	return summary, err
+	if err := w.dc.FromPayload(payload, &summary); err != nil {
+		return "", err
+	}
+	w.staticSummary = summary
+	return summary, nil
 }
 
 // GetStaticDetails returns the details set on workflow start.
 //
 // NOTE: Experimental
 func (w *WorkflowExecutionDescription) GetStaticDetails() (string, error) {
+	if w.staticDetails != "" {
+		return w.staticDetails, nil
+	}
 	if w.staticDetailsPayload == nil {
 		return "", nil
 	}
+	payload, err := visitPayload(context.Background(), w.inboundPayloadVisitor, w.staticDetailsPayload)
+	if err != nil {
+		return "", err
+	}
 	var details string
-	err := w.dc.FromPayload(w.staticDetailsPayload, &details)
-	return details, err
+	if err := w.dc.FromPayload(payload, &details); err != nil {
+		return "", err
+	}
+	w.staticDetails = details
+	return details, nil
+}
+
+// GetMemoValue decodes a memo value by key into valuePtr.
+// Returns ErrNoData if the memo is nil or the key is not present.
+//
+// NOTE: Experimental
+func (w *WorkflowExecutionDescription) GetMemoValue(key string, valuePtr interface{}) error {
+	if w.Memo == nil {
+		return ErrNoData
+	}
+	payload, ok := w.Memo.Fields[key]
+	if !ok {
+		return ErrNoData
+	}
+	var err error
+	if payload, err = visitPayload(context.Background(), w.inboundPayloadVisitor, payload); err != nil {
+		return err
+	}
+	return w.dc.FromPayload(payload, valuePtr)
 }
 
 // QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
@@ -1726,6 +1772,10 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		return err
 	}
 
+	if err := visitProtoPayloads(ctx, workflowRun.inboundPayloadVisitor, closeEvent); err != nil {
+		return err
+	}
+
 	switch closeEvent.GetEventType() {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED:
 		attributes := closeEvent.GetWorkflowExecutionCompletedEventAttributes()
@@ -1983,6 +2033,10 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		eagerExecutor = w.client.eagerDispatcher.applyToRequest(startRequest)
 	}
 
+	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, startRequest); err != nil {
+		return nil, err
+	}
+
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
 		w.client.metricsHandler.WithTags(metrics.RPCTags(in.WorkflowType, metrics.NoneTagValue, in.Options.TaskQueue))),
 		defaultGrpcRetryParameters(ctx))
@@ -2024,14 +2078,15 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	}
 	curRunIDCell := util.PopulatedOnceCell(runID)
 	return &workflowRunImpl{
-		workflowType:     in.WorkflowType,
-		workflowID:       workflowID,
-		firstRunID:       runID,
-		currentRunID:     &curRunIDCell,
-		iterFn:           iterFn,
-		dataConverter:    converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx),
-		failureConverter: converter.WithFailureConverterSerializationContext(w.client.failureConverter, wfCtx),
-		registry:         w.client.registry,
+		workflowType:          in.WorkflowType,
+		workflowID:            workflowID,
+		firstRunID:            runID,
+		currentRunID:          &curRunIDCell,
+		iterFn:                iterFn,
+		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx),
+		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, wfCtx),
+		registry:              w.client.registry,
+		inboundPayloadVisitor: w.client.inboundPayloadVisitor,
 	}, nil
 }
 
@@ -2138,6 +2193,10 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 		},
 	}
 
+	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, &multiRequest); err != nil {
+		return nil, err
+	}
+
 	var updateResp *workflowservice.UpdateWorkflowExecutionResponse
 	seenStart := false
 	for {
@@ -2235,6 +2294,9 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			break
 		}
 	}
+	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, updateResp); err != nil {
+		return nil, err
+	}
 	return updateResp, nil
 }
 
@@ -2274,6 +2336,10 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		request.RequestId = requestID
 	} else {
 		request.RequestId = uuid.NewString()
+	}
+
+	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, request); err != nil {
+		return err
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
@@ -2355,6 +2421,10 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
+	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, signalWithStartRequest); err != nil {
+		return nil, err
+	}
+
 	var response *workflowservice.SignalWithStartWorkflowExecutionResponse
 
 	// Start creating workflow request.
@@ -2379,14 +2449,15 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	}
 	curRunIDCell := util.PopulatedOnceCell(response.GetRunId())
 	return &workflowRunImpl{
-		workflowType:     in.WorkflowType,
-		workflowID:       in.Options.ID,
-		firstRunID:       response.GetRunId(),
-		currentRunID:     &curRunIDCell,
-		iterFn:           iterFn,
-		dataConverter:    converter.WithDataConverterSerializationContext(w.client.dataConverter, swsCtx),
-		failureConverter: converter.WithFailureConverterSerializationContext(w.client.failureConverter, swsCtx),
-		registry:         w.client.registry,
+		workflowType:          in.WorkflowType,
+		workflowID:            in.Options.ID,
+		firstRunID:            response.GetRunId(),
+		currentRunID:          &curRunIDCell,
+		iterFn:                iterFn,
+		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, swsCtx),
+		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, swsCtx),
+		registry:              w.client.registry,
+		inboundPayloadVisitor: w.client.inboundPayloadVisitor,
 	}, nil
 }
 
@@ -2427,8 +2498,13 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 		Details:  datailsPayload,
 	}
 
+	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, request); err != nil {
+		return err
+	}
+
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
+
 	_, err = w.client.workflowService.TerminateWorkflowExecution(grpcCtx, request)
 	return err
 }
@@ -2506,8 +2582,9 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 			Namespace:  w.client.namespace,
 			WorkflowID: in.WorkflowID,
 		}),
-		staticSummaryPayload: resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
-		staticDetailsPayload: resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
+		inboundPayloadVisitor: w.client.inboundPayloadVisitor,
+		staticSummaryPayload:  resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
+		staticDetailsPayload:  resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
 	}
 
 	return &ClientDescribeWorkflowOutput{
@@ -2551,10 +2628,19 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		QueryRejectCondition: in.QueryRejectCondition,
 	}
 
+	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, req); err != nil {
+		return nil, err
+	}
+
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
+
 	resp, err := w.client.workflowService.QueryWorkflow(grpcCtx, req)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, resp); err != nil {
 		return nil, err
 	}
 
@@ -2573,6 +2659,10 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 	var resp *workflowservice.UpdateWorkflowExecutionResponse
 	req, err := w.createUpdateWorkflowRequest(ctx, in)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, req); err != nil {
 		return nil, err
 	}
 
@@ -2596,6 +2686,10 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		if w.updateIsDurable(resp) {
 			break
 		}
+	}
+
+	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, resp); err != nil {
+		return nil, err
 	}
 
 	// Here we know the update is at least accepted
@@ -2727,6 +2821,11 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 			}
 			return nil, err
 		}
+
+		if err := visitProtoPayloads(parentCtx, w.client.inboundPayloadVisitor, resp); err != nil {
+			return nil, err
+		}
+
 		switch v := resp.GetOutcome().GetValue().(type) {
 		case *updatepb.Outcome_Failure:
 			return &ClientPollWorkflowUpdateOutput{

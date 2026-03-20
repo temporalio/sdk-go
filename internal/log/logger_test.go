@@ -1,6 +1,7 @@
 package log
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -73,6 +74,33 @@ func TestReplayLogger_With(t *testing.T) {
 	withReplayLogger.Info("message")
 	assert.Equal(t, "INFO  message p1 1 p2 v2 p3 3\n", logger.Lines()[0])
 	assert.Equal(t, "INFO  message2 p4 4\n", logger.Lines()[1])
+}
+
+func TestMemoryLogger_WithSharesLock(t *testing.T) {
+	logger := NewMemoryLogger()
+	child := log.With(logger, "k", "v").(*MemoryLoggerWithoutWith)
+	assert.Same(t, logger.lock, child.lock)
+}
+
+// TestMemoryLogger_ConcurrentWithAndLines verifies that concurrent writes from
+// a With-derived child logger and reads via Lines() on the parent do not race.
+func TestMemoryLogger_ConcurrentWithAndLines(t *testing.T) {
+	logger := NewMemoryLogger()
+	child := log.With(logger, "k", "v")
+
+	var wg sync.WaitGroup
+	for range 100 {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			child.Info("msg")
+		}()
+		go func() {
+			defer wg.Done()
+			_ = logger.Lines()
+		}()
+	}
+	wg.Wait()
 }
 
 func TestReplayLogger_Skip(t *testing.T) {

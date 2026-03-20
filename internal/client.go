@@ -4,9 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"github.com/google/uuid"
 	"sync/atomic"
 	"time"
+
+	"github.com/google/uuid"
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -96,9 +97,9 @@ type (
 		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
 		GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun
 
-		// SignalWorkflow sends a signals to a workflow in execution
+		// SignalWorkflow sends a signals to a running workflow.
 		//  - workflow ID of the workflow.
-		//  - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
+		//  - runID can be default(empty string). If set to empty string, then it will pick the running execution of that workflow ID.
 		//  - signalName name to identify the signal.
 		// The errors it can return:
 		//  - serviceerror.NotFound
@@ -108,10 +109,12 @@ type (
 
 		// SignalWithStartWorkflow sends a signal to a running workflow.
 		// If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
-		//  - workflowID, signalName, signalArg are same as SignalWorkflow's parameters
-		//  - options, workflow, workflowArgs are same as StartWorkflow's parameters
+		//  - workflowID, signalName, signalArg are the same as SignalWorkflow's parameters
+		//  - options, workflow, workflowArgs are the same as StartWorkflow's parameters
 		//  - the workflowID parameter is used instead of options.ID. If the latter is present, it must match the workflowID.
-		// Note: options.WorkflowIDReusePolicy is default to AllowDuplicate.
+		//
+		// Note: options.WorkflowIDReusePolicy defaults to AllowDuplicate.
+		//
 		// The errors it can return:
 		//  - serviceerror.NotFound
 		//  - serviceerror.InvalidArgument
@@ -186,8 +189,6 @@ type (
 		// CompleteActivityWithOptions reports activity completed with full context options.
 		// Similar to CompleteActivity but accepts a struct with optional ActivitySerializationContext
 		// fields (ActivityType, WorkflowType, TaskQueue, etc.) for custom codec support.
-		//
-		// Exposed as: [go.temporal.io/sdk/client.Client.CompleteActivityWithOptions]
 		CompleteActivityWithOptions(ctx context.Context, opts CompleteActivityOptions) error
 
 		// CompleteActivityByID reports activity completed.
@@ -216,8 +217,6 @@ type (
 		// CompleteActivityByIDWithOptions reports activity completed with full context options.
 		// Similar to CompleteActivityByID but accepts a struct with optional ActivitySerializationContext
 		// fields (ActivityType, WorkflowType, TaskQueue) for custom codec support.
-		//
-		// Exposed as: [go.temporal.io/sdk/client.Client.CompleteActivityByIDWithOptions]
 		CompleteActivityByIDWithOptions(ctx context.Context, opts CompleteActivityByIDOptions) error
 
 		// CompleteActivityByActivityID reports activity completed.
@@ -244,8 +243,6 @@ type (
 		// CompleteActivityByActivityIDWithOptions reports standalone activity completed with full context options.
 		// Similar to CompleteActivityByActivityID but accepts a struct with optional
 		// ActivitySerializationContext fields for custom codec support.
-		//
-		// Exposed as: [go.temporal.io/sdk/client.Client.CompleteActivityByActivityIDWithOptions]
 		CompleteActivityByActivityIDWithOptions(ctx context.Context, opts CompleteActivityByActivityIDOptions) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
@@ -264,8 +261,6 @@ type (
 		// RecordActivityHeartbeatWithOptions records heartbeat with full context options.
 		// Similar to RecordActivityHeartbeat but accepts a struct with optional
 		// ActivitySerializationContext fields for custom codec support.
-		//
-		// Exposed as: [go.temporal.io/sdk/client.Client.RecordActivityHeartbeatWithOptions]
 		RecordActivityHeartbeatWithOptions(ctx context.Context, opts RecordActivityHeartbeatOptions) error
 
 		// RecordActivityHeartbeatByID records heartbeat for an activity.
@@ -284,8 +279,6 @@ type (
 		// RecordActivityHeartbeatByIDWithOptions records heartbeat with full context options.
 		// Similar to RecordActivityHeartbeatByID but accepts a struct with optional
 		// ActivitySerializationContext fields for custom codec support.
-		//
-		// Exposed as: [go.temporal.io/sdk/client.Client.RecordActivityHeartbeatByIDWithOptions]
 		RecordActivityHeartbeatByIDWithOptions(ctx context.Context, opts RecordActivityHeartbeatByIDOptions) error
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters
@@ -773,6 +766,16 @@ type (
 		//
 		// NOTE: Experimental
 		WorkerHeartbeatInterval time.Duration
+
+		// ExternalStorage configures external payload storage for this client.
+		// When set, payloads that exceed ExternalStorage.PayloadSizeThreshold
+		// are offloaded to an external store (e.g. S3, GCS) by the configured
+		// driver(s), and a storage reference is substituted into the history event.
+		// References are resolved back to the original payloads transparently before
+		// they reach the data converter or application code.
+		//
+		// NOTE: Experimental
+		ExternalStorage converter.ExternalStorage
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -1396,6 +1399,11 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		heartbeatInterval = options.WorkerHeartbeatInterval
 	}
 
+	storageParams, err := ExternalStorageToParams(options.ExternalStorage)
+	if err != nil {
+		panic(fmt.Sprintf("invalid ExternalStorage options: %v", err))
+	}
+
 	client := &WorkflowClient{
 		workflowService:          workflowServiceClient,
 		conn:                     conn,
@@ -1417,6 +1425,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
 		workerGroupingKey:       uuid.NewString(),
+		inboundPayloadVisitor:   NewExternalRetrievalVisitor(storageParams),
+		outboundPayloadVisitor:  NewExternalStorageVisitor(storageParams),
 	}
 
 	if heartbeatInterval > 0 {

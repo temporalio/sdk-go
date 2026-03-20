@@ -81,8 +81,8 @@ type (
 	}
 
 	// ActivityOptions stores all activity-specific parameters that will be stored inside of a context.
-	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
-	// subjected to change in the future.
+	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But this is
+	// subject to change in the future.
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.ActivityOptions]
 	ActivityOptions struct {
@@ -91,7 +91,7 @@ type (
 		// Optional: The default task queue with the same name as the workflow task queue.
 		TaskQueue string
 
-		// ScheduleToCloseTimeout - Total time that a workflow is willing to wait for an Activity to complete.
+		// ScheduleToCloseTimeout - Total time that the workflow will wait for an Activity to complete.
 		// ScheduleToCloseTimeout limits the total time of an Activity's execution including retries
 		// 		(use StartToCloseTimeout to limit the time of a single attempt).
 		// The zero value of this uses default value.
@@ -126,8 +126,7 @@ type (
 		// Optional: default false
 		WaitForCancellation bool
 
-		// ActivityID - Business level activity ID, this is not needed for most of the cases if you have
-		// to specify this then talk to the temporal team. This is something will be done in the future.
+		// ActivityID - Business-level activity ID. This is not typically needed.
 		//
 		// Optional: default empty string
 		ActivityID string
