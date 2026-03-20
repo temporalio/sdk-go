@@ -5004,9 +5004,6 @@ func (ts *IntegrationTestSuite) testNonDeterminismFailureCause(historyMismatch b
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
 
-	// Give the new worker time to start polling before sending the signal.
-	time.Sleep(100 * time.Millisecond)
-
 	// Increase the determinism counter and send a tick to trigger replay
 	// non-determinism
 	forcedNonDeterminismCounter++
