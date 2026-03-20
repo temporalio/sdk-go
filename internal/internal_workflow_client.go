@@ -2283,7 +2283,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			startOp,
 			updateOp,
 		},
-		ResourceId: startRequest.WorkflowId,
+		ResourceId: fmt.Sprintf("workflow:%s", startRequest.WorkflowId),
 	}
 
 	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
