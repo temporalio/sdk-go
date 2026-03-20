@@ -15,8 +15,6 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
-// --- Test utilities ---
-
 // serCtxSigningCodec adds a context-derived signature on Encode and verifies on Decode.
 type serCtxSigningCodec struct {
 	signature string
@@ -95,6 +93,29 @@ func (dc *serCtxCapturingDataConverter) getCapturedContexts() []converter.Serial
 	return out
 }
 
+// serCtxRequiredCodec fails encoding unless WithSerializationContext has been called with a non-empty context.
+type serCtxRequiredCodec struct {
+	hasContext bool
+}
+
+func (c *serCtxRequiredCodec) WithSerializationContext(ctx converter.SerializationContext) converter.PayloadCodec {
+	return &serCtxRequiredCodec{hasContext: true}
+}
+
+func (c *serCtxRequiredCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if !c.hasContext {
+		return nil, fmt.Errorf("serCtxRequiredCodec: Encode called without serialization context")
+	}
+	return payloads, nil
+}
+
+func (c *serCtxRequiredCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if !c.hasContext {
+		return nil, fmt.Errorf("serCtxRequiredCodec: Decode called without serialization context")
+	}
+	return payloads, nil
+}
+
 // serCtxEncryptionCodec derives a deterministic key from context for concurrent isolation testing.
 type serCtxEncryptionCodec struct {
 	key string
@@ -137,8 +158,6 @@ func (c *serCtxEncryptionCodec) Decode(payloads []*commonpb.Payload) ([]*commonp
 	return result, nil
 }
 
-// --- Test Suite ---
-
 type SerializationContextTestSuite struct {
 	suite.Suite
 	WorkflowTestSuite
@@ -147,8 +166,6 @@ type SerializationContextTestSuite struct {
 func TestSerializationContextSuite(t *testing.T) {
 	suite.Run(t, new(SerializationContextTestSuite))
 }
-
-// --- Activity Tests ---
 
 func (s *SerializationContextTestSuite) TestActivityRoundTrip_SigningCodec() {
 	env := s.NewTestWorkflowEnvironment()
@@ -253,7 +270,23 @@ func (s *SerializationContextTestSuite) TestLocalActivityRoundTrip_CapturingDC()
 	s.True(foundLocal, "should have captured ActivitySerializationContext with IsLocal=true")
 }
 
-// --- Child Workflow Tests ---
+func (s *SerializationContextTestSuite) TestWorkflowInput_RequiresContext() {
+	env := s.NewTestWorkflowEnvironment()
+	codecDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxRequiredCodec{})
+	env.SetDataConverter(codecDC)
+
+	workflow := func(ctx Context, input string) (string, error) {
+		return "got:" + input, nil
+	}
+
+	env.ExecuteWorkflow(workflow, "hello-world")
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("got:hello-world", result)
+}
 
 func (s *SerializationContextTestSuite) TestChildWorkflowRoundTrip_SigningCodec() {
 	env := s.NewTestWorkflowEnvironment()
@@ -289,8 +322,6 @@ func (s *SerializationContextTestSuite) TestChildWorkflowRoundTrip_SigningCodec(
 	s.Equal("cba", result)
 }
 
-// --- SideEffect Test ---
-
 func (s *SerializationContextTestSuite) TestSideEffect_SigningCodec() {
 	env := s.NewTestWorkflowEnvironment()
 	codecDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
@@ -316,8 +347,6 @@ func (s *SerializationContextTestSuite) TestSideEffect_SigningCodec() {
 	s.NoError(env.GetWorkflowResult(&result))
 	s.Equal("side-effect-value", result)
 }
-
-// --- Concurrent Operations Test ---
 
 func (s *SerializationContextTestSuite) TestEncryptionCodec_ConcurrentOperations() {
 	env := s.NewTestWorkflowEnvironment()
@@ -371,8 +400,6 @@ func (s *SerializationContextTestSuite) TestEncryptionCodec_ConcurrentOperations
 	s.Equal("A:input|child:input", result)
 }
 
-// --- Signal External Workflow Test ---
-
 func (s *SerializationContextTestSuite) TestSignalExternalWorkflow_CapturingDC() {
 	env := s.NewTestWorkflowEnvironment()
 	dc := newSerCtxCapturingDataConverter()
@@ -403,8 +430,6 @@ func (s *SerializationContextTestSuite) TestSignalExternalWorkflow_CapturingDC()
 	}
 	s.True(foundTargetCtx, "should have captured WorkflowSerializationContext with target workflow ID")
 }
-
-// --- Query Tests ---
 
 func (s *SerializationContextTestSuite) TestQueryResult_CapturingDC() {
 	env := s.NewTestWorkflowEnvironment()
@@ -474,8 +499,6 @@ func (s *SerializationContextTestSuite) TestQueryRoundTrip_SigningCodec() {
 	s.True(env.IsWorkflowCompleted())
 	s.NoError(env.GetWorkflowError())
 }
-
-// --- Update Tests ---
 
 func (s *SerializationContextTestSuite) TestUpdateResult_CapturingDC() {
 	env := s.NewTestWorkflowEnvironment()

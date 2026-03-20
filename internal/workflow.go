@@ -793,7 +793,8 @@ func NewChannel(ctx Context) Channel {
 // Exposed as: [go.temporal.io/sdk/workflow.NewNamedChannel]
 func NewNamedChannel(ctx Context, name string) Channel {
 	env := getWorkflowEnvironment(ctx)
-	return &channelImpl{name: name, dataConverter: getDataConverterFromWorkflowContext(ctx), env: env}
+	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
+	return &channelImpl{name: name, dataConverter: dc, env: env}
 }
 
 // NewBufferedChannel create new buffered Channel instance
@@ -801,7 +802,8 @@ func NewNamedChannel(ctx Context, name string) Channel {
 // Exposed as: [go.temporal.io/sdk/workflow.NewBufferedChannel]
 func NewBufferedChannel(ctx Context, size int) Channel {
 	env := getWorkflowEnvironment(ctx)
-	return &channelImpl{size: size, dataConverter: getDataConverterFromWorkflowContext(ctx), env: env}
+	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
+	return &channelImpl{size: size, dataConverter: dc, env: env}
 }
 
 // NewNamedBufferedChannel create new BufferedChannel instance with a given human readable name.
@@ -810,7 +812,8 @@ func NewBufferedChannel(ctx Context, size int) Channel {
 // Exposed as: [go.temporal.io/sdk/workflow.NewNamedBufferedChannel]
 func NewNamedBufferedChannel(ctx Context, name string, size int) Channel {
 	env := getWorkflowEnvironment(ctx)
-	return &channelImpl{name: name, size: size, dataConverter: getDataConverterFromWorkflowContext(ctx), env: env}
+	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
+	return &channelImpl{name: name, size: size, dataConverter: dc, env: env}
 }
 
 // NewSelector creates a new Selector instance.
@@ -1838,10 +1841,11 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 		return future
 	}
 
+	wfInfo := env.WorkflowInfo()
 	dataConverter := converter.WithDataConverterSerializationContext(
 		getDataConverterFromWorkflowContext(ctx),
 		converter.WorkflowSerializationContext{
-			Namespace:  options.Namespace,
+			Namespace:  wfInfo.Namespace,
 			WorkflowID: workflowID,
 		})
 	input, err := encodeArg(dataConverter, arg)
@@ -2269,7 +2273,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Con
 }
 
 func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
-	dc := getDataConverterFromWorkflowContext(ctx)
+	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() (*commonpb.Payloads, error) {
 		coroutineState := getState(ctx)
@@ -2605,7 +2609,7 @@ func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d
 		return ErrNoData
 	}
 
-	encodedVal := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
+	encodedVal := newEncodedValues(info.lastCompletionResult, converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx)))
 	return encodedVal.Get(d...)
 }
 

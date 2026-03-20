@@ -582,7 +582,11 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn interface{}, 
 	if getKind(fType) == reflect.Func {
 		env.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 	}
-	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, env.GetDataConverter(), env.GetRegistry())
+	dc := converter.WithDataConverterSerializationContext(env.GetDataConverter(), converter.WorkflowSerializationContext{
+		Namespace:  env.workflowInfo.Namespace,
+		WorkflowID: env.workflowInfo.WorkflowExecution.ID,
+	})
+	workflowType, input, err := getValidatedWorkflowFunction(workflowFn, args, dc, env.GetRegistry())
 	if err != nil {
 		panic(err)
 	}
