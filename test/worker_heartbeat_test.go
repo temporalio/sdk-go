@@ -18,6 +18,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/contrib/sysinfo"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
@@ -912,4 +913,52 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	}
 	ts.True(pluginNames["test-client-plugin"])
 	ts.True(pluginNames["test-worker-plugin"])
+}
+
+func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStorageDrivers() {
+	ctx := context.Background()
+
+	driver1 := newMemDriver("test-driver1")
+	driver2 := newMemDriver("test-driver2")
+	driver3 := &panicMemDriver{memStorageDriver: newMemDriver("test-driver3")}
+	drivers := []converter.StorageDriver{driver1, driver2, driver3}
+
+	// Create a client with external storage configured
+	storageClient, err := client.Dial(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		Logger:    ilog.NewDefaultLogger(),
+		ExternalStorage: converter.ExternalStorage{
+			Drivers:        drivers,
+			DriverSelector: &roundRobinSelector{drivers: drivers},
+		},
+		WorkerHeartbeatInterval: 1 * time.Second,
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
+		Identity:                "StorageDriverTest",
+	})
+	ts.NoError(err)
+	defer storageClient.Close()
+
+	taskQueue := ts.taskQueueName + "-storage-drivers"
+	ts.worker = worker.New(storageClient, taskQueue, worker.Options{})
+	ts.worker.RegisterWorkflow(simpleWorkflow)
+	ts.NoError(ts.worker.Start())
+
+	workflowOptions := client.StartWorkflowOptions{
+		ID:        "test-storage-drivers-" + uuid.NewString(),
+		TaskQueue: taskQueue,
+	}
+	run, err := storageClient.ExecuteWorkflow(ctx, workflowOptions, simpleWorkflow)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// Wait for heartbeat with driver info
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, taskQueue)
+		return workerInfo != nil && len(workerInfo.Drivers) == 2
+	}, 5*time.Second, 200*time.Millisecond, "Should have 2 storage driver type")
+
+	ts.Equal("mem", workerInfo.Drivers[0].Type)
+	ts.Equal("panic", workerInfo.Drivers[1].Type)
 }

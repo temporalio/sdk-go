@@ -94,6 +94,8 @@ type panicMemDriver struct {
 	panicOnRetrieve bool
 }
 
+func (d *panicMemDriver) Type() string { return "panic" }
+
 func (d *panicMemDriver) Store(ctx converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
 	claims, err := d.memStorageDriver.Store(ctx, payloads)
 	if err != nil {

@@ -2298,6 +2298,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pid := strconv.Itoa(os.Getpid())
 		previousHeartbeatTime := time.Now()
 		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
+		driverInfos := collectStorageDriverInfos(client.storageDriverTypes)
 
 		var prevWorkflowProcessed, prevWorkflowFailed int64
 		var prevActivityProcessed, prevActivityFailed int64
@@ -2373,6 +2374,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				HeartbeatTime:             timestamppb.New(heartbeatTime),
 				ElapsedSinceLastHeartbeat: durationpb.New(elapsedSinceLastHeartbeat),
 				Plugins:                   pluginInfos,
+				Drivers:                   driverInfos,
 			}
 			aw.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
 
@@ -2760,5 +2762,16 @@ func collectPluginInfos(clientPluginNames []string, workerPlugins []WorkerPlugin
 		return result[i].Name < result[j].Name
 	})
 
+	return result
+}
+
+func collectStorageDriverInfos(driverTypes []string) []*workerpb.StorageDriverInfo {
+	if len(driverTypes) == 0 {
+		return nil
+	}
+	result := make([]*workerpb.StorageDriverInfo, len(driverTypes))
+	for i, t := range driverTypes {
+		result[i] = &workerpb.StorageDriverInfo{Type: t}
+	}
 	return result
 }

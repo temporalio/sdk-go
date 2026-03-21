@@ -90,6 +90,7 @@ type (
 		unclosedClients        *int32
 		inboundPayloadVisitor  PayloadVisitor
 		outboundPayloadVisitor PayloadVisitor
+		storageDriverTypes     []string
 	}
 
 	// namespaceClient is the client for managing namespaces.
