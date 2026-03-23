@@ -192,11 +192,13 @@ func TestRunWorkerInternal_UserOverridesApplied(t *testing.T) {
 
 	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
 		ctx.SetTaskQueue("user-queue")
-		ctx.MutateClientOptions(func(opts *client.Options) {
+		ctx.MutateClientOptions(func(opts *client.Options) error {
 			opts.Namespace = "custom-ns"
+			return nil
 		})
-		ctx.MutateWorkerOptions(func(opts *worker.Options) {
+		ctx.MutateWorkerOptions(func(opts *worker.Options) error {
 			opts.MaxConcurrentActivityExecutionSize = 99
+			return nil
 		})
 		return nil
 	}, deps)
@@ -322,8 +324,9 @@ func TestRunWorkerInternal_IdentityUserOverrideWins(t *testing.T) {
 	c.On("Close").Once()
 
 	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
-		ctx.MutateClientOptions(func(opts *client.Options) {
+		ctx.MutateClientOptions(func(opts *client.Options) error {
 			opts.Identity = "my-custom-identity"
+			return nil
 		})
 		return nil
 	}, deps)
@@ -354,6 +357,100 @@ func TestRunWorkerInternal_IdentityNoLambdaContext(t *testing.T) {
 	require.NoError(t, err)
 	// Identity left empty for the SDK to fill with its default.
 	assert.Empty(t, capturedClientOpts.Identity)
+}
+
+func TestRunWorkerInternal_OnShutdownCalled(t *testing.T) {
+	deps, w, c := newTestDeps()
+
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	shutdownCalled := false
+	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
+		ctx.OnShutdown(func(context.Context) error {
+			shutdownCalled = true
+			return nil
+		})
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.True(t, shutdownCalled, "shutdown function should be called during invocation")
+}
+
+func TestRunWorkerInternal_OnShutdownCalledPerInvocation(t *testing.T) {
+	deps, w, c := newTestDeps()
+	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+		if h, ok := handler.(func(context.Context) error); ok {
+			_ = h(testInvocationContext())
+			_ = h(testInvocationContext())
+			_ = h(testInvocationContext())
+		}
+	}
+
+	w.On("Start").Return(nil).Times(3)
+	w.On("Stop").Times(3)
+	c.On("Close").Times(3)
+
+	shutdownCount := 0
+	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
+		ctx.OnShutdown(func(context.Context) error {
+			shutdownCount++
+			return nil
+		})
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, shutdownCount, "shutdown function should be called once per invocation")
+}
+
+func TestRunWorkerInternal_OnShutdownMultipleFuncs(t *testing.T) {
+	deps, w, c := newTestDeps()
+
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	var order []string
+	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
+		ctx.OnShutdown(func(context.Context) error {
+			order = append(order, "first")
+			return nil
+		})
+		ctx.OnShutdown(func(context.Context) error {
+			order = append(order, "second")
+			return nil
+		})
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.Equal(t, []string{"first", "second"}, order, "shutdown functions should run in registration order")
+}
+
+func TestRunWorkerInternal_OnShutdownErrorLogged(t *testing.T) {
+	deps, w, c := newTestDeps()
+
+	w.On("Start").Return(nil).Once()
+	w.On("Stop").Once()
+	c.On("Close").Once()
+
+	secondCalled := false
+	err := runWorkerInternal(func(ctx *ConfigureWorkerContext) error {
+		ctx.OnShutdown(func(context.Context) error {
+			return errors.New("flush failed")
+		})
+		ctx.OnShutdown(func(context.Context) error {
+			secondCalled = true
+			return nil
+		})
+		return nil
+	}, deps)
+
+	require.NoError(t, err)
+	assert.True(t, secondCalled, "subsequent shutdown functions should still run after an error")
 }
 
 func TestRunWorkerInternal_PerInvocationLifecycle(t *testing.T) {

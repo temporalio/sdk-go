@@ -1,6 +1,8 @@
 package serverlesslambdaworker
 
 import (
+	"context"
+
 	"github.com/nexus-rpc/sdk-go/nexus"
 
 	"go.temporal.io/sdk/activity"
@@ -17,9 +19,10 @@ var _ worker.Registry = (*ConfigureWorkerContext)(nil)
 // it.
 type ConfigureWorkerContext struct {
 	taskQueue        string
-	mutateClientOpts func(*client.Options)
-	mutateWorkerOpts func(*worker.Options)
+	mutateClientOpts func(*client.Options) error
+	mutateWorkerOpts func(*worker.Options) error
 	registrations    []func(worker.Registry)
+	shutdownFuncs    []func(context.Context) error
 }
 
 // RegisterWorkflow registers a workflow on the worker. See
@@ -67,15 +70,22 @@ func (c *ConfigureWorkerContext) RegisterNexusService(s *nexus.Service) {
 // MutateClientOptions sets a callback that mutates client options before [client.Dial] is called.
 // The callback receives options that already have Lambda defaults applied, so any values the
 // callback sets will override Lambda defaults.
-func (c *ConfigureWorkerContext) MutateClientOptions(fn func(*client.Options)) {
+func (c *ConfigureWorkerContext) MutateClientOptions(fn func(*client.Options) error) {
 	c.mutateClientOpts = fn
 }
 
 // MutateWorkerOptions sets a callback that mutates worker options before [worker.New] is called.
 // The callback receives options that already have Lambda defaults applied, so any values the
 // callback sets will override Lambda defaults.
-func (c *ConfigureWorkerContext) MutateWorkerOptions(fn func(*worker.Options)) {
+func (c *ConfigureWorkerContext) MutateWorkerOptions(fn func(*worker.Options) error) {
 	c.mutateWorkerOpts = fn
+}
+
+// OnShutdown registers a function to be called at the end of each Lambda invocation, after the
+// worker has stopped. Shutdown functions run in registration order. Use this to flush telemetry
+// providers or release other per-process resources.
+func (c *ConfigureWorkerContext) OnShutdown(fn func(context.Context) error) {
+	c.shutdownFuncs = append(c.shutdownFuncs, fn)
 }
 
 // SetTaskQueue sets the task queue name for the worker. If not set, the TEMPORAL_TASK_QUEUE
