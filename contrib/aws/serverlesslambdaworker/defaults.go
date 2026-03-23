@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"path/filepath"
+	"path"
 	"time"
 
 	"go.temporal.io/sdk/client"
@@ -93,7 +93,7 @@ func lambdaDefaultConfigFilePath(getenv func(string) string) string {
 	if root == "" {
 		root = "."
 	}
-	return filepath.Join(root, defaultConfigFile)
+	return path.Join(root, defaultConfigFile)
 }
 
 // resolveTaskQueue determines the task queue name from user configuration or environment variables.
