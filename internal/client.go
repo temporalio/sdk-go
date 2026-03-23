@@ -1095,7 +1095,6 @@ func newClient(ctx context.Context, options ClientOptions, existing Client) (Cli
 
 	if options.Logger == nil {
 		options.Logger = ilog.NewDefaultLogger()
-		options.Logger.Info("No logger configured for temporal client. Created default one.")
 	}
 
 	// Validate mutually exclusive TLS options
