@@ -1383,7 +1383,8 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	}
 	wfInfo := env.WorkflowInfo()
 	childWfCtx := converter.WorkflowSerializationContext{
-		Namespace:  wfInfo.Namespace,
+		// Use target namespace for cross-namespace child workflows, otherwise default to parent's.
+		Namespace:  cmp.Or(workflowOptionsFromCtx.Namespace, wfInfo.Namespace),
 		WorkflowID: childWorkflowID,
 	}
 	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), childWfCtx)
@@ -1429,6 +1430,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		Header:           header,
 		scheduledTime:    Now(ctx), /* this is needed for test framework, and is not send to server */
 		attempt:          1,
+		dataConverter:    dc,
 		failureConverter: failureConverter,
 	}
 
@@ -1845,7 +1847,8 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	dataConverter := converter.WithDataConverterSerializationContext(
 		getDataConverterFromWorkflowContext(ctx),
 		converter.WorkflowSerializationContext{
-			Namespace:  wfInfo.Namespace,
+			// Use target namespace for cross-namespace signals, otherwise default to current workflow's.
+			Namespace:  cmp.Or(options.Namespace, wfInfo.Namespace),
 			WorkflowID: workflowID,
 		})
 	input, err := encodeArg(dataConverter, arg)

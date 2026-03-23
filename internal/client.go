@@ -636,6 +636,7 @@ type (
 		// These values are not validated by the SDK. Providing incorrect values
 		// may cause serialization/deserialization mismatches if your codec uses
 		// them (e.g., as encryption keys or signature input).
+		WorkflowID   string
 		ActivityType string
 		WorkflowType string
 		TaskQueue    string

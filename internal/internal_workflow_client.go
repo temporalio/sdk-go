@@ -582,6 +582,7 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 
 	actCtx := converter.ActivitySerializationContext{
 		Namespace:    opts.Namespace,
+		WorkflowID:   opts.WorkflowID,
 		ActivityType: opts.ActivityType,
 		WorkflowType: opts.WorkflowType,
 		TaskQueue:    opts.TaskQueue,
@@ -2482,7 +2483,7 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
 	})
-	datailsPayload, err := dc.ToPayloads(in.Details...)
+	detailsPayload, err := dc.ToPayloads(in.Details...)
 	if err != nil {
 		return err
 	}
@@ -2495,7 +2496,7 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 		},
 		Reason:   in.Reason,
 		Identity: w.client.identity,
-		Details:  datailsPayload,
+		Details:  detailsPayload,
 	}
 
 	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, request); err != nil {

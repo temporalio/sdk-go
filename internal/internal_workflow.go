@@ -224,6 +224,7 @@ type (
 		WorkflowType         *WorkflowType
 		Input                *commonpb.Payloads
 		Header               *commonpb.Header
+		dataConverter        converter.DataConverter    // context-aware DC from ExecuteChildWorkflow
 		failureConverter     converter.FailureConverter // context-aware FC from ExecuteChildWorkflow
 		attempt              int32                      // used by test framework to support child workflow retry
 		scheduledTime        time.Time                  // used by test framework to support child workflow retry
@@ -1801,8 +1802,8 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 	eo := getWorkflowEnvOptions(ctx)
 	wfCtx := getWorkflowSerializationContext(ctx)
 	uh.dataConverter = converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), wfCtx)
-	uh.failureConverter = converter.WithFailureConverterSerializationContext(
-		getWorkflowEnvironment(ctx).GetFailureConverter(), wfCtx)
+	// Already wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
+	uh.failureConverter = getWorkflowEnvironment(ctx).GetFailureConverter()
 	eo.updateHandlers[updateName] = uh
 	if getWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
 		getWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)

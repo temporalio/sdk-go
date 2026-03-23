@@ -69,6 +69,9 @@ type (
 		heartbeatDetails *commonpb.Payloads
 		token            testActivityToken
 		task             *workflowservice.PollActivityTaskQueueResponse
+		// Per-activity context-aware converters for async completion path.
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
 		// Timeout tracking
 		startTime         time.Time // when activity started executing
 		lastHeartbeatTime time.Time
@@ -776,7 +779,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	// ensure activityFn is registered to defaultTestTaskQueue
 	taskHandler := env.newTestActivityTaskHandler(defaultTestTaskQueue, env.GetDataConverter())
-	env.addNewActivityHandle(task, func(result *commonpb.Payloads, err error) {})
+	env.addNewActivityHandle(task, func(result *commonpb.Payloads, err error) {}, env.GetDataConverter(), env.GetFailureConverter())
 	activityID := ActivityID{id: task.ActivityId}
 
 	result, err := taskHandler.Execute(defaultTestTaskQueue, task)
@@ -1248,8 +1251,8 @@ func (env *testWorkflowEnvironmentImpl) CompleteActivity(taskToken []byte, resul
 		// We do allow canceled error to be passed here
 		cancelAllowed := true
 		request := convertActivityResultToRespondRequest("test-identity", taskToken, data, err,
-			env.GetDataConverter(), env.GetFailureConverter(), defaultTestNamespace, cancelAllowed, nil, nil, nil)
-		env.handleActivityResult(activityHandle, request, env.GetDataConverter())
+			activityHandle.dataConverter, activityHandle.failureConverter, defaultTestNamespace, cancelAllowed, nil, nil, nil)
+		env.handleActivityResult(activityHandle, request, activityHandle.dataConverter)
 	}, false /* do not auto schedule workflow task, because activity might be still pending */)
 
 	return nil
@@ -1303,7 +1306,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 	task.WorkflowType = &commonpb.WorkflowType{Name: env.workflowInfo.WorkflowType.Name}
 
 	taskHandler := env.newTestActivityTaskHandler(parameters.TaskQueueName, parameters.DataConverter)
-	activityHandle := env.addNewActivityHandle(task, callback)
+	activityHandle := env.addNewActivityHandle(task, callback, parameters.DataConverter, parameters.FailureConverter)
 	env.runningCount++
 	activityToken := activityHandle.token
 
@@ -1588,7 +1591,7 @@ func (env *testWorkflowEnvironmentImpl) validateRetryPolicy(policy *commonpb.Ret
 	return nil
 }
 
-func (env *testWorkflowEnvironmentImpl) addNewActivityHandle(task *workflowservice.PollActivityTaskQueueResponse, callback func(result *commonpb.Payloads, err error)) *testActivityHandle {
+func (env *testWorkflowEnvironmentImpl) addNewActivityHandle(task *workflowservice.PollActivityTaskQueueResponse, callback func(result *commonpb.Payloads, err error), dc converter.DataConverter, fc converter.FailureConverter) *testActivityHandle {
 	token := testActivityToken{activityID: task.ActivityId}
 	if task.WorkflowExecution.GetWorkflowId() == "" {
 		token.runID = task.ActivityRunId
@@ -1603,6 +1606,8 @@ func (env *testWorkflowEnvironmentImpl) addNewActivityHandle(task *workflowservi
 		heartbeatDetails:  nil,
 		token:             token,
 		task:              task,
+		dataConverter:     dc,
+		failureConverter:  fc,
 		startTime:         now,
 		lastHeartbeatTime: now,
 	}

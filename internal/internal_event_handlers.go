@@ -58,7 +58,11 @@ type (
 		waitForCancelRequest bool
 		handled              bool
 		activityType         ActivityType
-		failureConverter     converter.FailureConverter
+		// Per-activity context-aware converters so that cancellation details and
+		// failures are decoded with the correct ActivitySerializationContext,
+		// matching how they were encoded by the activity worker.
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
 	}
 
 	scheduledNexusOperation struct {
@@ -75,7 +79,11 @@ type (
 		startedCallback     func(r WorkflowExecution, e error)
 		waitForCancellation bool
 		handled             bool
-		failureConverter    converter.FailureConverter
+		// Per-child-workflow context-aware converters so that cancellation
+		// details and failures are decoded with the correct
+		// WorkflowSerializationContext, matching how they were encoded.
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
 	}
 
 	scheduledCancellation struct {
@@ -601,11 +609,20 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		callback(nil, &ChildWorkflowExecutionAlreadyStartedError{})
 		return
 	}
+	childDC := params.dataConverter
+	if childDC == nil {
+		childDC = wc.dataConverter
+	}
+	childFC := params.failureConverter
+	if childFC == nil {
+		childFC = wc.failureConverter
+	}
 	command.setData(&scheduledChildWorkflow{
 		resultCallback:      callback,
 		startedCallback:     startedHandler,
 		waitForCancellation: params.WaitForCancellation,
-		failureConverter:    params.failureConverter,
+		dataConverter:       childDC,
+		failureConverter:    childFC,
 	})
 
 	wc.logger.Debug("ExecuteChildWorkflow",
@@ -755,12 +772,21 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		return ActivityID{}
 	}
 
+	dc := parameters.DataConverter
+	if dc == nil {
+		dc = wc.dataConverter
+	}
+	fc := parameters.FailureConverter
+	if fc == nil {
+		fc = wc.failureConverter
+	}
 	command := wc.commandsHelper.scheduleActivityTask(parameters.ScheduleID, scheduleTaskAttr, startMetadata)
 	command.setData(&scheduledActivity{
 		callback:             callback,
 		waitForCancelRequest: parameters.WaitForCancellation,
 		activityType:         parameters.ActivityType,
-		failureConverter:     parameters.FailureConverter,
+		dataConverter:        dc,
+		failureConverter:     fc,
 	})
 
 	wc.logger.Debug("ExecuteActivity",
@@ -1541,7 +1567,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCanceled(event *
 		// Clear this so we don't have a recursive call that while executing might call the cancel one.
 
 		attributes := event.GetActivityTaskCanceledEventAttributes()
-		details := newEncodedValues(attributes.GetDetails(), weh.GetDataConverter())
+		details := newEncodedValues(attributes.GetDetails(), activity.dataConverter)
 
 		activityTaskErr := NewActivityError(
 			attributes.GetScheduledEventId(),
@@ -1862,7 +1888,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionCancel
 	if childWorkflow.handled {
 		return nil
 	}
-	details := newEncodedValues(attributes.Details, weh.GetDataConverter())
+	details := newEncodedValues(attributes.Details, childWorkflow.dataConverter)
 
 	childWorkflowExecutionError := NewChildWorkflowExecutionError(
 		attributes.GetNamespace(),
