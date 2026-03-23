@@ -328,14 +328,14 @@ func newWorkflowTaskWorkerInternal(
 	switch params.WorkflowTaskPollerBehavior.(type) {
 	case *pollerBehaviorSimpleMaximum:
 		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior),
+			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior, metrics.PollerTypeWorkflowTask),
 		}
 	case *pollerBehaviorAutoscaling:
 		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior),
+			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior, metrics.PollerTypeWorkflowTask),
 		}
 		if taskProcessor.stickyCacheSize > 0 {
-			scalableTaskPollers = append(scalableTaskPollers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior))
+			scalableTaskPollers = append(scalableTaskPollers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior, metrics.PollerTypeWorkflowStickyTask))
 		}
 	}
 
@@ -378,14 +378,13 @@ func newWorkflowTaskWorkerInternal(
 	// 2) local activity task poller will poll from laTunnel, and result will be pushed to laTunnel
 	localActivityTaskPoller := newLocalActivityPoller(laParams, laTunnel, interceptors, client, stopC)
 	localActivityWorker := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
-		maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
+		slotSupplier: laParams.Tuner.GetLocalActivitySlotSupplier(), maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
 			newScalableTaskPoller(localActivityTaskPoller, params.Logger, NewPollerBehaviorSimpleMaximum(
 				PollerBehaviorSimpleMaximumOptions{
 					MaximumNumberOfPollers: 2,
 				},
-			)),
+			), ""),
 		},
 		taskProcessor:  localActivityTaskPoller,
 		workerType:     "LocalActivityWorker",
@@ -531,7 +530,7 @@ func newActivityWorker(
 		slotSupplier:     slotSupplier,
 		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior),
+			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, ""),
 		},
 		taskProcessor:           poller,
 		workerType:              "ActivityWorker",

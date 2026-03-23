@@ -873,9 +873,14 @@ func (ps *pollerSemaphore) updatePermits(maxPermits int) {
 }
 
 func newScalableTaskPoller(
-	poller taskPoller, logger log.Logger, pollerBehavior PollerBehavior) scalableTaskPoller {
+	poller taskPoller,
+	logger log.Logger,
+	pollerBehavior PollerBehavior,
+	taskPollerType string,
+) scalableTaskPoller {
 	tw := scalableTaskPoller{
-		taskPoller: poller,
+		taskPoller:     poller,
+		taskPollerType: taskPollerType,
 	}
 	switch p := pollerBehavior.(type) {
 	case *pollerBehaviorAutoscaling:

@@ -31,6 +31,23 @@ type (
 	}
 )
 
+func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerSetsTaskPollerType() {
+	behavior := NewPollerBehaviorSimpleMaximum(
+		PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: 1,
+		},
+	)
+
+	blockingPoller := newSemaphoreProbeTaskPoller()
+	poller := newScalableTaskPoller(
+		blockingPoller,
+		ilog.NewNopLogger(),
+		behavior,
+		metrics.PollerTypeWorkflowStickyTask,
+	)
+
+	s.Equal(metrics.PollerTypeWorkflowStickyTask, poller.taskPollerType)
+}
 func TestScalableTaskPollerSuite(t *testing.T) {
 	suite.Run(t, new(ScalableTaskPollerSuite))
 }
@@ -140,7 +157,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "")
 	poller.taskPollerType = "test"
 
 	bw := newBaseWorker(baseWorkerOptions{
@@ -188,7 +205,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "")
 	poller.taskPollerType = "test"
 
 	bw := newBaseWorker(baseWorkerOptions{
