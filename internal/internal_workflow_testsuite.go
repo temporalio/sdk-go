@@ -457,7 +457,13 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 	childEnv.testWorkflowEnvironmentShared = env.testWorkflowEnvironmentShared
 	childEnv.workerOptions = env.workerOptions
 	childEnv.dataConverter = params.DataConverter
-	childEnv.failureConverter = env.failureConverter
+	if childEnv.dataConverter == nil {
+		childEnv.dataConverter = env.dataConverter
+	}
+	childEnv.failureConverter = params.failureConverter
+	if childEnv.failureConverter == nil {
+		childEnv.failureConverter = env.failureConverter
+	}
 	childEnv.registry = env.registry
 	childEnv.detachedChildWaitDisabled = env.detachedChildWaitDisabled
 
@@ -618,12 +624,17 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 	if wInfo.currentRunID == "" {
 		wInfo.currentRunID = wInfo.WorkflowExecution.RunID
 	}
-	wfCtx := converter.WorkflowSerializationContext{
-		Namespace:  wInfo.Namespace,
-		WorkflowID: wInfo.WorkflowExecution.ID,
+	// For child workflows, the interceptor already wraps converters with the
+	// child's WorkflowSerializationContext before setting them on the child env.
+	// Only wrap for the root workflow to avoid double-wrapping.
+	if env.parentEnv == nil {
+		wfCtx := converter.WorkflowSerializationContext{
+			Namespace:  wInfo.Namespace,
+			WorkflowID: wInfo.WorkflowExecution.ID,
+		}
+		env.dataConverter = converter.WithDataConverterSerializationContext(env.dataConverter, wfCtx)
+		env.failureConverter = converter.WithFailureConverterSerializationContext(env.failureConverter, wfCtx)
 	}
-	env.dataConverter = converter.WithDataConverterSerializationContext(env.dataConverter, wfCtx)
-	env.failureConverter = converter.WithFailureConverterSerializationContext(env.failureConverter, wfCtx)
 	env.locker.Unlock()
 
 	workflowDefinition, err := env.getWorkflowDefinition(wInfo.WorkflowType)

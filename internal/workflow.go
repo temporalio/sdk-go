@@ -792,7 +792,7 @@ func NewChannel(ctx Context) Channel {
 // Exposed as: [go.temporal.io/sdk/workflow.NewNamedChannel]
 func NewNamedChannel(ctx Context, name string) Channel {
 	env := getWorkflowEnvironment(ctx)
-	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
+	dc := getDataConverterFromWorkflowContext(ctx)
 	return &channelImpl{name: name, dataConverter: dc, env: env}
 }
 
@@ -801,7 +801,7 @@ func NewNamedChannel(ctx Context, name string) Channel {
 // Exposed as: [go.temporal.io/sdk/workflow.NewBufferedChannel]
 func NewBufferedChannel(ctx Context, size int) Channel {
 	env := getWorkflowEnvironment(ctx)
-	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
+	dc := getDataConverterFromWorkflowContext(ctx)
 	return &channelImpl{size: size, dataConverter: dc, env: env}
 }
 
@@ -811,7 +811,7 @@ func NewBufferedChannel(ctx Context, size int) Channel {
 // Exposed as: [go.temporal.io/sdk/workflow.NewNamedBufferedChannel]
 func NewNamedBufferedChannel(ctx Context, name string, size int) Channel {
 	env := getWorkflowEnvironment(ctx)
-	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
+	dc := getDataConverterFromWorkflowContext(ctx)
 	return &channelImpl{name: name, size: size, dataConverter: dc, env: env}
 }
 
@@ -2276,7 +2276,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Con
 }
 
 func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
-	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
+	dc := getDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() (*commonpb.Payloads, error) {
 		coroutineState := getState(ctx)
@@ -2612,7 +2612,7 @@ func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d
 		return ErrNoData
 	}
 
-	encodedVal := newEncodedValues(info.lastCompletionResult, converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx)))
+	encodedVal := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
 	return encodedVal.Get(d...)
 }
 

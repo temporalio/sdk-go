@@ -747,6 +747,15 @@ func (wc *workflowEnvironmentImpl) CreateNewCommand(commandType enumspb.CommandT
 }
 
 func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityParams, callback ResultHandler) ActivityID {
+	// Backward compatibility: generate ScheduleID/ActivityID if not set by caller.
+	// The Go SDK interceptor sets these before serialization so they're available
+	// to context-aware codecs, but bindings callers may not set them.
+	if parameters.ScheduleID == 0 {
+		parameters.ScheduleID = wc.GenerateSequence()
+	}
+	if parameters.ActivityID == "" {
+		parameters.ActivityID = getStringID(parameters.ScheduleID)
+	}
 	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{}
 	scheduleTaskAttr.ActivityId = parameters.ActivityID
 	scheduleTaskAttr.ActivityType = &commonpb.ActivityType{Name: parameters.ActivityType.Name}

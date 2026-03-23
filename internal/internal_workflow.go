@@ -374,7 +374,7 @@ func (f *futureImpl) Get(ctx Context, valuePtr interface{}) error {
 
 	if payload, ok := f.value.(*commonpb.Payloads); ok {
 		if _, ok2 := valuePtr.(**commonpb.Payloads); !ok2 {
-			if err := decodeArg(converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx)), payload, valuePtr); err != nil {
+			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, valuePtr); err != nil {
 				return err
 			}
 			return f.err
@@ -610,7 +610,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 					if err != nil {
 						return nil, err
 					}
-					return encodeArg(converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(rootCtx), getWorkflowSerializationContext(rootCtx)), converter.NewRawValue(resultPayload))
+					return encodeArg(getDataConverterFromWorkflowContext(rootCtx), converter.NewRawValue(resultPayload))
 				}
 			}
 
@@ -1609,17 +1609,6 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
-// getWorkflowSerializationContext returns the WorkflowSerializationContext for
-// the current workflow. Callers that need a different context (e.g. for a child
-// workflow or activity) should build their own.
-func getWorkflowSerializationContext(ctx Context) converter.WorkflowSerializationContext {
-	wfInfo := getWorkflowEnvironment(ctx).WorkflowInfo()
-	return converter.WorkflowSerializationContext{
-		Namespace:  wfInfo.Namespace,
-		WorkflowID: wfInfo.WorkflowExecution.ID,
-	}
-}
-
 func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	var dataConverter converter.DataConverter
@@ -1757,7 +1746,7 @@ func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
 	}
 	dataConverter := d.dataConverter
 	if dataConverter == nil {
-		dataConverter = converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
+		dataConverter = getDataConverterFromWorkflowContext(ctx)
 	}
 	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), valuePtr)
 	if err != nil {
@@ -1777,7 +1766,7 @@ func newDecodeFuture(ctx Context, fn interface{}) (Future, Settable) {
 // setQueryHandler sets query handler for given queryType.
 func setQueryHandler(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
 	eo := getWorkflowEnvOptions(ctx)
-	dataConverter := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), getWorkflowSerializationContext(ctx))
+	dataConverter := getDataConverterFromWorkflowContext(ctx)
 	qh := &queryHandler{
 		fn:            handler,
 		queryType:     queryType,
@@ -1800,9 +1789,8 @@ func setUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 		return err
 	}
 	eo := getWorkflowEnvOptions(ctx)
-	wfCtx := getWorkflowSerializationContext(ctx)
-	uh.dataConverter = converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), wfCtx)
-	// Already wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
+	// Data and Failure converter wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
+	uh.dataConverter = getWorkflowEnvironment(ctx).GetDataConverter()
 	uh.failureConverter = getWorkflowEnvironment(ctx).GetFailureConverter()
 	eo.updateHandlers[updateName] = uh
 	if getWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {

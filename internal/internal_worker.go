@@ -1033,12 +1033,6 @@ type workflowExecutor struct {
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
-	wfInfo := getWorkflowEnvironment(ctx).WorkflowInfo()
-	wfCtx := converter.WorkflowSerializationContext{
-		Namespace:  wfInfo.Namespace,
-		WorkflowID: wfInfo.WorkflowExecution.ID,
-	}
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, wfCtx)
 	fnType := reflect.TypeOf(we.fn)
 
 	var args []interface{}
