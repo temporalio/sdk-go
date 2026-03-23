@@ -1251,6 +1251,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		panic(fmt.Sprintf("invalid ExternalStorage options: %v", err))
 	}
 
+	storageDriverTypes := collectStorageDriverTypes(options.ExternalStorage.Drivers)
+
 	client := &WorkflowClient{
 		workflowService:          workflowServiceClient,
 		conn:                     conn,
@@ -1274,6 +1276,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		workerGroupingKey:       uuid.NewString(),
 		inboundPayloadVisitor:   NewExternalRetrievalVisitor(storageParams),
 		outboundPayloadVisitor:  NewExternalStorageVisitor(storageParams),
+		storageDriverTypes:      storageDriverTypes,
 	}
 
 	if heartbeatInterval > 0 {
@@ -1497,4 +1500,21 @@ func SetResponseInfoOnStartWorkflowOptions(opts *StartWorkflowOptions) *startWor
 		opts.responseInfo = &startWorkflowResponseInfo{}
 	}
 	return opts.responseInfo
+}
+
+// collectStorageDriverTypes returns deduplicated driver types from the given drivers.
+func collectStorageDriverTypes(drivers []converter.StorageDriver) []string {
+	if len(drivers) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(drivers))
+	result := make([]string, 0, len(drivers))
+	for _, d := range drivers {
+		t := d.Type()
+		if _, found := seen[t]; !found {
+			seen[t] = struct{}{}
+			result = append(result, t)
+		}
+	}
+	return result
 }
