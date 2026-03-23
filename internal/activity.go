@@ -327,6 +327,7 @@ func WithActivityTask(
 		WorkflowType: task.WorkflowType.GetName(),
 		ActivityType: task.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
+		IsLocal:      false,
 	}
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, actCtx)
 

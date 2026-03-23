@@ -554,6 +554,12 @@ func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error),
 ) {
+	// Backward compatibility: generate WorkflowID if not set by caller.
+	// The Go SDK interceptor sets this before serialization so it's available
+	// to context-aware codecs, but bindings callers may not set it.
+	if params.WorkflowID == "" {
+		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
+	}
 	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {

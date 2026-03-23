@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -489,7 +490,7 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 	}
 
 	actCtx := converter.ActivitySerializationContext{
-		Namespace:    opts.Namespace,
+		Namespace:    cmp.Or(opts.Namespace, wc.namespace),
 		WorkflowID:   opts.WorkflowID,
 		ActivityType: opts.ActivityType,
 		WorkflowType: opts.WorkflowType,
@@ -536,7 +537,7 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 	}
 
 	actCtx := converter.ActivitySerializationContext{
-		Namespace:    opts.Namespace,
+		Namespace:    cmp.Or(opts.Namespace, wc.namespace),
 		WorkflowID:   opts.WorkflowID,
 		ActivityType: opts.ActivityType,
 		WorkflowType: opts.WorkflowType,
@@ -581,7 +582,7 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 	}
 
 	actCtx := converter.ActivitySerializationContext{
-		Namespace:    opts.Namespace,
+		Namespace:    cmp.Or(opts.Namespace, wc.namespace),
 		WorkflowID:   opts.WorkflowID,
 		ActivityType: opts.ActivityType,
 		WorkflowType: opts.WorkflowType,
@@ -621,7 +622,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatWithOptions(ctx context.Context
 	}
 
 	actCtx := converter.ActivitySerializationContext{
-		Namespace:    opts.Namespace,
+		Namespace:    cmp.Or(opts.Namespace, wc.namespace),
 		WorkflowID:   opts.WorkflowID,
 		ActivityType: opts.ActivityType,
 		WorkflowType: opts.WorkflowType,
@@ -656,7 +657,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByIDWithOptions(ctx context.Con
 	}
 
 	actCtx := converter.ActivitySerializationContext{
-		Namespace:    opts.Namespace,
+		Namespace:    cmp.Or(opts.Namespace, wc.namespace),
 		WorkflowID:   opts.WorkflowID,
 		ActivityType: opts.ActivityType,
 		WorkflowType: opts.WorkflowType,
