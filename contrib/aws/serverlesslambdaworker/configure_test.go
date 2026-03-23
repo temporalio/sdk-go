@@ -6,6 +6,7 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
@@ -78,23 +79,26 @@ func TestConfigureWorkerContext_SetTaskQueue(t *testing.T) {
 
 func TestConfigureWorkerContext_MutateClientOptions(t *testing.T) {
 	ctx := &ConfigureWorkerContext{}
-	ctx.MutateClientOptions(func(opts *client.Options) {
+	ctx.MutateClientOptions(func(opts *client.Options) error {
 		opts.Namespace = "custom-ns"
+		return nil
 	})
 
 	var opts client.Options
-	ctx.mutateClientOpts(&opts)
+	err := ctx.mutateClientOpts(&opts)
+	assert.NoError(t, err)
 	assert.Equal(t, "custom-ns", opts.Namespace)
 }
 
 func TestConfigureWorkerContext_MutateWorkerOptions(t *testing.T) {
 	ctx := &ConfigureWorkerContext{}
-	ctx.MutateWorkerOptions(func(opts *worker.Options) {
+	ctx.MutateWorkerOptions(func(opts *worker.Options) error {
 		opts.MaxConcurrentActivityExecutionSize = 42
+		return nil
 	})
 
 	var opts worker.Options
-	ctx.mutateWorkerOpts(&opts)
+	require.NoError(t, ctx.mutateWorkerOpts(&opts))
 	assert.Equal(t, 42, opts.MaxConcurrentActivityExecutionSize)
 }
 

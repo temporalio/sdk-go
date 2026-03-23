@@ -18,7 +18,7 @@ import (
 type workerDeps struct {
 	dial             func(client.Options) (client.Client, error)
 	newWorker        func(client.Client, string, worker.Options) worker.Worker
-	startLambda      func(handler interface{}, options ...lambda.Option)
+	startLambda      func(handler any, options ...lambda.Option)
 	loadConfig       func() (client.Options, error)
 	getenv           func(string) string
 	setCacheSize     func(int)
@@ -32,7 +32,7 @@ func defaultDeps() workerDeps {
 		newWorker: func(c client.Client, tq string, opts worker.Options) worker.Worker {
 			return worker.New(c, tq, opts)
 		},
-		startLambda:  lambda.StartWithOptions,
+		startLambda: lambda.StartWithOptions,
 		loadConfig: func() (client.Options, error) {
 			return envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
 				ConfigFilePath: lambdaDefaultConfigFilePath(os.Getenv),
@@ -79,7 +79,9 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 	}
 	applyLambdaClientDefaults(&clientOpts)
 	if configCtx.mutateClientOpts != nil {
-		configCtx.mutateClientOpts(&clientOpts)
+		if err := configCtx.mutateClientOpts(&clientOpts); err != nil {
+			return fmt.Errorf("mutating client options: %w", err)
+		}
 	}
 
 	taskQueue, err := resolveTaskQueue(configCtx.taskQueue, deps.getenv)
@@ -90,7 +92,9 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 	var workerOpts worker.Options
 	applyLambdaWorkerDefaults(&workerOpts)
 	if configCtx.mutateWorkerOpts != nil {
-		configCtx.mutateWorkerOpts(&workerOpts)
+		if err := configCtx.mutateWorkerOpts(&workerOpts); err != nil {
+			return fmt.Errorf("mutating worker options: %w", err)
+		}
 	}
 	deps.setCacheSize(defaultStickyCacheSize)
 
@@ -134,6 +138,12 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 				case <-timer.C:
 				case <-invocationCtx.Done():
 				}
+			}
+		}
+
+		for _, fn := range configCtx.shutdownFuncs {
+			if err := fn(invocationCtx); err != nil {
+				fmt.Fprintf(os.Stderr, "serverlesslambdaworker: shutdown hook error: %v\n", err)
 			}
 		}
 		return nil
