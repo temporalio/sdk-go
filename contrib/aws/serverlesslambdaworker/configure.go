@@ -2,6 +2,8 @@ package serverlesslambdaworker
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 
@@ -18,11 +20,12 @@ var _ worker.Registry = (*ConfigureWorkerContext)(nil)
 // [worker.Registry] so that workflows, activities, and Nexus services can be registered directly on
 // it.
 type ConfigureWorkerContext struct {
-	taskQueue        string
-	mutateClientOpts func(*client.Options) error
-	mutateWorkerOpts func(*worker.Options) error
-	registrations    []func(worker.Registry)
-	shutdownFuncs    []func(context.Context) error
+	taskQueue              string
+	mutateClientOpts       func(*client.Options) error
+	mutateWorkerOpts       func(*worker.Options) error
+	registrations          []func(worker.Registry)
+	shutdownFuncs          []func(context.Context) error
+	shutdownDeadlineBuffer time.Duration
 }
 
 // RegisterWorkflow registers a workflow on the worker. See
@@ -82,10 +85,27 @@ func (c *ConfigureWorkerContext) MutateWorkerOptions(fn func(*worker.Options) er
 }
 
 // OnShutdown registers a function to be called at the end of each Lambda invocation, after the
-// worker has stopped. Shutdown functions run in registration order. Use this to flush telemetry
-// providers or release other per-process resources.
+// worker has stopped. Shutdown functions run in registration order and receive a background context
+// with no deadline — Lambda hard-kills the process at the invocation deadline regardless. Use this
+// to flush telemetry providers or release other per-process resources.
 func (c *ConfigureWorkerContext) OnShutdown(fn func(context.Context) error) {
 	c.shutdownFuncs = append(c.shutdownFuncs, fn)
+}
+
+// SetShutdownDeadlineBuffer sets how long before the Lambda invocation deadline the worker begins
+// its shutdown sequence (worker drain + shutdown hooks). If not set, it defaults to the
+// WorkerStopTimeout plus 2 seconds for shutdown hooks.
+//
+// This value is independent of [worker.Options.WorkerStopTimeout], which controls how long
+// [worker.Worker.Stop] waits for in-flight tasks to complete. The deadline buffer must be large
+// enough to accommodate both the worker stop timeout and any shutdown hooks (e.g. telemetry
+// flushes).
+func (c *ConfigureWorkerContext) SetShutdownDeadlineBuffer(d time.Duration) error {
+	if d < 0 {
+		return fmt.Errorf("shutdown deadline buffer must not be negative, got %v", d)
+	}
+	c.shutdownDeadlineBuffer = d
+	return nil
 }
 
 // SetTaskQueue sets the task queue name for the worker. If not set, the TEMPORAL_TASK_QUEUE
