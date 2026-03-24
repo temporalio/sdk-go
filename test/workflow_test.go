@@ -2698,9 +2698,7 @@ func (w *Workflows) WaitOnUpdate(ctx workflow.Context) (int, error) {
 		}()
 		updatesRan++
 
-		actOpt := w.defaultActivityOptions()
-		actOpt.ScheduleToCloseTimeout = 10 * time.Second
-		ctx = workflow.WithActivityOptions(ctx, actOpt)
+		ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 		var a Activities
 		err := workflow.ExecuteActivity(ctx, a.Echo, 1, 1).Get(ctx, nil)
 		return err
