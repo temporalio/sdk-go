@@ -467,7 +467,7 @@ type ClientOutboundInterceptor interface {
 type ClientUpdateWorkflowInput struct {
 	// UpdateID is the ID of the update.
 	UpdateID            string
-	// WorkflowID is the ID of the workflow.
+	// WorkflowID is the ID of the workflow to send the update to.
 	WorkflowID          string
 	// UpdateName is the name of the update.
 	UpdateName          string
