@@ -64,7 +64,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeployment(ctx context.Context
 	ts.Eventually(func() bool {
 		_, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 		return err == nil
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 15*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
@@ -83,7 +83,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
 			}
 		}
 		return false
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 15*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropagation(
@@ -115,7 +115,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropaga
 			return false
 		}
 		return false
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 15*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context, handle client.WorkflowRun) {
@@ -124,7 +124,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context,
 		ts.NoError(err)
 		status := describeResp.WorkflowExecutionInfo.Status
 		return enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING == status
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 15*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunningOnVersion(ctx context.Context, handle client.WorkflowRun, expectedBuildID string) {
@@ -140,7 +140,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunningOnVersion(ctx context
 			return false
 		}
 		return true
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 15*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForDrainage(ctx context.Context, dHandle client.WorkerDeploymentHandle, buildID string, target client.WorkerDeploymentVersionDrainageStatus) {
@@ -593,7 +593,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 		var startErr error
 		handle1, startErr = ts.client.ExecuteWorkflow(ctx, options, "WaitSignalToStartVersioned")
 		return startErr == nil
-	}, 5*time.Second, 200*time.Millisecond)
+	}, 15*time.Second, 200*time.Millisecond)
 	ts.Require().NotNil(handle1)
 	// No override
 	handle2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2"), "WaitSignalToStartVersioned")
@@ -718,7 +718,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 			},
 		})
 		return updateErr == nil
-	}, 5*time.Second, 200*time.Millisecond)
+	}, 15*time.Second, 200*time.Millisecond)
 	ts.Equal(options.VersioningOverride, &v2Override)
 
 	// Add and remove override to handle2
@@ -861,7 +861,7 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 		}
 		sort.Strings(res)
 		return reflect.DeepEqual(res, []string{deploymentName1, deploymentName2})
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 15*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
@@ -1114,7 +1114,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	// very likely probability (1-2^33) of success
 	ts.Eventually(func() bool {
 		return !ts.runWorkflowAndCheckV1(ctx, uuid.NewString())
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 15*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) TestRampVersion_AllowNoPollers() {

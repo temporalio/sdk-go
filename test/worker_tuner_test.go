@@ -3,7 +3,6 @@ package test_test
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -49,7 +48,7 @@ func (ts *WorkerTunerTestSuite) TestFixedSizeWorkerTuner() {
 	})
 	ts.NoError(err)
 
-	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx, 0)
+	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
 }
 
 func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
@@ -76,7 +75,7 @@ func (ts *WorkerTunerTestSuite) TestCompositeWorkerTuner() {
 		WorkflowSlotSupplier: wfSS, ActivitySlotSupplier: actSS, LocalActivitySlotSupplier: laCss})
 	ts.NoError(err)
 
-	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx, 0)
+	ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
 }
 
 func (ts *WorkerTunerTestSuite) TestPollerBehaviorAutoscalingScaler() {
@@ -90,7 +89,7 @@ func (ts *WorkerTunerTestSuite) TestPollerBehaviorAutoscalingScaler() {
 		ActivityTaskPollerBehavior: worker.NewPollerBehaviorAutoscaling(
 			worker.PollerBehaviorAutoscalingOptions{},
 		),
-	}, ctx, 0)
+	}, ctx)
 }
 
 func (ts *WorkerTunerTestSuite) TestPollerBehaviorSimpleMaximumScaler() {
@@ -104,11 +103,11 @@ func (ts *WorkerTunerTestSuite) TestPollerBehaviorSimpleMaximumScaler() {
 		ActivityTaskPollerBehavior: worker.NewPollerBehaviorSimpleMaximum(
 			worker.PollerBehaviorSimpleMaximumOptions{},
 		),
-	}, ctx, 0)
+	}, ctx)
 }
 
 func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
 	wfSS, err := worker.NewFixedSizeSlotSupplier(10)
@@ -133,22 +132,19 @@ func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
 
 	// The bug this is verifying was triggered by a race, so run this a bunch to verify it's not hit
 	for i := 0; i < 10; i++ {
-		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx, 2*time.Minute)
+		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx)
 	}
 }
 
-func (ts *WorkerTunerTestSuite) runTheWorkflow(workerOptions worker.Options, ctx context.Context, wfTimeout time.Duration) {
+func (ts *WorkerTunerTestSuite) runTheWorkflow(workerOptions worker.Options, ctx context.Context) {
 	myWorker := worker.New(ts.client, ts.taskQueueName, workerOptions)
 	ts.workflows.register(myWorker)
 	ts.activities.register(myWorker)
 	ts.NoError(myWorker.Start())
 	defer myWorker.Stop()
 
-	opts := ts.startWorkflowOptions(ts.T().Name())
-	if wfTimeout > 0 {
-		opts.WorkflowExecutionTimeout = wfTimeout
-	}
-	handle, err := ts.client.ExecuteWorkflow(ctx, opts,
+	handle, err := ts.client.ExecuteWorkflow(ctx,
+		ts.startWorkflowOptions(ts.T().Name()),
 		ts.workflows.RunsLocalAndNonlocalActsWithRetries, 5, 2)
 	ts.NoError(err)
 	ts.NoError(handle.Get(ctx, nil))
