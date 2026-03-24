@@ -1394,17 +1394,14 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowAndParentWorkflow() {
 		ts.workflows.ChildWorkflowAndParentCancel)
 	ts.NoError(err)
 
-	// Give it a sec to populate the query
-	<-time.After(1 * time.Second)
-
-	v, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), "", "child-and-parent-cancel-child-workflow-id")
-	ts.NoError(err)
-
 	var childWorkflowID string
-	err = v.Get(&childWorkflowID)
-	ts.NoError(err)
-	ts.NotNil(childWorkflowID)
-	ts.NotEmpty(childWorkflowID)
+	ts.Eventually(func() bool {
+		v, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), "", "child-and-parent-cancel-child-workflow-id")
+		if err != nil {
+			return false
+		}
+		return v.Get(&childWorkflowID) == nil && childWorkflowID != ""
+	}, 5*time.Second, 200*time.Millisecond)
 
 	err = ts.client.CancelWorkflow(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
@@ -7307,9 +7304,9 @@ func (ts *IntegrationTestSuite) metricGauge(name string, tagFilterKeyValue ...st
 }
 
 func (ts *IntegrationTestSuite) assertMetricGaugeEventually(name string, tags []string, expected float64) {
-	// Try for ten seconds to accommodate slow environments (e.g. docker-compose CI)
+	// Try for two seconds
 	var lastCount float64
-	for start := time.Now(); time.Since(start) <= 10*time.Second; {
+	for start := time.Now(); time.Since(start) <= 2*time.Second; {
 		lastCount = ts.metricGauge(name, tags...)
 		if lastCount == expected {
 			return
