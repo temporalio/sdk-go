@@ -180,7 +180,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		MetricsHandler:          metricsHandler,
 		TrafficController:       trafficController,
 		Interceptors:            clientInterceptors,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 		WorkerHeartbeatInterval: -1,
 	})
 	ts.NoError(err)
@@ -250,6 +250,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		})
 		ts.NoError(err)
 		options.Tuner = tuner
+		if strings.Contains(ts.T().Name(), "ManyActs") {
+			options.DeadlockDetectionTimeout = 5 * time.Second
+		}
 	}
 	if strings.Contains(ts.T().Name(), "SlotSuppliersWithSession") {
 		options.MaxConcurrentActivityExecutionSize = 1
