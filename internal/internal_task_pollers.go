@@ -315,16 +315,7 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		case <-doneC:
 			return result, err
 		case <-bp.stopC:
-			// Give the server a reasonable window to complete the poll after
-			// ShutdownWorker. Fall back to cancelling the poll if it takes too long.
-			timer := time.NewTimer(5 * time.Second)
-			defer timer.Stop()
-			select {
-			case <-doneC:
-			case <-timer.C:
-				cancel()
-				<-doneC
-			}
+			<-doneC
 			return result, err
 		}
 	}
@@ -512,6 +503,9 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 					return nil, nil
 				}
 				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
+				if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
+					return nil, err
+				}
 				task.doneCh = doneCh
 				task.laResultCh = laResultCh
 				task.laRetryCh = laRetryCh
@@ -541,6 +535,9 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
 		task = wtp.toWorkflowTask(response.WorkflowTask)
+		if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
+			return err
+		}
 	}
 }
 
