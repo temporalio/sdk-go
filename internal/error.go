@@ -195,7 +195,7 @@ type (
 		// params *ExecuteWorkflowParams
 		// WorkflowType is the type of the workflow.
 		WorkflowType        *WorkflowType
-		// Input is the payload of the workflow.
+		// Input is the arguments for the continued workflow execution.
 		Input               *commonpb.Payloads
 		// Header is the header of the workflow.
 		Header              *commonpb.Header

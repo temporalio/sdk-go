@@ -309,7 +309,7 @@ type WorkerPluginReplayWorkflowOptions struct {
 	WorkflowServiceClient workflowservice.WorkflowServiceClient
 	// Namespace is the namespace for the replay.
 	Namespace             string
-	// OriginalExecution is the execution used to start the replay.
+	// OriginalExecution is the original workflow execution being replayed.
 	OriginalExecution     WorkflowExecution
 }
 

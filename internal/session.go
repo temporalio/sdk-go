@@ -49,7 +49,7 @@ type (
 		ExecutionTimeout time.Duration
 		// CreationTimeout specifies how long session creation can take before returning an error.
 		CreationTimeout  time.Duration
-		// HeartbeatTimeout specifies the heartbeat timeout. 如果 heartbeat is not received by server within the timeout, the session will be declared as failed.
+		// HeartbeatTimeout specifies the heartbeat timeout. If heartbeat is not received by server within the timeout, the session will be declared as failed.
 		HeartbeatTimeout time.Duration
 	}
 

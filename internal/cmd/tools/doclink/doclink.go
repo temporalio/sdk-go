@@ -623,46 +623,15 @@ func checkInternalDocs(path string, file *os.File, pairs map[string]map[string]s
 					}
 					if structType, ok := typeSpec.Type.(*ast.StructType); ok {
 						for _, field := range structType.Fields.List {
-							isExported := false
-							var fieldName string
-							if len(field.Names) > 0 {
-								for _, name := range field.Names {
-									if ast.IsExported(name.Name) {
-										isExported = true
-										fieldName = name.Name
-										break
-									}
-								}
-							} else {
-								// Check anonymous field
-								if ident, ok := field.Type.(*ast.Ident); ok {
-									if ast.IsExported(ident.Name) {
-										isExported = true
-										fieldName = ident.Name
-									}
-								} else if sel, ok := field.Type.(*ast.SelectorExpr); ok {
-									if ast.IsExported(sel.Sel.Name) {
-										isExported = true
-										fieldName = sel.Sel.Name
-									}
-								} else if star, ok := field.Type.(*ast.StarExpr); ok {
-									if ident, ok := star.X.(*ast.Ident); ok {
-										if ast.IsExported(ident.Name) {
-											isExported = true
-											fieldName = ident.Name
-										}
-									} else if sel, ok := star.X.(*ast.SelectorExpr); ok {
-										if ast.IsExported(sel.Sel.Name) {
-											isExported = true
-											fieldName = sel.Sel.Name
-										}
-									}
-								}
+							if len(field.Names) == 0 {
+								// Skip anonymous/embedded fields
+								continue
 							}
-
-							if isExported && field.Doc == nil && field.Comment == nil {
-								changesNeeded = true
-								fmt.Printf("Missing doc for exposed struct %s field %s in %s\n", typeSpec.Name.Name, fieldName, path)
+							for _, name := range field.Names {
+								if ast.IsExported(name.Name) && field.Doc == nil {
+									changesNeeded = true
+									fmt.Printf("Missing doc for exposed struct %s field %s in %s\n", typeSpec.Name.Name, name.Name, path)
+								}
 							}
 						}
 					}

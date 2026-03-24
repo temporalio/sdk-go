@@ -384,9 +384,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.Execution]
 	WorkflowExecution struct {
-		// ID of the workflow execution.
+		// ID is the identifier of the workflow execution.
 		ID    string
-		// RunID of the workflow execution.
+		// RunID is the run identifier of the workflow execution.
 		RunID string
 	}
 
@@ -1427,7 +1427,8 @@ type WorkflowInfo struct {
 	WorkflowTaskTimeout      time.Duration
 	// Namespace is the namespace of the workflow.
 	Namespace                string
-	Attempt                  int32 // Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
+	// Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
+	Attempt                  int32
 	// Time of the workflow start.
 	// workflow.Now at the beginning of a workflow can return a later time if the Workflow Worker was down.
 	WorkflowStartTime       time.Time
@@ -1443,9 +1444,10 @@ type WorkflowInfo struct {
 	ParentWorkflowExecution *WorkflowExecution
 	// RootWorkflowExecution is the first workflow execution in the chain of workflows. If a workflow is itself a root workflow, then this field is nil.
 	RootWorkflowExecution *WorkflowExecution
-	Memo                  *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	// Memo can be decoded using data converter (defaultDataConverter, or custom one if set).
+	Memo                  *commonpb.Memo
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
-	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
+	SearchAttributes *commonpb.SearchAttributes
 	// RetryPolicy is the retry policy of the workflow.
 	RetryPolicy      *RetryPolicy
 	// Priority settings that control relative ordering of task processing when workflow tasks are backed up in a queue.

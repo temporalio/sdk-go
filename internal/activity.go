@@ -42,20 +42,29 @@ type (
 		// ActivityID is the ID of the activity.
 		ActivityID             string
 		// ActivityRunID is the run ID of the activity. Empty if the activity was started by a workflow.
-		ActivityRunID          string // Run ID of the activity. Empty if the activity was started by a workflow.
+		ActivityRunID          string
 		// ActivityType is the type of the activity.
 		ActivityType           ActivityType
 		// TaskQueue is the name of the task queue that the activity needs to be scheduled on.
 		TaskQueue              string
-		Namespace              string        // Namespace of this activity.
-		HeartbeatTimeout       time.Duration // Maximum time between heartbeats. 0 means no heartbeat needed.
-		ScheduleToCloseTimeout time.Duration // Schedule to close timeout set by the activity options.
-		StartToCloseTimeout    time.Duration // Start to close timeout set by the activity options.
-		ScheduledTime          time.Time     // Time of activity scheduled by a workflow
-		StartedTime            time.Time     // Time of activity start
-		Deadline               time.Time     // Time of activity timeout
-		Attempt                int32         // Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
-		IsLocalActivity        bool          // true if it is a local activity
+		// Namespace is the namespace of this activity.
+		Namespace              string
+		// HeartbeatTimeout is the maximum time between heartbeats. 0 means no heartbeat needed.
+		HeartbeatTimeout       time.Duration
+		// ScheduleToCloseTimeout is the schedule to close timeout set by the activity options.
+		ScheduleToCloseTimeout time.Duration
+		// StartToCloseTimeout is the start to close timeout set by the activity options.
+		StartToCloseTimeout    time.Duration
+		// ScheduledTime is the time when the activity was scheduled by a workflow.
+		ScheduledTime          time.Time
+		// StartedTime is the time when the activity started.
+		StartedTime            time.Time
+		// Deadline is the time of activity timeout.
+		Deadline               time.Time
+		// Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
+		Attempt                int32
+		// IsLocalActivity is true if it is a local activity.
+		IsLocalActivity        bool
 		// Priority settings that control relative ordering of task processing when activity tasks are backed up in a queue.
 		// If no priority is set, the default value is the zero value.
 		//
