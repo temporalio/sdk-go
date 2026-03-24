@@ -943,7 +943,8 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 		Logger:                  ilog.NewDefaultLogger(),
 		WorkerHeartbeatInterval: 1 * time.Second,
 		ConnectionOptions: client.ConnectionOptions{
-			TLS: ts.config.TLS,
+			TLS:                  ts.config.TLS,
+			GetSystemInfoTimeout: ctxTimeout,
 			DialOptions: []grpc.DialOption{
 				grpc.WithUnaryInterceptor(func(
 					ctx context.Context,

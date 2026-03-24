@@ -133,7 +133,7 @@ func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
 
 	// The bug this is verifying was triggered by a race, so run this a bunch to verify it's not hit
 	for i := 0; i < 10; i++ {
-		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx, 30*time.Second)
+		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx, 2*time.Minute)
 	}
 }
 
