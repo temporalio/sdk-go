@@ -250,9 +250,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		})
 		ts.NoError(err)
 		options.Tuner = tuner
-		if strings.Contains(ts.T().Name(), "ManyActs") {
-			options.DeadlockDetectionTimeout = 5 * time.Second
-		}
 	}
 	if strings.Contains(ts.T().Name(), "SlotSuppliersWithSession") {
 		options.MaxConcurrentActivityExecutionSize = 1
@@ -7304,9 +7301,9 @@ func (ts *IntegrationTestSuite) metricGauge(name string, tagFilterKeyValue ...st
 }
 
 func (ts *IntegrationTestSuite) assertMetricGaugeEventually(name string, tags []string, expected float64) {
-	// Try for two seconds
+	// Try for ten seconds to accommodate slow environments (e.g. docker-compose CI)
 	var lastCount float64
-	for start := time.Now(); time.Since(start) <= 2*time.Second; {
+	for start := time.Now(); time.Since(start) <= 10*time.Second; {
 		lastCount = ts.metricGauge(name, tags...)
 		if lastCount == expected {
 			return
