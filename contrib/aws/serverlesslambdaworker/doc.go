@@ -43,7 +43,7 @@
 //
 // The Lambda function timeout must be long enough for the worker to pick up a task, execute it,
 // and shut down gracefully. Set it to at least the longest expected activity StartToClose timeout
-// plus the worker stop timeout (default 5s). A minimum of 1 minute is recommended. If the timeout
+// plus the worker stop timeout (default 7s). A minimum of 1 minute is recommended. If the timeout
 // is too short, the worker may be terminated before it can complete in-progress tasks.
 //
 // # Observability

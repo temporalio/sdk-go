@@ -21,12 +21,13 @@ const (
 	defaultMaxConcurrentWorkflowTaskPollers        = 2
 	defaultMaxConcurrentNexusTaskPollers           = 1
 	defaultWorkerStopTimeout                       = 5 * time.Second
+	defaultShutdownHookBuffer                      = 2 * time.Second
 	defaultStickyCacheSize                         = 100
 
-	envTaskQueue       = "TEMPORAL_TASK_QUEUE"
-	envLambdaTaskRoot  = "LAMBDA_TASK_ROOT"
-	envConfigFile      = "TEMPORAL_CONFIG_FILE"
-	defaultConfigFile  = "temporal.toml"
+	envTaskQueue      = "TEMPORAL_TASK_QUEUE"
+	envLambdaTaskRoot = "LAMBDA_TASK_ROOT"
+	envConfigFile     = "TEMPORAL_CONFIG_FILE"
+	defaultConfigFile = "temporal.toml"
 )
 
 // applyLambdaWorkerDefaults sets Lambda-appropriate defaults on the given worker options.

@@ -2,6 +2,7 @@ package serverlesslambdaworker
 
 import (
 	"testing"
+	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/assert"
@@ -127,4 +128,16 @@ func TestConfigureWorkerContext_ReplayRegistrations(t *testing.T) {
 
 	ctx.replayRegistrations(w)
 	w.AssertExpectations(t)
+}
+
+func TestConfigureWorkerContext_SetShutdownDeadlineBuffer(t *testing.T) {
+	ctx := &ConfigureWorkerContext{}
+	require.NoError(t, ctx.SetShutdownDeadlineBuffer(5*time.Second))
+	assert.Equal(t, 5*time.Second, ctx.shutdownDeadlineBuffer)
+
+	require.NoError(t, ctx.SetShutdownDeadlineBuffer(0))
+	assert.Equal(t, time.Duration(0), ctx.shutdownDeadlineBuffer)
+
+	err := ctx.SetShutdownDeadlineBuffer(-1 * time.Second)
+	assert.ErrorContains(t, err, "must not be negative")
 }

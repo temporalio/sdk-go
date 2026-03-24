@@ -98,11 +98,40 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 	}
 	deps.setCacheSize(defaultStickyCacheSize)
 
-	stopTimeout := workerOpts.WorkerStopTimeout
+	shutdownBuffer := configCtx.shutdownDeadlineBuffer
+	if shutdownBuffer == 0 {
+		shutdownBuffer = workerOpts.WorkerStopTimeout + defaultShutdownHookBuffer
+	}
+
+	logger := clientOpts.Logger
 
 	handler := func(invocationCtx context.Context) error {
-		// Build per-invocation client options with identity from this invocation's
-		// Lambda context. A shallow copy is sufficient since only Identity is modified.
+		deadline, ok := invocationCtx.Deadline()
+		if ok {
+			workTime := time.Until(deadline) - shutdownBuffer
+			if workTime <= time.Second {
+				return fmt.Errorf(
+					"Lambda timeout leaves almost no time for work "+
+						"(workTime %v, shutdownBuffer %v); increase the "+
+						"function timeout or decrease the shutdown deadline "+
+						"buffer",
+					workTime, shutdownBuffer,
+				)
+			} else if workTime < 5*time.Second {
+				if logger != nil {
+					logger.Warn(
+						"Lambda timeout leaves less than 5s for work after "+
+							"shutdown buffer; consider increasing the function "+
+							"timeout or decreasing the shutdown deadline buffer",
+						"workTime", workTime,
+						"shutdownBuffer", shutdownBuffer,
+					)
+				}
+			}
+		}
+
+		// Build per-invocation client options with identity from this invocation's Lambda context.
+		// A shallow copy is sufficient since only Identity is modified.
 		invocationOpts := clientOpts
 		if invocationOpts.Identity == "" {
 			requestID, functionARN, ok := deps.extractLambdaCtx(invocationCtx)
@@ -123,13 +152,11 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 		if err := w.Start(); err != nil {
 			return fmt.Errorf("starting worker: %w", err)
 		}
-		defer w.Stop()
 
-		deadline, ok := invocationCtx.Deadline()
 		if !ok {
 			<-invocationCtx.Done()
 		} else {
-			shutdownAt := deadline.Add(-stopTimeout)
+			shutdownAt := deadline.Add(-shutdownBuffer)
 			waitDuration := time.Until(shutdownAt)
 			if waitDuration > 0 {
 				timer := time.NewTimer(waitDuration)
@@ -141,9 +168,16 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 			}
 		}
 
+		// Stop the worker before running shutdown hooks so that hooks (e.g. OTLP telemetry flushes)
+		// see all spans/metrics emitted during the drain phase.
+		w.Stop()
+
+		// Use context.Background because invocationCtx may already be cancelled. No timeout is
+		// needed — Lambda hard-kills the process at the deadline regardless.
 		for _, fn := range configCtx.shutdownFuncs {
-			if err := fn(invocationCtx); err != nil {
-				fmt.Fprintf(os.Stderr, "serverlesslambdaworker: shutdown hook error: %v\n", err)
+			if err := fn(context.Background()); err != nil {
+				fmt.Fprintf(os.Stderr,
+					"serverlesslambdaworker: shutdown hook error: %v\n", err)
 			}
 		}
 		return nil

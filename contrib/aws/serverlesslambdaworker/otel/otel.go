@@ -25,8 +25,13 @@ import (
 
 	"go.temporal.io/sdk/client"
 	temporalotel "go.temporal.io/sdk/contrib/opentelemetry"
-	"go.temporal.io/sdk/interceptor"
 )
+
+// ShutdownRegistrar accepts a function to be called at the end of each Lambda invocation.
+// [serverlesslambdaworker.ConfigureWorkerContext] implements this interface.
+type ShutdownRegistrar interface {
+	OnShutdown(func(context.Context) error)
+}
 
 // Options configures the behavior of [ApplyDefaults].
 type Options struct {
@@ -51,13 +56,17 @@ type Options struct {
 // The collector endpoint and service name can be set via [Options], or fall back to environment
 // variables (OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_SERVICE_NAME / AWS_LAMBDA_FUNCTION_NAME).
 //
-// The returned [ShutdownFunc] flushes pending metrics and traces, then shuts down the providers.
-// Register it with [serverlesslambdaworker.ConfigureWorkerContext.OnShutdown] to ensure telemetry
-// is exported before each Lambda invocation completes.
+// ApplyDefaults registers a per-invocation ForceFlush hook on the given [ShutdownRegistrar] so
+// that pending metrics and traces are exported before each Lambda invocation completes. It calls
+// only ForceFlush (not Shutdown) so the providers remain usable across warm-start invocations.
+// Permanent provider shutdown is unnecessary in Lambda since the runtime terminates the process.
 //
-// Call this from a [serverlesslambdaworker.ConfigureWorkerContext.MutateClientOptions] callback.
+// Call this from a [serverlesslambdaworker.ConfigureWorkerContext.MutateClientOptions] callback,
+// passing the [serverlesslambdaworker.ConfigureWorkerContext] as the [ShutdownRegistrar].
 // If you need more control, see [ApplyDefaultsWithProviders].
-func ApplyDefaults(opts *client.Options, options Options) (func(ctx context.Context) error, error) {
+func ApplyDefaults(
+	ctx ShutdownRegistrar, opts *client.Options, options Options,
+) error {
 	if options.MetricExportInterval == 0 {
 		options.MetricExportInterval = 10 * time.Second
 	}
@@ -83,53 +92,84 @@ func ApplyDefaults(opts *client.Options, options Options) (func(ctx context.Cont
 		traceGrpcOpts = append(traceGrpcOpts, otlptracegrpc.WithEndpoint(options.CollectorEndpoint))
 	}
 
+	// Build a shared resource for both providers so that metrics and traces
+	// carry the same service.name, enabling correlation in backends.
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(semconv.SchemaURL,
+			semconv.ServiceName(options.ServiceName)),
+	)
+	if err != nil {
+		return fmt.Errorf("creating OTel resource: %w", err)
+	}
+
 	metricExporter, err := otlpmetricgrpc.New(context.Background(), grpcOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating OTLP metric exporter: %w", err)
+		return fmt.Errorf("creating OTLP metric exporter: %w", err)
 	}
 	meterProvider := otelsdkmetric.NewMeterProvider(
 		otelsdkmetric.WithReader(otelsdkmetric.NewPeriodicReader(metricExporter,
-			otelsdkmetric.WithInterval(options.MetricExportInterval))))
+			otelsdkmetric.WithInterval(options.MetricExportInterval))),
+		otelsdkmetric.WithResource(res))
+
+	// If anything below fails, shut down the meterProvider to stop its
+	// periodic reader goroutine and release the underlying gRPC connection.
+	success := false
+	defer func() {
+		if !success {
+			// Use Background — the invocation context may already be cancelled.
+			_ = meterProvider.Shutdown(context.Background())
+		}
+	}()
 
 	traceExporter, err := otlptracegrpc.New(context.Background(), traceGrpcOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("creating OTLP trace exporter: %w", err)
+		return fmt.Errorf("creating OTLP trace exporter: %w", err)
 	}
-	serviceName := options.ServiceName
-	res := resource.NewWithAttributes(semconv.SchemaURL,
-		semconv.ServiceName(serviceName))
 	tracerProvider := otelsdktrace.NewTracerProvider(
 		otelsdktrace.WithBatcher(traceExporter),
 		otelsdktrace.WithIDGenerator(xray.NewIDGenerator()),
 		otelsdktrace.WithResource(res))
 
-	if err := ApplyDefaultsWithProviders(opts, meterProvider, tracerProvider); err != nil {
-		return nil, err
+	// If ApplyDefaultsWithProviders fails, shut down the tracerProvider too.
+	defer func() {
+		if !success {
+			_ = tracerProvider.Shutdown(context.Background())
+		}
+	}()
+
+	if err := ApplyDefaultsWithProviders(ctx, opts, meterProvider, tracerProvider); err != nil {
+		return err
 	}
 
-	shutdown := func(ctx context.Context) error {
-		return errors.Join(
-			meterProvider.ForceFlush(ctx),
-			tracerProvider.ForceFlush(ctx),
-			meterProvider.Shutdown(ctx),
-			tracerProvider.Shutdown(ctx),
-		)
-	}
-	return shutdown, nil
+	success = true
+	return nil
 }
 
 // ApplyDefaultsWithProviders configures OTel metrics and tracing on the given client options using
-// the provided MeterProvider and TracerProvider. Use this instead of [ApplyDefaults] when you need
-// full control over the OTel provider configuration.
+// the provided MeterProvider and TracerProvider. It registers a per-invocation ForceFlush hook on
+// the given [ShutdownRegistrar]. Use this instead of [ApplyDefaults] when you need full control
+// over the OTel provider configuration.
 //
-// Call this from a [serverlesslambdaworker.ConfigureWorkerContext.MutateClientOptions] callback.
+// Call this from a [serverlesslambdaworker.ConfigureWorkerContext.MutateClientOptions] callback,
+// passing the [serverlesslambdaworker.ConfigureWorkerContext] as the [ShutdownRegistrar].
 func ApplyDefaultsWithProviders(
+	ctx ShutdownRegistrar,
 	opts *client.Options,
 	meterProvider *otelsdkmetric.MeterProvider,
 	tracerProvider *otelsdktrace.TracerProvider,
 ) error {
 	ApplyMetrics(opts, meterProvider)
-	return ApplyTracing(opts, tracerProvider)
+	if err := ApplyTracing(opts, tracerProvider); err != nil {
+		return err
+	}
+	ctx.OnShutdown(func(flushCtx context.Context) error {
+		return errors.Join(
+			meterProvider.ForceFlush(flushCtx),
+			tracerProvider.ForceFlush(flushCtx),
+		)
+	})
+	return nil
 }
 
 // ApplyMetrics configures only OTel metrics (no tracing) on the given client
@@ -152,6 +192,3 @@ func ApplyTracing(opts *client.Options, tracerProvider *otelsdktrace.TracerProvi
 	opts.Interceptors = append(opts.Interceptors, tracingInterceptor)
 	return nil
 }
-
-// Verify interface compliance at compile time.
-var _ interceptor.Interceptor = (interceptor.Interceptor)(nil)

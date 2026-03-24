@@ -51,12 +51,13 @@ Metrics and tracing are opt-in. The `otel` sub-package provides convenience
 helpers for AWS Distro for OpenTelemetry (ADOT):
 
 ```go
-import "go.temporal.io/sdk/contrib/aws/serverlesslambdaworker/otel"
+import (
+    "go.temporal.io/sdk/client"
+    "go.temporal.io/sdk/contrib/aws/serverlesslambdaworker/otel"
+)
 
-ctx.MutateClientOptions(func(opts *client.Options) {
-    if err := otel.ApplyDefaults(opts, meterProvider); err != nil {
-        return err
-    }
+ctx.MutateClientOptions(func(opts *client.Options) error {
+    return otel.ApplyDefaults(ctx, opts, otel.Options{})
 })
 ```
 
