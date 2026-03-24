@@ -3608,14 +3608,14 @@ func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bo
 
 	if localActivity {
 		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
-			ScheduleToCloseTimeout: 2 * time.Second,
-			RetryPolicy:            &retryPolicy,
+			StartToCloseTimeout: 5 * time.Second,
+			RetryPolicy:         &retryPolicy,
 		})
 		err = workflow.ExecuteLocalActivity(ctx, activities.CancelActivity).Get(ctx, nil)
 	} else {
 		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			ScheduleToCloseTimeout: 2 * time.Second,
-			RetryPolicy:            &retryPolicy,
+			StartToCloseTimeout: 5 * time.Second,
+			RetryPolicy:         &retryPolicy,
 		})
 		err = workflow.ExecuteActivity(ctx, activities.CancelActivity).Get(ctx, nil)
 	}
@@ -3624,6 +3624,24 @@ func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bo
 		return err
 	}
 	return nil
+}
+
+func (w *Workflows) SessionCancelNDE(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+
+	sessionCtx, err := workflow.CreateSession(ctx, &workflow.SessionOptions{
+		CreationTimeout:  time.Minute,
+		ExecutionTimeout: time.Minute,
+	})
+	if err != nil {
+		return err
+	}
+	defer workflow.CompleteSession(sessionCtx)
+
+	// The DataConverter is configured to panic when encoding "FAIL_ENCODE_NOW"
+	var result string
+	err = workflow.ExecuteActivity(sessionCtx, "Prefix_ToUpper", "FAIL_ENCODE_NOW").Get(sessionCtx, &result)
+	return err
 }
 
 func (w *Workflows) register(worker worker.Worker) {
@@ -3645,6 +3663,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.Panicked)
 	worker.RegisterWorkflow(w.PanickedActivity)
 	worker.RegisterWorkflow(w.BasicSession)
+	worker.RegisterWorkflow(w.SessionCancelNDE)
 	worker.RegisterWorkflow(w.AdvancedSession)
 	worker.RegisterWorkflow(w.CancelActivity)
 	worker.RegisterWorkflow(w.CancelActivityImmediately)
