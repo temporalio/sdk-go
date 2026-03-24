@@ -1465,12 +1465,13 @@ func (aw *AggregatedWorker) Stop() {
 	case <-aw.stopC:
 		return
 	default:
-		close(aw.stopC)
 	}
 
-	// Prevent pollers from re-polling after ShutdownWorker cancels
-	// in-flight polls. The poll goroutine can return and re-poll
-	// before shutdownWorker() returns to this goroutine.
+	// Prevent pollers from re-polling before closing stopC. There is a race
+	// between stopC being closed and the ShutdownWorker RPC: a poll can
+	// complete naturally (e.g. long-poll timeout) right after stopC fires
+	// but before ShutdownWorker is sent, causing the poller to loop and
+	// re-poll.
 	if !util.IsInterfaceNil(aw.activityWorker) {
 		aw.activityWorker.worker.noRepoll.Store(true)
 	}
@@ -1480,6 +1481,8 @@ func (aw *AggregatedWorker) Stop() {
 	if !util.IsInterfaceNil(aw.nexusWorker) {
 		aw.nexusWorker.worker.noRepoll.Store(true)
 	}
+
+	close(aw.stopC)
 
 	aw.shutdownWorker()
 
