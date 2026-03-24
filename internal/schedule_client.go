@@ -542,9 +542,9 @@ type (
 		TypedSearchAttributes *SearchAttributes
 
 		// Memo - Optional non-indexed info attached to the schedule.
-		// Uses merge semantics matching workflow.UpsertMemo:
 		//   nil: leave existing memo unchanged
-		//   non-nil: merge with existing memo (nil values delete keys)
+		//   non-nil: replace existing memo entirely
+		//   empty map: clear all memo fields
 		Memo map[string]interface{}
 	}
 
