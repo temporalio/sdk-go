@@ -272,13 +272,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 }
 
 func (ts *IntegrationTestSuite) TearDownTest() {
-	// Stop worker before closing client so ShutdownWorker RPC reaches the server
+	if ts.client != nil {
+		ts.client.Close()
+	}
 	if !ts.workerStopped {
 		ts.worker.Stop()
 		ts.workerStopped = true
-	}
-	if ts.client != nil {
-		ts.client.Close()
 	}
 }
 
