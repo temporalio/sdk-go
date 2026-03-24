@@ -315,7 +315,16 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		case <-doneC:
 			return result, err
 		case <-bp.stopC:
-			<-doneC
+			// Give the server a reasonable window to complete the poll after
+			// ShutdownWorker. Fall back to cancelling the poll if it takes too long.
+			timer := time.NewTimer(50 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-doneC:
+			case <-timer.C:
+				cancel()
+				<-doneC
+			}
 			return result, err
 		}
 	}

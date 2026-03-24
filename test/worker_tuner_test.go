@@ -108,7 +108,7 @@ func (ts *WorkerTunerTestSuite) TestPollerBehaviorSimpleMaximumScaler() {
 }
 
 func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
 	wfSS, err := worker.NewFixedSizeSlotSupplier(10)
