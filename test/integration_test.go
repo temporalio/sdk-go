@@ -7520,7 +7520,7 @@ func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
 		HostPort:          ts.config.ServiceAddr,
 		Namespace:         ts.config.Namespace,
 		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 		DataConverter:     zlibConv,
 	})
 	defer c.Close()
@@ -7621,7 +7621,7 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 		HostPort:          ts.config.ServiceAddr,
 		Namespace:         ts.config.Namespace,
 		Logger:            logger,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 		MetricsHandler:    ts.metricsHandler,
 	})
 	ts.NoError(err)
@@ -8970,7 +8970,7 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 		HostPort:          ts.config.ServiceAddr,
 		Namespace:         ts.config.Namespace,
 		DataConverter:     dc,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 	})
 	ts.NoError(err)
 	defer cl.Close()
