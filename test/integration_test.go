@@ -1394,14 +1394,17 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowAndParentWorkflow() {
 		ts.workflows.ChildWorkflowAndParentCancel)
 	ts.NoError(err)
 
+	// Give it a sec to populate the query
+	<-time.After(1 * time.Second)
+
+	v, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), "", "child-and-parent-cancel-child-workflow-id")
+	ts.NoError(err)
+
 	var childWorkflowID string
-	ts.Eventually(func() bool {
-		v, err := ts.client.QueryWorkflow(context.Background(), run.GetID(), "", "child-and-parent-cancel-child-workflow-id")
-		if err != nil {
-			return false
-		}
-		return v.Get(&childWorkflowID) == nil && childWorkflowID != ""
-	}, 5*time.Second, 200*time.Millisecond)
+	err = v.Get(&childWorkflowID)
+	ts.NoError(err)
+	ts.NotNil(childWorkflowID)
+	ts.NotEmpty(childWorkflowID)
 
 	err = ts.client.CancelWorkflow(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
