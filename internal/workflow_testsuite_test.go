@@ -1104,7 +1104,6 @@ func TestMockCallWrapperInOrder(t *testing.T) {
 func TestMockCallWrapperNotBefore(t *testing.T) {
 	testSuite := &WorkflowTestSuite{}
 	env := testSuite.NewTestWorkflowEnvironment()
-	env.SetTestTimeout(10 * time.Second)
 	env.RegisterActivity(namedActivity)
 
 	c1 := env.OnActivity(namedActivity, mock.Anything, "call1").Return("result1", nil)
