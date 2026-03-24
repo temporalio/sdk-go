@@ -916,20 +916,19 @@ func newScalableTaskPoller(
 // at least one poller of each type is running before allowing any poller of the given type to increase.
 func (pb *pollerBalancer) balance(ctx context.Context, pollerType string) error {
 	pb.mu.Lock()
-	// If there are no pollers of this type, we can skip balancing.
-	if pb.pollerCount[pollerType] <= 0 {
-		pb.mu.Unlock()
-		return nil
-	}
 	for {
+		// If there are no pollers of this type, we can skip balancing.
+		// This check must happen before iterating the map to avoid
+		// non-deterministic map iteration visiting another type first
+		// and unnecessarily blocking on its barrier.
+		if pb.pollerCount[pollerType] <= 0 {
+			pb.mu.Unlock()
+			return nil
+		}
 		var b barrier
 		// Check if all other poller types have at least one poller running.
 		for pt, count := range pb.pollerCount {
 			if pt == pollerType {
-				if count <= 0 {
-					pb.mu.Unlock()
-					return nil
-				}
 				continue
 			}
 			if count == 0 {
