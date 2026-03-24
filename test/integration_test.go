@@ -272,13 +272,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 }
 
 func (ts *IntegrationTestSuite) TearDownTest() {
-	// Stop worker before closing client so ShutdownWorker RPC reaches the server
+	if ts.client != nil {
+		ts.client.Close()
+	}
 	if !ts.workerStopped {
 		ts.worker.Stop()
 		ts.workerStopped = true
-	}
-	if ts.client != nil {
-		ts.client.Close()
 	}
 }
 
@@ -7520,7 +7519,7 @@ func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
 		HostPort:          ts.config.ServiceAddr,
 		Namespace:         ts.config.Namespace,
 		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
 		DataConverter:     zlibConv,
 	})
 	defer c.Close()
@@ -7621,7 +7620,7 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 		HostPort:          ts.config.ServiceAddr,
 		Namespace:         ts.config.Namespace,
 		Logger:            logger,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
 		MetricsHandler:    ts.metricsHandler,
 	})
 	ts.NoError(err)
@@ -8970,7 +8969,7 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 		HostPort:          ts.config.ServiceAddr,
 		Namespace:         ts.config.Namespace,
 		DataConverter:     dc,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
 	})
 	ts.NoError(err)
 	defer cl.Close()

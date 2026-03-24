@@ -171,7 +171,7 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "20m"}
+	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
 	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
@@ -269,7 +269,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "20m"}
+		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}
