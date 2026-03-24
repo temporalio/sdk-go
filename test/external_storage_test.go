@@ -154,7 +154,7 @@ func (s *ExternalStorageTestSuite) SetupTest() {
 			Drivers:              []converter.StorageDriver{s.driver},
 			PayloadSizeThreshold: extStoreThreshold,
 		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
 		WorkerHeartbeatInterval: -1,
 	})
 	s.NoError(err)
@@ -395,7 +395,7 @@ func (s *ExternalStorageTestSuite) TestDriverSelector() {
 			DriverSelector:       selector,
 			PayloadSizeThreshold: extStoreThreshold,
 		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
 		WorkerHeartbeatInterval: -1,
 	})
 	s.NoError(err)
@@ -519,7 +519,7 @@ func (s *ExternalStorageTestSuite) TestDriverPanicOnRetrieve() {
 			Drivers:              []converter.StorageDriver{pd},
 			PayloadSizeThreshold: extStoreThreshold,
 		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
 		WorkerHeartbeatInterval: -1,
 	})
 	s.NoError(err)
@@ -568,7 +568,7 @@ func (s *ExternalStorageTestSuite) TestDriverPanicOnStore() {
 			Drivers:              []converter.StorageDriver{pd},
 			PayloadSizeThreshold: extStoreThreshold,
 		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
 		WorkerHeartbeatInterval: -1,
 	})
 	s.NoError(err)

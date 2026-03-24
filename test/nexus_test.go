@@ -83,7 +83,7 @@ func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContex
 		HostPort:          config.ServiceAddr,
 		Namespace:         config.Namespace,
 		Logger:            logger,
-		ConnectionOptions: client.ConnectionOptions{TLS: config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions: client.ConnectionOptions{TLS: config.TLS},
 		MetricsHandler:    metricsHandler,
 		Interceptors:      options.clientInterceptors,
 	})

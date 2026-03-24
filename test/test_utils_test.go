@@ -249,7 +249,7 @@ func SimplestWorkflow(_ workflow.Context) error {
 func (ts *ConfigAndClientSuiteBase) registerNamespace() error {
 	client, err := client.NewNamespaceClient(client.Options{
 		HostPort:          ts.config.ServiceAddr,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
 	})
 	if err != nil {
 		return fmt.Errorf("unable to create namespace client: %w", err)
