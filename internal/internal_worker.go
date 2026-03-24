@@ -260,7 +260,6 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 	if params.Logger == nil {
 		// create default logger if user does not supply one (should happen in tests only).
 		params.Logger = ilog.NewDefaultLogger()
-		params.Logger.Info("No logger configured for temporal worker. Created default one.")
 	}
 	if params.MetricsHandler == nil {
 		params.MetricsHandler = metrics.NopHandler
