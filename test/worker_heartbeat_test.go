@@ -51,7 +51,7 @@ func (ts *WorkerHeartbeatTestSuite) SetupSuite() {
 		Namespace:               ts.config.Namespace,
 		Logger:                  ilog.NewDefaultLogger(),
 		WorkerHeartbeatInterval: 1 * time.Second,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 		Identity:                "WorkerHeartbeatTest",
 	})
 	ts.NoError(err)
@@ -312,7 +312,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatDisabled() {
 		Namespace:               ts.config.Namespace,
 		Logger:                  ilog.NewDefaultLogger(),
 		WorkerHeartbeatInterval: -1,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 	})
 	ts.NoError(err)
 	defer clientNoHeartbeat.Close()
@@ -880,7 +880,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 		Namespace:               ts.config.Namespace,
 		Logger:                  ilog.NewDefaultLogger(),
 		WorkerHeartbeatInterval: 1 * time.Second,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 		Identity:                "PluginTest",
 		Plugins:                 []client.Plugin{clientPlugin},
 	})
@@ -943,8 +943,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 		Logger:                  ilog.NewDefaultLogger(),
 		WorkerHeartbeatInterval: 1 * time.Second,
 		ConnectionOptions: client.ConnectionOptions{
-			TLS:                  ts.config.TLS,
-			GetSystemInfoTimeout: ctxTimeout,
+			TLS: ts.config.TLS,
 			DialOptions: []grpc.DialOption{
 				grpc.WithUnaryInterceptor(func(
 					ctx context.Context,
@@ -1037,7 +1036,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStorageDrivers() {
 			DriverSelector: &roundRobinSelector{drivers: drivers},
 		},
 		WorkerHeartbeatInterval: 1 * time.Second,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 		Identity:                "StorageDriverTest",
 	})
 	ts.NoError(err)

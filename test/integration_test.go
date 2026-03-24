@@ -180,7 +180,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		MetricsHandler:          metricsHandler,
 		TrafficController:       trafficController,
 		Interceptors:            clientInterceptors,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
 		WorkerHeartbeatInterval: -1,
 	})
 	ts.NoError(err)
