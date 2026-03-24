@@ -64,7 +64,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeployment(ctx context.Context
 	ts.Eventually(func() bool {
 		_, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 		return err == nil
-	}, 15*time.Second, 100*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
@@ -83,7 +83,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
 			}
 		}
 		return false
-	}, 15*time.Second, 100*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropagation(
@@ -115,7 +115,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropaga
 			return false
 		}
 		return false
-	}, 15*time.Second, 100*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context, handle client.WorkflowRun) {
@@ -124,7 +124,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context,
 		ts.NoError(err)
 		status := describeResp.WorkflowExecutionInfo.Status
 		return enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING == status
-	}, 15*time.Second, 100*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunningOnVersion(ctx context.Context, handle client.WorkflowRun, expectedBuildID string) {
@@ -140,7 +140,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunningOnVersion(ctx context
 			return false
 		}
 		return true
-	}, 15*time.Second, 100*time.Millisecond)
+	}, 5*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForDrainage(ctx context.Context, dHandle client.WorkerDeploymentHandle, buildID string, target client.WorkerDeploymentVersionDrainageStatus) {
@@ -718,7 +718,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 			},
 		})
 		return updateErr == nil
-	}, 15*time.Second, 200*time.Millisecond)
+	}, 5*time.Second, 200*time.Millisecond)
 	ts.Equal(options.VersioningOverride, &v2Override)
 
 	// Add and remove override to handle2
