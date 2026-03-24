@@ -537,7 +537,7 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 	}
 
 	actCtx := converter.ActivitySerializationContext{
-		Namespace:    cmp.Or(opts.Namespace, wc.namespace),
+		Namespace:    opts.Namespace,
 		WorkflowID:   opts.WorkflowID,
 		ActivityType: opts.ActivityType,
 		WorkflowType: opts.WorkflowType,
@@ -582,7 +582,7 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 	}
 
 	actCtx := converter.ActivitySerializationContext{
-		Namespace:    cmp.Or(opts.Namespace, wc.namespace),
+		Namespace:    opts.Namespace,
 		WorkflowID:   opts.WorkflowID,
 		ActivityType: opts.ActivityType,
 		WorkflowType: opts.WorkflowType,
