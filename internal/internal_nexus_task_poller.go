@@ -15,13 +15,14 @@ import (
 
 type nexusTaskPoller struct {
 	basePoller
-	namespace       string
-	taskQueueName   string
-	identity        string
-	service         workflowservice.WorkflowServiceClient
-	taskHandler     *nexusTaskHandler
-	logger          log.Logger
-	numPollerMetric *numPollerMetric
+	namespace          string
+	taskQueueName      string
+	identity           string
+	service            workflowservice.WorkflowServiceClient
+	taskHandler        *nexusTaskHandler
+	logger             log.Logger
+	numPollerMetric    *numPollerMetric
+	pollerGroupTracker *pollerGroupTracker
 }
 
 type nexusTask struct {
@@ -51,7 +52,8 @@ func newNexusTaskPoller(
 		taskQueueName:   params.TaskQueue,
 		identity:        params.Identity,
 		logger:          params.Logger,
-		numPollerMetric: newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeNexusTask),
+		numPollerMetric:    newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeNexusTask),
+		pollerGroupTracker: newPollerGroupTracker(),
 	}
 }
 
@@ -67,6 +69,10 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 	traceLog(func() {
 		ntp.logger.Debug("nexusTaskPoller::Poll")
 	})
+
+	groupId := ntp.pollerGroupTracker.getNextGroupId()
+	defer ntp.pollerGroupTracker.release(groupId)
+
 	request := &workflowservice.PollNexusTaskQueueRequest{
 		Namespace: ntp.namespace,
 		TaskQueue: &taskqueuepb.TaskQueue{Name: ntp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -80,12 +86,14 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 			ntp.useBuildIDVersioning,
 			ntp.workerDeploymentVersion,
 		),
+		PollerGroupId: groupId,
 	}
 
 	response, err := ntp.pollNexusTaskQueue(ctx, request)
 	if err != nil {
 		return nil, err
 	}
+	ntp.pollerGroupTracker.updateGroups(response.GetPollerGroupInfos())
 	if response == nil || len(response.TaskToken) == 0 {
 		// No operation info is available on empty poll. Emit using base scope.
 		ntp.metricsHandler.Counter(metrics.NexusPollNoTaskCounter).Inc(1)
@@ -128,7 +136,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
 		// context wasn't propagated to us, use a background context.
-		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()))
+		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()), response.GetPollerGroupId())
 		if err != nil {
 			return err
 		}
