@@ -564,12 +564,8 @@ func (bw *baseWorker) runTaskDispatcher() {
 		// wait for new task or worker stop
 		select {
 		case <-bw.stopCh:
-			// Drain remaining tasks so we don't silently drop tasks that
-			// were dispatched by the server right before shutdown.
-			for len(bw.taskQueueCh) > 0 {
-				task := <-bw.taskQueueCh
-				bw.processTaskAsync(task)
-			}
+			// Currently we can drop any tasks received when closing.
+			// https://github.com/temporalio/sdk-go/issues/1197
 			return
 		case task := <-bw.taskQueueCh:
 			// for non-polled-task (local activity result as task or eager task), we don't need to rate limit
@@ -642,8 +638,11 @@ func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPe
 			taskWorker.pollerAutoscalerReportHandle.handleTask(task)
 		}
 
-		bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}
-		didSendTask = true
+		select {
+		case bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}:
+			didSendTask = true
+		case <-bw.stopCh:
+		}
 	}
 }
 
