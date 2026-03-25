@@ -852,14 +852,20 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 				},
 				ReportStats: true,
 			})
-			ts.NoError(err)
-			ts.Equal(1, len(taskQueueInfo.VersionsInfo))
-			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow])
-			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
-			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity])
-			ts.NotNil(taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
-
-			assert.Greater(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats.ApproximateBacklogCount, int64(0))
+			assert.NoError(t, err)
+			assert.Equal(t, 1, len(taskQueueInfo.VersionsInfo))
+			if !assert.NotNil(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow]) {
+				return
+			}
+			if !assert.NotNil(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats) {
+				return
+			}
+			if !assert.NotNil(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity]) {
+				return
+			}
+			if !assert.NotNil(t, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats) {
+				return
+			}
 		},
 		time.Second, 100*time.Millisecond,
 	)

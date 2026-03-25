@@ -8,12 +8,13 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"io"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"io"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
