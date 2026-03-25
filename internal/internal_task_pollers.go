@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.temporal.io/sdk/internal/common/retry"
@@ -84,6 +85,8 @@ type (
 		pollTimeTracker *pollTimeTracker
 		// Unique identifier for worker
 		workerInstanceKey string
+		// Server cancels polls on shutdown
+		workerPollCompleteOnShutdown *atomic.Bool
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -306,6 +309,28 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		close(doneC)
 	}()
 
+	if bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load() {
+		// Don't kill the gRPC stream. After ShutdownWorker, the server returns empty responses.
+		select {
+		case <-doneC:
+			return result, err
+		case <-bp.stopC:
+			// TEMP FIX: Give the server a reasonable window to complete the poll after
+			// ShutdownWorker. Fall back to cancelling the poll if it takes too
+			// long, e.g. when the gRPC connection was closed before Stop().
+			timer := time.NewTimer(5 * time.Second)
+			defer timer.Stop()
+			select {
+			case <-doneC:
+			case <-timer.C:
+				cancel()
+				<-doneC
+			}
+			return result, err
+		}
+	}
+
+	// Legacy: cancel in-flight polls immediately on shutdown
 	select {
 	case <-doneC:
 		return result, err
@@ -336,14 +361,15 @@ func newWorkflowTaskProcessor(
 ) *workflowTaskProcessor {
 	return &workflowTaskProcessor{
 		basePoller: basePoller{
-			metricsHandler:          params.MetricsHandler,
-			stopC:                   params.WorkerStopChannel,
-			workerBuildID:           params.getBuildID(),
-			useBuildIDVersioning:    params.UseBuildIDForVersioning,
-			workerDeploymentVersion: params.DeploymentOptions.Version,
-			capabilities:            params.capabilities,
-			pollTimeTracker:         params.pollTimeTracker,
-			workerInstanceKey:       params.workerInstanceKey,
+			metricsHandler:               params.MetricsHandler,
+			stopC:                        params.WorkerStopChannel,
+			workerBuildID:                params.getBuildID(),
+			useBuildIDVersioning:         params.UseBuildIDForVersioning,
+			workerDeploymentVersion:      params.DeploymentOptions.Version,
+			capabilities:                 params.capabilities,
+			pollTimeTracker:              params.pollTimeTracker,
+			workerInstanceKey:            params.workerInstanceKey,
+			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		service:                      service,
 		namespace:                    params.Namespace,
@@ -487,6 +513,9 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 					return nil, nil
 				}
 				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
+				if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
+					return nil, err
+				}
 				task.doneCh = doneCh
 				task.laResultCh = laResultCh
 				task.laRetryCh = laRetryCh
@@ -516,6 +545,9 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
 		task = wtp.toWorkflowTask(response.WorkflowTask)
+		if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
+			return err
+		}
 	}
 }
 
@@ -1252,14 +1284,15 @@ func newGetHistoryPageFunc(
 func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
 	return &activityTaskPoller{
 		basePoller: basePoller{
-			metricsHandler:          params.MetricsHandler,
-			stopC:                   params.WorkerStopChannel,
-			workerBuildID:           params.getBuildID(),
-			useBuildIDVersioning:    params.UseBuildIDForVersioning,
-			workerDeploymentVersion: params.DeploymentOptions.Version,
-			capabilities:            params.capabilities,
-			pollTimeTracker:         params.pollTimeTracker,
-			workerInstanceKey:       params.workerInstanceKey,
+			metricsHandler:               params.MetricsHandler,
+			stopC:                        params.WorkerStopChannel,
+			workerBuildID:                params.getBuildID(),
+			useBuildIDVersioning:         params.UseBuildIDForVersioning,
+			workerDeploymentVersion:      params.DeploymentOptions.Version,
+			capabilities:                 params.capabilities,
+			pollTimeTracker:              params.pollTimeTracker,
+			workerInstanceKey:            params.workerInstanceKey,
+			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:            taskHandler,
 		service:                service,
