@@ -4,8 +4,6 @@ go 1.23.0
 
 toolchain go1.23.6
 
-replace go.temporal.io/api => ../api-go
-
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
 	github.com/gogo/protobuf v1.3.2
@@ -16,7 +14,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.6.0
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.62.2
+	go.temporal.io/api v1.62.6
 	golang.org/x/sync v0.13.0
 	golang.org/x/sys v0.32.0
 	golang.org/x/time v0.3.0
