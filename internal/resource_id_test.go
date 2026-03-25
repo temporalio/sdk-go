@@ -14,7 +14,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	querypb "go.temporal.io/api/query/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -41,6 +40,11 @@ func TestResourceIDImplementation(t *testing.T) {
 	t.Run("WorkerHeartbeatRequest", func(t *testing.T) {
 		testRecordWorkerHeartbeatResourceID(t)
 	})
+}
+
+func TestGetActivityResourceId_BothEmpty(t *testing.T) {
+	result := getActivityResourceId("", "")
+	assert.Empty(t, result, "Expected empty resource ID when both workflowId and activityId are empty")
 }
 
 // Test activity heartbeat resource_id population using actual SDK code path
@@ -568,14 +572,6 @@ func createTestWorkflowTaskWithType(workflowID, runID, workflowType string) *wor
 		History:      &historypb.History{Events: events},
 		Attempt:      1,
 	}
-}
-
-func createTestQueryTask(workflowID, runID, queryType string) *workflowservice.PollWorkflowTaskQueueResponse {
-	task := createTestWorkflowTask(workflowID, runID)
-	task.Query = &querypb.WorkflowQuery{
-		QueryType: queryType,
-	}
-	return task
 }
 
 // Test RecordActivityTaskHeartbeatByIdRequest resource_id field (resource_id = 7)
