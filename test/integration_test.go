@@ -182,6 +182,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		Interceptors:            clientInterceptors,
 		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 		WorkerHeartbeatInterval: -1,
+		PayloadLimits: client.PayloadLimitOptions{
+			PayloadSizeWarning: 128,
+		},
 	})
 	ts.NoError(err)
 
@@ -1610,6 +1613,16 @@ func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DisablePayloadErrorLimit: true,
+	})
+	ts.registerWorkflowsAndActivities(ts.worker)
+	ts.NoError(ts.worker.Start())
+	ts.workerStopped = false
+
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
 	ts.Nil(err)
@@ -9094,4 +9107,46 @@ func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
 
 	err = run.Get(ctx, nil)
 	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	logger := ilog.NewMemoryLogger()
+	client, err := client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		Logger:            logger,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		MetricsHandler:    ts.metricsHandler,
+	})
+	ts.NoError(err)
+	defer client.Close()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	testWorker := worker.New(client, ts.taskQueueName, worker.Options{})
+	wfname := "payload-size-warning-workflow-result"
+	testWorker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) (string, error) { return strings.Repeat("a", 1024*1024), nil },
+		workflow.RegisterOptions{Name: wfname},
+	)
+	err = testWorker.Start()
+	ts.NoError(err)
+	defer testWorker.Stop()
+
+	run, err := client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions(ts.T().Name()),
+		wfname,
+	)
+	ts.NoError(err)
+
+	var res string
+	ts.NoError(run.Get(ctx, &res))
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.HasPrefix(line, "WARN  [TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
+	}))
 }

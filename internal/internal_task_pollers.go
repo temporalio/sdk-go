@@ -159,16 +159,14 @@ type (
 	// activityTaskPoller implements polling/processing a workflow task
 	activityTaskPoller struct {
 		basePoller
-		namespace              string
-		taskQueueName          string
-		identity               string
-		service                workflowservice.WorkflowServiceClient
-		taskHandler            ActivityTaskHandler
-		logger                 log.Logger
-		activitiesPerSecond    float64
-		numPollerMetric        *numPollerMetric
-		inboundPayloadVisitor  PayloadVisitor
-		outboundPayloadVisitor PayloadVisitor
+		namespace           string
+		taskQueueName       string
+		identity            string
+		service             workflowservice.WorkflowServiceClient
+		taskHandler         ActivityTaskHandler
+		logger              log.Logger
+		activitiesPerSecond float64
+		numPollerMetric     *numPollerMetric
 	}
 
 	historyIteratorImpl struct {
@@ -462,21 +460,34 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 	downloadPayloadMetrics := &workflowTaskStorageMetrics{logger: wtp.logger}
 	ctx := context.WithValue(context.Background(), storageOperationCallbackContextKey, downloadPayloadMetrics)
-	if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
+
+	var taskErr error
+	if taskErr = visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); taskErr != nil {
+		keyvals := []any{
+			tagWorkflowType, task.task.WorkflowType.GetName(),
+			tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.task.WorkflowExecution.GetRunId(),
+			tagAttempt, task.task.Attempt,
+		}
+		if errPayloadSize, isPayloadSizeError := taskErr.(payloadSizeError); isPayloadSizeError {
+			keyvals = append(keyvals,
+				tagPayloadSize, errPayloadSize.size,
+				tagPayloadSizeLimit, errPayloadSize.limit)
+		}
+		wtp.logger.Warn("Workflow task preprocess error: "+taskErr.Error(), keyvals...)
 		// Submit an explicit WFT failure so the server records the error immediately
 		// rather than waiting for the task to time out.
-		failReq := wtp.errorToFailWorkflowTask(task.task.TaskToken, err)
+		failReq := wtp.errorToFailWorkflowTask(task.task.TaskToken, taskErr)
 		if _, submitErr := wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failReq}, task.task); submitErr != nil {
 			wtp.logger.Warn("Failed to submit WFT failure after inbound visitor error.", tagError, submitErr)
 		}
-		return err
+		return nil
 	}
 
 	wfctx, err := wtp.contextManager.GetOrCreateWorkflowContext(task.task, task.historyIterator)
 	if err != nil {
 		return err
 	}
-	var taskErr error
 	defer func() {
 		// If we panic during processing the workflow task, we need to unlock the workflow context with an error to discard it.
 		if p := recover(); p != nil {
@@ -652,13 +663,30 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		RunID:        task.WorkflowExecution.GetRunId(),
 		WorkflowType: task.WorkflowType.GetName(),
 	})
-	if err = visitProtoPayloadsWithContextHook(ctx, wtp.outboundPayloadVisitor, taskCompletion.rawRequest, wtp.commandAwareContextHook(workflowInfo)); err != nil {
+	if taskErr = visitProtoPayloadsWithContextHook(ctx, wtp.outboundPayloadVisitor, taskCompletion.rawRequest, wtp.commandAwareContextHook(workflowInfo)); taskErr != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
 		// cannot send the original response, so fall back to an explicit WFT
 		// failure so the server records the error immediately.
-		failReq := wtp.errorToFailWorkflowTask(task.TaskToken, err)
+		keyvals := []any{
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+			tagAttempt, task.Attempt,
+		}
+		if errPayloadSize, isPayloadSizeError := taskErr.(payloadSizeError); isPayloadSizeError {
+			keyvals = append(keyvals,
+				tagPayloadSize, errPayloadSize.size,
+				tagPayloadSizeLimit, errPayloadSize.limit)
+		}
+		wtp.logger.Warn("Workflow task postprocess error: "+taskErr.Error(), keyvals...)
+		emitFailMetric = true
+		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
+		failureReason = "WorkflowError"
+		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE {
+			failureReason = "PayloadsTooLarge"
+		}
 		var submitErr error
-		response, submitErr = wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failReq}, task)
+		response, submitErr = wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failWorkflowTask}, task)
 		if submitErr != nil {
 			wtp.logger.Warn("Failed to submit WFT failure after outbound visitor error.", tagError, submitErr)
 		}
@@ -671,6 +699,10 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	response, err = wtp.sendTaskCompletedRequest(taskCompletion, task)
 
 	loggerDurationKeyVals := []interface{}{
+		tagWorkflowType, task.WorkflowType.GetName(),
+		tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+		tagRunID, task.WorkflowExecution.GetRunId(),
+		tagAttempt, task.Attempt,
 		tagEventID, task.GetStartedEventId(),
 		tagWorkflowTaskDuration, taskDuration,
 	}
@@ -838,6 +870,8 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 	} else if _, unknown := err.(unknownSdkFlagError); unknown {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	} else if _, tooLarge := err.(payloadSizeError); tooLarge {
+		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
 	}
 
 	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, cause)
@@ -1366,16 +1400,14 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			workerInstanceKey:            params.workerInstanceKey,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
-		taskHandler:            taskHandler,
-		service:                service,
-		namespace:              params.Namespace,
-		taskQueueName:          params.TaskQueue,
-		identity:               params.Identity,
-		logger:                 params.Logger,
-		activitiesPerSecond:    params.TaskQueueActivitiesPerSecond,
-		numPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeActivityTask),
-		inboundPayloadVisitor:  params.inboundPayloadVisitor,
-		outboundPayloadVisitor: params.outboundPayloadVisitor,
+		taskHandler:         taskHandler,
+		service:             service,
+		namespace:           params.Namespace,
+		taskQueueName:       params.TaskQueue,
+		identity:            params.Identity,
+		logger:              params.Logger,
+		activitiesPerSecond: params.TaskQueueActivitiesPerSecond,
+		numPollerMetric:     newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeActivityTask),
 	}
 }
 
@@ -1462,10 +1494,6 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	executionStartTime := time.Now()
 
-	if err := visitProtoPayloads(context.Background(), atp.inboundPayloadVisitor, activityTask.task); err != nil {
-		return err
-	}
-
 	// Process the activity task.
 	request, err := atp.taskHandler.Execute(atp.taskQueueName, activityTask.task)
 
@@ -1473,30 +1501,6 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	if err != nil {
 		activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		return err
-	}
-
-	if msg, ok := request.(proto.Message); ok {
-		var storageTarget converter.StorageDriverTargetInfo
-		t := activityTask.task
-		if t.WorkflowExecution.GetWorkflowId() != "" {
-			storageTarget = converter.StorageDriverWorkflowInfo{
-				Namespace:    atp.namespace,
-				WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
-				RunID:        t.WorkflowExecution.GetRunId(),
-				WorkflowType: t.WorkflowType.GetName(),
-			}
-		} else {
-			storageTarget = converter.StorageDriverActivityInfo{
-				Namespace:    atp.namespace,
-				ActivityID:   t.ActivityId,
-				RunID:        t.ActivityRunId,
-				ActivityType: t.ActivityType.GetName(),
-			}
-		}
-		outboundCtx := context.WithValue(context.Background(), storageTargetContextKey, storageTarget)
-		if err := visitProtoPayloads(outboundCtx, atp.outboundPayloadVisitor, msg); err != nil {
-			return err
-		}
 	}
 
 	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
