@@ -585,7 +585,7 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, request); err != nil {
+	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, request); err != nil {
 		return nil, err
 	}
 
@@ -679,7 +679,7 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		}
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, resp); err != nil {
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp); err != nil {
 		return nil, err
 	}
 
@@ -750,7 +750,7 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			CanceledReason:          info.CanceledReason,
 			dataConverter:           WithContext(ctx, w.client.dataConverter),
 			failureConverter:        w.client.failureConverter,
-			inboundPayloadVisitor:   w.client.inboundPayloadVisitor,
+			inboundPayloadVisitor:   w.inboundPayloadVisitor,
 		},
 	}, nil
 }
