@@ -121,7 +121,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.6.1-server-1.31.0-151.0",
+				Version: "v1.6.2-server-1.31.0-151.6",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
@@ -161,6 +161,7 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
 				"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`,
 				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
+				"--dynamic-config-value", "frontend.enableCancelWorkerPollsOnShutdown=true",
 			},
 		})
 		if err != nil {
