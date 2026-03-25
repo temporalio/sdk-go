@@ -1415,15 +1415,19 @@ func (env *testWorkflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivi
 			}
 
 			panicErr := recover()
+			fc := parameters.FailureConverter
+			if fc == nil {
+				fc = env.failureConverter
+			}
 			if result == nil && panicErr == nil {
 				failureErr := errors.New("activity called runtime.Goexit")
 				result = &workflowservice.RespondActivityTaskFailedRequest{
-					Failure: env.failureConverter.ErrorToFailure(failureErr),
+					Failure: fc.ErrorToFailure(failureErr),
 				}
 			} else if panicErr != nil {
 				failureErr := newPanicError(fmt.Sprintf("%v", panicErr), "")
 				result = &workflowservice.RespondActivityTaskFailedRequest{
-					Failure: env.failureConverter.ErrorToFailure(failureErr),
+					Failure: fc.ErrorToFailure(failureErr),
 				}
 			}
 
@@ -1685,7 +1689,11 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 			}
 
 			p := fromProtoRetryPolicy(parameters.RetryPolicy)
-			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), env.failureConverter.FailureToError(failure), env.Now(), expireTime)
+			retryFC := parameters.FailureConverter
+			if retryFC == nil {
+				retryFC = env.failureConverter
+			}
+			backoff := getRetryBackoffWithNowTime(p, task.GetAttempt(), retryFC.FailureToError(failure), env.Now(), expireTime)
 			if backoff > 0 {
 				// need a retry
 				waitCh := make(chan struct{})
@@ -1854,7 +1862,7 @@ func (env *testWorkflowEnvironmentImpl) handleActivityResult(activityHandle *tes
 			activityID,
 			activityType,
 			enumspb.RETRY_STATE_UNSPECIFIED,
-			env.failureConverter.FailureToError(request.GetFailure()),
+			activityHandle.failureConverter.FailureToError(request.GetFailure()),
 		)
 		activityHandle.callback(nil, err)
 	case *workflowservice.RespondActivityTaskCompletedRequest:

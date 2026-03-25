@@ -536,6 +536,10 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 		return errors.New("empty activity or workflow id or namespace")
 	}
 
+	if err := wc.ensureInitialized(ctx); err != nil {
+		return err
+	}
+
 	actCtx := converter.ActivitySerializationContext{
 		Namespace:    opts.Namespace,
 		WorkflowID:   opts.WorkflowID,
