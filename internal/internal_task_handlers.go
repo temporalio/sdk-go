@@ -1848,7 +1848,12 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		if err != nil {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
 			queryCompletedRequest.ErrorMessage = err.Error()
-			queryCompletedRequest.Failure = wth.failureConverter.ErrorToFailure(err)
+			wfCtx := converter.WorkflowSerializationContext{
+				Namespace:  eventHandler.workflowInfo.Namespace,
+				WorkflowID: eventHandler.workflowInfo.WorkflowExecution.ID,
+			}
+			fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, wfCtx)
+			queryCompletedRequest.Failure = fc.ErrorToFailure(err)
 		} else {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_ANSWERED
 			queryCompletedRequest.QueryResult = result
@@ -1902,7 +1907,13 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			metricCounterToIncrement = metrics.WorkflowFailedCounter
 		}
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION)
-		failure := wth.failureConverter.ErrorToFailure(workflowContext.err)
+		wfInfo := eventHandler.workflowInfo
+		wfCtx := converter.WorkflowSerializationContext{
+			Namespace:  wfInfo.Namespace,
+			WorkflowID: wfInfo.WorkflowExecution.ID,
+		}
+		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, wfCtx)
+		failure := fc.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,
 		}}
@@ -2265,6 +2276,16 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			)
 		}
 	})
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    ath.namespace,
+		WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
+		WorkflowType: t.WorkflowType.GetName(),
+		ActivityType: t.ActivityType.GetName(),
+		TaskQueue:    taskQueue,
+	}
+	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, actCtx)
+	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, actCtx)
+
 	// The root context is only cancelled when the worker is finished shutting down.
 	rootCtx := ath.backgroundContext
 	if rootCtx == nil {
@@ -2301,7 +2322,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+			dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
 			t.WorkflowExecution.GetWorkflowId(), t.ActivityId), nil
 	}
 
@@ -2320,7 +2341,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+				dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
 				t.WorkflowExecution.GetWorkflowId(), t.ActivityId)
 		}
 	}()
@@ -2368,7 +2389,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
 		t.WorkflowExecution.GetWorkflowId(), t.ActivityId), nil
 }
 

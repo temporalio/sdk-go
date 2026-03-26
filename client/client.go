@@ -225,6 +225,21 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
+	// CompleteActivityByIDOptions provides options for CompleteActivityByIDWithOptions.
+	CompleteActivityByIDOptions = internal.CompleteActivityByIDOptions
+
+	// RecordActivityHeartbeatByIDOptions provides options for RecordActivityHeartbeatByIDWithOptions.
+	RecordActivityHeartbeatByIDOptions = internal.RecordActivityHeartbeatByIDOptions
+
+	// CompleteActivityOptions provides options for CompleteActivityWithOptions.
+	CompleteActivityOptions = internal.CompleteActivityOptions
+
+	// CompleteActivityByActivityIDOptions provides options for CompleteActivityByActivityIDWithOptions.
+	CompleteActivityByActivityIDOptions = internal.CompleteActivityByActivityIDOptions
+
+	// RecordActivityHeartbeatOptions provides options for RecordActivityHeartbeatWithOptions.
+	RecordActivityHeartbeatOptions = internal.RecordActivityHeartbeatOptions
+
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
 	// See [client.Client.NewWithStartWorkflowOperation] and [client.Client.UpdateWithStartWorkflow].
 	WithStartWorkflowOperation = internal.WithStartWorkflowOperation
@@ -1108,7 +1123,17 @@ type (
 		//  To fail the activity with an error.
 		//      CompleteActivity(token, nil, temporal.NewApplicationError("reason", details)
 		// The activity can fail with below errors ApplicationError, TimeoutError, CanceledError.
+		//
+		// If using a context-aware converter (DataConverterWithSerializationContext or
+		// FailureConverterWithSerializationContext), consider using
+		// CompleteActivityWithOptions to provide full activity metadata
+		// (ActivityType, WorkflowType, TaskQueue) to your codec.
 		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
+
+		// CompleteActivityWithOptions reports activity completed with full context options.
+		// Similar to CompleteActivity but accepts a struct with optional ActivitySerializationContext
+		// fields (ActivityType, WorkflowType, TaskQueue, etc.) for custom codec support.
+		CompleteActivityWithOptions(ctx context.Context, opts CompleteActivityOptions) error
 
 		// CompleteActivityByID reports activity completed.
 		// Similar to CompleteActivity, but may save the user from keeping taskToken info.
@@ -1126,7 +1151,17 @@ type (
 		//  - ApplicationError
 		//  - TimeoutError
 		//  - CanceledError
+		//
+		// If using a context-aware converter (DataConverterWithSerializationContext or
+		// FailureConverterWithSerializationContext), consider using
+		// CompleteActivityByIDWithOptions to provide full activity metadata
+		// (ActivityType, WorkflowType, TaskQueue) to your codec.
 		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result interface{}, err error) error
+
+		// CompleteActivityByIDWithOptions reports activity completed with full context options.
+		// Similar to CompleteActivityByID but accepts a struct with optional ActivitySerializationContext
+		// fields (ActivityType, WorkflowType, TaskQueue) for custom codec support.
+		CompleteActivityByIDWithOptions(ctx context.Context, opts CompleteActivityByIDOptions) error
 
 		// CompleteActivityByActivityID reports activity completed.
 		// Similar to CompleteActivity, but may save the user from keeping taskToken info.
@@ -1142,7 +1177,17 @@ type (
 		//  - ApplicationError
 		//  - TimeoutError
 		//  - CanceledError
+		//
+		// If using a context-aware converter (DataConverterWithSerializationContext or
+		// FailureConverterWithSerializationContext), consider using
+		// CompleteActivityByActivityIDWithOptions to provide full activity metadata
+		// (ActivityType, WorkflowType, TaskQueue) to your codec.
 		CompleteActivityByActivityID(ctx context.Context, namespace, activityID, activityRunID string, result interface{}, err error) error
+
+		// CompleteActivityByActivityIDWithOptions reports standalone activity completed with full context options.
+		// Similar to CompleteActivityByActivityID but accepts a struct with optional
+		// ActivitySerializationContext fields for custom codec support.
+		CompleteActivityByActivityIDWithOptions(ctx context.Context, opts CompleteActivityByActivityIDOptions) error
 
 		// RecordActivityHeartbeat records heartbeat for an activity.
 		// taskToken - is the value of the binary "TaskToken" field of the "ActivityInfo" struct retrieved inside the activity.
@@ -1153,7 +1198,17 @@ type (
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
+		//
+		// If using a context-aware converter (DataConverterWithSerializationContext or
+		// FailureConverterWithSerializationContext), consider using
+		// RecordActivityHeartbeatWithOptions to provide full activity metadata
+		// (ActivityType, WorkflowType, TaskQueue) to your codec.
 		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
+
+		// RecordActivityHeartbeatWithOptions records heartbeat with full context options.
+		// Similar to RecordActivityHeartbeat but accepts a struct with optional
+		// ActivitySerializationContext fields for custom codec support.
+		RecordActivityHeartbeatWithOptions(ctx context.Context, opts RecordActivityHeartbeatOptions) error
 
 		// RecordActivityHeartbeatByID records heartbeat for an activity.
 		// details - is the progress you want to record along with heart beat for this activity. If the activity is canceled,
@@ -1163,7 +1218,17 @@ type (
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
+		//
+		// If using a context-aware converter (DataConverterWithSerializationContext or
+		// FailureConverterWithSerializationContext), consider using
+		// RecordActivityHeartbeatByIDWithOptions to provide full activity metadata
+		// (ActivityType, WorkflowType, TaskQueue) to your codec.
 		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...interface{}) error
+
+		// RecordActivityHeartbeatByIDWithOptions records heartbeat with full context options.
+		// Similar to RecordActivityHeartbeatByID but accepts a struct with optional
+		// ActivitySerializationContext fields for custom codec support.
+		RecordActivityHeartbeatByIDWithOptions(ctx context.Context, opts RecordActivityHeartbeatByIDOptions) error
 
 		// ListClosedWorkflow gets closed workflow executions based on request filters.
 		// Retrieved workflow executions are sorted by close time in descending order.
