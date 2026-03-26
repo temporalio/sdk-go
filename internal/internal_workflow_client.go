@@ -513,7 +513,7 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, opts.TaskToken,
 		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil,
-		"", "")
+		opts.WorkflowID, "")
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
