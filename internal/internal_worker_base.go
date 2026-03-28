@@ -134,6 +134,7 @@ type (
 		DrainUnhandledUpdates() bool
 		// TryUse returns true if this flag may currently be used.
 		TryUse(flag sdkFlag) bool
+		GenerateSequence() int64
 	}
 
 	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.

@@ -148,6 +148,7 @@ func testTimeoutErrorDetails(t *testing.T, timeoutType enumspb.TimeoutType) {
 		callback: func(r *commonpb.Payloads, e error) {
 			actualErr = e
 		},
+		failureConverter: GetDefaultFailureConverter(),
 	})
 	context.commandsHelper.addCommand(di)
 	encodedDetails1, _ := context.dataConverter.ToPayloads(testErrorDetails1)

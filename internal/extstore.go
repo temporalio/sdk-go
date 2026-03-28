@@ -89,7 +89,7 @@ const storageOperationCallbackContextKey contextKey = "storageOperationCallback"
 const metadataEncodingStorageRef = "json/external-storage-reference"
 
 type storageReference struct {
-	DriverName  string                 `json:"driver_name"`
+	DriverName  string                       `json:"driver_name"`
 	DriverClaim converter.StorageDriverClaim `json:"driver_claim"`
 }
 
