@@ -119,6 +119,34 @@ type (
 		Info WorkerDeploymentInfo
 	}
 
+	// WorkerDeploymentCreateVersionOptions provides options for
+	// [WorkerDeploymentClient.GetHandler.CreateVersion].
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentCreateVersionOptions]
+	WorkerDeploymentCreateVersionOptions struct {
+		// BuildID - The Build ID within this deployment to create as a version.
+		BuildID string
+
+		// ComputeConfig contains the optional compute configuration to use for
+		// the WorkerDeployment.
+		ComputeConfig *ComputeConfig
+
+		// Identity - The identity of the client who initiated this request.
+		//
+		// Optional: defaults to the identity of the underlying workflow client.
+		Identity string
+	}
+
+	// WorkerDeploymentCreateVersionResponse is the response for
+	// [WorkerDeploymentHandle.CreateVersion].
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.WorkerDeploymentCreateVersionResponse]
+	WorkerDeploymentCreateVersionResponse struct{}
+
 	// WorkerDeploymentSetCurrentVersionOptions provides options for
 	// [WorkerDeploymentHandle.SetCurrentVersion].
 	//
@@ -180,7 +208,7 @@ type (
 		ConflictToken []byte
 
 		// PreviousVersion - The Version that was current before executing this operation, if any.
-        //
+		//
 		// Deprecated: in favor of API idempotency. Use `Describe` before this API to get the previous
 		// state. Pass the `ConflictToken` returned by `Describe` to this API to avoid race conditions.
 		PreviousVersion *WorkerDeploymentVersion
@@ -392,6 +420,10 @@ type (
 
 		// Metadata - A user-defined set of key-values attached to this Version.
 		Metadata map[string]*commonpb.Payload
+
+		// ComputeConfig contains the optional compute configuration to use for
+		// the WorkerDeployment.
+		ComputeConfig *ComputeConfig
 	}
 
 	// WorkerDeploymentVersionDescription is the response for
@@ -486,6 +518,12 @@ type (
 		//
 		// NOTE: Experimental
 		Describe(ctx context.Context, options WorkerDeploymentDescribeOptions) (WorkerDeploymentDescribeResponse, error)
+
+		// CreateVersion creates a new WorkerDeploymentVersion in this Worker
+		// Deployment.
+		//
+		// NOTE: Experimental
+		CreateVersion(ctx context.Context, options WorkerDeploymentCreateVersionOptions) (WorkerDeploymentCreateVersionResponse, error)
 
 		// SetCurrentVersion changes the Current Version for this Worker Deployment.
 		//

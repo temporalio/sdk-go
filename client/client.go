@@ -8,12 +8,13 @@ package client
 import (
 	"context"
 	"crypto/tls"
+	"io"
+
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/workflowservice/v1"
-	"io"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
@@ -344,6 +345,29 @@ type (
 	// See [client.Client.UpdateWithStartWorkflow] and [client.Client.NewWithStartWorkflowOperation].
 	UpdateWithStartWorkflowOptions = internal.UpdateWithStartWorkflowOptions
 
+	// ComputeConfig provides information about a compute configuration.
+	//
+	// NOTE: Experimental
+	ComputeConfig = internal.ComputeConfig
+
+	// ComputeConfigScalingGroup provides information about a scaling group for
+	// a compute configuration.
+	//
+	// NOTE: Experimental
+	ComputeConfigScalingGroup = internal.ComputeConfigScalingGroup
+
+	// ComputeProvider provides information about a compute provider of a
+	// compute configuration scaling group.
+	//
+	// NOTE: Experimental
+	ComputeProvider = internal.ComputeProvider
+
+	// ComputeScaler provides information about a compute scaler of a compute
+	// configuration scaling group.
+	//
+	// NOTE: Experimental
+	ComputeScaler = internal.ComputeScaler
+
 	// WorkerDeploymentDescribeOptions provides options for [WorkerDeploymentHandle.Describe].
 	//
 	// NOTE: Experimental
@@ -363,6 +387,12 @@ type (
 	//
 	// NOTE: Experimental
 	WorkerDeploymentDescribeResponse = internal.WorkerDeploymentDescribeResponse
+
+	// WorkerDeploymentCreateVersionOptions provides options for
+	// [WorkerDeploymentHandle.CreateVersion].
+	//
+	// NOTE: Experimental
+	WorkerDeploymentCreateVersionOptions = internal.WorkerDeploymentCreateVersionOptions
 
 	// WorkerDeploymentSetCurrentVersionOptions provides options for
 	// [WorkerDeploymentHandle.SetCurrentVersion].
