@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"go.temporal.io/api/common/v1"
+	"go.temporal.io/api/compute/v1"
 	"go.temporal.io/api/deployment/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
@@ -129,9 +130,9 @@ func workerDeploymentVersionSummariesFromProto(summaries []*deployment.WorkerDep
 	return result
 }
 
-func workerDeploymentInfoFromProto(info *deployment.WorkerDeploymentInfo) WorkerDeploymentInfo {
+func workerDeploymentInfoFromProto(info *deployment.WorkerDeploymentInfo) (WorkerDeploymentInfo, error) {
 	if info == nil {
-		return WorkerDeploymentInfo{}
+		return WorkerDeploymentInfo{}, nil
 	}
 
 	return WorkerDeploymentInfo{
@@ -141,7 +142,7 @@ func workerDeploymentInfoFromProto(info *deployment.WorkerDeploymentInfo) Worker
 		RoutingConfig:        workerDeploymentRoutingConfigFromProto(info.RoutingConfig),
 		LastModifierIdentity: info.LastModifierIdentity,
 		ManagerIdentity:      info.ManagerIdentity,
-	}
+	}, nil
 
 }
 
@@ -186,10 +187,67 @@ func (h *workerDeploymentHandleImpl) Describe(ctx context.Context, options Worke
 		return WorkerDeploymentDescribeResponse{}, err
 	}
 
+	info, err := workerDeploymentInfoFromProto(resp.GetWorkerDeploymentInfo())
+	if err != nil {
+		return WorkerDeploymentDescribeResponse{}, err
+	}
+
 	return WorkerDeploymentDescribeResponse{
 		ConflictToken: resp.GetConflictToken(),
-		Info:          workerDeploymentInfoFromProto(resp.GetWorkerDeploymentInfo()),
+		Info:          info,
 	}, nil
+}
+
+func (h *workerDeploymentHandleImpl) CreateVersion(
+	ctx context.Context,
+	options WorkerDeploymentCreateVersionOptions,
+) (WorkerDeploymentCreateVersionResponse, error) {
+	if err := h.validate(); err != nil {
+		return WorkerDeploymentCreateVersionResponse{}, err
+	}
+	if err := h.workflowClient.ensureInitialized(ctx); err != nil {
+		return WorkerDeploymentCreateVersionResponse{}, err
+	}
+
+	identity := h.workflowClient.identity
+	if options.Identity != "" {
+		identity = options.Identity
+	}
+
+	dc := WithContext(ctx, h.workflowClient.dataConverter)
+	if dc == nil {
+		dc = converter.GetDefaultDataConverter()
+	}
+
+	var computeConfig *compute.ComputeConfig
+	if options.ComputeConfig != nil {
+		if err := validateComputeConfig(options.ComputeConfig); err != nil {
+			return WorkerDeploymentCreateVersionResponse{}, err
+		}
+		cc, err := computeConfigToProto(dc, options.ComputeConfig)
+		if err != nil {
+			return WorkerDeploymentCreateVersionResponse{}, err
+		}
+		computeConfig = cc
+	}
+
+	request := &workflowservice.CreateWorkerDeploymentVersionRequest{
+		Namespace: h.workflowClient.namespace,
+		DeploymentVersion: &deployment.WorkerDeploymentVersion{
+			DeploymentName: h.Name,
+			BuildId:        h.buildIdToVersionStr(options.BuildID),
+		},
+		Identity:      identity,
+		ComputeConfig: computeConfig,
+	}
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	_, err := h.workflowClient.workflowService.CreateWorkerDeploymentVersion(grpcCtx, request)
+	if err != nil {
+		return WorkerDeploymentCreateVersionResponse{}, err
+	}
+	return WorkerDeploymentCreateVersionResponse{}, nil
 }
 
 func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, options WorkerDeploymentSetCurrentVersionOptions) (WorkerDeploymentSetCurrentVersionResponse, error) {
@@ -339,15 +397,22 @@ func workerDeploymentDrainageInfoFromProto(drainageInfo *deployment.VersionDrain
 	}
 }
 
-func workerDeploymentVersionInfoFromProto(info *deployment.WorkerDeploymentVersionInfo) WorkerDeploymentVersionInfo {
+func workerDeploymentVersionInfoFromProto(info *deployment.WorkerDeploymentVersionInfo) (WorkerDeploymentVersionInfo, error) {
 	if info == nil {
-		return WorkerDeploymentVersionInfo{}
+		return WorkerDeploymentVersionInfo{}, nil
 	}
 	//lint:ignore SA1019 ignore deprecated versioning APIs
 	version := workerDeploymentVersionFromProtoOrString(info.DeploymentVersion, info.Version)
 	if version == nil {
 		// Should never happen unless server is sending junk data
 		version = &WorkerDeploymentVersion{}
+	}
+
+	dc := converter.GetDefaultDataConverter()
+
+	cc, err := computeConfigFromProto(dc, info.ComputeConfig)
+	if err != nil {
+		return WorkerDeploymentVersionInfo{}, err
 	}
 	return WorkerDeploymentVersionInfo{
 		Version:            *version,
@@ -359,7 +424,8 @@ func workerDeploymentVersionInfoFromProto(info *deployment.WorkerDeploymentVersi
 		TaskQueuesInfos:    workerDeploymentTaskQueuesInfosFromProto(info.TaskQueueInfos),
 		DrainageInfo:       workerDeploymentDrainageInfoFromProto(info.DrainageInfo),
 		Metadata:           info.Metadata.GetEntries(),
-	}
+		ComputeConfig:      cc,
+	}, nil
 }
 
 func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, options WorkerDeploymentDescribeVersionOptions) (WorkerDeploymentVersionDescription, error) {
@@ -390,8 +456,13 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 		return WorkerDeploymentVersionDescription{}, err
 	}
 
+	info, err := workerDeploymentVersionInfoFromProto(resp.GetWorkerDeploymentVersionInfo())
+	if err != nil {
+		return WorkerDeploymentVersionDescription{}, err
+	}
+
 	return WorkerDeploymentVersionDescription{
-		Info: workerDeploymentVersionInfoFromProto(resp.GetWorkerDeploymentVersionInfo()),
+		Info: info,
 	}, nil
 }
 
