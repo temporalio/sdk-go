@@ -1,4 +1,4 @@
-# serverlesslambdaworker
+# lambdaworker
 
 A wrapper for running [Temporal](https://temporal.io) workers inside AWS Lambda. A single
 `RunWorker` call handles the full per-invocation lifecycle: dialing the Temporal server, creating a
@@ -10,11 +10,11 @@ invocation deadline.
 ```go
 package main
 
-import "go.temporal.io/sdk/contrib/aws/serverlesslambdaworker"
+import "go.temporal.io/sdk/contrib/aws/lambdaworker"
 
 func main() {
-    serverlesslambdaworker.RunWorker(
-        func(ctx *serverlesslambdaworker.ConfigureWorkerContext) error {
+    lambdaworker.RunWorker(
+        func(ctx *lambdaworker.ConfigureWorkerContext) error {
             ctx.SetTaskQueue("my-task-queue")
             ctx.RegisterWorkflow(MyWorkflow)
             ctx.RegisterActivity(MyActivity)
@@ -53,7 +53,7 @@ helpers for AWS Distro for OpenTelemetry (ADOT):
 ```go
 import (
     "go.temporal.io/sdk/client"
-    "go.temporal.io/sdk/contrib/aws/serverlesslambdaworker/otel"
+    "go.temporal.io/sdk/contrib/aws/lambdaworker/otel"
 )
 
 ctx.MutateClientOptions(func(opts *client.Options) error {
@@ -68,4 +68,4 @@ If you use OTEL, you can use
 OpenTelemetry) to automatically integrate with AWS observability functionality. Namely, you will
 want to add the Lambda layer in the aforementioned link. We'll handle setting up the SDK for you.
 
-See more [here](https://aws-observability.github.io/aws-otel-collector/?utm_source=chatgpt.com)
+See more [here](https://aws-observability.github.io/aws-otel-collector/)

@@ -1,4 +1,4 @@
-package serverlesslambdaworker
+package lambdaworker
 
 import (
 	"testing"
@@ -64,11 +64,6 @@ func (m *mockWorker) Run(interruptCh <-chan interface{}) error {
 
 func (m *mockWorker) Stop() {
 	m.Called()
-}
-
-func TestConfigureWorkerContext_ImplementsRegistry(t *testing.T) {
-	// Compile-time check is in configure.go; this just exercises it at test time.
-	var _ worker.Registry = (*ConfigureWorkerContext)(nil)
 }
 
 func TestConfigureWorkerContext_SetTaskQueue(t *testing.T) {

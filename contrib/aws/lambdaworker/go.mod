@@ -1,4 +1,4 @@
-module go.temporal.io/sdk/contrib/aws/serverlesslambdaworker
+module go.temporal.io/sdk/contrib/aws/lambdaworker
 
 go 1.23.0
 

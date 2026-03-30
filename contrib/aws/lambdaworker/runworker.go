@@ -1,4 +1,4 @@
-package serverlesslambdaworker
+package lambdaworker
 
 import (
 	"context"
@@ -55,12 +55,18 @@ func defaultDeps() workerDeps {
 // configure callback to collect registrations and option overrides, then delegates to the Lambda
 // runtime. On each invocation, it dials the Temporal server, starts a worker, polls for tasks
 // until the invocation deadline approaches, and then gracefully shuts down the worker and closes
-// the client. RunWorker does not return under normal operation. On fatal configuration error, it
-// logs to stderr and calls os.Exit(1).
+// the client. RunWorker does not return under normal operation.
+//
+// You must configure a task queue for the worker to listen on, either via
+// ConfigureWorkerContext.SetTaskQueue or setting the `TEMPORAL_TASK_QUEUE` environment variable.
+// You must also register one or more Workflows, Activities, or Nexus Services by using the
+// registration methods provided by ConfigureWorkerContext.
+//
+// On fatal configuration error, it logs to stderr and calls os.Exit(1).
 func RunWorker(configure func(ctx *ConfigureWorkerContext) error) {
 	deps := defaultDeps()
 	if err := runWorkerInternal(configure, deps); err != nil {
-		fmt.Fprintf(os.Stderr, "serverlesslambdaworker: fatal: %v\n", err)
+		fmt.Fprintf(os.Stderr, "lambdaworker: fatal: %v\n", err)
 		deps.exit(1)
 	}
 }
@@ -89,6 +95,7 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 		return err
 	}
 
+	deps.setCacheSize(defaultStickyCacheSize)
 	var workerOpts worker.Options
 	applyLambdaWorkerDefaults(&workerOpts)
 	if configCtx.mutateWorkerOpts != nil {
@@ -96,7 +103,6 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 			return fmt.Errorf("mutating worker options: %w", err)
 		}
 	}
-	deps.setCacheSize(defaultStickyCacheSize)
 
 	shutdownBuffer := configCtx.shutdownDeadlineBuffer
 	if shutdownBuffer == 0 {
@@ -177,7 +183,7 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 		for _, fn := range configCtx.shutdownFuncs {
 			if err := fn(context.Background()); err != nil {
 				fmt.Fprintf(os.Stderr,
-					"serverlesslambdaworker: shutdown hook error: %v\n", err)
+					"lambdaworker: shutdown hook error: %v\n", err)
 			}
 		}
 		return nil

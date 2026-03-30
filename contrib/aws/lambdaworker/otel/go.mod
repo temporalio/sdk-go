@@ -1,4 +1,4 @@
-module go.temporal.io/sdk/contrib/aws/serverlesslambdaworker/otel
+module go.temporal.io/sdk/contrib/aws/lambdaworker/otel
 
 go 1.25.0
 

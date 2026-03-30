@@ -1,4 +1,4 @@
-package serverlesslambdaworker
+package lambdaworker
 
 import (
 	"fmt"

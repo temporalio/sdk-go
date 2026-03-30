@@ -1,4 +1,4 @@
-// Package serverlesslambdaworker provides an ergonomic wrapper for running
+// Package lambdaworker provides an ergonomic wrapper for running
 // Temporal workers inside AWS Lambda execution environments.
 //
 // # Usage
@@ -6,7 +6,7 @@
 // Call [RunWorker] from your Lambda's main() function:
 //
 //	func main() {
-//	    serverlesslambdaworker.RunWorker(func(ctx *serverlesslambdaworker.ConfigureWorkerContext) error {
+//	    lambdaworker.RunWorker(func(ctx *lambdaworker.ConfigureWorkerContext) error {
 //	        ctx.SetTaskQueue("my-task-queue")
 //	        ctx.RegisterWorkflow(MyWorkflow)
 //	        ctx.RegisterActivity(MyActivity)
@@ -23,7 +23,8 @@
 //
 // Client connection options (address, namespace, TLS, API key) are loaded automatically from
 // a TOML config file and environment variables via
-// [go.temporal.io/sdk/contrib/envconfig.LoadClientOptions].
+// [go.temporal.io/sdk/contrib/envconfig.LoadClientOptions]. See more at
+// https://docs.temporal.io/references/client-environment-configuration.
 //
 // Because AWS Lambda does not have a standard config file directory, it resolves the config file
 // path in the following order:
@@ -50,6 +51,6 @@
 //
 // Observability (metrics, tracing) is opt-in. Use [ConfigureWorkerContext.MutateClientOptions] to
 // supply your own metrics handler and tracing interceptor. A convenience sub-package at
-// contrib/aws/serverlesslambdaworker/otel/ provides ready-made OTel configuration for AWS Distro
+// contrib/aws/lambdaworker/otel/ provides ready-made OTel configuration for AWS Distro
 // for OpenTelemetry (ADOT).
-package serverlesslambdaworker
+package lambdaworker

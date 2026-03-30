@@ -1,7 +1,7 @@
 // Package otel provides convenience helpers for configuring OpenTelemetry
 // metrics and tracing on a Temporal client running inside AWS Lambda.
 //
-// Use [ApplyDefaults] inside a [serverlesslambdaworker.ConfigureWorkerContext.MutateClientOptions]
+// Use [ApplyDefaults] inside a [lambdaworker.ConfigureWorkerContext.MutateClientOptions]
 // callback for a batteries-included setup that creates OTLP gRPC exporters and an AWS X-Ray ID
 // generator, suitable for use with the AWS Distro for OpenTelemetry (ADOT) Lambda layer.
 //
@@ -28,7 +28,7 @@ import (
 )
 
 // ShutdownRegistrar accepts a function to be called at the end of each Lambda invocation.
-// [serverlesslambdaworker.ConfigureWorkerContext] implements this interface.
+// [lambdaworker.ConfigureWorkerContext] implements this interface.
 type ShutdownRegistrar interface {
 	OnShutdown(func(context.Context) error)
 }
@@ -47,6 +47,16 @@ type Options struct {
 	// If empty, defaults to the OTEL_EXPORTER_OTLP_ENDPOINT environment variable, then
 	// "localhost:4317".
 	CollectorEndpoint string
+
+	// MetricExporterOptions are additional options passed to the OTLP gRPC metric exporter.
+	// By default [otlpmetricgrpc.WithInsecure] is prepended; set this to override that
+	// default (e.g. to use TLS).
+	MetricExporterOptions []otlpmetricgrpc.Option
+
+	// TraceExporterOptions are additional options passed to the OTLP gRPC trace exporter.
+	// By default [otlptracegrpc.WithInsecure] is prepended; set this to override that
+	// default (e.g. to use TLS).
+	TraceExporterOptions []otlptracegrpc.Option
 }
 
 // ApplyDefaults configures OTel metrics and tracing on the given client options using AWS Lambda
@@ -61,8 +71,8 @@ type Options struct {
 // only ForceFlush (not Shutdown) so the providers remain usable across warm-start invocations.
 // Permanent provider shutdown is unnecessary in Lambda since the runtime terminates the process.
 //
-// Call this from a [serverlesslambdaworker.ConfigureWorkerContext.MutateClientOptions] callback,
-// passing the [serverlesslambdaworker.ConfigureWorkerContext] as the [ShutdownRegistrar].
+// Call this from a [lambdaworker.ConfigureWorkerContext.MutateClientOptions] callback,
+// passing the [lambdaworker.ConfigureWorkerContext] as the [ShutdownRegistrar].
 // If you need more control, see [ApplyDefaultsWithProviders].
 func ApplyDefaults(
 	ctx ShutdownRegistrar, opts *client.Options, options Options,
@@ -83,10 +93,12 @@ func ApplyDefaults(
 		options.CollectorEndpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
 	}
 
-	var grpcOpts []otlpmetricgrpc.Option
-	grpcOpts = append(grpcOpts, otlpmetricgrpc.WithInsecure())
-	var traceGrpcOpts []otlptracegrpc.Option
-	traceGrpcOpts = append(traceGrpcOpts, otlptracegrpc.WithInsecure())
+	grpcOpts := append(
+		[]otlpmetricgrpc.Option{otlpmetricgrpc.WithInsecure()}, options.MetricExporterOptions...,
+	)
+	traceGrpcOpts := append(
+		[]otlptracegrpc.Option{otlptracegrpc.WithInsecure()}, options.TraceExporterOptions...,
+	)
 	if options.CollectorEndpoint != "" {
 		grpcOpts = append(grpcOpts, otlpmetricgrpc.WithEndpoint(options.CollectorEndpoint))
 		traceGrpcOpts = append(traceGrpcOpts, otlptracegrpc.WithEndpoint(options.CollectorEndpoint))
@@ -151,8 +163,8 @@ func ApplyDefaults(
 // the given [ShutdownRegistrar]. Use this instead of [ApplyDefaults] when you need full control
 // over the OTel provider configuration.
 //
-// Call this from a [serverlesslambdaworker.ConfigureWorkerContext.MutateClientOptions] callback,
-// passing the [serverlesslambdaworker.ConfigureWorkerContext] as the [ShutdownRegistrar].
+// Call this from a [lambdaworker.ConfigureWorkerContext.MutateClientOptions] callback,
+// passing the [lambdaworker.ConfigureWorkerContext] as the [ShutdownRegistrar].
 func ApplyDefaultsWithProviders(
 	ctx ShutdownRegistrar,
 	opts *client.Options,
