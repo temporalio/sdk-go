@@ -96,15 +96,3 @@ func lambdaDefaultConfigFilePath(getenv func(string) string) string {
 	}
 	return path.Join(root, defaultConfigFile)
 }
-
-// resolveTaskQueue determines the task queue name from user configuration or environment variables.
-// Returns an error if no task queue is configured.
-func resolveTaskQueue(userTaskQueue string, getenv func(string) string) (string, error) {
-	if userTaskQueue != "" {
-		return userTaskQueue, nil
-	}
-	if tq := getenv(envTaskQueue); tq != "" {
-		return tq, nil
-	}
-	return "", fmt.Errorf("task queue not configured: set it via ConfigureWorkerContext.SetTaskQueue() or the %s environment variable", envTaskQueue)
-}

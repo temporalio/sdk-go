@@ -6,8 +6,8 @@
 // Call [RunWorker] from your Lambda's main() function:
 //
 //	func main() {
-//	    lambdaworker.RunWorker(func(ctx *lambdaworker.ConfigureWorkerContext) error {
-//	        ctx.SetTaskQueue("my-task-queue")
+//	    lambdaworker.RunWorker(func(ctx *lambdaworker.Options) error {
+//	        ctx.TaskQueue = "my-task-queue"
 //	        ctx.RegisterWorkflow(MyWorkflow)
 //	        ctx.RegisterActivity(MyActivity)
 //	        return nil
@@ -37,8 +37,8 @@
 // [go.temporal.io/sdk/contrib/envconfig] for the full list of supported environment variables
 // and TOML fields.
 //
-// Use [ConfigureWorkerContext.MutateClientOptions] and [ConfigureWorkerContext.MutateWorkerOptions]
-// to override any defaults. User overrides are applied after Lambda defaults, so they always win.
+// The configure callback receives an [Options] struct with public fields pre-populated with
+// Lambda-appropriate defaults. Override any field directly in the callback.
 //
 // # Lambda Timeout
 //
@@ -49,7 +49,7 @@
 //
 // # Observability
 //
-// Observability (metrics, tracing) is opt-in. Use [ConfigureWorkerContext.MutateClientOptions] to
+// Observability (metrics, tracing) is opt-in. Use [Options.MutateClientOptions] to
 // supply your own metrics handler and tracing interceptor. A convenience sub-package at
 // contrib/aws/lambdaworker/otel/ provides ready-made OTel configuration for AWS Distro
 // for OpenTelemetry (ADOT).

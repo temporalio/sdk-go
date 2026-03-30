@@ -1,8 +1,8 @@
 // Package otel provides convenience helpers for configuring OpenTelemetry
 // metrics and tracing on a Temporal client running inside AWS Lambda.
 //
-// Use [ApplyDefaults] inside a [lambdaworker.ConfigureWorkerContext.MutateClientOptions]
-// callback for a batteries-included setup that creates OTLP gRPC exporters and an AWS X-Ray ID
+// Use [ApplyDefaults] inside a [lambdaworker.RunWorker] configure callback for a
+// batteries-included setup that creates OTLP gRPC exporters and an AWS X-Ray ID
 // generator, suitable for use with the AWS Distro for OpenTelemetry (ADOT) Lambda layer.
 //
 // Use [ApplyDefaultsWithProviders] if you need to supply your own MeterProvider and TracerProvider.
@@ -71,8 +71,8 @@ type Options struct {
 // only ForceFlush (not Shutdown) so the providers remain usable across warm-start invocations.
 // Permanent provider shutdown is unnecessary in Lambda since the runtime terminates the process.
 //
-// Call this from a [lambdaworker.ConfigureWorkerContext.MutateClientOptions] callback,
-// passing the [lambdaworker.ConfigureWorkerContext] as the [ShutdownRegistrar].
+// Call this from a [lambdaworker.RunWorker] configure callback, passing the
+// [lambdaworker.Options] as the [ShutdownRegistrar].
 // If you need more control, see [ApplyDefaultsWithProviders].
 func ApplyDefaults(
 	ctx ShutdownRegistrar, opts *client.Options, options Options,
@@ -163,8 +163,8 @@ func ApplyDefaults(
 // the given [ShutdownRegistrar]. Use this instead of [ApplyDefaults] when you need full control
 // over the OTel provider configuration.
 //
-// Call this from a [lambdaworker.ConfigureWorkerContext.MutateClientOptions] callback,
-// passing the [lambdaworker.ConfigureWorkerContext] as the [ShutdownRegistrar].
+// Call this from a [lambdaworker.RunWorker] configure callback, passing the
+// [lambdaworker.Options] as the [ShutdownRegistrar].
 func ApplyDefaultsWithProviders(
 	ctx ShutdownRegistrar,
 	opts *client.Options,

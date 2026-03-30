@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
@@ -119,28 +118,4 @@ func TestLambdaDefaultConfigFilePath(t *testing.T) {
 			assert.Equal(t, tt.expected, lambdaDefaultConfigFilePath(getenv))
 		})
 	}
-}
-
-func TestResolveTaskQueue(t *testing.T) {
-	getenv := func(k string) string {
-		if k == "TEMPORAL_TASK_QUEUE" {
-			return "env-queue"
-		}
-		return ""
-	}
-
-	// User-set takes priority.
-	tq, err := resolveTaskQueue("user-queue", getenv)
-	require.NoError(t, err)
-	assert.Equal(t, "user-queue", tq)
-
-	// Falls back to env var.
-	tq, err = resolveTaskQueue("", getenv)
-	require.NoError(t, err)
-	assert.Equal(t, "env-queue", tq)
-
-	// Error when neither is set.
-	_, err = resolveTaskQueue("", func(string) string { return "" })
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "task queue not configured")
 }

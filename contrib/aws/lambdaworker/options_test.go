@@ -2,15 +2,12 @@ package lambdaworker
 
 import (
 	"testing"
-	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -66,44 +63,12 @@ func (m *mockWorker) Stop() {
 	m.Called()
 }
 
-func TestConfigureWorkerContext_SetTaskQueue(t *testing.T) {
-	ctx := &ConfigureWorkerContext{}
-	assert.Equal(t, "", ctx.TaskQueue())
-	ctx.SetTaskQueue("my-queue")
-	assert.Equal(t, "my-queue", ctx.TaskQueue())
-}
-
-func TestConfigureWorkerContext_MutateClientOptions(t *testing.T) {
-	ctx := &ConfigureWorkerContext{}
-	ctx.MutateClientOptions(func(opts *client.Options) error {
-		opts.Namespace = "custom-ns"
-		return nil
-	})
-
-	var opts client.Options
-	err := ctx.mutateClientOpts(&opts)
-	assert.NoError(t, err)
-	assert.Equal(t, "custom-ns", opts.Namespace)
-}
-
-func TestConfigureWorkerContext_MutateWorkerOptions(t *testing.T) {
-	ctx := &ConfigureWorkerContext{}
-	ctx.MutateWorkerOptions(func(opts *worker.Options) error {
-		opts.MaxConcurrentActivityExecutionSize = 42
-		return nil
-	})
-
-	var opts worker.Options
-	require.NoError(t, ctx.mutateWorkerOpts(&opts))
-	assert.Equal(t, 42, opts.MaxConcurrentActivityExecutionSize)
-}
-
 func myWorkflow()  {}
 func myActivity()  {}
 func myActivity2() {}
 
 func TestConfigureWorkerContext_ReplayRegistrations(t *testing.T) {
-	ctx := &ConfigureWorkerContext{}
+	ctx := &Options{}
 	ctx.RegisterWorkflow(myWorkflow)
 	ctx.RegisterWorkflowWithOptions(myWorkflow, workflow.RegisterOptions{Name: "custom-wf"})
 	ctx.RegisterActivity(myActivity)
@@ -123,16 +88,4 @@ func TestConfigureWorkerContext_ReplayRegistrations(t *testing.T) {
 
 	ctx.replayRegistrations(w)
 	w.AssertExpectations(t)
-}
-
-func TestConfigureWorkerContext_SetShutdownDeadlineBuffer(t *testing.T) {
-	ctx := &ConfigureWorkerContext{}
-	require.NoError(t, ctx.SetShutdownDeadlineBuffer(5*time.Second))
-	assert.Equal(t, 5*time.Second, ctx.shutdownDeadlineBuffer)
-
-	require.NoError(t, ctx.SetShutdownDeadlineBuffer(0))
-	assert.Equal(t, time.Duration(0), ctx.shutdownDeadlineBuffer)
-
-	err := ctx.SetShutdownDeadlineBuffer(-1 * time.Second)
-	assert.ErrorContains(t, err, "must not be negative")
 }

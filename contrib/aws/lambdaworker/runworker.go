@@ -58,12 +58,12 @@ func defaultDeps() workerDeps {
 // the client. RunWorker does not return under normal operation.
 //
 // You must configure a task queue for the worker to listen on, either via
-// ConfigureWorkerContext.SetTaskQueue or setting the `TEMPORAL_TASK_QUEUE` environment variable.
+// [Options.TaskQueue] or the TEMPORAL_TASK_QUEUE environment variable.
 // You must also register one or more Workflows, Activities, or Nexus Services by using the
-// registration methods provided by ConfigureWorkerContext.
+// registration methods provided by [Options].
 //
 // On fatal configuration error, it logs to stderr and calls os.Exit(1).
-func RunWorker(configure func(ctx *ConfigureWorkerContext) error) {
+func RunWorker(configure func(ctx *Options) error) {
 	deps := defaultDeps()
 	if err := runWorkerInternal(configure, deps); err != nil {
 		fmt.Fprintf(os.Stderr, "lambdaworker: fatal: %v\n", err)
@@ -73,55 +73,51 @@ func RunWorker(configure func(ctx *ConfigureWorkerContext) error) {
 
 // runWorkerInternal contains the core logic with injected dependencies for testability. It returns
 // an error instead of calling os.Exit.
-func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps workerDeps) error {
-	configCtx := &ConfigureWorkerContext{}
-	if err := configure(configCtx); err != nil {
-		return fmt.Errorf("configure callback failed: %w", err)
-	}
-
+func runWorkerInternal(configure func(ctx *Options) error, deps workerDeps) error {
 	clientOpts, err := deps.loadConfig()
 	if err != nil {
 		return fmt.Errorf("loading client config: %w", err)
 	}
 	applyLambdaClientDefaults(&clientOpts)
-	if configCtx.mutateClientOpts != nil {
-		if err := configCtx.mutateClientOpts(&clientOpts); err != nil {
-			return fmt.Errorf("mutating client options: %w", err)
-		}
-	}
 
-	taskQueue, err := resolveTaskQueue(configCtx.taskQueue, deps.getenv)
-	if err != nil {
-		return err
-	}
-
-	deps.setCacheSize(defaultStickyCacheSize)
 	var workerOpts worker.Options
 	applyLambdaWorkerDefaults(&workerOpts)
-	if configCtx.mutateWorkerOpts != nil {
-		if err := configCtx.mutateWorkerOpts(&workerOpts); err != nil {
-			return fmt.Errorf("mutating worker options: %w", err)
-		}
+
+	deps.setCacheSize(defaultStickyCacheSize)
+
+	configCtx := &Options{
+		ClientOptions:          clientOpts,
+		WorkerOptions:          workerOpts,
+		ShutdownDeadlineBuffer: workerOpts.WorkerStopTimeout + defaultShutdownHookBuffer,
+	}
+	if tq := deps.getenv(envTaskQueue); tq != "" {
+		configCtx.TaskQueue = tq
 	}
 
-	shutdownBuffer := configCtx.shutdownDeadlineBuffer
-	if shutdownBuffer == 0 {
-		shutdownBuffer = workerOpts.WorkerStopTimeout + defaultShutdownHookBuffer
+	if err := configure(configCtx); err != nil {
+		return fmt.Errorf("configure callback failed: %w", err)
 	}
 
-	logger := clientOpts.Logger
+	if configCtx.TaskQueue == "" {
+		return fmt.Errorf(
+			"task queue not configured: set Options.TaskQueue or the %s environment variable",
+			envTaskQueue,
+		)
+	}
+
+	logger := configCtx.ClientOptions.Logger
 
 	handler := func(invocationCtx context.Context) error {
 		deadline, ok := invocationCtx.Deadline()
 		if ok {
-			workTime := time.Until(deadline) - shutdownBuffer
+			workTime := time.Until(deadline) - configCtx.ShutdownDeadlineBuffer
 			if workTime <= time.Second {
 				return fmt.Errorf(
 					"Lambda timeout leaves almost no time for work "+
 						"(workTime %v, shutdownBuffer %v); increase the "+
 						"function timeout or decrease the shutdown deadline "+
 						"buffer",
-					workTime, shutdownBuffer,
+					workTime, configCtx.ShutdownDeadlineBuffer,
 				)
 			} else if workTime < 5*time.Second {
 				if logger != nil {
@@ -130,7 +126,7 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 							"shutdown buffer; consider increasing the function "+
 							"timeout or decreasing the shutdown deadline buffer",
 						"workTime", workTime,
-						"shutdownBuffer", shutdownBuffer,
+						"shutdownBuffer", configCtx.ShutdownDeadlineBuffer,
 					)
 				}
 			}
@@ -138,7 +134,7 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 
 		// Build per-invocation client options with identity from this invocation's Lambda context.
 		// A shallow copy is sufficient since only Identity is modified.
-		invocationOpts := clientOpts
+		invocationOpts := configCtx.ClientOptions
 		if invocationOpts.Identity == "" {
 			requestID, functionARN, ok := deps.extractLambdaCtx(invocationCtx)
 			if ok {
@@ -152,7 +148,7 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 		}
 		defer c.Close()
 
-		w := deps.newWorker(c, taskQueue, workerOpts)
+		w := deps.newWorker(c, configCtx.TaskQueue, configCtx.WorkerOptions)
 		configCtx.replayRegistrations(w)
 
 		if err := w.Start(); err != nil {
@@ -162,7 +158,7 @@ func runWorkerInternal(configure func(ctx *ConfigureWorkerContext) error, deps w
 		if !ok {
 			<-invocationCtx.Done()
 		} else {
-			shutdownAt := deadline.Add(-shutdownBuffer)
+			shutdownAt := deadline.Add(-configCtx.ShutdownDeadlineBuffer)
 			waitDuration := time.Until(shutdownAt)
 			if waitDuration > 0 {
 				timer := time.NewTimer(waitDuration)
