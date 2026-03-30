@@ -57,15 +57,20 @@ func defaultDeps() workerDeps {
 // until the invocation deadline approaches, and then gracefully shuts down the worker and closes
 // the client. RunWorker does not return under normal operation.
 //
-// You must configure a task queue for the worker to listen on, either via
-// [Options.TaskQueue] or the TEMPORAL_TASK_QUEUE environment variable.
-// You must also register one or more Workflows, Activities, or Nexus Services by using the
-// registration methods provided by [Options].
+// The version parameter identifies this worker's deployment version. RunWorker always enables
+// Worker Deployment Versioning ([worker.DeploymentOptions.UseVersioning] = true). To provide a
+// default versioning behavior for workflows that do not specify one at registration time, set
+// [worker.DeploymentOptions.DefaultVersioningBehavior] on [Options.WorkerOptions] in the configure
+// callback.
+//
+// You must configure a task queue for the worker to listen on, either via [Options.TaskQueue] or
+// the TEMPORAL_TASK_QUEUE environment variable. You must also register one or more Workflows,
+// Activities, or Nexus Services by using the registration methods provided by [Options].
 //
 // On fatal configuration error, it logs to stderr and calls os.Exit(1).
-func RunWorker(configure func(ctx *Options) error) {
+func RunWorker(version worker.WorkerDeploymentVersion, configure func(ctx *Options) error) {
 	deps := defaultDeps()
-	if err := runWorkerInternal(configure, deps); err != nil {
+	if err := runWorkerInternal(version, configure, deps); err != nil {
 		fmt.Fprintf(os.Stderr, "lambdaworker: fatal: %v\n", err)
 		deps.exit(1)
 	}
@@ -73,7 +78,15 @@ func RunWorker(configure func(ctx *Options) error) {
 
 // runWorkerInternal contains the core logic with injected dependencies for testability. It returns
 // an error instead of calling os.Exit.
-func runWorkerInternal(configure func(ctx *Options) error, deps workerDeps) error {
+func runWorkerInternal(
+	version worker.WorkerDeploymentVersion,
+	configure func(ctx *Options) error,
+	deps workerDeps,
+) error {
+	if (version == worker.WorkerDeploymentVersion{}) {
+		return fmt.Errorf("version is required")
+	}
+
 	clientOpts, err := deps.loadConfig()
 	if err != nil {
 		return fmt.Errorf("loading client config: %w", err)
@@ -82,6 +95,8 @@ func runWorkerInternal(configure func(ctx *Options) error, deps workerDeps) erro
 
 	var workerOpts worker.Options
 	applyLambdaWorkerDefaults(&workerOpts)
+	workerOpts.DeploymentOptions.UseVersioning = true
+	workerOpts.DeploymentOptions.Version = version
 
 	deps.setCacheSize(defaultStickyCacheSize)
 

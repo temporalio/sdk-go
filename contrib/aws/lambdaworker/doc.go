@@ -6,7 +6,10 @@
 // Call [RunWorker] from your Lambda's main() function:
 //
 //	func main() {
-//	    lambdaworker.RunWorker(func(ctx *lambdaworker.Options) error {
+//	    lambdaworker.RunWorker(worker.WorkerDeploymentVersion{
+//	        DeploymentName: "my-service",
+//	        BuildID:        "v1.0",
+//	    }, func(ctx *lambdaworker.Options) error {
 //	        ctx.TaskQueue = "my-task-queue"
 //	        ctx.RegisterWorkflow(MyWorkflow)
 //	        ctx.RegisterActivity(MyActivity)

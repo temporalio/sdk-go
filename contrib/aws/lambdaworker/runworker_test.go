@@ -70,6 +70,11 @@ func newTestDeps() (workerDeps, *mockWorker, *mockClient) {
 	return deps, w, c
 }
 
+var testVersion = worker.WorkerDeploymentVersion{
+	DeploymentName: "test-deployment",
+	BuildID:        "test-build",
+}
+
 func TestRunWorkerInternal_Success(t *testing.T) {
 	deps, w, c := newTestDeps()
 
@@ -79,7 +84,7 @@ func TestRunWorkerInternal_Success(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.RegisterWorkflow(myWorkflow)
 		ctx.RegisterActivity(myActivity)
 		return nil
@@ -92,7 +97,7 @@ func TestRunWorkerInternal_Success(t *testing.T) {
 
 func TestRunWorkerInternal_ConfigureCallbackError(t *testing.T) {
 	deps, _, _ := newTestDeps()
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return errors.New("bad config")
 	}, deps)
 	assert.ErrorContains(t, err, "configure callback failed")
@@ -103,7 +108,7 @@ func TestRunWorkerInternal_LoadConfigError(t *testing.T) {
 	deps.loadConfig = func() (client.Options, error) {
 		return client.Options{}, errors.New("config load error")
 	}
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 	assert.ErrorContains(t, err, "loading client config")
@@ -114,7 +119,7 @@ func TestRunWorkerInternal_DialError(t *testing.T) {
 	deps.dial = func(client.Options) (client.Client, error) {
 		return nil, errors.New("connection refused")
 	}
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 	// Dial error surfaces via the handler return, but startLambda swallows it.
@@ -135,7 +140,7 @@ func TestRunWorkerInternal_DialError_HandlerReturnsError(t *testing.T) {
 		}
 	}
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 
@@ -147,10 +152,18 @@ func TestRunWorkerInternal_MissingTaskQueue(t *testing.T) {
 	deps, _, _ := newTestDeps()
 	deps.getenv = func(string) string { return "" }
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 	assert.ErrorContains(t, err, "task queue not configured")
+}
+
+func TestRunWorkerInternal_MissingVersion(t *testing.T) {
+	deps, _, _ := newTestDeps()
+	err := runWorkerInternal(worker.WorkerDeploymentVersion{}, func(ctx *Options) error {
+		return nil
+	}, deps)
+	assert.ErrorContains(t, err, "version is required")
 }
 
 func TestRunWorkerInternal_WorkerStartError(t *testing.T) {
@@ -165,7 +178,7 @@ func TestRunWorkerInternal_WorkerStartError(t *testing.T) {
 		}
 	}
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 	assert.NoError(t, err) // runWorkerInternal itself succeeds.
@@ -192,7 +205,7 @@ func TestRunWorkerInternal_UserOverridesApplied(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.TaskQueue = "user-queue"
 		ctx.ClientOptions.Namespace = "custom-ns"
 		ctx.WorkerOptions.MaxConcurrentActivityExecutionSize = 99
@@ -219,7 +232,7 @@ func TestRunWorkerInternal_LambdaDefaultsApplied(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 
@@ -228,6 +241,8 @@ func TestRunWorkerInternal_LambdaDefaultsApplied(t *testing.T) {
 	assert.Equal(t, defaultMaxConcurrentWorkflowTaskExecutionSize, capturedWorkerOpts.MaxConcurrentWorkflowTaskExecutionSize)
 	assert.Equal(t, defaultWorkerStopTimeout, capturedWorkerOpts.WorkerStopTimeout)
 	assert.True(t, capturedWorkerOpts.DisableEagerActivities)
+	assert.True(t, capturedWorkerOpts.DeploymentOptions.UseVersioning)
+	assert.Equal(t, testVersion, capturedWorkerOpts.DeploymentOptions.Version)
 	w.AssertExpectations(t)
 	c.AssertExpectations(t)
 }
@@ -241,7 +256,7 @@ func TestRunWorkerInternal_SetsCacheSize(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 
@@ -259,7 +274,7 @@ func TestRunWorkerInternal_CleanupPerInvocation(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 
@@ -281,7 +296,7 @@ func TestRunWorkerInternal_TaskQueueFromSetTaskQueue(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.TaskQueue = "explicit-queue"
 		return nil
 	}, deps)
@@ -307,7 +322,7 @@ func TestRunWorkerInternal_IdentityFromLambdaContext(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 
@@ -329,7 +344,7 @@ func TestRunWorkerInternal_IdentityUserOverrideWins(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.ClientOptions.Identity = "my-custom-identity"
 		return nil
 	}, deps)
@@ -355,7 +370,7 @@ func TestRunWorkerInternal_IdentityNoLambdaContext(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 
@@ -374,7 +389,7 @@ func TestRunWorkerInternal_OnShutdownCalled(t *testing.T) {
 	c.On("Close").Once()
 
 	shutdownCalled := false
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.OnShutdown(func(context.Context) error {
 			shutdownCalled = true
 			return nil
@@ -403,7 +418,7 @@ func TestRunWorkerInternal_OnShutdownCalledPerInvocation(t *testing.T) {
 	c.On("Close").Times(3)
 
 	shutdownCount := 0
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.OnShutdown(func(context.Context) error {
 			shutdownCount++
 			return nil
@@ -425,7 +440,7 @@ func TestRunWorkerInternal_OnShutdownMultipleFuncs(t *testing.T) {
 	c.On("Close").Once()
 
 	var order []string
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.OnShutdown(func(context.Context) error {
 			order = append(order, "first")
 			return nil
@@ -451,7 +466,7 @@ func TestRunWorkerInternal_OnShutdownErrorLogged(t *testing.T) {
 	c.On("Close").Once()
 
 	secondCalled := false
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.OnShutdown(func(context.Context) error {
 			return errors.New("flush failed")
 		})
@@ -475,7 +490,7 @@ func TestRunWorkerInternal_OnShutdownReceivesFreshContext(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.OnShutdown(func(hookCtx context.Context) error {
 			// The hook context must not be cancelled — this is critical
 			// for OTLP flushes that check ctx.Err() before sending.
@@ -501,7 +516,7 @@ func TestRunWorkerInternal_OnShutdownRunsAfterWorkerStop(t *testing.T) {
 	}).Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.OnShutdown(func(context.Context) error {
 			order = append(order, "shutdown-hook")
 			return nil
@@ -530,7 +545,7 @@ func TestRunWorkerInternal_TightDeadlineReturnsError(t *testing.T) {
 		}
 	}
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.ShutdownDeadlineBuffer = 1500 * time.Millisecond
 		return nil
 	}, deps)
@@ -575,7 +590,7 @@ func TestRunWorkerInternal_TightDeadlineLogsWarning(t *testing.T) {
 	w.On("Stop").Once()
 	c.On("Close").Once()
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		ctx.ShutdownDeadlineBuffer = 500 * time.Millisecond
 		return nil
 	}, deps)
@@ -608,7 +623,7 @@ func TestRunWorkerInternal_PerInvocationLifecycle(t *testing.T) {
 	w.On("Stop").Times(3)
 	c.On("Close").Times(3)
 
-	err := runWorkerInternal(func(ctx *Options) error {
+	err := runWorkerInternal(testVersion, func(ctx *Options) error {
 		return nil
 	}, deps)
 
