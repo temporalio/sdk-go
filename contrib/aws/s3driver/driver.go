@@ -141,16 +141,16 @@ func (d *s3StorageDriver) Store(
 	}
 
 	claims := make([]converter.StorageDriverClaim, len(payloads))
-	eg2, egCtx := errgroup.WithContext(ctx.Context)
+	g, gctx := errgroup.WithContext(ctx.Context)
 	for i, pp := range prepared {
-		eg2.Go(func() error {
+		g.Go(func() error {
 			key := objectKey(pp.hexDigest)
-			exists, err := d.client.ObjectExists(egCtx, pp.bucket, key)
+			exists, err := d.client.ObjectExists(gctx, pp.bucket, key)
 			if err != nil {
 				return fmt.Errorf("existence check failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
 			}
 			if !exists {
-				if err := d.client.PutObject(egCtx, pp.bucket, key, pp.data); err != nil {
+				if err := d.client.PutObject(gctx, pp.bucket, key, pp.data); err != nil {
 					return fmt.Errorf("upload failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
 				}
 			}
@@ -165,7 +165,7 @@ func (d *s3StorageDriver) Store(
 			return nil
 		})
 	}
-	if err := eg2.Wait(); err != nil {
+	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 	return claims, nil
