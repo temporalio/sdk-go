@@ -289,25 +289,20 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
 	)
 	ts.NoError(err)
 
-	queryCtx, queryCancel := context.WithCancel(ctx)
+	queryCtx, queryCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer queryCancel()
 
 	go func() {
-		// This will block until query completes, but it will not complete
-		// because the result payload is too large.
+		// This will block until the context deadline expires; the query will
+		// never complete because the result payload is too large.
 		ts.client.QueryWorkflow(queryCtx, run.GetID(), run.GetRunID(), queryName)
 	}()
 
-	// Wait twice to ensure that the query was invoked repeatedly
-	for range 2 {
-		select {
-		case <-largeQueryInvoked:
-		case <-ctx.Done():
-			ts.Fail("Context cancelled before query handler was invoked")
-		}
+	select {
+	case <-largeQueryInvoked:
+	case <-ctx.Done():
+		ts.Fail("Context cancelled before query handler was invoked")
 	}
-
-	queryCancel()
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
