@@ -433,22 +433,16 @@ func TestRetrieve_GetObjectError(t *testing.T) {
 	assert.ErrorContains(t, err, "]: throttled")
 }
 
-func TestRetrieve_NoHashFields_BackwardCompat(t *testing.T) {
+func TestRetrieve_ClaimMissingHashAlgorithm(t *testing.T) {
 	mc := newMemClient()
 	d := newDriver(t, mc)
 
-	// Store normally.
-	p := testPayload("compat")
-	claims, err := d.Store(storeCtx(), []*commonpb.Payload{p})
+	claims, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
 	require.NoError(t, err)
+	delete(claims[0].ClaimData, claimKeyHashAlgorithm)
 
-	// Strip hash fields to simulate a legacy claim.
-	delete(claims[0].ClaimData, "hash_algorithm")
-	delete(claims[0].ClaimData, "hash_value")
-
-	restored, err := d.Retrieve(retrieveCtx(), claims)
-	require.NoError(t, err)
-	assert.True(t, proto.Equal(p, restored[0]))
+	_, err = d.Retrieve(retrieveCtx(), claims)
+	assert.EqualError(t, err, "claim missing hash algorithm")
 }
 
 // --- Key generation tests ---

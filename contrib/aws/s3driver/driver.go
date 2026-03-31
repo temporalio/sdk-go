@@ -197,7 +197,11 @@ func (d *s3StorageDriver) Retrieve(
 				return fmt.Errorf("download failed [bucket=%s, key=%s]: %w", bucket, key, err)
 			}
 
-			if algo, ok := c.ClaimData[claimKeyHashAlgorithm]; ok && algo != hashAlgorithm {
+			algo, ok := c.ClaimData[claimKeyHashAlgorithm]
+			if !ok {
+				return errors.New("claim missing hash algorithm")
+			}
+			if algo != hashAlgorithm {
 				return fmt.Errorf("unsupported hash algorithm %q", algo)
 			}
 
