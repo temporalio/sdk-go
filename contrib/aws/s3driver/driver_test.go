@@ -259,8 +259,9 @@ func TestStore_DynamicBucket(t *testing.T) {
 // errClient wraps a memClient and injects errors.
 type errClient struct {
 	*memClient
-	putErr error
-	getErr error
+	putErr    error
+	getErr    error
+	existsErr error
 }
 
 func (e *errClient) PutObject(ctx context.Context, bucket, key string, data []byte) error {
@@ -268,6 +269,13 @@ func (e *errClient) PutObject(ctx context.Context, bucket, key string, data []by
 		return e.putErr
 	}
 	return e.memClient.PutObject(ctx, bucket, key, data)
+}
+
+func (e *errClient) ObjectExists(ctx context.Context, bucket, key string) (bool, error) {
+	if e.existsErr != nil {
+		return false, e.existsErr
+	}
+	return e.memClient.ObjectExists(ctx, bucket, key)
 }
 
 func (e *errClient) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
@@ -287,6 +295,18 @@ func TestStore_PutObjectError(t *testing.T) {
 	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
 	assert.ErrorContains(t, err, "upload failed [bucket=test-bucket, key=")
 	assert.ErrorContains(t, err, "]: access denied")
+}
+
+func TestStore_ObjectExistsError(t *testing.T) {
+	ec := &errClient{
+		memClient: newMemClient(),
+		existsErr: errors.New("network timeout"),
+	}
+	d := newDriver(t, ec)
+
+	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
+	assert.ErrorContains(t, err, "existence check failed [bucket=test-bucket, key=")
+	assert.ErrorContains(t, err, "]: network timeout")
 }
 
 // --- Retrieve tests ---
