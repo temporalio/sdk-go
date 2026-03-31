@@ -43,11 +43,11 @@ func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger 
 func (m *heartbeatManager) registerWorker(
 	worker *AggregatedWorker,
 ) error {
-	capabilities, _, err := m.client.loadNamespaceData(worker.heartbeatMetrics)
+	nsData, err := m.client.loadNamespaceData(worker.heartbeatMetrics)
 	if err != nil {
 		return fmt.Errorf("failed to get namespace capabilities: %w", err)
 	}
-	if !capabilities.GetWorkerHeartbeats() {
+	if !nsData.capabilities.GetWorkerHeartbeats() {
 		if m.logger != nil {
 			m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
 		}
