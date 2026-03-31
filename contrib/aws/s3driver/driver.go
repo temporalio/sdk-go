@@ -183,8 +183,14 @@ func (d *s3StorageDriver) Retrieve(
 
 	for i, c := range claims {
 		g.Go(func() error {
-			bucket := c.ClaimData[claimKeyBucket]
-			key := c.ClaimData[claimKeyKey]
+			bucket, ok := c.ClaimData[claimKeyBucket]
+			if !ok {
+				return errors.New("claim missing bucket")
+			}
+			key, ok := c.ClaimData[claimKeyKey]
+			if !ok {
+				return errors.New("claim missing key")
+			}
 
 			data, err := d.client.GetObject(gctx, bucket, key)
 			if err != nil {

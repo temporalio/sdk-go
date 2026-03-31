@@ -394,6 +394,30 @@ func TestRetrieve_MissingKey(t *testing.T) {
 	assert.EqualError(t, err, "download failed [bucket=test-bucket, key=v0/d/sha256/nonexistent]: not found: test-bucket/v0/d/sha256/nonexistent")
 }
 
+func TestRetrieve_ClaimMissingBucket(t *testing.T) {
+	d := newDriver(t, newMemClient())
+	claims := []converter.StorageDriverClaim{{
+		ClaimData: map[string]string{claimKeyKey: "v0/d/sha256/abc"},
+	}}
+	_, err := d.Retrieve(retrieveCtx(), claims)
+	assert.EqualError(t, err, "claim missing bucket")
+}
+
+func TestRetrieve_ClaimMissingKey(t *testing.T) {
+	d := newDriver(t, newMemClient())
+	claims := []converter.StorageDriverClaim{{
+		ClaimData: map[string]string{claimKeyBucket: "test-bucket"},
+	}}
+	_, err := d.Retrieve(retrieveCtx(), claims)
+	assert.EqualError(t, err, "claim missing key")
+}
+
+func TestRetrieve_NilClaimData(t *testing.T) {
+	d := newDriver(t, newMemClient())
+	_, err := d.Retrieve(retrieveCtx(), []converter.StorageDriverClaim{{}})
+	assert.EqualError(t, err, "claim missing bucket")
+}
+
 func TestRetrieve_GetObjectError(t *testing.T) {
 	mc := newMemClient()
 	ec := &errClient{memClient: mc, getErr: errors.New("throttled")}
