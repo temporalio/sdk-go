@@ -205,14 +205,15 @@ func (d *s3StorageDriver) Retrieve(
 				return fmt.Errorf("unsupported hash algorithm %q", algo)
 			}
 
-			if expectedHash, ok := c.ClaimData[claimKeyHashValue]; ok {
-				actualHash := sha256Hex(data)
-				if actualHash != expectedHash {
-					return fmt.Errorf(
-						"integrity check failed [bucket=%s, key=%s]: expected hash %s, got %s",
-						bucket, key, expectedHash, actualHash,
-					)
-				}
+			expectedHash, ok := c.ClaimData[claimKeyHashValue]
+			if !ok {
+				return fmt.Errorf("claim missing field %q", claimKeyHashValue)
+			}
+			if actualHash := sha256Hex(data); actualHash != expectedHash {
+				return fmt.Errorf(
+					"integrity check failed [bucket=%s, key=%s]: expected hash %s, got %s",
+					bucket, key, expectedHash, actualHash,
+				)
 			}
 
 			var payload commonpb.Payload

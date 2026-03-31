@@ -445,6 +445,18 @@ func TestRetrieve_ClaimMissingHashAlgorithm(t *testing.T) {
 	assert.EqualError(t, err, `claim missing field "hash_algorithm"`)
 }
 
+func TestRetrieve_ClaimMissingHashValue(t *testing.T) {
+	mc := newMemClient()
+	d := newDriver(t, mc)
+
+	claims, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
+	require.NoError(t, err)
+	delete(claims[0].ClaimData, claimKeyHashValue)
+
+	_, err = d.Retrieve(retrieveCtx(), claims)
+	assert.EqualError(t, err, `claim missing field "hash_value"`)
+}
+
 // --- Key generation tests ---
 
 func TestObjectKey(t *testing.T) {
