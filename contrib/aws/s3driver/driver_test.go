@@ -116,14 +116,14 @@ func TestNewS3StorageDriver_NilClient(t *testing.T) {
 	_, err := NewDriver(Options{
 		Bucket: StaticBucket("b"),
 	})
-	assert.EqualError(t, err, "s3driver: Client is required")
+	assert.EqualError(t, err, "Client is required")
 }
 
 func TestNewS3StorageDriver_NilBucketFunc(t *testing.T) {
 	_, err := NewDriver(Options{
 		Client: newMemClient(),
 	})
-	assert.EqualError(t, err, "s3driver: Bucket is required")
+	assert.EqualError(t, err, "Bucket is required")
 }
 
 func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
@@ -132,7 +132,7 @@ func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
 		Bucket:         StaticBucket("b"),
 		MaxPayloadSize: -1,
 	})
-	assert.EqualError(t, err, "s3driver: MaxPayloadSize must be positive, got -1")
+	assert.EqualError(t, err, "MaxPayloadSize must be positive, got -1")
 }
 
 // --- StaticBucket tests ---
@@ -224,7 +224,7 @@ func TestStore_MaxPayloadSizeExceeded(t *testing.T) {
 
 	p := testPayload("this payload is definitely larger than 10 bytes when serialized")
 	_, err = d.Store(storeCtx(), []*commonpb.Payload{p})
-	assert.ErrorContains(t, err, "s3driver: payload size ")
+	assert.ErrorContains(t, err, "payload size ")
 	assert.ErrorContains(t, err, " exceeds maximum 10")
 }
 
@@ -285,7 +285,7 @@ func TestStore_PutObjectError(t *testing.T) {
 	d := newDriver(t, ec)
 
 	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
-	assert.ErrorContains(t, err, "s3driver: upload failed [bucket=test-bucket, key=")
+	assert.ErrorContains(t, err, "upload failed [bucket=test-bucket, key=")
 	assert.ErrorContains(t, err, "]: access denied")
 }
 
@@ -340,7 +340,7 @@ func TestRetrieve_HashVerificationFailure(t *testing.T) {
 	}
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
-	assert.ErrorContains(t, err, "s3driver: integrity check failed [bucket=test-bucket, key=")
+	assert.ErrorContains(t, err, "integrity check failed [bucket=test-bucket, key=")
 }
 
 func TestRetrieve_UnsupportedHashAlgorithm(t *testing.T) {
@@ -354,7 +354,7 @@ func TestRetrieve_UnsupportedHashAlgorithm(t *testing.T) {
 	claims[0].ClaimData["hash_algorithm"] = "md5"
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
-	assert.EqualError(t, err, `s3driver: unsupported hash algorithm "md5"`)
+	assert.EqualError(t, err, `unsupported hash algorithm "md5"`)
 }
 
 func TestRetrieve_MissingKey(t *testing.T) {
@@ -371,7 +371,7 @@ func TestRetrieve_MissingKey(t *testing.T) {
 	}}
 
 	_, err := d.Retrieve(retrieveCtx(), claims)
-	assert.EqualError(t, err, "s3driver: download failed [bucket=test-bucket, key=v0/d/sha256/nonexistent]: not found: test-bucket/v0/d/sha256/nonexistent")
+	assert.EqualError(t, err, "download failed [bucket=test-bucket, key=v0/d/sha256/nonexistent]: not found: test-bucket/v0/d/sha256/nonexistent")
 }
 
 func TestRetrieve_GetObjectError(t *testing.T) {
@@ -385,7 +385,7 @@ func TestRetrieve_GetObjectError(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
-	assert.ErrorContains(t, err, "s3driver: download failed [bucket=test-bucket, key=")
+	assert.ErrorContains(t, err, "download failed [bucket=test-bucket, key=")
 	assert.ErrorContains(t, err, "]: throttled")
 }
 

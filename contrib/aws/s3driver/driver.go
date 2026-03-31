@@ -72,10 +72,10 @@ type s3StorageDriver struct {
 // NOTE: Experimental
 func NewDriver(opts Options) (converter.StorageDriver, error) {
 	if opts.Client == nil {
-		return nil, errors.New("s3driver: Client is required")
+		return nil, errors.New("Client is required")
 	}
 	if opts.Bucket == nil {
-		return nil, errors.New("s3driver: Bucket is required")
+		return nil, errors.New("Bucket is required")
 	}
 	name := opts.DriverName
 	if name == "" {
@@ -86,7 +86,7 @@ func NewDriver(opts Options) (converter.StorageDriver, error) {
 		maxSize = defaultMaxPayloadSize
 	}
 	if maxSize < 0 {
-		return nil, fmt.Errorf("s3driver: MaxPayloadSize must be positive, got %d", maxSize)
+		return nil, fmt.Errorf("MaxPayloadSize must be positive, got %d", maxSize)
 	}
 	return &s3StorageDriver{
 		client:         opts.Client,
@@ -124,11 +124,11 @@ func (d *s3StorageDriver) Store(
 		eg1.Go(func() error {
 			data, err := proto.Marshal(p)
 			if err != nil {
-				return fmt.Errorf("s3driver: failed to marshal payload: %w", err)
+				return fmt.Errorf("failed to marshal payload: %w", err)
 			}
 			if len(data) > d.maxPayloadSize {
 				return fmt.Errorf(
-					"s3driver: payload size %d exceeds maximum %d",
+					"payload size %d exceeds maximum %d",
 					len(data), d.maxPayloadSize,
 				)
 			}
@@ -151,11 +151,11 @@ func (d *s3StorageDriver) Store(
 			key := objectKey(pp.hexDigest)
 			exists, err := d.client.ObjectExists(egCtx, pp.bucket, key)
 			if err != nil {
-				return fmt.Errorf("s3driver: existence check failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
+				return fmt.Errorf("existence check failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
 			}
 			if !exists {
 				if err := d.client.PutObject(egCtx, pp.bucket, key, pp.data); err != nil {
-					return fmt.Errorf("s3driver: upload failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
+					return fmt.Errorf("upload failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
 				}
 			}
 			claims[i] = converter.StorageDriverClaim{
@@ -192,18 +192,18 @@ func (d *s3StorageDriver) Retrieve(
 
 			data, err := d.client.GetObject(gctx, bucket, key)
 			if err != nil {
-				return fmt.Errorf("s3driver: download failed [bucket=%s, key=%s]: %w", bucket, key, err)
+				return fmt.Errorf("download failed [bucket=%s, key=%s]: %w", bucket, key, err)
 			}
 
 			if algo, ok := c.ClaimData[claimKeyHashAlgorithm]; ok && algo != hashAlgorithm {
-				return fmt.Errorf("s3driver: unsupported hash algorithm %q", algo)
+				return fmt.Errorf("unsupported hash algorithm %q", algo)
 			}
 
 			if expectedHash, ok := c.ClaimData[claimKeyHashValue]; ok {
 				actualHash := sha256Hex(data)
 				if actualHash != expectedHash {
 					return fmt.Errorf(
-						"s3driver: integrity check failed [bucket=%s, key=%s]: expected hash %s, got %s",
+						"integrity check failed [bucket=%s, key=%s]: expected hash %s, got %s",
 						bucket, key, expectedHash, actualHash,
 					)
 				}
@@ -211,7 +211,7 @@ func (d *s3StorageDriver) Retrieve(
 
 			var payload commonpb.Payload
 			if err := proto.Unmarshal(data, &payload); err != nil {
-				return fmt.Errorf("s3driver: failed to unmarshal payload [bucket=%s, key=%s]: %w", bucket, key, err)
+				return fmt.Errorf("failed to unmarshal payload [bucket=%s, key=%s]: %w", bucket, key, err)
 			}
 			payloads[i] = &payload
 			return nil
