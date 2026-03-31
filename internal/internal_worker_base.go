@@ -574,11 +574,15 @@ func (bw *baseWorker) runTaskDispatcher() {
 	defer bw.stopWG.Done()
 
 	for task := range bw.taskQueueCh {
-		// For non-polled-task (local activity result as task or eager task), we don't need to rate limit.
-		// During shutdown the limiter context is cancelled, so Wait returns
-		// immediately — we still process the task rather than dropping it.
+		// For non-polled-task (local activity result as task or eager task),
+		// we don't need to rate limit. During shutdown the limiter context
+		// is cancelled, so Wait returns immediately — we still process the
+		// task rather than dropping it.
 		if _, isPolledTask := task.(*polledTask); isPolledTask {
-			bw.taskLimiter.Wait(bw.limiterContext)
+			if err := bw.taskLimiter.Wait(bw.limiterContext); err != nil {
+				// Context cancelled during shutdown — skip rate limiting
+				// but still process remaining tasks.
+			}
 		}
 		bw.processTaskAsync(task)
 	}
