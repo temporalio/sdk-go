@@ -1,7 +1,6 @@
 package s3driver
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -30,13 +29,13 @@ const (
 // StaticBucket for a fixed bucket name.
 //
 // NOTE: Experimental
-type BucketFunc func(ctx context.Context, payload *commonpb.Payload) string
+type BucketFunc func(ctx converter.StorageDriverStoreContext, payload *commonpb.Payload) string
 
 // StaticBucket returns a BucketFunc that always returns the given bucket name.
 //
 // NOTE: Experimental
 func StaticBucket(name string) BucketFunc {
-	return func(_ context.Context, _ *commonpb.Payload) string { return name }
+	return func(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) string { return name }
 }
 
 // Options configures the S3 storage driver.
@@ -136,7 +135,7 @@ func (d *s3StorageDriver) Store(
 			prepared[i] = preparedPayload{
 				data:      data,
 				hexDigest: sha256Hex(data),
-				bucket:    d.bucketFunc(ctx.Context, p),
+				bucket:    d.bucketFunc(ctx, p),
 			}
 			return nil
 		})

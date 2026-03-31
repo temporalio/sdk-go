@@ -139,8 +139,8 @@ func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
 
 func TestStaticBucket(t *testing.T) {
 	fn := StaticBucket("my-bucket")
-	assert.Equal(t, "my-bucket", fn(context.Background(), nil))
-	assert.Equal(t, "my-bucket", fn(context.Background(), testPayload("x")))
+	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background()}, nil))
+	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background()}, testPayload("x")))
 }
 
 // --- Store tests ---
