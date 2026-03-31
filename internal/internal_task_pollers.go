@@ -467,7 +467,8 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 			tagRunID, task.task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.task.Attempt,
 		}
-		if errPayloadSize, isPayloadSizeError := taskErr.(payloadSizeError); isPayloadSizeError {
+		var errPayloadSize payloadSizeError
+		if errors.As(taskErr, &errPayloadSize) {
 			keyvals = append(keyvals,
 				tagPayloadSize, errPayloadSize.size,
 				tagPayloadSizeLimit, errPayloadSize.limit)
@@ -600,7 +601,8 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagRunID, task.WorkflowExecution.GetRunId(),
 			tagAttempt, task.Attempt,
 		}
-		if errPayloadSize, isPayloadSizeError := taskErr.(payloadSizeError); isPayloadSizeError {
+		var errPayloadSize payloadSizeError
+		if errors.As(taskErr, &errPayloadSize) {
 			keyvals = append(keyvals,
 				tagPayloadSize, errPayloadSize.size,
 				tagPayloadSizeLimit, errPayloadSize.limit)
@@ -797,7 +799,7 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
 	} else if _, unknown := err.(unknownSdkFlagError); unknown {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
-	} else if _, tooLarge := err.(payloadSizeError); tooLarge {
+	} else if errors.As(err, new(payloadSizeError)) {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
 	}
 

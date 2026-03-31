@@ -34,7 +34,7 @@ type payloadLimits struct {
 	payloadSize int64
 }
 
-func PayloadLimitOptionsToLimits(options PayloadLimitOptions) (payloadLimits, error) {
+func payloadLimitOptionsToLimits(options PayloadLimitOptions) (payloadLimits, error) {
 	payloadSizeWarning := int64(options.PayloadSizeWarning)
 	if payloadSizeWarning < 0 {
 		return payloadLimits{}, errors.New("PayloadSizeWarning must be greater than or equal to zero")
