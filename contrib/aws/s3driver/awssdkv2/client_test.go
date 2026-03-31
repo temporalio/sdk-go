@@ -21,7 +21,7 @@ import (
 // newFakeS3 starts an in-process fake S3 server and returns an
 // s3driver.Client backed by a real AWS SDK v2 client pointing
 // at it. The returned cleanup function stops the server.
-func newFakeS3(t *testing.T, buckets ...string) (s3driver.Client, func()) {
+func newFakeS3(t *testing.T, buckets ...string) s3driver.Client {
 	t.Helper()
 	backend := s3mem.New()
 	faker := gofakes3.New(backend)
@@ -45,53 +45,50 @@ func newFakeS3(t *testing.T, buckets ...string) (s3driver.Client, func()) {
 		require.NoError(t, err)
 	}
 
-	return awssdkv2.NewClient(client), ts.Close
+	t.Cleanup(ts.Close)
+	return awssdkv2.NewClient(client)
 }
 
 func TestFakeS3_PutGetRoundTrip(t *testing.T) {
-	c, cleanup := newFakeS3(t, "test-bucket")
-	defer cleanup()
+	client := newFakeS3(t, "test-bucket")
 	ctx := context.Background()
 
 	data := []byte("hello s3")
-	err := c.PutObject(ctx, "test-bucket", "my/key", data)
+	err := client.PutObject(ctx, "test-bucket", "my/key", data)
 	require.NoError(t, err)
 
-	got, err := c.GetObject(ctx, "test-bucket", "my/key")
+	got, err := client.GetObject(ctx, "test-bucket", "my/key")
 	require.NoError(t, err)
 	assert.Equal(t, data, got)
 }
 
 func TestFakeS3_ObjectExists(t *testing.T) {
-	c, cleanup := newFakeS3(t, "test-bucket")
-	defer cleanup()
+	client := newFakeS3(t, "test-bucket")
 	ctx := context.Background()
 
-	exists, err := c.ObjectExists(ctx, "test-bucket", "missing-key")
+	exists, err := client.ObjectExists(ctx, "test-bucket", "missing-key")
 	require.NoError(t, err)
 	assert.False(t, exists)
 
-	err = c.PutObject(ctx, "test-bucket", "present-key", []byte("data"))
+	err = client.PutObject(ctx, "test-bucket", "present-key", []byte("data"))
 	require.NoError(t, err)
 
-	exists, err = c.ObjectExists(ctx, "test-bucket", "present-key")
+	exists, err = client.ObjectExists(ctx, "test-bucket", "present-key")
 	require.NoError(t, err)
 	assert.True(t, exists)
 }
 
 func TestFakeS3_GetObject_NotFound(t *testing.T) {
-	c, cleanup := newFakeS3(t, "test-bucket")
-	defer cleanup()
+	client := newFakeS3(t, "test-bucket")
 	ctx := context.Background()
 
-	_, err := c.GetObject(ctx, "test-bucket", "no-such-key")
+	_, err := client.GetObject(ctx, "test-bucket", "no-such-key")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "NoSuchKey")
 }
 
 func TestFakeS3_LargeObject(t *testing.T) {
-	c, cleanup := newFakeS3(t, "test-bucket")
-	defer cleanup()
+	client := newFakeS3(t, "test-bucket")
 	ctx := context.Background()
 
 	// 1 MiB of data.
@@ -100,10 +97,10 @@ func TestFakeS3_LargeObject(t *testing.T) {
 		data[i] = byte(i % 256)
 	}
 
-	err := c.PutObject(ctx, "test-bucket", "large-obj", data)
+	err := client.PutObject(ctx, "test-bucket", "large-obj", data)
 	require.NoError(t, err)
 
-	got, err := c.GetObject(ctx, "test-bucket", "large-obj")
+	got, err := client.GetObject(ctx, "test-bucket", "large-obj")
 	require.NoError(t, err)
 	assert.Equal(t, data, got)
 }
@@ -111,11 +108,10 @@ func TestFakeS3_LargeObject(t *testing.T) {
 // TestFakeS3_FullDriverRoundTrip exercises the S3StorageDriver end-to-end
 // through the fake S3 backend.
 func TestFakeS3_FullDriverRoundTrip(t *testing.T) {
-	c, cleanup := newFakeS3(t, "driver-bucket")
-	defer cleanup()
+	client := newFakeS3(t, "driver-bucket")
 
 	d, err := s3driver.NewDriver(s3driver.Options{
-		Client: c,
+		Client: client,
 		Bucket: s3driver.StaticBucket("driver-bucket"),
 	})
 	require.NoError(t, err)
