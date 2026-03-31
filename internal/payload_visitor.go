@@ -16,6 +16,8 @@ type compositePayloadVisitor struct {
 	visitors []PayloadVisitor
 }
 
+var _ PayloadVisitor = (*compositePayloadVisitor)(nil)
+
 func (v *compositePayloadVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	var err error
 	for _, visitor := range v.visitors {
