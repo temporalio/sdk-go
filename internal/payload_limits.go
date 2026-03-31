@@ -16,6 +16,7 @@ import (
 // Exposed as: [go.temporal.io/sdk/client.PayloadLimitOptions]
 type PayloadLimitOptions struct {
 	// The limit (in bytes) at which a payload size warning is logged.
+	// If unspecified or zero, defaults to 512 KiB.
 	PayloadSizeWarning int
 }
 
