@@ -87,6 +87,36 @@ func TestFakeS3_GetObject_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "NoSuchKey")
 }
 
+func TestFakeS3_PutObject_BucketNotFound(t *testing.T) {
+	client := newFakeS3(t)
+	ctx := context.Background()
+
+	err := client.PutObject(ctx, "no-such-bucket", "my/key", []byte("data"))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "NoSuchBucket")
+}
+
+func TestFakeS3_ObjectExists_BucketNotFound(t *testing.T) {
+	client := newFakeS3(t)
+	ctx := context.Background()
+
+	// gofakes3 returns a generic NotFound for HeadObject on a missing bucket,
+	// which ObjectExists maps to (false, nil) — the same as a missing key.
+	// Real S3 would return NoSuchBucket here instead.
+	exists, err := client.ObjectExists(ctx, "no-such-bucket", "my/key")
+	assert.NoError(t, err)
+	assert.False(t, exists)
+}
+
+func TestFakeS3_GetObject_BucketNotFound(t *testing.T) {
+	client := newFakeS3(t)
+	ctx := context.Background()
+
+	_, err := client.GetObject(ctx, "no-such-bucket", "my/key")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "NoSuchBucket")
+}
+
 func TestFakeS3_LargeObject(t *testing.T) {
 	client := newFakeS3(t, "test-bucket")
 	ctx := context.Background()
