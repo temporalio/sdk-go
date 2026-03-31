@@ -34,11 +34,11 @@ func TestPayloadLimitsTestSuite(t *testing.T) {
 	suite.Run(t, new(PayloadLimitsTestSuite))
 }
 
-const PAYLOAD_SIZE_ERROR_LIMIT = 10 * 1024  // 10 KiB
-const PAYLOAD_SIZE_WARNING_LIMIT = 2 * 1024 // 2 KiB
+const payloadSizeErrorLimit = 10 * 1024  // 10 KiB
+const payloadSizeWarningLimit = 2 * 1024 // 2 KiB
 
-const PAYLOAD_ERROR_MESSAGE = "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit."
-const PAYLOAD_WARNING_MESSAGE = "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit."
+const payloadErrorMessage = "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit."
+const payloadWarningMessage = "[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit."
 
 func (ts *PayloadLimitsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
@@ -63,8 +63,8 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 		LogLevel: "warn",
 		ExtraArgs: []string{
 			"--http-port", httpPort,
-			"--dynamic-config-value", fmt.Sprintf("limit.blobSize.error=%d", PAYLOAD_SIZE_ERROR_LIMIT),
-			"--dynamic-config-value", fmt.Sprintf("limit.blobSize.warn=%d", PAYLOAD_SIZE_WARNING_LIMIT),
+			"--dynamic-config-value", fmt.Sprintf("limit.blobSize.error=%d", payloadSizeErrorLimit),
+			"--dynamic-config-value", fmt.Sprintf("limit.blobSize.warn=%d", payloadSizeWarningLimit),
 		},
 	})
 	ts.NoError(err)
@@ -177,7 +177,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
 	wfname := "payload-size-error-workflow-result"
 	ts.worker.RegisterWorkflowWithOptions(
 		func(ctx workflow.Context) (string, error) {
-			return strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000), nil
+			return strings.Repeat("a", payloadSizeErrorLimit+1000), nil
 		},
 		workflow.RegisterOptions{Name: wfname},
 	)
@@ -192,9 +192,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, PAYLOAD_ERROR_MESSAGE)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
 
-	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
+	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
@@ -211,7 +211,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
 	ts.worker.RegisterWorkflowWithOptions(
 		func(ctx workflow.Context) error {
 			err := workflow.SetUpdateHandler(ctx, updateName, func(ctx workflow.Context) (string, error) {
-				return strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000), nil
+				return strings.Repeat("a", payloadSizeErrorLimit+1000), nil
 			})
 			if err != nil {
 				return err
@@ -245,9 +245,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, PAYLOAD_ERROR_MESSAGE)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
 
-	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
+	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
@@ -269,7 +269,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
 		func(ctx workflow.Context) error {
 			err := workflow.SetQueryHandler(ctx, queryName, func() (string, error) {
 				largeQueryInvoked <- true
-				return strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000), nil
+				return strings.Repeat("a", payloadSizeErrorLimit+1000), nil
 			})
 			if err != nil {
 				return err
@@ -310,7 +310,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
+	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
@@ -337,7 +337,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
 				WorkflowExecutionTimeout: 10 * time.Second,
 			})
 			// Try to start child workflow with input that exceeds payload limit
-			largeInput := strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000)
+			largeInput := strings.Repeat("a", payloadSizeErrorLimit+1000)
 			return workflow.ExecuteChildWorkflow(childCtx, childWfName, largeInput).Get(ctx, nil)
 		},
 		workflow.RegisterOptions{Name: parentWfName},
@@ -354,9 +354,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, PAYLOAD_ERROR_MESSAGE)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
 
-	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
+	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
@@ -378,7 +378,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
 					workflow.ActivityOptions{ScheduleToCloseTimeout: 5 * time.Second},
 				),
 				actName,
-				strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000),
+				strings.Repeat("a", payloadSizeErrorLimit+1000),
 			).Get(ctx, &s)
 			return
 		},
@@ -399,9 +399,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, PAYLOAD_ERROR_MESSAGE)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
 
-	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
+	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
@@ -429,7 +429,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
 		workflow.RegisterOptions{Name: wfName},
 	)
 	ts.worker.RegisterActivityWithOptions(
-		func(context.Context) (string, error) { return strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000), nil },
+		func(context.Context) (string, error) { return strings.Repeat("a", payloadSizeErrorLimit+1000), nil },
 		activity.RegisterOptions{Name: actName},
 	)
 	run, err := ts.client.ExecuteWorkflow(
@@ -464,10 +464,10 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
 	attributes := lastActivityTaskFailedEvent.GetActivityTaskFailedEventAttributes()
 	ts.NotNil(attributes)
 	ts.NotNil(attributes.Failure)
-	ts.Equal(PAYLOAD_ERROR_MESSAGE, attributes.Failure.Message)
+	ts.Equal(payloadErrorMessage, attributes.Failure.Message)
 
 	// Verify failure is logged
-	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
+	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
@@ -486,7 +486,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
 	wfname := "payload-size-error-workflow-result"
 	ts.worker.RegisterWorkflowWithOptions(
 		func(ctx workflow.Context) (string, error) {
-			return strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000), nil
+			return strings.Repeat("a", payloadSizeErrorLimit+1000), nil
 		},
 		workflow.RegisterOptions{Name: wfname},
 	)
@@ -547,7 +547,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningClientCustom() {
 
 	var res int
 	ts.NoError(run.Get(ctx, &res))
-	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
+	ts.assertLogContains(logger, payloadWarningMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningWorkflowCustom() {
@@ -591,7 +591,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningWorkflowCustom() {
 
 	var res string
 	ts.NoError(run.Get(ctx, &res))
-	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
+	ts.assertLogContains(logger, payloadWarningMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningActivityInput() {
@@ -636,7 +636,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningActivityInput() {
 
 	var res string
 	ts.NoError(run.Get(ctx, &res))
-	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
+	ts.assertLogContains(logger, payloadWarningMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningSignalInput() {
@@ -678,7 +678,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningSignalInput() {
 	ts.NoError(run.Get(ctx, &res))
 	ts.Equal(signalPayload, res)
 
-	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
+	ts.assertLogContains(logger, payloadWarningMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningUpdateInput() {
@@ -734,7 +734,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningUpdateInput() {
 
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", nil))
 
-	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
+	ts.assertLogContains(logger, payloadWarningMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningSignalWithStartInput() {
@@ -775,7 +775,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningSignalWithStartInput() {
 	ts.NoError(run.Get(ctx, &res))
 	ts.Equal(signalPayload, res)
 
-	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
+	ts.assertLogContains(logger, payloadWarningMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningQueryInput() {
@@ -823,7 +823,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningQueryInput() {
 
 	ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", nil))
 
-	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
+	ts.assertLogContains(logger, payloadWarningMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledActivityResult() {
@@ -856,7 +856,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledActivityResult() {
 	)
 	ts.worker.RegisterActivityWithOptions(
 		func(context.Context) (string, error) {
-			return strings.Repeat("a", PAYLOAD_SIZE_ERROR_LIMIT+1000), nil
+			return strings.Repeat("a", payloadSizeErrorLimit+1000), nil
 		},
 		activity.RegisterOptions{Name: actName},
 	)
@@ -915,9 +915,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorInboundBypass() {
 	ts.Equal(signalPayload, res)
 
 	// Verify that only the client-side outbound warning appeared, not an error.
-	ts.assertLogContains(logger, PAYLOAD_WARNING_MESSAGE)
+	ts.assertLogContains(logger, payloadWarningMessage)
 	ts.False(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, PAYLOAD_ERROR_MESSAGE)
+		return strings.Contains(line, payloadErrorMessage)
 	}))
 }
 
@@ -938,7 +938,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorMultipleArguments() {
 			// aggregate size in the ScheduleActivityTask command's Input
 			// field exceeds it. The worker outbound visitor catches this
 			// and submits a WFT failure.
-			arg := strings.Repeat("a", (PAYLOAD_SIZE_ERROR_LIMIT/2)+1000)
+			arg := strings.Repeat("a", (payloadSizeErrorLimit/2)+1000)
 			err = workflow.ExecuteActivity(
 				workflow.WithActivityOptions(
 					ctx,
@@ -967,7 +967,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorMultipleArguments() {
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, PAYLOAD_ERROR_MESSAGE)
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
 
-	ts.assertLogContains(logger, PAYLOAD_ERROR_MESSAGE)
+	ts.assertLogContains(logger, payloadErrorMessage)
 }
