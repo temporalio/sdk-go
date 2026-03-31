@@ -2431,7 +2431,8 @@ func (ath *activityTaskHandlerImpl) visitorErrorToActivityFailure(msgPrefix stri
 		tagAttempt, t.Attempt,
 	}
 
-	if errPayloadSize, isPayloadSizeError := err.(payloadSizeError); isPayloadSizeError {
+	var errPayloadSize payloadSizeError
+	if errors.As(err, &errPayloadSize) {
 		keyvals = append(keyvals,
 			tagPayloadSize, errPayloadSize.size,
 			tagPayloadSizeLimit, errPayloadSize.limit)

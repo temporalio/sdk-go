@@ -13,19 +13,19 @@ import (
 
 func TestPayloadLimitOptionsToLimits(t *testing.T) {
 	t.Run("default value when zero", func(t *testing.T) {
-		limits, err := PayloadLimitOptionsToLimits(PayloadLimitOptions{})
+		limits, err := payloadLimitOptionsToLimits(PayloadLimitOptions{})
 		require.NoError(t, err)
 		require.Equal(t, int64(512*1024), limits.payloadSize)
 	})
 
 	t.Run("custom value", func(t *testing.T) {
-		limits, err := PayloadLimitOptionsToLimits(PayloadLimitOptions{PayloadSizeWarning: 1024})
+		limits, err := payloadLimitOptionsToLimits(PayloadLimitOptions{PayloadSizeWarning: 1024})
 		require.NoError(t, err)
 		require.Equal(t, int64(1024), limits.payloadSize)
 	})
 
 	t.Run("negative value returns error", func(t *testing.T) {
-		_, err := PayloadLimitOptionsToLimits(PayloadLimitOptions{PayloadSizeWarning: -1})
+		_, err := payloadLimitOptionsToLimits(PayloadLimitOptions{PayloadSizeWarning: -1})
 		require.Error(t, err)
 	})
 }

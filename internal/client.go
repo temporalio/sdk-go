@@ -1411,7 +1411,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 	storageDriverTypes := collectStorageDriverTypes(options.ExternalStorage.Drivers)
 
-	payloadWarningLimits, err := PayloadLimitOptionsToLimits(options.PayloadLimits)
+	payloadWarningLimits, err := payloadLimitOptionsToLimits(options.PayloadLimits)
 	if err != nil {
 		panic(fmt.Sprintf("invalid PayloadLimits options: %v", err))
 	}
