@@ -115,36 +115,29 @@ type preparedPayload struct {
 // S3 if not already present, and returns a claim per payload.
 //
 // Two phases are used to avoid partial S3 uploads when validation fails:
-//  1. Marshal and validate all payloads concurrently.
+//  1. Marshal and validate all payloads sequentially.
 //  2. Upload concurrently — only reached if all payloads passed validation.
 func (d *s3StorageDriver) Store(
 	ctx converter.StorageDriverStoreContext,
 	payloads []*commonpb.Payload,
 ) ([]converter.StorageDriverClaim, error) {
 	prepared := make([]preparedPayload, len(payloads))
-	eg1, _ := errgroup.WithContext(ctx.Context)
 	for i, p := range payloads {
-		eg1.Go(func() error {
-			data, err := proto.Marshal(p)
-			if err != nil {
-				return fmt.Errorf("failed to marshal payload: %w", err)
-			}
-			if len(data) > d.maxPayloadSize {
-				return fmt.Errorf(
-					"payload size %d exceeds maximum %d",
-					len(data), d.maxPayloadSize,
-				)
-			}
-			prepared[i] = preparedPayload{
-				data:      data,
-				hexDigest: sha256Hex(data),
-				bucket:    d.bucketFunc(ctx, p),
-			}
-			return nil
-		})
-	}
-	if err := eg1.Wait(); err != nil {
-		return nil, err
+		data, err := proto.Marshal(p)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal payload: %w", err)
+		}
+		if len(data) > d.maxPayloadSize {
+			return nil, fmt.Errorf(
+				"payload size %d exceeds maximum %d",
+				len(data), d.maxPayloadSize,
+			)
+		}
+		prepared[i] = preparedPayload{
+			data:      data,
+			hexDigest: sha256Hex(data),
+			bucket:    d.bucketFunc(ctx, p),
+		}
 	}
 
 	claims := make([]converter.StorageDriverClaim, len(payloads))
