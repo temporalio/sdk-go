@@ -400,7 +400,7 @@ func TestRetrieve_ClaimMissingBucket(t *testing.T) {
 		ClaimData: map[string]string{claimKeyKey: "v0/d/sha256/abc"},
 	}}
 	_, err := d.Retrieve(retrieveCtx(), claims)
-	assert.EqualError(t, err, "claim missing bucket")
+	assert.EqualError(t, err, `claim missing field "bucket"`)
 }
 
 func TestRetrieve_ClaimMissingKey(t *testing.T) {
@@ -409,13 +409,13 @@ func TestRetrieve_ClaimMissingKey(t *testing.T) {
 		ClaimData: map[string]string{claimKeyBucket: "test-bucket"},
 	}}
 	_, err := d.Retrieve(retrieveCtx(), claims)
-	assert.EqualError(t, err, "claim missing key")
+	assert.EqualError(t, err, `claim missing field "key"`)
 }
 
 func TestRetrieve_NilClaimData(t *testing.T) {
 	d := newDriver(t, newMemClient())
 	_, err := d.Retrieve(retrieveCtx(), []converter.StorageDriverClaim{{}})
-	assert.EqualError(t, err, "claim missing bucket")
+	assert.EqualError(t, err, `claim missing field "bucket"`)
 }
 
 func TestRetrieve_GetObjectError(t *testing.T) {
@@ -442,7 +442,7 @@ func TestRetrieve_ClaimMissingHashAlgorithm(t *testing.T) {
 	delete(claims[0].ClaimData, claimKeyHashAlgorithm)
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
-	assert.EqualError(t, err, "claim missing hash algorithm")
+	assert.EqualError(t, err, `claim missing field "hash_algorithm"`)
 }
 
 // --- Key generation tests ---

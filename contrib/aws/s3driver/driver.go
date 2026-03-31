@@ -185,11 +185,11 @@ func (d *s3StorageDriver) Retrieve(
 		g.Go(func() error {
 			bucket, ok := c.ClaimData[claimKeyBucket]
 			if !ok {
-				return errors.New("claim missing bucket")
+				return fmt.Errorf("claim missing field %q", claimKeyBucket)
 			}
 			key, ok := c.ClaimData[claimKeyKey]
 			if !ok {
-				return errors.New("claim missing key")
+				return fmt.Errorf("claim missing field %q", claimKeyKey)
 			}
 
 			data, err := d.client.GetObject(gctx, bucket, key)
@@ -199,7 +199,7 @@ func (d *s3StorageDriver) Retrieve(
 
 			algo, ok := c.ClaimData[claimKeyHashAlgorithm]
 			if !ok {
-				return errors.New("claim missing hash algorithm")
+				return fmt.Errorf("claim missing field %q", claimKeyHashAlgorithm)
 			}
 			if algo != hashAlgorithm {
 				return fmt.Errorf("unsupported hash algorithm %q", algo)
