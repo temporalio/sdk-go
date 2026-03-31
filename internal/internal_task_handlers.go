@@ -2298,7 +2298,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	defer cancel(nil)
 
 	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t); err != nil {
-		return ath.visitorErrorToActivityFailure("Activity task preprocess error:", t, err), nil
+		return ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err), nil
 	}
 
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
