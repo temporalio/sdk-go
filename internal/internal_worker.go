@@ -1297,26 +1297,26 @@ func (aw *AggregatedWorker) start() error {
 	}
 	proto.Merge(aw.capabilities, capabilities)
 
-	nsCapabilities, nsLimits, err := aw.client.loadNamespaceData(aw.executionParams.MetricsHandler)
+	nsData, err := aw.client.loadNamespaceData(aw.executionParams.MetricsHandler)
 	if err != nil {
 		return err
 	}
 
-	if nsLimits != nil && aw.executionParams.setPayloadErrorLimits != nil {
+	if aw.executionParams.setPayloadErrorLimits != nil {
 		payloadSizeError := int64(0)
-		if nsLimits.BlobSizeLimitError > 0 {
-			payloadSizeError = nsLimits.BlobSizeLimitError
+		if nsData.limits.BlobSizeLimitError > 0 {
+			payloadSizeError = nsData.limits.BlobSizeLimitError
 		}
 		aw.executionParams.setPayloadErrorLimits(&payloadLimits{
 			payloadSize: payloadSizeError,
 		})
 	}
 
-	if nsCapabilities.GetWorkerPollCompleteOnShutdown() {
+	if nsData.capabilities.GetWorkerPollCompleteOnShutdown() {
 		aw.workerPollCompleteOnShutdown.Store(true)
 	}
 
-	if nsCapabilities.GetPollerAutoscaling() {
+	if nsData.capabilities.GetPollerAutoscaling() {
 		aw.executionParams.serverSupportsAutoscaling.Store(true)
 	}
 

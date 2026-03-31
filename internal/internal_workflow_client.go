@@ -78,9 +78,8 @@ type (
 		excludeInternalFromRetry *atomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
-		namespaceCapabilities    *namespacepb.NamespaceInfo_Capabilities
-		namespaceLimits          *namespacepb.NamespaceInfo_Limits
-		namespaceDataLock        sync.RWMutex
+		namespaceData     *namespaceData
+		namespaceDataLock sync.RWMutex
 		eagerDispatcher          *eagerWorkflowDispatcher
 		getSystemInfoTimeout     time.Duration
 		workerHeartbeatInterval  time.Duration
@@ -93,6 +92,12 @@ type (
 		storageParams        storageParameters
 		storageDriverTypes   []string
 		payloadWarningLimits payloadLimits
+	}
+
+	// namespaceData holds cached namespace capabilities and limits.
+	namespaceData struct {
+		capabilities *namespacepb.NamespaceInfo_Capabilities
+		limits       *namespacepb.NamespaceInfo_Limits
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -1550,14 +1555,13 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 }
 
 // Get namespace capabilities, lazily fetching from server if not already obtained.
-func (wc *WorkflowClient) loadNamespaceData(metricsHandler metrics.Handler) (*namespacepb.NamespaceInfo_Capabilities, *namespacepb.NamespaceInfo_Limits, error) {
+func (wc *WorkflowClient) loadNamespaceData(metricsHandler metrics.Handler) (namespaceData, error) {
 	ctx := contextWithNewHeader(context.Background())
 	wc.namespaceDataLock.RLock()
-	capabilities := wc.namespaceCapabilities
-	limits := wc.namespaceLimits
+	cached := wc.namespaceData
 	wc.namespaceDataLock.RUnlock()
-	if capabilities != nil && limits != nil {
-		return capabilities, limits, nil
+	if cached != nil {
+		return *cached, nil
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(metricsHandler), defaultGrpcRetryParameters(ctx))
@@ -1565,24 +1569,24 @@ func (wc *WorkflowClient) loadNamespaceData(metricsHandler metrics.Handler) (*na
 	resp, err := wc.workflowService.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: wc.namespace})
 	var unimplemented *serviceerror.Unimplemented
 	if err != nil && !errors.As(err, &unimplemented) {
-		return nil, nil, fmt.Errorf("failed reaching server: %w", err)
+		return namespaceData{}, fmt.Errorf("failed reaching server: %w", err)
 	}
+	data := namespaceData{}
 	if resp != nil {
-		capabilities = resp.GetNamespaceInfo().GetCapabilities()
-		limits = resp.GetNamespaceInfo().GetLimits()
+		data.capabilities = resp.GetNamespaceInfo().GetCapabilities()
+		data.limits = resp.GetNamespaceInfo().GetLimits()
 	}
-	if capabilities == nil {
-		capabilities = &namespacepb.NamespaceInfo_Capabilities{}
+	if data.capabilities == nil {
+		data.capabilities = &namespacepb.NamespaceInfo_Capabilities{}
 	}
-	if limits == nil {
-		limits = &namespacepb.NamespaceInfo_Limits{}
+	if data.limits == nil {
+		data.limits = &namespacepb.NamespaceInfo_Limits{}
 	}
 
 	wc.namespaceDataLock.Lock()
-	wc.namespaceCapabilities = capabilities
-	wc.namespaceLimits = limits
+	wc.namespaceData = &data
 	wc.namespaceDataLock.Unlock()
-	return capabilities, limits, nil
+	return data, nil
 }
 
 func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
