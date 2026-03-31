@@ -461,6 +461,9 @@ func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientSta
 		return nil, err
 	}
 
+	// Set header before interceptor run so interceptors can access it
+	ctx = contextWithNewHeader(ctx)
+
 	return wc.interceptor.ExecuteActivity(ctx, &ClientExecuteActivityInput{
 		Options:      &options,
 		ActivityType: activityType.Name,
@@ -562,7 +565,6 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	ctx context.Context,
 	in *ClientExecuteActivityInput,
 ) (ClientActivityHandle, error) {
-	ctx = contextWithNewHeader(ctx)
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
