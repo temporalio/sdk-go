@@ -123,6 +123,7 @@ func (ts *PayloadLimitsTestSuite) ResetClientAndWorker(
 
 // pollForHistoryEvent polls the workflow history until an event of the specified type is found.
 // Returns the last event of the specified type, or nil if not found within the polling period.
+// The polling period is approximately 10 seconds (100 iterations with 100ms sleep in between).
 func (ts *PayloadLimitsTestSuite) pollForHistoryEvent(
 	ctx context.Context,
 	workflowID string,
