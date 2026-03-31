@@ -136,6 +136,19 @@ func TestPayloadLimitsVisitorError(t *testing.T) {
 		_, err := visitor.Visit(ctx, []*commonpb.Payload{makeTestPayload(100000)})
 		require.NoError(t, err)
 	})
+
+	t.Run("changed error limit allows larger payloads", func(t *testing.T) {
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000}, nil)
+
+		setErrorLimits(&payloadLimits{payloadSize: 1000})
+		ctx := &proxy.VisitPayloadsContext{}
+		_, err := visitor.Visit(ctx, []*commonpb.Payload{makeTestPayload(2000)})
+		require.Error(t, err)
+
+		setErrorLimits(&payloadLimits{payloadSize: 100000})
+		_, err = visitor.Visit(ctx, []*commonpb.Payload{makeTestPayload(2000)})
+		require.NoError(t, err)
+	})
 }
 
 func TestPayloadLimitsVisitorAggregation(t *testing.T) {
