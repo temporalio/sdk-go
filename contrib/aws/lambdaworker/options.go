@@ -12,7 +12,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// Compile-time check that ConfigureWorkerContext implements worker.Registry.
+// Compile-time check that Options implements worker.Registry.
 var _ worker.Registry = (*Options)(nil)
 
 // Options is passed to the configure callback of [RunWorker]. It implements [worker.Registry] so

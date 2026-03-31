@@ -10,17 +10,21 @@ invocation deadline.
 ```go
 package main
 
-import "go.temporal.io/sdk/contrib/aws/lambdaworker"
+import (
+    "go.temporal.io/sdk/contrib/aws/lambdaworker"
+    "go.temporal.io/sdk/worker"
+)
 
 func main() {
-    lambdaworker.RunWorker(
-        func(ctx *lambdaworker.ConfigureWorkerContext) error {
-            ctx.SetTaskQueue("my-task-queue")
-            ctx.RegisterWorkflow(MyWorkflow)
-            ctx.RegisterActivity(MyActivity)
-            return nil
-        },
-    )
+    lambdaworker.RunWorker(worker.WorkerDeploymentVersion{
+        DeploymentName: "my-service",
+        BuildID:        "v1.0",
+    }, func(ctx *lambdaworker.Options) error {
+        ctx.TaskQueue = "my-task-queue"
+        ctx.RegisterWorkflow(MyWorkflow)
+        ctx.RegisterActivity(MyActivity)
+        return nil
+    })
 }
 ```
 
@@ -36,9 +40,9 @@ automatically from a TOML config file and/or environment variables via
 
 The file is optional — if absent, only environment variables are used.
 
-Use `MutateClientOptions` and `MutateWorkerOptions` on the
-`ConfigureWorkerContext` to override any defaults programmatically. User
-overrides are applied last, so they always win.
+Set the public fields on `Options` (e.g. `ClientOptions`, `WorkerOptions`) in
+the configure callback to override any defaults programmatically. User overrides
+are applied last, so they always win.
 
 ## Lambda-tuned worker defaults
 
@@ -51,14 +55,9 @@ Metrics and tracing are opt-in. The `otel` sub-package provides convenience
 helpers for AWS Distro for OpenTelemetry (ADOT):
 
 ```go
-import (
-    "go.temporal.io/sdk/client"
-    "go.temporal.io/sdk/contrib/aws/lambdaworker/otel"
-)
+import "go.temporal.io/sdk/contrib/aws/lambdaworker/otel"
 
-ctx.MutateClientOptions(func(opts *client.Options) error {
-    return otel.ApplyDefaults(ctx, opts, otel.Options{})
-})
+otel.ApplyDefaults(ctx, &ctx.ClientOptions, otel.Options{})
 ```
 
 You can also use `otel.ApplyMetrics` or `otel.ApplyTracing` individually.

@@ -53,8 +53,8 @@
 //
 // # Observability
 //
-// Observability (metrics, tracing) is opt-in. Use [Options.MutateClientOptions] to
-// supply your own metrics handler and tracing interceptor. A convenience sub-package at
+// Observability (metrics, tracing) is opt-in. Set [Options.ClientOptions] fields directly
+// or use the helpers in the convenience sub-package at
 // contrib/aws/lambdaworker/otel/ provides ready-made OTel configuration for AWS Distro
 // for OpenTelemetry (ADOT).
 package lambdaworker

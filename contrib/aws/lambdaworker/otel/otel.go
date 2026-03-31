@@ -28,7 +28,7 @@ import (
 )
 
 // ShutdownRegistrar accepts a function to be called at the end of each Lambda invocation.
-// [lambdaworker.ConfigureWorkerContext] implements this interface.
+// [lambdaworker.Options] implements this interface.
 type ShutdownRegistrar interface {
 	OnShutdown(func(context.Context) error)
 }
