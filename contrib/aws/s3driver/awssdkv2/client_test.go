@@ -19,7 +19,7 @@ import (
 )
 
 // newFakeS3 starts an in-process fake S3 server and returns an
-// s3driver.S3StorageDriverClient backed by a real AWS SDK v2 client pointing
+// s3driver.Client backed by a real AWS SDK v2 client pointing
 // at it. The returned cleanup function stops the server.
 func newFakeS3(t *testing.T, buckets ...string) (s3driver.Client, func()) {
 	t.Helper()
