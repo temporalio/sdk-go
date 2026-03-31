@@ -10,12 +10,18 @@ import "context"
 //
 // NOTE: Experimental
 type Client interface {
-	// PutObject uploads data to the given bucket and key.
+	// PutObject uploads data to the given bucket and key. If an object already
+	// exists at that key it should be overwritten. Implementations must be safe
+	// to call concurrently for different keys.
 	PutObject(ctx context.Context, bucket, key string, data []byte) error
 
-	// ObjectExists returns true if an object exists at the given bucket and key.
+	// ObjectExists reports whether an object exists at the given bucket and key.
+	// It should return (false, nil) when the object is absent, and a non-nil
+	// error only when the existence of the object cannot be determined (e.g. a
+	// network or permission failure).
 	ObjectExists(ctx context.Context, bucket, key string) (bool, error)
 
-	// GetObject downloads and returns the data stored at the given bucket and key.
+	// GetObject downloads and returns the data stored at the given bucket and
+	// key. It must return a non-nil error if the object does not exist.
 	GetObject(ctx context.Context, bucket, key string) ([]byte, error)
 }
