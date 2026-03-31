@@ -68,4 +68,4 @@ If you use OTEL, you can use
 OpenTelemetry) to automatically integrate with AWS observability functionality. Namely, you will
 want to add the Lambda layer in the aforementioned link. We'll handle setting up the SDK for you.
 
-See more [here](https://aws-observability.github.io/aws-otel-collector/)
+See more [here](https://aws-observability.github.io/aws-otel-collector)

@@ -27,7 +27,8 @@
 // Client connection options (address, namespace, TLS, API key) are loaded automatically from
 // a TOML config file and environment variables via
 // [go.temporal.io/sdk/contrib/envconfig.LoadClientOptions]. See more at
-// https://docs.temporal.io/references/client-environment-configuration.
+// https://docs.temporal.io/references/client-environment-configuration. In production, we recommend
+// using a secret manager of some sort and pulling your credentials from there.
 //
 // Because AWS Lambda does not have a standard config file directory, it resolves the config file
 // path in the following order:
