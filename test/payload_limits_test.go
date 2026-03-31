@@ -600,7 +600,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningActivityInput() {
 
 	logger := ilog.NewMemoryLogger()
 	ts.ResetClientAndWorker(func(opts *client.Options) {
-		//opts.Logger = logger
+		opts.Logger = logger
 		opts.PayloadLimits = client.PayloadLimitOptions{
 			PayloadSizeWarning: 512,
 		}
