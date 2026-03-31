@@ -67,6 +67,9 @@ type s3StorageDriver struct {
 	maxPayloadSize int
 }
 
+// Compile-time check that s3StorageDriver implements converter.StorageDriver.
+var _ converter.StorageDriver = (*s3StorageDriver)(nil)
+
 // NewDriver creates a new S3 StorageDriver with the given options.
 //
 // NOTE: Experimental
