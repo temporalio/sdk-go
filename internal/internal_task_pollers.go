@@ -310,24 +310,13 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 	}()
 
 	if bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load() {
-		// Don't kill the gRPC stream. After ShutdownWorker, the server returns empty responses.
-		select {
-		case <-doneC:
-			return result, err
-		case <-bp.stopC:
-			// TEMP FIX: Give the server a reasonable window to complete the poll after
-			// ShutdownWorker. Fall back to cancelling the poll if it takes too
-			// long, e.g. when the gRPC connection was closed before Stop().
-			timer := time.NewTimer(5 * time.Second)
-			defer timer.Stop()
-			select {
-			case <-doneC:
-			case <-timer.C:
-				cancel()
-				<-doneC
-			}
-			return result, err
-		}
+		// Don't cancel the gRPC stream. After ShutdownWorker, the server
+		// completes the poll with an empty response. The poll is bounded by
+		// the gRPC timeout (pollTaskServiceTimeOut). The worker's stop
+		// timeout (WorkerStopTimeout) controls how long Stop() blocks;
+		// goroutines clean up in the background within the gRPC deadline.
+		<-doneC
+		return result, err
 	}
 
 	// Legacy: cancel in-flight polls immediately on shutdown
