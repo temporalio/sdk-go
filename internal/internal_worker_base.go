@@ -579,10 +579,9 @@ func (bw *baseWorker) runTaskDispatcher() {
 		// is cancelled, so Wait returns immediately — we still process the
 		// task rather than dropping it.
 		if _, isPolledTask := task.(*polledTask); isPolledTask {
-			if err := bw.taskLimiter.Wait(bw.limiterContext); err != nil {
-				// Context cancelled during shutdown — skip rate limiting
-				// but still process remaining tasks.
-			}
+			// Ignore error: during shutdown the limiter context is
+			// cancelled, but we still process remaining tasks.
+			_ = bw.taskLimiter.Wait(bw.limiterContext)
 		}
 		bw.processTaskAsync(task)
 	}
