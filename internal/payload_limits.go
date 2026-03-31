@@ -9,7 +9,7 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
-// Options for when payload sizes exceed limits.
+// PayloadLimitOptions for when payload sizes exceed limits.
 //
 // NOTE: Experimental
 //
