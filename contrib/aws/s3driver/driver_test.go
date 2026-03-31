@@ -232,7 +232,7 @@ func TestStore_DynamicBucket(t *testing.T) {
 	mc := newMemClient()
 	d, err := NewDriver(Options{
 		Client: mc,
-		Bucket: func(_ context.Context, p *commonpb.Payload) string {
+		Bucket: func(_ converter.StorageDriverStoreContext, p *commonpb.Payload) string {
 			if string(p.Data) == "a" {
 				return "bucket-a"
 			}
