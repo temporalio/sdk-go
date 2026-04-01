@@ -609,17 +609,15 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		}
 		wtp.logger.Warn("Workflow task postprocess error: "+taskErr.Error(), keyvals...)
 		emitFailMetric = true
-		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
 		failureReason = "WorkflowError"
-		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE {
+		if errors.As(taskErr, new(payloadSizeError)) {
 			failureReason = "PayloadsTooLarge"
 		}
-		var submitErr error
-		response, submitErr = wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failWorkflowTask}, task)
-		if submitErr != nil {
-			wtp.logger.Warn("Failed to submit WFT failure after outbound visitor error.", tagError, submitErr)
+		if _, ok := taskCompletion.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest); ok {
+			taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailQueryTask(task.TaskToken, taskErr)}
+		} else {
+			taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
 		}
-		return
 	}
 
 	taskDuration := time.Since(startTime)
@@ -834,6 +832,26 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 	}
 
 	return builtRequest
+}
+
+func (wtp *workflowTaskProcessor) errorToFailQueryTask(taskToken []byte, err error) *workflowservice.RespondQueryTaskCompletedRequest {
+	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED
+	if errors.As(err, new(payloadSizeError)) {
+		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
+	}
+
+	return wtp.errorToFailQueryTaskWithCause(taskToken, err, cause)
+}
+
+func (wtp *workflowTaskProcessor) errorToFailQueryTaskWithCause(taskToken []byte, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondQueryTaskCompletedRequest {
+	return &workflowservice.RespondQueryTaskCompletedRequest{
+		TaskToken:     taskToken,
+		CompletedType: enumspb.QUERY_RESULT_TYPE_FAILED,
+		ErrorMessage:  err.Error(),
+		Namespace:     wtp.namespace,
+		Failure:       wtp.failureConverter.ErrorToFailure(err),
+		Cause:         cause,
+	}
 }
 
 type workflowTaskStorageMetrics struct {
