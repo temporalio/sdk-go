@@ -9,7 +9,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.6.0
 	github.com/stretchr/testify v1.10.0
 	go.temporal.io/sdk v1.33.0
-	go.temporal.io/sdk/contrib/envconfig v0.0.0
+	go.temporal.io/sdk/contrib/envconfig v1.0.0
 )
 
 require (
