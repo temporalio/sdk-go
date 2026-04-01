@@ -547,7 +547,7 @@ func TestExistingContextMetadataJoinedWithSDKHeaders(t *testing.T) {
 	)
 }
 
-func TestNamespaceInterceptor(t *testing.T) {
+func TestTemporalHeaderInterceptor(t *testing.T) {
 	srv, err := startTestGRPCServer()
 	require.NoError(t, err)
 	defer srv.Stop()
@@ -566,11 +566,17 @@ func TestNamespaceInterceptor(t *testing.T) {
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, temporalNamespaceHeaderKey),
 	)
 	// Verify namespace header is set on a request that does have namespace on the request
-	require.NoError(t, client.SignalWorkflow(context.Background(), "workflowid", "runid", "signalname", nil))
+	require.NoError(t, client.SignalWorkflow(context.Background(), "test-workflow-id", "runid", "signalname", nil))
 	require.Equal(
 		t,
 		[]string{"test-namespace"},
 		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, temporalNamespaceHeaderKey),
+	)
+	// Verify resource-id header is also set
+	require.Equal(
+		t,
+		[]string{"workflow:test-workflow-id"},
+		metadata.ValueFromIncomingContext(srv.lastSignalWorkflowExecutionContext, "temporal-resource-id"),
 	)
 }
 

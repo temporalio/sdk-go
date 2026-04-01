@@ -512,7 +512,8 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, opts.TaskToken,
-		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
+		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil,
+		opts.WorkflowID, "")
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -2198,6 +2199,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			startOp,
 			updateOp,
 		},
+		ResourceId: fmt.Sprintf("workflow:%s", startRequest.WorkflowId),
 	}
 
 	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, &multiRequest); err != nil {
