@@ -10,7 +10,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.42.0
 	go.opentelemetry.io/otel/sdk/metric v1.42.0
 	go.temporal.io/sdk v1.41.1
-	go.temporal.io/sdk/contrib/opentelemetry v1.41.1
+	go.temporal.io/sdk/contrib/opentelemetry v0.7.0
 )
 
 require (
