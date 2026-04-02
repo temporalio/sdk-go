@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
@@ -144,7 +145,7 @@ func (d *s3StorageDriver) Store(
 	g, gctx := errgroup.WithContext(ctx.Context)
 	for i, pp := range prepared {
 		g.Go(func() error {
-			key := objectKey(pp.hexDigest)
+			key := objectKey(ctx.Target, pp.hexDigest)
 			exists, err := d.client.ObjectExists(gctx, pp.bucket, key)
 			if err != nil {
 				return fmt.Errorf("existence check failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
@@ -231,8 +232,33 @@ func (d *s3StorageDriver) Retrieve(
 	return payloads, nil
 }
 
-func objectKey(hexDigest string) string {
-	return keyVersion + "/d/" + hashAlgorithm + "/" + hexDigest
+func objectKey(target converter.StorageDriverTargetInfo, hexDigest string) string {
+	digestSegment := "/d/" + hashAlgorithm + "/" + hexDigest
+	switch t := target.(type) {
+	case converter.StorageDriverWorkflowInfo:
+		return keyVersion +
+			"/ns/" + pathEscape(t.Namespace) +
+			"/wt/" + pathEscape(t.WorkflowType) +
+			"/wi/" + pathEscape(t.WorkflowID) +
+			"/ri/" + pathEscape(t.RunID) +
+			digestSegment
+	case converter.StorageDriverActivityInfo:
+		return keyVersion +
+			"/ns/" + pathEscape(t.Namespace) +
+			"/at/" + pathEscape(t.ActivityType) +
+			"/ai/" + pathEscape(t.ActivityID) +
+			"/ri/" + pathEscape(t.RunID) +
+			digestSegment
+	default:
+		return keyVersion + digestSegment
+	}
+}
+
+func pathEscape(s string) string {
+	if s == "" {
+		return "null"
+	}
+	return url.PathEscape(s)
 }
 
 func sha256Hex(data []byte) string {

@@ -13,15 +13,23 @@ type PayloadVisitor interface {
 }
 
 // visitProtoPayloads runs visitor over all payloads in msg, skipping search
-// attributes. If visitor is nil, msg is unchanged.
+// attributes. If visitor is nil, msg is unchanged. An optional ContextHook may
+// be supplied to override the context for specific message subtrees during
+// traversal (see [proxy.VisitPayloadsOptions.ContextHook]).
 func visitProtoPayloads(ctx context.Context, visitor PayloadVisitor, msg proto.Message) error {
+	return visitProtoPayloadsWithContextHook(ctx, visitor, msg, nil)
+}
+
+func visitProtoPayloadsWithContextHook(ctx context.Context, visitor PayloadVisitor, msg proto.Message, hook func(context.Context, proto.Message) (context.Context, error)) error {
 	if visitor == nil {
 		return nil
 	}
-	return proxy.VisitPayloads(ctx, msg, proxy.VisitPayloadsOptions{
+	opts := proxy.VisitPayloadsOptions{
 		Visitor:              visitor.Visit,
 		SkipSearchAttributes: true,
-	})
+		ContextHook:          hook,
+	}
+	return proxy.VisitPayloads(ctx, msg, opts)
 }
 
 // visitPayload runs visitor over a single payload. If visitor is nil
