@@ -707,6 +707,12 @@ func (bw *baseWorker) Stop() {
 	close(bw.stopCh)
 	bw.limiterContextCancel()
 
+	// Wait for pollers to finish. (pollTaskServiceTimeOut) bounds this if the connection is broken.
+	bw.pollerWG.Wait()
+
+	// Wait for task processing to complete. The dispatcher
+	// drains taskQueueCh (closed after pollers finish above) and
+	// processTaskAsync goroutines are tracked in stopWG.
 	if success := awaitWaitGroup(&bw.stopWG, bw.options.stopTimeout); !success {
 		traceLog(func() {
 			bw.logger.Info("Worker graceful stop timed out.", "Stop timeout", bw.options.stopTimeout)
