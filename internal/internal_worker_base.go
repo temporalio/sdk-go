@@ -216,6 +216,7 @@ type (
 		lastPollTaskErrLock    sync.Mutex
 
 		noRepoll atomic.Bool
+		pollerWG sync.WaitGroup
 	}
 
 	eagerOrPolledTask interface {
@@ -391,6 +392,7 @@ func (bw *baseWorker) Start() {
 
 		for i := 0; i < taskWorker.pollerCount; i++ {
 			bw.stopWG.Add(1)
+			bw.pollerWG.Add(1)
 			go bw.runPoller(taskWorker)
 		}
 
@@ -402,6 +404,15 @@ func (bw *baseWorker) Start() {
 			}()
 		}
 	}
+
+	// When all pollers have exited, close taskQueueCh so the dispatcher
+	// knows no more polled tasks will arrive and can drain what remains.
+	bw.stopWG.Add(1)
+	go func() {
+		defer bw.stopWG.Done()
+		bw.pollerWG.Wait()
+		close(bw.taskQueueCh)
+	}()
 
 	bw.stopWG.Add(1)
 	go bw.runTaskDispatcher()
@@ -428,6 +439,10 @@ func (bw *baseWorker) isStop() bool {
 
 func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 	defer bw.stopWG.Done()
+	defer func() {
+		bw.logger.Info("Poller exiting", "pollerType", taskWorker.taskPollerType)
+		bw.pollerWG.Done()
+	}()
 	// Note: With poller autoscaling, this metric doesn't make a lot of sense since the number of pollers can go up and down.
 	bw.metricsHandler.Counter(metrics.PollerStartCounter).Inc(1)
 
@@ -561,24 +576,17 @@ func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
 func (bw *baseWorker) runTaskDispatcher() {
 	defer bw.stopWG.Done()
 
-	for {
-		// wait for new task or worker stop
-		select {
-		case <-bw.stopCh:
-			// Currently we can drop any tasks received when closing.
-			// https://github.com/temporalio/sdk-go/issues/1197
-			return
-		case task := <-bw.taskQueueCh:
-			// for non-polled-task (local activity result as task or eager task), we don't need to rate limit
-			_, isPolledTask := task.(*polledTask)
-			if isPolledTask && bw.taskLimiter.Wait(bw.limiterContext) != nil {
-				if bw.isStop() {
-					bw.releaseSlot(task.getPermit(), SlotReleaseReasonUnused)
-					return
-				}
-			}
-			bw.processTaskAsync(task)
+	for task := range bw.taskQueueCh {
+		// For non-polled-task (local activity result as task or eager task),
+		// we don't need to rate limit. During shutdown the limiter context
+		// is cancelled, so Wait returns immediately — we still process the
+		// task rather than dropping it.
+		if _, isPolledTask := task.(*polledTask); isPolledTask {
+			// Ignore error: during shutdown the limiter context is
+			// cancelled, but we still process remaining tasks.
+			_ = bw.taskLimiter.Wait(bw.limiterContext)
 		}
+		bw.processTaskAsync(task)
 	}
 }
 
@@ -639,11 +647,10 @@ func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPe
 			taskWorker.pollerAutoscalerReportHandle.handleTask(task)
 		}
 
-		select {
-		case bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}:
-			didSendTask = true
-		case <-bw.stopCh:
-		}
+		// The dispatcher is guaranteed to be alive: it only exits after
+		// taskQueueCh is closed, which happens after all pollers finish.
+		bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}
+		didSendTask = true
 	}
 }
 
@@ -703,6 +710,13 @@ func (bw *baseWorker) Stop() {
 	close(bw.stopCh)
 	bw.limiterContextCancel()
 
+	bw.logger.Info("Waiting for pollers to finish")
+	bw.pollerWG.Wait()
+	bw.logger.Info("All pollers finished")
+
+	// Wait for task processing to complete. The dispatcher
+	// drains taskQueueCh (closed after pollers finish above) and
+	// processTaskAsync goroutines are tracked in stopWG.
 	if success := awaitWaitGroup(&bw.stopWG, bw.options.stopTimeout); !success {
 		traceLog(func() {
 			bw.logger.Info("Worker graceful stop timed out.", "Stop timeout", bw.options.stopTimeout)

@@ -315,6 +315,104 @@ type noopTaskProcessor struct{}
 
 func (noopTaskProcessor) ProcessTask(any) error { return nil }
 
+// TestTaskNotDroppedDuringShutdown verifies the two-stage shutdown: when a
+// poller receives a task during shutdown, the task is still dispatched and
+// processed rather than silently dropped.
+func TestTaskNotDroppedDuringShutdown(t *testing.T) {
+	taskProcessed := make(chan struct{})
+	pollStarted := make(chan struct{})
+
+	// A poller that blocks until returnTask is closed, then returns a task
+	// exactly once. Subsequent polls return nil so the poller can exit.
+	tp := &shutdownTaskPoller{
+		pollStarted: pollStarted,
+		returnTask:  make(chan struct{}),
+		task:        &testTask{},
+	}
+
+	processor := &recordingTaskProcessor{
+		processed: taskProcessed,
+	}
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &testSlotSupplier{},
+		maxTaskPerSecond: 1000,
+		taskPollers: []scalableTaskPoller{
+			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+		},
+		taskProcessor:  processor,
+		workerType:     "ShutdownTest",
+		logger:         ilog.NewNopLogger(),
+		stopTimeout:    5 * time.Second,
+		metricsHandler: metrics.NopHandler,
+	})
+
+	bw.Start()
+
+	// Wait for the poller to be actively polling.
+	<-pollStarted
+
+	// Release the poller so it returns a task, then stop the worker.
+	// The poller returns a task and then nil on subsequent polls,
+	// allowing it to exit via noRepoll/stopCh during Stop().
+	close(tp.returnTask)
+
+	// Stop exercises the real shutdown path: noRepoll, close(stopCh),
+	// limiterContextCancel, and awaitWaitGroup.
+	stopDone := make(chan struct{})
+	go func() {
+		bw.Stop()
+		close(stopDone)
+	}()
+
+	select {
+	case <-taskProcessed:
+		// Success: the task was dispatched and processed during shutdown
+	case <-time.After(5 * time.Second):
+		t.Fatal("task polled during shutdown was not processed (dropped)")
+	}
+
+	select {
+	case <-stopDone:
+		// Stop completed cleanly
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() did not return in time")
+	}
+}
+
+// shutdownTaskPoller blocks until returnTask is closed, then returns a task
+// exactly once. Subsequent polls return nil.
+type shutdownTaskPoller struct {
+	pollStarted chan struct{}
+	returnTask  chan struct{}
+	task        taskForWorker
+	returned    atomic.Bool
+}
+
+func (p *shutdownTaskPoller) PollTask() (taskForWorker, error) {
+	select {
+	case p.pollStarted <- struct{}{}:
+	default:
+	}
+	<-p.returnTask
+	if p.returned.CompareAndSwap(false, true) {
+		return p.task, nil
+	}
+	return nil, nil
+}
+
+type recordingTaskProcessor struct {
+	processed chan struct{}
+}
+
+func (p *recordingTaskProcessor) ProcessTask(any) error {
+	select {
+	case p.processed <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
 func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithCapability() {
 	targetSuggestion := 0
 	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
