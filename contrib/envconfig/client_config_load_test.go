@@ -2,6 +2,7 @@ package envconfig_test
 
 import (
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -168,6 +169,25 @@ disable_host_verification = true`
 		"some-header2": "some-value2-new",
 		"some-header4": "some-value4-new",
 	}, prof.GRPCMeta)
+}
+
+func TestLoadDefaultConfigFileNotExist(t *testing.T) {
+	// Unset default user config dir.
+	switch runtime.GOOS {
+	case "windows":
+		t.Setenv("AppData", "")
+	case "darwin", "ios":
+		t.Setenv("HOME", "")
+	case "plan9":
+		t.Setenv("home", "")
+	default: // Unix
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", "")
+	}
+	// Load default config, config file does not exist
+	config, err := envconfig.LoadClientConfig(envconfig.LoadClientConfigOptions{})
+	require.NoError(t, err)
+	require.Equal(t, envconfig.ClientConfig{Profiles: make(map[string]*envconfig.ClientConfigProfile)}, config)
 }
 
 type EnvLookupMap map[string]string
