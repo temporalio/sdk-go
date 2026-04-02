@@ -126,8 +126,10 @@ func LoadClientConfig(options LoadClientConfigOptions) (ClientConfig, error) {
 			// for config file path are both treated as unset
 			file, _ = env.LookupEnv("TEMPORAL_CONFIG_FILE")
 		}
-		// Get the default config file path. If it doesn't exist, the file path will be empty.
-		file = DefaultConfigFilePath()
+		if file == "" {
+			// Get the default config file path. If it doesn't exist, the file path will be empty.
+			file = DefaultConfigFilePath()
+		}
 		// Load file, not exist is ok
 		if b, err := os.ReadFile(file); err == nil {
 			data = b
