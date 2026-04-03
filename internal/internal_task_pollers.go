@@ -314,15 +314,8 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		// completes the poll with an empty response. The poll is bounded
 		// by the gRPC timeout (pollTaskServiceTimeOut). Stop() waits for
 		// all pollers to finish before proceeding to task drain.
-		select {
-		case <-doneC:
-			return result, err
-		case <-bp.stopC:
-			fmt.Println("DEBUG: doPoll graceful path: stopC fired, waiting for poll to complete")
-			<-doneC
-			fmt.Println("DEBUG: doPoll graceful path: poll completed after stopC")
-			return result, err
-		}
+		<-doneC
+		return result, err
 	}
 
 	// Legacy: cancel in-flight polls immediately on shutdown
