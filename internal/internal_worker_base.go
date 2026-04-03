@@ -710,13 +710,10 @@ func (bw *baseWorker) Stop() {
 	close(bw.stopCh)
 	bw.limiterContextCancel()
 
-	bw.logger.Info("Waiting for pollers to finish")
-	bw.pollerWG.Wait()
-	bw.logger.Info("All pollers finished")
+	// TODO: uncomment once server-side CancelOutstandingWorkerPolls is deployed.
+	// bw.pollerWG.Wait()
 
-	// Wait for task processing to complete. The dispatcher
-	// drains taskQueueCh (closed after pollers finish above) and
-	// processTaskAsync goroutines are tracked in stopWG.
+	// Wait for task processing to complete.
 	if success := awaitWaitGroup(&bw.stopWG, bw.options.stopTimeout); !success {
 		traceLog(func() {
 			bw.logger.Info("Worker graceful stop timed out.", "Stop timeout", bw.options.stopTimeout)
