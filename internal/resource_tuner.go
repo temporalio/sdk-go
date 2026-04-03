@@ -32,6 +32,7 @@ type SysInfoProvider interface {
 //
 // Exposed as: [go.temporal.io/sdk/worker.SysInfoContext]
 type SysInfoContext struct {
+	// Logger is the logger to use for the SysInfoContext calls.
 	Logger log.Logger
 }
 
@@ -237,7 +238,7 @@ func (r *ResourceBasedSlotSupplier) SysInfoProvider() SysInfoProvider {
 
 // ResourceControllerOptions contains configurable parameters for a ResourceController.
 // It is recommended to use DefaultResourceControllerOptions to create a ResourceControllerOptions
-// and only modify the mem/cpu target percent fields.
+// and only modify the mem/CPU target percent fields.
 //
 // Exposed as: [go.temporal.io/sdk/worker.ResourceControllerOptions]
 type ResourceControllerOptions struct {
@@ -250,14 +251,22 @@ type ResourceControllerOptions struct {
 	// InfoSupplier is the supplier that the controller will use to get system resources.
 	InfoSupplier SysInfoProvider
 
+	// MemOutputThreshold is the memory output threshold limit.
 	MemOutputThreshold float64
+	// CpuOutputThreshold is the CPU output threshold limit.
 	CpuOutputThreshold float64
 
+	// MemPGain is the memory Proportional gain limit threshold.
 	MemPGain float64
+	// MemIGain is the memory Integral gain limit threshold.
 	MemIGain float64
+	// MemDGain is the memory Derivative gain limit threshold.
 	MemDGain float64
+	// CpuPGain is the CPU Proportional gain limit threshold.
 	CpuPGain float64
+	// CpuIGain is the CPU Integral gain limit threshold.
 	CpuIGain float64
+	// CpuDGain is the CPU Derivative gain limit threshold.
 	CpuDGain float64
 }
 
