@@ -182,6 +182,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		Interceptors:            clientInterceptors,
 		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
 		WorkerHeartbeatInterval: -1,
+		PayloadLimits: client.PayloadLimitOptions{
+			PayloadSizeWarning: 128,
+		},
 	})
 	ts.NoError(err)
 
@@ -212,7 +215,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	}
 
 	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") ||
-		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
+		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") ||
+		strings.Contains(ts.T().Name(), "TestLargeQueryResultError") {
 		// We disable sticky execution here since we kill the worker and restart it
 		// and sticky execution adds a 5s penalty
 		worker.SetStickyWorkflowCacheSize(0)
@@ -1610,9 +1614,26 @@ func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
 func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DisablePayloadErrorLimit: true,
+	})
+	ts.registerWorkflowsAndActivities(ts.worker)
+	ts.NoError(ts.worker.Start())
+	ts.workerStopped = false
+
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
 	ts.Nil(err)
+
+	// Wait for the workflow to complete before querying. Sticky execution is
+	// disabled in SetupTest, so the standalone query goes directly to the normal
+	// queue and is processed well within the 10s gRPC deadline.
+	var result string
+	ts.NoError(run.Get(ctx, &result))
+
 	value, err := ts.client.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
 
@@ -9094,4 +9115,46 @@ func (ts *IntegrationTestSuite) TestPanicWithDeferredYield() {
 
 	err = run.Get(ctx, nil)
 	ts.NoError(err)
+}
+
+func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	logger := ilog.NewMemoryLogger()
+	client, err := client.Dial(client.Options{
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		Logger:            logger,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		MetricsHandler:    ts.metricsHandler,
+	})
+	ts.NoError(err)
+	defer client.Close()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	testWorker := worker.New(client, ts.taskQueueName, worker.Options{})
+	wfname := "payload-size-warning-workflow-result"
+	testWorker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) (string, error) { return strings.Repeat("a", 1024*1024), nil },
+		workflow.RegisterOptions{Name: wfname},
+	)
+	err = testWorker.Start()
+	ts.NoError(err)
+	defer testWorker.Stop()
+
+	run, err := client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions(ts.T().Name()),
+		wfname,
+	)
+	ts.NoError(err)
+
+	var res string
+	ts.NoError(run.Get(ctx, &res))
+	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.HasPrefix(line, "WARN  [TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
+	}))
 }

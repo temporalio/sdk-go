@@ -227,6 +227,8 @@ type (
 		inboundPayloadVisitor PayloadVisitor
 
 		outboundPayloadVisitor PayloadVisitor
+
+		setPayloadErrorLimits func(*payloadLimits)
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -1295,15 +1297,26 @@ func (aw *AggregatedWorker) start() error {
 	}
 	proto.Merge(aw.capabilities, capabilities)
 
-	nsCapabilities, err := aw.client.loadNamespaceCapabilities(aw.executionParams.MetricsHandler)
+	nsData, err := aw.client.loadNamespaceData(aw.executionParams.MetricsHandler)
 	if err != nil {
 		return err
 	}
-	if nsCapabilities.GetWorkerPollCompleteOnShutdown() {
+
+	if aw.executionParams.setPayloadErrorLimits != nil {
+		payloadSizeError := int64(0)
+		if nsData.limits.BlobSizeLimitError > 0 {
+			payloadSizeError = nsData.limits.BlobSizeLimitError
+		}
+		aw.executionParams.setPayloadErrorLimits(&payloadLimits{
+			payloadSize: payloadSizeError,
+		})
+	}
+
+	if nsData.capabilities.GetWorkerPollCompleteOnShutdown() {
 		aw.workerPollCompleteOnShutdown.Store(true)
 	}
 
-	if nsCapabilities.GetPollerAutoscaling() {
+	if nsData.capabilities.GetPollerAutoscaling() {
 		aw.executionParams.serverSupportsAutoscaling.Store(true)
 	}
 
@@ -2201,6 +2214,29 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		metricsHandler = baseMetricsHandler
 	}
 
+	identity := client.identity
+	if options.Identity != "" {
+		identity = options.Identity
+	}
+
+	logger := client.logger
+	if logger == nil {
+		logger = ilog.NewDefaultLogger()
+	}
+	logger = log.With(logger,
+		tagNamespace, client.namespace,
+		tagTaskQueue, taskQueue,
+		tagWorkerID, identity,
+	)
+	if options.BuildID != "" {
+		// Add worker build ID to the logs if it's set by user
+		logger = log.With(logger,
+			tagBuildID, options.BuildID,
+		)
+	}
+
+	payloadLimitVisitor, setPayloadErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
+
 	cache := NewWorkerCache()
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
@@ -2209,12 +2245,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		Tuner:                            options.Tuner,
 		WorkerActivitiesPerSecond:        options.WorkerActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:   options.WorkerLocalActivitiesPerSecond,
-		Identity:                         client.identity,
+		Identity:                         identity,
 		WorkerBuildID:                    options.BuildID,
 		UseBuildIDForVersioning:          options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
 		DeploymentOptions:                options.DeploymentOptions,
 		MetricsHandler:                   metricsHandler,
-		Logger:                           client.logger,
+		Logger:                           logger,
 		EnableLoggingInReplay:            options.EnableLoggingInReplay,
 		BackgroundContext:                backgroundActivityContext,
 		BackgroundContextCancel:          backgroundActivityContextCancel,
@@ -2239,9 +2275,17 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:              &pollTimeTracker{},
 		workerInstanceKey:            workerInstanceKey,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
-		serverSupportsAutoscaling: &atomic.Bool{},
-		inboundPayloadVisitor:     client.inboundPayloadVisitor,
-		outboundPayloadVisitor:    client.outboundPayloadVisitor,
+		serverSupportsAutoscaling:    &atomic.Bool{},
+		inboundPayloadVisitor:        NewExternalRetrievalVisitor(client.storageParams),
+		outboundPayloadVisitor: newCompositePayloadVisitor(
+			NewExternalStorageVisitor(client.storageParams),
+			payloadLimitVisitor,
+		),
+		setPayloadErrorLimits: func(limits *payloadLimits) {
+			if !options.DisablePayloadErrorLimit {
+				setPayloadErrorLimits(limits)
+			}
+		},
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
@@ -2274,22 +2318,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("must set either MaxConcurrentNexusTaskPollers or NexusTaskPollerBehavior")
 	}
 
-	if options.Identity != "" {
-		workerParams.Identity = options.Identity
-	}
-
 	ensureRequiredParams(&workerParams)
-	workerParams.Logger = log.With(workerParams.Logger,
-		tagNamespace, client.namespace,
-		tagTaskQueue, taskQueue,
-		tagWorkerID, workerParams.Identity,
-	)
-	if workerParams.WorkerBuildID != "" {
-		// Add worker build ID to the logs if it's set by user
-		workerParams.Logger = log.With(workerParams.Logger,
-			tagBuildID, workerParams.WorkerBuildID,
-		)
-	}
 
 	processTestTags(&options, &workerParams)
 

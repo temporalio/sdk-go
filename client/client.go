@@ -222,6 +222,11 @@ type (
 	// Credentials are optional credentials that can be specified in ClientOptions.
 	Credentials = internal.Credentials
 
+	// PayloadLimitOptions are optional payload size limits that can be specified in ClientOptions.
+	//
+	// NOTE: Experimental
+	PayloadLimitOptions = internal.PayloadLimitOptions
+
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
