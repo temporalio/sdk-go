@@ -322,8 +322,7 @@ func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 	taskProcessed := make(chan struct{})
 	pollStarted := make(chan struct{})
 
-	// A poller that blocks until returnTask is closed, then returns a task
-	// exactly once. Subsequent polls return nil so the poller can exit.
+	// A poller that blocks until returnTask is closed, then returns a task.
 	tp := &shutdownTaskPoller{
 		pollStarted: pollStarted,
 		returnTask:  make(chan struct{}),
@@ -349,35 +348,26 @@ func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 
 	bw.Start()
 
-	// Wait for the poller to be actively polling.
+	// Wait for the poller to start polling
 	<-pollStarted
 
-	// Release the poller so it returns a task, then stop the worker.
-	// The poller returns a task and then nil on subsequent polls,
-	// allowing it to exit via noRepoll/stopCh during Stop().
+	// Signal the poller to return a task, then stop the worker.
+	// The task should be processed, not dropped.
+	bw.noRepoll.Store(true)
+	close(bw.stopCh)
 	close(tp.returnTask)
-
-	// Stop exercises the real shutdown path: noRepoll, close(stopCh),
-	// limiterContextCancel, and awaitWaitGroup.
-	stopDone := make(chan struct{})
-	go func() {
-		bw.Stop()
-		close(stopDone)
-	}()
+	bw.limiterContextCancel()
 
 	select {
 	case <-taskProcessed:
-		// Success: the task was dispatched and processed during shutdown
+		// Success: the task was dispatched and processed
 	case <-time.After(5 * time.Second):
 		t.Fatal("task polled during shutdown was not processed (dropped)")
 	}
 
-	select {
-	case <-stopDone:
-		// Stop completed cleanly
-	case <-time.After(5 * time.Second):
-		t.Fatal("Stop() did not return in time")
-	}
+	// Wait for full cleanup. We already closed stopCh manually, so
+	// replicate the remaining Stop() logic.
+	awaitWaitGroup(&bw.stopWG, bw.options.stopTimeout)
 }
 
 // shutdownTaskPoller blocks until returnTask is closed, then returns a task

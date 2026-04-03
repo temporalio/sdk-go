@@ -310,26 +310,12 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 	}()
 
 	if bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load() {
-		// Don't cancel the gRPC stream right away. After ShutdownWorker,
-		// the server should complete the poll with an empty response.
-		// TEMP FIX: Cancel the context as a fallback if the server doesn't
-		// complete the poll in time. This is needed until
-		// https://github.com/temporalio/temporal/pull/9545 is deployed,
-		// which adds CancelOutstandingWorkerPolls support. Any task
-		// received before cancellation is still processed — the two-stage
-		// shutdown keeps the dispatcher alive.
-		select {
-		case <-doneC:
-		case <-bp.stopC:
-			timer := time.NewTimer(5 * time.Second)
-			defer timer.Stop()
-			select {
-			case <-doneC:
-			case <-timer.C:
-				cancel()
-				<-doneC
-			}
-		}
+		// Don't cancel the gRPC stream. After ShutdownWorker, the server
+		// completes the poll with an empty response. The poll is bounded by
+		// the gRPC timeout (pollTaskServiceTimeOut). The worker's stop
+		// timeout (WorkerStopTimeout) controls how long Stop() blocks;
+		// goroutines clean up in the background within the gRPC deadline.
+		<-doneC
 		return result, err
 	}
 
