@@ -214,8 +214,9 @@ func IsApplicationError(err error) bool {
 // WorkflowExecutionAlreadyStartedError or if an error in the chain is a
 // ChildWorkflowExecutionAlreadyStartedError.
 func IsWorkflowExecutionAlreadyStartedError(err error) bool {
-	if _, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok {
-		return ok
+	var alreadyStartedError *serviceerror.WorkflowExecutionAlreadyStarted
+	if errors.As(err, &alreadyStartedError) {
+		return true
 	}
 	var childError *ChildWorkflowExecutionAlreadyStartedError
 	return errors.As(err, &childError)
