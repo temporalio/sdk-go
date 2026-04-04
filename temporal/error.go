@@ -5,7 +5,6 @@ import (
 
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
-
 	"go.temporal.io/sdk/internal"
 )
 
@@ -210,9 +209,8 @@ func IsApplicationError(err error) bool {
 	return errors.As(err, &applicationError)
 }
 
-// IsWorkflowExecutionAlreadyStartedError return if the err is a
-// WorkflowExecutionAlreadyStartedError or if an error in the chain is a
-// ChildWorkflowExecutionAlreadyStartedError.
+// IsWorkflowExecutionAlreadyStartedError returns true if an error in the chain
+// is a WorkflowExecutionAlreadyStartedError or ChildWorkflowExecutionAlreadyStartedError.
 func IsWorkflowExecutionAlreadyStartedError(err error) bool {
 	var alreadyStartedError *serviceerror.WorkflowExecutionAlreadyStarted
 	if errors.As(err, &alreadyStartedError) {
