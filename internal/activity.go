@@ -171,6 +171,22 @@ type (
 		//
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
+
+		// WorkspaceOptions - If set, this activity will use the specified durable
+		// workspace. The server creates the workspace lazily on first use.
+		// The worker prepares the workspace filesystem before executing the activity.
+		//
+		// NOTE: Experimental
+		WorkspaceOptions *WorkspaceOptions
+
+		// SandboxOptions - If set, this activity will execute inside an isolated
+		// sandbox (e.g. gVisor) with the workspace bind-mounted at /data.
+		// Requires WorkspaceOptions to be set and a SandboxProvider configured on
+		// the worker. Activities without SandboxOptions run directly on the worker
+		// host even when a SandboxProvider is configured.
+		//
+		// NOTE: Experimental
+		SandboxOptions *SandboxOptions
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.

@@ -523,6 +523,16 @@ type (
 		//
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
+
+		// WorkspaceTransfers - Optional workspace transfers for the child workflow.
+		// Each transfer gives the child access to a workspace owned by the parent.
+		//
+		// Supported modes:
+		//   - WorkspaceHandoff: Transfer write access to child. Parent re-acquires after child completes.
+		//   - WorkspaceFork: Child gets independent copy. Parent and child diverge.
+		//
+		// NOTE: Experimental
+		WorkspaceTransfers []WorkspaceTransfer
 	}
 
 	// RegisterWorkflowOptions consists of options for registering a workflow
@@ -1939,6 +1949,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.StaticSummary = cwo.StaticSummary
 	wfOptions.StaticDetails = cwo.StaticDetails
 	wfOptions.Priority = convertToPBPriority(cwo.Priority)
+	wfOptions.WorkspaceTransfers = cwo.WorkspaceTransfers
 
 	return ctx1
 }
@@ -2585,6 +2596,8 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.VersioningIntent = options.VersioningIntent
 	eap.Priority = convertToPBPriority(options.Priority)
 	eap.Summary = options.Summary
+	eap.WorkspaceOptions = options.WorkspaceOptions
+	eap.SandboxOptions = options.SandboxOptions
 	return ctx1
 }
 

@@ -381,6 +381,21 @@ type (
 		// NOTE: Experimental
 		NexusTaskPollerBehavior PollerBehavior
 
+		// Optional: WorkspaceManager enables durable workspace support for activities.
+		// When set, activities with a workspace_id will have their filesystem prepared
+		// before execution and diffs captured after completion.
+		//
+		// NOTE: Experimental
+		WorkspaceManager *WorkspaceManager
+
+		// Optional: SandboxProvider enables sandboxed execution for activities.
+		// When set alongside WorkspaceManager, activities with sandbox options
+		// will have their commands executed inside an isolated sandbox with the
+		// workspace bind-mounted at /data.
+		//
+		// NOTE: Experimental
+		SandboxProvider SandboxProvider
+
 		// Plugins that can configure options and intercept start/stop worker.
 		//
 		// Any plugins that were part of client options and implement

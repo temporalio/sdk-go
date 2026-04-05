@@ -20,6 +20,7 @@ import (
 	historypb "go.temporal.io/api/history/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	workspacepb "go.temporal.io/api/workspace/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -1486,6 +1487,7 @@ func convertActivityResultToRespondRequest(
 	versionStamp *commonpb.WorkerVersionStamp,
 	deployment *deploymentpb.Deployment,
 	workerDeploymentOptions *deploymentpb.WorkerDeploymentOptions,
+	wsCommit *workspacepb.WorkspaceCommit,
 ) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1502,6 +1504,7 @@ func convertActivityResultToRespondRequest(
 			WorkerVersion:     versionStamp,
 			Deployment:        deployment,
 			DeploymentOptions: workerDeploymentOptions,
+			WorkspaceCommit:   wsCommit,
 		}
 	}
 

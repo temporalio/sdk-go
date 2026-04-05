@@ -24,6 +24,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	workspacepb "go.temporal.io/api/workspace/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -163,6 +164,8 @@ type (
 		versionStamp                     *commonpb.WorkerVersionStamp
 		deployment                       *deploymentpb.Deployment
 		workerDeploymentOptions          *deploymentpb.WorkerDeploymentOptions
+		workspaceManager                 *WorkspaceManager
+		sandboxProvider                  SandboxProvider
 	}
 
 	// history wrapper method to help information about events.
@@ -1792,6 +1795,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 		commandAttributes := d.GetRequestCancelNexusOperationCommandAttributes()
 
 		return eventAttributes.GetScheduledEventId() == commandAttributes.GetScheduledEventId()
+
 	}
 
 	return false
@@ -2075,6 +2079,8 @@ func newActivityTaskHandlerWithCustomProvider(
 			params.UseBuildIDForVersioning,
 			params.DeploymentOptions.Version,
 		),
+		workspaceManager: params.workspaceManager,
+		sandboxProvider:  params.sandboxProvider,
 	}
 }
 
@@ -2300,7 +2306,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+			ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions, nil), nil
 	}
 
 	// panic handler
@@ -2318,7 +2324,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
+				ath.dataConverter, ath.failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions, nil)
 		}
 	}()
 
@@ -2328,11 +2334,86 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		return nil, err
 	}
 
+	// Workspace lifecycle: set up lazy workspace preparation. The workspace
+	// is prepared on first call to activity.WorkspacePath(ctx).
+	var wsCommit *workspacepb.WorkspaceCommit
+	wsInfo := t.GetWorkspaceInfo()
+	runID := t.WorkflowExecution.GetRunId()
+	var wsAccessor *workspaceAccessor
+	if wsInfo != nil {
+		wsAccessor = &workspaceAccessor{
+			manager: ath.workspaceManager, // may be nil — error surfaces on first WorkspacePath() call
+			runID:   runID,
+			wsInfo:  wsInfo,
+		}
+		ctx = withWorkspaceAccessor(ctx, wsAccessor)
+	}
+
+	// Sandbox lifecycle: set up lazy sandbox creation. The sandbox is
+	// created on first call to activity.GetSandbox(ctx). Works with or
+	// without a workspace — if workspace is prepared, its path is
+	// bind-mounted as /data inside the sandbox.
+	var sbAccessor *sandboxAccessor
+	if sbProto := t.GetSandboxOptions(); sbProto != nil {
+		sbOpts := sandboxOptionsFromProto(sbProto)
+		// WorkspacePath will be set lazily when sandbox is created —
+		// the sandbox accessor reads it from the workspace accessor.
+		sbAccessor = &sandboxAccessor{
+			provider:    ath.sandboxProvider, // may be nil — error surfaces on first GetSandbox() call
+			opts:        *sbOpts,
+			wsAccessor:  wsAccessor, // may be nil if no workspace
+		}
+		ctx = withSandboxAccessor(ctx, sbAccessor)
+	}
+
+	// Save context without activity deadline for workspace commit operations.
+	// CommitActivity uploads chunks to external storage after the activity
+	// completes — it should not be constrained by the activity's timeout.
+	wsCommitCtx := ctx
+
 	info := getActivityEnv(ctx)
 	ctx, dlCancelFunc := context.WithDeadline(ctx, info.deadline)
 	defer dlCancelFunc()
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
+
+	// Sandbox lifecycle: close sandbox before workspace commit/rollback so no
+	// sandboxed process holds files open in the workspace.
+	// Close is a no-op if the sandbox was never accessed (lazy creation not triggered).
+	if sbAccessor != nil {
+		if closeErr := sbAccessor.Close(); closeErr != nil {
+			ath.logger.Error("Sandbox Close failed", "error", closeErr)
+		}
+	}
+
+	// Workspace lifecycle: commit on success, rollback on failure.
+	// Only if the workspace was actually prepared (lazy creation triggered).
+	if wsAccessor != nil && wsAccessor.isPrepared() {
+		wsAccessor.Close()
+		isReadOnly := wsInfo.GetAccessMode() == enumspb.WORKSPACE_ACCESS_MODE_READ_ONLY
+		if err == nil && !isReadOnly {
+			ath.logger.Info("Workspace CommitActivity starting")
+			var commitErr error
+			wsCommit, commitErr = ath.workspaceManager.CommitActivity(wsCommitCtx, runID, wsInfo.GetWorkspaceId(), wsInfo.GetCommittedVersion())
+			if commitErr != nil {
+				ath.logger.Error("Workspace CommitActivity failed", "error", commitErr)
+				// Treat workspace commit failure as an activity failure so the
+				// server does not record a successful completion without a
+				// workspace version advancement.
+				err = fmt.Errorf("workspace commit: %w", commitErr)
+			} else if wsCommit != nil {
+				ath.logger.Info("Workspace CommitActivity done", "newVersion", wsCommit.GetNewVersion())
+			} else {
+				ath.logger.Info("Workspace unchanged, skipping version bump")
+			}
+		} else {
+			if isReadOnly && err == nil {
+				ath.logger.Info("Workspace read-only activity completed, discarding upper layer")
+			}
+			_ = ath.workspaceManager.RollbackActivity(runID, wsInfo.GetWorkspaceId(), wsInfo.GetCommittedVersion())
+		}
+	}
+
 	// Check if context canceled at a higher level before we cancel it ourselves
 
 	// Cancels that don't originate from the server will have separate cancel reasons, like
@@ -2365,7 +2446,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		)
 	}
 	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+		ath.dataConverter, ath.failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions, wsCommit), nil
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {

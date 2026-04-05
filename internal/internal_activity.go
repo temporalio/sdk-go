@@ -51,6 +51,8 @@ type (
 		VersioningIntent       VersioningIntent
 		Summary                string
 		Priority               *commonpb.Priority
+		WorkspaceOptions       *WorkspaceOptions
+		SandboxOptions         *SandboxOptions
 	}
 
 	// ExecuteLocalActivityOptions options for executing a local activity

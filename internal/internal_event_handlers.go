@@ -17,6 +17,7 @@ import (
 	protocolpb "go.temporal.io/api/protocol/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	workspacepb "go.temporal.io/api/workspace/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
@@ -580,6 +581,9 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	//lint:ignore SA1019 ignore deprecated old versioning APIs
 	attributes.InheritBuildId = determineInheritBuildIdFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
+	if len(params.WorkspaceTransfers) > 0 {
+		attributes.WorkspaceTransfers = workspaceTransfersToProto(params.WorkspaceTransfers)
+	}
 
 	startMetadata, err := buildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
 	if err != nil {
@@ -747,6 +751,15 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.UseWorkflowBuildId = determineInheritBuildIdFlagForCommand(
 		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
 	scheduleTaskAttr.Priority = parameters.Priority
+	if parameters.WorkspaceOptions != nil {
+		scheduleTaskAttr.WorkspaceOptions = &workspacepb.ActivityWorkspaceOptions{
+			WorkspaceId: parameters.WorkspaceOptions.ID,
+			AccessMode:  parameters.WorkspaceOptions.AccessMode,
+		}
+	}
+	if parameters.SandboxOptions != nil {
+		scheduleTaskAttr.SandboxOptions = sandboxOptionsToProto(parameters.SandboxOptions)
+	}
 
 	startMetadata, err := buildUserMetadata(parameters.Summary, "", wc.dataConverter)
 	if err != nil {

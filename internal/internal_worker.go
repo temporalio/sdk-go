@@ -225,6 +225,9 @@ type (
 		inboundPayloadVisitor PayloadVisitor
 
 		outboundPayloadVisitor PayloadVisitor
+
+		workspaceManager *WorkspaceManager
+		sandboxProvider  SandboxProvider
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -2197,6 +2200,8 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		serverSupportsAutoscaling: &atomic.Bool{},
 		inboundPayloadVisitor:     client.inboundPayloadVisitor,
 		outboundPayloadVisitor:    client.outboundPayloadVisitor,
+		workspaceManager:       options.WorkspaceManager,
+		sandboxProvider:        options.SandboxProvider,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {

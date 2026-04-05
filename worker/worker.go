@@ -211,6 +211,88 @@ type (
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 
+	// WorkspaceManager coordinates filesystem snapshots and external storage for durable workspaces.
+	//
+	// NOTE: Experimental
+	WorkspaceManager = internal.WorkspaceManager
+
+	// SnapshotFS is an abstraction over a copy-on-write filesystem for workspace snapshots.
+	//
+	// NOTE: Experimental
+	SnapshotFS = internal.SnapshotFS
+
+	// TarDiffFS is a SnapshotFS implementation using tar archives. No kernel modules needed.
+	//
+	// NOTE: Experimental
+	TarDiffFS = internal.TarDiffFS
+
+	// FuseOverlayFS is a SnapshotFS implementation using a FUSE-based overlay
+	// filesystem. Provides efficient snapshots and diffs by capturing changes in
+	// a writable upper layer. Requires FUSE support (libfuse on Linux, macFUSE on macOS).
+	//
+	// NOTE: Experimental
+	FuseOverlayFS = internal.FuseOverlayFS
+
+	// WorkspaceOptions configures a durable workspace for an activity.
+	// Set on [workflow.ActivityOptions] to associate an activity with a workspace.
+	//
+	// NOTE: Experimental
+	WorkspaceOptions = internal.WorkspaceOptions
+
+	// WorkspaceTransfer specifies how a workspace is passed to a child workflow.
+	// Set on [workflow.ChildWorkflowOptions] to transfer workspace access.
+	//
+	// NOTE: Experimental
+	WorkspaceTransfer = internal.WorkspaceTransfer
+
+	// SandboxProvider creates sandboxes for executing untrusted code in
+	// isolated environments. Set on [Options] alongside [WorkspaceManager].
+	//
+	// NOTE: Experimental
+	SandboxProvider = internal.SandboxProvider
+
+	// SandboxOptions configures a sandbox instance.
+	//
+	// NOTE: Experimental
+	SandboxOptions = internal.SandboxOptions
+
+	// SandboxResourceLimits sets per-sandbox resource constraints.
+	//
+	// NOTE: Experimental
+	SandboxResourceLimits = internal.SandboxResourceLimits
+
+	// SandboxNetworkPolicy controls outbound network access from the sandbox.
+	//
+	// NOTE: Experimental
+	SandboxNetworkPolicy = internal.SandboxNetworkPolicy
+
+	// SandboxHostPort is a host:port pair for network allowlist entries.
+	//
+	// NOTE: Experimental
+	SandboxHostPort = internal.SandboxHostPort
+
+	// GVisorSandboxProvider creates gVisor-based sandboxes using runsc.
+	//
+	// NOTE: Experimental
+	GVisorSandboxProvider = internal.GVisorSandboxProvider
+
+	// BubblewrapSandboxProvider creates sandboxes using bubblewrap (bwrap).
+	// Provides namespace-level isolation with lower latency and full FUSE
+	// compatibility. See BubblewrapSandboxProvider for details.
+	//
+	// NOTE: Experimental
+	BubblewrapSandboxProvider = internal.BubblewrapSandboxProvider
+
+	// TemplateStore resolves sandbox template IDs to host rootfs paths.
+	//
+	// NOTE: Experimental
+	TemplateStore = internal.TemplateStore
+
+	// LocalTemplateStore looks up templates as subdirectories of a base path.
+	//
+	// NOTE: Experimental
+	LocalTemplateStore = internal.LocalTemplateStore
+
 	// PollerBehavior is used to configure the behavior of the poller.
 	PollerBehavior = internal.PollerBehavior
 
@@ -233,6 +315,23 @@ type (
 	// ReplayWorkflowHistoryOptions are options for replaying a workflow.
 	ReplayWorkflowHistoryOptions = internal.ReplayWorkflowHistoryOptions
 )
+
+// NewWorkspaceManager creates a WorkspaceManager for durable workspace support.
+//
+// NOTE: Experimental
+var NewWorkspaceManager = internal.NewWorkspaceManager
+
+// NewTarDiffFS creates a TarDiffFS with the given base path.
+//
+// NOTE: Experimental
+var NewTarDiffFS = internal.NewTarDiffFS
+
+// NewFuseOverlayFS creates a FuseOverlayFS with the given base path.
+// Requires FUSE support: libfuse/fuse3 on Linux, macFUSE on macOS.
+//
+// NOTE: Experimental
+var NewFuseOverlayFS = internal.NewFuseOverlayFS
+
 
 var _ WorkflowRegistry = (WorkflowReplayer)(nil)
 

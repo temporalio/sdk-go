@@ -156,7 +156,7 @@ type (
 		scheduledEventIDToActivityID     map[int64]string
 		scheduledEventIDToCancellationID map[int64]string
 		scheduledEventIDToSignalID       map[int64]string
-		versionMarkerLookup              map[int64]versionMarker
+		versionMarkerLookup map[int64]versionMarker
 
 		// A mapping of scheduled event ID to a sequence.
 		scheduledEventIDToNexusSeq map[int64]int64
@@ -1010,8 +1010,8 @@ func newCommandsHelper() *commandsHelper {
 		scheduledEventIDToActivityID:      make(map[int64]string),
 		scheduledEventIDToCancellationID:  make(map[int64]string),
 		scheduledEventIDToSignalID:        make(map[int64]string),
-		versionMarkerLookup:               make(map[int64]versionMarker),
-		scheduledEventIDToNexusSeq:        make(map[int64]int64),
+		versionMarkerLookup:        make(map[int64]versionMarker),
+		scheduledEventIDToNexusSeq: make(map[int64]int64),
 		nexusOperationsWithoutScheduledID: list.New(),
 	}
 }
@@ -1325,6 +1325,7 @@ func (h *commandsHelper) handleVersionMarker(eventID int64, changeID string, sea
 		searchAttrUpdated: searchAttrUpdated,
 	}
 }
+
 
 func (h *commandsHelper) recordSideEffectMarker(sideEffectID int64, data *commonpb.Payloads, dc converter.DataConverter, userMetadata *sdk.UserMetadata) commandStateMachine {
 	markerID := fmt.Sprintf("%v_%v", sideEffectMarkerName, sideEffectID)

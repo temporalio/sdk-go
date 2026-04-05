@@ -213,6 +213,8 @@ type (
 		runningUpdatesHandles     map[string]UpdateInfo
 		VersioningIntent          VersioningIntent
 		InitialVersioningBehavior ContinueAsNewVersioningBehavior
+		// WorkspaceTransfers optionally transfers workspace access to a child workflow.
+		WorkspaceTransfers []WorkspaceTransfer
 		// currentDetails is the user-set string returned on metadata query as
 		// WorkflowMetadata.current_details
 		currentDetails string

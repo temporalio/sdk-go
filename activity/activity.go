@@ -39,6 +39,50 @@ var ErrActivityPaused = internal.ErrActivityPaused
 // WARNING: Activity reset is currently experimental
 var ErrActivityReset = internal.ErrActivityReset
 
+// GetWorkspacePath returns the filesystem path of the durable workspace for the
+// current activity. The workspace is lazily prepared on the first call.
+// Returns a non-nil error if the workspace cannot be prepared (e.g.,
+// WorkspaceManager not configured) or if the activity was not configured
+// with WorkspaceOptions in the workflow. Activity code can read/write files at
+// this path and the changes will be captured and persisted for subsequent
+// activities.
+//
+// NOTE: Experimental
+func GetWorkspacePath(ctx context.Context) (string, error) {
+	return internal.GetWorkspacePath(ctx)
+}
+
+// Sandbox provides command execution inside an isolated environment.
+// The sandbox lifecycle is managed by the framework — do not close it manually.
+//
+// NOTE: Experimental
+type Sandbox interface {
+	// Exec runs a command inside the sandbox via "sh -c <cmd>".
+	Exec(ctx context.Context, cmd string, opts ExecOptions) (*ExecResult, error)
+}
+
+// GetSandbox returns the Sandbox for the current activity. The sandbox is
+// lazily created on the first call. Returns a non-nil error if the sandbox
+// cannot be created (e.g., SandboxProvider not configured, runsc not found)
+// or if the activity was not configured with SandboxOptions in the workflow.
+// Use the sandbox to execute commands in an isolated environment with the
+// workspace (if configured) mounted at /data.
+//
+// NOTE: Experimental
+func GetSandbox(ctx context.Context) (Sandbox, error) {
+	return internal.GetSandbox(ctx)
+}
+
+// ExecOptions configures a single command execution inside a sandbox.
+//
+// NOTE: Experimental
+type ExecOptions = internal.ExecOptions
+
+// ExecResult holds the output of a command executed inside a sandbox.
+//
+// NOTE: Experimental
+type ExecResult = internal.ExecResult
+
 // GetInfo returns information about the currently executing activity.
 func GetInfo(ctx context.Context) Info {
 	return internal.GetActivityInfo(ctx)
