@@ -83,6 +83,7 @@ type storageOperationCallback interface {
 }
 
 const storageOperationCallbackContextKey contextKey = "storageOperationCallback"
+const storageTargetContextKey contextKey = "storageTarget"
 
 // metadataEncodingStorageRef is the metadata encoding value used to identify
 // payloads that are storage references rather than actual data.
@@ -247,7 +248,11 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	driverBatches := map[string]*driverBatch{}
 
 	result := make([]*commonpb.Payload, len(payloads))
-	driverCtx := converter.StorageDriverStoreContext{Context: ctx.Context}
+	var target converter.StorageDriverTargetInfo
+	if t, ok := ctx.Context.Value(storageTargetContextKey).(converter.StorageDriverTargetInfo); ok {
+		target = t
+	}
+	driverCtx := converter.StorageDriverStoreContext{Context: ctx.Context, Target: target}
 
 	for i, p := range payloads {
 		if proto.Size(p) < v.params.payloadSizeThreshold {
@@ -287,7 +292,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	// Fan out to each driver concurrently. The errgroup context is used as the
 	// StorageDriverStoreContext so a failing driver cancels in-flight siblings.
 	eg, egCtx := errgroup.WithContext(ctx.Context)
-	storeDrCtx := converter.StorageDriverStoreContext{Context: egCtx}
+	storeDrCtx := converter.StorageDriverStoreContext{Context: egCtx, Target: target}
 	sizes := make([]int64, len(driverOrder))
 
 	externalCount := 0

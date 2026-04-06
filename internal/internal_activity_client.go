@@ -587,7 +587,12 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, request); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverActivityInfo{
+		Namespace:    w.client.namespace,
+		ActivityID:   request.ActivityId,
+		ActivityType: in.ActivityType,
+	})
+	if err := visitProtoPayloads(storeCtx, w.client.outboundPayloadVisitor, request); err != nil {
 		return nil, err
 	}
 
