@@ -27,6 +27,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -2344,7 +2345,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithDataConverter()
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
 		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
 			heartbeatRequest = request
-			require.Equal(t, encodedDetail, request.Details)
+			require.True(t, proto.Equal(encodedDetail, request.Details), "details proto mismatch")
 		}).Times(1)
 
 	_ = wfClient.RecordActivityHeartbeat(context.Background(), nil, detail1, detail2, detail3)
