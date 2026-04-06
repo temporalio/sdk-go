@@ -31,6 +31,8 @@ type StorageDriverWorkflowInfo struct {
 
 func (StorageDriverWorkflowInfo) isStorageDriverTargetInfo() {}
 
+var _ StorageDriverTargetInfo = StorageDriverWorkflowInfo{}
+
 // StorageDriverActivityInfo carries activity identity for a storage operation.
 // This is only used for standalone (non-workflow-bound) activities; activities
 // started by a workflow use [StorageDriverWorkflowInfo] as the target.
@@ -48,6 +50,8 @@ type StorageDriverActivityInfo struct {
 }
 
 func (StorageDriverActivityInfo) isStorageDriverTargetInfo() {}
+
+var _ StorageDriverTargetInfo = StorageDriverActivityInfo{}
 
 // StorageDriverStoreContext carries context passed to StorageDriver.Store and
 // StorageDriverSelector.SelectDriver operations.
