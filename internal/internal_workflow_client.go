@@ -14,10 +14,11 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	commonpb "go.temporal.io/api/common/v1"
