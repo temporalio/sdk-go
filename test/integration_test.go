@@ -215,8 +215,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	}
 
 	if strings.Contains(ts.T().Name(), "TestSessionOnWorkerFailure") ||
-		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") ||
-		strings.Contains(ts.T().Name(), "TestLargeQueryResultError") {
+		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
 		// We disable sticky execution here since we kill the worker and restart it
 		// and sticky execution adds a 5s penalty
 		worker.SetStickyWorkflowCacheSize(0)
@@ -1628,11 +1627,13 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
 	ts.Nil(err)
 
-	// Wait for the workflow to complete before querying. Sticky execution is
-	// disabled in SetupTest, so the standalone query goes directly to the normal
-	// queue and is processed well within the 10s gRPC deadline.
-	var result string
-	ts.NoError(run.Get(ctx, &result))
+	// There is a possible issue where the query is issued to the server while
+	// the workflow is completing the one and only WFT, which could cause scheduling
+	// issues for the query. This appears as a DeadlineExceeded error for the query.
+	// To avoid this, wait for the workflow to complete so the query uses the deterministic
+	// standalone (historical replay) path.
+	var workflowResult string
+	ts.NoError(run.Get(ctx, &workflowResult))
 
 	value, err := ts.client.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
 	ts.Error(err)
