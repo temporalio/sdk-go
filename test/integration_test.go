@@ -1632,8 +1632,11 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 
 	var value converter.EncodedValue
 	ts.Eventually(func() bool {
-		value, err = ts.client.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
-		return err != nil && !errors.Is(err, context.DeadlineExceeded)
+		queryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		value, err = ts.client.QueryWorkflow(queryCtx, "test-large-query-error", run.GetRunID(), "large_query")
+		var de *serviceerror.DeadlineExceeded
+		return err != nil && !errors.As(err, &de)
 	}, 60*time.Second, 500*time.Millisecond)
 
 	ts.IsType(&serviceerror.QueryFailed{}, err)
