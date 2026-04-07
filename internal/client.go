@@ -1446,16 +1446,11 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		client.heartbeatManager = newHeartbeatManager(client, heartbeatInterval, client.logger)
 	}
 
-	payloadLimitVisitor, _ := newPayloadLimitsVisitor(payloadWarningLimits, client.logger)
-
 	// Create outbound interceptor by wrapping backwards through chain
 	client.interceptor = &workflowClientInterceptor{
-		client:                client,
-		inboundPayloadVisitor: NewExternalRetrievalVisitor(storageParams),
-		outboundPayloadVisitor: newCompositePayloadVisitor(
-			NewExternalStorageVisitor(storageParams),
-			payloadLimitVisitor,
-		),
+		client:                 client,
+		inboundPayloadVisitor:  NewExternalRetrievalVisitor(storageParams),
+		outboundPayloadVisitor: client.newOutboundPayloadVisitor(),
 	}
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {
 		client.interceptor = options.Interceptors[i].InterceptClient(client.interceptor)

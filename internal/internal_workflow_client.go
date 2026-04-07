@@ -527,7 +527,7 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 			WorkflowID:   opts.WorkflowID,
 			WorkflowType: opts.WorkflowType,
 		})
-		if err := visitProtoPayloads(storeCtx, wc.outboundPayloadVisitor, msg); err != nil {
+		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg); err != nil {
 			return err
 		}
 	}
@@ -589,7 +589,7 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 			RunID:        opts.RunID,
 			WorkflowType: opts.WorkflowType,
 		})
-		if err := visitProtoPayloads(storeCtx, wc.outboundPayloadVisitor, msg); err != nil {
+		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg); err != nil {
 			return err
 		}
 	}
@@ -645,7 +645,7 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 			RunID:        opts.ActivityRunID,
 			ActivityType: opts.ActivityType,
 		})
-		if err := visitProtoPayloads(storeCtx, wc.outboundPayloadVisitor, msg); err != nil {
+		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg); err != nil {
 			return err
 		}
 	}
@@ -1631,13 +1631,9 @@ func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 
 // ScheduleClient implements Client.ScheduleClient.
 func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
-	payloadLimitVisitor, _ := newPayloadLimitsVisitor(wc.payloadWarningLimits, wc.logger)
 	return &scheduleClient{
-		workflowClient: wc,
-		outboundPayloadVisitor: newCompositePayloadVisitor(
-			NewExternalStorageVisitor(wc.storageParams),
-			payloadLimitVisitor,
-		),
+		workflowClient:         wc,
+		outboundPayloadVisitor: wc.newOutboundPayloadVisitor(),
 	}
 }
 
@@ -1692,6 +1688,14 @@ func (wc *WorkflowClient) Close() {
 			wc.logger.Warn("unable to close connection", tagError, err)
 		}
 	}
+}
+
+func (wc *WorkflowClient) newOutboundPayloadVisitor() PayloadVisitor {
+	payloadLimitVisitor, _ := newPayloadLimitsVisitor(wc.payloadWarningLimits, wc.logger)
+	return newCompositePayloadVisitor(
+		NewExternalStorageVisitor(wc.storageParams),
+		payloadLimitVisitor,
+	)
 }
 
 // Register a namespace with temporal server
