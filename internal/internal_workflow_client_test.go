@@ -1761,8 +1761,12 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
 	memo := map[string]interface{}{
 		"testMemo": "memo value",
 	}
+	nilPayload, err := converter.GetDefaultDataConverter().ToPayload(nil)
+	s.NoError(err)
 	searchAttributes := map[string]interface{}{
-		"testAttr": "attr value",
+		"testAttr":       "attr value",
+		"nilAttr":        nil,
+		"nilPayloadAttr": nilPayload,
 	}
 	options := StartWorkflowOptions{
 		ID:                       workflowID,
@@ -1787,6 +1791,11 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
 			err = converter.GetDefaultDataConverter().FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
+			s.Len(req.SearchAttributes.IndexedFields, 1)
+			_, ok := req.SearchAttributes.IndexedFields["nilAttr"]
+			s.False(ok)
+			_, ok = req.SearchAttributes.IndexedFields["nilPayloadAttr"]
+			s.False(ok)
 		})
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
@@ -1795,8 +1804,12 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 	memo := map[string]interface{}{
 		"testMemo": "memo value",
 	}
+	nilPayload, err := converter.GetDefaultDataConverter().ToPayload(nil)
+	s.NoError(err)
 	searchAttributes := map[string]interface{}{
-		"testAttr": "attr value",
+		"testAttr":       "attr value",
+		"nilAttr":        nil,
+		"nilPayloadAttr": nilPayload,
 	}
 	options := StartWorkflowOptions{
 		ID:                       "wid",
@@ -1821,6 +1834,11 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 			err = converter.GetDefaultDataConverter().FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
+			s.Len(req.SearchAttributes.IndexedFields, 1)
+			_, ok := req.SearchAttributes.IndexedFields["nilAttr"]
+			s.False(ok)
+			_, ok = req.SearchAttributes.IndexedFields["nilPayloadAttr"]
+			s.False(ok)
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
 }
@@ -2068,6 +2086,16 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	_ = converter.GetDefaultDataConverter().FromPayload(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
+	input1 = map[string]interface{}{
+		"nil-attr": nil,
+	}
+	resultNil, err := serializeUntypedSearchAttributes(input1)
+	s.NoError(err)
+	s.NotNil(resultNil)
+	s.Contains(resultNil.IndexedFields, "nil-attr")
+	s.NotNil(resultNil.IndexedFields["nil-attr"])
+	s.Nil(resultNil.IndexedFields["nil-attr"].GetData())
+
 	// *Payload type goes through.
 	p, err := converter.GetDefaultDataConverter().ToPayload("5eaf00d")
 	s.NoError(err)
@@ -2086,6 +2114,44 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	}
 	_, err = serializeUntypedSearchAttributes(input1)
 	s.Error(err)
+}
+
+func (s *workflowClientTestSuite) TestSerializeSearchAttributesOmitsNilValuesOnStart() {
+	nilPayload, err := converter.GetDefaultDataConverter().ToPayload(nil)
+	s.NoError(err)
+	payload, err := converter.GetDefaultDataConverter().ToPayload("value")
+	s.NoError(err)
+	var nilBytes []byte
+	nilBytesPayload, err := converter.GetDefaultDataConverter().ToPayload(nilBytes)
+	s.NoError(err)
+
+	result, err := serializeSearchAttributes(map[string]interface{}{
+		"realAttr":          payload,
+		"nilAttr":           nil,
+		"nilPayloadAttr":    nilPayload,
+		"nilBytesPayload":   nilBytesPayload,
+		"typedNilBytesAttr": nilBytes,
+	}, SearchAttributes{})
+	s.NoError(err)
+	s.NotNil(result)
+	s.Len(result.IndexedFields, 3)
+	_, ok := result.IndexedFields["nilAttr"]
+	s.False(ok)
+	_, ok = result.IndexedFields["nilPayloadAttr"]
+	s.False(ok)
+	s.Equal(converter.MetadataEncodingBinary, string(result.IndexedFields["nilBytesPayload"].GetMetadata()[converter.MetadataEncoding]))
+	s.Nil(result.IndexedFields["nilBytesPayload"].GetData())
+	s.Equal(converter.MetadataEncodingBinary, string(result.IndexedFields["typedNilBytesAttr"].GetMetadata()[converter.MetadataEncoding]))
+	s.Nil(result.IndexedFields["typedNilBytesAttr"].GetData())
+
+	var resultString string
+	err = converter.GetDefaultDataConverter().FromPayload(result.IndexedFields["realAttr"], &resultString)
+	s.NoError(err)
+	s.Equal("value", resultString)
+
+	result, err = serializeSearchAttributes(map[string]interface{}{"nilAttr": nil}, SearchAttributes{})
+	s.NoError(err)
+	s.Nil(result)
 }
 
 func (s *workflowClientTestSuite) TestListWorkflow() {
