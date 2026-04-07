@@ -121,9 +121,9 @@ func (ts *PayloadLimitsTestSuite) ResetClientAndWorker(
 	ts.NoError(ts.worker.Start())
 }
 
-// pollForHistoryEvent polls the workflow history until an event of the specified type is found.
-// Returns the last event of the specified type, or nil if not found within the polling period.
-// The polling period is approximately 10 seconds (100 iterations with 100ms sleep in between).
+// pollForHistoryEvent polls the workflow history until an event of the specified type is found
+// or the context is cancelled/expired.
+// Returns the last event of the specified type, or nil if not found.
 func (ts *PayloadLimitsTestSuite) pollForHistoryEvent(
 	ctx context.Context,
 	workflowID string,
@@ -131,8 +131,12 @@ func (ts *PayloadLimitsTestSuite) pollForHistoryEvent(
 	eventType enumspb.EventType,
 ) *historypb.HistoryEvent {
 	var lastEvent *historypb.HistoryEvent
-	for range 100 {
-		time.Sleep(100 * time.Millisecond)
+	for {
+		select {
+		case <-ctx.Done():
+			return lastEvent
+		case <-time.After(100 * time.Millisecond):
+		}
 		eventIterator := ts.client.GetWorkflowHistory(ctx, workflowID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		for eventIterator.HasNext() {
 			event, err := eventIterator.Next()
@@ -142,10 +146,9 @@ func (ts *PayloadLimitsTestSuite) pollForHistoryEvent(
 			}
 		}
 		if lastEvent != nil {
-			break
+			return lastEvent
 		}
 	}
-	return lastEvent
 }
 
 // assertWorkflowTaskFailedWithPayloadLimit verifies that the event is a WORKFLOW_TASK_FAILED
