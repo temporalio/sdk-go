@@ -1627,16 +1627,14 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
 	ts.Nil(err)
 
-	// There is a possible issue where the query is issued to the server while
-	// the workflow is completing the one and only WFT, which could cause scheduling
-	// issues for the query. This appears as a DeadlineExceeded error for the query.
-	// To avoid this, wait for the workflow to complete so the query uses the deterministic
-	// standalone (historical replay) path.
 	var workflowResult string
 	ts.NoError(run.Get(ctx, &workflowResult))
 
-	value, err := ts.client.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
-	ts.Error(err)
+	var value converter.EncodedValue
+	ts.Eventually(func() bool {
+		value, err = ts.client.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
+		return err != nil && !errors.Is(err, context.DeadlineExceeded)
+	}, 60*time.Second, 500*time.Millisecond)
 
 	ts.IsType(&serviceerror.QueryFailed{}, err)
 	ts.Equal("query result size (3000036) exceeds limit (2000000)", err.Error())
