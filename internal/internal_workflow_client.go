@@ -17,6 +17,8 @@ import (
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -78,8 +80,8 @@ type (
 		excludeInternalFromRetry *atomic.Bool
 		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
 		capabilitiesLock         sync.RWMutex
-		namespaceData     *namespaceData
-		namespaceDataLock sync.RWMutex
+		namespaceData            *namespaceData
+		namespaceDataLock        sync.RWMutex
 		eagerDispatcher          *eagerWorkflowDispatcher
 		getSystemInfoTimeout     time.Duration
 		workerHeartbeatInterval  time.Duration
@@ -519,6 +521,16 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, opts.TaskToken,
 		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
+	if msg, ok := request.(proto.Message); ok {
+		storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+			Namespace:    cmp.Or(opts.Namespace, wc.namespace),
+			WorkflowID:   opts.WorkflowID,
+			WorkflowType: opts.WorkflowType,
+		})
+		if err := visitProtoPayloads(storeCtx, wc.outboundPayloadVisitor, msg); err != nil {
+			return err
+		}
+	}
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -570,6 +582,17 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequestByID(wc.identity, opts.Namespace, opts.WorkflowID, opts.RunID, opts.ActivityID,
 		data, opts.Err, dataConverter, failureConverter, cancelAllowed)
+	if msg, ok := request.(proto.Message); ok {
+		storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+			Namespace:    opts.Namespace,
+			WorkflowID:   opts.WorkflowID,
+			RunID:        opts.RunID,
+			WorkflowType: opts.WorkflowType,
+		})
+		if err := visitProtoPayloads(storeCtx, wc.outboundPayloadVisitor, msg); err != nil {
+			return err
+		}
+	}
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -615,6 +638,17 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequestByID(wc.identity, opts.Namespace, "", opts.ActivityRunID, opts.ActivityID,
 		data, opts.Err, dataConverter, failureConverter, cancelAllowed)
+	if msg, ok := request.(proto.Message); ok {
+		storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverActivityInfo{
+			Namespace:    opts.Namespace,
+			ActivityID:   opts.ActivityID,
+			RunID:        opts.ActivityRunID,
+			ActivityType: opts.ActivityType,
+		})
+		if err := visitProtoPayloads(storeCtx, wc.outboundPayloadVisitor, msg); err != nil {
+			return err
+		}
+	}
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -2058,7 +2092,12 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		eagerExecutor = w.client.eagerDispatcher.applyToRequest(startRequest)
 	}
 
-	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, startRequest); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    w.client.namespace,
+		WorkflowID:   startRequest.WorkflowId,
+		WorkflowType: in.WorkflowType,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, startRequest); err != nil {
 		return nil, err
 	}
 
@@ -2218,7 +2257,12 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 		},
 	}
 
-	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, &multiRequest); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    w.client.namespace,
+		WorkflowID:   startRequest.WorkflowId,
+		WorkflowType: startRequest.WorkflowType.GetName(),
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, &multiRequest); err != nil {
 		return nil, err
 	}
 
@@ -2363,7 +2407,12 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		request.RequestId = uuid.NewString()
 	}
 
-	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, request); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+		RunID:      in.RunID,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request); err != nil {
 		return err
 	}
 
@@ -2446,7 +2495,12 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, signalWithStartRequest); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    w.client.namespace,
+		WorkflowID:   in.Options.ID,
+		WorkflowType: in.WorkflowType,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, signalWithStartRequest); err != nil {
 		return nil, err
 	}
 
@@ -2523,7 +2577,12 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 		Details:  detailsPayload,
 	}
 
-	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, request); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+		RunID:      in.RunID,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request); err != nil {
 		return err
 	}
 
@@ -2653,7 +2712,12 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		QueryRejectCondition: in.QueryRejectCondition,
 	}
 
-	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, req); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+		RunID:      in.RunID,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, req); err != nil {
 		return nil, err
 	}
 
@@ -2687,7 +2751,12 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, req); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+		RunID:      in.RunID,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, req); err != nil {
 		return nil, err
 	}
 

@@ -1717,7 +1717,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 		}
 		eventAttributes := e.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
 		commandAttributes := d.GetRequestCancelExternalWorkflowExecutionCommandAttributes()
-		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) ||
+		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) || //lint:ignore SA1019 deprecated namespace field
 			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.GetWorkflowId() {
 			return false
 		}
@@ -1730,7 +1730,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 		}
 		eventAttributes := e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes()
 		commandAttributes := d.GetSignalExternalWorkflowExecutionCommandAttributes()
-		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) ||
+		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) || //lint:ignore SA1019 deprecated namespace field
 			eventAttributes.GetSignalName() != commandAttributes.GetSignalName() ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.Execution.GetWorkflowId() {
 			return false
@@ -2398,7 +2398,24 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
 
 	if msg, ok := response.(proto.Message); ok {
-		if err := visitProtoPayloads(canCtx, ath.outboundPayloadVisitor, msg); err != nil {
+		var storageTarget converter.StorageDriverTargetInfo
+		if t.WorkflowExecution.GetWorkflowId() != "" {
+			storageTarget = converter.StorageDriverWorkflowInfo{
+				Namespace:    ath.namespace,
+				WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
+				RunID:        t.WorkflowExecution.GetRunId(),
+				WorkflowType: t.WorkflowType.GetName(),
+			}
+		} else {
+			storageTarget = converter.StorageDriverActivityInfo{
+				Namespace:    ath.namespace,
+				ActivityID:   t.ActivityId,
+				RunID:        t.ActivityRunId,
+				ActivityType: t.ActivityType.GetName(),
+			}
+		}
+		outboundCtx := context.WithValue(canCtx, storageTargetContextKey, storageTarget)
+		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg); err != nil {
 			return ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err), nil
 		}
 	}

@@ -133,7 +133,12 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		SearchAttributes: searchAttr,
 	}
 
-	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, startRequest); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    w.client.namespace,
+		WorkflowID:   action.GetStartWorkflow().GetWorkflowId(),
+		WorkflowType: action.GetStartWorkflow().GetWorkflowType().GetName(),
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, startRequest); err != nil {
 		return nil, err
 	}
 
@@ -301,7 +306,12 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		SearchAttributes: newSA,
 	}
 
-	if err := visitProtoPayloads(ctx, scheduleHandle.outboundPayloadVisitor, updateRequest); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    scheduleHandle.client.namespace,
+		WorkflowID:   newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowId(),
+		WorkflowType: newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowType().GetName(),
+	})
+	if err := visitProtoPayloads(storeCtx, scheduleHandle.outboundPayloadVisitor, updateRequest); err != nil {
 		return err
 	}
 
