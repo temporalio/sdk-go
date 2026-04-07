@@ -53,6 +53,8 @@ type payloadLimitsVisitorImpl struct {
 	logger        log.Logger
 }
 
+var _ PayloadVisitor = (*payloadLimitsVisitorImpl)(nil)
+
 func (v *payloadLimitsVisitorImpl) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	var totalSize int64
 	for _, payload := range payloads {
