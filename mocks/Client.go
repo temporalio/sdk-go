@@ -1294,6 +1294,104 @@ func (_m *Client) CountActivities(ctx context.Context, options client.CountActiv
 	return r0, r1
 }
 
+// NewNexusClient provides a mock function with given fields: options
+func (_m *Client) NewNexusClient(options client.NexusClientOptions) (client.NexusClient, error) {
+	ret := _m.Called(options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for NexusClient")
+	}
+
+	var r0 client.NexusClient
+	var r1 error
+	if rf, ok := ret.Get(0).(func(client.NexusClientOptions) (client.NexusClient, error)); ok {
+		return rf(options)
+	}
+	if rf, ok := ret.Get(0).(func(client.NexusClientOptions) client.NexusClient); ok {
+		r0 = rf(options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.NexusClient)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(client.NexusClientOptions) error); ok {
+		r1 = rf(options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetNexusOperationHandle provides a mock function with given fields: options
+func (_m *Client) GetNexusOperationHandle(options client.GetNexusOperationHandleOptions) client.NexusOperationHandle {
+	ret := _m.Called(options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetNexusOperationHandle")
+	}
+
+	var r0 client.NexusOperationHandle
+	if rf, ok := ret.Get(0).(func(client.GetNexusOperationHandleOptions) client.NexusOperationHandle); ok {
+		r0 = rf(options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.NexusOperationHandle)
+		}
+	}
+
+	return r0
+}
+
+// ListNexusOperations provides a mock function with given fields: ctx, options
+func (_m *Client) ListNexusOperations(ctx context.Context, options client.ListNexusOperationsOptions) (client.ListNexusOperationsResult, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListNexusOperations")
+	}
+
+	var r0 client.ListNexusOperationsResult
+	if rf, ok := ret.Get(0).(func(context.Context, client.ListNexusOperationsOptions) client.ListNexusOperationsResult); ok {
+		r0 = rf(ctx, options)
+	} else {
+		r0 = ret.Get(0).(client.ListNexusOperationsResult)
+	}
+
+	return r0, nil
+}
+
+// CountNexusOperations provides a mock function with given fields: ctx, options
+func (_m *Client) CountNexusOperations(ctx context.Context, options client.CountNexusOperationsOptions) (*client.CountNexusOperationsResult, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountNexusOperations")
+	}
+
+	var r0 *client.CountNexusOperationsResult
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CountNexusOperationsOptions) (*client.CountNexusOperationsResult, error)); ok {
+		return rf(ctx, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, client.CountNexusOperationsOptions) *client.CountNexusOperationsResult); ok {
+		r0 = rf(ctx, options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.CountNexusOperationsResult)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, client.CountNexusOperationsOptions) error); ok {
+		r1 = rf(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
 // WorkerDeploymentClient provides a mock function with given fields:
 func (_m *Client) WorkerDeploymentClient() client.WorkerDeploymentClient {
 	ret := _m.Called()
