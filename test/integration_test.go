@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,6 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
-	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
@@ -9170,7 +9170,7 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 	ts.Run("Execute and Get result", func() {
 		input := "hello-nexus"
 		handle := executeNexusOpWithRetry("echo-op", input, client.StartNexusOperationOptions{
-			OperationID:            uuid.NewString(),
+			ID:                     uuid.NewString(),
 			ScheduleToCloseTimeout: 10 * time.Second,
 		})
 		ts.NotEmpty(handle.GetID())
@@ -9183,7 +9183,7 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 
 	ts.Run("Describe operation", func() {
 		handle := executeNexusOpWithRetry("echo-op", "describe-test", client.StartNexusOperationOptions{
-			OperationID:            uuid.NewString(),
+			ID:                     uuid.NewString(),
 			ScheduleToCloseTimeout: 10 * time.Second,
 		})
 
@@ -9200,7 +9200,7 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 	ts.Run("GetNexusOperationHandle", func() {
 		operationID := uuid.NewString()
 		handle := executeNexusOpWithRetry("echo-op", "handle-test", client.StartNexusOperationOptions{
-			OperationID:            operationID,
+			ID:                     operationID,
 			ScheduleToCloseTimeout: 10 * time.Second,
 		})
 
@@ -9223,7 +9223,7 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 
 	ts.Run("Cancel operation", func() {
 		handle := executeNexusOpWithRetry("async-op", "cancel-test", client.StartNexusOperationOptions{
-			OperationID:            uuid.NewString(),
+			ID:                     uuid.NewString(),
 			ScheduleToCloseTimeout: 30 * time.Second,
 		})
 		ts.NotEmpty(handle.GetID())
@@ -9236,7 +9236,7 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 
 	ts.Run("Terminate operation", func() {
 		handle := executeNexusOpWithRetry("async-op", "terminate-test", client.StartNexusOperationOptions{
-			OperationID:            uuid.NewString(),
+			ID:                     uuid.NewString(),
 			ScheduleToCloseTimeout: 30 * time.Second,
 		})
 		ts.NotEmpty(handle.GetID())
