@@ -792,6 +792,22 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkflowExecutionOptions(ctx c
 	panic("not implemented in the test environment")
 }
 
+func (t *testSuiteClientForNexusOperations) NewNexusClient(options ClientNexusClientOptions) (ClientNexusClient, error) {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) GetNexusOperationHandle(options ClientGetNexusOperationHandleOptions) ClientNexusOperationHandle {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) ListNexusOperations(ctx context.Context, options ClientListNexusOperationsOptions) (ClientListNexusOperationsResult, error) {
+	panic("not implemented in the test environment")
+}
+
+func (t *testSuiteClientForNexusOperations) CountNexusOperations(ctx context.Context, options ClientCountNexusOperationsOptions) (*ClientCountNexusOperationsResult, error) {
+	panic("not implemented in the test environment")
+}
+
 var _ Client = &testSuiteClientForNexusOperations{}
 
 // testEnvWorkflowRunForNexusOperations is a partial [WorkflowRun] implementation for the test workflow environment used

@@ -244,6 +244,54 @@ type ClientPollActivityResultInput = internal.ClientPollActivityResultInput
 // NOTE: Experimental
 type ClientPollActivityResultOutput = internal.ClientPollActivityResultOutput
 
+// ClientExecuteNexusOperationInput is the input to
+// ClientOutboundInterceptor.ExecuteNexusOperation.
+//
+// NOTE: Experimental
+type ClientExecuteNexusOperationInput = internal.ClientExecuteNexusOperationInput
+
+// ClientGetNexusOperationHandleInput is the input to
+// ClientOutboundInterceptor.GetNexusOperationHandle.
+//
+// NOTE: Experimental
+type ClientGetNexusOperationHandleInput = internal.ClientGetNexusOperationHandleInput
+
+// ClientCancelNexusOperationInput is the input to
+// ClientOutboundInterceptor.CancelNexusOperation.
+//
+// NOTE: Experimental
+type ClientCancelNexusOperationInput = internal.ClientCancelNexusOperationInput
+
+// ClientTerminateNexusOperationInput is the input to
+// ClientOutboundInterceptor.TerminateNexusOperation.
+//
+// NOTE: Experimental
+type ClientTerminateNexusOperationInput = internal.ClientTerminateNexusOperationInput
+
+// ClientDescribeNexusOperationInput is the input to
+// ClientOutboundInterceptor.DescribeNexusOperation.
+//
+// NOTE: Experimental
+type ClientDescribeNexusOperationInput = internal.ClientDescribeNexusOperationInput
+
+// ClientDescribeNexusOperationOutput is the output of
+// ClientOutboundInterceptor.DescribeNexusOperation.
+//
+// NOTE: Experimental
+type ClientDescribeNexusOperationOutput = internal.ClientDescribeNexusOperationOutput
+
+// ClientPollNexusOperationResultInput is the input to
+// ClientOutboundInterceptor.PollNexusOperationResult.
+//
+// NOTE: Experimental
+type ClientPollNexusOperationResultInput = internal.ClientPollNexusOperationResultInput
+
+// ClientPollNexusOperationResultOutput is the output of
+// ClientOutboundInterceptor.PollNexusOperationResult.
+//
+// NOTE: Experimental
+type ClientPollNexusOperationResultOutput = internal.ClientPollNexusOperationResultOutput
+
 // ScheduleClientCreateInput is input for
 // ScheduleClientInterceptor.CreateSchedule.
 type ScheduleClientCreateInput = internal.ScheduleClientCreateInput

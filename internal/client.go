@@ -533,6 +533,30 @@ type (
 		// NOTE: Experimental
 		CountActivities(ctx context.Context, options ClientCountActivitiesOptions) (*ClientCountActivitiesResult, error)
 
+		// NewNexusClient creates a new Nexus client bound to the given endpoint and service.
+		// This is for standalone Nexus operations outside of workflow context.
+		// For Nexus operations within workflows, use workflow.NewNexusClient instead.
+		//
+		// NOTE: Experimental
+		NewNexusClient(options ClientNexusClientOptions) (ClientNexusClient, error)
+
+		// GetNexusOperationHandle creates a handle to the referenced Nexus operation.
+		// No network call is made. The handle can be used to poll, describe, cancel, or terminate.
+		//
+		// NOTE: Experimental
+		GetNexusOperationHandle(options ClientGetNexusOperationHandleOptions) ClientNexusOperationHandle
+
+		// ListNexusOperations lists Nexus operation executions based on query.
+		// Currently, all errors are returned in the iterator and not the base level error.
+		//
+		// NOTE: Experimental
+		ListNexusOperations(ctx context.Context, options ClientListNexusOperationsOptions) (ClientListNexusOperationsResult, error)
+
+		// CountNexusOperations counts Nexus operation executions based on query.
+		//
+		// NOTE: Experimental
+		CountNexusOperations(ctx context.Context, options ClientCountNexusOperationsOptions) (*ClientCountNexusOperationsResult, error)
+
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
 		// service are not configured with internal semantics such as automatic retries.
