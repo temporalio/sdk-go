@@ -102,7 +102,7 @@ The AWS credentials used by your S3 client must have the following S3 permission
 }
 ```
 
-`s3:PutObject` is required by components that store payloads (typically the Temporal client and workers sending Workflow/Activity inputs and results), and `s3:GetObject` is required by components that retrieve them (typically Workers and Clients reading results). Components that only retrieve payloads do not need `s3:PutObject`, and vice versa.
+`s3:PutObject` is required by components that store payloads (typically the Temporal Client and Workers sending Workflow/Activity inputs and results), and `s3:GetObject` is required by components that retrieve them (typically Workers and Clients reading inputs and results). Components that only retrieve payloads do not need `s3:PutObject`, and vice versa.
 
 ## Custom S3 Driver Client Implementations
 
