@@ -56,7 +56,7 @@ func TestExecuteNexusOperationHeaderAvailableToInterceptors(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = nexusClient.ExecuteOperation(context.Background(), "test-op", "test-input", ClientStartNexusOperationOptions{
-		OperationID: "test-op-id",
+		ID: "test-op-id",
 	})
 	// We expect the short-circuit error from our interceptor.
 	require.ErrorContains(t, err, "short-circuit")

@@ -27,10 +27,10 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.StartNexusOperationOptions]
 	ClientStartNexusOperationOptions struct {
-		// OperationID - The business identifier of the operation.
+		// ID - The business identifier of the operation.
 		//
 		// Mandatory: No default.
-		OperationID string
+		ID string
 		// ScheduleToCloseTimeout - Total time that the operation is allowed to run.
 		//
 		// Optional: Defaults to unlimited.
@@ -208,10 +208,10 @@ type (
 		// Identity is the identity of the client who started this operation.
 		Identity string
 		// CancellationInfo contains cancellation information if cancellation has been requested.
-		CancellationInfo        *ClientNexusOperationCancellationInfo
-		dc                      converter.DataConverter
-		failureConverter        converter.FailureConverter
-		inboundPayloadVisitor   PayloadVisitor
+		CancellationInfo      *ClientNexusOperationCancellationInfo
+		dc                    converter.DataConverter
+		failureConverter      converter.FailureConverter
+		inboundPayloadVisitor PayloadVisitor
 	}
 
 	// ClientNexusOperationCancellationInfo contains cancellation information for a Nexus operation.
@@ -557,7 +557,7 @@ func (wc *WorkflowClient) ListNexusOperations(ctx context.Context, options Clien
 
 				for _, op := range resp.Operations {
 					if !yield(&ClientNexusOperationMetadata{
-						RawExecutionListInfo:  op,
+						RawExecutionListInfo: op,
 						OperationID:          op.OperationId,
 						OperationRunID:       op.RunId,
 						Endpoint:             op.Endpoint,
@@ -639,7 +639,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		dataConverter = converter.GetDefaultDataConverter()
 	}
 
-	if in.Options.OperationID == "" {
+	if in.Options.ID == "" {
 		return nil, errors.New("operation ID is required")
 	}
 	if in.Options.ScheduleToCloseTimeout < 0 {
@@ -670,7 +670,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		Namespace:        w.client.namespace,
 		Identity:         w.client.identity,
 		RequestId:        uuid.NewString(),
-		OperationId:      in.Options.OperationID,
+		OperationId:      in.Options.ID,
 		Endpoint:         in.Endpoint,
 		Service:          in.Service,
 		Operation:        in.OperationType,
@@ -697,7 +697,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 
 	return &clientNexusOperationHandleImpl{
 		client: w.client,
-		id:     in.Options.OperationID,
+		id:     in.Options.ID,
 		runID:  resp.RunId,
 	}, nil
 }
@@ -791,7 +791,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 	return &ClientDescribeNexusOperationOutput{
 		Description: &ClientNexusOperationExecutionDescription{
 			ClientNexusOperationMetadata: ClientNexusOperationMetadata{
-				RawExecutionListInfo:  nil,
+				RawExecutionListInfo: nil,
 				OperationID:          info.OperationId,
 				OperationRunID:       info.RunId,
 				Endpoint:             info.Endpoint,
@@ -862,4 +862,3 @@ func (w *workflowClientInterceptor) TerminateNexusOperation(
 	_, err := w.client.WorkflowService().TerminateNexusOperationExecution(grpcCtx, request)
 	return err
 }
-

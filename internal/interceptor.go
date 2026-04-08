@@ -711,7 +711,7 @@ type ClientExecuteNexusOperationInput struct {
 	Endpoint      string
 	Service       string
 	OperationType string
-	Input         interface{} // single value, NOT Args []interface{}
+	Input         interface{}
 }
 
 // ClientGetNexusOperationHandleInput is the input to
@@ -793,7 +793,6 @@ type ClientPollNexusOperationResultOutput struct {
 	// Error is the result of a failed operation.
 	Error error
 }
-
 
 // NexusOutboundInterceptor intercepts Nexus operation method invocations. See documentation in the interceptor package
 // for more details.
