@@ -45,13 +45,13 @@ Credentials and region are resolved automatically from the standard AWS credenti
 
 ## Key Structure
 
-Payloads are stored under content-addressable keys derived from a SHA-256 hash of the serialized payload bytes, segmented by namespace and workflow/activity identifiers when the target is available:
+Payloads are stored under content-addressable keys derived from a SHA-256 hash of the serialized payload bytes, segmented by Namespace and Workflow/Standalone Activity identifiers when the target is available:
 
 ```
 # Workflow payload
 v0/ns/<namespace>/wt/<workflow-type>/wi/<workflow-id>/ri/<run-id>/d/sha256/<hash>
 
-# Activity payload
+# Standalone Activity payload
 v0/ns/<namespace>/at/<activity-type>/ai/<activity-id>/ri/<run-id>/d/sha256/<hash>
 
 # Unknown context (fallback)
@@ -62,9 +62,9 @@ Special characters in path segments are percent-encoded. Empty segments are repl
 
 ## Notes
 
-- Any driver used to store payloads must also be configured on the component that retrieves them. If the client stores workflow inputs using this driver, the worker must include it in its `ExternalStorage.Drivers` list to retrieve them.
+- Any driver used to store payloads must also be configured on the component that retrieves them. If the client stores Workflow inputs using this driver, the worker must include it in its `ExternalStorage.Drivers` list to retrieve them.
 - The target S3 bucket must already exist; the driver will not create it.
-- Identical serialized bytes within the same namespace and workflow (or activity) share the same S3 object — the key is content-addressable within that scope. The same bytes used across different workflows or namespaces produce distinct S3 objects because the key includes the namespace and workflow/activity identifiers.
+- Identical serialized bytes within the same Namespace and Workflow (or Standalone Activity) share the same S3 object — the key is content-addressable within that scope. The same bytes used across different Workflows or Namespaces produce distinct S3 objects because the key includes the Namespace and Workflow/Standalone Activity identifiers.
 - Only payloads at or above `ExternalStorage.PayloadSizeThreshold` (default: 256 KiB) are offloaded; smaller payloads are stored inline. Set `ExternalStorage.PayloadSizeThreshold` to `0` or leave unset to use the default threshold. To store all payloads in external storage, set `ExternalStorage.PayloadSizeThreshold` to `1`.
 - `Options.MaxPayloadSize` (default: 50 MiB) sets a hard upper limit on the serialized size of any single payload. An error is returned at store time if a payload exceeds this limit.
 - Override `Options.DriverName` only when registering multiple `s3driver` instances with distinct configurations under the same `ExternalStorage.Drivers` list.
@@ -102,7 +102,7 @@ The AWS credentials used by your S3 client must have the following S3 permission
 }
 ```
 
-`s3:PutObject` is required by components that store payloads (typically the Temporal client and workers sending workflow/activity inputs), and `s3:GetObject` is required by components that retrieve them (typically workers and clients reading results). Components that only retrieve payloads do not need `s3:PutObject`, and vice versa.
+`s3:PutObject` is required by components that store payloads (typically the Temporal client and workers sending Workflow/Activity inputs and results), and `s3:GetObject` is required by components that retrieve them (typically Workers and Clients reading results). Components that only retrieve payloads do not need `s3:PutObject`, and vice versa.
 
 ## Custom S3 Driver Client Implementations
 
