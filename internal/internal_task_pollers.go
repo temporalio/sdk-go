@@ -686,11 +686,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		if errors.As(taskErr, new(payloadSizeError)) {
 			failureReason = "PayloadsTooLarge"
 		}
-		if _, ok := taskCompletion.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest); ok {
-			taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailQueryTask(task.TaskToken, taskErr)}
-		} else {
-			taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
-		}
+		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
 	}
 
 	taskDuration := time.Since(startTime)
