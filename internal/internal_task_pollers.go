@@ -682,17 +682,11 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		}
 		wtp.logger.Warn("Workflow task postprocess error: "+taskErr.Error(), keyvals...)
 		emitFailMetric = true
-		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
 		failureReason = "WorkflowError"
-		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE {
+		if errors.As(taskErr, new(payloadSizeError)) {
 			failureReason = "PayloadsTooLarge"
 		}
-		var submitErr error
-		response, submitErr = wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failWorkflowTask}, task)
-		if submitErr != nil {
-			wtp.logger.Warn("Failed to submit WFT failure after outbound visitor error.", tagError, submitErr)
-		}
-		return
+		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
 	}
 
 	taskDuration := time.Since(startTime)
