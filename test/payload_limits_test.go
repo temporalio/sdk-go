@@ -288,23 +288,20 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
 	)
 	ts.NoError(err)
 
-	// Query will fail because the result payload is too large. The SDK will log a
-	// payload size error regardless of whether the query is dispatched as a standalone
-	// task or embedded in a workflow task. Run in goroutine to avoid blocking.
+	// This will block until the context deadline expires; the query will
+	// never complete because the result payload is too large. Run in goroutine
+	// and monitor event history for the workflow task failure caused by the large query result.
 	go func() {
 		_, _ = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
 	}()
 
-	// Wait for the SDK to detect and log the payload size error.
-	ts.Eventually(func() bool {
-		return slices.ContainsFunc(logger.Lines(), func(line string) bool {
-			return strings.Contains(line, payloadErrorMessage)
-		})
-	}, 30*time.Second, 500*time.Millisecond)
+	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
 
-	cancelCtx, cancelCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancelCancel()
-	ts.NoError(ts.client.CancelWorkflow(cancelCtx, run.GetID(), run.GetRunID()))
+	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
+
+	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
