@@ -7,8 +7,11 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/api/common/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
@@ -324,4 +327,52 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultCo
 		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
+}
+
+func (s *scheduleClientTestSuite) TestUpdateSchedulePassesConflictToken() {
+	conflictToken := []byte("test-conflict-token")
+	describeResp := &workflowservice.DescribeScheduleResponse{
+		Schedule: &schedulepb.Schedule{
+			Spec: &schedulepb.ScheduleSpec{},
+			Action: &schedulepb.ScheduleAction{
+				Action: &schedulepb.ScheduleAction_StartWorkflow{
+					StartWorkflow: &workflowpb.NewWorkflowExecutionInfo{
+						WorkflowId:   "test-wf-id",
+						WorkflowType: &commonpb.WorkflowType{Name: "test-wf"},
+						TaskQueue:    &taskqueuepb.TaskQueue{Name: "test-tq"},
+					},
+				},
+			},
+			Policies: &schedulepb.SchedulePolicies{},
+			State:    &schedulepb.ScheduleState{},
+		},
+		Info:          &schedulepb.ScheduleInfo{},
+		ConflictToken: conflictToken,
+	}
+	s.service.EXPECT().DescribeSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResp, nil).Times(1)
+
+	var capturedToken []byte
+	s.service.EXPECT().UpdateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ interface{}, req *workflowservice.UpdateScheduleRequest, _ ...interface{}) {
+			capturedToken = req.ConflictToken
+		}).
+		Return(&workflowservice.UpdateScheduleResponse{}, nil).Times(1)
+
+	handle := s.client.ScheduleClient().GetHandle(context.Background(), scheduleID)
+	err := handle.Update(context.Background(), ScheduleUpdateOptions{
+		DoUpdate: func(input ScheduleUpdateInput) (*ScheduleUpdate, error) {
+			return &ScheduleUpdate{
+				Schedule: &Schedule{
+					Action: &ScheduleWorkflowAction{
+						Workflow:  "test-wf",
+						TaskQueue: "test-tq",
+					},
+					Policy: &SchedulePolicies{},
+					State:  &ScheduleState{},
+				},
+			}, nil
+		},
+	})
+	s.NoError(err)
+	s.Equal(conflictToken, capturedToken)
 }

@@ -287,7 +287,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		Namespace:        scheduleHandle.client.namespace,
 		ScheduleId:       scheduleHandle.ID,
 		Schedule:         newSchedulePB,
-		ConflictToken:    nil,
+		ConflictToken:    describeResponse.ConflictToken,
 		Identity:         scheduleHandle.client.identity,
 		RequestId:        uuid.NewString(),
 		SearchAttributes: newSA,
