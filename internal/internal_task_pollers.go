@@ -903,26 +903,6 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 	return builtRequest
 }
 
-func (wtp *workflowTaskProcessor) errorToFailQueryTask(taskToken []byte, err error) *workflowservice.RespondQueryTaskCompletedRequest {
-	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED
-	if errors.As(err, new(payloadSizeError)) {
-		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
-	}
-
-	return wtp.errorToFailQueryTaskWithCause(taskToken, err, cause)
-}
-
-func (wtp *workflowTaskProcessor) errorToFailQueryTaskWithCause(taskToken []byte, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondQueryTaskCompletedRequest {
-	return &workflowservice.RespondQueryTaskCompletedRequest{
-		TaskToken:     taskToken,
-		CompletedType: enumspb.QUERY_RESULT_TYPE_FAILED,
-		ErrorMessage:  err.Error(),
-		Namespace:     wtp.namespace,
-		Failure:       wtp.failureConverter.ErrorToFailure(err),
-		Cause:         cause,
-	}
-}
-
 type workflowTaskStorageMetrics struct {
 	mu                 sync.Mutex
 	payloadCount       int
