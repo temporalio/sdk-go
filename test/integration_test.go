@@ -1626,18 +1626,8 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	run, err := ts.client.ExecuteWorkflow(ctx,
 		ts.startWorkflowOptions("test-large-query-error"), ts.workflows.LargeQueryResultWorkflow)
 	ts.Nil(err)
-
-	var workflowResult string
-	ts.NoError(run.Get(ctx, &workflowResult))
-
-	var value converter.EncodedValue
-	ts.Eventually(func() bool {
-		queryCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		value, err = ts.client.QueryWorkflow(queryCtx, "test-large-query-error", run.GetRunID(), "large_query")
-		var de *serviceerror.DeadlineExceeded
-		return err != nil && !errors.As(err, &de)
-	}, 60*time.Second, 500*time.Millisecond)
+	value, err := ts.client.QueryWorkflow(ctx, "test-large-query-error", run.GetRunID(), "large_query")
+	ts.Error(err)
 
 	ts.IsType(&serviceerror.QueryFailed{}, err)
 	ts.Equal("query result size (3000036) exceeds limit (2000000)", err.Error())
