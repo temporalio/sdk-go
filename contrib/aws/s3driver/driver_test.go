@@ -81,6 +81,10 @@ func storeCtx() converter.StorageDriverStoreContext {
 	return converter.StorageDriverStoreContext{Context: context.Background()}
 }
 
+func storeCtxWithTarget(target converter.StorageDriverTargetInfo) converter.StorageDriverStoreContext {
+	return converter.StorageDriverStoreContext{Context: context.Background(), Target: target}
+}
+
 func retrieveCtx() converter.StorageDriverRetrieveContext {
 	return converter.StorageDriverRetrieveContext{Context: context.Background()}
 }
@@ -459,8 +463,72 @@ func TestRetrieve_ClaimMissingHashValue(t *testing.T) {
 
 // --- Key generation tests ---
 
-func TestObjectKey(t *testing.T) {
-	assert.Equal(t, "v0/d/sha256/abc123", objectKey("abc123"))
+func TestObjectKey_NoTarget(t *testing.T) {
+	assert.Equal(t, "v0/d/sha256/abc123", objectKey(nil, "abc123"))
+}
+
+func TestObjectKey_WorkflowInfo(t *testing.T) {
+	target := converter.StorageDriverWorkflowInfo{
+		Namespace:    "default",
+		WorkflowType: "MyWorkflow",
+		WorkflowID:   "wf-123",
+		RunID:        "run-456",
+	}
+	assert.Equal(t,
+		"v0/ns/default/wt/MyWorkflow/wi/wf-123/ri/run-456/d/sha256/abc123",
+		objectKey(target, "abc123"),
+	)
+}
+
+func TestObjectKey_ActivityInfo(t *testing.T) {
+	target := converter.StorageDriverActivityInfo{
+		Namespace:    "default",
+		ActivityType: "MyActivity",
+		ActivityID:   "act-789",
+		RunID:        "run-abc",
+	}
+	assert.Equal(t,
+		"v0/ns/default/at/MyActivity/ai/act-789/ri/run-abc/d/sha256/abc123",
+		objectKey(target, "abc123"),
+	)
+}
+
+func TestObjectKey_WorkflowInfo_EmptyFields(t *testing.T) {
+	// Empty strings should fall back to "null" in each segment.
+	target := converter.StorageDriverWorkflowInfo{
+		Namespace: "my-ns",
+		// WorkflowType, WorkflowID, RunID intentionally empty
+	}
+	assert.Equal(t,
+		"v0/ns/my-ns/wt/null/wi/null/ri/null/d/sha256/abc123",
+		objectKey(target, "abc123"),
+	)
+}
+
+func TestObjectKey_ActivityInfo_EmptyFields(t *testing.T) {
+	target := converter.StorageDriverActivityInfo{
+		Namespace: "my-ns",
+		// ActivityType, ActivityID, RunID intentionally empty
+	}
+	assert.Equal(t,
+		"v0/ns/my-ns/at/null/ai/null/ri/null/d/sha256/abc123",
+		objectKey(target, "abc123"),
+	)
+}
+
+func TestObjectKey_WorkflowInfo_SpecialChars(t *testing.T) {
+	// Slashes, spaces, and other special characters must be percent-encoded.
+	target := converter.StorageDriverWorkflowInfo{
+		Namespace:    "my namespace",
+		WorkflowType: "my/workflow",
+		WorkflowID:   "wf id+1",
+		RunID:        "run=abc",
+	}
+	key := objectKey(target, "abc123")
+	assert.Equal(t,
+		"v0/ns/my%20namespace/wt/my%2Fworkflow/wi/wf%20id+1/ri/run=abc/d/sha256/abc123",
+		key,
+	)
 }
 
 func TestSha256Hex(t *testing.T) {
@@ -468,4 +536,82 @@ func TestSha256Hex(t *testing.T) {
 	h := sha256.Sum256(data)
 	expected := hex.EncodeToString(h[:])
 	assert.Equal(t, expected, sha256Hex(data))
+}
+
+// --- Store with target context tests ---
+
+func TestStore_WithWorkflowTarget(t *testing.T) {
+	mc := newMemClient()
+	d := newDriver(t, mc)
+	p := testPayload("workflow payload")
+
+	target := converter.StorageDriverWorkflowInfo{
+		Namespace:    "default",
+		WorkflowType: "MyWorkflow",
+		WorkflowID:   "wf-123",
+		RunID:        "run-456",
+	}
+	claims, err := d.Store(storeCtxWithTarget(target), []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.Len(t, claims, 1)
+
+	key := claims[0].ClaimData["key"]
+	assert.Contains(t, key, "v0/ns/default/wt/MyWorkflow/wi/wf-123/ri/run-456/d/sha256/")
+}
+
+func TestStore_WithActivityTarget(t *testing.T) {
+	mc := newMemClient()
+	d := newDriver(t, mc)
+	p := testPayload("activity payload")
+
+	target := converter.StorageDriverActivityInfo{
+		Namespace:    "default",
+		ActivityType: "MyActivity",
+		ActivityID:   "act-789",
+		RunID:        "run-abc",
+	}
+	claims, err := d.Store(storeCtxWithTarget(target), []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.Len(t, claims, 1)
+
+	key := claims[0].ClaimData["key"]
+	assert.Contains(t, key, "v0/ns/default/at/MyActivity/ai/act-789/ri/run-abc/d/sha256/")
+}
+
+func TestStore_RoundTrip_WithWorkflowTarget(t *testing.T) {
+	mc := newMemClient()
+	d := newDriver(t, mc)
+	original := testPayload("round-trip with target")
+
+	target := converter.StorageDriverWorkflowInfo{
+		Namespace:    "default",
+		WorkflowType: "MyWorkflow",
+		WorkflowID:   "wf-123",
+		RunID:        "run-456",
+	}
+	claims, err := d.Store(storeCtxWithTarget(target), []*commonpb.Payload{original})
+	require.NoError(t, err)
+
+	restored, err := d.Retrieve(retrieveCtx(), claims)
+	require.NoError(t, err)
+	require.Len(t, restored, 1)
+	assert.True(t, proto.Equal(original, restored[0]))
+}
+
+func TestStore_DifferentTargets_SamePayload_DifferentKeys(t *testing.T) {
+	// The same payload stored under different targets produces different keys.
+	mc := newMemClient()
+	d := newDriver(t, mc)
+	p := testPayload("shared payload")
+
+	wfTarget := converter.StorageDriverWorkflowInfo{Namespace: "ns", WorkflowID: "wf-1", RunID: "run-1"}
+	actTarget := converter.StorageDriverActivityInfo{Namespace: "ns", ActivityID: "act-1", RunID: "run-1"}
+
+	wfClaims, err := d.Store(storeCtxWithTarget(wfTarget), []*commonpb.Payload{p})
+	require.NoError(t, err)
+
+	actClaims, err := d.Store(storeCtxWithTarget(actTarget), []*commonpb.Payload{p})
+	require.NoError(t, err)
+
+	assert.NotEqual(t, wfClaims[0].ClaimData["key"], actClaims[0].ClaimData["key"])
 }

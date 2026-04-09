@@ -579,7 +579,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 
 	attributes := &commandpb.StartChildWorkflowExecutionCommandAttributes{}
 
-	attributes.Namespace = params.Namespace
+	attributes.Namespace = params.Namespace //lint:ignore SA1019 deprecated namespace field
 	attributes.TaskQueue = &taskqueuepb.TaskQueue{Name: params.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL}
 	attributes.WorkflowId = params.WorkflowID
 	attributes.WorkflowExecutionTimeout = durationpb.New(params.WorkflowExecutionTimeout)

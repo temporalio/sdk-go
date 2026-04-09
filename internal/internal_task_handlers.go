@@ -1715,7 +1715,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 		}
 		eventAttributes := e.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
 		commandAttributes := d.GetRequestCancelExternalWorkflowExecutionCommandAttributes()
-		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) ||
+		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) || //lint:ignore SA1019 deprecated namespace field
 			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.GetWorkflowId() {
 			return false
 		}
@@ -1728,7 +1728,7 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 		}
 		eventAttributes := e.GetSignalExternalWorkflowExecutionInitiatedEventAttributes()
 		commandAttributes := d.GetSignalExternalWorkflowExecutionCommandAttributes()
-		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) ||
+		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) || //lint:ignore SA1019 deprecated namespace field
 			eventAttributes.GetSignalName() != commandAttributes.GetSignalName() ||
 			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.Execution.GetWorkflowId() {
 			return false
