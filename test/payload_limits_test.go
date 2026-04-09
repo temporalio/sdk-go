@@ -263,13 +263,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
 	wfname := "payload-size-error-query-result"
 	queryName := "large-query"
 
-	// Buffered channel to avoid blocking the query handler
-	largeQueryInvoked := make(chan bool, 1)
-
 	ts.worker.RegisterWorkflowWithOptions(
 		func(ctx workflow.Context) error {
 			err := workflow.SetQueryHandler(ctx, queryName, func() (string, error) {
-				largeQueryInvoked <- true
 				return strings.Repeat("a", payloadSizeErrorLimit+1000), nil
 			})
 			if err != nil {
@@ -289,22 +285,18 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
 	)
 	ts.NoError(err)
 
-	queryCtx, queryCancel := context.WithTimeout(ctx, 5*time.Second)
-	defer queryCancel()
-
+	// This will block until the context deadline expires; the query will
+	// never complete because the result payload is too large. Run in goroutine
+	// and monitor event history for the workflow task failure caused by the large query result.
 	go func() {
-		// This will block until the context deadline expires; the query will
-		// never complete because the result payload is too large.
-		ts.client.QueryWorkflow(queryCtx, run.GetID(), run.GetRunID(), queryName)
+		_, _ = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
 	}()
 
-	select {
-	case <-largeQueryInvoked:
-	case <-ctx.Done():
-		ts.Fail("Context cancelled before query handler was invoked")
-	}
+	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
 
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
+
+	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
 
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
