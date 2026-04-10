@@ -34,6 +34,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/extstore"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/common/serializer"
@@ -516,7 +517,7 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 	request := convertActivityResultToRespondRequest(wc.identity, opts.TaskToken,
 		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
 	if msg, ok := request.(proto.Message); ok {
-		storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 			Namespace:    cmp.Or(opts.Namespace, wc.namespace),
 			WorkflowID:   opts.WorkflowID,
 			WorkflowType: opts.WorkflowType,
@@ -577,7 +578,7 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 	request := convertActivityResultToRespondRequestByID(wc.identity, opts.Namespace, opts.WorkflowID, opts.RunID, opts.ActivityID,
 		data, opts.Err, dataConverter, failureConverter, cancelAllowed)
 	if msg, ok := request.(proto.Message); ok {
-		storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 			Namespace:    opts.Namespace,
 			WorkflowID:   opts.WorkflowID,
 			RunID:        opts.RunID,
@@ -633,7 +634,7 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 	request := convertActivityResultToRespondRequestByID(wc.identity, opts.Namespace, "", opts.ActivityRunID, opts.ActivityID,
 		data, opts.Err, dataConverter, failureConverter, cancelAllowed)
 	if msg, ok := request.(proto.Message); ok {
-		storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverActivityInfo{
+		storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverActivityInfo{
 			Namespace:    opts.Namespace,
 			ActivityID:   opts.ActivityID,
 			RunID:        opts.ActivityRunID,
@@ -2074,7 +2075,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		eagerExecutor = w.client.eagerDispatcher.applyToRequest(startRequest)
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:    w.client.namespace,
 		WorkflowID:   startRequest.WorkflowId,
 		WorkflowType: in.WorkflowType,
@@ -2239,7 +2240,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 		},
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:    w.client.namespace,
 		WorkflowID:   startRequest.WorkflowId,
 		WorkflowType: startRequest.WorkflowType.GetName(),
@@ -2389,7 +2390,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		request.RequestId = uuid.NewString()
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,
@@ -2477,7 +2478,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:    w.client.namespace,
 		WorkflowID:   in.Options.ID,
 		WorkflowType: in.WorkflowType,
@@ -2559,7 +2560,7 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 		Details:  detailsPayload,
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,
@@ -2694,7 +2695,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		QueryRejectCondition: in.QueryRejectCondition,
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,
@@ -2733,7 +2734,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		return nil, err
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,

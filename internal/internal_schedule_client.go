@@ -18,6 +18,7 @@ import (
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/extstore"
 	"go.temporal.io/sdk/log"
 )
 
@@ -131,7 +132,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		SearchAttributes: searchAttr,
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:    w.client.namespace,
 		WorkflowID:   action.GetStartWorkflow().GetWorkflowId(),
 		WorkflowType: action.GetStartWorkflow().GetWorkflowType().GetName(),
@@ -302,7 +303,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		SearchAttributes: newSA,
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:    scheduleHandle.client.namespace,
 		WorkflowID:   newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowId(),
 		WorkflowType: newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowType().GetName(),
