@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -78,11 +79,30 @@ func TestNexusClientValidation(t *testing.T) {
 	require.NotNil(t, nc)
 }
 
+// mockOperationReference implements the Name()/InputType() interface used by resolveNexusOperationName.
+type mockOperationReference struct {
+	name      string
+	inputType reflect.Type
+}
+
+func (m mockOperationReference) Name() string         { return m.name }
+func (m mockOperationReference) InputType() reflect.Type { return m.inputType }
+
 func TestResolveNexusOperationName(t *testing.T) {
 	// String name
 	name, err := resolveNexusOperationName("my-op", nil)
 	require.NoError(t, err)
 	require.Equal(t, "my-op", name)
+
+	// Typed operation reference with correct input type
+	op := mockOperationReference{name: "typed-op", inputType: reflect.TypeOf("")}
+	name, err = resolveNexusOperationName(op, "hello")
+	require.NoError(t, err)
+	require.Equal(t, "typed-op", name)
+
+	// Typed operation reference with wrong input type
+	_, err = resolveNexusOperationName(op, 123)
+	require.ErrorContains(t, err, "cannot assign argument of type")
 
 	// Invalid type
 	_, err = resolveNexusOperationName(123, nil)

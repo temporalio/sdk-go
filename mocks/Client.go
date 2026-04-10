@@ -1299,7 +1299,7 @@ func (_m *Client) NewNexusClient(options client.NexusClientOptions) (client.Nexu
 	ret := _m.Called(options)
 
 	if len(ret) == 0 {
-		panic("no return value specified for NexusClient")
+		panic("no return value specified for NewNexusClient")
 	}
 
 	var r0 client.NexusClient

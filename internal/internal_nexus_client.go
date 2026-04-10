@@ -303,18 +303,30 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.NexusOperationHandle]
 	ClientNexusOperationHandle interface {
 		// GetID returns the ID of the operation this handle points to.
+		//
+		// NOTE: Experimental
 		GetID() string
 		// GetRunID returns the run ID that this handle was created with.
+		//
+		// NOTE: Experimental
 		GetRunID() string
 		// Get waits until the operation finishes and gets its result. If the operation completes
 		// successfully, the result is written to valuePtr and nil is returned. If the operation
 		// failed, the failure is returned as an error.
+		//
+		// NOTE: Experimental
 		Get(ctx context.Context, valuePtr any) error
 		// Describe returns detailed information about current state of the operation execution.
+		//
+		// NOTE: Experimental
 		Describe(ctx context.Context, options ClientDescribeNexusOperationOptions) (*ClientNexusOperationExecutionDescription, error)
 		// Cancel requests cancellation of the operation.
+		//
+		// NOTE: Experimental
 		Cancel(ctx context.Context, options ClientCancelNexusOperationOptions) error
 		// Terminate terminates the operation.
+		//
+		// NOTE: Experimental
 		Terminate(ctx context.Context, options ClientTerminateNexusOperationOptions) error
 	}
 
@@ -332,6 +344,11 @@ type (
 		runID  string
 		result *ClientPollNexusOperationResultOutput
 	}
+)
+
+var (
+	_ ClientNexusClient          = &nexusClientImpl{}
+	_ ClientNexusOperationHandle = &clientNexusOperationHandleImpl{}
 )
 
 // GetSummary returns summary of the operation. See ClientStartNexusOperationOptions.Summary.

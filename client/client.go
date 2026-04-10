@@ -1585,7 +1585,7 @@ type (
 		// NOTE: Experimental
 		CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error)
 
-		// NexusClient creates a new Nexus client bound to the given endpoint and service.
+		// NewNexusClient creates a new Nexus client bound to the given endpoint and service.
 		// This is for standalone Nexus operations outside of workflow context.
 		// For Nexus operations within workflows, use workflow.NexusClient instead.
 		//
