@@ -162,9 +162,35 @@ func (f *FuseOverlayFS) mount(wsKey string) error {
 	defer f.mu.Unlock()
 
 	cfg := &overlayConfig{
-		lowerDir: f.lowerDir(wsKey),
-		upperDir: f.upperDir(wsKey),
+		lowerDir:   f.lowerDir(wsKey),
+		upperDir:   f.upperDir(wsKey),
+		upperPaths: make(map[string]bool),
+		whiteouts:  make(map[string]bool),
 	}
+
+	// Scan upper directory to populate in-memory path indexes.
+	_ = filepath.WalkDir(cfg.upperDir, func(path string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, _ := filepath.Rel(cfg.upperDir, path)
+		if rel == "." {
+			return nil
+		}
+		name := d.Name()
+		if strings.HasPrefix(name, whiteoutPrefix) {
+			dir := filepath.Dir(rel)
+			origName := name[len(whiteoutPrefix):]
+			if dir == "." {
+				cfg.whiteouts[origName] = true
+			} else {
+				cfg.whiteouts[filepath.Join(dir, origName)] = true
+			}
+			return nil
+		}
+		cfg.upperPaths[rel] = true
+		return nil
+	})
 
 	// Set up lazy mode if manifest and chunk loader are available.
 	if m, ok := f.manifests[wsKey]; ok && m != nil {
@@ -697,10 +723,44 @@ type overlayConfig struct {
 	chunkMu      sync.Mutex          // lazy: protects loadedChunks
 	fetchGrp     singleflight.Group  // dedup concurrent chunk loads (key = chunkID)
 
+	// In-memory path indexes for upper layer and whiteouts. These avoid
+	// os.Lstat syscalls in resolveExt for the common case. All mutations to
+	// upper (Create, copyUp, Mkdir, Rename, Symlink, Unlink, Rmdir) update
+	// these maps. Initialized from disk at mount time.
+	upperPaths map[string]bool // paths (files + dirs) that exist in upper
+	whiteouts  map[string]bool // paths that have been deleted (whiteout markers)
+	pathMu     sync.RWMutex   // protects upperPaths and whiteouts
+
 	// Disk space quota for the upper layer. 0 = unlimited, >0 = limit in bytes.
 	diskLimitBytes int64
 	diskUsedBytes  int64       // approximate; updated on write/create/unlink
 	diskMu         sync.Mutex  // protects diskUsedBytes
+}
+
+// pathAdd marks a path as existing in the upper layer.
+func (c *overlayConfig) pathAdd(rel string) {
+	c.pathMu.Lock()
+	c.upperPaths[rel] = true
+	delete(c.whiteouts, rel)
+	c.pathMu.Unlock()
+}
+
+// pathRemove marks a path as deleted (whiteout) from upper.
+func (c *overlayConfig) pathRemove(rel string) {
+	c.pathMu.Lock()
+	delete(c.upperPaths, rel)
+	c.whiteouts[rel] = true
+	c.pathMu.Unlock()
+}
+
+// pathRename moves a path in the index from old to new.
+func (c *overlayConfig) pathRename(oldRel, newRel string) {
+	c.pathMu.Lock()
+	delete(c.upperPaths, oldRel)
+	c.whiteouts[oldRel] = true
+	c.upperPaths[newRel] = true
+	delete(c.whiteouts, newRel)
+	c.pathMu.Unlock()
 }
 
 // diskCheckSpace returns ENOSPC if adding delta bytes would exceed the quota.
@@ -792,36 +852,30 @@ func (n *overlayNode) resolve(rel string) (realPath string, inUpper bool) {
 }
 
 // resolveExt is the extended resolve that also reports cache and manifest hits.
+// Uses in-memory path indexes for upper/whiteout to avoid os.Lstat syscalls.
 func (n *overlayNode) resolveExt(rel string) (resolveResult, string, bool) {
 	c := n.config
 	if rel == "" {
 		return resolveUpper, c.upperDir, true
 	}
 
-	dir := filepath.Dir(rel)
-	if dir == "." {
-		dir = ""
-	}
-	base := filepath.Base(rel)
+	c.pathMu.RLock()
+	whited := c.whiteouts[rel]
+	inUpper := c.upperPaths[rel]
+	c.pathMu.RUnlock()
 
-	// Check for whiteout in upper.
-	wh := filepath.Join(c.upperDir, dir, whiteoutPrefix+base)
-	if _, err := os.Lstat(wh); err == nil {
+	// Check for whiteout — fast path via in-memory set.
+	if whited {
 		return resolveNotFound, "", false
 	}
 
-	// Check upper.
-	up := filepath.Join(c.upperDir, rel)
-	if _, err := os.Lstat(up); err == nil {
-		return resolveUpper, up, true
+	// Check upper — fast path via in-memory set.
+	if inUpper {
+		return resolveUpper, filepath.Join(c.upperDir, rel), true
 	}
 
-	// Check lower first, then cache. Lower's inodes are stable (only modified
-	// during Snapshot, which remounts the FUSE). Cache directories are created
-	// as side effects of chunk loading (os.MkdirAll for parent dirs). If cache
-	// were checked first, a directory could switch from lower (inode A) to cache
-	// (inode B) mid-activity when a chunk is loaded, causing the kernel's FUSE
-	// dentry to be invalidated and breaking getcwd(2).
+	// Check lower. Lower's inodes are stable (only modified during Snapshot,
+	// which remounts the FUSE and rebuilds the path index).
 	lo := filepath.Join(c.lowerDir, rel)
 	if _, err := os.Lstat(lo); err == nil {
 		return resolveLower, lo, false
@@ -987,13 +1041,21 @@ func (n *overlayNode) copyUp(ctx context.Context, rel string) (string, error) {
 
 	switch {
 	case info.IsDir():
-		return up, os.Mkdir(up, info.Mode().Perm())
+		if err := os.Mkdir(up, info.Mode().Perm()); err != nil {
+			return "", err
+		}
+		c.pathAdd(rel)
+		return up, nil
 	case info.Mode()&os.ModeSymlink != 0:
 		target, err := os.Readlink(lo)
 		if err != nil {
 			return "", err
 		}
-		return up, os.Symlink(target, up)
+		if err := os.Symlink(target, up); err != nil {
+			return "", err
+		}
+		c.pathAdd(rel)
+		return up, nil
 	default:
 		src, err := os.Open(lo)
 		if err != nil {
@@ -1010,6 +1072,7 @@ func (n *overlayNode) copyUp(ctx context.Context, rel string) (string, error) {
 		// The copy creates a duplicate in upper. Adjust so the net effect is
 		// zero: the file is now tracked as upper bytes instead of lower bytes.
 		c.diskAdd(written - info.Size())
+		c.pathAdd(rel)
 		return up, err
 	}
 }
@@ -1322,6 +1385,7 @@ func (n *overlayNode) Create(ctx context.Context, name string, flags uint32, mod
 		return nil, nil, 0, fs.ToErrno(err)
 	}
 	out.Attr.FromStat(&st)
+	c.pathAdd(rel)
 	return n.newChild(ctx, &st), &overlayFileHandle{file: f, config: n.config, fileSize: 0}, 0, fs.OK
 }
 
@@ -1350,6 +1414,7 @@ func (n *overlayNode) Unlink(ctx context.Context, name string) syscall.Errno {
 		n.config.diskAdd(-info.Size())
 	}
 	_ = os.Remove(upperPath)
+	n.config.pathRemove(rel)
 	return n.createWhiteout(rel, name)
 }
 
@@ -1372,6 +1437,7 @@ func (n *overlayNode) Mkdir(ctx context.Context, name string, mode uint32, out *
 		return nil, fs.ToErrno(err)
 	}
 	out.Attr.FromStat(&st)
+	c.pathAdd(rel)
 	return n.newChild(ctx, &st), fs.OK
 }
 
@@ -1380,6 +1446,7 @@ func (n *overlayNode) Mkdir(ctx context.Context, name string, mode uint32, out *
 func (n *overlayNode) Rmdir(ctx context.Context, name string) syscall.Errno {
 	rel := filepath.Join(n.relPath(), name)
 	_ = os.RemoveAll(filepath.Join(n.config.upperDir, rel))
+	n.config.pathRemove(rel)
 	return n.createWhiteout(rel, name)
 }
 
@@ -1408,6 +1475,7 @@ func (n *overlayNode) Rename(ctx context.Context, name string, newParent fs.Inod
 		return fs.ToErrno(err)
 	}
 
+	c.pathRename(oldRel, newRel)
 	// Create whiteout at old location if source existed below upper.
 	return n.createWhiteout(oldRel, name)
 }
@@ -1492,6 +1560,7 @@ func (n *overlayNode) Symlink(ctx context.Context, target, name string, out *fus
 		return nil, fs.ToErrno(err)
 	}
 	out.Attr.FromStat(&st)
+	c.pathAdd(rel)
 	return n.newChild(ctx, &st), fs.OK
 }
 
