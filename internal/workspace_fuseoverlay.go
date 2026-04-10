@@ -217,23 +217,21 @@ func (f *FuseOverlayFS) mount(wsKey string) error {
 	root := &overlayNode{config: cfg}
 
 	mp := f.mountDir(wsKey)
-	// EntryTimeout: cache "does this name exist?" in the kernel dentry cache.
-	// Safe because all file create/delete/rename ops go through the FUSE daemon
-	// which updates the kernel cache directly. Cleared on unmount (Snapshot/Suspend).
-	// Dramatically reduces FUSE round-trips for repeated lookups/stats.
+	// EntryTimeout: cache dentry lookups ("does this name exist?").
+	// AttrTimeout: cache file attributes (size, mode, mtime).
+	// NegativeTimeout: cache negative lookups ("this name doesn't exist").
 	//
-	// AttrTimeout: must be zero. Git mmaps pack files; if the kernel caches stale
-	// attributes (size), the page cache won't be invalidated after writes, and
-	// mmap reads return corrupted data.
-	//
-	// NegativeTimeout: cache "this name doesn't exist". Safe because creates go
-	// through FUSE which invalidates the negative entry automatically.
-	entryTimeout := time.Minute
-	zeroTimeout := time.Duration(0)
+	// All three are safe with non-zero values because:
+	// - All mutations go through the FUSE daemon which updates the kernel cache.
+	// - The Linux kernel invalidates cached attrs after Write (fuse_write_update_attr
+	//   calls fuse_invalidate_attr_mask with FUSE_STATX_MODSIZE), so mmap sees
+	//   correct file sizes even with AttrTimeout > 0.
+	// - Cleared on unmount (Snapshot/Suspend).
+	cacheTimeout := time.Minute
 	server, err := fs.Mount(mp, root, &fs.Options{
-		EntryTimeout:    &entryTimeout,
-		AttrTimeout:     &zeroTimeout,
-		NegativeTimeout: &entryTimeout,
+		EntryTimeout:    &cacheTimeout,
+		AttrTimeout:     &cacheTimeout,
+		NegativeTimeout: &cacheTimeout,
 		MountOptions: fuse.MountOptions{
 			FsName:      "temporal-filesystem",
 			Name:        "temporal",
@@ -1007,7 +1005,11 @@ func (n *overlayNode) existsBelowUpper(rel string) bool {
 func (n *overlayNode) copyUp(ctx context.Context, rel string) (string, error) {
 	c := n.config
 	up := filepath.Join(c.upperDir, rel)
-	if _, err := os.Lstat(up); err == nil {
+	// Fast check via path index before syscall.
+	c.pathMu.RLock()
+	inUpper := c.upperPaths[rel]
+	c.pathMu.RUnlock()
+	if inUpper {
 		return up, nil
 	}
 
@@ -1214,24 +1216,49 @@ func (n *overlayNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno)
 	c := n.config
 	rel := n.relPath()
 	entries := make(map[string]fuse.DirEntry)
-	whiteouts := make(map[string]bool)
 
-	// Read upper directory. Include real inode numbers — gVisor's
-	// FUSE_READDIRPLUS needs them to properly discover files created/renamed
-	// by child processes (e.g., git's index-pack).
-	if dirents, err := os.ReadDir(filepath.Join(c.upperDir, rel)); err == nil {
-		for _, d := range dirents {
-			name := d.Name()
-			if strings.HasPrefix(name, whiteoutPrefix) {
-				whiteouts[name[len(whiteoutPrefix):]] = true
-				continue
+	// Collect whiteouts from the in-memory index (no disk I/O needed).
+	prefix := rel
+	if prefix != "" {
+		prefix += "/"
+	}
+	c.pathMu.RLock()
+	whiteouts := make(map[string]bool)
+	for wh := range c.whiteouts {
+		if prefix == "" {
+			if !strings.Contains(wh, "/") {
+				whiteouts[wh] = true
 			}
-			entries[name] = dirEntryWithIno(d)
+		} else if strings.HasPrefix(wh, prefix) {
+			rest := wh[len(prefix):]
+			if !strings.Contains(rest, "/") {
+				whiteouts[rest] = true
+			}
 		}
 	}
+	// Collect upper entries from the in-memory index (no disk I/O needed).
+	for p := range c.upperPaths {
+		var name string
+		if prefix == "" {
+			if strings.Contains(p, "/") {
+				continue
+			}
+			name = p
+		} else if strings.HasPrefix(p, prefix) {
+			rest := p[len(prefix):]
+			if strings.Contains(rest, "/") {
+				continue
+			}
+			name = rest
+		} else {
+			continue
+		}
+		// Get real inode for gVisor READDIRPLUS compatibility.
+		entries[name] = dirEntryFromPath(filepath.Join(c.upperDir, prefix+name))
+	}
+	c.pathMu.RUnlock()
 
-	// Read lower directory before cache — matches resolveExt order.
-	// Lower inodes are stable; cache directories are side effects of chunk loading.
+	// Read lower directory — needs disk I/O but only for entries not in upper.
 	if dirents, err := os.ReadDir(filepath.Join(c.lowerDir, rel)); err == nil {
 		for _, d := range dirents {
 			name := d.Name()
@@ -1245,7 +1272,6 @@ func (n *overlayNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno)
 		}
 	}
 
-	// Add manifest entries (lazy mode).
 	// Read cache directory (lazy mode) — after lower, before manifest.
 	if c.cacheDir != "" {
 		if dirents, err := os.ReadDir(filepath.Join(c.cacheDir, rel)); err == nil {
@@ -1292,6 +1318,17 @@ func (n *overlayNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno)
 	})
 
 	return fs.NewListDirStream(result), fs.OK
+}
+
+// dirEntryFromPath creates a fuse.DirEntry from a filesystem path with real inode.
+func dirEntryFromPath(path string) fuse.DirEntry {
+	entry := fuse.DirEntry{Name: filepath.Base(path)}
+	var st syscall.Stat_t
+	if err := syscall.Lstat(path, &st); err == nil {
+		entry.Ino = st.Ino
+		entry.Mode = st.Mode & syscall.S_IFMT
+	}
+	return entry
 }
 
 // dirEntryWithIno creates a fuse.DirEntry with real inode number from stat.
@@ -1358,7 +1395,15 @@ func (n *overlayNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, ui
 	if info, serr := f.Stat(); serr == nil {
 		sz = info.Size()
 	}
-	return &overlayFileHandle{file: f, config: n.config, fileSize: sz}, 0, fs.OK
+	// FOPEN_KEEP_CACHE tells the kernel to keep page cache data across opens.
+	// Safe for read-only opens because file content doesn't change between
+	// Open calls within the same FUSE mount. For write opens, the kernel
+	// invalidates the cache automatically on Write.
+	var fuseFlags uint32
+	if !isWrite {
+		fuseFlags = fuse.FOPEN_KEEP_CACHE
+	}
+	return &overlayFileHandle{file: f, config: n.config, fileSize: sz}, fuseFlags, fs.OK
 }
 
 // ---------- Create ----------
