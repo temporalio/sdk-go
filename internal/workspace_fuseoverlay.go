@@ -1508,15 +1508,14 @@ var _ = (fs.FileReleaser)((*overlayFileHandle)(nil))
 var _ = (fs.FileGetattrer)((*overlayFileHandle)(nil))
 
 func (fh *overlayFileHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	n, err := fh.file.ReadAt(dest, off)
-	if err != nil && err != io.EOF {
-		return nil, fs.ToErrno(err)
-	}
-	return fuse.ReadResultData(dest[:n]), fs.OK
+	// Use ReadResultFd for zero-copy reads: the kernel splices data directly
+	// from the file's page cache into the FUSE response, avoiding a user-space
+	// buffer copy. This works because our files are regular seekable files.
+	return fuse.ReadResultFd(fh.file.Fd(), off, len(dest)), fs.OK
 }
 
 func (fh *overlayFileHandle) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
-	if fh.config != nil {
+	if fh.config != nil && fh.config.diskLimitBytes > 0 {
 		// Check if this write extends the file. Only count new bytes beyond current size.
 		info, _ := fh.file.Stat()
 		var growth int64
@@ -1541,7 +1540,10 @@ func (fh *overlayFileHandle) Write(ctx context.Context, data []byte, off int64) 
 }
 
 func (fh *overlayFileHandle) Flush(ctx context.Context) syscall.Errno {
-	return fs.ToErrno(fh.file.Sync())
+	// Don't fsync on close — standard POSIX behavior. Data is in the page
+	// cache from Write calls. Explicit fsync(2) still works via Fsync handler.
+	// Workspace commit happens after activity completion, ensuring durability.
+	return fs.OK
 }
 
 func (fh *overlayFileHandle) Fsync(ctx context.Context, flags uint32) syscall.Errno {
