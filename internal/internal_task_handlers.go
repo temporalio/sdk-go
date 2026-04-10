@@ -2342,9 +2342,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	var wsAccessor *workspaceAccessor
 	if wsInfo != nil {
 		wsAccessor = &workspaceAccessor{
-			manager: ath.workspaceManager, // may be nil — error surfaces on first WorkspacePath() call
-			runID:   runID,
-			wsInfo:  wsInfo,
+			manager:     ath.workspaceManager, // may be nil — error surfaces on first WorkspacePath() call
+			runID:       runID,
+			wsInfo:      wsInfo,
+			diskLimitMB: wsInfo.GetDiskLimitMb(),
 		}
 		ctx = withWorkspaceAccessor(ctx, wsAccessor)
 	}

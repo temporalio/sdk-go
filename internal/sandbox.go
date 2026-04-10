@@ -82,11 +82,6 @@ type SandboxResourceLimits struct {
 	// MaxPIDs limits the number of concurrent processes inside the sandbox.
 	// Zero uses the default (256).
 	MaxPIDs int64
-
-	// DiskMB limits the total bytes written to the workspace (upper layer)
-	// during an activity. Enforced by the FUSE overlay returning ENOSPC.
-	// Zero means no limit (unlimited). Positive values set the limit in MB.
-	DiskMB int64
 }
 
 // SandboxNetworkPolicy controls outbound network access from the sandbox.
@@ -161,11 +156,6 @@ func (a *sandboxAccessor) getOrCreate(ctx context.Context) (Sandbox, error) {
 			// If a workspace accessor exists, ensure the workspace is prepared
 			// and set its path on the sandbox options for bind-mounting as /data.
 			if a.wsAccessor != nil {
-				// Set disk limit on the workspace before preparing (mounting).
-				// DiskMB == 0 means unlimited (no limit). Positive values set the cap.
-				if a.wsAccessor.manager != nil && a.opts.ResourceLimits.DiskMB > 0 {
-					a.wsAccessor.manager.SetDiskLimit(a.wsAccessor.runID, a.wsAccessor.wsInfo.GetWorkspaceId(), a.opts.ResourceLimits.DiskMB*1024*1024)
-				}
 				wsPath, wsErr := a.wsAccessor.getOrPrepare(ctx)
 				if wsErr != nil {
 					a.err = fmt.Errorf("workspace prepare for sandbox: %w", wsErr)
@@ -228,7 +218,6 @@ func sandboxOptionsToProto(opts *SandboxOptions) *sandboxpb.SandboxOptions {
 			MemoryMb: opts.ResourceLimits.MemoryMB,
 			DiskIops: opts.ResourceLimits.DiskIOPS,
 			MaxPids:  opts.ResourceLimits.MaxPIDs,
-			DiskMb:   opts.ResourceLimits.DiskMB,
 		}
 	}
 	if len(opts.NetworkPolicy.AllowedHosts) > 0 {
@@ -255,7 +244,6 @@ func sandboxOptionsFromProto(pb *sandboxpb.SandboxOptions) *SandboxOptions {
 			MemoryMB: rl.GetMemoryMb(),
 			DiskIOPS: rl.GetDiskIops(),
 			MaxPIDs:  rl.GetMaxPids(),
-			DiskMB:   rl.GetDiskMb(),
 		}
 	}
 	if np := pb.GetNetworkPolicy(); np != nil {

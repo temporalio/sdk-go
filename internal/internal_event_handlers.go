@@ -755,6 +755,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		scheduleTaskAttr.WorkspaceOptions = &workspacepb.ActivityWorkspaceOptions{
 			WorkspaceId: parameters.WorkspaceOptions.ID,
 			AccessMode:  parameters.WorkspaceOptions.AccessMode,
+			DiskLimitMb: parameters.WorkspaceOptions.DiskLimitMB,
 		}
 	}
 	if parameters.SandboxOptions != nil {

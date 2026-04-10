@@ -61,10 +61,11 @@ type FuseOverlayFS struct {
 
 	mu           sync.Mutex
 	servers      map[string]*fuse.Server
-	manifests    map[string]*Manifest   // per-workspace merged manifest
-	chunkLoaders map[string]ChunkLoader // wsKey → chunk loader
-	diskLimits   map[string]int64       // wsKey → disk limit in bytes (0 = unlimited)
-	lowerSizes   map[string]int64       // wsKey → known lower dir size in bytes
+	configs      map[string]*overlayConfig // live overlay configs (for post-mount updates)
+	manifests    map[string]*Manifest      // per-workspace merged manifest
+	chunkLoaders map[string]ChunkLoader    // wsKey → chunk loader
+	diskLimits   map[string]int64          // wsKey → disk limit in bytes (0 = unlimited)
+	lowerSizes   map[string]int64          // wsKey → known lower dir size in bytes
 }
 
 var _ SnapshotFS = (*FuseOverlayFS)(nil)
@@ -76,6 +77,7 @@ func NewFuseOverlayFS(basePath string) *FuseOverlayFS {
 	return &FuseOverlayFS{
 		BasePath:     basePath,
 		servers:      make(map[string]*fuse.Server),
+		configs:      make(map[string]*overlayConfig),
 		manifests:    make(map[string]*Manifest),
 		chunkLoaders: make(map[string]ChunkLoader),
 		diskLimits:   make(map[string]int64),
@@ -93,6 +95,26 @@ func (f *FuseOverlayFS) SetDiskLimit(wsKey string, limitBytes int64) {
 		f.diskLimits[wsKey] = limitBytes
 	} else {
 		delete(f.diskLimits, wsKey)
+	}
+	// If the workspace is already mounted, update the live overlay config
+	// so the limit takes effect immediately (handles the case where
+	// GetWorkspacePath was called before GetSandbox).
+	if cfg, ok := f.configs[wsKey]; ok {
+		cfg.diskMu.Lock()
+		if limitBytes > 0 {
+			if cfg.diskLimitBytes <= 0 {
+				// First time setting limit on a live mount — compute current usage.
+				lowerSize, ok := f.lowerSizes[wsKey]
+				if !ok {
+					lowerSize = dirSize(cfg.lowerDir)
+				}
+				cfg.diskUsedBytes = lowerSize + dirSize(cfg.upperDir)
+			}
+			cfg.diskLimitBytes = limitBytes
+		} else {
+			cfg.diskLimitBytes = 0
+		}
+		cfg.diskMu.Unlock()
 	}
 }
 
@@ -120,7 +142,9 @@ func (f *FuseOverlayFS) snapshotDir(wsKey, snap string) string {
 	return filepath.Join(f.BasePath, wsKey, "snapshots", snap)
 }
 
-// Create creates a new workspace with an empty FUSE overlay mount.
+// Create sets up a new workspace directory structure. Does not mount the FUSE
+// overlay — the caller is responsible for mounting via EnsureMounted after
+// any lazy diff application is complete.
 func (f *FuseOverlayFS) Create(wsKey string) (string, error) {
 	_ = f.Destroy(wsKey)
 
@@ -130,9 +154,6 @@ func (f *FuseOverlayFS) Create(wsKey string) (string, error) {
 		}
 	}
 
-	if err := f.mount(wsKey); err != nil {
-		return "", err
-	}
 	return f.mountDir(wsKey), nil
 }
 
@@ -188,6 +209,7 @@ func (f *FuseOverlayFS) mount(wsKey string) error {
 	}
 
 	f.servers[wsKey] = server
+	f.configs[wsKey] = cfg
 	return nil
 }
 
@@ -198,12 +220,22 @@ func (f *FuseOverlayFS) unmount(wsKey string) {
 	if s, ok := f.servers[wsKey]; ok {
 		_ = s.Unmount()
 		delete(f.servers, wsKey)
+		delete(f.configs, wsKey)
 	}
 }
 
-// Snapshot saves the current upper layer as a named snapshot, merges changes
-// into lower, and remounts with a fresh upper layer.
+// Snapshot saves the current upper layer as a named snapshot and merges changes
+// into lower. The FUSE mount is left unmounted — the caller is responsible for
+// remounting via EnsureMounted if the mount is needed afterwards.
 func (f *FuseOverlayFS) Snapshot(wsKey, snapName string) error {
+	// If the upper layer is empty (no activity writes), just create the
+	// snapshot marker directory. No need to unmount or merge.
+	if isEmptyDir(f.upperDir(wsKey)) {
+		snapDir := f.snapshotDir(wsKey, snapName)
+		_ = os.RemoveAll(snapDir)
+		return os.MkdirAll(snapDir, 0o755)
+	}
+
 	f.unmount(wsKey)
 
 	snapDir := f.snapshotDir(wsKey, snapName)
@@ -222,8 +254,11 @@ func (f *FuseOverlayFS) Snapshot(wsKey, snapName string) error {
 		return fmt.Errorf("fuseoverlay: merge to lower: %w", err)
 	}
 
-	// In lazy mode, merge cache into lower (materializes fetched files) and
-	// clear cache + manifest. Lower now has the full state for cached files.
+	// In lazy mode, merge any cached files into lower and reset the cache dir.
+	// Keep the manifest and chunk loader alive so the remounted FUSE overlay
+	// can still lazy-load files that haven't been accessed yet. This is
+	// critical for the PrepareForActivity snapshot on a reconstructed workspace
+	// where most files haven't been fetched yet.
 	cacheDir := f.cacheDir(wsKey)
 	if _, err := os.Stat(cacheDir); err == nil {
 		if err := mergeCacheIntoLower(f.lowerDir(wsKey), cacheDir); err != nil {
@@ -231,19 +266,41 @@ func (f *FuseOverlayFS) Snapshot(wsKey, snapName string) error {
 		}
 		_ = os.RemoveAll(cacheDir)
 	}
+
+	// Update the manifest to reflect changes from the upper layer:
+	// - Remove entries for files that were deleted (whiteouts)
+	// - Remove entries for files that now exist in lower (overwritten)
+	// Without this, deleted or overwritten files would reappear from
+	// the manifest on the next mount.
 	f.mu.Lock()
-	delete(f.manifests, wsKey)
-	delete(f.chunkLoaders, wsKey)
-	// Lower now holds the full state; record its size for disk quota.
+	if m := f.manifests[wsKey]; m != nil {
+		lowerDir := f.lowerDir(wsKey)
+		var kept []ManifestFileEntry
+		for _, entry := range m.Files {
+			// If the file now exists in lower (was materialized via cache
+			// merge or overwritten), the manifest entry is redundant.
+			if _, err := os.Lstat(filepath.Join(lowerDir, entry.Path)); err == nil {
+				continue
+			}
+			// If a whiteout exists in the snapshot, the file was deleted.
+			dir := filepath.Dir(entry.Path)
+			if dir == "." {
+				dir = ""
+			}
+			whPath := filepath.Join(snapDir, dir, whiteoutPrefix+filepath.Base(entry.Path))
+			if _, err := os.Lstat(whPath); err == nil {
+				continue
+			}
+			kept = append(kept, entry)
+		}
+		m.Files = kept
+		m.buildIndex()
+	}
 	f.lowerSizes[wsKey] = dirSize(f.lowerDir(wsKey))
 	f.mu.Unlock()
 
-	// Fresh upper.
-	if err := os.MkdirAll(f.upperDir(wsKey), 0o755); err != nil {
-		return err
-	}
-
-	return f.mount(wsKey)
+	// Fresh upper for the next activity.
+	return os.MkdirAll(f.upperDir(wsKey), 0o755)
 }
 
 // FullDiff generates a tar archive of the named snapshot layer. Since the first
@@ -307,6 +364,7 @@ func (f *FuseOverlayFS) Destroy(wsKey string) error {
 	delete(f.manifests, wsKey)
 	delete(f.chunkLoaders, wsKey)
 	delete(f.lowerSizes, wsKey)
+	delete(f.configs, wsKey)
 	f.mu.Unlock()
 	return nil
 }
@@ -745,18 +803,23 @@ func (n *overlayNode) resolveExt(rel string) (resolveResult, string, bool) {
 		return resolveUpper, up, true
 	}
 
+	// Check lower first, then cache. Lower's inodes are stable (only modified
+	// during Snapshot, which remounts the FUSE). Cache directories are created
+	// as side effects of chunk loading (os.MkdirAll for parent dirs). If cache
+	// were checked first, a directory could switch from lower (inode A) to cache
+	// (inode B) mid-activity when a chunk is loaded, causing the kernel's FUSE
+	// dentry to be invalidated and breaking getcwd(2).
+	lo := filepath.Join(c.lowerDir, rel)
+	if _, err := os.Lstat(lo); err == nil {
+		return resolveLower, lo, false
+	}
+
 	// Check cache (lazy mode).
 	if c.cacheDir != "" {
 		cached := filepath.Join(c.cacheDir, rel)
 		if _, err := os.Lstat(cached); err == nil {
 			return resolveCache, cached, false
 		}
-	}
-
-	// Check lower.
-	lo := filepath.Join(c.lowerDir, rel)
-	if _, err := os.Lstat(lo); err == nil {
-		return resolveLower, lo, false
 	}
 
 	// Check manifest (lazy mode).
@@ -1091,7 +1154,23 @@ func (n *overlayNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno)
 		}
 	}
 
-	// Read cache directory (lazy mode).
+	// Read lower directory before cache — matches resolveExt order.
+	// Lower inodes are stable; cache directories are side effects of chunk loading.
+	if dirents, err := os.ReadDir(filepath.Join(c.lowerDir, rel)); err == nil {
+		for _, d := range dirents {
+			name := d.Name()
+			if whiteouts[name] {
+				continue
+			}
+			if _, exists := entries[name]; exists {
+				continue
+			}
+			entries[name] = dirEntryWithIno(d)
+		}
+	}
+
+	// Add manifest entries (lazy mode).
+	// Read cache directory (lazy mode) — after lower, before manifest.
 	if c.cacheDir != "" {
 		if dirents, err := os.ReadDir(filepath.Join(c.cacheDir, rel)); err == nil {
 			for _, d := range dirents {
@@ -1107,21 +1186,6 @@ func (n *overlayNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno)
 		}
 	}
 
-	// Read lower directory, skip whited-out and overridden entries.
-	if dirents, err := os.ReadDir(filepath.Join(c.lowerDir, rel)); err == nil {
-		for _, d := range dirents {
-			name := d.Name()
-			if whiteouts[name] {
-				continue
-			}
-			if _, exists := entries[name]; exists {
-				continue
-			}
-			entries[name] = dirEntryWithIno(d)
-		}
-	}
-
-	// Add manifest entries (lazy mode).
 	if c.manifest != nil {
 		for _, child := range c.manifest.childEntries(rel) {
 			if whiteouts[child] {

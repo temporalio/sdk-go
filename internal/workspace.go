@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -29,6 +30,12 @@ type WorkspaceOptions struct {
 	// READ_ONLY gives shared access — multiple read-only activities can run
 	// concurrently, but no read-write activity can be scheduled.
 	AccessMode enumspb.WorkspaceAccessMode
+
+	// DiskLimitMB limits the total disk space in megabytes for the workspace.
+	// Enforced by the FUSE overlay returning ENOSPC when the limit is exceeded.
+	// Covers both existing content (lower layer) and new writes (upper layer).
+	// Zero means unlimited.
+	DiskLimitMB int64
 }
 
 // WorkspaceTransferMode constants for use in WorkspaceTransfer.Mode.
@@ -100,14 +107,15 @@ const workspaceAccessorContextKey contextKey = "workspaceAccessor"
 
 // workspaceAccessor lazily prepares a workspace on first access via WorkspacePath().
 type workspaceAccessor struct {
-	manager  *WorkspaceManager // may be nil — error surfaces on first access
-	runID    string
-	wsInfo   *workspacepb.WorkspaceInfo
-	mu       sync.Mutex
-	path     string
-	prepared bool
-	err      error
-	closed   bool
+	manager     *WorkspaceManager // may be nil — error surfaces on first access
+	runID       string
+	wsInfo      *workspacepb.WorkspaceInfo
+	diskLimitMB int64 // disk space limit in MB (0 = unlimited)
+	mu          sync.Mutex
+	path        string
+	prepared    bool
+	err         error
+	closed      bool
 }
 
 func (a *workspaceAccessor) getOrPrepare(ctx context.Context) (string, error) {
@@ -120,6 +128,10 @@ func (a *workspaceAccessor) getOrPrepare(ctx context.Context) (string, error) {
 		if a.manager == nil {
 			a.err = fmt.Errorf("activity has workspace_id but no WorkspaceManager configured on worker")
 		} else {
+			// Set disk limit before mounting.
+			if a.diskLimitMB > 0 {
+				a.manager.SetDiskLimit(a.runID, a.wsInfo.GetWorkspaceId(), a.diskLimitMB*1024*1024)
+			}
 			if err := a.manager.EnsureReady(ctx, a.runID, a.wsInfo); err != nil {
 				a.err = fmt.Errorf("workspace prepare: %w", err)
 			} else {
@@ -322,23 +334,26 @@ func (m *WorkspaceManager) SetDiskLimit(runID, wsID string, limitBytes int64) {
 func (m *WorkspaceManager) PrepareForActivity(runID, wsID string, currentVersion int64) (string, error) {
 	localKey := localWorkspaceKey(runID, wsID)
 
-	// Remount if suspended after a previous CommitActivity.
-	if suspendable, ok := m.snapshotFS.(SuspendableFS); ok {
-		if err := suspendable.EnsureMounted(localKey); err != nil {
-			return "", fmt.Errorf("workspace %s: ensure mounted: %w", localKey, err)
-		}
-	}
-
 	// Take a snapshot at the current version if one doesn't exist yet.
-	// For version 0 on a fresh workspace, this is the initial snapshot.
-	// For version > 0 on a worker that just reconstructed from diffs (e.g.
-	// child workflow or worker restart), the snapshot may not exist because
-	// no prior CommitActivity ran on this worker. We always ensure the
-	// snapshot exists so that RollbackActivity can restore to it.
+	// Snapshot may unmount the FUSE (for non-empty upper), so we do this
+	// before EnsureMounted. For version 0 on a fresh workspace, this is the
+	// initial snapshot. For version > 0 on a worker that just reconstructed
+	// from diffs, the snapshot may not exist because no prior CommitActivity
+	// ran on this worker.
 	snapName := versionSnapshotName(currentVersion)
 	if !m.snapshotExists(localKey, snapName) {
 		if err := m.snapshotFS.Snapshot(localKey, snapName); err != nil {
 			return "", fmt.Errorf("workspace %s: snapshot %s: %w", localKey, snapName, err)
+		}
+	}
+
+	// Ensure the FUSE is mounted for the activity. Handles:
+	// - Suspended after previous CommitActivity
+	// - Unmounted by Snapshot above
+	// - Already mounted (no-op)
+	if suspendable, ok := m.snapshotFS.(SuspendableFS); ok {
+		if err := suspendable.EnsureMounted(localKey); err != nil {
+			return "", fmt.Errorf("workspace %s: ensure mounted: %w", localKey, err)
 		}
 	}
 
@@ -495,7 +510,10 @@ func (m *WorkspaceManager) uploadChunksAndManifest(
 ) error {
 	storeCtx := converter.StorageDriverStoreContext{Context: ctx}
 
-	// Upload each chunk and record the claim.
+	// Upload each chunk and record the claim. Use a content-addressable
+	// chunk ID derived from the stored data's hash to prevent ID collisions
+	// when manifests from different diffs are merged (sequential IDs like
+	// chunk-0000 would collide across diffs).
 	for _, chunk := range chunks {
 		payloads := []*commonpb.Payload{{
 			Metadata: map[string][]byte{
@@ -508,9 +526,20 @@ func (m *WorkspaceManager) uploadChunksAndManifest(
 			return fmt.Errorf("upload chunk %s: %w", chunk.ID, err)
 		}
 		if len(claims) > 0 {
-			mc := manifest.Chunks[chunk.ID]
-			mc.Claim = claims[0].ClaimData
-			manifest.Chunks[chunk.ID] = mc
+			// Derive a unique chunk ID from the content hash to avoid
+			// collisions across manifests from different diffs.
+			h := sha256.Sum256(chunk.Data)
+			newID := fmt.Sprintf("c_%x", h[:8])
+
+			// Remap: update manifest chunk map and file entries.
+			delete(manifest.Chunks, chunk.ID)
+			manifest.Chunks[newID] = ManifestChunk{Claim: claims[0].ClaimData}
+			for i := range manifest.Files {
+				if manifest.Files[i].ChunkID == chunk.ID {
+					manifest.Files[i].ChunkID = newID
+				}
+			}
+			chunk.ID = newID
 		}
 	}
 
