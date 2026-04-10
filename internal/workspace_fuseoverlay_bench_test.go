@@ -347,8 +347,7 @@ func BenchmarkFuseSmallFileRead_Lazy(b *testing.B) {
 func BenchmarkFuseSmallFileStat(b *testing.B) {
 	skipBenchWithoutFUSE(b)
 	const fileSize = 1024
-	// Each iteration stats one file. Pool ensures variety across iterations.
-	const poolSize = 10000
+	const numFiles = 10000
 
 	for _, mode := range []struct {
 		name  string
@@ -364,7 +363,7 @@ func BenchmarkFuseSmallFileStat(b *testing.B) {
 			// Pre-create files.
 			data := make([]byte, fileSize)
 			var paths []string
-			for j := 0; j < poolSize; j++ {
+			for j := 0; j < numFiles; j++ {
 				subdir := filepath.Join(dir, fmt.Sprintf("dir%03d", j/100))
 				os.MkdirAll(subdir, 0o755)
 				p := filepath.Join(subdir, fmt.Sprintf("f%05d", j))
@@ -372,10 +371,15 @@ func BenchmarkFuseSmallFileStat(b *testing.B) {
 				paths = append(paths, p)
 			}
 
+			// Stat all files once per iteration. This gives accurate per-batch
+			// timing — each iteration stats numFiles unique files (cold first
+			// iteration, warm subsequent). Use -benchtime=1x for pure cold measurement.
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if _, err := os.Lstat(paths[i%poolSize]); err != nil {
-					b.Fatal(err)
+				for _, p := range paths {
+					if _, err := os.Lstat(p); err != nil {
+						b.Fatal(err)
+					}
 				}
 			}
 		})
@@ -395,10 +399,13 @@ func BenchmarkFuseSmallFileStat_Lazy(b *testing.B) {
 		paths = append(paths, filepath.Join(dir, fmt.Sprintf("dir%03d/file%05d.dat", j/100, j)))
 	}
 
+	// Stat all files once per iteration.
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := os.Lstat(paths[i%numFiles]); err != nil {
-			b.Fatal(err)
+		for _, p := range paths {
+			if _, err := os.Lstat(p); err != nil {
+				b.Fatal(err)
+			}
 		}
 	}
 }

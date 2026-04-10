@@ -1349,7 +1349,7 @@ func dirEntryFromPath(path string) fuse.DirEntry {
 	var st syscall.Stat_t
 	if err := syscall.Lstat(path, &st); err == nil {
 		entry.Ino = st.Ino
-		entry.Mode = st.Mode & syscall.S_IFMT
+		entry.Mode = uint32(st.Mode) & syscall.S_IFMT
 	}
 	return entry
 }
