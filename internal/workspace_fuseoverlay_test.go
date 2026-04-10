@@ -39,14 +39,22 @@ func skipWithoutFUSE(t *testing.T) {
 	}
 }
 
+// createAndMount is a test helper that creates a workspace and mounts it.
+func createAndMount(t *testing.T, fs *FuseOverlayFS, wsKey string) string {
+	t.Helper()
+	path, err := fs.Create(wsKey)
+	require.NoError(t, err)
+	require.NoError(t, fs.EnsureMounted(wsKey))
+	return path
+}
+
 func TestFuseOverlayFS_CreateAndMountPath(t *testing.T) {
 	skipWithoutFUSE(t)
 	base := t.TempDir()
 	fs := NewFuseOverlayFS(base)
 	t.Cleanup(func() { fs.Destroy("ws-1") })
 
-	path, err := fs.Create("ws-1")
-	require.NoError(t, err)
+	path := createAndMount(t, fs, "ws-1")
 	assert.DirExists(t, path)
 	assert.Equal(t, path, fs.MountPath("ws-1"))
 }
@@ -57,8 +65,7 @@ func TestFuseOverlayFS_WriteAndReadThroughMount(t *testing.T) {
 	fs := NewFuseOverlayFS(base)
 	t.Cleanup(func() { fs.Destroy("ws-1") })
 
-	path, err := fs.Create("ws-1")
-	require.NoError(t, err)
+	path := createAndMount(t, fs, "ws-1")
 
 	// Write through FUSE mount.
 	require.NoError(t, os.WriteFile(filepath.Join(path, "hello.txt"), []byte("hello"), 0o644))
@@ -75,14 +82,14 @@ func TestFuseOverlayFS_SnapshotAndRollback(t *testing.T) {
 	fs := NewFuseOverlayFS(base)
 	t.Cleanup(func() { fs.Destroy("ws-1") })
 
-	path, err := fs.Create("ws-1")
-	require.NoError(t, err)
+	path := createAndMount(t, fs, "ws-1")
 
 	// Write a file.
 	require.NoError(t, os.WriteFile(filepath.Join(path, "hello.txt"), []byte("hello"), 0o644))
 
-	// Snapshot.
+	// Snapshot (unmounts if upper non-empty).
 	require.NoError(t, fs.Snapshot("ws-1", "snap1"))
+	require.NoError(t, fs.EnsureMounted("ws-1"))
 
 	// Modify file through the remounted overlay.
 	require.NoError(t, os.WriteFile(filepath.Join(path, "hello.txt"), []byte("modified"), 0o644))
@@ -110,8 +117,7 @@ func TestFuseOverlayFS_FullDiffAndApply(t *testing.T) {
 		fs.Destroy("ws-2")
 	})
 
-	path, err := fs.Create("ws-1")
-	require.NoError(t, err)
+	path := createAndMount(t, fs, "ws-1")
 
 	// Snapshot empty state as v0.
 	require.NoError(t, fs.Snapshot("ws-1", "v0"))
@@ -130,18 +136,18 @@ func TestFuseOverlayFS_FullDiffAndApply(t *testing.T) {
 	assert.Greater(t, diffSize, int64(0))
 
 	// Apply to fresh workspace.
-	_, err = fs.Create("ws-2")
-	require.NoError(t, err)
+	_, err2 := fs.Create("ws-2")
+	require.NoError(t, err2)
 	require.NoError(t, fs.ApplyDiff("ws-2", diffReader))
 
 	// Verify applied state through FUSE mount.
 	ws2Path := fs.MountPath("ws-2")
-	data, err := os.ReadFile(filepath.Join(ws2Path, "file1.txt"))
-	require.NoError(t, err)
+	data, err2 := os.ReadFile(filepath.Join(ws2Path, "file1.txt"))
+	require.NoError(t, err2)
 	assert.Equal(t, "content1", string(data))
 
-	data, err = os.ReadFile(filepath.Join(ws2Path, "subdir", "file2.txt"))
-	require.NoError(t, err)
+	data, err2 = os.ReadFile(filepath.Join(ws2Path, "subdir", "file2.txt"))
+	require.NoError(t, err2)
 	assert.Equal(t, "content2", string(data))
 }
 
@@ -154,12 +160,12 @@ func TestFuseOverlayFS_IncrementalDiffAndApply(t *testing.T) {
 		fs.Destroy("ws-2")
 	})
 
-	path, err := fs.Create("ws-1")
-	require.NoError(t, err)
+	path := createAndMount(t, fs, "ws-1")
 
 	// Create initial state.
 	require.NoError(t, os.WriteFile(filepath.Join(path, "file1.txt"), []byte("original"), 0o644))
 	require.NoError(t, fs.Snapshot("ws-1", "v0"))
+	require.NoError(t, fs.EnsureMounted("ws-1"))
 
 	// Make changes.
 	require.NoError(t, os.WriteFile(filepath.Join(path, "file1.txt"), []byte("changed"), 0o644))
@@ -199,13 +205,13 @@ func TestFuseOverlayFS_FileDeletion(t *testing.T) {
 		fs.Destroy("ws-2")
 	})
 
-	path, err := fs.Create("ws-1")
-	require.NoError(t, err)
+	path := createAndMount(t, fs, "ws-1")
 
 	// Create files.
 	require.NoError(t, os.WriteFile(filepath.Join(path, "keep.txt"), []byte("keep"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(path, "delete.txt"), []byte("delete"), 0o644))
 	require.NoError(t, fs.Snapshot("ws-1", "v0"))
+	require.NoError(t, fs.EnsureMounted("ws-1"))
 
 	// Delete one file.
 	require.NoError(t, os.Remove(filepath.Join(path, "delete.txt")))
@@ -213,8 +219,8 @@ func TestFuseOverlayFS_FileDeletion(t *testing.T) {
 
 	// The snapshot layer should have a whiteout for the deleted file.
 	snapDir := fs.snapshotDir("ws-1", "v1")
-	_, err = os.Stat(filepath.Join(snapDir, ".wh.delete.txt"))
-	assert.NoError(t, err, "whiteout file should exist in snapshot")
+	_, statErr := os.Stat(filepath.Join(snapDir, ".wh.delete.txt"))
+	assert.NoError(t, statErr, "whiteout file should exist in snapshot")
 
 	// Generate incremental diff.
 	diffReader, _, err := fs.IncrementalDiff("ws-1", "v0", "v1")
@@ -243,8 +249,7 @@ func TestFuseOverlayFS_Subdirectories(t *testing.T) {
 	fs := NewFuseOverlayFS(base)
 	t.Cleanup(func() { fs.Destroy("ws-1") })
 
-	path, err := fs.Create("ws-1")
-	require.NoError(t, err)
+	path := createAndMount(t, fs, "ws-1")
 
 	// Create nested structure through FUSE.
 	require.NoError(t, os.MkdirAll(filepath.Join(path, "src", "pkg"), 0o755))
@@ -253,6 +258,7 @@ func TestFuseOverlayFS_Subdirectories(t *testing.T) {
 
 	// Snapshot.
 	require.NoError(t, fs.Snapshot("ws-1", "v0"))
+	require.NoError(t, fs.EnsureMounted("ws-1"))
 
 	// Verify files are accessible after snapshot + remount.
 	data, err := os.ReadFile(filepath.Join(path, "src", "main.go"))
@@ -269,8 +275,7 @@ func TestFuseOverlayFS_Destroy(t *testing.T) {
 	base := t.TempDir()
 	fs := NewFuseOverlayFS(base)
 
-	_, err := fs.Create("ws-1")
-	require.NoError(t, err)
+	createAndMount(t, fs, "ws-1")
 	require.NoError(t, fs.Snapshot("ws-1", "snap"))
 
 	require.NoError(t, fs.Destroy("ws-1"))
@@ -294,15 +299,14 @@ func TestFuseOverlayFS_GitClone(t *testing.T) {
 	fusefs := NewFuseOverlayFS(base)
 	t.Cleanup(func() { fusefs.Destroy("ws-git") })
 
-	mountPath, err := fusefs.Create("ws-git")
-	require.NoError(t, err)
+	mountPath := createAndMount(t, fusefs, "ws-git")
 
 	// Clone a small repo through the FUSE overlay mount.
 	cmd := exec.Command("git", "clone", "https://github.com/temporalio/samples-go.git")
 	cmd.Dir = mountPath
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-	err = cmd.Run()
+	err := cmd.Run()
 	require.NoError(t, err, "git clone failed: %s", stderr.String())
 
 	// Verify the clone produced a valid repo.
@@ -355,8 +359,7 @@ func TestFuseOverlayFS_GitCloneInGVisor(t *testing.T) {
 	fusefs := NewFuseOverlayFS(base)
 	t.Cleanup(func() { fusefs.Destroy("ws-gvisor") })
 
-	mountPath, err := fusefs.Create("ws-gvisor")
-	require.NoError(t, err)
+	mountPath := createAndMount(t, fusefs, "ws-gvisor")
 
 	// Step 2: Create gVisor sandbox with the FUSE mount
 	provider := &GVisorSandboxProvider{
@@ -564,16 +567,15 @@ func TestFuseOverlayFS_LowerVisibleThroughMount(t *testing.T) {
 	fs := NewFuseOverlayFS(base)
 	t.Cleanup(func() { fs.Destroy("ws-1") })
 
-	// Pre-populate lower before mounting.
-	lowerDir := filepath.Join(base, "lower", "ws-1")
-	require.NoError(t, os.MkdirAll(lowerDir, 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(lowerDir, "from-lower.txt"), []byte("lower content"), 0o644))
-
-	// Create workspace (mounts overlay).
+	// Create workspace (sets up dirs, does not mount).
 	_, err := fs.Create("ws-1")
 	require.NoError(t, err)
 
-	// File from lower should be visible through FUSE mount.
+	// Pre-populate lower before mounting.
+	require.NoError(t, os.WriteFile(filepath.Join(fs.lowerDir("ws-1"), "from-lower.txt"), []byte("lower content"), 0o644))
+
+	// Mount and verify file from lower is visible.
+	require.NoError(t, fs.EnsureMounted("ws-1"))
 	data, err := os.ReadFile(filepath.Join(fs.MountPath("ws-1"), "from-lower.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "lower content", string(data))
