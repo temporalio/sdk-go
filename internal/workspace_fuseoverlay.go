@@ -256,12 +256,13 @@ func (f *FuseOverlayFS) mount(wsKey string) error {
 		AttrTimeout:     &cacheTimeout,
 		NegativeTimeout: &cacheTimeout,
 		MountOptions: fuse.MountOptions{
-			FsName:      "temporal-filesystem",
-			Name:        "temporal",
-			DirectMount: true,  // Use syscall.Mount when available (root/CAP_SYS_ADMIN), fallback to fusermount3
-			AllowOther:  true,  // Allow gVisor sandbox processes to access the mount
-			EnableLocks: true,  // Enable kernel-level flock/fcntl locking (needed by git)
-			MaxWrite:    1 << 20, // 1MB — reduces FUSE round-trips for sequential I/O (default 64KB)
+			FsName:        "temporal-filesystem",
+			Name:          "temporal",
+			DirectMount:   true,  // Use syscall.Mount when available (root/CAP_SYS_ADMIN), fallback to fusermount3
+			AllowOther:    true,  // Allow gVisor sandbox processes to access the mount
+			EnableLocks:   true,  // Enable kernel-level flock/fcntl locking (needed by git)
+			MaxWrite:      1 << 20, // 1MB — reduces FUSE round-trips for sequential I/O (default 64KB)
+			MaxStackDepth: 2,    // Allow passthrough over stacked filesystems (e.g., Docker overlayfs has depth 1)
 		},
 	})
 	if err != nil {
@@ -1385,12 +1386,14 @@ func (n *overlayNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, ui
 	isWrite := flags&(syscall.O_WRONLY|syscall.O_RDWR|syscall.O_TRUNC|syscall.O_APPEND) != 0
 
 	var path string
+	var fileInUpper bool
 	if isWrite {
 		var err error
 		path, err = n.copyUp(ctx, rel)
 		if err != nil {
 			return nil, 0, fs.ToErrno(err)
 		}
+		fileInUpper = true
 	} else {
 		result, resolvedPath, _ := n.resolveExt(rel)
 		switch result {
@@ -1406,10 +1409,12 @@ func (n *overlayNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, ui
 		default:
 			path = resolvedPath
 		}
+		fileInUpper = result == resolveUpper
 	}
 
 	// Strip O_APPEND: FUSE handles append by providing the correct offset
 	// in Write calls. Keeping O_APPEND causes Go's WriteAt to fail.
+
 	f, err := os.OpenFile(path, int(flags)&^(syscall.O_CREAT|syscall.O_APPEND), 0)
 	if err != nil {
 		return nil, 0, fs.ToErrno(err)
@@ -1422,11 +1427,13 @@ func (n *overlayNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, ui
 	// Safe for read-only opens because file content doesn't change between
 	// Open calls within the same FUSE mount. For write opens, the kernel
 	// invalidates the cache automatically on Write.
+	// Note: the go-fuse bridge clears FOPEN_KEEP_CACHE when passthrough is
+	// active, so this flag is harmless for upper-layer files.
 	var fuseFlags uint32
 	if !isWrite {
 		fuseFlags = fuse.FOPEN_KEEP_CACHE
 	}
-	return &overlayFileHandle{file: f, config: n.config, fileSize: sz}, fuseFlags, fs.OK
+	return &overlayFileHandle{file: f, config: n.config, fileSize: sz, isUpper: fileInUpper, isWrite: isWrite}, fuseFlags, fs.OK
 }
 
 // ---------- Create ----------
@@ -1454,7 +1461,7 @@ func (n *overlayNode) Create(ctx context.Context, name string, flags uint32, mod
 	}
 	out.Attr.FromStat(&st)
 	c.pathAdd(rel)
-	return n.newChild(ctx, &st), &overlayFileHandle{file: f, config: n.config, fileSize: 0}, 0, fs.OK
+	return n.newChild(ctx, &st), &overlayFileHandle{file: f, config: n.config, fileSize: 0, isUpper: true, isWrite: true}, 0, fs.OK
 }
 
 // createWhiteout creates a whiteout marker in the upper layer if the path
@@ -1653,6 +1660,8 @@ type overlayFileHandle struct {
 	file     *os.File
 	config   *overlayConfig // for disk quota tracking (may be nil)
 	fileSize int64          // tracked size — avoids fstat on every Write for disk quota
+	isUpper  bool           // true when the file is in the upper layer (eligible for passthrough)
+	isWrite  bool           // true when opened for writing (always use passthrough if upper)
 }
 
 var _ = (fs.FileReader)((*overlayFileHandle)(nil))
@@ -1661,6 +1670,7 @@ var _ = (fs.FileFlusher)((*overlayFileHandle)(nil))
 var _ = (fs.FileFsyncer)((*overlayFileHandle)(nil))
 var _ = (fs.FileReleaser)((*overlayFileHandle)(nil))
 var _ = (fs.FileGetattrer)((*overlayFileHandle)(nil))
+var _ = (fs.FilePassthroughFder)((*overlayFileHandle)(nil))
 
 func (fh *overlayFileHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	// Use ReadResultFd for zero-copy reads: the kernel splices data directly
@@ -1719,4 +1729,29 @@ func (fh *overlayFileHandle) Getattr(ctx context.Context, out *fuse.AttrOut) sys
 	}
 	out.FromStat(&st)
 	return fs.OK
+}
+
+// passthroughMinSize is the minimum file size for FUSE passthrough. Files
+// smaller than this use FOPEN_KEEP_CACHE instead, which retains page cache
+// across opens — better for small files that are read repeatedly. Larger files
+// benefit from passthrough because it eliminates per-block FUSE round-trips.
+const passthroughMinSize = 128 * 1024 // 128KB
+
+// PassthroughFd enables FUSE passthrough for files in the upper layer.
+// When enabled, the kernel bypasses the FUSE daemon entirely for reads and
+// writes, performing I/O directly on the backing file at native speed.
+// Only upper-layer files are eligible: lower/cache files are not, because
+// the kernel requires one backing inode per FUSE inode — if a lower file
+// were registered and then copyUp'd, the backing inode would change.
+// Small read-only files (< 128KB) opt out: FOPEN_KEEP_CACHE gives better
+// repeated-read performance since the go-fuse bridge clears FOPEN_KEEP_CACHE
+// for passthrough. Write opens always use passthrough regardless of size.
+func (fh *overlayFileHandle) PassthroughFd() (int, bool) {
+	if !fh.isUpper {
+		return 0, false
+	}
+	if !fh.isWrite && fh.fileSize < passthroughMinSize {
+		return 0, false
+	}
+	return int(fh.file.Fd()), true
 }
