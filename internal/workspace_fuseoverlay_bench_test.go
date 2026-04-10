@@ -213,8 +213,8 @@ func BenchmarkFuseLargeFileSeqRead(b *testing.B) {
 
 func BenchmarkFuseLargeFileRead_Lazy(b *testing.B) {
 	skipBenchWithoutFUSE(b)
-	const numFiles = 5
-	const fileSize = 20 * 1024 * 1024 // 20MB each, 100MB total
+	const numFiles = 25
+	const fileSize = 4 * 1024 * 1024 // 4MB each, 100MB total (matches default chunk size)
 
 	dir, cleanup := setupBenchLazy(b, numFiles, fileSize)
 	defer cleanup()

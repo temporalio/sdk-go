@@ -166,6 +166,7 @@ func (f *FuseOverlayFS) mount(wsKey string) error {
 		upperDir:   f.upperDir(wsKey),
 		upperPaths: make(map[string]bool),
 		whiteouts:  make(map[string]bool),
+		opaqueDirs: make(map[string]bool),
 	}
 
 	// Scan upper directory to populate in-memory path indexes.
@@ -178,6 +179,15 @@ func (f *FuseOverlayFS) mount(wsKey string) error {
 			return nil
 		}
 		name := d.Name()
+		// Detect opaque directory marker.
+		if name == opaqueMarker {
+			dir := filepath.Dir(rel)
+			if dir == "." {
+				dir = ""
+			}
+			cfg.opaqueDirs[dir] = true
+			return nil
+		}
 		if strings.HasPrefix(name, whiteoutPrefix) {
 			dir := filepath.Dir(rel)
 			origName := name[len(whiteoutPrefix):]
@@ -258,11 +268,11 @@ func (f *FuseOverlayFS) mount(wsKey string) error {
 		MountOptions: fuse.MountOptions{
 			FsName:        "temporal-filesystem",
 			Name:          "temporal",
-			DirectMount:   true,  // Use syscall.Mount when available (root/CAP_SYS_ADMIN), fallback to fusermount3
-			AllowOther:    true,  // Allow gVisor sandbox processes to access the mount
-			EnableLocks:   true,  // Enable kernel-level flock/fcntl locking (needed by git)
+			DirectMount:   true,    // Use syscall.Mount when available (root/CAP_SYS_ADMIN), fallback to fusermount3
+			AllowOther:    true,    // Allow gVisor sandbox processes to access the mount
+			EnableLocks:   true,    // Enable kernel-level flock/fcntl locking (needed by git)
 			MaxWrite:      1 << 20, // 1MB — reduces FUSE round-trips for sequential I/O (default 64KB)
-			MaxStackDepth: 2,    // Allow passthrough over stacked filesystems (e.g., Docker overlayfs has depth 1)
+			MaxStackDepth: 2,       // Allow passthrough over stacked filesystems (e.g., Docker overlayfs has depth 1)
 		},
 	})
 	if err != nil {
@@ -329,10 +339,50 @@ func (f *FuseOverlayFS) Snapshot(wsKey, snapName string) error {
 	}
 
 	// Update the manifest to reflect changes from the upper layer:
+	// - Remove entries under opaque directories (entire subtree replaced)
 	// - Remove entries for files that were deleted (whiteouts)
 	// - Remove entries for files that now exist in lower (overwritten)
 	// Without this, deleted or overwritten files would reappear from
 	// the manifest on the next mount.
+	//
+	// Collect directory-level whiteouts and opaque markers from the snapshot.
+	// A whiteout like .wh.temporal means the entire temporal/ subtree was deleted.
+	// An opaque marker .wh..wh..opq means the directory's lower content is hidden.
+	// Both cause all manifest entries under that directory to be removed.
+	deletedDirs := make(map[string]bool)
+	_ = filepath.WalkDir(snapDir, func(path string, d iofs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		name := d.Name()
+		rel, _ := filepath.Rel(snapDir, path)
+		if rel == "." {
+			return nil
+		}
+		// Opaque marker: directory contents are hidden.
+		if name == opaqueMarker {
+			dir := filepath.Dir(rel)
+			if dir == "." {
+				dir = ""
+			}
+			deletedDirs[dir] = true
+			return nil
+		}
+		// Directory whiteout: .wh.dirname means dirname/ subtree is deleted.
+		if strings.HasPrefix(name, whiteoutPrefix) {
+			origName := name[len(whiteoutPrefix):]
+			dir := filepath.Dir(rel)
+			var deletedPath string
+			if dir == "." {
+				deletedPath = origName
+			} else {
+				deletedPath = filepath.Join(dir, origName)
+			}
+			deletedDirs[deletedPath] = true
+		}
+		return nil
+	})
+
 	f.mu.Lock()
 	if m := f.manifests[wsKey]; m != nil {
 		lowerDir := f.lowerDir(wsKey)
@@ -341,6 +391,18 @@ func (f *FuseOverlayFS) Snapshot(wsKey, snapName string) error {
 			// If the file now exists in lower (was materialized via cache
 			// merge or overwritten), the manifest entry is redundant.
 			if _, err := os.Lstat(filepath.Join(lowerDir, entry.Path)); err == nil {
+				continue
+			}
+			// If the entry itself or any ancestor directory was deleted or
+			// marked opaque, all entries under it are hidden.
+			hidden := false
+			for ddir := range deletedDirs {
+				if entry.Path == ddir || strings.HasPrefix(entry.Path, ddir+"/") {
+					hidden = true
+					break
+				}
+			}
+			if hidden {
 				continue
 			}
 			// If a whiteout exists in the snapshot, the file was deleted.
@@ -534,8 +596,10 @@ func mergeCacheIntoLower(lowerDir, cacheDir string) error {
 }
 
 // mergeUpperIntoLower applies changes from the upper layer directory into the
-// lower directory: regular files are copied (added/modified), and whiteout
-// files (.wh.name) cause the corresponding entry to be deleted from lower.
+// lower directory: regular files are copied (added/modified), whiteout files
+// (.wh.name) cause the corresponding entry to be deleted from lower, and
+// opaque markers (.wh..wh..opq) cause the entire lower directory contents to
+// be replaced by the upper directory contents.
 func mergeUpperIntoLower(lowerDir, upperDir string) error {
 	return filepath.WalkDir(upperDir, func(path string, d iofs.DirEntry, err error) error {
 		if err != nil {
@@ -550,6 +614,18 @@ func mergeUpperIntoLower(lowerDir, upperDir string) error {
 		}
 
 		base := filepath.Base(rel)
+
+		// Opaque marker: clear all lower contents for this directory, then
+		// skip the marker file itself (upper contents will be copied normally).
+		if base == opaqueMarker {
+			dir := filepath.Dir(rel)
+			lowerTarget := filepath.Join(lowerDir, dir)
+			// Remove all existing lower contents, then recreate the directory.
+			_ = os.RemoveAll(lowerTarget)
+			_ = os.MkdirAll(lowerTarget, 0o755)
+			return nil
+		}
+
 		if strings.HasPrefix(base, whiteoutPrefix) {
 			origName := base[len(whiteoutPrefix):]
 			_ = os.RemoveAll(filepath.Join(lowerDir, filepath.Dir(rel), origName))
@@ -590,6 +666,22 @@ func tarOverlayLayer(layerDir string) (io.Reader, int64, error) {
 
 		hasEntries = true
 		base := filepath.Base(rel)
+
+		// Convert opaque marker to TEMPORAL.opaque PAX record.
+		if base == opaqueMarker {
+			dir := filepath.Dir(rel)
+			if dir == "." {
+				dir = ""
+			}
+			return tw.WriteHeader(&tar.Header{
+				Name:     dir + "/",
+				Typeflag: tar.TypeDir,
+				Mode:     0o755,
+				PAXRecords: map[string]string{
+					"TEMPORAL.opaque": "true",
+				},
+			})
+		}
 
 		// Convert whiteout to TEMPORAL.deleted marker.
 		if strings.HasPrefix(base, whiteoutPrefix) {
@@ -654,7 +746,8 @@ func tarOverlayLayer(layerDir string) (io.Reader, int64, error) {
 }
 
 // extractTarToDir extracts a tar archive to a directory, handling
-// TEMPORAL.deleted PAX records by removing the corresponding files.
+// TEMPORAL.deleted PAX records by removing the corresponding files and
+// TEMPORAL.opaque PAX records by clearing existing directory contents.
 func extractTarToDir(dir string, diff io.Reader) error {
 	tr := tar.NewReader(diff)
 	for {
@@ -673,6 +766,13 @@ func extractTarToDir(dir string, diff io.Reader) error {
 
 		if header.PAXRecords["TEMPORAL.deleted"] == "true" {
 			_ = os.RemoveAll(target)
+			continue
+		}
+
+		// Opaque directory: clear all existing contents, then recreate.
+		if header.PAXRecords["TEMPORAL.opaque"] == "true" {
+			_ = os.RemoveAll(target)
+			_ = os.MkdirAll(target, os.FileMode(header.Mode))
 			continue
 		}
 
@@ -731,6 +831,16 @@ func walkTarEntries(r io.Reader, fn func(path string, mode os.FileMode, r io.Rea
 // A file named ".wh.foo" in the upper layer means "foo" has been deleted.
 const whiteoutPrefix = ".wh."
 
+// opaqueMarker is placed inside a directory to mark it as opaque. An opaque
+// directory hides ALL entries from lower/cache/manifest layers — only upper
+// entries are visible. This follows the Linux overlayfs convention.
+//
+// Opaque markers are created when a directory that exists in a lower layer is
+// recreated in upper (e.g., mkdir after rmdir). Without the marker, the lower
+// entries would bleed through after a remount because rmdir's os.RemoveAll
+// destroys the individual whiteout files that were inside the directory.
+const opaqueMarker = ".wh..wh..opq"
+
 // overlayConfig holds the lower (read-only) and upper (writable) directory paths
 // for the FUSE overlay filesystem. When manifest is non-nil, the overlay operates
 // in lazy mode: files listed in the manifest are virtually present and their
@@ -738,12 +848,12 @@ const whiteoutPrefix = ".wh."
 type overlayConfig struct {
 	lowerDir     string
 	upperDir     string
-	cacheDir     string              // lazy: cached file contents after chunk load
-	manifest     *Manifest           // lazy: merged manifest (nil = eager mode)
-	chunkLoader  ChunkLoader         // lazy: downloads and extracts chunk tars
-	loadedChunks map[string]bool     // lazy: tracks which chunks have been loaded
-	chunkMu      sync.Mutex          // lazy: protects loadedChunks
-	fetchGrp     singleflight.Group  // dedup concurrent chunk loads (key = chunkID)
+	cacheDir     string             // lazy: cached file contents after chunk load
+	manifest     *Manifest          // lazy: merged manifest (nil = eager mode)
+	chunkLoader  ChunkLoader        // lazy: downloads and extracts chunk tars
+	loadedChunks map[string]bool    // lazy: tracks which chunks have been loaded
+	chunkMu      sync.Mutex         // lazy: protects loadedChunks
+	fetchGrp     singleflight.Group // dedup concurrent chunk loads (key = chunkID)
 
 	// In-memory path indexes for upper layer and whiteouts. These avoid
 	// os.Lstat syscalls in resolveExt for the common case. All mutations to
@@ -751,12 +861,13 @@ type overlayConfig struct {
 	// these maps. Initialized from disk at mount time.
 	upperPaths map[string]bool // paths (files + dirs) that exist in upper
 	whiteouts  map[string]bool // paths that have been deleted (whiteout markers)
-	pathMu     sync.RWMutex   // protects upperPaths and whiteouts
+	opaqueDirs map[string]bool // dirs whose lower/cache/manifest content is hidden
+	pathMu     sync.RWMutex    // protects upperPaths, whiteouts, and opaqueDirs
 
 	// Disk space quota for the upper layer. 0 = unlimited, >0 = limit in bytes.
 	diskLimitBytes int64
-	diskUsedBytes  int64       // approximate; updated on write/create/unlink
-	diskMu         sync.Mutex  // protects diskUsedBytes
+	diskUsedBytes  int64      // approximate; updated on write/create/unlink
+	diskMu         sync.Mutex // protects diskUsedBytes
 }
 
 // pathAdd marks a path as existing in the upper layer.
@@ -783,6 +894,36 @@ func (c *overlayConfig) pathRename(oldRel, newRel string) {
 	c.upperPaths[newRel] = true
 	delete(c.whiteouts, newRel)
 	c.pathMu.Unlock()
+}
+
+// isUnderOpaqueDir returns true if rel or any of its ancestor directories is
+// marked opaque. Must be called with pathMu held (at least RLock).
+func (c *overlayConfig) isUnderOpaqueDir(rel string) bool {
+	// Walk up the path checking each ancestor.
+	cur := rel
+	for {
+		parent := filepath.Dir(cur)
+		if parent == "." || parent == "" {
+			// Check root opaque (empty string key).
+			return c.opaqueDirs[""]
+		}
+		if c.opaqueDirs[parent] {
+			return true
+		}
+		cur = parent
+	}
+}
+
+// isDirOpaqueOrUnder returns true if rel itself is opaque, or any ancestor is.
+// Must be called with pathMu held (at least RLock).
+func (c *overlayConfig) isDirOpaqueOrUnder(rel string) bool {
+	if c.opaqueDirs[rel] {
+		return true
+	}
+	if rel == "" {
+		return false
+	}
+	return c.isUnderOpaqueDir(rel)
 }
 
 // diskCheckSpace returns ENOSPC if adding delta bytes would exceed the quota.
@@ -858,11 +999,11 @@ func (n *overlayNode) relPath() string {
 type resolveResult int
 
 const (
-	resolveNotFound  resolveResult = iota
-	resolveUpper                   // found in upper (writable) layer
-	resolveLower                   // found in lower (read-only) layer
-	resolveCache                   // found in lazy cache
-	resolveManifest                // exists virtually in manifest (no content on disk)
+	resolveNotFound resolveResult = iota
+	resolveUpper                  // found in upper (writable) layer
+	resolveLower                  // found in lower (read-only) layer
+	resolveCache                  // found in lazy cache
+	resolveManifest               // exists virtually in manifest (no content on disk)
 )
 
 // resolve returns the real filesystem path for a relative path by checking
@@ -884,6 +1025,7 @@ func (n *overlayNode) resolveExt(rel string) (resolveResult, string, bool) {
 	c.pathMu.RLock()
 	whited := c.whiteouts[rel]
 	inUpper := c.upperPaths[rel]
+	opaque := c.isUnderOpaqueDir(rel)
 	c.pathMu.RUnlock()
 
 	// Check for whiteout — fast path via in-memory set.
@@ -894,6 +1036,11 @@ func (n *overlayNode) resolveExt(rel string) (resolveResult, string, bool) {
 	// Check upper — fast path via in-memory set.
 	if inUpper {
 		return resolveUpper, filepath.Join(c.upperDir, rel), true
+	}
+
+	// If an ancestor directory is opaque, lower/cache/manifest are hidden.
+	if opaque {
+		return resolveNotFound, "", false
 	}
 
 	// Check lower. Lower's inodes are stable (only modified during Snapshot,
@@ -1204,22 +1351,32 @@ func (n *overlayNode) OpendirHandle(ctx context.Context, flags uint32) (fs.FileH
 	c := n.config
 	rel := n.relPath()
 
-	// Fast path: no lower layers, use loopback dirstream on upper directly.
-	// NewLoopbackDirStream reads via getdents() which provides live updates
-	// when child processes create/rename files (critical for git's index-pack).
-	hasOtherLayers := false
-	if _, err := os.Stat(filepath.Join(c.lowerDir, rel)); err == nil {
-		hasOtherLayers = true
-	}
-	if !hasOtherLayers && c.cacheDir != "" {
-		if _, err := os.Stat(filepath.Join(c.cacheDir, rel)); err == nil {
+	// Fast path: use loopback dirstream on upper directly when no lower layers
+	// need merging. NewLoopbackDirStream reads via getdents() which provides
+	// live updates when child processes create/rename files (critical for git's
+	// index-pack). Also used when the directory is opaque — lower layers are
+	// hidden by the opaque marker so only upper entries matter.
+	c.pathMu.RLock()
+	opaque := c.isDirOpaqueOrUnder(rel)
+	c.pathMu.RUnlock()
+
+	upperOnly := opaque
+	if !upperOnly {
+		hasOtherLayers := false
+		if _, err := os.Stat(filepath.Join(c.lowerDir, rel)); err == nil {
 			hasOtherLayers = true
 		}
+		if !hasOtherLayers && c.cacheDir != "" {
+			if _, err := os.Stat(filepath.Join(c.cacheDir, rel)); err == nil {
+				hasOtherLayers = true
+			}
+		}
+		if !hasOtherLayers && c.manifest != nil && c.manifest.hasDir(rel) {
+			hasOtherLayers = true
+		}
+		upperOnly = !hasOtherLayers
 	}
-	if !hasOtherLayers && c.manifest != nil && c.manifest.hasDir(rel) {
-		hasOtherLayers = true
-	}
-	if !hasOtherLayers {
+	if upperOnly {
 		upperPath := filepath.Join(c.upperDir, rel)
 		ds, errno := fs.NewLoopbackDirStream(upperPath)
 		if errno == 0 {
@@ -1280,7 +1437,13 @@ func (n *overlayNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno)
 		// Get real inode for gVisor READDIRPLUS compatibility.
 		entries[name] = dirEntryFromPath(filepath.Join(c.upperDir, prefix+name))
 	}
+	// If this directory (or an ancestor) is opaque, skip lower/cache/manifest.
+	skipLower := c.isDirOpaqueOrUnder(rel)
 	c.pathMu.RUnlock()
+
+	if skipLower {
+		return n.sortedDirStream(entries)
+	}
 
 	// Read lower directory — needs disk I/O but only for entries not in upper.
 	if dirents, err := os.ReadDir(filepath.Join(c.lowerDir, rel)); err == nil {
@@ -1333,6 +1496,10 @@ func (n *overlayNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno)
 		}
 	}
 
+	return n.sortedDirStream(entries)
+}
+
+func (n *overlayNode) sortedDirStream(entries map[string]fuse.DirEntry) (fs.DirStream, syscall.Errno) {
 	result := make([]fuse.DirEntry, 0, len(entries))
 	for _, e := range entries {
 		result = append(result, e)
@@ -1340,7 +1507,6 @@ func (n *overlayNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno)
 	sort.Slice(result, func(i, j int) bool {
 		return result[i].Name < result[j].Name
 	})
-
 	return fs.NewListDirStream(result), fs.OK
 }
 
@@ -1507,6 +1673,21 @@ func (n *overlayNode) Mkdir(ctx context.Context, name string, mode uint32, out *
 		return nil, fs.ToErrno(err)
 	}
 
+	// Mark opaque if this directory exists in a lower layer. The opaque marker
+	// tells Readdir and resolveExt to hide lower/cache/manifest entries, which
+	// is critical after rmdir+mkdir cycles: rmdir's os.RemoveAll destroys the
+	// individual whiteout files inside the directory, and without the opaque
+	// marker those entries would reappear after a remount.
+	if n.existsBelowUpper(rel) {
+		opqPath := filepath.Join(path, opaqueMarker)
+		if f, err := os.Create(opqPath); err == nil {
+			f.Close()
+		}
+		c.pathMu.Lock()
+		c.opaqueDirs[rel] = true
+		c.pathMu.Unlock()
+	}
+
 	var st syscall.Stat_t
 	if err := syscall.Stat(path, &st); err != nil {
 		return nil, fs.ToErrno(err)
@@ -1521,6 +1702,9 @@ func (n *overlayNode) Mkdir(ctx context.Context, name string, mode uint32, out *
 func (n *overlayNode) Rmdir(ctx context.Context, name string) syscall.Errno {
 	rel := filepath.Join(n.relPath(), name)
 	_ = os.RemoveAll(filepath.Join(n.config.upperDir, rel))
+	n.config.pathMu.Lock()
+	delete(n.config.opaqueDirs, rel)
+	n.config.pathMu.Unlock()
 	n.config.pathRemove(rel)
 	return n.createWhiteout(rel, name)
 }

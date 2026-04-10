@@ -321,11 +321,24 @@ func MergeManifests(manifests []*Manifest) *Manifest {
 	allChunks := make(map[string]ManifestChunk)
 
 	for _, m := range manifests {
-		// Apply deletions from this manifest.
+		// Apply deletions from this manifest. A deletion of "foo" also removes
+		// all entries under "foo/" (directory-level deletion cascades to contents).
 		for _, d := range m.Deleted {
 			deleted[d] = true
 			delete(fileMap, d)
 			delete(dirSet, d)
+			// Cascade: remove all files and dirs under the deleted path.
+			prefix := d + "/"
+			for path := range fileMap {
+				if strings.HasPrefix(path, prefix) {
+					delete(fileMap, path)
+				}
+			}
+			for path := range dirSet {
+				if strings.HasPrefix(path, prefix) {
+					delete(dirSet, path)
+				}
+			}
 		}
 
 		// Add directories.
