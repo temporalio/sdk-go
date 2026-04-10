@@ -191,17 +191,30 @@ func (f *FuseOverlayFS) mount(wsKey string) error {
 	root := &overlayNode{config: cfg}
 
 	mp := f.mountDir(wsKey)
+	// EntryTimeout: cache "does this name exist?" in the kernel dentry cache.
+	// Safe because all file create/delete/rename ops go through the FUSE daemon
+	// which updates the kernel cache directly. Cleared on unmount (Snapshot/Suspend).
+	// Dramatically reduces FUSE round-trips for repeated lookups/stats.
+	//
+	// AttrTimeout: must be zero. Git mmaps pack files; if the kernel caches stale
+	// attributes (size), the page cache won't be invalidated after writes, and
+	// mmap reads return corrupted data.
+	//
+	// NegativeTimeout: cache "this name doesn't exist". Safe because creates go
+	// through FUSE which invalidates the negative entry automatically.
+	entryTimeout := time.Minute
 	zeroTimeout := time.Duration(0)
 	server, err := fs.Mount(mp, root, &fs.Options{
-		EntryTimeout:    &zeroTimeout,
+		EntryTimeout:    &entryTimeout,
 		AttrTimeout:     &zeroTimeout,
-		NegativeTimeout: &zeroTimeout,
+		NegativeTimeout: &entryTimeout,
 		MountOptions: fuse.MountOptions{
 			FsName:      "temporal-filesystem",
 			Name:        "temporal",
 			DirectMount: true,  // Use syscall.Mount when available (root/CAP_SYS_ADMIN), fallback to fusermount3
 			AllowOther:  true,  // Allow gVisor sandbox processes to access the mount
 			EnableLocks: true,  // Enable kernel-level flock/fcntl locking (needed by git)
+			MaxWrite:    1 << 20, // 1MB — reduces FUSE round-trips for sequential I/O (default 64KB)
 		},
 	})
 	if err != nil {
@@ -1278,7 +1291,11 @@ func (n *overlayNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, ui
 	if err != nil {
 		return nil, 0, fs.ToErrno(err)
 	}
-	return &overlayFileHandle{file: f, config: n.config}, 0, fs.OK
+	var sz int64
+	if info, serr := f.Stat(); serr == nil {
+		sz = info.Size()
+	}
+	return &overlayFileHandle{file: f, config: n.config, fileSize: sz}, 0, fs.OK
 }
 
 // ---------- Create ----------
@@ -1305,7 +1322,7 @@ func (n *overlayNode) Create(ctx context.Context, name string, flags uint32, mod
 		return nil, nil, 0, fs.ToErrno(err)
 	}
 	out.Attr.FromStat(&st)
-	return n.newChild(ctx, &st), &overlayFileHandle{file: f, config: n.config}, 0, fs.OK
+	return n.newChild(ctx, &st), &overlayFileHandle{file: f, config: n.config, fileSize: 0}, 0, fs.OK
 }
 
 // createWhiteout creates a whiteout marker in the upper layer if the path
@@ -1496,8 +1513,9 @@ func (n *overlayNode) Readlink(ctx context.Context) ([]byte, syscall.Errno) {
 
 // overlayFileHandle wraps an os.File for FUSE read/write operations.
 type overlayFileHandle struct {
-	file   *os.File
-	config *overlayConfig // for disk quota tracking (may be nil)
+	file     *os.File
+	config   *overlayConfig // for disk quota tracking (may be nil)
+	fileSize int64          // tracked size — avoids fstat on every Write for disk quota
 }
 
 var _ = (fs.FileReader)((*overlayFileHandle)(nil))
@@ -1516,21 +1534,24 @@ func (fh *overlayFileHandle) Read(ctx context.Context, dest []byte, off int64) (
 
 func (fh *overlayFileHandle) Write(ctx context.Context, data []byte, off int64) (uint32, syscall.Errno) {
 	if fh.config != nil && fh.config.diskLimitBytes > 0 {
-		// Check if this write extends the file. Only count new bytes beyond current size.
-		info, _ := fh.file.Stat()
+		// Track growth using in-memory file size to avoid fstat syscall per write.
+		end := off + int64(len(data))
 		var growth int64
-		if info != nil {
-			end := off + int64(len(data))
-			if end > info.Size() {
-				growth = end - info.Size()
-			}
-		} else {
-			growth = int64(len(data))
+		if end > fh.fileSize {
+			growth = end - fh.fileSize
 		}
 		if errno := fh.config.diskCheckSpace(growth); errno != fs.OK {
 			return 0, errno
 		}
-		defer fh.config.diskAdd(growth)
+		n, err := fh.file.WriteAt(data, off)
+		if end > fh.fileSize {
+			fh.fileSize = end
+		}
+		fh.config.diskAdd(growth)
+		if err != nil {
+			return uint32(n), fs.ToErrno(err)
+		}
+		return uint32(n), fs.OK
 	}
 	n, err := fh.file.WriteAt(data, off)
 	if err != nil {
