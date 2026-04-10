@@ -172,6 +172,7 @@ func BenchmarkFuseLargeFileSeqRead(b *testing.B) {
 	skipBenchWithoutFUSE(b)
 	const fileSize = 100 * 1024 * 1024
 	const blockSize = 4096
+	const numFiles = 10
 
 	for _, mode := range []struct {
 		name  string
@@ -184,14 +185,16 @@ func BenchmarkFuseLargeFileSeqRead(b *testing.B) {
 			dir, cleanup := mode.setup(b)
 			defer cleanup()
 
-			// Pre-create the file.
-			p := filepath.Join(dir, "large.dat")
-			writeRandomFile(b, p, fileSize)
+			// Pre-create multiple files so each iteration reads a different one (cold cache).
+			for j := 0; j < numFiles; j++ {
+				writeRandomFile(b, filepath.Join(dir, fmt.Sprintf("large_%d.dat", j)), fileSize)
+			}
 
 			buf := make([]byte, blockSize)
 			b.SetBytes(fileSize)
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
+				p := filepath.Join(dir, fmt.Sprintf("large_%d.dat", i%numFiles))
 				f, err := os.Open(p)
 				if err != nil {
 					b.Fatal(err)
@@ -272,8 +275,10 @@ func BenchmarkFuseSmallFileCreate(b *testing.B) {
 
 func BenchmarkFuseSmallFileRead(b *testing.B) {
 	skipBenchWithoutFUSE(b)
-	const numFiles = 10000
 	const fileSize = 1024
+	// Create enough files that b.N iterations read different files.
+	// Each iteration reads one file. This measures cold-cache per-file read cost.
+	const poolSize = 10000
 
 	for _, mode := range []struct {
 		name  string
@@ -290,7 +295,7 @@ func BenchmarkFuseSmallFileRead(b *testing.B) {
 			data := make([]byte, fileSize)
 			rand.Read(data)
 			var paths []string
-			for j := 0; j < numFiles; j++ {
+			for j := 0; j < poolSize; j++ {
 				subdir := filepath.Join(dir, fmt.Sprintf("dir%03d", j/100))
 				os.MkdirAll(subdir, 0o755)
 				p := filepath.Join(subdir, fmt.Sprintf("f%05d", j))
@@ -300,14 +305,13 @@ func BenchmarkFuseSmallFileRead(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				for _, p := range paths {
-					d, err := os.ReadFile(p)
-					if err != nil {
-						b.Fatal(err)
-					}
-					if len(d) != fileSize {
-						b.Fatalf("unexpected size: %d", len(d))
-					}
+				p := paths[i%poolSize]
+				d, err := os.ReadFile(p)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if len(d) != fileSize {
+					b.Fatalf("unexpected size: %d", len(d))
 				}
 			}
 		})
@@ -329,22 +333,22 @@ func BenchmarkFuseSmallFileRead_Lazy(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for _, p := range paths {
-			d, err := os.ReadFile(p)
-			if err != nil {
-				b.Fatal(err)
-			}
-			if len(d) != fileSize {
-				b.Fatalf("unexpected size: %d", len(d))
-			}
+		p := paths[i%numFiles]
+		d, err := os.ReadFile(p)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if len(d) != fileSize {
+			b.Fatalf("unexpected size: %d", len(d))
 		}
 	}
 }
 
 func BenchmarkFuseSmallFileStat(b *testing.B) {
 	skipBenchWithoutFUSE(b)
-	const numFiles = 10000
 	const fileSize = 1024
+	// Each iteration stats one file. Pool ensures variety across iterations.
+	const poolSize = 10000
 
 	for _, mode := range []struct {
 		name  string
@@ -360,7 +364,7 @@ func BenchmarkFuseSmallFileStat(b *testing.B) {
 			// Pre-create files.
 			data := make([]byte, fileSize)
 			var paths []string
-			for j := 0; j < numFiles; j++ {
+			for j := 0; j < poolSize; j++ {
 				subdir := filepath.Join(dir, fmt.Sprintf("dir%03d", j/100))
 				os.MkdirAll(subdir, 0o755)
 				p := filepath.Join(subdir, fmt.Sprintf("f%05d", j))
@@ -370,10 +374,8 @@ func BenchmarkFuseSmallFileStat(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				for _, p := range paths {
-					if _, err := os.Lstat(p); err != nil {
-						b.Fatal(err)
-					}
+				if _, err := os.Lstat(paths[i%poolSize]); err != nil {
+					b.Fatal(err)
 				}
 			}
 		})
@@ -395,10 +397,8 @@ func BenchmarkFuseSmallFileStat_Lazy(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		for _, p := range paths {
-			if _, err := os.Lstat(p); err != nil {
-				b.Fatal(err)
-			}
+		if _, err := os.Lstat(paths[i%numFiles]); err != nil {
+			b.Fatal(err)
 		}
 	}
 }
@@ -432,14 +432,13 @@ func BenchmarkFuseReaddir(b *testing.B) {
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				for _, d := range dirs {
-					entries, err := os.ReadDir(d)
-					if err != nil {
-						b.Fatal(err)
-					}
-					if len(entries) != filesPerDir {
-						b.Fatalf("expected %d entries, got %d", filesPerDir, len(entries))
-					}
+				d := dirs[i%numDirs]
+				entries, err := os.ReadDir(d)
+				if err != nil {
+					b.Fatal(err)
+				}
+				if len(entries) != filesPerDir {
+					b.Fatalf("expected %d entries, got %d", filesPerDir, len(entries))
 				}
 			}
 		})
@@ -564,27 +563,45 @@ func BenchmarkFuseLookup(b *testing.B) {
 	// Re-create upper_file in upper for the test.
 	os.WriteFile(filepath.Join(mountPath, "upper_file"), []byte("data"), 0o644)
 
+	// Create many files for cold-cache testing (different file per iteration).
+	const poolSize = 1000
+	var upperPaths, lowerPaths, missPaths []string
+	for j := 0; j < poolSize; j++ {
+		os.WriteFile(filepath.Join(mountPath, fmt.Sprintf("up_%04d", j)), []byte("data"), 0o644)
+		upperPaths = append(upperPaths, filepath.Join(mountPath, fmt.Sprintf("up_%04d", j)))
+		missPaths = append(missPaths, filepath.Join(mountPath, fmt.Sprintf("miss_%04d", j)))
+	}
+	// Snapshot to move files to lower, then create fresh upper files.
+	if err := ffs.Snapshot("bench", "v1"); err != nil {
+		b.Fatal(err)
+	}
+	if err := ffs.EnsureMounted("bench"); err != nil {
+		b.Fatal(err)
+	}
+	for j := 0; j < poolSize; j++ {
+		lowerPaths = append(lowerPaths, filepath.Join(mountPath, fmt.Sprintf("up_%04d", j)))
+		os.WriteFile(filepath.Join(mountPath, fmt.Sprintf("newup_%04d", j)), []byte("data"), 0o644)
+		upperPaths[j] = filepath.Join(mountPath, fmt.Sprintf("newup_%04d", j))
+	}
+
 	b.Run("upper_hit", func(b *testing.B) {
-		p := filepath.Join(mountPath, "upper_file")
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			os.Lstat(p)
+			os.Lstat(upperPaths[i%poolSize])
 		}
 	})
 
 	b.Run("lower_hit", func(b *testing.B) {
-		p := filepath.Join(mountPath, "lower_file")
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			os.Lstat(p)
+			os.Lstat(lowerPaths[i%poolSize])
 		}
 	})
 
 	b.Run("miss", func(b *testing.B) {
-		p := filepath.Join(mountPath, "nonexistent")
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			os.Lstat(p)
+			os.Lstat(missPaths[i%poolSize])
 		}
 	})
 }
