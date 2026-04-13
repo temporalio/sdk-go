@@ -6,28 +6,19 @@ import (
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
-	workflowservicepb "go.temporal.io/api/workflowservice/v1"
+	systemnexus "go.temporal.io/api/workflowservice/v1/workflowservicenexus/json"
 
 	"go.temporal.io/sdk/converter"
-	systemnexus "go.temporal.io/sdk/temporalnexus/system"
 )
 
+const systemNexusPayloadConverterContextKey contextKey = "systemNexusPayloadConverter"
+
 func isSystemNexusOperation(service, operation string) bool {
-	return service == systemnexus.WorkflowService.ServiceName &&
-		operation == systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name()
+	return systemnexus.IsTemporalNexusOperation(service, operation)
 }
 
 func getSystemNexusPayloadConverter() converter.DataConverter {
 	return converter.GetDefaultDataConverter()
-}
-
-type payloadVisitorFunc func(*proxy.VisitPayloadsContext, []*commonpb.Payload) ([]*commonpb.Payload, error)
-
-func (f payloadVisitorFunc) Visit(
-	ctx *proxy.VisitPayloadsContext,
-	payloads []*commonpb.Payload,
-) ([]*commonpb.Payload, error) {
-	return f(ctx, payloads)
 }
 
 type systemNexusOutboundPayloadVisitor struct {
@@ -54,7 +45,7 @@ func (v *systemNexusOutboundPayloadVisitor) Visit(
 		ctx.SinglePayloadRequired &&
 		len(payloads) == 1 &&
 		isSystemNexusOperation(attrs.GetService(), attrs.GetOperation()) {
-		return v.rewriteSystemNexusPayload(ctx.Context, payloads[0])
+		return v.rewriteSystemNexusPayload(ctx, attrs.GetService(), attrs.GetOperation(), payloads[0])
 	}
 	if v.next == nil {
 		return payloads, nil
@@ -63,36 +54,44 @@ func (v *systemNexusOutboundPayloadVisitor) Visit(
 }
 
 func (v *systemNexusOutboundPayloadVisitor) rewriteSystemNexusPayload(
-	ctx context.Context,
+	visitCtx *proxy.VisitPayloadsContext,
+	service string,
+	operation string,
 	payload *commonpb.Payload,
 ) ([]*commonpb.Payload, error) {
-	req := &workflowservicepb.SignalWithStartWorkflowExecutionRequest{}
-	if err := getSystemNexusPayloadConverter().FromPayload(payload, req); err != nil {
-		return nil, err
+	rewriter := systemnexus.GetTemporalNexusPayloadRewriter(service, operation)
+	if rewriter == nil {
+		return []*commonpb.Payload{payload}, nil
 	}
 
-	nestedVisitor := payloadVisitorFunc(func(
-		visitCtx *proxy.VisitPayloadsContext,
+	rewrittenPayload, err := rewriter(payload, func(
 		nestedPayloads []*commonpb.Payload,
 	) ([]*commonpb.Payload, error) {
-		encodedPayloads, err := encodeSystemNexusNestedPayloads(v.dataConverter, nestedPayloads)
+		encodedPayloads, err := encodeSystemNexusNestedPayloads(
+			v.dataConverterForContext(visitCtx.Context),
+			nestedPayloads,
+		)
 		if err != nil {
 			return nil, err
 		}
 		if v.next == nil {
 			return encodedPayloads, nil
 		}
-		return v.next.Visit(visitCtx, encodedPayloads)
-	})
-	if err := visitProtoPayloads(ctx, nestedVisitor, req); err != nil {
-		return nil, err
-	}
-
-	rewrittenPayload, err := getSystemNexusPayloadConverter().ToPayload(req)
+		return v.next.Visit(&proxy.VisitPayloadsContext{Context: visitCtx.Context}, encodedPayloads)
+	}, false)
 	if err != nil {
 		return nil, err
 	}
 	return []*commonpb.Payload{rewrittenPayload}, nil
+}
+
+func (v *systemNexusOutboundPayloadVisitor) dataConverterForContext(ctx context.Context) converter.DataConverter {
+	if ctx != nil {
+		if dc, ok := ctx.Value(systemNexusPayloadConverterContextKey).(converter.DataConverter); ok && dc != nil {
+			return dc
+		}
+	}
+	return v.dataConverter
 }
 
 func encodeSystemNexusNestedPayloads(

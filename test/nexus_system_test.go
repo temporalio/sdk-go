@@ -11,13 +11,11 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
-	sdkpb "go.temporal.io/api/sdk/v1"
-	workflowservicepb "go.temporal.io/api/workflowservice/v1"
+	systemnexus "go.temporal.io/api/workflowservice/v1/workflowservicenexus/json"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
-	systemnexus "go.temporal.io/sdk/temporalnexus/system"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 	"google.golang.org/protobuf/proto"
@@ -65,29 +63,21 @@ func TestSystemNexusDefersOuterEnvelopeEncoding(t *testing.T) {
 		systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name(),
 		func(
 			_ context.Context,
-			req *workflowservicepb.SignalWithStartWorkflowExecutionRequest,
+			req systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput,
 			_ nexus.StartOperationOptions,
-		) (*workflowservicepb.SignalWithStartWorkflowExecutionResponse, error) {
-			require.Equal(t, "system-nexus-workflow-id", req.GetWorkflowId())
-			require.Equal(t, "test-signal", req.GetSignalName())
+		) (systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionOutput, error) {
+			require.Equal(t, "system-nexus-workflow-id", req.WorkflowID)
+			require.Equal(t, "test-signal", req.SignalName)
+			requirePayloadJSONReference(t, req.Input.Payloads[0])
+			requirePayloadJSONReference(t, req.SignalInput.Payloads[0])
+			requirePayloadJSONReference(t, req.Memo.Fields["memo-key"])
+			requirePayloadJSONReference(t, req.Header.Fields["header-key"])
+			requirePayloadJSONReference(t, req.UserMetadata.Summary)
+			requirePayloadJSONReference(t, req.UserMetadata.Details)
+			require.Equal(t, "search-attribute-value", req.SearchAttributes.IndexedFields["custom-key"])
 
-			for _, payload := range req.GetInput().GetPayloads() {
-				require.NotEmpty(t, payload.GetExternalPayloads())
-			}
-			for _, payload := range req.GetSignalInput().GetPayloads() {
-				require.NotEmpty(t, payload.GetExternalPayloads())
-			}
-			require.NotEmpty(t, req.GetMemo().GetFields()["memo-key"].GetExternalPayloads())
-			require.NotEmpty(t, req.GetHeader().GetFields()["header-key"].GetExternalPayloads())
-			require.NotEmpty(t, req.GetUserMetadata().GetSummary().GetExternalPayloads())
-			require.NotEmpty(t, req.GetUserMetadata().GetDetails().GetExternalPayloads())
-
-			searchAttr := req.GetSearchAttributes().GetIndexedFields()["custom-key"]
-			require.Empty(t, searchAttr.GetExternalPayloads())
-			require.NotContains(t, searchAttr.GetMetadata(), "test-codec")
-
-			return &workflowservicepb.SignalWithStartWorkflowExecutionResponse{
-				RunId: "system-nexus-workflow-id-run",
+			return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionOutput{
+				RunID: "system-nexus-workflow-id-run",
 			}, nil
 		},
 	)))
@@ -130,57 +120,44 @@ func systemNexusSignalWithStartWorkflow(ctx workflow.Context, endpoint string) (
 	fut := nexusClient.ExecuteOperation(
 		ctx,
 		systemnexus.WorkflowService.SignalWithStartWorkflowExecution,
-		&workflowservicepb.SignalWithStartWorkflowExecutionRequest{
+		systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{
 			Namespace:  "default",
-			WorkflowId: "system-nexus-workflow-id",
+			WorkflowID: "system-nexus-workflow-id",
 			SignalName: "test-signal",
-			Input: &commonpb.Payloads{Payloads: []*commonpb.Payload{
-				jsonStringPayload("workflow-input"),
+			Input: &systemnexus.Input{Payloads: []any{
+				"workflow-input",
 			}},
-			SignalInput: &commonpb.Payloads{Payloads: []*commonpb.Payload{
-				jsonStringPayload("signal-input"),
+			SignalInput: &systemnexus.Input{Payloads: []any{
+				"signal-input",
 			}},
-			Memo: &commonpb.Memo{
-				Fields: map[string]*commonpb.Payload{
-					"memo-key": jsonStringPayload("memo-value"),
+			Memo: &systemnexus.Memo{
+				Fields: map[string]any{
+					"memo-key": "memo-value",
 				},
 			},
-			Header: &commonpb.Header{
-				Fields: map[string]*commonpb.Payload{
-					"header-key": jsonStringPayload("header-value"),
+			Header: &systemnexus.Header{
+				Fields: map[string]any{
+					"header-key": "header-value",
 				},
 			},
-			UserMetadata: &sdkpb.UserMetadata{
-				Summary: jsonStringPayload("summary-value"),
-				Details: jsonStringPayload("details-value"),
+			UserMetadata: &systemnexus.UserMetadata{
+				Summary: "summary-value",
+				Details: "details-value",
 			},
-			SearchAttributes: &commonpb.SearchAttributes{
-				IndexedFields: map[string]*commonpb.Payload{
-					"custom-key": jsonStringPayload("search-attribute-value"),
+			SearchAttributes: &systemnexus.SearchAttributes{
+				IndexedFields: map[string]any{
+					"custom-key": "search-attribute-value",
 				},
 			},
 		},
 		workflow.NexusOperationOptions{},
 	)
 
-	var result *workflowservicepb.SignalWithStartWorkflowExecutionResponse
+	var result systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionOutput
 	if err := fut.Get(ctx, &result); err != nil {
 		return "", err
 	}
-	return result.GetRunId(), nil
-}
-
-func jsonStringPayload(value string) *commonpb.Payload {
-	data, err := json.Marshal(value)
-	if err != nil {
-		panic(err)
-	}
-	return &commonpb.Payload{
-		Metadata: map[string][]byte{
-			converter.MetadataEncoding: []byte(converter.MetadataEncodingJSON),
-		},
-		Data: data,
-	}
+	return result.RunID, nil
 }
 
 type rejectOuterSystemNexusCodec struct {
@@ -232,4 +209,12 @@ func looksLikeSystemNexusEnvelope(payload *commonpb.Payload) bool {
 	_, hasWorkflowID := value["workflowId"]
 	_, hasSignalName := value["signalName"]
 	return hasNamespace && hasWorkflowID && hasSignalName
+}
+
+func requirePayloadJSONReference(t *testing.T, value any) {
+	t.Helper()
+	payloadMap, ok := value.(map[string]any)
+	require.True(t, ok)
+	_, hasExternalPayloads := payloadMap["externalPayloads"]
+	require.True(t, hasExternalPayloads)
 }

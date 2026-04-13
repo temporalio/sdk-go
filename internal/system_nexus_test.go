@@ -11,10 +11,8 @@ import (
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
-	sdkpb "go.temporal.io/api/sdk/v1"
-	workflowservicepb "go.temporal.io/api/workflowservice/v1"
+	systemnexus "go.temporal.io/api/workflowservice/v1/workflowservicenexus/json"
 	"go.temporal.io/sdk/converter"
-	systemnexus "go.temporal.io/sdk/temporalnexus/system"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -26,33 +24,33 @@ func TestSystemNexusOutboundPayloadVisitor_RewritesNestedPayloadsOnly(t *testing
 	})
 	require.NoError(t, err)
 
-	req := &workflowservicepb.SignalWithStartWorkflowExecutionRequest{
+	req := systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{
 		Namespace:  "default",
-		WorkflowId: "system-nexus-workflow-id",
+		WorkflowID: "system-nexus-workflow-id",
 		SignalName: "test-signal",
-		Input: &commonpb.Payloads{Payloads: []*commonpb.Payload{
-			testJSONStringPayload("workflow-input"),
+		Input: &systemnexus.Input{Payloads: []any{
+			"workflow-input",
 		}},
-		SignalInput: &commonpb.Payloads{Payloads: []*commonpb.Payload{
-			testJSONStringPayload("signal-input"),
+		SignalInput: &systemnexus.Input{Payloads: []any{
+			"signal-input",
 		}},
-		Memo: &commonpb.Memo{
-			Fields: map[string]*commonpb.Payload{
-				"memo-key": testJSONStringPayload("memo-value"),
+		Memo: &systemnexus.Memo{
+			Fields: map[string]any{
+				"memo-key": "memo-value",
 			},
 		},
-		Header: &commonpb.Header{
-			Fields: map[string]*commonpb.Payload{
-				"header-key": testJSONStringPayload("header-value"),
+		Header: &systemnexus.Header{
+			Fields: map[string]any{
+				"header-key": "header-value",
 			},
 		},
-		UserMetadata: &sdkpb.UserMetadata{
-			Summary: testJSONStringPayload("summary-value"),
-			Details: testJSONStringPayload("details-value"),
+		UserMetadata: &systemnexus.UserMetadata{
+			Summary: "summary-value",
+			Details: "details-value",
 		},
-		SearchAttributes: &commonpb.SearchAttributes{
-			IndexedFields: map[string]*commonpb.Payload{
-				"custom-key": testJSONStringPayload("search-attribute-value"),
+		SearchAttributes: &systemnexus.SearchAttributes{
+			IndexedFields: map[string]any{
+				"custom-key": "search-attribute-value",
 			},
 		},
 	}
@@ -73,23 +71,17 @@ func TestSystemNexusOutboundPayloadVisitor_RewritesNestedPayloadsOnly(t *testing
 	require.NoError(t, err)
 	require.Len(t, rewritten, 1)
 
-	decoded := &workflowservicepb.SignalWithStartWorkflowExecutionRequest{}
-	require.NoError(t, getSystemNexusPayloadConverter().FromPayload(rewritten[0], decoded))
+	var decoded map[string]any
+	require.NoError(t, getSystemNexusPayloadConverter().FromPayload(rewritten[0], &decoded))
+	requirePayloadJSONReference(t, decoded["input"], "payloads")
+	requirePayloadJSONReference(t, decoded["signalInput"], "payloads")
+	requirePayloadJSONReference(t, decoded["memo"], "fields", "memo-key")
+	requirePayloadJSONReference(t, decoded["header"], "fields", "header-key")
+	requirePayloadJSONReference(t, decoded["userMetadata"], "summary")
+	requirePayloadJSONReference(t, decoded["userMetadata"], "details")
 
-	for _, payload := range decoded.GetInput().GetPayloads() {
-		require.NotEmpty(t, payload.GetExternalPayloads())
-	}
-	for _, payload := range decoded.GetSignalInput().GetPayloads() {
-		require.NotEmpty(t, payload.GetExternalPayloads())
-	}
-	require.NotEmpty(t, decoded.GetMemo().GetFields()["memo-key"].GetExternalPayloads())
-	require.NotEmpty(t, decoded.GetHeader().GetFields()["header-key"].GetExternalPayloads())
-	require.NotEmpty(t, decoded.GetUserMetadata().GetSummary().GetExternalPayloads())
-	require.NotEmpty(t, decoded.GetUserMetadata().GetDetails().GetExternalPayloads())
-
-	searchAttr := decoded.GetSearchAttributes().GetIndexedFields()["custom-key"]
-	require.Empty(t, searchAttr.GetExternalPayloads())
-	require.NotContains(t, searchAttr.GetMetadata(), "test-codec")
+	searchAttr := decoded["searchAttributes"].(map[string]any)["indexedFields"].(map[string]any)["custom-key"]
+	require.Equal(t, "search-attribute-value", searchAttr)
 	require.GreaterOrEqual(t, codec.EncodeCount(), 6)
 
 	driver := storageParams.driverMap["system-nexus"].(*testStorageDriver)
@@ -101,16 +93,78 @@ func TestSystemNexusOutboundPayloadVisitor_RewritesNestedPayloadsOnly(t *testing
 	}
 }
 
-func testJSONStringPayload(value string) *commonpb.Payload {
-	data, err := json.Marshal(value)
-	if err != nil {
-		panic(err)
+func TestSystemNexusOutboundPayloadVisitor_UsesContextAwareConverterOverride(t *testing.T) {
+	storageParams, err := ExternalStorageToParams(converter.ExternalStorage{
+		Drivers:              []converter.StorageDriver{newTestDriver("system-nexus")},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+
+	req := systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{
+		Namespace:  "default",
+		WorkflowID: "system-nexus-workflow-id",
+		SignalName: "test-signal",
+		Input: &systemnexus.Input{Payloads: []any{
+			"test",
+		}},
 	}
-	return &commonpb.Payload{
-		Metadata: map[string][]byte{
-			converter.MetadataEncoding: []byte(converter.MetadataEncodingJSON),
+
+	outerPayload, err := getSystemNexusPayloadConverter().ToPayload(req)
+	require.NoError(t, err)
+
+	contextAwareConverter := WithWorkflowContext(
+		WithValue(Background(), ContextAwareDataConverterContextKey, "e"),
+		NewContextAwareDataConverter(converter.GetDefaultDataConverter()),
+	)
+	visitor := newSystemNexusOutboundPayloadVisitor(
+		converter.GetDefaultDataConverter(),
+		NewExternalStorageVisitor(storageParams),
+	)
+
+	rewritten, err := visitor.Visit(&proxy.VisitPayloadsContext{
+		Context: context.WithValue(
+			context.Background(),
+			systemNexusPayloadConverterContextKey,
+			contextAwareConverter,
+		),
+		Parent: &commandpb.ScheduleNexusOperationCommandAttributes{
+			Service:   systemnexus.WorkflowService.ServiceName,
+			Operation: systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name(),
 		},
-		Data: data,
+		SinglePayloadRequired: true,
+	}, []*commonpb.Payload{outerPayload})
+	require.NoError(t, err)
+	require.Len(t, rewritten, 1)
+
+	var decoded map[string]any
+	require.NoError(t, getSystemNexusPayloadConverter().FromPayload(rewritten[0], &decoded))
+
+	driver := storageParams.driverMap["system-nexus"].(*testStorageDriver)
+	driver.mu.Lock()
+	defer driver.mu.Unlock()
+	require.Len(t, driver.data, 1)
+	for _, payload := range driver.data {
+		require.Equal(t, []byte(`"t?st"`), payload.GetData())
+	}
+}
+
+func requirePayloadJSONReference(t *testing.T, value any, path ...string) {
+	t.Helper()
+	current := value
+	for _, segment := range path {
+		next, ok := current.(map[string]any)
+		require.True(t, ok)
+		current = next[segment]
+	}
+	switch typed := current.(type) {
+	case []any:
+		require.NotEmpty(t, typed)
+		requirePayloadJSONReference(t, typed[0])
+	case map[string]any:
+		_, hasExternalPayloads := typed["externalPayloads"]
+		require.True(t, hasExternalPayloads)
+	default:
+		require.Failf(t, "expected rewritten payload JSON", "got %T", current)
 	}
 }
 

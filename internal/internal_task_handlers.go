@@ -219,6 +219,7 @@ type (
 	workflowTaskCompletion struct {
 		rawRequest             proto.Message
 		applyCompletionMetrics func()
+		outboundDataConverter  converter.DataConverter
 	}
 )
 
@@ -2010,7 +2011,18 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 				metricsHandler.Timer(metrics.WorkflowEndToEndLatency).Record(elapsed)
 			}
 		},
+		outboundDataConverter: workflowTaskCompletionDataConverter(eventHandler, wth.dataConverter),
 	}
+}
+
+func workflowTaskCompletionDataConverter(
+	eventHandler *workflowExecutionEventHandlerImpl,
+	defaultConverter converter.DataConverter,
+) converter.DataConverter {
+	if syncDefinition, ok := eventHandler.workflowDefinition.(*syncWorkflowDefinition); ok && syncDefinition.rootCtx != nil {
+		return getDataConverterFromWorkflowContext(syncDefinition.rootCtx)
+	}
+	return defaultConverter
 }
 
 func (wth *workflowTaskHandlerImpl) executeAnyPressurePoints(event *historypb.HistoryEvent, isInReplay bool) error {
