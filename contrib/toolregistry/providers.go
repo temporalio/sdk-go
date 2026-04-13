@@ -112,14 +112,17 @@ func (p *AnthropicProvider) RunTurn(ctx context.Context, messages []map[string]a
 			}
 		}
 		result, err := p.registry.Dispatch(name, input)
-		if err != nil {
-			result = fmt.Sprintf("error: %s", err)
-		}
-		toolResults = append(toolResults, map[string]any{
+		toolResult := map[string]any{
 			"type":        "tool_result",
 			"tool_use_id": id,
-			"content":     result,
-		})
+		}
+		if err != nil {
+			toolResult["content"] = fmt.Sprintf("error: %s", err)
+			toolResult["is_error"] = true
+		} else {
+			toolResult["content"] = result
+		}
+		toolResults = append(toolResults, toolResult)
 	}
 	newMsgs = append(newMsgs, map[string]any{"role": "user", "content": toolResults})
 	return newMsgs, false, nil

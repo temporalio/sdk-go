@@ -13,6 +13,8 @@ A Temporal Activity is a function that Temporal monitors and retries automatical
 
 New to Temporal? → https://docs.temporal.io/develop
 
+**Python or TypeScript user?** Those SDKs also ship framework-level integrations (`openai_agents`, `google_adk_agents`, `langgraph`, `@temporalio/ai-sdk`) for teams already using a specific agent framework. ToolRegistry is the equivalent story for direct Anthropic/OpenAI calls, and shares the same API surface across all six Temporal SDKs.
+
 ## Install
 
 ```bash
