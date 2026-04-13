@@ -361,7 +361,10 @@ func newWorkflowTaskProcessor(
 		numNormalPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
 		numStickyPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
 		inboundPayloadVisitor:        params.inboundPayloadVisitor,
-		outboundPayloadVisitor:       params.outboundPayloadVisitor,
+		outboundPayloadVisitor: newSystemNexusOutboundPayloadVisitor(
+			params.DataConverter,
+			params.outboundPayloadVisitor,
+		),
 	}
 }
 
