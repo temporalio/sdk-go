@@ -227,6 +227,8 @@ type (
 		inboundPayloadVisitor PayloadVisitor
 
 		outboundPayloadVisitor PayloadVisitor
+
+		payloadVisitorConcurrency int
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -1979,7 +1981,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	// task handler. This mirrors what processWorkflowTask does for live workers.
 	replayStorageCb := &replayStorageMetrics{logger: logger}
 	inboundPayloadVisitorCtx := context.WithValue(context.Background(), storageOperationCallbackContextKey, replayStorageCb)
-	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task); err != nil {
+	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task, 0); err != nil {
 		return err
 	}
 
@@ -2239,9 +2241,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:              &pollTimeTracker{},
 		workerInstanceKey:            workerInstanceKey,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
-		serverSupportsAutoscaling: &atomic.Bool{},
-		inboundPayloadVisitor:     client.inboundPayloadVisitor,
-		outboundPayloadVisitor:    client.outboundPayloadVisitor,
+		serverSupportsAutoscaling:    &atomic.Bool{},
+		inboundPayloadVisitor:        client.inboundPayloadVisitor,
+		outboundPayloadVisitor:       client.outboundPayloadVisitor,
+		payloadVisitorConcurrency:    options.MaxConcurrentWorkflowTaskExternalStorageVisits,
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
@@ -2630,6 +2633,9 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 	if options.MaxHeartbeatThrottleInterval == 0 {
 		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
+	}
+	if options.MaxConcurrentWorkflowTaskExternalStorageVisits == 0 {
+		options.MaxConcurrentWorkflowTaskExternalStorageVisits = defualtMaxConcurrentWorkflowTaskExternalStorageVisits
 	}
 	if options.Tuner == nil {
 		// Err cannot happen since these slot numbers are guaranteed valid

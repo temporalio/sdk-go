@@ -41,8 +41,9 @@ const (
 
 	noRetryBackoff = time.Duration(-1)
 
-	defaultDefaultHeartbeatThrottleInterval = 30 * time.Second
-	defaultMaxHeartbeatThrottleInterval     = 60 * time.Second
+	defaultDefaultHeartbeatThrottleInterval               = 30 * time.Second
+	defaultMaxHeartbeatThrottleInterval                   = 60 * time.Second
+	defualtMaxConcurrentWorkflowTaskExternalStorageVisits = 3
 )
 
 var (
