@@ -3568,6 +3568,7 @@ func (h *testNexusOperationHandle) newStartTask() *workflowservice.PollNexusTask
 		Request: &nexuspb.Request{
 			ScheduledTime: timestamppb.Now(),
 			Header:        h.params.nexusHeader,
+			Endpoint:      h.params.client.Endpoint(),
 			Capabilities: &nexuspb.Request_Capabilities{
 				TemporalFailureResponses: true,
 			},
@@ -3595,6 +3596,7 @@ func (h *testNexusOperationHandle) newCancelTask() *workflowservice.PollNexusTas
 		Request: &nexuspb.Request{
 			ScheduledTime: timestamppb.Now(),
 			Header:        h.params.nexusHeader,
+			Endpoint:      h.params.client.Endpoint(),
 			Capabilities: &nexuspb.Request_Capabilities{
 				TemporalFailureResponses: true,
 			},
