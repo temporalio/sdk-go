@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -20,6 +21,7 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
+	"google.golang.org/grpc"
 )
 
 type PayloadLimitsTestSuite struct {
@@ -121,45 +123,39 @@ func (ts *PayloadLimitsTestSuite) ResetClientAndWorker(
 	ts.NoError(ts.worker.Start())
 }
 
-// pollForHistoryEvent polls the workflow history until an event of the specified type is found
-// or the context is cancelled/expired.
-// Returns the last event of the specified type, or nil if not found.
-func (ts *PayloadLimitsTestSuite) pollForHistoryEvent(
-	ctx context.Context,
-	workflowID string,
-	runID string,
-	eventType enumspb.EventType,
-) *historypb.HistoryEvent {
-	var lastEvent *historypb.HistoryEvent
-	for {
-		select {
-		case <-ctx.Done():
-			return lastEvent
-		case <-time.After(100 * time.Millisecond):
-		}
-		eventIterator := ts.client.GetWorkflowHistory(ctx, workflowID, runID, false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for eventIterator.HasNext() {
-			event, err := eventIterator.Next()
-			ts.NoError(err)
-			if event.EventType == eventType {
-				lastEvent = event
+// addWFTFailedCapture injects a gRPC interceptor into opts that sends the cause of
+// each outbound RespondWorkflowTaskFailed call to ch. Used with assertPayloadLimitWFTFailed.
+func addWFTFailedCapture(opts *client.Options, ch chan<- enumspb.WorkflowTaskFailedCause) {
+	opts.ConnectionOptions.DialOptions = append(
+		opts.ConnectionOptions.DialOptions,
+		grpc.WithUnaryInterceptor(func(
+			ctx context.Context,
+			method string,
+			req, reply interface{},
+			cc *grpc.ClientConn,
+			invoker grpc.UnaryInvoker,
+			callOpts ...grpc.CallOption,
+		) error {
+			if r, ok := req.(*workflowservice.RespondWorkflowTaskFailedRequest); ok {
+				select {
+				case ch <- r.Cause:
+				default:
+				}
 			}
-		}
-		if lastEvent != nil {
-			return lastEvent
-		}
-	}
+			return invoker(ctx, method, req, reply, cc, callOpts...)
+		}),
+	)
 }
 
-// assertWorkflowTaskFailedWithPayloadLimit verifies that the event is a WORKFLOW_TASK_FAILED
-// event with the expected payload limit failure attributes.
-func (ts *PayloadLimitsTestSuite) assertWorkflowTaskFailedWithPayloadLimit(event *historypb.HistoryEvent, message string) {
-	ts.NotNil(event)
-	attributes := event.GetWorkflowTaskFailedEventAttributes()
-	ts.NotNil(attributes)
-	ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, attributes.Cause)
-	ts.NotNil(attributes.Failure)
-	ts.Equal(message, attributes.Failure.Message)
+// assertPayloadLimitWFTFailed waits for a RespondWorkflowTaskFailed call captured by
+// addWFTFailedCapture and asserts its cause is PAYLOADS_TOO_LARGE.
+func (ts *PayloadLimitsTestSuite) assertPayloadLimitWFTFailed(ctx context.Context, ch <-chan enumspb.WorkflowTaskFailedCause) {
+	select {
+	case cause := <-ch:
+		ts.Equal(enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE, cause)
+	case <-ctx.Done():
+		ts.Fail("timed out waiting for RespondWorkflowTaskFailed with PAYLOADS_TOO_LARGE cause")
+	}
 }
 
 // assertLogContains verifies that the logger contains a line with the specified message.
@@ -174,8 +170,10 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
+	wftFailedCh := make(chan enumspb.WorkflowTaskFailedCause, 10)
 	ts.ResetClientAndWorker(func(opts *client.Options) {
 		opts.Logger = logger
+		addWFTFailedCapture(opts, wftFailedCh)
 	}, nil)
 
 	wfname := "payload-size-error-workflow-result"
@@ -192,12 +190,8 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
 	)
 	ts.NoError(err)
 
-	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
-
+	ts.assertPayloadLimitWFTFailed(ctx, wftFailedCh)
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
-
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
-
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
@@ -206,8 +200,10 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
+	wftFailedCh := make(chan enumspb.WorkflowTaskFailedCause, 10)
 	ts.ResetClientAndWorker(func(opts *client.Options) {
 		opts.Logger = logger
+		addWFTFailedCapture(opts, wftFailedCh)
 	}, nil)
 
 	wfname := "payload-size-error-update-result"
@@ -235,8 +231,8 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
 
 	go func() {
 		// UpdateWorkflow blocks until the update is accepted, which never happens
-		// because the update handler doesn't complete. Run in a goroutine and monitor
-		// event history.
+		// because the update handler doesn't complete. Run in a goroutine and wait
+		// for the interceptor to signal that RespondWorkflowTaskFailed was sent.
 		ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
 			WorkflowID:   run.GetID(),
 			RunID:        run.GetRunID(),
@@ -245,12 +241,8 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorUpdateResult() {
 		})
 	}()
 
-	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
-
+	ts.assertPayloadLimitWFTFailed(ctx, wftFailedCh)
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
-
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
-
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
@@ -259,8 +251,10 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
+	wftFailedCh := make(chan enumspb.WorkflowTaskFailedCause, 10)
 	ts.ResetClientAndWorker(func(opts *client.Options) {
 		opts.Logger = logger
+		addWFTFailedCapture(opts, wftFailedCh)
 	}, nil)
 
 	wfname := "payload-size-error-query-result"
@@ -289,18 +283,14 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
 	ts.NoError(err)
 
 	// This will block until the context deadline expires; the query will
-	// never complete because the result payload is too large. Run in goroutine
-	// and monitor event history for the workflow task failure caused by the large query result.
+	// never complete because the result payload is too large. Run in a goroutine
+	// and wait for the interceptor to signal that RespondWorkflowTaskFailed was sent.
 	go func() {
 		_, _ = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
 	}()
 
-	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
-
+	ts.assertPayloadLimitWFTFailed(ctx, wftFailedCh)
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
-
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
-
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
@@ -309,8 +299,10 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
+	wftFailedCh := make(chan enumspb.WorkflowTaskFailedCause, 10)
 	ts.ResetClientAndWorker(func(opts *client.Options) {
 		opts.Logger = logger
+		addWFTFailedCapture(opts, wftFailedCh)
 	}, nil)
 
 	childWfName := "child-workflow"
@@ -341,12 +333,8 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
 	)
 	ts.NoError(err)
 
-	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
-
+	ts.assertPayloadLimitWFTFailed(ctx, wftFailedCh)
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
-
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
-
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
@@ -355,8 +343,10 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
+	wftFailedCh := make(chan enumspb.WorkflowTaskFailedCause, 10)
 	ts.ResetClientAndWorker(func(opts *client.Options) {
 		opts.Logger = logger
+		addWFTFailedCapture(opts, wftFailedCh)
 	}, nil)
 
 	wfName := "payload-size-error-activity-input"
@@ -386,12 +376,8 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityInput() {
 	)
 	ts.NoError(err)
 
-	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
-
+	ts.assertPayloadLimitWFTFailed(ctx, wftFailedCh)
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
-
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
-
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
@@ -917,8 +903,10 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorMultipleArguments() {
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
+	wftFailedCh := make(chan enumspb.WorkflowTaskFailedCause, 10)
 	ts.ResetClientAndWorker(func(opts *client.Options) {
 		opts.Logger = logger
+		addWFTFailedCapture(opts, wftFailedCh)
 	}, nil)
 
 	wfName := "payload-size-error-multi-arg"
@@ -954,11 +942,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorMultipleArguments() {
 	)
 	ts.NoError(err)
 
-	lastWorkflowTaskFailedEvent := ts.pollForHistoryEvent(ctx, run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED)
-
+	ts.assertPayloadLimitWFTFailed(ctx, wftFailedCh)
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
-
-	ts.assertWorkflowTaskFailedWithPayloadLimit(lastWorkflowTaskFailedEvent, payloadErrorMessage)
-
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
