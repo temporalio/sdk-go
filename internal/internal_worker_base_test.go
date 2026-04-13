@@ -31,6 +31,24 @@ type (
 	}
 )
 
+func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerSetsTaskPollerType() {
+	behavior := NewPollerBehaviorSimpleMaximum(
+		PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: 1,
+		},
+	)
+
+	blockingPoller := newSemaphoreProbeTaskPoller()
+	poller := newScalableTaskPoller(
+		blockingPoller,
+		ilog.NewNopLogger(),
+		behavior,
+		metrics.PollerTypeWorkflowStickyTask,
+		&atomic.Bool{},
+	)
+
+	s.Equal(metrics.PollerTypeWorkflowStickyTask, poller.taskPollerType)
+}
 func TestScalableTaskPollerSuite(t *testing.T) {
 	suite.Run(t, new(ScalableTaskPollerSuite))
 }
@@ -140,9 +158,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, nil)
-	poller.taskPollerType = "test"
-
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
 		maxTaskPerSecond: 1000,
@@ -188,8 +204,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, nil)
-	poller.taskPollerType = "test"
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
 
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
@@ -396,4 +411,35 @@ func (s *PollScalerReportHandleSuite) TestErrorScaleDownWithCapability() {
 	assert.Equal(s.T(), 4, targetSuggestion)
 	ps.handleError(serviceerror.NewInternal("test error"))
 	assert.Equal(s.T(), 3, targetSuggestion)
+}
+
+func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {
+	behavior := NewPollerBehaviorSimpleMaximum(
+		PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: 1,
+		},
+	)
+
+	cases := []struct {
+		name  string
+		ptype string
+	}{
+		{"workflow", metrics.PollerTypeWorkflowTask},
+		{"workflow-sticky", metrics.PollerTypeWorkflowStickyTask},
+		{"activity", metrics.PollerTypeActivityTask},
+		{"nexus", metrics.PollerTypeNexusTask},
+	}
+
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			poller := newScalableTaskPoller(
+				newSemaphoreProbeTaskPoller(),
+				ilog.NewNopLogger(),
+				behavior,
+				tc.ptype,
+				&atomic.Bool{},
+			)
+			s.Equal(tc.ptype, poller.taskPollerType)
+		})
+	}
 }
