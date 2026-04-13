@@ -548,7 +548,7 @@ func TestOperationInfo(t *testing.T) {
 
 	op := nexus.NewSyncOperation("op", func(ctx context.Context, outcome string, o nexus.StartOperationOptions) (string, error) {
 		info := temporalnexus.GetOperationInfo(ctx)
-		return info.Namespace + ":" + info.TaskQueue, nil
+		return info.Endpoint + ":" + info.Namespace + ":" + info.TaskQueue, nil
 	})
 
 	wf := func(ctx workflow.Context, outcome string) (string, error) {
@@ -586,7 +586,7 @@ func TestOperationInfo(t *testing.T) {
 	require.NoError(t, err)
 	var result string
 	require.NoError(t, run.Get(ctx, &result))
-	require.Equal(t, tc.testConfig.Namespace+":"+tc.taskQueue, result)
+	require.Equal(t, tc.endpoint+":"+tc.testConfig.Namespace+":"+tc.taskQueue, result)
 }
 
 func TestSyncOperationFromWorkflow(t *testing.T) {
