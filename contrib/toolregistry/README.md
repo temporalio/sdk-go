@@ -36,7 +36,7 @@ Tool definitions use [JSON Schema](https://json-schema.org/understanding-json-sc
 import "go.temporal.io/sdk/contrib/toolregistry"
 
 func AnalyzeActivity(ctx context.Context, prompt string) ([]string, error) {
-    var issues []string
+    var results []string
     reg := toolregistry.NewToolRegistry()
     reg.Register(toolregistry.ToolDef{
         Name:        "flag_issue",
@@ -47,7 +47,7 @@ func AnalyzeActivity(ctx context.Context, prompt string) ([]string, error) {
             "required":   []string{"description"},
         },
     }, func(inp map[string]any) (string, error) {
-        issues = append(issues, inp["description"].(string))
+        results = append(results, inp["description"].(string))
         return "recorded", nil // this string is sent back to the LLM as the tool result
     })
 
@@ -59,7 +59,7 @@ func AnalyzeActivity(ctx context.Context, prompt string) ([]string, error) {
     if _, err := toolregistry.RunToolLoop(ctx, provider, reg, prompt); err != nil {
         return nil, err
     }
-    return issues, nil
+    return results, nil
 }
 ```
 
