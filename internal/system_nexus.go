@@ -59,12 +59,12 @@ func (v *systemNexusOutboundPayloadVisitor) rewriteSystemNexusPayload(
 	operation string,
 	payload *commonpb.Payload,
 ) ([]*commonpb.Payload, error) {
-	rewriter := systemnexus.GetTemporalNexusPayloadRewriter(service, operation)
-	if rewriter == nil {
+	visitor := systemnexus.GetTemporalNexusPayloadVisitor(service, operation)
+	if visitor == nil {
 		return []*commonpb.Payload{payload}, nil
 	}
 
-	rewrittenPayload, err := rewriter(payload, func(
+	rewrittenPayload, err := visitor(payload, func(
 		nestedPayloads []*commonpb.Payload,
 	) ([]*commonpb.Payload, error) {
 		encodedPayloads, err := encodeSystemNexusNestedPayloads(
