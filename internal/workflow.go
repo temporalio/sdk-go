@@ -3061,7 +3061,12 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return executeNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
-	payload, err := dc.ToPayload(input.Input)
+	payloadConverter := dc
+	if isSystemNexusOperation(input.Client.Service(), operationName) {
+		payloadConverter = getSystemNexusPayloadConverter()
+	}
+
+	payload, err := payloadConverter.ToPayload(input.Input)
 	if err != nil {
 		return executeNexusOperationParams{}, err
 	}
