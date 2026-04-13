@@ -214,3 +214,23 @@ Recommended timeouts:
 |---|---|
 | Standard (Claude 3.x, GPT-4o) | 30 s |
 | Reasoning (o1, o3, extended thinking) | 300 s |
+
+## MCP integration
+
+`FromMCPTools` converts a slice of MCP tool descriptors into a populated registry.
+Handlers default to no-ops that return an empty string; override them with `Register`
+after construction.
+
+```go
+// mcpTools is []MCPTool — populate from your MCP client.
+reg := toolregistry.FromMCPTools(mcpTools)
+
+// Override specific handlers before running the loop.
+reg.Register(toolregistry.ToolDef{Name: "read_file", /* ... */},
+    func(inp map[string]any) (string, error) {
+        return readFile(inp["path"].(string))
+    })
+```
+
+`MCPTool` mirrors the MCP protocol's `Tool` object: `Name`, `Description`, and
+`InputSchema` (a `map[string]any` containing a JSON Schema object).

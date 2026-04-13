@@ -80,6 +80,36 @@ func NewToolRegistry() *ToolRegistry {
 	}
 }
 
+// MCPTool is an MCP-compatible tool descriptor.
+// Any struct with Name, Description, and InputSchema fields satisfies this shape.
+type MCPTool struct {
+	Name        string
+	Description string
+	InputSchema map[string]any
+}
+
+// FromMCPTools creates a [ToolRegistry] from a list of MCP tool descriptors.
+//
+// Each tool is registered with a no-op handler (returning an empty string).
+// Override handlers by calling [ToolRegistry.Register] with the same name after
+// construction.
+func FromMCPTools(tools []MCPTool) *ToolRegistry {
+	reg := NewToolRegistry()
+	for _, t := range tools {
+		schema := t.InputSchema
+		if schema == nil {
+			schema = map[string]any{"type": "object", "properties": map[string]any{}}
+		}
+		name := t.Name
+		reg.Register(ToolDef{
+			Name:        name,
+			Description: t.Description,
+			InputSchema: schema,
+		}, func(_ map[string]any) (string, error) { return "", nil })
+	}
+	return reg
+}
+
 // Register adds a tool definition and its handler to the registry.
 func (r *ToolRegistry) Register(def ToolDef, handler Handler) {
 	r.defs = append(r.defs, def)

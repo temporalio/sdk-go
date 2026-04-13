@@ -133,3 +133,39 @@ func TestRunToolLoop_EmptyResponses(t *testing.T) {
 	// provider returns done immediately, so only the user message is present
 	require.Len(t, msgs, 1)
 }
+
+func TestFromMCPTools(t *testing.T) {
+	tools := []MCPTool{
+		{
+			Name:        "read_file",
+			Description: "Read a file from disk",
+			InputSchema: map[string]any{
+				"type":       "object",
+				"properties": map[string]any{"path": map[string]any{"type": "string"}},
+				"required":   []string{"path"},
+			},
+		},
+		{
+			Name:        "list_dir",
+			Description: "List directory contents",
+			InputSchema: nil, // should default to empty object schema
+		},
+	}
+
+	reg := FromMCPTools(tools)
+
+	defs := reg.Defs()
+	require.Len(t, defs, 2)
+
+	require.Equal(t, "read_file", defs[0].Name)
+	require.Equal(t, "Read a file from disk", defs[0].Description)
+	require.Equal(t, "object", defs[0].InputSchema["type"])
+
+	require.Equal(t, "list_dir", defs[1].Name)
+	require.Equal(t, "object", defs[1].InputSchema["type"]) // nil schema defaulted
+
+	// No-op handlers return empty string without error.
+	result, err := reg.Dispatch("read_file", map[string]any{"path": "/etc/hosts"})
+	require.NoError(t, err)
+	require.Equal(t, "", result)
+}
