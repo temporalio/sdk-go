@@ -45,7 +45,7 @@ func TestCheckpoint_RoundTrip(t *testing.T) {
 				"tool_calls": toolCalls,
 			},
 		},
-		Issues: []map[string]any{
+		Results: []map[string]any{
 			{"type": "smell", "file": "foo.go"},
 		},
 	}
@@ -71,32 +71,32 @@ func TestCheckpoint_RoundTrip(t *testing.T) {
 	fn := tc["function"].(map[string]any)
 	require.Equal(t, "my_tool", fn["name"])
 
-	require.Len(t, restored.Issues, 1)
-	require.Equal(t, "smell", restored.Issues[0]["type"])
-	require.Equal(t, "foo.go", restored.Issues[0]["file"])
+	require.Len(t, restored.Results, 1)
+	require.Equal(t, "smell", restored.Results[0]["type"])
+	require.Equal(t, "foo.go", restored.Results[0]["file"])
 }
 
-// ── MarshalIssue ──────────────────────────────────────────────────────────────
+// ── MarshalResult ─────────────────────────────────────────────────────────────
 
-func TestMarshalIssue(t *testing.T) {
+func TestMarshalResult(t *testing.T) {
 	s := &AgenticSession{}
-	type Issue struct {
+	type Result struct {
 		Kind string `json:"kind"`
 		Msg  string `json:"msg"`
 	}
-	err := MarshalIssue(s, Issue{Kind: "error", Msg: "oops"})
+	err := MarshalResult(s, Result{Kind: "error", Msg: "oops"})
 	require.NoError(t, err)
-	require.Len(t, s.Issues, 1)
-	require.Equal(t, "error", s.Issues[0]["kind"])
-	require.Equal(t, "oops", s.Issues[0]["msg"])
+	require.Len(t, s.Results, 1)
+	require.Equal(t, "error", s.Results[0]["kind"])
+	require.Equal(t, "oops", s.Results[0]["msg"])
 }
 
-func TestMarshalIssue_Multiple(t *testing.T) {
+func TestMarshalResult_Multiple(t *testing.T) {
 	s := &AgenticSession{}
-	type Issue struct{ V int }
-	require.NoError(t, MarshalIssue(s, Issue{V: 1}))
-	require.NoError(t, MarshalIssue(s, Issue{V: 2}))
-	require.Len(t, s.Issues, 2)
+	type Result struct{ V int }
+	require.NoError(t, MarshalResult(s, Result{V: 1}))
+	require.NoError(t, MarshalResult(s, Result{V: 2}))
+	require.Len(t, s.Results, 2)
 }
 
 // ── AgenticSession.RunToolLoop ────────────────────────────────────────────────
@@ -108,7 +108,7 @@ func TestAgenticSession_FreshStart(t *testing.T) {
 
 	runInActivity(t, func(ctx context.Context) error {
 		session = AgenticSession{}
-		return session.RunToolLoop(ctx, provider, reg, "sys", "my prompt")
+		return session.RunToolLoop(ctx, provider, reg, "my prompt")
 	})
 
 	require.Equal(t, "my prompt", session.Messages[0]["content"])
@@ -128,7 +128,7 @@ func TestAgenticSession_ResumesExistingMessages(t *testing.T) {
 	session := AgenticSession{Messages: existing}
 
 	runInActivity(t, func(ctx context.Context) error {
-		return session.RunToolLoop(ctx, provider, reg, "sys", "ignored prompt")
+		return session.RunToolLoop(ctx, provider, reg, "ignored prompt")
 	})
 
 	// First two messages unchanged.
@@ -153,7 +153,7 @@ func TestAgenticSession_WithToolCalls(t *testing.T) {
 
 	session := AgenticSession{}
 	runInActivity(t, func(ctx context.Context) error {
-		return session.RunToolLoop(ctx, provider, reg, "sys", "go")
+		return session.RunToolLoop(ctx, provider, reg, "go")
 	})
 
 	require.Equal(t, []string{"first", "second"}, collected)
@@ -170,7 +170,7 @@ func TestAgenticSession_CheckpointOnEachTurn(t *testing.T) {
 
 	session := AgenticSession{}
 	runInActivity(t, func(ctx context.Context) error {
-		return session.RunToolLoop(ctx, provider, reg, "sys", "prompt")
+		return session.RunToolLoop(ctx, provider, reg, "prompt")
 	})
 
 	// The loop ran without error — heartbeating inside an activity context works.
@@ -186,7 +186,7 @@ func TestRunWithSession_FreshStart(t *testing.T) {
 
 	runInActivity(t, func(ctx context.Context) error {
 		return RunWithSession(ctx, func(ctx context.Context, s *AgenticSession) error {
-			err := s.RunToolLoop(ctx, provider, reg, "sys", "hello")
+			err := s.RunToolLoop(ctx, provider, reg, "hello")
 			capturedMessages = s.Messages
 			return err
 		})
@@ -196,7 +196,7 @@ func TestRunWithSession_FreshStart(t *testing.T) {
 	require.Equal(t, "hello", capturedMessages[0]["content"])
 }
 
-func TestRunWithSession_IssuesAccumulate(t *testing.T) {
+func TestRunWithSession_ResultsAccumulate(t *testing.T) {
 	reg := NewToolRegistry()
 	reg.Register(ToolDef{Name: "flag", Description: "d", InputSchema: map[string]any{}},
 		func(inp map[string]any) (string, error) { return "recorded", nil })
@@ -206,20 +206,20 @@ func TestRunWithSession_IssuesAccumulate(t *testing.T) {
 		Done("done"),
 	}).WithRegistry(reg)
 
-	type Issue struct {
+	type Result struct {
 		Desc string `json:"desc"`
 	}
-	var capturedIssues []map[string]any
+	var capturedResults []map[string]any
 
 	runInActivity(t, func(ctx context.Context) error {
 		return RunWithSession(ctx, func(ctx context.Context, s *AgenticSession) error {
-			_ = MarshalIssue(s, Issue{Desc: "pre-existing"})
-			err := s.RunToolLoop(ctx, provider, reg, "sys", "analyze")
-			capturedIssues = s.Issues
+			_ = MarshalResult(s, Result{Desc: "pre-existing"})
+			err := s.RunToolLoop(ctx, provider, reg, "analyze")
+			capturedResults = s.Results
 			return err
 		})
 	})
 
-	require.Len(t, capturedIssues, 1)
-	require.Equal(t, "pre-existing", capturedIssues[0]["desc"])
+	require.Len(t, capturedResults, 1)
+	require.Equal(t, "pre-existing", capturedResults[0]["desc"])
 }

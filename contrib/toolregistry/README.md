@@ -56,7 +56,7 @@ func AnalyzeActivity(ctx context.Context, prompt string) ([]string, error) {
         "You are a code reviewer. Call flag_issue for each problem you find.")
 
     // RunToolLoop returns the full conversation history; capture or discard as needed.
-    if _, err := toolregistry.RunToolLoop(ctx, provider, reg, "" /* system prompt: "" defers to provider default */, prompt); err != nil {
+    if _, err := toolregistry.RunToolLoop(ctx, provider, reg, prompt); err != nil {
         return nil, err
     }
     return issues, nil
@@ -82,7 +82,7 @@ Model IDs are defined by the provider — see Anthropic or OpenAI docs for curre
 ```go
 cfg := toolregistry.OpenAIConfig{APIKey: os.Getenv("OPENAI_API_KEY")}
 provider := toolregistry.NewOpenAIProvider(cfg, reg, "system prompt")
-if _, err := toolregistry.RunToolLoop(ctx, provider, reg, "", prompt); err != nil {
+if _, err := toolregistry.RunToolLoop(ctx, provider, reg, prompt); err != nil {
     return nil, err
 }
 ```
@@ -101,7 +101,7 @@ import (
 )
 
 func LongAnalysisActivity(ctx context.Context, prompt string) ([]map[string]any, error) {
-    var issues []map[string]any
+    var results []map[string]any
 
     err := toolregistry.RunWithSession(ctx, func(ctx context.Context, s *toolregistry.AgenticSession) error {
         reg := toolregistry.NewToolRegistry()
@@ -109,19 +109,19 @@ func LongAnalysisActivity(ctx context.Context, prompt string) ([]map[string]any,
             Name: "flag", Description: "...",
             InputSchema: map[string]any{"type": "object"},
         }, func(inp map[string]any) (string, error) {
-            s.Issues = append(s.Issues, inp) // s.Issues is []map[string]any
+            s.Results = append(s.Results, inp) // s.Results is []map[string]any
             return "ok", nil
         })
 
         cfg := toolregistry.AnthropicConfig{APIKey: os.Getenv("ANTHROPIC_API_KEY")}
         provider := toolregistry.NewAnthropicProvider(cfg, reg, "...")
-        if err := s.RunToolLoop(ctx, provider, reg, "...", prompt); err != nil {
+        if err := s.RunToolLoop(ctx, provider, reg, prompt); err != nil {
             return err
         }
-        issues = s.Issues // capture after loop completes
+        results = s.Results // capture after loop completes
         return nil
     })
-    return issues, err
+    return results, err
 }
 ```
 
@@ -141,7 +141,7 @@ func TestAnalyze(t *testing.T) {
         toolregistry.Done("analysis complete"),
     }).WithRegistry(reg)
 
-    msgs, err := toolregistry.RunToolLoop(context.Background(), provider, reg, "sys", "analyze")
+    msgs, err := toolregistry.RunToolLoop(context.Background(), provider, reg, "analyze")
     require.NoError(t, err)
     require.Greater(t, len(msgs), 2)
 }
@@ -163,7 +163,7 @@ incur billing — expect a few cents per full test run.
 
 ## Storing application results
 
-`s.Issues` accumulates application-level results during the tool loop.
+`s.Results` accumulates application-level results during the tool loop.
 Elements are serialized to JSON inside each heartbeat checkpoint — they must be
 plain maps/dicts with JSON-serializable values. A non-serializable value raises
 a non-retryable `ApplicationError` at heartbeat time rather than silently losing
@@ -175,21 +175,21 @@ Convert your domain type to a plain dict at the tool-call site and back after
 the session:
 
 ```go
-type Issue struct {
+type Result struct {
     Type string `json:"type"`
     File string `json:"file"`
 }
 
 // Inside tool handler:
-s.Issues = append(s.Issues, map[string]any{"type": "smell", "file": "foo.go"})
+s.Results = append(s.Results, map[string]any{"type": "smell", "file": "foo.go"})
 
 // After session:
-var issues []Issue
-for _, raw := range s.Issues {
+var results []Result
+for _, raw := range s.Results {
     data, _ := json.Marshal(raw)
-    var issue Issue
-    _ = json.Unmarshal(data, &issue)
-    issues = append(issues, issue)
+    var r Result
+    _ = json.Unmarshal(data, &r)
+    results = append(results, r)
 }
 ```
 
@@ -216,6 +216,21 @@ Recommended timeouts:
 |---|---|
 | Standard (Claude 3.x, GPT-4o) | 30 s |
 | Reasoning (o1, o3, extended thinking) | 300 s |
+
+### Activity-level timeout
+
+Set `ScheduleToCloseTimeout` on the activity options to bound the entire conversation:
+
+```go
+c.ExecuteActivity(ctx, LongAnalysisActivity, prompt,
+    workflow.ActivityOptions{
+        ScheduleToCloseTimeout: 10 * time.Minute,
+    })
+```
+
+The per-turn client timeout and `ScheduleToCloseTimeout` are complementary:
+- Per-turn timeout fires if one LLM call hangs (protects against a single stuck turn)
+- `ScheduleToCloseTimeout` bounds the entire conversation including all retries (protects against runaway multi-turn loops)
 
 ## MCP integration
 

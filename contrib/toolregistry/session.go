@@ -14,7 +14,7 @@ import (
 type sessionCheckpoint struct {
 	Version  int              `json:"version"`
 	Messages []map[string]any `json:"messages"`
-	Issues   []map[string]any `json:"issues"`
+	Results  []map[string]any `json:"results"`
 }
 
 // AgenticSession holds conversation state across a multi-turn LLM tool-use
@@ -24,9 +24,9 @@ type sessionCheckpoint struct {
 type AgenticSession struct {
 	// Messages is the full conversation history. Append-only during a session.
 	Messages []map[string]any
-	// Issues accumulates application-level results from tool calls.
+	// Results accumulates application-level results from tool calls.
 	// Elements must be JSON-serializable for checkpoint storage.
-	Issues []map[string]any
+	Results []map[string]any
 }
 
 // RunToolLoop runs the agentic tool-use loop to completion.
@@ -42,7 +42,7 @@ func (s *AgenticSession) RunToolLoop(
 	ctx context.Context,
 	provider Provider,
 	registry *ToolRegistry,
-	system, prompt string,
+	prompt string,
 ) error {
 	if len(s.Messages) == 0 {
 		s.Messages = []map[string]any{{"role": "user", "content": prompt}}
@@ -68,15 +68,15 @@ func (s *AgenticSession) RunToolLoop(
 // checkpoint heartbeats the current session state. It also returns ctx.Err()
 // after recording, so callers detect heartbeat-timeout cancellation promptly.
 //
-// Returns a non-retryable [temporal.ApplicationError] if any issue cannot be
+// Returns a non-retryable [temporal.ApplicationError] if any result cannot be
 // JSON-marshaled — this surfaces the mistake at heartbeat time rather than
 // silently losing data on the next retry.
 func (s *AgenticSession) checkpoint(ctx context.Context) error {
-	for i, issue := range s.Issues {
-		if _, err := json.Marshal(issue); err != nil {
+	for i, result := range s.Results {
+		if _, err := json.Marshal(result); err != nil {
 			return temporal.NewNonRetryableApplicationError(
 				fmt.Sprintf(
-					"AgenticSession: issues[%d] is not JSON-serializable: %v. "+
+					"AgenticSession: results[%d] is not JSON-serializable: %v. "+
 						"Store only map[string]any with JSON-serializable values.",
 					i, err),
 				"InvalidArgument",
@@ -87,7 +87,7 @@ func (s *AgenticSession) checkpoint(ctx context.Context) error {
 	activity.RecordHeartbeat(ctx, sessionCheckpoint{
 		Version:  1,
 		Messages: s.Messages,
-		Issues:   s.Issues,
+		Results:  s.Results,
 	})
 	return ctx.Err()
 }
@@ -96,7 +96,7 @@ func (s *AgenticSession) checkpoint(ctx context.Context) error {
 //
 // On entry it checks for heartbeat details from a prior attempt via
 // [activity.GetHeartbeatDetails]. If found, the session is restored
-// (messages + issues) so the conversation resumes mid-turn rather than
+// (messages + results) so the conversation resumes mid-turn rather than
 // restarting from turn 0.
 //
 // Go concurrency note: activities are goroutines with a context. Unlike Python
@@ -109,12 +109,12 @@ func (s *AgenticSession) checkpoint(ctx context.Context) error {
 // Example:
 //
 //	err := toolregistry.RunWithSession(ctx, func(ctx context.Context, s *toolregistry.AgenticSession) error {
-//	    return s.RunToolLoop(ctx, provider, registry, system, prompt)
+//	    return s.RunToolLoop(ctx, provider, registry, prompt)
 //	})
 func RunWithSession(ctx context.Context, fn func(ctx context.Context, s *AgenticSession) error) error {
 	session := &AgenticSession{
 		Messages: make([]map[string]any, 0),
-		Issues:   make([]map[string]any, 0),
+		Results:  make([]map[string]any, 0),
 	}
 
 	// Attempt to restore from a previous heartbeat checkpoint.
@@ -140,8 +140,8 @@ func RunWithSession(ctx context.Context, fn func(ctx context.Context, s *Agentic
 			if cp.Messages != nil {
 				session.Messages = cp.Messages
 			}
-			if cp.Issues != nil {
-				session.Issues = cp.Issues
+			if cp.Results != nil {
+				session.Results = cp.Results
 			}
 		}
 	}
@@ -149,18 +149,18 @@ func RunWithSession(ctx context.Context, fn func(ctx context.Context, s *Agentic
 	return fn(ctx, session)
 }
 
-// MarshalIssue is a convenience helper that JSON-encodes v and stores the
-// result in session.Issues. Use it when your issue type is a struct rather
+// MarshalResult is a convenience helper that JSON-encodes v and stores the
+// result in session.Results. Use it when your result type is a struct rather
 // than a plain map.
-func MarshalIssue(s *AgenticSession, v any) error {
+func MarshalResult(s *AgenticSession, v any) error {
 	data, err := json.Marshal(v)
 	if err != nil {
-		return fmt.Errorf("toolregistry: marshal issue: %w", err)
+		return fmt.Errorf("toolregistry: marshal result: %w", err)
 	}
 	var m map[string]any
 	if err := json.Unmarshal(data, &m); err != nil {
-		return fmt.Errorf("toolregistry: unmarshal issue: %w", err)
+		return fmt.Errorf("toolregistry: unmarshal result: %w", err)
 	}
-	s.Issues = append(s.Issues, m)
+	s.Results = append(s.Results, m)
 	return nil
 }

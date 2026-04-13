@@ -92,7 +92,7 @@ func TestRunToolLoop_SingleDone(t *testing.T) {
 	reg := NewToolRegistry()
 	provider := NewMockProvider([]MockResponse{Done("finished")})
 
-	msgs, err := RunToolLoop(context.Background(), provider, reg, "sys", "hello")
+	msgs, err := RunToolLoop(context.Background(), provider, reg, "hello")
 	require.NoError(t, err)
 	// user + assistant
 	require.Len(t, msgs, 2)
@@ -116,7 +116,7 @@ func TestRunToolLoop_WithToolCall(t *testing.T) {
 		Done("all done"),
 	}).WithRegistry(reg)
 
-	msgs, err := RunToolLoop(context.Background(), provider, reg, "sys", "go")
+	msgs, err := RunToolLoop(context.Background(), provider, reg, "go")
 	require.NoError(t, err)
 	require.Equal(t, []string{"first", "second"}, collected)
 
@@ -128,7 +128,7 @@ func TestRunToolLoop_EmptyResponses(t *testing.T) {
 	reg := NewToolRegistry()
 	provider := NewMockProvider([]MockResponse{})
 
-	msgs, err := RunToolLoop(context.Background(), provider, reg, "sys", "prompt")
+	msgs, err := RunToolLoop(context.Background(), provider, reg, "prompt")
 	require.NoError(t, err)
 	// provider returns done immediately, so only the user message is present
 	require.Len(t, msgs, 1)

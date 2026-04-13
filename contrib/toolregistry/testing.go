@@ -160,24 +160,24 @@ func (f *FakeToolRegistry) Dispatch(name string, input map[string]any) (string, 
 	return f.ToolRegistry.Dispatch(name, input)
 }
 
-// MockAgenticSession is a pre-canned session that returns fixed issues without
+// MockAgenticSession is a pre-canned session that returns fixed results without
 // any LLM calls. Use it to test code that calls [RunWithSession] and inspects
-// session.Issues without an API key or a Temporal server.
+// session.Results without an API key or a Temporal server.
 //
 // Example:
 //
 //	s := &toolregistry.MockAgenticSession{
-//	    Issues: []map[string]any{{"type": "missing", "symbol": "x"}},
+//	    Results: []map[string]any{{"type": "missing", "symbol": "x"}},
 //	}
-//	_ = s.RunToolLoop(ctx, nil, nil, "sys", "prompt")
-//	// s.Issues still contains the pre-canned entry
+//	_ = s.RunToolLoop(ctx, nil, nil, "prompt")
+//	// s.Results still contains the pre-canned entry
 type MockAgenticSession struct {
 	Messages []map[string]any
-	Issues   []map[string]any
+	Results  []map[string]any
 }
 
 // RunToolLoop is a no-op — it does not call any LLM or record a heartbeat.
-func (s *MockAgenticSession) RunToolLoop(_ context.Context, _ Provider, _ *ToolRegistry, _, prompt string) error {
+func (s *MockAgenticSession) RunToolLoop(_ context.Context, _ Provider, _ *ToolRegistry, prompt string) error {
 	if len(s.Messages) == 0 {
 		s.Messages = []map[string]any{{"role": "user", "content": prompt}}
 	}

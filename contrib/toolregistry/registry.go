@@ -23,7 +23,7 @@
 //
 //	cfg := toolregistry.AnthropicConfig{APIKey: os.Getenv("ANTHROPIC_API_KEY")}
 //	provider := toolregistry.NewAnthropicProvider(cfg, reg)
-//	_, err := toolregistry.RunToolLoop(ctx, provider, reg, system, prompt)
+//	_, err := toolregistry.RunToolLoop(ctx, provider, reg, prompt)
 package toolregistry
 
 import (
@@ -176,7 +176,7 @@ func RunToolLoop(
 	ctx context.Context,
 	provider Provider,
 	registry *ToolRegistry,
-	system, prompt string,
+	prompt string,
 ) ([]map[string]any, error) {
 	messages := []map[string]any{
 		{"role": "user", "content": prompt},

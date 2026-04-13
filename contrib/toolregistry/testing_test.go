@@ -79,7 +79,7 @@ func TestMockProvider_RunsWithRunToolLoop(t *testing.T) {
 	reg := NewToolRegistry()
 	provider := NewMockProvider([]MockResponse{Done("done")})
 
-	msgs, err := RunToolLoop(context.Background(), provider, reg, "sys", "prompt")
+	msgs, err := RunToolLoop(context.Background(), provider, reg, "prompt")
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, len(msgs), 2)
 }
@@ -91,7 +91,7 @@ func TestFakeToolRegistry_RecordsDispatchCalls(t *testing.T) {
 	fake.Register(ToolDef{Name: "greet", Description: "d", InputSchema: map[string]any{}},
 		func(inp map[string]any) (string, error) { return "ok", nil })
 
-	fake.Dispatch("greet", map[string]any{"name": "world"})   //nolint:errcheck
+	fake.Dispatch("greet", map[string]any{"name": "world"})    //nolint:errcheck
 	fake.Dispatch("greet", map[string]any{"name": "temporal"}) //nolint:errcheck
 
 	require.Equal(t, []DispatchCall{
@@ -132,7 +132,7 @@ func TestFakeToolRegistry_SatisfiesDispatcher(t *testing.T) {
 		Done(),
 	}).WithRegistry(fake)
 
-	_, err := RunToolLoop(context.Background(), provider, fake.ToolRegistry, "sys", "p")
+	_, err := RunToolLoop(context.Background(), provider, fake.ToolRegistry, "p")
 	require.NoError(t, err)
 	require.Len(t, fake.Calls, 1)
 	require.Equal(t, "ping", fake.Calls[0].Name)
@@ -177,24 +177,24 @@ func TestCrashAfterTurns_ImplementsProvider(t *testing.T) {
 
 func TestMockAgenticSession_NoOpRunToolLoop(t *testing.T) {
 	s := &MockAgenticSession{
-		Issues: []map[string]any{{"type": "deprecated", "symbol": "old_fn"}},
+		Results: []map[string]any{{"type": "deprecated", "symbol": "old_fn"}},
 	}
-	err := s.RunToolLoop(context.Background(), nil, nil, "sys", "prompt")
+	err := s.RunToolLoop(context.Background(), nil, nil, "prompt")
 	require.NoError(t, err)
-	// Issues unchanged — no LLM calls.
-	require.Len(t, s.Issues, 1)
-	require.Equal(t, "deprecated", s.Issues[0]["type"])
+	// Results unchanged — no LLM calls.
+	require.Len(t, s.Results, 1)
+	require.Equal(t, "deprecated", s.Results[0]["type"])
 }
 
 func TestMockAgenticSession_SetsFirstMessage(t *testing.T) {
 	s := &MockAgenticSession{}
-	_ = s.RunToolLoop(context.Background(), nil, nil, "sys", "my prompt")
+	_ = s.RunToolLoop(context.Background(), nil, nil, "my prompt")
 	require.Len(t, s.Messages, 1)
 	require.Equal(t, "my prompt", s.Messages[0]["content"])
 }
 
 func TestMockAgenticSession_EmptyByDefault(t *testing.T) {
 	s := &MockAgenticSession{}
-	require.Empty(t, s.Issues)
+	require.Empty(t, s.Results)
 	require.Empty(t, s.Messages)
 }

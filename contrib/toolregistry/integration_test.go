@@ -39,7 +39,7 @@ func TestIntegration_Anthropic(t *testing.T) {
 	provider := NewAnthropicProvider(cfg, reg,
 		"You must call record() exactly once with value='hello'.")
 
-	_, err := RunToolLoop(context.Background(), provider, reg, "",
+	_, err := RunToolLoop(context.Background(), provider, reg,
 		"Please call the record tool with value='hello'.")
 	require.NoError(t, err)
 	require.Contains(t, *collected, "hello")
@@ -57,7 +57,7 @@ func TestIntegration_OpenAI(t *testing.T) {
 	provider := NewOpenAIProvider(cfg, reg,
 		"You must call record() exactly once with value='hello'.")
 
-	_, err := RunToolLoop(context.Background(), provider, reg, "",
+	_, err := RunToolLoop(context.Background(), provider, reg,
 		"Please call the record tool with value='hello'.")
 	require.NoError(t, err)
 	require.Contains(t, *collected, "hello")
