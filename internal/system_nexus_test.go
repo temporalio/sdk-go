@@ -52,7 +52,7 @@ func TestSystemNexusPayloadVisitor_VisitsNestedPayloadsOnly(t *testing.T) {
 		},
 	}
 
-	outerPayload, err := getSystemNexusPayloadConverter().ToPayload(req)
+	outerPayload, err := converter.GetDefaultDataConverter().ToPayload(req)
 	require.NoError(t, err)
 
 	attrs := &commandpb.ScheduleNexusOperationCommandAttributes{
@@ -64,7 +64,7 @@ func TestSystemNexusPayloadVisitor_VisitsNestedPayloadsOnly(t *testing.T) {
 	require.NoError(t, err)
 
 	var decoded map[string]any
-	require.NoError(t, getSystemNexusPayloadConverter().FromPayload(attrs.Input, &decoded))
+	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(attrs.Input, &decoded))
 	requirePayloadJSONReference(t, decoded["input"], "payloads")
 	requirePayloadJSONReference(t, decoded["signalInput"], "payloads")
 	requirePayloadJSONReference(t, decoded["memo"], "fields", "memo-key")
@@ -94,9 +94,9 @@ func TestNewSystemNexusSignalWithStartInput_PreservesPreencodedPayloads(t *testi
 	userMetadata, err := buildUserMetadata("summary-value", "details-value", dc)
 	require.NoError(t, err)
 
-	req, err := newSystemNexusSignalWithStartInput(
+	outerPayload, err := newSystemNexusSignalWithStartPayload(
 		"default",
-		"",
+		"test-request-id",
 		"system-nexus-workflow-id",
 		"test-signal",
 		&WorkflowType{Name: "test-workflow"},
@@ -110,8 +110,9 @@ func TestNewSystemNexusSignalWithStartInput_PreservesPreencodedPayloads(t *testi
 	)
 	require.NoError(t, err)
 
-	outerPayload, err := getSystemNexusPayloadConverter().ToPayload(req)
-	require.NoError(t, err)
+	var decodedReq systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput
+	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(outerPayload, &decodedReq))
+	require.Equal(t, "test-request-id", decodedReq.RequestID)
 
 	handler := systemnexus.GetTemporalNexusPayloadVisitor(
 		systemnexus.WorkflowService.ServiceName,
