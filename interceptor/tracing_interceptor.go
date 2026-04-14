@@ -711,6 +711,28 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	return t.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
+func (t *tracingWorkflowOutboundInterceptor) SignalWithStartWorkflow(
+	ctx workflow.Context,
+	workflowID string,
+	signalName string,
+	signalArg interface{},
+	options workflow.StartWorkflowOptions,
+	workflowType string,
+	workflowArgs ...interface{},
+) workflow.Future {
+	if !t.root.options.DisableSignalTracing {
+		var span TracerSpan
+		var futErr workflow.Future
+		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalWithStartWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
+		if futErr != nil {
+			return futErr
+		}
+		defer span.Finish(&TracerFinishSpanOptions{})
+	}
+
+	return t.Next.SignalWithStartWorkflow(ctx, workflowID, signalName, signalArg, options, workflowType, workflowArgs...)
+}
+
 func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	ctx workflow.Context,
 	workflowID string,

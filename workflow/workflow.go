@@ -121,6 +121,9 @@ type (
 	// ChildWorkflowOptions stores all child workflow specific parameters that will be stored inside of a Context.
 	ChildWorkflowOptions = internal.ChildWorkflowOptions
 
+	// StartWorkflowOptions configuration parameters for starting a workflow execution.
+	StartWorkflowOptions = internal.StartWorkflowOptions
+
 	// RegisterOptions consists of options for registering a workflow
 	RegisterOptions = internal.RegisterWorkflowOptions
 
@@ -381,6 +384,21 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 // SignalExternalWorkflow return Future with failure or empty success result.
 func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
 	return internal.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
+}
+
+// SignalWithStartWorkflow sends a signal to a running workflow. If the workflow is not
+// running or not found, it starts the workflow and then sends the signal in a single
+// system Nexus operation.
+func SignalWithStartWorkflow(
+	ctx Context,
+	workflowID string,
+	signalName string,
+	signalArg interface{},
+	options StartWorkflowOptions,
+	workflow interface{},
+	workflowArgs ...interface{},
+) Future {
+	return internal.SignalWithStartWorkflow(ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs...)
 }
 
 // GetSignalChannel returns the channel corresponding to the signal name.

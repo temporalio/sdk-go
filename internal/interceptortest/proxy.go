@@ -368,6 +368,21 @@ func (p *proxyWorkflowOutbound) SignalExternalWorkflow(
 	return
 }
 
+func (p *proxyWorkflowOutbound) SignalWithStartWorkflow(
+	ctx workflow.Context,
+	workflowID string,
+	signalName string,
+	signalArg interface{},
+	options workflow.StartWorkflowOptions,
+	workflowType string,
+	workflowArgs ...interface{},
+) (ret workflow.Future) {
+	args := []interface{}{ctx, workflowID, signalName, signalArg, options, workflowType}
+	args = append(args, workflowArgs...)
+	ret, _ = p.invoke(args...)[0].Interface().(workflow.Future)
+	return
+}
+
 func (p *proxyWorkflowOutbound) UpsertSearchAttributes(
 	ctx workflow.Context,
 	attributes map[string]interface{},

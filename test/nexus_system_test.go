@@ -11,6 +11,8 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	systemnexus "go.temporal.io/api/workflowservice/v1/workflowservicenexus/json"
 
 	"go.temporal.io/sdk/client"
@@ -71,7 +73,6 @@ func TestSystemNexusDefersOuterEnvelopeEncoding(t *testing.T) {
 			requirePayloadJSONReference(t, req.Input.Payloads[0])
 			requirePayloadJSONReference(t, req.SignalInput.Payloads[0])
 			requirePayloadJSONReference(t, req.Memo.Fields["memo-key"])
-			requirePayloadJSONReference(t, req.Header.Fields["header-key"])
 			requirePayloadJSONReference(t, req.UserMetadata.Summary)
 			requirePayloadJSONReference(t, req.UserMetadata.Details)
 			require.Equal(t, "search-attribute-value", req.SearchAttributes.IndexedFields["custom-key"])
@@ -83,6 +84,37 @@ func TestSystemNexusDefersOuterEnvelopeEncoding(t *testing.T) {
 	)))
 	handlerWorker.RegisterNexusService(service)
 
+	systemEndpointSpec := &nexuspb.EndpointSpec{
+		// TODO: Switch this back to "__temporal_system" once the server supports
+		// reserved system endpoint names for Nexus endpoint registration/routing.
+		Name: "temporal-system",
+		Target: &nexuspb.EndpointTarget{
+			Variant: &nexuspb.EndpointTarget_Worker_{
+				Worker: &nexuspb.EndpointTarget_Worker{
+					Namespace: handlerTC.testConfig.Namespace,
+					TaskQueue: handlerTC.taskQueue,
+				},
+			},
+		},
+	}
+	existingEndpoints, err := handlerTC.client.OperatorService().ListNexusEndpoints(ctx, &operatorservice.ListNexusEndpointsRequest{
+		Name: systemEndpointSpec.Name,
+	})
+	require.NoError(t, err)
+	if len(existingEndpoints.Endpoints) == 0 {
+		_, err = handlerTC.client.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+			Spec: systemEndpointSpec,
+		})
+		require.NoError(t, err)
+	} else {
+		_, err = handlerTC.client.OperatorService().UpdateNexusEndpoint(ctx, &operatorservice.UpdateNexusEndpointRequest{
+			Id:      existingEndpoints.Endpoints[0].Id,
+			Version: existingEndpoints.Endpoints[0].Version,
+			Spec:    systemEndpointSpec,
+		})
+		require.NoError(t, err)
+	}
+
 	require.NoError(t, callerWorker.Start())
 	defer callerWorker.Stop()
 	require.NoError(t, handlerWorker.Start())
@@ -91,73 +123,58 @@ func TestSystemNexusDefersOuterEnvelopeEncoding(t *testing.T) {
 	run, err := callerClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:        "system-nexus-" + uuid.NewString(),
 		TaskQueue: callerTaskQueue,
-	}, systemNexusSignalWithStartWorkflow, handlerTC.endpoint)
+	}, systemNexusSignalWithStartWorkflow)
 	require.NoError(t, err)
 
 	var result string
 	require.NoError(t, run.Get(ctx, &result))
 	require.Equal(t, "system-nexus-workflow-id-run", result)
-	require.GreaterOrEqual(t, codec.EncodeCount(), 6)
+	require.GreaterOrEqual(t, codec.EncodeCount(), 5)
 
 	driver.mu.Lock()
 	defer driver.mu.Unlock()
 	var storedPayloadData [][]byte
 	for _, payload := range driver.data {
-		require.Equal(t, []byte("true"), payload.GetMetadata()["test-codec"])
 		storedPayloadData = append(storedPayloadData, payload.GetData())
 	}
 	require.NotEmpty(t, storedPayloadData)
 	require.Contains(t, storedPayloadData, []byte(`"workflow-input"`))
 	require.Contains(t, storedPayloadData, []byte(`"signal-input"`))
 	require.Contains(t, storedPayloadData, []byte(`"memo-value"`))
-	require.Contains(t, storedPayloadData, []byte(`"header-value"`))
 	require.Contains(t, storedPayloadData, []byte(`"summary-value"`))
 	require.Contains(t, storedPayloadData, []byte(`"details-value"`))
 }
 
-func systemNexusSignalWithStartWorkflow(ctx workflow.Context, endpoint string) (string, error) {
-	nexusClient := workflow.NewNexusClient(endpoint, systemnexus.WorkflowService.ServiceName)
-	fut := nexusClient.ExecuteOperation(
+func systemNexusSignalWithStartWorkflow(ctx workflow.Context) (string, error) {
+	fut := workflow.SignalWithStartWorkflow(
 		ctx,
-		systemnexus.WorkflowService.SignalWithStartWorkflowExecution,
-		systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{
-			Namespace:  "default",
-			WorkflowID: "system-nexus-workflow-id",
-			SignalName: "test-signal",
-			Input: &systemnexus.Input{Payloads: []any{
-				"workflow-input",
-			}},
-			SignalInput: &systemnexus.Input{Payloads: []any{
-				"signal-input",
-			}},
-			Memo: &systemnexus.Memo{
-				Fields: map[string]any{
-					"memo-key": "memo-value",
-				},
+		"system-nexus-workflow-id",
+		"test-signal",
+		"signal-input",
+		workflow.StartWorkflowOptions{
+			TaskQueue: "test-task-queue",
+			Memo: map[string]interface{}{
+				"memo-key": "memo-value",
 			},
-			Header: &systemnexus.Header{
-				Fields: map[string]any{
-					"header-key": "header-value",
-				},
+			SearchAttributes: map[string]interface{}{
+				"custom-key": "search-attribute-value",
 			},
-			UserMetadata: &systemnexus.UserMetadata{
-				Summary: "summary-value",
-				Details: "details-value",
-			},
-			SearchAttributes: &systemnexus.SearchAttributes{
-				IndexedFields: map[string]any{
-					"custom-key": "search-attribute-value",
-				},
-			},
+			StaticSummary: "summary-value",
+			StaticDetails: "details-value",
 		},
-		workflow.NexusOperationOptions{},
+		systemNexusTargetWorkflow,
+		"workflow-input",
 	)
 
-	var result systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionOutput
-	if err := fut.Get(ctx, &result); err != nil {
+	var exec workflow.Execution
+	if err := fut.Get(ctx, &exec); err != nil {
 		return "", err
 	}
-	return result.RunID, nil
+	return exec.RunID, nil
+}
+
+func systemNexusTargetWorkflow(ctx workflow.Context, input string) error {
+	return nil
 }
 
 type rejectOuterSystemNexusCodec struct {

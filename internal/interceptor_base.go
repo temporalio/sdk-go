@@ -310,6 +310,20 @@ func (w *WorkflowOutboundInterceptorBase) SignalExternalWorkflow(
 	return w.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
+// SignalWithStartWorkflow implements
+// WorkflowOutboundInterceptor.SignalWithStartWorkflow.
+func (w *WorkflowOutboundInterceptorBase) SignalWithStartWorkflow(
+	ctx Context,
+	workflowID string,
+	signalName string,
+	signalArg interface{},
+	options StartWorkflowOptions,
+	workflowType string,
+	workflowArgs ...interface{},
+) Future {
+	return w.Next.SignalWithStartWorkflow(ctx, workflowID, signalName, signalArg, options, workflowType, workflowArgs...)
+}
+
 // SignalChildWorkflow implements
 // WorkflowOutboundInterceptor.SignalChildWorkflow.
 func (w *WorkflowOutboundInterceptorBase) SignalChildWorkflow(

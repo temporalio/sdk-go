@@ -361,10 +361,7 @@ func newWorkflowTaskProcessor(
 		numNormalPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
 		numStickyPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
 		inboundPayloadVisitor:        params.inboundPayloadVisitor,
-		outboundPayloadVisitor: newSystemNexusOutboundPayloadVisitor(
-			params.DataConverter,
-			params.outboundPayloadVisitor,
-		),
+		outboundPayloadVisitor:       params.outboundPayloadVisitor,
 	}
 }
 
@@ -551,9 +548,6 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 
 	uploadPayloadMetrics := &workflowTaskStorageMetrics{}
 	ctx := context.WithValue(context.Background(), storageOperationCallbackContextKey, uploadPayloadMetrics)
-	if taskCompletion.outboundDataConverter != nil {
-		ctx = context.WithValue(ctx, systemNexusPayloadConverterContextKey, taskCompletion.outboundDataConverter)
-	}
 	if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, taskCompletion.rawRequest); err != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
 		// cannot send the original response, so fall back to an explicit WFT

@@ -2,22 +2,18 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
-	"go.temporal.io/api/proxy"
 	systemnexus "go.temporal.io/api/workflowservice/v1/workflowservicenexus/json"
+
 	"go.temporal.io/sdk/converter"
 	"google.golang.org/protobuf/proto"
 )
 
-func TestSystemNexusOutboundPayloadVisitor_RewritesNestedPayloadsOnly(t *testing.T) {
-	codec := &testRejectOuterSystemNexusCodec{}
+func TestSystemNexusPayloadVisitor_VisitsNestedPayloadsOnly(t *testing.T) {
 	storageParams, err := ExternalStorageToParams(converter.ExternalStorage{
 		Drivers:              []converter.StorageDriver{newTestDriver("system-nexus")},
 		PayloadSizeThreshold: 1,
@@ -58,21 +54,16 @@ func TestSystemNexusOutboundPayloadVisitor_RewritesNestedPayloadsOnly(t *testing
 	outerPayload, err := getSystemNexusPayloadConverter().ToPayload(req)
 	require.NoError(t, err)
 
-	visitor := newSystemNexusOutboundPayloadVisitor(
-		converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec),
-		NewExternalStorageVisitor(storageParams),
-	)
-
-	rewritten, err := visitor.Visit(&proxy.VisitPayloadsContext{
-		Context:               context.Background(),
-		Parent:                &commandpb.ScheduleNexusOperationCommandAttributes{Service: systemnexus.WorkflowService.ServiceName, Operation: systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name()},
-		SinglePayloadRequired: true,
-	}, []*commonpb.Payload{outerPayload})
+	attrs := &commandpb.ScheduleNexusOperationCommandAttributes{
+		Service:   systemnexus.WorkflowService.ServiceName,
+		Operation: systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name(),
+		Input:     outerPayload,
+	}
+	err = visitProtoPayloads(context.Background(), NewExternalStorageVisitor(storageParams), attrs)
 	require.NoError(t, err)
-	require.Len(t, rewritten, 1)
 
 	var decoded map[string]any
-	require.NoError(t, getSystemNexusPayloadConverter().FromPayload(rewritten[0], &decoded))
+	require.NoError(t, getSystemNexusPayloadConverter().FromPayload(attrs.Input, &decoded))
 	requirePayloadJSONReference(t, decoded["input"], "payloads")
 	requirePayloadJSONReference(t, decoded["signalInput"], "payloads")
 	requirePayloadJSONReference(t, decoded["memo"], "fields", "memo-key")
@@ -82,69 +73,60 @@ func TestSystemNexusOutboundPayloadVisitor_RewritesNestedPayloadsOnly(t *testing
 
 	searchAttr := decoded["searchAttributes"].(map[string]any)["indexedFields"].(map[string]any)["custom-key"]
 	require.Equal(t, "search-attribute-value", searchAttr)
-	require.GreaterOrEqual(t, codec.EncodeCount(), 6)
 
 	driver := storageParams.driverMap["system-nexus"].(*testStorageDriver)
 	driver.mu.Lock()
 	defer driver.mu.Unlock()
-	require.NotEmpty(t, driver.data)
-	for _, payload := range driver.data {
-		require.Equal(t, []byte("true"), payload.GetMetadata()["test-codec"])
-	}
+	require.Len(t, driver.data, 6)
 }
 
-func TestSystemNexusOutboundPayloadVisitor_UsesContextAwareConverterOverride(t *testing.T) {
-	storageParams, err := ExternalStorageToParams(converter.ExternalStorage{
-		Drivers:              []converter.StorageDriver{newTestDriver("system-nexus")},
-		PayloadSizeThreshold: 1,
-	})
+func TestNewSystemNexusSignalWithStartInput_PreservesPreencodedPayloads(t *testing.T) {
+	codec := &testSignalWithStartCodec{}
+	dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec)
+
+	input, err := encodeArgs(dc, []interface{}{"workflow-input"})
+	require.NoError(t, err)
+	signalInput, err := encodeArg(dc, "signal-input")
+	require.NoError(t, err)
+	memo, err := getWorkflowMemo(map[string]interface{}{"memo-key": "memo-value"}, dc, true)
+	require.NoError(t, err)
+	userMetadata, err := buildUserMetadata("summary-value", "details-value", dc)
 	require.NoError(t, err)
 
-	req := systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{
-		Namespace:  "default",
-		WorkflowID: "system-nexus-workflow-id",
-		SignalName: "test-signal",
-		Input: &systemnexus.Input{Payloads: []any{
-			"test",
-		}},
-	}
+	req, err := newSystemNexusSignalWithStartInput(
+		"default",
+		"",
+		"system-nexus-workflow-id",
+		"test-signal",
+		&WorkflowType{Name: "test-workflow"},
+		input,
+		signalInput,
+		nil,
+		memo,
+		nil,
+		userMetadata,
+		StartWorkflowOptions{TaskQueue: "task-queue"},
+	)
+	require.NoError(t, err)
 
 	outerPayload, err := getSystemNexusPayloadConverter().ToPayload(req)
 	require.NoError(t, err)
 
-	contextAwareConverter := WithWorkflowContext(
-		WithValue(Background(), ContextAwareDataConverterContextKey, "e"),
-		NewContextAwareDataConverter(converter.GetDefaultDataConverter()),
+	visitor := systemnexus.GetTemporalNexusPayloadVisitor(
+		systemnexus.WorkflowService.ServiceName,
+		systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name(),
 	)
-	visitor := newSystemNexusOutboundPayloadVisitor(
-		converter.GetDefaultDataConverter(),
-		NewExternalStorageVisitor(storageParams),
-	)
+	require.NotNil(t, visitor)
 
-	rewritten, err := visitor.Visit(&proxy.VisitPayloadsContext{
-		Context: context.WithValue(
-			context.Background(),
-			systemNexusPayloadConverterContextKey,
-			contextAwareConverter,
-		),
-		Parent: &commandpb.ScheduleNexusOperationCommandAttributes{
-			Service:   systemnexus.WorkflowService.ServiceName,
-			Operation: systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name(),
-		},
-		SinglePayloadRequired: true,
-	}, []*commonpb.Payload{outerPayload})
+	var visitedPayloads []*commonpb.Payload
+	_, err = visitor(outerPayload, func(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+		visitedPayloads = append(visitedPayloads, payloads...)
+		return payloads, nil
+	}, false)
 	require.NoError(t, err)
-	require.Len(t, rewritten, 1)
-
-	var decoded map[string]any
-	require.NoError(t, getSystemNexusPayloadConverter().FromPayload(rewritten[0], &decoded))
-
-	driver := storageParams.driverMap["system-nexus"].(*testStorageDriver)
-	driver.mu.Lock()
-	defer driver.mu.Unlock()
-	require.Len(t, driver.data, 1)
-	for _, payload := range driver.data {
-		require.Equal(t, []byte(`"t?st"`), payload.GetData())
+	require.Len(t, visitedPayloads, 4)
+	for _, payload := range visitedPayloads {
+		require.Equal(t, []byte("true"), payload.GetMetadata()["test-codec"])
 	}
 }
 
@@ -168,17 +150,11 @@ func requirePayloadJSONReference(t *testing.T, value any, path ...string) {
 	}
 }
 
-type testRejectOuterSystemNexusCodec struct {
-	mu          sync.Mutex
-	encodeCount int
-}
+type testSignalWithStartCodec struct{}
 
-func (c *testRejectOuterSystemNexusCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+func (c *testSignalWithStartCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	encoded := make([]*commonpb.Payload, len(payloads))
 	for i, payload := range payloads {
-		if testLooksLikeSystemNexusEnvelope(payload) {
-			return nil, fmt.Errorf("outer system nexus envelope should not be codec encoded")
-		}
 		cloned := proto.Clone(payload).(*commonpb.Payload)
 		if cloned.Metadata == nil {
 			cloned.Metadata = make(map[string][]byte, 1)
@@ -186,35 +162,9 @@ func (c *testRejectOuterSystemNexusCodec) Encode(payloads []*commonpb.Payload) (
 		cloned.Metadata["test-codec"] = []byte("true")
 		encoded[i] = cloned
 	}
-
-	c.mu.Lock()
-	c.encodeCount += len(payloads)
-	c.mu.Unlock()
 	return encoded, nil
 }
 
-func (c *testRejectOuterSystemNexusCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	for _, payload := range payloads {
-		if testLooksLikeSystemNexusEnvelope(payload) {
-			return nil, fmt.Errorf("outer system nexus envelope should not be codec decoded")
-		}
-	}
+func (c *testSignalWithStartCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	return payloads, nil
-}
-
-func (c *testRejectOuterSystemNexusCodec) EncodeCount() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.encodeCount
-}
-
-func testLooksLikeSystemNexusEnvelope(payload *commonpb.Payload) bool {
-	var value map[string]any
-	if err := json.Unmarshal(payload.GetData(), &value); err != nil {
-		return false
-	}
-	_, hasNamespace := value["namespace"]
-	_, hasWorkflowID := value["workflowId"]
-	_, hasSignalName := value["signalName"]
-	return hasNamespace && hasWorkflowID && hasSignalName
 }

@@ -272,6 +272,18 @@ type WorkflowOutboundInterceptor interface {
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
 	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future
 
+	// SignalWithStartWorkflow intercepts workflow.SignalWithStartWorkflow.
+	// interceptor.WorkflowHeader will return a non-nil map for this context.
+	SignalWithStartWorkflow(
+		ctx Context,
+		workflowID string,
+		signalName string,
+		signalArg interface{},
+		options StartWorkflowOptions,
+		workflowType string,
+		workflowArgs ...interface{},
+	) Future
+
 	// SignalChildWorkflow intercepts
 	// workflow.ChildWorkflowFuture.SignalChildWorkflow.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
