@@ -29,7 +29,7 @@ const (
 	// maxRPCTimeout is maximum gRPC call timeout allowed (should not be less than defaultRPCTimeout).
 	maxRPCTimeout = 10 * time.Second
 
-	temporalPrefix      = "__temporal_"
+	temporalPrefix      = "THISNEEDSTOCHANGEBACK__temporal_"
 	temporalPrefixError = "__temporal_ is a reserved prefix"
 )
 
