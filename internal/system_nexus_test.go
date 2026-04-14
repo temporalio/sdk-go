@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -112,18 +113,27 @@ func TestNewSystemNexusSignalWithStartInput_PreservesPreencodedPayloads(t *testi
 	outerPayload, err := getSystemNexusPayloadConverter().ToPayload(req)
 	require.NoError(t, err)
 
-	visitor := systemnexus.GetTemporalNexusPayloadVisitor(
+	handler := systemnexus.GetTemporalNexusPayloadVisitor(
 		systemnexus.WorkflowService.ServiceName,
 		systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name(),
 	)
-	require.NotNil(t, visitor)
+	require.NotNil(t, handler)
+
+	value := handler.InputType()
+	require.IsType(t, &systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, value)
+	require.NoError(t, json.Unmarshal(outerPayload.GetData(), value))
 
 	var visitedPayloads []*commonpb.Payload
-	_, err = visitor(outerPayload, func(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-		visitedPayloads = append(visitedPayloads, payloads...)
-		return payloads, nil
-	}, false)
+	visitedValue, err := handler.Visit(
+		value,
+		func(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+			visitedPayloads = append(visitedPayloads, payloads...)
+			return payloads, nil
+		},
+		false,
+	)
 	require.NoError(t, err)
+	require.IsType(t, &systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, visitedValue)
 	require.Len(t, visitedPayloads, 4)
 	for _, payload := range visitedPayloads {
 		require.Equal(t, []byte("true"), payload.GetMetadata()["test-codec"])
