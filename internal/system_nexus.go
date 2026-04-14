@@ -13,10 +13,6 @@ import (
 
 const systemNexusPayloadConverterContextKey contextKey = "systemNexusPayloadConverter"
 
-func isSystemNexusOperation(service, operation string) bool {
-	return systemnexus.IsTemporalNexusOperation(service, operation)
-}
-
 func getSystemNexusPayloadConverter() converter.DataConverter {
 	return converter.GetDefaultDataConverter()
 }
@@ -44,7 +40,7 @@ func (v *systemNexusOutboundPayloadVisitor) Visit(
 	if ok &&
 		ctx.SinglePayloadRequired &&
 		len(payloads) == 1 &&
-		isSystemNexusOperation(attrs.GetService(), attrs.GetOperation()) {
+		systemnexus.IsTemporalNexusOperation(attrs.GetService(), attrs.GetOperation()) {
 		return v.rewriteSystemNexusPayload(ctx, attrs.GetService(), attrs.GetOperation(), payloads[0])
 	}
 	if v.next == nil {

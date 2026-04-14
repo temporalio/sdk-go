@@ -17,6 +17,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	systemnexus "go.temporal.io/api/workflowservice/v1/workflowservicenexus/json"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -2982,7 +2983,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	}
 
 	payloadConverter := dc
-	if isSystemNexusOperation(input.Client.Service(), operationName) {
+	if systemnexus.IsTemporalNexusOperation(input.Client.Service(), operationName) {
 		payloadConverter = getSystemNexusPayloadConverter()
 	}
 
