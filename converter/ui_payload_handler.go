@@ -78,6 +78,8 @@ type uiPayloadHTTPHandler struct {
 	retrievalVisitor  extstore.PayloadVisitor // nil when no drivers configured
 }
 
+var _ http.Handler = (*uiPayloadHTTPHandler)(nil)
+
 // NewUIPayloadHTTPHandler creates an [http.Handler] that serves /ui/decode and
 // /ui/download routes for Temporal Web UI using the provided options.
 //
