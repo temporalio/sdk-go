@@ -43,7 +43,7 @@ const (
 
 	defaultDefaultHeartbeatThrottleInterval               = 30 * time.Second
 	defaultMaxHeartbeatThrottleInterval                   = 60 * time.Second
-	defualtMaxConcurrentWorkflowTaskExternalStorageVisits = 3
+	defaultMaxConcurrentWorkflowTaskExternalStorageVisits = 3
 )
 
 var (

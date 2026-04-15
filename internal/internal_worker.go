@@ -2635,7 +2635,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
 	}
 	if options.MaxConcurrentWorkflowTaskExternalStorageVisits == 0 {
-		options.MaxConcurrentWorkflowTaskExternalStorageVisits = defualtMaxConcurrentWorkflowTaskExternalStorageVisits
+		options.MaxConcurrentWorkflowTaskExternalStorageVisits = defaultMaxConcurrentWorkflowTaskExternalStorageVisits
 	}
 	if options.Tuner == nil {
 		// Err cannot happen since these slot numbers are guaranteed valid
