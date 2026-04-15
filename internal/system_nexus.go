@@ -234,16 +234,23 @@ func toSystemNexusInput(payloads *commonpb.Payloads) (*systemnexus.Input, error)
 	if payloads == nil || len(payloads.Payloads) == 0 {
 		return nil, nil
 	}
-	value, err := systemNexusProtoToJSONValue(payloads)
+	items, err := toSystemNexusPayloadValues(payloads.Payloads)
 	if err != nil {
 		return nil, err
 	}
-	valueMap, ok := value.(map[string]any)
-	if !ok {
-		return nil, errors.New("system nexus payloads JSON must be an object")
-	}
-	items, _ := valueMap["payloads"].([]any)
 	return &systemnexus.Input{Payloads: items}, nil
+}
+
+func toSystemNexusPayloadValues(payloads []*commonpb.Payload) ([]any, error) {
+	items := make([]any, len(payloads))
+	for i, payload := range payloads {
+		value, err := systemNexusProtoToJSONValue(payload)
+		if err != nil {
+			return nil, err
+		}
+		items[i] = value
+	}
+	return items, nil
 }
 
 func toSystemNexusHeader(header *commonpb.Header) (*systemnexus.Header, error) {
