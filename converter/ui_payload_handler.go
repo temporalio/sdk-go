@@ -64,6 +64,14 @@ type UIPayloadHTTPHandlerOptions struct {
 	StorageDrivers []StorageDriver
 }
 
+// noopDriverSelector to satisfy the StorageDriverSelector interface when constructing
+// the retrieval visitor. It is never actually used because the visitor only performs retrieval operations.
+type noopDriverSelector struct{}
+
+func (noopDriverSelector) SelectDriver(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	return nil, nil
+}
+
 type uiPayloadHTTPHandler struct {
 	postStorageCodecs []PayloadCodec
 	preStorageCodecs  []PayloadCodec
@@ -80,7 +88,10 @@ func NewUIPayloadHTTPHandler(options UIPayloadHTTPHandlerOptions) (http.Handler,
 		preStorageCodecs:  options.PreStorageCodecs,
 	}
 	if len(options.StorageDrivers) > 0 {
-		params, err := extstore.ExternalStorageToParams(ExternalStorage{Drivers: options.StorageDrivers})
+		params, err := extstore.ExternalStorageToParams(ExternalStorage{
+			Drivers:        options.StorageDrivers,
+			DriverSelector: noopDriverSelector{},
+		})
 		if err != nil {
 			return nil, err
 		}

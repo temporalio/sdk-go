@@ -434,3 +434,33 @@ func TestDownload_UnknownDriver(t *testing.T) {
 	rr := servePost(t, h, "/ui/download", encodeRequest(t, ref))
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 }
+
+// TestDownload_MultipleDrivers verifies that multiple storage
+// drivers can be registered.
+func TestDownload_MultipleDrivers(t *testing.T) {
+	driverA := newMemDriver("driver-a")
+	driverB := newMemDriver("driver-b")
+
+	driverA.data["key-a"] = makePayload(t, "from-a")
+	driverB.data["key-b"] = makePayload(t, "from-b")
+
+	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
+		StorageDrivers: []converter.StorageDriver{driverA, driverB},
+	})
+	require.NoError(t, err)
+
+	refs := []*commonpb.Payload{
+		makeStorageRef(t, "driver-a", "key-a"),
+		makeStorageRef(t, "driver-b", "key-b"),
+	}
+	rr := servePost(t, h, "/ui/download", encodeRequest(t, refs...))
+	result := decodeResponse(t, rr)
+	require.Len(t, result, 2)
+
+	var got0, got1 string
+	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(result[0], &got0))
+	require.Equal(t, "from-a", got0)
+
+	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(result[1], &got1))
+	require.Equal(t, "from-b", got1)
+}
