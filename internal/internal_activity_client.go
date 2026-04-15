@@ -14,6 +14,7 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/extstore"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -587,7 +588,7 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		return nil, err
 	}
 
-	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverActivityInfo{
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverActivityInfo{
 		Namespace:    w.client.namespace,
 		ActivityID:   request.ActivityId,
 		ActivityType: in.ActivityType,

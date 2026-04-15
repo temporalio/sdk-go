@@ -17,6 +17,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/extstore"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
@@ -1399,7 +1400,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		heartbeatInterval = options.WorkerHeartbeatInterval
 	}
 
-	storageParams, err := ExternalStorageToParams(options.ExternalStorage)
+	storageParams, err := extstore.ExternalStorageToParams(options.ExternalStorage)
 	if err != nil {
 		panic(fmt.Sprintf("invalid ExternalStorage options: %v", err))
 	}
@@ -1427,8 +1428,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
 		workerGroupingKey:       uuid.NewString(),
-		inboundPayloadVisitor:   NewExternalRetrievalVisitor(storageParams),
-		outboundPayloadVisitor:  NewExternalStorageVisitor(storageParams),
+		inboundPayloadVisitor:   extstore.NewExternalRetrievalVisitor(storageParams),
+		outboundPayloadVisitor:  extstore.NewExternalStorageVisitor(storageParams),
 		storageDriverTypes:      storageDriverTypes,
 	}
 

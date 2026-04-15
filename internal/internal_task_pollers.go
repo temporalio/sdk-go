@@ -24,6 +24,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/extstore"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/serializer"
 	"go.temporal.io/sdk/log"
@@ -461,7 +462,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 	defer close(doneCh)
 
 	downloadPayloadMetrics := &workflowTaskStorageMetrics{logger: wtp.logger}
-	ctx := context.WithValue(context.Background(), storageOperationCallbackContextKey, downloadPayloadMetrics)
+	ctx := extstore.WithStorageOperationCallback(context.Background(), downloadPayloadMetrics)
 	if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
 		// Submit an explicit WFT failure so the server records the error immediately
 		// rather than waiting for the task to time out.
@@ -568,16 +569,16 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 // payload visitation. info is the WorkflowInfo for the current execution.
 func (wtp *workflowTaskProcessor) commandAwareContextHook(info *WorkflowInfo) func(context.Context, proto.Message) (context.Context, error) {
 	return func(ctx context.Context, msg proto.Message) (context.Context, error) {
-		var target converter.StorageDriverTargetInfo
+		var target extstore.StorageDriverTargetInfo
 		switch attrs := msg.(type) {
 		case *commandpb.StartChildWorkflowExecutionCommandAttributes:
-			target = converter.StorageDriverWorkflowInfo{
+			target = extstore.StorageDriverWorkflowInfo{
 				Namespace:    wtp.namespace,
 				WorkflowType: attrs.WorkflowType.GetName(),
 				WorkflowID:   attrs.WorkflowId,
 			}
 		case *commandpb.SignalExternalWorkflowExecutionCommandAttributes:
-			target = converter.StorageDriverWorkflowInfo{
+			target = extstore.StorageDriverWorkflowInfo{
 				Namespace:  wtp.namespace,
 				WorkflowID: attrs.Execution.GetWorkflowId(),
 				RunID:      attrs.Execution.GetRunId(),
@@ -586,12 +587,12 @@ func (wtp *workflowTaskProcessor) commandAwareContextHook(info *WorkflowInfo) fu
 			// The new run keeps the same workflow ID. WorkflowType comes from the
 			// command if specified (type change), otherwise falls back to the current
 			// type already in context. RunID is omitted — the new run hasn't started.
-			current, _ := ctx.Value(storageTargetContextKey).(converter.StorageDriverWorkflowInfo)
+			current, _ := extstore.StorageTargetFromContext(ctx).(extstore.StorageDriverWorkflowInfo)
 			wfType := attrs.WorkflowType.GetName()
 			if wfType == "" {
 				wfType = current.WorkflowType
 			}
-			target = converter.StorageDriverWorkflowInfo{
+			target = extstore.StorageDriverWorkflowInfo{
 				Namespace:    current.Namespace,
 				WorkflowID:   current.WorkflowID,
 				WorkflowType: wfType,
@@ -604,7 +605,7 @@ func (wtp *workflowTaskProcessor) commandAwareContextHook(info *WorkflowInfo) fu
 			if ns == "" {
 				ns = wtp.namespace
 			}
-			target = converter.StorageDriverWorkflowInfo{
+			target = extstore.StorageDriverWorkflowInfo{
 				Namespace:  ns,
 				WorkflowID: info.ParentWorkflowExecution.ID,
 				RunID:      info.ParentWorkflowExecution.RunID,
@@ -612,7 +613,7 @@ func (wtp *workflowTaskProcessor) commandAwareContextHook(info *WorkflowInfo) fu
 		default:
 			return ctx, nil
 		}
-		return context.WithValue(ctx, storageTargetContextKey, target), nil
+		return extstore.WithStorageTarget(ctx, target), nil
 	}
 }
 
@@ -645,8 +646,8 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	}
 
 	uploadPayloadMetrics := &workflowTaskStorageMetrics{}
-	ctx := context.WithValue(context.Background(), storageOperationCallbackContextKey, uploadPayloadMetrics)
-	ctx = context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+	ctx := extstore.WithStorageOperationCallback(context.Background(), uploadPayloadMetrics)
+	ctx = extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:    wtp.namespace,
 		WorkflowID:   task.WorkflowExecution.GetWorkflowId(),
 		RunID:        task.WorkflowExecution.GetRunId(),
@@ -1476,24 +1477,24 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 	}
 
 	if msg, ok := request.(proto.Message); ok {
-		var storageTarget converter.StorageDriverTargetInfo
+		var storageTarget extstore.StorageDriverTargetInfo
 		t := activityTask.task
 		if t.WorkflowExecution.GetWorkflowId() != "" {
-			storageTarget = converter.StorageDriverWorkflowInfo{
+			storageTarget = extstore.StorageDriverWorkflowInfo{
 				Namespace:    atp.namespace,
 				WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
 				RunID:        t.WorkflowExecution.GetRunId(),
 				WorkflowType: t.WorkflowType.GetName(),
 			}
 		} else {
-			storageTarget = converter.StorageDriverActivityInfo{
+			storageTarget = extstore.StorageDriverActivityInfo{
 				Namespace:    atp.namespace,
 				ActivityID:   t.ActivityId,
 				RunID:        t.ActivityRunId,
 				ActivityType: t.ActivityType.GetName(),
 			}
 		}
-		outboundCtx := context.WithValue(context.Background(), storageTargetContextKey, storageTarget)
+		outboundCtx := extstore.WithStorageTarget(context.Background(), storageTarget)
 		if err := visitProtoPayloads(outboundCtx, atp.outboundPayloadVisitor, msg); err != nil {
 			return err
 		}
