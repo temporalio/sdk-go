@@ -463,25 +463,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 	var taskErr error
 	if taskErr = visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); taskErr != nil {
-		keyvals := []any{
-			tagWorkflowType, task.task.WorkflowType.GetName(),
-			tagWorkflowID, task.task.WorkflowExecution.GetWorkflowId(),
-			tagRunID, task.task.WorkflowExecution.GetRunId(),
-			tagAttempt, task.task.Attempt,
-		}
-		var errPayloadSize payloadSizeError
-		if errors.As(taskErr, &errPayloadSize) {
-			keyvals = append(keyvals,
-				tagPayloadSize, errPayloadSize.size,
-				tagPayloadSizeLimit, errPayloadSize.limit)
-		}
-		wtp.logger.Warn("Workflow task preprocess error: "+taskErr.Error(), keyvals...)
-		// Submit an explicit WFT failure so the server records the error immediately
-		// rather than waiting for the task to time out.
-		failReq := wtp.errorToFailWorkflowTask(task.task.TaskToken, taskErr)
-		if _, submitErr := wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failReq}, task.task); submitErr != nil {
-			wtp.logger.Warn("Failed to submit WFT failure after inbound visitor error.", tagError, submitErr)
-		}
+		wtp.handleInboundVisitorError(task.task, taskErr)
 		return nil
 	}
 
@@ -533,7 +515,8 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 				}
 				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
 				if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
-					return nil, err
+					wtp.handleInboundVisitorError(task.task, err)
+					return nil, nil
 				}
 				task.doneCh = doneCh
 				task.laResultCh = laResultCh
@@ -571,7 +554,8 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
 		task = wtp.toWorkflowTask(response.WorkflowTask)
 		if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
-			return err
+			wtp.handleInboundVisitorError(task.task, err)
+			return nil
 		}
 	}
 }
@@ -855,6 +839,28 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 		panic("unknown request type from ProcessWorkflowTask()")
 	}
 	return
+}
+
+func (wtp *workflowTaskProcessor) handleInboundVisitorError(task *workflowservice.PollWorkflowTaskQueueResponse, visitErr error) {
+	keyvals := []any{
+		tagWorkflowType, task.WorkflowType.GetName(),
+		tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+		tagRunID, task.WorkflowExecution.GetRunId(),
+		tagAttempt, task.Attempt,
+	}
+	var errPayloadSize payloadSizeError
+	if errors.As(visitErr, &errPayloadSize) {
+		keyvals = append(keyvals,
+			tagPayloadSize, errPayloadSize.size,
+			tagPayloadSizeLimit, errPayloadSize.limit)
+	}
+	wtp.logger.Warn("Workflow task preprocess error: "+visitErr.Error(), keyvals...)
+	// Submit an explicit WFT failure so the server records the error immediately
+	// rather than waiting for the task to time out.
+	failReq := wtp.errorToFailWorkflowTask(task.TaskToken, visitErr)
+	if _, submitErr := wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failReq}, task); submitErr != nil {
+		wtp.logger.Warn("Failed to submit WFT failure after inbound visitor error.", tagError, submitErr)
+	}
 }
 
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
