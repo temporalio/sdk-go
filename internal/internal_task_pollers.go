@@ -123,7 +123,8 @@ type (
 		numNormalPollerMetric *numPollerMetric
 		numStickyPollerMetric *numPollerMetric
 
-		inboundPayloadVisitor PayloadVisitor
+		inboundPayloadVisitor     PayloadVisitor
+		payloadVisitorConcurrency int
 	}
 
 	// workflowTaskProcessor implements processing of a workflow task and can create
@@ -152,8 +153,9 @@ type (
 		numNormalPollerMetric *numPollerMetric
 		numStickyPollerMetric *numPollerMetric
 
-		inboundPayloadVisitor  PayloadVisitor
-		outboundPayloadVisitor PayloadVisitor
+		inboundPayloadVisitor     PayloadVisitor
+		outboundPayloadVisitor    PayloadVisitor
+		payloadVisitorConcurrency int
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -188,8 +190,9 @@ type (
 	// payload visitor to each page fetched, resolving external storage references
 	// in paginated history events that were not part of the initial poll response.
 	retrievingHistoryIterator struct {
-		inner          HistoryIterator
-		inboundVisitor PayloadVisitor
+		inner                     HistoryIterator
+		inboundVisitor            PayloadVisitor
+		payloadVisitorConcurrency int
 	}
 
 	localActivityTaskPoller struct {
@@ -389,6 +392,7 @@ func newWorkflowTaskProcessor(
 		numStickyPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
 		inboundPayloadVisitor:        params.inboundPayloadVisitor,
 		outboundPayloadVisitor:       params.outboundPayloadVisitor,
+		payloadVisitorConcurrency:    params.payloadVisitorConcurrency,
 	}
 }
 
@@ -426,6 +430,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 		numNormalPollerMetric:        wtp.numNormalPollerMetric,
 		numStickyPollerMetric:        wtp.numStickyPollerMetric,
 		inboundPayloadVisitor:        wtp.inboundPayloadVisitor,
+		payloadVisitorConcurrency:    wtp.payloadVisitorConcurrency,
 	}
 }
 
@@ -462,7 +467,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 	downloadPayloadMetrics := &workflowTaskStorageMetrics{logger: wtp.logger}
 	ctx := context.WithValue(context.Background(), storageOperationCallbackContextKey, downloadPayloadMetrics)
-	if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
+	if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.payloadVisitorConcurrency); err != nil {
 		// Submit an explicit WFT failure so the server records the error immediately
 		// rather than waiting for the task to time out.
 		failReq := wtp.errorToFailWorkflowTask(task.task.TaskToken, err)
@@ -520,7 +525,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 					return nil, nil
 				}
 				task := wtp.toWorkflowTask(heartbeatResponse.WorkflowTask)
-				if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
+				if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.payloadVisitorConcurrency); err != nil {
 					return nil, err
 				}
 				task.doneCh = doneCh
@@ -558,7 +563,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 
 		// we are getting new workflow task, so reset the workflowTask and continue process the new one
 		task = wtp.toWorkflowTask(response.WorkflowTask)
-		if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task); err != nil {
+		if err := visitProtoPayloads(ctx, wtp.inboundPayloadVisitor, task.task, wtp.payloadVisitorConcurrency); err != nil {
 			return err
 		}
 	}
@@ -652,7 +657,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		RunID:        task.WorkflowExecution.GetRunId(),
 		WorkflowType: task.WorkflowType.GetName(),
 	})
-	if err = visitProtoPayloadsWithContextHook(ctx, wtp.outboundPayloadVisitor, taskCompletion.rawRequest, wtp.commandAwareContextHook(workflowInfo)); err != nil {
+	if err = visitProtoPayloadsWithContextHook(ctx, wtp.outboundPayloadVisitor, taskCompletion.rawRequest, wtp.payloadVisitorConcurrency, wtp.commandAwareContextHook(workflowInfo)); err != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
 		// cannot send the original response, so fall back to an explicit WFT
 		// failure so the server records the error immediately.
@@ -800,7 +805,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 		emitFailMetric = true
 		request := wtp.errorToFailWorkflowTask(task.TaskToken, sendErr)
 		request.Cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE
-		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request); err != nil {
+		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.payloadVisitorConcurrency); err != nil {
 			wtp.logger.Error("Failed to visit payloads for GRPC message too large failure response.", tagError, err)
 			return
 		}
@@ -814,7 +819,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 			Failure:       wtp.failureConverter.ErrorToFailure(sendErr),
 			Cause:         enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE,
 		}
-		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request); err != nil {
+		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.payloadVisitorConcurrency); err != nil {
 			wtp.logger.Error("Failed to visit payloads for GRPC message too large query failure response.", tagError, err)
 			return
 		}
@@ -1235,7 +1240,8 @@ func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWork
 				metricsHandler: wtp.metricsHandler,
 				taskQueue:      wtp.taskQueueName,
 			},
-			inboundVisitor: wtp.inboundPayloadVisitor,
+			inboundVisitor:            wtp.inboundPayloadVisitor,
+			payloadVisitorConcurrency: wtp.payloadVisitorConcurrency,
 		},
 	}
 }
@@ -1253,7 +1259,8 @@ func (wtp *workflowTaskProcessor) toWorkflowTask(response *workflowservice.PollW
 				metricsHandler: wtp.metricsHandler,
 				taskQueue:      wtp.taskQueueName,
 			},
-			inboundVisitor: wtp.inboundPayloadVisitor,
+			inboundVisitor:            wtp.inboundPayloadVisitor,
+			payloadVisitorConcurrency: wtp.payloadVisitorConcurrency,
 		},
 	}
 }
@@ -1292,7 +1299,7 @@ func (r *retrievingHistoryIterator) GetNextPage() (*historypb.History, error) {
 	if err != nil || history == nil {
 		return history, err
 	}
-	if err := visitProtoPayloads(context.Background(), r.inboundVisitor, history); err != nil {
+	if err := visitProtoPayloads(context.Background(), r.inboundVisitor, history, r.payloadVisitorConcurrency); err != nil {
 		return nil, err
 	}
 	return history, nil
@@ -1462,7 +1469,8 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	executionStartTime := time.Now()
 
-	if err := visitProtoPayloads(context.Background(), atp.inboundPayloadVisitor, activityTask.task); err != nil {
+	// Activity execution does not benefit from concurrent payload visiting.
+	if err := visitProtoPayloads(context.Background(), atp.inboundPayloadVisitor, activityTask.task, 0); err != nil {
 		return err
 	}
 
@@ -1494,7 +1502,8 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 			}
 		}
 		outboundCtx := context.WithValue(context.Background(), storageTargetContextKey, storageTarget)
-		if err := visitProtoPayloads(outboundCtx, atp.outboundPayloadVisitor, msg); err != nil {
+		// Activity execution does not benefit from concurrent payload visiting.
+		if err := visitProtoPayloads(outboundCtx, atp.outboundPayloadVisitor, msg, 0); err != nil {
 			return err
 		}
 	}

@@ -12,7 +12,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.6.0
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.62.7
+	go.temporal.io/api v1.62.8
 	golang.org/x/sync v0.19.0
 	golang.org/x/sys v0.40.0
 	golang.org/x/time v0.3.0

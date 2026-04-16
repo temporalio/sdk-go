@@ -392,6 +392,21 @@ type (
 		//
 		// NOTE: Experimental
 		Plugins []WorkerPlugin
+
+		// MaxConcurrentWorkflowTaskExternalStorageVisits sets how many external
+		// storage operations (reads or writes) may run in parallel when the worker
+		// processes a single workflow task. When a workflow task contains many large
+		// payloads that need to be fetched from or uploaded to external storage,
+		// raising this value can reduce latency by overlapping those calls. Lower
+		// values reduce pressure on the storage backend.
+		// A value of 0 uses the default. Set to 1 to disable parallelism.
+		// Please report any issues you encounter with this setting or if you feel the
+		// default should be changed.
+		//
+		// NOTE: Experimental
+		//
+		// default: 3
+		MaxConcurrentWorkflowTaskExternalStorageVisits int
 	}
 )
 
