@@ -2212,6 +2212,11 @@ func (b EncodedValue) HasValue() bool {
 	return b.value != nil
 }
 
+// Payloads gets the underlying commonpb.Payloads
+func (b EncodedValue) Payloads() *commonpb.Payloads {
+	return b.value
+}
+
 // SideEffect executes the provided function once, records its result into the workflow history. The recorded result on
 // history will be returned without executing the provided function during replay. This guarantees the deterministic
 // requirement for workflow as the exact same result will be returned in replay.
