@@ -4303,7 +4303,9 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 		}()
 	}
 
-	// The server does not support admitted updates, so we send the update in a separate goroutine
+	// The server does not support admitted updates, so we send the update in a separate goroutine.
+	// Keep this shorter than the activity's ScheduleToCloseTimeout (5s) so the new worker
+	// has time to execute activities before they time out.
 	time.Sleep(5 * time.Second)
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
