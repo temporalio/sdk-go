@@ -1486,6 +1486,10 @@ func (aw *AggregatedWorker) Stop() {
 
 	close(aw.stopC)
 
+	// TODO: temporary sleep to test if the CancelOutstandingWorkerPolls race
+	// is caused by polls still being registered when ShutdownWorker runs.
+	time.Sleep(1 * time.Second)
+
 	aw.shutdownWorker()
 
 	// Issue stop through plugins
