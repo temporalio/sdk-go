@@ -664,6 +664,9 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		RunID:        task.WorkflowExecution.GetRunId(),
 		WorkflowType: task.WorkflowType.GetName(),
 	})
+	if _, isFailed := taskCompletion.rawRequest.(*workflowservice.RespondWorkflowTaskFailedRequest); isFailed {
+		ctx = WithSkipPayloadLimits(ctx)
+	}
 	if taskErr = visitProtoPayloadsWithContextHook(ctx, wtp.outboundPayloadVisitor, taskCompletion.rawRequest, wtp.commandAwareContextHook(workflowInfo)); taskErr != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
 		// cannot send the original response, so fall back to an explicit WFT

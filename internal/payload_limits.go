@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"errors"
 	"sync/atomic"
 
@@ -18,6 +19,12 @@ type PayloadLimitOptions struct {
 	// The limit (in bytes) at which a payload size warning is logged.
 	// If unspecified or zero, defaults to 512 KiB.
 	PayloadSizeWarning int
+}
+
+type skipPayloadLimitsKey struct{}
+
+func WithSkipPayloadLimits(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skipPayloadLimitsKey{}, true)
 }
 
 type payloadSizeError struct {
@@ -56,6 +63,9 @@ type payloadLimitsVisitorImpl struct {
 var _ PayloadVisitor = (*payloadLimitsVisitorImpl)(nil)
 
 func (v *payloadLimitsVisitorImpl) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if ctx.Context != nil && ctx.Value(skipPayloadLimitsKey{}) == true {
+		return payloads, nil
+	}
 	var totalSize int64
 	for _, payload := range payloads {
 		if payload != nil {

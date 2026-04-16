@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -184,6 +185,35 @@ func TestPayloadLimitsVisitorAggregation(t *testing.T) {
 		result, err := visitor.Visit(ctx, []*commonpb.Payload{})
 		require.NoError(t, err)
 		require.Empty(t, result)
+	})
+}
+
+func TestPayloadLimitsVisitorSkipContext(t *testing.T) {
+	t.Run("skips error limit when context has skip key", func(t *testing.T) {
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, nil)
+		setErrorLimits(&payloadLimits{payloadSize: 10})
+		ctx := &proxy.VisitPayloadsContext{Context: WithSkipPayloadLimits(context.Background())}
+		result, err := visitor.Visit(ctx, []*commonpb.Payload{makeTestPayload(9999)})
+		require.NoError(t, err)
+		require.Len(t, result, 1)
+	})
+
+	t.Run("skips warning when context has skip key", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
+		ctx := &proxy.VisitPayloadsContext{Context: WithSkipPayloadLimits(context.Background())}
+		result, err := visitor.Visit(ctx, []*commonpb.Payload{makeTestPayload(9999)})
+		require.NoError(t, err)
+		require.Len(t, result, 1)
+		require.Empty(t, logger.Lines())
+	})
+
+	t.Run("normal limits apply without skip key", func(t *testing.T) {
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, nil)
+		setErrorLimits(&payloadLimits{payloadSize: 10})
+		ctx := &proxy.VisitPayloadsContext{}
+		_, err := visitor.Visit(ctx, []*commonpb.Payload{makeTestPayload(9999)})
+		require.Error(t, err)
 	})
 }
 
