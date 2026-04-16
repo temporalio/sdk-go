@@ -2417,7 +2417,13 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 				ActivityType: t.ActivityType.GetName(),
 			}
 		}
-		outboundCtx := context.WithValue(canCtx, storageTargetContextKey, storageTarget)
+		// Use backgroundContext as base so a cancelled activity context (e.g. pause/reset)
+		// does not prevent the outbound storage visitor from making HTTP calls.
+		outboundBase := ath.backgroundContext
+		if outboundBase == nil {
+			outboundBase = context.Background()
+		}
+		outboundCtx := context.WithValue(outboundBase, storageTargetContextKey, storageTarget)
 		if _, isFailed := msg.(*workflowservice.RespondActivityTaskFailedRequest); isFailed {
 			outboundCtx = WithSkipPayloadLimits(outboundCtx)
 		}
