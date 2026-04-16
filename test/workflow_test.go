@@ -545,6 +545,59 @@ func (w *Workflows) ContinueAsNewWithOptions(ctx workflow.Context, count int, ta
 	return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewWithOptions, count-1, taskQueue)
 }
 
+func (w *Workflows) ContinueAsNewAfterUnsetSearchAttribute(ctx workflow.Context, continued bool) (string, error) {
+	info := workflow.GetInfo(ctx)
+	if info.SearchAttributes == nil {
+		return "", errors.New("search attributes are not present")
+	}
+
+	fields := info.SearchAttributes.GetIndexedFields()
+	stringPayload, ok := fields["CustomStringField"]
+	if !ok {
+		return "", errors.New("search attribute CustomStringField not present")
+	}
+
+	var stringValue string
+	err := converter.GetDefaultDataConverter().FromPayload(stringPayload, &stringValue)
+	if err != nil {
+		return "", errors.New("error when get CustomStringField value")
+	}
+	if stringValue != "carry-over" {
+		return "", fmt.Errorf("unexpected CustomStringField value: %s", stringValue)
+	}
+
+	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	if !continued {
+		keywordPayload, ok := fields["CustomKeywordField"]
+		if !ok {
+			return "", errors.New("search attribute CustomKeywordField not present before unset")
+		}
+
+		var keywordValue string
+		err = converter.GetDefaultDataConverter().FromPayload(keywordPayload, &keywordValue)
+		if err != nil {
+			return "", errors.New("error when get CustomKeywordField value")
+		}
+		if keywordValue != "drop-me" {
+			return "", fmt.Errorf("unexpected CustomKeywordField value: %s", keywordValue)
+		}
+
+		err = workflow.UpsertTypedSearchAttributes(ctx, keywordKey.ValueUnset())
+		if err != nil {
+			return "", err
+		}
+		return "", workflow.NewContinueAsNewError(ctx, w.ContinueAsNewAfterUnsetSearchAttribute, true)
+	}
+
+	if _, ok := fields["CustomKeywordField"]; ok {
+		return "", errors.New("unset search attribute carried over")
+	}
+	if keywordValue, ok := workflow.GetTypedSearchAttributes(ctx).GetKeyword(keywordKey); ok || keywordValue != "" {
+		return "", errors.New("unset search attribute unexpectedly present in typed search attributes")
+	}
+	return stringValue, nil
+}
+
 func (w *Workflows) ContinueAsNewWithRetryPolicy(
 	ctx workflow.Context,
 	initialMaximumAttempts int,
@@ -3697,6 +3750,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ContinueAsNew)
 	worker.RegisterWorkflow(w.UpsertSearchAttributesConditional)
 	worker.RegisterWorkflow(w.UpsertMemoConditional)
+	worker.RegisterWorkflow(w.ContinueAsNewAfterUnsetSearchAttribute)
 	worker.RegisterWorkflow(w.ContinueAsNewWithOptions)
 	worker.RegisterWorkflow(w.ContinueAsNewWithRetryPolicy)
 	worker.RegisterWorkflow(w.ContinueAsNewWithChildWF)

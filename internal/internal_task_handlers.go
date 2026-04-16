@@ -1897,7 +1897,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			WorkflowTaskTimeout:       durationpb.New(contErr.WorkflowTaskTimeout),
 			Header:                    contErr.Header,
 			Memo:                      workflowContext.workflowInfo.Memo,
-			SearchAttributes:          workflowContext.workflowInfo.SearchAttributes,
+			SearchAttributes:          sanitizeSearchAttributesForStart(workflowContext.workflowInfo.SearchAttributes),
 			RetryPolicy:               convertToPBRetryPolicy(retryPolicy),
 			InheritBuildId:            useCompat,
 			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),
