@@ -2163,6 +2163,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
+	if options.MaxConcurrentWorkflowTaskExternalStorageVisits < 0 {
+		panic("MaxConcurrentWorkflowTaskExternalStorageVisits must not be negative")
+	}
+
 	// Need reference to result for fatal error handler
 	var aw *AggregatedWorker
 	fatalErrorCallback := func(err error) {

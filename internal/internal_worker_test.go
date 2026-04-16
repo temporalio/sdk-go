@@ -2937,6 +2937,9 @@ func TestWorkerOptionInvalid(t *testing.T) {
 	require.Panics(t, func() {
 		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskPollers: 1})
 	})
+	require.Panics(t, func() {
+		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskExternalStorageVisits: -1})
+	})
 }
 
 func TestWorkerOptionDefaults(t *testing.T) {
