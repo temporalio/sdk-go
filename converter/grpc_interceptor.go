@@ -27,10 +27,34 @@ func NewPayloadCodecGRPCClientInterceptor(options PayloadCodecGRPCClientIntercep
 	return proxy.NewPayloadVisitorInterceptor(proxy.PayloadVisitorInterceptorOptions{
 		Outbound: &proxy.VisitPayloadsOptions{
 			Visitor: func(vpc *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+				inputExternal := make([][]*commonpb.Payload_ExternalPayloadDetails, len(payloads))
+				for i, p := range payloads {
+					inputExternal[i] = p.GetExternalPayloads()
+				}
+
 				var err error
 				for i := len(options.Codecs) - 1; i >= 0; i-- {
 					if payloads, err = options.Codecs[i].Encode(payloads); err != nil {
 						return payloads, err
+					}
+				}
+
+				// Best effort: preserve external size information after encoding
+				if len(payloads) == len(inputExternal) {
+					for i, ext := range inputExternal {
+						if len(ext) > 0 {
+							payloads[i].ExternalPayloads = ext
+						}
+					}
+				} else if len(payloads) == 1 && len(inputExternal) > 1 {
+					var total int64
+					for _, extSlice := range inputExternal {
+						for _, d := range extSlice {
+							total += d.GetSizeBytes()
+						}
+					}
+					if total > 0 {
+						payloads[0].ExternalPayloads = []*commonpb.Payload_ExternalPayloadDetails{{SizeBytes: total}}
 					}
 				}
 
