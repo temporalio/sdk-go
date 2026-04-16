@@ -41,8 +41,9 @@ const (
 
 	noRetryBackoff = time.Duration(-1)
 
-	defaultDefaultHeartbeatThrottleInterval = 30 * time.Second
-	defaultMaxHeartbeatThrottleInterval     = 60 * time.Second
+	defaultDefaultHeartbeatThrottleInterval               = 30 * time.Second
+	defaultMaxHeartbeatThrottleInterval                   = 60 * time.Second
+	defaultMaxConcurrentWorkflowTaskExternalStorageVisits = 3
 )
 
 var (
@@ -165,6 +166,7 @@ type (
 		workerDeploymentOptions          *deploymentpb.WorkerDeploymentOptions
 		inboundPayloadVisitor            PayloadVisitor
 		outboundPayloadVisitor           PayloadVisitor
+		payloadVisitorConcurrency        int
 	}
 
 	// history wrapper method to help information about events.
@@ -2088,8 +2090,9 @@ func newActivityTaskHandlerWithCustomProvider(
 			params.UseBuildIDForVersioning,
 			params.DeploymentOptions.Version,
 		),
-		inboundPayloadVisitor:  params.inboundPayloadVisitor,
-		outboundPayloadVisitor: params.outboundPayloadVisitor,
+		inboundPayloadVisitor:     params.inboundPayloadVisitor,
+		outboundPayloadVisitor:    params.outboundPayloadVisitor,
+		payloadVisitorConcurrency: params.payloadVisitorConcurrency,
 	}
 }
 
@@ -2297,7 +2300,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	canCtx, cancel := context.WithCancelCause(rootCtx)
 	defer cancel(nil)
 
-	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t); err != nil {
+	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.payloadVisitorConcurrency); err != nil {
 		return ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err), nil
 	}
 
@@ -2418,7 +2421,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		if _, isFailed := msg.(*workflowservice.RespondActivityTaskFailedRequest); isFailed {
 			outboundCtx = WithSkipPayloadLimits(outboundCtx)
 		}
-		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg); err != nil {
+		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.payloadVisitorConcurrency); err != nil {
 			return ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err), nil
 		}
 	}

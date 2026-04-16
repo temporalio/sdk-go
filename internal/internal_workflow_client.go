@@ -527,7 +527,7 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 			WorkflowID:   opts.WorkflowID,
 			WorkflowType: opts.WorkflowType,
 		})
-		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg); err != nil {
+		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg, 0); err != nil {
 			return err
 		}
 	}
@@ -589,7 +589,7 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 			RunID:        opts.RunID,
 			WorkflowType: opts.WorkflowType,
 		})
-		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg); err != nil {
+		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg, 0); err != nil {
 			return err
 		}
 	}
@@ -645,7 +645,7 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 			RunID:        opts.ActivityRunID,
 			ActivityType: opts.ActivityType,
 		})
-		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg); err != nil {
+		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg, 0); err != nil {
 			return err
 		}
 	}
@@ -1833,7 +1833,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		return err
 	}
 
-	if err := visitProtoPayloads(ctx, workflowRun.inboundPayloadVisitor, closeEvent); err != nil {
+	if err := visitProtoPayloads(ctx, workflowRun.inboundPayloadVisitor, closeEvent, 0); err != nil {
 		return err
 	}
 
@@ -2101,7 +2101,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		WorkflowID:   startRequest.WorkflowId,
 		WorkflowType: in.WorkflowType,
 	})
-	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, startRequest); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, startRequest, 0); err != nil {
 		return nil, err
 	}
 
@@ -2266,7 +2266,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 		WorkflowID:   startRequest.WorkflowId,
 		WorkflowType: startRequest.WorkflowType.GetName(),
 	})
-	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, &multiRequest); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, &multiRequest, 0); err != nil {
 		return nil, err
 	}
 
@@ -2367,7 +2367,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			break
 		}
 	}
-	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, updateResp); err != nil {
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, updateResp, 0); err != nil {
 		return nil, err
 	}
 	return updateResp, nil
@@ -2416,7 +2416,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,
 	})
-	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request, 0); err != nil {
 		return err
 	}
 
@@ -2504,7 +2504,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		WorkflowID:   in.Options.ID,
 		WorkflowType: in.WorkflowType,
 	})
-	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, signalWithStartRequest); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, signalWithStartRequest, 0); err != nil {
 		return nil, err
 	}
 
@@ -2586,7 +2586,7 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,
 	})
-	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request, 0); err != nil {
 		return err
 	}
 
@@ -2721,7 +2721,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,
 	})
-	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, req); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, req, 0); err != nil {
 		return nil, err
 	}
 
@@ -2733,7 +2733,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp); err != nil {
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -2760,7 +2760,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		WorkflowID: in.WorkflowID,
 		RunID:      in.RunID,
 	})
-	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, req); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, req, 0); err != nil {
 		return nil, err
 	}
 
@@ -2786,7 +2786,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		}
 	}
 
-	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp); err != nil {
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -2920,7 +2920,7 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 			return nil, err
 		}
 
-		if err := visitProtoPayloads(parentCtx, w.inboundPayloadVisitor, resp); err != nil {
+		if err := visitProtoPayloads(parentCtx, w.inboundPayloadVisitor, resp, 0); err != nil {
 			return nil, err
 		}
 

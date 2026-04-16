@@ -39,11 +39,11 @@ func newCompositePayloadVisitor(visitors ...PayloadVisitor) PayloadVisitor {
 // attributes. If visitor is nil, msg is unchanged. An optional ContextHook may
 // be supplied to override the context for specific message subtrees during
 // traversal (see [proxy.VisitPayloadsOptions.ContextHook]).
-func visitProtoPayloads(ctx context.Context, visitor PayloadVisitor, msg proto.Message) error {
-	return visitProtoPayloadsWithContextHook(ctx, visitor, msg, nil)
+func visitProtoPayloads(ctx context.Context, visitor PayloadVisitor, msg proto.Message, concurrencyLimit int) error {
+	return visitProtoPayloadsWithContextHook(ctx, visitor, msg, concurrencyLimit, nil)
 }
 
-func visitProtoPayloadsWithContextHook(ctx context.Context, visitor PayloadVisitor, msg proto.Message, hook func(context.Context, proto.Message) (context.Context, error)) error {
+func visitProtoPayloadsWithContextHook(ctx context.Context, visitor PayloadVisitor, msg proto.Message, concurrencyLimit int, hook func(context.Context, proto.Message) (context.Context, error)) error {
 	if visitor == nil {
 		return nil
 	}
@@ -51,6 +51,7 @@ func visitProtoPayloadsWithContextHook(ctx context.Context, visitor PayloadVisit
 		Visitor:              visitor.Visit,
 		SkipSearchAttributes: true,
 		ContextHook:          hook,
+		ConcurrencyLimit:     concurrencyLimit,
 	}
 	return proxy.VisitPayloads(ctx, msg, opts)
 }

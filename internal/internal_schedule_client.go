@@ -138,7 +138,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		WorkflowID:   action.GetStartWorkflow().GetWorkflowId(),
 		WorkflowType: action.GetStartWorkflow().GetWorkflowType().GetName(),
 	})
-	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, startRequest); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, startRequest, 0); err != nil {
 		return nil, err
 	}
 
@@ -311,7 +311,8 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		WorkflowID:   newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowId(),
 		WorkflowType: newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowType().GetName(),
 	})
-	if err := visitProtoPayloads(storeCtx, scheduleHandle.outboundPayloadVisitor, updateRequest); err != nil {
+
+	if err := visitProtoPayloads(storeCtx, scheduleHandle.outboundPayloadVisitor, updateRequest, 0); err != nil {
 		return err
 	}
 

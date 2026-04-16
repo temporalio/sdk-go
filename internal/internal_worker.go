@@ -228,6 +228,8 @@ type (
 
 		outboundPayloadVisitor PayloadVisitor
 
+		payloadVisitorConcurrency int
+
 		setPayloadErrorLimits func(*payloadLimits)
 	}
 
@@ -1992,7 +1994,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	// task handler. This mirrors what processWorkflowTask does for live workers.
 	replayStorageCb := &replayStorageMetrics{logger: logger}
 	inboundPayloadVisitorCtx := context.WithValue(context.Background(), storageOperationCallbackContextKey, replayStorageCb)
-	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task); err != nil {
+	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task, 0); err != nil {
 		return err
 	}
 
@@ -2174,6 +2176,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
+	if options.MaxConcurrentWorkflowTaskExternalStorageVisits < 0 {
+		panic("MaxConcurrentWorkflowTaskExternalStorageVisits must not be negative")
+	}
+
 	// Need reference to result for fatal error handler
 	var aw *AggregatedWorker
 	fatalErrorCallback := func(err error) {
@@ -2281,6 +2287,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			NewExternalStorageVisitor(client.storageParams),
 			payloadLimitVisitor,
 		),
+		payloadVisitorConcurrency: options.MaxConcurrentWorkflowTaskExternalStorageVisits,
 		setPayloadErrorLimits: func(limits *payloadLimits) {
 			if !options.DisablePayloadErrorLimit {
 				setPayloadErrorLimits(limits)
@@ -2659,6 +2666,9 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 	if options.MaxHeartbeatThrottleInterval == 0 {
 		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
+	}
+	if options.MaxConcurrentWorkflowTaskExternalStorageVisits == 0 {
+		options.MaxConcurrentWorkflowTaskExternalStorageVisits = defaultMaxConcurrentWorkflowTaskExternalStorageVisits
 	}
 	if options.Tuner == nil {
 		// Err cannot happen since these slot numbers are guaranteed valid
