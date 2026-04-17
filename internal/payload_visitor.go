@@ -12,22 +12,63 @@ type PayloadVisitor interface {
 	Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error)
 }
 
-// visitProtoPayloads runs visitor over all payloads in msg, skipping search
-// attributes. If visitor is nil, msg is unchanged. An optional ContextHook may
-// be supplied to override the context for specific message subtrees during
-// traversal (see [proxy.VisitPayloadsOptions.ContextHook]).
-func visitProtoPayloads(ctx context.Context, visitor PayloadVisitor, msg proto.Message, concurrencyLimit int) error {
-	return visitProtoPayloadsWithContextHook(ctx, visitor, msg, concurrencyLimit, nil)
+type PayloadVisitorWithContextHook interface {
+	PayloadVisitor
+	ContextHook(ctx context.Context, msg proto.Message) (context.Context, error)
 }
 
-func visitProtoPayloadsWithContextHook(ctx context.Context, visitor PayloadVisitor, msg proto.Message, concurrencyLimit int, hook func(context.Context, proto.Message) (context.Context, error)) error {
+type compositePayloadVisitor struct {
+	visitors []PayloadVisitor
+}
+
+var _ PayloadVisitor = (*compositePayloadVisitor)(nil)
+var _ PayloadVisitorWithContextHook = (*compositePayloadVisitor)(nil)
+
+func (v *compositePayloadVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	var err error
+	for _, visitor := range v.visitors {
+		payloads, err = visitor.Visit(ctx, payloads)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return payloads, err
+}
+
+func (v *compositePayloadVisitor) ContextHook(ctx context.Context, msg proto.Message) (context.Context, error) {
+	for _, visitor := range v.visitors {
+		if hook, ok := visitor.(PayloadVisitorWithContextHook); ok {
+			var err error
+			ctx, err = hook.ContextHook(ctx, msg)
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return ctx, nil
+}
+
+func newCompositePayloadVisitor(visitors ...PayloadVisitor) PayloadVisitor {
+	return &compositePayloadVisitor{
+		visitors: visitors,
+	}
+}
+
+// visitProtoPayloads runs visitor over all payloads in msg, skipping search
+// attributes. If visitor is nil, msg is unchanged.
+func visitProtoPayloads(ctx context.Context, visitor PayloadVisitor, msg proto.Message, concurrencyLimit int) error {
 	if visitor == nil {
 		return nil
+	}
+	var contextHook func(context.Context, proto.Message) (context.Context, error)
+	payloadVisitorWithContextHook, _ := visitor.(PayloadVisitorWithContextHook)
+	if payloadVisitorWithContextHook != nil {
+		contextHook = payloadVisitorWithContextHook.ContextHook
 	}
 	opts := proxy.VisitPayloadsOptions{
 		Visitor:              visitor.Visit,
 		SkipSearchAttributes: true,
-		ContextHook:          hook,
+		ContextHook:          contextHook,
 		ConcurrencyLimit:     concurrencyLimit,
 	}
 	return proxy.VisitPayloads(ctx, msg, opts)
