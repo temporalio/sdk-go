@@ -14,6 +14,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/proxy"
 	"go.temporal.io/api/workflowservice/v1"
+	"google.golang.org/protobuf/proto"
 )
 
 // visitorFunc is a PayloadVisitor backed by a plain function, used in tests.
@@ -21,6 +22,20 @@ type visitorFunc func(*proxy.VisitPayloadsContext, []*commonpb.Payload) ([]*comm
 
 func (f visitorFunc) Visit(ctx *proxy.VisitPayloadsContext, p []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	return f(ctx, p)
+}
+
+// hookVisitorFunc is a PayloadVisitorWithContextHook backed by plain functions, used in tests.
+type hookVisitorFunc struct {
+	visit func(*proxy.VisitPayloadsContext, []*commonpb.Payload) ([]*commonpb.Payload, error)
+	hook  func(context.Context, proto.Message) (context.Context, error)
+}
+
+func (v *hookVisitorFunc) Visit(ctx *proxy.VisitPayloadsContext, p []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return v.visit(ctx, p)
+}
+
+func (v *hookVisitorFunc) ContextHook(ctx context.Context, msg proto.Message) (context.Context, error) {
+	return v.hook(ctx, msg)
 }
 
 // scheduleActivitiesRequest builds a RespondWorkflowTaskCompletedRequest with n
@@ -181,5 +196,76 @@ func TestCompositePayloadVisitor(t *testing.T) {
 		result, err := composite.Visit(ctx, []*commonpb.Payload{makeTestPayload(10)})
 		require.NoError(t, err)
 		require.Len(t, result, 1)
+	})
+
+	t.Run("context hook invoked on visitor implementing PayloadVisitorWithContextHook", func(t *testing.T) {
+		hookCalled := false
+		v := &hookVisitorFunc{
+			visit: func(_ *proxy.VisitPayloadsContext, p []*commonpb.Payload) ([]*commonpb.Payload, error) {
+				return p, nil
+			},
+			hook: func(ctx context.Context, _ proto.Message) (context.Context, error) {
+				hookCalled = true
+				return ctx, nil
+			},
+		}
+		composite := newCompositePayloadVisitor(v).(PayloadVisitorWithContextHook)
+		_, err := composite.ContextHook(context.Background(), &commandpb.RecordMarkerCommandAttributes{})
+		require.NoError(t, err)
+		require.True(t, hookCalled)
+	})
+
+	t.Run("context hook chains context across visitors", func(t *testing.T) {
+		type key1 struct{}
+		type key2 struct{}
+		v1 := &hookVisitorFunc{
+			visit: func(_ *proxy.VisitPayloadsContext, p []*commonpb.Payload) ([]*commonpb.Payload, error) {
+				return p, nil
+			},
+			hook: func(ctx context.Context, _ proto.Message) (context.Context, error) {
+				return context.WithValue(ctx, key1{}, true), nil
+			},
+		}
+		var v2SawKey1 bool
+		v2 := &hookVisitorFunc{
+			visit: func(_ *proxy.VisitPayloadsContext, p []*commonpb.Payload) ([]*commonpb.Payload, error) {
+				return p, nil
+			},
+			hook: func(ctx context.Context, _ proto.Message) (context.Context, error) {
+				v2SawKey1 = ctx.Value(key1{}) == true
+				return context.WithValue(ctx, key2{}, true), nil
+			},
+		}
+		composite := newCompositePayloadVisitor(v1, v2).(PayloadVisitorWithContextHook)
+		returnedCtx, err := composite.ContextHook(context.Background(), &commandpb.RecordMarkerCommandAttributes{})
+		require.NoError(t, err)
+		require.True(t, v2SawKey1)
+		require.Equal(t, true, returnedCtx.Value(key2{}))
+	})
+
+	t.Run("context hook error short-circuits", func(t *testing.T) {
+		expectedErr := errors.New("hook error")
+		v1 := &hookVisitorFunc{
+			visit: func(_ *proxy.VisitPayloadsContext, p []*commonpb.Payload) ([]*commonpb.Payload, error) {
+				return p, nil
+			},
+			hook: func(ctx context.Context, _ proto.Message) (context.Context, error) {
+				return nil, expectedErr
+			},
+		}
+		v2Called := false
+		v2 := &hookVisitorFunc{
+			visit: func(_ *proxy.VisitPayloadsContext, p []*commonpb.Payload) ([]*commonpb.Payload, error) {
+				return p, nil
+			},
+			hook: func(ctx context.Context, _ proto.Message) (context.Context, error) {
+				v2Called = true
+				return ctx, nil
+			},
+		}
+		composite := newCompositePayloadVisitor(v1, v2).(PayloadVisitorWithContextHook)
+		_, err := composite.ContextHook(context.Background(), &commandpb.RecordMarkerCommandAttributes{})
+		require.ErrorIs(t, err, expectedErr)
+		require.False(t, v2Called)
 	})
 }

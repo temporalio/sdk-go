@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/serviceerror"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
@@ -282,16 +283,15 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorQueryResult() {
 	)
 	ts.NoError(err)
 
-	// This will block until the context deadline expires; the query will
-	// never complete because the result payload is too large. Run in a goroutine
-	// and wait for the interceptor to signal that RespondWorkflowTaskFailed was sent.
-	go func() {
-		_, _ = ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
-	}()
+	value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
 
-	ts.assertPayloadLimitWFTFailed(ctx, wftFailedCh)
 	ts.NoError(ts.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
-	ts.assertLogContains(logger, payloadErrorMessage)
+
+	ts.Error(err)
+	var queryFailed *serviceerror.QueryFailed
+	ts.ErrorAs(err, &queryFailed)
+	ts.Contains(queryFailed.Message, payloadErrorMessage)
+	ts.Nil(value)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorChildWorkflowInput() {
