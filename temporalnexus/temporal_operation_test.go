@@ -7,6 +7,8 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/workflow"
 )
 
 func TestNewSyncResult(t *testing.T) {
@@ -134,6 +136,21 @@ func TestLoadTokenType(t *testing.T) {
 	missingType := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"ns":"ns"}`))
 	_, err = loadTokenType(missingType)
 	require.ErrorContains(t, err, "missing or zero token type")
+}
+
+func TestDoubleStartGuard(t *testing.T) {
+	started := true
+	nc := NexusClient{asyncStarted: &started}
+
+	_, err := StartUntypedWorkflow[string](context.Background(), nc, client.StartWorkflowOptions{}, "ignored")
+	var handlerErr *nexus.HandlerError
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+	require.Contains(t, handlerErr.Message, "only one async operation")
+
+	_, err = StartWorkflow(context.Background(), nc, client.StartWorkflowOptions{}, func(_ workflow.Context, _ string) (string, error) { return "", nil }, "ignored")
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
 }
 
 func strPtr(s string) *string {

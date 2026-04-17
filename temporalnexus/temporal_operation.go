@@ -54,10 +54,11 @@ type NexusClient struct {
 	namespace             string
 	taskQueue             string
 	startOperationOptions nexus.StartOperationOptions
+	asyncStarted          *bool
 }
 
 // GetWorkflowClient returns the underlying Temporal client for advanced or fallback use cases.
-func (nc *NexusClient) GetWorkflowClient() client.Client {
+func (nc NexusClient) GetWorkflowClient() client.Client {
 	return nc.client
 }
 
@@ -92,6 +93,10 @@ func StartUntypedWorkflow[R any](
 	workflow any,
 	args ...any,
 ) (TemporalOperationResult[R], error) {
+	if nc.asyncStarted != nil && *nc.asyncStarted {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "only one async operation can be started per operation invocation")
+	}
+
 	// Prevent the test env client from panicking when we try to use it from an operation.
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 
@@ -100,6 +105,10 @@ func StartUntypedWorkflow[R any](
 		return TemporalOperationResult[R]{}, err
 	}
 
+	if nc.asyncStarted != nil {
+		*nc.asyncStarted = true
+	}
+	nexus.AddHandlerLinks(ctx, handle.link())
 	return NewAsyncResult[R](handle.token()), nil
 }
 
@@ -195,11 +204,13 @@ func (o *temporalOperation[I, O]) Start(
 		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
+	started := false
 	nc := NexusClient{
 		client:                GetClient(ctx),
 		namespace:             nctx.Namespace,
 		taskQueue:             nctx.TaskQueue,
 		startOperationOptions: options,
+		asyncStarted:          &started,
 	}
 
 	result, err := o.options.Start(ctx, nc, input, options)
