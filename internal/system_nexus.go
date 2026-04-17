@@ -1,8 +1,10 @@
 package internal
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -12,6 +14,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	sdkpb "go.temporal.io/api/sdk/v1"
 	systemnexus "go.temporal.io/api/workflowservice/v1/workflowservicenexus/json"
 
 	"go.temporal.io/sdk/converter"
@@ -132,8 +135,8 @@ func newSystemNexusSignalWithStartInput(
 	searchAttr *commonpb.SearchAttributes,
 	userMetadata proto.Message,
 	options StartWorkflowOptions,
-) (systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput, error) {
-	req := systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{
+) (systemnexus.SignalWithStartWorkflowExecutionRequest, error) {
+	req := systemnexus.SignalWithStartWorkflowExecutionRequest{
 		Namespace:  namespace,
 		RequestID:  requestID,
 		WorkflowID: workflowID,
@@ -149,45 +152,45 @@ func newSystemNexusSignalWithStartInput(
 	}
 	var err error
 	if req.RetryPolicy, err = toSystemNexusRetryPolicy(options.RetryPolicy); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 
 	if req.Input, err = toSystemNexusInput(input); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 	if req.SignalInput, err = toSystemNexusInput(signalInput); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 	if req.Header, err = toSystemNexusHeader(header); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 	if req.Memo, err = toSystemNexusMemo(memo); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 	if req.SearchAttributes, err = toSystemNexusSearchAttributes(searchAttr); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 	if req.UserMetadata, err = toSystemNexusUserMetadata(userMetadata); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 
 	if executionTimeout, err := toSystemNexusDurationString(options.WorkflowExecutionTimeout); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	} else {
 		req.WorkflowExecutionTimeout = executionTimeout
 	}
 	if runTimeout, err := toSystemNexusDurationString(options.WorkflowRunTimeout); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	} else {
 		req.WorkflowRunTimeout = runTimeout
 	}
 	if taskTimeout, err := toSystemNexusDurationString(options.WorkflowTaskTimeout); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	} else {
 		req.WorkflowTaskTimeout = taskTimeout
 	}
 	if startDelay, err := toSystemNexusDurationString(options.StartDelay); err != nil {
-		return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	} else {
 		req.WorkflowStartDelay = startDelay
 	}
@@ -230,21 +233,21 @@ func newSystemNexusSignalWithStartPayload(
 	return converter.GetDefaultDataConverter().ToPayload(req)
 }
 
-func toSystemNexusInput(payloads *commonpb.Payloads) (*systemnexus.Input, error) {
+func toSystemNexusInput(payloads *commonpb.Payloads) (*systemnexus.Payloads, error) {
 	if payloads == nil || len(payloads.Payloads) == 0 {
 		return nil, nil
 	}
-	items, err := toSystemNexusPayloadValues(payloads.Payloads)
+	items, err := toSystemNexusPayloads(payloads.Payloads)
 	if err != nil {
 		return nil, err
 	}
-	return &systemnexus.Input{Payloads: items}, nil
+	return &systemnexus.Payloads{Payloads: items}, nil
 }
 
-func toSystemNexusPayloadValues(payloads []*commonpb.Payload) ([]any, error) {
-	items := make([]any, len(payloads))
+func toSystemNexusPayloads(payloads []*commonpb.Payload) ([]systemnexus.Payload, error) {
+	items := make([]systemnexus.Payload, len(payloads))
 	for i, payload := range payloads {
-		value, err := systemNexusProtoToJSONValue(payload)
+		value, err := toSystemNexusPayload(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -257,31 +260,53 @@ func toSystemNexusHeader(header *commonpb.Header) (*systemnexus.Header, error) {
 	if header == nil {
 		return nil, nil
 	}
-	value, err := systemNexusProtoToJSONValue(header)
-	if err != nil {
-		return nil, err
+	fields := make(map[string]systemnexus.Payload, len(header.Fields))
+	for key, payload := range header.Fields {
+		value, err := toSystemNexusPayload(payload)
+		if err != nil {
+			return nil, err
+		}
+		fields[key] = value
 	}
-	valueMap, ok := value.(map[string]any)
-	if !ok {
-		return nil, errors.New("system nexus header JSON must be an object")
-	}
-	fields, _ := valueMap["fields"].(map[string]any)
 	return &systemnexus.Header{Fields: fields}, nil
+}
+
+func toSystemNexusPayload(payload *commonpb.Payload) (systemnexus.Payload, error) {
+	if payload == nil {
+		return systemnexus.Payload{}, nil
+	}
+	result := systemnexus.Payload{
+		Data: base64.StdEncoding.EncodeToString(payload.GetData()),
+	}
+	if len(payload.GetMetadata()) > 0 {
+		result.Metadata = make(map[string]string, len(payload.GetMetadata()))
+		for key, value := range payload.GetMetadata() {
+			result.Metadata[key] = base64.StdEncoding.EncodeToString(value)
+		}
+	}
+	if externalPayloads := payload.GetExternalPayloads(); len(externalPayloads) > 0 {
+		result.ExternalPayloads = make([]systemnexus.PayloadExternalPayloadDetails, len(externalPayloads))
+		for i, details := range externalPayloads {
+			result.ExternalPayloads[i] = systemnexus.PayloadExternalPayloadDetails{
+				SizeBytes: strconv.FormatInt(details.GetSizeBytes(), 10),
+			}
+		}
+	}
+	return result, nil
 }
 
 func toSystemNexusMemo(memo *commonpb.Memo) (*systemnexus.Memo, error) {
 	if memo == nil {
 		return nil, nil
 	}
-	value, err := systemNexusProtoToJSONValue(memo)
-	if err != nil {
-		return nil, err
+	fields := make(map[string]systemnexus.Payload, len(memo.Fields))
+	for key, payload := range memo.Fields {
+		value, err := toSystemNexusPayload(payload)
+		if err != nil {
+			return nil, err
+		}
+		fields[key] = value
 	}
-	valueMap, ok := value.(map[string]any)
-	if !ok {
-		return nil, errors.New("system nexus memo JSON must be an object")
-	}
-	fields, _ := valueMap["fields"].(map[string]any)
 	return &systemnexus.Memo{Fields: fields}, nil
 }
 
@@ -289,15 +314,14 @@ func toSystemNexusSearchAttributes(searchAttr *commonpb.SearchAttributes) (*syst
 	if searchAttr == nil {
 		return nil, nil
 	}
-	value, err := systemNexusProtoToJSONValue(searchAttr)
-	if err != nil {
-		return nil, err
+	fields := make(map[string]systemnexus.Payload, len(searchAttr.IndexedFields))
+	for key, payload := range searchAttr.IndexedFields {
+		value, err := toSystemNexusPayload(payload)
+		if err != nil {
+			return nil, err
+		}
+		fields[key] = value
 	}
-	valueMap, ok := value.(map[string]any)
-	if !ok {
-		return nil, errors.New("system nexus search attributes JSON must be an object")
-	}
-	fields, _ := valueMap["indexedFields"].(map[string]any)
 	return &systemnexus.SearchAttributes{IndexedFields: fields}, nil
 }
 
@@ -305,18 +329,65 @@ func toSystemNexusUserMetadata(userMetadata proto.Message) (*systemnexus.UserMet
 	if userMetadata == nil {
 		return nil, nil
 	}
-	value, err := systemNexusProtoToJSONValue(userMetadata)
+	result := &systemnexus.UserMetadata{}
+	switch metadata := userMetadata.(type) {
+	case *sdkpb.UserMetadata:
+		if metadata.Summary != nil {
+			summary, err := toSystemNexusPayload(metadata.Summary)
+			if err != nil {
+				return nil, err
+			}
+			result.Summary = &summary
+		}
+		if metadata.Details != nil {
+			details, err := toSystemNexusPayload(metadata.Details)
+			if err != nil {
+				return nil, err
+			}
+			result.Details = &details
+		}
+		return result, nil
+	default:
+		value, err := systemNexusProtoToJSONValue(userMetadata)
+		if err != nil {
+			return nil, err
+		}
+		valueMap, ok := value.(map[string]any)
+		if !ok {
+			return nil, errors.New("system nexus user metadata JSON must be an object")
+		}
+		if rawSummary, ok := valueMap["summary"].(map[string]any); ok {
+			summary, err := toSystemNexusPayloadFromJSONMap(rawSummary)
+			if err != nil {
+				return nil, err
+			}
+			result.Summary = &summary
+		}
+		if rawDetails, ok := valueMap["details"].(map[string]any); ok {
+			details, err := toSystemNexusPayloadFromJSONMap(rawDetails)
+			if err != nil {
+				return nil, err
+			}
+			result.Details = &details
+		}
+		return result, nil
+	}
+}
+
+func toSystemNexusPayloadFromJSONMap(valueMap map[string]any) (systemnexus.Payload, error) {
+	value, err := json.Marshal(valueMap)
 	if err != nil {
-		return nil, err
+		return systemnexus.Payload{}, err
 	}
-	valueMap, ok := value.(map[string]any)
-	if !ok {
-		return nil, errors.New("system nexus user metadata JSON must be an object")
+	var protoPayload commonpb.Payload
+	if err := (temporalproto.CustomJSONUnmarshalOptions{
+		Metadata: map[string]interface{}{
+			commonpb.EnablePayloadShorthandMetadataKey: true,
+		},
+	}).Unmarshal(value, &protoPayload); err != nil {
+		return systemnexus.Payload{}, err
 	}
-	return &systemnexus.UserMetadata{
-		Summary: valueMap["summary"],
-		Details: valueMap["details"],
-	}, nil
+	return toSystemNexusPayload(&protoPayload)
 }
 
 func systemNexusProtoToJSONValue(message proto.Message) (any, error) {
@@ -435,9 +506,9 @@ func toSystemNexusVersioningOverride(versioningOverride VersioningOverride) *sys
 				SeriesName: v.Version.DeploymentName,
 				BuildID:    v.Version.BuildID,
 			},
-			Pinned: &systemnexus.Pinned{
+			Pinned: &systemnexus.VersioningOverridePinnedOverride{
 				Behavior: &pinnedBehavior,
-				Version: &systemnexus.Version{
+				Version: &systemnexus.WorkerDeploymentVersion{
 					DeploymentName: v.Version.DeploymentName,
 					BuildID:        v.Version.BuildID,
 				},

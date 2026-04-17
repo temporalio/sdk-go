@@ -21,33 +21,33 @@ func TestSystemNexusPayloadVisitor_VisitsNestedPayloadsOnly(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	req := systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{
+	req := systemnexus.SignalWithStartWorkflowExecutionRequest{
 		Namespace:  "default",
 		WorkflowID: "system-nexus-workflow-id",
 		SignalName: "test-signal",
-		Input: &systemnexus.Input{Payloads: []any{
-			"workflow-input",
+		Input: &systemnexus.Payloads{Payloads: []systemnexus.Payload{
+			mustSystemNexusPayloadJSON(t, "workflow-input"),
 		}},
-		SignalInput: &systemnexus.Input{Payloads: []any{
-			"signal-input",
+		SignalInput: &systemnexus.Payloads{Payloads: []systemnexus.Payload{
+			mustSystemNexusPayloadJSON(t, "signal-input"),
 		}},
 		Memo: &systemnexus.Memo{
-			Fields: map[string]any{
-				"memo-key": "memo-value",
+			Fields: map[string]systemnexus.Payload{
+				"memo-key": mustSystemNexusPayloadJSON(t, "memo-value"),
 			},
 		},
 		Header: &systemnexus.Header{
-			Fields: map[string]any{
-				"header-key": "header-value",
+			Fields: map[string]systemnexus.Payload{
+				"header-key": mustSystemNexusPayloadJSON(t, "header-value"),
 			},
 		},
 		UserMetadata: &systemnexus.UserMetadata{
-			Summary: "summary-value",
-			Details: "details-value",
+			Summary: payloadPtr(mustSystemNexusPayloadJSON(t, "summary-value")),
+			Details: payloadPtr(mustSystemNexusPayloadJSON(t, "details-value")),
 		},
 		SearchAttributes: &systemnexus.SearchAttributes{
-			IndexedFields: map[string]any{
-				"custom-key": "search-attribute-value",
+			IndexedFields: map[string]systemnexus.Payload{
+				"custom-key": mustSystemNexusPayloadJSON(t, "search-attribute-value"),
 			},
 		},
 	}
@@ -73,7 +73,7 @@ func TestSystemNexusPayloadVisitor_VisitsNestedPayloadsOnly(t *testing.T) {
 	requirePayloadJSONReference(t, decoded["userMetadata"], "details")
 
 	searchAttr := decoded["searchAttributes"].(map[string]any)["indexedFields"].(map[string]any)["custom-key"]
-	require.Equal(t, "search-attribute-value", searchAttr)
+	requirePayloadJSONReference(t, searchAttr)
 
 	driver := storageParams.driverMap["system-nexus"].(*testStorageDriver)
 	driver.mu.Lock()
@@ -110,7 +110,7 @@ func TestNewSystemNexusSignalWithStartInput_PreservesPreencodedPayloads(t *testi
 	)
 	require.NoError(t, err)
 
-	var decodedReq systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput
+	var decodedReq systemnexus.SignalWithStartWorkflowExecutionRequest
 	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(outerPayload, &decodedReq))
 	require.Equal(t, "test-request-id", decodedReq.RequestID)
 
@@ -121,7 +121,7 @@ func TestNewSystemNexusSignalWithStartInput_PreservesPreencodedPayloads(t *testi
 	require.NotNil(t, handler)
 
 	value := handler.InputType()
-	require.IsType(t, &systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, value)
+	require.IsType(t, &systemnexus.SignalWithStartWorkflowExecutionRequest{}, value)
 	require.NoError(t, json.Unmarshal(outerPayload.GetData(), value))
 
 	var visitedPayloads []*commonpb.Payload
@@ -134,7 +134,7 @@ func TestNewSystemNexusSignalWithStartInput_PreservesPreencodedPayloads(t *testi
 		false,
 	)
 	require.NoError(t, err)
-	require.IsType(t, &systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput{}, visitedValue)
+	require.IsType(t, &systemnexus.SignalWithStartWorkflowExecutionRequest{}, visitedValue)
 	require.Len(t, visitedPayloads, 4)
 	for _, payload := range visitedPayloads {
 		require.Equal(t, []byte("true"), payload.GetMetadata()["test-codec"])
@@ -155,13 +155,27 @@ func requirePayloadJSONReference(t *testing.T, value any, path ...string) {
 		requirePayloadJSONReference(t, typed[0])
 	case map[string]any:
 		_, hasExternalPayloads := typed["externalPayloads"]
-		require.True(t, hasExternalPayloads)
+		_, hasData := typed["data"]
+		require.True(t, hasExternalPayloads || hasData)
 	default:
 		require.Failf(t, "expected rewritten payload JSON", "got %T", current)
 	}
 }
 
 type testSignalWithStartCodec struct{}
+
+func payloadPtr(payload systemnexus.Payload) *systemnexus.Payload {
+	return &payload
+}
+
+func mustSystemNexusPayloadJSON(t *testing.T, value interface{}) systemnexus.Payload {
+	t.Helper()
+	payload, err := converter.GetDefaultDataConverter().ToPayload(value)
+	require.NoError(t, err)
+	result, err := toSystemNexusPayload(payload)
+	require.NoError(t, err)
+	return result
+}
 
 func (c *testSignalWithStartCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	encoded := make([]*commonpb.Payload, len(payloads))

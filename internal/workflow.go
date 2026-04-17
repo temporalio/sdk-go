@@ -1839,7 +1839,7 @@ func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(
 	})
 
 	Go(ctx1, func(ctx Context) {
-		var result systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionOutput
+		var result systemnexus.SignalWithStartWorkflowExecutionResponse
 		if err := opFuture.Get(ctx, &result); err != nil {
 			settable.Set(nil, err)
 			return

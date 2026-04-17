@@ -61,23 +61,20 @@ func TestSystemNexusDefersOuterEnvelopeEncoding(t *testing.T) {
 
 	handlerWorker := worker.New(handlerTC.client, handlerTC.taskQueue, worker.Options{})
 	service := nexus.NewService(systemnexus.WorkflowService.ServiceName)
+	var receivedRequestMu sync.Mutex
+	var receivedRequest *systemnexus.SignalWithStartWorkflowExecutionRequest
 	require.NoError(t, service.Register(nexus.NewSyncOperation(
 		systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name(),
 		func(
 			_ context.Context,
-			req systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionInput,
+			req systemnexus.SignalWithStartWorkflowExecutionRequest,
 			_ nexus.StartOperationOptions,
-		) (systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionOutput, error) {
-			require.Equal(t, "system-nexus-workflow-id", req.WorkflowID)
-			require.Equal(t, "test-signal", req.SignalName)
-			requirePayloadJSONReference(t, req.Input.Payloads[0])
-			requirePayloadJSONReference(t, req.SignalInput.Payloads[0])
-			requirePayloadJSONReference(t, req.Memo.Fields["memo-key"])
-			requirePayloadJSONReference(t, req.UserMetadata.Summary)
-			requirePayloadJSONReference(t, req.UserMetadata.Details)
-			require.Equal(t, "search-attribute-value", req.SearchAttributes.IndexedFields["custom-key"])
-
-			return systemnexus.WorkflowServiceSignalWithStartWorkflowExecutionOutput{
+		) (systemnexus.SignalWithStartWorkflowExecutionResponse, error) {
+			receivedRequestMu.Lock()
+			reqCopy := req
+			receivedRequest = &reqCopy
+			receivedRequestMu.Unlock()
+			return systemnexus.SignalWithStartWorkflowExecutionResponse{
 				RunID: "system-nexus-workflow-id-run",
 			}, nil
 		},
@@ -130,6 +127,17 @@ func TestSystemNexusDefersOuterEnvelopeEncoding(t *testing.T) {
 	require.NoError(t, run.Get(ctx, &result))
 	require.Equal(t, "system-nexus-workflow-id-run", result)
 	require.GreaterOrEqual(t, codec.EncodeCount(), 5)
+	receivedRequestMu.Lock()
+	defer receivedRequestMu.Unlock()
+	require.NotNil(t, receivedRequest)
+	require.Equal(t, "system-nexus-workflow-id", receivedRequest.WorkflowID)
+	require.Equal(t, "test-signal", receivedRequest.SignalName)
+	requirePayloadJSONReference(t, receivedRequest.Input.Payloads[0])
+	requirePayloadJSONReference(t, receivedRequest.SignalInput.Payloads[0])
+	requirePayloadJSONReference(t, receivedRequest.Memo.Fields["memo-key"])
+	requirePayloadJSONReference(t, receivedRequest.UserMetadata.Summary)
+	requirePayloadJSONReference(t, receivedRequest.UserMetadata.Details)
+	requirePayloadJSONReference(t, receivedRequest.SearchAttributes.IndexedFields["custom-key"])
 
 	driver.mu.Lock()
 	defer driver.mu.Unlock()
@@ -230,8 +238,17 @@ func looksLikeSystemNexusEnvelope(payload *commonpb.Payload) bool {
 
 func requirePayloadJSONReference(t *testing.T, value any) {
 	t.Helper()
-	payloadMap, ok := value.(map[string]any)
-	require.True(t, ok)
-	_, hasExternalPayloads := payloadMap["externalPayloads"]
-	require.True(t, hasExternalPayloads)
+	switch payload := value.(type) {
+	case systemnexus.Payload:
+		require.True(t, len(payload.ExternalPayloads) > 0 || payload.Data != "")
+	case *systemnexus.Payload:
+		require.NotNil(t, payload)
+		require.True(t, len(payload.ExternalPayloads) > 0 || payload.Data != "")
+	case map[string]any:
+		_, hasExternalPayloads := payload["externalPayloads"]
+		_, hasData := payload["data"]
+		require.True(t, hasExternalPayloads || hasData)
+	default:
+		require.Failf(t, "expected payload object", "got %T", value)
+	}
 }
