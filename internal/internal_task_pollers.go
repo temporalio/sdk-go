@@ -20,6 +20,7 @@ import (
 	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/proxy"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
@@ -565,58 +566,6 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 	}
 }
 
-// commandAwareContextHook returns a ContextHook for use during WFT completion
-// payload visitation. info is the WorkflowInfo for the current execution.
-func (wtp *workflowTaskProcessor) commandAwareContextHook(info *WorkflowInfo) func(context.Context, proto.Message) (context.Context, error) {
-	return func(ctx context.Context, msg proto.Message) (context.Context, error) {
-		var target converter.StorageDriverTargetInfo
-		switch attrs := msg.(type) {
-		case *commandpb.StartChildWorkflowExecutionCommandAttributes:
-			target = converter.StorageDriverWorkflowInfo{
-				Namespace:    wtp.namespace,
-				WorkflowType: attrs.WorkflowType.GetName(),
-				WorkflowID:   attrs.WorkflowId,
-			}
-		case *commandpb.SignalExternalWorkflowExecutionCommandAttributes:
-			target = converter.StorageDriverWorkflowInfo{
-				Namespace:  wtp.namespace,
-				WorkflowID: attrs.Execution.GetWorkflowId(),
-				RunID:      attrs.Execution.GetRunId(),
-			}
-		case *commandpb.ContinueAsNewWorkflowExecutionCommandAttributes:
-			// The new run keeps the same workflow ID. WorkflowType comes from the
-			// command if specified (type change), otherwise falls back to the current
-			// type already in context. RunID is omitted — the new run hasn't started.
-			current, _ := ctx.Value(storageTargetContextKey).(converter.StorageDriverWorkflowInfo)
-			wfType := attrs.WorkflowType.GetName()
-			if wfType == "" {
-				wfType = current.WorkflowType
-			}
-			target = converter.StorageDriverWorkflowInfo{
-				Namespace:    current.Namespace,
-				WorkflowID:   current.WorkflowID,
-				WorkflowType: wfType,
-			}
-		case *commandpb.CompleteWorkflowExecutionCommandAttributes:
-			if info == nil || info.ParentWorkflowExecution == nil || info.ContinuedExecutionRunID != "" {
-				return ctx, nil
-			}
-			ns := info.ParentWorkflowNamespace
-			if ns == "" {
-				ns = wtp.namespace
-			}
-			target = converter.StorageDriverWorkflowInfo{
-				Namespace:  ns,
-				WorkflowID: info.ParentWorkflowExecution.ID,
-				RunID:      info.ParentWorkflowExecution.RunID,
-			}
-		default:
-			return ctx, nil
-		}
-		return context.WithValue(ctx, storageTargetContextKey, target), nil
-	}
-}
-
 func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	taskCompletion *workflowTaskCompletion,
 	taskErr error,
@@ -653,10 +602,11 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		RunID:        task.WorkflowExecution.GetRunId(),
 		WorkflowType: task.WorkflowType.GetName(),
 	})
-	if _, isFailed := taskCompletion.rawRequest.(*workflowservice.RespondWorkflowTaskFailedRequest); isFailed {
-		ctx = WithSkipPayloadLimits(ctx)
+	outboundPayloadVisitor := &commandAwarePayloadVisitor{
+		innerVisitor: wtp.outboundPayloadVisitor,
+		workflowInfo: workflowInfo,
 	}
-	if taskErr = visitProtoPayloadsWithContextHook(ctx, wtp.outboundPayloadVisitor, taskCompletion.rawRequest, wtp.payloadVisitorConcurrency, wtp.commandAwareContextHook(workflowInfo)); taskErr != nil {
+	if taskErr = visitProtoPayloads(ctx, outboundPayloadVisitor, taskCompletion.rawRequest, wtp.payloadVisitorConcurrency); taskErr != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
 		// cannot send the original response, so fall back to an explicit WFT
 		// failure so the server records the error immediately.
@@ -1809,4 +1759,68 @@ func (nt *nexusTask) scaleDecision() (pollerScaleDecision, bool) {
 	return pollerScaleDecision{
 		pollRequestDeltaSuggestion: int(nt.task.PollerScalingDecision.PollRequestDeltaSuggestion),
 	}, true
+}
+
+// commandAwarePayloadVisitor is a wrapper around a PayloadVisitor that adds command-specific context information
+type commandAwarePayloadVisitor struct {
+	innerVisitor PayloadVisitor
+	workflowInfo *WorkflowInfo
+}
+
+var _ PayloadVisitorWithContextHook = (*commandAwarePayloadVisitor)(nil)
+
+func (v *commandAwarePayloadVisitor) Visit(ctx *proxy.VisitPayloadsContext, payload []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if v.innerVisitor == nil {
+		return payload, nil
+	}
+	return v.innerVisitor.Visit(ctx, payload)
+}
+
+func (v *commandAwarePayloadVisitor) ContextHook(ctx context.Context, msg proto.Message) (context.Context, error) {
+	switch attrs := msg.(type) {
+	case *commandpb.StartChildWorkflowExecutionCommandAttributes:
+		ctx = context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+			Namespace:    v.workflowInfo.Namespace,
+			WorkflowType: attrs.WorkflowType.GetName(),
+			WorkflowID:   attrs.WorkflowId,
+		})
+	case *commandpb.SignalExternalWorkflowExecutionCommandAttributes:
+		ctx = context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+			Namespace:  v.workflowInfo.Namespace,
+			WorkflowID: attrs.Execution.GetWorkflowId(),
+			RunID:      attrs.Execution.GetRunId(),
+		})
+	case *commandpb.ContinueAsNewWorkflowExecutionCommandAttributes:
+		// The new run keeps the same workflow ID. WorkflowType comes from the
+		// command if specified (type change), otherwise falls back to the current
+		// type already in context. RunID is omitted — the new run hasn't started.
+		wfType := attrs.WorkflowType.GetName()
+		if wfType == "" {
+			wfType = v.workflowInfo.WorkflowType.Name
+		}
+		ctx = context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+			Namespace:    v.workflowInfo.Namespace,
+			WorkflowID:   v.workflowInfo.WorkflowExecution.ID,
+			WorkflowType: wfType,
+		})
+	case *commandpb.CompleteWorkflowExecutionCommandAttributes:
+		// Set target to parent context if not a continue-as-new workflow
+		if v.workflowInfo.ParentWorkflowExecution != nil && v.workflowInfo.ContinuedExecutionRunID == "" {
+			ns := v.workflowInfo.ParentWorkflowNamespace
+			if ns == "" {
+				ns = v.workflowInfo.Namespace
+			}
+			ctx = context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+				Namespace:  ns,
+				WorkflowID: v.workflowInfo.ParentWorkflowExecution.ID,
+				RunID:      v.workflowInfo.ParentWorkflowExecution.RunID,
+			})
+		}
+	}
+
+	if innerVisitorWithHook, ok := v.innerVisitor.(PayloadVisitorWithContextHook); ok {
+		return innerVisitorWithHook.ContextHook(ctx, msg)
+	}
+
+	return ctx, nil
 }

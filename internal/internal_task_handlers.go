@@ -2424,9 +2424,6 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			outboundBase = context.Background()
 		}
 		outboundCtx := context.WithValue(outboundBase, storageTargetContextKey, storageTarget)
-		if _, isFailed := msg.(*workflowservice.RespondActivityTaskFailedRequest); isFailed {
-			outboundCtx = WithSkipPayloadLimits(outboundCtx)
-		}
 		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.payloadVisitorConcurrency); err != nil {
 			return ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err), nil
 		}
