@@ -8,6 +8,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
 	"go.temporal.io/sdk/log"
+	"google.golang.org/protobuf/proto"
 )
 
 // PayloadLimitOptions for when payload sizes exceed limits.
@@ -60,34 +61,38 @@ type payloadLimitsVisitorImpl struct {
 	logger        log.Logger
 }
 
-var _ PayloadVisitor = (*payloadLimitsVisitorImpl)(nil)
+var _ PayloadVisitorWithContextHook = (*payloadLimitsVisitorImpl)(nil)
 
 func (v *payloadLimitsVisitorImpl) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	if ctx.Context != nil && ctx.Value(skipPayloadLimitsKey{}) == true {
-		return payloads, nil
-	}
-	var totalSize int64
-	for _, payload := range payloads {
-		if payload != nil {
-			totalSize += int64(payload.Size())
-		}
-	}
-	errorLimits := v.errorLimits.Load()
-	if errorLimits != nil && errorLimits.payloadSize > 0 && totalSize > errorLimits.payloadSize {
-		return nil, payloadSizeError{
-			message: "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.",
-			size:    totalSize,
-			limit:   errorLimits.payloadSize,
-		}
-	}
-	if v.warningLimits.payloadSize > 0 && totalSize > v.warningLimits.payloadSize && v.logger != nil {
-		v.logger.Warn(
-			"[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.",
-			tagPayloadSize, totalSize,
-			tagPayloadSizeLimit, v.warningLimits.payloadSize,
-		)
-	}
 	return payloads, nil
+}
+
+func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Message) (context.Context, error) {
+	if ctx != nil && ctx.Value(skipPayloadLimitsKey{}) == true {
+		return ctx, nil
+	}
+
+	payloads := msg.(*commonpb.Payloads)
+	if payloads != nil {
+		size := int64(payloads.Size())
+		errorLimits := v.errorLimits.Load()
+		if errorLimits != nil && errorLimits.payloadSize > 0 && size > errorLimits.payloadSize {
+			return nil, payloadSizeError{
+				message: "[TMPRL1103] Attempted to upload payloads with size that exceeded the error limit.",
+				size:    size,
+				limit:   errorLimits.payloadSize,
+			}
+		}
+		if v.warningLimits.payloadSize > 0 && size > v.warningLimits.payloadSize && v.logger != nil {
+			v.logger.Warn(
+				"[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.",
+				tagPayloadSize, size,
+				tagPayloadSizeLimit, v.warningLimits.payloadSize,
+			)
+		}
+	}
+
+	return ctx, nil
 }
 
 func (v *payloadLimitsVisitorImpl) setErrorLimits(errorLimits *payloadLimits) {

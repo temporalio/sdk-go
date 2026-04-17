@@ -20,6 +20,7 @@ import (
 	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	"go.temporal.io/api/proxy"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
@@ -656,7 +657,11 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	if _, isFailed := taskCompletion.rawRequest.(*workflowservice.RespondWorkflowTaskFailedRequest); isFailed {
 		ctx = WithSkipPayloadLimits(ctx)
 	}
-	if taskErr = visitProtoPayloadsWithContextHook(ctx, wtp.outboundPayloadVisitor, taskCompletion.rawRequest, wtp.payloadVisitorConcurrency, wtp.commandAwareContextHook(workflowInfo)); taskErr != nil {
+	outboundPayloadVisitor := &commandAwarePayloadVisitor{
+		innerVisitor: wtp.outboundPayloadVisitor,
+		workflowInfo: workflowInfo,
+	}
+	if taskErr = visitProtoPayloads(ctx, outboundPayloadVisitor, taskCompletion.rawRequest, wtp.payloadVisitorConcurrency); taskErr != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
 		// cannot send the original response, so fall back to an explicit WFT
 		// failure so the server records the error immediately.
@@ -1809,4 +1814,71 @@ func (nt *nexusTask) scaleDecision() (pollerScaleDecision, bool) {
 	return pollerScaleDecision{
 		pollRequestDeltaSuggestion: int(nt.task.PollerScalingDecision.PollRequestDeltaSuggestion),
 	}, true
+}
+
+// commandAwarePayloadVisitor updates the payload visitor context with command-aware
+// information to allow the inner visitor to make command-aware decisions when processing payloads.
+type commandAwarePayloadVisitor struct {
+	innerVisitor PayloadVisitor
+	workflowInfo *WorkflowInfo
+}
+
+var _ PayloadVisitorWithContextHook = (*commandAwarePayloadVisitor)(nil)
+
+func (v *commandAwarePayloadVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return v.innerVisitor.Visit(ctx, payloads)
+}
+
+func (v *commandAwarePayloadVisitor) ContextHook(ctx context.Context, msg proto.Message) (context.Context, error) {
+	if v.workflowInfo != nil {
+		var target converter.StorageDriverTargetInfo
+		switch attrs := msg.(type) {
+		case *commandpb.StartChildWorkflowExecutionCommandAttributes:
+			target = converter.StorageDriverWorkflowInfo{
+				Namespace:    v.workflowInfo.Namespace,
+				WorkflowType: attrs.WorkflowType.GetName(),
+				WorkflowID:   attrs.WorkflowId,
+			}
+		case *commandpb.SignalExternalWorkflowExecutionCommandAttributes:
+			target = converter.StorageDriverWorkflowInfo{
+				Namespace:  v.workflowInfo.Namespace,
+				WorkflowID: attrs.Execution.GetWorkflowId(),
+				RunID:      attrs.Execution.GetRunId(),
+			}
+		case *commandpb.ContinueAsNewWorkflowExecutionCommandAttributes:
+			// The new run keeps the same workflow ID. WorkflowType comes from the
+			// command if specified (type change), otherwise falls back to the current
+			// type already in context. RunID is omitted — the new run hasn't started.
+			current, _ := ctx.Value(storageTargetContextKey).(converter.StorageDriverWorkflowInfo)
+			wfType := attrs.WorkflowType.GetName()
+			if wfType == "" {
+				wfType = current.WorkflowType
+			}
+			target = converter.StorageDriverWorkflowInfo{
+				Namespace:    current.Namespace,
+				WorkflowID:   current.WorkflowID,
+				WorkflowType: wfType,
+			}
+		case *commandpb.CompleteWorkflowExecutionCommandAttributes:
+			// For workflow completion, use parent workflow as target if not a continued workflow.
+			if v.workflowInfo.ParentWorkflowExecution == nil && v.workflowInfo.ContinuedExecutionRunID == "" {
+				ns := v.workflowInfo.ParentWorkflowNamespace
+				if ns == "" {
+					ns = v.workflowInfo.Namespace
+				}
+				target = converter.StorageDriverWorkflowInfo{
+					Namespace:  ns,
+					WorkflowID: v.workflowInfo.ParentWorkflowExecution.ID,
+					RunID:      v.workflowInfo.ParentWorkflowExecution.RunID,
+				}
+			}
+		}
+		ctx = context.WithValue(ctx, storageTargetContextKey, target)
+	}
+
+	if innerVisitorWithContextHook, ok := v.innerVisitor.(PayloadVisitorWithContextHook); ok {
+		return innerVisitorWithContextHook.ContextHook(ctx, msg)
+	}
+
+	return ctx, nil
 }
