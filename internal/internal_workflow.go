@@ -456,9 +456,7 @@ func (f *futureImpl) Chain(future Future) {
 		return
 	}
 	val, err := ch.GetValueAndError()
-	f.value = val
-	f.err = err
-	f.ready = true
+	f.Set(val, err)
 }
 
 func (f *futureImpl) ChainFuture(future Future) {
