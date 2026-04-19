@@ -12,6 +12,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
@@ -408,6 +409,48 @@ func TestWFTPanicInTaskHandler(t *testing.T) {
 	require.Error(t, poller.processWorkflowTask(&task0))
 	// Workflow should not be in cache
 	require.Nil(t, cache.getWorkflowContext(runID))
+}
+
+func TestErrorToFailWorkflowTaskCause(t *testing.T) {
+	params := workerExecutionParameters{cache: NewWorkerCache()}
+	ensureRequiredParams(&params)
+
+	taskHandler := newWorkflowTaskHandler(params, nil, newRegistry())
+	poller := newWorkflowTaskProcessor(taskHandler, taskHandler, nil, params, "")
+
+	tests := []struct {
+		name  string
+		err   error
+		cause enumspb.WorkflowTaskFailedCause
+	}{
+		{
+			name:  "generic error",
+			err:   errors.New("something went wrong"),
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
+		},
+		{
+			name:  "history mismatch",
+			err:   historyMismatchError{},
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
+		},
+		{
+			name:  "unknown sdk flag",
+			err:   unknownSdkFlagError{},
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
+		},
+		{
+			name:  "payload size error",
+			err:   payloadSizeError{message: "too large", size: 100, limit: 50},
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := poller.errorToFailWorkflowTask([]byte("token"), tc.err)
+			require.Equal(t, tc.cause, resp.Cause)
+		})
+	}
 }
 
 type mockTask struct{}
