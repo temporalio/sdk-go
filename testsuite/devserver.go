@@ -26,7 +26,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 )
 
-// Cached download of the dev server.
+// CachedDownload is the cached download configuration for the dev server binary.
 type CachedDownload struct {
 	// Which version to download, by default the latest version compatible with the SDK will be downloaded.
 	// Acceptable values are specific release versions (e.g v0.3.0), "default", and "latest".
@@ -35,7 +35,7 @@ type CachedDownload struct {
 	DestDir string
 }
 
-// Configuration for the dev server.
+// DevServerOptions configures the dev server process.
 type DevServerOptions struct {
 	// Existing path on the filesystem for the executable.
 	ExistingPath string
@@ -66,7 +66,7 @@ type DevServerOptions struct {
 	Stderr io.Writer
 }
 
-// Temporal CLI based DevServer
+// DevServer is a Temporal CLI-based dev server process.
 type DevServer struct {
 	cmd              *exec.Cmd
 	client           client.Client

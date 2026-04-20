@@ -459,6 +459,16 @@ func (s *replayTestSuite) TestSelectorNonBlocking() {
 	require.NoError(s.T(), err)
 }
 
+func (s *replayTestSuite) TestChannelWorkerWithBlockedSelectorFlag() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(ChannelWorkerWorkflow)
+	// Verify we can replay a history generated with SDKFlagBlockedSelectorSignalReceive
+	// but without SDKFlagWorkflowNewChannelLostMessages. The old c.recValue
+	// overwrite behavior must be preserved during replay.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "channel-worker-blocked-selector.json")
+	s.NoError(err)
+}
+
 func (s *replayTestSuite) TestPartialReplayNonCommandEvent() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(TripWorkflow)

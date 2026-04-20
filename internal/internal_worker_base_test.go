@@ -140,7 +140,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, nil)
 	poller.taskPollerType = "test"
 
 	bw := newBaseWorker(baseWorkerOptions{
@@ -188,7 +188,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, nil)
 	poller.taskPollerType = "test"
 
 	bw := newBaseWorker(baseWorkerOptions{
@@ -314,3 +314,86 @@ func (s *testSlotSupplier) MaxSlots() int { return 0 }
 type noopTaskProcessor struct{}
 
 func (noopTaskProcessor) ProcessTask(any) error { return nil }
+
+func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithCapability() {
+	targetSuggestion := 0
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount:        10,
+		maxPollerCount:            10,
+		minPollerCount:            1,
+		serverSupportsAutoscaling: &atomic.Bool{},
+		scaleCallback: func(suggestion int) {
+			targetSuggestion = suggestion
+		},
+	})
+	ps.serverSupportsAutoscaling.Store(true)
+
+	// Send 20 empty polls - should scale all the way down to min (1)
+	for i := 0; i < 20; i++ {
+		ps.handleTask(newEmptyTask())
+	}
+	assert.Equal(s.T(), 1, targetSuggestion)
+	assert.False(s.T(), ps.everSawScalingDecision.Load())
+}
+
+func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithoutCapability() {
+	targetSuggestion := 0
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount: 10,
+		maxPollerCount:     10,
+		minPollerCount:     1,
+		scaleCallback: func(suggestion int) {
+			targetSuggestion = suggestion
+		},
+	})
+
+	// Send 20 empty polls - should NOT scale down because we haven't seen a
+	// scaling decision and server doesn't support autoscaling
+	for i := 0; i < 20; i++ {
+		ps.handleTask(newEmptyTask())
+	}
+	// target never changed from initial, callback was never called
+	assert.Equal(s.T(), 0, targetSuggestion)
+	assert.Equal(s.T(), int64(10), ps.target.Load())
+}
+
+func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutClampsToMin() {
+	targetSuggestion := 0
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount:        10,
+		maxPollerCount:            10,
+		minPollerCount:            3,
+		serverSupportsAutoscaling: &atomic.Bool{},
+		scaleCallback: func(suggestion int) {
+			targetSuggestion = suggestion
+		},
+	})
+	ps.serverSupportsAutoscaling.Store(true)
+
+	// Send 20 empty polls - should scale down but clamp at min (3)
+	for i := 0; i < 20; i++ {
+		ps.handleTask(newEmptyTask())
+	}
+	assert.Equal(s.T(), 3, targetSuggestion)
+	assert.False(s.T(), ps.everSawScalingDecision.Load())
+}
+
+func (s *PollScalerReportHandleSuite) TestErrorScaleDownWithCapability() {
+	targetSuggestion := 0
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount:        8,
+		maxPollerCount:            10,
+		minPollerCount:            2,
+		serverSupportsAutoscaling: &atomic.Bool{},
+		scaleCallback: func(suggestion int) {
+			targetSuggestion = suggestion
+		},
+	})
+	ps.serverSupportsAutoscaling.Store(true)
+
+	// Should scale down on errors even without having seen a scaling decision
+	ps.handleError(serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, ""))
+	assert.Equal(s.T(), 4, targetSuggestion)
+	ps.handleError(serviceerror.NewInternal("test error"))
+	assert.Equal(s.T(), 3, targetSuggestion)
+}

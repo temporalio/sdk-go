@@ -1234,6 +1234,43 @@ func TestDynamicWorkflows(t *testing.T) {
 	require.Equal(t, "dynamic-activity - grape - cherry", result)
 }
 
+func SleepHour(ctx Context) error {
+	// We need to specifically have a timer that's cancelled, so that the
+	// timer's underlying channel is closed when the workflow is cancelled
+	return Sleep(ctx, time.Hour)
+}
+
+func SleepThenCancel(ctx Context) error {
+	cwf := ExecuteChildWorkflow(
+		ctx,
+		SleepHour,
+	)
+	var res WorkflowExecution
+	if err := cwf.GetChildWorkflowExecution().Get(ctx, &res); err != nil {
+		return err
+	}
+
+	err := RequestCancelExternalWorkflow(ctx, res.ID, res.RunID).Get(ctx, nil)
+	if err != nil {
+		return err
+	}
+
+	// This Sleep yields control back to startMainLoop, allowing it to process the
+	// child's cancel callback. Without it, the parent completes before the cancel
+	// propagates. The cancel callback then calls workflowCancelHandler,
+	// which would previously cause a panic.
+	return Sleep(ctx, time.Second)
+}
+
+func TestRequestCancelExternalWorkflowInSelector(t *testing.T) {
+	testSuite := &WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(SleepHour)
+	env.ExecuteWorkflow(SleepThenCancel)
+	require.NoError(t, env.GetWorkflowError())
+	env.IsWorkflowCompleted()
+}
+
 func checkActivityInfo(ctx context.Context, isWorkflowActivity bool) error {
 	info := GetActivityInfo(ctx)
 	if isWorkflowActivity {

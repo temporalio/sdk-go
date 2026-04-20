@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	activitypb "go.temporal.io/api/activity/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"google.golang.org/grpc"
@@ -2649,4 +2650,43 @@ func TestUpdate(t *testing.T) {
 		err = handle.Get(context.TODO(), nil)
 		require.NoError(t, err)
 	})
+}
+
+func (s *workflowClientTestSuite) TestPollActivityResultUsesPerIterationContext() {
+	var prevCtx context.Context
+	callCount := 0
+	s.service.EXPECT().
+		PollActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			ctx context.Context,
+			_ *workflowservice.PollActivityExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.PollActivityExecutionResponse, error) {
+			callCount++
+			_, ok := ctx.Deadline()
+			s.True(ok)
+			if callCount > 1 {
+				s.True(prevCtx != ctx, "each call should get a fresh context, not share one")
+			}
+			prevCtx = ctx
+
+			if callCount < 3 {
+				return &workflowservice.PollActivityExecutionResponse{}, nil
+			}
+			return &workflowservice.PollActivityExecutionResponse{
+				Outcome: &activitypb.ActivityExecutionOutcome{
+					Value: &activitypb.ActivityExecutionOutcome_Result{
+						Result: &commonpb.Payloads{},
+					},
+				},
+			}, nil
+		}).Times(3)
+
+	client := s.client.(*WorkflowClient)
+	out, err := client.interceptor.PollActivityResult(
+		context.Background(),
+		&ClientPollActivityResultInput{ActivityID: "test-id", RunID: "run-id"},
+	)
+	s.NoError(err)
+	s.NotNil(out.Result)
 }

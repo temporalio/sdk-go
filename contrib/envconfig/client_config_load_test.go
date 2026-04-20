@@ -2,6 +2,7 @@ package envconfig_test
 
 import (
 	"os"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -49,6 +50,20 @@ func TestLoadClientOptionsAPIKeyTLS(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, opts.Credentials)
 	require.NotNil(t, opts.ConnectionOptions.TLS)
+
+	// API key present but TLS explicitly disabled
+	opts, err = envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
+		ConfigFileData: []byte(`
+		[profile.default]
+		api_key = "my-api-key"
+		[profile.default.tls]
+		disabled = true`),
+		EnvLookup: EnvLookupMap{},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, opts.Credentials)
+	require.Nil(t, opts.ConnectionOptions.TLS)
+	require.True(t, opts.ConnectionOptions.TLSDisabled)
 
 	// But when API key is not present, neither should TLS be
 	opts, err = envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{
@@ -154,6 +169,25 @@ disable_host_verification = true`
 		"some-header2": "some-value2-new",
 		"some-header4": "some-value4-new",
 	}, prof.GRPCMeta)
+}
+
+func TestLoadDefaultConfigFileNotExist(t *testing.T) {
+	// Unset default user config dir.
+	switch runtime.GOOS {
+	case "windows":
+		t.Setenv("AppData", "")
+	case "darwin", "ios":
+		t.Setenv("HOME", "")
+	case "plan9":
+		t.Setenv("home", "")
+	default: // Unix
+		t.Setenv("XDG_CONFIG_HOME", "")
+		t.Setenv("HOME", "")
+	}
+	// Load default config, config file does not exist
+	config, err := envconfig.LoadClientConfig(envconfig.LoadClientConfigOptions{})
+	require.NoError(t, err)
+	require.Equal(t, envconfig.ClientConfig{Profiles: make(map[string]*envconfig.ClientConfigProfile)}, config)
 }
 
 type EnvLookupMap map[string]string

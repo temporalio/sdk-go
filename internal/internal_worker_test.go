@@ -34,6 +34,20 @@ import (
 	"go.temporal.io/sdk/log"
 )
 
+// contextCapturingDC records every SerializationContext it receives.
+type contextCapturingDC struct {
+	converter.DataConverter
+	contexts *[]converter.SerializationContext
+}
+
+func (dc *contextCapturingDC) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
+	*dc.contexts = append(*dc.contexts, ctx)
+	return &contextCapturingDC{
+		DataConverter: dc.DataConverter,
+		contexts:      dc.contexts,
+	}
+}
+
 func testInternalWorkerRegister(r *registry) {
 	r.RegisterWorkflowWithOptions(
 		sampleWorkflowExecute,
@@ -843,6 +857,89 @@ func createHistoryForCancelActivityTests(workflowType string) []*historypb.Histo
 		createTestEventWorkflowExecutionCompleted(19, &historypb.WorkflowExecutionCompletedEventAttributes{
 			WorkflowTaskCompletedEventId: 18,
 		}),
+	}
+}
+
+// TestReplayWorkflowHistory_CancelActivity_Unusual_Ordering is a regression test for
+// https://github.com/temporalio/sdk-go/issues/2206
+//
+// This test constructs a history where the ActivityTaskCancelRequested event arrives
+// while the activity's state machine is still in Initiated state during replay. This
+// can happen when the server delivers the cancel event before the workflow task that
+// sends the cancel command.
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_CancelActivity_Unusual_Ordering() {
+	taskQueue := "taskQueue1"
+	// This history is the same as createHistoryForCancelActivityTests but with
+	// ActivityTaskCancelRequested moved before the workflow task that sends the
+	// cancel command. This reordering can occur in practice (see issue #2206)
+	// and is analogous to the child workflow cancel unusual ordering in PR #323.
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowCancelActivity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "5",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity1"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventTimerStarted(6, 6),
+		createTestEventActivityTaskStarted(7, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 5,
+		}),
+		createTestEventTimerFired(8, 6),
+		// Unusual ordering: ActivityTaskCancelRequested appears here, before the
+		// workflow task that sends the cancel command. During replay, the activity
+		// state machine is in Initiated state at this point because the workflow
+		// code that calls cancelFunc1() hasn't re-executed yet (it runs at the
+		// WFTaskStarted event below).
+		createTestEventActivityTaskCancelRequested(9, &historypb.ActivityTaskCancelRequestedEventAttributes{
+			ScheduledEventId:             5,
+			WorkflowTaskCompletedEventId: 11,
+		}),
+		createTestEventWorkflowTaskScheduled(10, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(11),
+		createTestEventWorkflowTaskCompleted(12, &historypb.WorkflowTaskCompletedEventAttributes{}),
+		createTestEventActivityTaskScheduled(13, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "13",
+			ActivityType: &commonpb.ActivityType{Name: "testActivity2"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskStarted(14, &historypb.ActivityTaskStartedEventAttributes{
+			ScheduledEventId: 13,
+		}),
+		createTestEventActivityTaskCompleted(15, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 13,
+			StartedEventId:   14,
+		}),
+		createTestEventWorkflowTaskScheduled(16, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(17),
+		createTestEventWorkflowTaskCompleted(18, &historypb.WorkflowTaskCompletedEventAttributes{
+			ScheduledEventId: 16,
+			StartedEventId:   17,
+		}),
+		createTestEventWorkflowExecutionCompleted(19, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 18,
+		}),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayWorkflowCancelActivity)
+	err = replayer.ReplayWorkflowHistory(logger, history)
+	// The unusual event ordering means the replay commands won't perfectly
+	// match the history (the cancel event appears before the workflow code
+	// generates it). The important thing is that handleCancelInitiatedEvent
+	// no longer panics when the activity is in Initiated state.
+	if err != nil {
+		require.NotContains(s.T(), err.Error(), "handleCancelInitiatedEvent",
+			"state machine should accept cancel in Initiated state")
 	}
 }
 
@@ -2015,6 +2112,209 @@ func (s *internalWorkerTestSuite) TestCompleteActivityByIDWithContextAwareDataCo
 	_ = client.CompleteActivityByID(ctx, DefaultNamespace, "wid", "", "aid", "test", nil)
 }
 
+func (s *internalWorkerTestSuite) TestCompleteActivityByIDWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
+	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
+
+	err := client.CompleteActivityByIDWithOptions(context.Background(), CompleteActivityByIDOptions{
+		Namespace:    DefaultNamespace,
+		WorkflowID:   "wid",
+		RunID:        "rid",
+		ActivityID:   "aid",
+		Result:       "test",
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("wid", actCtx.WorkflowID)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityByID_DelegatesToWithOptions() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: DefaultNamespace})
+
+	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
+	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...interface{}) {
+			s.Equal(DefaultNamespace, req.Namespace)
+			s.Equal("wid", req.WorkflowId)
+			s.Equal("rid", req.RunId)
+			s.Equal("aid", req.ActivityId)
+		})
+
+	err := client.CompleteActivityByID(context.Background(), DefaultNamespace, "wid", "rid", "aid", "result", nil)
+	s.NoError(err)
+}
+
+func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByIDWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatByIdResponse{CancelRequested: false}
+	s.service.EXPECT().RecordActivityTaskHeartbeatById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+
+	err := client.RecordActivityHeartbeatByIDWithOptions(context.Background(), RecordActivityHeartbeatByIDOptions{
+		Namespace:    DefaultNamespace,
+		WorkflowID:   "wid",
+		RunID:        "rid",
+		ActivityID:   "aid",
+		Details:      []interface{}{"progress"},
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("wid", actCtx.WorkflowID)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	response := &workflowservice.RespondActivityTaskCompletedResponse{}
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
+
+	err := client.CompleteActivityWithOptions(context.Background(), CompleteActivityOptions{
+		TaskToken:    []byte("token"),
+		Result:       "test",
+		Namespace:    DefaultNamespace,
+		WorkflowID:   "wid",
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("wid", actCtx.WorkflowID)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+	s.False(actCtx.IsLocal)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivity_DelegatesToWithOptions() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: DefaultNamespace})
+
+	response := &workflowservice.RespondActivityTaskCompletedResponse{}
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...interface{}) {
+			s.Equal([]byte("token"), req.TaskToken)
+		})
+
+	err := client.CompleteActivity(context.Background(), []byte("token"), "result", nil)
+	s.NoError(err)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityByActivityIDWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
+	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
+
+	err := client.CompleteActivityByActivityIDWithOptions(context.Background(), CompleteActivityByActivityIDOptions{
+		Namespace:    DefaultNamespace,
+		ActivityID:   "aid",
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+	s.False(actCtx.IsLocal)
+}
+
+func (s *internalWorkerTestSuite) TestCompleteActivityByActivityID_DelegatesToWithOptions() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: DefaultNamespace})
+
+	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
+	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...interface{}) {
+			s.Equal(DefaultNamespace, req.Namespace)
+			s.Equal("aid", req.ActivityId)
+		})
+
+	err := client.CompleteActivityByActivityID(context.Background(), DefaultNamespace, "aid", "", "result", nil)
+	s.NoError(err)
+}
+
+func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithOptions_SerializationContext() {
+	captured := &[]converter.SerializationContext{}
+	dc := &contextCapturingDC{DataConverter: converter.GetDefaultDataConverter(), contexts: captured}
+	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
+
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+
+	err := client.RecordActivityHeartbeatWithOptions(context.Background(), RecordActivityHeartbeatOptions{
+		TaskToken:    []byte("token"),
+		Details:      []interface{}{"progress"},
+		Namespace:    DefaultNamespace,
+		WorkflowID:   "wid",
+		ActivityType: "MyActivity",
+		WorkflowType: "MyWorkflow",
+		TaskQueue:    "my-queue",
+	})
+	s.NoError(err)
+
+	s.Require().Len(*captured, 1)
+	actCtx, ok := (*captured)[0].(converter.ActivitySerializationContext)
+	s.Require().True(ok)
+	s.Equal(DefaultNamespace, actCtx.Namespace)
+	s.Equal("wid", actCtx.WorkflowID)
+	s.Equal("MyActivity", actCtx.ActivityType)
+	s.Equal("MyWorkflow", actCtx.WorkflowType)
+	s.Equal("my-queue", actCtx.TaskQueue)
+	s.False(actCtx.IsLocal)
+}
+
+func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_DelegatesToWithOptions() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: DefaultNamespace})
+
+	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
+		Do(func(_ interface{}, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...interface{}) {
+			s.Equal([]byte("token"), req.TaskToken)
+		})
+
+	err := client.RecordActivityHeartbeat(context.Background(), []byte("token"), "progress")
+	s.NoError(err)
+}
+
 func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat() {
 	wfClient := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
 	var heartbeatRequest *workflowservice.RecordActivityTaskHeartbeatRequest
@@ -2637,6 +2937,9 @@ func TestWorkerOptionInvalid(t *testing.T) {
 	require.Panics(t, func() {
 		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskPollers: 1})
 	})
+	require.Panics(t, func() {
+		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskExternalStorageVisits: -1})
+	})
 }
 
 func TestWorkerOptionDefaults(t *testing.T) {
@@ -2678,6 +2981,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
 		Identity:                       workflowWorker.executionParameters.Identity,
 		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
+		payloadVisitorConcurrency:      3,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2706,17 +3010,18 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	}
 
 	options := WorkerOptions{
-		TaskQueueActivitiesPerSecond:            8888,
-		MaxConcurrentSessionExecutionSize:       3333,
-		MaxConcurrentWorkflowTaskExecutionSize:  2222,
-		MaxConcurrentActivityExecutionSize:      1111,
-		MaxConcurrentLocalActivityExecutionSize: 101,
-		MaxConcurrentWorkflowTaskPollers:        11,
-		MaxConcurrentActivityTaskPollers:        12,
-		WorkerLocalActivitiesPerSecond:          222,
-		WorkerActivitiesPerSecond:               99,
-		StickyScheduleToStartTimeout:            555 * time.Minute,
-		BackgroundActivityContext:               context.Background(),
+		TaskQueueActivitiesPerSecond:                   8888,
+		MaxConcurrentSessionExecutionSize:              3333,
+		MaxConcurrentWorkflowTaskExecutionSize:         2222,
+		MaxConcurrentActivityExecutionSize:             1111,
+		MaxConcurrentLocalActivityExecutionSize:        101,
+		MaxConcurrentWorkflowTaskPollers:               11,
+		MaxConcurrentActivityTaskPollers:               12,
+		WorkerLocalActivitiesPerSecond:                 222,
+		WorkerActivitiesPerSecond:                      99,
+		StickyScheduleToStartTimeout:                   555 * time.Minute,
+		BackgroundActivityContext:                      context.Background(),
+		MaxConcurrentWorkflowTaskExternalStorageVisits: 7,
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
@@ -2747,6 +3052,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		Logger:                         client.logger,
 		MetricsHandler:                 client.metricsHandler,
 		Identity:                       client.identity,
+		payloadVisitorConcurrency:      options.MaxConcurrentWorkflowTaskExternalStorageVisits,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2796,6 +3102,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
 		Identity:                       workflowWorker.executionParameters.Identity,
 		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
+		payloadVisitorConcurrency:      3,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -2818,6 +3125,7 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.ActivityTaskPollerBehavior, paramsB.ActivityTaskPollerBehavior)
 	require.Equal(t, paramsA.WorkflowPanicPolicy, paramsB.WorkflowPanicPolicy)
 	require.Equal(t, paramsA.EnableLoggingInReplay, paramsB.EnableLoggingInReplay)
+	require.Equal(t, paramsA.payloadVisitorConcurrency, paramsB.payloadVisitorConcurrency)
 }
 
 // Encode function args
