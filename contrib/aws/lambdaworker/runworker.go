@@ -2,6 +2,7 @@ package lambdaworker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -122,7 +123,7 @@ func runWorkerInternal(
 
 	logger := configCtx.ClientOptions.Logger
 
-	handler := func(invocationCtx context.Context) error {
+	handler := func(invocationCtx context.Context, event json.RawMessage) error {
 		deadline, ok := invocationCtx.Deadline()
 		if ok {
 			workTime := time.Until(deadline) - configCtx.ShutdownDeadlineBuffer
@@ -149,21 +150,31 @@ func runWorkerInternal(
 
 		// Build per-invocation client options with identity from this invocation's Lambda context.
 		// A shallow copy is sufficient since only Identity is modified.
-		invocationOpts := configCtx.ClientOptions
-		if invocationOpts.Identity == "" {
+		invocationOptions := Options{
+			ClientOptions: configCtx.ClientOptions,
+			WorkerOptions: configCtx.WorkerOptions,
+			TaskQueue:     configCtx.TaskQueue,
+		}
+		if invocationOptions.ClientOptions.Identity == "" {
 			requestID, functionARN, ok := deps.extractLambdaCtx(invocationCtx)
 			if ok {
-				invocationOpts.Identity = buildLambdaIdentity(requestID, functionARN)
+				invocationOptions.ClientOptions.Identity = buildLambdaIdentity(requestID, functionARN)
 			}
 		}
 
-		c, err := deps.dial(invocationOpts)
+		if configCtx.PerInvocationOptions != nil {
+			if err := configCtx.PerInvocationOptions(invocationCtx, event, &invocationOptions); err != nil {
+				return fmt.Errorf("failed to apply per invocation options: %w", err)
+			}
+		}
+
+		c, err := deps.dial(invocationOptions.ClientOptions)
 		if err != nil {
 			return fmt.Errorf("dialing Temporal server: %w", err)
 		}
 		defer c.Close()
 
-		w := deps.newWorker(c, configCtx.TaskQueue, configCtx.WorkerOptions)
+		w := deps.newWorker(c, invocationOptions.TaskQueue, invocationOptions.WorkerOptions)
 		configCtx.replayRegistrations(w)
 
 		if err := w.Start(); err != nil {

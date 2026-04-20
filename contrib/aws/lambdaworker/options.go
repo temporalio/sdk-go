@@ -2,6 +2,7 @@ package lambdaworker
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -42,6 +43,8 @@ type Options struct {
 
 	registrations []func(worker.Registry)
 	shutdownFuncs []func(context.Context) error
+
+	PerInvocationOptions func(ctx context.Context, event json.RawMessage, invocationOptions *Options) error
 }
 
 // RegisterWorkflow registers a workflow on the worker. See
