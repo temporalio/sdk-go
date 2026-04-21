@@ -31,6 +31,10 @@ type Config struct {
 	EnableObjectFacts bool
 	// Map `package -> function names` with functions making any argument deterministic
 	AcceptsNonDeterministicParameters map[string][]string
+	// Map of fully-qualified function name to the argument index that must not
+	// be an anonymous function (function literal). If an anonymous function is
+	// passed at the specified index, it is flagged as non-deterministic.
+	RejectsAnonymousFuncArgs map[string]int
 }
 
 // Checker is a checker that can run analysis passes to check for
@@ -282,6 +286,17 @@ func (c *collector) collectFuncInfo(fn *types.Func, decl *ast.FuncDecl) {
 		case *ast.CallExpr:
 			// Get the callee
 			if callee, _ := typeutil.Callee(c.pass.TypesInfo, n).(*types.Func); callee != nil {
+				// Check if this call rejects anonymous function arguments
+				if argIdx, ok := c.checker.RejectsAnonymousFuncArgs[callee.FullName()]; ok && argIdx < len(n.Args) {
+					if isAnonymousFunc(n.Args[argIdx], n.Pos(), decl, c.pass.TypesInfo) {
+						c.checker.debugf("Marking %v as non-deterministic because it passes anonymous function to %v", fn.FullName(), callee.Name())
+						pos := c.pass.Fset.Position(n.Pos())
+						info.reasons = append(info.reasons, &ReasonAnonymousFunc{
+							SourcePos: &pos,
+							FuncName:  callee.Name(),
+						})
+					}
+				}
 				if callee.Pkg() != nil && slices.Contains(c.checker.AcceptsNonDeterministicParameters[callee.Pkg().Path()], callee.Name()) {
 					return false
 				} else if c.pass.Pkg != callee.Pkg() {
@@ -428,6 +443,91 @@ func (c *collector) applyFuncNonDeterminisms(f *funcInfo, p PackageNonDeterminis
 	if len(f.reasons) > 0 {
 		p[f.fn.FullName()] = f.reasons
 	}
+}
+
+// isAnonymousFunc checks if expr is a function literal or an identifier
+// that could hold an anonymous function at the call site. For straight-line
+// code, the latest assignment before callPos wins. For branches (if/else),
+// if any branch assigns an anonymous function, it is flagged conservatively.
+func isAnonymousFunc(expr ast.Expr, callPos token.Pos, decl *ast.FuncDecl, info *types.Info) bool {
+	if _, ok := expr.(*ast.FuncLit); ok {
+		return true
+	}
+	ident, ok := expr.(*ast.Ident)
+	if !ok || decl.Body == nil {
+		return false
+	}
+	obj := info.ObjectOf(ident)
+	if obj == nil {
+		return false
+	}
+	return stmtsHaveAnonForVar(decl.Body.List, obj, callPos, info)
+}
+
+// stmtsHaveAnonForVar walks statements in order and determines if the variable
+// identified by obj could hold an anonymous function at callPos.
+// Direct assignments override the state (latest wins). Assignments inside
+// branches (if/else/for/switch) conservatively flag if any is anonymous.
+func stmtsHaveAnonForVar(stmts []ast.Stmt, obj types.Object, callPos token.Pos, info *types.Info) bool {
+	isAnon := false
+	for _, stmt := range stmts {
+		if stmt.Pos() >= callPos {
+			break
+		}
+		switch s := stmt.(type) {
+		case *ast.AssignStmt:
+			if _, isFuncLit := assignsToVar(s, obj, info); isFuncLit != nil {
+				isAnon = *isFuncLit
+			}
+		case *ast.DeclStmt:
+			if genDecl, ok := s.Decl.(*ast.GenDecl); ok {
+				for _, spec := range genDecl.Specs {
+					if vs, ok := spec.(*ast.ValueSpec); ok {
+						for i, name := range vs.Names {
+							if info.ObjectOf(name) == obj && i < len(vs.Values) {
+								_, isAnon = vs.Values[i].(*ast.FuncLit)
+							}
+						}
+					}
+				}
+			}
+		default:
+			if containsAnonAssignToVar(stmt, obj, callPos, info) {
+				isAnon = true
+			}
+		}
+	}
+	return isAnon
+}
+
+func assignsToVar(s *ast.AssignStmt, obj types.Object, info *types.Info) (ast.Expr, *bool) {
+	for i, lhs := range s.Lhs {
+		if lhsIdent, ok := lhs.(*ast.Ident); ok && info.ObjectOf(lhsIdent) == obj && i < len(s.Rhs) {
+			_, isFuncLit := s.Rhs[i].(*ast.FuncLit)
+			return s.Rhs[i], &isFuncLit
+		}
+	}
+	return nil, nil
+}
+
+func containsAnonAssignToVar(node ast.Node, obj types.Object, callPos token.Pos, info *types.Info) bool {
+	found := false
+	ast.Inspect(node, func(n ast.Node) bool {
+		if found || n == nil || n.Pos() >= callPos {
+			return false
+		}
+		if assign, ok := n.(*ast.AssignStmt); ok {
+			for i, lhs := range assign.Lhs {
+				if lhsIdent, ok := lhs.(*ast.Ident); ok && info.ObjectOf(lhsIdent) == obj && i < len(assign.Rhs) {
+					if _, ok := assign.Rhs[i].(*ast.FuncLit); ok {
+						found = true
+					}
+				}
+			}
+		}
+		return !found
+	})
+	return found
 }
 
 // PackageLookupCache caches fact lookups across packages.

@@ -19,3 +19,7 @@ func AwaitWithTimeout(ctx Context, timeout time.Duration, condition func() bool)
 func SideEffect(ctx Context, f func(ctx Context) interface{}) interface{} {
 	return nil
 }
+
+func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) interface{} {
+	return nil
+}
