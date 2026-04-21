@@ -516,6 +516,11 @@ func containsAnonAssignToVar(node ast.Node, obj types.Object, callPos token.Pos,
 		if found || n == nil || n.Pos() >= callPos {
 			return false
 		}
+		// Don't descend into function literals — assignments inside closures
+		// that are only defined (not invoked) should not count.
+		if _, ok := n.(*ast.FuncLit); ok {
+			return false
+		}
 		if assign, ok := n.(*ast.AssignStmt); ok {
 			for i, lhs := range assign.Lhs {
 				if lhsIdent, ok := lhs.(*ast.Ident); ok && info.ObjectOf(lhsIdent) == obj && i < len(assign.Rhs) {

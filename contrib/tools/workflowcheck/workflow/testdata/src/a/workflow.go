@@ -138,6 +138,16 @@ func WorkflowLocalActivityIfElseOverridden(ctx workflow.Context) error {
 	return nil
 }
 
+func WorkflowLocalActivityAnonInClosure(ctx workflow.Context) error {
+	f := myLocalActivity
+	_ = func() {
+		f = func(ctx context.Context) error { return nil }
+		_ = f
+	}
+	workflow.ExecuteLocalActivity(ctx, f)
+	return nil
+}
+
 func WorkflowLocalActivityFuncParam(ctx workflow.Context, f func(ctx context.Context) error) error {
 	workflow.ExecuteLocalActivity(ctx, f)
 	return nil
