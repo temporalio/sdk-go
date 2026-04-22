@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -52,7 +51,8 @@ func TestSystemNexusPayloadVisitor_VisitsNestedPayloadsOnly(t *testing.T) {
 		},
 	}
 
-	outerPayload, err := converter.GetDefaultDataConverter().ToPayload(req)
+	systemDC := converter.NewSystemNexusDataConverter()
+	outerPayload, err := systemDC.ToPayload(req)
 	require.NoError(t, err)
 
 	attrs := &commandpb.ScheduleNexusOperationCommandAttributes{
@@ -63,17 +63,15 @@ func TestSystemNexusPayloadVisitor_VisitsNestedPayloadsOnly(t *testing.T) {
 	err = visitProtoPayloads(context.Background(), NewExternalStorageVisitor(storageParams), attrs)
 	require.NoError(t, err)
 
-	var decoded map[string]any
-	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(attrs.Input, &decoded))
-	requirePayloadJSONReference(t, decoded["input"], "payloads")
-	requirePayloadJSONReference(t, decoded["signalInput"], "payloads")
-	requirePayloadJSONReference(t, decoded["memo"], "fields", "memo-key")
-	requirePayloadJSONReference(t, decoded["header"], "fields", "header-key")
-	requirePayloadJSONReference(t, decoded["userMetadata"], "summary")
-	requirePayloadJSONReference(t, decoded["userMetadata"], "details")
-
-	searchAttr := decoded["searchAttributes"].(map[string]any)["indexedFields"].(map[string]any)["custom-key"]
-	requirePayloadJSONReference(t, searchAttr)
+	var decoded systemnexus.SignalWithStartWorkflowExecutionRequest
+	require.NoError(t, systemDC.FromPayload(attrs.Input, &decoded))
+	requirePayloadJSONReference(t, decoded.Input.Payloads[0])
+	requirePayloadJSONReference(t, decoded.SignalInput.Payloads[0])
+	requirePayloadJSONReference(t, decoded.Memo.Fields["memo-key"])
+	requirePayloadJSONReference(t, decoded.Header.Fields["header-key"])
+	requirePayloadJSONReference(t, decoded.UserMetadata.Summary)
+	requirePayloadJSONReference(t, decoded.UserMetadata.Details)
+	requirePayloadJSONReference(t, decoded.SearchAttributes.IndexedFields["custom-key"])
 
 	driver := storageParams.driverMap["system-nexus"].(*testStorageDriver)
 	driver.mu.Lock()
@@ -110,8 +108,9 @@ func TestNewSystemNexusSignalWithStartInput_PreservesPreencodedPayloads(t *testi
 	)
 	require.NoError(t, err)
 
+	systemDC := converter.NewSystemNexusDataConverter()
 	var decodedReq systemnexus.SignalWithStartWorkflowExecutionRequest
-	require.NoError(t, converter.GetDefaultDataConverter().FromPayload(outerPayload, &decodedReq))
+	require.NoError(t, systemDC.FromPayload(outerPayload, &decodedReq))
 	require.Equal(t, "test-request-id", decodedReq.RequestID)
 
 	handler := systemnexus.GetTemporalNexusPayloadVisitor(
@@ -122,7 +121,7 @@ func TestNewSystemNexusSignalWithStartInput_PreservesPreencodedPayloads(t *testi
 
 	value := handler.InputType()
 	require.IsType(t, &systemnexus.SignalWithStartWorkflowExecutionRequest{}, value)
-	require.NoError(t, json.Unmarshal(outerPayload.GetData(), value))
+	require.NoError(t, systemDC.FromPayload(outerPayload, value))
 
 	var visitedPayloads []*commonpb.Payload
 	visitedValue, err := handler.Visit(
@@ -153,6 +152,11 @@ func requirePayloadJSONReference(t *testing.T, value any, path ...string) {
 	case []any:
 		require.NotEmpty(t, typed)
 		requirePayloadJSONReference(t, typed[0])
+	case systemnexus.Payload:
+		require.True(t, len(typed.ExternalPayloads) > 0 || typed.Data != "")
+	case *systemnexus.Payload:
+		require.NotNil(t, typed)
+		require.True(t, len(typed.ExternalPayloads) > 0 || typed.Data != "")
 	case map[string]any:
 		_, hasExternalPayloads := typed["externalPayloads"]
 		_, hasData := typed["data"]

@@ -55,11 +55,22 @@ func TestSystemNexusDefersOuterEnvelopeEncoding(t *testing.T) {
 	require.NoError(t, err)
 	defer callerClient.Close()
 
+	handlerClient, err := client.DialContext(ctx, client.Options{
+		HostPort:  handlerTC.testConfig.ServiceAddr,
+		Namespace: handlerTC.testConfig.Namespace,
+		Logger:    ilog.NewDefaultLogger(),
+		DataConverter: converter.NewSystemNexusDataConverter(),
+		ConnectionOptions:       client.ConnectionOptions{TLS: handlerTC.testConfig.TLS},
+		WorkerHeartbeatInterval: -1,
+	})
+	require.NoError(t, err)
+	defer handlerClient.Close()
+
 	callerTaskQueue := "sdk-go-system-nexus-caller-" + uuid.NewString()
 	callerWorker := worker.New(callerClient, callerTaskQueue, worker.Options{})
 	callerWorker.RegisterWorkflow(systemNexusSignalWithStartWorkflow)
 
-	handlerWorker := worker.New(handlerTC.client, handlerTC.taskQueue, worker.Options{})
+	handlerWorker := worker.New(handlerClient, handlerTC.taskQueue, worker.Options{})
 	service := nexus.NewService(systemnexus.WorkflowService.ServiceName)
 	var receivedRequestMu sync.Mutex
 	var receivedRequest *systemnexus.SignalWithStartWorkflowExecutionRequest

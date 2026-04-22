@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/temporalproto"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -20,7 +19,7 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
-func prepareSystemNexusSignalWithStartOperationParams(
+func newSystemNexusSignalWithStartInputFromWorkflow(
 	ctx Context,
 	env WorkflowEnvironment,
 	workflowID string,
@@ -29,84 +28,48 @@ func prepareSystemNexusSignalWithStartOperationParams(
 	options StartWorkflowOptions,
 	workflowType string,
 	workflowArgs []interface{},
-) (executeNexusOperationParams, error) {
-	outerPayload, err := newSystemNexusSignalWithStartPayloadFromWorkflow(
-		ctx,
-		env,
-		workflowID,
-		signalName,
-		signalArg,
-		options,
-		workflowType,
-		workflowArgs,
-	)
-	if err != nil {
-		return executeNexusOperationParams{}, err
-	}
-
-	return executeNexusOperationParams{
-		client: nexusClient{
-			endpoint: systemNexusEndpoint,
-			service:  systemnexus.WorkflowService.ServiceName,
-		},
-		operation:   systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name(),
-		input:       outerPayload,
-		options:     NexusOperationOptions{CancellationType: NexusOperationCancellationTypeWaitCompleted},
-		nexusHeader: nexus.Header{},
-	}, nil
-}
-
-func newSystemNexusSignalWithStartPayloadFromWorkflow(
-	ctx Context,
-	env WorkflowEnvironment,
-	workflowID string,
-	signalName string,
-	signalArg interface{},
-	options StartWorkflowOptions,
-	workflowType string,
-	workflowArgs []interface{},
-) (*commonpb.Payload, error) {
+) (systemnexus.SignalWithStartWorkflowExecutionRequest, error) {
 	if workflowID == "" {
-		return nil, errWorkflowIDNotSet
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, errWorkflowIDNotSet
 	}
 
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
 	dc := WithWorkflowContext(ctx, workflowOptionsFromCtx.DataConverter)
 	wfType, input, err := getValidatedWorkflowFunction(workflowType, workflowArgs, dc, env.GetRegistry())
 	if err != nil {
-		return nil, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 
 	signalInput, err := encodeArg(dc, signalArg)
 	if err != nil {
-		return nil, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 
 	header, err := workflowHeaderPropagated(ctx, workflowOptionsFromCtx.ContextPropagators)
 	if err != nil {
-		return nil, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 
 	memo, err := getWorkflowMemo(options.Memo, dc, env.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
-		return nil, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 
 	searchAttr, err := serializeSearchAttributes(options.SearchAttributes, options.TypedSearchAttributes)
 	if err != nil {
-		return nil, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 
 	userMetadata, err := buildUserMetadata(options.StaticSummary, options.StaticDetails, dc)
 	if err != nil {
-		return nil, err
+		return systemnexus.SignalWithStartWorkflowExecutionRequest{}, err
 	}
 	var userMetadataMessage proto.Message
 	if userMetadata != nil {
 		userMetadataMessage = userMetadata
 	}
 
-	return newSystemNexusSignalWithStartPayload(
+	return newSystemNexusSignalWithStartInput(
 		workflowOptionsFromCtx.Namespace,
 		options.requestID,
 		workflowID,
@@ -230,7 +193,7 @@ func newSystemNexusSignalWithStartPayload(
 	if err != nil {
 		return nil, err
 	}
-	return converter.GetDefaultDataConverter().ToPayload(req)
+	return converter.NewSystemNexusDataConverter().ToPayload(req)
 }
 
 func toSystemNexusInput(payloads *commonpb.Payloads) (*systemnexus.Payloads, error) {

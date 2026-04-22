@@ -1815,7 +1815,7 @@ func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	future, settable := NewFuture(ctx1)
 
-	params, err := prepareSystemNexusSignalWithStartOperationParams(
+	req, err := newSystemNexusSignalWithStartInputFromWorkflow(
 		ctx1,
 		wc.env,
 		workflowID,
@@ -1831,14 +1831,17 @@ func (wc *workflowEnvironmentInterceptor) SignalWithStartWorkflow(
 	}
 
 	opFuture := wc.ExecuteNexusOperation(ctx1, ExecuteNexusOperationInput{
-		Client:      params.client,
-		Operation:   params.operation,
-		Input:       converter.NewRawValue(params.input),
-		Options:     params.options,
-		NexusHeader: params.nexusHeader,
+		Client: nexusClient{
+			endpoint: systemNexusEndpoint,
+			service:  systemnexus.WorkflowService.ServiceName,
+		},
+		Operation:   systemnexus.WorkflowService.SignalWithStartWorkflowExecution.Name(),
+		Input:       req,
+		Options:     NexusOperationOptions{CancellationType: NexusOperationCancellationTypeWaitCompleted},
+		NexusHeader: nexus.Header{},
 	})
 
-	Go(ctx1, func(ctx Context) {
+	wc.dispatcher.NewCoroutine(ctx1, "signal-with-start-workflow", false, func(ctx Context) {
 		var result systemnexus.SignalWithStartWorkflowExecutionResponse
 		if err := opFuture.Get(ctx, &result); err != nil {
 			settable.Set(nil, err)
@@ -3075,7 +3078,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 
 	payloadConverter := dc
 	if systemnexus.IsTemporalNexusOperation(input.Client.Service(), operationName) {
-		payloadConverter = converter.GetDefaultDataConverter()
+		payloadConverter = converter.NewSystemNexusDataConverter()
 	}
 
 	payload, err := payloadConverter.ToPayload(input.Input)

@@ -19,6 +19,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/sdk/v1"
+	systemnexus "go.temporal.io/api/workflowservice/v1/workflowservicenexus/json"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -1727,6 +1728,10 @@ func (w *WorkflowOptions) getRunningUpdateHandles() map[string]UpdateInfo {
 }
 
 func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
+	return d.getWithDataConverter(ctx, valuePtr, getDataConverterFromWorkflowContext(ctx))
+}
+
+func (d *decodeFutureImpl) getWithDataConverter(ctx Context, valuePtr interface{}, dataConverter converter.DataConverter) error {
 	more := d.futureImpl.channel.Receive(ctx, nil)
 	if more {
 		panic("not closed")
@@ -1741,12 +1746,19 @@ func (d *decodeFutureImpl) Get(ctx Context, valuePtr interface{}) error {
 	if rf.Type().Kind() != reflect.Ptr {
 		return errors.New("valuePtr parameter is not a pointer")
 	}
-	dataConverter := getDataConverterFromWorkflowContext(ctx)
 	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), valuePtr)
 	if err != nil {
 		return err
 	}
 	return d.futureImpl.err
+}
+
+func (n *nexusOperationFutureImpl) Get(ctx Context, valuePtr interface{}) error {
+	dataConverter := getDataConverterFromWorkflowContext(ctx)
+	if systemnexus.GetTemporalNexusProtoMessage(valuePtr) != nil {
+		dataConverter = converter.NewSystemNexusDataConverter()
+	}
+	return n.decodeFutureImpl.getWithDataConverter(ctx, valuePtr, dataConverter)
 }
 
 // newDecodeFuture creates a new future as well as associated Settable that is used to set its value.

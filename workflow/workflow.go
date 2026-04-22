@@ -388,7 +388,7 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 
 // SignalWithStartWorkflow sends a signal to a running workflow. If the workflow is not
 // running or not found, it starts the workflow and then sends the signal in a single
-// system Nexus operation.
+// system Nexus operation. The returned future resolves to a [workflow.Execution].
 func SignalWithStartWorkflow(
 	ctx Context,
 	workflowID string,
