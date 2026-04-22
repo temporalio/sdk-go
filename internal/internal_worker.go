@@ -2365,11 +2365,23 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		})
 	}
 
-	// Get SysInfoProvider from tuner's slot supplier if it implements HasSysInfoProvider.
-	// If not available, heartbeats will report 0 for CPU/memory usage.
+	// Resolve the SysInfoProvider used for worker heartbeats. Prefer the explicit
+	// WorkerOptions.SysInfoProvider; otherwise fall back to the tuner's slot supplier if it
+	// implements HasSysInfoProvider. If both are set to different providers, that's a config
+	// error. If neither is set, heartbeats report 0 for CPU/memory usage.
 	var sysInfoProvider SysInfoProvider
+	var tunerSysInfoProvider SysInfoProvider
 	if sis, ok := options.Tuner.GetWorkflowTaskSlotSupplier().(HasSysInfoProvider); ok {
-		sysInfoProvider = sis.SysInfoProvider()
+		tunerSysInfoProvider = sis.SysInfoProvider()
+	}
+	switch {
+	case options.SysInfoProvider != nil && tunerSysInfoProvider != nil && options.SysInfoProvider != tunerSysInfoProvider:
+		panic("WorkerOptions.SysInfoProvider conflicts with the SysInfoProvider exposed by the Tuner; " +
+			"set only one, or set both to the same instance")
+	case options.SysInfoProvider != nil:
+		sysInfoProvider = options.SysInfoProvider
+	default:
+		sysInfoProvider = tunerSysInfoProvider
 	}
 
 	var heartbeatCallback func() *workerpb.WorkerHeartbeat
