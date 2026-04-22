@@ -61,7 +61,7 @@ func (c *appendCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload,
 }
 
 // ---------------------------------------------------------------------------
-// memDriver — minimal in-memory StorageDriver for testing /ui/download.
+// memDriver — minimal in-memory StorageDriver for testing /download.
 // ---------------------------------------------------------------------------
 
 type memDriver struct {
@@ -166,22 +166,32 @@ func encoding(p *commonpb.Payload) string {
 	return string(p.GetMetadata()[converter.MetadataEncoding])
 }
 
+// firstDriverSelector is a StorageDriverSelector that always routes to the
+// provided driver. Used in tests that register multiple drivers but only need
+// to satisfy the API requirement; the selector is never invoked on the
+// retrieval path.
+type firstDriverSelector struct{ driver converter.StorageDriver }
+
+func (s firstDriverSelector) SelectDriver(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+	return s.driver, nil
+}
+
 // ---------------------------------------------------------------------------
 // Routing
 // ---------------------------------------------------------------------------
 
 func TestRouting_WrongMethod(t *testing.T) {
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{})
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{})
 	require.NoError(t, err)
 
-	req, _ := http.NewRequest(http.MethodGet, "/ui/decode", nil)
+	req, _ := http.NewRequest(http.MethodGet, "/decode", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusNotFound, rr.Code)
 }
 
 func TestRouting_WrongPath(t *testing.T) {
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{})
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{})
 	require.NoError(t, err)
 
 	rr := servePost(t, h, "/missing", bytes.NewReader(nil))
@@ -189,26 +199,26 @@ func TestRouting_WrongPath(t *testing.T) {
 }
 
 func TestRouting_NilBody(t *testing.T) {
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{})
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{})
 	require.NoError(t, err)
 
-	req, _ := http.NewRequest(http.MethodPost, "/ui/decode", nil)
+	req, _ := http.NewRequest(http.MethodPost, "/decode", nil)
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
 func TestRouting_MountedAtPrefix(t *testing.T) {
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{})
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{})
 	require.NoError(t, err)
 
 	p := makePayload(t, "hello")
-	rr := servePost(t, h, "/myapp/codec/ui/decode", encodeRequest(t, p))
+	rr := servePost(t, h, "/myapp/codec/decode", encodeRequest(t, p))
 	require.Equal(t, http.StatusOK, rr.Code)
 }
 
 // ---------------------------------------------------------------------------
-// /ui/decode
+// /decode
 // ---------------------------------------------------------------------------
 
 // TestDecode_AppliesPostThenPreCodecs verifies that post-storage codecs run
@@ -216,7 +226,7 @@ func TestRouting_MountedAtPrefix(t *testing.T) {
 func TestDecode_AppliesPostThenPreCodecs(t *testing.T) {
 	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
 	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
 		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
 		PostStorageCodecs: []converter.PayloadCodec{postCodec},
 	})
@@ -231,7 +241,7 @@ func TestDecode_AppliesPostThenPreCodecs(t *testing.T) {
 	require.NoError(t, err)
 
 	// Decode through the handler and verify the result matches the original.
-	rr := servePost(t, h, "/ui/decode", encodeRequest(t, postEncoded[0]))
+	rr := servePost(t, h, "/decode", encodeRequest(t, postEncoded[0]))
 	result := decodeResponse(t, rr)
 	require.Len(t, result, 1)
 	require.Equal(t, originalEncoding, encoding(result[0]))
@@ -239,13 +249,13 @@ func TestDecode_AppliesPostThenPreCodecs(t *testing.T) {
 
 // TestDecode_StorageRefReturnedAsIs verifies that a payload which is a storage
 // reference after post-storage decoding is returned without applying pre-storage
-// codecs (the caller should resolve it via /ui/download).
+// codecs (the caller should resolve it via /download).
 func TestDecode_StorageRefReturnedAsIs(t *testing.T) {
 	// Pre-storage codec that would fail if applied to a storage ref
 	// (its Decode checks for the ".pre" suffix).
 	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
 	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
 		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
 		PostStorageCodecs: []converter.PayloadCodec{postCodec},
 	})
@@ -257,7 +267,7 @@ func TestDecode_StorageRefReturnedAsIs(t *testing.T) {
 	postWrapped, err := postCodec.Encode([]*commonpb.Payload{ref})
 	require.NoError(t, err)
 
-	rr := servePost(t, h, "/ui/decode", encodeRequest(t, postWrapped[0]))
+	rr := servePost(t, h, "/decode", encodeRequest(t, postWrapped[0]))
 	result := decodeResponse(t, rr)
 	require.Len(t, result, 1)
 
@@ -271,7 +281,7 @@ func TestDecode_StorageRefReturnedAsIs(t *testing.T) {
 func TestDecode_MixedBatch(t *testing.T) {
 	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
 	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
 		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
 		PostStorageCodecs: []converter.PayloadCodec{postCodec},
 	})
@@ -290,7 +300,7 @@ func TestDecode_MixedBatch(t *testing.T) {
 	postWrappedRef, err := postCodec.Encode([]*commonpb.Payload{ref})
 	require.NoError(t, err)
 
-	rr := servePost(t, h, "/ui/decode", encodeRequest(t, encoded[0], postWrappedRef[0]))
+	rr := servePost(t, h, "/decode", encodeRequest(t, encoded[0], postWrappedRef[0]))
 	result := decodeResponse(t, rr)
 	require.Len(t, result, 2)
 
@@ -301,11 +311,11 @@ func TestDecode_MixedBatch(t *testing.T) {
 }
 
 // TestDecode_RoundTrip verifies that a payload encoded through the full codec
-// chain (pre then post) is restored to its original form after /ui/decode.
+// chain (pre then post) is restored to its original form after /decode.
 func TestDecode_RoundTrip(t *testing.T) {
 	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
 	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
 		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
 		PostStorageCodecs: []converter.PayloadCodec{postCodec},
 	})
@@ -322,7 +332,7 @@ func TestDecode_RoundTrip(t *testing.T) {
 	encoded, err := postCodec.Encode(preEncoded)
 	require.NoError(t, err)
 
-	rr := servePost(t, h, "/ui/decode", encodeRequest(t, encoded...))
+	rr := servePost(t, h, "/decode", encodeRequest(t, encoded...))
 	decoded := decodeResponse(t, rr)
 	require.Len(t, decoded, 2)
 
@@ -333,7 +343,7 @@ func TestDecode_RoundTrip(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// /ui/download
+// /download
 // ---------------------------------------------------------------------------
 
 // TestDownload_HappyPath verifies that a storage reference is retrieved from
@@ -348,14 +358,14 @@ func TestDownload_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 	driver.data["my-key"] = proto.Clone(preEncoded[0]).(*commonpb.Payload)
 
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
 		PreStorageCodecs: []converter.PayloadCodec{preCodec},
-		StorageDrivers:   []converter.StorageDriver{driver},
+		ExternalStorage:  converter.ExternalStorage{Drivers: []converter.StorageDriver{driver}},
 	})
 	require.NoError(t, err)
 
 	ref := makeStorageRef(t, "testdrv", "my-key")
-	rr := servePost(t, h, "/ui/download", encodeRequest(t, ref))
+	rr := servePost(t, h, "/download", encodeRequest(t, ref))
 	result := decodeResponse(t, rr)
 	require.Len(t, result, 1)
 
@@ -365,7 +375,7 @@ func TestDownload_HappyPath(t *testing.T) {
 }
 
 // TestDownload_MultipleRefs verifies fan-out retrieval of multiple storage
-// references in a single /ui/download request.
+// references in a single /download request.
 func TestDownload_MultipleRefs(t *testing.T) {
 	driver := newMemDriver("drv")
 	payloads := []*commonpb.Payload{
@@ -378,8 +388,8 @@ func TestDownload_MultipleRefs(t *testing.T) {
 		driver.data[key] = proto.Clone(p).(*commonpb.Payload)
 	}
 
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
-		StorageDrivers: []converter.StorageDriver{driver},
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
+		ExternalStorage: converter.ExternalStorage{Drivers: []converter.StorageDriver{driver}},
 	})
 	require.NoError(t, err)
 
@@ -388,7 +398,7 @@ func TestDownload_MultipleRefs(t *testing.T) {
 		refs[i] = makeStorageRef(t, "drv", fmt.Sprintf("k%d", i))
 	}
 
-	rr := servePost(t, h, "/ui/download", encodeRequest(t, refs...))
+	rr := servePost(t, h, "/download", encodeRequest(t, refs...))
 	result := decodeResponse(t, rr)
 	require.Len(t, result, 3)
 	for i, p := range payloads {
@@ -396,42 +406,45 @@ func TestDownload_MultipleRefs(t *testing.T) {
 	}
 }
 
-// TestDownload_NonStorageRef verifies that /ui/download returns 400 when any
+// TestDownload_NonStorageRef verifies that /download returns 400 when any
 // payload in the request is not a storage reference.
 func TestDownload_NonStorageRef(t *testing.T) {
 	driver := newMemDriver("drv")
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
-		StorageDrivers: []converter.StorageDriver{driver},
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
+		ExternalStorage: converter.ExternalStorage{Drivers: []converter.StorageDriver{driver}},
 	})
 	require.NoError(t, err)
 
 	regular := makePayload(t, "not-a-ref")
-	rr := servePost(t, h, "/ui/download", encodeRequest(t, regular))
+	rr := servePost(t, h, "/download", encodeRequest(t, regular))
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
-// TestDownload_NoDrivers verifies that /ui/download returns 400 when no storage
-// drivers are configured.
+// TestDownload_NoDrivers verifies that /download with no drivers configured
+// returns the storage reference payload unresolved (the retrieval visitor leaves
+// it as-is when no driver map is present).
 func TestDownload_NoDrivers(t *testing.T) {
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{})
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{})
 	require.NoError(t, err)
 
 	ref := makeStorageRef(t, "drv", "k1")
-	rr := servePost(t, h, "/ui/download", encodeRequest(t, ref))
-	require.Equal(t, http.StatusBadRequest, rr.Code)
+	rr := servePost(t, h, "/download", encodeRequest(t, ref))
+	result := decodeResponse(t, rr)
+	require.Len(t, result, 1)
+	require.Equal(t, "json/external-storage-reference", encoding(result[0]))
 }
 
-// TestDownload_UnknownDriver verifies that /ui/download returns 400 when the
+// TestDownload_UnknownDriver verifies that /download returns 400 when the
 // storage reference names a driver that is not registered.
 func TestDownload_UnknownDriver(t *testing.T) {
 	driver := newMemDriver("registered")
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
-		StorageDrivers: []converter.StorageDriver{driver},
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
+		ExternalStorage: converter.ExternalStorage{Drivers: []converter.StorageDriver{driver}},
 	})
 	require.NoError(t, err)
 
 	ref := makeStorageRef(t, "unregistered", "k1")
-	rr := servePost(t, h, "/ui/download", encodeRequest(t, ref))
+	rr := servePost(t, h, "/download", encodeRequest(t, ref))
 	require.Equal(t, http.StatusBadRequest, rr.Code)
 }
 
@@ -444,8 +457,11 @@ func TestDownload_MultipleDrivers(t *testing.T) {
 	driverA.data["key-a"] = makePayload(t, "from-a")
 	driverB.data["key-b"] = makePayload(t, "from-b")
 
-	h, err := converter.NewUIPayloadHTTPHandler(converter.UIPayloadHTTPHandlerOptions{
-		StorageDrivers: []converter.StorageDriver{driverA, driverB},
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
+		ExternalStorage: converter.ExternalStorage{
+			Drivers:        []converter.StorageDriver{driverA, driverB},
+			DriverSelector: firstDriverSelector{driver: driverA},
+		},
 	})
 	require.NoError(t, err)
 
@@ -453,7 +469,7 @@ func TestDownload_MultipleDrivers(t *testing.T) {
 		makeStorageRef(t, "driver-a", "key-a"),
 		makeStorageRef(t, "driver-b", "key-b"),
 	}
-	rr := servePost(t, h, "/ui/download", encodeRequest(t, refs...))
+	rr := servePost(t, h, "/download", encodeRequest(t, refs...))
 	result := decodeResponse(t, rr)
 	require.Len(t, result, 2)
 

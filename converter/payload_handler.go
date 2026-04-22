@@ -3,11 +3,11 @@
 //
 // The handler exposes two routes:
 //
-//   - POST /ui/decode — decodes payloads through the post-storage then pre-storage
+//   - POST /decode — decodes payloads through the post-storage then pre-storage
 //     codec chains. If a payload is a storage reference after post-storage
-//     decoding it is returned as-is so the caller can resolve it via /ui/download.
+//     decoding it is returned as-is so the caller can resolve it via /download.
 //
-//   - POST /ui/download — accepts storage reference payloads, retrieves the
+//   - POST /download — accepts storage reference payloads, retrieves the
 //     original payloads from the configured storage drivers, then decodes
 //     them through the pre-storage codec chain.
 //
@@ -31,15 +31,14 @@ import (
 )
 
 const (
-	uiDecodePath   = "/ui/decode"
-	uiDownloadPath = "/ui/download"
+	downloadPath = "/download"
 )
 
-// UIPayloadHTTPHandlerOptions configures a storage and codec aware HTTP handler
+// PayloadHTTPHandlerOptions configures a storage and codec aware HTTP handler
 // for use with Temporal Web UI.
 //
 // NOTE: Experimental
-type UIPayloadHTTPHandlerOptions struct {
+type PayloadHTTPHandlerOptions struct {
 	// PostStorageCodecs are codecs applied outside the storage layer, e.g. a
 	// proxy codec that wraps the entire payload.
 	// They run last on encode (after external storage) and first on decode
@@ -56,62 +55,51 @@ type UIPayloadHTTPHandlerOptions struct {
 	// NOTE: Experimental.
 	PreStorageCodecs []PayloadCodec
 
-	// StorageDrivers provides the storage drivers used by the /download route to
+	// ExternalStorage provides the storage drivers used by the /download route to
 	// retrieve payloads identified by storage reference claims. Driver names
 	// must be unique. If no drivers are configured, /download returns HTTP 400.
 	//
 	// NOTE: Experimental.
-	StorageDrivers []StorageDriver
+	ExternalStorage ExternalStorage
 }
 
-// noopDriverSelector to satisfy the StorageDriverSelector interface when constructing
-// the retrieval visitor. It is never actually used because the visitor only performs retrieval operations.
-type noopDriverSelector struct{}
-
-func (noopDriverSelector) SelectDriver(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
-	return nil, nil
-}
-
-type uiPayloadHTTPHandler struct {
+type payloadHTTPHandler struct {
 	postStorageCodecs []PayloadCodec
 	preStorageCodecs  []PayloadCodec
-	retrievalVisitor  extstore.PayloadVisitor // nil when no drivers configured
+	retrievalVisitor  extstore.PayloadVisitor
+	storageVisitor    extstore.PayloadVisitor
 }
 
-var _ http.Handler = (*uiPayloadHTTPHandler)(nil)
+var _ http.Handler = (*payloadHTTPHandler)(nil)
 
-// NewUIPayloadHTTPHandler creates an [http.Handler] that serves /ui/decode and
-// /ui/download routes for Temporal Web UI using the provided options.
+// NewPayloadHTTPHandler creates an [http.Handler] that serves /decode, /download, and
+// /encode routes for remote payload transformations.
 //
 // NOTE: Experimental
-func NewUIPayloadHTTPHandler(options UIPayloadHTTPHandlerOptions) (http.Handler, error) {
-	h := &uiPayloadHTTPHandler{
+func NewPayloadHTTPHandler(options PayloadHTTPHandlerOptions) (http.Handler, error) {
+	params, err := extstore.ExternalStorageToParams(options.ExternalStorage)
+	if err != nil {
+		return nil, err
+	}
+	h := &payloadHTTPHandler{
 		postStorageCodecs: options.PostStorageCodecs,
 		preStorageCodecs:  options.PreStorageCodecs,
-	}
-	if len(options.StorageDrivers) > 0 {
-		params, err := extstore.ExternalStorageToParams(ExternalStorage{
-			Drivers:        options.StorageDrivers,
-			DriverSelector: noopDriverSelector{},
-		})
-		if err != nil {
-			return nil, err
-		}
-		h.retrievalVisitor = extstore.NewExternalRetrievalVisitor(params)
+		retrievalVisitor:  extstore.NewExternalRetrievalVisitor(params),
+		storageVisitor:    extstore.NewExternalStorageVisitor(params),
 	}
 	return h, nil
 }
 
 // ServeHTTP implements [http.Handler].
-func (h *uiPayloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (h *payloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.NotFound(w, r)
 		return
 	}
 
 	path := r.URL.Path
-	if !strings.HasSuffix(path, uiDecodePath) &&
-		!strings.HasSuffix(path, uiDownloadPath) {
+	if !strings.HasSuffix(path, remotePayloadCodecDecodePath) &&
+		!strings.HasSuffix(path, downloadPath) {
 		http.NotFound(w, r)
 		return
 	}
@@ -136,9 +124,9 @@ func (h *uiPayloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 	payloads := payloadspb.Payloads
 
 	switch {
-	case strings.HasSuffix(path, uiDecodePath):
+	case strings.HasSuffix(path, remotePayloadCodecDecodePath):
 		payloads, err = h.decode(payloads)
-	case strings.HasSuffix(path, uiDownloadPath):
+	case strings.HasSuffix(path, downloadPath):
 		payloads, err = h.download(r, payloads)
 	default:
 		http.NotFound(w, r)
@@ -158,9 +146,9 @@ func (h *uiPayloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 
 // decode applies post-storage codecs (first-to-last) to all payloads. Any
 // payload that is a storage reference after this step is returned as-is so
-// the caller can resolve it via /ui/download. Remaining payloads are further
+// the caller can resolve it via /download. Remaining payloads are further
 // decoded through the pre-storage codecs (first-to-last).
-func (h *uiPayloadHTTPHandler) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+func (h *payloadHTTPHandler) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	var err error
 
 	// Apply post-storage codecs to all payloads.
@@ -198,7 +186,7 @@ func (h *uiPayloadHTTPHandler) decode(payloads []*commonpb.Payload) ([]*commonpb
 // download validates that every payload is a storage reference, retrieves the
 // original payloads from the registered storage drivers, then decodes them
 // through the pre-storage codec chain.
-func (h *uiPayloadHTTPHandler) download(r *http.Request, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+func (h *payloadHTTPHandler) download(r *http.Request, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	if h.retrievalVisitor == nil {
 		return nil, errors.New("no storage drivers configured")
 	}
