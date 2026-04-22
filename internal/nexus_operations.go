@@ -28,6 +28,9 @@ type NexusOperationInfo struct {
 	Namespace string
 	// The task queue of the worker handling this Nexus operation.
 	TaskQueue string
+	// The endpoint this request was addressed to before forwarding to the worker.
+	// Supported from server version 1.30.0.
+	Endpoint string
 }
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
@@ -35,6 +38,7 @@ type NexusOperationContext struct {
 	client         Client
 	Namespace      string
 	TaskQueue      string
+	Endpoint       string
 	metricsHandler metrics.Handler
 	log            log.Logger
 	registry       *registry
@@ -54,6 +58,7 @@ func (nc *nexusOperationEnvironment) GetOperationInfo(ctx context.Context) Nexus
 		panic("temporalnexus GetInfo: Not a valid Nexus context")
 	}
 	return NexusOperationInfo{
+		Endpoint:  nctx.Endpoint,
 		Namespace: nctx.Namespace,
 		TaskQueue: nctx.TaskQueue,
 	}

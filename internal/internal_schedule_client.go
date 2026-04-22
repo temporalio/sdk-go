@@ -26,13 +26,15 @@ type (
 
 	// ScheduleClient is the client for starting a workflow execution.
 	scheduleClient struct {
-		workflowClient *WorkflowClient
+		workflowClient         *WorkflowClient
+		outboundPayloadVisitor PayloadVisitor
 	}
 
 	// scheduleHandleImpl is the implementation of ScheduleHandle.
 	scheduleHandleImpl struct {
-		ID     string
-		client *WorkflowClient
+		ID                     string
+		client                 *WorkflowClient
+		outboundPayloadVisitor PayloadVisitor
 	}
 
 	// scheduleListIteratorImpl is the implementation of ScheduleListIterator
@@ -137,7 +139,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		WorkflowID:   action.GetStartWorkflow().GetWorkflowId(),
 		WorkflowType: action.GetStartWorkflow().GetWorkflowType().GetName(),
 	})
-	if err := visitProtoPayloads(storeCtx, w.client.outboundPayloadVisitor, startRequest); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, startRequest, 0); err != nil {
 		return nil, err
 	}
 
@@ -153,8 +155,9 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 	}
 
 	return &scheduleHandleImpl{
-		ID:     ID,
-		client: w.client,
+		ID:                     ID,
+		client:                 w.client,
+		outboundPayloadVisitor: w.outboundPayloadVisitor,
 	}, nil
 }
 
@@ -174,8 +177,9 @@ func (sc *scheduleClient) Create(ctx context.Context, options ScheduleOptions) (
 
 func (sc *scheduleClient) GetHandle(ctx context.Context, scheduleID string) ScheduleHandle {
 	return &scheduleHandleImpl{
-		ID:     scheduleID,
-		client: sc.workflowClient,
+		ID:                     scheduleID,
+		client:                 sc.workflowClient,
+		outboundPayloadVisitor: sc.outboundPayloadVisitor,
 	}
 }
 
@@ -308,7 +312,8 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		WorkflowID:   newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowId(),
 		WorkflowType: newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowType().GetName(),
 	})
-	if err := visitProtoPayloads(storeCtx, scheduleHandle.client.outboundPayloadVisitor, updateRequest); err != nil {
+
+	if err := visitProtoPayloads(storeCtx, scheduleHandle.outboundPayloadVisitor, updateRequest, 0); err != nil {
 		return err
 	}
 

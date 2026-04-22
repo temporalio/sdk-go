@@ -304,7 +304,7 @@ func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...an
 	if details == nil {
 		return ErrNoData
 	}
-	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, details); err != nil {
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, details, 0); err != nil {
 		return err
 	}
 	return d.dataConverter.FromPayloads(details, valuePtrs...)
@@ -317,7 +317,7 @@ func (d *ClientActivityExecutionDescription) GetLastFailure() error {
 	if failure == nil {
 		return nil
 	}
-	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, failure); err != nil {
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, failure, 0); err != nil {
 		return err
 	}
 	return d.failureConverter.FailureToError(failure)
@@ -593,7 +593,7 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		ActivityID:   request.ActivityId,
 		ActivityType: in.ActivityType,
 	})
-	if err := visitProtoPayloads(storeCtx, w.client.outboundPayloadVisitor, request); err != nil {
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request, 0); err != nil {
 		return nil, err
 	}
 
@@ -687,7 +687,7 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		}
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, resp); err != nil {
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -758,7 +758,7 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			CanceledReason:          info.CanceledReason,
 			dataConverter:           WithContext(ctx, w.client.dataConverter),
 			failureConverter:        w.client.failureConverter,
-			inboundPayloadVisitor:   w.client.inboundPayloadVisitor,
+			inboundPayloadVisitor:   w.inboundPayloadVisitor,
 		},
 	}, nil
 }

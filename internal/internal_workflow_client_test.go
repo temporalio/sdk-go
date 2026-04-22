@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	ilog "go.temporal.io/sdk/internal/log"
 
@@ -1711,7 +1712,7 @@ func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
 		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
 			dc := client.dataConverter
 			encodedArg, _ := dc.ToPayloads(input)
-			s.Equal(req.Input, encodedArg)
+			s.True(proto.Equal(req.Input, encodedArg))
 			var decodedArg []byte
 			_ = dc.FromPayloads(req.Input, &decodedArg)
 			s.Equal(input, decodedArg)

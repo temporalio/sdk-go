@@ -17,8 +17,8 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/extstore"
 	"go.temporal.io/sdk/internal/common/metrics"
+	"go.temporal.io/sdk/internal/extstore"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
@@ -778,6 +778,11 @@ type (
 		//
 		// NOTE: Experimental
 		ExternalStorage converter.ExternalStorage
+
+		// Configuration for when payload sizes exceed limits.
+		//
+		// NOTE: Experimental
+		PayloadLimits PayloadLimitOptions
 	}
 
 	// HeadersProvider returns a map of gRPC headers that should be used on every request.
@@ -1407,6 +1412,11 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 
 	storageDriverTypes := collectStorageDriverTypes(options.ExternalStorage.Drivers)
 
+	payloadWarningLimits, err := payloadLimitOptionsToLimits(options.PayloadLimits)
+	if err != nil {
+		panic(fmt.Sprintf("invalid PayloadLimits options: %v", err))
+	}
+
 	client := &WorkflowClient{
 		workflowService:          workflowServiceClient,
 		conn:                     conn,
@@ -1428,9 +1438,9 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
 		workerGroupingKey:       uuid.NewString(),
-		inboundPayloadVisitor:   extstore.NewExternalRetrievalVisitor(storageParams),
-		outboundPayloadVisitor:  extstore.NewExternalStorageVisitor(storageParams),
+		storageParams:           storageParams,
 		storageDriverTypes:      storageDriverTypes,
+		payloadWarningLimits:    payloadWarningLimits,
 	}
 
 	if heartbeatInterval > 0 {
@@ -1438,7 +1448,11 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain
-	client.interceptor = &workflowClientInterceptor{client: client}
+	client.interceptor = &workflowClientInterceptor{
+		client:                 client,
+		inboundPayloadVisitor:  extstore.NewExternalRetrievalVisitor(storageParams),
+		outboundPayloadVisitor: client.newOutboundPayloadVisitor(),
+	}
 	for i := len(options.Interceptors) - 1; i >= 0; i-- {
 		client.interceptor = options.Interceptors[i].InterceptClient(client.interceptor)
 	}

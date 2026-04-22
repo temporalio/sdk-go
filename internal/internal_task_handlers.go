@@ -28,6 +28,7 @@ import (
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	"go.temporal.io/sdk/internal/common/retry"
+	"go.temporal.io/sdk/internal/extstore"
 	"go.temporal.io/sdk/internal/protocol"
 
 	"go.temporal.io/sdk/converter"
@@ -41,8 +42,9 @@ const (
 
 	noRetryBackoff = time.Duration(-1)
 
-	defaultDefaultHeartbeatThrottleInterval = 30 * time.Second
-	defaultMaxHeartbeatThrottleInterval     = 60 * time.Second
+	defaultDefaultHeartbeatThrottleInterval               = 30 * time.Second
+	defaultMaxHeartbeatThrottleInterval                   = 60 * time.Second
+	defaultMaxConcurrentWorkflowTaskExternalStorageVisits = 3
 )
 
 var (
@@ -163,6 +165,9 @@ type (
 		versionStamp                     *commonpb.WorkerVersionStamp
 		deployment                       *deploymentpb.Deployment
 		workerDeploymentOptions          *deploymentpb.WorkerDeploymentOptions
+		inboundPayloadVisitor            PayloadVisitor
+		outboundPayloadVisitor           PayloadVisitor
+		payloadVisitorConcurrency        int
 	}
 
 	// history wrapper method to help information about events.
@@ -2086,6 +2091,9 @@ func newActivityTaskHandlerWithCustomProvider(
 			params.UseBuildIDForVersioning,
 			params.DeploymentOptions.Version,
 		),
+		inboundPayloadVisitor:     params.inboundPayloadVisitor,
+		outboundPayloadVisitor:    params.outboundPayloadVisitor,
+		payloadVisitorConcurrency: params.payloadVisitorConcurrency,
 	}
 }
 
@@ -2293,6 +2301,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	canCtx, cancel := context.WithCancelCause(rootCtx)
 	defer cancel(nil)
 
+	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.payloadVisitorConcurrency); err != nil {
+		return ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err), nil
+	}
+
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
@@ -2385,8 +2397,68 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			tagError, err,
 		)
 	}
-	return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+
+	response := convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
+		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
+
+	if msg, ok := response.(proto.Message); ok {
+		var storageTarget converter.StorageDriverTargetInfo
+		if t.WorkflowExecution.GetWorkflowId() != "" {
+			storageTarget = converter.StorageDriverWorkflowInfo{
+				Namespace:    ath.namespace,
+				WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
+				RunID:        t.WorkflowExecution.GetRunId(),
+				WorkflowType: t.WorkflowType.GetName(),
+			}
+		} else {
+			storageTarget = converter.StorageDriverActivityInfo{
+				Namespace:    ath.namespace,
+				ActivityID:   t.ActivityId,
+				RunID:        t.ActivityRunId,
+				ActivityType: t.ActivityType.GetName(),
+			}
+		}
+		// Use backgroundContext as base so a cancelled activity context (e.g. pause/reset)
+		// does not prevent the outbound storage visitor from making HTTP calls.
+		outboundBase := ath.backgroundContext
+		if outboundBase == nil {
+			outboundBase = context.Background()
+		}
+		outboundCtx := extstore.WithStorageTarget(outboundBase, storageTarget)
+		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.payloadVisitorConcurrency); err != nil {
+			return ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err), nil
+		}
+	}
+
+	return response, nil
+}
+
+func (ath *activityTaskHandlerImpl) visitorErrorToActivityFailure(msgPrefix string, t *workflowservice.PollActivityTaskQueueResponse, err error) *workflowservice.RespondActivityTaskFailedRequest {
+	keyvals := []any{
+		tagWorkflowID, t.WorkflowExecution.GetWorkflowId(),
+		tagRunID, t.WorkflowExecution.GetRunId(),
+		tagActivityType, t.ActivityType.Name,
+		tagAttempt, t.Attempt,
+	}
+
+	var errPayloadSize payloadSizeError
+	if errors.As(err, &errPayloadSize) {
+		keyvals = append(keyvals,
+			tagPayloadSize, errPayloadSize.size,
+			tagPayloadSizeLimit, errPayloadSize.limit)
+	}
+
+	ath.logger.Error(msgPrefix+err.Error(), keyvals...)
+
+	return &workflowservice.RespondActivityTaskFailedRequest{
+		TaskToken:         t.TaskToken,
+		Failure:           ath.failureConverter.ErrorToFailure(err),
+		Identity:          ath.identity,
+		Namespace:         ath.namespace,
+		WorkerVersion:     ath.versionStamp,
+		Deployment:        ath.deployment,
+		DeploymentOptions: ath.workerDeploymentOptions,
+	}
 }
 
 func (ath *activityTaskHandlerImpl) getActivity(name string) activity {
