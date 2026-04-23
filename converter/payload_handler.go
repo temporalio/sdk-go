@@ -1,19 +1,5 @@
-// Package converter provides an HTTP handler for a Temporal codec server that
-// understands the two-layer codec architecture used with external payload storage.
-//
-// The handler exposes two routes:
-//
-//   - POST /decode — decodes payloads through the post-storage then pre-storage
-//     codec chains. If a payload is a storage reference after post-storage
-//     decoding it is returned as-is so the caller can resolve it via /download.
-//
-//   - POST /download — accepts storage reference payloads, retrieves the
-//     original payloads from the configured storage drivers, then decodes
-//     them through the pre-storage codec chain.
-//
-// The wire format for both routes is identical to the existing
-// [NewPayloadCodecHTTPHandler]: a JSON-encoded [commonpb.Payloads] request body
-// and response body, with Content-Type application/json.
+// Package converter provides an HTTP handler for a Temporal codec server with
+// support for external payload storage.
 
 package converter
 
@@ -34,30 +20,28 @@ const (
 	downloadPath = "/download"
 )
 
-// PayloadHTTPHandlerOptions configures a storage and codec aware HTTP handler
-// for use with Temporal Web UI.
+// PayloadHTTPHandlerOptions configures a [NewPayloadHTTPHandler].
 //
 // NOTE: Experimental
 type PayloadHTTPHandlerOptions struct {
-	// PostStorageCodecs are codecs applied outside the storage layer, e.g. a
-	// proxy codec that wraps the entire payload.
-	// They run last on encode (after external storage) and first on decode
-	// (before external retrieval).
+	// PostStorageCodecs are codecs applied after external storage from the
+	// perspective of payloads going through a encoding transformation. These are
+	// typically the codecs that would be configured in the proxy's codec chain.
 	//
 	// NOTE: Experimental.
 	PostStorageCodecs []PayloadCodec
 
-	// PreStorageCodecs are worker-configured codecs that run before payloads
-	// enter external storage, e.g. encryption or compression. They run first
-	// on encode (before external storage) and last on decode (after external
-	// retrieval).
+	// PreStorageCodecs are codecs that are applied before external storage,
+	// from the perspective of payloads going through an encoding transformation.
+	// These are typically the codecs that would be configured in the DataConverter
+	// codec chain on a Temporal client.
 	//
 	// NOTE: Experimental.
 	PreStorageCodecs []PayloadCodec
 
-	// ExternalStorage provides the storage drivers used by the /download route to
-	// retrieve payloads identified by storage reference claims. Driver names
-	// must be unique. If no drivers are configured, /download returns HTTP 400.
+	// ExternalStorage configures external payload storage, allowing payloads
+	// to be stored and retrieved from external sources if they meet the size
+	// threshold and driver selection criteria.
 	//
 	// NOTE: Experimental.
 	ExternalStorage ExternalStorage
@@ -72,8 +56,8 @@ type payloadHTTPHandler struct {
 
 var _ http.Handler = (*payloadHTTPHandler)(nil)
 
-// NewPayloadHTTPHandler creates an [http.Handler] that serves /decode, /download, and
-// /encode routes for remote payload transformations.
+// NewPayloadHTTPHandler creates an [http.Handler] that serves /encode, /decode,
+// and /download routes for remote payload transformations.
 //
 // NOTE: Experimental
 func NewPayloadHTTPHandler(options PayloadHTTPHandlerOptions) (http.Handler, error) {
@@ -81,6 +65,7 @@ func NewPayloadHTTPHandler(options PayloadHTTPHandlerOptions) (http.Handler, err
 	if err != nil {
 		return nil, err
 	}
+
 	h := &payloadHTTPHandler{
 		postStorageCodecs: options.PostStorageCodecs,
 		preStorageCodecs:  options.PreStorageCodecs,
@@ -99,6 +84,7 @@ func (h *payloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	path := r.URL.Path
 	if !strings.HasSuffix(path, remotePayloadCodecDecodePath) &&
+		!strings.HasSuffix(path, remotePayloadCodecEncodePath) &&
 		!strings.HasSuffix(path, downloadPath) {
 		http.NotFound(w, r)
 		return
@@ -125,7 +111,9 @@ func (h *payloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch {
 	case strings.HasSuffix(path, remotePayloadCodecDecodePath):
-		payloads, err = h.decode(payloads)
+		payloads, err = h.decode(r, payloads)
+	case strings.HasSuffix(path, remotePayloadCodecEncodePath):
+		payloads, err = h.encode(r, payloads)
 	case strings.HasSuffix(path, downloadPath):
 		payloads, err = h.download(r, payloads)
 	default:
@@ -144,52 +132,31 @@ func (h *payloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// decode applies post-storage codecs (first-to-last) to all payloads. Any
-// payload that is a storage reference after this step is returned as-is so
-// the caller can resolve it via /download. Remaining payloads are further
-// decoded through the pre-storage codecs (first-to-last).
-func (h *payloadHTTPHandler) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+// decode decodes payloads through the post-storage then pre-storage codec chains.
+// If returnStorageClaims=true is set in the query string, storage references are
+// returned as-is rather than being retrieved from external storage.
+func (h *payloadHTTPHandler) decode(r *http.Request, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	var err error
 
-	// Apply post-storage codecs to all payloads.
-	for _, c := range h.postStorageCodecs {
-		if payloads, err = c.Decode(payloads); err != nil {
+	payloads, err = decodePayloads(payloads, h.postStorageCodecs)
+	if err != nil {
+		return nil, err
+	}
+
+	if !strings.EqualFold(r.URL.Query().Get("returnStorageClaims"), "true") {
+		vpc := &proxy.VisitPayloadsContext{Context: r.Context()}
+		payloads, err = h.retrievalVisitor.Visit(vpc, payloads)
+		if err != nil {
 			return nil, err
 		}
 	}
 
-	// Separate storage references — they cannot be pre-storage decoded yet.
-	result := make([]*commonpb.Payload, len(payloads))
-	var nonRefIdxs []int
-	var nonRefPayloads []*commonpb.Payload
-	for i, p := range payloads {
-		if extstore.IsStorageReference(p) {
-			result[i] = p
-		} else {
-			nonRefIdxs = append(nonRefIdxs, i)
-			nonRefPayloads = append(nonRefPayloads, p)
-		}
-	}
-
-	// Apply pre-storage codecs to non-reference payloads.
-	for _, c := range h.preStorageCodecs {
-		if nonRefPayloads, err = c.Decode(nonRefPayloads); err != nil {
-			return nil, err
-		}
-	}
-	for j, i := range nonRefIdxs {
-		result[i] = nonRefPayloads[j]
-	}
-	return result, nil
+	return decodeNonReferences(payloads, h.preStorageCodecs)
 }
 
-// download validates that every payload is a storage reference, retrieves the
-// original payloads from the registered storage drivers, then decodes them
-// through the pre-storage codec chain.
+// download retrieves payloads from external storage and decodes them through
+// the pre-storage codec chain. All input payloads must be storage references.
 func (h *payloadHTTPHandler) download(r *http.Request, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	if h.retrievalVisitor == nil {
-		return nil, errors.New("no storage drivers configured")
-	}
 	for _, p := range payloads {
 		if !extstore.IsStorageReference(p) {
 			return nil, errors.New("all payloads must be storage references")
@@ -202,10 +169,54 @@ func (h *payloadHTTPHandler) download(r *http.Request, payloads []*commonpb.Payl
 		return nil, err
 	}
 
-	for _, c := range h.preStorageCodecs {
-		if retrieved, err = c.Decode(retrieved); err != nil {
-			return nil, err
+	return decodeNonReferences(retrieved, h.preStorageCodecs)
+}
+
+// encode encodes payloads through the pre-storage then post-storage codec chains,
+// applying external storage as configured. Storage references are returned for
+// payloads that meet the size threshold and driver selection criteria.
+func (h *payloadHTTPHandler) encode(r *http.Request, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	var err error
+
+	payloads, err = encodePayloads(payloads, h.preStorageCodecs)
+	if err != nil {
+		return nil, err
+	}
+
+	vpc := &proxy.VisitPayloadsContext{Context: r.Context()}
+	payloads, err = h.storageVisitor.Visit(vpc, payloads)
+	if err != nil {
+		return nil, err
+	}
+
+	payloads, err = encodePayloads(payloads, h.postStorageCodecs)
+	if err != nil {
+		return nil, err
+	}
+
+	return payloads, nil
+}
+
+// decodeNonReferences decodes non-storage-reference payloads through the given
+// codec chain. Storage references pass through as-is.
+func decodeNonReferences(payloads []*commonpb.Payload, codecs []PayloadCodec) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	var nonRefIdxs []int
+	var nonRefPayloads []*commonpb.Payload
+	for i, p := range payloads {
+		if extstore.IsStorageReference(p) {
+			result[i] = p
+		} else {
+			nonRefIdxs = append(nonRefIdxs, i)
+			nonRefPayloads = append(nonRefPayloads, p)
 		}
 	}
-	return retrieved, nil
+	decoded, err := decodePayloads(nonRefPayloads, codecs)
+	if err != nil {
+		return nil, err
+	}
+	for j, idx := range nonRefIdxs {
+		result[idx] = decoded[j]
+	}
+	return result, nil
 }
