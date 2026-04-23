@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -637,12 +638,13 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 
 	response, err = wtp.sendTaskCompletedRequest(taskCompletion, task)
 
+	completionEventId := task.GetStartedEventId() + 1
 	loggerDurationKeyVals := []interface{}{
 		tagWorkflowType, task.WorkflowType.GetName(),
 		tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 		tagRunID, task.WorkflowExecution.GetRunId(),
 		tagAttempt, task.Attempt,
-		tagEventID, task.GetStartedEventId(),
+		tagEventID, completionEventId,
 		tagWorkflowTaskDuration, taskDuration,
 	}
 	if downloadPayloadMetrics.payloadCount > 0 {
@@ -650,6 +652,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagPayloadDownloadCount, downloadPayloadMetrics.payloadCount,
 			tagPayloadDownloadSize, downloadPayloadMetrics.totalSize,
 			tagPayloadDownloadDuration, downloadPayloadMetrics.totalDuration,
+			tagPayloadDownloadDrivers, downloadPayloadMetrics.GetDriverNames(),
 		)
 	}
 	if uploadPayloadMetrics.payloadCount > 0 {
@@ -657,15 +660,17 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagPayloadUploadCount, uploadPayloadMetrics.payloadCount,
 			tagPayloadUploadSize, uploadPayloadMetrics.totalSize,
 			tagPayloadUploadDuration, uploadPayloadMetrics.totalDuration,
+			tagPayloadUploadDrivers, uploadPayloadMetrics.GetDriverNames(),
 		)
 	}
 
+	taskID := fmt.Sprintf("%s:%d:%d", task.WorkflowExecution.GetRunId(), completionEventId, task.Attempt)
 	if taskDuration > 10*time.Second {
-		wtp.logger.Warn("[TMPRL1104] Workflow task exceeded 10 seconds.", loggerDurationKeyVals...)
+		wtp.logger.Warn("[TMPRL1104] "+taskID+" Workflow task exceeded 10 seconds.", loggerDurationKeyVals...)
 	} else if taskDuration > 5*time.Second {
-		wtp.logger.Info("[TMPRL1104] Workflow task exceeded 5 seconds.", loggerDurationKeyVals...)
+		wtp.logger.Info("[TMPRL1104] "+taskID+" Workflow task exceeded 5 seconds.", loggerDurationKeyVals...)
 	} else {
-		wtp.logger.Debug("[TMPRL1104] Workflow task duration information.", loggerDurationKeyVals...)
+		wtp.logger.Debug("[TMPRL1104] "+taskID+" Workflow task duration information.", loggerDurationKeyVals...)
 	}
 
 	var grpcMessageTooLargeErr *retry.GrpcMessageTooLargeError
@@ -873,16 +878,32 @@ type workflowTaskStorageMetrics struct {
 	payloadCount       int
 	totalSize          int64
 	totalDuration      time.Duration
+	driverNames        map[string]struct{}
 	logger             log.Logger
 	warnedUnconfigured bool
 }
 
-func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, duration time.Duration) {
+func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string) {
 	callback.mu.Lock()
 	defer callback.mu.Unlock()
 	callback.payloadCount += count
 	callback.totalSize += size
 	callback.totalDuration += duration
+	for _, name := range driverNames {
+		if callback.driverNames == nil {
+			callback.driverNames = make(map[string]struct{})
+		}
+		callback.driverNames[name] = struct{}{}
+	}
+}
+
+func (callback *workflowTaskStorageMetrics) GetDriverNames() []string {
+	names := make([]string, 0, len(callback.driverNames))
+	for name := range callback.driverNames {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func (callback *workflowTaskStorageMetrics) UnconfiguredStorageReference() {

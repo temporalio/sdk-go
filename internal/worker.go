@@ -357,6 +357,17 @@ type (
 		// NOTE: Experimental
 		Tuner WorkerTuner
 
+		// Optional: If set, provides CPU and memory usage information for worker heartbeats.
+		// Use contrib/sysinfo.SysInfoProvider() for a gopsutil-based implementation, or provide
+		// your own. When unset, the worker will use the Tuner's SysInfoProvider if it exposes one
+		// (e.g. a resource-based tuner); otherwise heartbeats report 0 for CPU/memory usage.
+		//
+		// It is an error to provide a SysInfoProvider here that differs from the one used by the
+		// Tuner.
+		//
+		// NOTE: Experimental
+		SysInfoProvider SysInfoProvider
+
 		// Optional: If set, the worker will use the provided poller behavior when polling for workflow tasks.
 		// This is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
 		//

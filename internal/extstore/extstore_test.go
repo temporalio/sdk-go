@@ -1082,7 +1082,7 @@ type testCallback struct {
 	unconfiguredCount int
 }
 
-func (c *testCallback) PayloadBatchCompleted(count int, size int64, duration time.Duration) {
+func (c *testCallback) PayloadBatchCompleted(count int, size int64, duration time.Duration, _ []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.count = count

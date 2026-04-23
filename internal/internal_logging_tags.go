@@ -38,9 +38,11 @@ const (
 	tagPayloadDownloadCount         = "PayloadDownloadCount"
 	tagPayloadDownloadSize          = "PayloadDownloadSize"
 	tagPayloadDownloadDuration      = "PayloadDownloadDuration"
+	tagPayloadDownloadDrivers       = "PayloadDownloadDrivers"
 	tagPayloadUploadCount           = "PayloadUploadCount"
 	tagPayloadUploadSize            = "PayloadUploadSize"
 	tagPayloadUploadDuration        = "PayloadUploadDuration"
+	tagPayloadUploadDrivers         = "PayloadUploadDrivers"
 	tagPayloadSize                  = "PayloadSize"
 	tagPayloadSizeLimit             = "PayloadSizeLimit"
 )
