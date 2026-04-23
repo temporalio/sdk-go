@@ -27,6 +27,9 @@ type PayloadHTTPHandlerOptions struct {
 	// PostStorageCodecs are codecs applied after external storage from the
 	// perspective of payloads going through a encoding transformation. These are
 	// typically the codecs that would be configured in the proxy's codec chain.
+	// When encoding, the codecs are applied last to first meaning the earlier
+	// codecs wrap the later ones. When decoding, the codecs are applied first
+	// to last to reverse the effect.
 	//
 	// NOTE: Experimental.
 	PostStorageCodecs []PayloadCodec
@@ -34,7 +37,9 @@ type PayloadHTTPHandlerOptions struct {
 	// PreStorageCodecs are codecs that are applied before external storage,
 	// from the perspective of payloads going through an encoding transformation.
 	// These are typically the codecs that would be configured in the DataConverter
-	// codec chain on a Temporal client.
+	// codec chain on a Temporal client. When encoding, the codecs are applied last
+	// to first meaning the earlier codecs wrap the later ones. When decoding, the
+	// codecs are applied first to last to reverse the effect.
 	//
 	// NOTE: Experimental.
 	PreStorageCodecs []PayloadCodec
