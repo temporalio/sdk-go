@@ -10,6 +10,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/proxy"
 	querypb "go.temporal.io/api/query/v1"
+	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/log"
 	"google.golang.org/protobuf/proto"
@@ -24,17 +25,30 @@ type PayloadLimitOptions struct {
 	// The limit (in bytes) at which a payload size warning is logged.
 	// If unspecified or zero, defaults to 512 KiB.
 	PayloadSizeWarning int
+	// The limit (in bytes) at which an aggregate memo size warning is logged.
+	// If unspecified or zero, defaults to 512 KiB.
+	MemoSizeWarning int
 }
 
 type skipErrorLimitKey struct{}
 type skipWarningLimitKey struct{}
+type skipMemoErrorLimitKey struct{}
+type skipMemoWarningLimitKey struct{}
 
-func withSkipErrorLimit(ctx context.Context) context.Context {
+func withSkipPayloadErrorLimit(ctx context.Context) context.Context {
 	return context.WithValue(ctx, skipErrorLimitKey{}, true)
 }
 
-func withSkipWarningLimit(ctx context.Context) context.Context {
+func withSkipPayloadWarningLimit(ctx context.Context) context.Context {
 	return context.WithValue(ctx, skipWarningLimitKey{}, true)
+}
+
+func withSkipMemoErrorLimit(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skipMemoErrorLimitKey{}, true)
+}
+
+func withSkipMemoWarningLimit(ctx context.Context) context.Context {
+	return context.WithValue(ctx, skipMemoWarningLimitKey{}, true)
 }
 
 type payloadSizeError struct {
@@ -49,6 +63,7 @@ func (e payloadSizeError) Error() string {
 
 type payloadLimits struct {
 	payloadSize int64
+	memoSize    int64
 }
 
 func payloadLimitOptionsToLimits(options PayloadLimitOptions) (payloadLimits, error) {
@@ -59,8 +74,16 @@ func payloadLimitOptionsToLimits(options PayloadLimitOptions) (payloadLimits, er
 	if payloadSizeWarning == 0 {
 		payloadSizeWarning = 512 * 1024
 	}
+	memoSizeWarning := int64(options.MemoSizeWarning)
+	if memoSizeWarning < 0 {
+		return payloadLimits{}, errors.New("MemoSizeWarning must be greater than or equal to zero")
+	}
+	if memoSizeWarning == 0 {
+		memoSizeWarning = 2 * 1024
+	}
 	return payloadLimits{
 		payloadSize: payloadSizeWarning,
+		memoSize:    memoSizeWarning,
 	}, nil
 }
 
@@ -108,7 +131,7 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 		if err != nil {
 			return nil, err
 		}
-		ctx = withSkipErrorLimit(withSkipWarningLimit(ctx))
+		ctx = withSkipPayloadErrorLimit(withSkipPayloadWarningLimit(ctx))
 	// UpsertWorkflowSearchAttributesCommandAttributes.SearchAttributes is a map[string]Payload
 	// Server has specialized size checking for map[string]Payload (that are not Memo fields).
 	case *commandpb.UpsertWorkflowSearchAttributesCommandAttributes:
@@ -116,7 +139,7 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 		if err != nil {
 			return nil, err
 		}
-		ctx = withSkipErrorLimit(withSkipWarningLimit(ctx))
+		ctx = withSkipPayloadErrorLimit(withSkipPayloadWarningLimit(ctx))
 	// ModifyWorkflowPropertiesCommandAttributes.Properties is a map[string]Payload
 	// Server has specialized size checking for map[string]Payload (that are not Memo fields).
 	case *commandpb.ModifyWorkflowPropertiesCommandAttributes:
@@ -124,7 +147,15 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 		if err != nil {
 			return nil, err
 		}
-		ctx = withSkipErrorLimit(withSkipWarningLimit(ctx))
+		ctx = withSkipPayloadErrorLimit(withSkipPayloadWarningLimit(ctx))
+	case *commonpb.Memo:
+		skipErrorLimit := ctx.Value(skipMemoErrorLimitKey{}) == true
+		skipWarningLimit := ctx.Value(skipMemoWarningLimitKey{}) == true
+		err := v.checkMemoSize(int64(msg.Size()), !skipErrorLimit, !skipWarningLimit)
+		if err != nil {
+			return nil, err
+		}
+		ctx = withSkipPayloadErrorLimit(withSkipPayloadWarningLimit(ctx))
 	case *querypb.WorkflowQueryResult:
 		err := v.checkPayloadSize(int64(msg.GetAnswer().Size()), true, true)
 		// Server translates too large results into failed query results
@@ -133,7 +164,7 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 			msg.ErrorMessage = err.Error()
 			msg.ResultType = enumspb.QUERY_RESULT_TYPE_FAILED
 		}
-		ctx = withSkipErrorLimit(withSkipWarningLimit(ctx))
+		ctx = withSkipPayloadErrorLimit(withSkipPayloadWarningLimit(ctx))
 	case *workflowservice.RespondQueryTaskCompletedRequest:
 		err := v.checkPayloadSize(int64(msg.GetQueryResult().Size()), true, true)
 		// Server translates too large results into failed query results
@@ -142,16 +173,42 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 			msg.QueryResult = nil
 			msg.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
 		}
-		ctx = withSkipErrorLimit(withSkipWarningLimit(ctx))
+		ctx = withSkipPayloadErrorLimit(withSkipPayloadWarningLimit(ctx))
+	// CreateScheduleRequest has a custom size checking algorithm checked against the payload size limit.
+	case *workflowservice.CreateScheduleRequest:
+		// Server only supports StartWorkflow action; skip if not StartWorkflow and let the server handle it.
+		if action, ok := msg.GetSchedule().GetAction().GetAction().(*schedulepb.ScheduleAction_StartWorkflow); ok {
+			size := int64(msg.GetMemo().Size()) + int64(action.StartWorkflow.GetInput().Size())
+			err := v.checkPayloadSize(size, true, true)
+			if err != nil {
+				return nil, err
+			}
+		}
+		ctx = withSkipMemoErrorLimit(withSkipMemoWarningLimit(ctx))
+		ctx = withSkipPayloadErrorLimit(withSkipPayloadWarningLimit(ctx))
+	// UpdateScheduleRequest.Memo is not validated by the server against memo size limits.
+	case *workflowservice.UpdateScheduleRequest:
+		ctx = withSkipMemoErrorLimit(ctx)
 	// Failures are passed through to server which will append failure details instead of failing the workflow.
 	// Skip error checking these to allow the server to receive the failures.
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		ctx = withSkipErrorLimit(ctx)
+		ctx = withSkipPayloadErrorLimit(ctx)
 	case *workflowservice.RespondActivityTaskFailedByIdRequest:
-		ctx = withSkipErrorLimit(ctx)
+		ctx = withSkipPayloadErrorLimit(ctx)
 	case *workflowservice.RespondWorkflowTaskFailedRequest:
-		ctx = withSkipErrorLimit(ctx)
+		ctx = withSkipPayloadErrorLimit(ctx)
 	}
+	// These are the additional protos that server checks that the SDK does not currently check:
+	// - UpsertWorkflowSearchAttributesCommandAttributes has another SearchAttributes size check that combines execution info,
+	//   which is not available in the SDK. Violating the limit will terminate the workflow.
+	// - ModifyWorkflowPropertiesCommandAttributes has another SearchAttributes size check that combines execution info,
+	//   which is not available in the SDK. Violating the limit will terminate the workflow.
+	// - UpdateScheduleRequest has a complicated payload sizing algorithm that combines multiple fields into another proto,
+	//   proto-preferred encodes them, and checks against the payload size limit. Violating the limit returns an error to the client.
+	// - PatchScheduleRequest has a Patch field that is proto-preferred encoded and checked against the payload size limit.
+	//   Violating the limit returns an error to the client.
+	// - ListScheduleMatchingTimesRequest is proto-preferred encoded and checked against the payload size limit.
+	//   Violating the limit returns an error to the client.
 	return ctx, nil
 }
 
@@ -171,6 +228,27 @@ func (v *payloadLimitsVisitorImpl) checkPayloadSize(size int64, checkErrorLimits
 			"[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.",
 			tagPayloadSize, size,
 			tagPayloadSizeLimit, v.warningLimits.payloadSize,
+		)
+	}
+	return nil
+}
+
+func (v *payloadLimitsVisitorImpl) checkMemoSize(size int64, checkErrorLimits bool, checkWarningLimits bool) error {
+	if checkErrorLimits {
+		errorLimits := v.errorLimits.Load()
+		if errorLimits != nil && errorLimits.memoSize > 0 && size > errorLimits.memoSize {
+			return payloadSizeError{
+				message: "[TMPRL1103] Attempted to upload memo with size that exceeded the error limit.",
+				size:    size,
+				limit:   errorLimits.memoSize,
+			}
+		}
+	}
+	if checkWarningLimits && v.warningLimits.memoSize > 0 && size > v.warningLimits.memoSize && v.logger != nil {
+		v.logger.Warn(
+			"[TMPRL1103] Attempted to upload memo with size that exceeded the warning limit.",
+			tagMemoSize, size,
+			tagMemoSizeLimit, v.warningLimits.memoSize,
 		)
 	}
 	return nil
