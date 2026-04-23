@@ -6,6 +6,53 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 )
 
+// StorageDriverTargetInfo identifies the workflow or activity on whose behalf
+// a payload is being stored. Use a type switch on [StorageDriverWorkflowInfo]
+// and [StorageDriverActivityInfo] to access the concrete values.
+//
+// NOTE: Experimental
+type StorageDriverTargetInfo interface {
+	isStorageDriverTargetInfo()
+}
+
+// StorageDriverWorkflowInfo carries workflow identity for a storage operation.
+//
+// NOTE: Experimental
+type StorageDriverWorkflowInfo struct {
+	// Namespace is the Temporal namespace of the workflow execution.
+	Namespace string
+	// WorkflowType is the type name of the workflow.
+	WorkflowType string
+	// WorkflowID is the ID of the workflow execution.
+	WorkflowID string
+	// RunID is the run ID of the workflow execution.
+	RunID string
+}
+
+func (StorageDriverWorkflowInfo) isStorageDriverTargetInfo() {}
+
+var _ StorageDriverTargetInfo = StorageDriverWorkflowInfo{}
+
+// StorageDriverActivityInfo carries activity identity for a storage operation.
+// This is only used for standalone (non-workflow-bound) activities; activities
+// started by a workflow use [StorageDriverWorkflowInfo] as the target.
+//
+// NOTE: Experimental
+type StorageDriverActivityInfo struct {
+	// Namespace is the Temporal namespace of the activity execution.
+	Namespace string
+	// ActivityType is the type name of the activity.
+	ActivityType string
+	// ActivityID is the ID of the activity execution.
+	ActivityID string
+	// RunID is the run ID of the activity execution.
+	RunID string
+}
+
+func (StorageDriverActivityInfo) isStorageDriverTargetInfo() {}
+
+var _ StorageDriverTargetInfo = StorageDriverActivityInfo{}
+
 // StorageDriverStoreContext carries context passed to StorageDriver.Store and
 // StorageDriverSelector.SelectDriver operations.
 //
@@ -15,6 +62,10 @@ type StorageDriverStoreContext struct {
 	// Drivers should use it to respect cancellation and to propagate deadlines
 	// and trace information to downstream calls (e.g. cloud storage SDKs).
 	Context context.Context
+	// Target identifies the workflow or activity on whose behalf payloads are
+	// being stored. Use a type switch on [StorageDriverWorkflowInfo] and
+	// [StorageDriverActivityInfo] to access the concrete values.
+	Target StorageDriverTargetInfo
 }
 
 // StorageDriverRetrieveContext carries context passed to StorageDriver.Retrieve

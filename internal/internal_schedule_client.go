@@ -25,13 +25,15 @@ type (
 
 	// ScheduleClient is the client for starting a workflow execution.
 	scheduleClient struct {
-		workflowClient *WorkflowClient
+		workflowClient         *WorkflowClient
+		outboundPayloadVisitor PayloadVisitor
 	}
 
 	// scheduleHandleImpl is the implementation of ScheduleHandle.
 	scheduleHandleImpl struct {
-		ID     string
-		client *WorkflowClient
+		ID                     string
+		client                 *WorkflowClient
+		outboundPayloadVisitor PayloadVisitor
 	}
 
 	// scheduleListIteratorImpl is the implementation of ScheduleListIterator
@@ -131,6 +133,15 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		SearchAttributes: searchAttr,
 	}
 
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    w.client.namespace,
+		WorkflowID:   action.GetStartWorkflow().GetWorkflowId(),
+		WorkflowType: action.GetStartWorkflow().GetWorkflowType().GetName(),
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, startRequest, 0); err != nil {
+		return nil, err
+	}
+
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
@@ -143,8 +154,9 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 	}
 
 	return &scheduleHandleImpl{
-		ID:     ID,
-		client: w.client,
+		ID:                     ID,
+		client:                 w.client,
+		outboundPayloadVisitor: w.outboundPayloadVisitor,
 	}, nil
 }
 
@@ -164,8 +176,9 @@ func (sc *scheduleClient) Create(ctx context.Context, options ScheduleOptions) (
 
 func (sc *scheduleClient) GetHandle(ctx context.Context, scheduleID string) ScheduleHandle {
 	return &scheduleHandleImpl{
-		ID:     scheduleID,
-		client: sc.workflowClient,
+		ID:                     scheduleID,
+		client:                 sc.workflowClient,
+		outboundPayloadVisitor: sc.outboundPayloadVisitor,
 	}
 }
 
@@ -283,7 +296,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		}
 	}
 
-	_, err = scheduleHandle.client.workflowService.UpdateSchedule(grpcCtx, &workflowservice.UpdateScheduleRequest{
+	updateRequest := &workflowservice.UpdateScheduleRequest{
 		Namespace:        scheduleHandle.client.namespace,
 		ScheduleId:       scheduleHandle.ID,
 		Schedule:         newSchedulePB,
@@ -291,7 +304,19 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		Identity:         scheduleHandle.client.identity,
 		RequestId:        uuid.NewString(),
 		SearchAttributes: newSA,
+	}
+
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    scheduleHandle.client.namespace,
+		WorkflowID:   newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowId(),
+		WorkflowType: newSchedulePB.GetAction().GetStartWorkflow().GetWorkflowType().GetName(),
 	})
+
+	if err := visitProtoPayloads(storeCtx, scheduleHandle.outboundPayloadVisitor, updateRequest, 0); err != nil {
+		return err
+	}
+
+	_, err = scheduleHandle.client.workflowService.UpdateSchedule(grpcCtx, updateRequest)
 	return err
 }
 

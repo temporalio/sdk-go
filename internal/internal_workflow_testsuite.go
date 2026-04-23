@@ -2775,7 +2775,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		response, failure, err := taskHandler.Execute(task)
 		if err != nil {
 			// No retries for operations, fail the operation immediately.
-			failure, err = taskHandler.fillInFailure(task.TaskToken, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, err.Error()), false)
+			failure, err = taskHandler.fillInFailure(task.TaskToken, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "%s", err.Error()), false)
 		}
 		if failure != nil {
 			// Convert to a nexus HandlerError first to simulate the flow in the server.
@@ -3568,6 +3568,7 @@ func (h *testNexusOperationHandle) newStartTask() *workflowservice.PollNexusTask
 		Request: &nexuspb.Request{
 			ScheduledTime: timestamppb.Now(),
 			Header:        h.params.nexusHeader,
+			Endpoint:      h.params.client.Endpoint(),
 			Capabilities: &nexuspb.Request_Capabilities{
 				TemporalFailureResponses: true,
 			},
@@ -3595,6 +3596,7 @@ func (h *testNexusOperationHandle) newCancelTask() *workflowservice.PollNexusTas
 		Request: &nexuspb.Request{
 			ScheduledTime: timestamppb.Now(),
 			Header:        h.params.nexusHeader,
+			Endpoint:      h.params.client.Endpoint(),
 			Capabilities: &nexuspb.Request_Capabilities{
 				TemporalFailureResponses: true,
 			},

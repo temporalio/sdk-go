@@ -78,11 +78,12 @@ func driversEqual(a, b converter.StorageDriver) (equal bool) {
 }
 
 type storageOperationCallback interface {
-	PayloadBatchCompleted(count int, size int64, duration time.Duration)
+	PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string)
 	UnconfiguredStorageReference()
 }
 
 const storageOperationCallbackContextKey contextKey = "storageOperationCallback"
+const storageTargetContextKey contextKey = "storageTarget"
 
 // metadataEncodingStorageRef is the metadata encoding value used to identify
 // payloads that are storage references rather than actual data.
@@ -216,7 +217,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
 		if callback, isCallback := callbackValue.(storageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime))
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
 		}
 	}
 	return result, nil
@@ -247,7 +248,11 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	driverBatches := map[string]*driverBatch{}
 
 	result := make([]*commonpb.Payload, len(payloads))
-	driverCtx := converter.StorageDriverStoreContext{Context: ctx.Context}
+	var target converter.StorageDriverTargetInfo
+	if t, ok := ctx.Context.Value(storageTargetContextKey).(converter.StorageDriverTargetInfo); ok {
+		target = t
+	}
+	driverCtx := converter.StorageDriverStoreContext{Context: ctx.Context, Target: target}
 
 	for i, p := range payloads {
 		if proto.Size(p) < v.params.payloadSizeThreshold {
@@ -287,7 +292,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	// Fan out to each driver concurrently. The errgroup context is used as the
 	// StorageDriverStoreContext so a failing driver cancels in-flight siblings.
 	eg, egCtx := errgroup.WithContext(ctx.Context)
-	storeDrCtx := converter.StorageDriverStoreContext{Context: egCtx}
+	storeDrCtx := converter.StorageDriverStoreContext{Context: egCtx, Target: target}
 	sizes := make([]int64, len(driverOrder))
 
 	externalCount := 0
@@ -331,7 +336,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
 		if callback, isCallback := callbackValue.(storageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime))
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
 		}
 	}
 	return result, nil

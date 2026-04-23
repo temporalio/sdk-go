@@ -3,6 +3,7 @@ package test_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -11,8 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	"google.golang.org/protobuf/proto"
 
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
@@ -32,6 +35,7 @@ type memStorageDriver struct {
 	storeCount    int
 	retrieveCount int
 	retrieveErr   error
+	storeContexts []converter.StorageDriverStoreContext
 }
 
 func newMemDriver(name string) *memStorageDriver {
@@ -41,10 +45,11 @@ func newMemDriver(name string) *memStorageDriver {
 func (d *memStorageDriver) Name() string { return d.name }
 func (d *memStorageDriver) Type() string { return "mem" }
 
-func (d *memStorageDriver) Store(_ converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
+func (d *memStorageDriver) Store(ctx converter.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]converter.StorageDriverClaim, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.storeCount++
+	d.storeContexts = append(d.storeContexts, ctx)
 	claims := make([]converter.StorageDriverClaim, len(payloads))
 	for i, p := range payloads {
 		key := uuid.NewString()
@@ -78,10 +83,24 @@ func (d *memStorageDriver) getStoreCounts() (store, retrieve int) {
 	return d.storeCount, d.retrieveCount
 }
 
+func (d *memStorageDriver) getStoreContexts() []converter.StorageDriverStoreContext {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]converter.StorageDriverStoreContext, len(d.storeContexts))
+	copy(out, d.storeContexts)
+	return out
+}
+
 func (d *memStorageDriver) setRetrieveErr(err error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.retrieveErr = err
+}
+
+func (d *memStorageDriver) resetStoreContexts() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.storeContexts = nil
 }
 
 // ---------------------------------------------------------------------------
@@ -671,4 +690,811 @@ func (s *ExternalStorageTestSuite) TestReplayWithoutExternalStorageFails() {
 		s.config.Namespace,
 		workflow.Execution{ID: wfID, RunID: run.GetRunID()},
 	), "replay should fail when storage references cannot be resolved")
+}
+
+// ---------------------------------------------------------------------------
+// Target context tests — verify StorageDriverStoreContext.Target is populated
+// correctly for every outbound payload visitor call site.
+// ---------------------------------------------------------------------------
+
+// extStoreTargetWorkflow is a simple workflow that returns its input unchanged.
+func extStoreTargetWorkflow(ctx workflow.Context, input string) (string, error) {
+	return input, nil
+}
+
+// extStoreTargetSignalWorkflow blocks on a signal and returns the received value.
+var extStoreTargetSignalCh = "ext-target-signal"
+
+func extStoreTargetSignalWorkflow(ctx workflow.Context) (string, error) {
+	var received string
+	workflow.GetSignalChannel(ctx, extStoreTargetSignalCh).Receive(ctx, &received)
+	return received, nil
+}
+
+// extStoreTargetUpdateWorkflow accepts a single update named "set" that stores
+// the provided string, then blocks on a signal before returning it.
+var extStoreTargetUpdateName = "set"
+var extStoreTargetUpdateDone = "ext-target-update-done"
+
+func extStoreTargetUpdateWorkflow(ctx workflow.Context) (string, error) {
+	var value string
+	if err := workflow.SetUpdateHandler(ctx, extStoreTargetUpdateName, func(_ workflow.Context, v string) error {
+		value = v
+		return nil
+	}); err != nil {
+		return "", err
+	}
+	workflow.GetSignalChannel(ctx, extStoreTargetUpdateDone).Receive(ctx, nil)
+	return value, nil
+}
+
+// extStoreTargetActivityWorkflow runs an activity and returns its result.
+func extStoreTargetActivityWorkflow(ctx workflow.Context) (string, error) {
+	ao := workflow.ActivityOptions{
+		StartToCloseTimeout: 10 * time.Second,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+	}
+	var result string
+	err := workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, ao), extStoreTargetActivity).Get(ctx, &result)
+	return result, err
+}
+
+func extStoreTargetActivity(_ context.Context) (string, error) {
+	return oversized(72), nil
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_ExecuteWorkflow() {
+	s.worker.RegisterWorkflow(extStoreTargetWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-exec-" + uuid.NewString()
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreTargetWorkflow, oversized(72))
+	s.NoError(err)
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 2)
+
+	// [0] client-side: Start workflow arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		WorkflowType: "extStoreTargetWorkflow",
+	}, ctxs[0].Target)
+
+	// [1] WFT #1: CompleteWorkflowExecution result
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		WorkflowType: "extStoreTargetWorkflow",
+		RunID:        run.GetRunID(),
+	}, ctxs[1].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_SignalWorkflow() {
+	s.worker.RegisterWorkflow(extStoreTargetSignalWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-signal-" + uuid.NewString()
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreTargetSignalWorkflow)
+	s.NoError(err)
+
+	// Isolate: only capture stores triggered by SignalWorkflow.
+	s.driver.resetStoreContexts()
+	s.NoError(s.client.SignalWorkflow(ctx, wfID, run.GetRunID(), extStoreTargetSignalCh, oversized(72)))
+
+	var result string
+	s.NoError(run.Get(ctx, &result))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 2)
+
+	// [0] client-side: signal workflow arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:  s.config.Namespace,
+		WorkflowID: wfID,
+		RunID:      run.GetRunID(),
+	}, ctxs[0].Target)
+
+	// [1] WFT #1: CompleteWorkflowExecution result
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		RunID:        run.GetRunID(),
+		WorkflowType: "extStoreTargetSignalWorkflow",
+	}, ctxs[1].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_UpdateWorkflow() {
+	s.worker.RegisterWorkflow(extStoreTargetUpdateWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-update-" + uuid.NewString()
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreTargetUpdateWorkflow)
+	s.NoError(err)
+
+	// Isolate: only capture stores triggered by UpdateWorkflow and beyond.
+	s.driver.resetStoreContexts()
+	handle, err := s.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   wfID,
+		RunID:        run.GetRunID(),
+		UpdateName:   extStoreTargetUpdateName,
+		Args:         []interface{}{oversized(72)},
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	s.NoError(err)
+	s.NoError(handle.Get(ctx, nil))
+
+	// Unblock the workflow.
+	s.NoError(s.client.SignalWorkflow(ctx, wfID, run.GetRunID(), extStoreTargetUpdateDone, nil))
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 3)
+
+	// [0] client-side: workflow update
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:  s.config.Namespace,
+		WorkflowID: wfID,
+		RunID:      run.GetRunID(),
+	}, ctxs[0].Target)
+
+	workerTarget := converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		RunID:        run.GetRunID(),
+		WorkflowType: "extStoreTargetUpdateWorkflow",
+	}
+
+	// [1] WFT #1: Update acceptance arg
+	s.Equal(workerTarget, ctxs[1].Target)
+
+	// [2] WFT #2: CompleteWorkflowExecution result
+	s.Equal(workerTarget, ctxs[2].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_TerminateWorkflow() {
+	s.worker.RegisterWorkflow(extStoreTargetSignalWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-terminate-" + uuid.NewString()
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreTargetSignalWorkflow)
+	s.NoError(err)
+
+	// Isolate: only capture stores triggered by TerminateWorkflow.
+	s.driver.resetStoreContexts()
+	s.NoError(s.client.TerminateWorkflow(ctx, wfID, run.GetRunID(), "test termination", oversized(72)))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 1)
+
+	// [0] client-side: terminate workflow details
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:  s.config.Namespace,
+		WorkflowID: wfID,
+		RunID:      run.GetRunID(),
+	}, ctxs[0].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_ActivityResult() {
+	s.worker.RegisterWorkflow(extStoreTargetActivityWorkflow)
+	s.worker.RegisterActivity(extStoreTargetActivity)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-activity-" + uuid.NewString()
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreTargetActivityWorkflow)
+	s.NoError(err)
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 2)
+
+	expected := converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		RunID:        run.GetRunID(),
+		WorkflowType: "extStoreTargetActivityWorkflow",
+	}
+
+	// [0] WFT #1: CompleteActivity command result
+	s.Equal(expected, ctxs[0].Target)
+
+	// [1] WFT #2: CompleteWorkflowExecution command result
+	s.Equal(expected, ctxs[1].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_CreateSchedule() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	workflowID := "ext-target-schedule-wf-" + uuid.NewString()
+	scheduleID := "ext-target-schedule-" + uuid.NewString()
+
+	handle, err := s.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:   scheduleID,
+		Spec: client.ScheduleSpec{},
+		Action: &client.ScheduleWorkflowAction{
+			ID:                  workflowID,
+			Workflow:            extStoreTargetWorkflow,
+			Args:                []interface{}{oversized(72)},
+			TaskQueue:           s.taskQueueName,
+			WorkflowTaskTimeout: 5 * time.Second,
+		},
+	})
+	s.NoError(err)
+	defer func() { _ = handle.Delete(ctx) }()
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 1)
+
+	// [0] client-side: create schedule action arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   workflowID,
+		WorkflowType: "extStoreTargetWorkflow",
+	}, ctxs[0].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_UpdateSchedule() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	workflowID := "ext-target-schedule-wf-" + uuid.NewString()
+	scheduleID := "ext-target-schedule-" + uuid.NewString()
+
+	handle, err := s.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:   scheduleID,
+		Spec: client.ScheduleSpec{},
+		Action: &client.ScheduleWorkflowAction{
+			ID:                  workflowID,
+			Workflow:            extStoreTargetWorkflow,
+			Args:                []interface{}{"small"}, // below threshold; satisfies arg validation
+			TaskQueue:           s.taskQueueName,
+			WorkflowTaskTimeout: 5 * time.Second,
+		},
+	})
+	s.NoError(err)
+	defer func() { _ = handle.Delete(ctx) }()
+
+	// Isolate: only capture stores triggered by Update.
+	s.driver.resetStoreContexts()
+
+	s.NoError(handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			action := input.Description.Schedule.Action.(*client.ScheduleWorkflowAction)
+			action.Args = []interface{}{oversized(72)}
+			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	}))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 1)
+
+	// [0] client-side: update schedule action arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   workflowID,
+		WorkflowType: "extStoreTargetWorkflow",
+	}, ctxs[0].Target)
+}
+
+func extStoreTargetStandaloneActivity(_ context.Context, _ string) (string, error) {
+	return oversized(72), nil
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_ExecuteStandaloneActivity() {
+	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
+		s.T().SkipNow()
+	}
+
+	s.worker.RegisterActivity(extStoreTargetStandaloneActivity)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	activityID := "ext-target-standalone-" + uuid.NewString()
+	handle, err := s.client.ExecuteActivity(ctx, client.StartActivityOptions{
+		ID:                  activityID,
+		TaskQueue:           s.taskQueueName,
+		StartToCloseTimeout: 10 * time.Second,
+	}, extStoreTargetStandaloneActivity, oversized(72))
+	s.NoError(err)
+	s.NoError(handle.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 2)
+
+	// [0] client-side: start activity arg
+	s.Equal(converter.StorageDriverActivityInfo{
+		Namespace:    s.config.Namespace,
+		ActivityID:   activityID,
+		ActivityType: "extStoreTargetStandaloneActivity",
+	}, ctxs[0].Target)
+
+	// [1] WFT #1: CompleteActivity command result
+	s.Equal(converter.StorageDriverActivityInfo{
+		Namespace:    s.config.Namespace,
+		ActivityID:   activityID,
+		RunID:        handle.GetRunID(),
+		ActivityType: "extStoreTargetStandaloneActivity",
+	}, ctxs[1].Target)
+}
+
+func extStoreAsyncActivityWorkflow(ctx workflow.Context) error {
+	ao := workflow.ActivityOptions{
+		ActivityID:          "async-act",
+		StartToCloseTimeout: 15 * time.Second,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+	}
+	var result string
+	_ = workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, ao), "extStoreAsyncActivity").Get(ctx, &result)
+	return nil
+}
+
+var extStoreTargetQueryName = "ext-target-query"
+var extStoreTargetQueryDoneCh = "ext-target-query-done"
+
+func extStoreTargetQueryWorkflow(ctx workflow.Context) error {
+	_ = workflow.SetQueryHandler(ctx, extStoreTargetQueryName, func(_ string) (string, error) {
+		return "ok", nil
+	})
+	workflow.GetSignalChannel(ctx, extStoreTargetQueryDoneCh).Receive(ctx, nil)
+	return nil
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_QueryWorkflow() {
+	s.worker.RegisterWorkflow(extStoreTargetQueryWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-query-" + uuid.NewString()
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreTargetQueryWorkflow)
+	s.NoError(err)
+
+	// Wait for the query handler to be registered using a small arg.
+	s.Eventually(func() bool {
+		_, err = s.client.QueryWorkflow(ctx, wfID, run.GetRunID(), extStoreTargetQueryName, "ping")
+		return err == nil
+	}, 10*time.Second, 200*time.Millisecond)
+
+	// Isolate: only capture stores triggered by QueryWorkflow with an oversized arg.
+	s.driver.resetStoreContexts()
+
+	_, err = s.client.QueryWorkflow(ctx, wfID, run.GetRunID(), extStoreTargetQueryName, oversized(72))
+	s.NoError(err)
+
+	// Unblock the workflow.
+	s.NoError(s.client.SignalWorkflow(ctx, wfID, run.GetRunID(), extStoreTargetQueryDoneCh, nil))
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 1)
+
+	// [0] client-side: query arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:  s.config.Namespace,
+		WorkflowID: wfID,
+		RunID:      run.GetRunID(),
+	}, ctxs[0].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_SignalWithStartWorkflow() {
+	s.worker.RegisterWorkflow(extStoreTargetSignalWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-signal-start-" + uuid.NewString()
+	run, err := s.client.SignalWithStartWorkflow(ctx, wfID, extStoreTargetSignalCh, oversized(72),
+		s.startOpts(wfID), extStoreTargetSignalWorkflow)
+	s.NoError(err)
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 2)
+
+	// [0] client-side: signal-with-start signal arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		WorkflowType: "extStoreTargetSignalWorkflow",
+	}, ctxs[0].Target)
+
+	// [1] WFT #1: CompleteWorkflowExecution result
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		RunID:        run.GetRunID(),
+		WorkflowType: "extStoreTargetSignalWorkflow",
+	}, ctxs[1].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_UpdateWithStartWorkflow() {
+	s.worker.RegisterWorkflow(extStoreTargetUpdateWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-update-start-" + uuid.NewString()
+	opts := s.startOpts(wfID)
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+
+	startOp := s.client.NewWithStartWorkflowOperation(opts, extStoreTargetUpdateWorkflow)
+	handle, err := s.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
+		StartWorkflowOperation: startOp,
+		UpdateOptions: client.UpdateWorkflowOptions{
+			UpdateName:   extStoreTargetUpdateName,
+			Args:         []interface{}{oversized(72)},
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		},
+	})
+	s.NoError(err)
+	s.NoError(handle.Get(ctx, nil))
+
+	run, err := startOp.Get(ctx)
+	s.NoError(err)
+
+	// Unblock the workflow.
+	s.NoError(s.client.SignalWorkflow(ctx, wfID, run.GetRunID(), extStoreTargetUpdateDone, nil))
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 3)
+
+	// [0] client-side: update-with-start update arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		WorkflowType: "extStoreTargetUpdateWorkflow",
+	}, ctxs[0].Target)
+
+	workerTarget := converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		RunID:        run.GetRunID(),
+		WorkflowType: "extStoreTargetUpdateWorkflow",
+	}
+
+	// [1] WFT #1: update acceptance arg
+	s.Equal(workerTarget, ctxs[1].Target)
+
+	// [2] WFT #2: CompleteWorkflowExecution result
+	s.Equal(workerTarget, ctxs[2].Target)
+}
+func (s *ExternalStorageTestSuite) TestTargetContext_CompleteActivity() {
+	taskTokenCh := make(chan []byte, 1)
+	s.worker.RegisterActivityWithOptions(func(ctx context.Context) error {
+		taskTokenCh <- activity.GetInfo(ctx).TaskToken
+		return activity.ErrResultPending
+	}, activity.RegisterOptions{Name: "extStoreAsyncActivity"})
+	s.worker.RegisterWorkflow(extStoreAsyncActivityWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-complete-act-" + uuid.NewString()
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreAsyncActivityWorkflow)
+	s.NoError(err)
+
+	var taskToken []byte
+	select {
+	case taskToken = <-taskTokenCh:
+	case <-ctx.Done():
+		s.Fail("timed out waiting for activity task token")
+	}
+
+	// Isolate: only capture stores triggered by CompleteActivity.
+	s.driver.resetStoreContexts()
+	s.NoError(s.client.CompleteActivityWithOptions(ctx, client.CompleteActivityOptions{
+		TaskToken:    taskToken,
+		WorkflowID:   wfID,
+		WorkflowType: "extStoreAsyncActivityWorkflow",
+		Result:       oversized(72),
+	}))
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 1)
+
+	// [0] client-side: complete activity input result
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		WorkflowType: "extStoreAsyncActivityWorkflow",
+	}, ctxs[0].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_CompleteActivityByID() {
+	taskTokenCh := make(chan []byte, 1)
+	s.worker.RegisterActivityWithOptions(func(ctx context.Context) error {
+		taskTokenCh <- activity.GetInfo(ctx).TaskToken
+		return activity.ErrResultPending
+	}, activity.RegisterOptions{Name: "extStoreAsyncActivity"})
+	s.worker.RegisterWorkflow(extStoreAsyncActivityWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-complete-byid-" + uuid.NewString()
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreAsyncActivityWorkflow)
+	s.NoError(err)
+
+	select {
+	case <-taskTokenCh:
+	case <-ctx.Done():
+		s.Fail("timed out waiting for activity to start")
+	}
+
+	// Isolate: only capture stores triggered by CompleteActivityByID.
+	s.driver.resetStoreContexts()
+	s.NoError(s.client.CompleteActivityByIDWithOptions(ctx, client.CompleteActivityByIDOptions{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		RunID:        run.GetRunID(),
+		ActivityID:   "async-act",
+		WorkflowType: "extStoreAsyncActivityWorkflow",
+		Result:       oversized(72),
+	}))
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 1)
+
+	// [0] client-side: complete activity input result
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		RunID:        run.GetRunID(),
+		WorkflowType: "extStoreAsyncActivityWorkflow",
+	}, ctxs[0].Target)
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_CompleteActivityByActivityID() {
+	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
+		s.T().SkipNow()
+	}
+
+	taskTokenCh := make(chan []byte, 1)
+	s.worker.RegisterActivityWithOptions(func(ctx context.Context) error {
+		taskTokenCh <- activity.GetInfo(ctx).TaskToken
+		return activity.ErrResultPending
+	}, activity.RegisterOptions{Name: "extStoreAsyncStandaloneActivity"})
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	activityID := "ext-target-complete-standalone-" + uuid.NewString()
+	handle, err := s.client.ExecuteActivity(ctx, client.StartActivityOptions{
+		ID:                  activityID,
+		TaskQueue:           s.taskQueueName,
+		StartToCloseTimeout: 15 * time.Second,
+	}, "extStoreAsyncStandaloneActivity")
+	s.NoError(err)
+
+	select {
+	case <-taskTokenCh:
+	case <-ctx.Done():
+		s.Fail("timed out waiting for standalone activity to start")
+	}
+
+	// Isolate: only capture stores triggered by CompleteActivityByActivityID.
+	s.driver.resetStoreContexts()
+	s.NoError(s.client.CompleteActivityByActivityIDWithOptions(ctx, client.CompleteActivityByActivityIDOptions{
+		Namespace:     s.config.Namespace,
+		ActivityID:    activityID,
+		ActivityRunID: handle.GetRunID(),
+		ActivityType:  "extStoreAsyncStandaloneActivity",
+		Result:        oversized(72),
+	}))
+	s.NoError(handle.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 1)
+
+	// [0] client-side: complete activity input result
+	s.Equal(converter.StorageDriverActivityInfo{
+		Namespace:    s.config.Namespace,
+		ActivityID:   activityID,
+		RunID:        handle.GetRunID(),
+		ActivityType: "extStoreAsyncStandaloneActivity",
+	}, ctxs[0].Target)
+}
+
+// extStoreCaNWorkflow continues-as-new on its first run (empty input), passing
+// an oversized payload to the next run, which simply returns that value.
+func extStoreCaNWorkflow(ctx workflow.Context, input string) (string, error) {
+	if input == "" {
+		return "", workflow.NewContinueAsNewError(ctx, extStoreCaNWorkflow, oversized(72))
+	}
+	return input, nil
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_ContinueAsNew() {
+	s.worker.RegisterWorkflow(extStoreCaNWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-target-can-" + uuid.NewString()
+	firstRun, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreCaNWorkflow, "")
+	s.NoError(err)
+	firstRunID := firstRun.GetRunID() // capture before Get() follows the CAN chain
+	s.NoError(firstRun.Get(ctx, nil))
+	lastRunID := firstRun.GetRunID()
+
+	s.NotEqual(firstRunID, lastRunID)
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 2)
+
+	// [0] First run WFT #1: ContinueAsNewWorkflowExecution arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		WorkflowType: "extStoreCaNWorkflow",
+	}, ctxs[0].Target)
+
+	// [1] Second run WFT #1: CompleteWorkflowExecution result
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   wfID,
+		RunID:        lastRunID,
+		WorkflowType: "extStoreCaNWorkflow",
+	}, ctxs[1].Target)
+}
+
+// extStoreCaNChildWorkflow always continues-as-new on its first run (regardless
+// of input), then returns the input unchanged on the second run.
+func extStoreCaNChildWorkflow(ctx workflow.Context, input string) (string, error) {
+	if workflow.GetInfo(ctx).ContinuedExecutionRunID == "" {
+		return "", workflow.NewContinueAsNewError(ctx, extStoreCaNChildWorkflow, input)
+	}
+	return input, nil
+}
+
+// extStoreCaNParentWorkflow starts extStoreCaNChildWorkflow as a child and
+// returns its result.
+func extStoreCaNParentWorkflow(ctx workflow.Context) (string, error) {
+	info := workflow.GetInfo(ctx)
+	childOpts := workflow.ChildWorkflowOptions{WorkflowID: info.WorkflowExecution.ID + "/child"}
+	var result string
+	err := workflow.ExecuteChildWorkflow(
+		workflow.WithChildOptions(ctx, childOpts),
+		extStoreCaNChildWorkflow,
+		oversized(72),
+	).Get(ctx, &result)
+	return result, err
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_ChildWorkflowContinuedAsNew() {
+	s.worker.RegisterWorkflow(extStoreCaNParentWorkflow)
+	s.worker.RegisterWorkflow(extStoreCaNChildWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	parentWFID := "ext-target-can-child-" + uuid.NewString()
+	childWFID := parentWFID + "/child"
+
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(parentWFID), extStoreCaNParentWorkflow)
+	s.NoError(err)
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 4)
+
+	childTarget := converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   childWFID,
+		WorkflowType: "extStoreCaNChildWorkflow",
+	}
+
+	// [0] Parent WFT #1: StartChildWorkflowExecution arg
+	s.Equal(childTarget, ctxs[0].Target)
+
+	// [1] Child run 1 WFT #1: ContinueAsNewWorkflowExecution input
+	s.Equal(childTarget, ctxs[1].Target)
+
+	// [2] Child run 2 WFT #1: CompleteWorkflowExecution result
+	childRun2Info, ok := ctxs[2].Target.(converter.StorageDriverWorkflowInfo)
+	s.Require().True(ok)
+	s.Equal(s.config.Namespace, childRun2Info.Namespace)
+	s.Equal(childWFID, childRun2Info.WorkflowID)
+	s.Equal("extStoreCaNChildWorkflow", childRun2Info.WorkflowType)
+	s.NotEmpty(childRun2Info.RunID)
+
+	// [3] Parent WFT #2: CompleteWorkflowExecution result
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   parentWFID,
+		WorkflowType: "extStoreCaNParentWorkflow",
+		RunID:        run.GetRunID(),
+	}, ctxs[3].Target)
+}
+
+// extStoreTargetParentWorkflow starts a child workflow with a deterministic
+// ID (parentID+"/child") passing its input through, then returns the child's result.
+func extStoreTargetParentWorkflow(ctx workflow.Context, input string) (string, error) {
+	info := workflow.GetInfo(ctx)
+	childOpts := workflow.ChildWorkflowOptions{WorkflowID: info.WorkflowExecution.ID + "/child"}
+	var result string
+	err := workflow.ExecuteChildWorkflow(
+		workflow.WithChildOptions(ctx, childOpts),
+		extStoreTargetWorkflow,
+		input,
+	).Get(ctx, &result)
+	return result, err
+}
+
+func (s *ExternalStorageTestSuite) TestTargetContext_StartChildWorkflow() {
+	s.worker.RegisterWorkflow(extStoreTargetParentWorkflow)
+	s.worker.RegisterWorkflow(extStoreTargetWorkflow)
+	s.NoError(s.worker.Start())
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	parentWFID := "ext-target-child-" + uuid.NewString()
+	childWFID := parentWFID + "/child"
+
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(parentWFID), extStoreTargetParentWorkflow, oversized(72))
+	s.NoError(err)
+	s.NoError(run.Get(ctx, nil))
+
+	ctxs := s.driver.getStoreContexts()
+	s.Len(ctxs, 4)
+
+	// [0] client-side: start workflow arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   parentWFID,
+		WorkflowType: "extStoreTargetParentWorkflow",
+	}, ctxs[0].Target)
+
+	// [1] parent WFT #1: StartChildWorkflowExecution arg
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   childWFID,
+		WorkflowType: "extStoreTargetWorkflow",
+	}, ctxs[1].Target)
+
+	// [2] child WFT #1: CompleteWorkflowExecution result
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:  s.config.Namespace,
+		WorkflowID: parentWFID,
+		RunID:      run.GetRunID(),
+	}, ctxs[2].Target)
+
+	// [3] parent WFT #2: CompleteWorkflowExecution result
+	s.Equal(converter.StorageDriverWorkflowInfo{
+		Namespace:    s.config.Namespace,
+		WorkflowID:   parentWFID,
+		WorkflowType: "extStoreTargetParentWorkflow",
+		RunID:        run.GetRunID(),
+	}, ctxs[3].Target)
 }

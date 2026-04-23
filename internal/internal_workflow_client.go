@@ -17,6 +17,8 @@ import (
 	"google.golang.org/grpc/codes"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -61,37 +63,43 @@ const (
 type (
 	// WorkflowClient is the client for starting a workflow execution.
 	WorkflowClient struct {
-		workflowService           workflowservice.WorkflowServiceClient
-		conn                      *grpc.ClientConn
-		namespace                 string
-		registry                  *registry
-		logger                    log.Logger
-		metricsHandler            metrics.Handler
-		identity                  string
-		dataConverter             converter.DataConverter
-		failureConverter          converter.FailureConverter
-		contextPropagators        []ContextPropagator
-		workerPlugins             []WorkerPlugin
-		workerInterceptors        []WorkerInterceptor
-		clientPluginNames         []string
-		interceptor               ClientOutboundInterceptor
-		excludeInternalFromRetry  *atomic.Bool
-		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
-		capabilitiesLock          sync.RWMutex
-		namespaceCapabilities     *namespacepb.NamespaceInfo_Capabilities
-		namespaceCapabilitiesLock sync.RWMutex
-		eagerDispatcher           *eagerWorkflowDispatcher
-		getSystemInfoTimeout      time.Duration
-		workerHeartbeatInterval   time.Duration
-		workerGroupingKey         string
-		heartbeatManager          *heartbeatManager
+		workflowService          workflowservice.WorkflowServiceClient
+		conn                     *grpc.ClientConn
+		namespace                string
+		registry                 *registry
+		logger                   log.Logger
+		metricsHandler           metrics.Handler
+		identity                 string
+		dataConverter            converter.DataConverter
+		failureConverter         converter.FailureConverter
+		contextPropagators       []ContextPropagator
+		workerPlugins            []WorkerPlugin
+		workerInterceptors       []WorkerInterceptor
+		clientPluginNames        []string
+		interceptor              ClientOutboundInterceptor
+		excludeInternalFromRetry *atomic.Bool
+		capabilities             *workflowservice.GetSystemInfoResponse_Capabilities
+		capabilitiesLock         sync.RWMutex
+		namespaceData            *namespaceData
+		namespaceDataLock        sync.RWMutex
+		eagerDispatcher          *eagerWorkflowDispatcher
+		getSystemInfoTimeout     time.Duration
+		workerHeartbeatInterval  time.Duration
+		workerGroupingKey        string
+		heartbeatManager         *heartbeatManager
 
 		// The pointer value is shared across multiple clients. If non-nil, only
 		// access/mutate atomically.
-		unclosedClients        *int32
-		inboundPayloadVisitor  PayloadVisitor
-		outboundPayloadVisitor PayloadVisitor
-		storageDriverTypes     []string
+		unclosedClients      *int32
+		storageParams        storageParameters
+		storageDriverTypes   []string
+		payloadWarningLimits payloadLimits
+	}
+
+	// namespaceData holds cached namespace capabilities and limits.
+	namespaceData struct {
+		capabilities *namespacepb.NamespaceInfo_Capabilities
+		limits       *namespacepb.NamespaceInfo_Limits
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -278,7 +286,7 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
 		registry:              wc.registry,
-		inboundPayloadVisitor: wc.inboundPayloadVisitor,
+		inboundPayloadVisitor: NewExternalRetrievalVisitor(wc.storageParams),
 	}
 }
 
@@ -513,6 +521,16 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, opts.TaskToken,
 		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
+	if msg, ok := request.(proto.Message); ok {
+		storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+			Namespace:    cmp.Or(opts.Namespace, wc.namespace),
+			WorkflowID:   opts.WorkflowID,
+			WorkflowType: opts.WorkflowType,
+		})
+		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg, 0); err != nil {
+			return err
+		}
+	}
 	return reportActivityComplete(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -564,6 +582,17 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequestByID(wc.identity, opts.Namespace, opts.WorkflowID, opts.RunID, opts.ActivityID,
 		data, opts.Err, dataConverter, failureConverter, cancelAllowed)
+	if msg, ok := request.(proto.Message); ok {
+		storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+			Namespace:    opts.Namespace,
+			WorkflowID:   opts.WorkflowID,
+			RunID:        opts.RunID,
+			WorkflowType: opts.WorkflowType,
+		})
+		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg, 0); err != nil {
+			return err
+		}
+	}
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -609,6 +638,17 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequestByID(wc.identity, opts.Namespace, "", opts.ActivityRunID, opts.ActivityID,
 		data, opts.Err, dataConverter, failureConverter, cancelAllowed)
+	if msg, ok := request.(proto.Message); ok {
+		storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverActivityInfo{
+			Namespace:    opts.Namespace,
+			ActivityID:   opts.ActivityID,
+			RunID:        opts.ActivityRunID,
+			ActivityType: opts.ActivityType,
+		})
+		if err := visitProtoPayloads(storeCtx, wc.newOutboundPayloadVisitor(), msg, 0); err != nil {
+			return err
+		}
+	}
 	return reportActivityCompleteByID(ctx, wc.workflowService, request, wc.metricsHandler)
 }
 
@@ -1549,13 +1589,13 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 }
 
 // Get namespace capabilities, lazily fetching from server if not already obtained.
-func (wc *WorkflowClient) loadNamespaceCapabilities(metricsHandler metrics.Handler) (*namespacepb.NamespaceInfo_Capabilities, error) {
+func (wc *WorkflowClient) loadNamespaceData(metricsHandler metrics.Handler) (namespaceData, error) {
 	ctx := contextWithNewHeader(context.Background())
-	wc.namespaceCapabilitiesLock.RLock()
-	capabilities := wc.namespaceCapabilities
-	wc.namespaceCapabilitiesLock.RUnlock()
-	if capabilities != nil {
-		return capabilities, nil
+	wc.namespaceDataLock.RLock()
+	cached := wc.namespaceData
+	wc.namespaceDataLock.RUnlock()
+	if cached != nil {
+		return *cached, nil
 	}
 
 	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(metricsHandler), defaultGrpcRetryParameters(ctx))
@@ -1563,19 +1603,24 @@ func (wc *WorkflowClient) loadNamespaceCapabilities(metricsHandler metrics.Handl
 	resp, err := wc.workflowService.DescribeNamespace(grpcCtx, &workflowservice.DescribeNamespaceRequest{Namespace: wc.namespace})
 	var unimplemented *serviceerror.Unimplemented
 	if err != nil && !errors.As(err, &unimplemented) {
-		return nil, fmt.Errorf("failed reaching server: %w", err)
+		return namespaceData{}, fmt.Errorf("failed reaching server: %w", err)
 	}
+	data := namespaceData{}
 	if resp != nil {
-		capabilities = resp.GetNamespaceInfo().GetCapabilities()
+		data.capabilities = resp.GetNamespaceInfo().GetCapabilities()
+		data.limits = resp.GetNamespaceInfo().GetLimits()
 	}
-	if capabilities == nil {
-		capabilities = &namespacepb.NamespaceInfo_Capabilities{}
+	if data.capabilities == nil {
+		data.capabilities = &namespacepb.NamespaceInfo_Capabilities{}
+	}
+	if data.limits == nil {
+		data.limits = &namespacepb.NamespaceInfo_Limits{}
 	}
 
-	wc.namespaceCapabilitiesLock.Lock()
-	wc.namespaceCapabilities = capabilities
-	wc.namespaceCapabilitiesLock.Unlock()
-	return capabilities, nil
+	wc.namespaceDataLock.Lock()
+	wc.namespaceData = &data
+	wc.namespaceDataLock.Unlock()
+	return data, nil
 }
 
 func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
@@ -1587,7 +1632,8 @@ func (wc *WorkflowClient) ensureInitialized(ctx context.Context) error {
 // ScheduleClient implements Client.ScheduleClient.
 func (wc *WorkflowClient) ScheduleClient() ScheduleClient {
 	return &scheduleClient{
-		workflowClient: wc,
+		workflowClient:         wc,
+		outboundPayloadVisitor: wc.newOutboundPayloadVisitor(),
 	}
 }
 
@@ -1642,6 +1688,14 @@ func (wc *WorkflowClient) Close() {
 			wc.logger.Warn("unable to close connection", tagError, err)
 		}
 	}
+}
+
+func (wc *WorkflowClient) newOutboundPayloadVisitor() PayloadVisitor {
+	payloadLimitVisitor, _ := newPayloadLimitsVisitor(wc.payloadWarningLimits, wc.logger)
+	return newCompositePayloadVisitor(
+		NewExternalStorageVisitor(wc.storageParams),
+		payloadLimitVisitor,
+	)
 }
 
 // Register a namespace with temporal server
@@ -1779,7 +1833,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		return err
 	}
 
-	if err := visitProtoPayloads(ctx, workflowRun.inboundPayloadVisitor, closeEvent); err != nil {
+	if err := visitProtoPayloads(ctx, workflowRun.inboundPayloadVisitor, closeEvent, 0); err != nil {
 		return err
 	}
 
@@ -1910,7 +1964,9 @@ func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter, u
 }
 
 type workflowClientInterceptor struct {
-	client *WorkflowClient
+	client                 *WorkflowClient
+	inboundPayloadVisitor  PayloadVisitor
+	outboundPayloadVisitor PayloadVisitor
 }
 
 func createStartWorkflowInput(
@@ -2040,7 +2096,12 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		eagerExecutor = w.client.eagerDispatcher.applyToRequest(startRequest)
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, startRequest); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    w.client.namespace,
+		WorkflowID:   startRequest.WorkflowId,
+		WorkflowType: in.WorkflowType,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, startRequest, 0); err != nil {
 		return nil, err
 	}
 
@@ -2093,7 +2154,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, wfCtx),
 		registry:              w.client.registry,
-		inboundPayloadVisitor: w.client.inboundPayloadVisitor,
+		inboundPayloadVisitor: w.inboundPayloadVisitor,
 	}, nil
 }
 
@@ -2200,7 +2261,12 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 		},
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, &multiRequest); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    w.client.namespace,
+		WorkflowID:   startRequest.WorkflowId,
+		WorkflowType: startRequest.WorkflowType.GetName(),
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, &multiRequest, 0); err != nil {
 		return nil, err
 	}
 
@@ -2301,7 +2367,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			break
 		}
 	}
-	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, updateResp); err != nil {
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, updateResp, 0); err != nil {
 		return nil, err
 	}
 	return updateResp, nil
@@ -2345,7 +2411,12 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		request.RequestId = uuid.NewString()
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, request); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+		RunID:      in.RunID,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request, 0); err != nil {
 		return err
 	}
 
@@ -2428,7 +2499,12 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, signalWithStartRequest); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:    w.client.namespace,
+		WorkflowID:   in.Options.ID,
+		WorkflowType: in.WorkflowType,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, signalWithStartRequest, 0); err != nil {
 		return nil, err
 	}
 
@@ -2464,7 +2540,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, swsCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, swsCtx),
 		registry:              w.client.registry,
-		inboundPayloadVisitor: w.client.inboundPayloadVisitor,
+		inboundPayloadVisitor: w.inboundPayloadVisitor,
 	}, nil
 }
 
@@ -2505,7 +2581,12 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 		Details:  detailsPayload,
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, request); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+		RunID:      in.RunID,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request, 0); err != nil {
 		return err
 	}
 
@@ -2589,7 +2670,7 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 			Namespace:  w.client.namespace,
 			WorkflowID: in.WorkflowID,
 		}),
-		inboundPayloadVisitor: w.client.inboundPayloadVisitor,
+		inboundPayloadVisitor: w.inboundPayloadVisitor,
 		staticSummaryPayload:  resp.GetExecutionConfig().GetUserMetadata().GetSummary(),
 		staticDetailsPayload:  resp.GetExecutionConfig().GetUserMetadata().GetDetails(),
 	}
@@ -2635,7 +2716,12 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		QueryRejectCondition: in.QueryRejectCondition,
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, req); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+		RunID:      in.RunID,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, req, 0); err != nil {
 		return nil, err
 	}
 
@@ -2647,7 +2733,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, resp); err != nil {
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -2669,7 +2755,12 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		return nil, err
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, req); err != nil {
+	storeCtx := context.WithValue(ctx, storageTargetContextKey, converter.StorageDriverWorkflowInfo{
+		Namespace:  w.client.namespace,
+		WorkflowID: in.WorkflowID,
+		RunID:      in.RunID,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, req, 0); err != nil {
 		return nil, err
 	}
 
@@ -2695,7 +2786,7 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		}
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, resp); err != nil {
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -2829,7 +2920,7 @@ func (w *workflowClientInterceptor) PollWorkflowUpdate(
 			return nil, err
 		}
 
-		if err := visitProtoPayloads(parentCtx, w.client.inboundPayloadVisitor, resp); err != nil {
+		if err := visitProtoPayloads(parentCtx, w.inboundPayloadVisitor, resp, 0); err != nil {
 			return nil, err
 		}
 

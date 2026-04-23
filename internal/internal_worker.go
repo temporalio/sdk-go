@@ -227,6 +227,10 @@ type (
 		inboundPayloadVisitor PayloadVisitor
 
 		outboundPayloadVisitor PayloadVisitor
+
+		payloadVisitorConcurrency int
+
+		setPayloadErrorLimits func(*payloadLimits)
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -1295,15 +1299,26 @@ func (aw *AggregatedWorker) start() error {
 	}
 	proto.Merge(aw.capabilities, capabilities)
 
-	nsCapabilities, err := aw.client.loadNamespaceCapabilities(aw.executionParams.MetricsHandler)
+	nsData, err := aw.client.loadNamespaceData(aw.executionParams.MetricsHandler)
 	if err != nil {
 		return err
 	}
-	if nsCapabilities.GetWorkerPollCompleteOnShutdown() {
+
+	if aw.executionParams.setPayloadErrorLimits != nil {
+		payloadSizeError := int64(0)
+		if nsData.limits.BlobSizeLimitError > 0 {
+			payloadSizeError = nsData.limits.BlobSizeLimitError
+		}
+		aw.executionParams.setPayloadErrorLimits(&payloadLimits{
+			payloadSize: payloadSizeError,
+		})
+	}
+
+	if nsData.capabilities.GetWorkerPollCompleteOnShutdown() {
 		aw.workerPollCompleteOnShutdown.Store(true)
 	}
 
-	if nsCapabilities.GetPollerAutoscaling() {
+	if nsData.capabilities.GetPollerAutoscaling() {
 		aw.executionParams.serverSupportsAutoscaling.Store(true)
 	}
 
@@ -1600,7 +1615,7 @@ type replayStorageMetrics struct {
 	warnedUnconfigured bool
 }
 
-func (c *replayStorageMetrics) PayloadBatchCompleted(_ int, _ int64, _ time.Duration) {}
+func (c *replayStorageMetrics) PayloadBatchCompleted(_ int, _ int64, _ time.Duration, _ []string) {}
 
 func (c *replayStorageMetrics) UnconfiguredStorageReference() {
 	c.mu.Lock()
@@ -1979,7 +1994,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	// task handler. This mirrors what processWorkflowTask does for live workers.
 	replayStorageCb := &replayStorageMetrics{logger: logger}
 	inboundPayloadVisitorCtx := context.WithValue(context.Background(), storageOperationCallbackContextKey, replayStorageCb)
-	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task); err != nil {
+	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task, 0); err != nil {
 		return err
 	}
 
@@ -2161,6 +2176,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
+	if options.MaxConcurrentWorkflowTaskExternalStorageVisits < 0 {
+		panic("MaxConcurrentWorkflowTaskExternalStorageVisits must not be negative")
+	}
+
 	// Need reference to result for fatal error handler
 	var aw *AggregatedWorker
 	fatalErrorCallback := func(err error) {
@@ -2201,6 +2220,29 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		metricsHandler = baseMetricsHandler
 	}
 
+	identity := client.identity
+	if options.Identity != "" {
+		identity = options.Identity
+	}
+
+	logger := client.logger
+	if logger == nil {
+		logger = ilog.NewDefaultLogger()
+	}
+	logger = log.With(logger,
+		tagNamespace, client.namespace,
+		tagTaskQueue, taskQueue,
+		tagWorkerID, identity,
+	)
+	if options.BuildID != "" {
+		// Add worker build ID to the logs if it's set by user
+		logger = log.With(logger,
+			tagBuildID, options.BuildID,
+		)
+	}
+
+	payloadLimitVisitor, setPayloadErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
+
 	cache := NewWorkerCache()
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
@@ -2209,12 +2251,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		Tuner:                            options.Tuner,
 		WorkerActivitiesPerSecond:        options.WorkerActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond:   options.WorkerLocalActivitiesPerSecond,
-		Identity:                         client.identity,
+		Identity:                         identity,
 		WorkerBuildID:                    options.BuildID,
 		UseBuildIDForVersioning:          options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
 		DeploymentOptions:                options.DeploymentOptions,
 		MetricsHandler:                   metricsHandler,
-		Logger:                           client.logger,
+		Logger:                           logger,
 		EnableLoggingInReplay:            options.EnableLoggingInReplay,
 		BackgroundContext:                backgroundActivityContext,
 		BackgroundContextCancel:          backgroundActivityContextCancel,
@@ -2239,9 +2281,18 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:              &pollTimeTracker{},
 		workerInstanceKey:            workerInstanceKey,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
-		serverSupportsAutoscaling: &atomic.Bool{},
-		inboundPayloadVisitor:     client.inboundPayloadVisitor,
-		outboundPayloadVisitor:    client.outboundPayloadVisitor,
+		serverSupportsAutoscaling:    &atomic.Bool{},
+		inboundPayloadVisitor:        NewExternalRetrievalVisitor(client.storageParams),
+		outboundPayloadVisitor: newCompositePayloadVisitor(
+			NewExternalStorageVisitor(client.storageParams),
+			payloadLimitVisitor,
+		),
+		payloadVisitorConcurrency: options.MaxConcurrentWorkflowTaskExternalStorageVisits,
+		setPayloadErrorLimits: func(limits *payloadLimits) {
+			if !options.DisablePayloadErrorLimit {
+				setPayloadErrorLimits(limits)
+			}
+		},
 	}
 
 	if options.MaxConcurrentWorkflowTaskPollers != 0 {
@@ -2274,22 +2325,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("must set either MaxConcurrentNexusTaskPollers or NexusTaskPollerBehavior")
 	}
 
-	if options.Identity != "" {
-		workerParams.Identity = options.Identity
-	}
-
 	ensureRequiredParams(&workerParams)
-	workerParams.Logger = log.With(workerParams.Logger,
-		tagNamespace, client.namespace,
-		tagTaskQueue, taskQueue,
-		tagWorkerID, workerParams.Identity,
-	)
-	if workerParams.WorkerBuildID != "" {
-		// Add worker build ID to the logs if it's set by user
-		workerParams.Logger = log.With(workerParams.Logger,
-			tagBuildID, workerParams.WorkerBuildID,
-		)
-	}
 
 	processTestTags(&options, &workerParams)
 
@@ -2329,11 +2365,23 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		})
 	}
 
-	// Get SysInfoProvider from tuner's slot supplier if it implements HasSysInfoProvider.
-	// If not available, heartbeats will report 0 for CPU/memory usage.
+	// Resolve the SysInfoProvider used for worker heartbeats. Prefer the explicit
+	// WorkerOptions.SysInfoProvider; otherwise fall back to the tuner's slot supplier if it
+	// implements HasSysInfoProvider. If both are set to different providers, that's a config
+	// error. If neither is set, heartbeats report 0 for CPU/memory usage.
 	var sysInfoProvider SysInfoProvider
+	var tunerSysInfoProvider SysInfoProvider
 	if sis, ok := options.Tuner.GetWorkflowTaskSlotSupplier().(HasSysInfoProvider); ok {
-		sysInfoProvider = sis.SysInfoProvider()
+		tunerSysInfoProvider = sis.SysInfoProvider()
+	}
+	switch {
+	case options.SysInfoProvider != nil && tunerSysInfoProvider != nil && options.SysInfoProvider != tunerSysInfoProvider:
+		panic("WorkerOptions.SysInfoProvider conflicts with the SysInfoProvider exposed by the Tuner; " +
+			"set only one, or set both to the same instance")
+	case options.SysInfoProvider != nil:
+		sysInfoProvider = options.SysInfoProvider
+	default:
+		sysInfoProvider = tunerSysInfoProvider
 	}
 
 	var heartbeatCallback func() *workerpb.WorkerHeartbeat
@@ -2630,6 +2678,9 @@ func setWorkerOptionsDefaults(options *WorkerOptions) {
 	}
 	if options.MaxHeartbeatThrottleInterval == 0 {
 		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
+	}
+	if options.MaxConcurrentWorkflowTaskExternalStorageVisits == 0 {
+		options.MaxConcurrentWorkflowTaskExternalStorageVisits = defaultMaxConcurrentWorkflowTaskExternalStorageVisits
 	}
 	if options.Tuner == nil {
 		// Err cannot happen since these slot numbers are guaranteed valid
