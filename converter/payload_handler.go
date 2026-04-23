@@ -138,7 +138,7 @@ func (h *payloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // decode decodes payloads through the post-storage then pre-storage codec chains.
-// If returnStorageClaims=true is set in the query string, storage references are
+// If preserveStorageRefs=true is set in the query string, storage references are
 // returned as-is rather than being retrieved from external storage.
 func (h *payloadHTTPHandler) decode(r *http.Request, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	var err error
@@ -148,7 +148,7 @@ func (h *payloadHTTPHandler) decode(r *http.Request, payloads []*commonpb.Payloa
 		return nil, err
 	}
 
-	if !strings.EqualFold(r.URL.Query().Get("returnStorageClaims"), "true") {
+	if !strings.EqualFold(r.URL.Query().Get("preserveStorageRefs"), "true") {
 		vpc := &proxy.VisitPayloadsContext{Context: r.Context()}
 		payloads, err = h.retrievalVisitor.Visit(vpc, payloads)
 		if err != nil {

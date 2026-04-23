@@ -312,10 +312,10 @@ func TestDecode_RoundTrip(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// /decode?returnStorageClaims=true
+// /decode?preserveStorageRefs=true
 // ---------------------------------------------------------------------------
 
-func TestDecode_ReturnStorageClaims_AllRefs(t *testing.T) {
+func TestDecode_PreserveStorageRefs_AllRefs(t *testing.T) {
 	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
 		PostStorageCodecs: []converter.PayloadCodec{postCodec},
@@ -327,14 +327,14 @@ func TestDecode_ReturnStorageClaims_AllRefs(t *testing.T) {
 	postWrapped, err := postCodec.Encode([]*commonpb.Payload{ref1, ref2})
 	require.NoError(t, err)
 
-	rr := servePost(t, h, "/decode?returnStorageClaims=true", createRequest(t, postWrapped...))
+	rr := servePost(t, h, "/decode?preserveStorageRefs=true", createRequest(t, postWrapped...))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 2)
 	require.True(t, extstore.IsStorageReference(result[0]))
 	require.True(t, extstore.IsStorageReference(result[1]))
 }
 
-func TestDecode_ReturnStorageClaims_NoRefs(t *testing.T) {
+func TestDecode_PreserveStorageRefs_NoRefs(t *testing.T) {
 	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
 	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
@@ -350,13 +350,13 @@ func TestDecode_ReturnStorageClaims_NoRefs(t *testing.T) {
 	postEncoded, err := postCodec.Encode(preEncoded)
 	require.NoError(t, err)
 
-	rr := servePost(t, h, "/decode?returnStorageClaims=true", createRequest(t, postEncoded[0]))
+	rr := servePost(t, h, "/decode?preserveStorageRefs=true", createRequest(t, postEncoded[0]))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 1)
 	require.Equal(t, originalEncoding, encoding(result[0]))
 }
 
-func TestDecode_ReturnStorageClaims_MixedBatch(t *testing.T) {
+func TestDecode_PreserveStorageRefs_MixedBatch(t *testing.T) {
 	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
 	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
@@ -378,7 +378,7 @@ func TestDecode_ReturnStorageClaims_MixedBatch(t *testing.T) {
 	postEncoded, err := postCodec.Encode([]*commonpb.Payload{ref1, preEncoded[0], ref2, preEncoded[1]})
 	require.NoError(t, err)
 
-	rr := servePost(t, h, "/decode?returnStorageClaims=true", createRequest(t, postEncoded...))
+	rr := servePost(t, h, "/decode?preserveStorageRefs=true", createRequest(t, postEncoded...))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 4)
 	require.True(t, extstore.IsStorageReference(result[0]))
@@ -387,7 +387,7 @@ func TestDecode_ReturnStorageClaims_MixedBatch(t *testing.T) {
 	require.Equal(t, originalEncoding2, encoding(result[3]))
 }
 
-func TestDecode_ReturnStorageClaims_CaseInsensitive(t *testing.T) {
+func TestDecode_PreserveStorageRefs_CaseInsensitive(t *testing.T) {
 	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
 	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
 		PostStorageCodecs: []converter.PayloadCodec{postCodec},
@@ -400,7 +400,7 @@ func TestDecode_ReturnStorageClaims_CaseInsensitive(t *testing.T) {
 
 	for _, val := range []string{"TRUE", "True", "tRuE"} {
 		t.Run(val, func(t *testing.T) {
-			rr := servePost(t, h, "/decode?returnStorageClaims="+val, createRequest(t, postWrapped[0]))
+			rr := servePost(t, h, "/decode?preserveStorageRefs="+val, createRequest(t, postWrapped[0]))
 			result := getPayloads(t, rr)
 			require.Len(t, result, 1)
 			require.True(t, extstore.IsStorageReference(result[0]))
@@ -408,9 +408,9 @@ func TestDecode_ReturnStorageClaims_CaseInsensitive(t *testing.T) {
 	}
 }
 
-// TestDecode_ReturnStorageClaims_False verifies that returnStorageClaims=false
+// TestDecode_PreserveStorageRefs_False verifies that preserveStorageRefs=false
 // behaves the same as omitting the parameter — retrieval is performed.
-func TestDecode_ReturnStorageClaims_False(t *testing.T) {
+func TestDecode_PreserveStorageRefs_False(t *testing.T) {
 	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
 	driver := newMemDriver("drv")
 
@@ -426,7 +426,7 @@ func TestDecode_ReturnStorageClaims_False(t *testing.T) {
 	require.NoError(t, err)
 
 	ref := makeStorageRef(t, "drv", "k1")
-	rr := servePost(t, h, "/decode?returnStorageClaims=false", createRequest(t, ref))
+	rr := servePost(t, h, "/decode?preserveStorageRefs=false", createRequest(t, ref))
 	result := getPayloads(t, rr)
 	require.Len(t, result, 1)
 	require.True(t, proto.Equal(stored, result[0]))
