@@ -110,9 +110,9 @@ func (*zlibCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, err
 
 func decodePayloads(payloads []*commonpb.Payload, codecs []PayloadCodec) ([]*commonpb.Payload, error) {
 	var err error
-	// Iterate backwards encoding
-	for i := len(codecs) - 1; i >= 0; i-- {
-		if payloads, err = codecs[i].Decode(payloads); err != nil {
+	// Iterate forwards decoding
+	for _, codec := range codecs {
+		if payloads, err = codec.Decode(payloads); err != nil {
 			return payloads, err
 		}
 	}
@@ -121,9 +121,9 @@ func decodePayloads(payloads []*commonpb.Payload, codecs []PayloadCodec) ([]*com
 
 func encodePayloads(payloads []*commonpb.Payload, codecs []PayloadCodec) ([]*commonpb.Payload, error) {
 	var err error
-	// Iterate forwards decoding
-	for _, codec := range codecs {
-		if payloads, err = codec.Encode(payloads); err != nil {
+	// Iterate backwards encoding
+	for i := len(codecs) - 1; i >= 0; i-- {
+		if payloads, err = codecs[i].Encode(payloads); err != nil {
 			return payloads, err
 		}
 	}
