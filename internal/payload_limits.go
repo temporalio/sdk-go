@@ -113,7 +113,7 @@ func (v *payloadLimitsVisitorImpl) Visit(ctx *proxy.VisitPayloadsContext, payloa
 		size = int64((&commonpb.Payloads{Payloads: payloads}).Size())
 	}
 
-	err := v.checkPayloadSize(size, !skipErrorLimit, !skipWarningLimit)
+	err := v.checkPayloadSize(size, skipErrorLimit, skipWarningLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 	// RecordMarkerCommandAttributes.Details is a map[string]Payloads
 	// Server has specialized size checking for map[string]Payloads for this field.
 	case *commandpb.RecordMarkerCommandAttributes:
-		err := v.checkPayloadSize(v.getPayloadsMapSize(msg.Details), true, true)
+		err := v.checkPayloadSize(v.getPayloadsMapSize(msg.Details), false, false)
 		if err != nil {
 			return nil, err
 		}
@@ -135,7 +135,7 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 	// UpsertWorkflowSearchAttributesCommandAttributes.SearchAttributes is a map[string]Payload
 	// Server has specialized size checking for map[string]Payload (that are not Memo fields).
 	case *commandpb.UpsertWorkflowSearchAttributesCommandAttributes:
-		err := v.checkPayloadSize(v.getPayloadMapSize(msg.GetSearchAttributes().GetIndexedFields()), true, true)
+		err := v.checkPayloadSize(v.getPayloadMapSize(msg.GetSearchAttributes().GetIndexedFields()), false, false)
 		if err != nil {
 			return nil, err
 		}
@@ -143,7 +143,7 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 	// ModifyWorkflowPropertiesCommandAttributes.Properties is a map[string]Payload
 	// Server has specialized size checking for map[string]Payload (that are not Memo fields).
 	case *commandpb.ModifyWorkflowPropertiesCommandAttributes:
-		err := v.checkPayloadSize(v.getPayloadMapSize(msg.GetUpsertedMemo().GetFields()), true, true)
+		err := v.checkPayloadSize(v.getPayloadMapSize(msg.GetUpsertedMemo().GetFields()), false, false)
 		if err != nil {
 			return nil, err
 		}
@@ -151,13 +151,13 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 	case *commonpb.Memo:
 		skipErrorLimit := ctx.Value(skipMemoErrorLimitKey{}) == true
 		skipWarningLimit := ctx.Value(skipMemoWarningLimitKey{}) == true
-		err := v.checkMemoSize(int64(msg.Size()), !skipErrorLimit, !skipWarningLimit)
+		err := v.checkMemoSize(int64(msg.Size()), skipErrorLimit, skipWarningLimit)
 		if err != nil {
 			return nil, err
 		}
 		ctx = withSkipPayloadErrorLimit(withSkipPayloadWarningLimit(ctx))
 	case *querypb.WorkflowQueryResult:
-		err := v.checkPayloadSize(int64(msg.GetAnswer().Size()), true, true)
+		err := v.checkPayloadSize(int64(msg.GetAnswer().Size()), false, false)
 		// Server translates too large results into failed query results
 		if err != nil {
 			msg.Answer = nil
@@ -166,7 +166,7 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 		}
 		ctx = withSkipPayloadErrorLimit(withSkipPayloadWarningLimit(ctx))
 	case *workflowservice.RespondQueryTaskCompletedRequest:
-		err := v.checkPayloadSize(int64(msg.GetQueryResult().Size()), true, true)
+		err := v.checkPayloadSize(int64(msg.GetQueryResult().Size()), false, false)
 		// Server translates too large results into failed query results
 		if err != nil {
 			msg.ErrorMessage = err.Error()
@@ -179,7 +179,7 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 		// Server only supports StartWorkflow action; skip if not StartWorkflow and let the server handle it.
 		if action, ok := msg.GetSchedule().GetAction().GetAction().(*schedulepb.ScheduleAction_StartWorkflow); ok {
 			size := int64(msg.GetMemo().Size()) + int64(action.StartWorkflow.GetInput().Size())
-			err := v.checkPayloadSize(size, true, true)
+			err := v.checkPayloadSize(size, false, false)
 			if err != nil {
 				return nil, err
 			}
@@ -212,8 +212,8 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 	return ctx, nil
 }
 
-func (v *payloadLimitsVisitorImpl) checkPayloadSize(size int64, checkErrorLimits bool, checkWarningLimits bool) error {
-	if checkErrorLimits {
+func (v *payloadLimitsVisitorImpl) checkPayloadSize(size int64, skipErrorLimits bool, skipWarningLimits bool) error {
+	if !skipErrorLimits {
 		errorLimits := v.errorLimits.Load()
 		if errorLimits != nil && errorLimits.payloadSize > 0 && size > errorLimits.payloadSize {
 			return payloadSizeError{
@@ -223,7 +223,7 @@ func (v *payloadLimitsVisitorImpl) checkPayloadSize(size int64, checkErrorLimits
 			}
 		}
 	}
-	if checkWarningLimits && v.warningLimits.payloadSize > 0 && size > v.warningLimits.payloadSize && v.logger != nil {
+	if !skipWarningLimits && v.warningLimits.payloadSize > 0 && size > v.warningLimits.payloadSize && v.logger != nil {
 		v.logger.Warn(
 			"[TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.",
 			tagPayloadSize, size,
@@ -233,8 +233,8 @@ func (v *payloadLimitsVisitorImpl) checkPayloadSize(size int64, checkErrorLimits
 	return nil
 }
 
-func (v *payloadLimitsVisitorImpl) checkMemoSize(size int64, checkErrorLimits bool, checkWarningLimits bool) error {
-	if checkErrorLimits {
+func (v *payloadLimitsVisitorImpl) checkMemoSize(size int64, skipErrorLimits bool, skipWarningLimits bool) error {
+	if !skipErrorLimits {
 		errorLimits := v.errorLimits.Load()
 		if errorLimits != nil && errorLimits.memoSize > 0 && size > errorLimits.memoSize {
 			return payloadSizeError{
@@ -244,7 +244,7 @@ func (v *payloadLimitsVisitorImpl) checkMemoSize(size int64, checkErrorLimits bo
 			}
 		}
 	}
-	if checkWarningLimits && v.warningLimits.memoSize > 0 && size > v.warningLimits.memoSize && v.logger != nil {
+	if !skipWarningLimits && v.warningLimits.memoSize > 0 && size > v.warningLimits.memoSize && v.logger != nil {
 		v.logger.Warn(
 			"[TMPRL1103] Attempted to upload memo with size that exceeded the warning limit.",
 			tagMemoSize, size,
