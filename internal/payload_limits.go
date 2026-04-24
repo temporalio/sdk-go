@@ -192,11 +192,11 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 	// Failures are passed through to server which will append failure details instead of failing the workflow.
 	// Skip error checking these to allow the server to receive the failures.
 	case *workflowservice.RespondActivityTaskFailedRequest:
-		ctx = withSkipPayloadErrorLimit(ctx)
+		ctx = withSkipPayloadErrorLimit(withSkipMemoErrorLimit(ctx))
 	case *workflowservice.RespondActivityTaskFailedByIdRequest:
-		ctx = withSkipPayloadErrorLimit(ctx)
+		ctx = withSkipPayloadErrorLimit(withSkipMemoErrorLimit(ctx))
 	case *workflowservice.RespondWorkflowTaskFailedRequest:
-		ctx = withSkipPayloadErrorLimit(ctx)
+		ctx = withSkipPayloadErrorLimit(withSkipMemoErrorLimit(ctx))
 	}
 	// These are the additional protos that server checks that the SDK does not currently check:
 	// - UpsertWorkflowSearchAttributesCommandAttributes has another SearchAttributes size check that combines execution info,

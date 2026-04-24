@@ -431,10 +431,10 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 
 	for _, tc := range skipErrorOnlyTypes {
 		tc := tc
-		t.Run(tc.name+" skips error limit but not warning", func(t *testing.T) {
+		t.Run(tc.name+" skips payload and memo error limits but not warning", func(t *testing.T) {
 			logger := ilog.NewMemoryLogger()
 			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
-			setErrorLimits(&payloadLimits{payloadSize: 10})
+			setErrorLimits(&payloadLimits{payloadSize: 10, memoSize: 10})
 			err := visitProtoPayloads(context.Background(), visitor, tc.msg, 0)
 			require.NoError(t, err)
 			require.True(t, hasWarningLine(logger))
