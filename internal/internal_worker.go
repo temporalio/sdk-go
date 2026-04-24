@@ -231,7 +231,7 @@ type (
 
 		payloadVisitorConcurrency int
 
-		setPayloadErrorLimits func(*payloadLimits)
+		setErrorLimits func(*payloadLimits)
 	}
 
 	// HistoryJSONOptions are options for HistoryFromJSON.
@@ -1305,13 +1305,18 @@ func (aw *AggregatedWorker) start() error {
 		return err
 	}
 
-	if aw.executionParams.setPayloadErrorLimits != nil {
+	if aw.executionParams.setErrorLimits != nil {
 		payloadSizeError := int64(0)
 		if nsData.limits.BlobSizeLimitError > 0 {
 			payloadSizeError = nsData.limits.BlobSizeLimitError
 		}
-		aw.executionParams.setPayloadErrorLimits(&payloadLimits{
+		memoSizeError := int64(0)
+		if nsData.limits.MemoSizeLimitError > 0 {
+			memoSizeError = nsData.limits.MemoSizeLimitError
+		}
+		aw.executionParams.setErrorLimits(&payloadLimits{
 			payloadSize: payloadSizeError,
+			memoSize:    memoSizeError,
 		})
 	}
 
@@ -2242,7 +2247,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		)
 	}
 
-	payloadLimitVisitor, setPayloadErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
+	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
 
 	cache := NewWorkerCache()
 	workerPollCompleteOnShutdown := &atomic.Bool{}
@@ -2289,9 +2294,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			payloadLimitVisitor,
 		),
 		payloadVisitorConcurrency: options.MaxConcurrentWorkflowTaskExternalStorageVisits,
-		setPayloadErrorLimits: func(limits *payloadLimits) {
+		setErrorLimits: func(limits *payloadLimits) {
 			if !options.DisablePayloadErrorLimit {
-				setPayloadErrorLimits(limits)
+				setErrorLimits(limits)
 			}
 		},
 	}

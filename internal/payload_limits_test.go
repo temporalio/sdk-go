@@ -13,6 +13,8 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/proxy"
 	querypb "go.temporal.io/api/query/v1"
+	schedulepb "go.temporal.io/api/schedule/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	ilog "go.temporal.io/sdk/internal/log"
 	"google.golang.org/protobuf/proto"
@@ -23,16 +25,23 @@ func TestPayloadLimitOptionsToLimits(t *testing.T) {
 		limits, err := payloadLimitOptionsToLimits(PayloadLimitOptions{})
 		require.NoError(t, err)
 		require.Equal(t, int64(512*1024), limits.payloadSize)
+		require.Equal(t, int64(2*1024), limits.memoSize)
 	})
 
 	t.Run("custom value", func(t *testing.T) {
-		limits, err := payloadLimitOptionsToLimits(PayloadLimitOptions{PayloadSizeWarning: 1024})
+		limits, err := payloadLimitOptionsToLimits(PayloadLimitOptions{PayloadSizeWarning: 1024, MemoSizeWarning: 2048})
 		require.NoError(t, err)
 		require.Equal(t, int64(1024), limits.payloadSize)
+		require.Equal(t, int64(2048), limits.memoSize)
 	})
 
 	t.Run("negative value returns error", func(t *testing.T) {
 		_, err := payloadLimitOptionsToLimits(PayloadLimitOptions{PayloadSizeWarning: -1})
+		require.Error(t, err)
+	})
+
+	t.Run("negative memo value returns error", func(t *testing.T) {
+		_, err := payloadLimitOptionsToLimits(PayloadLimitOptions{MemoSizeWarning: -1})
 		require.Error(t, err)
 	})
 }
@@ -422,13 +431,183 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 
 	for _, tc := range skipErrorOnlyTypes {
 		tc := tc
-		t.Run(tc.name+" skips error limit but not warning", func(t *testing.T) {
+		t.Run(tc.name+" skips payload and memo error limits but not warning", func(t *testing.T) {
 			logger := ilog.NewMemoryLogger()
 			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
-			setErrorLimits(&payloadLimits{payloadSize: 10})
+			setErrorLimits(&payloadLimits{payloadSize: 10, memoSize: 10})
 			err := visitProtoPayloads(context.Background(), visitor, tc.msg, 0)
 			require.NoError(t, err)
 			require.True(t, hasWarningLine(logger))
 		})
 	}
+}
+
+func TestCreateScheduleRequestSpecialization(t *testing.T) {
+	makeScheduleRequest := func(memoSize, inputSize int) *workflowservice.CreateScheduleRequest {
+		return &workflowservice.CreateScheduleRequest{
+			Memo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"k": makeTestPayload(memoSize)}},
+			Schedule: &schedulepb.Schedule{
+				Action: &schedulepb.ScheduleAction{
+					Action: &schedulepb.ScheduleAction_StartWorkflow{
+						StartWorkflow: &workflowpb.NewWorkflowExecutionInfo{
+							Input: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(inputSize)}},
+						},
+					},
+				},
+			},
+		}
+	}
+
+	t.Run("error when combined memo+input exceeds payload error limit", func(t *testing.T) {
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
+		setErrorLimits(&payloadLimits{payloadSize: 100})
+		msg := makeScheduleRequest(60, 60)
+		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		require.Error(t, err)
+		var pse payloadSizeError
+		require.ErrorAs(t, err, &pse)
+	})
+
+	t.Run("warning when combined memo+input exceeds payload warning limit", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10, memoSize: 10000}, logger)
+		msg := makeScheduleRequest(60, 60)
+		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		require.NoError(t, err)
+		require.True(t, hasWarningLine(logger))
+	})
+
+	t.Run("no memo size check fires", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10}, logger)
+		setErrorLimits(&payloadLimits{payloadSize: 10000, memoSize: 10})
+		msg := makeScheduleRequest(200, 1)
+		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		require.NoError(t, err)
+		require.False(t, hasMemoWarningLine(logger))
+	})
+
+	t.Run("non-StartWorkflow action skips combined check", func(t *testing.T) {
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
+		setErrorLimits(&payloadLimits{payloadSize: 1})
+		msg := &workflowservice.CreateScheduleRequest{
+			Memo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"k": makeTestPayload(200)}},
+			Schedule: &schedulepb.Schedule{
+				Action: &schedulepb.ScheduleAction{},
+			},
+		}
+		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		require.NoError(t, err)
+	})
+}
+
+func hasMemoWarningLine(logger *ilog.MemoryLogger) bool {
+	return slices.ContainsFunc(logger.Lines(), func(line string) bool {
+		return strings.Contains(line, "WARN  [TMPRL1103] Attempted to upload memo with size that exceeded the warning limit.")
+	})
+}
+
+func TestMemoLimitsVisitorWarning(t *testing.T) {
+	makeMemo := func(payloadSize int) *commonpb.Memo {
+		return &commonpb.Memo{Fields: map[string]*commonpb.Payload{"k": makeTestPayload(payloadSize)}}
+	}
+
+	t.Run("warning when aggregate memo size exceeds limit", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10}, logger)
+		err := visitProtoPayloads(context.Background(), visitor, makeMemo(200), 0)
+		require.NoError(t, err)
+		require.True(t, hasMemoWarningLine(logger))
+	})
+
+	t.Run("no warning when aggregate memo size is under limit", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, logger)
+		err := visitProtoPayloads(context.Background(), visitor, makeMemo(10), 0)
+		require.NoError(t, err)
+		require.Empty(t, logger.Lines())
+	})
+
+	t.Run("zero memo warning limit disables memo warning", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 0}, logger)
+		err := visitProtoPayloads(context.Background(), visitor, makeMemo(10000), 0)
+		require.NoError(t, err)
+		require.Empty(t, logger.Lines())
+	})
+
+	t.Run("memo warning does not trigger payload warning", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		// memo limit low, payload limit high — only memo warning should fire
+		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10}, logger)
+		err := visitProtoPayloads(context.Background(), visitor, makeMemo(200), 0)
+		require.NoError(t, err)
+		require.True(t, hasMemoWarningLine(logger))
+		require.False(t, hasWarningLine(logger))
+	})
+
+	t.Run("fires for StartWorkflowExecutionRequest memo", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10}, logger)
+		msg := &workflowservice.StartWorkflowExecutionRequest{
+			Memo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"k": makeTestPayload(200)}},
+		}
+		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		require.NoError(t, err)
+		require.True(t, hasMemoWarningLine(logger))
+	})
+
+	t.Run("UpdateScheduleRequest memo skips error but not warning", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10}, logger)
+		setErrorLimits(&payloadLimits{memoSize: 10})
+		msg := &workflowservice.UpdateScheduleRequest{
+			Memo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"k": makeTestPayload(200)}},
+		}
+		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		require.NoError(t, err)
+		require.True(t, hasMemoWarningLine(logger))
+	})
+}
+
+func TestMemoLimitsVisitorError(t *testing.T) {
+	makeMemo := func(payloadSize int) *commonpb.Memo {
+		return &commonpb.Memo{Fields: map[string]*commonpb.Payload{"k": makeTestPayload(payloadSize)}}
+	}
+
+	t.Run("error when aggregate memo size exceeds error limit", func(t *testing.T) {
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
+		setErrorLimits(&payloadLimits{memoSize: 10})
+		err := visitProtoPayloads(context.Background(), visitor, makeMemo(200), 0)
+		require.Error(t, err)
+		var pse payloadSizeError
+		require.ErrorAs(t, err, &pse)
+		require.Contains(t, pse.Error(), "memo")
+		require.Equal(t, int64(10), pse.limit)
+	})
+
+	t.Run("no error when memo size is under error limit", func(t *testing.T) {
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
+		setErrorLimits(&payloadLimits{memoSize: 10000})
+		err := visitProtoPayloads(context.Background(), visitor, makeMemo(10), 0)
+		require.NoError(t, err)
+	})
+
+	t.Run("zero memo error limit means no error check", func(t *testing.T) {
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
+		setErrorLimits(&payloadLimits{memoSize: 0})
+		err := visitProtoPayloads(context.Background(), visitor, makeMemo(100000), 0)
+		require.NoError(t, err)
+	})
+
+	t.Run("memo error does not trigger payload error", func(t *testing.T) {
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
+		// memo error limit low, payload error limit high
+		setErrorLimits(&payloadLimits{payloadSize: 100000, memoSize: 10})
+		err := visitProtoPayloads(context.Background(), visitor, makeMemo(200), 0)
+		require.Error(t, err)
+		var pse payloadSizeError
+		require.ErrorAs(t, err, &pse)
+		require.Contains(t, pse.Error(), "memo")
+	})
 }
