@@ -31,11 +31,14 @@ type appendCodec struct {
 func (c *appendCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	result := make([]*commonpb.Payload, len(payloads))
 	for i, p := range payloads {
-		enc := string(p.GetMetadata()[converter.MetadataEncoding]) + c.encodingSuffix
-		data := append(append([]byte(nil), p.GetData()...), c.marker)
+		meta := make(map[string][]byte, len(p.GetMetadata()))
+		for k, v := range p.GetMetadata() {
+			meta[k] = v
+		}
+		meta[converter.MetadataEncoding] = []byte(string(p.GetMetadata()[converter.MetadataEncoding]) + c.encodingSuffix)
 		result[i] = &commonpb.Payload{
-			Metadata: map[string][]byte{converter.MetadataEncoding: []byte(enc)},
-			Data:     data,
+			Metadata: meta,
+			Data:     append(append([]byte(nil), p.GetData()...), c.marker),
 		}
 	}
 	return result, nil
@@ -52,8 +55,13 @@ func (c *appendCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload,
 		if len(data) == 0 || data[len(data)-1] != c.marker {
 			return nil, fmt.Errorf("appendCodec.Decode: expected trailing marker byte %d", c.marker)
 		}
+		meta := make(map[string][]byte, len(p.GetMetadata()))
+		for k, v := range p.GetMetadata() {
+			meta[k] = v
+		}
+		meta[converter.MetadataEncoding] = []byte(strings.TrimSuffix(enc, c.encodingSuffix))
 		result[i] = &commonpb.Payload{
-			Metadata: map[string][]byte{converter.MetadataEncoding: []byte(strings.TrimSuffix(enc, c.encodingSuffix))},
+			Metadata: meta,
 			Data:     data[:len(data)-1],
 		}
 	}
