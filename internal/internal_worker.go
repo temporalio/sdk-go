@@ -1147,14 +1147,6 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	return WithContext(ctx, dataConverter)
 }
 
-func getNamespaceFromActivityCtx(ctx context.Context) string {
-	env := getActivityEnvironmentFromCtx(ctx)
-	if env == nil {
-		return ""
-	}
-	return env.namespace
-}
-
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
 	if ctx == nil || ctx.Value(activityEnvContextKey) == nil {
 		return nil
