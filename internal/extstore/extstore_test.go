@@ -947,10 +947,10 @@ func TestRetrievalVisitor_LegacyFormat(t *testing.T) {
 // Claim Compatibility: legacy-format fixed claim JSON produced by another SDK
 // ---------------------------------------------------------------------------
 
-// TestClaimDeserialization_PlainJson_OtherSdk verifies that a full plain JSON
+// TestClaimDeserialization_PlainJSON_OtherSdk verifies that a full plain JSON
 // payload produced by another language SDK (e.g. Python) is correctly parsed by
 // the Go SDK's payloadToStorageReference function.
-func TestClaimDeserialization_PlainJson_OtherSdk(t *testing.T) {
+func TestClaimDeserialization_PlainJSON_OtherSdk(t *testing.T) {
 	// Full proto-JSON representation of a storage-reference payload as another
 	// SDK would serialize it onto the wire.
 	const rawPayloadJSON = `{
@@ -982,10 +982,10 @@ func TestClaimDeserialization_PlainJson_OtherSdk(t *testing.T) {
 // Claim Compatibility: current-format fixed claim JSON produced by another SDK
 // ---------------------------------------------------------------------------
 
-// TestClaimDeserialization_OtherSdk_ProtoJson verifies that a full proto-JSON
+// TestClaimDeserialization_OtherSdk_ProtoJSON verifies that a full proto-JSON
 // payload produced by another language SDK (e.g. Python) is correctly parsed by
 // the Go SDK's payloadToStorageReference function.
-func TestClaimDeserialization_OtherSdk_ProtoJson(t *testing.T) {
+func TestClaimDeserialization_OtherSdk_ProtoJSON(t *testing.T) {
 	// Full proto-JSON representation of a storage-reference payload as another
 	// SDK would serialize it onto the wire.
 	const rawPayloadJSON = `{
