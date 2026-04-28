@@ -1604,25 +1604,6 @@ func (aw *AggregatedWorker) activeTaskQueueTypes() []enumspb.TaskQueueType {
 	return types
 }
 
-// replayStorageMetrics is a storageOperationCallback used by WorkflowReplayer.
-// It logs a warning once when storage references are encountered but no driver
-// is configured, and is otherwise a no-op.
-type replayStorageMetrics struct {
-	mu                 sync.Mutex
-	logger             log.Logger
-	warnedUnconfigured bool
-}
-
-func (c *replayStorageMetrics) PayloadBatchCompleted(_ int, _ int64, _ time.Duration, _ []string) {}
-
-func (c *replayStorageMetrics) UnconfiguredStorageReference() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.warnedUnconfigured && c.logger != nil {
-		c.logger.Warn("[TMPRL1105] Detected externally stored payload(s) but no storage driver is configured.")
-		c.warnedUnconfigured = true
-	}
-}
 
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
@@ -1990,9 +1971,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	}
 	// Resolve externally stored payloads in the history before passing to the
 	// task handler. This mirrors what processWorkflowTask does for live workers.
-	replayStorageCb := &replayStorageMetrics{logger: logger}
-	inboundPayloadVisitorCtx := extstore.WithStorageOperationCallback(context.Background(), replayStorageCb)
-	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task, 0); err != nil {
+	if err := visitProtoPayloads(context.Background(), aw.inboundPayloadVisitor, task, 0); err != nil {
 		return err
 	}
 

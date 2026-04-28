@@ -96,7 +96,6 @@ func driversEqual(a, b StorageDriver) (equal bool) {
 
 type StorageOperationCallback interface {
 	PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string)
-	UnconfiguredStorageReference()
 }
 
 type contextKey string
@@ -222,14 +221,10 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 			continue
 		}
 
-		// No storage drivers configured at all. Notify the caller and leave the
-		// payload unresolved so downstream code can surface a clear error.
+		// No storage drivers configured at all — fail immediately with a clear error
+		// rather than passing through an unresolved reference.
 		if len(v.params.driverMap) == 0 {
-			if cb, ok := ctx.Value(storageOperationCallbackContextKey).(StorageOperationCallback); ok {
-				cb.UnconfiguredStorageReference()
-			}
-			result[i] = p
-			continue
+			return nil, fmt.Errorf("externally stored payload encountered but no storage driver is configured")
 		}
 
 		ref, err := payloadToStorageReference(p)

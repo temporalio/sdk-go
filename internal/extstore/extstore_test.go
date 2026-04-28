@@ -1230,11 +1230,10 @@ func newValDriver(name string) StorageDriver {
 }
 
 type testCallback struct {
-	mu                sync.Mutex
-	count             int
-	size              int64
-	duration          time.Duration
-	unconfiguredCount int
+	mu       sync.Mutex
+	count    int
+	size     int64
+	duration time.Duration
 }
 
 func (c *testCallback) PayloadBatchCompleted(count int, size int64, duration time.Duration, _ []string) {
@@ -1243,10 +1242,4 @@ func (c *testCallback) PayloadBatchCompleted(count int, size int64, duration tim
 	c.count = count
 	c.size = size
 	c.duration = duration
-}
-
-func (c *testCallback) UnconfiguredStorageReference() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.unconfiguredCount++
 }
