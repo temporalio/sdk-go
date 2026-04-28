@@ -2,6 +2,7 @@ name: Omes Testing
 on:
   push:
     branches:
+      - main
       - master
 
 permissions:

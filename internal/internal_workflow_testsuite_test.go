@@ -4916,39 +4916,39 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 	})
 }
 func (s *WorkflowTestSuiteUnitTest) Test_OnWorkflowMockSeesHeaderContext() {
-    headerSeen := false
+	headerSeen := false
 
-    childWorkflowFn := func(ctx Context) error {
-        return nil
-    }
+	childWorkflowFn := func(ctx Context) error {
+		return nil
+	}
 
-    workflowFn := func(ctx Context) error {
-        cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour}
-        ctx = WithChildWorkflowOptions(ctx, cwo)
-        return ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
-    }
+	workflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		return ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
+	}
 
-    env := s.NewTestWorkflowEnvironment()
-    env.SetHeader(&commonpb.Header{
-        Fields: map[string]*commonpb.Payload{
-            testHeader: encodeString(s.T(), "test-data"),
-        },
-    })
-    env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
-    env.RegisterWorkflow(childWorkflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.SetHeader(&commonpb.Header{
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data"),
+		},
+	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
+	env.RegisterWorkflow(childWorkflowFn)
 
-    env.OnWorkflow(childWorkflowFn, mock.MatchedBy(func(ctx Context) bool {
-        val := ctx.Value(contextKey(testHeader))
-        if v, ok := val.(string); ok && v == "test-data" {
-            headerSeen = true
-        }
-        return true
-    })).Return(nil)
+	env.OnWorkflow(childWorkflowFn, mock.MatchedBy(func(ctx Context) bool {
+		val := ctx.Value(contextKey(testHeader))
+		if v, ok := val.(string); ok && v == "test-data" {
+			headerSeen = true
+		}
+		return true
+	})).Return(nil)
 
-    env.ExecuteWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
 
-    s.True(env.IsWorkflowCompleted())
-    s.NoError(env.GetWorkflowError())
-    s.True(headerSeen, "OnWorkflow mock should see propagated header in context")
-    env.AssertExpectations(s.T())
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(headerSeen, "OnWorkflow mock should see propagated header in context")
+	env.AssertExpectations(s.T())
 }

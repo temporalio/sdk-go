@@ -94,6 +94,24 @@ func (_m *Client) CompleteActivity(ctx context.Context, taskToken []byte, result
 	return r0
 }
 
+// CompleteActivityWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) CompleteActivityWithOptions(ctx context.Context, opts client.CompleteActivityOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteActivityWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CompleteActivityOptions) error); ok {
+		r0 = rf(ctx, opts)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // CompleteActivityByID provides a mock function with given fields: ctx, namespace, workflowID, runID, activityID, result, err
 func (_m *Client) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result interface{}, err error) error {
 	ret := _m.Called(ctx, namespace, workflowID, runID, activityID, result, err)
@@ -112,7 +130,25 @@ func (_m *Client) CompleteActivityByID(ctx context.Context, namespace string, wo
 	return r0
 }
 
-// CompleteActivityByID provides a mock function with given fields: ctx, namespace, activityID, activityRunID, result, err
+// CompleteActivityByIDWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) CompleteActivityByIDWithOptions(ctx context.Context, opts client.CompleteActivityByIDOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteActivityByIDWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CompleteActivityByIDOptions) error); ok {
+		r0 = rf(ctx, opts)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// CompleteActivityByActivityID provides a mock function with given fields: ctx, namespace, activityID, activityRunID, result, err
 func (_m *Client) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result interface{}, err error) error {
 	ret := _m.Called(ctx, namespace, activityID, activityRunID, result, err)
 
@@ -123,6 +159,24 @@ func (_m *Client) CompleteActivityByActivityID(ctx context.Context, namespace st
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, interface{}, error) error); ok {
 		r0 = rf(ctx, namespace, activityID, activityRunID, result, err)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// CompleteActivityByActivityIDWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) CompleteActivityByActivityIDWithOptions(ctx context.Context, opts client.CompleteActivityByActivityIDOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteActivityByActivityIDWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CompleteActivityByActivityIDOptions) error); ok {
+		r0 = rf(ctx, opts)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -753,6 +807,24 @@ func (_m *Client) RecordActivityHeartbeat(ctx context.Context, taskToken []byte,
 	return r0
 }
 
+// RecordActivityHeartbeatWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) RecordActivityHeartbeatWithOptions(ctx context.Context, opts client.RecordActivityHeartbeatOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RecordActivityHeartbeatWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.RecordActivityHeartbeatOptions) error); ok {
+		r0 = rf(ctx, opts)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // RecordActivityHeartbeatByID provides a mock function with given fields: ctx, namespace, workflowID, runID, activityID, details
 func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...interface{}) error {
 	var _ca []interface{}
@@ -767,6 +839,24 @@ func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, namespace str
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, ...interface{}) error); ok {
 		r0 = rf(ctx, namespace, workflowID, runID, activityID, details...)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// RecordActivityHeartbeatByIDWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) RecordActivityHeartbeatByIDWithOptions(ctx context.Context, opts client.RecordActivityHeartbeatByIDOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RecordActivityHeartbeatByIDWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.RecordActivityHeartbeatByIDOptions) error); ok {
+		r0 = rf(ctx, opts)
 	} else {
 		r0 = ret.Error(0)
 	}
