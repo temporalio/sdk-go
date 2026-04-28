@@ -25,7 +25,7 @@ type StorageParameters struct {
 }
 
 // IsStorageReference reports whether p is an external-storage reference payload.
-// It recognises both the current protojson format (encoding=json/protobuf,
+// It recognizes both the current protojson format (encoding=json/protobuf,
 // messageType=temporal.api.sdk.v1.ExternalStorageReference) and the legacy
 // format (encoding=json/external-storage-reference) written by earlier releases.
 func IsStorageReference(p *commonpb.Payload) bool {
