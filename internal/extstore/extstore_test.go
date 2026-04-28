@@ -1001,8 +1001,6 @@ func TestClaimDeserialization_OtherSdk_ProtoJson(t *testing.T) {
 	]
 }`
 
-	externalStorageReferenceMessageType = string((*sdkpb.ExternalStorageReference)(nil).ProtoReflect().Descriptor().FullName())
-
 	refPayload := &commonpb.Payload{}
 	require.NoError(t, protojson.Unmarshal([]byte(rawPayloadJSON), refPayload))
 
