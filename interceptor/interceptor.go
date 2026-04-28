@@ -302,6 +302,7 @@ type NexusCancelOperationInput = internal.NexusCancelOperationInput
 //
 // This returns a non-nil map only for contexts inside
 // ActivityInboundInterceptor.ExecuteActivity,
+// ClientOutboundInterceptor.ExecuteActivity,
 // ClientOutboundInterceptor.ExecuteWorkflow, and
 // ClientOutboundInterceptor.SignalWithStartWorkflow.
 func Header(ctx context.Context) map[string]*commonpb.Payload {
