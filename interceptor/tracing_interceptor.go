@@ -394,6 +394,28 @@ func (t *tracingClientOutboundInterceptor) UpdateWithStartWorkflow(
 	return val, err
 }
 
+func (t *tracingClientOutboundInterceptor) ExecuteActivity(
+	ctx context.Context,
+	in *ClientExecuteActivityInput,
+) (client.ActivityHandle, error) {
+	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+		Operation: "StartActivity",
+		Name:      in.ActivityType,
+		Tags:      map[string]string{activityIDTagKey: in.Options.ID},
+		ToHeader:  true,
+		Time:      time.Now(),
+	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	if err != nil {
+		return nil, err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	handle, err := t.Next.ExecuteActivity(ctx, in)
+	finishOpts.Error = err
+	return handle, err
+}
+
 type tracingActivityOutboundInterceptor struct {
 	ActivityOutboundInterceptorBase
 	root *tracingInterceptor
