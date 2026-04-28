@@ -149,7 +149,9 @@ var (
 	externalStorageReferenceMessageType = string((*sdkpb.ExternalStorageReference)(nil).ProtoReflect().Descriptor().FullName())
 
 	protoMarshalOptions   = protojson.MarshalOptions{}
-	protoUnmarshalOptions = protojson.UnmarshalOptions{}
+	protoUnmarshalOptions = protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
 )
 
 func storageReferenceToPayload(ref *sdkpb.ExternalStorageReference, storedSizeBytes int64) (*commonpb.Payload, error) {
