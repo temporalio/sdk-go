@@ -29,7 +29,7 @@ func newFakeS3(t *testing.T, buckets ...string) s3driver.Client {
 
 	client := s3.New(s3.Options{
 		BaseEndpoint: aws.String(ts.URL),
-		Region:       "us-east-1",
+		Region:       "ap-southeast-2",
 		UsePathStyle: true,
 		Credentials: aws.CredentialsProviderFunc(func(_ context.Context) (aws.Credentials, error) {
 			return aws.Credentials{
@@ -49,7 +49,7 @@ func newFakeS3(t *testing.T, buckets ...string) s3driver.Client {
 	return awssdkv2.NewClient(client)
 }
 
-func TestFakeS3_PutGetRoundTrip(t *testing.T) {
+func TestAwsSdkClient_PutGetRoundTrip(t *testing.T) {
 	client := newFakeS3(t, "test-bucket")
 	ctx := context.Background()
 
@@ -62,7 +62,7 @@ func TestFakeS3_PutGetRoundTrip(t *testing.T) {
 	assert.Equal(t, data, got)
 }
 
-func TestFakeS3_ObjectExists(t *testing.T) {
+func TestAwsSdkClient_ObjectExists(t *testing.T) {
 	client := newFakeS3(t, "test-bucket")
 	ctx := context.Background()
 
@@ -78,7 +78,7 @@ func TestFakeS3_ObjectExists(t *testing.T) {
 	assert.True(t, exists)
 }
 
-func TestFakeS3_GetObject_NotFound(t *testing.T) {
+func TestAwsSdkClient_GetObject_NotFound(t *testing.T) {
 	client := newFakeS3(t, "test-bucket")
 	ctx := context.Background()
 
@@ -87,7 +87,7 @@ func TestFakeS3_GetObject_NotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "NoSuchKey")
 }
 
-func TestFakeS3_PutObject_BucketNotFound(t *testing.T) {
+func TestAwsSdkClient_PutObject_BucketNotFound(t *testing.T) {
 	client := newFakeS3(t)
 	ctx := context.Background()
 
@@ -96,7 +96,7 @@ func TestFakeS3_PutObject_BucketNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "NoSuchBucket")
 }
 
-func TestFakeS3_ObjectExists_BucketNotFound(t *testing.T) {
+func TestAwsSdkClient_ObjectExists_BucketNotFound(t *testing.T) {
 	client := newFakeS3(t)
 	ctx := context.Background()
 
@@ -108,7 +108,7 @@ func TestFakeS3_ObjectExists_BucketNotFound(t *testing.T) {
 	assert.False(t, exists)
 }
 
-func TestFakeS3_GetObject_BucketNotFound(t *testing.T) {
+func TestAwsSdkClient_GetObject_BucketNotFound(t *testing.T) {
 	client := newFakeS3(t)
 	ctx := context.Background()
 
@@ -117,7 +117,7 @@ func TestFakeS3_GetObject_BucketNotFound(t *testing.T) {
 	assert.Contains(t, err.Error(), "NoSuchBucket")
 }
 
-func TestFakeS3_LargeObject(t *testing.T) {
+func TestAwsSdkClient_LargeObject(t *testing.T) {
 	client := newFakeS3(t, "test-bucket")
 	ctx := context.Background()
 
@@ -135,9 +135,26 @@ func TestFakeS3_LargeObject(t *testing.T) {
 	assert.Equal(t, data, got)
 }
 
-// TestFakeS3_FullDriverRoundTrip exercises the S3StorageDriver end-to-end
+func TestAwsSdkClient_Describe_ReturnsClientRegion(t *testing.T) {
+	client := newFakeS3(t)
+	assert.Equal(t, map[string]string{"client_region": "ap-southeast-2"}, client.Describe())
+}
+
+func TestAwsSdkClient_Describe_EmptyRegion(t *testing.T) {
+	s3c := s3.New(s3.Options{
+		BaseEndpoint: aws.String("http://localhost"),
+		UsePathStyle: true,
+		Credentials: aws.CredentialsProviderFunc(func(_ context.Context) (aws.Credentials, error) {
+			return aws.Credentials{AccessKeyID: "test", SecretAccessKey: "test"}, nil
+		}),
+	})
+	client := awssdkv2.NewClient(s3c)
+	assert.Nil(t, client.Describe())
+}
+
+// TestAwsSdkClient_FullDriverRoundTrip exercises the S3StorageDriver end-to-end
 // through the fake S3 backend.
-func TestFakeS3_FullDriverRoundTrip(t *testing.T) {
+func TestAwsSdkClient_FullDriverRoundTrip(t *testing.T) {
 	client := newFakeS3(t, "driver-bucket")
 
 	d, err := s3driver.NewDriver(s3driver.Options{

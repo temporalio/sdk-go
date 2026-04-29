@@ -24,4 +24,9 @@ type Client interface {
 	// GetObject downloads and returns the data stored at the given bucket and
 	// key. It must return a non-nil error if the object does not exist.
 	GetObject(ctx context.Context, bucket, key string) ([]byte, error)
+
+	// Describe returns diagnostic metadata about the client configuration,
+	// such as {"client_region": "us-west-2"}, that the driver appends to error
+	// messages. Return nil or an empty map if no metadata is available.
+	Describe() map[string]string
 }

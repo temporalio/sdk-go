@@ -23,10 +23,14 @@ type memClient struct {
 	mu       sync.RWMutex
 	data     map[string][]byte // key: "bucket/key"
 	putCount atomic.Int64
+	describe map[string]string
 }
 
 func newMemClient() *memClient {
-	return &memClient{data: make(map[string][]byte)}
+	return &memClient{
+		data:     make(map[string][]byte),
+		describe: map[string]string{"client_region": "ap-southeast-2"},
+	}
 }
 
 func memKey(bucket, key string) string { return bucket + "/" + key }
@@ -59,6 +63,8 @@ func (m *memClient) GetObject(_ context.Context, bucket, key string) ([]byte, er
 	copy(cp, d)
 	return cp, nil
 }
+
+func (m *memClient) Describe() map[string]string { return m.describe }
 
 func testPayload(data string) *commonpb.Payload {
 	return &commonpb.Payload{
@@ -298,7 +304,7 @@ func TestStore_PutObjectError(t *testing.T) {
 
 	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
 	assert.ErrorContains(t, err, "upload failed [bucket=test-bucket, key=")
-	assert.ErrorContains(t, err, "]: access denied")
+	assert.ErrorContains(t, err, ", client_region=ap-southeast-2]: access denied")
 }
 
 func TestStore_ObjectExistsError(t *testing.T) {
@@ -310,7 +316,7 @@ func TestStore_ObjectExistsError(t *testing.T) {
 
 	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
 	assert.ErrorContains(t, err, "existence check failed [bucket=test-bucket, key=")
-	assert.ErrorContains(t, err, "]: network timeout")
+	assert.ErrorContains(t, err, ", client_region=ap-southeast-2]: network timeout")
 }
 
 // --- Retrieve tests ---
@@ -395,7 +401,7 @@ func TestRetrieve_MissingKey(t *testing.T) {
 	}}
 
 	_, err := d.Retrieve(retrieveCtx(), claims)
-	assert.EqualError(t, err, "download failed [bucket=test-bucket, key=v0/d/sha256/nonexistent]: not found: test-bucket/v0/d/sha256/nonexistent")
+	assert.EqualError(t, err, "download failed [bucket=test-bucket, key=v0/d/sha256/nonexistent, client_region=ap-southeast-2]: not found: test-bucket/v0/d/sha256/nonexistent")
 }
 
 func TestRetrieve_ClaimMissingBucket(t *testing.T) {
@@ -434,7 +440,7 @@ func TestRetrieve_GetObjectError(t *testing.T) {
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
 	assert.ErrorContains(t, err, "download failed [bucket=test-bucket, key=")
-	assert.ErrorContains(t, err, "]: throttled")
+	assert.ErrorContains(t, err, ", client_region=ap-southeast-2]: throttled")
 }
 
 func TestRetrieve_ClaimMissingHashAlgorithm(t *testing.T) {
@@ -614,4 +620,31 @@ func TestStore_DifferentTargets_SamePayload_DifferentKeys(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.NotEqual(t, wfClaims[0].ClaimData["key"], actClaims[0].ClaimData["key"])
+}
+
+func TestDescribeClient_EmptyDescribe(t *testing.T) {
+	mc := newMemClient()
+	mc.describe = map[string]string{}
+	assert.Equal(t, "", describeClient(mc))
+}
+
+func TestDescribeClient_NilDescribe(t *testing.T) {
+	mc := newMemClient()
+	mc.describe = nil
+	assert.Nil(t, mc.Describe())
+	assert.Equal(t, "", describeClient(mc))
+}
+
+func TestDescribeClient_SingleEntry(t *testing.T) {
+	mc := newMemClient()
+	mc.describe = map[string]string{"client_region": "us-west-2"}
+	assert.Equal(t, ", client_region=us-west-2", describeClient(mc))
+}
+
+func TestDescribeClient_MultipleEntries(t *testing.T) {
+	mc := newMemClient()
+	mc.describe = map[string]string{"client_region": "us-west-2", "foo": "bar"}
+	out := describeClient(mc)
+	assert.Contains(t, out, ", client_region=us-west-2")
+	assert.Contains(t, out, ", foo=bar")
 }
