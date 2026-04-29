@@ -341,14 +341,37 @@ func newWorkflowTaskWorkerInternal(
 	switch params.WorkflowTaskPollerBehavior.(type) {
 	case *pollerBehaviorSimpleMaximum:
 		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(Mixed), params.Logger, params.WorkflowTaskPollerBehavior, params.serverSupportsAutoscaling),
+			newScalableTaskPoller(
+				taskProcessor.createPoller(Mixed),
+				params.Logger,
+				params.WorkflowTaskPollerBehavior,
+				metrics.PollerTypeWorkflowTask,
+				params.serverSupportsAutoscaling,
+			),
 		}
+
 	case *pollerBehaviorAutoscaling:
 		scalableTaskPollers = []scalableTaskPoller{
-			newScalableTaskPoller(taskProcessor.createPoller(NonSticky), params.Logger, params.WorkflowTaskPollerBehavior, params.serverSupportsAutoscaling),
+			newScalableTaskPoller(
+				taskProcessor.createPoller(NonSticky),
+				params.Logger,
+				params.WorkflowTaskPollerBehavior,
+				metrics.PollerTypeWorkflowTask,
+				params.serverSupportsAutoscaling,
+			),
 		}
+
 		if taskProcessor.stickyCacheSize > 0 {
-			scalableTaskPollers = append(scalableTaskPollers, newScalableTaskPoller(taskProcessor.createPoller(Sticky), params.Logger, params.WorkflowTaskPollerBehavior, params.serverSupportsAutoscaling))
+			scalableTaskPollers = append(
+				scalableTaskPollers,
+				newScalableTaskPoller(
+					taskProcessor.createPoller(Sticky),
+					params.Logger,
+					params.WorkflowTaskPollerBehavior,
+					metrics.PollerTypeWorkflowStickyTask,
+					params.serverSupportsAutoscaling,
+				),
+			)
 		}
 	}
 
@@ -394,11 +417,17 @@ func newWorkflowTaskWorkerInternal(
 		slotSupplier:     laParams.Tuner.GetLocalActivitySlotSupplier(),
 		maxTaskPerSecond: laParams.WorkerLocalActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(localActivityTaskPoller, params.Logger, NewPollerBehaviorSimpleMaximum(
-				PollerBehaviorSimpleMaximumOptions{
-					MaximumNumberOfPollers: 2,
-				},
-			), params.serverSupportsAutoscaling),
+			newScalableTaskPoller(
+				localActivityTaskPoller,
+				params.Logger,
+				NewPollerBehaviorSimpleMaximum(
+					PollerBehaviorSimpleMaximumOptions{
+						MaximumNumberOfPollers: 2,
+					},
+				),
+				"",
+				nil,
+			),
 		},
 		taskProcessor:  localActivityTaskPoller,
 		workerType:     "LocalActivityWorker",
@@ -549,7 +578,7 @@ func newActivityWorker(
 		slotSupplier:     slotSupplier,
 		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, params.serverSupportsAutoscaling),
+			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, metrics.PollerTypeActivityTask, params.serverSupportsAutoscaling),
 		},
 		taskProcessor:           poller,
 		workerType:              "ActivityWorker",
@@ -1604,25 +1633,6 @@ func (aw *AggregatedWorker) activeTaskQueueTypes() []enumspb.TaskQueueType {
 	return types
 }
 
-// replayStorageMetrics is a storageOperationCallback used by WorkflowReplayer.
-// It logs a warning once when storage references are encountered but no driver
-// is configured, and is otherwise a no-op.
-type replayStorageMetrics struct {
-	mu                 sync.Mutex
-	logger             log.Logger
-	warnedUnconfigured bool
-}
-
-func (c *replayStorageMetrics) PayloadBatchCompleted(_ int, _ int64, _ time.Duration, _ []string) {}
-
-func (c *replayStorageMetrics) UnconfiguredStorageReference() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if !c.warnedUnconfigured && c.logger != nil {
-		c.logger.Warn("[TMPRL1105] Detected externally stored payload(s) but no storage driver is configured.")
-		c.warnedUnconfigured = true
-	}
-}
 
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {
@@ -1990,9 +2000,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 	}
 	// Resolve externally stored payloads in the history before passing to the
 	// task handler. This mirrors what processWorkflowTask does for live workers.
-	replayStorageCb := &replayStorageMetrics{logger: logger}
-	inboundPayloadVisitorCtx := extstore.WithStorageOperationCallback(context.Background(), replayStorageCb)
-	if err := visitProtoPayloads(inboundPayloadVisitorCtx, aw.inboundPayloadVisitor, task, 0); err != nil {
+	if err := visitProtoPayloads(context.Background(), aw.inboundPayloadVisitor, task, 0); err != nil {
 		return err
 	}
 

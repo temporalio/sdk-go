@@ -31,11 +31,14 @@ type appendCodec struct {
 func (c *appendCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	result := make([]*commonpb.Payload, len(payloads))
 	for i, p := range payloads {
-		enc := string(p.GetMetadata()[converter.MetadataEncoding]) + c.encodingSuffix
-		data := append(append([]byte(nil), p.GetData()...), c.marker)
+		meta := make(map[string][]byte, len(p.GetMetadata()))
+		for k, v := range p.GetMetadata() {
+			meta[k] = v
+		}
+		meta[converter.MetadataEncoding] = []byte(string(p.GetMetadata()[converter.MetadataEncoding]) + c.encodingSuffix)
 		result[i] = &commonpb.Payload{
-			Metadata: map[string][]byte{converter.MetadataEncoding: []byte(enc)},
-			Data:     data,
+			Metadata: meta,
+			Data:     append(append([]byte(nil), p.GetData()...), c.marker),
 		}
 	}
 	return result, nil
@@ -52,8 +55,13 @@ func (c *appendCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload,
 		if len(data) == 0 || data[len(data)-1] != c.marker {
 			return nil, fmt.Errorf("appendCodec.Decode: expected trailing marker byte %d", c.marker)
 		}
+		meta := make(map[string][]byte, len(p.GetMetadata()))
+		for k, v := range p.GetMetadata() {
+			meta[k] = v
+		}
+		meta[converter.MetadataEncoding] = []byte(strings.TrimSuffix(enc, c.encodingSuffix))
 		result[i] = &commonpb.Payload{
-			Metadata: map[string][]byte{converter.MetadataEncoding: []byte(strings.TrimSuffix(enc, c.encodingSuffix))},
+			Metadata: meta,
 			Data:     data[:len(data)-1],
 		}
 	}
@@ -234,52 +242,25 @@ func TestDecode_AppliesPostThenPreCodecs(t *testing.T) {
 	require.Equal(t, originalEncoding, encoding(result[0]))
 }
 
-func TestDecode_StorageRefReturnedAsIs(t *testing.T) {
-	// appendCodec.Decode would error on a storage reference because it requires
-	// the ".pre" encoding suffix — confirms pre-storage codecs are skipped.
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
-	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
-	})
+func TestDecode_NoDrivers_StorageRefFails(t *testing.T) {
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{})
 	require.NoError(t, err)
 
 	ref := makeStorageRef(t, "drv", "k1")
-	postEncodedRef, err := postCodec.Encode([]*commonpb.Payload{ref})
-	require.NoError(t, err)
-
-	rr := servePost(t, h, "/decode", createRequest(t, postEncodedRef[0]))
-	result := getPayloads(t, rr)
-	require.Len(t, result, 1)
-	require.True(t, extstore.IsStorageReference(result[0]))
+	rr := servePost(t, h, "/decode", createRequest(t, ref))
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	require.Contains(t, rr.Body.String(), "no storage driver is configured")
 }
 
-func TestDecode_MixedBatch(t *testing.T) {
-	preCodec := &appendCodec{encodingSuffix: ".pre", marker: 'P'}
-	postCodec := &appendCodec{encodingSuffix: ".post", marker: 'O'}
-	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{
-		PreStorageCodecs:  []converter.PayloadCodec{preCodec},
-		PostStorageCodecs: []converter.PayloadCodec{postCodec},
-	})
+func TestDecode_NoDrivers_MixedBatch_StorageRefFails(t *testing.T) {
+	h, err := converter.NewPayloadHTTPHandler(converter.PayloadHTTPHandlerOptions{})
 	require.NoError(t, err)
 
 	regular := makePayload(t, "data")
-	originalEncoding := encoding(regular)
-	preEncoded, err := preCodec.Encode([]*commonpb.Payload{regular})
-	require.NoError(t, err)
-	postEncoded, err := postCodec.Encode(preEncoded)
-	require.NoError(t, err)
-
 	ref := makeStorageRef(t, "drv", "k1")
-	postEncodedRef, err := postCodec.Encode([]*commonpb.Payload{ref})
-	require.NoError(t, err)
-
-	rr := servePost(t, h, "/decode", createRequest(t, postEncoded[0], postEncodedRef[0]))
-	result := getPayloads(t, rr)
-	require.Len(t, result, 2)
-	require.Equal(t, originalEncoding, encoding(result[0]))
-	require.True(t, extstore.IsStorageReference(result[1]))
+	rr := servePost(t, h, "/decode", createRequest(t, regular, ref))
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	require.Contains(t, rr.Body.String(), "no storage driver is configured")
 }
 
 func TestDecode_RoundTrip(t *testing.T) {
@@ -507,9 +488,8 @@ func TestDownload_NoDrivers(t *testing.T) {
 
 	ref := makeStorageRef(t, "drv", "k1")
 	rr := servePost(t, h, "/download", createRequest(t, ref))
-	result := getPayloads(t, rr)
-	require.Len(t, result, 1)
-	require.True(t, extstore.IsStorageReference(result[0]))
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+	require.Contains(t, rr.Body.String(), "no storage driver is configured")
 }
 
 func TestDownload_UnknownDriver(t *testing.T) {

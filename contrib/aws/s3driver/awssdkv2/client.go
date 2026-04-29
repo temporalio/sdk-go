@@ -59,6 +59,14 @@ func (c *s3Client) ObjectExists(ctx context.Context, bucket, key string) (bool, 
 	return true, nil
 }
 
+func (c *s3Client) Describe() map[string]string {
+	region := c.client.Options().Region
+	if region == "" {
+		return nil
+	}
+	return map[string]string{"client_region": region}
+}
+
 func (c *s3Client) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
 	output, err := c.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &bucket,
