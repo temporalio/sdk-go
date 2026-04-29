@@ -493,6 +493,58 @@ func (s *ExternalStorageTestSuite) TestRetrieveFailure() {
 	s.Greater(storeCount, 0, "client should have stored the input")
 }
 
+func (s *ExternalStorageTestSuite) TestWorkerWithoutExternalStorageFails() {
+	// Build a client and worker with no ExternalStorage. s.client still has the
+	// driver, so it can store the oversized input; the worker below cannot retrieve it.
+	noStorageClient, err := client.Dial(client.Options{
+		HostPort:                s.config.ServiceAddr,
+		Namespace:               s.config.Namespace,
+		Logger:                  ilog.NewDefaultLogger(),
+		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
+		WorkerHeartbeatInterval: -1,
+	})
+	s.NoError(err)
+	defer noStorageClient.Close()
+
+	noStorageWorker := worker.New(noStorageClient, s.taskQueueName, worker.Options{
+		WorkflowPanicPolicy: worker.FailWorkflow,
+	})
+	noStorageWorker.RegisterWorkflow(extStoreEchoWorkflow)
+	s.NoError(noStorageWorker.Start())
+	defer noStorageWorker.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-no-driver-" + uuid.NewString()
+	_, err = s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreEchoWorkflow, oversized(72))
+	s.NoError(err)
+
+	storeCount, _ := s.driver.getStoreCounts()
+	s.Greater(storeCount, 0, "client should have stored the large input")
+
+	// Poll history until the first WorkflowTaskFailed event appears, then
+	// terminate rather than waiting for the execution timeout to expire.
+	var failureMsg string
+	s.Eventually(func() bool {
+		iter := s.client.GetWorkflowHistory(ctx, wfID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for iter.HasNext() {
+			event, err := iter.Next()
+			if err != nil {
+				return false
+			}
+			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
+				failureMsg = event.GetWorkflowTaskFailedEventAttributes().GetFailure().GetMessage()
+				return true
+			}
+		}
+		return false
+	}, 10*time.Second, 200*time.Millisecond, "expected a WorkflowTaskFailed event")
+
+	s.Contains(failureMsg, "externally stored payload encountered but no storage driver is configured")
+	s.NoError(s.client.TerminateWorkflow(ctx, wfID, "", "test complete"))
+}
+
 // ---------------------------------------------------------------------------
 // TestNoStorageWhenBelowThreshold — sanity check that the driver is never
 // called when all payloads are below the threshold.

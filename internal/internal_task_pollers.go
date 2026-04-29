@@ -466,7 +466,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 	// close doneCh so local activity worker won't get blocked forever when trying to send back result to laResultCh.
 	defer close(doneCh)
 
-	downloadPayloadMetrics := &workflowTaskStorageMetrics{logger: wtp.logger}
+	downloadPayloadMetrics := &workflowTaskStorageMetrics{}
 	ctx := extstore.WithStorageOperationCallback(context.Background(), downloadPayloadMetrics)
 
 	var taskErr error
@@ -874,13 +874,11 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 }
 
 type workflowTaskStorageMetrics struct {
-	mu                 sync.Mutex
-	payloadCount       int
-	totalSize          int64
-	totalDuration      time.Duration
-	driverNames        map[string]struct{}
-	logger             log.Logger
-	warnedUnconfigured bool
+	mu            sync.Mutex
+	payloadCount  int
+	totalSize     int64
+	totalDuration time.Duration
+	driverNames   map[string]struct{}
 }
 
 func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string) {
@@ -906,14 +904,6 @@ func (callback *workflowTaskStorageMetrics) GetDriverNames() []string {
 	return names
 }
 
-func (callback *workflowTaskStorageMetrics) UnconfiguredStorageReference() {
-	callback.mu.Lock()
-	defer callback.mu.Unlock()
-	if !callback.warnedUnconfigured && callback.logger != nil {
-		callback.logger.Warn("[TMPRL1105] Detected externally stored payload(s) but no storage driver is configured.")
-		callback.warnedUnconfigured = true
-	}
-}
 
 func newLocalActivityPoller(
 	params workerExecutionParameters,
