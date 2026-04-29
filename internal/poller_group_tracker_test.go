@@ -27,6 +27,17 @@ func makeWeightedGroups(pairs ...interface{}) []*taskqueuepb.PollerGroupInfo {
 	return groups
 }
 
+func makeWeightedCandidates(pairs ...interface{}) []pollerGroupCandidate {
+	candidates := make([]pollerGroupCandidate, 0, len(pairs)/2)
+	for i := 0; i < len(pairs); i += 2 {
+		candidates = append(candidates, pollerGroupCandidate{
+			id:     pairs[i].(string),
+			weight: pairs[i+1].(float32),
+		})
+	}
+	return candidates
+}
+
 func TestPollerGroupTracker_NoGroups(t *testing.T) {
 	tracker := newPollerGroupTracker()
 	// With no groups, should return empty string.
@@ -113,7 +124,7 @@ func TestPollerGroupTracker_UpdateGroupsCleansStale(t *testing.T) {
 
 	// Pending for "a" should be cleaned up.
 	tracker.mu.Lock()
-	_, hasPendingA := tracker.pending["a"]
+	_, hasPendingA := tracker.groups["a"]
 	tracker.mu.Unlock()
 	assert.False(t, hasPendingA, "pending for removed group should be cleaned up")
 
@@ -134,14 +145,14 @@ func TestPollerGroupTracker_UpdateGroupsEmptyNoOp(t *testing.T) {
 }
 
 func TestWeightedRandom_SingleCandidate(t *testing.T) {
-	groups := makeGroups("only")
-	assert.Equal(t, "only", weightedRandom(groups))
+	candidates := []pollerGroupCandidate{{id: "only", weight: 1.0}}
+	assert.Equal(t, "only", weightedRandom(candidates))
 }
 
 func TestWeightedRandom_ZeroWeights(t *testing.T) {
-	groups := makeWeightedGroups("a", float32(0), "b", float32(0))
+	candidates := makeWeightedCandidates("a", float32(0), "b", float32(0))
 	// Should still return a valid group.
-	id := weightedRandom(groups)
+	id := weightedRandom(candidates)
 	assert.Contains(t, []string{"a", "b"}, id)
 }
 
@@ -186,16 +197,15 @@ func TestPollerGroupTracker_UpdateGroupsPreservesSurvivingPending(t *testing.T) 
 }
 
 func TestWeightedRandom_DistributionConverges(t *testing.T) {
-	groups := makeWeightedGroups("a", float32(3.0), "b", float32(1.0))
+	candidates := makeWeightedCandidates("a", float32(3.0), "b", float32(1.0))
 
 	counts := map[string]int{}
 	iterations := 10000
 	for i := 0; i < iterations; i++ {
-		counts[weightedRandom(groups)]++
+		counts[weightedRandom(candidates)]++
 	}
 
 	// With weights 3:1, "a" should get ~75% of selections.
 	ratioA := float64(counts["a"]) / float64(iterations)
 	assert.InDelta(t, 0.75, ratioA, 0.05, "expected ~75%% for weight-3 group, got %.2f%%", ratioA*100)
 }
-

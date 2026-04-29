@@ -12,14 +12,23 @@ import (
 // every group has at least one pending (unreleased) request, and beyond that
 // minimum the distribution follows group weights.
 type pollerGroupTracker struct {
-	mu      sync.Mutex
-	groups  []*taskqueuepb.PollerGroupInfo
-	pending map[string]int // number of unreleased requests per group ID
+	mu     sync.Mutex
+	groups map[string]pollerGroupState
+}
+
+type pollerGroupState struct {
+	pendingRequests int
+	weight          float32
+}
+
+type pollerGroupCandidate struct {
+	id     string
+	weight float32
 }
 
 func newPollerGroupTracker() *pollerGroupTracker {
 	return &pollerGroupTracker{
-		pending: make(map[string]int),
+		groups: make(map[string]pollerGroupState),
 	}
 }
 
@@ -31,15 +40,23 @@ func (t *pollerGroupTracker) updateGroups(groups []*taskqueuepb.PollerGroupInfo)
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.groups = groups
-	// Remove pending entries for groups that no longer exist.
-	valid := make(map[string]bool, len(groups))
+
+	valid := make(map[string]struct{}, len(groups))
+
+	// Update weights for persisting groups
 	for _, g := range groups {
-		valid[g.GetId()] = true
+		id := g.GetId()
+		valid[id] = struct{}{}
+
+		state := t.groups[id]
+		state.weight = g.GetWeight()
+		t.groups[id] = state
 	}
-	for id := range t.pending {
-		if !valid[id] {
-			delete(t.pending, id)
+
+	// Remove pending entries for groups that no longer exist.
+	for id := range t.groups {
+		if _, ok := valid[id]; !ok {
+			delete(t.groups, id)
 		}
 	}
 }
@@ -57,48 +74,53 @@ func (t *pollerGroupTracker) getNextGroupId() string {
 	}
 
 	// Candidate set: groups with zero pending polls.
-	var candidates []*taskqueuepb.PollerGroupInfo
-	for _, g := range t.groups {
-		if t.pending[g.GetId()] == 0 {
-			candidates = append(candidates, g)
+	candidates := make([]pollerGroupCandidate, 0, len(t.groups))
+	for id, state := range t.groups {
+		if state.pendingRequests == 0 {
+			candidates = append(candidates, pollerGroupCandidate{id: id, weight: state.weight})
 		}
 	}
+
 	// If all groups have pending polls, all groups are candidates.
 	if len(candidates) == 0 {
-		candidates = t.groups
+		for id, state := range t.groups {
+			candidates = append(candidates, pollerGroupCandidate{id: id, weight: state.weight})
+		}
 	}
 
 	chosen := weightedRandom(candidates)
-	t.pending[chosen]++
+	state := t.groups[chosen]
+	state.pendingRequests++
+	t.groups[chosen] = state
 	return chosen
 }
 
 // weightedRandom selects a group ID from candidates randomly based on weights.
 // candidates must be non-empty.
-func weightedRandom(candidates []*taskqueuepb.PollerGroupInfo) string {
+func weightedRandom(candidates []pollerGroupCandidate) string {
 	if len(candidates) == 1 {
-		return candidates[0].GetId()
+		return candidates[0].id
 	}
 
 	var totalWeight float64
 	for _, g := range candidates {
-		totalWeight += float64(g.GetWeight())
+		totalWeight += float64(g.weight)
 	}
 
 	// If all weights are zero, pick uniformly at random.
 	if totalWeight <= 0 {
-		return candidates[rand.Intn(len(candidates))].GetId()
+		return candidates[rand.Intn(len(candidates))].id
 	}
 
 	r := rand.Float64() * totalWeight
 	for _, g := range candidates {
-		r -= float64(g.GetWeight())
+		r -= float64(g.weight)
 		if r <= 0 {
-			return g.GetId()
+			return g.id
 		}
 	}
 	// Floating-point rounding fallback.
-	return candidates[len(candidates)-1].GetId()
+	return candidates[len(candidates)-1].id
 }
 
 // release marks one pending request for the given group as completed.
@@ -106,7 +128,10 @@ func (t *pollerGroupTracker) release(groupId string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.pending[groupId] > 0 {
-		t.pending[groupId]--
+	state, ok := t.groups[groupId]
+	if !ok || state.pendingRequests == 0 {
+		return
 	}
+	state.pendingRequests--
+	t.groups[groupId] = state
 }

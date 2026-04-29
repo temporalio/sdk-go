@@ -1155,6 +1155,9 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		panic("unknown workflow task poller mode")
 	}
 
+	groupId := wtp.pollerGroupTracker.getNextGroupId()
+	defer wtp.pollerGroupTracker.release(groupId)
+
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
@@ -1170,6 +1173,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 			wtp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey: wtp.workerInstanceKey,
+		PollerGroupId:     groupId,
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1197,11 +1201,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		wtp.logger.Debug("workflowTaskPoller::Poll")
 	})
 
-	groupId := wtp.pollerGroupTracker.getNextGroupId()
-	defer wtp.pollerGroupTracker.release(groupId)
-
 	request := wtp.getNextPollRequest()
-	request.PollerGroupId = groupId
 	defer wtp.release(request.TaskQueue.GetKind())
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
