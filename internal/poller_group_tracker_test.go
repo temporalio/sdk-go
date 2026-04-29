@@ -16,17 +16,6 @@ func makeGroups(ids ...string) []*taskqueuepb.PollerGroupInfo {
 	return groups
 }
 
-func makeWeightedGroups(pairs ...interface{}) []*taskqueuepb.PollerGroupInfo {
-	var groups []*taskqueuepb.PollerGroupInfo
-	for i := 0; i < len(pairs); i += 2 {
-		groups = append(groups, &taskqueuepb.PollerGroupInfo{
-			Id:     pairs[i].(string),
-			Weight: pairs[i+1].(float32),
-		})
-	}
-	return groups
-}
-
 func makeWeightedCandidates(pairs ...interface{}) []pollerGroupCandidate {
 	candidates := make([]pollerGroupCandidate, 0, len(pairs)/2)
 	for i := 0; i < len(pairs); i += 2 {
