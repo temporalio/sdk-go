@@ -404,6 +404,8 @@ type (
 		// Namespace of the child workflow.
 		//
 		// Optional: the current workflow (parent)'s namespace will be used if this is not provided.
+		//
+		// Deprecated: Cross-namespace operations are disabled by default as of server 1.30.1.
 		Namespace string
 
 		// WorkflowID of the child workflow to be scheduled.
@@ -2050,6 +2052,8 @@ func GetChildWorkflowOptions(ctx Context) ChildWorkflowOptions {
 }
 
 // WithWorkflowNamespace adds a namespace to the context.
+//
+// Deprecated: Cross-namespace operations are disabled by default as of server 1.30.1.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.WithWorkflowNamespace]
 func WithWorkflowNamespace(ctx Context, name string) Context {

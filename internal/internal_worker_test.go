@@ -27,6 +27,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
@@ -2344,7 +2345,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithDataConverter()
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
 		Do(func(ctx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
 			heartbeatRequest = request
-			require.Equal(t, encodedDetail, request.Details)
+			require.True(t, proto.Equal(encodedDetail, request.Details), "details proto mismatch")
 		}).Times(1)
 
 	_ = wfClient.RecordActivityHeartbeat(context.Background(), nil, detail1, detail2, detail3)
@@ -2937,6 +2938,9 @@ func TestWorkerOptionInvalid(t *testing.T) {
 	require.Panics(t, func() {
 		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskPollers: 1})
 	})
+	require.Panics(t, func() {
+		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskExternalStorageVisits: -1})
+	})
 }
 
 func TestWorkerOptionDefaults(t *testing.T) {
@@ -2978,6 +2982,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
 		Identity:                       workflowWorker.executionParameters.Identity,
 		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
+		payloadVisitorConcurrency:      3,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -3006,17 +3011,18 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	}
 
 	options := WorkerOptions{
-		TaskQueueActivitiesPerSecond:            8888,
-		MaxConcurrentSessionExecutionSize:       3333,
-		MaxConcurrentWorkflowTaskExecutionSize:  2222,
-		MaxConcurrentActivityExecutionSize:      1111,
-		MaxConcurrentLocalActivityExecutionSize: 101,
-		MaxConcurrentWorkflowTaskPollers:        11,
-		MaxConcurrentActivityTaskPollers:        12,
-		WorkerLocalActivitiesPerSecond:          222,
-		WorkerActivitiesPerSecond:               99,
-		StickyScheduleToStartTimeout:            555 * time.Minute,
-		BackgroundActivityContext:               context.Background(),
+		TaskQueueActivitiesPerSecond:                   8888,
+		MaxConcurrentSessionExecutionSize:              3333,
+		MaxConcurrentWorkflowTaskExecutionSize:         2222,
+		MaxConcurrentActivityExecutionSize:             1111,
+		MaxConcurrentLocalActivityExecutionSize:        101,
+		MaxConcurrentWorkflowTaskPollers:               11,
+		MaxConcurrentActivityTaskPollers:               12,
+		WorkerLocalActivitiesPerSecond:                 222,
+		WorkerActivitiesPerSecond:                      99,
+		StickyScheduleToStartTimeout:                   555 * time.Minute,
+		BackgroundActivityContext:                      context.Background(),
+		MaxConcurrentWorkflowTaskExternalStorageVisits: 7,
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
@@ -3047,6 +3053,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		Logger:                         client.logger,
 		MetricsHandler:                 client.metricsHandler,
 		Identity:                       client.identity,
+		payloadVisitorConcurrency:      options.MaxConcurrentWorkflowTaskExternalStorageVisits,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -3096,6 +3103,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 		MetricsHandler:                 workflowWorker.executionParameters.MetricsHandler,
 		Identity:                       workflowWorker.executionParameters.Identity,
 		BackgroundContext:              workflowWorker.executionParameters.BackgroundContext,
+		payloadVisitorConcurrency:      3,
 	}
 
 	assertWorkerExecutionParamsEqual(t, expected, workflowWorker.executionParameters)
@@ -3118,6 +3126,7 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 	require.Equal(t, paramsA.ActivityTaskPollerBehavior, paramsB.ActivityTaskPollerBehavior)
 	require.Equal(t, paramsA.WorkflowPanicPolicy, paramsB.WorkflowPanicPolicy)
 	require.Equal(t, paramsA.EnableLoggingInReplay, paramsB.EnableLoggingInReplay)
+	require.Equal(t, paramsA.payloadVisitorConcurrency, paramsB.payloadVisitorConcurrency)
 }
 
 // Encode function args

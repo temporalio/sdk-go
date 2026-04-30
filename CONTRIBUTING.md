@@ -1,98 +1,98 @@
-# Developing Temporal Go SDK
+# Contributing to Temporal Go SDK
 
 This doc is intended for contributors to Go SDK (hopefully that's you!)
 
-**Note:** All contributors also need to fill out the [Temporal Contributor License Agreement](https://gist.github.com/samarabbas/7dcd41eb1d847e12263cc961ccfdb197) before we can merge in any of your changes.
+All contributors must complete the Temporal Contributor License Agreement (CLA) before changes can be merged. A link to the CLA will be posted in the PR.
 
-## Development Environment
+## Prerequisites
 
-* [Go Lang](https://golang.org/) (minimum version required is 1.14):
-  - Ubuntu: `sudo apt install golang`.
-  - OS X: `brew install go` and add this to your `.bashrc`:
+- [Go](https://go.dev/) 1.24+ (see [go.mod](go.mod) for the minimum supported version)
 
-        ```
-        export GOPATH=$HOME/go
-        export GOROOT="$(brew --prefix go)/libexec"
-        export PATH="$PATH:${GOPATH}/bin:${GOROOT}/bin"
-        ```
+## Local development workflow
 
-## Checking out the code
-
-Temporal GO SDK uses go modules, there is no dependency on `$GOPATH` variable. Clone the repo into the preferred location:
-
-```bash
-git clone https://github.com/temporalio/sdk-go.git
-```
-
-## Commit Messages And Titles of Pull Requests
-
-Overcommit adds some requirements to your commit messages. At Temporal, we follow the
-[Chris Beams](http://chris.beams.io/posts/git-commit/) guide to writing git
-commit messages. Read it, follow it, learn it, love it.
-
-All commit messages are from the titles of your pull requests. So make sure follow the rules when titling them. 
-Please don't use very generic titles like "bug fixes". 
-
-All PR titles should start with Upper case.
-
-## Testing
+The canonical local commands are provided by the build tool in `internal/cmd/build`.
 
 Tests are managed through the build tool at `internal/cmd/build`. This tool handles starting an embedded Temporal dev
 server with the required dynamic configs and search attributes, enforces consistent test flags (`-race`, `-count 1`, no caching),
 and manages coverage collection — so you don't need to manually configure a server or remember the right flags.
 
-Run all static analysis tools:
+```bash
+cd internal/cmd/build
+```
+
+Run static analysis checks:
 
 ```bash
-cd ./internal/cmd/build
 go run . check
 ```
 
-### Integration Tests
-
-Integration tests live in the `test/` directory and require a Temporal server by default. Use `-dev-server` to start an
-embedded server automatically:
+Run unit tests (all packages except `test/`):
 
 ```bash
-cd ./internal/cmd/build
-go run . integration-test -dev-server
-```
-
-Run a specific test with `-run` (uses the same syntax as `go test -run`):
-
-```bash
-# Run a single test within a suite
-cd ./internal/cmd/build
-go run . integration-test -dev-server -run "TestIntegrationSuite/TestMyTest"
-
-# Run all tests in a suite
-cd ./internal/cmd/build
-go run . integration-test -dev-server -run "TestWorkerTunerTestSuite"
-```
-
-Without `-dev-server`, the tests connect to a server already running on `localhost:7233`.
-
-### Unit Tests
-
-Unit tests cover all packages except `test/`:
-
-```bash
-cd ./internal/cmd/build
 go run . unit-test
 ```
 
-Run specific unit tests with `-run`:
+Run integration tests with an embedded Temporal dev server:
 
 ```bash
-cd ./internal/cmd/build
+go run . integration-test -dev-server
+```
+
+If you omit `-dev-server`, integration tests connect to a server already running on `localhost:7233`.
+
+## Running specific tests
+
+Use `-run` with the same semantics as `go test -run`.
+
+Unit tests:
+
+```bash
 go run . unit-test -run "TestMyFunction"
 ```
 
-## Updating go mod files
+Integration tests:
 
-Sometimes all go.mod files need to be tidied. For an easy way to do this on linux or (probably) mac,
-run:
+```bash
+# Single test in a suite
+go run . integration-test -dev-server -run "TestIntegrationSuite/TestMyTest"
+
+# Entire suite
+go run . integration-test -dev-server -run "TestWorkerTunerTestSuite"
+```
+
+## Coverage
+
+Unit test coverage (writes per-package profiles under `.build/coverage`):
+
+```bash
+go run . unit-test -coverage
+```
+
+Integration test coverage:
+
+```bash
+go run . integration-test -dev-server -coverage-file integration-test.out
+```
+
+Merge coverage files:
+
+```bash
+go run . merge-coverage-files coverage.out
+```
+
+## Go module housekeeping
+
+If dependencies change, tidy all modules:
 
 ```bash
 find . -name go.mod -execdir go mod tidy \;
 ```
+
+## Pull request checklist
+
+Before opening or updating a pull request:
+
+- Run `go run . check` from `internal/cmd/build`.
+- Run relevant tests (`unit-test` and, when needed, `integration-test -dev-server`).
+- Keep changes focused and include tests for behavior changes.
+- Update documentation/comments when public behavior changes.

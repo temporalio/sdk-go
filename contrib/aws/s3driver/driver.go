@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
@@ -144,14 +145,14 @@ func (d *s3StorageDriver) Store(
 	g, gctx := errgroup.WithContext(ctx.Context)
 	for i, pp := range prepared {
 		g.Go(func() error {
-			key := objectKey(pp.hexDigest)
+			key := objectKey(ctx.Target, pp.hexDigest)
 			exists, err := d.client.ObjectExists(gctx, pp.bucket, key)
 			if err != nil {
-				return fmt.Errorf("existence check failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
+				return fmt.Errorf("existence check failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
 			}
 			if !exists {
 				if err := d.client.PutObject(gctx, pp.bucket, key, pp.data); err != nil {
-					return fmt.Errorf("upload failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
+					return fmt.Errorf("upload failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
 				}
 			}
 			claims[i] = converter.StorageDriverClaim{
@@ -194,7 +195,7 @@ func (d *s3StorageDriver) Retrieve(
 
 			data, err := d.client.GetObject(gctx, bucket, key)
 			if err != nil {
-				return fmt.Errorf("download failed [bucket=%s, key=%s]: %w", bucket, key, err)
+				return fmt.Errorf("download failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
 			}
 
 			algo, ok := c.ClaimData[claimKeyHashAlgorithm]
@@ -231,8 +232,43 @@ func (d *s3StorageDriver) Retrieve(
 	return payloads, nil
 }
 
-func objectKey(hexDigest string) string {
-	return keyVersion + "/d/" + hashAlgorithm + "/" + hexDigest
+func objectKey(target converter.StorageDriverTargetInfo, hexDigest string) string {
+	digestSegment := "/d/" + hashAlgorithm + "/" + hexDigest
+	switch t := target.(type) {
+	case converter.StorageDriverWorkflowInfo:
+		return keyVersion +
+			"/ns/" + pathEscape(t.Namespace) +
+			"/wt/" + pathEscape(t.WorkflowType) +
+			"/wi/" + pathEscape(t.WorkflowID) +
+			"/ri/" + pathEscape(t.RunID) +
+			digestSegment
+	case converter.StorageDriverActivityInfo:
+		return keyVersion +
+			"/ns/" + pathEscape(t.Namespace) +
+			"/at/" + pathEscape(t.ActivityType) +
+			"/ai/" + pathEscape(t.ActivityID) +
+			"/ri/" + pathEscape(t.RunID) +
+			digestSegment
+	default:
+		return keyVersion + digestSegment
+	}
+}
+
+// describeClient returns ", k=v, k=v" diagnostic info from the client's
+// Describe method, or "" if Describe returns nil/empty.
+func describeClient(c Client) string {
+	var s string
+	for k, v := range c.Describe() {
+		s += ", " + k + "=" + v
+	}
+	return s
+}
+
+func pathEscape(s string) string {
+	if s == "" {
+		return "null"
+	}
+	return url.PathEscape(s)
 }
 
 func sha256Hex(data []byte) string {

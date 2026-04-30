@@ -856,6 +856,53 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatResourceBasedTuner() {
 	ts.True(workerInfo.ActivityPollerInfo.IsAutoscaling)
 }
 
+// TestWorkerHeartbeatSysInfoProviderWithoutResourceTuner verifies that a worker using a
+// fixed-size tuner (not resource-based) still reports CPU/memory in heartbeats when the user
+// wires a SysInfoProvider into WorkerOptions directly.
+func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatSysInfoProviderWithoutResourceTuner() {
+	ctx := context.Background()
+
+	sysInfoWorkflow := func(ctx workflow.Context) error {
+		ao := workflow.ActivityOptions{StartToCloseTimeout: 10 * time.Second}
+		return workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, ao), "sysInfoActivity").Get(ctx, nil)
+	}
+	sysInfoActivity := func(ctx context.Context) error { return nil }
+
+	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
+		MaxConcurrentWorkflowTaskExecutionSize: 5,
+		MaxConcurrentActivityExecutionSize:     5,
+		SysInfoProvider:                        sysinfo.SysInfoProvider(),
+	})
+	ts.worker.RegisterWorkflowWithOptions(sysInfoWorkflow, workflow.RegisterOptions{Name: "sysInfoWorkflow"})
+	ts.worker.RegisterActivityWithOptions(sysInfoActivity, activity.RegisterOptions{Name: "sysInfoActivity"})
+	ts.NoError(ts.worker.Start())
+
+	workflowOptions := client.StartWorkflowOptions{
+		ID:        "test-sysinfo-no-resource-tuner-" + uuid.NewString(),
+		TaskQueue: ts.taskQueueName,
+	}
+	run, err := ts.client.ExecuteWorkflow(ctx, workflowOptions, "sysInfoWorkflow")
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// Wait for a heartbeat that reports populated memory usage. Memory usage from sysinfo should
+	// always be > 0 on a running Go process; CPU may be near zero on an idle host, so we only
+	// gate on memory for the Eventually condition.
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.HostInfo != nil &&
+			workerInfo.HostInfo.CurrentHostMemUsage > 0
+	}, 5*time.Second, 200*time.Millisecond, "Heartbeat should report non-zero memory usage")
+
+	// Confirm we're exercising the non-resource-based path.
+	ts.NotNil(workerInfo.WorkflowTaskSlotsInfo)
+	ts.Equal("Fixed", workerInfo.WorkflowTaskSlotsInfo.SlotSupplierKind)
+
+	ts.Greater(workerInfo.HostInfo.CurrentHostMemUsage, float32(0.0))
+	ts.GreaterOrEqual(workerInfo.HostInfo.CurrentHostCpuUsage, float32(0.0))
+}
+
 func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	ctx := context.Background()
 
