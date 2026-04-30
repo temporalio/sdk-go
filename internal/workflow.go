@@ -107,6 +107,8 @@ const (
 	// Note that if the workflow being continued has a Pinned override, that override will be inherited by the
 	// new workflow run regardless of the ContinueAsNewVersioningBehavior specified in the continue-as-new
 	// command. Versioning Override always takes precedence until it's removed manually via UpdateWorkflowExecutionOptions.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewVersioningBehaviorUseRampingVersion]
 	ContinueAsNewVersioningBehaviorUseRampingVersion = 2
 )
 
