@@ -4,7 +4,6 @@
 package converter
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -131,8 +130,13 @@ func (h *payloadHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	bs, err = protojson.Marshal(&commonpb.Payloads{Payloads: payloads})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	if err = json.NewEncoder(w).Encode(commonpb.Payloads{Payloads: payloads}); err != nil {
+	if _, err = w.Write(bs); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	}
 }

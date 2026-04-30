@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
+	sdkpb "go.temporal.io/sdk/internal/temporalapi/sdk/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
@@ -210,20 +211,20 @@ func TestExternalStorageToParams_SingleDriverSynthesizesSelector(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestStorageReferenceRoundTrip(t *testing.T) {
-	ref := storageReference{
-		DriverName:  "mydriver",
-		DriverClaim: StorageDriverClaim{ClaimData: map[string]string{"key": "abc123"}},
+	ref := &sdkpb.ExternalStorageReference{
+		DriverName: "mydriver",
+		ClaimData:  map[string]string{"key": "abc123"},
 	}
 	p, err := storageReferenceToPayload(ref, 512)
 	require.NoError(t, err)
-	require.Equal(t, metadataEncodingStorageRef, string(p.Metadata[metadataEncoding]))
+	require.Equal(t, metadataEncodingProtoJSON, string(p.Metadata[metadataEncoding]))
 	require.Len(t, p.ExternalPayloads, 1)
 	require.Equal(t, int64(512), p.ExternalPayloads[0].SizeBytes)
 
 	decoded, err := payloadToStorageReference(p)
 	require.NoError(t, err)
 	require.Equal(t, ref.DriverName, decoded.DriverName)
-	require.Equal(t, ref.DriverClaim.ClaimData, decoded.DriverClaim.ClaimData)
+	require.Equal(t, ref.ClaimData, decoded.ClaimData)
 }
 
 func TestPayloadToStorageReference_WrongEncoding(t *testing.T) {
@@ -237,11 +238,90 @@ func TestPayloadToStorageReference_WrongEncoding(t *testing.T) {
 
 func TestPayloadToStorageReference_CorruptJSON(t *testing.T) {
 	p := &commonpb.Payload{
-		Metadata: map[string][]byte{metadataEncoding: []byte(metadataEncodingStorageRef)},
+		Metadata: map[string][]byte{metadataEncoding: []byte(metadataEncodingStorageRefLegacy)},
 		Data:     []byte(`not json`),
 	}
 	_, err := payloadToStorageReference(p)
 	require.Error(t, err)
+}
+
+func TestPayloadToStorageReference_ProtoJSONFormat(t *testing.T) {
+	want := &sdkpb.ExternalStorageReference{
+		DriverName: "mydriver",
+		ClaimData:  map[string]string{"bucket": "b", "key": "k"},
+	}
+	p, err := storageReferenceToPayload(want, 0)
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingProtoJSON, string(p.Metadata[metadataEncoding]))
+	require.Equal(t, externalStorageReferenceMessageType, string(p.Metadata[metadataMessageType]))
+
+	got, err := payloadToStorageReference(p)
+	require.NoError(t, err)
+	require.Equal(t, want.DriverName, got.DriverName)
+	require.Equal(t, want.ClaimData, got.ClaimData)
+}
+
+func TestPayloadToStorageReference_LegacyFormat(t *testing.T) {
+	legacyData, err := json.Marshal(legacyStorageReference{
+		DriverName:  "mydriver",
+		DriverClaim: StorageDriverClaim{ClaimData: map[string]string{"bucket": "b", "key": "k"}},
+	})
+	require.NoError(t, err)
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{metadataEncoding: []byte(metadataEncodingStorageRefLegacy)},
+		Data:     legacyData,
+	}
+
+	got, err := payloadToStorageReference(p)
+	require.NoError(t, err)
+	require.Equal(t, "mydriver", got.DriverName)
+	require.Equal(t, map[string]string{"bucket": "b", "key": "k"}, got.ClaimData)
+}
+
+func TestPayloadToStorageReference_ProtoJSON_WrongMessageType(t *testing.T) {
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{
+			metadataEncoding:    []byte(metadataEncodingProtoJSON),
+			metadataMessageType: []byte("some.other.MessageType"),
+		},
+		Data: []byte(`{}`),
+	}
+	_, err := payloadToStorageReference(p)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "some.other.MessageType")
+}
+
+// ---------------------------------------------------------------------------
+// IsStorageReference
+// ---------------------------------------------------------------------------
+
+func TestIsStorageReference_ProtoJSONFormat(t *testing.T) {
+	p, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{DriverName: "d"}, 0)
+	require.NoError(t, err)
+	require.True(t, IsStorageReference(p))
+}
+
+func TestIsStorageReference_LegacyFormat(t *testing.T) {
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{metadataEncoding: []byte(metadataEncodingStorageRefLegacy)},
+		Data:     []byte(`{"driver_name":"d","driver_claim":{}}`),
+	}
+	require.True(t, IsStorageReference(p))
+}
+
+func TestIsStorageReference_ProtoJSON_WrongMessageType(t *testing.T) {
+	p := &commonpb.Payload{
+		Metadata: map[string][]byte{
+			metadataEncoding:    []byte(metadataEncodingProtoJSON),
+			metadataMessageType: []byte("some.other.MessageType"),
+		},
+	}
+	require.False(t, IsStorageReference(p))
+}
+
+func TestIsStorageReference_NotStorageReference(t *testing.T) {
+	require.False(t, IsStorageReference(makePayload(t, "hello")))
+	require.False(t, IsStorageReference(&commonpb.Payload{}))
 }
 
 // ---------------------------------------------------------------------------
@@ -291,7 +371,7 @@ func TestStoreVisitor_AtThreshold_Stored(t *testing.T) {
 
 	result, err := visitPayloads(context.Background(), visitor, []*commonpb.Payload{p})
 	require.NoError(t, err)
-	require.Equal(t, metadataEncodingStorageRef, string(result[0].Metadata[metadataEncoding]))
+	require.Equal(t, metadataEncodingProtoJSON, string(result[0].Metadata[metadataEncoding]))
 	require.Equal(t, 1, driver.storeCount)
 }
 
@@ -308,7 +388,7 @@ func TestStoreVisitor_AboveThreshold_Stored(t *testing.T) {
 	p := makeOversizedPayload(t, threshold+1)
 	result, err := visitPayloads(context.Background(), visitor, []*commonpb.Payload{p})
 	require.NoError(t, err)
-	require.Equal(t, metadataEncodingStorageRef, string(result[0].Metadata[metadataEncoding]))
+	require.Equal(t, metadataEncodingProtoJSON, string(result[0].Metadata[metadataEncoding]))
 	require.Equal(t, 1, driver.storeCount)
 }
 
@@ -329,8 +409,8 @@ func TestStoreVisitor_MultiplePayloads_Batched(t *testing.T) {
 	result, err := visitPayloads(context.Background(), visitor, []*commonpb.Payload{big1, small, big2})
 	require.NoError(t, err)
 	require.Len(t, result, 3)
-	require.Equal(t, metadataEncodingStorageRef, string(result[0].Metadata[metadataEncoding]))
-	require.Equal(t, metadataEncodingStorageRef, string(result[2].Metadata[metadataEncoding]))
+	require.Equal(t, metadataEncodingProtoJSON, string(result[0].Metadata[metadataEncoding]))
+	require.Equal(t, metadataEncodingProtoJSON, string(result[2].Metadata[metadataEncoding]))
 	// small payload is inline
 	require.Empty(t, result[1].ExternalPayloads)
 	// both big payloads batched in a single Store call
@@ -663,9 +743,9 @@ func TestRetrievalVisitor_UnknownDriver(t *testing.T) {
 	require.NoError(t, err)
 	visitor := NewExternalRetrievalVisitor(params)
 
-	ref, err := storageReferenceToPayload(storageReference{
-		DriverName:  "unregistered-driver",
-		DriverClaim: StorageDriverClaim{ClaimData: map[string]string{"key": "k"}},
+	ref, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "unregistered-driver",
+		ClaimData:  map[string]string{"key": "k"},
 	}, 10)
 	require.NoError(t, err)
 
@@ -702,9 +782,9 @@ func TestRetrievalVisitor_RetrievePanic(t *testing.T) {
 	require.NoError(t, err)
 	visitor := NewExternalRetrievalVisitor(params)
 
-	ref, err := storageReferenceToPayload(storageReference{
-		DriverName:  "my-panic-retrieve-driver",
-		DriverClaim: StorageDriverClaim{ClaimData: map[string]string{"key": "k"}},
+	ref, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "my-panic-retrieve-driver",
+		ClaimData:  map[string]string{"key": "k"},
 	}, 10)
 	require.NoError(t, err)
 
@@ -732,9 +812,9 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 	require.NoError(t, err)
 	errRef := refs[0]
 
-	blockRef, err := storageReferenceToPayload(storageReference{
-		DriverName:  "block-driver",
-		DriverClaim: StorageDriverClaim{ClaimData: map[string]string{"key": "k"}},
+	blockRef, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "block-driver",
+		ClaimData:  map[string]string{"key": "k"},
 	}, 10)
 	require.NoError(t, err)
 
@@ -766,9 +846,9 @@ func TestRetrievalVisitor_WrongPayloadCount(t *testing.T) {
 	require.NoError(t, err)
 	visitor := NewExternalRetrievalVisitor(params)
 
-	ref, err := storageReferenceToPayload(storageReference{
-		DriverName:  "my-bad-count-driver",
-		DriverClaim: StorageDriverClaim{ClaimData: map[string]string{"key": "k"}},
+	ref, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "my-bad-count-driver",
+		ClaimData:  map[string]string{"key": "k"},
 	}, 10)
 	require.NoError(t, err)
 
@@ -825,13 +905,52 @@ func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Claim Compatibility: fixed claim JSON produced by another SDK
+// Claim Compatibility: legacy-format reference payload
 // ---------------------------------------------------------------------------
 
-// TestClaimDeserialization verifies that a full proto-JSON payload
-// produced by another language SDK (e.g. Python) is correctly parsed by
+// TestRetrievalVisitor_LegacyFormat verifies that the retrieval visitor can
+// resolve a payload written in the legacy json/external-storage-reference
+// format (as written by earlier prerelease SDK versions).
+func TestRetrievalVisitor_LegacyFormat(t *testing.T) {
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+
+	// Store a payload to get a real claim key in the driver.
+	original := makePayload(t, "legacy-compat-value")
+	refs, err := visitPayloads(context.Background(), NewExternalStorageVisitor(params), []*commonpb.Payload{original})
+	require.NoError(t, err)
+
+	// Extract the claim data from the new-format reference and rebuild it as a
+	// legacy-format payload (encoding=json/external-storage-reference, old JSON structure).
+	newRef, err := payloadToStorageReference(refs[0])
+	require.NoError(t, err)
+	legacyData, err := json.Marshal(legacyStorageReference{
+		DriverName:  newRef.DriverName,
+		DriverClaim: StorageDriverClaim{ClaimData: newRef.ClaimData},
+	})
+	require.NoError(t, err)
+	legacyPayload := &commonpb.Payload{
+		Metadata: map[string][]byte{metadataEncoding: []byte(metadataEncodingStorageRefLegacy)},
+		Data:     legacyData,
+	}
+
+	result, err := visitPayloads(context.Background(), NewExternalRetrievalVisitor(params), []*commonpb.Payload{legacyPayload})
+	require.NoError(t, err)
+	require.True(t, proto.Equal(original, result[0]))
+}
+
+// ---------------------------------------------------------------------------
+// Claim Compatibility: legacy-format fixed claim JSON produced by another SDK
+// ---------------------------------------------------------------------------
+
+// TestClaimDeserialization_PlainJSON_OtherSdk verifies that a full plain JSON
+// payload produced by another language SDK (e.g. Python) is correctly parsed by
 // the Go SDK's payloadToStorageReference function.
-func TestClaimDeserialization(t *testing.T) {
+func TestClaimDeserialization_PlainJSON_OtherSdk(t *testing.T) {
 	// Full proto-JSON representation of a storage-reference payload as another
 	// SDK would serialize it onto the wire.
 	const rawPayloadJSON = `{
@@ -851,12 +970,48 @@ func TestClaimDeserialization(t *testing.T) {
 
 	ref, err := payloadToStorageReference(refPayload)
 	require.NoError(t, err)
-	require.Equal(t, metadataEncodingStorageRef, string(refPayload.GetMetadata()[metadataEncoding]))
+	require.Equal(t, metadataEncodingStorageRefLegacy, string(refPayload.GetMetadata()[metadataEncoding]))
 	require.Equal(t, 1, len(refPayload.ExternalPayloads))
 	require.Equal(t, int64(385), refPayload.ExternalPayloads[0].SizeBytes)
 	require.Equal(t, "temporalio:driver:s3", ref.DriverName)
-	require.Equal(t, "test-bucket", ref.DriverClaim.ClaimData["bucket"])
-	require.Equal(t, "/ns/default/wi/13f3d9cf-1705-4ce1-b3cb-370974a482c7/d/sha256/6ca22c34560cf35ac24427dc7619c9ab472a82cf18f286f27871649a2b5608c8", ref.DriverClaim.ClaimData["key"])
+	require.Equal(t, "test-bucket", ref.ClaimData["bucket"])
+	require.Equal(t, "/ns/default/wi/13f3d9cf-1705-4ce1-b3cb-370974a482c7/d/sha256/6ca22c34560cf35ac24427dc7619c9ab472a82cf18f286f27871649a2b5608c8", ref.ClaimData["key"])
+}
+
+// ---------------------------------------------------------------------------
+// Claim Compatibility: current-format fixed claim JSON produced by another SDK
+// ---------------------------------------------------------------------------
+
+// TestClaimDeserialization_OtherSdk_ProtoJSON verifies that a full proto-JSON
+// payload produced by another language SDK (e.g. Python) is correctly parsed by
+// the Go SDK's payloadToStorageReference function.
+func TestClaimDeserialization_OtherSdk_ProtoJSON(t *testing.T) {
+	// Full proto-JSON representation of a storage-reference payload as another
+	// SDK would serialize it onto the wire.
+	const rawPayloadJSON = `{
+	"metadata": {
+		"encoding": "anNvbi9wcm90b2J1Zg==",
+		"messageType": "dGVtcG9yYWwuYXBpLnNkay52MS5FeHRlcm5hbFN0b3JhZ2VSZWZlcmVuY2U="
+	},
+	"data": "eyJjbGFpbURhdGEiOnsiYnVja2V0IjoidGVzdC1idWNrZXQiLCJoYXNoX2FsZ29yaXRobSI6InNoYTI1NiIsImhhc2hfdmFsdWUiOiI2Y2EyMmMzNDU2MGNmMzVhYzI0NDI3ZGM3NjE5YzlhYjQ3MmE4MmNmMThmMjg2ZjI3ODcxNjQ5YTJiNTYwOGM4Iiwia2V5IjoidjAvbnMvZGVmYXVsdC93dC9MYXJnZUlPV29ya2Zsb3cvd2kvZjFkMmE0YWMtZjhjYi00NWQzLTkwOGMtOTNhMGYzM2FiMjQ1L3JpL251bGwvZC9zaGEyNTYvNmNhMjJjMzQ1NjBjZjM1YWMyNDQyN2RjNzYxOWM5YWI0NzJhODJjZjE4ZjI4NmYyNzg3MTY0OWEyYjU2MDhjOCJ9LCJkcml2ZXJOYW1lIjoiYXdzLnMzZHJpdmVyIn0=",
+	"externalPayloads": [
+		{
+			"sizeBytes": "385"
+		}
+	]
+}`
+
+	refPayload := &commonpb.Payload{}
+	require.NoError(t, protojson.Unmarshal([]byte(rawPayloadJSON), refPayload))
+
+	ref, err := payloadToStorageReference(refPayload)
+	require.NoError(t, err)
+	require.Equal(t, metadataEncodingProtoJSON, string(refPayload.GetMetadata()[metadataEncoding]))
+	require.Equal(t, externalStorageReferenceMessageType, string(refPayload.GetMetadata()[metadataMessageType]))
+	require.Equal(t, 1, len(refPayload.ExternalPayloads))
+	require.Equal(t, int64(385), refPayload.ExternalPayloads[0].SizeBytes)
+	require.Equal(t, "aws.s3driver", ref.DriverName)
+	require.Equal(t, "v0/ns/default/wt/LargeIOWorkflow/wi/f1d2a4ac-f8cb-45d3-908c-93a0f33ab245/ri/null/d/sha256/6ca22c34560cf35ac24427dc7619c9ab472a82cf18f286f27871649a2b5608c8", ref.ClaimData["key"])
 }
 
 // ---------------------------------------------------------------------------
@@ -876,7 +1031,7 @@ func TestStoreRetrieveRoundTrip_Single(t *testing.T) {
 	original := makePayload(t, "round-trip value")
 	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{original})
 	require.NoError(t, err)
-	require.Equal(t, metadataEncodingStorageRef, string(refs[0].Metadata[metadataEncoding]))
+	require.Equal(t, metadataEncodingProtoJSON, string(refs[0].Metadata[metadataEncoding]))
 
 	restored, err := visitPayloads(context.Background(), retrieveVisitor, refs)
 	require.NoError(t, err)
@@ -1075,11 +1230,10 @@ func newValDriver(name string) StorageDriver {
 }
 
 type testCallback struct {
-	mu                sync.Mutex
-	count             int
-	size              int64
-	duration          time.Duration
-	unconfiguredCount int
+	mu       sync.Mutex
+	count    int
+	size     int64
+	duration time.Duration
 }
 
 func (c *testCallback) PayloadBatchCompleted(count int, size int64, duration time.Duration, _ []string) {
@@ -1088,10 +1242,4 @@ func (c *testCallback) PayloadBatchCompleted(count int, size int64, duration tim
 	c.count = count
 	c.size = size
 	c.duration = duration
-}
-
-func (c *testCallback) UnconfiguredStorageReference() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.unconfiguredCount++
 }

@@ -148,11 +148,11 @@ func (d *s3StorageDriver) Store(
 			key := objectKey(ctx.Target, pp.hexDigest)
 			exists, err := d.client.ObjectExists(gctx, pp.bucket, key)
 			if err != nil {
-				return fmt.Errorf("existence check failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
+				return fmt.Errorf("existence check failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
 			}
 			if !exists {
 				if err := d.client.PutObject(gctx, pp.bucket, key, pp.data); err != nil {
-					return fmt.Errorf("upload failed [bucket=%s, key=%s]: %w", pp.bucket, key, err)
+					return fmt.Errorf("upload failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
 				}
 			}
 			claims[i] = converter.StorageDriverClaim{
@@ -195,7 +195,7 @@ func (d *s3StorageDriver) Retrieve(
 
 			data, err := d.client.GetObject(gctx, bucket, key)
 			if err != nil {
-				return fmt.Errorf("download failed [bucket=%s, key=%s]: %w", bucket, key, err)
+				return fmt.Errorf("download failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
 			}
 
 			algo, ok := c.ClaimData[claimKeyHashAlgorithm]
@@ -252,6 +252,16 @@ func objectKey(target converter.StorageDriverTargetInfo, hexDigest string) strin
 	default:
 		return keyVersion + digestSegment
 	}
+}
+
+// describeClient returns ", k=v, k=v" diagnostic info from the client's
+// Describe method, or "" if Describe returns nil/empty.
+func describeClient(c Client) string {
+	var s string
+	for k, v := range c.Describe() {
+		s += ", " + k + "=" + v
+	}
+	return s
 }
 
 func pathEscape(s string) string {

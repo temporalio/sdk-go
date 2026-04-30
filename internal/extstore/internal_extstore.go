@@ -8,7 +8,9 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
+	sdkpb "go.temporal.io/sdk/internal/temporalapi/sdk/v1"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -22,10 +24,18 @@ type StorageParameters struct {
 	payloadSizeThreshold int
 }
 
-// IsStorageReference reports whether p is an external-storage reference payload
-// (i.e. its encoding metadata equals the internal storage-reference marker).
+// IsStorageReference reports whether p is an external-storage reference payload.
+// It recognizes both the current protojson format (encoding=json/protobuf,
+// messageType=temporal.api.sdk.v1.ExternalStorageReference) and the legacy
+// format (encoding=json/external-storage-reference) written by earlier releases.
 func IsStorageReference(p *commonpb.Payload) bool {
-	return string(p.GetMetadata()[metadataEncoding]) == metadataEncodingStorageRef
+	switch string(p.GetMetadata()[metadataEncoding]) {
+	case metadataEncodingProtoJSON:
+		return string(p.GetMetadata()[metadataMessageType]) == externalStorageReferenceMessageType
+	case metadataEncodingStorageRefLegacy:
+		return true
+	}
+	return false
 }
 
 func ExternalStorageToParams(options ExternalStorage) (StorageParameters, error) {
@@ -86,7 +96,6 @@ func driversEqual(a, b StorageDriver) (equal bool) {
 
 type StorageOperationCallback interface {
 	PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string)
-	UnconfiguredStorageReference()
 }
 
 type contextKey string
@@ -112,23 +121,48 @@ func StorageTargetFromContext(ctx context.Context) StorageDriverTargetInfo {
 // format. Mirrors converter.MetadataEncoding without importing converter package.
 const metadataEncoding = "encoding"
 
-// metadataEncodingStorageRef is the metadata encoding value used to identify
-// payloads that are storage references rather than actual data.
-const metadataEncodingStorageRef = "json/external-storage-reference"
+// metadataMessageType is the key used in payload metadata to identify the proto
+// message type. Mirrors converter.MetadataMessageType without importing converter package.
+const metadataMessageType = "messageType"
 
-type storageReference struct {
+// metadataEncodingProtoJSON is the standard protojson encoding value, shared with
+// ProtoJSONPayloadConverter. Mirrors converter.MetadataEncodingProtoJSON.
+const metadataEncodingProtoJSON = "json/protobuf"
+
+// metadataEncodingStorageRefLegacy is the encoding written by earlier prerelease
+// SDK versions. Retained solely for backward-compatible reads.
+const metadataEncodingStorageRefLegacy = "json/external-storage-reference"
+
+// legacyStorageReference is the old wire format retained for backward compatibility
+// with payloads written by earlier prerelease SDK versions.
+type legacyStorageReference struct {
 	DriverName  string             `json:"driver_name"`
 	DriverClaim StorageDriverClaim `json:"driver_claim"`
 }
 
-func storageReferenceToPayload(ref storageReference, storedSizeBytes int64) (*commonpb.Payload, error) {
-	data, err := json.Marshal(ref)
+var (
+	// compile-time assertion that ExternalStorageReference implements proto.Message.
+	_ proto.Message = (*sdkpb.ExternalStorageReference)(nil)
+
+	// externalStorageReferenceMessageType is the fully-qualified proto message name,
+	// derived from the descriptor so it stays in sync with the generated code.
+	externalStorageReferenceMessageType = string((*sdkpb.ExternalStorageReference)(nil).ProtoReflect().Descriptor().FullName())
+
+	protoMarshalOptions   = protojson.MarshalOptions{}
+	protoUnmarshalOptions = protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
+)
+
+func storageReferenceToPayload(ref *sdkpb.ExternalStorageReference, storedSizeBytes int64) (*commonpb.Payload, error) {
+	data, err := protoMarshalOptions.Marshal(ref)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal storage reference: %w", err)
 	}
 	return &commonpb.Payload{
 		Metadata: map[string][]byte{
-			metadataEncoding: []byte(metadataEncodingStorageRef),
+			metadataEncoding:    []byte(metadataEncodingProtoJSON),
+			metadataMessageType: []byte(externalStorageReferenceMessageType),
 		},
 		Data: data,
 		ExternalPayloads: []*commonpb.Payload_ExternalPayloadDetails{
@@ -138,15 +172,31 @@ func storageReferenceToPayload(ref storageReference, storedSizeBytes int64) (*co
 }
 
 // payloadToStorageReference decodes a storage reference from a payload.
-func payloadToStorageReference(p *commonpb.Payload) (storageReference, error) {
-	if string(p.GetMetadata()[metadataEncoding]) != metadataEncodingStorageRef {
-		return storageReference{}, fmt.Errorf("payload is not a storage reference: unexpected encoding %q", string(p.GetMetadata()[metadataEncoding]))
+// The current format uses encoding=json/protobuf with the ExternalStorageReference
+// message type. The legacy format uses encoding=json/external-storage-reference.
+func payloadToStorageReference(p *commonpb.Payload) (*sdkpb.ExternalStorageReference, error) {
+	switch string(p.GetMetadata()[metadataEncoding]) {
+	case metadataEncodingProtoJSON:
+		if string(p.GetMetadata()[metadataMessageType]) != externalStorageReferenceMessageType {
+			return nil, fmt.Errorf("payload is not a storage reference: unexpected message type %q", string(p.GetMetadata()[metadataMessageType]))
+		}
+		ref := &sdkpb.ExternalStorageReference{}
+		if err := protoUnmarshalOptions.Unmarshal(p.GetData(), ref); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal storage reference: %w", err)
+		}
+		return ref, nil
+	case metadataEncodingStorageRefLegacy:
+		var legacy legacyStorageReference
+		if err := json.Unmarshal(p.Data, &legacy); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal storage reference: %w", err)
+		}
+		return &sdkpb.ExternalStorageReference{
+			DriverName: legacy.DriverName,
+			ClaimData:  legacy.DriverClaim.ClaimData,
+		}, nil
+	default:
+		return nil, fmt.Errorf("payload is not a storage reference: unexpected encoding %q", string(p.GetMetadata()[metadataEncoding]))
 	}
-	var ref storageReference
-	if err := json.Unmarshal(p.Data, &ref); err != nil {
-		return storageReference{}, fmt.Errorf("failed to unmarshal storage reference: %w", err)
-	}
-	return ref, nil
 }
 
 type externalRetrievalVisitor struct {
@@ -168,19 +218,15 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	result := make([]*commonpb.Payload, len(payloads))
 
 	for i, p := range payloads {
-		if string(p.GetMetadata()[metadataEncoding]) != metadataEncodingStorageRef {
+		if !IsStorageReference(p) {
 			result[i] = p
 			continue
 		}
 
-		// No storage drivers configured at all. Notify the caller and leave the
-		// payload unresolved so downstream code can surface a clear error.
+		// No storage drivers configured at all — fail immediately with a clear error
+		// rather than passing through an unresolved reference.
 		if len(v.params.driverMap) == 0 {
-			if cb, ok := ctx.Value(storageOperationCallbackContextKey).(StorageOperationCallback); ok {
-				cb.UnconfiguredStorageReference()
-			}
-			result[i] = p
-			continue
+			return nil, fmt.Errorf("externally stored payload encountered but no storage driver is configured")
 		}
 
 		ref, err := payloadToStorageReference(p)
@@ -200,7 +246,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 			driverOrder = append(driverOrder, ref.DriverName)
 		}
 		batch.indices = append(batch.indices, i)
-		batch.claims = append(batch.claims, ref.DriverClaim)
+		batch.claims = append(batch.claims, StorageDriverClaim{ClaimData: ref.ClaimData})
 	}
 
 	// Fan out to each driver concurrently. The errgroup context is used as the
@@ -333,9 +379,9 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 			}
 			var batchSize int64
 			for j, claim := range claims {
-				ref := storageReference{
-					DriverName:  name,
-					DriverClaim: claim,
+				ref := &sdkpb.ExternalStorageReference{
+					DriverName: name,
+					ClaimData:  claim.ClaimData,
 				}
 				storedSize := int64(batch.payloads[j].Size())
 				batchSize += storedSize

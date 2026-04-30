@@ -2097,6 +2097,14 @@ func newActivityTaskHandlerWithCustomProvider(
 	}
 }
 
+// heartbeatVisitorError wraps an outbound payload visitor error from a heartbeat.
+// It is used as the context cancellation cause so Execute() can detect that
+// RespondActivityTaskFailed was already sent proactively and skip sending a second response.
+type heartbeatVisitorError struct{ err error }
+
+func (e heartbeatVisitorError) Error() string { return e.err.Error() }
+func (e heartbeatVisitorError) Unwrap() error { return e.err }
+
 type temporalInvoker struct {
 	sync.Mutex
 	identity       string
@@ -2113,6 +2121,8 @@ type temporalInvoker struct {
 	workerStopChannel         <-chan struct{}
 	namespace                 string
 	excludeInternalFromRetry  *atomic.Bool // borrowed from client in order to tell if internal errors are retriable
+	outboundPayloadVisitor    PayloadVisitor
+	failureConverter          converter.FailureConverter
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
@@ -2183,7 +2193,31 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	ctx, cancel := context.WithTimeout(ctx, recordTimeout)
 	defer cancel()
 
-	err := recordActivityHeartbeat(ctx, i.service, i.metricsHandler, i.identity, i.taskToken, details)
+	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
+		TaskToken: i.taskToken,
+		Details:   details,
+		Identity:  i.identity,
+		Namespace: i.namespace,
+	}
+	var err error
+	if visitErr := visitProtoPayloads(ctx, i.outboundPayloadVisitor, request, 0); visitErr != nil {
+		// Proactively fail the task so the server can retry immediately rather than
+		// waiting for the heartbeat timeout. Errors are ignored — if the RPC fails the
+		// activity will still be timed out by the server.
+		failReq := &workflowservice.RespondActivityTaskFailedRequest{
+			TaskToken: i.taskToken,
+			Failure:   i.failureConverter.ErrorToFailure(visitErr),
+			Identity:  i.identity,
+			Namespace: i.namespace,
+		}
+		failCtx, failCancel := context.WithTimeout(context.Background(), recordTimeout)
+		defer failCancel()
+		_, _ = i.service.RespondActivityTaskFailed(failCtx, failReq)
+		err = heartbeatVisitorError{visitErr}
+		i.cancelHandler(err)
+	} else {
+		err = recordActivityHeartbeat(ctx, i.service, i.metricsHandler, request)
+	}
 
 	switch err.(type) {
 	case *CanceledError:
@@ -2248,6 +2282,8 @@ func newServiceInvoker(
 	workerStopChannel <-chan struct{},
 	namespace string,
 	excludeInternalFromRetry *atomic.Bool,
+	outboundPayloadVisitor PayloadVisitor,
+	failureConverter converter.FailureConverter,
 ) ServiceInvoker {
 	return &temporalInvoker{
 		taskToken:                 taskToken,
@@ -2260,6 +2296,8 @@ func newServiceInvoker(
 		workerStopChannel:         workerStopChannel,
 		namespace:                 namespace,
 		excludeInternalFromRetry:  excludeInternalFromRetry,
+		outboundPayloadVisitor:    outboundPayloadVisitor,
+		failureConverter:          failureConverter,
 	}
 }
 
@@ -2308,7 +2346,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
 	invoker := newServiceInvoker(
 		t.TaskToken, ath.identity, ath.client.workflowService, ath.metricsHandler, cancel, heartbeatThrottleInterval,
-		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry)
+		ath.workerStopCh, ath.namespace, ath.client.excludeInternalFromRetry, ath.outboundPayloadVisitor, failureConverter)
 
 	workflowType := t.WorkflowType.GetName()
 	activityType := t.ActivityType.GetName()
@@ -2367,6 +2405,13 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 	// Check if context canceled at a higher level before we cancel it ourselves
+
+	// The heartbeat visitor failure path proactively sent RespondActivityTaskFailed,
+	// skip sending another response regardless of what the activity returned.
+	var hbVisitorErr heartbeatVisitorError
+	if errors.As(context.Cause(canCtx), &hbVisitorErr) {
+		return nil, nil
+	}
 
 	// Cancels that don't originate from the server will have separate cancel reasons, like
 	// ErrWorkerShutdown or ErrActivityPaused
@@ -2519,16 +2564,8 @@ func createNewCommandWithMetadata(commandType enumspb.CommandType, metadata *sdk
 }
 
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
-	identity string, taskToken []byte, details *commonpb.Payloads,
+	request *workflowservice.RecordActivityTaskHeartbeatRequest,
 ) error {
-	namespace := getNamespaceFromActivityCtx(ctx)
-	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
-		TaskToken: taskToken,
-		Details:   details,
-		Identity:  identity,
-		Namespace: namespace,
-	}
-
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatResponse
 	grpcCtx, cancel := newGRPCContext(ctx,
 		grpcMetricsHandler(metricsHandler),
@@ -2549,17 +2586,8 @@ func recordActivityHeartbeat(ctx context.Context, service workflowservice.Workfl
 }
 
 func recordActivityHeartbeatByID(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
-	identity, namespace, workflowID, runID, activityID string, details *commonpb.Payloads,
+	request *workflowservice.RecordActivityTaskHeartbeatByIdRequest,
 ) error {
-	request := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
-		Namespace:  namespace,
-		WorkflowId: workflowID,
-		RunId:      runID,
-		ActivityId: activityID,
-		Details:    details,
-		Identity:   identity,
-	}
-
 	var heartbeatResponse *workflowservice.RecordActivityTaskHeartbeatByIdResponse
 	grpcCtx, cancel := newGRPCContext(ctx,
 		grpcMetricsHandler(metricsHandler),
