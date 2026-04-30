@@ -439,10 +439,7 @@ func (bw *baseWorker) isStop() bool {
 
 func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 	defer bw.stopWG.Done()
-	defer func() {
-		bw.logger.Info("Poller exiting", "pollerType", taskWorker.taskPollerType)
-		bw.pollerWG.Done()
-	}()
+	defer bw.pollerWG.Done()
 	// Note: With poller autoscaling, this metric doesn't make a lot of sense since the number of pollers can go up and down.
 	bw.metricsHandler.Counter(metrics.PollerStartCounter).Inc(1)
 
@@ -710,9 +707,8 @@ func (bw *baseWorker) Stop() {
 	close(bw.stopCh)
 	bw.limiterContextCancel()
 
-	bw.logger.Info("Waiting for pollers to finish")
+	// Wait for pollers to finish. (pollTaskServiceTimeOut) bounds this if the connection is broken.
 	bw.pollerWG.Wait()
-	bw.logger.Info("All pollers finished")
 
 	// Wait for task processing to complete. The dispatcher
 	// drains taskQueueCh (closed after pollers finish above) and
