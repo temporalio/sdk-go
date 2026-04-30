@@ -48,9 +48,9 @@ const (
 	ContinueAsNewVersioningBehaviorAutoUpgrade = internal.ContinueAsNewVersioningBehaviorAutoUpgrade
 
 	// ContinueAsNewVersioningBehaviorUseRampingVersion - Use the Ramping Version of the workflow's task queue at start time,
-	// regardless of the workflow's Target Version (according to f(workflow_id, ramp_percentage)). After the first workflow
-	// task completes, the workflow will use whatever Versioning Behavior it is annotated with. If there is no Ramping
-	// Version by the time that the first workflow task is dispatched, it will be sent to the Current Version.
+	// regardless of the workflow's Target Version. After the first workflow task completes, the workflow will use whatever
+	// Versioning Behavior it is annotated with. If there is no Ramping Version by the time that the first workflow task is
+	// dispatched, it will be sent to the Current Version.
 	//
 	// It is highly discouraged to use this if the workflow is annotated with AutoUpgrade behavior, because
 	// this setting ONLY applies to the first task of the workflow. If, after the first task, the workflow
