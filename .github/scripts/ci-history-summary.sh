@@ -129,14 +129,13 @@ render_summary() {
   {
     echo "## CI History for ${branch_label}"
     echo
-    echo "| Window | Runs | Pass Rate | Failures |"
-    echo "|---|---:|---:|---:|"
-    workflow_stats_row "7 days" "${seven_cutoff}"
-    workflow_stats_row "30 days" "${thirty_cutoff}"
+    echo "## Job History"
+    echo
+    job_stats_table
     echo
     echo "## Most Failure-Prone Jobs, 30 days"
     echo
-    job_stats_table
+    most_failure_prone_jobs
     echo
     echo "## Recent Failed Jobs"
     echo
@@ -146,50 +145,70 @@ render_summary() {
   } >>"${GITHUB_STEP_SUMMARY}"
 }
 
-workflow_stats_row() {
-  local label cutoff stats runs successes failures pass_rate
-  label="$1"
-  cutoff="$2"
-  stats="$(
-    jq -s --arg cutoff "${cutoff}" '
-      map(select(.created_at >= $cutoff)) as $runs |
-      {
-        runs: ($runs | length),
-        successes: ($runs | map(select(.conclusion == "success")) | length),
-        failures: ($runs | map(select(.conclusion != null and (.conclusion | IN("success", "skipped", "neutral") | not))) | length)
-      }
-    ' "${RUNS_FILE}"
-  )"
-
-  runs="$(jq -r '.runs' <<<"${stats}")"
-  successes="$(jq -r '.successes' <<<"${stats}")"
-  failures="$(jq -r '.failures' <<<"${stats}")"
-  pass_rate="n/a"
-  if [[ "${runs}" -gt 0 ]]; then
-    pass_rate="$(awk -v successes="${successes}" -v runs="${runs}" 'BEGIN { printf "%.1f%%", successes * 100 / runs }')"
-  fi
-
-  echo "| ${label} | ${runs} | ${pass_rate} | ${failures} |"
-}
-
 job_stats_table() {
   local rows
   rows="$(
-    jq -rs '
-      def base_name: .name | sub(" \\(.+\\)$"; "");
+    jq -rs --arg seven_cutoff "$(iso_days_ago 7)" --arg thirty_cutoff "$(iso_days_ago 30)" '
       def failed: .conclusion != null and (.conclusion | IN("success", "skipped", "neutral") | not);
+      def pass_rate($runs; $failures):
+        if $runs == 0 then "n/a" else (((($runs - $failures) * 100 / $runs) * 10 | round / 10 | tostring) + "%") end;
+      def stats($cutoff):
+        map(select(.completed_at // .run_updated_at // .run_created_at >= $cutoff and .conclusion != "skipped")) as $jobs |
+        {
+          runs: ($jobs | length),
+          failures: ($jobs | map(select(failed)) | length)
+        };
 
       map(select(.conclusion != "skipped"))
-      | group_by(base_name)
+      | group_by(.name)
+      | map(
+          stats($seven_cutoff) as $seven |
+          stats($thirty_cutoff) as $thirty |
+          {
+            name: .[0].name,
+            seven_runs: $seven.runs,
+            seven_failures: $seven.failures,
+            seven_pass_rate: pass_rate($seven.runs; $seven.failures),
+            thirty_runs: $thirty.runs,
+            thirty_failures: $thirty.failures,
+            thirty_pass_rate: pass_rate($thirty.runs; $thirty.failures)
+          }
+        )
+      | sort_by([-.seven_failures, -.thirty_failures, .name])
+      | .[]
+      | "| \(.name) | \(.seven_runs) | \(.seven_failures) | \(.seven_pass_rate) | \(.thirty_runs) | \(.thirty_failures) | \(.thirty_pass_rate) |"
+    ' "${JOBS_FILE}"
+  )"
+
+  if [[ -z "${rows}" ]]; then
+    echo "No completed jobs found in the last 30 days."
+    return
+  fi
+
+  echo "| Job | 7d Runs | 7d Failures | 7d Pass Rate | 30d Runs | 30d Failures | 30d Pass Rate |"
+  echo "|---|---:|---:|---:|---:|---:|---:|"
+  echo "${rows}"
+}
+
+most_failure_prone_jobs() {
+  local rows
+  rows="$(
+    jq -rs --arg thirty_cutoff "$(iso_days_ago 30)" '
+      def failed: .conclusion != null and (.conclusion | IN("success", "skipped", "neutral") | not);
+      def pass_rate($runs; $failures):
+        if $runs == 0 then "n/a" else (((($runs - $failures) * 100 / $runs) * 10 | round / 10 | tostring) + "%") end;
+
+      map(select(.completed_at // .run_updated_at // .run_created_at >= $thirty_cutoff and .conclusion != "skipped"))
+      | group_by(.name)
       | map({
-          name: (.[0] | base_name),
+          name: .[0].name,
           runs: length,
           failures: (map(select(failed)) | length)
         })
       | map(select(.failures > 0))
       | sort_by([-.failures, .name])
       | .[]
-      | "| \(.name) | \(.runs) | \((.failures * 100 / .runs) | . * 10 | round / 10)% | \(.failures) |"
+      | "| \(.name) | \(.runs) | \(.failures) | \(pass_rate(.runs; .failures)) |"
     ' "${JOBS_FILE}"
   )"
 
@@ -198,7 +217,7 @@ job_stats_table() {
     return
   fi
 
-  echo "| Job | Runs | Failure Rate | Failures |"
+  echo "| Job | 30d Runs | 30d Failures | 30d Pass Rate |"
   echo "|---|---:|---:|---:|"
   echo "${rows}"
 }
@@ -210,7 +229,6 @@ recent_failed_jobs() {
   jq -rs \
     --arg server_url "${GITHUB_SERVER_URL}" \
     --arg repository "${GITHUB_REPOSITORY}" '
-    def base_name: .name | sub(" \\(.+\\)$"; "");
     def suffix: ((.name | [capture("\\((?<suffix>.+)\\)$").suffix] | first) // "");
     def failed: .conclusion != null and (.conclusion | IN("success", "skipped", "neutral") | not);
     def short_sha: .run_sha[0:7];
@@ -220,9 +238,9 @@ recent_failed_jobs() {
 
     map(select(failed))
     | map([
-        base_name,
+        .name,
         completed,
-        "- [\(date_only) `\(short_sha)`\(if suffix == "" then "" else " — \(suffix)" end)](\(job_url))"
+        "- [\(date_only) `\(short_sha)`](\(job_url))"
       ])
     | .[]
     | @tsv
