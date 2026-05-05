@@ -122,9 +122,6 @@ render_summary() {
   seven_cutoff="$(iso_days_ago 7)"
   thirty_cutoff="$(iso_days_ago 30)"
   branch_label="${CI_HISTORY_TARGET_BRANCH}"
-  if [[ "${branch_label}" != "main" && "${branch_label}" != "master" ]]; then
-    branch_label="${branch_label} (temporary PR validation)"
-  fi
 
   {
     echo "## CI History for ${branch_label}"
@@ -159,7 +156,6 @@ job_stats_table() {
         elif .name == "docker-compose-test" then 40
         elif .name | startswith("cloud-test") then 50
         elif .name | startswith("features-test") then 60
-        elif .name == "CI History Validation Failure" then 70
         else 90 end;
       def os_order:
         if .name | contains("(ubuntu-latest,") then 0
