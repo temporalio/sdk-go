@@ -31,6 +31,24 @@ type (
 	}
 )
 
+func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerSetsTaskPollerType() {
+	behavior := NewPollerBehaviorSimpleMaximum(
+		PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: 1,
+		},
+	)
+
+	blockingPoller := newSemaphoreProbeTaskPoller()
+	poller := newScalableTaskPoller(
+		blockingPoller,
+		ilog.NewNopLogger(),
+		behavior,
+		metrics.PollerTypeWorkflowStickyTask,
+		&atomic.Bool{},
+	)
+
+	s.Equal(metrics.PollerTypeWorkflowStickyTask, poller.taskPollerType)
+}
 func TestScalableTaskPollerSuite(t *testing.T) {
 	suite.Run(t, new(ScalableTaskPollerSuite))
 }
@@ -140,9 +158,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, nil)
-	poller.taskPollerType = "test"
-
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
 		maxTaskPerSecond: 1000,
@@ -188,8 +204,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, nil)
-	poller.taskPollerType = "test"
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
 
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
@@ -396,4 +411,107 @@ func (s *PollScalerReportHandleSuite) TestErrorScaleDownWithCapability() {
 	assert.Equal(s.T(), 4, targetSuggestion)
 	ps.handleError(serviceerror.NewInternal("test error"))
 	assert.Equal(s.T(), 3, targetSuggestion)
+}
+
+// TestPollerBalancerReturnsNilWhenOwnCountZero is a regression test for
+// https://github.com/temporalio/sdk-go/issues/2236
+// It verifies that balance() returns nil immediately when the calling poller
+// type's count has dropped to <= 0, even if another type has count == 0.
+func TestPollerBalancerReturnsNilWhenOwnCountZero(t *testing.T) {
+	pb := &pollerBalancer{
+		pollerCount:   make(map[string]int),
+		pollerBarrier: make(map[string]barrier),
+	}
+	pb.registerPollerType("sticky")
+	pb.registerPollerType("non-sticky")
+
+	ctx := context.Background()
+
+	// Both types have count 0 — balance should return nil immediately for either type.
+	err := pb.balance(ctx, "sticky")
+	require.NoError(t, err, "balance should return nil when own count is 0")
+
+	err = pb.balance(ctx, "non-sticky")
+	require.NoError(t, err, "balance should return nil when own count is 0")
+
+	// Simulate: sticky has 1 poller, non-sticky has 0.
+	// balance("sticky") should block waiting for non-sticky. But if sticky's count
+	// drops to 0 before non-sticky starts, balance should return nil.
+	pb.incrementPoller("sticky")
+	pb.decrementPoller("sticky") // sticky count is back to 0
+
+	// Even though non-sticky count is 0, we should NOT block because our own count is 0.
+	// Run with a timeout to catch the bug where it would block indefinitely.
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	err = pb.balance(ctx, "sticky")
+	require.NoError(t, err, "balance should return nil when own count is 0, not block on other type's barrier")
+}
+
+// TestPollerBalancerBlocksWhenOtherTypeHasNoPollers verifies the normal blocking
+// behavior: balance() blocks when another poller type has no active pollers, and
+// unblocks once that type starts a poller.
+func TestPollerBalancerBlocksWhenOtherTypeHasNoPollers(t *testing.T) {
+	pb := &pollerBalancer{
+		pollerCount:   make(map[string]int),
+		pollerBarrier: make(map[string]barrier),
+	}
+	pb.registerPollerType("sticky")
+	pb.registerPollerType("non-sticky")
+
+	// sticky has 1 poller, non-sticky has 0 — balance("sticky") should block.
+	pb.incrementPoller("sticky")
+
+	done := make(chan error, 1)
+	go func() {
+		done <- pb.balance(context.Background(), "sticky")
+	}()
+
+	// Verify it's still blocked.
+	select {
+	case <-done:
+		t.Fatal("balance should be blocking")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// Start a non-sticky poller — this should unblock balance.
+	pb.incrementPoller("non-sticky")
+
+	select {
+	case err := <-done:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("balance should have returned after non-sticky poller started")
+	}
+}
+
+func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {
+	behavior := NewPollerBehaviorSimpleMaximum(
+		PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: 1,
+		},
+	)
+
+	cases := []struct {
+		name  string
+		ptype string
+	}{
+		{"workflow", metrics.PollerTypeWorkflowTask},
+		{"workflow-sticky", metrics.PollerTypeWorkflowStickyTask},
+		{"activity", metrics.PollerTypeActivityTask},
+		{"nexus", metrics.PollerTypeNexusTask},
+	}
+
+	for _, tc := range cases {
+		s.Run(tc.name, func() {
+			poller := newScalableTaskPoller(
+				newSemaphoreProbeTaskPoller(),
+				ilog.NewNopLogger(),
+				behavior,
+				tc.ptype,
+				&atomic.Bool{},
+			)
+			s.Equal(tc.ptype, poller.taskPollerType)
+		})
+	}
 }

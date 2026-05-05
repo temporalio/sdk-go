@@ -1,4 +1,4 @@
-package internal
+package extstore
 
 import (
 	"context"
@@ -8,34 +8,51 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
-	"go.temporal.io/sdk/converter"
+	sdkpb "go.temporal.io/sdk/internal/temporalapi/sdk/v1"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
 const defaultPayloadSizeThreshold = 256 * 1024
 
-type storageParameters struct {
-	driverMap            map[string]converter.StorageDriver
-	driverSelector       converter.StorageDriverSelector
+// StorageParameters holds the validated, ready-to-use storage configuration
+// built from a [ExternalStorage] value via [ExternalStorageToParams].
+type StorageParameters struct {
+	driverMap            map[string]StorageDriver
+	driverSelector       StorageDriverSelector
 	payloadSizeThreshold int
 }
 
-func ExternalStorageToParams(options converter.ExternalStorage) (storageParameters, error) {
+// IsStorageReference reports whether p is an external-storage reference payload.
+// It recognizes both the current protojson format (encoding=json/protobuf,
+// messageType=temporal.api.sdk.v1.ExternalStorageReference) and the legacy
+// format (encoding=json/external-storage-reference) written by earlier releases.
+func IsStorageReference(p *commonpb.Payload) bool {
+	switch string(p.GetMetadata()[metadataEncoding]) {
+	case metadataEncodingProtoJSON:
+		return string(p.GetMetadata()[metadataMessageType]) == externalStorageReferenceMessageType
+	case metadataEncodingStorageRefLegacy:
+		return true
+	}
+	return false
+}
+
+func ExternalStorageToParams(options ExternalStorage) (StorageParameters, error) {
 	if options.PayloadSizeThreshold < 0 {
-		return storageParameters{}, fmt.Errorf("PayloadSizeThreshold must not be negative")
+		return StorageParameters{}, fmt.Errorf("PayloadSizeThreshold must not be negative")
 	}
 
-	driverMap := make(map[string]converter.StorageDriver, len(options.Drivers))
+	driverMap := make(map[string]StorageDriver, len(options.Drivers))
 	for _, d := range options.Drivers {
 		if _, exists := driverMap[d.Name()]; exists {
-			return storageParameters{}, fmt.Errorf("duplicate storage driver name: %q", d.Name())
+			return StorageParameters{}, fmt.Errorf("duplicate storage driver name: %q", d.Name())
 		}
 		driverMap[d.Name()] = d
 	}
 
 	if len(options.Drivers) > 1 && options.DriverSelector == nil {
-		return storageParameters{}, fmt.Errorf("DriverSelector must be set when more than one driver is provided")
+		return StorageParameters{}, fmt.Errorf("DriverSelector must be set when more than one driver is provided")
 	}
 
 	selector := options.DriverSelector
@@ -48,7 +65,7 @@ func ExternalStorageToParams(options converter.ExternalStorage) (storageParamete
 		sizeThreshold = defaultPayloadSizeThreshold
 	}
 
-	return storageParameters{
+	return StorageParameters{
 		driverMap:            driverMap,
 		driverSelector:       selector,
 		payloadSizeThreshold: sizeThreshold,
@@ -57,10 +74,10 @@ func ExternalStorageToParams(options converter.ExternalStorage) (storageParamete
 
 // singleDriverSelector is a StorageDriverSelector that always returns the same driver.
 type singleDriverSelector struct {
-	driver converter.StorageDriver
+	driver StorageDriver
 }
 
-func (s singleDriverSelector) SelectDriver(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+func (s singleDriverSelector) SelectDriver(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
 	return s.driver, nil
 }
 
@@ -68,7 +85,7 @@ func (s singleDriverSelector) SelectDriver(_ converter.StorageDriverStoreContext
 // the dynamic type is comparable (pointer types, simple value types) and
 // falls back to name equality for non-comparable value types (e.g. structs
 // with map fields).
-func driversEqual(a, b converter.StorageDriver) (equal bool) {
+func driversEqual(a, b StorageDriver) (equal bool) {
 	defer func() {
 		if recover() != nil {
 			equal = a.Name() == b.Name()
@@ -77,30 +94,75 @@ func driversEqual(a, b converter.StorageDriver) (equal bool) {
 	return a == b
 }
 
-type storageOperationCallback interface {
-	PayloadBatchCompleted(count int, size int64, duration time.Duration)
-	UnconfiguredStorageReference()
+type StorageOperationCallback interface {
+	PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string)
 }
+
+type contextKey string
 
 const storageOperationCallbackContextKey contextKey = "storageOperationCallback"
 
-// metadataEncodingStorageRef is the metadata encoding value used to identify
-// payloads that are storage references rather than actual data.
-const metadataEncodingStorageRef = "json/external-storage-reference"
-
-type storageReference struct {
-	DriverName  string                 `json:"driver_name"`
-	DriverClaim converter.StorageDriverClaim `json:"driver_claim"`
+func WithStorageOperationCallback(ctx context.Context, cb StorageOperationCallback) context.Context {
+	return context.WithValue(ctx, storageOperationCallbackContextKey, cb)
 }
 
-func storageReferenceToPayload(ref storageReference, storedSizeBytes int64) (*commonpb.Payload, error) {
-	data, err := json.Marshal(ref)
+const storageTargetContextKey contextKey = "storageTarget"
+
+func WithStorageTarget(ctx context.Context, target StorageDriverTargetInfo) context.Context {
+	return context.WithValue(ctx, storageTargetContextKey, target)
+}
+
+func StorageTargetFromContext(ctx context.Context) StorageDriverTargetInfo {
+	t, _ := ctx.Value(storageTargetContextKey).(StorageDriverTargetInfo)
+	return t
+}
+
+// metadataEncoding is the key used in payload metadata to identify the encoding
+// format. Mirrors converter.MetadataEncoding without importing converter package.
+const metadataEncoding = "encoding"
+
+// metadataMessageType is the key used in payload metadata to identify the proto
+// message type. Mirrors converter.MetadataMessageType without importing converter package.
+const metadataMessageType = "messageType"
+
+// metadataEncodingProtoJSON is the standard protojson encoding value, shared with
+// ProtoJSONPayloadConverter. Mirrors converter.MetadataEncodingProtoJSON.
+const metadataEncodingProtoJSON = "json/protobuf"
+
+// metadataEncodingStorageRefLegacy is the encoding written by earlier prerelease
+// SDK versions. Retained solely for backward-compatible reads.
+const metadataEncodingStorageRefLegacy = "json/external-storage-reference"
+
+// legacyStorageReference is the old wire format retained for backward compatibility
+// with payloads written by earlier prerelease SDK versions.
+type legacyStorageReference struct {
+	DriverName  string             `json:"driver_name"`
+	DriverClaim StorageDriverClaim `json:"driver_claim"`
+}
+
+var (
+	// compile-time assertion that ExternalStorageReference implements proto.Message.
+	_ proto.Message = (*sdkpb.ExternalStorageReference)(nil)
+
+	// externalStorageReferenceMessageType is the fully-qualified proto message name,
+	// derived from the descriptor so it stays in sync with the generated code.
+	externalStorageReferenceMessageType = string((*sdkpb.ExternalStorageReference)(nil).ProtoReflect().Descriptor().FullName())
+
+	protoMarshalOptions   = protojson.MarshalOptions{}
+	protoUnmarshalOptions = protojson.UnmarshalOptions{
+		DiscardUnknown: true,
+	}
+)
+
+func storageReferenceToPayload(ref *sdkpb.ExternalStorageReference, storedSizeBytes int64) (*commonpb.Payload, error) {
+	data, err := protoMarshalOptions.Marshal(ref)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal storage reference: %w", err)
 	}
 	return &commonpb.Payload{
 		Metadata: map[string][]byte{
-			converter.MetadataEncoding: []byte(metadataEncodingStorageRef),
+			metadataEncoding:    []byte(metadataEncodingProtoJSON),
+			metadataMessageType: []byte(externalStorageReferenceMessageType),
 		},
 		Data: data,
 		ExternalPayloads: []*commonpb.Payload_ExternalPayloadDetails{
@@ -110,19 +172,35 @@ func storageReferenceToPayload(ref storageReference, storedSizeBytes int64) (*co
 }
 
 // payloadToStorageReference decodes a storage reference from a payload.
-func payloadToStorageReference(p *commonpb.Payload) (storageReference, error) {
-	if string(p.GetMetadata()[converter.MetadataEncoding]) != metadataEncodingStorageRef {
-		return storageReference{}, fmt.Errorf("payload is not a storage reference: unexpected encoding %q", string(p.GetMetadata()[converter.MetadataEncoding]))
+// The current format uses encoding=json/protobuf with the ExternalStorageReference
+// message type. The legacy format uses encoding=json/external-storage-reference.
+func payloadToStorageReference(p *commonpb.Payload) (*sdkpb.ExternalStorageReference, error) {
+	switch string(p.GetMetadata()[metadataEncoding]) {
+	case metadataEncodingProtoJSON:
+		if string(p.GetMetadata()[metadataMessageType]) != externalStorageReferenceMessageType {
+			return nil, fmt.Errorf("payload is not a storage reference: unexpected message type %q", string(p.GetMetadata()[metadataMessageType]))
+		}
+		ref := &sdkpb.ExternalStorageReference{}
+		if err := protoUnmarshalOptions.Unmarshal(p.GetData(), ref); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal storage reference: %w", err)
+		}
+		return ref, nil
+	case metadataEncodingStorageRefLegacy:
+		var legacy legacyStorageReference
+		if err := json.Unmarshal(p.Data, &legacy); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal storage reference: %w", err)
+		}
+		return &sdkpb.ExternalStorageReference{
+			DriverName: legacy.DriverName,
+			ClaimData:  legacy.DriverClaim.ClaimData,
+		}, nil
+	default:
+		return nil, fmt.Errorf("payload is not a storage reference: unexpected encoding %q", string(p.GetMetadata()[metadataEncoding]))
 	}
-	var ref storageReference
-	if err := json.Unmarshal(p.Data, &ref); err != nil {
-		return storageReference{}, fmt.Errorf("failed to unmarshal storage reference: %w", err)
-	}
-	return ref, nil
 }
 
 type externalRetrievalVisitor struct {
-	params storageParameters
+	params StorageParameters
 }
 
 func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
@@ -130,9 +208,9 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 
 	// Identify which payloads are storage references and group them by driver.
 	type driverBatch struct {
-		driver  converter.StorageDriver
+		driver  StorageDriver
 		indices []int
-		claims  []converter.StorageDriverClaim
+		claims  []StorageDriverClaim
 	}
 	var driverOrder []string
 	driverBatches := map[string]*driverBatch{}
@@ -140,19 +218,15 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	result := make([]*commonpb.Payload, len(payloads))
 
 	for i, p := range payloads {
-		if string(p.GetMetadata()[converter.MetadataEncoding]) != metadataEncodingStorageRef {
+		if !IsStorageReference(p) {
 			result[i] = p
 			continue
 		}
 
-		// No storage drivers configured at all. Notify the caller and leave the
-		// payload unresolved so downstream code can surface a clear error.
+		// No storage drivers configured at all — fail immediately with a clear error
+		// rather than passing through an unresolved reference.
 		if len(v.params.driverMap) == 0 {
-			if cb, ok := ctx.Value(storageOperationCallbackContextKey).(storageOperationCallback); ok {
-				cb.UnconfiguredStorageReference()
-			}
-			result[i] = p
-			continue
+			return nil, fmt.Errorf("externally stored payload encountered but no storage driver is configured")
 		}
 
 		ref, err := payloadToStorageReference(p)
@@ -172,7 +246,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 			driverOrder = append(driverOrder, ref.DriverName)
 		}
 		batch.indices = append(batch.indices, i)
-		batch.claims = append(batch.claims, ref.DriverClaim)
+		batch.claims = append(batch.claims, StorageDriverClaim{ClaimData: ref.ClaimData})
 	}
 
 	// Fan out to each driver concurrently. The errgroup context is used as the
@@ -181,7 +255,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	// information for determing how to retrieve payloads. Drivers should only use information
 	// from the StorageDriverClaim to retrieve payloads.
 	eg, egCtx := errgroup.WithContext(context.Background())
-	driverCtx := converter.StorageDriverRetrieveContext{Context: egCtx}
+	driverCtx := StorageDriverRetrieveContext{Context: egCtx}
 	sizes := make([]int64, len(driverOrder))
 
 	externalCount := 0
@@ -215,19 +289,19 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	}
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
-		if callback, isCallback := callbackValue.(storageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime))
+		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
 		}
 	}
 	return result, nil
 }
 
-func NewExternalRetrievalVisitor(params storageParameters) PayloadVisitor {
+func NewExternalRetrievalVisitor(params StorageParameters) PayloadVisitor {
 	return &externalRetrievalVisitor{params: params}
 }
 
 type externalStorageVisitor struct {
-	params storageParameters
+	params StorageParameters
 }
 
 func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
@@ -239,7 +313,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 
 	// Determine which driver (if any) should store each payload.
 	type driverBatch struct {
-		driver   converter.StorageDriver
+		driver   StorageDriver
 		indices  []int
 		payloads []*commonpb.Payload
 	}
@@ -247,7 +321,8 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	driverBatches := map[string]*driverBatch{}
 
 	result := make([]*commonpb.Payload, len(payloads))
-	driverCtx := converter.StorageDriverStoreContext{Context: ctx.Context}
+	target := StorageTargetFromContext(ctx.Context)
+	driverCtx := StorageDriverStoreContext{Context: ctx.Context, Target: target}
 
 	for i, p := range payloads {
 		if proto.Size(p) < v.params.payloadSizeThreshold {
@@ -259,7 +334,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 		if err != nil {
 			return nil, fmt.Errorf("storage driver selector failed: %w", err)
 		}
-		var driver converter.StorageDriver
+		var driver StorageDriver
 		if selected != nil {
 			registered, ok := v.params.driverMap[selected.Name()]
 			if !ok || !driversEqual(registered, selected) {
@@ -287,7 +362,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	// Fan out to each driver concurrently. The errgroup context is used as the
 	// StorageDriverStoreContext so a failing driver cancels in-flight siblings.
 	eg, egCtx := errgroup.WithContext(ctx.Context)
-	storeDrCtx := converter.StorageDriverStoreContext{Context: egCtx}
+	storeDrCtx := StorageDriverStoreContext{Context: egCtx, Target: target}
 	sizes := make([]int64, len(driverOrder))
 
 	externalCount := 0
@@ -304,9 +379,9 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 			}
 			var batchSize int64
 			for j, claim := range claims {
-				ref := storageReference{
-					DriverName:  name,
-					DriverClaim: claim,
+				ref := &sdkpb.ExternalStorageReference{
+					DriverName: name,
+					ClaimData:  claim.ClaimData,
 				}
 				storedSize := int64(batch.payloads[j].Size())
 				batchSize += storedSize
@@ -330,18 +405,18 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	}
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
-		if callback, isCallback := callbackValue.(storageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime))
+		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
 		}
 	}
 	return result, nil
 }
 
-func NewExternalStorageVisitor(params storageParameters) PayloadVisitor {
+func NewExternalStorageVisitor(params StorageParameters) PayloadVisitor {
 	return &externalStorageVisitor{params: params}
 }
 
-func callDriverSelector(s converter.StorageDriverSelector, ctx converter.StorageDriverStoreContext, p *commonpb.Payload) (driver converter.StorageDriver, err error) {
+func callDriverSelector(s StorageDriverSelector, ctx StorageDriverStoreContext, p *commonpb.Payload) (driver StorageDriver, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)
@@ -350,7 +425,7 @@ func callDriverSelector(s converter.StorageDriverSelector, ctx converter.Storage
 	return s.SelectDriver(ctx, p)
 }
 
-func callDriverStore(d converter.StorageDriver, ctx converter.StorageDriverStoreContext, payloads []*commonpb.Payload) (claims []converter.StorageDriverClaim, err error) {
+func callDriverStore(d StorageDriver, ctx StorageDriverStoreContext, payloads []*commonpb.Payload) (claims []StorageDriverClaim, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)
@@ -359,7 +434,7 @@ func callDriverStore(d converter.StorageDriver, ctx converter.StorageDriverStore
 	return d.Store(ctx, payloads)
 }
 
-func callDriverRetrieve(d converter.StorageDriver, ctx converter.StorageDriverRetrieveContext, claims []converter.StorageDriverClaim) (payloads []*commonpb.Payload, err error) {
+func callDriverRetrieve(d StorageDriver, ctx StorageDriverRetrieveContext, claims []StorageDriverClaim) (payloads []*commonpb.Payload, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)

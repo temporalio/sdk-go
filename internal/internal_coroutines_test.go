@@ -1943,3 +1943,47 @@ func TestDeadlockDetectorStackTrace(t *testing.T) {
 	require.Regexp(t, `^coroutine sleeper \[running\]:\ntime\.Sleep\(0x[\da-f]+\)\n`, wfPanic.StackTrace())
 	require.Equal(t, 4, strings.Count(wfPanic.StackTrace(), "\n"), "2 stack frames expected")
 }
+
+func TestChainAlreadyReadyFuture(t *testing.T) {
+	var result int
+
+	d := createNewDispatcher(func(ctx Context) {
+		source, sourceSettable := NewFuture(ctx)
+		sourceSettable.SetValue(42)
+
+		target, targetSettable := NewFuture(ctx)
+		targetSettable.Chain(source)
+
+		err := target.Get(ctx, &result)
+		require.NoError(t, err)
+	})
+
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.Equal(t, 42, result)
+}
+func TestChainAlreadyReadyFuturePropagates(t *testing.T) {
+	var result int
+
+	d := createNewDispatcher(func(ctx Context) {
+		source, sourceSettable := NewFuture(ctx)
+		mid, midSettable := NewFuture(ctx)
+		leaf, leafSettable := NewFuture(ctx)
+
+		// leaf depends on mid
+		leafSettable.Chain(mid)
+
+		// source is already ready
+		sourceSettable.SetValue(42)
+
+		// mid chains from already-ready source
+		midSettable.Chain(source)
+
+		err := leaf.Get(ctx, &result)
+		require.NoError(t, err)
+	})
+
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.Equal(t, 42, result)
+}
