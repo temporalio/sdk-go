@@ -1454,3 +1454,87 @@ func (ts *WorkerDeploymentTestSuite) TestContinueAsNewWithVersionUpgrade() {
 	ts.NoError(wfHandle.Get(ctx, &result))
 	ts.Equal("v2.0", result)
 }
+
+func (ts *WorkerDeploymentTestSuite) TestContinueAsNewWithRampingVersion() {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	v1 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "1.0",
+	}
+	v2 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "2.0",
+	}
+
+	// Keep current at 1.0 and ramp 0% to 2.0. A continued run with
+	// UseRampingVersion should still start on 2.0.
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       v1,
+		},
+	})
+	worker1.RegisterWorkflowWithOptions(ts.workflows.ContinueAsNewWithRampingVersionV1, workflow.RegisterOptions{
+		Name:               "ContinueAsNewWithRampingVersion",
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       v2,
+		},
+	})
+	worker2.RegisterWorkflowWithOptions(ts.workflows.ContinueAsNewWithRampingVersionV2, workflow.RegisterOptions{
+		Name:               "ContinueAsNewWithRampingVersion",
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+	ts.waitForWorkerDeployment(ctx, dHandle)
+	response1, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
+	response2, err := dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		BuildID:       v1.BuildID,
+		ConflictToken: response1.ConflictToken,
+	})
+	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
+
+	wfHandle, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions("test-continueasnew-with-ramping-version"),
+		"ContinueAsNewWithRampingVersion",
+		0,
+	)
+	ts.NoError(err)
+	ts.waitForWorkflowRunningOnVersion(ctx, wfHandle, v1.BuildID)
+
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
+	// Set ramping percentage to 0%, ramping should still occur due to CaN.
+	_, err = dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
+		BuildID:       v2.BuildID,
+		ConflictToken: response2.ConflictToken,
+		Percentage:    float32(0.0),
+	})
+	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, v2.BuildID)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, wfHandle.GetID(), wfHandle.GetRunID(), "continue-as-new", nil))
+
+	var result string
+	ts.NoError(wfHandle.Get(ctx, &result))
+	ts.Equal("v2.0", result)
+}
