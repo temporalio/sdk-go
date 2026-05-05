@@ -185,3 +185,32 @@ jobs:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
+
+  ci-history:
+    name: CI History Summary
+    needs:
+      - unit-test
+      - integration-test-no-cache
+      - integration-test-with-cache
+      - docker-compose-test
+      - cloud-test
+      - features-test
+    # TODO before merge: remove this PR validation path and restore post-merge monitoring only.
+    # The final configuration should query main/master push runs, not pull_request branch history.
+    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'pull_request') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      CI_HISTORY_WORKFLOW_FILE: ci.yml
+      CI_HISTORY_TARGET_BRANCH: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+      CI_HISTORY_EVENT: ${{ github.event_name == 'pull_request' && 'pull_request' || 'push' }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Write CI history summary
+        run: bash .github/scripts/ci-history-summary.sh
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
