@@ -1535,6 +1535,8 @@ type WorkflowInfo struct {
 	RootWorkflowExecution *WorkflowExecution
 	// Memo can be decoded using data converter (defaultDataConverter, or custom one if set).
 	Memo                  *commonpb.Memo
+	// SearchAttributes can be decoded using defaultDataConverter.
+	//
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
 	SearchAttributes *commonpb.SearchAttributes
 	// RetryPolicy is the retry policy of the workflow.
