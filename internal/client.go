@@ -559,106 +559,224 @@ type (
 
 	// CompleteActivityByIDOptions provides options for CompleteActivityByIDWithOptions.
 	//
+	// ActivityType, WorkflowType, and TaskQueue values are not validated by the SDK.
+	// Providing incorrect values may cause serialization/deserialization mismatches
+	// if your codec uses them, for example, as encryption keys or signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityByIDOptions]
 	CompleteActivityByIDOptions struct {
-		Namespace  string // required
-		WorkflowID string // required
-		RunID      string
-		ActivityID string // required
-		Result     interface{}
-		Err        error
+		// Namespace is the Temporal Namespace containing the Workflow Execution.
+		// This field is required.
+		Namespace string
+
+		// WorkflowID is the ID of the Workflow Execution that scheduled the Activity.
+		// This field is required.
+		WorkflowID string
+
+		// RunID is the Run ID of the Workflow Execution that scheduled the Activity.
+		// Leave empty to target the latest run for WorkflowID.
+		RunID string
+
+		// ActivityID is the ID of the Activity to complete.
+		// This field is required.
+		ActivityID string
+
+		// Result is the Activity result to report on successful completion.
+		Result interface{}
+
+		// Err is the Activity error to report on failed completion.
+		Err error
 
 		// Optional fields for ActivitySerializationContext.
 		// When set, these are passed to DataConverterWithSerializationContext and
 		// FailureConverterWithSerializationContext to provide activity metadata
 		// for encoding. Useful when the caller has access to this metadata.
-		//
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Result or Err.
+		TaskQueue string
 	}
 
 	// RecordActivityHeartbeatByIDOptions provides options for RecordActivityHeartbeatByIDWithOptions.
 	//
+	// ActivityType, WorkflowType, and TaskQueue values are not validated by the SDK.
+	// Providing incorrect values may cause serialization/deserialization mismatches
+	// if your codec uses them, for example, as encryption keys or signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.RecordActivityHeartbeatByIDOptions]
 	RecordActivityHeartbeatByIDOptions struct {
-		Namespace  string // required
-		WorkflowID string // required
-		RunID      string
-		ActivityID string // required
-		Details    []interface{}
+		// Namespace is the Temporal Namespace containing the Workflow Execution.
+		// This field is required.
+		Namespace string
+
+		// WorkflowID is the ID of the Workflow Execution that scheduled the Activity.
+		// This field is required.
+		WorkflowID string
+
+		// RunID is the Run ID of the Workflow Execution that scheduled the Activity.
+		// Leave empty to target the latest run for WorkflowID.
+		RunID string
+
+		// ActivityID is the ID of the Activity to heartbeat.
+		// This field is required.
+		ActivityID string
+
+		// Details are the Activity heartbeat details to report.
+		Details []interface{}
 
 		// Optional fields for ActivitySerializationContext.
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Details.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Details.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Details.
+		TaskQueue string
 	}
 
 	// CompleteActivityOptions provides options for CompleteActivityWithOptions.
 	//
+	// Namespace, WorkflowID, ActivityType, WorkflowType, and TaskQueue values are
+	// not validated by the SDK. Providing incorrect values may cause
+	// serialization/deserialization mismatches if your codec uses them, for
+	// example, as encryption keys or signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityOptions]
 	CompleteActivityOptions struct {
-		TaskToken []byte // required
-		Result    interface{}
-		Err       error
+		// TaskToken identifies the Activity Task to complete.
+		// This field is required.
+		TaskToken []byte
+
+		// Result is the Activity result to report on successful completion.
+		Result interface{}
+
+		// Err is the Activity error to report on failed or canceled completion.
+		Err error
 
 		// Optional fields for ActivitySerializationContext.
 		// When set, these are passed to DataConverterWithSerializationContext and
 		// FailureConverterWithSerializationContext to provide activity metadata
 		// for encoding.
-		//
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
-		Namespace    string
-		WorkflowID   string
+
+		// Namespace is the optional Temporal Namespace to include in the Activity
+		// serialization context. If unset, the Client's Namespace is used.
+		Namespace string
+
+		// WorkflowID is the optional Workflow ID to include in the Activity
+		// serialization context.
+		WorkflowID string
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Result or Err.
+		TaskQueue string
 	}
 
 	// CompleteActivityByActivityIDOptions provides options for CompleteActivityByActivityIDWithOptions.
 	//
+	// WorkflowID, ActivityType, WorkflowType, and TaskQueue values are not validated
+	// by the SDK. Providing incorrect values may cause serialization/deserialization
+	// mismatches if your codec uses them, for example, as encryption keys or
+	// signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityByActivityIDOptions]
 	CompleteActivityByActivityIDOptions struct {
-		Namespace     string // required
-		ActivityID    string // required
+		// Namespace is the Temporal Namespace containing the Activity.
+		// This field is required.
+		Namespace string
+
+		// ActivityID is the ID of the Activity to complete.
+		// This field is required.
+		ActivityID string
+
+		// ActivityRunID is the Run ID of the Activity to complete.
+		// Leave empty to target the latest run for ActivityID.
 		ActivityRunID string
-		Result        interface{}
-		Err           error
+
+		// Result is the Activity result to report on successful completion.
+		Result interface{}
+
+		// Err is the Activity error to report on failed or canceled completion.
+		Err error
 
 		// Optional fields for ActivitySerializationContext.
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
-		WorkflowID   string
+
+		// WorkflowID is the optional Workflow ID to include in the Activity
+		// serialization context when encoding Result or Err.
+		WorkflowID string
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Result or Err.
+		TaskQueue string
 	}
 
 	// RecordActivityHeartbeatOptions provides options for RecordActivityHeartbeatWithOptions.
 	//
+	// Namespace, WorkflowID, ActivityType, WorkflowType, and TaskQueue values are
+	// not validated by the SDK. Providing incorrect values may cause
+	// serialization/deserialization mismatches if your codec uses them, for
+	// example, as encryption keys or signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.RecordActivityHeartbeatOptions]
 	RecordActivityHeartbeatOptions struct {
-		TaskToken []byte // required
-		Details   []interface{}
+		// TaskToken identifies the Activity Task to heartbeat.
+		// This field is required.
+		TaskToken []byte
+
+		// Details are the Activity heartbeat details to report.
+		// These values are encoded with the Client's DataConverter.
+		Details []interface{}
 
 		// Optional fields for ActivitySerializationContext.
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
-		Namespace    string
-		WorkflowID   string
+
+		// Namespace is the optional Temporal Namespace to include in the Activity
+		// serialization context and heartbeat request. If unset, the Client's
+		// Namespace is used.
+		Namespace string
+
+		// WorkflowID is the optional Workflow ID to include in the Activity
+		// serialization context when encoding Details.
+		WorkflowID string
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Details.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Details.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Details.
+		TaskQueue string
 	}
 
 	// ClientOptions are optional parameters for Client creation.
