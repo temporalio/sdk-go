@@ -211,7 +211,7 @@ recent_failed_jobs() {
     --arg server_url "${GITHUB_SERVER_URL}" \
     --arg repository "${GITHUB_REPOSITORY}" '
     def base_name: .name | sub(" \\(.+\\)$"; "");
-    def suffix: (.name | capture("\\((?<suffix>.+)\\)$")?.suffix) // "";
+    def suffix: ((.name | [capture("\\((?<suffix>.+)\\)$").suffix] | first) // "");
     def failed: .conclusion != null and (.conclusion | IN("success", "skipped", "neutral") | not);
     def short_sha: .run_sha[0:7];
     def completed: .completed_at // .run_updated_at // .run_created_at;
