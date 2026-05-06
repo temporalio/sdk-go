@@ -540,6 +540,16 @@ type (
 		// attributes present: replace any and all pre-existing assigned search attributes with the defined search
 		//                     attributes, i.e. upsert
 		TypedSearchAttributes *SearchAttributes
+
+		// Memo - Non-indexed user supplied information to replace on the schedule.
+		// If set, replaces the entire memo. If nil, leaves the existing memo intact.
+		// An initialized but empty map will clear the memo.
+		//
+		// NOTE: Memo updates are only supported on CHASM-backed schedules.
+		// Attempting to update memo on a workflow-backed schedule will return an error.
+		//
+		// NOTE: Experimental
+		Memo *map[string]interface{}
 	}
 
 	// ScheduleUpdateInput describes the current state of the schedule to be updated.

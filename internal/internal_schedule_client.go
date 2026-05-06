@@ -297,6 +297,22 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		}
 	}
 
+	var newMemo *commonpb.Memo
+	if newSchedule.Memo != nil {
+		dataConverter := WithContext(ctx, scheduleHandle.client.dataConverter)
+		if dataConverter == nil {
+			dataConverter = converter.GetDefaultDataConverter()
+		}
+		newMemo, err = getWorkflowMemo(*newSchedule.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
+		if err != nil {
+			return err
+		}
+		if newMemo == nil {
+			// An empty but non-nil map should clear the memo.
+			newMemo = &commonpb.Memo{}
+		}
+	}
+
 	updateRequest := &workflowservice.UpdateScheduleRequest{
 		Namespace:        scheduleHandle.client.namespace,
 		ScheduleId:       scheduleHandle.ID,
@@ -305,6 +321,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		Identity:         scheduleHandle.client.identity,
 		RequestId:        uuid.NewString(),
 		SearchAttributes: newSA,
+		Memo:             newMemo,
 	}
 
 	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
