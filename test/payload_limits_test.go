@@ -495,6 +495,68 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
 	ts.Contains(attributes.Reason, "BadScheduleActivityAttributes: CompleteWorkflowExecutionCommandAttributes.Result exceeds size limit.")
 }
 
+// assertActivityTaskFailed checks that an ActivityTaskFailed event (not a timeout) is in history.
+func (ts *PayloadLimitsTestSuite) assertActivityTaskFailed(ctx context.Context, run client.WorkflowRun) {
+	err := run.Get(ctx, nil)
+	var workflowExecutionErr *temporal.WorkflowExecutionError
+	ts.ErrorAs(err, &workflowExecutionErr)
+	var activityErr *temporal.ActivityError
+	ts.ErrorAs(workflowExecutionErr.Unwrap(), &activityErr)
+
+	eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var actTaskFailedEvent *historypb.HistoryEvent
+	for eventIterator.HasNext() {
+		event, err := eventIterator.Next()
+		ts.NoError(err)
+		if event.EventType == enumspb.EVENT_TYPE_ACTIVITY_TASK_FAILED {
+			actTaskFailedEvent = event
+		}
+	}
+	ts.NotNil(actTaskFailedEvent, "expected ActivityTaskFailed event in history, not a timeout")
+}
+
+// TestPayloadSizeErrorActivityHeartbeat verifies that oversized heartbeat details proactively
+// produce an ActivityTaskFailed event regardless of whether the activity observes the cancellation.
+func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityHeartbeat() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	logger := ilog.NewMemoryLogger()
+	ts.ResetClientAndWorker(func(opts *client.Options) {
+		opts.Logger = logger
+	}, nil)
+
+	wfName := "payload-size-error-activity-heartbeat"
+	actName := "heartbeat-large-payload-activity"
+	ts.worker.RegisterWorkflowWithOptions(
+		func(ctx workflow.Context) error {
+			return workflow.ExecuteActivity(
+				workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+					ScheduleToCloseTimeout: 20 * time.Second,
+					HeartbeatTimeout:       15 * time.Second,
+					RetryPolicy:            &temporal.RetryPolicy{MaximumAttempts: 1},
+				}),
+				actName,
+			).Get(ctx, nil)
+		},
+		workflow.RegisterOptions{Name: wfName},
+	)
+	ts.worker.RegisterActivityWithOptions(
+		func(ctx context.Context) error {
+			activity.RecordHeartbeat(ctx, strings.Repeat("h", payloadSizeErrorLimit+1000))
+			return nil // ignores ctx.Done()
+		},
+		activity.RegisterOptions{Name: actName},
+	)
+
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions(ts.T().Name()), wfName)
+	ts.NoError(err)
+
+	ts.assertActivityTaskFailed(ctx, run)
+	ts.assertLogContains(logger, payloadErrorMessage)
+}
+
+
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningClientCustom() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

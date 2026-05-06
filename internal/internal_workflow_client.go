@@ -680,7 +680,16 @@ func (wc *WorkflowClient) RecordActivityHeartbeatWithOptions(ctx context.Context
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeat(ctx, wc.workflowService, wc.metricsHandler, wc.identity, opts.TaskToken, data)
+	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
+		TaskToken: opts.TaskToken,
+		Details:   data,
+		Identity:  wc.identity,
+		Namespace: cmp.Or(opts.Namespace, wc.namespace),
+	}
+	if err := visitProtoPayloads(ctx, wc.newOutboundPayloadVisitor(), request, 0); err != nil {
+		return err
+	}
+	return recordActivityHeartbeat(ctx, wc.workflowService, wc.metricsHandler, request)
 }
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
@@ -715,7 +724,18 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByIDWithOptions(ctx context.Con
 	if err != nil {
 		return err
 	}
-	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.metricsHandler, wc.identity, opts.Namespace, opts.WorkflowID, opts.RunID, opts.ActivityID, data)
+	byIDRequest := &workflowservice.RecordActivityTaskHeartbeatByIdRequest{
+		Namespace:  cmp.Or(opts.Namespace, wc.namespace),
+		WorkflowId: opts.WorkflowID,
+		RunId:      opts.RunID,
+		ActivityId: opts.ActivityID,
+		Details:    data,
+		Identity:   wc.identity,
+	}
+	if err := visitProtoPayloads(ctx, wc.newOutboundPayloadVisitor(), byIDRequest, 0); err != nil {
+		return err
+	}
+	return recordActivityHeartbeatByID(ctx, wc.workflowService, wc.metricsHandler, byIDRequest)
 }
 
 // ListClosedWorkflow gets closed workflow executions based on request filters

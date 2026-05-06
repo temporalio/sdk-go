@@ -547,8 +547,6 @@ type (
 		//
 		// NOTE: Memo updates are only supported on CHASM-backed schedules.
 		// Attempting to update memo on a workflow-backed schedule will return an error.
-		//
-		// NOTE: Experimental
 		Memo *map[string]interface{}
 	}
 
