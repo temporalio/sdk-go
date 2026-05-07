@@ -9330,7 +9330,7 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 		ts.Equal("second", result)
 	})
 
-	ts.Run("Async operation start and describe", func() {
+	ts.Run("Async operation completes and returns result", func() {
 		input := "async-hello"
 		handle := executeNexusOpWithRetry("async-echo-op", input, client.StartNexusOperationOptions{
 			ID:                     uuid.NewString(),
@@ -9339,15 +9339,10 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 		ts.NotEmpty(handle.GetID())
 		ts.NotEmpty(handle.GetRunID())
 
-		// Verify the operation can be described.
-		desc, err := handle.Describe(ctx, client.DescribeNexusOperationOptions{})
+		var result string
+		err := handle.Get(ctx, &result)
 		ts.NoError(err)
-		ts.Equal(handle.GetID(), desc.OperationID)
-		ts.NotNil(desc.RawInfo)
-
-		// TODO(nexus): Test Get() for async operations once the server supports
-		// completion callbacks for standalone nexus operations. Currently the server
-		// fails with "NamespaceID is empty" when processing the callback.
+		ts.Equal(input, result)
 	})
 
 	ts.Run("Cancel operation", func() {
