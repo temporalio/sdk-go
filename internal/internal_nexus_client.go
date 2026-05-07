@@ -31,10 +31,20 @@ type (
 		//
 		// Mandatory: No default.
 		ID string
-		// ScheduleToCloseTimeout - Total time that the operation is allowed to run.
+		// ScheduleToCloseTimeout - The end to end timeout for the Nexus Operation.
 		//
-		// Optional: Defaults to unlimited.
+		// Optional: defaults to the maximum allowed by the Temporal server.
 		ScheduleToCloseTimeout time.Duration
+		// ScheduleToStartTimeout - Maximum time to wait for an operation to be started (or completed
+		// if synchronous) by the handler.
+		//
+		// Optional: If not set or zero, no schedule-to-start timeout is enforced.
+		ScheduleToStartTimeout time.Duration
+		// StartToCloseTimeout - Maximum time to wait for an asynchronous operation to complete after
+		// it has been started. Only applies to asynchronous operations. Ignored for synchronous operations.
+		//
+		// Optional: If not set or zero, no start-to-close timeout is enforced.
+		StartToCloseTimeout time.Duration
 		// IDConflictPolicy - Defines how to resolve an operation id conflict with a running operation.
 		//
 		// Optional: Defaults to NEXUS_OPERATION_ID_CONFLICT_POLICY_FAIL.
@@ -382,7 +392,7 @@ func (d *ClientNexusOperationExecutionDescription) GetLastAttemptFailure() error
 	if failure == nil {
 		return nil
 	}
-	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, failure); err != nil {
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, failure, 0); err != nil {
 		return err
 	}
 	return d.failureConverter.FailureToError(failure)
@@ -396,7 +406,7 @@ func (c *ClientNexusOperationCancellationInfo) GetLastAttemptFailure() error {
 	if c.lastAttemptFailure == nil {
 		return nil
 	}
-	if err := visitProtoPayloads(context.Background(), c.inboundPayloadVisitor, c.lastAttemptFailure); err != nil {
+	if err := visitProtoPayloads(context.Background(), c.inboundPayloadVisitor, c.lastAttemptFailure, 0); err != nil {
 		return err
 	}
 	return c.failureConverter.FailureToError(c.lastAttemptFailure)
@@ -487,10 +497,10 @@ func (h *clientNexusOperationHandleImpl) Get(ctx context.Context, valuePtr any) 
 			return resp.Error
 		}
 		if resp.Result != nil {
+			h.result = &ClientPollNexusOperationResultOutput{Result: resp.Result}
 			if valuePtr == nil {
 				return nil
 			}
-			h.result = &ClientPollNexusOperationResultOutput{Result: resp.Result}
 			return resp.Result.Get(valuePtr)
 		}
 	}
@@ -700,7 +710,13 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 	if in.Options.ScheduleToCloseTimeout > 0 {
 		request.ScheduleToCloseTimeout = durationpb.New(in.Options.ScheduleToCloseTimeout)
 	}
-	if err := visitProtoPayloads(ctx, w.client.outboundPayloadVisitor, request); err != nil {
+	if in.Options.ScheduleToStartTimeout > 0 {
+		request.ScheduleToStartTimeout = durationpb.New(in.Options.ScheduleToStartTimeout)
+	}
+	if in.Options.StartToCloseTimeout > 0 {
+		request.StartToCloseTimeout = durationpb.New(in.Options.StartToCloseTimeout)
+	}
+	if err := visitProtoPayloads(ctx, w.outboundPayloadVisitor, request, 0); err != nil {
 		return nil, err
 	}
 
@@ -751,7 +767,7 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 		}
 	}
 
-	if err := visitProtoPayloads(ctx, w.client.inboundPayloadVisitor, resp); err != nil {
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
 		return nil, err
 	}
 
@@ -801,7 +817,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 			Reason:                  info.CancellationInfo.Reason,
 			lastAttemptFailure:      info.CancellationInfo.LastAttemptFailure,
 			failureConverter:        w.client.failureConverter,
-			inboundPayloadVisitor:   w.client.inboundPayloadVisitor,
+			inboundPayloadVisitor:   w.inboundPayloadVisitor,
 		}
 	}
 
@@ -837,7 +853,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 			CancellationInfo:        cancellationInfo,
 			dc:                      WithContext(ctx, w.client.dataConverter),
 			failureConverter:        w.client.failureConverter,
-			inboundPayloadVisitor:   w.client.inboundPayloadVisitor,
+			inboundPayloadVisitor:   w.inboundPayloadVisitor,
 		},
 	}, nil
 }
