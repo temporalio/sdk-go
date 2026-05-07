@@ -78,7 +78,6 @@ jobs:
         working-directory: ./internal/cmd/build
         env:
           WORKFLOW_CACHE_SIZE: "0"
-          DISABLE_STANDALONE_NEXUS_TESTS: "1"
 
   integration-test-with-cache:
     strategy:
@@ -110,8 +109,6 @@ jobs:
       - name: Integration tests (with cache)
         run: go run . integration-test -dev-server
         working-directory: ./internal/cmd/build
-        env:
-          DISABLE_STANDALONE_NEXUS_TESTS: "1"
 
   docker-compose-test:
     runs-on: ubuntu-latest
