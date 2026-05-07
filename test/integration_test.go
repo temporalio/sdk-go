@@ -7177,7 +7177,18 @@ func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worke
 			return client.StartWorkflowOptions{ID: "nexus-async-" + uuid.NewString()}, nil
 		},
 	)
-	ts.NoError(service.Register(syncOp, asyncOp))
+	echoWf := func(ctx workflow.Context, input string) (string, error) {
+		return input, nil
+	}
+	w.RegisterWorkflowWithOptions(echoWf, workflow.RegisterOptions{Name: "echo-wf"})
+	asyncEchoOp := temporalnexus.NewWorkflowRunOperation(
+		"async-echo-op",
+		echoWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: "nexus-async-echo-" + uuid.NewString()}, nil
+		},
+	)
+	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp))
 	w.RegisterNexusService(service)
 }
 
@@ -9317,6 +9328,26 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 		err = handle3.Get(ctx, &result)
 		ts.NoError(err)
 		ts.Equal("second", result)
+	})
+
+	ts.Run("Async operation start and describe", func() {
+		input := "async-hello"
+		handle := executeNexusOpWithRetry("async-echo-op", input, client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+		ts.NotEmpty(handle.GetRunID())
+
+		// Verify the operation can be described.
+		desc, err := handle.Describe(ctx, client.DescribeNexusOperationOptions{})
+		ts.NoError(err)
+		ts.Equal(handle.GetID(), desc.OperationID)
+		ts.NotNil(desc.RawInfo)
+
+		// TODO(nexus): Test Get() for async operations once the server supports
+		// completion callbacks for standalone nexus operations. Currently the server
+		// fails with "NamespaceID is empty" when processing the callback.
 	})
 
 	ts.Run("Cancel operation", func() {
