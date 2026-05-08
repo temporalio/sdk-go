@@ -395,7 +395,7 @@ func TestNexusSyncOperation(t *testing.T) {
 	t.Run("timeout", func(t *testing.T) {
 		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "timeout", nexus.StartOperationOptions{
 			// Force shorter timeout to speed up the test and get a response back.
-			Header: nexus.Header{nexus.HeaderRequestTimeout: "2s"},
+			Header: nexus.Header{nexus.HeaderRequestTimeout: "5s"},
 		})
 		var handlerErr *nexus.HandlerError
 		require.ErrorAs(t, err, &handlerErr)
