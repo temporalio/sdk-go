@@ -287,7 +287,7 @@ func renderJobStatsTable(rows []jobSummary) string {
 }
 
 func renderMostFailureProneJobs(rows []jobSummary) string {
-	failureRows := rows[:0]
+	failureRows := make([]jobSummary, 0, len(rows))
 	for _, row := range rows {
 		if row.ThirtyFailures > 0 {
 			failureRows = append(failureRows, row)
