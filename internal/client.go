@@ -566,10 +566,14 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityByIDOptions]
 	CompleteActivityByIDOptions struct {
 		// Namespace is the Temporal Namespace containing the Workflow Execution.
+		// This is the target Namespace for the completion request and may differ
+		// from the Client's Namespace.
+		//
 		// This field is required.
 		Namespace string
 
 		// WorkflowID is the ID of the Workflow Execution that scheduled the Activity.
+		//
 		// This field is required.
 		WorkflowID string
 
@@ -578,13 +582,16 @@ type (
 		RunID string
 
 		// ActivityID is the ID of the Activity to complete.
+		//
 		// This field is required.
 		ActivityID string
 
-		// Result is the Activity result to report on successful completion.
+		// Result completes the Activity as successful with this value.
+		// If both Result and Err are set, Err takes precedence.
 		Result interface{}
 
-		// Err is the Activity error to report on failed completion.
+		// Err completes the Activity as failed with this error.
+		// If both Result and Err are set, Err takes precedence.
 		Err error
 
 		// Optional fields for ActivitySerializationContext.
@@ -614,10 +621,13 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.RecordActivityHeartbeatByIDOptions]
 	RecordActivityHeartbeatByIDOptions struct {
 		// Namespace is the Temporal Namespace containing the Workflow Execution.
-		// This field is required.
+		// If empty, the Client's Namespace is used.
+		// This is the target Namespace for the heartbeat request and may differ
+		// from the Client's Namespace.
 		Namespace string
 
 		// WorkflowID is the ID of the Workflow Execution that scheduled the Activity.
+		//
 		// This field is required.
 		WorkflowID string
 
@@ -626,10 +636,13 @@ type (
 		RunID string
 
 		// ActivityID is the ID of the Activity to heartbeat.
+		//
 		// This field is required.
 		ActivityID string
 
 		// Details are the Activity heartbeat details to report.
+		// These values are encoded with the Client's DataConverter and may be
+		// stored externally if ExternalStorage is configured.
 		Details []interface{}
 
 		// Optional fields for ActivitySerializationContext.
@@ -657,13 +670,16 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityOptions]
 	CompleteActivityOptions struct {
 		// TaskToken identifies the Activity Task to complete.
+		//
 		// This field is required.
 		TaskToken []byte
 
-		// Result is the Activity result to report on successful completion.
+		// Result completes the Activity as successful with this value.
+		// If both Result and Err are set, Err takes precedence.
 		Result interface{}
 
-		// Err is the Activity error to report on failed or canceled completion.
+		// Err completes the Activity as failed or canceled with this error.
+		// If both Result and Err are set, Err takes precedence.
 		Err error
 
 		// Optional fields for ActivitySerializationContext.
@@ -671,8 +687,11 @@ type (
 		// FailureConverterWithSerializationContext to provide activity metadata
 		// for encoding.
 
-		// Namespace is the optional Temporal Namespace to include in the Activity
-		// serialization context. If unset, the Client's Namespace is used.
+		// Namespace is the optional Temporal Namespace to include in serialization
+		// and external storage context. If empty, the Client's Namespace is used
+		// for this context.
+		// This field does not change the Namespace used to complete the Activity,
+		// and should not differ from the Client's Namespace.
 		Namespace string
 
 		// WorkflowID is the optional Workflow ID to include in the Activity
@@ -702,10 +721,14 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityByActivityIDOptions]
 	CompleteActivityByActivityIDOptions struct {
 		// Namespace is the Temporal Namespace containing the Activity.
+		// This is the target Namespace for the completion request and may differ
+		// from the Client's Namespace.
+		//
 		// This field is required.
 		Namespace string
 
 		// ActivityID is the ID of the Activity to complete.
+		//
 		// This field is required.
 		ActivityID string
 
@@ -713,10 +736,12 @@ type (
 		// Leave empty to target the latest run for ActivityID.
 		ActivityRunID string
 
-		// Result is the Activity result to report on successful completion.
+		// Result completes the Activity as successful with this value.
+		// If both Result and Err are set, Err takes precedence.
 		Result interface{}
 
-		// Err is the Activity error to report on failed or canceled completion.
+		// Err completes the Activity as failed or canceled with this error.
+		// If both Result and Err are set, Err takes precedence.
 		Err error
 
 		// Optional fields for ActivitySerializationContext.
@@ -748,18 +773,20 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.RecordActivityHeartbeatOptions]
 	RecordActivityHeartbeatOptions struct {
 		// TaskToken identifies the Activity Task to heartbeat.
+		//
 		// This field is required.
 		TaskToken []byte
 
 		// Details are the Activity heartbeat details to report.
-		// These values are encoded with the Client's DataConverter.
+		// These values are encoded with the Client's DataConverter and may be
+		// stored externally if ExternalStorage is configured.
 		Details []interface{}
 
 		// Optional fields for ActivitySerializationContext.
 
-		// Namespace is the optional Temporal Namespace to include in the Activity
-		// serialization context and heartbeat request. If unset, the Client's
-		// Namespace is used.
+		// Namespace is the optional Temporal Namespace to use for serialization
+		// context and as the target Namespace for the heartbeat request. If empty,
+		// the Client's Namespace is used.
 		Namespace string
 
 		// WorkflowID is the optional Workflow ID to include in the Activity
