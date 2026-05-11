@@ -51,10 +51,10 @@ var sdkFlagsAllowed = map[sdkFlag]bool{
 	SDKFlagChildWorkflowErrorExecution:    true,
 	SDKFlagProtocolMessageCommand:         true,
 	SDKPriorityUpdateHandling:             true,
-	SDKFlagBlockedSelectorSignalReceive:   false,
+	SDKFlagBlockedSelectorSignalReceive:   true,
 	SDKFlagCancelAwaitTimerOnCondition:    false,
 	SDKFlagMemoUserDCEncode:               false,
-	SDKFlagWorkflowNewChannelLostMessages: false,
+	SDKFlagWorkflowNewChannelLostMessages: true,
 }
 
 func init() {
