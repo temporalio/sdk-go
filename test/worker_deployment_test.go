@@ -332,6 +332,7 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDWithSession() {
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
 
 	// start workflow1 with 1.0, BasicSession, auto-upgrade
 	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf-1"), "SessionBuildIDWorkflow")
@@ -681,6 +682,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
 
 	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
@@ -761,6 +763,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v2.BuildID, "")
 
 	ts.NoError(ts.client.SignalWorkflow(ctx, handle1.GetID(), handle1.GetRunID(), "start-signal", "prefix"))
 	ts.NoError(ts.client.SignalWorkflow(ctx, handle2.GetID(), handle2.GetRunID(), "start-signal", "prefix"))
@@ -1091,6 +1094,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 		Percentage:    float32(100.0),
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, v2.BuildID)
 
 	ts.True(!ts.runWorkflowAndCheckV1(ctx, "1"))
 	ts.True(!ts.runWorkflowAndCheckV1(ctx, "2"))
@@ -1102,17 +1106,19 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 		Percentage:    float32(0.0),
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, v2.BuildID)
 
 	ts.True(ts.runWorkflowAndCheckV1(ctx, "1"))
 	ts.True(ts.runWorkflowAndCheckV1(ctx, "2"))
 
-	// Ramp 0% to 2.0
+	// Ramp 50% to 2.0
 	_, err = dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
 		BuildID:       v2.BuildID,
 		ConflictToken: response4.ConflictToken,
 		Percentage:    float32(50.0),
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, v2.BuildID)
 
 	// very likely probability (1-2^33) of success
 	ts.Eventually(func() bool {
