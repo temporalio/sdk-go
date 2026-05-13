@@ -3796,7 +3796,6 @@ func (w *Workflows) TemporalOpClientInStartCaller(ctx workflow.Context, input st
 }
 
 func (w *Workflows) register(worker worker.Worker) {
-	worker.RegisterNexusService(temporalOpService)
 	worker.RegisterWorkflow(w.TemporalOpEcho)
 	worker.RegisterWorkflow(w.TemporalOpWaitForCancel)
 	worker.RegisterWorkflow(w.TemporalOpWaitForSignal)
