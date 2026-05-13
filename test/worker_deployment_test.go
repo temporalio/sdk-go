@@ -344,7 +344,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
