@@ -748,8 +748,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 
 	parameters := ExecuteActivityParams{
 		ExecuteActivityOptions: ExecuteActivityOptions{
-			ScheduleToCloseTimeout: 600 * time.Second,
-			StartToCloseTimeout:    600 * time.Second,
+			ScheduleToCloseTimeout: 10 * time.Minute,
+			StartToCloseTimeout:    10 * time.Minute,
 		},
 		ActivityType: *activityType,
 		Input:        input,
