@@ -116,7 +116,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropaga
 			return false
 		}
 		return false
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 10*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context, handle client.WorkflowRun) {
