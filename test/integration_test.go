@@ -7154,6 +7154,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
 	ts.workflows.register(w)
 	ts.activities.register(w)
+	w.RegisterNexusService(temporalOpService)
 }
 
 var (
