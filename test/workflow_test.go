@@ -13,12 +13,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -3671,7 +3674,151 @@ func (w *Workflows) SessionCancelNDE(ctx workflow.Context) error {
 	return err
 }
 
+// temporalOpEndpoint is set by TestTemporalOperationSuite before executing
+// caller workflows. The package-level vars below close over it.
+var temporalOpEndpoint string
+
+const temporalOpServiceName = "temporal-op-test"
+
+func (w *Workflows) TemporalOpEcho(_ workflow.Context, input string) (string, error) {
+	return input, nil
+}
+
+func (w *Workflows) TemporalOpWaitForCancel(ctx workflow.Context, _ string) (string, error) {
+	return "", workflow.Await(ctx, func() bool { return false })
+}
+
+func (w *Workflows) TemporalOpWaitForSignal(ctx workflow.Context, _ string) (string, error) {
+	var result string
+	workflow.GetSignalChannel(ctx, "my-signal").Receive(ctx, &result)
+	return result, nil
+}
+
+var temporalOpSyncOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "sync-op",
+	Start: func(_ context.Context, _ temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.NewSyncResult("sync-" + input), nil
+	},
+})
+
+var temporalOpAsyncTypedOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-typed-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpEcho, input)
+	},
+})
+
+var temporalOpAsyncUntypedOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "async-untyped-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartUntypedWorkflow[string](ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpEcho, input)
+	},
+})
+
+var temporalOpCancelOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "cancel-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForCancel, input)
+	},
+})
+
+var temporalOpCustomCancelOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "custom-cancel-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForCancel, input)
+	},
+	CancelWorkflowRun: func(ctx context.Context, nc temporalnexus.NexusClient, workflowID string, _ nexus.CancelOperationOptions) error {
+		return nc.GetWorkflowClient().TerminateWorkflow(ctx, workflowID, "", "terminated via nexus cancel")
+	},
+})
+
+var temporalOpClientInStartOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+	Name: "client-in-start-op",
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+		result, err := temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForSignal, input)
+		if err != nil {
+			return result, err
+		}
+		if err := nc.GetWorkflowClient().SignalWorkflow(ctx, input, "", "my-signal", "signaled-"+input); err != nil {
+			return result, err
+		}
+		return result, nil
+	},
+})
+
+var temporalOpService = func() *nexus.Service {
+	s := nexus.NewService(temporalOpServiceName)
+	if err := s.Register(
+		temporalOpSyncOp,
+		temporalOpAsyncTypedOp,
+		temporalOpAsyncUntypedOp,
+		temporalOpCancelOp,
+		temporalOpCustomCancelOp,
+		temporalOpClientInStartOp,
+	); err != nil {
+		panic(err)
+	}
+	return s
+}()
+
+func (w *Workflows) TemporalOpSyncCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpSyncOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncTypedCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncTypedOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpAsyncUntypedCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpAsyncUntypedOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
+func (w *Workflows) TemporalOpCancelCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpCancelCaller(ctx, temporalOpCancelOp, input)
+}
+
+func (w *Workflows) TemporalOpCustomCancelCaller(ctx workflow.Context, input string) (string, error) {
+	return w.runTemporalOpCancelCaller(ctx, temporalOpCustomCancelOp, input)
+}
+
+func (w *Workflows) runTemporalOpCancelCaller(ctx workflow.Context, op nexus.Operation[string, string], input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	opCtx, opCancel := workflow.WithCancel(ctx)
+	fut := c.ExecuteOperation(opCtx, op, input, workflow.NexusOperationOptions{})
+	var exec workflow.NexusOperationExecution
+	if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+		return "", fmt.Errorf("expected start to succeed: %w", err)
+	}
+	opCancel()
+	if err := fut.Get(ctx, nil); err == nil {
+		return "", fmt.Errorf("expected cancel error")
+	}
+	return "", nil
+}
+
+func (w *Workflows) TemporalOpClientInStartCaller(ctx workflow.Context, input string) (string, error) {
+	c := workflow.NewNexusClient(temporalOpEndpoint, temporalOpServiceName)
+	var result string
+	return result, c.ExecuteOperation(ctx, temporalOpClientInStartOp, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+}
+
 func (w *Workflows) register(worker worker.Worker) {
+	worker.RegisterNexusService(temporalOpService)
+	worker.RegisterWorkflow(w.TemporalOpEcho)
+	worker.RegisterWorkflow(w.TemporalOpWaitForCancel)
+	worker.RegisterWorkflow(w.TemporalOpWaitForSignal)
+	worker.RegisterWorkflow(w.TemporalOpSyncCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncTypedCaller)
+	worker.RegisterWorkflow(w.TemporalOpAsyncUntypedCaller)
+	worker.RegisterWorkflow(w.TemporalOpCancelCaller)
+	worker.RegisterWorkflow(w.TemporalOpCustomCancelCaller)
+	worker.RegisterWorkflow(w.TemporalOpClientInStartCaller)
 	worker.RegisterWorkflow(w.ActivityCancelRepro)
 	worker.RegisterWorkflow(w.ActivityCompletionUsingID)
 	worker.RegisterWorkflow(w.ActivityHeartbeatWithRetry)
