@@ -57,6 +57,7 @@ func (ts *WorkerDeploymentTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkerDeploymentTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 
@@ -429,6 +430,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
 
 	// start workflow1 with 1.0, WaitSignalToStartVersionedOne, auto-upgrade
 	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
@@ -443,6 +445,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v2.BuildID, "")
 
 	// start workflow2 with 2.0, WaitSignalToStartVersionedOne, pinned
 	handle2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2"), "WaitSignalToStartVersioned")
@@ -452,15 +455,13 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v3)
 
-	// Needed if server constant maxFastUserDataFetches is not >= 20
-	//time.Sleep(10 * time.Second)
-
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		BuildID:       v3.BuildID,
 		ConflictToken: response3.ConflictToken,
 		Identity:      "client1",
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v3.BuildID, "")
 
 	desc, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 
@@ -896,13 +897,12 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 			Version:       v1,
 		},
 	})
-	ts.NoError(worker1.Start())
-	defer worker1.Stop()
-
 	worker1.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedOne, workflow.RegisterOptions{
 		Name:               "WaitSignalToStartVersioned",
 		VersioningBehavior: workflow.VersioningBehaviorPinned,
 	})
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
 
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
@@ -910,14 +910,10 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 			Version:       v2,
 		},
 	})
-	ts.NoError(worker2.Start())
-	defer worker2.Stop()
-
 	worker2.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedTwo, workflow.RegisterOptions{
 		Name:               "WaitSignalToStartVersioned",
 		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 	})
-
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
 
@@ -937,6 +933,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
 
 	// Show no drainage
 
@@ -968,6 +965,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v2.BuildID, "")
 
 	// Show 1.0) Draining and 2.0) not
 
