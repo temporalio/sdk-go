@@ -331,6 +331,33 @@ func (e *TestWorkflowEnvironment) RegisterNexusService(s *nexus.Service) {
 	e.impl.RegisterNexusService(s)
 }
 
+// ExecuteStandaloneActivity executes a standalone activity through the full
+// client interceptor chain. Unlike [TestActivityEnvironment.ExecuteActivity],
+// which runs the activity function directly, this method invokes the
+// [interceptor.ClientOutboundInterceptor] chain, enabling testing of
+// interceptor-dependent features such as tracing, metrics, and header
+// propagation.
+//
+// The activity is executed synchronously. The returned [ClientActivityHandle]
+// can be used to retrieve the activity result via [ClientActivityHandle.Get].
+//
+// Interceptors are sourced from [TestWorkflowEnvironment.SetWorkerOptions].
+// Only interceptors implementing [interceptor.ClientInterceptor] participate
+// in the chain; pure [interceptor.WorkerInterceptor] implementations are
+// skipped.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/testsuite.TestWorkflowEnvironment.ExecuteStandaloneActivity]
+func (e *TestWorkflowEnvironment) ExecuteStandaloneActivity(
+	ctx context.Context,
+	options ClientStartActivityOptions,
+	activity interface{},
+	args ...interface{},
+) (ClientActivityHandle, error) {
+	return e.impl.executeStandaloneActivity(ctx, options, activity, args...)
+}
+
 // SetStartTime sets the start time of the workflow. This is optional, default start time will be the wall clock time when
 // workflow starts. Start time is the workflow.Now(ctx) time at the beginning of the workflow.
 func (e *TestWorkflowEnvironment) SetStartTime(startTime time.Time) {
