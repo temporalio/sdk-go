@@ -1179,6 +1179,52 @@ func TestPanic(t *testing.T) {
 	require.Contains(t, panicError.StackTrace(), "go.temporal.io/sdk/internal.TestPanic")
 }
 
+func TestYieldDuringPanic(t *testing.T) {
+	// Verify that a deferred function attempting to yield (block) during panic
+	// unwinding is detected and re-panicked with a descriptive error, using the
+	// coroutineState.panicking flag instead of the old runtime.Callers() approach.
+	d := createNewDispatcher(func(ctx Context) {
+		c := NewNamedChannel(ctx, "test-chan")
+		GoNamed(ctx, "panicker", func(ctx Context) {
+			defer func() {
+				// This deferred function tries to block by receiving on a channel
+				// during panic unwinding. The panicking flag should catch this.
+				c.Receive(ctx, nil)
+			}()
+			panic("trigger unwinding")
+		})
+	})
+	defer d.Close()
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "yield during panic unwinding")
+}
+
+func TestPanicDoesNotAffectSubsequentCoroutines(t *testing.T) {
+	// Verify that a panic in one coroutine does not leave the panicking flag
+	// set on other coroutines, ensuring isolation between coroutines.
+	var history []string
+	d := createNewDispatcher(func(ctx Context) {
+		GoNamed(ctx, "panicker", func(ctx Context) {
+			panic("first coroutine panic")
+		})
+		GoNamed(ctx, "normal", func(ctx Context) {
+			history = append(history, "normal-start")
+			c := NewBufferedChannel(ctx, 1)
+			c.Send(ctx, "hello")
+			var v string
+			c.Receive(ctx, &v)
+			history = append(history, fmt.Sprintf("normal-got-%s", v))
+		})
+	})
+	defer d.Close()
+	// The panicker coroutine should cause an error, but verify the error
+	// is from the panic itself, not from a leaked panicking flag.
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "first coroutine panic")
+}
+
 func TestChannelReceivePointer(t *testing.T) {
 	// This confirms that a sent pointer can be received as a pointer
 	d := createNewDispatcher(func(ctx Context) {
@@ -1986,4 +2032,13 @@ func TestChainAlreadyReadyFuturePropagates(t *testing.T) {
 	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
 	require.Equal(t, 42, result)
+}
+
+func BenchmarkIsPanicking(b *testing.B) {
+	// Benchmark the happy path (not panicking) which is the hot path
+	// that executes on every coroutine yield.
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		isPanicking()
+	}
 }
