@@ -461,8 +461,10 @@ type (
 		// Optional: default false
 		WaitForCancellation bool
 
-		// WorkflowIDReusePolicy - Whether server allow reuse of workflow ID, can be useful
-		// for dedup logic if set to WorkflowIdReusePolicyRejectDuplicate
+		// WorkflowIDReusePolicy - Specifies server behavior if a *completed* workflow with the same id exists.
+		// This can be useful for dedupe logic if set to WorkflowIdReusePolicyRejectDuplicate.
+		//
+		// Optional: defaults to AllowDuplicate.
 		WorkflowIDReusePolicy enumspb.WorkflowIdReusePolicy
 
 		// RetryPolicy specify how to retry child workflow if error happens.
