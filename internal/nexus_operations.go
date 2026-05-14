@@ -263,7 +263,7 @@ func protoFailureToNexusFailure(failure *nexuspb.Failure) nexus.Failure {
 }
 
 // nexusOperationFailure is a utility in use by the test environment.
-func nexusOperationFailure(params executeNexusOperationParams, token string, cause *failurepb.Failure) *failurepb.Failure {
+func nexusOperationFailure(params ExecuteNexusOperationParams, token string, cause *failurepb.Failure) *failurepb.Failure {
 	return &failurepb.Failure{
 		Message: "nexus operation completed unsuccessfully",
 		FailureInfo: &failurepb.Failure_NexusOperationExecutionFailureInfo{
