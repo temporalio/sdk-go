@@ -126,6 +126,7 @@ type (
 		numNormalPollerMetric *numPollerMetric
 		numStickyPollerMetric *numPollerMetric
 
+		pollerGroupTracker        *pollerGroupTracker
 		inboundPayloadVisitor     PayloadVisitor
 		payloadVisitorConcurrency int
 	}
@@ -161,7 +162,7 @@ type (
 		payloadVisitorConcurrency int
 	}
 
-	// activityTaskPoller implements polling/processing a workflow task
+	// activityTaskPoller implements polling/processing an activity task
 	activityTaskPoller struct {
 		basePoller
 		namespace           string
@@ -172,6 +173,7 @@ type (
 		logger              log.Logger
 		activitiesPerSecond float64
 		numPollerMetric     *numPollerMetric
+		pollerGroupTracker  *pollerGroupTracker
 	}
 
 	historyIteratorImpl struct {
@@ -430,6 +432,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 		eagerActivityExecutor:        wtp.eagerActivityExecutor,
 		numNormalPollerMetric:        wtp.numNormalPollerMetric,
 		numStickyPollerMetric:        wtp.numStickyPollerMetric,
+		pollerGroupTracker:           newPollerGroupTracker(),
 		inboundPayloadVisitor:        wtp.inboundPayloadVisitor,
 		payloadVisitorConcurrency:    wtp.payloadVisitorConcurrency,
 	}
@@ -789,6 +792,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 			Namespace:     wtp.namespace,
 			Failure:       wtp.failureConverter.ErrorToFailure(sendErr),
 			Cause:         enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE,
+			PollerGroupId: task.GetPollerGroupId(),
 		}
 		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.payloadVisitorConcurrency); err != nil {
 			wtp.logger.Error("Failed to visit payloads for GRPC message too large query failure response.", tagError, err)
@@ -1141,6 +1145,9 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		panic("unknown workflow task poller mode")
 	}
 
+	groupId := wtp.pollerGroupTracker.getNextGroupId()
+	defer wtp.pollerGroupTracker.release(groupId)
+
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
@@ -1156,6 +1163,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 			wtp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey: wtp.workerInstanceKey,
+		PollerGroupId:     groupId,
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1191,6 +1199,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return nil, err
 	}
+	wtp.pollerGroupTracker.updateGroups(response.GetPollerGroupInfos())
 
 	if response == nil || len(response.TaskToken) == 0 {
 		// Emit using base scope as no workflow type information is available in the case of empty poll
@@ -1382,6 +1391,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		logger:              params.Logger,
 		activitiesPerSecond: params.TaskQueueActivitiesPerSecond,
 		numPollerMetric:     newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeActivityTask),
+		pollerGroupTracker:  newPollerGroupTracker(),
 	}
 }
 
@@ -1398,6 +1408,10 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	traceLog(func() {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
+
+	groupId := atp.pollerGroupTracker.getNextGroupId()
+	defer atp.pollerGroupTracker.release(groupId)
+
 	request := &workflowservice.PollActivityTaskQueueRequest{
 		Namespace:         atp.namespace,
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -1413,12 +1427,14 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 			atp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey: atp.workerInstanceKey,
+		PollerGroupId:     groupId,
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)
 	if err != nil {
 		return nil, err
 	}
+	atp.pollerGroupTracker.updateGroups(response.GetPollerGroupInfos())
 	if response == nil || len(response.TaskToken) == 0 {
 		// No activity info is available on empty poll.  Emit using base scope.
 		atp.metricsHandler.Counter(metrics.ActivityPollNoTaskCounter).Inc(1)
