@@ -203,6 +203,21 @@ func (r *ReasonMapRange) String() string {
 	return "iterates over map"
 }
 
+// ReasonAnonymousFunc represents passing an anonymous function to an API
+// that requires deterministic function names.
+type ReasonAnonymousFunc struct {
+	SourcePos *token.Position
+	FuncName  string
+}
+
+// Pos returns the source position.
+func (r *ReasonAnonymousFunc) Pos() *token.Position { return r.SourcePos }
+
+// String returns the reason.
+func (r *ReasonAnonymousFunc) String() string {
+	return "anonymous function passed to " + r.FuncName + " that has a non-deterministic function name"
+}
+
 func init() {
 	// Needed for go vet usage
 	gob.Register(&ReasonDecl{})
@@ -210,4 +225,5 @@ func init() {
 	gob.Register(&ReasonVarAccess{})
 	gob.Register(&ReasonConcurrency{})
 	gob.Register(&ReasonMapRange{})
+	gob.Register(&ReasonAnonymousFunc{})
 }

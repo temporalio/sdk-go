@@ -84,6 +84,9 @@ func NewChecker(config Config) *Checker {
 			Debug:                             config.DeterminismDebug,
 			EnableObjectFacts:                 config.EnableObjectFacts,
 			AcceptsNonDeterministicParameters: map[string][]string{"go.temporal.io/sdk/workflow": {"SideEffect", "MutableSideEffect"}},
+			RejectsAnonymousFuncArgs: map[string]int{
+				"go.temporal.io/sdk/workflow.ExecuteLocalActivity": 1,
+			},
 		}),
 	}
 }
@@ -144,12 +147,19 @@ func (c *Checker) Run(pass *analysis.Pass) error {
 		determinism.UpdateIgnoreMap(pass.Fset, file, ignoreMap)
 
 		ast.Inspect(file, func(n ast.Node) bool {
-			// Only handle calls with followable function pointers
 			_, isIgnored := ignoreMap[n]
 			for k := range ignoreMap {
-				asExprStmt, _ := k.(*ast.ExprStmt)
-				if asExprStmt != nil && asExprStmt.X == n {
-					isIgnored = true
+				switch stmt := k.(type) {
+				case *ast.ExprStmt:
+					if stmt.X == n {
+						isIgnored = true
+					}
+				case *ast.AssignStmt:
+					for _, rhs := range stmt.Rhs {
+						if rhs == n {
+							isIgnored = true
+						}
+					}
 				}
 			}
 			funcDecl, _ := n.(*ast.FuncDecl)
