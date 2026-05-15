@@ -244,6 +244,54 @@ type ClientPollActivityResultInput = internal.ClientPollActivityResultInput
 // NOTE: Experimental
 type ClientPollActivityResultOutput = internal.ClientPollActivityResultOutput
 
+// ClientExecuteCallbackInput is the input to
+// ClientOutboundInterceptor.ExecuteCallback.
+//
+// NOTE: Experimental
+type ClientExecuteCallbackInput = internal.ClientExecuteCallbackInput
+
+// ClientGetCallbackExecutionHandleInput is the input to
+// ClientOutboundInterceptor.GetCallbackExecutionHandle.
+//
+// NOTE: Experimental
+type ClientGetCallbackExecutionHandleInput = internal.ClientGetCallbackExecutionHandleInput
+
+// ClientCancelCallbackInput is the input to
+// ClientOutboundInterceptor.CancelCallback.
+//
+// NOTE: Experimental
+type ClientCancelCallbackInput = internal.ClientCancelCallbackInput
+
+// ClientTerminateCallbackInput is the input to
+// ClientOutboundInterceptor.TerminateCallback.
+//
+// NOTE: Experimental
+type ClientTerminateCallbackInput = internal.ClientTerminateCallbackInput
+
+// ClientDescribeCallbackInput is the input to
+// ClientOutboundInterceptor.DescribeCallback.
+//
+// NOTE: Experimental
+type ClientDescribeCallbackInput = internal.ClientDescribeCallbackInput
+
+// ClientDescribeCallbackOutput is the output of
+// ClientOutboundInterceptor.DescribeCallback.
+//
+// NOTE: Experimental
+type ClientDescribeCallbackOutput = internal.ClientDescribeCallbackOutput
+
+// ClientPollCallbackResultInput is the input to
+// ClientOutboundInterceptor.PollCallbackResult.
+//
+// NOTE: Experimental
+type ClientPollCallbackResultInput = internal.ClientPollCallbackResultInput
+
+// ClientPollCallbackResultOutput is the output of
+// ClientOutboundInterceptor.PollCallbackResult.
+//
+// NOTE: Experimental
+type ClientPollCallbackResultOutput = internal.ClientPollCallbackResultOutput
+
 // ScheduleClientCreateInput is input for
 // ScheduleClientInterceptor.CreateSchedule.
 type ScheduleClientCreateInput = internal.ScheduleClientCreateInput

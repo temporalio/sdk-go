@@ -589,3 +589,49 @@ func (p *proxyClientOutbound) PollActivityResult(
 	err, _ = vals[1].Interface().(error)
 	return
 }
+
+func (p *proxyClientOutbound) ExecuteCallback(
+	ctx context.Context,
+	in *interceptor.ClientExecuteCallbackInput,
+) (ret client.CallbackExecutionHandle, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(client.CallbackExecutionHandle)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) GetCallbackExecutionHandle(
+	in *interceptor.ClientGetCallbackExecutionHandleInput,
+) (ret client.CallbackExecutionHandle) {
+	ret, _ = p.invoke(in)[0].Interface().(client.CallbackExecutionHandle)
+	return
+}
+
+
+func (p *proxyClientOutbound) TerminateCallback(
+	ctx context.Context,
+	in *interceptor.ClientTerminateCallbackInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) DescribeCallback(
+	ctx context.Context,
+	in *interceptor.ClientDescribeCallbackInput,
+) (ret *interceptor.ClientDescribeCallbackOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientDescribeCallbackOutput)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) PollCallbackResult(
+	ctx context.Context,
+	in *interceptor.ClientPollCallbackResultInput,
+) (ret *interceptor.ClientPollCallbackResultOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientPollCallbackResultOutput)
+	err, _ = vals[1].Interface().(error)
+	return
+}
