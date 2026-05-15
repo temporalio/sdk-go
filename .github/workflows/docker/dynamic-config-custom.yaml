@@ -54,3 +54,7 @@ frontend.WorkerHeartbeatsEnabled:
   - value: true
 frontend.ListWorkersEnabled:
   - value: true
+# Will no longer be necessary when CHASM schedule creation is enabled by default.
+frontend.allowedExperiments:
+  - value:
+    - "chasm-scheduler"
