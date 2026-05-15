@@ -461,7 +461,7 @@ type (
 		// Optional: default false
 		WaitForCancellation bool
 
-		// WorkflowIDReusePolicy - Specifies server behavior if a *completed* workflow with the same id exists.
+		// WorkflowIDReusePolicy - Controls how the server handles attempts to reuse the ID of a completed workflow.
 		// This can be useful for dedupe logic if set to WorkflowIdReusePolicyRejectDuplicate.
 		//
 		// Optional: defaults to AllowDuplicate.
