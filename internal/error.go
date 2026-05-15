@@ -566,6 +566,10 @@ func (e *temporalError) failure() *failurepb.Failure {
 	return e.originalFailure
 }
 
+func (e *temporalError) Failure() *failurepb.Failure {
+	return e.originalFailure
+}
+
 // IsCanceledError returns whether error in CanceledError.
 func IsCanceledError(err error) bool {
 	var canceledErr *CanceledError

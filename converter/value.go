@@ -57,3 +57,22 @@ func (v RawValue) MarshalJSON() ([]byte, error) {
 func (v *RawValue) UnmarshalJSON(b []byte) error {
 	return fmt.Errorf("RawValue is not JSON serializable")
 }
+
+// ValuesPayloads is an optional interface that EncodedValue and EncodedValues may implement
+// to expose the underlying commonpb.Payloads without decoding.
+type ValuesPayloads interface {
+	// Payloads gets the underlying commonpb.Payloads
+	Payloads() *commonpb.Payloads
+}
+
+// GetPayloads acts as a helper to extract the raw *commonpb.Payloads from an EncodedValue
+// or EncodedValues, if the underlying implementation supports it via the ValuesPayloads interface.
+// If the underlying implementation does not support it, this returns nil.
+//
+// Exposed as: [go.temporal.io/sdk/converter.GetPayloads]
+func GetPayloads(encoded interface{}) *commonpb.Payloads {
+	if vp, ok := encoded.(ValuesPayloads); ok {
+		return vp.Payloads()
+	}
+	return nil
+}
