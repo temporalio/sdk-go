@@ -3944,3 +3944,182 @@ func (res *updateResult) post_callbacks(env *testWorkflowEnvironmentImpl) {
 	}
 	res.callbacks = []updateCallbacksWrapper{}
 }
+
+// testClientOutboundInterceptor is the terminal interceptor in the
+// ClientOutboundInterceptor chain for TestWorkflowEnvironment. Instead of
+// making gRPC calls to a real server, it executes activities directly via the
+// test activity task handler.
+type testClientOutboundInterceptor struct {
+	ClientOutboundInterceptorBase
+	env *testWorkflowEnvironmentImpl
+}
+
+func (t *testClientOutboundInterceptor) ExecuteActivity(
+	ctx context.Context,
+	in *ClientExecuteActivityInput,
+) (ClientActivityHandle, error) {
+	if in.Options == nil {
+		return nil, errors.New("options are required")
+	}
+	if in.Options.ID == "" {
+		in.Options.ID = uuid.NewString()
+	}
+	if in.Options.TaskQueue == "" {
+		in.Options.TaskQueue = defaultTestTaskQueue
+	}
+	if in.Options.ScheduleToCloseTimeout == 0 && in.Options.StartToCloseTimeout == 0 {
+		in.Options.StartToCloseTimeout = 10 * time.Minute
+	}
+
+	dc := t.env.GetDataConverter()
+	input, err := encodeArgs(dc, in.Args)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode activity args: %w", err)
+	}
+
+	scheduleTaskAttr := &commandpb.ScheduleActivityTaskCommandAttributes{
+		ActivityId:             in.Options.ID,
+		ActivityType:           &commonpb.ActivityType{Name: in.ActivityType},
+		TaskQueue:              &taskqueuepb.TaskQueue{Name: in.Options.TaskQueue, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+		Input:                  input,
+		ScheduleToCloseTimeout: durationpb.New(in.Options.ScheduleToCloseTimeout),
+		StartToCloseTimeout:    durationpb.New(in.Options.StartToCloseTimeout),
+		ScheduleToStartTimeout: durationpb.New(in.Options.ScheduleToStartTimeout),
+		HeartbeatTimeout:       durationpb.New(in.Options.HeartbeatTimeout),
+		RetryPolicy:            convertToPBRetryPolicy(in.Options.RetryPolicy),
+	}
+
+	// Propagate headers from context
+	header, err := headerPropagated(ctx, t.env.contextPropagators)
+	if err != nil {
+		return nil, fmt.Errorf("failed to propagate headers: %w", err)
+	}
+	scheduleTaskAttr.Header = header
+
+	task := newTestActivityTask(t.env.workflowInfo.Namespace, scheduleTaskAttr)
+	activityRunID := getStringID(t.env.nextID())
+	task.ActivityRunId = activityRunID
+
+	taskHandler := t.env.newTestActivityTaskHandler(in.Options.TaskQueue, dc)
+	t.env.addNewActivityHandle(task, func(result *commonpb.Payloads, err error) {}, dc, t.env.GetFailureConverter())
+
+	result, err := taskHandler.Execute(in.Options.TaskQueue, task)
+	if err != nil {
+		if err == context.DeadlineExceeded {
+			return nil, fmt.Errorf("activity %v timed out: %w", in.ActivityType, err)
+		}
+		return nil, fmt.Errorf("activity %v panicked: %w", in.ActivityType, err)
+	}
+
+	if result == ErrActivityResultPending {
+		return &testClientActivityHandleImpl{
+			id:    in.Options.ID,
+			runID: activityRunID,
+			env:   t.env,
+		}, nil
+	}
+
+	handle := &testClientActivityHandleImpl{
+		id:    in.Options.ID,
+		runID: activityRunID,
+		env:   t.env,
+	}
+
+	switch request := result.(type) {
+	case *workflowservice.RespondActivityTaskCanceledRequest:
+		handle.result = &ClientPollActivityResultOutput{
+			Error: NewCanceledError(newEncodedValues(request.Details, dc)),
+		}
+	case *workflowservice.RespondActivityTaskFailedRequest:
+		handle.result = &ClientPollActivityResultOutput{
+			Error: t.env.GetFailureConverter().FailureToError(request.GetFailure()),
+		}
+	case *workflowservice.RespondActivityTaskCompletedRequest:
+		handle.result = &ClientPollActivityResultOutput{
+			Result: newEncodedValue(request.Result, dc),
+		}
+	default:
+		return nil, fmt.Errorf("unsupported activity result type %T", result)
+	}
+
+	return handle, nil
+}
+
+func (*testClientOutboundInterceptor) mustEmbedClientOutboundInterceptorBase() {}
+
+// testClientActivityHandleImpl implements ClientActivityHandle for the test
+// environment. Since the test environment executes activities synchronously,
+// the result is typically available immediately.
+type testClientActivityHandleImpl struct {
+	id     string
+	runID  string
+	env    *testWorkflowEnvironmentImpl
+	result *ClientPollActivityResultOutput
+}
+
+func (h *testClientActivityHandleImpl) GetID() string {
+	return h.id
+}
+
+func (h *testClientActivityHandleImpl) GetRunID() string {
+	return h.runID
+}
+
+func (h *testClientActivityHandleImpl) Get(ctx context.Context, valuePtr any) error {
+	if h.result == nil {
+		return fmt.Errorf("activity result not available")
+	}
+	if h.result.Error != nil {
+		return h.result.Error
+	}
+	if h.result.Result != nil && valuePtr != nil {
+		return h.result.Result.Get(valuePtr)
+	}
+	return nil
+}
+
+func (h *testClientActivityHandleImpl) Describe(ctx context.Context, options ClientDescribeActivityOptions) (*ClientActivityExecutionDescription, error) {
+	return nil, fmt.Errorf("Describe is not supported in the test environment")
+}
+
+func (h *testClientActivityHandleImpl) Cancel(ctx context.Context, options ClientCancelActivityOptions) error {
+	return fmt.Errorf("Cancel is not supported in the test environment for standalone activities")
+}
+
+func (h *testClientActivityHandleImpl) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
+	return fmt.Errorf("Terminate is not supported in the test environment for standalone activities")
+}
+
+// executeStandaloneActivity runs a standalone activity through the
+// ClientOutboundInterceptor chain, allowing user interceptors (tracing,
+// metrics, etc.) to be exercised during tests.
+func (env *testWorkflowEnvironmentImpl) executeStandaloneActivity(
+	ctx context.Context,
+	options ClientStartActivityOptions,
+	activityFn interface{},
+	args ...interface{},
+) (ClientActivityHandle, error) {
+	activityType, err := getValidatedActivityFunction(activityFn, args, env.registry)
+	if err != nil {
+		return nil, err
+	}
+
+	// Set up header context so interceptors can read/write headers
+	ctx = contextWithNewHeader(ctx)
+
+	// Build the client interceptor chain: user interceptors wrapping our
+	// terminal test interceptor. The chain is built per-call, matching the
+	// real client's initialization pattern.
+	var chain ClientOutboundInterceptor = &testClientOutboundInterceptor{env: env}
+	for i := len(env.registry.interceptors) - 1; i >= 0; i-- {
+		if ci, ok := env.registry.interceptors[i].(ClientInterceptor); ok {
+			chain = ci.InterceptClient(chain)
+		}
+	}
+
+	return chain.ExecuteActivity(ctx, &ClientExecuteActivityInput{
+		Options:      &options,
+		ActivityType: activityType.Name,
+		Args:         args,
+	})
+}
