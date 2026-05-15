@@ -28,6 +28,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -7152,6 +7154,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
 	ts.workflows.register(w)
 	ts.activities.register(w)
+	w.RegisterNexusService(temporalOpService)
 }
 
 var (
@@ -9147,4 +9150,55 @@ func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
 	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
 		return strings.HasPrefix(line, "WARN  [TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
 	}))
+}
+
+func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	endpoint := "temporal-op-test-ep-" + uuid.NewString()
+	_, err := ts.client.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: endpoint,
+			Target: &nexuspb.EndpointTarget{
+				Variant: &nexuspb.EndpointTarget_Worker_{
+					Worker: &nexuspb.EndpointTarget_Worker{
+						Namespace: ts.config.Namespace,
+						TaskQueue: ts.taskQueueName,
+					},
+				},
+			},
+		},
+	})
+	ts.NoError(err)
+	temporalOpEndpoint = endpoint
+
+	startOpts := client.StartWorkflowOptions{
+		TaskQueue: ts.taskQueueName, WorkflowTaskTimeout: time.Second,
+	}
+
+	typedInput := "typed-wf-" + uuid.NewString()
+	untypedInput := "untyped-wf-" + uuid.NewString()
+	signalInput := "signal-wf-" + uuid.NewString()
+	for _, tc := range []struct {
+		name     string
+		wf       func(workflow.Context, string) (string, error)
+		input    string
+		expected string
+	}{
+		{"Sync result", ts.workflows.TemporalOpSyncCaller, "hello", "sync-hello"},
+		{"Async with StartWorkflow", ts.workflows.TemporalOpAsyncTypedCaller, typedInput, typedInput},
+		{"Async with StartUntypedWorkflow", ts.workflows.TemporalOpAsyncUntypedCaller, untypedInput, untypedInput},
+		{"Cancel", ts.workflows.TemporalOpCancelCaller, "cancel-wf-" + uuid.NewString(), ""},
+		{"Custom cancel with GetWorkflowClient", ts.workflows.TemporalOpCustomCancelCaller, "custom-cancel-wf-" + uuid.NewString(), ""},
+		{"GetWorkflowClient in Start", ts.workflows.TemporalOpClientInStartCaller, signalInput, "signaled-" + signalInput},
+	} {
+		ts.Run(tc.name, func() {
+			run, err := ts.client.ExecuteWorkflow(ctx, startOpts, tc.wf, tc.input)
+			ts.NoError(err)
+			var result string
+			ts.NoError(run.Get(ctx, &result))
+			ts.Equal(tc.expected, result)
+		})
+	}
 }
