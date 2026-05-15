@@ -331,6 +331,12 @@ func ExecuteUntypedWorkflow[R any](
 		// This field is expected to be populated by servers older than 1.27.0.
 		nexusOptions.CallbackHeader.Set("nexus-operation-id", encodedToken)
 		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, encodedToken)
+		// Mirror the reserved Nexus identity headers onto the callback so the
+		// caller-side completion path sees Endpoint/Service/Operation and can
+		// wrap the result decode in NexusSerializationContext.
+		nexusOptions.CallbackHeader.Set(internal.NexusEndpointHeaderKey, nctx.Endpoint)
+		nexusOptions.CallbackHeader.Set(internal.NexusServiceHeaderKey, nctx.Service)
+		nexusOptions.CallbackHeader.Set(internal.NexusOperationHeaderKey, nctx.Operation)
 		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
 			{
 				Variant: &common.Callback_Nexus_{

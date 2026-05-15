@@ -171,8 +171,15 @@ func (h *nexusTaskHandler) handleStartOperation(
 	req *nexuspb.StartOperationRequest,
 	header nexus.Header,
 ) (*nexuspb.Response, *nexus.HandlerError, error) {
+	// Wrap data + failure converters with NexusSerializationContext for the
+	// duration of this start-operation. This is the Nexus handler boundary:
+	// input deserialization, sync result serialization, and failure conversion
+	// all see NexusSerializationContext.
+	nexCtx := h.nexusSerCtx(nctx.Endpoint, nctx.Service, nctx.Operation)
+	dc := converter.WithDataConverterSerializationContext(h.dataConverter, nexCtx)
+	fc := converter.WithFailureConverterSerializationContext(h.failureConverter, nexCtx)
 	serializer := &payloadSerializer{
-		converter: h.dataConverter,
+		converter: dc,
 		payload:   req.GetPayload(),
 	}
 	// Create a fake lazy value, Temporal server already converts Nexus content into payloads.
@@ -210,8 +217,8 @@ func (h *nexusTaskHandler) handleStartOperation(
 		Links:          nexusLinks,
 	}
 	ctx = nexus.WithHandlerContext(ctx, nexus.HandlerInfo{
-		Service:   req.GetService(),
-		Operation: req.GetOperation(),
+		Service:   nctx.Service,
+		Operation: nctx.Operation,
 		Header:    header,
 	})
 	var opres nexus.HandlerStartOperationResult[any]
@@ -274,7 +281,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 				Variant: &nexuspb.Response_StartOperation{
 					StartOperation: &nexuspb.StartOperationResponse{
 						Variant: &nexuspb.StartOperationResponse_Failure{
-							Failure: h.failureConverter.ErrorToFailure(tempoErr),
+							Failure: fc.ErrorToFailure(tempoErr),
 						},
 					},
 				},
@@ -325,7 +332,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		}
 		// *nexus.HandlerStartOperationResultSync is generic, we can't type switch unfortunately.
 		value := reflect.ValueOf(t).Elem().FieldByName("Value").Interface()
-		payload, err := h.dataConverter.ToPayload(value)
+		payload, err := dc.ToPayload(value)
 		if err != nil {
 			nctx.log.Error("Cannot convert Nexus sync result", tagError, err)
 			return nil, nexus.NewHandlerErrorf(
@@ -453,10 +460,25 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 		Endpoint:       response.GetRequest().GetEndpoint(),
 		Namespace:      h.namespace,
 		TaskQueue:      h.taskQueueName,
+		Service:        service,
+		Operation:      operation,
 		metricsHandler: metricsHandler,
 		log:            logger,
 		registry:       h.registry,
 	}, nil
+}
+
+// nexusSerCtx builds a NexusSerializationContext keyed by this handler's
+// namespace and the provided endpoint/service/operation identity. Operations
+// carries a single-entry chain matching the flat fields; the handler does not
+// inherit the caller's accumulated chain (that would require a wire contract
+// beyond the existing Nexus task payload).
+func (h *nexusTaskHandler) nexusSerCtx(endpoint, service, operation string) converter.NexusSerializationContext {
+	op := converter.NexusOperation{Endpoint: endpoint, Service: service, Operation: operation}
+	return converter.NexusSerializationContext{
+		Namespace:  h.namespace,
+		Operations: []converter.NexusOperation{op},
+	}
 }
 
 func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response, failureReasonSupport bool) (*workflowservice.RespondNexusTaskCompletedRequest, error) {

@@ -2,7 +2,8 @@ package converter
 
 // SerializationContext provides metadata about where serialization is occurring.
 // Implementations include [WorkflowSerializationContext] for workflow-level
-// payloads, and [ActivitySerializationContext] for activity-level payloads.
+// payloads, [ActivitySerializationContext] for activity-level payloads, and
+// [NexusSerializationContext] for Nexus operation payloads.
 type SerializationContext interface {
 	isSerializationContext()
 }
@@ -33,6 +34,43 @@ type ActivitySerializationContext struct {
 }
 
 func (ActivitySerializationContext) isSerializationContext() {}
+
+// NexusOperation identifies a single Nexus operation by Endpoint, Service,
+// and Operation name. Used as an element of [NexusSerializationContext.Operations]
+// to describe the accumulated chain of Nexus operations that have been
+// scheduled in the current workflow execution (or inherited from a parent
+// Nexus boundary).
+type NexusOperation struct {
+	Endpoint  string
+	Service   string
+	Operation string
+}
+
+// NexusSerializationContext is the serialization context for Nexus operation
+// payloads at every Nexus code boundary: the Nexus task handler, the workflow
+// caller (ExecuteNexusOperation), and the spawned workflow's input/output if
+// the operation is workflow-backed.
+//
+// Operations is the accumulated chain of Nexus operations applied to this
+// serialization, ordered from oldest to most recent. The last entry is the
+// active Nexus operation; earlier entries are operations the workflow has
+// already scheduled (workflow-side build-up) or inherited (handler-side). A
+// codec may choose to use the most recent entry, all entries, or any other
+// derivation.
+//
+// Namespace is the Temporal namespace of whichever worker is performing
+// serialization.
+//
+// Security note: the Endpoint, Service, and Operation strings originate from
+// server-delivered task/header data. Codec implementations should treat them
+// as untrusted input if used in security-sensitive operations (filesystem
+// paths, key IDs, log fields).
+type NexusSerializationContext struct {
+	Namespace  string
+	Operations []NexusOperation
+}
+
+func (NexusSerializationContext) isSerializationContext() {}
 
 // DataConverterWithSerializationContext is an optional interface that [DataConverter]
 // implementations can implement to receive serialization context.

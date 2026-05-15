@@ -39,6 +39,12 @@ type NexusOperationContext struct {
 	Namespace      string
 	TaskQueue      string
 	Endpoint       string
+	// Service is the Nexus service name being handled. Internal-only; not
+	// exposed via NexusOperationInfo per spec non-goal.
+	Service string
+	// Operation is the Nexus operation name being handled. Internal-only; not
+	// exposed via NexusOperationInfo per spec non-goal.
+	Operation      string
 	metricsHandler metrics.Handler
 	log            log.Logger
 	registry       *registry

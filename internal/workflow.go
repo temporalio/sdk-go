@@ -3079,7 +3079,23 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return executeNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
-	payload, err := dc.ToPayload(input.Input)
+	// Build a NexusSerializationContext-aware data converter for input
+	// encoding at the workflow caller side. Each Nexus operation call carries
+	// a single-entry Operations chain: just the operation being scheduled.
+	// (The chain only grows on the callee/boundary side, where a workflow can
+	// be started + attached-to by multiple Nexus operations.)
+	op := converter.NexusOperation{
+		Endpoint:  input.Client.Endpoint(),
+		Service:   input.Client.Service(),
+		Operation: operationName,
+	}
+	nexCtx := converter.NexusSerializationContext{
+		Namespace:  wc.env.WorkflowInfo().Namespace,
+		Operations: []converter.NexusOperation{op},
+	}
+	nexDC := converter.WithDataConverterSerializationContext(dc, nexCtx)
+
+	payload, err := nexDC.ToPayload(input.Input)
 	if err != nil {
 		return executeNexusOperationParams{}, err
 	}
@@ -3089,11 +3105,12 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	}
 
 	return executeNexusOperationParams{
-		client:      input.Client,
-		operation:   operationName,
-		input:       payload,
-		options:     input.Options,
-		nexusHeader: input.NexusHeader,
+		client:        input.Client,
+		operation:     operationName,
+		input:         payload,
+		options:       input.Options,
+		nexusHeader:   input.NexusHeader,
+		dataConverter: nexDC,
 	}, nil
 }
 
@@ -3120,6 +3137,13 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		executionSettable.Set(nil, err)
 		mainSettable.Set(nil, err)
 		return result
+	}
+
+	// Wire the NexusSerializationContext-aware data converter onto the result
+	// future so FromPayloads at Get-time uses NexusSerializationContext.
+	// Precedent: decodeFutureImpl.dataConverter pattern (internal/internal_workflow.go).
+	if params.dataConverter != nil {
+		result.decodeFutureImpl.dataConverter = params.dataConverter
 	}
 
 	var operationToken string

@@ -71,6 +71,10 @@ type (
 		input       *commonpb.Payload
 		options     NexusOperationOptions
 		nexusHeader map[string]string
+		// dataConverter is the NexusSerializationContext-wrapped converter
+		// used to decode the operation result at the caller side. nil falls
+		// back to the workflow context's default converter.
+		dataConverter converter.DataConverter
 	}
 
 	// WorkflowEnvironment Represents the environment for workflow.
@@ -117,6 +121,16 @@ type (
 		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool, summary string) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
 		GetFailureConverter() converter.FailureConverter
+		// GetNexusBoundaryDataConverter returns the NexusSerializationContext-wrapped
+		// data converter to use at this workflow's own I/O boundary. Returns nil
+		// when the workflow was not started by a Nexus operation. Used at
+		// workflowExecutor.Execute for input decode + output encode, and at the
+		// cancel-details close path. NOT used for activities, child workflows,
+		// queries, side-effects, markers, CAN input, or GetDataConverter().
+		GetNexusBoundaryDataConverter() converter.DataConverter
+		// GetNexusBoundaryFailureConverter is the failure-converter analog of
+		// GetNexusBoundaryDataConverter. Used at the workflow-failure close path.
+		GetNexusBoundaryFailureConverter() converter.FailureConverter
 		AddSession(sessionInfo *SessionInfo)
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator

@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -252,6 +253,100 @@ func TestWithSerializationContextHelper_Wraps(t *testing.T) {
 	require.NotSame(t, dc, result)
 
 	captured := dc.getCapturedContexts()
+	require.Len(t, captured, 1)
+	require.Equal(t, ctx, captured[0])
+}
+
+// Compile-time assertion that NexusSerializationContext satisfies SerializationContext.
+var _ SerializationContext = NexusSerializationContext{}
+
+func TestNexusSerializationContext_ImplementsInterface(t *testing.T) {
+	var ctx SerializationContext = NexusSerializationContext{
+		Namespace: "ns",
+		Operations: []NexusOperation{
+			{Endpoint: "endpoint-1", Service: "svc", Operation: "op"},
+		},
+	}
+	// Verify type assertion roundtrip.
+	nexCtx, ok := ctx.(NexusSerializationContext)
+	require.True(t, ok)
+	require.Equal(t, "ns", nexCtx.Namespace)
+	require.Len(t, nexCtx.Operations, 1)
+	require.Equal(t, "endpoint-1", nexCtx.Operations[0].Endpoint)
+	require.Equal(t, "svc", nexCtx.Operations[0].Service)
+	require.Equal(t, "op", nexCtx.Operations[0].Operation)
+}
+
+func TestWithDataConverterSerializationContext_NexusContext(t *testing.T) {
+	dc := newCapturingDC()
+	ctx := NexusSerializationContext{
+		Namespace: "ns",
+		Operations: []NexusOperation{
+			{Endpoint: "ep", Service: "svc", Operation: "op"},
+		},
+	}
+	result := WithDataConverterSerializationContext(dc, ctx)
+	require.NotSame(t, dc, result)
+
+	captured := dc.getCapturedContexts()
+	require.Len(t, captured, 1)
+	require.Equal(t, ctx, captured[0])
+}
+
+// noopFC is a minimal FailureConverter to embed in capturingFC.
+type noopFC struct{}
+
+func (noopFC) ErrorToFailure(err error) *failurepb.Failure { return nil }
+func (noopFC) FailureToError(*failurepb.Failure) error     { return nil }
+
+// capturingFC records contexts observed by WithSerializationContext.
+type capturingFC struct {
+	FailureConverter
+	mu       *sync.Mutex
+	contexts *[]SerializationContext
+}
+
+func newCapturingFC() *capturingFC {
+	contexts := make([]SerializationContext, 0)
+	mu := &sync.Mutex{}
+	return &capturingFC{
+		FailureConverter: noopFC{},
+		mu:               mu,
+		contexts:         &contexts,
+	}
+}
+
+func (fc *capturingFC) WithSerializationContext(ctx SerializationContext) FailureConverter {
+	fc.mu.Lock()
+	*fc.contexts = append(*fc.contexts, ctx)
+	fc.mu.Unlock()
+	return &capturingFC{
+		FailureConverter: fc.FailureConverter,
+		mu:               fc.mu,
+		contexts:         fc.contexts,
+	}
+}
+
+func (fc *capturingFC) getCapturedContexts() []SerializationContext {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	out := make([]SerializationContext, len(*fc.contexts))
+	copy(out, *fc.contexts)
+	return out
+}
+
+func TestWithFailureConverterSerializationContext_NexusContext(t *testing.T) {
+	fc := newCapturingFC()
+	ctx := NexusSerializationContext{
+		Namespace: "ns",
+		Operations: []NexusOperation{
+			{Endpoint: "ep", Service: "svc", Operation: "op"},
+		},
+	}
+	result := WithFailureConverterSerializationContext(fc, ctx)
+	require.NotSame(t, fc, result)
+
+	captured := fc.getCapturedContexts()
 	require.Len(t, captured, 1)
 	require.Equal(t, ctx, captured[0])
 }

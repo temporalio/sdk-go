@@ -1876,8 +1876,17 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		// Workflow canceled
 		metricCounterToIncrement = metrics.WorkflowCanceledCounter
 		closeCommand = createNewCommand(enumspb.COMMAND_TYPE_CANCEL_WORKFLOW_EXECUTION)
+		// Cancellation details are workflow output to the Nexus caller. Use the
+		// nexus-boundary data converter when the workflow was started by a Nexus
+		// operation; otherwise fall back to wth.dataConverter.
+		cancelDC := wth.dataConverter
+		if eh := workflowContext.getEventHandler(); eh != nil {
+			if nexusDC := eh.GetNexusBoundaryDataConverter(); nexusDC != nil {
+				cancelDC = nexusDC
+			}
+		}
 		closeCommand.Attributes = &commandpb.Command_CancelWorkflowExecutionCommandAttributes{CancelWorkflowExecutionCommandAttributes: &commandpb.CancelWorkflowExecutionCommandAttributes{
-			Details: convertErrDetailsToPayloads(canceledErr.details, wth.dataConverter),
+			Details: convertErrDetailsToPayloads(canceledErr.details, cancelDC),
 		}}
 	} else if errors.As(workflowContext.err, &contErr) {
 		// Continue as new error.
@@ -1918,6 +1927,15 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			WorkflowID: wfInfo.WorkflowExecution.ID,
 		}
 		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, wfCtx)
+		// For a Nexus-backed workflow, the failure is sent back to the Nexus
+		// caller as the workflow's terminal result; the caller's codec keys by
+		// Endpoint, so the failure must be encoded under
+		// NexusSerializationContext instead of WorkflowSerializationContext.
+		if eventHandler != nil {
+			if nexusFC := eventHandler.GetNexusBoundaryFailureConverter(); nexusFC != nil {
+				fc = nexusFC
+			}
+		}
 		failure := fc.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,

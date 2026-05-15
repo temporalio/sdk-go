@@ -45,7 +45,7 @@ func ExampleCodecDataConverter_compression() {
 
 	// Output:
 	// Uncompressed payload size: 1202 (encoding: json/plain)
-	// Compressed payload size: 57 (encoding: binary/zlib)
+	// Compressed payload size: 53 (encoding: binary/zlib)
 	// Uncompressed payload back to original? true
 	// Compressed payload back to original? true
 }

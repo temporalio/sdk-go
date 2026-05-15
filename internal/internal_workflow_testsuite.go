@@ -1285,6 +1285,26 @@ func (env *testWorkflowEnvironmentImpl) GetFailureConverter() converter.FailureC
 	return env.failureConverter
 }
 
+// GetNexusBoundaryDataConverter returns nil for the test environment. The
+// test env does not synthesize __temporal_nexus_* start headers, so it never
+// runs a workflow under a Nexus boundary converter. workflowExecutor.Execute
+// falls back to the normal data converter when this returns nil.
+func (env *testWorkflowEnvironmentImpl) GetNexusBoundaryDataConverter() converter.DataConverter {
+	return nil
+}
+
+// GetNexusBoundaryFailureConverter mirrors GetNexusBoundaryDataConverter for
+// failures.
+func (env *testWorkflowEnvironmentImpl) GetNexusBoundaryFailureConverter() converter.FailureConverter {
+	return nil
+}
+
+// GetNexusHeaderPayloads returns nil for the test environment.
+// NewContinueAsNewError skips Nexus header re-injection on nil/empty.
+func (env *testWorkflowEnvironmentImpl) GetNexusHeaderPayloads() map[string]*commonpb.Payload {
+	return nil
+}
+
 func (env *testWorkflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
 	return env.contextPropagators
 }

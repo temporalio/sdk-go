@@ -72,6 +72,10 @@ type (
 		endpoint          string
 		service           string
 		operation         string
+		// failureConverter is the Nexus-context-aware failure converter used
+		// to decode failure proto returned for this operation. nil falls back
+		// to weh.failureConverter.
+		failureConverter converter.FailureConverter
 	}
 
 	scheduledChildWorkflow struct {
@@ -154,10 +158,19 @@ type (
 		isReplay              bool // flag to indicate if workflow is in replay mode
 		enableLoggingInReplay bool // flag to indicate if workflow should enable logging in replay mode
 
-		metricsHandler           metrics.Handler
-		registry                 *registry
-		dataConverter            converter.DataConverter
-		failureConverter         converter.FailureConverter
+		metricsHandler   metrics.Handler
+		registry         *registry
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
+		// nexusOperations is the chain of Nexus operations that started or
+		// attached to this workflow as a Nexus callback target. Length 1 when
+		// the workflow was started by a single Nexus operation; grows by one
+		// each time another Nexus completion callback is attached via
+		// WorkflowExecutionOptionsUpdated. Empty unless the workflow was started
+		// by a Nexus operation. When non-empty, GetNexusBoundaryDataConverter /
+		// GetNexusBoundaryFailureConverter wrap dataConverter / failureConverter
+		// with NexusSerializationContext built from this chain on demand.
+		nexusOperations          []converter.NexusOperation
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
 		sdkFlags                 *sdkFlags
@@ -656,6 +669,18 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOper
 	}
 
 	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr, startMetadata)
+	// Each Nexus op call carries a single-entry chain matching the flat
+	// fields. The chain only grows on the callee/boundary side (a workflow
+	// started + attached-to by multiple Nexus operations).
+	thisOp := converter.NexusOperation{
+		Endpoint:  params.client.Endpoint(),
+		Service:   params.client.Service(),
+		Operation: params.operation,
+	}
+	nexCtx := converter.NexusSerializationContext{
+		Namespace:  wc.workflowInfo.Namespace,
+		Operations: []converter.NexusOperation{thisOp},
+	}
 	command.setData(&scheduledNexusOperation{
 		startedCallback:   startedHandler,
 		completedCallback: callback,
@@ -663,6 +688,7 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params executeNexusOper
 		endpoint:          params.client.Endpoint(),
 		service:           params.client.Service(),
 		operation:         params.operation,
+		failureConverter:  converter.WithFailureConverterSerializationContext(wc.failureConverter, nexCtx),
 	})
 
 	wc.logger.Debug("ScheduleNexusOperation",
@@ -724,6 +750,47 @@ func (wc *workflowEnvironmentImpl) GetMetricsHandler() metrics.Handler {
 
 func (wc *workflowEnvironmentImpl) GetDataConverter() converter.DataConverter {
 	return wc.dataConverter
+}
+
+// GetNexusBoundaryDataConverter returns the NexusSerializationContext-wrapped
+// data converter used at the workflow's input/output boundary when the
+// workflow was started by a Nexus operation. nil otherwise.
+//
+// This is the boundary converter used at exactly these sites:
+//   - workflowExecutor.Execute (input decode + output encode)
+//   - workflow-failure close path
+//   - cancel-details close path
+//
+// It is NOT used for queries, side-effects, markers, child workflows,
+// activities, CAN input, or GetDataConverter(). Those continue to consult
+// the WorkflowSerializationContext-wrapped wc.dataConverter so transitive
+// isolation is preserved.
+//
+// Constructed on demand from wc.nexusOperations. Each consumption site fires
+// at most once per workflow lifecycle, so JIT wrapping is cheap; in exchange
+// no field needs to be kept in sync as the operations chain grows.
+func (wc *workflowEnvironmentImpl) GetNexusBoundaryDataConverter() converter.DataConverter {
+	if len(wc.nexusOperations) == 0 {
+		return nil
+	}
+	return converter.WithDataConverterSerializationContext(wc.dataConverter, wc.nexusSerializationContext())
+}
+
+// GetNexusBoundaryFailureConverter is the failure-converter analog of
+// GetNexusBoundaryDataConverter. nil unless the workflow was started by a
+// Nexus operation.
+func (wc *workflowEnvironmentImpl) GetNexusBoundaryFailureConverter() converter.FailureConverter {
+	if len(wc.nexusOperations) == 0 {
+		return nil
+	}
+	return converter.WithFailureConverterSerializationContext(wc.failureConverter, wc.nexusSerializationContext())
+}
+
+func (wc *workflowEnvironmentImpl) nexusSerializationContext() converter.NexusSerializationContext {
+	return converter.NexusSerializationContext{
+		Namespace:  wc.workflowInfo.Namespace,
+		Operations: wc.nexusOperations,
+	}
 }
 
 func (wc *workflowEnvironmentImpl) GetFailureConverter() converter.FailureConverter {
@@ -1380,6 +1447,9 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_UPDATE_COMPLETED:
 		// No Operation
 
+	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_OPTIONS_UPDATED:
+		weh.handleWorkflowExecutionOptionsUpdated(event)
+
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED:
 		weh.commandsHelper.handleNexusOperationScheduled(event)
 	case enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED:
@@ -1505,9 +1575,48 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	// as the value varies by WFT)
 	weh.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !weh.isReplay)
 
+	// If the Nexus identity (endpoint/service/operation) can be recovered from
+	// the workflow's attached Nexus completion callback header, this workflow
+	// is backing a Nexus operation. The callback header is set on the handler
+	// side at temporalnexus/operation.go and carries the same identity as the
+	// reserved __temporal_nexus_* start headers; callbacks are preferred
+	// because the values arrive as plain strings (no Payload bootstrap
+	// circularity to guard). Fall back to the three reserved start headers
+	// for cross-SDK / older-handler compatibility.
+	endpoint, service, operation, ok := nexusIdentityFromCallbacks(attributes.GetCompletionCallbacks())
+	if !ok {
+		if fields := attributes.GetHeader().GetFields(); len(fields) > 0 {
+			epP, okE := fields[NexusEndpointHeaderKey]
+			svcP, okS := fields[NexusServiceHeaderKey]
+			opP, okO := fields[NexusOperationHeaderKey]
+			if okE && okS && okO {
+				endpoint, service, operation = string(epP.GetData()), string(svcP.GetData()), string(opP.GetData())
+				ok = true
+			}
+		}
+	}
+	if ok {
+		weh.nexusOperations = []converter.NexusOperation{{Endpoint: endpoint, Service: service, Operation: operation}}
+	}
+
 	// Invoke the workflow.
 	weh.workflowDefinition.Execute(weh, attributes.Header, attributes.Input)
 	return nil
+}
+
+// handleWorkflowExecutionOptionsUpdated appends Nexus identities attached
+// mid-workflow via OnConflictOptions.AttachCompletionCallbacks to the
+// workflow's Nexus operation chain. The boundary converters wrap on demand
+// from nexusOperations, so no rewrap is needed here. nexusHeaderPayloads is
+// not touched -- it preserves the workflow's ORIGINAL start identity for
+// CAN re-injection.
+func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionOptionsUpdated(event *historypb.HistoryEvent) {
+	attrs := event.GetWorkflowExecutionOptionsUpdatedEventAttributes()
+	endpoint, service, operation, ok := nexusIdentityFromCallbacks(attrs.GetAttachedCompletionCallbacks())
+	if !ok {
+		return
+	}
+	weh.nexusOperations = append(weh.nexusOperations, converter.NexusOperation{Endpoint: endpoint, Service: service, Operation: operation})
 }
 
 func (weh *workflowExecutionEventHandlerImpl) handleActivityTaskCompleted(event *historypb.HistoryEvent) error {
@@ -2010,7 +2119,11 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCompleted(even
 	state := command.getData().(*scheduledNexusOperation)
 	var err error
 	if failure != nil {
-		err = weh.failureConverter.FailureToError(failure)
+		fc := state.failureConverter
+		if fc == nil {
+			fc = weh.failureConverter
+		}
+		err = fc.FailureToError(failure)
 	}
 	// Also unblock the start future
 	if state.startedCallback != nil {

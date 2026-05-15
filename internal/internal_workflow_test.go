@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/api/common/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -1587,4 +1589,202 @@ func TestStackTraceInvalidDepthBounded(t *testing.T) {
 	// because we show the full trace when bounds are wrong
 	lines = strings.Split(getStackTrace("mycoroutine", "success", 100), "\n")
 	require.True(t, len(lines) > 3 && len(lines) < 100)
+}
+
+// recordingDataConverter is a thin DataConverter that records every
+// FromPayloads call and delegates encoding to the default converter.
+type recordingDataConverter struct {
+	converter.DataConverter
+	mu               sync.Mutex
+	fromPayloadCalls int
+}
+
+func newRecordingDataConverter() *recordingDataConverter {
+	return &recordingDataConverter{DataConverter: converter.GetDefaultDataConverter()}
+}
+
+func (r *recordingDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+	r.mu.Lock()
+	r.fromPayloadCalls++
+	r.mu.Unlock()
+	return r.DataConverter.FromPayloads(payloads, valuePtrs...)
+}
+
+func (r *recordingDataConverter) calls() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.fromPayloadCalls
+}
+
+// TestDecodeFutureImpl_UsesPerFutureDataConverter verifies the per-future
+// dataConverter override (used at internal/workflow.go:3138 for Nexus result
+// decoding) is consulted by decodeFutureImpl.Get instead of the workflow
+// context's default converter when set.
+func TestDecodeFutureImpl_UsesPerFutureDataConverter(t *testing.T) {
+	perFutureDC := newRecordingDataConverter()
+	ctxDC := newRecordingDataConverter()
+
+	var gotErr error
+	var gotValue string
+	d := createNewDispatcher(func(ctx Context) {
+		// Make the workflow context's DC observable so we can assert it was NOT used.
+		ctx = WithDataConverter(ctx, ctxDC)
+
+		fut, settable := newDecodeFuture(ctx, nil)
+		fut.(*decodeFutureImpl).dataConverter = perFutureDC
+
+		Go(ctx, func(ctx Context) {
+			payloads, err := converter.GetDefaultDataConverter().ToPayloads("nexus-result")
+			require.NoError(t, err)
+			settable.SetValue(payloads)
+		})
+
+		gotErr = fut.Get(ctx, &gotValue)
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+
+	require.NoError(t, gotErr)
+	require.Equal(t, "nexus-result", gotValue)
+	// Per-future DC must have been consulted exactly once.
+	require.Equal(t, 1, perFutureDC.calls(),
+		"per-future dataConverter override not consulted; calls=%d", perFutureDC.calls())
+	// Workflow context DC must NOT have been consulted by Get when override is set.
+	require.Equal(t, 0, ctxDC.calls(),
+		"workflow context DC was consulted despite per-future override; calls=%d", ctxDC.calls())
+}
+
+// envOverridingNexusBoundaryDC wraps a WorkflowEnvironment to return a fixed
+// DataConverter from GetNexusBoundaryDataConverter, leaving every other method
+// delegated to the inner env.
+type envOverridingNexusBoundaryDC struct {
+	WorkflowEnvironment
+	dc converter.DataConverter
+}
+
+func (e *envOverridingNexusBoundaryDC) GetNexusBoundaryDataConverter() converter.DataConverter {
+	return e.dc
+}
+
+// TestWorkflowExecutorExecute_UsesNexusBoundaryConverter verifies the override
+// branch in workflowExecutor.Execute (internal/internal_worker.go:1074-1083):
+// when getWorkflowEnvironment(ctx).GetNexusBoundaryDataConverter() returns a
+// non-nil DC, Execute uses it for both input decode (line 1092) and output
+// encode (line 1107) instead of the workflow context's default DC.
+func TestWorkflowExecutorExecute_UsesNexusBoundaryConverter(t *testing.T) {
+	// Spy DC that records both directions.
+	nexusDC := newRecordingDataConverter()
+	// Capture-only DC for the workflow context fallback (must NOT be used).
+	ctxDC := newRecordingDataConverter()
+
+	// Build encoded input using the default DC (encoding side is upstream of Execute).
+	input, err := converter.GetDefaultDataConverter().ToPayloads("nexus-input")
+	require.NoError(t, err)
+
+	we := &workflowExecutor{
+		workflowType: "TestWorkflow",
+		fn: func(ctx Context, s string) (string, error) {
+			return s + "-output", nil
+		},
+	}
+
+	var execResult *commonpb.Payloads
+	var execErr error
+	d := createNewDispatcher(func(ctx Context) {
+		// Override the env in the workflow context with a wrapper that returns
+		// our spy nexus-boundary DC. Override the wf-context DC with the
+		// fallback spy so we can assert it is NOT consulted.
+		realEnv := getWorkflowEnvironment(ctx)
+		wrapped := &envOverridingNexusBoundaryDC{WorkflowEnvironment: realEnv, dc: nexusDC}
+		ctx = WithValue(ctx, workflowEnvironmentContextKey, wrapped)
+		ctx = WithDataConverter(ctx, ctxDC)
+
+		execResult, execErr = we.Execute(ctx, input)
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+
+	require.NoError(t, execErr)
+	require.NotNil(t, execResult)
+
+	// Nexus boundary DC must have been consulted for input decode at minimum.
+	require.GreaterOrEqual(t, nexusDC.calls(), 1,
+		"nexus boundary DC was not consulted by workflowExecutor.Execute; calls=%d", nexusDC.calls())
+	// Workflow-context DC must NOT have been consulted for the workflow's own I/O
+	// when the nexus boundary DC is set.
+	require.Equal(t, 0, ctxDC.calls(),
+		"workflow context DC was consulted despite nexus boundary override; calls=%d", ctxDC.calls())
+
+	// Verify output payload round-trips back to the expected value.
+	var got string
+	require.NoError(t, converter.GetDefaultDataConverter().FromPayloads(execResult, &got))
+	require.Equal(t, "nexus-input-output", got)
+}
+
+// TestWorkflowExecutorExecute_NoNexusBoundary_UsesWorkflowContextDC verifies the
+// fallback branch in workflowExecutor.Execute: when
+// GetNexusBoundaryDataConverter returns nil, the workflow context's DC is used
+// for input decode + output encode.
+func TestWorkflowExecutorExecute_NoNexusBoundary_UsesWorkflowContextDC(t *testing.T) {
+	ctxDC := newRecordingDataConverter()
+	input, err := converter.GetDefaultDataConverter().ToPayloads("non-nexus-input")
+	require.NoError(t, err)
+
+	we := &workflowExecutor{
+		workflowType: "TestWorkflow",
+		fn: func(ctx Context, s string) (string, error) {
+			return s + "-output", nil
+		},
+	}
+
+	var execResult *commonpb.Payloads
+	var execErr error
+	d := createNewDispatcher(func(ctx Context) {
+		// No env override: real test env returns nil from GetNexusBoundaryDataConverter.
+		ctx = WithDataConverter(ctx, ctxDC)
+		execResult, execErr = we.Execute(ctx, input)
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+
+	require.NoError(t, execErr)
+	require.NotNil(t, execResult)
+	// Workflow context DC must have been consulted for both input decode and output encode.
+	require.GreaterOrEqual(t, ctxDC.calls(), 1,
+		"workflow context DC was not consulted; calls=%d", ctxDC.calls())
+}
+
+// TestDecodeFutureImpl_NoPerFutureDataConverter_FallsBackToContext verifies the
+// negative case: when decodeFutureImpl.dataConverter is nil, Get must fall back
+// to getDataConverterFromWorkflowContext(ctx).
+func TestDecodeFutureImpl_NoPerFutureDataConverter_FallsBackToContext(t *testing.T) {
+	ctxDC := newRecordingDataConverter()
+
+	var gotErr error
+	var gotValue string
+	d := createNewDispatcher(func(ctx Context) {
+		ctx = WithDataConverter(ctx, ctxDC)
+
+		fut, settable := newDecodeFuture(ctx, nil)
+		// Leave decodeFutureImpl.dataConverter nil — fallback path.
+
+		Go(ctx, func(ctx Context) {
+			payloads, err := converter.GetDefaultDataConverter().ToPayloads("ctx-result")
+			require.NoError(t, err)
+			settable.SetValue(payloads)
+		})
+
+		gotErr = fut.Get(ctx, &gotValue)
+	})
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.True(t, d.IsDone())
+
+	require.NoError(t, gotErr)
+	require.Equal(t, "ctx-result", gotValue)
+	require.Equal(t, 1, ctxDC.calls(),
+		"workflow context DC fallback was not consulted; calls=%d", ctxDC.calls())
 }

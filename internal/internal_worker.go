@@ -1073,6 +1073,14 @@ type workflowExecutor struct {
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
+	// If this workflow was started by a Nexus operation, use the nexus-boundary
+	// data converter for input decode + output encode. This converter carries
+	// NexusSerializationContext instead of WorkflowSerializationContext, scoped
+	// to exactly this workflow's own I/O boundary. Activities, child workflows,
+	// queries, side-effects, etc. continue to see WorkflowSerializationContext.
+	if nexusDC := getWorkflowEnvironment(ctx).GetNexusBoundaryDataConverter(); nexusDC != nil {
+		dataConverter = nexusDC
+	}
 	fnType := reflect.TypeOf(we.fn)
 
 	var args []interface{}
