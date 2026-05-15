@@ -185,3 +185,35 @@ jobs:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
       version: ${{github.event.pull_request.head.ref}}
       version-is-repo-ref: true
+
+  ci-history:
+    name: CI History Summary
+    needs:
+      - unit-test
+      - integration-test-no-cache
+      - integration-test-with-cache
+      - docker-compose-test
+      - cloud-test
+      - features-test
+    if: ${{ always() && github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    env:
+      CI_HISTORY_WORKFLOW_FILE: ci.yml
+      CI_HISTORY_TARGET_BRANCH: ${{ github.ref_name }}
+      CI_HISTORY_EVENT: push
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: stable
+
+      - name: Write CI history summary
+        run: go run ./.github/tools/ci-history-summary/main.go
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
