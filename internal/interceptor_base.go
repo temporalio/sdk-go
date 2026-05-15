@@ -15,7 +15,9 @@ import (
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.InterceptorBase]
 type InterceptorBase struct {
+	// ClientInterceptorBase is the base implementation of ClientInterceptor.
 	ClientInterceptorBase
+	// WorkerInterceptorBase is the base implementation of WorkerInterceptor.
 	WorkerInterceptorBase
 }
 
@@ -57,6 +59,7 @@ func (*WorkerInterceptorBase) mustEmbedWorkerInterceptorBase() {}
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ActivityInboundInterceptorBase]
 type ActivityInboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next ActivityInboundInterceptor
 }
 
@@ -84,6 +87,7 @@ func (*ActivityInboundInterceptorBase) mustEmbedActivityInboundInterceptorBase()
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ActivityOutboundInterceptorBase]
 type ActivityOutboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next ActivityOutboundInterceptor
 }
 
@@ -142,6 +146,7 @@ func (*ActivityOutboundInterceptorBase) mustEmbedActivityOutboundInterceptorBase
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.WorkflowInboundInterceptorBase]
 type WorkflowInboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next WorkflowInboundInterceptor
 }
 
@@ -186,6 +191,7 @@ func (*WorkflowInboundInterceptorBase) mustEmbedWorkflowInboundInterceptorBase()
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptorBase]
 type WorkflowOutboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next WorkflowOutboundInterceptor
 }
 
@@ -498,6 +504,7 @@ func (*ClientInterceptorBase) mustEmbedClientInterceptorBase() {}
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientOutboundInterceptorBase]
 type ClientOutboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next ClientOutboundInterceptor
 }
 
@@ -642,6 +649,7 @@ func (*ClientOutboundInterceptorBase) mustEmbedClientOutboundInterceptorBase() {
 //
 // Note: Experimental
 type NexusOperationInboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next NexusOperationInboundInterceptor
 }
 
@@ -670,6 +678,7 @@ var _ NexusOperationInboundInterceptor = &NexusOperationInboundInterceptorBase{}
 //
 // Note: Experimental
 type NexusOperationOutboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next NexusOperationOutboundInterceptor
 }
 
