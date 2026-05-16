@@ -92,7 +92,7 @@ type (
 	testNexusOperationHandle struct {
 		env             *testWorkflowEnvironmentImpl
 		seq             int64
-		params          executeNexusOperationParams
+		params          ExecuteNexusOperationParams
 		operationToken  string
 		cancelRequested bool
 		started         bool
@@ -2680,7 +2680,7 @@ func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler(
 }
 
 func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
-	params executeNexusOperationParams,
+	params ExecuteNexusOperationParams,
 	callback func(*commonpb.Payload, error),
 	startedHandler func(opID string, e error),
 ) int64 {
