@@ -267,6 +267,28 @@ func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 	return run, err
 }
 
+func (t *tracingClientOutboundInterceptor) ExecuteActivity(
+	ctx context.Context,
+	in *ClientExecuteActivityInput,
+) (client.ActivityHandle, error) {
+	// Start span and write to header
+	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+		Operation: "StartActivity",
+		Name:      in.ActivityType,
+		ToHeader:  true,
+		Time:      time.Now(),
+	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	if err != nil {
+		return nil, err
+	}
+	var finishOpts TracerFinishSpanOptions
+	defer span.Finish(&finishOpts)
+
+	handle, err := t.Next.ExecuteActivity(ctx, in)
+	finishOpts.Error = err
+	return handle, err
+}
+
 func (t *tracingClientOutboundInterceptor) SignalWorkflow(ctx context.Context, in *ClientSignalWorkflowInput) error {
 	// Only add tracing if enabled
 	if t.root.options.DisableSignalTracing {
