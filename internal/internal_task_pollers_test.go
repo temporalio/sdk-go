@@ -19,8 +19,10 @@ import (
 	"go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"go.temporal.io/sdk/internal/common/metrics"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type countingTaskHandler struct {
@@ -457,6 +459,84 @@ type mockTask struct{}
 
 func (mockTask) scaleDecision() (pollerScaleDecision, bool) { return pollerScaleDecision{}, false }
 func (mockTask) isEmpty() bool                              { return false }
+
+func TestActivityTaskProcessedAfterStopForShutdownDrain(t *testing.T) {
+	stopC := make(chan struct{})
+	close(stopC)
+	graceful := &atomic.Bool{}
+	graceful.Store(true)
+
+	handler := &pendingActivityTaskHandler{executed: make(chan struct{})}
+	poller := &activityTaskPoller{
+		basePoller: basePoller{
+			stopC:                        stopC,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: graceful,
+		},
+		taskHandler:   handler,
+		taskQueueName: "test-task-queue",
+	}
+
+	now := timestamppb.Now()
+	err := poller.ProcessTask(&activityTask{task: &workflowservice.PollActivityTaskQueueResponse{
+		TaskToken:                   []byte("task-token"),
+		WorkflowType:                &commonpb.WorkflowType{Name: "workflow"},
+		ActivityType:                &commonpb.ActivityType{Name: "activity"},
+		StartedTime:                 now,
+		CurrentAttemptScheduledTime: now,
+		ScheduledTime:               now,
+	}})
+	require.NoError(t, err)
+
+	select {
+	case <-handler.executed:
+	case <-time.After(time.Second):
+		t.Fatal("activity task was not processed after shutdown started")
+	}
+}
+
+func TestActivityTaskNotProcessedAfterStopForLegacyShutdown(t *testing.T) {
+	stopC := make(chan struct{})
+	close(stopC)
+	graceful := &atomic.Bool{}
+
+	handler := &pendingActivityTaskHandler{executed: make(chan struct{})}
+	poller := &activityTaskPoller{
+		basePoller: basePoller{
+			stopC:                        stopC,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: graceful,
+		},
+		taskHandler:   handler,
+		taskQueueName: "test-task-queue",
+	}
+
+	now := timestamppb.Now()
+	err := poller.ProcessTask(&activityTask{task: &workflowservice.PollActivityTaskQueueResponse{
+		TaskToken:                   []byte("task-token"),
+		WorkflowType:                &commonpb.WorkflowType{Name: "workflow"},
+		ActivityType:                &commonpb.ActivityType{Name: "activity"},
+		StartedTime:                 now,
+		CurrentAttemptScheduledTime: now,
+		ScheduledTime:               now,
+	}})
+	require.ErrorIs(t, err, errStop)
+
+	select {
+	case <-handler.executed:
+		t.Fatal("activity task was processed after shutdown without drain capability")
+	default:
+	}
+}
+
+type pendingActivityTaskHandler struct {
+	executed chan struct{}
+}
+
+func (h *pendingActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
+	close(h.executed)
+	return ErrActivityResultPending, nil
+}
 
 func TestDoPollGracefulShutdown(t *testing.T) {
 	tests := []struct {

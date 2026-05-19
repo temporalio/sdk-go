@@ -293,6 +293,10 @@ func (bp *basePoller) stopping() bool {
 	}
 }
 
+func (bp *basePoller) shouldDrainOnShutdown() bool {
+	return bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load()
+}
+
 // doPoll runs the given pollFunc in a separate go routine. Returns when any of the conditions are met:
 //   - poll succeeds
 //   - poll fails
@@ -314,7 +318,7 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		close(doneC)
 	}()
 
-	if bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load() {
+	if bp.shouldDrainOnShutdown() {
 		// Don't cancel the gRPC stream. After ShutdownWorker, the server
 		// completes the poll with an empty response. The poll is bounded
 		// by the gRPC timeout (pollTaskServiceTimeOut). Stop() waits for
@@ -425,7 +429,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 
 // ProcessTask processes a task which could be workflow task or local activity result
 func (wtp *workflowTaskProcessor) ProcessTask(task interface{}) error {
-	if wtp.stopping() {
+	if !wtp.shouldDrainOnShutdown() && wtp.stopping() {
 		return errStop
 	}
 
@@ -1438,7 +1442,7 @@ func (atp *activityTaskPoller) PollTask() (taskForWorker, error) {
 
 // ProcessTask processes a new task
 func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
-	if atp.stopping() {
+	if !atp.shouldDrainOnShutdown() && atp.stopping() {
 		return errStop
 	}
 

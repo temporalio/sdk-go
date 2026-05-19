@@ -195,23 +195,24 @@ type (
 
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
-		pollerRate              int
-		slotSupplier            SlotSupplier
-		maxTaskPerSecond        float64
-		taskPollers             []scalableTaskPoller
-		taskProcessor           taskProcessor
-		workerType              string
-		identity                string
-		buildId                 string
-		deploymentOptions       WorkerDeploymentOptions
-		logger                  log.Logger
-		stopTimeout             time.Duration
-		fatalErrCb              func(error)
-		backgroundContextCancel context.CancelCauseFunc
-		metricsHandler          metrics.Handler
-		sessionTokenBucket      *sessionTokenBucket
-		slotReservationData     slotReservationData
-		isInternalWorker        bool
+		pollerRate                   int
+		slotSupplier                 SlotSupplier
+		maxTaskPerSecond             float64
+		taskPollers                  []scalableTaskPoller
+		taskProcessor                taskProcessor
+		workerType                   string
+		identity                     string
+		buildId                      string
+		deploymentOptions            WorkerDeploymentOptions
+		logger                       log.Logger
+		stopTimeout                  time.Duration
+		fatalErrCb                   func(error)
+		backgroundContextCancel      context.CancelCauseFunc
+		metricsHandler               metrics.Handler
+		sessionTokenBucket           *sessionTokenBucket
+		slotReservationData          slotReservationData
+		isInternalWorker             bool
+		workerPollCompleteOnShutdown *atomic.Bool
 	}
 
 	// baseWorker that wraps worker activities.
@@ -461,6 +462,10 @@ func (bw *baseWorker) isStop() bool {
 	}
 }
 
+func (bw *baseWorker) shouldDrainOnShutdown() bool {
+	return bw.options.workerPollCompleteOnShutdown != nil && bw.options.workerPollCompleteOnShutdown.Load()
+}
+
 func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 	defer bw.stopWG.Done()
 	defer bw.pollerWG.Done()
@@ -597,17 +602,40 @@ func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
 func (bw *baseWorker) runTaskDispatcher() {
 	defer bw.stopWG.Done()
 
-	for task := range bw.taskQueueCh {
-		// For non-polled-task (local activity result as task or eager task),
-		// we don't need to rate limit. During shutdown the limiter context
-		// is cancelled, so Wait returns immediately — we still process the
-		// task rather than dropping it.
-		if _, isPolledTask := task.(*polledTask); isPolledTask {
-			// Ignore error: during shutdown the limiter context is
-			// cancelled, but we still process remaining tasks.
-			_ = bw.taskLimiter.Wait(bw.limiterContext)
+	if bw.shouldDrainOnShutdown() {
+		for task := range bw.taskQueueCh {
+			// For non-polled-task (local activity result as task or eager task),
+			// we don't need to rate limit. During shutdown the limiter context is
+			// cancelled, so polled tasks continue processing without dispatch rate
+			// throttling; slot permits still enforce execution concurrency.
+			if _, isPolledTask := task.(*polledTask); isPolledTask {
+				// Ignore error: during shutdown the limiter context is
+				// cancelled, but we still process remaining tasks.
+				_ = bw.taskLimiter.Wait(bw.limiterContext)
+			}
+			bw.processTaskAsync(task)
 		}
-		bw.processTaskAsync(task)
+		return
+	}
+
+	for {
+		select {
+		case <-bw.stopCh:
+			return
+		case task, ok := <-bw.taskQueueCh:
+			if !ok {
+				return
+			}
+			if _, isPolledTask := task.(*polledTask); isPolledTask {
+				if bw.taskLimiter.Wait(bw.limiterContext) != nil {
+					if bw.isStop() {
+						bw.releaseSlot(task.getPermit(), SlotReleaseReasonUnused)
+						return
+					}
+				}
+			}
+			bw.processTaskAsync(task)
+		}
 	}
 }
 
@@ -668,10 +696,19 @@ func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPe
 			taskWorker.pollerAutoscalerReportHandle.handleTask(task)
 		}
 
-		// The dispatcher is guaranteed to be alive: it only exits after
-		// taskQueueCh is closed, which happens after all pollers finish.
-		bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}
-		didSendTask = true
+		if bw.shouldDrainOnShutdown() {
+			// The dispatcher is guaranteed to be alive: in drain mode it
+			// only exits after taskQueueCh is closed, which happens after
+			// all pollers finish.
+			bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}
+			didSendTask = true
+		} else {
+			select {
+			case bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}:
+				didSendTask = true
+			case <-bw.stopCh:
+			}
+		}
 	}
 }
 
@@ -731,12 +768,9 @@ func (bw *baseWorker) Stop() {
 	close(bw.stopCh)
 	bw.limiterContextCancel()
 
-	// Wait for pollers to finish. (pollTaskServiceTimeOut) bounds this if the connection is broken.
-	bw.pollerWG.Wait()
-
-	// Wait for task processing to complete. The dispatcher
-	// drains taskQueueCh (closed after pollers finish above) and
-	// processTaskAsync goroutines are tracked in stopWG.
+	// Wait for pollers, task dispatch, and task processing to complete, or until stopTimeout elapses.
+	// The task dispatcher drains taskQueueCh after the closer goroutine
+	// closes it when pollers finish.
 	if success := awaitWaitGroup(&bw.stopWG, bw.options.stopTimeout); !success {
 		traceLog(func() {
 			bw.logger.Info("Worker graceful stop timed out.", "Stop timeout", bw.options.stopTimeout)
