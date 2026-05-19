@@ -29,7 +29,7 @@ type (
 	ClientStartNexusOperationOptions struct {
 		// ID - The business identifier of the operation.
 		//
-		// Mandatory: No default.
+		// Required
 		ID string
 		// ScheduleToCloseTimeout - The end to end timeout for the Nexus Operation.
 		//
@@ -71,11 +71,11 @@ type (
 	ClientNexusClientOptions struct {
 		// Endpoint - The Nexus endpoint name.
 		//
-		// Mandatory: No default.
+		// Required
 		Endpoint string
 		// Service - The Nexus service name.
 		//
-		// Mandatory: No default.
+		// Required
 		Service string
 	}
 
@@ -87,7 +87,7 @@ type (
 	ClientGetNexusOperationHandleOptions struct {
 		// OperationID - The operation ID.
 		//
-		// Mandatory: No default.
+		// Required
 		OperationID string
 		// RunID - The run ID. Can be empty to target the latest run.
 		//
@@ -357,8 +357,8 @@ type (
 )
 
 var (
-	_ ClientNexusClient          = &nexusClientImpl{}
-	_ ClientNexusOperationHandle = &clientNexusOperationHandleImpl{}
+	_ ClientNexusClient          = (*nexusClientImpl)(nil)
+	_ ClientNexusOperationHandle = (*clientNexusOperationHandleImpl)(nil)
 )
 
 // GetSummary returns summary of the operation. See ClientStartNexusOperationOptions.Summary.
@@ -674,13 +674,9 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 	}
 
 	// Encode input as a single Payload (not Payloads)
-	var inputPayload *commonpb.Payload
-	if in.Input != nil {
-		var err error
-		inputPayload, err = dataConverter.ToPayload(in.Input)
-		if err != nil {
-			return nil, err
-		}
+	inputPayload, err := dataConverter.ToPayload(in.Input)
+	if err != nil {
+		return nil, err
 	}
 
 	searchAttrs, err := serializeTypedSearchAttributes(in.Options.SearchAttributes.GetUntypedValues())
