@@ -376,19 +376,20 @@ func newWorkflowTaskWorkerInternal(
 	}
 
 	bwo := baseWorkerOptions{
-		pollerRate:        defaultPollerRate,
-		slotSupplier:      params.Tuner.GetWorkflowTaskSlotSupplier(),
-		maxTaskPerSecond:  defaultWorkerTaskExecutionRate,
-		taskPollers:       scalableTaskPollers,
-		taskProcessor:     taskProcessor,
-		workerType:        "WorkflowWorker",
-		identity:          params.Identity,
-		buildId:           params.getBuildID(),
-		deploymentOptions: params.DeploymentOptions,
-		logger:            params.Logger,
-		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCb:        params.WorkerFatalErrorCallback,
-		metricsHandler:    params.MetricsHandler,
+		pollerRate:                   defaultPollerRate,
+		slotSupplier:                 params.Tuner.GetWorkflowTaskSlotSupplier(),
+		maxTaskPerSecond:             defaultWorkerTaskExecutionRate,
+		taskPollers:                  scalableTaskPollers,
+		taskProcessor:                taskProcessor,
+		workerType:                   "WorkflowWorker",
+		identity:                     params.Identity,
+		buildId:                      params.getBuildID(),
+		deploymentOptions:            params.DeploymentOptions,
+		logger:                       params.Logger,
+		stopTimeout:                  params.WorkerStopTimeout,
+		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		metricsHandler:               params.MetricsHandler,
+		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
@@ -580,16 +581,17 @@ func newActivityWorker(
 		taskPollers: []scalableTaskPoller{
 			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, metrics.PollerTypeActivityTask, params.serverSupportsAutoscaling),
 		},
-		taskProcessor:           poller,
-		workerType:              "ActivityWorker",
-		identity:                params.Identity,
-		buildId:                 params.getBuildID(),
-		logger:                  params.Logger,
-		stopTimeout:             params.WorkerStopTimeout,
-		fatalErrCb:              params.WorkerFatalErrorCallback,
-		backgroundContextCancel: params.BackgroundContextCancel,
-		metricsHandler:          params.MetricsHandler,
-		sessionTokenBucket:      sessionTokenBucket,
+		taskProcessor:                poller,
+		workerType:                   "ActivityWorker",
+		identity:                     params.Identity,
+		buildId:                      params.getBuildID(),
+		logger:                       params.Logger,
+		stopTimeout:                  params.WorkerStopTimeout,
+		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		backgroundContextCancel:      params.BackgroundContextCancel,
+		metricsHandler:               params.MetricsHandler,
+		sessionTokenBucket:           sessionTokenBucket,
+		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
 			taskQueue: params.TaskQueue,
 		},
@@ -1632,7 +1634,6 @@ func (aw *AggregatedWorker) activeTaskQueueTypes() []enumspb.TaskQueueType {
 	}
 	return types
 }
-
 
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {

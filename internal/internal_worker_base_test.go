@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -348,6 +349,8 @@ func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 	processor := &recordingTaskProcessor{
 		processed: taskProcessed,
 	}
+	workerPollCompleteOnShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown.Store(true)
 
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
@@ -355,11 +358,12 @@ func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 		taskPollers: []scalableTaskPoller{
 			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
 		},
-		taskProcessor:  processor,
-		workerType:     "ShutdownTest",
-		logger:         ilog.NewNopLogger(),
-		stopTimeout:    5 * time.Second,
-		metricsHandler: metrics.NopHandler,
+		taskProcessor:                processor,
+		workerType:                   "ShutdownTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  5 * time.Second,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
 	})
 
 	bw.Start()
@@ -367,18 +371,23 @@ func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 	// Wait for the poller to be actively polling.
 	<-pollStarted
 
-	// Release the poller so it returns a task, then stop the worker.
-	// The poller returns a task and then nil on subsequent polls,
-	// allowing it to exit via noRepoll/stopCh during Stop().
-	close(tp.returnTask)
+	// AggregatedWorker.Stop sets noRepoll before stopping base workers.
+	bw.noRepoll.Store(true)
 
-	// Stop exercises the real shutdown path: noRepoll, close(stopCh),
+	// Stop exercises the base worker shutdown path: close(stopCh),
 	// limiterContextCancel, and awaitWaitGroup.
 	stopDone := make(chan struct{})
 	go func() {
 		bw.Stop()
 		close(stopDone)
 	}()
+
+	<-bw.stopCh
+
+	// Release the poller after shutdown has started so the task is polled
+	// during shutdown. The poller returns a task and then nil on subsequent
+	// polls, allowing it to exit via noRepoll/stopCh during Stop().
+	close(tp.returnTask)
 
 	select {
 	case <-taskProcessed:
@@ -426,6 +435,80 @@ func (p *recordingTaskProcessor) ProcessTask(any) error {
 	default:
 	}
 	return nil
+}
+
+func TestStopTimeoutBoundsPollerDrain(t *testing.T) {
+	pollStarted := make(chan struct{})
+	releasePoll := make(chan struct{})
+	var releasePollOnce sync.Once
+	releaseBlockedPoller := func() {
+		releasePollOnce.Do(func() {
+			close(releasePoll)
+		})
+	}
+	defer releaseBlockedPoller()
+	tp := &blockingShutdownPoller{
+		pollStarted: pollStarted,
+		releasePoll: releasePoll,
+	}
+	workerPollCompleteOnShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown.Store(true)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &testSlotSupplier{},
+		maxTaskPerSecond: 1000,
+		taskPollers: []scalableTaskPoller{
+			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+		},
+		taskProcessor:                noopTaskProcessor{},
+		workerType:                   "StopTimeoutTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  50 * time.Millisecond,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	})
+
+	bw.Start()
+	<-pollStarted
+
+	stopDone := make(chan struct{})
+	start := time.Now()
+	go func() {
+		bw.Stop()
+		close(stopDone)
+	}()
+
+	// Stop() should return after stopTimeout (~50ms), not block for the
+	// full pollTaskServiceTimeOut (70s).
+	select {
+	case <-stopDone:
+		elapsed := time.Since(start)
+		require.Less(t, elapsed, time.Second,
+			"Stop() should return after stopTimeout, not wait for pollTaskServiceTimeOut")
+	case <-time.After(time.Second):
+		releaseBlockedPoller()
+		require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
+			"worker goroutines should finish after blocked poll is released")
+		t.Fatal("Stop() should return after stopTimeout, not wait for pollTaskServiceTimeOut")
+	}
+
+	releaseBlockedPoller()
+	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
+		"worker goroutines should finish after blocked poll is released")
+}
+
+type blockingShutdownPoller struct {
+	pollStarted chan struct{}
+	releasePoll chan struct{}
+	started     atomic.Bool
+}
+
+func (p *blockingShutdownPoller) PollTask() (taskForWorker, error) {
+	if p.started.CompareAndSwap(false, true) {
+		close(p.pollStarted)
+	}
+	<-p.releasePoll
+	return nil, nil
 }
 
 func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithCapability() {

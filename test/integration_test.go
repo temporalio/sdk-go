@@ -232,7 +232,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
 		strings.Contains(ts.T().Name(), "LocalActivityCompleteWithinGracefulShutdown") ||
-		strings.Contains(ts.T().Name(), "LocalActivityTaskTimeoutHeartbeat") {
+		strings.Contains(ts.T().Name(), "LocalActivityTaskTimeoutHeartbeat") ||
+		strings.Contains(ts.T().Name(), "ShutdownDuringActiveTimerActivityWorkflows") {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
@@ -388,6 +389,21 @@ func (ts *IntegrationTestSuite) getHistory(workflowID string, runID string) (*hi
 	}
 
 	return &historypb.History{Events: events}, nil
+}
+
+func (ts *IntegrationTestSuite) waitForHistoryEvent(workflowID string, runID string, eventType enumspb.EventType, timeout time.Duration) {
+	ts.Eventually(func() bool {
+		history, err := ts.getHistory(workflowID, runID)
+		if err != nil {
+			return false
+		}
+		for _, event := range history.Events {
+			if event.GetEventType() == eventType {
+				return true
+			}
+		}
+		return false
+	}, timeout, 100*time.Millisecond, "timed out waiting for history event %s", eventType)
 }
 
 func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
@@ -3408,7 +3424,9 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 3)
 
 	// Signal the first and last to close and confirm increased by two
-	time.Sleep(2 * time.Second)
+	// Give the workflows enough time to enter the timer/activity loop so
+	// shutdown overlaps active polling and dispatch.
+	time.Sleep(500 * time.Millisecond)
 	ts.NoError(ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "cancel", nil))
 	ts.NoError(ts.client.SignalWorkflow(ctx, run3.GetID(), run3.GetRunID(), "cancel", nil))
 	ts.NoError(run1.Get(ctx, nil))
@@ -7950,6 +7968,58 @@ func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown(
 	ts.True(wfeCompleted)
 }
 
+func (ts *IntegrationTestSuite) TestShutdownDuringActiveTimerActivityWorkflows() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	resp, err := ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
+	}
+
+	const numWorkflows = 5
+	runs := make([]client.WorkflowRun, 0, numWorkflows)
+	for i := 0; i < numWorkflows; i++ {
+		run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:                       fmt.Sprintf("shutdown-active-timer-activity-%s-%d", uuid.NewString(), i),
+			TaskQueue:                ts.taskQueueName,
+			WorkflowExecutionTimeout: 30 * time.Second,
+			WorkflowTaskTimeout:      time.Second,
+			WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+		}, ts.workflows.ShutdownDuringActiveTimerActivityWorkflow)
+		ts.NoError(err)
+		runs = append(runs, run)
+	}
+
+	for _, run := range runs {
+		// Wait until each workflow has entered the timer/activity loop so
+		// shutdown overlaps active polling and dispatch instead of racing
+		// workflow startup.
+		ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED, 10*time.Second)
+	}
+
+	shutdownStart := time.Now()
+	ts.worker.Stop()
+	ts.workerStopped = true
+	ts.Less(time.Since(shutdownStart), 5*time.Second)
+
+	for _, run := range runs {
+		ts.NoError(ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "test complete"))
+		history, err := ts.getHistory(run.GetID(), run.GetRunID())
+		ts.NoError(err)
+		for _, event := range history.Events {
+			switch event.GetEventType() {
+			case enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED, enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
+				ts.Failf("unexpected workflow task failure during shutdown",
+					"workflowID=%s runID=%s event=%s", run.GetID(), run.GetRunID(), event)
+			}
+		}
+	}
+}
+
 func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -9008,18 +9078,7 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 	// Wait for a workflow task failure to appear. The first WFT succeeds (commands from defer
 	// CompleteSession are committed), but the second WFT fails when the same panic recurs during
 	// replay of the new events.
-	ts.Eventually(func() bool {
-		history, err := ts.getHistory(run.GetID(), run.GetRunID())
-		if err != nil {
-			return false
-		}
-		for _, event := range history.Events {
-			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
-				return true
-			}
-		}
-		return false
-	}, 20*time.Second, 200*time.Millisecond, "timed out waiting for workflow task failure")
+	ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED, 20*time.Second)
 
 	// Stop the poison worker and restart with a normal DataConverter.
 	// This simulates the transient DC failure resolving. The new worker
