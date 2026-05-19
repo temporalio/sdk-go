@@ -1294,6 +1294,117 @@ func (_m *Client) CountActivities(ctx context.Context, options client.CountActiv
 	return r0, r1
 }
 
+func (_m *Client) FailNexusOperation(ctx context.Context, callbackToken string, failure error, options client.CompleteNexusOperationOptions) error {
+	ret := _m.Called(ctx, callbackToken, failure, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FailNexusOperation")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, error, client.CompleteNexusOperationOptions) error); ok {
+		r0 = rf(ctx, callbackToken, failure, options)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+func (_m *Client) CompleteNexusOperation(ctx context.Context, callbackToken string, result any, options client.CompleteNexusOperationOptions) error {
+	ret := _m.Called(ctx, callbackToken, result, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteNexusOperation")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, any, client.CompleteNexusOperationOptions) error); ok {
+		r0 = rf(ctx, callbackToken, result, options)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+func (_m *Client) StartCompleteNexusOperation(ctx context.Context, callbackToken string, result any, options client.CompleteNexusOperationOptions) (client.CallbackExecutionHandle, error) {
+	ret := _m.Called(ctx, callbackToken, result, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for StartCompleteNexusOperation")
+	}
+
+	var r0 client.CallbackExecutionHandle
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, any, client.CompleteNexusOperationOptions) (client.CallbackExecutionHandle, error)); ok {
+		return rf(ctx, callbackToken, result, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, any, client.CompleteNexusOperationOptions) client.CallbackExecutionHandle); ok {
+		r0 = rf(ctx, callbackToken, result, options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.CallbackExecutionHandle)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, any, client.CompleteNexusOperationOptions) error); ok {
+		r1 = rf(ctx, callbackToken, result, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+func (_m *Client) StartFailNexusOperation(ctx context.Context, callbackToken string, failure error, options client.CompleteNexusOperationOptions) (client.CallbackExecutionHandle, error) {
+	ret := _m.Called(ctx, callbackToken, failure, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for StartFailNexusOperation")
+	}
+
+	var r0 client.CallbackExecutionHandle
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, error, client.CompleteNexusOperationOptions) (client.CallbackExecutionHandle, error)); ok {
+		return rf(ctx, callbackToken, failure, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, error, client.CompleteNexusOperationOptions) client.CallbackExecutionHandle); ok {
+		r0 = rf(ctx, callbackToken, failure, options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.CallbackExecutionHandle)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, error, client.CompleteNexusOperationOptions) error); ok {
+		r1 = rf(ctx, callbackToken, failure, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+func (_m *Client) GetCallbackExecutionHandle(options client.GetCallbackExecutionHandleOptions) client.CallbackExecutionHandle {
+	ret := _m.Called(options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetCallbackExecutionHandle")
+	}
+
+	var r0 client.CallbackExecutionHandle
+	if rf, ok := ret.Get(0).(func(client.GetCallbackExecutionHandleOptions) client.CallbackExecutionHandle); ok {
+		r0 = rf(options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.CallbackExecutionHandle)
+		}
+	}
+
+	return r0
+}
+
 // WorkerDeploymentClient provides a mock function with given fields:
 func (_m *Client) WorkerDeploymentClient() client.WorkerDeploymentClient {
 	ret := _m.Called()

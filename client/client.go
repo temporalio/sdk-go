@@ -990,6 +990,46 @@ type (
 	// NOTE: Experimental
 	TerminateActivityOptions = internal.ClientTerminateActivityOptions
 
+	// CompleteNexusOperationOptions contains configuration parameters for completing an async Nexus operation.
+	//
+	// NOTE: Experimental
+	CompleteNexusOperationOptions = internal.ClientCompleteNexusOperationOptions
+
+	// GetCallbackExecutionHandleOptions contains input for GetCallbackExecutionHandle call.
+	//
+	// NOTE: Experimental
+	GetCallbackExecutionHandleOptions = internal.ClientGetCallbackExecutionHandleOptions
+
+	// CallbackExecutionHandle represents a running or completed standalone callback execution.
+	//
+	// NOTE: Experimental
+	CallbackExecutionHandle = internal.ClientCallbackExecutionHandle
+
+	// CallbackExecutionInfo contains information about a callback execution.
+	//
+	// NOTE: Experimental
+	CallbackExecutionInfo = internal.ClientCallbackExecutionInfo
+
+	// CallbackExecutionDescription contains detailed information about a callback execution.
+	//
+	// NOTE: Experimental
+	CallbackExecutionDescription = internal.ClientCallbackExecutionDescription
+
+	// DescribeCallbackOptions contains options for CallbackHandle.Describe call.
+	//
+	// NOTE: Experimental
+	DescribeCallbackOptions = internal.ClientDescribeCallbackOptions
+
+	// CancelCallbackOptions contains options for CallbackHandle.Cancel call.
+	//
+	// NOTE: Experimental
+	CancelCallbackOptions = internal.ClientCancelCallbackOptions
+
+	// TerminateCallbackOptions contains options for CallbackHandle.Terminate call.
+	//
+	// NOTE: Experimental
+	TerminateCallbackOptions = internal.ClientTerminateCallbackOptions
+
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
 	Client interface {
@@ -1504,6 +1544,35 @@ type (
 		// NOTE: Experimental
 		CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error)
 
+		// CompleteNexusOperation completes an async Nexus operation with a success result.
+		// It starts the callback execution and waits for it to complete.
+		//
+		// NOTE: Experimental
+		CompleteNexusOperation(ctx context.Context, callbackToken string, result any, options CompleteNexusOperationOptions) error
+
+		// FailNexusOperation fails an async Nexus operation with an error.
+		// It starts the callback execution and waits for it to complete.
+		//
+		// NOTE: Experimental
+		FailNexusOperation(ctx context.Context, callbackToken string, failure error, options CompleteNexusOperationOptions) error
+
+		// StartCompleteNexusOperation starts completing an async Nexus operation and returns
+		// a handle that can be used to wait for the completion, describe, or terminate it.
+		//
+		// NOTE: Experimental
+		StartCompleteNexusOperation(ctx context.Context, callbackToken string, result any, options CompleteNexusOperationOptions) (CallbackExecutionHandle, error)
+
+		// StartFailNexusOperation starts failing an async Nexus operation and returns
+		// a handle that can be used to wait for the completion, describe, or terminate it.
+		//
+		// NOTE: Experimental
+		StartFailNexusOperation(ctx context.Context, callbackToken string, failure error, options CompleteNexusOperationOptions) (CallbackExecutionHandle, error)
+
+		// GetCallbackExecutionHandle creates a handle to the referenced callback execution.
+		//
+		// NOTE: Experimental
+		GetCallbackExecutionHandle(options GetCallbackExecutionHandleOptions) CallbackExecutionHandle
+
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
 		// service are not configured with internal semantics such as automatic retries.
@@ -1742,6 +1811,7 @@ func NewAPIKeyDynamicCredentials(apiKeyCallback func(context.Context) (string, e
 func NewMTLSCredentials(certificate tls.Certificate) Credentials {
 	return internal.NewMTLSCredentials(certificate)
 }
+
 
 // NewWorkflowUpdateServiceTimeoutOrCanceledError creates a new WorkflowUpdateServiceTimeoutOrCanceledError.
 func NewWorkflowUpdateServiceTimeoutOrCanceledError(err error) *WorkflowUpdateServiceTimeoutOrCanceledError {
