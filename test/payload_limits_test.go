@@ -76,6 +76,7 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 }
 
 func (ts *PayloadLimitsTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 	// Only initialize if not already set (tests can call ResetClientAndWorker themselves)
 	if ts.client == nil {
