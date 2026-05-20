@@ -1952,7 +1952,7 @@ func createWorkerWithThrottle(
 	setupPollingMocks(namespace, service, activitiesPerSecond)
 
 	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(3)
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{
