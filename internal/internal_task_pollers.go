@@ -225,7 +225,10 @@ type (
 	localActivityTunnel struct {
 		taskCh   chan *localActivityTask
 		resultCh chan eagerOrPolledTask
-		stopCh   <-chan struct{}
+		// stopCh is a read-only view of workflowWorker.localActivityStopC.
+		// It is closed by workflowWorker.Stop() after the workflow worker stops,
+		// causing tunnel sends/receives to stop accepting local activity work.
+		stopCh <-chan struct{}
 	}
 )
 

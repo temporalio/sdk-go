@@ -18,7 +18,9 @@ type nexusWorker struct {
 	executionParameters workerExecutionParameters
 	workflowService     workflowservice.WorkflowServiceClient
 	worker              *baseWorker
-	stopC               chan struct{}
+	// stopC is created by newNexusWorker, exposed to the Nexus task poller through
+	// WorkerStopChannel, and closed by nexusWorker.Stop() during shutdown.
+	stopC chan struct{}
 }
 
 func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {

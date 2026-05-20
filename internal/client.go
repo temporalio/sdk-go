@@ -1086,7 +1086,8 @@ type (
 		input *ClientExecuteWorkflowInput
 		// flag to ensure the operation is only executed once
 		executed atomic.Bool
-		// channel to indicate that handle or err is available
+		// doneCh is closed by withStartWorkflowOperationImpl.set() once workflowRun/err is available.
+		// Get() waits on doneCh; workflowRun and err must not be read before it closes.
 		doneCh chan struct{}
 		// workflowRun and err cannot be accessed before doneCh is closed
 		workflowRun WorkflowRun
