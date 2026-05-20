@@ -11,7 +11,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
 	github.com/nexus-rpc/sdk-go v0.6.0
 	github.com/robfig/cron v1.2.0
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	go.temporal.io/api v1.62.12
 	golang.org/x/sync v0.19.0
 	golang.org/x/sys v0.40.0
