@@ -476,11 +476,6 @@ func (ww *workflowWorker) Stop() {
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
-	// Session workers poll on resource-specific task queues not included in
-	// ShutdownWorker, so the server will never cancel their polls. Use the
-	// legacy immediate-cancel path instead of graceful shutdown.
-	params.workerPollCompleteOnShutdown = &atomic.Bool{}
-
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
@@ -1525,6 +1520,10 @@ func (aw *AggregatedWorker) Stop() {
 	if !util.IsInterfaceNil(aw.nexusWorker) {
 		aw.nexusWorker.worker.noRepoll.Store(true)
 	}
+	if !util.IsInterfaceNil(aw.sessionWorker) {
+		aw.sessionWorker.creationWorker.worker.noRepoll.Store(true)
+		aw.sessionWorker.activityWorker.worker.noRepoll.Store(true)
+	}
 
 	close(aw.stopC)
 
@@ -1600,6 +1599,35 @@ func (aw *AggregatedWorker) sendShutdownWorkerRPC() {
 		stickyTaskQueue = getWorkerTaskQueue(aw.workflowWorker.stickyUUID)
 	}
 
+	aw.sendShutdownWorkerRPCForTaskQueue(grpcCtx, aw.executionParams.TaskQueue, stickyTaskQueue, aw.activeTaskQueueTypes(), heartbeat)
+
+	if util.IsInterfaceNil(aw.sessionWorker) {
+		return
+	}
+
+	aw.sendShutdownWorkerRPCForTaskQueue(
+		grpcCtx,
+		aw.sessionWorker.creationWorker.executionParameters.TaskQueue,
+		"",
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		nil,
+	)
+	aw.sendShutdownWorkerRPCForTaskQueue(
+		grpcCtx,
+		aw.sessionWorker.activityWorker.executionParameters.TaskQueue,
+		"",
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		nil,
+	)
+}
+
+func (aw *AggregatedWorker) sendShutdownWorkerRPCForTaskQueue(
+	grpcCtx context.Context,
+	taskQueue string,
+	stickyTaskQueue string,
+	taskQueueTypes []enumspb.TaskQueueType,
+	heartbeat *workerpb.WorkerHeartbeat,
+) {
 	_, err := aw.client.workflowService.ShutdownWorker(grpcCtx, &workflowservice.ShutdownWorkerRequest{
 		Namespace:         aw.executionParams.Namespace,
 		StickyTaskQueue:   stickyTaskQueue,
@@ -1607,8 +1635,8 @@ func (aw *AggregatedWorker) sendShutdownWorkerRPC() {
 		Reason:            "graceful shutdown",
 		WorkerHeartbeat:   heartbeat,
 		WorkerInstanceKey: aw.workerInstanceKey,
-		TaskQueue:         aw.executionParams.TaskQueue,
-		TaskQueueTypes:    aw.activeTaskQueueTypes(),
+		TaskQueue:         taskQueue,
+		TaskQueueTypes:    taskQueueTypes,
 	})
 
 	// Ignore unimplemented (server doesn't support it)

@@ -3200,6 +3200,84 @@ func TestWorkerBuildIDAndSessionPanic(t *testing.T) {
 	require.Equal(t, "cannot set both EnableSessionWorker and UseBuildIDForVersioning", recovered)
 }
 
+func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSendsShutdownWorkerForSessionTaskQueues() {
+	var requestsMu sync.Mutex
+	var requests []*workflowservice.ShutdownWorkerRequest
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.ShutdownWorkerRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.ShutdownWorkerResponse, error) {
+			requestsMu.Lock()
+			defer requestsMu.Unlock()
+			requests = append(requests, proto.Clone(request).(*workflowservice.ShutdownWorkerRequest))
+			return &workflowservice.ShutdownWorkerResponse{}, nil
+		}).Times(3)
+
+	const namespace = "testNamespace"
+	const taskQueue = "session-shutdown-task-queue"
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: namespace})
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
+		EnableSessionWorker: true,
+	})
+	s.NotNil(worker.sessionWorker)
+
+	sessionActivityTaskQueue := worker.sessionWorker.activityWorker.executionParameters.TaskQueue
+	s.NotEmpty(sessionActivityTaskQueue)
+
+	worker.Stop()
+
+	requestsMu.Lock()
+	defer requestsMu.Unlock()
+
+	s.Len(requests, 3)
+	requestsByTaskQueue := make(map[string]*workflowservice.ShutdownWorkerRequest)
+	for _, request := range requests {
+		requestsByTaskQueue[request.GetTaskQueue()] = request
+	}
+
+	s.Contains(requestsByTaskQueue, taskQueue)
+	s.ElementsMatch(
+		[]enumspb.TaskQueueType{
+			enumspb.TASK_QUEUE_TYPE_WORKFLOW,
+			enumspb.TASK_QUEUE_TYPE_ACTIVITY,
+		},
+		requestsByTaskQueue[taskQueue].GetTaskQueueTypes(),
+	)
+
+	sessionCreationTaskQueue := getCreationTaskqueue(taskQueue)
+	s.Contains(requestsByTaskQueue, sessionCreationTaskQueue)
+	s.Equal(
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		requestsByTaskQueue[sessionCreationTaskQueue].GetTaskQueueTypes(),
+	)
+
+	s.Contains(requestsByTaskQueue, sessionActivityTaskQueue)
+	s.Equal(
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		requestsByTaskQueue[sessionActivityTaskQueue].GetTaskQueueTypes(),
+	)
+}
+
+func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSetsNoRepollOnSessionWorkers() {
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "session-shutdown-task-queue", WorkerOptions{
+		EnableSessionWorker: true,
+	})
+	s.NotNil(worker.sessionWorker)
+
+	worker.Stop()
+
+	s.True(worker.sessionWorker.creationWorker.worker.noRepoll.Load(),
+		"session creation worker should stop starting new polls during shutdown")
+	s.True(worker.sessionWorker.activityWorker.worker.noRepoll.Load(),
+		"session activity worker should stop starting new polls during shutdown")
+}
+
 func TestHistoryFromJSON(t *testing.T) {
 	// Load sample history and just make sure it has the right event count
 	r, err := os.Open("testdata/sampleHistory.json")

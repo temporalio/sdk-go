@@ -233,7 +233,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
 		strings.Contains(ts.T().Name(), "LocalActivityCompleteWithinGracefulShutdown") ||
 		strings.Contains(ts.T().Name(), "LocalActivityTaskTimeoutHeartbeat") ||
-		strings.Contains(ts.T().Name(), "ShutdownDuringActiveTimerActivityWorkflows") {
+		strings.Contains(ts.T().Name(), "ShutdownDuringActiveTimerActivityWorkflows") ||
+		strings.Contains(ts.T().Name(), "SessionWorkerShutdownWithPollComplete") {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
@@ -1953,6 +1954,28 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	// createSession activity, actual activity, completeSession activity.
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "HandleSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
+}
+
+func (ts *IntegrationTestSuite) TestSessionWorkerShutdownWithPollComplete() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	resp, err := ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
+	}
+
+	var expected []string
+	err = ts.executeWorkflow("test-session-worker-shutdown-poll-complete", ts.workflows.BasicSession, &expected)
+	ts.NoError(err)
+
+	shutdownStart := time.Now()
+	ts.worker.Stop()
+	ts.workerStopped = true
+	ts.Less(time.Since(shutdownStart), 5*time.Second)
 }
 
 func (ts *IntegrationTestSuite) TestEagerWorkflowDispatchRaceWithWorkerStop() {
