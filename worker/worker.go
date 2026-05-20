@@ -182,7 +182,7 @@ type (
 
 		// ReplayWorkflowHistoryFromJSONFile executes a single workflow task for the json history file downloaded from the cli.
 		// To download the history file: temporal workflow show --workflow-id <workflow_id> --output json > <output_file>
-		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
+		// See https://docs.temporal.io/cli and https://github.com/temporalio/cli for full documentation.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
 		ReplayWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string) error
@@ -190,7 +190,7 @@ type (
 		// ReplayPartialWorkflowHistoryFromJSONFile executes a single workflow task for the json history file upto provided
 		// lastEventID(inclusive), downloaded from the cli.
 		// To download the history file: temporal workflow show --workflow-id <workflow_id> --output json > <output_file>
-		// See https://github.com/temporalio/temporal/blob/master/tools/cli/README.md for full documentation
+		// See https://docs.temporal.io/cli and https://github.com/temporalio/cli for full documentation.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
 		// The logger is an optional parameter. Defaults to the noop logger.
 		ReplayPartialWorkflowHistoryFromJSONFile(logger log.Logger, jsonfileName string, lastEventID int64) error

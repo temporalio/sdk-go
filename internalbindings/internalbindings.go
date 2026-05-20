@@ -53,9 +53,40 @@ type (
 	ContinueAsNewError = internal.ContinueAsNewError
 	// UpdateCallbacks used to report the result of an update
 	UpdateCallbacks = internal.UpdateCallbacks
+	// ExecuteNexusOperationParams parameters for invoking a Nexus operation from
+	// a workflow via WorkflowEnvironment.ExecuteNexusOperation. Exposed so that
+	// non-Go SDKs (e.g. roadrunner-temporal proxying for PHP) can build the
+	// params struct directly when they receive an `ExecuteNexusOperation`
+	// command from the worker.
+	ExecuteNexusOperationParams = internal.ExecuteNexusOperationParams
+	// NexusOperationOptions are workflow-level options for a Nexus operation.
+	NexusOperationOptions = internal.NexusOperationOptions
+	// NexusClient is the workflow-level client used to issue Nexus operations.
+	// Build via internal.NewNexusClient(endpoint, service).
+	NexusClient = internal.NexusClient
 )
 
 // GetLastCompletionResult returns last completion result from workflow.
 func GetLastCompletionResult(env WorkflowEnvironment) *commonpb.Payloads {
 	return internal.GetLastCompletionResultFromWorkflowInfo(env.WorkflowInfo())
+}
+
+// NewNexusClient builds a NexusClient targeted at the given endpoint and
+// service. Use the result with NewExecuteNexusOperationParams when feeding
+// WorkflowEnvironment.ExecuteNexusOperation directly.
+func NewNexusClient(endpoint, service string) NexusClient {
+	return internal.NewNexusClient(endpoint, service)
+}
+
+// NewExecuteNexusOperationParams builds an ExecuteNexusOperationParams struct
+// from outside the `internal` package — see internal.NewExecuteNexusOperationParams
+// for the rationale.
+func NewExecuteNexusOperationParams(
+	client NexusClient,
+	operation string,
+	input *commonpb.Payload,
+	options NexusOperationOptions,
+	nexusHeader map[string]string,
+) ExecuteNexusOperationParams {
+	return internal.NewExecuteNexusOperationParams(client, operation, input, options, nexusHeader)
 }
