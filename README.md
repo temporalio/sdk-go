@@ -1,3 +1,5 @@
+![Temporal Go SDK](https://raw.githubusercontent.com/temporalio/assets/main/files/w/go.png)
+
 # Temporal Go SDK [![Build Status](https://github.com/temporalio/sdk-go/actions/workflows/ci.yml/badge.svg?event=push)](https://github.com/temporalio/sdk-go/actions/workflows/ci.yml) [![PkgGoDev](https://pkg.go.dev/badge/go.temporal.io/sdk)](https://pkg.go.dev/go.temporal.io/sdk)
 
 [Temporal](https://github.com/temporalio/temporal) is a distributed, scalable, durable, and highly available orchestration engine used to execute asynchronous long-running business logic in a scalable and resilient way.
