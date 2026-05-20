@@ -566,8 +566,8 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityByIDOptions]
 	CompleteActivityByIDOptions struct {
 		// Namespace is the Temporal Namespace containing the Workflow Execution.
-		// This is the target Namespace for the completion request and may differ
-		// from the Client's Namespace.
+		// This is the request Namespace used to locate the Activity, matching the
+		// namespace parameter on CompleteActivityByID.
 		//
 		// This field is required.
 		Namespace string
@@ -622,8 +622,8 @@ type (
 	RecordActivityHeartbeatByIDOptions struct {
 		// Namespace is the Temporal Namespace containing the Workflow Execution.
 		// If empty, the Client's Namespace is used.
-		// This is the target Namespace for the heartbeat request and may differ
-		// from the Client's Namespace.
+		// This is the request Namespace used to locate the Activity, matching the
+		// namespace parameter on RecordActivityHeartbeatByID.
 		Namespace string
 
 		// WorkflowID is the ID of the Workflow Execution that scheduled the Activity.
@@ -662,10 +662,9 @@ type (
 
 	// CompleteActivityOptions provides options for CompleteActivityWithOptions.
 	//
-	// Namespace, WorkflowID, ActivityType, WorkflowType, and TaskQueue values are
-	// not validated by the SDK. Providing incorrect values may cause
-	// serialization/deserialization mismatches if your codec uses them, for
-	// example, as encryption keys or signature input.
+	// Serialization context values are not validated by the SDK. Providing
+	// incorrect values may cause serialization/deserialization mismatches if your
+	// codec uses them, for example, as encryption keys or signature input.
 	//
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityOptions]
 	CompleteActivityOptions struct {
@@ -721,8 +720,8 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityByActivityIDOptions]
 	CompleteActivityByActivityIDOptions struct {
 		// Namespace is the Temporal Namespace containing the Activity.
-		// This is the target Namespace for the completion request and may differ
-		// from the Client's Namespace.
+		// This is the request Namespace used to locate the standalone Activity,
+		// matching the namespace parameter on CompleteActivityByActivityID.
 		//
 		// This field is required.
 		Namespace string
@@ -765,10 +764,9 @@ type (
 
 	// RecordActivityHeartbeatOptions provides options for RecordActivityHeartbeatWithOptions.
 	//
-	// Namespace, WorkflowID, ActivityType, WorkflowType, and TaskQueue values are
-	// not validated by the SDK. Providing incorrect values may cause
-	// serialization/deserialization mismatches if your codec uses them, for
-	// example, as encryption keys or signature input.
+	// Serialization context values are not validated by the SDK. Providing
+	// incorrect values may cause serialization/deserialization mismatches if your
+	// codec uses them, for example, as encryption keys or signature input.
 	//
 	// Exposed as: [go.temporal.io/sdk/client.RecordActivityHeartbeatOptions]
 	RecordActivityHeartbeatOptions struct {
@@ -784,9 +782,11 @@ type (
 
 		// Optional fields for ActivitySerializationContext.
 
-		// Namespace is the optional Temporal Namespace to use for serialization
-		// context and as the target Namespace for the heartbeat request. If empty,
-		// the Client's Namespace is used.
+		// Namespace is the optional Temporal Namespace to include in serialization
+		// and external storage context. If empty, the Client's Namespace is used
+		// for this context.
+		// This field does not change the Namespace used to heartbeat the Activity,
+		// and should not differ from the Client's Namespace.
 		Namespace string
 
 		// WorkflowID is the optional Workflow ID to include in the Activity
