@@ -231,18 +231,39 @@ type (
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
 	// CompleteActivityByIDOptions provides options for CompleteActivityByIDWithOptions.
+	//
+	// ActivityType, WorkflowType, and TaskQueue values are not validated by the SDK.
+	// Providing incorrect values may cause serialization/deserialization mismatches
+	// if your codec uses them, for example, as encryption keys or signature input.
 	CompleteActivityByIDOptions = internal.CompleteActivityByIDOptions
 
 	// RecordActivityHeartbeatByIDOptions provides options for RecordActivityHeartbeatByIDWithOptions.
+	//
+	// ActivityType, WorkflowType, and TaskQueue values are not validated by the SDK.
+	// Providing incorrect values may cause serialization/deserialization mismatches
+	// if your codec uses them, for example, as encryption keys or signature input.
 	RecordActivityHeartbeatByIDOptions = internal.RecordActivityHeartbeatByIDOptions
 
 	// CompleteActivityOptions provides options for CompleteActivityWithOptions.
+	//
+	// Serialization context values are not validated by the SDK. Providing
+	// incorrect values may cause serialization/deserialization mismatches if your
+	// codec uses them, for example, as encryption keys or signature input.
 	CompleteActivityOptions = internal.CompleteActivityOptions
 
 	// CompleteActivityByActivityIDOptions provides options for CompleteActivityByActivityIDWithOptions.
+	//
+	// WorkflowID, ActivityType, WorkflowType, and TaskQueue values are not validated
+	// by the SDK. Providing incorrect values may cause serialization/deserialization
+	// mismatches if your codec uses them, for example, as encryption keys or
+	// signature input.
 	CompleteActivityByActivityIDOptions = internal.CompleteActivityByActivityIDOptions
 
 	// RecordActivityHeartbeatOptions provides options for RecordActivityHeartbeatWithOptions.
+	//
+	// Serialization context values are not validated by the SDK. Providing
+	// incorrect values may cause serialization/deserialization mismatches if your
+	// codec uses them, for example, as encryption keys or signature input.
 	RecordActivityHeartbeatOptions = internal.RecordActivityHeartbeatOptions
 
 	// WithStartWorkflowOperation defines how to start a workflow when using UpdateWithStartWorkflow.
