@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -54,7 +55,11 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 	_, httpPort, err := net.SplitHostPort(ts.config.ServiceHTTPAddr)
 	ts.NoError(err)
 
-	// Start dev server with low payload limits
+	// File-backed SQLite so database/sql uses a real connection pool. Default
+	// in-memory mode is pool-of-one, where one sqlite3_interrupt() (e.g. from a
+	// context cancellation during worker shutdown) can wedge every later query.
+	dbPath := filepath.Join(ts.T().TempDir(), "payload-limits.sqlite")
+
 	ts.server, err = testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 		CachedDownload: testsuite.CachedDownload{
 			Version: "v1.6.0",
@@ -63,7 +68,8 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 			HostPort:  ts.config.ServiceAddr,
 			Namespace: ts.config.Namespace,
 		},
-		LogLevel: "warn",
+		DBFilename: dbPath,
+		LogLevel:   "warn",
 		ExtraArgs: []string{
 			"--http-port", httpPort,
 			"--dynamic-config-value", fmt.Sprintf("limit.blobSize.error=%d", payloadSizeErrorLimit),
@@ -71,13 +77,19 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 		},
 	})
 	ts.NoError(err)
-
-	ts.NoError(WaitForTCP(time.Minute, ts.config.ServiceAddr))
 }
 
 func (ts *PayloadLimitsTestSuite) SetupTest() {
 	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
+	// Fail fast if the dev server is wedged.
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	_, err := ts.server.Client().WorkflowService().DescribeNamespace(ctx,
+		&workflowservice.DescribeNamespaceRequest{Namespace: ts.config.Namespace})
+	if err != nil {
+		ts.T().Fatalf("dev server health probe failed (namespace=%q): %v", ts.config.Namespace, err)
+	}
 	// Only initialize if not already set (tests can call ResetClientAndWorker themselves)
 	if ts.client == nil {
 		ts.NoError(ts.InitClient())
@@ -556,7 +568,6 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityHeartbeat() {
 	ts.assertActivityTaskFailed(ctx, run)
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
-
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningClientCustom() {
 	ctx, cancel := context.WithCancel(context.Background())

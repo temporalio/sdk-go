@@ -59,9 +59,6 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
-	for _, configure := range configCallbacks {
-		configure(&cfg)
-	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
 	}
@@ -90,6 +87,9 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 			panic(fmt.Sprintf("Failed loading client cert: %v", err))
 		}
 		cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+	}
+	for _, configure := range configCallbacks {
+		configure(&cfg)
 	}
 	return cfg
 }
