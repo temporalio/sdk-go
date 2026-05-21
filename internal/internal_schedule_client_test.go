@@ -266,10 +266,8 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoDataConverter() 
 		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
-	s.T().Run("new behavior", func(t *testing.T) {
-		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
-		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
-		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+	s.T().Run("default behavior", func(t *testing.T) {
+		s.True(sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 		testFn()
 	})
 }
@@ -318,10 +316,8 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultCo
 		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
 		testFn()
 	})
-	s.T().Run("new behavior", func(t *testing.T) {
-		orig := sdkFlagsAllowed[SDKFlagMemoUserDCEncode]
-		sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = true
-		defer func() { sdkFlagsAllowed[SDKFlagMemoUserDCEncode] = orig }()
+	s.T().Run("default behavior", func(t *testing.T) {
+		s.True(sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 		testFn()
 	})
 }
