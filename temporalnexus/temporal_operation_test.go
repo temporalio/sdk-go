@@ -3,6 +3,7 @@ package temporalnexus
 import (
 	"context"
 	"encoding/base64"
+	"sync/atomic"
 	"testing"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -139,7 +140,8 @@ func TestLoadTokenType(t *testing.T) {
 }
 
 func TestDoubleStartGuard(t *testing.T) {
-	started := true
+	var started atomic.Bool
+	started.Store(true)
 	nc := NexusClient{asyncStarted: &started}
 
 	_, err := StartUntypedWorkflow[string](context.Background(), nc, client.StartWorkflowOptions{}, "ignored")

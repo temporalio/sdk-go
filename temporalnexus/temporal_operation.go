@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/sdk/client"
@@ -54,7 +55,7 @@ type NexusClient struct {
 	namespace             string
 	taskQueue             string
 	startOperationOptions nexus.StartOperationOptions
-	asyncStarted          *bool
+	asyncStarted          *atomic.Bool
 }
 
 // GetWorkflowClient returns the underlying Temporal client for advanced or fallback use cases.
@@ -93,7 +94,7 @@ func StartUntypedWorkflow[R any](
 	workflow any,
 	args ...any,
 ) (TemporalOperationResult[R], error) {
-	if nc.asyncStarted != nil && *nc.asyncStarted {
+	if nc.asyncStarted != nil && nc.asyncStarted.Load() {
 		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "only one async operation can be started per operation invocation")
 	}
 
@@ -106,7 +107,7 @@ func StartUntypedWorkflow[R any](
 	}
 
 	if nc.asyncStarted != nil {
-		*nc.asyncStarted = true
+		nc.asyncStarted.Store(true)
 	}
 	nexus.AddHandlerLinks(ctx, handle.link())
 	return NewAsyncResult[R](handle.token()), nil
@@ -204,13 +205,12 @@ func (o *temporalOperation[I, O]) Start(
 		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
-	started := false
 	nc := NexusClient{
 		client:                GetClient(ctx),
 		namespace:             nctx.Namespace,
 		taskQueue:             nctx.TaskQueue,
 		startOperationOptions: options,
-		asyncStarted:          &started,
+		asyncStarted:          &atomic.Bool{},
 	}
 
 	result, err := o.options.Start(ctx, nc, input, options)
