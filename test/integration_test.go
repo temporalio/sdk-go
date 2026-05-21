@@ -171,26 +171,19 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		clientInterceptors = append(clientInterceptors, interceptor)
 	}
 
-	var err error
 	trafficController := test.NewSimpleTrafficController()
-	ts.client, err = client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ContextPropagators: []workflow.ContextPropagator{
+	ts.NoError(ts.InitClient(func(opts *client.Options) {
+		opts.ContextPropagators = []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
-		},
-		MetricsHandler:          metricsHandler,
-		TrafficController:       trafficController,
-		Interceptors:            clientInterceptors,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
-		WorkerHeartbeatInterval: -1,
-		PayloadLimits: client.PayloadLimitOptions{
+		}
+		opts.MetricsHandler = metricsHandler
+		opts.TrafficController = trafficController
+		opts.Interceptors = clientInterceptors
+		opts.PayloadLimits = client.PayloadLimitOptions{
 			PayloadSizeWarning: 128,
-		},
-	})
-	ts.NoError(err)
+		}
+	}))
 
 	ts.trafficController = trafficController
 	ts.activities.clearInvoked()
@@ -288,6 +281,9 @@ func (ts *IntegrationTestSuite) TearDownTest() {
 	}
 	if ts.client != nil {
 		ts.client.Close()
+		// Nil out so the next SetupTest's InitClient creates a fresh client
+		// instead of skipping via its non-nil idempotency check.
+		ts.client = nil
 	}
 }
 

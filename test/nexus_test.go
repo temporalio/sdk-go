@@ -79,13 +79,10 @@ func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContex
 
 	metricsHandler := metrics.NewCapturingHandler()
 	logger := ilog.NewMemoryLogger()
-	c, err := client.DialContext(ctx, client.Options{
-		HostPort:          config.ServiceAddr,
-		Namespace:         config.Namespace,
-		Logger:            logger,
-		ConnectionOptions: client.ConnectionOptions{TLS: config.TLS},
-		MetricsHandler:    metricsHandler,
-		Interceptors:      options.clientInterceptors,
+	c, err := newClientFromConfig(ctx, config, func(opts *client.Options) {
+		opts.Logger = logger
+		opts.MetricsHandler = metricsHandler
+		opts.Interceptors = options.clientInterceptors
 	})
 	require.NoError(t, err)
 
