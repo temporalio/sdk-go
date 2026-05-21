@@ -23,6 +23,7 @@ import (
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/cliversion"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 )
@@ -127,7 +128,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.7.1-standalone-nexus-operations",
+				Version: cliversion.CLIVersion,
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",

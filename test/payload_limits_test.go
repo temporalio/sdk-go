@@ -18,6 +18,7 @@ import (
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/cliversion"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
@@ -62,7 +63,7 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 
 	ts.server, err = testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 		CachedDownload: testsuite.CachedDownload{
-			Version: "v1.6.0",
+			Version: cliversion.CLIVersion,
 		},
 		ClientOptions: &client.Options{
 			HostPort:  ts.config.ServiceAddr,
