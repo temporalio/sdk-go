@@ -3683,45 +3683,45 @@ func (w *Workflows) TemporalOpWaitForSignal(ctx workflow.Context, _ string) (str
 
 var temporalOpSyncOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
 	Name: "sync-op",
-	Start: func(_ context.Context, _ temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+	Start: func(_ context.Context, _ temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
 		return temporalnexus.NewSyncResult("sync-" + input), nil
 	},
 })
 
 var temporalOpAsyncTypedOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
 	Name: "async-typed-op",
-	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
 		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpEcho, input)
 	},
 })
 
 var temporalOpAsyncUntypedOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
 	Name: "async-untyped-op",
-	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
 		return temporalnexus.StartUntypedWorkflow[string](ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpEcho, input)
 	},
 })
 
 var temporalOpCancelOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
 	Name: "cancel-op",
-	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
 		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForCancel, input)
 	},
 })
 
 var temporalOpCustomCancelOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
 	Name: "custom-cancel-op",
-	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
 		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForCancel, input)
 	},
-	CancelWorkflowRun: func(ctx context.Context, c client.Client, workflowID string, _ nexus.CancelOperationOptions) error {
-		return c.TerminateWorkflow(ctx, workflowID, "", "terminated via nexus cancel")
+	CancelWorkflowRun: func(ctx context.Context, c client.Client, opts temporalnexus.CancelTemporalWorkflowRunOptions, _ nexus.CancelOperationOptions) error {
+		return c.TerminateWorkflow(ctx, opts.WorkflowID, "", "terminated via nexus cancel")
 	},
 })
 
 var temporalOpClientInStartOp = temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
 	Name: "client-in-start-op",
-	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
 		result, err := temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForSignal, input)
 		if err != nil {
 			return result, err

@@ -12,19 +12,56 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+// StartTemporalOperationOptions are options provided to the Start callback of a Temporal Nexus operation.
+// Mirrors [nexus.StartOperationOptions].
+//
+// NOTE: Experimental
+type StartTemporalOperationOptions struct {
+	// Header contains the request header fields received by the server.
+	//
+	// Header keys with the "content-" prefix are reserved for [nexus.Serializer] headers and are not
+	// available here.
+	Header nexus.Header
+	// CallbackURL is used to deliver completion of async operations.
+	CallbackURL string
+	// CallbackHeader contains header fields set by the client that are required to be attached to the
+	// callback request when an asynchronous operation completes.
+	CallbackHeader nexus.Header
+	// RequestID may be used by the server handler to dedupe a start request.
+	RequestID string
+	// Links contain arbitrary caller information. Handlers may use these links as metadata on
+	// resources associated with an operation.
+	Links []nexus.Link
+}
+
+// CancelTemporalWorkflowRunOptions are options provided to the CancelWorkflowRun callback of a
+// Temporal Nexus operation.
+//
+// NOTE: Experimental
+type CancelTemporalWorkflowRunOptions struct {
+	// WorkflowID extracted from the operation token.
+	WorkflowID string
+}
+
 // TemporalOperationResult encapsulates either a synchronous result or an asynchronous operation token.
 // Exactly one of sync or token must be set.
+//
+// NOTE: Experimental
 type TemporalOperationResult[R any] struct {
 	sync  *R
 	token string
 }
 
 // NewSyncResult creates a TemporalOperationResult with a synchronous value.
+//
+// NOTE: Experimental
 func NewSyncResult[R any](value R) TemporalOperationResult[R] {
 	return TemporalOperationResult[R]{sync: &value}
 }
 
 // NewAsyncResult creates a TemporalOperationResult with an asynchronous operation token.
+//
+// NOTE: Experimental
 func NewAsyncResult[R any](token string) TemporalOperationResult[R] {
 	return TemporalOperationResult[R]{token: token}
 }
@@ -50,6 +87,8 @@ func (r TemporalOperationResult[R]) toHandlerResult() (nexus.HandlerStartOperati
 
 // NexusClient wraps the Temporal client.Client with Nexus-aware context.
 // It is scoped to a single operation invocation and should not be stored beyond the Start callback.
+//
+// NOTE: Experimental
 type NexusClient struct {
 	client                client.Client
 	namespace             string
@@ -59,6 +98,8 @@ type NexusClient struct {
 }
 
 // GetWorkflowClient returns the underlying Temporal client for advanced or fallback use cases.
+//
+// NOTE: Experimental
 func (nc NexusClient) GetWorkflowClient() client.Client {
 	return nc.client
 }
@@ -71,6 +112,8 @@ func (nc NexusClient) GetWorkflowClient() client.Client {
 // For workflows that don't follow this signature, use [StartUntypedWorkflow].
 //
 // These are free functions because Go does not allow generic methods on non-generic structs.
+//
+// NOTE: Experimental
 func StartWorkflow[I, O any, WF func(workflow.Context, I) (O, error)](
 	ctx context.Context,
 	nc NexusClient,
@@ -87,6 +130,8 @@ func StartWorkflow[I, O any, WF func(workflow.Context, I) (O, error)](
 //
 // Useful for invoking workflows that don't follow the single argument / single return type signature.
 // See [StartWorkflow] for the type-safe variant.
+//
+// NOTE: Experimental
 func StartUntypedWorkflow[R any](
 	ctx context.Context,
 	nc NexusClient,
@@ -118,7 +163,7 @@ func StartUntypedWorkflow[R any](
 //
 //	op, err := NewTemporalOperation(TemporalOperationOptions[MyInput, MyOutput]{
 //		Name: "my-async-op",
-//		Start: func(ctx context.Context, nc NexusClient, input MyInput, opts nexus.StartOperationOptions) (TemporalOperationResult[MyOutput], error) {
+//		Start: func(ctx context.Context, nc NexusClient, input MyInput, opts StartTemporalOperationOptions) (TemporalOperationResult[MyOutput], error) {
 //			return StartWorkflow[MyOutput](ctx, nc,
 //				client.StartWorkflowOptions{ID: "wf-" + input.ID},
 //				MyWorkflow, input)
@@ -129,25 +174,29 @@ func StartUntypedWorkflow[R any](
 //
 //	op, err := NewTemporalOperation(TemporalOperationOptions[string, string]{
 //		Name: "my-sync-op",
-//		Start: func(ctx context.Context, nc NexusClient, input string, opts nexus.StartOperationOptions) (TemporalOperationResult[string], error) {
+//		Start: func(ctx context.Context, nc NexusClient, input string, opts StartTemporalOperationOptions) (TemporalOperationResult[string], error) {
 //			return NewSyncResult("result: " + input), nil
 //		},
 //	})
+//
+// NOTE: Experimental
 type TemporalOperationOptions[I, O any] struct {
 	// Name of the operation. Required.
 	Name string
 	// Start handles the operation start. It receives the operation context, a [NexusClient] scoped
-	// to this invocation, the operation input, and the Nexus start operation options.
+	// to this invocation, the operation input, and the start operation options.
 	// Required.
-	Start func(ctx context.Context, nc NexusClient, input I, options nexus.StartOperationOptions) (TemporalOperationResult[O], error)
+	Start func(ctx context.Context, nc NexusClient, input I, options StartTemporalOperationOptions) (TemporalOperationResult[O], error)
 	// CancelWorkflowRun handles cancel for workflow-run operation tokens.
-	// It receives the Temporal client and the workflow ID extracted from the token.
-	// If nil, defaults to cancelling the workflow via the Temporal client.
-	CancelWorkflowRun func(ctx context.Context, c client.Client, workflowID string, options nexus.CancelOperationOptions) error
+	// It receives the Temporal client, the workflow-run options extracted from the token, and the
+	// Nexus cancel options. If nil, defaults to cancelling the workflow via the Temporal client.
+	CancelWorkflowRun func(ctx context.Context, c client.Client, options CancelTemporalWorkflowRunOptions, cancelOptions nexus.CancelOperationOptions) error
 }
 
 // NewTemporalOperation creates a generic Nexus operation backed by Temporal.
 // The returned operation satisfies nexus.Operation[I, O] for service registration.
+//
+// NOTE: Experimental
 func NewTemporalOperation[I, O any](opts TemporalOperationOptions[I, O]) (nexus.Operation[I, O], error) {
 	if opts.Name == "" {
 		return nil, errors.New("invalid options: Name is required")
@@ -166,6 +215,8 @@ func NewTemporalOperation[I, O any](opts TemporalOperationOptions[I, O]) (nexus.
 
 // MustNewTemporalOperation creates a generic Nexus operation backed by Temporal.
 // Panics if invalid options are provided.
+//
+// NOTE: Experimental
 func MustNewTemporalOperation[I, O any](opts TemporalOperationOptions[I, O]) nexus.Operation[I, O] {
 	op, err := NewTemporalOperation(opts)
 	if err != nil {
@@ -175,8 +226,8 @@ func MustNewTemporalOperation[I, O any](opts TemporalOperationOptions[I, O]) nex
 }
 
 // defaultCancelWorkflowRun is the default cancel handler for workflow-run operation tokens.
-func defaultCancelWorkflowRun(ctx context.Context, c client.Client, workflowID string, _ nexus.CancelOperationOptions) error {
-	return c.CancelWorkflow(ctx, workflowID, "")
+func defaultCancelWorkflowRun(ctx context.Context, c client.Client, options CancelTemporalWorkflowRunOptions, _ nexus.CancelOperationOptions) error {
+	return c.CancelWorkflow(ctx, options.WorkflowID, "")
 }
 
 // temporalOperation implements nexus.Operation[I, O] for a generic Temporal-backed operation.
@@ -212,7 +263,13 @@ func (o *temporalOperation[I, O]) Start(
 		asyncStarted:          &atomic.Bool{},
 	}
 
-	result, err := o.options.Start(ctx, nc, input, options)
+	result, err := o.options.Start(ctx, nc, input, StartTemporalOperationOptions{
+		Header:         options.Header,
+		CallbackURL:    options.CallbackURL,
+		CallbackHeader: options.CallbackHeader,
+		RequestID:      options.RequestID,
+		Links:          options.Links,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +301,9 @@ func (o *temporalOperation[I, O]) Cancel(ctx context.Context, token string, opti
 				Cause:   err,
 			}
 		}
-		return o.options.CancelWorkflowRun(ctx, GetClient(ctx), wfToken.WorkflowID, options)
+		return o.options.CancelWorkflowRun(ctx, GetClient(ctx), CancelTemporalWorkflowRunOptions{
+			WorkflowID: wfToken.WorkflowID,
+		}, options)
 	default:
 		return nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "unknown operation token type: %d", tokenType)
 	}

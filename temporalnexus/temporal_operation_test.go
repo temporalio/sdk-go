@@ -83,7 +83,7 @@ func TestNewTemporalOperationValidation(t *testing.T) {
 	// Valid options
 	_, err = NewTemporalOperation(TemporalOperationOptions[string, string]{
 		Name: "test",
-		Start: func(ctx context.Context, nc NexusClient, input string, opts nexus.StartOperationOptions) (TemporalOperationResult[string], error) {
+		Start: func(ctx context.Context, nc NexusClient, input string, opts StartTemporalOperationOptions) (TemporalOperationResult[string], error) {
 			return NewSyncResult("ok"), nil
 		},
 	})
@@ -100,7 +100,7 @@ func TestMustNewTemporalOperationValid(t *testing.T) {
 	require.NotPanics(t, func() {
 		MustNewTemporalOperation(TemporalOperationOptions[string, string]{
 			Name: "test",
-			Start: func(ctx context.Context, nc NexusClient, input string, opts nexus.StartOperationOptions) (TemporalOperationResult[string], error) {
+			Start: func(ctx context.Context, nc NexusClient, input string, opts StartTemporalOperationOptions) (TemporalOperationResult[string], error) {
 				return NewSyncResult("ok"), nil
 			},
 		})
