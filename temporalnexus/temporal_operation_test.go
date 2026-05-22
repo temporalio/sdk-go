@@ -114,6 +114,12 @@ func TestLoadTokenType(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, operationTokenTypeWorkflowRun, tokenType)
 
+	// Valid type=4 (activity execution)
+	activityToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":4,"ns":"ns","aid":"a"}`))
+	tokenType, err = loadTokenType(activityToken)
+	require.NoError(t, err)
+	require.Equal(t, operationTokenTypeActivityExecution, tokenType)
+
 	// Unknown type=99
 	unknownToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":99}`))
 	tokenType, err = loadTokenType(unknownToken)
@@ -137,6 +143,18 @@ func TestLoadTokenType(t *testing.T) {
 	missingType := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"ns":"ns"}`))
 	_, err = loadTokenType(missingType)
 	require.ErrorContains(t, err, "missing or zero token type")
+}
+
+func TestNewTemporalOperationDefaultsCancelActivityExecution(t *testing.T) {
+	opAny, err := NewTemporalOperation(TemporalOperationOptions[string, string]{
+		Name: "test",
+		Start: func(ctx context.Context, nc NexusClient, input string, opts StartTemporalOperationOptions) (TemporalOperationResult[string], error) {
+			return NewSyncResult("ok"), nil
+		},
+	})
+	require.NoError(t, err)
+	op := opAny.(*temporalOperation[string, string])
+	require.NotNil(t, op.options.CancelActivityExecution)
 }
 
 func TestDoubleStartGuard(t *testing.T) {
