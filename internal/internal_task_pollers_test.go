@@ -20,6 +20,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
+	ilog "go.temporal.io/sdk/internal/log"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -526,6 +527,53 @@ func TestActivityTaskNotProcessedAfterStopForLegacyShutdown(t *testing.T) {
 	case <-handler.executed:
 		t.Fatal("activity task was processed after shutdown without drain capability")
 	default:
+	}
+}
+
+func TestWorkflowTaskProcessAfterStopMatchesShutdownMode(t *testing.T) {
+	tests := []struct {
+		name                         string
+		workerPollCompleteOnShutdown *atomic.Bool
+		wantErr                      error
+	}{
+		{
+			name:    "nil capability",
+			wantErr: errStop,
+		},
+		{
+			name:                         "false capability",
+			workerPollCompleteOnShutdown: &atomic.Bool{},
+			wantErr:                      errStop,
+		},
+		{
+			name: "true capability",
+			workerPollCompleteOnShutdown: func() *atomic.Bool {
+				enabled := &atomic.Bool{}
+				enabled.Store(true)
+				return enabled
+			}(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stopC := make(chan struct{})
+			close(stopC)
+			wtp := &workflowTaskProcessor{
+				basePoller: basePoller{
+					stopC:                        stopC,
+					workerPollCompleteOnShutdown: tt.workerPollCompleteOnShutdown,
+				},
+				logger: ilog.NewNopLogger(),
+			}
+
+			err := wtp.ProcessTask(&workflowTask{})
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }
 

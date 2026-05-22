@@ -568,6 +568,39 @@ func TestStopTimeoutBoundsPollerDrain(t *testing.T) {
 		"worker goroutines should finish after blocked poll is released")
 }
 
+func TestLegacyStopReturnsPromptlyWithBlockedPoller(t *testing.T) {
+	pollStarted := make(chan struct{})
+	tp := &stopAwareShutdownPoller{
+		pollStarted: pollStarted,
+	}
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &testSlotSupplier{},
+		maxTaskPerSecond: 1000,
+		taskPollers: []scalableTaskPoller{
+			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+		},
+		taskProcessor:                noopTaskProcessor{},
+		workerType:                   "LegacyStopTimeoutTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  5 * time.Second,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: &atomic.Bool{},
+	})
+	tp.stopC = bw.stopCh
+
+	bw.Start()
+	<-pollStarted
+
+	start := time.Now()
+	bw.Stop()
+	elapsed := time.Since(start)
+
+	require.Less(t, elapsed, time.Second,
+		"legacy Stop() should return promptly when a blocked poll observes shutdown")
+	require.True(t, tp.stopped.Load(), "blocked poller should observe shutdown")
+}
+
 type blockingShutdownPoller struct {
 	pollStarted chan struct{}
 	releasePoll chan struct{}
@@ -580,6 +613,22 @@ func (p *blockingShutdownPoller) PollTask() (taskForWorker, error) {
 	}
 	<-p.releasePoll
 	return nil, nil
+}
+
+type stopAwareShutdownPoller struct {
+	pollStarted chan struct{}
+	stopC       <-chan struct{}
+	started     atomic.Bool
+	stopped     atomic.Bool
+}
+
+func (p *stopAwareShutdownPoller) PollTask() (taskForWorker, error) {
+	if p.started.CompareAndSwap(false, true) {
+		close(p.pollStarted)
+	}
+	<-p.stopC
+	p.stopped.Store(true)
+	return nil, errStop
 }
 
 func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithCapability() {

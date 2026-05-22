@@ -3278,6 +3278,26 @@ func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSetsNoRepollOnSession
 		"session activity worker should stop starting new polls during shutdown")
 }
 
+func (s *internalWorkerTestSuite) TestSessionWorkerShutdownDrainModeMatchesAggregateWorker() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "session-shutdown-task-queue", WorkerOptions{
+		EnableSessionWorker: true,
+	})
+	s.NotNil(worker.sessionWorker)
+
+	s.False(worker.sessionWorker.creationWorker.worker.shouldDrainOnShutdown(),
+		"session creation worker should default to legacy shutdown before the capability is enabled")
+	s.False(worker.sessionWorker.activityWorker.worker.shouldDrainOnShutdown(),
+		"session activity worker should default to legacy shutdown before the capability is enabled")
+
+	worker.workerPollCompleteOnShutdown.Store(true)
+
+	s.True(worker.sessionWorker.creationWorker.worker.shouldDrainOnShutdown(),
+		"session creation worker should share the aggregate shutdown drain capability")
+	s.True(worker.sessionWorker.activityWorker.worker.shouldDrainOnShutdown(),
+		"session activity worker should share the aggregate shutdown drain capability")
+}
+
 func TestHistoryFromJSON(t *testing.T) {
 	// Load sample history and just make sure it has the right event count
 	r, err := os.Open("testdata/sampleHistory.json")
