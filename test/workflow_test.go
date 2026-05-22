@@ -3714,8 +3714,8 @@ var temporalOpCustomCancelOp = temporalnexus.MustNewTemporalOperation(temporalne
 	Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ nexus.StartOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
 		return temporalnexus.StartWorkflow(ctx, nc, client.StartWorkflowOptions{ID: input}, (*Workflows)(nil).TemporalOpWaitForCancel, input)
 	},
-	CancelWorkflowRun: func(ctx context.Context, nc temporalnexus.NexusClient, workflowID string, _ nexus.CancelOperationOptions) error {
-		return nc.GetWorkflowClient().TerminateWorkflow(ctx, workflowID, "", "terminated via nexus cancel")
+	CancelWorkflowRun: func(ctx context.Context, c client.Client, workflowID string, _ nexus.CancelOperationOptions) error {
+		return c.TerminateWorkflow(ctx, workflowID, "", "terminated via nexus cancel")
 	},
 })
 
