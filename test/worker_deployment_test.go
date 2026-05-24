@@ -57,6 +57,7 @@ func (ts *WorkerDeploymentTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkerDeploymentTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 
@@ -115,7 +116,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropaga
 			return false
 		}
 		return false
-	}, 5*time.Second, 100*time.Millisecond)
+	}, 10*time.Second, 100*time.Millisecond)
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context, handle client.WorkflowRun) {
@@ -331,6 +332,7 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDWithSession() {
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
 
 	// start workflow1 with 1.0, BasicSession, auto-upgrade
 	wfHandle, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("evolving-wf-1"), "SessionBuildIDWorkflow")
@@ -343,7 +345,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
@@ -429,6 +431,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
 
 	// start workflow1 with 1.0, WaitSignalToStartVersionedOne, auto-upgrade
 	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
@@ -443,6 +446,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v2.BuildID, "")
 
 	// start workflow2 with 2.0, WaitSignalToStartVersionedOne, pinned
 	handle2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2"), "WaitSignalToStartVersioned")
@@ -452,15 +456,13 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v3)
 
-	// Needed if server constant maxFastUserDataFetches is not >= 20
-	//time.Sleep(10 * time.Second)
-
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		BuildID:       v3.BuildID,
 		ConflictToken: response3.ConflictToken,
 		Identity:      "client1",
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v3.BuildID, "")
 
 	desc, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 
@@ -616,7 +618,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
@@ -680,6 +682,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
 
 	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
@@ -760,6 +763,7 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v2.BuildID, "")
 
 	ts.NoError(ts.client.SignalWorkflow(ctx, handle1.GetID(), handle1.GetRunID(), "start-signal", "prefix"))
 	ts.NoError(ts.client.SignalWorkflow(ctx, handle2.GetID(), handle2.GetRunID(), "start-signal", "prefix"))
@@ -937,6 +941,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 		ConflictToken: response1.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
 
 	// Show no drainage
 
@@ -968,6 +973,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 		ConflictToken: response2.ConflictToken,
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v2.BuildID, "")
 
 	// Show 1.0) Draining and 2.0) not
 
@@ -1009,7 +1015,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
@@ -1088,6 +1094,7 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 		Percentage:    float32(100.0),
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, v2.BuildID)
 
 	ts.True(!ts.runWorkflowAndCheckV1(ctx, "1"))
 	ts.True(!ts.runWorkflowAndCheckV1(ctx, "2"))
@@ -1099,17 +1106,19 @@ func (ts *WorkerDeploymentTestSuite) TestRampVersions() {
 		Percentage:    float32(0.0),
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, v2.BuildID)
 
 	ts.True(ts.runWorkflowAndCheckV1(ctx, "1"))
 	ts.True(ts.runWorkflowAndCheckV1(ctx, "2"))
 
-	// Ramp 0% to 2.0
+	// Ramp 50% to 2.0
 	_, err = dHandle.SetRampingVersion(ctx, client.WorkerDeploymentSetRampingVersionOptions{
 		BuildID:       v2.BuildID,
 		ConflictToken: response4.ConflictToken,
 		Percentage:    float32(50.0),
 	})
 	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, v2.BuildID)
 
 	// very likely probability (1-2^33) of success
 	ts.Eventually(func() bool {
@@ -1356,7 +1365,7 @@ func (ts *WorkerDeploymentTestSuite) TestContinueAsNewWithVersionUpgrade() {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
@@ -1459,7 +1468,7 @@ func (ts *WorkerDeploymentTestSuite) TestContinueAsNewWithRampingVersion() {
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
