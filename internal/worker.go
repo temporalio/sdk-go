@@ -109,9 +109,12 @@ type (
 		// Optional: Sets the rate limiting on number of activities that can be executed per second per
 		// worker. This can be used to limit resources used by the worker.
 		// Notice that the number is represented in float, so that you can set it to less than
-		// 1 if needed. For example, set the number to 0.1 means you want your activity to be executed
-		// once for every 10 seconds. This can be used to protect down stream services from flooding.
-		// The zero value of this uses the default value
+		// 1 if needed. For example, setting the number to 0.1 means activities execute
+		// once every 10 seconds. This can be used to protect downstream services from flooding.
+		// This rate limit is applied after activity tasks are received by the worker. If this
+		// value is set very low, server-side timeouts may continue to elapse while tasks wait
+		// behind this worker-side rate limiter.
+		// The zero value of this uses the default value.
 		//
 		// default: 100k
 		WorkerActivitiesPerSecond float64
