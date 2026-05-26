@@ -375,7 +375,7 @@ func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 	bw.noRepoll.Store(true)
 
 	// Stop exercises the base worker shutdown path: close(stopCh),
-	// limiterContextCancel, and awaitWaitGroup.
+	// poll-side limiter cancellation, and awaitWaitGroup.
 	stopDone := make(chan struct{})
 	go func() {
 		bw.Stop()
@@ -402,6 +402,125 @@ func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop() did not return in time")
 	}
+}
+
+// effectivelyBlockedDispatchRate lets the first task consume the limiter's
+// initial token while making the next task wait until the test cancels the
+// limiter context.
+const effectivelyBlockedDispatchRate = 0.001
+
+func TestTaskDrainDuringShutdownRespectsDispatchRate(t *testing.T) {
+	taskProcessed := make(chan struct{}, 2)
+	workerPollCompleteOnShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown.Store(true)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:                 &testSlotSupplier{},
+		maxTaskPerSecond:             effectivelyBlockedDispatchRate,
+		taskPollers:                  []scalableTaskPoller{},
+		taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
+		workerType:                   "ShutdownRateLimitTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  5 * time.Second,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	})
+
+	bw.stopWG.Add(1)
+	go bw.runTaskDispatcher()
+	bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+
+	select {
+	case <-taskProcessed:
+	case <-time.After(time.Second):
+		t.Fatal("first task polled during shutdown was not processed")
+	}
+
+	secondSent := make(chan struct{})
+	go func() {
+		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+		close(secondSent)
+	}()
+	select {
+	case <-secondSent:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher did not receive the second task")
+	}
+
+	select {
+	case <-taskProcessed:
+		t.Fatal("second task should not bypass the dispatch rate during shutdown drain")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	bw.taskLimiterContextCancel()
+	close(bw.taskQueueCh)
+
+	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
+		"dispatcher and processed tasks should finish after taskQueueCh closes")
+}
+
+func TestTaskDrainAfterDispatchLimiterCancelReleasesUnprocessedTasks(t *testing.T) {
+	taskProcessed := make(chan struct{}, 3)
+	workerPollCompleteOnShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown.Store(true)
+	slotSupplier := &CountingSlotSupplier{}
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:                 slotSupplier,
+		maxTaskPerSecond:             effectivelyBlockedDispatchRate,
+		taskPollers:                  []scalableTaskPoller{},
+		taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
+		workerType:                   "ShutdownTimeoutDrainTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  5 * time.Second,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	})
+
+	bw.stopWG.Add(1)
+	go bw.runTaskDispatcher()
+	bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+
+	select {
+	case <-taskProcessed:
+	case <-time.After(time.Second):
+		t.Fatal("first task polled during shutdown was not processed")
+	}
+
+	secondSent := make(chan struct{})
+	go func() {
+		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+		close(secondSent)
+	}()
+	select {
+	case <-secondSent:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher did not receive the second task")
+	}
+
+	thirdSent := make(chan struct{})
+	go func() {
+		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+		close(thirdSent)
+	}()
+
+	bw.taskLimiterContextCancel()
+	select {
+	case <-thirdSent:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher did not keep receiving after dispatch limiter cancellation")
+	}
+	close(bw.taskQueueCh)
+
+	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
+		"dispatcher should keep receiving and releasing tasks after dispatch limiter cancellation so pollers can exit")
+	require.Empty(t, taskProcessed,
+		"only the task dispatched before dispatch limiter cancellation should be processed")
+	require.Equal(t, int32(1), slotSupplier.uses.Load(),
+		"only the processed task should mark its slot used")
+	require.Equal(t, int32(3), slotSupplier.releases.Load(),
+		"processed and discarded tasks should all release their slots")
 }
 
 func TestTaskNotProcessedDuringLegacyShutdown(t *testing.T) {

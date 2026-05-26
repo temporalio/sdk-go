@@ -225,9 +225,14 @@ type (
 		taskLimiter          *rate.Limiter
 		limiterContext       context.Context
 		limiterContextCancel func()
-		retrier              *backoff.ConcurrentRetrier // Service errors back off retrier
-		logger               log.Logger
-		metricsHandler       metrics.Handler
+		// taskLimiterContext stays live during shutdown drain so already-polled
+		// tasks still respect the dispatch rate after poll-side waits are
+		// canceled via limiterContext.
+		taskLimiterContext       context.Context
+		taskLimiterContextCancel func()
+		retrier                  *backoff.ConcurrentRetrier // Service errors back off retrier
+		logger                   log.Logger
+		metricsHandler           metrics.Handler
 
 		slotSupplier       *trackingSlotSupplier
 		taskQueueCh        chan eagerOrPolledTask
@@ -354,6 +359,7 @@ func newBaseWorker(
 	options baseWorkerOptions,
 ) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
+	taskLimiterCtx, taskLimiterCancel := context.WithCancel(context.Background())
 	logger := log.With(options.logger, tagWorkerType, options.workerType)
 	if heartbeatHandler, isHeartbeat := options.metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
 		options.metricsHandler = heartbeatHandler.forWorker(options.workerType)
@@ -382,9 +388,11 @@ func newBaseWorker(
 		eagerTaskQueueCh: make(chan eagerTask, 2000),
 		fatalErrCb:       options.fatalErrCb,
 
-		limiterContext:       ctx,
-		limiterContextCancel: cancel,
-		sessionTokenBucket:   options.sessionTokenBucket,
+		limiterContext:           ctx,
+		limiterContextCancel:     cancel,
+		taskLimiterContext:       taskLimiterCtx,
+		taskLimiterContextCancel: taskLimiterCancel,
+		sessionTokenBucket:       options.sessionTokenBucket,
 	}
 	// Set secondary retrier as resource exhausted
 	bw.retrier.SetSecondaryRetryPolicy(pollResourceExhaustedRetryPolicy)
@@ -605,13 +613,19 @@ func (bw *baseWorker) runTaskDispatcher() {
 	if bw.shouldDrainOnShutdown() {
 		for task := range bw.taskQueueCh {
 			// For non-polled-task (local activity result as task or eager task),
-			// we don't need to rate limit. During shutdown the limiter context is
-			// cancelled, so polled tasks continue processing without dispatch rate
-			// throttling; slot permits still enforce execution concurrency.
+			// we don't need to rate limit. Keep using the dispatch limiter during
+			// shutdown drain so already-polled tasks still respect the worker's
+			// configured task start rate.
 			if _, isPolledTask := task.(*polledTask); isPolledTask {
-				// Ignore error: during shutdown the limiter context is
-				// cancelled, but we still process remaining tasks.
-				_ = bw.taskLimiter.Wait(bw.limiterContext)
+				if bw.taskLimiter.Wait(bw.taskLimiterContext) != nil {
+					bw.releaseSlot(task.getPermit(), SlotReleaseReasonUnused)
+					// Pollers in drain mode send to taskQueueCh without a
+					// stopCh escape hatch. Keep receiving and releasing any
+					// remaining tasks so pollers can finish and taskQueueCh can
+					// close even after we stop processing tasks.
+					bw.discardTaskQueue()
+					return
+				}
 			}
 			bw.processTaskAsync(task)
 		}
@@ -636,6 +650,12 @@ func (bw *baseWorker) runTaskDispatcher() {
 			}
 			bw.processTaskAsync(task)
 		}
+	}
+}
+
+func (bw *baseWorker) discardTaskQueue() {
+	for task := range bw.taskQueueCh {
+		bw.releaseSlot(task.getPermit(), SlotReleaseReasonUnused)
 	}
 }
 
@@ -776,6 +796,7 @@ func (bw *baseWorker) Stop() {
 			bw.logger.Info("Worker graceful stop timed out.", "Stop timeout", bw.options.stopTimeout)
 		})
 	}
+	bw.taskLimiterContextCancel()
 
 	// Close context
 	if bw.options.backgroundContextCancel != nil {
