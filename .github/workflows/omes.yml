@@ -1,5 +1,6 @@
 name: Omes Testing
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -14,7 +15,9 @@ jobs:
       contents: read
       packages: write
     uses: temporalio/omes/.github/workflows/docker-images.yml@main
-    secrets: inherit
+    secrets:
+      DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      DOCKER_PAT: ${{ secrets.DOCKER_SDK_PAT }}
     with:
       lang: go
       sdk-repo-url: ${{ github.event.pull_request.head.repo.full_name || 'temporalio/sdk-go' }}
