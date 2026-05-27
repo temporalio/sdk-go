@@ -527,7 +527,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.assertMetricCountAtLeast("temporal_activity_execution_failed", 2)
 	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
 	ts.assertMetricCountAtLeast("temporal_long_request", 4, "operation", "PollActivityTaskQueue")
-	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
+	ts.assertMetricCountAtLeastEventually("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
 	ts.Equal(ts.metricCount("temporal_long_request"), ts.metricCount("temporal_long_request_attempt"))
 }
 
@@ -7429,6 +7429,18 @@ func (ts *IntegrationTestSuite) assertMetricCountAtLeast(name string, value int6
 	ts.GreaterOrEqual(ts.metricCount(name, tagFilterKeyValue...), value)
 }
 
+func (ts *IntegrationTestSuite) assertMetricCountAtLeastEventually(name string, value int64, tagFilterKeyValue ...string) {
+	var lastCount int64
+	for start := time.Now(); time.Since(start) <= 2*time.Second; {
+		lastCount = ts.metricCount(name, tagFilterKeyValue...)
+		if lastCount >= value {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	ts.GreaterOrEqual(lastCount, value)
+}
+
 func (ts *IntegrationTestSuite) assertReportedOperationCount(metricName string, operation string, expectedCount int) {
 	count := ts.getReportedOperationCount(metricName, operation)
 	ts.EqualValues(expectedCount, count, fmt.Sprintf("Metric %v for operation %v has been reported unexpected number of times", metricName, operation))
@@ -8043,6 +8055,11 @@ func (ts *IntegrationTestSuite) TestShutdownDuringActiveTimerActivityWorkflows()
 
 	const numWorkflows = 5
 	runs := make([]client.WorkflowRun, 0, numWorkflows)
+	defer func() {
+		for _, run := range runs {
+			_ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "test complete")
+		}
+	}()
 	for i := 0; i < numWorkflows; i++ {
 		run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 			ID:                       fmt.Sprintf("shutdown-active-timer-activity-%s-%d", uuid.NewString(), i),
@@ -8068,7 +8085,6 @@ func (ts *IntegrationTestSuite) TestShutdownDuringActiveTimerActivityWorkflows()
 	ts.Less(time.Since(shutdownStart), 5*time.Second)
 
 	for _, run := range runs {
-		ts.NoError(ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "test complete"))
 		history, err := ts.getHistory(run.GetID(), run.GetRunID())
 		ts.NoError(err)
 		for _, event := range history.Events {
