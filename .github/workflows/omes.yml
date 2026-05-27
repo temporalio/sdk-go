@@ -1,8 +1,8 @@
 name: Omes Testing
 on:
-  workflow_dispatch:
   push:
     branches:
+      - fix/omes-docker-sdk-pat
       - main
       - master
 
