@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,6 +29,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -53,6 +56,7 @@ import (
 	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -265,6 +269,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.workerStopped = false
 	ts.registerWorkflowsAndActivities(ts.worker)
+	if strings.Contains(ts.T().Name(), "TestExecuteNexusOperationSuite") {
+		ts.registerStandaloneNexusOperations(ts.worker)
+	}
 	if strings.Contains(ts.T().Name(), "NoWorker") {
 		// Don't even start the worker
 		ts.workerStopped = true
@@ -7197,6 +7204,37 @@ func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) 
 	ts.activities.register(w)
 }
 
+func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worker) {
+	service := nexus.NewService("test-standalone-service")
+	syncOp := nexus.NewSyncOperation("echo-op", func(ctx context.Context, input string, opts nexus.StartOperationOptions) (string, error) {
+		return input, nil
+	})
+	blockForeverWf := func(ctx workflow.Context, input string) (string, error) {
+		return "", workflow.Await(ctx, func() bool { return false })
+	}
+	w.RegisterWorkflowWithOptions(blockForeverWf, workflow.RegisterOptions{Name: "block-forever-wf"})
+	asyncOp := temporalnexus.NewWorkflowRunOperation(
+		"async-op",
+		blockForeverWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: "nexus-async-" + uuid.NewString()}, nil
+		},
+	)
+	echoWf := func(ctx workflow.Context, input string) (string, error) {
+		return input, nil
+	}
+	w.RegisterWorkflowWithOptions(echoWf, workflow.RegisterOptions{Name: "echo-wf"})
+	asyncEchoOp := temporalnexus.NewWorkflowRunOperation(
+		"async-echo-op",
+		echoWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: "nexus-async-echo-" + uuid.NewString()}, nil
+		},
+	)
+	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp))
+	w.RegisterNexusService(service)
+}
+
 var (
 	_ interceptor.WorkerInterceptor           = (*tracingInterceptor)(nil)
 	_ interceptor.WorkflowInboundInterceptor  = (*tracingWorkflowInboundInterceptor)(nil)
@@ -9231,4 +9269,232 @@ func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
 	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
 		return strings.HasPrefix(line, "WARN  [TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
 	}))
+}
+
+func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
+	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Create a Nexus endpoint targeting our task queue.
+	endpoint := "sdk-go-nexus-standalone-test-ep-" + uuid.NewString()
+	createResp, err := ts.client.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: endpoint,
+			Target: &nexuspb.EndpointTarget{
+				Variant: &nexuspb.EndpointTarget_Worker_{
+					Worker: &nexuspb.EndpointTarget_Worker{
+						Namespace: ts.config.Namespace,
+						TaskQueue: ts.taskQueueName,
+					},
+				},
+			},
+		},
+	})
+	ts.NoError(err)
+	defer func() {
+		_, _ = ts.client.OperatorService().DeleteNexusEndpoint(ctx, &operatorservice.DeleteNexusEndpointRequest{
+			Id:      createResp.Endpoint.Id,
+			Version: createResp.Endpoint.Version,
+		})
+	}()
+
+	nexusClient, err := ts.client.NewNexusClient(client.NexusClientOptions{
+		Endpoint: endpoint,
+		Service:  "test-standalone-service",
+	})
+	ts.NoError(err)
+
+	// executeNexusOpWithRetry retries ExecuteOperation until the endpoint has propagated.
+	// The endpoint registry is eventually consistent and may take a few attempts.
+	executeNexusOpWithRetry := func(
+		opName string,
+		input string,
+		options client.StartNexusOperationOptions,
+	) client.NexusOperationHandle {
+		ts.T().Helper()
+		var handle client.NexusOperationHandle
+		require.Eventually(ts.T(), func() bool {
+			var execErr error
+			handle, execErr = nexusClient.ExecuteOperation(ctx, opName, input, options)
+			return execErr == nil
+		}, 10*time.Second, 100*time.Millisecond, "timed out waiting for endpoint to propagate")
+		return handle
+	}
+
+	ts.Run("Execute and get result", func() {
+		input := "hello-nexus"
+		handle := executeNexusOpWithRetry("echo-op", input, client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+
+		var result string
+		err := handle.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal(input, result)
+	})
+
+	ts.Run("Describe operation", func() {
+		handle := executeNexusOpWithRetry("echo-op", "describe-test", client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+
+		// Wait for operation to complete.
+		err := handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		description, err := handle.Describe(ctx, client.DescribeNexusOperationOptions{})
+		ts.NoError(err)
+		ts.Equal(handle.GetID(), description.OperationID)
+		ts.NotNil(description.RawInfo)
+	})
+
+	ts.Run("Get operation handle", func() {
+		operationID := uuid.NewString()
+		handle := executeNexusOpWithRetry("echo-op", "handle-test", client.StartNexusOperationOptions{
+			ID:                     operationID,
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+
+		// Wait for operation to complete.
+		err := handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		// Get a handle to the same operation.
+		handle2 := ts.client.GetNexusOperationHandle(client.GetNexusOperationHandleOptions{
+			OperationID: operationID,
+			RunID:       handle.GetRunID(),
+		})
+		ts.Equal(operationID, handle2.GetID())
+
+		var result string
+		err = handle2.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal("handle-test", result)
+	})
+
+	ts.Run("Get operation handle without run ID gets latest", func() {
+		operationID := uuid.NewString()
+
+		// Start the first operation and wait for it to complete.
+		handle1 := executeNexusOpWithRetry("echo-op", "first", client.StartNexusOperationOptions{
+			ID:                     operationID,
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+		err := handle1.Get(ctx, nil)
+		ts.NoError(err)
+
+		// Start a second operation with the same ID (allowed by ALLOW_DUPLICATE).
+		handle2 := executeNexusOpWithRetry("echo-op", "second", client.StartNexusOperationOptions{
+			ID:                     operationID,
+			IDReusePolicy:          enumspb.NEXUS_OPERATION_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+		err = handle2.Get(ctx, nil)
+		ts.NoError(err)
+
+		// The two operations should have different run IDs.
+		ts.NotEqual(handle1.GetRunID(), handle2.GetRunID())
+
+		// Get a handle without specifying RunID — should resolve to the latest.
+		handle3 := ts.client.GetNexusOperationHandle(client.GetNexusOperationHandleOptions{
+			OperationID: operationID,
+		})
+		ts.Equal(operationID, handle3.GetID())
+
+		var result string
+		err = handle3.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal("second", result)
+	})
+
+	ts.Run("Async operation completes and returns result", func() {
+		input := "async-hello"
+		handle := executeNexusOpWithRetry("async-echo-op", input, client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+		ts.NotEmpty(handle.GetRunID())
+
+		var result string
+		err := handle.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal(input, result)
+	})
+
+	ts.Run("Cancel operation", func() {
+		handle := executeNexusOpWithRetry("async-op", "cancel-test", client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+
+		// Operation record exists on the server after ExecuteOperation returns successfully;
+		// cancel targets the record by ID so no waiting is needed.
+		err := handle.Cancel(ctx, client.CancelNexusOperationOptions{Reason: "test cancellation"})
+		ts.NoError(err)
+	})
+
+	ts.Run("Terminate operation", func() {
+		handle := executeNexusOpWithRetry("async-op", "terminate-test", client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+
+		// Operation record exists on the server after ExecuteOperation returns successfully;
+		// terminate targets the record by ID so no waiting is needed.
+		err := handle.Terminate(ctx, client.TerminateNexusOperationOptions{Reason: "test termination"})
+		ts.NoError(err)
+	})
+
+	ts.Run("Count operations", func() {
+		// Visibility is eventually consistent; poll until operations appear.
+		require.Eventually(ts.T(), func() bool {
+			result, err := ts.client.CountNexusOperations(ctx, client.CountNexusOperationsOptions{
+				Query: "Endpoint = '" + endpoint + "'",
+			})
+			return err == nil && result.Count > 0
+		}, 10*time.Second, 200*time.Millisecond, "timed out waiting for operations to appear in count")
+	})
+
+	ts.Run("List operations", func() {
+		// Visibility is eventually consistent; poll until operations appear.
+		require.Eventually(ts.T(), func() bool {
+			listResult, err := ts.client.ListNexusOperations(ctx, client.ListNexusOperationsOptions{
+				Query: "Endpoint = '" + endpoint + "'",
+			})
+			if err != nil {
+				return false
+			}
+			count := 0
+			for metadata, iterErr := range listResult.Results {
+				if iterErr != nil {
+					return false
+				}
+				if metadata.OperationID == "" || metadata.Endpoint != endpoint {
+					return false
+				}
+				count++
+			}
+			return count > 0
+		}, 10*time.Second, 200*time.Millisecond, "timed out waiting for operations to appear in list")
+	})
+
+	ts.Run("Client creation validation", func() {
+		_, err := ts.client.NewNexusClient(client.NexusClientOptions{})
+		ts.Error(err)
+		ts.Contains(err.Error(), "endpoint is required")
+
+		_, err = ts.client.NewNexusClient(client.NexusClientOptions{Endpoint: "ep"})
+		ts.Error(err)
+		ts.Contains(err.Error(), "service is required")
+	})
 }

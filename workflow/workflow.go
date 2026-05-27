@@ -186,6 +186,7 @@ type (
 	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
 
 	// NexusClient is a client for executing Nexus Operations from a workflow.
+	// For Nexus operations outside workflows, use client.NexusClient instead.
 	NexusClient interface {
 		// The endpoint name this client uses.
 		Endpoint() string
