@@ -3,11 +3,14 @@ package converter
 import (
 	"bytes"
 	"compress/zlib"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -130,12 +133,69 @@ func encodePayloads(payloads []*commonpb.Payload, codecs []PayloadCodec) ([]*com
 	return payloads, nil
 }
 
+// Defaults applied by (*CodecDataConverter).callWithRetry when a
+// CodecRetryPolicy field is zero. Values mirror the conventions in
+// internal/common/retry.Default* so codec retry behavior is consistent with
+// the rest of the SDK's retry surface.
+const (
+	defaultCodecRetryInitialInterval       = 100 * time.Millisecond
+	defaultCodecRetryBackoffCoefficient    = 2.0
+	defaultCodecRetryMaximumIntervalFactor = 100
+)
+
+// CodecRetryPolicy controls retry and backoff for individual PayloadCodec
+// Encode/Decode calls made by a CodecDataConverter. Zero values for each
+// field fall back to the documented defaults so the zero value is usable.
+type CodecRetryPolicy struct {
+	// InitialInterval is the wait before the first retry. Defaults to 100ms.
+	InitialInterval time.Duration
+	// BackoffCoefficient is the multiplier applied to InitialInterval after
+	// each failed attempt. Defaults to 2.0.
+	BackoffCoefficient float64
+	// MaximumInterval caps the per-attempt wait. Defaults to 100 *
+	// InitialInterval.
+	MaximumInterval time.Duration
+	// MaximumAttempts is the total attempt count including the first call.
+	// 0 means unlimited (bounded only by ExpirationInterval and the
+	// retry-loop context).
+	MaximumAttempts int
+	// ExpirationInterval is the absolute wall-clock budget across all
+	// attempts. 0 means no time bound.
+	ExpirationInterval time.Duration
+}
+
+// CodecDataConverterOptions configures a CodecDataConverter built with
+// NewCodecDataConverterWithOptions. The zero value preserves the behavior of
+// NewCodecDataConverter exactly: each codec is invoked once and the first
+// error aborts the chain.
+type CodecDataConverterOptions struct {
+	// RetryPolicy, if non-nil, is applied to each individual PayloadCodec
+	// Encode and Decode call. Each codec in the chain is retried
+	// independently, so a transient failure in one codec does not re-run
+	// codecs that already succeeded — this matters for non-idempotent codecs
+	// such as authenticated encryption.
+	RetryPolicy *CodecRetryPolicy
+
+	// IsRetryable, if non-nil, is consulted on every codec error to decide
+	// whether to retry. Return true to keep retrying (subject to RetryPolicy
+	// limits), false to fail fast. If nil, all errors are treated as
+	// retryable.
+	IsRetryable func(error) bool
+
+	// Context, if non-nil, governs cancellation of waits between retry
+	// attempts. Defaults to context.Background(). The context is only used
+	// to short-circuit retry sleeps; it is not propagated into PayloadCodec
+	// calls, which do not take a context today.
+	Context context.Context
+}
+
 // CodecDataConverter is a DataConverter that wraps an underlying data
 // converter and supports chained encoding of just the payload without regard
 // for serialization to/from actual types.
 type CodecDataConverter struct {
-	parent DataConverter
-	codecs []PayloadCodec
+	parent  DataConverter
+	codecs  []PayloadCodec
+	options CodecDataConverterOptions
 }
 
 // NewCodecDataConverter wraps the given parent DataConverter and performs
@@ -143,16 +203,130 @@ type CodecDataConverter struct {
 // ToPayload(s), the codecs are applied last to first meaning the earlier
 // encoders wrap the later ones. When decoding for FromPayload(s) and
 // ToString(s), the decoders are applied first to last to reverse the effect.
+//
+// Each codec call is invoked exactly once. To opt in to retries on transient
+// codec failures (e.g. for codecs that call external KMS/HTTP services), use
+// NewCodecDataConverterWithOptions.
 func NewCodecDataConverter(parent DataConverter, codecs ...PayloadCodec) DataConverter {
-	return &CodecDataConverter{parent, codecs}
+	return &CodecDataConverter{parent, codecs, CodecDataConverterOptions{}}
+}
+
+// NewCodecDataConverterWithOptions wraps the given parent DataConverter with
+// the given chain of PayloadCodecs, configurable via CodecDataConverterOptions.
+// The codec chain semantics are identical to NewCodecDataConverter; options
+// only add retry behavior around each individual codec call. A zero options
+// value is equivalent to calling NewCodecDataConverter.
+func NewCodecDataConverterWithOptions(
+	parent DataConverter,
+	codecs []PayloadCodec,
+	options CodecDataConverterOptions,
+) DataConverter {
+	return &CodecDataConverter{parent, codecs, options}
 }
 
 func (e *CodecDataConverter) encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	return encodePayloads(payloads, e.codecs)
+	if e.options.RetryPolicy == nil {
+		return encodePayloads(payloads, e.codecs)
+	}
+	var err error
+	for i := len(e.codecs) - 1; i >= 0; i-- {
+		codec := e.codecs[i]
+		if payloads, err = e.callWithRetry(func() ([]*commonpb.Payload, error) {
+			return codec.Encode(payloads)
+		}); err != nil {
+			return payloads, err
+		}
+	}
+	return payloads, nil
 }
 
 func (e *CodecDataConverter) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	return decodePayloads(payloads, e.codecs)
+	if e.options.RetryPolicy == nil {
+		return decodePayloads(payloads, e.codecs)
+	}
+	var err error
+	for _, codec := range e.codecs {
+		if payloads, err = e.callWithRetry(func() ([]*commonpb.Payload, error) {
+			return codec.Decode(payloads)
+		}); err != nil {
+			return payloads, err
+		}
+	}
+	return payloads, nil
+}
+
+// callWithRetry runs op according to e.options.RetryPolicy and IsRetryable.
+// When RetryPolicy is nil, op is called exactly once. Otherwise op is retried
+// using exponential backoff bounded by MaximumAttempts, ExpirationInterval,
+// and the options' Context (defaulting to context.Background()).
+func (e *CodecDataConverter) callWithRetry(op func() ([]*commonpb.Payload, error)) ([]*commonpb.Payload, error) {
+	policy := e.options.RetryPolicy
+	if policy == nil {
+		return op()
+	}
+
+	ctx := e.options.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	initialInterval := policy.InitialInterval
+	if initialInterval <= 0 {
+		initialInterval = defaultCodecRetryInitialInterval
+	}
+	backoffCoeff := policy.BackoffCoefficient
+	if backoffCoeff <= 0 {
+		backoffCoeff = defaultCodecRetryBackoffCoefficient
+	}
+	maxInterval := policy.MaximumInterval
+	if maxInterval <= 0 {
+		maxInterval = defaultCodecRetryMaximumIntervalFactor * initialInterval
+	}
+
+	startTime := time.Now()
+	var (
+		payloads []*commonpb.Payload
+		err      error
+	)
+
+	for attempt := 1; ; attempt++ {
+		payloads, err = op()
+		if err == nil {
+			return payloads, nil
+		}
+
+		if e.options.IsRetryable != nil && !e.options.IsRetryable(err) {
+			return payloads, err
+		}
+
+		if policy.MaximumAttempts > 0 && attempt >= policy.MaximumAttempts {
+			return payloads, err
+		}
+
+		elapsed := time.Since(startTime)
+		if policy.ExpirationInterval > 0 && elapsed >= policy.ExpirationInterval {
+			return payloads, err
+		}
+
+		interval := math.Min(
+			float64(initialInterval)*math.Pow(backoffCoeff, float64(attempt-1)),
+			float64(maxInterval),
+		)
+		if policy.ExpirationInterval > 0 {
+			interval = math.Min(interval, float64(policy.ExpirationInterval-elapsed))
+		}
+		if interval <= 0 {
+			return payloads, err
+		}
+
+		timer := time.NewTimer(time.Duration(interval))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return payloads, err
+		case <-timer.C:
+		}
+	}
 }
 
 // ToPayload implements DataConverter.ToPayload performing encoding on the
@@ -257,7 +431,7 @@ func (e *CodecDataConverter) WithSerializationContext(ctx SerializationContext) 
 	if !changed {
 		return e
 	}
-	return &CodecDataConverter{parent, codecs}
+	return &CodecDataConverter{parent, codecs, e.options}
 }
 
 const remotePayloadCodecEncodePath = "/encode"

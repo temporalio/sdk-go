@@ -2,13 +2,17 @@ package converter
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
@@ -354,4 +358,334 @@ func TestCodecDataConverter_ToPayload_EncodeError(t *testing.T) {
 	require.EqualError(err, "some encode error")
 	// Also assert that the original payload is returned on error.
 	require.True(proto.Equal(originalPayload, payload))
+}
+
+// flakyCodec is a test PayloadCodec that fails the first failuresBeforeSuccess
+// Encode and Decode calls and then begins succeeding. Call counts are tracked
+// atomically so tests can assert exact attempt counts.
+type flakyCodec struct {
+	encodeFailures      int32
+	decodeFailures      int32
+	encodeAttempts      int32
+	decodeAttempts      int32
+	err                 error
+	innerEncoding       string
+	passThroughOnEncode bool
+}
+
+func (c *flakyCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	attempt := atomic.AddInt32(&c.encodeAttempts, 1)
+	if attempt <= c.encodeFailures {
+		return payloads, c.err
+	}
+	if c.passThroughOnEncode {
+		return payloads, nil
+	}
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		b, err := proto.Marshal(p)
+		if err != nil {
+			return payloads, err
+		}
+		result[i] = &commonpb.Payload{
+			Metadata: map[string][]byte{MetadataEncoding: []byte(c.innerEncoding)},
+			Data:     b,
+		}
+	}
+	return result, nil
+}
+
+func (c *flakyCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	attempt := atomic.AddInt32(&c.decodeAttempts, 1)
+	if attempt <= c.decodeFailures {
+		return payloads, c.err
+	}
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		if string(p.Metadata[MetadataEncoding]) != c.innerEncoding {
+			result[i] = p
+			continue
+		}
+		result[i] = &commonpb.Payload{}
+		if err := proto.Unmarshal(p.Data, result[i]); err != nil {
+			return payloads, err
+		}
+	}
+	return result, nil
+}
+
+// countingCodec is a pass-through PayloadCodec that records Encode/Decode
+// invocation counts. Useful for asserting per-codec retry boundaries.
+type countingCodec struct {
+	encodeAttempts int32
+	decodeAttempts int32
+}
+
+func (c *countingCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	atomic.AddInt32(&c.encodeAttempts, 1)
+	return payloads, nil
+}
+
+func (c *countingCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	atomic.AddInt32(&c.decodeAttempts, 1)
+	return payloads, nil
+}
+
+// fastRetry returns a CodecRetryPolicy with sub-millisecond intervals so that
+// retry tests complete quickly.
+func fastRetry(maxAttempts int) *CodecRetryPolicy {
+	return &CodecRetryPolicy{
+		InitialInterval:    time.Millisecond,
+		BackoffCoefficient: 1.0,
+		MaximumInterval:    time.Millisecond,
+		MaximumAttempts:    maxAttempts,
+	}
+}
+
+func TestCodecDataConverter_Retry_EncodeSucceedsAfterTransientFailures(t *testing.T) {
+	require := require.New(t)
+
+	codec := &flakyCodec{
+		encodeFailures: 2,
+		err:            errors.New("transient"),
+		innerEncoding:  "test/flaky",
+	}
+	conv := NewCodecDataConverterWithOptions(
+		GetDefaultDataConverter(),
+		[]PayloadCodec{codec},
+		CodecDataConverterOptions{RetryPolicy: fastRetry(4)},
+	)
+
+	payload, err := conv.ToPayload("foo")
+	require.NoError(err)
+	require.NotNil(payload)
+	require.Equal(int32(3), atomic.LoadInt32(&codec.encodeAttempts))
+}
+
+func TestCodecDataConverter_Retry_EncodeExhaustsAttempts(t *testing.T) {
+	require := require.New(t)
+
+	codec := &flakyCodec{
+		encodeFailures: 100,
+		err:            errors.New("permanent"),
+		innerEncoding:  "test/flaky",
+	}
+	conv := NewCodecDataConverterWithOptions(
+		GetDefaultDataConverter(),
+		[]PayloadCodec{codec},
+		CodecDataConverterOptions{RetryPolicy: fastRetry(3)},
+	)
+
+	_, err := conv.ToPayload("foo")
+	require.Error(err)
+	require.EqualError(err, "permanent")
+	require.Equal(int32(3), atomic.LoadInt32(&codec.encodeAttempts))
+}
+
+func TestCodecDataConverter_Retry_DecodeRetried(t *testing.T) {
+	require := require.New(t)
+
+	codec := &flakyCodec{
+		decodeFailures: 2,
+		err:            errors.New("transient"),
+		innerEncoding:  "test/flaky",
+	}
+	conv := NewCodecDataConverterWithOptions(
+		GetDefaultDataConverter(),
+		[]PayloadCodec{codec},
+		CodecDataConverterOptions{RetryPolicy: fastRetry(4)},
+	)
+
+	// Build an encoded payload by hand so Decode has something to chew on.
+	defaultConv := GetDefaultDataConverter()
+	innerPayload, err := defaultConv.ToPayload("foo")
+	require.NoError(err)
+	innerBytes, err := proto.Marshal(innerPayload)
+	require.NoError(err)
+	encoded := &commonpb.Payload{
+		Metadata: map[string][]byte{MetadataEncoding: []byte("test/flaky")},
+		Data:     innerBytes,
+	}
+
+	var out string
+	require.NoError(conv.FromPayload(encoded, &out))
+	require.Equal("foo", out)
+	require.Equal(int32(3), atomic.LoadInt32(&codec.decodeAttempts))
+}
+
+func TestCodecDataConverter_Retry_NonRetryableErrorFailsImmediately(t *testing.T) {
+	require := require.New(t)
+
+	sentinel := errors.New("do not retry")
+	codec := &flakyCodec{
+		encodeFailures: 100,
+		err:            sentinel,
+		innerEncoding:  "test/flaky",
+	}
+	conv := NewCodecDataConverterWithOptions(
+		GetDefaultDataConverter(),
+		[]PayloadCodec{codec},
+		CodecDataConverterOptions{
+			RetryPolicy: fastRetry(10),
+			IsRetryable: func(err error) bool { return !errors.Is(err, sentinel) },
+		},
+	)
+
+	_, err := conv.ToPayload("foo")
+	require.ErrorIs(err, sentinel)
+	require.Equal(int32(1), atomic.LoadInt32(&codec.encodeAttempts))
+}
+
+func TestCodecDataConverter_Retry_DefaultPolicyPreservesOldBehavior(t *testing.T) {
+	require := require.New(t)
+
+	errCodec := &errorCodecOnEncode{err: fmt.Errorf("some encode error")}
+	conv := NewCodecDataConverterWithOptions(
+		GetDefaultDataConverter(),
+		[]PayloadCodec{errCodec},
+		CodecDataConverterOptions{},
+	)
+
+	originalPayload, err := GetDefaultDataConverter().ToPayload("foo")
+	require.NoError(err)
+
+	payload, err := conv.ToPayload("foo")
+	require.Error(err)
+	require.EqualError(err, "some encode error")
+	require.True(proto.Equal(originalPayload, payload))
+}
+
+func TestCodecDataConverter_Retry_PerCodecBoundary(t *testing.T) {
+	require := require.New(t)
+
+	flaky := &flakyCodec{
+		encodeFailures:      2,
+		err:                 errors.New("transient"),
+		passThroughOnEncode: true,
+	}
+	counter := &countingCodec{}
+
+	// Encode iterates backwards, so the codec slice [counter, flaky] runs
+	// flaky first then counter. flaky fails twice and succeeds on the third
+	// attempt; counter must be invoked exactly once.
+	conv := NewCodecDataConverterWithOptions(
+		GetDefaultDataConverter(),
+		[]PayloadCodec{counter, flaky},
+		CodecDataConverterOptions{RetryPolicy: fastRetry(5)},
+	)
+
+	_, err := conv.ToPayload("foo")
+	require.NoError(err)
+	require.Equal(int32(3), atomic.LoadInt32(&flaky.encodeAttempts))
+	require.Equal(int32(1), atomic.LoadInt32(&counter.encodeAttempts))
+}
+
+func TestCodecDataConverter_Retry_ContextCancellationStopsRetries(t *testing.T) {
+	require := require.New(t)
+
+	codec := &flakyCodec{
+		encodeFailures: 1000,
+		err:            errors.New("transient"),
+		innerEncoding:  "test/flaky",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	conv := NewCodecDataConverterWithOptions(
+		GetDefaultDataConverter(),
+		[]PayloadCodec{codec},
+		CodecDataConverterOptions{
+			RetryPolicy: &CodecRetryPolicy{
+				InitialInterval:    50 * time.Millisecond,
+				BackoffCoefficient: 1.0,
+				MaximumInterval:    50 * time.Millisecond,
+				// MaximumAttempts: 0 = unlimited; context must stop the loop.
+			},
+			Context: ctx,
+		},
+	)
+
+	cancel() // cancel before the call so the first sleep returns immediately
+	start := time.Now()
+	_, err := conv.ToPayload("foo")
+	elapsed := time.Since(start)
+
+	require.Error(err)
+	require.EqualError(err, "transient")
+	require.Less(elapsed, 100*time.Millisecond, "retry loop should exit promptly on cancel")
+	// At least one attempt happened; far fewer than would occur in 100ms of
+	// unbounded retries at 50ms intervals.
+	require.GreaterOrEqual(atomic.LoadInt32(&codec.encodeAttempts), int32(1))
+	require.Less(atomic.LoadInt32(&codec.encodeAttempts), int32(5))
+}
+
+func TestCodecDataConverter_Retry_NewCodecDataConverterIsZeroOptions(t *testing.T) {
+	require := require.New(t)
+
+	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+	defaultConv := GetDefaultDataConverter()
+
+	convA := NewCodecDataConverter(defaultConv, codec)
+	convB := NewCodecDataConverterWithOptions(
+		defaultConv,
+		[]PayloadCodec{codec},
+		CodecDataConverterOptions{},
+	)
+
+	payloadA, err := convA.ToPayload("hello")
+	require.NoError(err)
+	payloadB, err := convB.ToPayload("hello")
+	require.NoError(err)
+	require.True(proto.Equal(payloadA, payloadB))
+}
+
+// retryTestSerializationContext is a no-op SerializationContext used only to
+// exercise the WithSerializationContext path in the retry tests.
+type retryTestSerializationContext struct{}
+
+func (retryTestSerializationContext) isSerializationContext() {}
+
+func TestCodecDataConverter_Retry_OptionsPreservedThroughSerializationContext(t *testing.T) {
+	require := require.New(t)
+
+	codec := &flakyCodec{
+		encodeFailures: 2,
+		err:            errors.New("transient"),
+		innerEncoding:  "test/flaky",
+	}
+	conv := NewCodecDataConverterWithOptions(
+		GetDefaultDataConverter(),
+		[]PayloadCodec{codec},
+		CodecDataConverterOptions{RetryPolicy: fastRetry(4)},
+	)
+
+	ctxAware, ok := conv.(DataConverterWithSerializationContext)
+	require.True(ok, "CodecDataConverter should implement DataConverterWithSerializationContext")
+
+	rederived := ctxAware.WithSerializationContext(retryTestSerializationContext{})
+	require.NotNil(rederived)
+
+	_, err := rederived.ToPayload("foo")
+	require.NoError(err, "retry options must survive WithSerializationContext")
+	require.Equal(int32(3), atomic.LoadInt32(&codec.encodeAttempts))
+}
+
+func TestCodecDataConverter_Retry_NilContextDefaultsToBackground(t *testing.T) {
+	require := require.New(t)
+
+	codec := &flakyCodec{
+		encodeFailures: 1,
+		err:            errors.New("transient"),
+		innerEncoding:  "test/flaky",
+	}
+	conv := NewCodecDataConverterWithOptions(
+		GetDefaultDataConverter(),
+		[]PayloadCodec{codec},
+		CodecDataConverterOptions{
+			RetryPolicy: fastRetry(3),
+			Context:     nil,
+		},
+	)
+
+	_, err := conv.ToPayload("foo")
+	require.NoError(err)
+	require.Equal(int32(2), atomic.LoadInt32(&codec.encodeAttempts))
 }
