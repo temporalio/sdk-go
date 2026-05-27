@@ -806,6 +806,10 @@ func (bw *baseWorker) Stop() {
 	bw.isWorkerStarted = false
 }
 
+func (bw *baseWorker) stopPolling() {
+	bw.noRepoll.Store(true)
+}
+
 func newPollScalerReportHandle(options pollScalerReportHandleOptions) *pollScalerReportHandle {
 	logger := options.logger
 	if logger == nil {

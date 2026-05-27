@@ -1940,6 +1940,16 @@ func (m *mockPollActivityTaskQueueRequest) String() string {
 	return "PollActivityTaskQueueRequest"
 }
 
+const (
+	expectedShutdownWorkerRPCsForMainTaskQueue     = 1
+	expectedShutdownWorkerRPCsForSessionTaskQueues = 2
+	// Session workers use both the shared session creation task queue and a
+	// resource-specific session activity task queue. Until ShutdownWorker RPC
+	// is changed to specify session activity worker task queues, we must send
+	// separate RPCs to shutdown these task queues.
+	expectedShutdownWorkerRPCsWithSessionWorker = expectedShutdownWorkerRPCsForMainTaskQueue + expectedShutdownWorkerRPCsForSessionTaskQueues
+)
+
 func createWorker(service *workflowservicemock.MockWorkflowServiceClient) *AggregatedWorker {
 	return createWorkerWithThrottle(service, 0.0, nil)
 }
@@ -1952,7 +1962,7 @@ func createWorkerWithThrottle(
 	setupPollingMocks(namespace, service, activitiesPerSecond)
 
 	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(3)
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(expectedShutdownWorkerRPCsWithSessionWorker)
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{
@@ -3213,7 +3223,7 @@ func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSendsShutdownWorkerFo
 			defer requestsMu.Unlock()
 			requests = append(requests, proto.Clone(request).(*workflowservice.ShutdownWorkerRequest))
 			return &workflowservice.ShutdownWorkerResponse{}, nil
-		}).Times(3)
+		}).Times(expectedShutdownWorkerRPCsWithSessionWorker)
 
 	const namespace = "testNamespace"
 	const taskQueue = "session-shutdown-task-queue"
@@ -3231,7 +3241,7 @@ func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSendsShutdownWorkerFo
 	requestsMu.Lock()
 	defer requestsMu.Unlock()
 
-	s.Len(requests, 3)
+	s.Len(requests, expectedShutdownWorkerRPCsWithSessionWorker)
 	requestsByTaskQueue := make(map[string]*workflowservice.ShutdownWorkerRequest)
 	for _, request := range requests {
 		requestsByTaskQueue[request.GetTaskQueue()] = request

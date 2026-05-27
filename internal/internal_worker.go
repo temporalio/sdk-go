@@ -539,6 +539,19 @@ func (sw *sessionWorker) Stop() {
 	sw.activityWorker.Stop()
 }
 
+func (sw *sessionWorker) getCreationWorkerTaskQueue() string {
+	return sw.creationWorker.executionParameters.TaskQueue
+}
+
+func (sw *sessionWorker) getActivityWorkerTaskQueue() string {
+	return sw.activityWorker.executionParameters.TaskQueue
+}
+
+func (sw *sessionWorker) stopPolling() {
+	sw.creationWorker.worker.stopPolling()
+	sw.activityWorker.worker.stopPolling()
+}
+
 func newActivityWorker(
 	client *WorkflowClient,
 	params workerExecutionParameters,
@@ -1512,17 +1525,16 @@ func (aw *AggregatedWorker) Stop() {
 	// but before ShutdownWorker is sent, causing the poller to loop and
 	// re-poll.
 	if !util.IsInterfaceNil(aw.activityWorker) {
-		aw.activityWorker.worker.noRepoll.Store(true)
+		aw.activityWorker.worker.stopPolling()
 	}
 	if !util.IsInterfaceNil(aw.workflowWorker) {
-		aw.workflowWorker.worker.noRepoll.Store(true)
+		aw.workflowWorker.worker.stopPolling()
 	}
 	if !util.IsInterfaceNil(aw.nexusWorker) {
-		aw.nexusWorker.worker.noRepoll.Store(true)
+		aw.nexusWorker.worker.stopPolling()
 	}
 	if !util.IsInterfaceNil(aw.sessionWorker) {
-		aw.sessionWorker.creationWorker.worker.noRepoll.Store(true)
-		aw.sessionWorker.activityWorker.worker.noRepoll.Store(true)
+		aw.sessionWorker.stopPolling()
 	}
 
 	close(aw.stopC)
@@ -1607,14 +1619,14 @@ func (aw *AggregatedWorker) sendShutdownWorkerRPC() {
 
 	aw.sendShutdownWorkerRPCForTaskQueue(
 		grpcCtx,
-		aw.sessionWorker.creationWorker.executionParameters.TaskQueue,
+		aw.sessionWorker.getCreationWorkerTaskQueue(),
 		"",
 		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
 		nil,
 	)
 	aw.sendShutdownWorkerRPCForTaskQueue(
 		grpcCtx,
-		aw.sessionWorker.activityWorker.executionParameters.TaskQueue,
+		aw.sessionWorker.getActivityWorkerTaskQueue(),
 		"",
 		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
 		nil,
