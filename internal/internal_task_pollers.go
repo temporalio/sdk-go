@@ -127,6 +127,7 @@ type (
 		numStickyPollerMetric *numPollerMetric
 
 		pollerGroupTracker        *pollerGroupTracker
+		stickyPollerGroupTracker  *pollerGroupTracker
 		inboundPayloadVisitor     PayloadVisitor
 		payloadVisitorConcurrency int
 	}
@@ -425,6 +426,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 		numNormalPollerMetric:        wtp.numNormalPollerMetric,
 		numStickyPollerMetric:        wtp.numStickyPollerMetric,
 		pollerGroupTracker:           newPollerGroupTracker(),
+		stickyPollerGroupTracker:     newPollerGroupTracker(),
 		inboundPayloadVisitor:        wtp.inboundPayloadVisitor,
 		payloadVisitorConcurrency:    wtp.payloadVisitorConcurrency,
 	}
@@ -1138,9 +1140,6 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		panic("unknown workflow task poller mode")
 	}
 
-	groupId := wtp.pollerGroupTracker.getNextGroupId()
-	defer wtp.pollerGroupTracker.release(groupId)
-
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
 		Namespace:      wtp.namespace,
 		TaskQueue:      taskQueue,
@@ -1156,7 +1155,6 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 			wtp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey: wtp.workerInstanceKey,
-		PollerGroupId:     groupId,
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1183,8 +1181,16 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	traceLog(func() {
 		wtp.logger.Debug("workflowTaskPoller::Poll")
 	})
-
 	request := wtp.getNextPollRequest()
+
+	groupTracker := wtp.pollerGroupTracker
+	if request.TaskQueue.Kind == enumspb.TASK_QUEUE_KIND_STICKY {
+		groupTracker = wtp.stickyPollerGroupTracker
+	}
+	groupId := groupTracker.getNextGroupId()
+	defer groupTracker.release(groupId)
+	request.PollerGroupId = groupId
+
 	defer wtp.release(request.TaskQueue.GetKind())
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
@@ -1192,7 +1198,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
 		return nil, err
 	}
-	wtp.pollerGroupTracker.updateGroups(response.GetPollerGroupInfos())
+	groupTracker.updateGroups(response.GetPollerGroupInfos())
 
 	if response == nil || len(response.TaskToken) == 0 {
 		// Emit using base scope as no workflow type information is available in the case of empty poll
