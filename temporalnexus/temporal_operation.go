@@ -91,8 +91,6 @@ func (r TemporalOperationResult[R]) toHandlerResult() (nexus.HandlerStartOperati
 // NOTE: Experimental
 type NexusClient struct {
 	client                client.Client
-	namespace             string
-	taskQueue             string
 	startOperationOptions nexus.StartOperationOptions
 	asyncStarted          *atomic.Bool
 }
@@ -250,15 +248,12 @@ func (o *temporalOperation[I, O]) Start(
 	// Prevent the test env client from panicking.
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
+	if _, ok := internal.NexusOperationContextFromGoContext(ctx); !ok {
 		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
 	nc := NexusClient{
 		client:                GetClient(ctx),
-		namespace:             nctx.Namespace,
-		taskQueue:             nctx.TaskQueue,
 		startOperationOptions: options,
 		asyncStarted:          &atomic.Bool{},
 	}
