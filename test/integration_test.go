@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/opentracing/opentracing-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,6 +29,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
+	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -53,6 +56,7 @@ import (
 	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -232,7 +236,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
 		strings.Contains(ts.T().Name(), "LocalActivityCompleteWithinGracefulShutdown") ||
-		strings.Contains(ts.T().Name(), "LocalActivityTaskTimeoutHeartbeat") {
+		strings.Contains(ts.T().Name(), "LocalActivityTaskTimeoutHeartbeat") ||
+		strings.Contains(ts.T().Name(), "ShutdownDuringActiveTimerActivityWorkflows") ||
+		strings.Contains(ts.T().Name(), "SessionWorkerShutdownWithPollComplete") {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
@@ -263,6 +269,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.workerStopped = false
 	ts.registerWorkflowsAndActivities(ts.worker)
+	if strings.Contains(ts.T().Name(), "TestExecuteNexusOperationSuite") {
+		ts.registerStandaloneNexusOperations(ts.worker)
+	}
 	if strings.Contains(ts.T().Name(), "NoWorker") {
 		// Don't even start the worker
 		ts.workerStopped = true
@@ -287,8 +296,6 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
-	// See https://grokbase.com/p/gg/golang-nuts/153jjj8dgg/go-nuts-fm-suffix-in-function-name-what-does-it-mean
-	// for explanation of -fm postfix.
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("Basic"))
 
@@ -390,6 +397,21 @@ func (ts *IntegrationTestSuite) getHistory(workflowID string, runID string) (*hi
 	}
 
 	return &historypb.History{Events: events}, nil
+}
+
+func (ts *IntegrationTestSuite) waitForHistoryEvent(workflowID string, runID string, eventType enumspb.EventType, timeout time.Duration) {
+	ts.Eventually(func() bool {
+		history, err := ts.getHistory(workflowID, runID)
+		if err != nil {
+			return false
+		}
+		for _, event := range history.Events {
+			if event.GetEventType() == eventType {
+				return true
+			}
+		}
+		return false
+	}, timeout, 100*time.Millisecond, "timed out waiting for history event %s", eventType)
 }
 
 func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
@@ -505,7 +527,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.assertMetricCountAtLeast("temporal_activity_execution_failed", 2)
 	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
 	ts.assertMetricCountAtLeast("temporal_long_request", 4, "operation", "PollActivityTaskQueue")
-	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
+	ts.assertMetricCountAtLeastEventually("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
 	ts.Equal(ts.metricCount("temporal_long_request"), ts.metricCount("temporal_long_request_attempt"))
 }
 
@@ -1939,6 +1961,28 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	// createSession activity, actual activity, completeSession activity.
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "HandleSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
+}
+
+func (ts *IntegrationTestSuite) TestSessionWorkerShutdownWithPollComplete() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	resp, err := ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
+	}
+
+	var expected []string
+	err = ts.executeWorkflow("test-session-worker-shutdown-poll-complete", ts.workflows.BasicSession, &expected)
+	ts.NoError(err)
+
+	shutdownStart := time.Now()
+	ts.worker.Stop()
+	ts.workerStopped = true
+	ts.Less(time.Since(shutdownStart), 5*time.Second)
 }
 
 func (ts *IntegrationTestSuite) TestEagerWorkflowDispatchRaceWithWorkerStop() {
@@ -3410,7 +3454,9 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 3)
 
 	// Signal the first and last to close and confirm increased by two
-	time.Sleep(2 * time.Second)
+	// Give the workflows enough time to enter the timer/activity loop so
+	// shutdown overlaps active polling and dispatch.
+	time.Sleep(500 * time.Millisecond)
 	ts.NoError(ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "cancel", nil))
 	ts.NoError(ts.client.SignalWorkflow(ctx, run3.GetID(), run3.GetRunID(), "cancel", nil))
 	ts.NoError(run1.Get(ctx, nil))
@@ -4316,7 +4362,9 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 		}()
 	}
 
-	// The server does not support admitted updates, so we send the update in a separate goroutine
+	// The server does not support admitted updates, so we send the update in a separate goroutine.
+	// Keep this shorter than the activity's ScheduleToCloseTimeout (5s) so the new worker
+	// has time to execute activities before they time out.
 	time.Sleep(5 * time.Second)
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
@@ -7156,6 +7204,37 @@ func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) 
 	ts.activities.register(w)
 }
 
+func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worker) {
+	service := nexus.NewService("test-standalone-service")
+	syncOp := nexus.NewSyncOperation("echo-op", func(ctx context.Context, input string, opts nexus.StartOperationOptions) (string, error) {
+		return input, nil
+	})
+	blockForeverWf := func(ctx workflow.Context, input string) (string, error) {
+		return "", workflow.Await(ctx, func() bool { return false })
+	}
+	w.RegisterWorkflowWithOptions(blockForeverWf, workflow.RegisterOptions{Name: "block-forever-wf"})
+	asyncOp := temporalnexus.NewWorkflowRunOperation(
+		"async-op",
+		blockForeverWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: "nexus-async-" + uuid.NewString()}, nil
+		},
+	)
+	echoWf := func(ctx workflow.Context, input string) (string, error) {
+		return input, nil
+	}
+	w.RegisterWorkflowWithOptions(echoWf, workflow.RegisterOptions{Name: "echo-wf"})
+	asyncEchoOp := temporalnexus.NewWorkflowRunOperation(
+		"async-echo-op",
+		echoWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: "nexus-async-echo-" + uuid.NewString()}, nil
+		},
+	)
+	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp))
+	w.RegisterNexusService(service)
+}
+
 var (
 	_ interceptor.WorkerInterceptor           = (*tracingInterceptor)(nil)
 	_ interceptor.WorkflowInboundInterceptor  = (*tracingWorkflowInboundInterceptor)(nil)
@@ -7348,6 +7427,18 @@ func (ts *IntegrationTestSuite) assertMetricCountEventually(name string, value i
 
 func (ts *IntegrationTestSuite) assertMetricCountAtLeast(name string, value int64, tagFilterKeyValue ...string) {
 	ts.GreaterOrEqual(ts.metricCount(name, tagFilterKeyValue...), value)
+}
+
+func (ts *IntegrationTestSuite) assertMetricCountAtLeastEventually(name string, value int64, tagFilterKeyValue ...string) {
+	var lastCount int64
+	for start := time.Now(); time.Since(start) <= 2*time.Second; {
+		lastCount = ts.metricCount(name, tagFilterKeyValue...)
+		if lastCount >= value {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	ts.GreaterOrEqual(lastCount, value)
 }
 
 func (ts *IntegrationTestSuite) assertReportedOperationCount(metricName string, operation string, expectedCount int) {
@@ -7948,6 +8039,62 @@ func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown(
 	ts.Equal(1, wftStarted)
 	ts.Equal(2, laCompleted)
 	ts.True(wfeCompleted)
+}
+
+func (ts *IntegrationTestSuite) TestShutdownDuringActiveTimerActivityWorkflows() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	resp, err := ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
+	}
+
+	const numWorkflows = 5
+	runs := make([]client.WorkflowRun, 0, numWorkflows)
+	defer func() {
+		for _, run := range runs {
+			_ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "test complete")
+		}
+	}()
+	for i := 0; i < numWorkflows; i++ {
+		run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:                       fmt.Sprintf("shutdown-active-timer-activity-%s-%d", uuid.NewString(), i),
+			TaskQueue:                ts.taskQueueName,
+			WorkflowExecutionTimeout: 30 * time.Second,
+			WorkflowTaskTimeout:      time.Second,
+			WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+		}, ts.workflows.ShutdownDuringActiveTimerActivityWorkflow)
+		ts.NoError(err)
+		runs = append(runs, run)
+	}
+
+	for _, run := range runs {
+		// Wait until each workflow has entered the timer/activity loop so
+		// shutdown overlaps active polling and dispatch instead of racing
+		// workflow startup.
+		ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED, 10*time.Second)
+	}
+
+	shutdownStart := time.Now()
+	ts.worker.Stop()
+	ts.workerStopped = true
+	ts.Less(time.Since(shutdownStart), 5*time.Second)
+
+	for _, run := range runs {
+		history, err := ts.getHistory(run.GetID(), run.GetRunID())
+		ts.NoError(err)
+		for _, event := range history.Events {
+			switch event.GetEventType() {
+			case enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED, enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
+				ts.Failf("unexpected workflow task failure during shutdown",
+					"workflowID=%s runID=%s event=%s", run.GetID(), run.GetRunID(), event)
+			}
+		}
+	}
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
@@ -9008,18 +9155,7 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 	// Wait for a workflow task failure to appear. The first WFT succeeds (commands from defer
 	// CompleteSession are committed), but the second WFT fails when the same panic recurs during
 	// replay of the new events.
-	ts.Eventually(func() bool {
-		history, err := ts.getHistory(run.GetID(), run.GetRunID())
-		if err != nil {
-			return false
-		}
-		for _, event := range history.Events {
-			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
-				return true
-			}
-		}
-		return false
-	}, 20*time.Second, 200*time.Millisecond, "timed out waiting for workflow task failure")
+	ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED, 20*time.Second)
 
 	// Stop the poison worker and restart with a normal DataConverter.
 	// This simulates the transient DC failure resolving. The new worker
@@ -9149,4 +9285,232 @@ func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
 	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
 		return strings.HasPrefix(line, "WARN  [TMPRL1103] Attempted to upload payloads with size that exceeded the warning limit.")
 	}))
+}
+
+func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
+	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	// Create a Nexus endpoint targeting our task queue.
+	endpoint := "sdk-go-nexus-standalone-test-ep-" + uuid.NewString()
+	createResp, err := ts.client.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: endpoint,
+			Target: &nexuspb.EndpointTarget{
+				Variant: &nexuspb.EndpointTarget_Worker_{
+					Worker: &nexuspb.EndpointTarget_Worker{
+						Namespace: ts.config.Namespace,
+						TaskQueue: ts.taskQueueName,
+					},
+				},
+			},
+		},
+	})
+	ts.NoError(err)
+	defer func() {
+		_, _ = ts.client.OperatorService().DeleteNexusEndpoint(ctx, &operatorservice.DeleteNexusEndpointRequest{
+			Id:      createResp.Endpoint.Id,
+			Version: createResp.Endpoint.Version,
+		})
+	}()
+
+	nexusClient, err := ts.client.NewNexusClient(client.NexusClientOptions{
+		Endpoint: endpoint,
+		Service:  "test-standalone-service",
+	})
+	ts.NoError(err)
+
+	// executeNexusOpWithRetry retries ExecuteOperation until the endpoint has propagated.
+	// The endpoint registry is eventually consistent and may take a few attempts.
+	executeNexusOpWithRetry := func(
+		opName string,
+		input string,
+		options client.StartNexusOperationOptions,
+	) client.NexusOperationHandle {
+		ts.T().Helper()
+		var handle client.NexusOperationHandle
+		require.Eventually(ts.T(), func() bool {
+			var execErr error
+			handle, execErr = nexusClient.ExecuteOperation(ctx, opName, input, options)
+			return execErr == nil
+		}, 10*time.Second, 100*time.Millisecond, "timed out waiting for endpoint to propagate")
+		return handle
+	}
+
+	ts.Run("Execute and get result", func() {
+		input := "hello-nexus"
+		handle := executeNexusOpWithRetry("echo-op", input, client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+
+		var result string
+		err := handle.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal(input, result)
+	})
+
+	ts.Run("Describe operation", func() {
+		handle := executeNexusOpWithRetry("echo-op", "describe-test", client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+
+		// Wait for operation to complete.
+		err := handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		description, err := handle.Describe(ctx, client.DescribeNexusOperationOptions{})
+		ts.NoError(err)
+		ts.Equal(handle.GetID(), description.OperationID)
+		ts.NotNil(description.RawInfo)
+	})
+
+	ts.Run("Get operation handle", func() {
+		operationID := uuid.NewString()
+		handle := executeNexusOpWithRetry("echo-op", "handle-test", client.StartNexusOperationOptions{
+			ID:                     operationID,
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+
+		// Wait for operation to complete.
+		err := handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		// Get a handle to the same operation.
+		handle2 := ts.client.GetNexusOperationHandle(client.GetNexusOperationHandleOptions{
+			OperationID: operationID,
+			RunID:       handle.GetRunID(),
+		})
+		ts.Equal(operationID, handle2.GetID())
+
+		var result string
+		err = handle2.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal("handle-test", result)
+	})
+
+	ts.Run("Get operation handle without run ID gets latest", func() {
+		operationID := uuid.NewString()
+
+		// Start the first operation and wait for it to complete.
+		handle1 := executeNexusOpWithRetry("echo-op", "first", client.StartNexusOperationOptions{
+			ID:                     operationID,
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+		err := handle1.Get(ctx, nil)
+		ts.NoError(err)
+
+		// Start a second operation with the same ID (allowed by ALLOW_DUPLICATE).
+		handle2 := executeNexusOpWithRetry("echo-op", "second", client.StartNexusOperationOptions{
+			ID:                     operationID,
+			IDReusePolicy:          enumspb.NEXUS_OPERATION_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+		err = handle2.Get(ctx, nil)
+		ts.NoError(err)
+
+		// The two operations should have different run IDs.
+		ts.NotEqual(handle1.GetRunID(), handle2.GetRunID())
+
+		// Get a handle without specifying RunID — should resolve to the latest.
+		handle3 := ts.client.GetNexusOperationHandle(client.GetNexusOperationHandleOptions{
+			OperationID: operationID,
+		})
+		ts.Equal(operationID, handle3.GetID())
+
+		var result string
+		err = handle3.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal("second", result)
+	})
+
+	ts.Run("Async operation completes and returns result", func() {
+		input := "async-hello"
+		handle := executeNexusOpWithRetry("async-echo-op", input, client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+		ts.NotEmpty(handle.GetRunID())
+
+		var result string
+		err := handle.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal(input, result)
+	})
+
+	ts.Run("Cancel operation", func() {
+		handle := executeNexusOpWithRetry("async-op", "cancel-test", client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+
+		// Operation record exists on the server after ExecuteOperation returns successfully;
+		// cancel targets the record by ID so no waiting is needed.
+		err := handle.Cancel(ctx, client.CancelNexusOperationOptions{Reason: "test cancellation"})
+		ts.NoError(err)
+	})
+
+	ts.Run("Terminate operation", func() {
+		handle := executeNexusOpWithRetry("async-op", "terminate-test", client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+
+		// Operation record exists on the server after ExecuteOperation returns successfully;
+		// terminate targets the record by ID so no waiting is needed.
+		err := handle.Terminate(ctx, client.TerminateNexusOperationOptions{Reason: "test termination"})
+		ts.NoError(err)
+	})
+
+	ts.Run("Count operations", func() {
+		// Visibility is eventually consistent; poll until operations appear.
+		require.Eventually(ts.T(), func() bool {
+			result, err := ts.client.CountNexusOperations(ctx, client.CountNexusOperationsOptions{
+				Query: "Endpoint = '" + endpoint + "'",
+			})
+			return err == nil && result.Count > 0
+		}, 10*time.Second, 200*time.Millisecond, "timed out waiting for operations to appear in count")
+	})
+
+	ts.Run("List operations", func() {
+		// Visibility is eventually consistent; poll until operations appear.
+		require.Eventually(ts.T(), func() bool {
+			listResult, err := ts.client.ListNexusOperations(ctx, client.ListNexusOperationsOptions{
+				Query: "Endpoint = '" + endpoint + "'",
+			})
+			if err != nil {
+				return false
+			}
+			count := 0
+			for metadata, iterErr := range listResult.Results {
+				if iterErr != nil {
+					return false
+				}
+				if metadata.OperationID == "" || metadata.Endpoint != endpoint {
+					return false
+				}
+				count++
+			}
+			return count > 0
+		}, 10*time.Second, 200*time.Millisecond, "timed out waiting for operations to appear in list")
+	})
+
+	ts.Run("Client creation validation", func() {
+		_, err := ts.client.NewNexusClient(client.NexusClientOptions{})
+		ts.Error(err)
+		ts.Contains(err.Error(), "endpoint is required")
+
+		_, err = ts.client.NewNexusClient(client.NexusClientOptions{Endpoint: "ep"})
+		ts.Error(err)
+		ts.Contains(err.Error(), "service is required")
+	})
 }

@@ -383,8 +383,10 @@ func convertNexusLinks(nexusLinks []nexus.Link, log log.Logger) ([]*common.Link,
 					WorkflowEvent: link,
 				},
 			})
+		case string((&common.Link_NexusOperation{}).ProtoReflect().Descriptor().FullName()):
+			// TODO: forward Link_NexusOperation variants once frontend validateLinks accepts them.
 		default:
-			log.Warn("ignoring unsupported link data type: %q", nexusLink.Type)
+			log.Warn("ignoring unsupported link data type", "LinkType", nexusLink.Type)
 		}
 	}
 	return links, nil
