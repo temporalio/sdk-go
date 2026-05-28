@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -329,6 +330,425 @@ func (s *testSlotSupplier) MaxSlots() int { return 0 }
 type noopTaskProcessor struct{}
 
 func (noopTaskProcessor) ProcessTask(any) error { return nil }
+
+// TestTaskNotDroppedDuringShutdown verifies the two-stage shutdown: when a
+// poller receives a task during shutdown, the task is still dispatched and
+// processed rather than silently dropped.
+func TestTaskNotDroppedDuringShutdown(t *testing.T) {
+	taskProcessed := make(chan struct{}, 1)
+	pollStarted := make(chan struct{})
+
+	// A poller that blocks until returnTask is closed, then returns a task
+	// exactly once. Subsequent polls return nil so the poller can exit.
+	tp := &shutdownTaskPoller{
+		pollStarted: pollStarted,
+		returnTask:  make(chan struct{}),
+		task:        &testTask{},
+	}
+
+	processor := &recordingTaskProcessor{
+		processed: taskProcessed,
+	}
+	workerPollCompleteOnShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown.Store(true)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &testSlotSupplier{},
+		maxTaskPerSecond: 1000,
+		taskPollers: []scalableTaskPoller{
+			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+		},
+		taskProcessor:                processor,
+		workerType:                   "ShutdownTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  5 * time.Second,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	})
+
+	bw.Start()
+
+	// Wait for the poller to be actively polling.
+	<-pollStarted
+
+	// AggregatedWorker.Stop sets noRepoll before stopping base workers.
+	bw.noRepoll.Store(true)
+
+	// Stop exercises the base worker shutdown path: close(stopCh),
+	// poll-side limiter cancellation, and awaitWaitGroup.
+	stopDone := make(chan struct{})
+	go func() {
+		bw.Stop()
+		close(stopDone)
+	}()
+
+	<-bw.stopCh
+
+	// Release the poller after shutdown has started so the task is polled
+	// during shutdown. The poller returns a task and then nil on subsequent
+	// polls, allowing it to exit via noRepoll/stopCh during Stop().
+	close(tp.returnTask)
+
+	select {
+	case <-taskProcessed:
+		// Success: the task was dispatched and processed during shutdown
+	case <-time.After(5 * time.Second):
+		t.Fatal("task polled during shutdown was not processed (dropped)")
+	}
+
+	select {
+	case <-stopDone:
+		// Stop completed cleanly
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() did not return in time")
+	}
+}
+
+// effectivelyBlockedDispatchRate lets the first task consume the limiter's
+// initial token while making the next task wait until the test cancels the
+// limiter context.
+const effectivelyBlockedDispatchRate = 0.001
+
+func TestTaskDrainDuringShutdownRespectsDispatchRate(t *testing.T) {
+	taskProcessed := make(chan struct{}, 2)
+	workerPollCompleteOnShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown.Store(true)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:                 &testSlotSupplier{},
+		maxTaskPerSecond:             effectivelyBlockedDispatchRate,
+		taskPollers:                  []scalableTaskPoller{},
+		taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
+		workerType:                   "ShutdownRateLimitTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  5 * time.Second,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	})
+
+	bw.stopWG.Add(1)
+	go bw.runTaskDispatcher()
+	bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+
+	select {
+	case <-taskProcessed:
+	case <-time.After(time.Second):
+		t.Fatal("first task polled during shutdown was not processed")
+	}
+
+	secondSent := make(chan struct{})
+	go func() {
+		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+		close(secondSent)
+	}()
+	select {
+	case <-secondSent:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher did not receive the second task")
+	}
+
+	select {
+	case <-taskProcessed:
+		t.Fatal("second task should not bypass the dispatch rate during shutdown drain")
+	case <-time.After(200 * time.Millisecond):
+	}
+
+	bw.taskLimiterContextCancel()
+	close(bw.taskQueueCh)
+
+	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
+		"dispatcher and processed tasks should finish after taskQueueCh closes")
+}
+
+func TestTaskDrainAfterDispatchLimiterCancelReleasesUnprocessedTasks(t *testing.T) {
+	taskProcessed := make(chan struct{}, 3)
+	workerPollCompleteOnShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown.Store(true)
+	slotSupplier := &CountingSlotSupplier{}
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:                 slotSupplier,
+		maxTaskPerSecond:             effectivelyBlockedDispatchRate,
+		taskPollers:                  []scalableTaskPoller{},
+		taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
+		workerType:                   "ShutdownTimeoutDrainTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  5 * time.Second,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	})
+
+	bw.stopWG.Add(1)
+	go bw.runTaskDispatcher()
+	bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+
+	select {
+	case <-taskProcessed:
+	case <-time.After(time.Second):
+		t.Fatal("first task polled during shutdown was not processed")
+	}
+
+	secondSent := make(chan struct{})
+	go func() {
+		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+		close(secondSent)
+	}()
+	select {
+	case <-secondSent:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher did not receive the second task")
+	}
+
+	thirdSent := make(chan struct{})
+	go func() {
+		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+		close(thirdSent)
+	}()
+
+	bw.taskLimiterContextCancel()
+	select {
+	case <-thirdSent:
+	case <-time.After(time.Second):
+		t.Fatal("dispatcher did not keep receiving after dispatch limiter cancellation")
+	}
+	close(bw.taskQueueCh)
+
+	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
+		"dispatcher should keep receiving and releasing tasks after dispatch limiter cancellation so pollers can exit")
+	require.Empty(t, taskProcessed,
+		"only the task dispatched before dispatch limiter cancellation should be processed")
+	require.Equal(t, int32(1), slotSupplier.uses.Load(),
+		"only the processed task should mark its slot used")
+	require.Equal(t, int32(3), slotSupplier.releases.Load(),
+		"processed and discarded tasks should all release their slots")
+}
+
+func TestTaskNotProcessedDuringLegacyShutdown(t *testing.T) {
+	tests := []struct {
+		name                         string
+		workerPollCompleteOnShutdown *atomic.Bool
+	}{
+		{
+			name: "nil capability",
+		},
+		{
+			name:                         "false capability",
+			workerPollCompleteOnShutdown: &atomic.Bool{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			taskProcessed := make(chan struct{}, 1)
+			pollStarted := make(chan struct{})
+
+			// This poller simulates a poll returning a task after shutdown has
+			// already started. Legacy shutdown should not dispatch that task.
+			tp := &shutdownTaskPoller{
+				pollStarted: pollStarted,
+				returnTask:  make(chan struct{}),
+				task:        &testTask{},
+			}
+
+			bw := newBaseWorker(baseWorkerOptions{
+				slotSupplier:     &testSlotSupplier{},
+				maxTaskPerSecond: 1000,
+				taskPollers: []scalableTaskPoller{
+					{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+				},
+				taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
+				workerType:                   "LegacyShutdownTest",
+				logger:                       ilog.NewNopLogger(),
+				stopTimeout:                  5 * time.Second,
+				metricsHandler:               metrics.NopHandler,
+				workerPollCompleteOnShutdown: tt.workerPollCompleteOnShutdown,
+			})
+
+			bw.Start()
+			<-pollStarted
+
+			// AggregatedWorker.Stop sets noRepoll before stopping base workers.
+			bw.noRepoll.Store(true)
+
+			stopDone := make(chan struct{})
+			go func() {
+				bw.Stop()
+				close(stopDone)
+			}()
+
+			<-bw.stopCh
+			close(tp.returnTask)
+
+			select {
+			case <-stopDone:
+			case <-time.After(5 * time.Second):
+				t.Fatal("Stop() did not return in time")
+			}
+
+			select {
+			case <-taskProcessed:
+				t.Fatal("task polled during legacy shutdown was processed")
+			default:
+			}
+		})
+	}
+}
+
+// shutdownTaskPoller blocks until returnTask is closed, then returns a task
+// exactly once. Subsequent polls return nil.
+type shutdownTaskPoller struct {
+	pollStarted chan struct{}
+	returnTask  chan struct{}
+	task        taskForWorker
+	returned    atomic.Bool
+}
+
+func (p *shutdownTaskPoller) PollTask() (taskForWorker, error) {
+	select {
+	case p.pollStarted <- struct{}{}:
+	default:
+	}
+	<-p.returnTask
+	if p.returned.CompareAndSwap(false, true) {
+		return p.task, nil
+	}
+	return nil, nil
+}
+
+type recordingTaskProcessor struct {
+	processed chan struct{}
+}
+
+func (p *recordingTaskProcessor) ProcessTask(any) error {
+	select {
+	case p.processed <- struct{}{}:
+	default:
+	}
+	return nil
+}
+
+func TestStopTimeoutBoundsPollerDrain(t *testing.T) {
+	pollStarted := make(chan struct{})
+	releasePoll := make(chan struct{})
+	var releasePollOnce sync.Once
+	releaseBlockedPoller := func() {
+		releasePollOnce.Do(func() {
+			close(releasePoll)
+		})
+	}
+	defer releaseBlockedPoller()
+	tp := &blockingShutdownPoller{
+		pollStarted: pollStarted,
+		releasePoll: releasePoll,
+	}
+	workerPollCompleteOnShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown.Store(true)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &testSlotSupplier{},
+		maxTaskPerSecond: 1000,
+		taskPollers: []scalableTaskPoller{
+			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+		},
+		taskProcessor:                noopTaskProcessor{},
+		workerType:                   "StopTimeoutTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  50 * time.Millisecond,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	})
+
+	bw.Start()
+	<-pollStarted
+
+	stopDone := make(chan struct{})
+	start := time.Now()
+	go func() {
+		bw.Stop()
+		close(stopDone)
+	}()
+
+	// Stop() should return after stopTimeout (~50ms), not block for the
+	// full pollTaskServiceTimeOut (70s).
+	select {
+	case <-stopDone:
+		elapsed := time.Since(start)
+		require.Less(t, elapsed, time.Second,
+			"Stop() should return after stopTimeout, not wait for pollTaskServiceTimeOut")
+	case <-time.After(time.Second):
+		releaseBlockedPoller()
+		require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
+			"worker goroutines should finish after blocked poll is released")
+		t.Fatal("Stop() should return after stopTimeout, not wait for pollTaskServiceTimeOut")
+	}
+
+	releaseBlockedPoller()
+	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
+		"worker goroutines should finish after blocked poll is released")
+}
+
+func TestLegacyStopReturnsPromptlyWithBlockedPoller(t *testing.T) {
+	pollStarted := make(chan struct{})
+	tp := &stopAwareShutdownPoller{
+		pollStarted: pollStarted,
+	}
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &testSlotSupplier{},
+		maxTaskPerSecond: 1000,
+		taskPollers: []scalableTaskPoller{
+			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+		},
+		taskProcessor:                noopTaskProcessor{},
+		workerType:                   "LegacyStopTimeoutTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  5 * time.Second,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: &atomic.Bool{},
+	})
+	tp.stopC = bw.stopCh
+
+	bw.Start()
+	<-pollStarted
+
+	start := time.Now()
+	bw.Stop()
+	elapsed := time.Since(start)
+
+	require.Less(t, elapsed, time.Second,
+		"legacy Stop() should return promptly when a blocked poll observes shutdown")
+	require.True(t, tp.stopped.Load(), "blocked poller should observe shutdown")
+}
+
+type blockingShutdownPoller struct {
+	pollStarted chan struct{}
+	releasePoll chan struct{}
+	started     atomic.Bool
+}
+
+func (p *blockingShutdownPoller) PollTask() (taskForWorker, error) {
+	if p.started.CompareAndSwap(false, true) {
+		close(p.pollStarted)
+	}
+	<-p.releasePoll
+	return nil, nil
+}
+
+type stopAwareShutdownPoller struct {
+	pollStarted chan struct{}
+	stopC       <-chan struct{}
+	started     atomic.Bool
+	stopped     atomic.Bool
+}
+
+func (p *stopAwareShutdownPoller) PollTask() (taskForWorker, error) {
+	if p.started.CompareAndSwap(false, true) {
+		close(p.pollStarted)
+	}
+	<-p.stopC
+	p.stopped.Store(true)
+	return nil, errStop
+}
 
 func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithCapability() {
 	targetSuggestion := 0

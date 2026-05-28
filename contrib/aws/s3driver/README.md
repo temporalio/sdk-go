@@ -113,6 +113,7 @@ type Client interface {
     PutObject(ctx context.Context, bucket, key string, data []byte) error
     ObjectExists(ctx context.Context, bucket, key string) (bool, error)
     GetObject(ctx context.Context, bucket, key string) ([]byte, error)
+    Describe() map[string]string
 }
 ```
 

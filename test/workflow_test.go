@@ -1421,6 +1421,22 @@ func (w *Workflows) ActivityTimeoutsWorkflow(ctx workflow.Context, activityOptio
 	activityCtx := workflow.WithActivityOptions(ctx, activityOptions)
 	return workflow.ExecuteActivity(activityCtx, "Sleep", time.Second).Get(ctx, nil)
 }
+
+func (w *Workflows) ShutdownDuringActiveTimerActivityWorkflow(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ScheduleToCloseTimeout: 10 * time.Second,
+		StartToCloseTimeout:    10 * time.Second,
+	})
+	for {
+		if err := workflow.Sleep(ctx, 10*time.Millisecond); err != nil {
+			return err
+		}
+		if err := workflow.ExecuteActivity(ctx, "EmptyActivity").Get(ctx, nil); err != nil {
+			return err
+		}
+	}
+}
+
 func (w *Workflows) SignalWorkflow(ctx workflow.Context) (*commonpb.WorkflowType, error) {
 	s := workflow.NewSelector(ctx)
 
@@ -3684,6 +3700,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityRetryOptionsChange)
 	worker.RegisterWorkflow(w.ActivityWaitForWorkerStop)
 	worker.RegisterWorkflow(w.ActivityHeartbeatUntilSignal)
+	worker.RegisterWorkflow(w.ShutdownDuringActiveTimerActivityWorkflow)
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
