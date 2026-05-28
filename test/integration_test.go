@@ -7842,21 +7842,77 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
 }
 
+func (ts *IntegrationTestSuite) registerWorkerShutdownCancelWorkflow(w worker.Worker) (
+	workflowName string,
+	activityName string,
+	activityStarted <-chan struct{},
+	firstStarted *atomic.Bool,
+) {
+	workflowName = "worker-shutdown-cancel-workflow-" + uuid.NewString()
+	activityName = "worker-shutdown-cancel-activity-" + uuid.NewString()
+	activityStartedCh := make(chan struct{})
+	firstStarted = &atomic.Bool{}
+	ts.registerWorkerShutdownCancelWorkflowWithNames(w, workflowName, activityName, activityStartedCh, firstStarted)
+	return workflowName, activityName, activityStartedCh, firstStarted
+}
+
+func (ts *IntegrationTestSuite) registerWorkerShutdownCancelWorkflowWithNames(
+	w worker.Worker,
+	workflowName string,
+	activityName string,
+	activityStarted chan<- struct{},
+	firstStarted *atomic.Bool,
+) {
+	w.RegisterActivityWithOptions(func(ctx context.Context) error {
+		if firstStarted.CompareAndSwap(false, true) {
+			if activityStarted != nil {
+				close(activityStarted)
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		return nil
+	}, activity.RegisterOptions{Name: activityName})
+
+	w.RegisterWorkflowWithOptions(func(ctx workflow.Context, localActivity bool, activityName string) error {
+		retryPolicy := temporal.RetryPolicy{MaximumAttempts: 2}
+		if localActivity {
+			ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+				StartToCloseTimeout: 5 * time.Second,
+				RetryPolicy:         &retryPolicy,
+			})
+			return workflow.ExecuteLocalActivity(ctx, activityName).Get(ctx, nil)
+		}
+
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 5 * time.Second,
+			RetryPolicy:         &retryPolicy,
+		})
+		return workflow.ExecuteActivity(ctx, activityName).Get(ctx, nil)
+	}, workflow.RegisterOptions{Name: workflowName})
+}
+
 func (ts *IntegrationTestSuite) TestActivityCancelFromWorkerShutdown() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-activity-cancel"), ts.workflows.WorkflowReactToCancel, false)
+	workflowName, activityName, activityStarted, firstStarted := ts.registerWorkerShutdownCancelWorkflow(ts.worker)
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-activity-cancel"), workflowName, false, activityName)
 	ts.NoError(err)
 
-	// Give the workflow time to run and run activity
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-activityStarted:
+	case <-time.After(10 * time.Second):
+		ts.FailNow("timed out waiting for activity to start")
+	}
+
 	ts.worker.Stop()
 	ts.workerStopped = true
 	// Now create a new worker on that same task queue to resume the work of the
 	// activity retry
 	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.registerWorkerShutdownCancelWorkflowWithNames(nextWorker, workflowName, activityName, nil, firstStarted)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
 
@@ -7868,17 +7924,23 @@ func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-local-activity-cancel"), ts.workflows.WorkflowReactToCancel, true)
+	workflowName, activityName, activityStarted, firstStarted := ts.registerWorkerShutdownCancelWorkflow(ts.worker)
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-local-activity-cancel"), workflowName, true, activityName)
 	ts.NoError(err)
 
-	// Give the workflow time to run and run activity
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-activityStarted:
+	case <-time.After(10 * time.Second):
+		ts.FailNow("timed out waiting for local activity to start")
+	}
+
 	ts.worker.Stop()
 	ts.workerStopped = true
 	// Now create a new worker on that same task queue to resume the work of the
 	// activity retry
 	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.registerWorkerShutdownCancelWorkflowWithNames(nextWorker, workflowName, activityName, nil, firstStarted)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
 
@@ -7893,7 +7955,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
 			break
 		}
 
-		// WFT timeout should come from first worker stopping and LA being canceled
+		// WFT timeout should come from the first worker stopping while the LA is blocked.
 		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT {
 			timeout_count++
 		}

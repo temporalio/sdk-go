@@ -3640,35 +3640,6 @@ func (w *Workflows) WorkflowRawValue(ctx workflow.Context, value converter.RawVa
 	return returnVal, err
 }
 
-func (w *Workflows) WorkflowReactToCancel(ctx workflow.Context, localActivity bool) error {
-	var activities *Activities
-	var err error
-	// Allow for 2 attempts so when a worker shuts down and a 2nd one is created,
-	// it can use the 2nd attempt to complete the activity.
-	retryPolicy := temporal.RetryPolicy{
-		MaximumAttempts: 2,
-	}
-
-	if localActivity {
-		ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
-			StartToCloseTimeout: 5 * time.Second,
-			RetryPolicy:         &retryPolicy,
-		})
-		err = workflow.ExecuteLocalActivity(ctx, activities.CancelActivity).Get(ctx, nil)
-	} else {
-		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
-			StartToCloseTimeout: 5 * time.Second,
-			RetryPolicy:         &retryPolicy,
-		})
-		err = workflow.ExecuteActivity(ctx, activities.CancelActivity).Get(ctx, nil)
-	}
-
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
 func (w *Workflows) SessionCancelNDE(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
 
@@ -3840,7 +3811,6 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.WorkflowClientFromActivity)
 	worker.RegisterWorkflow(w.WorkflowTemporalPrefixSignal)
 	worker.RegisterWorkflow(w.WorkflowRawValue)
-	worker.RegisterWorkflow(w.WorkflowReactToCancel)
 }
 
 func (w *Workflows) defaultActivityOptions() workflow.ActivityOptions {
