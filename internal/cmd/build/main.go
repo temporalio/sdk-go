@@ -5,6 +5,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"html"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -31,6 +33,7 @@ func main() {
 }
 
 const coverageDir = ".build/coverage"
+const githubStepSummaryMaxDetailBytes = 64 * 1024
 
 type builder struct {
 	thisDir string
@@ -92,6 +95,8 @@ func (b *builder) integrationTest() error {
 	// Supports some flags
 	flagSet := flag.NewFlagSet("integration-test", flag.ContinueOnError)
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
+	pFlag := flagSet.String("p", "", "Passed to go test as -p")
+	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
@@ -178,10 +183,13 @@ func (b *builder) integrationTest() error {
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
 	}
+	if *pFlag != "" {
+		args = append(args, "-p", *pFlag)
+	}
 	if *coverageFileFlag != "" {
 		args = append(args, "-coverprofile="+filepath.Join(b.rootDir, coverageDir, *coverageFileFlag), "-coverpkg=./...")
 	}
-	args = append(args, "./...")
+	args = append(args, strings.Fields(*packagesFlag)...)
 	if *devServerFlag {
 		args = append(args, "--", "-using-cli-dev-server")
 		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
@@ -190,7 +198,7 @@ func (b *builder) integrationTest() error {
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
 	cmd.Env = env
-	if err := b.runCmd(cmd); err != nil {
+	if err := b.runTestCmd(cmd); err != nil {
 		return fmt.Errorf("integration test failed: %w", err)
 	}
 
@@ -286,7 +294,7 @@ func (b *builder) unitTest() error {
 		cmd := b.cmdFromRoot(args...)
 		// Need to run inside directory
 		cmd.Dir = filepath.Join(b.rootDir, testDir)
-		if err := b.runCmd(cmd); err != nil {
+		if err := b.runTestCmd(cmd); err != nil {
 			return fmt.Errorf("unit test failed in %v: %w", testDir, err)
 		}
 	}
@@ -305,6 +313,161 @@ func (b *builder) runCmd(cmd *exec.Cmd) error {
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	log.Printf("Running %v in %v with args %v", cmd.Path, cmd.Dir, cmd.Args[1:])
 	return cmd.Run()
+}
+
+// runTestCmd runs a go test command while capturing output for the GitHub step
+// summary. Output is still streamed to stdout/stderr as the command runs.
+func (b *builder) runTestCmd(cmd *exec.Cmd) error {
+	var output bytes.Buffer
+	cmd.Stdout = io.MultiWriter(os.Stdout, &output)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &output)
+	log.Printf("Running %v in %v with args %v", cmd.Path, cmd.Dir, cmd.Args[1:])
+	err := cmd.Run()
+	if err != nil {
+		summaryErr := appendTestFailureSummary(os.Getenv("GITHUB_STEP_SUMMARY"), output.String())
+		if summaryErr != nil {
+			log.Printf("Failed writing test failure summary: %v", summaryErr)
+		}
+	}
+	return err
+}
+
+type testFailureSummaryRow struct {
+	Test    string
+	Package string
+	Details string
+}
+
+func appendTestFailureSummary(summaryPath, output string) error {
+	if summaryPath == "" {
+		return nil
+	}
+	rows := parseTestFailures(output)
+	if len(rows) == 0 {
+		return nil
+	}
+	f, err := os.OpenFile(summaryPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(renderTestFailureSummary(rows))
+	return err
+}
+
+func parseTestFailures(output string) []testFailureSummaryRow {
+	lines := strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n")
+	rows := make([]testFailureSummaryRow, 0)
+	currentPackage := ""
+	packageStart := 0
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
+		if strings.HasPrefix(line, "FAIL\t") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				currentPackage = fields[1]
+				for rowIndex := packageStart; rowIndex < len(rows); rowIndex++ {
+					if rows[rowIndex].Package == "" {
+						rows[rowIndex].Package = currentPackage
+					}
+				}
+				packageStart = len(rows)
+			}
+			continue
+		}
+		const failPrefix = "--- FAIL: "
+		trimmedLine := strings.TrimLeft(line, " \t")
+		if !strings.HasPrefix(trimmedLine, failPrefix) {
+			continue
+		}
+		name := strings.TrimSpace(strings.TrimPrefix(trimmedLine, failPrefix))
+		if idx := strings.Index(name, " "); idx >= 0 {
+			name = name[:idx]
+		}
+		start := findMatchingRunLine(lines, i, name)
+		end := len(lines)
+		for j := start + 1; j < len(lines); j++ {
+			next := lines[j]
+			if isRunLine(next) || strings.HasPrefix(next, "FAIL\t") || strings.HasPrefix(next, "ok  \t") {
+				end = j
+				break
+			}
+		}
+		rows = append(rows, testFailureSummaryRow{
+			Test:    name,
+			Package: currentPackage,
+			Details: strings.Join(lines[start:end], "\n"),
+		})
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].Package != rows[j].Package {
+			return rows[i].Package < rows[j].Package
+		}
+		return rows[i].Test < rows[j].Test
+	})
+	return filterParentFailureRows(rows)
+}
+
+func filterParentFailureRows(rows []testFailureSummaryRow) []testFailureSummaryRow {
+	hasFailedSubtest := make(map[string]bool, len(rows))
+	for _, row := range rows {
+		if parent, _, ok := strings.Cut(row.Test, "/"); ok {
+			hasFailedSubtest[parent] = true
+		}
+	}
+	filtered := rows[:0]
+	for _, row := range rows {
+		if !hasFailedSubtest[row.Test] {
+			filtered = append(filtered, row)
+		}
+	}
+	return filtered
+}
+
+func findMatchingRunLine(lines []string, before int, testName string) int {
+	for i := before - 1; i >= 0; i-- {
+		if testNameFromRunLine(lines[i]) == testName {
+			return i
+		}
+	}
+	return before
+}
+
+func testNameFromRunLine(line string) string {
+	fields := strings.Fields(strings.TrimLeft(line, " \t"))
+	if len(fields) != 3 || fields[0] != "===" || fields[1] != "RUN" {
+		return ""
+	}
+	return fields[2]
+}
+
+func isRunLine(line string) bool {
+	return strings.HasPrefix(strings.TrimLeft(line, " \t"), "=== RUN ")
+}
+
+func renderTestFailureSummary(rows []testFailureSummaryRow) string {
+	var sb strings.Builder
+	sb.WriteString("## Test failures\n\n")
+	sb.WriteString("<table>\n<tr><th>Kind</th><th>Test failure</th></tr>\n")
+	for _, row := range rows {
+		details := row.Details
+		if len(details) > githubStepSummaryMaxDetailBytes {
+			details = details[:githubStepSummaryMaxDetailBytes] + "\n... (truncated; see full job logs)"
+		}
+		title := row.Test
+		if row.Package != "" {
+			title = row.Package + " / " + title
+		}
+		fmt.Fprintf(
+			&sb,
+			"<tr><td>%s</td><td><details><summary>%s</summary><pre>%s</pre></details></td></tr>\n",
+			html.EscapeString("Failed"),
+			html.EscapeString(title),
+			html.EscapeString(details),
+		)
+	}
+	sb.WriteString("</table>\n\n")
+	return sb.String()
 }
 
 func (b *builder) getInstalledTool(modPath string) (string, error) {
