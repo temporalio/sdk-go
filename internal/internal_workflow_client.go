@@ -99,8 +99,9 @@ type (
 
 	// namespaceData holds cached namespace capabilities and limits.
 	namespaceData struct {
-		capabilities *namespacepb.NamespaceInfo_Capabilities
-		limits       *namespacepb.NamespaceInfo_Limits
+		capabilities     *namespacepb.NamespaceInfo_Capabilities
+		limits           *namespacepb.NamespaceInfo_Limits
+		pollerGroupInfos []*taskqueuepb.PollerGroupInfo
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -1630,6 +1631,7 @@ func (wc *WorkflowClient) loadNamespaceData(metricsHandler metrics.Handler) (nam
 	if resp != nil {
 		data.capabilities = resp.GetNamespaceInfo().GetCapabilities()
 		data.limits = resp.GetNamespaceInfo().GetLimits()
+		data.pollerGroupInfos = resp.GetPollerGroupInfos()
 	}
 	if data.capabilities == nil {
 		data.capabilities = &namespacepb.NamespaceInfo_Capabilities{}

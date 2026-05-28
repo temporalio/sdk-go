@@ -13,6 +13,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -25,6 +26,15 @@ import (
 	internallog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
+
+func seedScalableTaskPollerGroupInfos(pollers []scalableTaskPoller, groups []*taskqueuepb.PollerGroupInfo) {
+	for i := range pollers {
+		pollers[i].ensurePollerGroupCapacity(len(groups))
+		if seeder, ok := pollers[i].taskPoller.(pollerGroupSeeder); ok {
+			seeder.seedPollerGroupInfos(groups)
+		}
+	}
+}
 
 const (
 	retryPollOperationInitialInterval         = 200 * time.Millisecond
@@ -828,6 +838,30 @@ func newPollScalerReportHandle(options pollScalerReportHandleOptions) *pollScale
 	}
 	psr.target.Store(int64(options.initialPollerCount))
 	return psr
+}
+
+func (tw *scalableTaskPoller) ensurePollerGroupCapacity(groupCount int) {
+	if groupCount <= 0 || tw.pollerCount >= groupCount {
+		return
+	}
+	tw.pollerCount = groupCount
+	if tw.pollerAutoscalerReportHandle == nil {
+		return
+	}
+
+	handle := tw.pollerAutoscalerReportHandle
+	if handle.minPollerCount < groupCount {
+		handle.minPollerCount = groupCount
+	}
+	if handle.maxPollerCount < groupCount {
+		handle.maxPollerCount = groupCount
+	}
+	if handle.target.Load() < int64(groupCount) {
+		handle.target.Store(int64(groupCount))
+	}
+	if tw.pollerSemaphore != nil {
+		tw.pollerSemaphore.updatePermits(int(handle.target.Load()))
+	}
 }
 
 func (prh *pollScalerReportHandle) handleTask(task taskForWorker) {

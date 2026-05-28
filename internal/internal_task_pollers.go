@@ -58,6 +58,10 @@ type (
 		PollTask() (taskForWorker, error)
 	}
 
+	pollerGroupSeeder interface {
+		seedPollerGroupInfos([]*taskqueuepb.PollerGroupInfo)
+	}
+
 	// taskProcessor interface to process tasks
 	taskProcessor interface {
 		// ProcessTask processes a task
@@ -401,6 +405,11 @@ func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
 	}
 
 	return workflowTask, nil
+}
+
+func (wtp *workflowTaskPoller) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	wtp.pollerGroupTracker.updateGroups(groups)
+	wtp.stickyPollerGroupTracker.updateGroups(groups)
 }
 
 func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) taskPoller {
@@ -1460,6 +1469,10 @@ func (atp *activityTaskPoller) PollTask() (taskForWorker, error) {
 		return nil, err
 	}
 	return activityTask, nil
+}
+
+func (atp *activityTaskPoller) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	atp.pollerGroupTracker.updateGroups(groups)
 }
 
 // ProcessTask processes a new task

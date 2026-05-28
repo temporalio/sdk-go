@@ -39,17 +39,25 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/worker.PollerBehaviorAutoscalingOptions]
 	PollerBehaviorAutoscalingOptions struct {
-		// InitialNumberOfPollers is the initial number of pollers to start.
+		// InitialNumberOfPollers is the initial number of pollers to start. This value is
+		// a suggestion and may be raised by the SDK when required for worker
+		// functionality, such as polling every server-provided poller group.
 		//
 		// Default: 5
 		InitialNumberOfPollers int
 
-		// MinimumNumberOfPollers is the minimum number of pollers the worker is allowed scale down to.
+		// MinimumNumberOfPollers is the minimum number of pollers the worker is allowed
+		// scale down to. This value is a suggestion and may be raised by the SDK when
+		// required for worker functionality, such as polling every server-provided poller
+		// group.
 		//
 		// Default: 1
 		MinimumNumberOfPollers int
 
-		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed
+		// scale up to. This value is a suggestion and may be raised by the SDK when
+		// required for worker functionality, such as polling every server-provided poller
+		// group.
 		//
 		// Default: 100
 		MaximumNumberOfPollers int
@@ -60,7 +68,8 @@ type (
 	// Exposed as: [go.temporal.io/sdk/worker.PollerBehaviorSimpleMaximumOptions]
 	PollerBehaviorSimpleMaximumOptions struct {
 		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed
-		// to start.
+		// to start. This value is a suggestion and may be raised by the SDK when required
+		// for worker functionality, such as polling every server-provided poller group.
 		//
 		// Default: 2
 		MaximumNumberOfPollers int
@@ -147,7 +156,9 @@ type (
 
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
 		// temporal-server to retrieve activity tasks. Changing this value will affect the
-		// rate at which the worker is able to consume tasks from a task queue.
+		// rate at which the worker is able to consume tasks from a task queue. This value
+		// is a suggestion and may be raised by the SDK when required for worker
+		// functionality, such as polling every server-provided poller group.
 		//
 		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
 		//
@@ -166,7 +177,9 @@ type (
 		// temporal-server to retrieve workflow tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task queue. Due to
 		// internal logic where pollers alternate between stick and non-sticky queues, this
-		// value cannot be 1 and will panic if set to that value.
+		// value cannot be 1 and will panic if set to that value. This value is a suggestion
+		// and may be raised by the SDK when required for worker functionality, such as
+		// polling every server-provided poller group.
 		//
 		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
 		//
@@ -181,7 +194,9 @@ type (
 
 		// Optional: Sets the maximum number of goroutines that will concurrently poll the
 		// temporal-server to retrieve nexus tasks. Changing this value will affect the
-		// rate at which the worker is able to consume tasks from a task queue.
+		// rate at which the worker is able to consume tasks from a task queue. This value
+		// is a suggestion and may be raised by the SDK when required for worker
+		// functionality, such as polling every server-provided poller group.
 		//
 		// NOTE: This option is mutually exclusive with NexusTaskPollerBehavior.
 		//
@@ -511,7 +526,7 @@ func (p *pollerBehaviorSimpleMaximum) isPollerBehavior() {
 func (p *pollerBehaviorAutoscaling) isPollerBehavior() {
 }
 
-// NewPollerBehaviorSimpleMaximum creates a PollerBehavior that allows the worker to start up to a maximum number of pollers.
+// NewPollerBehaviorSimpleMaximum creates a PollerBehavior that allows the worker to start up to a suggested maximum number of pollers.
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorSimpleMaximum]
 func NewPollerBehaviorSimpleMaximum(
@@ -525,7 +540,7 @@ func NewPollerBehaviorSimpleMaximum(
 	}
 }
 
-// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
+// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a suggested range.
 // based on the workflow and feedback from the server.
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorAutoscaling]

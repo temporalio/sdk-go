@@ -26,6 +26,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/temporalproto"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -466,6 +467,10 @@ func (ww *workflowWorker) Start() error {
 	return nil // TODO: propagate error
 }
 
+func (ww *workflowWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	seedScalableTaskPollerGroupInfos(ww.worker.options.taskPollers, groups)
+}
+
 // Stop the worker.
 func (ww *workflowWorker) Stop() {
 	close(ww.stopC)
@@ -532,6 +537,11 @@ func (sw *sessionWorker) Start() error {
 		return err
 	}
 	return nil
+}
+
+func (sw *sessionWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	sw.creationWorker.seedPollerGroupInfos(groups)
+	sw.activityWorker.seedPollerGroupInfos(groups)
 }
 
 func (sw *sessionWorker) Stop() {
@@ -620,6 +630,12 @@ func newActivityWorker(
 func (aw *activityWorker) Start() error {
 	aw.worker.Start()
 	return nil // TODO: propagate errors
+}
+
+func (aw *activityWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	if seeder, ok := aw.poller.(pollerGroupSeeder); ok {
+		seeder.seedPollerGroupInfos(groups)
+	}
 }
 
 // Stop the worker.
@@ -1359,6 +1375,8 @@ func (aw *AggregatedWorker) start() error {
 		aw.executionParams.serverSupportsAutoscaling.Store(true)
 	}
 
+	aw.seedPollerGroupInfos(nsData.pollerGroupInfos)
+
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
@@ -1422,6 +1440,7 @@ func (aw *AggregatedWorker) start() error {
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
 		}
+		aw.nexusWorker.seedPollerGroupInfos(nsData.pollerGroupInfos)
 		if err := aw.nexusWorker.Start(); err != nil {
 			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
@@ -1434,6 +1453,21 @@ func (aw *AggregatedWorker) start() error {
 	}
 	aw.logger.Info("Started Worker")
 	return nil
+}
+
+func (aw *AggregatedWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	if len(groups) == 0 {
+		return
+	}
+	if !util.IsInterfaceNil(aw.workflowWorker) {
+		aw.workflowWorker.seedPollerGroupInfos(groups)
+	}
+	if !util.IsInterfaceNil(aw.activityWorker) {
+		aw.activityWorker.seedPollerGroupInfos(groups)
+	}
+	if !util.IsInterfaceNil(aw.sessionWorker) {
+		aw.sessionWorker.seedPollerGroupInfos(groups)
+	}
 }
 
 func (aw *AggregatedWorker) assertNotStopped() {

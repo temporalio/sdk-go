@@ -48,12 +48,12 @@ func newNexusTaskPoller(
 			workerInstanceKey:            params.workerInstanceKey,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
-		taskHandler:     taskHandler,
-		service:         service,
-		namespace:       params.Namespace,
-		taskQueueName:   params.TaskQueue,
-		identity:        params.Identity,
-		logger:          params.Logger,
+		taskHandler:        taskHandler,
+		service:            service,
+		namespace:          params.Namespace,
+		taskQueueName:      params.TaskQueue,
+		identity:           params.Identity,
+		logger:             params.Logger,
 		numPollerMetric:    newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeNexusTask),
 		pollerGroupTracker: newPollerGroupTracker(),
 	}
@@ -111,6 +111,10 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 // PollTask polls a new task
 func (ntp *nexusTaskPoller) PollTask() (taskForWorker, error) {
 	return ntp.doPoll(ntp.poll)
+}
+
+func (ntp *nexusTaskPoller) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	ntp.pollerGroupTracker.updateGroups(groups)
 }
 
 // ProcessTask processes a new task

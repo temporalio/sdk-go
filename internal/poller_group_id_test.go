@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -11,6 +12,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	namespacepb "go.temporal.io/api/namespace/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -67,6 +69,56 @@ func TestActivityPoll_SetsPollerGroupIdAndUpdatesTracker(t *testing.T) {
 
 	_, err = poller.poll(ctx)
 	require.NoError(t, err)
+}
+
+func TestWorkerStart_SeedsActivityPollerGroupInfosFromDescribeNamespace(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.GetSystemInfoResponse{}, nil).
+		AnyTimes()
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.DescribeNamespaceResponse{
+			NamespaceInfo: &namespacepb.NamespaceInfo{Name: "test-ns"},
+			PollerGroupInfos: []*taskqueuepb.PollerGroupInfo{
+				{Id: "seed-group", Weight: 1.0},
+			},
+		}, nil).
+		AnyTimes()
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).
+		AnyTimes()
+
+	firstPollerGroupID := make(chan string, 1)
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			req *workflowservice.PollActivityTaskQueueRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.PollActivityTaskQueueResponse, error) {
+			select {
+			case firstPollerGroupID <- req.GetPollerGroupId():
+			default:
+			}
+			return &workflowservice.PollActivityTaskQueueResponse{}, nil
+		}).
+		AnyTimes()
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: "test-ns"})
+	worker := NewAggregatedWorker(client, "test-tq", WorkerOptions{
+		DisableWorkflowWorker:            true,
+		MaxConcurrentActivityTaskPollers: 2,
+	})
+	require.NoError(t, worker.Start())
+	defer worker.Stop()
+
+	select {
+	case groupID := <-firstPollerGroupID:
+		require.Equal(t, "seed-group", groupID)
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first activity poll")
+	}
 }
 
 type noopActivityTaskHandler struct{}
@@ -129,6 +181,41 @@ func TestWorkflowPoll_SetsPollerGroupIdAndUpdatesTracker(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestWorkflowPoll_UsesSeededPollerGroupInfos(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+	params := workerExecutionParameters{
+		Namespace: "test-ns",
+		TaskQueue: "test-tq",
+		cache:     NewWorkerCache(),
+	}
+	ensureRequiredParams(&params)
+
+	processor := newWorkflowTaskProcessor(
+		newWorkflowTaskHandler(params, nil, newRegistry()),
+		nil,
+		service,
+		params,
+		"sticky-uuid",
+	)
+	poller := processor.createPoller(NonSticky).(*workflowTaskPoller)
+	poller.seedPollerGroupInfos([]*taskqueuepb.PollerGroupInfo{{Id: "seeded-wf-group", Weight: 1.0}})
+
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			req *workflowservice.PollWorkflowTaskQueueRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			require.Equal(t, "seeded-wf-group", req.PollerGroupId)
+			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+		})
+
+	_, err := poller.poll(context.Background())
+	require.NoError(t, err)
+}
+
 func TestNexusPoll_SetsPollerGroupIdAndUpdatesTracker(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
@@ -173,6 +260,34 @@ func TestNexusPoll_SetsPollerGroupIdAndUpdatesTracker(t *testing.T) {
 		})
 
 	_, err = poller.poll(ctx)
+	require.NoError(t, err)
+}
+
+func TestNexusPoll_UsesSeededPollerGroupInfos(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+	params := workerExecutionParameters{
+		Namespace: "test-ns",
+		TaskQueue: "test-tq",
+		cache:     NewWorkerCache(),
+	}
+	ensureRequiredParams(&params)
+
+	poller := newNexusTaskPoller(nil, service, params)
+	poller.seedPollerGroupInfos([]*taskqueuepb.PollerGroupInfo{{Id: "seeded-nexus-group", Weight: 1.0}})
+
+	service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			req *workflowservice.PollNexusTaskQueueRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.PollNexusTaskQueueResponse, error) {
+			require.Equal(t, "seeded-nexus-group", req.PollerGroupId)
+			return &workflowservice.PollNexusTaskQueueResponse{}, nil
+		})
+
+	_, err := poller.poll(context.Background())
 	require.NoError(t, err)
 }
 

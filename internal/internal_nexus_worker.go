@@ -2,6 +2,7 @@ package internal
 
 import (
 	"github.com/nexus-rpc/sdk-go/nexus"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 )
@@ -85,6 +86,10 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 func (w *nexusWorker) Start() error {
 	w.worker.Start()
 	return nil
+}
+
+func (w *nexusWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	seedScalableTaskPollerGroupInfos(w.worker.options.taskPollers, groups)
 }
 
 // Stop the worker.
