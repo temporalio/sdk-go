@@ -78,6 +78,24 @@ func TestRenderTestFailureSummaryEscapesHTML(t *testing.T) {
 	}
 }
 
+func TestFilterParentFailureRowsUsesPackage(t *testing.T) {
+	rows := filterParentFailureRows([]testFailureSummaryRow{
+		{Package: "example.com/a", Test: "TestSuite"},
+		{Package: "example.com/a", Test: "TestSuite/TestSub"},
+		{Package: "example.com/b", Test: "TestSuite"},
+	})
+
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d: %#v", len(rows), rows)
+	}
+	if rows[0].Package != "example.com/a" || rows[0].Test != "TestSuite/TestSub" {
+		t.Fatalf("expected package a subtest row first, got %#v", rows[0])
+	}
+	if rows[1].Package != "example.com/b" || rows[1].Test != "TestSuite" {
+		t.Fatalf("expected package b parent row to be preserved, got %#v", rows[1])
+	}
+}
+
 func TestAppendTestFailureSummary(t *testing.T) {
 	summaryPath := filepath.Join(t.TempDir(), "summary.md")
 	err := appendTestFailureSummary(summaryPath, strings.Join([]string{

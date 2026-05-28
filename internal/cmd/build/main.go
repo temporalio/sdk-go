@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	_ "github.com/BurntSushi/toml"
 	_ "github.com/kisielk/errcheck/errcheck"
@@ -318,7 +319,7 @@ func (b *builder) runCmd(cmd *exec.Cmd) error {
 // runTestCmd runs a go test command while capturing output for the GitHub step
 // summary. Output is still streamed to stdout/stderr as the command runs.
 func (b *builder) runTestCmd(cmd *exec.Cmd) error {
-	var output bytes.Buffer
+	var output lockedBuffer
 	cmd.Stdout = io.MultiWriter(os.Stdout, &output)
 	cmd.Stderr = io.MultiWriter(os.Stderr, &output)
 	log.Printf("Running %v in %v with args %v", cmd.Path, cmd.Dir, cmd.Args[1:])
@@ -330,6 +331,23 @@ func (b *builder) runTestCmd(cmd *exec.Cmd) error {
 		}
 	}
 	return err
+}
+
+type lockedBuffer struct {
+	mu sync.Mutex
+	bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.Buffer.String()
 }
 
 type testFailureSummaryRow struct {
@@ -409,19 +427,24 @@ func parseTestFailures(output string) []testFailureSummaryRow {
 }
 
 func filterParentFailureRows(rows []testFailureSummaryRow) []testFailureSummaryRow {
-	hasFailedSubtest := make(map[string]bool, len(rows))
+	hasFailedSubtest := make(map[testFailureSummaryKey]bool, len(rows))
 	for _, row := range rows {
 		if parent, _, ok := strings.Cut(row.Test, "/"); ok {
-			hasFailedSubtest[parent] = true
+			hasFailedSubtest[testFailureSummaryKey{Package: row.Package, Test: parent}] = true
 		}
 	}
 	filtered := rows[:0]
 	for _, row := range rows {
-		if !hasFailedSubtest[row.Test] {
+		if !hasFailedSubtest[testFailureSummaryKey{Package: row.Package, Test: row.Test}] {
 			filtered = append(filtered, row)
 		}
 	}
 	return filtered
+}
+
+type testFailureSummaryKey struct {
+	Package string
+	Test    string
 }
 
 func findMatchingRunLine(lines []string, before int, testName string) int {
