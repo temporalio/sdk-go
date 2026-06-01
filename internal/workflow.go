@@ -2661,6 +2661,7 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.WaitForCancellation = options.WaitForCancellation
 	eap.ActivityID = options.ActivityID
 	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
+	eap.PausePolicy = convertToPBPausePolicy(options.PausePolicy)
 	eap.DisableEagerExecution = options.DisableEagerExecution
 	eap.VersioningIntent = options.VersioningIntent
 	eap.Priority = convertToPBPriority(options.Priority)
@@ -2865,6 +2866,19 @@ func convertToPBPriority(priority Priority) *commonpb.Priority {
 		PriorityKey:    int32(priority.PriorityKey),
 		FairnessKey:    priority.FairnessKey,
 		FairnessWeight: priority.FairnessWeight,
+	}
+}
+
+func convertToPBPausePolicy(pausePolicy PausePolicy) *commonpb.PausePolicy {
+	// Zero value means no pause policy - there's no need to send the
+	// default values to the server.
+	var defaultPausePolicy PausePolicy
+	if pausePolicy == defaultPausePolicy {
+		return nil
+	}
+
+	return &commonpb.PausePolicy{
+		MaxAttempts: pausePolicy.MaxAttempts,
 	}
 }
 

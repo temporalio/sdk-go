@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/converter"
 )
 
 // headerCheckInterceptor is a ClientInterceptor that verifies the header is
@@ -62,4 +63,32 @@ func TestExecuteActivityHeaderAvailableToInterceptors(t *testing.T) {
 	require.ErrorContains(t, err, "short-circuit")
 	require.True(t, interceptor.headerWasPresent,
 		"Header should be set on context before interceptor chain runs")
+}
+
+func TestStartActivityOptions_PausePolicy(t *testing.T) {
+	dc := converter.GetDefaultDataConverter()
+
+	t.Run("set", func(t *testing.T) {
+		options := ClientStartActivityOptions{
+			ID:                  "test-activity-id",
+			TaskQueue:           "test-tq",
+			StartToCloseTimeout: 1,
+			PausePolicy:         PausePolicy{MaxAttempts: 3},
+		}
+		request := &workflowservice.StartActivityExecutionRequest{}
+		require.NoError(t, options.validateAndSetInRequest(request, dc))
+		require.NotNil(t, request.PausePolicy)
+		require.Equal(t, int32(3), request.PausePolicy.GetMaxAttempts())
+	})
+
+	t.Run("zero value sends nil", func(t *testing.T) {
+		options := ClientStartActivityOptions{
+			ID:                  "test-activity-id",
+			TaskQueue:           "test-tq",
+			StartToCloseTimeout: 1,
+		}
+		request := &workflowservice.StartActivityExecutionRequest{}
+		require.NoError(t, options.validateAndSetInRequest(request, dc))
+		require.Nil(t, request.PausePolicy)
+	})
 }

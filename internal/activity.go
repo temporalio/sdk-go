@@ -171,6 +171,13 @@ type (
 		//
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
+
+		// PausePolicy - Optional policy to automatically pause the activity once it
+		// has failed a configured number of attempts, instead of continuing to retry.
+		// When unset (zero value), no pause policy is applied.
+		//
+		// WARNING: Activity pause policy is currently experimental.
+		PausePolicy PausePolicy
 	}
 
 	// LocalActivityOptions stores local activity specific parameters that will be stored inside of a context.

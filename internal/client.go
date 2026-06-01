@@ -1154,6 +1154,18 @@ type (
 		FairnessWeight float32
 	}
 
+	// PausePolicy contains the configuration for automatically pausing an activity.
+	//
+	// WARNING: Activity pause policy is currently experimental.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.PausePolicy]
+	PausePolicy struct {
+		// MaxAttempts - Number of attempts after which the activity is paused.
+		//
+		// The default value when unset or 0 means no pause policy is applied.
+		MaxAttempts int32
+	}
+
 	// NamespaceClient is the client for managing operations on the namespace.
 	// CLI, tools, ... can use this layer to manager operations on namespace.
 	NamespaceClient interface {

@@ -47,6 +47,7 @@ type (
 		WaitForCancellation    bool
 		OriginalTaskQueueName  string
 		RetryPolicy            *commonpb.RetryPolicy
+		PausePolicy            *commonpb.PausePolicy
 		DisableEagerExecution  bool
 		VersioningIntent       VersioningIntent
 		Summary                string

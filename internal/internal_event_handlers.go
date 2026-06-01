@@ -772,6 +772,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 	scheduleTaskAttr.ScheduleToStartTimeout = durationpb.New(parameters.ScheduleToStartTimeout)
 	scheduleTaskAttr.HeartbeatTimeout = durationpb.New(parameters.HeartbeatTimeout)
 	scheduleTaskAttr.RetryPolicy = parameters.RetryPolicy
+	scheduleTaskAttr.PausePolicy = parameters.PausePolicy
 	scheduleTaskAttr.Header = parameters.Header
 	// We set this as true if not disabled on the params knowing it will be set as
 	// false just before request by the eager activity executor if eager activity

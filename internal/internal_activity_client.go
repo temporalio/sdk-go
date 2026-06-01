@@ -110,6 +110,12 @@ type (
 		//
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
+		// PausePolicy - Optional policy to automatically pause the activity after a number of attempts.
+		//
+		// Optional: defaults to no pause policy.
+		//
+		// WARNING: Activity pause policy is currently experimental.
+		PausePolicy PausePolicy
 	}
 
 	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
@@ -653,6 +659,7 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	request.SearchAttributes = searchAttrs
 	request.UserMetadata = userMetadata
 	request.Priority = convertToPBPriority(options.Priority)
+	request.PausePolicy = convertToPBPausePolicy(options.PausePolicy)
 	return nil
 }
 
