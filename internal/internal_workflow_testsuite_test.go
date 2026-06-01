@@ -4754,10 +4754,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
-	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
-	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
-
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
@@ -4830,10 +4826,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLost() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
-	origBlockedSelectorSignalReceive := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
-	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = origBlockedSelectorSignalReceive }()
-
 	// Two workers listening on the same channel with multiple items sent quickly.
 	workflowFn := func(ctx Context) ([]int, error) {
 		ch := NewChannel(ctx)
@@ -4877,10 +4869,15 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 		return received, nil
 	}
 
-	s.Run("BuggyBehavior", func() {
+	s.Run("OldBehaviorWithOnlyBlockedSelectorFlag", func() {
+		origBlockedSelectorSignalReceive := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
 		origChannelLostMsg := sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages]
+		sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
 		sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = false
-		defer func() { sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg }()
+		defer func() {
+			sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = origBlockedSelectorSignalReceive
+			sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg
+		}()
 
 		env := s.NewTestWorkflowEnvironment()
 		env.ExecuteWorkflow(workflowFn)
@@ -4898,10 +4895,9 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 		s.ElementsMatch([]int{1, 3, 0}, received)
 	})
 
-	s.Run("FixedBehavior", func() {
-		origChannelLostMsg := sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages]
-		sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = true
-		defer func() { sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg }()
+	s.Run("DefaultBehavior", func() {
+		s.Require().True(sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive])
+		s.Require().True(sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages])
 
 		env := s.NewTestWorkflowEnvironment()
 		env.ExecuteWorkflow(workflowFn)
