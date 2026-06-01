@@ -179,8 +179,8 @@ jobs:
       - name: Selected integration tests against cloud
         # Keep this list intentionally small. Add cloud-safe tests here when
         # they cover behavior that cannot be validated against the local dev server.
-        run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
-        working-directory: test
+        run: 'go run . integration-test -p 1 -packages . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
+        working-directory: ./internal/cmd/build
 
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main
