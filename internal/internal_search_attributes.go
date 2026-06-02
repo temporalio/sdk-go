@@ -419,21 +419,27 @@ func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]inte
 // Start-like requests should not carry null or unset search attributes, even
 // though workflow info may still contain them in the current run.
 func sanitizeSearchAttributesForStart(attributes *commonpb.SearchAttributes) *commonpb.SearchAttributes {
-	if len(attributes.GetIndexedFields()) == 0 {
+	indexedFields := attributes.GetIndexedFields()
+	if len(indexedFields) == 0 {
 		return attributes
 	}
 
-	filteredAttributes := make(map[string]*commonpb.Payload, len(attributes.IndexedFields))
-	filteredAny := false
-	for key, payload := range attributes.IndexedFields {
+	var filteredAttributes map[string]*commonpb.Payload
+	for _, payload := range indexedFields {
 		if string(payload.GetMetadata()[converter.MetadataEncoding]) == converter.MetadataEncodingNil {
-			filteredAny = true
+			filteredAttributes = make(map[string]*commonpb.Payload, len(indexedFields)-1)
+			break
+		}
+	}
+	if filteredAttributes == nil {
+		return attributes
+	}
+
+	for key, payload := range indexedFields {
+		if string(payload.GetMetadata()[converter.MetadataEncoding]) == converter.MetadataEncodingNil {
 			continue
 		}
 		filteredAttributes[key] = payload
-	}
-	if !filteredAny {
-		return attributes
 	}
 	if len(filteredAttributes) == 0 {
 		return nil
