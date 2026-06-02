@@ -426,7 +426,7 @@ func sanitizeSearchAttributesForStart(attributes *commonpb.SearchAttributes) *co
 	filteredAttributes := make(map[string]*commonpb.Payload, len(attributes.IndexedFields))
 	filteredAny := false
 	for key, payload := range attributes.IndexedFields {
-		if payload == nil || string(payload.GetMetadata()[converter.MetadataEncoding]) == converter.MetadataEncodingNil {
+		if string(payload.GetMetadata()[converter.MetadataEncoding]) == converter.MetadataEncodingNil {
 			filteredAny = true
 			continue
 		}
