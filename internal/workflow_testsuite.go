@@ -1271,7 +1271,7 @@ func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes ma
 	if err != nil {
 		return err
 	}
-	e.impl.workflowInfo.SearchAttributes = attr
+	e.impl.workflowInfo.SearchAttributes = sanitizeSearchAttributesForStart(attr)
 	return nil
 }
 
