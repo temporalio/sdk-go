@@ -11,7 +11,7 @@ type operationTokenType int
 
 const (
 	operationTokenTypeWorkflowRun       = operationTokenType(1)
-	operationTokenTypeActivityExecution = operationTokenType(4)
+	operationTokenTypeActivityExecution = operationTokenType(2)
 )
 
 // workflowRunOperationToken is the decoded form of the workflow run operation token.
