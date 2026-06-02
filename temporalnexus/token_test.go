@@ -61,7 +61,7 @@ func TestEncodeActivityExecutionOperationTokenDoesNotIncludeVersion(t *testing.T
 	err = json.Unmarshal(b, &token)
 	require.NoError(t, err)
 	require.NotContains(t, token, "v", "version field should not be present in the token")
-	require.Equal(t, 4.0, token["t"], "token type should be activity execution")
+	require.Equal(t, 2.0, token["t"], "token type should be activity execution")
 	require.Equal(t, "ns", token["ns"], "namespace name should match")
 	require.Equal(t, "a-1", token["aid"], "activity ID should match")
 }
@@ -81,13 +81,13 @@ func TestDecodeActivityExecutionOperationTokenErrors(t *testing.T) {
 
 	wrongTypeToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":1,"aid":"a-1"}`))
 	_, err = loadActivityExecutionOperationToken(wrongTypeToken)
-	require.ErrorContains(t, err, "invalid activity execution token type: 1, expected: 4")
+	require.ErrorContains(t, err, "invalid activity execution token type: 1, expected: 2")
 
-	missingAIDToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":4}`))
+	missingAIDToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":2}`))
 	_, err = loadActivityExecutionOperationToken(missingAIDToken)
 	require.ErrorContains(t, err, "missing activity ID (aid)")
 
-	versionedToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"v":1,"t":4,"aid":"a-1"}`))
+	versionedToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"v":1,"t":2,"aid":"a-1"}`))
 	_, err = loadActivityExecutionOperationToken(versionedToken)
 	require.ErrorContains(t, err, `invalid activity execution token: "v" field should not be present`)
 }

@@ -114,8 +114,8 @@ func TestLoadTokenType(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, operationTokenTypeWorkflowRun, tokenType)
 
-	// Valid type=4 (activity execution)
-	activityToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":4,"ns":"ns","aid":"a"}`))
+	// Valid type=2 (activity execution)
+	activityToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":2,"ns":"ns","aid":"a"}`))
 	tokenType, err = loadTokenType(activityToken)
 	require.NoError(t, err)
 	require.Equal(t, operationTokenTypeActivityExecution, tokenType)
