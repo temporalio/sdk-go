@@ -2625,6 +2625,9 @@ func getFunctionName(i interface{}) (name string, isMethod bool) {
 }
 
 func getActivityFunctionName(r *registry, i interface{}) string {
+	if name, ok := i.(string); ok {
+		return name
+	}
 	result, _ := getFunctionName(i)
 	if alias, ok := r.getActivityAlias(result); ok {
 		result = alias
