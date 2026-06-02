@@ -162,14 +162,12 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
 				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
 				"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
-				"--dynamic-config-value", "activity.enableStandalone=true",
-				"--dynamic-config-value", "history.enableChasm=true",
-				"--dynamic-config-value", "history.enableTransitionHistory=true",
 				"--dynamic-config-value", `component.nexusoperations.useSystemCallbackURL=false`,
 				"--dynamic-config-value", `component.nexusoperations.callback.endpoint.template="http://localhost:7243/namespaces/{{.NamespaceName}}/nexus/callback"`,
 				"--dynamic-config-value", "nexusoperation.enableStandalone=true",
 				"--dynamic-config-value", "history.enableChasmCallbacks=true",
 				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
+				"--dynamic-config-value", "activity.startDelayEnabled=true",
 			},
 		})
 		if err != nil {
