@@ -700,6 +700,21 @@ func (r *registry) RegisterWorkflowWithOptions(
 	if len(alias) > 0 && r.workflowAliasMap != nil {
 		r.workflowAliasMap[fnName] = alias
 	}
+
+	if r.workflowAliasMap != nil {
+		// If activityAliasMap[f] = a and activityFuncMap[f] exists, invoking "f" will actually trigger activityFuncMap[a].
+		// Unfortunately this is expected behavior when the user disobeys us by not turning on DisableRegistrationAliasing;
+		// see TestAliasStringNameClash, TestAliasUnqualifiedNameClash, and TestAliasAntialiasing. At least we can warn them.
+		a, ok1 := r.workflowAliasMap[fnName]
+		_, ok2 := r.workflowFuncMap[fnName]
+		if ok1 && ok2 {
+			fmt.Printf("WARNING: Workflow alias collision detected: invoking workflow \"%v\" will actually trigger \"%v\". Consider turning on 'WorkerOptions.DisableRegistrationAliasing'.\n", fnName, a)
+		}
+		a, ok3 := r.workflowAliasMap[registerName]
+		if ok3 {
+			fmt.Printf("WARNING: Workflow alias collision detected: invoking workflow \"%v\" will actually trigger \"%v\". Consider turning on 'WorkerOptions.DisableRegistrationAliasing'.\n", registerName, a)
+		}
+	}
 }
 
 func (r *registry) RegisterDynamicWorkflow(wf interface{}, options DynamicRegisterWorkflowOptions) {
