@@ -702,7 +702,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 	}
 
 	if r.workflowAliasMap != nil {
-		// If activityAliasMap[f] = a and activityFuncMap[f] exists, invoking "f" will actually trigger activityFuncMap[a].
+		// If workflowAliasMap[f] = a and workflowFuncMap[f] exists, invoking "f" will actually trigger workflowFuncMap[a].
 		// Unfortunately this is expected behavior when the user disobeys us by not turning on DisableRegistrationAliasing;
 		// see TestAliasStringNameClash, TestAliasUnqualifiedNameClash, and TestAliasAntialiasing. At least we can warn them.
 		a, ok1 := r.workflowAliasMap[fnName]
