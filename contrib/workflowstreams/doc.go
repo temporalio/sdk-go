@@ -50,10 +50,8 @@
 //
 // The handler names (see PublishSignalName, PollUpdateName, OffsetQueryName),
 // the JSON envelope field names, and the per-item payload encoding (base64 of
-// the marshaled temporal.api.common.v1.Payload) match the Python
-// (temporalio.contrib.workflow_streams) and TypeScript
-// (@temporalio/workflow-streams) packages, so a Go publisher or subscriber
-// interoperates with a Python/TypeScript workflow and vice versa.
+// the marshaled temporal.api.common.v1.Payload) match workflow streams
+// packages in other languages for interoperability.
 //
 // The data converter codec chain (encryption, compression) runs once on the
 // signal/update envelope that carries each batch — not per item — so payloads
