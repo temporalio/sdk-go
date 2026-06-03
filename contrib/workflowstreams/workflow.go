@@ -208,24 +208,36 @@ func (s *WorkflowStream) onPublish(input PublishInput) {
 }
 
 func (s *WorkflowStream) onPoll(ctx workflow.Context, input PollInput) (PollResult, error) {
-	logOffset := input.FromOffset - s.baseOffset
-	if logOffset < 0 {
-		if input.FromOffset == 0 {
-			// "From the beginning" — start at whatever is available.
-			logOffset = 0
-		} else {
-			// The subscriber had a specific position that has been truncated.
-			return PollResult{}, temporal.NewNonRetryableApplicationError(
-				fmt.Sprintf("requested offset %d has been truncated; current base offset is %d", input.FromOffset, s.baseOffset),
-				ErrTypeTruncatedOffset, nil)
-		}
-	}
-
+	// Wait until items at or after the requested offset are available, the
+	// requested offset has been truncated away, or the stream is draining.
+	// baseOffset can advance via Truncate while we wait, so re-evaluate the
+	// requested position against the current baseOffset on every check rather
+	// than capturing it once up front — otherwise a truncation that passes the
+	// waiting offset leaves the condition permanently unsatisfiable.
+	truncated := false
 	if err := workflow.Await(ctx, func() bool {
-		return int64(len(s.log)) > logOffset || s.draining
+		if s.draining {
+			return true
+		}
+		if input.FromOffset != 0 && input.FromOffset < s.baseOffset {
+			// The subscriber's position was truncated, possibly while waiting.
+			truncated = true
+			return true
+		}
+		// max clamps "from the beginning" to whatever is available.
+		logOffset := max(input.FromOffset-s.baseOffset, 0)
+		return int64(len(s.log)) > logOffset
 	}); err != nil {
 		return PollResult{}, err
 	}
+	if truncated {
+		return PollResult{}, temporal.NewNonRetryableApplicationError(
+			fmt.Sprintf("requested offset %d has been truncated; current base offset is %d", input.FromOffset, s.baseOffset),
+			ErrTypeTruncatedOffset, nil)
+	}
+
+	// max clamps "From the beginning" to whatever is available.
+	logOffset := max(input.FromOffset-s.baseOffset, 0)
 
 	var topicSet map[string]struct{}
 	if len(input.Topics) > 0 {
