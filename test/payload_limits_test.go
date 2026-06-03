@@ -18,7 +18,7 @@ import (
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/internal/cliversion"
+	"go.temporal.io/sdk/internal/devserverdefaults"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
@@ -63,7 +63,7 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 
 	ts.server, err = testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 		CachedDownload: testsuite.CachedDownload{
-			Version: cliversion.CLIVersion,
+			Version: devserverdefaults.CLIVersion,
 		},
 		ClientOptions: &client.Options{
 			HostPort:  ts.config.ServiceAddr,
@@ -71,11 +71,11 @@ func (ts *PayloadLimitsTestSuite) SetupSuite() {
 		},
 		DBFilename: dbPath,
 		LogLevel:   "warn",
-		ExtraArgs: []string{
+		ExtraArgs: append(devserverdefaults.SQLitePragmas(),
 			"--http-port", httpPort,
 			"--dynamic-config-value", fmt.Sprintf("limit.blobSize.error=%d", payloadSizeErrorLimit),
 			"--dynamic-config-value", fmt.Sprintf("limit.blobSize.warn=%d", payloadSizeWarningLimit),
-		},
+		),
 	})
 	ts.NoError(err)
 }

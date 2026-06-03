@@ -23,7 +23,7 @@ import (
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/internal/cliversion"
+	"go.temporal.io/sdk/internal/devserverdefaults"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 )
@@ -128,7 +128,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: cliversion.CLIVersion,
+				Version: devserverdefaults.CLIVersion,
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
@@ -137,9 +137,7 @@ func (b *builder) integrationTest() error {
 			DBFilename:       "temporal.sqlite",
 			LogLevel:         "warn",
 			SearchAttributes: searchAttributes,
-			ExtraArgs: []string{
-				"--sqlite-pragma", "journal_mode=WAL",
-				"--sqlite-pragma", "synchronous=OFF",
+			ExtraArgs: append(devserverdefaults.SQLitePragmas(),
 				"--dynamic-config-value", "frontend.enableExecuteMultiOperation=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecution=true",
 				"--dynamic-config-value", "frontend.enableUpdateWorkflowExecutionAsyncAccepted=true",
@@ -171,7 +169,7 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "nexusoperation.enableStandalone=true",
 				"--dynamic-config-value", "history.enableChasmCallbacks=true",
 				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
-			},
+			),
 		})
 		if err != nil {
 			return fmt.Errorf("failed starting dev server: %w", err)
