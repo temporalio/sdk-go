@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -32,6 +33,13 @@ const (
 	temporalPrefix      = "__temporal_"
 	temporalPrefixError = "__temporal_ is a reserved prefix"
 )
+
+// isReservedNamePrefixException reports whether name is within the
+// reservedNamePrefixException sub-namespace and therefore allowed to use the
+// otherwise-reserved temporalPrefix for a signal, update, or query handler.
+func isReservedNamePrefixException(name string) bool {
+	return strings.HasPrefix(name, "__temporal_workflow_stream")
+}
 
 // grpcContextBuilder stores all gRPC-specific parameters that will
 // be stored inside of a context.
