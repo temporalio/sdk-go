@@ -135,24 +135,23 @@ func TestForceFlush(t *testing.T) {
 }
 
 func TestFlushTimeoutAfterMaxRetryDuration(t *testing.T) {
+	const retryWindow = time.Millisecond
 	fc := &fakeClient{signalErr: errors.New("boom")}
-	// Tiny retry window so the first retry already exceeds it.
-	c := NewClient(fc, "wf-1", Options{BatchInterval: time.Hour, MaxRetryDuration: time.Nanosecond})
+	c := NewClient(fc, "wf-1", Options{BatchInterval: time.Hour, MaxRetryDuration: retryWindow})
 
 	c.Topic("t").Publish("a", false)
 
-	// The first flush sets pending and fails to send (transient "boom"); a
-	// subsequent flush sees the elapsed retry window exceeded and returns
+	// The first flush sets pending and fails to send (transient "boom").
+	require.Error(t, c.Flush(context.Background()))
+
+	// Wait past the retry window with ample margin for coarse OS timer
+	// granularity (notably on Windows, where sub-tick durations can read as
+	// zero). The next flush sees the window exceeded and returns
 	// FlushTimeoutError.
+	time.Sleep(50 * time.Millisecond)
+
 	var fte *FlushTimeoutError
-	var err error
-	for range 5 {
-		err = c.Flush(context.Background())
-		if errors.As(err, &fte) {
-			break
-		}
-	}
-	require.ErrorAs(t, err, &fte)
+	require.ErrorAs(t, c.Flush(context.Background()), &fte)
 
 	require.NoError(t, c.Close(context.Background()))
 }
