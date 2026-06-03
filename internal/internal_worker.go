@@ -780,6 +780,21 @@ func (r *registry) RegisterActivityWithOptions(
 	if len(alias) > 0 && r.activityAliasMap != nil {
 		r.activityAliasMap[fnName] = alias
 	}
+
+	if r.activityAliasMap != nil {
+		// If activityAliasMap[f] = a and activityFuncMap[f] exists, invoking "f" will actually trigger activityFuncMap[a].
+		// Unfortunately this is expected behavior when the user disobeys us by not turning on DisableRegistrationAliasing;
+		// see TestAliasStringNameClash, TestAliasUnqualifiedNameClash, and TestAliasAntialiasing. At least we can warn them.
+		a, ok1 := r.activityAliasMap[fnName]
+		_, ok2 := r.activityFuncMap[fnName]
+		if ok1 && ok2 {
+			fmt.Printf("WARNING: Activity alias collision detected: invoking activity \"%v\" will actually trigger \"%v\". Consider turning on 'WorkerOptions.DisableRegistrationAliasing'.\n", fnName, a)
+		}
+		a, ok3 := r.activityAliasMap[registerName]
+		if ok3 {
+			fmt.Printf("WARNING: Activity alias collision detected: invoking activity \"%v\" will actually trigger \"%v\". Consider turning on 'WorkerOptions.DisableRegistrationAliasing'.\n", registerName, a)
+		}
+	}
 }
 
 func (r *registry) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
@@ -2625,9 +2640,6 @@ func getFunctionName(i interface{}) (name string, isMethod bool) {
 }
 
 func getActivityFunctionName(r *registry, i interface{}) string {
-	if name, ok := i.(string); ok {
-		return name
-	}
 	result, _ := getFunctionName(i)
 	if alias, ok := r.getActivityAlias(result); ok {
 		result = alias

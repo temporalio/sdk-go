@@ -3384,8 +3384,6 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	require.Equal(t, "func1", executeWorkflow(true))
 }
 
-// These structs intentionally have activities with the same short name. Setting an
-// alias should allow us to disambiguate them.
 type aliasReproV1 struct{}
 func (aliasReproV1) MyActivity(context.Context) (string, error) { return "func1", nil }
 type aliasReproV2 struct{}
@@ -3405,8 +3403,9 @@ func TestAliasAntialiasing(t *testing.T) {
 		return str1 + "-" + str2, nil
 	}
 
-	executeWorkflow := func() (result string) {
+	executeWorkflow := func(disableAlias bool) (result string) {
 		var suite WorkflowTestSuite
+		suite.SetDisableRegistrationAliasing(disableAlias)
 		env := suite.NewTestWorkflowEnvironment()
 		env.RegisterActivity(aliasReproV1{}.MyActivity)
 		env.RegisterActivityWithOptions(
@@ -3418,7 +3417,10 @@ func TestAliasAntialiasing(t *testing.T) {
 		return
 	}
 
-	require.Equal(t, "func1-func2", executeWorkflow())
+	// Without disabling alias registration, the alias will choose aliasReproV2 both times.
+	// With disabling alias, we can disambiguate them properly.
+	require.Equal(t, "func2-func2", executeWorkflow(false))
+	require.Equal(t, "func1-func2", executeWorkflow(true))
 }
 
 func (s *internalWorkerTestSuite) TestReservedTemporalName() {

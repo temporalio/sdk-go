@@ -326,8 +326,7 @@ type (
 		// Users are strongly recommended to set this as true if they register any
 		// workflow or activity functions with custom names. By leaving this as
 		// false, the historical default, ambiguity can occur between function names
-		// and aliased names when not using string names when executing child
-		// workflow or activities.
+		// and aliased names.
 		DisableRegistrationAliasing bool
 
 		// Assign a BuildID to this worker. This replaces the deprecated binary checksum concept,
