@@ -5,6 +5,10 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
+	"go.temporal.io/sdk/converter"
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 func TestSearchAttributes(t *testing.T) {
@@ -127,6 +131,74 @@ func TestSearchAttributesKeywordList(t *testing.T) {
 	values2, ok := sa.GetKeywordList(kw)
 	require.True(t, ok)
 	require.Equal(t, []string{"keyword1", "keyword2", "keyword3"}, values2)
+}
+
+func TestSearchAttributesKeywordListNilValueRejected(t *testing.T) {
+	t.Parallel()
+	kw := NewSearchAttributeKeyKeywordList("keywordList")
+	sa := NewSearchAttributes(kw.ValueSet(nil))
+
+	_, err := serializeTypedSearchAttributes(sa.untypedValue)
+	require.Error(t, err)
+}
+
+func TestSearchAttributesKeywordListUnsetSerializesWithoutTypeMetadata(t *testing.T) {
+	t.Parallel()
+	kw := NewSearchAttributeKeyKeywordList("keywordList")
+	sa := NewSearchAttributes(kw.ValueUnset())
+
+	attrs, err := serializeTypedSearchAttributes(sa.untypedValue)
+	require.NoError(t, err)
+	payload := attrs.GetIndexedFields()[kw.GetName()]
+	require.NotNil(t, payload)
+	require.Equal(t, converter.MetadataEncodingNil, string(payload.GetMetadata()[converter.MetadataEncoding]))
+	require.Nil(t, payload.GetMetadata()["type"])
+}
+
+func TestSearchAttributesKeywordListNullPayloadDecodesAsAbsent(t *testing.T) {
+	t.Parallel()
+	kw := NewSearchAttributeKeyKeywordList("keywordList")
+
+	for _, tc := range []struct {
+		name    string
+		payload *commonpb.Payload
+	}{
+		{
+			name: "binary null without type metadata",
+			payload: &commonpb.Payload{Metadata: map[string][]byte{
+				converter.MetadataEncoding: []byte(converter.MetadataEncodingNil),
+			}},
+		},
+		{
+			name: "binary null with legacy type metadata",
+			payload: &commonpb.Payload{Metadata: map[string][]byte{
+				converter.MetadataEncoding: []byte(converter.MetadataEncodingNil),
+				"type":                     []byte(enumspb.INDEXED_VALUE_TYPE_KEYWORD_LIST.String()),
+			}},
+		},
+		{
+			name: "json null with legacy type metadata",
+			payload: &commonpb.Payload{
+				Metadata: map[string][]byte{
+					converter.MetadataEncoding: []byte(converter.MetadataEncodingJSON),
+					"type":                     []byte(enumspb.INDEXED_VALUE_TYPE_KEYWORD_LIST.String()),
+				},
+				Data: []byte("null"),
+			},
+		},
+	} {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			attrs := convertToTypedSearchAttributes(
+				ilog.NewNopLogger(),
+				map[string]*commonpb.Payload{kw.GetName(): tc.payload},
+			)
+			require.False(t, attrs.ContainsKey(kw))
+			_, ok := attrs.GetKeywordList(kw)
+			require.False(t, ok)
+		})
+	}
 }
 
 func TestSearchAttributesDeepCopy(t *testing.T) {
