@@ -34,11 +34,8 @@ const (
 	temporalPrefixError = "__temporal_ is a reserved prefix"
 )
 
-// isReservedNamePrefixException reports whether name is within the
-// reservedNamePrefixException sub-namespace and therefore allowed to use the
-// otherwise-reserved temporalPrefix for a signal, update, or query handler.
 func isReservedNamePrefixException(name string) bool {
-	return strings.HasPrefix(name, "__temporal_workflow_stream")
+	return strings.HasPrefix(name, "__temporal_workflow_stream_")
 }
 
 // grpcContextBuilder stores all gRPC-specific parameters that will
