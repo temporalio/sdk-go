@@ -2,16 +2,19 @@ package internal
 
 import (
 	"context"
-	iconverter "go.temporal.io/sdk/internal/converter"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/api/common/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 )
 
 const (
@@ -219,6 +222,192 @@ func (s *scheduleClientTestSuite) TestIteratorError() {
 	event, err = iter.Next()
 	s.Nil(event)
 	s.NotNil(err)
+}
+
+func (s *scheduleClientTestSuite) TestUpdateScheduleWithMemo() {
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+
+	// Create the schedule first
+	createResp := &workflowservice.CreateScheduleResponse{}
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).Times(1)
+
+	handle, err := s.client.ScheduleClient().Create(context.Background(), ScheduleOptions{
+		ID: scheduleID,
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: &ScheduleWorkflowAction{
+			Workflow:                 wf,
+			ID:                       workflowID,
+			TaskQueue:                taskqueue,
+			WorkflowExecutionTimeout: timeoutInSeconds,
+			WorkflowTaskTimeout:      timeoutInSeconds,
+		},
+	})
+	s.NoError(err)
+
+	// Mock Describe and Update for the update call
+	describeResp := &workflowservice.DescribeScheduleResponse{
+		Schedule: &schedulepb.Schedule{
+			Spec: &schedulepb.ScheduleSpec{},
+			Action: &schedulepb.ScheduleAction{
+				Action: &schedulepb.ScheduleAction_StartWorkflow{
+					StartWorkflow: s.createWorkflowExecutionInfo(),
+				},
+			},
+			Policies: &schedulepb.SchedulePolicies{},
+			State:    &schedulepb.ScheduleState{},
+		},
+		Info:          &schedulepb.ScheduleInfo{},
+		ConflictToken: nil,
+	}
+	s.service.EXPECT().DescribeSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResp, nil).Times(1)
+
+	s.service.EXPECT().UpdateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.UpdateScheduleRequest, _ ...interface{}) (*workflowservice.UpdateScheduleResponse, error) {
+			s.NotNil(req.Memo)
+			s.Len(req.Memo.Fields, 1)
+			s.Contains(req.Memo.Fields, "key1")
+			return &workflowservice.UpdateScheduleResponse{}, nil
+		}).Times(1)
+
+	memo := map[string]interface{}{
+		"key1": "value1",
+	}
+	err = handle.Update(context.Background(), ScheduleUpdateOptions{
+		DoUpdate: func(input ScheduleUpdateInput) (*ScheduleUpdate, error) {
+			return &ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+				Memo:     &memo,
+			}, nil
+		},
+	})
+	s.NoError(err)
+}
+
+func (s *scheduleClientTestSuite) TestUpdateScheduleWithNilMemoDoesNotSetMemo() {
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+
+	createResp := &workflowservice.CreateScheduleResponse{}
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).Times(1)
+
+	handle, err := s.client.ScheduleClient().Create(context.Background(), ScheduleOptions{
+		ID: scheduleID,
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: &ScheduleWorkflowAction{
+			Workflow:                 wf,
+			ID:                       workflowID,
+			TaskQueue:                taskqueue,
+			WorkflowExecutionTimeout: timeoutInSeconds,
+			WorkflowTaskTimeout:      timeoutInSeconds,
+		},
+	})
+	s.NoError(err)
+
+	describeResp := &workflowservice.DescribeScheduleResponse{
+		Schedule: &schedulepb.Schedule{
+			Spec: &schedulepb.ScheduleSpec{},
+			Action: &schedulepb.ScheduleAction{
+				Action: &schedulepb.ScheduleAction_StartWorkflow{
+					StartWorkflow: s.createWorkflowExecutionInfo(),
+				},
+			},
+			Policies: &schedulepb.SchedulePolicies{},
+			State:    &schedulepb.ScheduleState{},
+		},
+		Info:          &schedulepb.ScheduleInfo{},
+		ConflictToken: nil,
+	}
+	s.service.EXPECT().DescribeSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResp, nil).Times(1)
+
+	s.service.EXPECT().UpdateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.UpdateScheduleRequest, _ ...interface{}) (*workflowservice.UpdateScheduleResponse, error) {
+			s.Nil(req.Memo)
+			return &workflowservice.UpdateScheduleResponse{}, nil
+		}).Times(1)
+
+	err = handle.Update(context.Background(), ScheduleUpdateOptions{
+		DoUpdate: func(input ScheduleUpdateInput) (*ScheduleUpdate, error) {
+			return &ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+				// Memo is nil, should not be set on the request
+			}, nil
+		},
+	})
+	s.NoError(err)
+}
+
+func (s *scheduleClientTestSuite) TestUpdateScheduleWithEmptyMemoClears() {
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+
+	createResp := &workflowservice.CreateScheduleResponse{}
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).Times(1)
+
+	handle, err := s.client.ScheduleClient().Create(context.Background(), ScheduleOptions{
+		ID: scheduleID,
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: &ScheduleWorkflowAction{
+			Workflow:                 wf,
+			ID:                       workflowID,
+			TaskQueue:                taskqueue,
+			WorkflowExecutionTimeout: timeoutInSeconds,
+			WorkflowTaskTimeout:      timeoutInSeconds,
+		},
+	})
+	s.NoError(err)
+
+	describeResp := &workflowservice.DescribeScheduleResponse{
+		Schedule: &schedulepb.Schedule{
+			Spec: &schedulepb.ScheduleSpec{},
+			Action: &schedulepb.ScheduleAction{
+				Action: &schedulepb.ScheduleAction_StartWorkflow{
+					StartWorkflow: s.createWorkflowExecutionInfo(),
+				},
+			},
+			Policies: &schedulepb.SchedulePolicies{},
+			State:    &schedulepb.ScheduleState{},
+		},
+		Info:          &schedulepb.ScheduleInfo{},
+		ConflictToken: nil,
+	}
+	s.service.EXPECT().DescribeSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResp, nil).Times(1)
+
+	s.service.EXPECT().UpdateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.UpdateScheduleRequest, _ ...interface{}) (*workflowservice.UpdateScheduleResponse, error) {
+			// Empty map should produce an empty Memo (not nil), to signal "clear"
+			s.NotNil(req.Memo)
+			s.Empty(req.Memo.Fields)
+			return &workflowservice.UpdateScheduleResponse{}, nil
+		}).Times(1)
+
+	emptyMemo := map[string]interface{}{}
+	err = handle.Update(context.Background(), ScheduleUpdateOptions{
+		DoUpdate: func(input ScheduleUpdateInput) (*ScheduleUpdate, error) {
+			return &ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+				Memo:     &emptyMemo,
+			}, nil
+		},
+	})
+	s.NoError(err)
+}
+
+func (s *scheduleClientTestSuite) createWorkflowExecutionInfo() *workflowpb.NewWorkflowExecutionInfo {
+	return &workflowpb.NewWorkflowExecutionInfo{
+		WorkflowId:   workflowID,
+		WorkflowType: &commonpb.WorkflowType{Name: "test-workflow"},
+		TaskQueue:    &taskqueuepb.TaskQueue{Name: taskqueue},
+	}
 }
 
 func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoDataConverter() {

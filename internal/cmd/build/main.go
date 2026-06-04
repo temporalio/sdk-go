@@ -170,6 +170,7 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "nexusoperation.enableStandalone=true",
 				"--dynamic-config-value", "history.enableChasmCallbacks=true",
 				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
+				"--dynamic-config-value", `frontend.allowedExperiments=["chasm-scheduler"]`, // Will no longer be necessary when CHASM schedule creation is enabled by default
 			},
 		})
 		if err != nil {

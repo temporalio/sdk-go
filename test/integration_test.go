@@ -38,6 +38,7 @@ import (
 	"go.temporal.io/sdk/temporalnexus"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/contrib/opentelemetry"
@@ -6892,6 +6893,125 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 	default:
 		ts.Fail("schedule action wrong type")
 	}
+}
+
+func (ts *IntegrationTestSuite) TestScheduleUpdateMemo() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Use the chasm-scheduler experiment header to create a CHASM-backed schedule.
+	// This will no longer be necessary when CHASM schedule creation is enabled by default.
+	ctx = metadata.AppendToOutgoingContext(ctx, "temporal-experiment", "chasm-scheduler")
+
+	initialMemo := map[string]interface{}{
+		"key1": "value1",
+		"key2": "value2",
+	}
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     "test-schedule-update-memo-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-memo-workflow", ts.workflows.SimplestWorkflow),
+		Paused: true,
+		Memo:   initialMemo,
+	})
+	ts.NoError(err)
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	// Verify initial memo
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.NotNil(description.Memo)
+	ts.Len(description.Memo.Fields, 2)
+
+	// Update memo with new values
+	updatedMemo := map[string]interface{}{
+		"key1": "updated_value1",
+		"key3": "value3",
+	}
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+				Memo:     &updatedMemo,
+			}, nil
+		},
+	})
+	ts.NoError(err)
+
+	// Verify updated memo (CHASM updates are synchronous)
+	description, err = handle.Describe(ctx)
+	ts.NoError(err)
+	ts.NotNil(description.Memo)
+	ts.Len(description.Memo.Fields, 2)
+	ts.Contains(description.Memo.Fields, "key1")
+	ts.Contains(description.Memo.Fields, "key3")
+	ts.NotContains(description.Memo.Fields, "key2")
+
+	// Clear memo with empty map
+	emptyMemo := map[string]interface{}{}
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+				Memo:     &emptyMemo,
+			}, nil
+		},
+	})
+	ts.NoError(err)
+
+	description, err = handle.Describe(ctx)
+	ts.NoError(err)
+	ts.NotNil(description.Memo)
+	ts.Empty(description.Memo.Fields)
+
+	// nil Memo should leave existing memo intact
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+			}, nil
+		},
+	})
+	ts.NoError(err)
+
+	description, err = handle.Describe(ctx)
+	ts.NoError(err)
+	ts.NotNil(description.Memo)
+	ts.Empty(description.Memo.Fields)
+}
+
+// TestScheduleUpdateMemoNotSupportedOnWorkflowBackedSchedule will fail once CHASM schedule
+// creation is enabled by default, at which point this test can be removed.
+func (ts *IntegrationTestSuite) TestScheduleUpdateMemoNotSupportedOnWorkflowBackedSchedule() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// Create a non-CHASM (workflow-backed) schedule by not passing the experiment header.
+	handle, err := ts.client.ScheduleClient().Create(ctx, client.ScheduleOptions{
+		ID:     "test-schedule-update-memo-rejected-schedule",
+		Spec:   client.ScheduleSpec{},
+		Action: ts.createBasicScheduleWorkflowAction("test-schedule-update-memo-rejected-workflow", ts.workflows.SimplestWorkflow),
+		Paused: true,
+	})
+	ts.NoError(err)
+	defer func() {
+		ts.NoError(handle.Delete(ctx))
+	}()
+
+	// Attempt to update memo on a workflow-backed schedule
+	updatedMemo := map[string]interface{}{
+		"key1": "value1",
+	}
+	err = handle.Update(ctx, client.ScheduleUpdateOptions{
+		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
+			return &client.ScheduleUpdate{
+				Schedule: &input.Description.Schedule,
+				Memo:     &updatedMemo,
+			}, nil
+		},
+	})
+	ts.Error(err)
+	ts.Contains(err.Error(), "memo updates are not supported on workflow-backed schedules")
 }
 
 func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
