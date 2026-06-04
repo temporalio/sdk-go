@@ -18,7 +18,6 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -148,7 +147,6 @@ type ExternalStorageTestSuite struct {
 	suite.Suite
 	ConfigAndClientSuiteBase
 	driver *memStorageDriver
-	client client.Client
 	worker worker.Worker
 }
 
@@ -164,27 +162,26 @@ func (s *ExternalStorageTestSuite) SetupSuite() {
 func (s *ExternalStorageTestSuite) SetupTest() {
 	s.taskQueueName = taskQueuePrefix + "-ext-" + s.T().Name()
 	s.driver = newMemDriver("test")
-	var err error
-	s.client, err = client.Dial(client.Options{
-		HostPort:  s.config.ServiceAddr,
-		Namespace: s.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.ExternalStorage{
+	s.NoError(s.InitClient(func(opts *client.Options) {
+		opts.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{s.driver},
 			PayloadSizeThreshold: extStoreThreshold,
-		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
-	})
-	s.NoError(err)
+		}
+	}))
 	s.worker = worker.New(s.client, s.taskQueueName, worker.Options{
 		WorkflowPanicPolicy: worker.FailWorkflow,
 	})
 }
 
 func (s *ExternalStorageTestSuite) TearDownTest() {
-	s.worker.Stop()
-	s.client.Close()
+	if s.worker != nil {
+		s.worker.Stop()
+		s.worker = nil
+	}
+	if s.client != nil {
+		s.client.Close()
+		s.client = nil
+	}
 }
 
 // oversized returns a string that exceeds extStoreThreshold by extra bytes.
@@ -403,19 +400,14 @@ func (s *ExternalStorageTestSuite) TestDriverSelector() {
 	var selectMu sync.Mutex
 	selector := &roundRobinSelector{drivers: []converter.StorageDriver{d1, d2}, mu: &selectMu, idx: &selectIdx}
 
-	var err error
 	s.client.Close()
-	s.client, err = client.Dial(client.Options{
-		HostPort:  s.config.ServiceAddr,
-		Namespace: s.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.ExternalStorage{
+	var err error
+	s.client, err = s.newClient(func(opts *client.Options) {
+		opts.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{d1, d2},
 			DriverSelector:       selector,
 			PayloadSizeThreshold: extStoreThreshold,
-		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
+		}
 	})
 	s.NoError(err)
 	// Re-create worker bound to the new client.
@@ -496,13 +488,7 @@ func (s *ExternalStorageTestSuite) TestRetrieveFailure() {
 func (s *ExternalStorageTestSuite) TestWorkerWithoutExternalStorageFails() {
 	// Build a client and worker with no ExternalStorage. s.client still has the
 	// driver, so it can store the oversized input; the worker below cannot retrieve it.
-	noStorageClient, err := client.Dial(client.Options{
-		HostPort:                s.config.ServiceAddr,
-		Namespace:               s.config.Namespace,
-		Logger:                  ilog.NewDefaultLogger(),
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
-	})
+	noStorageClient, err := s.newClient()
 	s.NoError(err)
 	defer noStorageClient.Close()
 
@@ -582,16 +568,11 @@ func (s *ExternalStorageTestSuite) TestNoStorageWhenBelowThreshold() {
 func (s *ExternalStorageTestSuite) TestDriverPanicOnRetrieve() {
 	pd := &panicMemDriver{memStorageDriver: newMemDriver("test"), panicOnRetrieve: true}
 
-	c, err := client.Dial(client.Options{
-		HostPort:  s.config.ServiceAddr,
-		Namespace: s.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.ExternalStorage{
+	c, err := s.newClient(func(opts *client.Options) {
+		opts.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{pd},
 			PayloadSizeThreshold: extStoreThreshold,
-		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
+		}
 	})
 	s.NoError(err)
 	defer c.Close()
@@ -631,16 +612,11 @@ func extStorePanicOnStoreWorkflow(_ workflow.Context) (string, error) {
 func (s *ExternalStorageTestSuite) TestDriverPanicOnStore() {
 	pd := &panicMemDriver{memStorageDriver: newMemDriver("test"), panicOnStore: true}
 
-	c, err := client.Dial(client.Options{
-		HostPort:  s.config.ServiceAddr,
-		Namespace: s.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.ExternalStorage{
+	c, err := s.newClient(func(opts *client.Options) {
+		opts.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{pd},
 			PayloadSizeThreshold: extStoreThreshold,
-		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
+		}
 	})
 	s.NoError(err)
 	defer c.Close()

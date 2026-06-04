@@ -59,9 +59,6 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
-	for _, configure := range configCallbacks {
-		configure(&cfg)
-	}
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
 	}
@@ -90,6 +87,9 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 			panic(fmt.Sprintf("Failed loading client cert: %v", err))
 		}
 		cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+	}
+	for _, configure := range configCallbacks {
+		configure(&cfg)
 	}
 	return cfg
 }
@@ -248,11 +248,16 @@ func (ts *ConfigAndClientSuiteBase) InitClient(clientOpts ...ConfigureClientOpti
 }
 
 func (ts *ConfigAndClientSuiteBase) newClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
+	return newClientFromConfig(context.Background(), ts.config, clientOpts...)
+}
+
+// newClientFromConfig builds a Client from a Config and optional callback-based overrides.
+func newClientFromConfig(ctx context.Context, config Config, clientOpts ...ConfigureClientOptions) (client.Client, error) {
 	options := client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
+		HostPort:  config.ServiceAddr,
+		Namespace: config.Namespace,
 		ConnectionOptions: client.ConnectionOptions{
-			TLS:                  ts.config.TLS,
+			TLS:                  config.TLS,
 			GetSystemInfoTimeout: ctxTimeout,
 		},
 		WorkerHeartbeatInterval: -1,
@@ -263,7 +268,7 @@ func (ts *ConfigAndClientSuiteBase) newClient(clientOpts ...ConfigureClientOptio
 	if options.Logger == nil {
 		options.Logger = ilog.NewDefaultLogger()
 	}
-	return client.Dial(options)
+	return client.DialContext(ctx, options)
 }
 
 func SimplestWorkflow(_ workflow.Context) error {
