@@ -278,6 +278,9 @@ func (c *ClientConfigProfile) ApplyEnvVars(env EnvLookup) error {
 	if s, ok := env.LookupEnv("TEMPORAL_API_KEY"); ok {
 		c.APIKey = s
 	}
+	if s, ok := env.LookupEnv("TEMPORAL_CLIENT_AUTHORITY"); ok {
+		c.Authority = s
+	}
 	if s, ok := env.LookupEnv("TEMPORAL_TLS"); ok {
 		if v, ok := envVarToBool(s); ok {
 			if c.TLS == nil {
