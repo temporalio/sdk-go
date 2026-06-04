@@ -459,6 +459,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 	defer close(doneCh)
 
 	downloadPayloadMetrics := &workflowTaskStorageMetrics{}
+	downloadPayloadMetrics.Start() // start wall-clock before visits begin
 	ctx := extstore.WithStorageOperationCallback(context.Background(), downloadPayloadMetrics)
 
 	var taskErr error
@@ -466,6 +467,7 @@ func (wtp *workflowTaskProcessor) processWorkflowTask(task *workflowTask) (retEr
 		wtp.handleInboundVisitorError(task.task, taskErr)
 		return nil
 	}
+	downloadPayloadMetrics.Stop() // capture end time before any other work
 
 	wfctx, err := wtp.contextManager.GetOrCreateWorkflowContext(task.task, task.historyIterator)
 	if err != nil {
@@ -589,6 +591,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	}
 
 	uploadPayloadMetrics := &workflowTaskStorageMetrics{}
+	uploadPayloadMetrics.Start() // start wall-clock before visits begin
 	ctx := extstore.WithStorageOperationCallback(context.Background(), uploadPayloadMetrics)
 	ctx = extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 		Namespace:    wtp.namespace,
@@ -624,6 +627,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		}
 		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
 	}
+	uploadPayloadMetrics.Stop() // capture end time before network call
 
 	taskDuration := time.Since(startTime)
 	metricsHandler.Timer(metrics.WorkflowTaskExecutionLatency).Record(taskDuration)
@@ -643,7 +647,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
 			tagPayloadDownloadCount, downloadPayloadMetrics.payloadCount,
 			tagPayloadDownloadSize, downloadPayloadMetrics.totalSize,
-			tagPayloadDownloadDuration, downloadPayloadMetrics.totalDuration,
+			tagPayloadDownloadDuration, downloadPayloadMetrics.WallClockDuration(),
 			tagPayloadDownloadDrivers, downloadPayloadMetrics.GetDriverNames(),
 		)
 	}
@@ -651,7 +655,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
 			tagPayloadUploadCount, uploadPayloadMetrics.payloadCount,
 			tagPayloadUploadSize, uploadPayloadMetrics.totalSize,
-			tagPayloadUploadDuration, uploadPayloadMetrics.totalDuration,
+			tagPayloadUploadDuration, uploadPayloadMetrics.WallClockDuration(),
 			tagPayloadUploadDrivers, uploadPayloadMetrics.GetDriverNames(),
 		)
 	}
@@ -868,11 +872,26 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 }
 
 type workflowTaskStorageMetrics struct {
-	mu            sync.Mutex
-	payloadCount  int
-	totalSize     int64
-	totalDuration time.Duration
-	driverNames   map[string]struct{}
+	mu           sync.Mutex
+	payloadCount int
+	totalSize    int64
+	startTime   time.Time
+	endTime     time.Time
+	driverNames map[string]struct{}
+}
+
+// Start records the wall-clock start time for this metrics collector.
+// Call immediately before visitProtoPayloads.
+func (callback *workflowTaskStorageMetrics) Start() {
+	callback.mu.Lock()
+	defer callback.mu.Unlock()
+	callback.startTime = time.Now()
+}
+
+func (callback *workflowTaskStorageMetrics) Stop() {
+	callback.mu.Lock()
+	defer callback.mu.Unlock()
+	callback.endTime = time.Now()
 }
 
 func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string) {
@@ -880,13 +899,25 @@ func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, siz
 	defer callback.mu.Unlock()
 	callback.payloadCount += count
 	callback.totalSize += size
-	callback.totalDuration += duration
 	for _, name := range driverNames {
 		if callback.driverNames == nil {
 			callback.driverNames = make(map[string]struct{})
 		}
 		callback.driverNames[name] = struct{}{}
 	}
+}
+
+// WallClockDuration returns the elapsed time between Start() and Stop().
+// This reflects true wall-clock latency for only the storage phase —
+// unaffected by workflow execution or network calls that follow.
+// Returns 0 if Start() or Stop() was never called.
+func (callback *workflowTaskStorageMetrics) WallClockDuration() time.Duration {
+	callback.mu.Lock()
+	defer callback.mu.Unlock()
+	if callback.startTime.IsZero() || callback.endTime.IsZero() {
+		return 0
+	}
+	return callback.endTime.Sub(callback.startTime)
 }
 
 func (callback *workflowTaskStorageMetrics) GetDriverNames() []string {
