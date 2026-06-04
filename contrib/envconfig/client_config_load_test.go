@@ -83,6 +83,7 @@ func TestClientProfileApplyEnvVars(t *testing.T) {
 address = "my-address"
 namespace = "my-namespace"
 api_key = "my-api-key"
+authority = "my-authority"
 codec = { endpoint = "my-endpoint", auth = "my-auth" }
 grpc_meta = { some-heAder1 = "some-value1", some-header2 = "some-value2", some_heaDer3 = "some-value3" }
 some_future_key = "some future value not handled"
@@ -109,6 +110,7 @@ disable_host_verification = true`
 	require.Equal(t, "my-api-key", prof.APIKey)
 	require.Equal(t, "my-endpoint", prof.Codec.Endpoint)
 	require.Equal(t, "my-auth", prof.Codec.Auth)
+	require.Equal(t, "my-authority", prof.Authority)
 	require.True(t, prof.TLS.Disabled)
 	require.Equal(t, "my-client-cert-path", prof.TLS.ClientCertPath)
 	require.Equal(t, []byte("my-client-cert-data"), prof.TLS.ClientCertData)
@@ -143,6 +145,7 @@ disable_host_verification = true`
 			"TEMPORAL_TLS_DISABLE_HOST_VERIFICATION": "false",
 			"TEMPORAL_CODEC_ENDPOINT":                "my-endpoint-new",
 			"TEMPORAL_CODEC_AUTH":                    "my-auth-new",
+			"TEMPORAL_CLIENT_AUTHORITY":              "my-authority-new",
 			// Leave first header alone, replace second header, set third as empty, add a fourth
 			"TEMPORAL_GRPC_META_SOME_HEADER2": "some-value2-new",
 			"TEMPORAL_GRPC_META_SOME_HEADER3": "",
@@ -155,6 +158,7 @@ disable_host_verification = true`
 	require.Equal(t, "my-api-key-new", prof.APIKey)
 	require.Equal(t, "my-endpoint-new", prof.Codec.Endpoint)
 	require.Equal(t, "my-auth-new", prof.Codec.Auth)
+	require.Equal(t, "my-authority-new", prof.Authority)
 	require.False(t, prof.TLS.Disabled)
 	require.Equal(t, "my-client-cert-path-new", prof.TLS.ClientCertPath)
 	require.Equal(t, []byte("my-client-cert-data-new"), prof.TLS.ClientCertData)
