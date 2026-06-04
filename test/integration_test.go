@@ -9153,6 +9153,24 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		ts.True(errors.Is(err, context.DeadlineExceeded) || errors.As(err, &serviceErr))
 		activityResultChan <- "" // allow activity to complete
 	})
+
+	ts.Run("Execute activity with start delay", func() {
+		startDelay := 2 * time.Second
+		options := makeOptions()
+		options.StartDelay = startDelay
+
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, options, activities.EmptyActivity)
+		ts.NoError(err)
+
+		err = handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+		ts.NoError(err)
+		ts.Greater(description.LastStartedTime.Sub(description.ScheduleTime), startDelay-500*time.Millisecond)
+	})
 }
 
 // poisonDataConverter wraps a DataConverter and fails ToPayloads when any of the
