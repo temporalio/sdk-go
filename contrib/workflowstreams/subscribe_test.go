@@ -237,6 +237,35 @@ func TestSubscribeContinueAsNewRetries(t *testing.T) {
 	require.Equal(t, []string{"R1"}, fc.recordedDescribeRuns(), "the rollover is detected by describing the polled run R1, not the latest run")
 }
 
+func TestSubscribeRetriesWhileDraining(t *testing.T) {
+	// While the workflow is detaching for continue-as-new, the poll validator
+	// rejects with ErrTypeStreamDraining. Subscribe must back off and retry
+	// rather than surface the rejection; the next poll then lands on the
+	// successor run.
+	draining := temporal.NewApplicationError("workflow is draining", ErrTypeStreamDraining)
+	fc := &fakeSubClient{steps: []pollStep{
+		{runID: "R1", getErr: draining},
+		{runID: "R2", result: PollResult{Items: []WireItem{wireItem(t, "evt", "after-can", 1)}, NextOffset: 2, MoreReady: true}},
+	}}
+	c := newSubClient(fc)
+
+	var got []string
+	var gotErr error
+	for item, err := range c.Subscribe(context.Background(), SubscribeOptions{PollCooldown: time.Millisecond}) {
+		if err != nil {
+			gotErr = err
+			break
+		}
+		got = append(got, decodeItem(t, item.Data))
+		break
+	}
+
+	require.NoError(t, gotErr, "a draining rejection must not surface as an error")
+	require.Equal(t, []string{"after-can"}, got)
+	require.GreaterOrEqual(t, len(fc.recordedPolls()), 2, "the poll is retried after the draining rejection")
+	require.Empty(t, fc.recordedDescribeRuns(), "a draining rejection is retried without describing the workflow")
+}
+
 func TestSubscribeSurfacesNonTerminalError(t *testing.T) {
 	// A transient failure on a run that is still RUNNING (no rollover, not
 	// terminal) must surface rather than retry forever.

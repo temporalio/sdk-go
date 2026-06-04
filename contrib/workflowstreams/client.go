@@ -178,11 +178,26 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2
 			}
 			if err != nil {
 				var appErr *temporal.ApplicationError
-				if errors.As(err, &appErr) && appErr.Type() == ErrTypeTruncatedOffset {
-					// Fell behind truncation; restart from the beginning of
-					// whatever still exists.
-					offset = 0
-					continue
+				if errors.As(err, &appErr) {
+					switch appErr.Type() {
+					case ErrTypeTruncatedOffset:
+						// Fell behind truncation; restart from the beginning of
+						// whatever still exists.
+						offset = 0
+						continue
+					case ErrTypeStreamDraining:
+						// The workflow is detaching for continue-as-new. Back off
+						// and retry; the poll lands on the successor run once the
+						// rollover completes (or the chain/terminal checks below
+						// fire on a genuine end).
+						select {
+						case <-time.After(pollCooldown):
+							continue
+						case <-ctx.Done():
+							yield(WorkflowStreamItem{}, ctx.Err())
+							return
+						}
+					}
 				}
 				// The workflow may have continued-as-new or completed between
 				// polls. Follow the chain, exit cleanly on a terminal state,

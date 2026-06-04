@@ -75,7 +75,8 @@ func NewStream(ctx workflow.Context, priorState *WorkflowStreamState) (*Workflow
 	if err := workflow.SetUpdateHandlerWithOptions(ctx, PollUpdateName, s.onPoll, workflow.UpdateHandlerOptions{
 		Validator: func(_ PollInput) error {
 			if s.draining {
-				return fmt.Errorf("workflow is draining for continue-as-new")
+				return temporal.NewApplicationError(
+					"workflow is draining for continue-as-new", ErrTypeStreamDraining)
 			}
 			return nil
 		},

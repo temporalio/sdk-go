@@ -29,6 +29,11 @@ const (
 	// ErrTypeTruncateOutOfRange is the ApplicationError type returned by
 	// Truncate when the requested offset is past the end of the log.
 	ErrTypeTruncateOutOfRange = "TruncateOutOfRange"
+	// ErrTypeStreamDraining is the ApplicationError type the poll update's
+	// validator returns while the stream is detaching for continue-as-new. It
+	// tells a subscriber the rollover is in progress so it retries (rather than
+	// surfacing an error) until the poll lands on the successor run.
+	ErrTypeStreamDraining = "StreamDraining"
 )
 
 // maxPollResponseBytes caps the estimated wire size of a single poll response.
