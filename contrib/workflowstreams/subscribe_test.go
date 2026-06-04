@@ -19,8 +19,10 @@ import (
 
 // pollStep is a single scripted reply to one Subscribe poll. updateErr fails the
 // UpdateWorkflow call itself; getErr fails the handle.Get; otherwise result is
-// returned.
+// returned. runID is the run the update is admitted to, surfaced via the handle's
+// RunID() so Subscribe can describe that specific run on failure.
 type pollStep struct {
+	runID     string
 	updateErr error
 	getErr    error
 	result    PollResult
@@ -43,12 +45,11 @@ type fakeSubClient struct {
 	idx   int
 	polls []PollInput // PollInput captured per UpdateWorkflow call, in order
 
-	// describeStatuses is consumed one per DescribeWorkflowExecution call.
-	// Once exhausted, COMPLETED is returned so loops terminate cleanly.
-	describeStatuses []enumspb.WorkflowExecutionStatus
-	describeIdx      int
-	describeCalls    int
-	describeErr      error
+	// describeByRun maps a run id to the status DescribeWorkflowExecution reports
+	// for it. A run not present defaults to COMPLETED, so loops terminate cleanly.
+	describeByRun map[string]enumspb.WorkflowExecutionStatus
+	describeRuns  []string // run ids passed to DescribeWorkflowExecution, in order
+	describeErr   error
 }
 
 func (f *fakeSubClient) UpdateWorkflow(_ context.Context, options client.UpdateWorkflowOptions) (client.WorkflowUpdateHandle, error) {
@@ -63,20 +64,19 @@ func (f *fakeSubClient) UpdateWorkflow(_ context.Context, options client.UpdateW
 	if step.updateErr != nil {
 		return nil, step.updateErr
 	}
-	return &fakeUpdateHandle{result: step.result, err: step.getErr}, nil
+	return &fakeUpdateHandle{runID: step.runID, result: step.result, err: step.getErr}, nil
 }
 
-func (f *fakeSubClient) DescribeWorkflowExecution(_ context.Context, _, _ string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
+func (f *fakeSubClient) DescribeWorkflowExecution(_ context.Context, _, runID string) (*workflowservice.DescribeWorkflowExecutionResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.describeCalls++
+	f.describeRuns = append(f.describeRuns, runID)
 	if f.describeErr != nil {
 		return nil, f.describeErr
 	}
-	status := enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED
-	if f.describeIdx < len(f.describeStatuses) {
-		status = f.describeStatuses[f.describeIdx]
-		f.describeIdx++
+	status, ok := f.describeByRun[runID]
+	if !ok {
+		status = enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED
 	}
 	return &workflowservice.DescribeWorkflowExecutionResponse{
 		WorkflowExecutionInfo: &workflowpb.WorkflowExecutionInfo{Status: status},
@@ -89,14 +89,23 @@ func (f *fakeSubClient) recordedPolls() []PollInput {
 	return append([]PollInput(nil), f.polls...)
 }
 
-// fakeUpdateHandle returns a scripted PollResult (or error) from Get. The other
-// WorkflowUpdateHandle methods are unused by Subscribe and panic via the nil
-// embedded interface if called.
+func (f *fakeSubClient) recordedDescribeRuns() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.describeRuns...)
+}
+
+// fakeUpdateHandle returns a scripted PollResult (or error) from Get and reports
+// its run id via RunID(). The remaining WorkflowUpdateHandle methods are unused by
+// Subscribe and panic via the nil embedded interface if called.
 type fakeUpdateHandle struct {
 	client.WorkflowUpdateHandle
+	runID  string
 	result PollResult
 	err    error
 }
+
+func (h *fakeUpdateHandle) RunID() string { return h.runID }
 
 func (h *fakeUpdateHandle) Get(_ context.Context, valuePtr interface{}) error {
 	if h.err != nil {
@@ -179,16 +188,15 @@ func TestSubscribeTruncationResetsOffset(t *testing.T) {
 	require.GreaterOrEqual(t, len(polls), 2)
 	require.EqualValues(t, 5, polls[0].FromOffset, "first poll uses the requested offset")
 	require.EqualValues(t, 0, polls[1].FromOffset, "truncation restarts from the beginning")
-	require.Zero(t, fc.describeCalls, "truncation is handled without describing the workflow")
+	require.Empty(t, fc.recordedDescribeRuns(), "truncation is handled without describing the workflow")
 }
 
 func TestSubscribeTerminalEndsCleanly(t *testing.T) {
 	fc := &fakeSubClient{
-		steps:            []pollStep{{getErr: errors.New("workflow gone")}},
-		describeStatuses: []enumspb.WorkflowExecutionStatus{
-			// followContinueAsNew then isTerminal both observe COMPLETED.
-			enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED,
-			enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED,
+		steps: []pollStep{{runID: "R1", getErr: errors.New("workflow gone")}},
+		describeByRun: map[string]enumspb.WorkflowExecutionStatus{
+			// The polled run itself ended — not a rollover.
+			"R1": enumspb.WORKFLOW_EXECUTION_STATUS_COMPLETED,
 		},
 	}
 	c := newSubClient(fc)
@@ -199,16 +207,20 @@ func TestSubscribeTerminalEndsCleanly(t *testing.T) {
 		require.NoError(t, err, "terminal workflow should end the stream without surfacing an error")
 	}
 	require.Zero(t, yields, "no items and no error are yielded on a clean terminal end")
+	require.Equal(t, []string{"R1"}, fc.recordedDescribeRuns()[:1], "the polled run is the one described")
 }
 
 func TestSubscribeContinueAsNewRetries(t *testing.T) {
+	// The poll on run R1 fails because R1 continued-as-new mid-poll; describing R1
+	// reports CONTINUED_AS_NEW, so Subscribe retries and the next poll lands on the
+	// successor run R2.
 	fc := &fakeSubClient{
 		steps: []pollStep{
-			{getErr: errors.New("update lost to continue-as-new")},
-			{result: PollResult{Items: []WireItem{wireItem(t, "evt", "after-can", 1)}, NextOffset: 2, MoreReady: true}},
+			{runID: "R1", getErr: errors.New("update lost to continue-as-new")},
+			{runID: "R2", result: PollResult{Items: []WireItem{wireItem(t, "evt", "after-can", 1)}, NextOffset: 2, MoreReady: true}},
 		},
-		describeStatuses: []enumspb.WorkflowExecutionStatus{
-			enumspb.WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW,
+		describeByRun: map[string]enumspb.WorkflowExecutionStatus{
+			"R1": enumspb.WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW,
 		},
 	}
 	c := newSubClient(fc)
@@ -222,17 +234,17 @@ func TestSubscribeContinueAsNewRetries(t *testing.T) {
 
 	require.Equal(t, []string{"after-can"}, got)
 	require.GreaterOrEqual(t, len(fc.recordedPolls()), 2, "the poll is retried after following continue-as-new")
-	require.Equal(t, 1, fc.describeCalls, "only followContinueAsNew describes; isTerminal is skipped on retry")
+	require.Equal(t, []string{"R1"}, fc.recordedDescribeRuns(), "the rollover is detected by describing the polled run R1, not the latest run")
 }
 
 func TestSubscribeSurfacesNonTerminalError(t *testing.T) {
+	// A transient failure on a run that is still RUNNING (no rollover, not
+	// terminal) must surface rather than retry forever.
 	boom := errors.New("boom")
 	fc := &fakeSubClient{
-		steps: []pollStep{{getErr: boom}},
-		describeStatuses: []enumspb.WorkflowExecutionStatus{
-			// Not continued-as-new and not terminal: the error must surface.
-			enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING,
-			enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING,
+		steps: []pollStep{{runID: "R1", getErr: boom}},
+		describeByRun: map[string]enumspb.WorkflowExecutionStatus{
+			"R1": enumspb.WORKFLOW_EXECUTION_STATUS_RUNNING,
 		},
 	}
 	c := newSubClient(fc)

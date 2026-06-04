@@ -149,6 +149,11 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2
 			topics = []string{}
 		}
 		offset := opts.FromOffset
+		// polledRunID is the run the most recent poll's update was admitted to.
+		// We capture it before waiting for the update's outcome so that, if that
+		// run continues-as-new mid-poll (failing the outcome), we still know which
+		// run to inspect to tell a rollover apart from a terminal end.
+		var polledRunID string
 
 		for {
 			if err := ctx.Err(); err != nil {
@@ -157,13 +162,18 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2
 			}
 
 			var result PollResult
+			// Wait only for ACCEPTED so UpdateWorkflow returns the handle (and its
+			// run id) as soon as the update is admitted; handle.Get then waits for
+			// the outcome. With WaitForStage Completed a mid-poll continue-as-new
+			// would fail UpdateWorkflow with a nil handle, losing the run id.
 			handle, err := c.c.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
 				WorkflowID:   c.workflowID,
 				UpdateName:   PollUpdateName,
 				Args:         []any{PollInput{Topics: topics, FromOffset: offset}},
-				WaitForStage: client.WorkflowUpdateStageCompleted,
+				WaitForStage: client.WorkflowUpdateStageAccepted,
 			})
 			if err == nil {
+				polledRunID = handle.RunID()
 				err = handle.Get(ctx, &result)
 			}
 			if err != nil {
@@ -177,10 +187,10 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2
 				// The workflow may have continued-as-new or completed between
 				// polls. Follow the chain, exit cleanly on a terminal state,
 				// otherwise surface the error.
-				if followed := c.followContinueAsNew(ctx); followed {
+				if followed := c.followContinueAsNew(ctx, polledRunID); followed {
 					continue
 				}
-				if c.isTerminal(ctx) {
+				if c.isTerminal(ctx, polledRunID) {
 					return
 				}
 				yield(WorkflowStreamItem{}, err)
@@ -211,22 +221,26 @@ func (c *Client) Subscribe(ctx context.Context, opts SubscribeOptions) iter.Seq2
 	}
 }
 
-// followContinueAsNew reports whether the target workflow continued-as-new.
-// Because polls use an empty run ID they always address the latest run, so the
-// caller only needs to retry.
-func (c *Client) followContinueAsNew(ctx context.Context) bool {
+// followContinueAsNew reports whether runID (the run we were polling) rolled
+// over to a fresh run via continue-as-new. It describes that specific run: a
+// rolled-over run is closed with status CONTINUED_AS_NEW, whereas the latest run
+// would report RUNNING, so describing by run id is what makes the check fire.
+// The successor run id is not needed — subsequent polls use an empty run id and
+// so address the latest run automatically. A blank runID (no poll has been
+// admitted yet) falls back to describing the latest run.
+func (c *Client) followContinueAsNew(ctx context.Context, runID string) bool {
 	if !c.followCAN {
 		return false
 	}
-	desc, err := c.c.DescribeWorkflowExecution(ctx, c.workflowID, "")
+	desc, err := c.c.DescribeWorkflowExecution(ctx, c.workflowID, runID)
 	if err != nil {
 		return false
 	}
 	return desc.GetWorkflowExecutionInfo().GetStatus() == enumspb.WORKFLOW_EXECUTION_STATUS_CONTINUED_AS_NEW
 }
 
-func (c *Client) isTerminal(ctx context.Context) bool {
-	desc, err := c.c.DescribeWorkflowExecution(ctx, c.workflowID, "")
+func (c *Client) isTerminal(ctx context.Context, runID string) bool {
+	desc, err := c.c.DescribeWorkflowExecution(ctx, c.workflowID, runID)
 	if err != nil {
 		return false
 	}
