@@ -10,7 +10,8 @@ import (
 type operationTokenType int
 
 const (
-	operationTokenTypeWorkflowRun = operationTokenType(1)
+	operationTokenTypeWorkflowRun       = operationTokenType(1)
+	operationTokenTypeActivityExecution = operationTokenType(2)
 )
 
 // workflowRunOperationToken is the decoded form of the workflow run operation token.
@@ -22,6 +23,16 @@ type workflowRunOperationToken struct {
 	Type          operationTokenType `json:"t"`
 	NamespaceName string             `json:"ns"`
 	WorkflowID    string             `json:"wid"`
+}
+
+// activityExecutionOperationToken is the decoded form of the activity-execution operation token.
+type activityExecutionOperationToken struct {
+	// Version of the token. Not emitted; only used to reject newer token versions on load.
+	Version int `json:"v,omitempty"`
+	// Type of the operation. Must be operationTokenTypeActivityExecution.
+	Type          operationTokenType `json:"t"`
+	NamespaceName string             `json:"ns"`
+	ActivityID    string             `json:"aid"`
 }
 
 func generateWorkflowRunOperationToken(namespace, workflowID string) (string, error) {
@@ -57,6 +68,43 @@ func loadTokenType(data string) (operationTokenType, error) {
 		return 0, errors.New("invalid operation token: missing or zero token type")
 	}
 	return partial.Type, nil
+}
+
+func generateActivityExecutionOperationToken(namespace, activityID string) (string, error) {
+	token := activityExecutionOperationToken{
+		Type:          operationTokenTypeActivityExecution,
+		NamespaceName: namespace,
+		ActivityID:    activityID,
+	}
+	data, err := json.Marshal(token)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal activity execution operation token: %w", err)
+	}
+	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(data), nil
+}
+
+func loadActivityExecutionOperationToken(data string) (activityExecutionOperationToken, error) {
+	var token activityExecutionOperationToken
+	if len(data) == 0 {
+		return token, errors.New("invalid activity execution token: token is empty")
+	}
+	b, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(data)
+	if err != nil {
+		return token, fmt.Errorf("failed to decode token: %w", err)
+	}
+	if err := json.Unmarshal(b, &token); err != nil {
+		return token, fmt.Errorf("failed to unmarshal activity execution operation token: %w", err)
+	}
+	if token.Type != operationTokenTypeActivityExecution {
+		return token, fmt.Errorf("invalid activity execution token type: %v, expected: %v", token.Type, operationTokenTypeActivityExecution)
+	}
+	if token.Version != 0 {
+		return token, fmt.Errorf(`invalid activity execution token: "v" field should not be present`)
+	}
+	if token.ActivityID == "" {
+		return token, errors.New("invalid activity execution token: missing activity ID (aid)")
+	}
+	return token, nil
 }
 
 func loadWorkflowRunOperationToken(data string) (workflowRunOperationToken, error) {

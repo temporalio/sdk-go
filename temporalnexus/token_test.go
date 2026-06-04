@@ -37,6 +37,61 @@ func TestEncodeWorkflowRunOperationTokenDoesNotIncludeVersion(t *testing.T) {
 	require.Equal(t, "w", token["wid"], "workflow ID should match")
 }
 
+func TestEncodeDecodeActivityExecutionOperationToken(t *testing.T) {
+	want := activityExecutionOperationToken{
+		Type:          operationTokenTypeActivityExecution,
+		NamespaceName: "ns",
+		ActivityID:    "a-1",
+	}
+	token, err := generateActivityExecutionOperationToken("ns", "a-1")
+	require.NoError(t, err)
+	got, err := loadActivityExecutionOperationToken(token)
+	require.NoError(t, err)
+	require.Equal(t, want, got)
+}
+
+func TestEncodeActivityExecutionOperationTokenDoesNotIncludeVersion(t *testing.T) {
+	data, err := generateActivityExecutionOperationToken("ns", "a-1")
+	require.NoError(t, err)
+
+	b, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(data)
+	require.NoError(t, err)
+
+	var token map[string]interface{}
+	err = json.Unmarshal(b, &token)
+	require.NoError(t, err)
+	require.NotContains(t, token, "v", "version field should not be present in the token")
+	require.Equal(t, 2.0, token["t"], "token type should be activity execution")
+	require.Equal(t, "ns", token["ns"], "namespace name should match")
+	require.Equal(t, "a-1", token["aid"], "activity ID should match")
+}
+
+func TestDecodeActivityExecutionOperationTokenErrors(t *testing.T) {
+	var err error
+
+	_, err = loadActivityExecutionOperationToken("")
+	require.ErrorContains(t, err, "invalid activity execution token: token is empty")
+
+	_, err = loadActivityExecutionOperationToken("not-base64!@#$")
+	require.ErrorContains(t, err, "failed to decode token: illegal base64 data")
+
+	invalidJSONToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte("invalid json"))
+	_, err = loadActivityExecutionOperationToken(invalidJSONToken)
+	require.ErrorContains(t, err, "failed to unmarshal activity execution operation token")
+
+	wrongTypeToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":1,"aid":"a-1"}`))
+	_, err = loadActivityExecutionOperationToken(wrongTypeToken)
+	require.ErrorContains(t, err, "invalid activity execution token type: 1, expected: 2")
+
+	missingAIDToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":2}`))
+	_, err = loadActivityExecutionOperationToken(missingAIDToken)
+	require.ErrorContains(t, err, "missing activity ID (aid)")
+
+	versionedToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"v":1,"t":2,"aid":"a-1"}`))
+	_, err = loadActivityExecutionOperationToken(versionedToken)
+	require.ErrorContains(t, err, `invalid activity execution token: "v" field should not be present`)
+}
+
 func TestDecodeWorkflowRunOperationTokenErrors(t *testing.T) {
 	var err error
 
