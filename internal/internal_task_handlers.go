@@ -1802,20 +1802,6 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 	return false
 }
 
-func isSearchAttributesMatched(attrFromEvent, attrFromCommand *commonpb.SearchAttributes) bool {
-	if attrFromEvent != nil && attrFromCommand != nil {
-		return reflect.DeepEqual(attrFromEvent.IndexedFields, attrFromCommand.IndexedFields)
-	}
-	return attrFromEvent == nil && attrFromCommand == nil
-}
-
-func isMemoMatched(attrFromEvent, attrFromCommand *commonpb.Memo) bool {
-	if attrFromEvent != nil && attrFromCommand != nil {
-		return reflect.DeepEqual(attrFromEvent.Fields, attrFromCommand.Fields)
-	}
-	return attrFromEvent == nil && attrFromCommand == nil
-}
-
 // return true if the check fails:
 //
 //	namespace is not empty in command
@@ -1839,8 +1825,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	// for query task
 	if task.Query != nil {
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{
-			TaskToken: task.TaskToken,
-			Namespace: wth.namespace,
+			TaskToken:     task.TaskToken,
+			Namespace:     wth.namespace,
+			PollerGroupId: task.GetPollerGroupId(),
 		}
 		var panicErr *PanicError
 		if errors.As(workflowContext.err, &panicErr) {

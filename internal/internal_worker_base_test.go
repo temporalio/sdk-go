@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 )
@@ -50,6 +51,62 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerSetsTaskPollerType() 
 
 	s.Equal(metrics.PollerTypeWorkflowStickyTask, poller.taskPollerType)
 }
+
+func (s *ScalableTaskPollerSuite) TestSeedPollerGroupInfosRaisesSimpleMaximumPollerCount() {
+	behavior := NewPollerBehaviorSimpleMaximum(
+		PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: 1,
+		},
+	)
+
+	pollers := []scalableTaskPoller{newScalableTaskPoller(
+		newSemaphoreProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		behavior,
+		metrics.PollerTypeActivityTask,
+		&atomic.Bool{},
+	)}
+
+	seedScalableTaskPollerGroupInfos(pollers, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1.0},
+		{Id: "group-b", Weight: 1.0},
+		{Id: "group-c", Weight: 1.0},
+	})
+
+	s.Equal(3, pollers[0].pollerCount)
+}
+
+func (s *ScalableTaskPollerSuite) TestSeedPollerGroupInfosRaisesAutoscalingPollerCapacity() {
+	behavior := NewPollerBehaviorAutoscaling(
+		PollerBehaviorAutoscalingOptions{
+			InitialNumberOfPollers: 1,
+			MinimumNumberOfPollers: 1,
+			MaximumNumberOfPollers: 2,
+		},
+	)
+
+	pollers := []scalableTaskPoller{newScalableTaskPoller(
+		newSemaphoreProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		behavior,
+		metrics.PollerTypeActivityTask,
+		&atomic.Bool{},
+	)}
+
+	seedScalableTaskPollerGroupInfos(pollers, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1.0},
+		{Id: "group-b", Weight: 1.0},
+		{Id: "group-c", Weight: 1.0},
+	})
+
+	s.Equal(3, pollers[0].pollerCount)
+	s.Equal(3, pollers[0].pollerAutoscalerReportHandle.minPollerCount)
+	s.Equal(3, pollers[0].pollerAutoscalerReportHandle.maxPollerCount)
+	s.Equal(int64(3), pollers[0].pollerAutoscalerReportHandle.target.Load())
+	_, maxPermits := readSemaphoreState(pollers[0].pollerSemaphore)
+	s.Equal(3, maxPermits)
+}
+
 func TestScalableTaskPollerSuite(t *testing.T) {
 	suite.Run(t, new(ScalableTaskPollerSuite))
 }

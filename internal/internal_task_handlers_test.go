@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,20 @@ import (
 const (
 	testNamespace = "test-namespace"
 )
+
+func isSearchAttributesMatched(attrFromEvent, attrFromCommand *commonpb.SearchAttributes) bool {
+	if attrFromEvent != nil && attrFromCommand != nil {
+		return reflect.DeepEqual(attrFromEvent.IndexedFields, attrFromCommand.IndexedFields)
+	}
+	return attrFromEvent == nil && attrFromCommand == nil
+}
+
+func isMemoMatched(attrFromEvent, attrFromCommand *commonpb.Memo) bool {
+	if attrFromEvent != nil && attrFromCommand != nil {
+		return reflect.DeepEqual(attrFromEvent.Fields, attrFromCommand.Fields)
+	}
+	return attrFromEvent == nil && attrFromCommand == nil
+}
 
 type (
 	TaskHandlersTestSuite struct {
