@@ -296,6 +296,10 @@ func (bp *basePoller) stopping() bool {
 	}
 }
 
+func (bp *basePoller) shouldDrainOnShutdown() bool {
+	return bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load()
+}
+
 // doPoll runs the given pollFunc in a separate go routine. Returns when any of the conditions are met:
 //   - poll succeeds
 //   - poll fails
@@ -317,25 +321,13 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		close(doneC)
 	}()
 
-	if bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load() {
-		// Don't kill the gRPC stream. After ShutdownWorker, the server returns empty responses.
-		select {
-		case <-doneC:
-			return result, err
-		case <-bp.stopC:
-			// TEMP FIX: Give the server a reasonable window to complete the poll after
-			// ShutdownWorker. Fall back to cancelling the poll if it takes too
-			// long, e.g. when the gRPC connection was closed before Stop().
-			timer := time.NewTimer(5 * time.Second)
-			defer timer.Stop()
-			select {
-			case <-doneC:
-			case <-timer.C:
-				cancel()
-				<-doneC
-			}
-			return result, err
-		}
+	if bp.shouldDrainOnShutdown() {
+		// Don't cancel the gRPC stream. After ShutdownWorker, the server
+		// completes the poll with an empty response. The poll is bounded
+		// by the gRPC timeout (pollTaskServiceTimeOut). Stop() waits for
+		// all pollers to finish before proceeding to task drain.
+		<-doneC
+		return result, err
 	}
 
 	// Legacy: cancel in-flight polls immediately on shutdown
@@ -440,7 +432,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 
 // ProcessTask processes a task which could be workflow task or local activity result
 func (wtp *workflowTaskProcessor) ProcessTask(task interface{}) error {
-	if wtp.stopping() {
+	if !wtp.shouldDrainOnShutdown() && wtp.stopping() {
 		return errStop
 	}
 
@@ -1453,7 +1445,7 @@ func (atp *activityTaskPoller) PollTask() (taskForWorker, error) {
 
 // ProcessTask processes a new task
 func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
-	if atp.stopping() {
+	if !atp.shouldDrainOnShutdown() && atp.stopping() {
 		return errStop
 	}
 

@@ -195,23 +195,24 @@ type (
 
 	// baseWorkerOptions options to configure base worker.
 	baseWorkerOptions struct {
-		pollerRate              int
-		slotSupplier            SlotSupplier
-		maxTaskPerSecond        float64
-		taskPollers             []scalableTaskPoller
-		taskProcessor           taskProcessor
-		workerType              string
-		identity                string
-		buildId                 string
-		deploymentOptions       WorkerDeploymentOptions
-		logger                  log.Logger
-		stopTimeout             time.Duration
-		fatalErrCb              func(error)
-		backgroundContextCancel context.CancelCauseFunc
-		metricsHandler          metrics.Handler
-		sessionTokenBucket      *sessionTokenBucket
-		slotReservationData     slotReservationData
-		isInternalWorker        bool
+		pollerRate                   int
+		slotSupplier                 SlotSupplier
+		maxTaskPerSecond             float64
+		taskPollers                  []scalableTaskPoller
+		taskProcessor                taskProcessor
+		workerType                   string
+		identity                     string
+		buildId                      string
+		deploymentOptions            WorkerDeploymentOptions
+		logger                       log.Logger
+		stopTimeout                  time.Duration
+		fatalErrCb                   func(error)
+		backgroundContextCancel      context.CancelCauseFunc
+		metricsHandler               metrics.Handler
+		sessionTokenBucket           *sessionTokenBucket
+		slotReservationData          slotReservationData
+		isInternalWorker             bool
+		workerPollCompleteOnShutdown *atomic.Bool
 	}
 
 	// baseWorker that wraps worker activities.
@@ -227,9 +228,14 @@ type (
 		taskLimiter          *rate.Limiter
 		limiterContext       context.Context
 		limiterContextCancel func()
-		retrier              *backoff.ConcurrentRetrier // Service errors back off retrier
-		logger               log.Logger
-		metricsHandler       metrics.Handler
+		// taskLimiterContext stays live during shutdown drain so already-polled
+		// tasks still respect the dispatch rate after poll-side waits are
+		// canceled via limiterContext.
+		taskLimiterContext       context.Context
+		taskLimiterContextCancel func()
+		retrier                  *backoff.ConcurrentRetrier // Service errors back off retrier
+		logger                   log.Logger
+		metricsHandler           metrics.Handler
 
 		slotSupplier       *trackingSlotSupplier
 		taskQueueCh        chan eagerOrPolledTask
@@ -243,6 +249,7 @@ type (
 		lastPollTaskErrLock    sync.Mutex
 
 		noRepoll atomic.Bool
+		pollerWG sync.WaitGroup
 	}
 
 	eagerOrPolledTask interface {
@@ -355,6 +362,7 @@ func newBaseWorker(
 	options baseWorkerOptions,
 ) *baseWorker {
 	ctx, cancel := context.WithCancel(context.Background())
+	taskLimiterCtx, taskLimiterCancel := context.WithCancel(context.Background())
 	logger := log.With(options.logger, tagWorkerType, options.workerType)
 	if heartbeatHandler, isHeartbeat := options.metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
 		options.metricsHandler = heartbeatHandler.forWorker(options.workerType)
@@ -383,9 +391,11 @@ func newBaseWorker(
 		eagerTaskQueueCh: make(chan eagerTask, 2000),
 		fatalErrCb:       options.fatalErrCb,
 
-		limiterContext:       ctx,
-		limiterContextCancel: cancel,
-		sessionTokenBucket:   options.sessionTokenBucket,
+		limiterContext:           ctx,
+		limiterContextCancel:     cancel,
+		taskLimiterContext:       taskLimiterCtx,
+		taskLimiterContextCancel: taskLimiterCancel,
+		sessionTokenBucket:       options.sessionTokenBucket,
 	}
 	// Set secondary retrier as resource exhausted
 	bw.retrier.SetSecondaryRetryPolicy(pollResourceExhaustedRetryPolicy)
@@ -418,6 +428,7 @@ func (bw *baseWorker) Start() {
 
 		for i := 0; i < taskWorker.pollerCount; i++ {
 			bw.stopWG.Add(1)
+			bw.pollerWG.Add(1)
 			go bw.runPoller(taskWorker)
 		}
 
@@ -429,6 +440,15 @@ func (bw *baseWorker) Start() {
 			}()
 		}
 	}
+
+	// When all pollers have exited, close taskQueueCh so the dispatcher
+	// knows no more polled tasks will arrive and can drain what remains.
+	bw.stopWG.Add(1)
+	go func() {
+		defer bw.stopWG.Done()
+		bw.pollerWG.Wait()
+		close(bw.taskQueueCh)
+	}()
 
 	bw.stopWG.Add(1)
 	go bw.runTaskDispatcher()
@@ -453,8 +473,13 @@ func (bw *baseWorker) isStop() bool {
 	}
 }
 
+func (bw *baseWorker) shouldDrainOnShutdown() bool {
+	return bw.options.workerPollCompleteOnShutdown != nil && bw.options.workerPollCompleteOnShutdown.Load()
+}
+
 func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 	defer bw.stopWG.Done()
+	defer bw.pollerWG.Done()
 	// Note: With poller autoscaling, this metric doesn't make a lot of sense since the number of pollers can go up and down.
 	bw.metricsHandler.Counter(metrics.PollerStartCounter).Inc(1)
 
@@ -588,24 +613,52 @@ func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
 func (bw *baseWorker) runTaskDispatcher() {
 	defer bw.stopWG.Done()
 
-	for {
-		// wait for new task or worker stop
-		select {
-		case <-bw.stopCh:
-			// Currently we can drop any tasks received when closing.
-			// https://github.com/temporalio/sdk-go/issues/1197
-			return
-		case task := <-bw.taskQueueCh:
-			// for non-polled-task (local activity result as task or eager task), we don't need to rate limit
-			_, isPolledTask := task.(*polledTask)
-			if isPolledTask && bw.taskLimiter.Wait(bw.limiterContext) != nil {
-				if bw.isStop() {
+	if bw.shouldDrainOnShutdown() {
+		for task := range bw.taskQueueCh {
+			// For non-polled-task (local activity result as task or eager task),
+			// we don't need to rate limit. Keep using the dispatch limiter during
+			// shutdown drain so already-polled tasks still respect the worker's
+			// configured task start rate.
+			if _, isPolledTask := task.(*polledTask); isPolledTask {
+				if bw.taskLimiter.Wait(bw.taskLimiterContext) != nil {
 					bw.releaseSlot(task.getPermit(), SlotReleaseReasonUnused)
+					// Pollers in drain mode send to taskQueueCh without a
+					// stopCh escape hatch. Keep receiving and releasing any
+					// remaining tasks so pollers can finish and taskQueueCh can
+					// close even after we stop processing tasks.
+					bw.discardTaskQueue()
 					return
 				}
 			}
 			bw.processTaskAsync(task)
 		}
+		return
+	}
+
+	for {
+		select {
+		case <-bw.stopCh:
+			return
+		case task, ok := <-bw.taskQueueCh:
+			if !ok {
+				return
+			}
+			if _, isPolledTask := task.(*polledTask); isPolledTask {
+				if bw.taskLimiter.Wait(bw.limiterContext) != nil {
+					if bw.isStop() {
+						bw.releaseSlot(task.getPermit(), SlotReleaseReasonUnused)
+						return
+					}
+				}
+			}
+			bw.processTaskAsync(task)
+		}
+	}
+}
+
+func (bw *baseWorker) discardTaskQueue() {
+	for task := range bw.taskQueueCh {
+		bw.releaseSlot(task.getPermit(), SlotReleaseReasonUnused)
 	}
 }
 
@@ -666,10 +719,18 @@ func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPe
 			taskWorker.pollerAutoscalerReportHandle.handleTask(task)
 		}
 
-		select {
-		case bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}:
+		if bw.shouldDrainOnShutdown() {
+			// The dispatcher is guaranteed to be alive: in drain mode it
+			// only exits after taskQueueCh is closed, which happens after
+			// all pollers finish.
+			bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}
 			didSendTask = true
-		case <-bw.stopCh:
+		} else {
+			select {
+			case bw.taskQueueCh <- &polledTask{task: task, permit: slotPermit}:
+				didSendTask = true
+			case <-bw.stopCh:
+			}
 		}
 	}
 }
@@ -730,11 +791,15 @@ func (bw *baseWorker) Stop() {
 	close(bw.stopCh)
 	bw.limiterContextCancel()
 
+	// Wait for pollers, task dispatch, and task processing to complete, or until stopTimeout elapses.
+	// The task dispatcher drains taskQueueCh after the closer goroutine
+	// closes it when pollers finish.
 	if success := awaitWaitGroup(&bw.stopWG, bw.options.stopTimeout); !success {
 		traceLog(func() {
 			bw.logger.Info("Worker graceful stop timed out.", "Stop timeout", bw.options.stopTimeout)
 		})
 	}
+	bw.taskLimiterContextCancel()
 
 	// Close context
 	if bw.options.backgroundContextCancel != nil {
@@ -742,6 +807,10 @@ func (bw *baseWorker) Stop() {
 	}
 
 	bw.isWorkerStarted = false
+}
+
+func (bw *baseWorker) stopPolling() {
+	bw.noRepoll.Store(true)
 }
 
 func newPollScalerReportHandle(options pollScalerReportHandleOptions) *pollScalerReportHandle {
