@@ -45,6 +45,31 @@ const (
 	QueryTypeWorkflowMetadata string = "__temporal_workflow_metadata"
 )
 
+// GrpcCompression controls gRPC compression for connections to the Temporal
+// server.
+//
+// Exposed as: [go.temporal.io/sdk/client.GrpcCompression]
+type GrpcCompression interface {
+	grpcCompression()
+}
+
+type (
+	// GrpcCompressionGzip compresses outbound gRPC request bodies with gzip and
+	// accepts gzip-compressed responses. This is the default.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.GrpcCompressionGzip]
+	GrpcCompressionGzip struct{}
+
+	// GrpcCompressionNone disables gRPC request compression. The client will
+	// still accept compressed responses for encodings registered with grpc-go.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.GrpcCompressionNone]
+	GrpcCompressionNone struct{}
+)
+
+func (GrpcCompressionGzip) grpcCompression() {}
+func (GrpcCompressionNone) grpcCompression() {}
+
 type (
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -1012,6 +1037,12 @@ type (
 
 		// MaxPayloadSize is a number of bytes that gRPC would allow to travel to and from server. Defaults to 128 MB.
 		MaxPayloadSize int
+
+		// GrpcCompression controls transport-level gRPC compression for requests
+		// sent to the Temporal server.
+		//
+		// default: GrpcCompressionGzip
+		GrpcCompression GrpcCompression
 
 		// Advanced dial options for gRPC connections. These are applied after the internal default dial options are
 		// applied. Therefore any dial options here may override internal ones. Dial options WithBlock, WithTimeout,

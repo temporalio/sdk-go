@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -31,6 +32,7 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/resolver/manual"
+	"google.golang.org/grpc/stats"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
@@ -335,6 +337,60 @@ func TestDialOptions(t *testing.T) {
 	require.Equal(t, expected, trace)
 }
 
+func TestGrpcCompression(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		connectionOptions ConnectionOptions
+		wantCompression   string
+	}{
+		{
+			name:            "default",
+			wantCompression: "gzip",
+		},
+		{
+			name: "explicit gzip",
+			connectionOptions: ConnectionOptions{
+				GrpcCompression: GrpcCompressionGzip{},
+			},
+			wantCompression: "gzip",
+		},
+		{
+			name: "none",
+			connectionOptions: ConnectionOptions{
+				GrpcCompression: GrpcCompressionNone{},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, err := startTestGRPCServer()
+			require.NoError(t, err)
+			defer srv.Stop()
+
+			client, err := DialClient(context.Background(), ClientOptions{
+				HostPort:          srv.addr,
+				ConnectionOptions: tc.connectionOptions,
+			})
+			require.NoError(t, err)
+			defer client.Close()
+
+			_, err = client.WorkflowService().SignalWorkflowExecution(context.Background(),
+				&workflowservice.SignalWorkflowExecutionRequest{
+					Namespace:  "test-namespace",
+					SignalName: strings.Repeat("test-signal", 100),
+				},
+			)
+			require.NoError(t, err)
+
+			require.Equal(t,
+				tc.wantCompression,
+				srv.statsHandler.compressionForMethod(
+					"/"+workflowservice.WorkflowService_ServiceDesc.ServiceName+"/SignalWorkflowExecution",
+				),
+			)
+		})
+	}
+}
+
 func TestCustomResolver(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -605,6 +661,7 @@ type testGRPCServer struct {
 	*grpc.Server
 	addr                                 string
 	healthServer                         *health.Server
+	statsHandler                         *compressionStatsHandler
 	sigWfCount                           int32
 	getSystemInfoRequestContext          context.Context
 	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
@@ -619,10 +676,12 @@ func startTestGRPCServer() (*testGRPCServer, error) {
 	if err != nil {
 		return nil, err
 	}
+	statsHandler := &compressionStatsHandler{}
 	t := &testGRPCServer{
-		Server:       grpc.NewServer(),
+		Server:       grpc.NewServer(grpc.StatsHandler(statsHandler)),
 		addr:         l.Addr().String(),
 		healthServer: health.NewServer(),
+		statsHandler: statsHandler,
 	}
 	workflowservice.RegisterWorkflowServiceServer(t.Server, t)
 	grpc_health_v1.RegisterHealthServer(t.Server, t.healthServer)
@@ -683,4 +742,38 @@ func (t *testGRPCServer) signalWorkflowInvokeCount() int {
 
 func (t *testGRPCServer) resetSignalWorkflowInvokeCount() {
 	atomic.StoreInt32(&t.sigWfCount, 0)
+}
+
+type compressionStatsHandler struct {
+	mu                  sync.Mutex
+	compressionByMethod map[string]string
+}
+
+func (h *compressionStatsHandler) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
+	return ctx
+}
+
+func (h *compressionStatsHandler) HandleRPC(_ context.Context, s stats.RPCStats) {
+	inHeader, ok := s.(*stats.InHeader)
+	if !ok {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.compressionByMethod == nil {
+		h.compressionByMethod = make(map[string]string)
+	}
+	h.compressionByMethod[inHeader.FullMethod] = inHeader.Compression
+}
+
+func (h *compressionStatsHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
+	return ctx
+}
+
+func (h *compressionStatsHandler) HandleConn(context.Context, stats.ConnStats) {}
+
+func (h *compressionStatsHandler) compressionForMethod(method string) string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.compressionByMethod[method]
 }

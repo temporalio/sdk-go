@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	grpcgzip "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -99,6 +101,14 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	opts = append(opts, securityOptions...)
 	opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(maxPayloadSize)))
 	opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxPayloadSize)))
+
+	switch compression := params.UserConnectionOptions.GrpcCompression.(type) {
+	case nil, GrpcCompressionGzip:
+		opts = append(opts, grpc.WithDefaultCallOptions(grpc.UseCompressor(grpcgzip.Name)))
+	case GrpcCompressionNone:
+	default:
+		return nil, fmt.Errorf("unsupported gRPC compression option %T", compression)
+	}
 
 	if !params.UserConnectionOptions.DisableKeepAliveCheck {
 		// gRPC utilizes keep alive mechanism to detect dead connections in case if server didn't close them
