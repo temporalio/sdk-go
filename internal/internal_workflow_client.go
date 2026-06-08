@@ -2128,6 +2128,18 @@ func convertToPBTimeSkippingConfig(config TimeSkippingConfig) *workflowpb.TimeSk
 	return pbConfig
 }
 
+// convertFromPBTimeSkippingConfig converts the proto TimeSkippingConfig back into its SDK representation.
+func convertFromPBTimeSkippingConfig(config *workflowpb.TimeSkippingConfig) TimeSkippingConfig {
+	if config == nil {
+		return TimeSkippingConfig{}
+	}
+	return TimeSkippingConfig{
+		Enabled:            config.GetEnabled(),
+		MaxSkippedDuration: config.GetMaxSkippedDuration().AsDuration(),
+		MaxElapsedDuration: config.GetMaxElapsedDuration().AsDuration(),
+	}
+}
+
 func (w *workflowClientInterceptor) ExecuteWorkflow(
 	ctx context.Context,
 	in *ClientExecuteWorkflowInput,
