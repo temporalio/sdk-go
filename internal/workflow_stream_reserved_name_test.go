@@ -6,26 +6,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIsReservedNamePrefixException(t *testing.T) {
-	require.True(t, isReservedNamePrefixException("__temporal_workflow_stream_publish"))
-	require.True(t, isReservedNamePrefixException("__temporal_workflow_stream_poll"))
-	require.True(t, isReservedNamePrefixException("__temporal_workflow_stream_offset"))
-	require.False(t, isReservedNamePrefixException("__temporal_"))
-	require.False(t, isReservedNamePrefixException("__temporal_foo"))
-	require.False(t, isReservedNamePrefixException("__internal"))
-	require.False(t, isReservedNamePrefixException("events"))
+func TestIsWorkflowStreamReservedName(t *testing.T) {
+	require.True(t, isWorkflowStreamReservedName("__temporal_workflow_stream_publish"))
+	require.True(t, isWorkflowStreamReservedName("__temporal_workflow_stream_poll"))
+	require.True(t, isWorkflowStreamReservedName("__temporal_workflow_stream_offset"))
+	require.False(t, isWorkflowStreamReservedName("__temporal_"))
+	require.False(t, isWorkflowStreamReservedName("__temporal_foo"))
+	require.False(t, isWorkflowStreamReservedName("__internal"))
+	require.False(t, isWorkflowStreamReservedName("events"))
 }
 
-// TestReservedNamePrefixExceptionAllowsWorkflowStreamHandlers verifies that the
+// TestIsWorkflowStreamReservedNameAllowsHandlers verifies that the
 // "__temporal_workflow_stream_" sub-namespace is permitted for signal, update,
 // and query handler registration even though the "__temporal_"/"__" prefixes
 // are otherwise reserved. This backs the workflowstreams contrib package.
-func TestReservedNamePrefixExceptionAllowsWorkflowStreamHandlers(t *testing.T) {
+func TestIsWorkflowStreamReservedNameAllowsHandlers(t *testing.T) {
 	var ts WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()
 
 	wf := func(ctx Context) error {
-		// Signal channel registration must not panic on the exception name.
+		// Signal channel registration must not panic on the workflow-stream name.
 		_ = GetSignalChannel(ctx, "__temporal_workflow_stream_publish")
 		if err := SetUpdateHandler(ctx, "__temporal_workflow_stream_poll",
 			func(ctx Context) error { return nil }, UpdateHandlerOptions{}); err != nil {
@@ -40,9 +40,9 @@ func TestReservedNamePrefixExceptionAllowsWorkflowStreamHandlers(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 }
 
-// TestReservedNamePrefixStillRejectsOtherNames verifies that names outside the
-// exception sub-namespace are still rejected.
-func TestReservedNamePrefixStillRejectsOtherNames(t *testing.T) {
+// TestIsWorkflowStreamReservedNameStillRejectsOtherNames verifies that names outside the
+// workflow-stream sub-namespace are still rejected.
+func TestIsWorkflowStreamReservedNameStillRejectsOtherNames(t *testing.T) {
 	var ts WorkflowTestSuite
 
 	t.Run("signal panics", func(t *testing.T) {

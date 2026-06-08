@@ -19,8 +19,13 @@ Construct a `WorkflowStream` once at the start of your workflow. The constructor
 registers the publish signal, poll update, and offset query handlers.
 
 ```go
-func MyWorkflow(ctx workflow.Context, priorState *workflowstreams.WorkflowStreamState) error {
-	stream, err := workflowstreams.NewStream(ctx, priorState)
+type MyInput struct {
+	ItemsProcessed int // your own workflow state
+	StreamState    *workflowstreams.WorkflowStreamState
+}
+
+func MyWorkflow(ctx workflow.Context, input MyInput) error {
+	stream, err := workflowstreams.NewWorkflowStream(ctx, input.StreamState)
 	if err != nil {
 		return err
 	}
@@ -31,21 +36,40 @@ func MyWorkflow(ctx workflow.Context, priorState *workflowstreams.WorkflowStream
 	}
 
 	// Run your workflow; the stream serves external publishers and subscribers
-	// for as long as the workflow is running.
+	// for as long as the workflow is running. Block until your workflow's exit
+	// condition is met (here, a `done` flag set elsewhere, e.g. by a signal).
 	return workflow.Await(ctx, func() bool { return done })
 }
 ```
 
-For workflows that support continue-as-new, thread a
-`*workflowstreams.WorkflowStreamState` field through your workflow input and
-pass it to `NewStream` — it is `nil` on a fresh start and carries accumulated
-state across continue-as-new boundaries:
+For workflows that use continue-as-new, the stream's log and offsets must be
+carried across each boundary, since continue-as-new starts a fresh run with an
+empty history. This is a round-trip with two halves:
 
-```go
-return stream.ContinueAsNew(ctx, MyWorkflow, func(state *workflowstreams.WorkflowStreamState) []any {
-	return []any{state}
-})
-```
+- **Capture** the state when rolling over. Instead of returning a plain
+  `workflow.NewContinueAsNewError`, return `stream.ContinueAsNew`. It snapshots
+  the current stream state and hands it to your callback, which builds the
+  argument list for the next run. The callback is where you assemble the full
+  input — carry forward your own workflow state alongside the captured
+  `state`:
+
+  ```go
+  return stream.ContinueAsNew(ctx, MyWorkflow, func(state *workflowstreams.WorkflowStreamState) []any {
+  	return []any{MyInput{
+  		ItemsProcessed: itemsProcessed, // your own state, carried across the boundary
+  		StreamState:    state,          // the captured stream state
+  	}}
+  })
+  ```
+
+- **Restore** it on the next run. That `MyInput` arrives as the next run's input,
+  and its `StreamState` field is the value already passed to `NewWorkflowStream` in the
+  example above. It is `nil` on a fresh start and non-nil after a roll-over, so
+  `NewWorkflowStream` rehydrates the log automatically.
+
+The `*workflowstreams.WorkflowStreamState` field is what gives the captured
+stream state somewhere to live between runs; the other fields on `MyInput` are
+your own and are threaded through the same way.
 
 ## Publishing (client side)
 
@@ -57,13 +81,13 @@ func PublishActivity(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer c.Close(ctx)
+	defer c.Close(ctx) // Flush the remaining buffer
 
 	topic := c.Topic("events")
 	for i := range 100 {
 		topic.Publish(fmt.Sprintf("item %d", i), false)
 	}
-	return nil // Close flushes the remaining buffer
+	return nil
 }
 ```
 
@@ -82,7 +106,7 @@ when the buffer reaches `MaxBatchSize`, on `forceFlush`, on an explicit
 
 ## Subscribing
 
-`Subscribe` returns a range-over-func iterator (Go 1.23+):
+`Subscribe` returns a range-over-func iterator:
 
 ```go
 for item, err := range c.Subscribe(ctx, workflowstreams.SubscribeOptions{

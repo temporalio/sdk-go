@@ -21,7 +21,7 @@ type internalEntry struct {
 // to external publishers (via signal), subscribers (via update), and offset
 // queries (via query).
 //
-// Construct it once at the start of your workflow function with New. The
+// Construct it once at the start of your workflow function with NewWorkflowStream. The
 // constructor registers all three handlers on the current workflow.
 type WorkflowStream struct {
 	ctx workflow.Context
@@ -35,10 +35,10 @@ type WorkflowStream struct {
 	topicHandles map[string]*WorkflowTopicHandle
 }
 
-// NewStream constructs a WorkflowStream and registers its signal, update, and
+// NewWorkflowStream constructs a WorkflowStream and registers its signal, update, and
 // query handlers on the current workflow. Pass priorState (which may be nil) to
 // restore state carried across a continue-as-new boundary.
-func NewStream(ctx workflow.Context, priorState *WorkflowStreamState) (*WorkflowStream, error) {
+func NewWorkflowStream(ctx workflow.Context, priorState *WorkflowStreamState) (*WorkflowStream, error) {
 	s := &WorkflowStream{
 		ctx:               ctx,
 		publisherSeqs:     map[string]int64{},
@@ -111,7 +111,8 @@ func (s *WorkflowStream) DetachPollers() {
 }
 
 // GetState returns a serializable snapshot of stream state for continue-as-new.
-// Publisher dedup entries idle longer than publisherTTL are pruned.
+// It drops per-publisher sequence tracking for publishers that have not sent a
+// batch within publisherTTL.
 func (s *WorkflowStream) GetState(publisherTTL time.Duration) (*WorkflowStreamState, error) {
 	now := float64(workflow.Now(s.ctx).Unix())
 	ttlSeconds := publisherTTL.Seconds()

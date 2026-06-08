@@ -14,21 +14,38 @@
 // constructor registers the publish signal, poll update, and offset query
 // handlers on the current workflow:
 //
-//	func MyWorkflow(ctx workflow.Context, priorState *workflowstreams.WorkflowStreamState) error {
-//		stream, err := workflowstreams.NewStream(ctx, priorState)
+//	type MyInput struct {
+//		ItemsProcessed int // your own workflow state
+//		StreamState    *workflowstreams.WorkflowStreamState
+//	}
+//
+//	func MyWorkflow(ctx workflow.Context, input MyInput) error {
+//		stream, err := workflowstreams.NewWorkflowStream(ctx, input.StreamState)
 //		if err != nil {
 //			return err
 //		}
 //		// Optionally publish from workflow code:
 //		_ = stream.Topic("events").Publish("hello")
 //		// ... run your workflow; the stream serves external publishers/subscribers.
+//		// Block until your workflow's exit condition is met (here, a done flag
+//		// set elsewhere, e.g. by a signal).
 //		return workflow.Await(ctx, func() bool { return done })
 //	}
 //
-// For workflows that support continue-as-new, thread a
-// *[WorkflowStreamState] field through your workflow input and pass it as
-// priorState — it is nil on a fresh start and carries accumulated state across
-// continue-as-new boundaries.
+// Continue-as-new starts a fresh run with an empty history, so the stream's log
+// and offsets must be carried across each boundary. This is a round-trip: when
+// rolling over, return [WorkflowStream.ContinueAsNew] instead of a plain
+// workflow.NewContinueAsNewError. It snapshots the stream state and hands it to
+// your callback, which builds the next run's arguments — carry your own state
+// forward alongside the captured state:
+//
+//	return stream.ContinueAsNew(ctx, MyWorkflow, func(state *workflowstreams.WorkflowStreamState) []any {
+//		return []any{MyInput{ItemsProcessed: itemsProcessed, StreamState: state}}
+//	})
+//
+// On the next run that captured state arrives as MyInput.StreamState, the value
+// passed to [NewWorkflowStream] above: nil on a fresh start, non-nil after a
+// roll-over, so the constructor rehydrates the log automatically.
 //
 // # Client side
 //

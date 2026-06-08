@@ -13,7 +13,7 @@ import (
 // streamHostWorkflow hosts a WorkflowStream and runs until it receives a
 // "finish" signal. priorState may be nil.
 func streamHostWorkflow(ctx workflow.Context, priorState *WorkflowStreamState) error {
-	_, err := NewStream(ctx, priorState)
+	_, err := NewWorkflowStream(ctx, priorState)
 	if err != nil {
 		return err
 	}

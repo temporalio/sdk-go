@@ -2200,7 +2200,7 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannelWithOptions(
 	signalName string,
 	options SignalChannelOptions,
 ) ReceiveChannel {
-	if strings.HasPrefix(signalName, temporalPrefix) && !isReservedNamePrefixException(signalName) {
+	if strings.HasPrefix(signalName, temporalPrefix) && !isWorkflowStreamReservedName(signalName) {
 		panic(temporalPrefixError)
 	}
 	eo := getWorkflowEnvOptions(ctx)
@@ -2529,7 +2529,7 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandlerWithOptions(
 	handler interface{},
 	options QueryHandlerOptions,
 ) error {
-	if strings.HasPrefix(queryType, "__") && !isReservedNamePrefixException(queryType) {
+	if strings.HasPrefix(queryType, "__") && !isWorkflowStreamReservedName(queryType) {
 		return errors.New("queryType starts with '__' is reserved for internal use")
 	}
 	return setQueryHandler(ctx, queryType, handler, options)
@@ -2566,7 +2566,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 }
 
 func (wc *workflowEnvironmentInterceptor) SetUpdateHandler(ctx Context, name string, handler interface{}, opts UpdateHandlerOptions) error {
-	if strings.HasPrefix(name, "__") && !isReservedNamePrefixException(name) {
+	if strings.HasPrefix(name, "__") && !isWorkflowStreamReservedName(name) {
 		return errors.New("update names starting with '__' are reserved for internal use")
 	}
 	return setUpdateHandler(ctx, name, handler, opts)

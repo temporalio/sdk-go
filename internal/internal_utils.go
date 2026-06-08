@@ -34,7 +34,7 @@ const (
 	temporalPrefixError = "__temporal_ is a reserved prefix"
 )
 
-func isReservedNamePrefixException(name string) bool {
+func isWorkflowStreamReservedName(name string) bool {
 	return strings.HasPrefix(name, "__temporal_workflow_stream_")
 }
 
