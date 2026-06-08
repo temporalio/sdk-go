@@ -273,6 +273,8 @@ type (
 		maxPollerCount            int
 		minPollerCount            int
 		logger                    log.Logger
+		metricsHandler            metrics.Handler
+		pollerType                string
 		scaleCallback             func(int)
 		serverSupportsAutoscaling *atomic.Bool
 	}
@@ -282,6 +284,7 @@ type (
 		maxPollerCount            int
 		logger                    log.Logger
 		target                    atomic.Int64
+		targetGauge               metrics.Gauge
 		scaleCallback             func(int)
 		everSawScalingDecision    atomic.Bool
 		serverSupportsAutoscaling *atomic.Bool
@@ -822,14 +825,25 @@ func newPollScalerReportHandle(options pollScalerReportHandleOptions) *pollScale
 	if serverSupportsAutoscaling == nil {
 		serverSupportsAutoscaling = &atomic.Bool{}
 	}
+	metricsHandler := options.metricsHandler
+	if metricsHandler == nil {
+		metricsHandler = metrics.NopHandler
+	}
+	// Mirror newNumPollerMetric: route through the per-poller heartbeat handler
+	// when present so the target gauge is tagged consistently with num_pollers.
+	if heartbeatHandler, isHeartbeat := metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
+		metricsHandler = heartbeatHandler.forPoller(options.pollerType)
+	}
 	psr := &pollScalerReportHandle{
 		maxPollerCount:            options.maxPollerCount,
 		minPollerCount:            options.minPollerCount,
 		logger:                    logger,
+		targetGauge:               metricsHandler.WithTags(metrics.PollerTags(options.pollerType)).Gauge(metrics.PollerTarget),
 		scaleCallback:             options.scaleCallback,
 		serverSupportsAutoscaling: serverSupportsAutoscaling,
 	}
 	psr.target.Store(int64(options.initialPollerCount))
+	psr.targetGauge.Update(float64(options.initialPollerCount))
 	return psr
 }
 
@@ -881,6 +895,7 @@ func (prh *pollScalerReportHandle) updateTarget(f func(int64) int64) {
 		}
 	}
 	permits := int(newTarget)
+	prh.targetGauge.Update(float64(newTarget))
 	if prh.scaleCallback != nil {
 		traceLog(func() {
 			prh.logger.Debug("Updating number of permits", "permits", permits)
@@ -987,6 +1002,7 @@ func (ps *pollerSemaphore) updatePermits(maxPermits int) {
 func newScalableTaskPoller(
 	poller taskPoller,
 	logger log.Logger,
+	metricsHandler metrics.Handler,
 	pollerBehavior PollerBehavior,
 	taskPollerType string,
 	serverSupportsAutoscaling *atomic.Bool,
@@ -1004,6 +1020,8 @@ func newScalableTaskPoller(
 			maxPollerCount:            p.maximumNumberOfPollers,
 			minPollerCount:            p.minimumNumberOfPollers,
 			logger:                    logger,
+			metricsHandler:            metricsHandler,
+			pollerType:                taskPollerType,
 			serverSupportsAutoscaling: serverSupportsAutoscaling,
 			scaleCallback: func(newTarget int) {
 				tw.pollerSemaphore.updatePermits(newTarget)
