@@ -1758,6 +1758,66 @@ func (s *workflowClientTestSuite) TestExecuteWorkflowWithContextAwareDataConvert
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
 
+func (s *workflowClientTestSuite) TestExecuteWorkflowWithTimeSkippingConfig() {
+	client, ok := s.client.(*WorkflowClient)
+	s.True(ok)
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		TimeSkippingConfig: TimeSkippingConfig{
+			Enabled:            true,
+			MaxSkippedDuration: time.Hour,
+		},
+	}
+	f1 := func(ctx Context, r []byte) string {
+		panic("this is just a stub")
+	}
+
+	createResponse := &workflowservice.StartWorkflowExecutionResponse{RunId: runID}
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).
+		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+			s.NotNil(req.TimeSkippingConfig)
+			s.True(req.TimeSkippingConfig.GetEnabled())
+			s.Equal(time.Hour, req.TimeSkippingConfig.GetMaxSkippedDuration().AsDuration())
+			s.Nil(req.TimeSkippingConfig.GetMaxElapsedDuration())
+		})
+
+	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
+	s.Nil(err)
+	s.Equal(createResponse.GetRunId(), resp.GetRunID())
+}
+
+func TestConvertToPBTimeSkippingConfig(t *testing.T) {
+	// Default config maps to nil so the default is not sent to the server.
+	require.Nil(t, convertToPBTimeSkippingConfig(TimeSkippingConfig{}))
+
+	// Enabled only, no bound.
+	enabledOnly := convertToPBTimeSkippingConfig(TimeSkippingConfig{Enabled: true})
+	require.NotNil(t, enabledOnly)
+	require.True(t, enabledOnly.GetEnabled())
+	require.Nil(t, enabledOnly.GetBound())
+
+	// MaxSkippedDuration bound.
+	skipped := convertToPBTimeSkippingConfig(TimeSkippingConfig{MaxSkippedDuration: 2 * time.Minute})
+	require.Equal(t, 2*time.Minute, skipped.GetMaxSkippedDuration().AsDuration())
+	require.Nil(t, skipped.GetMaxElapsedDuration())
+
+	// MaxElapsedDuration bound.
+	elapsed := convertToPBTimeSkippingConfig(TimeSkippingConfig{MaxElapsedDuration: 3 * time.Minute})
+	require.Equal(t, 3*time.Minute, elapsed.GetMaxElapsedDuration().AsDuration())
+	require.Nil(t, elapsed.GetMaxSkippedDuration())
+
+	// When both bounds are set, MaxSkippedDuration takes precedence.
+	both := convertToPBTimeSkippingConfig(TimeSkippingConfig{
+		MaxSkippedDuration: time.Minute,
+		MaxElapsedDuration: time.Hour,
+	})
+	require.Equal(t, time.Minute, both.GetMaxSkippedDuration().AsDuration())
+	require.Nil(t, both.GetMaxElapsedDuration())
+}
+
 func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
 	memo := map[string]interface{}{
 		"testMemo": "memo value",

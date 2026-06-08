@@ -31,6 +31,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	updatepb "go.temporal.io/api/update/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
@@ -2082,6 +2083,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 		OnConflictOptions:        in.Options.onConflictOptions.ToProto(),
 		Priority:                 convertToPBPriority(in.Options.Priority),
+		TimeSkippingConfig:       convertToPBTimeSkippingConfig(in.Options.TimeSkippingConfig),
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -2100,6 +2102,30 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	}
 
 	return startRequest, nil
+}
+
+// convertToPBTimeSkippingConfig converts the SDK TimeSkippingConfig into its proto representation.
+// If the config only contains default values, it returns nil so the default is not sent to the server.
+func convertToPBTimeSkippingConfig(config TimeSkippingConfig) *workflowpb.TimeSkippingConfig {
+	var defaultConfig TimeSkippingConfig
+	if config == defaultConfig {
+		return nil
+	}
+
+	pbConfig := &workflowpb.TimeSkippingConfig{
+		Enabled: config.Enabled,
+	}
+	switch {
+	case config.MaxSkippedDuration != 0:
+		pbConfig.Bound = &workflowpb.TimeSkippingConfig_MaxSkippedDuration{
+			MaxSkippedDuration: durationpb.New(config.MaxSkippedDuration),
+		}
+	case config.MaxElapsedDuration != 0:
+		pbConfig.Bound = &workflowpb.TimeSkippingConfig_MaxElapsedDuration{
+			MaxElapsedDuration: durationpb.New(config.MaxElapsedDuration),
+		}
+	}
+	return pbConfig
 }
 
 func (w *workflowClientInterceptor) ExecuteWorkflow(
@@ -2509,6 +2535,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		Header:                   header,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 		Priority:                 convertToPBPriority(in.Options.Priority),
+		TimeSkippingConfig:       convertToPBTimeSkippingConfig(in.Options.TimeSkippingConfig),
 	}
 
 	if in.Options.StartDelay != 0 {

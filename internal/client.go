@@ -1192,6 +1192,14 @@ type (
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 
+		// TimeSkippingConfig - Optional configuration that controls time skipping for this workflow
+		// execution. This is only honored by the test server; it is ignored by a production server.
+		//
+		// Optional: defaults to no time skipping configuration.
+		//
+		// NOTE: Experimental
+		TimeSkippingConfig TimeSkippingConfig
+
 		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.
 		// Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
 		responseInfo *startWorkflowResponseInfo
@@ -1322,6 +1330,37 @@ type (
 		//
 		// Weight values are clamped to the range [0.001, 1000].
 		FairnessWeight float32
+	}
+
+	// TimeSkippingConfig configures time skipping for a workflow execution. Time skipping is only
+	// supported by the Temporal test server; a production server ignores this configuration.
+	//
+	// All fields are optional; the zero value means "no time skipping configuration", which leaves
+	// the behavior up to the server.
+	//
+	// WARNING: Time skipping configuration is currently experimental.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.TimeSkippingConfig]
+	TimeSkippingConfig struct {
+		// Enabled enables or disables time skipping for this workflow execution.
+		Enabled bool
+
+		// MaxSkippedDuration optionally bounds the maximum total virtual time that can be skipped.
+		// Once the bound is reached, time skipping is automatically disabled, but can be re-enabled
+		// by setting Enabled to true via UpdateWorkflowExecutionOptions.
+		//
+		// MaxSkippedDuration and MaxElapsedDuration are mutually exclusive; if both are set,
+		// MaxSkippedDuration takes precedence.
+		MaxSkippedDuration time.Duration
+
+		// MaxElapsedDuration optionally bounds the maximum elapsed time since time skipping was
+		// enabled. This includes both skipped time and real time elapsing. Once the bound is
+		// reached, time skipping is automatically disabled, but can be re-enabled by setting
+		// Enabled to true via UpdateWorkflowExecutionOptions.
+		//
+		// MaxSkippedDuration and MaxElapsedDuration are mutually exclusive; if both are set,
+		// MaxSkippedDuration takes precedence.
+		MaxElapsedDuration time.Duration
 	}
 
 	// NamespaceClient is the client for managing operations on the namespace.

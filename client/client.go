@@ -671,6 +671,13 @@ type (
 	// NOTE: Experimental
 	AutoUpgradeVersioningOverride = internal.AutoUpgradeVersioningOverride
 
+	// TimeSkippingConfig is a property in [StartWorkflowOptions] that configures time skipping for a
+	// workflow execution. Time skipping is only supported by the Temporal test server; a production
+	// server ignores this configuration.
+	//
+	// NOTE: Experimental
+	TimeSkippingConfig = internal.TimeSkippingConfig
+
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
 	WorkflowUpdateHandle = internal.WorkflowUpdateHandle
