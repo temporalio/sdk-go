@@ -69,7 +69,9 @@ type (
 
 	sessionEnvironmentImpl struct {
 		*sync.Mutex
-		doneChanMap               map[string]chan struct{}
+		// doneChanMap is keyed by sessionID. CreateSession creates and stores each
+		// channel, and CompleteSession deletes and closes it to signal session end.
+		doneChanMap map[string]chan struct{}
 		resourceID                string
 		resourceSpecificTaskqueue string
 		sessionTokenBucket        *sessionTokenBucket
