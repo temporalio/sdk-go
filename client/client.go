@@ -652,7 +652,10 @@ type (
 	VersioningOverrideChange = internal.VersioningOverrideChange
 
 	// TimeSkippingConfigChange sets the time skipping configuration when used with
-	// [WorkflowExecutionOptionsChanges].
+	// [WorkflowExecutionOptionsChanges]. The update replaces the entire time skipping configuration
+	// as a single unit rather than merging per field, so any unset [TimeSkippingConfig] field
+	// overwrites the corresponding server-side value. Setting an empty value clears the
+	// configuration; leave the [WorkflowExecutionOptionsChanges] entry nil to leave it untouched.
 	//
 	// NOTE: Experimental
 	TimeSkippingConfigChange = internal.TimeSkippingConfigChange

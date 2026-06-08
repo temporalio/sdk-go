@@ -58,8 +58,14 @@ type (
 	}
 
 	// TimeSkippingConfigChange sets the time skipping configuration when used with
-	// [WorkflowExecutionOptionsChanges]. Setting an empty [TimeSkippingConfig] value clears any
-	// previously set configuration on the server.
+	// [WorkflowExecutionOptionsChanges].
+	//
+	// The update replaces the entire time skipping configuration as a single unit; it is not a
+	// per-field merge. Any [TimeSkippingConfig] field left at its zero value (for example, an unset
+	// Enabled) overwrites the corresponding value on the server. To keep an existing bound while
+	// toggling Enabled, you must set both fields in Value. Setting an empty [TimeSkippingConfig]
+	// value clears any previously set configuration on the server. To leave the configuration
+	// untouched, leave the [WorkflowExecutionOptionsChanges] entry nil instead of setting this.
 	//
 	// NOTE: Experimental
 	TimeSkippingConfigChange struct {
