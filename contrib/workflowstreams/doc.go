@@ -34,12 +34,12 @@
 //
 // Continue-as-new starts a fresh run with an empty history, so the stream's log
 // and offsets must be carried across each boundary. This is a round-trip: when
-// rolling over, return [WorkflowStream.ContinueAsNew] instead of a plain
+// rolling over, return [WorkflowStream.NewContinueAsNewError] instead of a plain
 // workflow.NewContinueAsNewError. It snapshots the stream state and hands it to
 // your callback, which builds the next run's arguments — carry your own state
 // forward alongside the captured state:
 //
-//	return stream.ContinueAsNew(ctx, MyWorkflow, func(state *workflowstreams.WorkflowStreamState) []any {
+//	return stream.NewContinueAsNewError(ctx, MyWorkflow, func(state *workflowstreams.WorkflowStreamState) []any {
 //		return []any{MyInput{ItemsProcessed: itemsProcessed, StreamState: state}}
 //	})
 //

@@ -47,14 +47,14 @@ carried across each boundary, since continue-as-new starts a fresh run with an
 empty history. This is a round-trip with two halves:
 
 - **Capture** the state when rolling over. Instead of returning a plain
-  `workflow.NewContinueAsNewError`, return `stream.ContinueAsNew`. It snapshots
-  the current stream state and hands it to your callback, which builds the
-  argument list for the next run. The callback is where you assemble the full
-  input — carry forward your own workflow state alongside the captured
+  `workflow.NewContinueAsNewError`, return `stream.NewContinueAsNewError`. It
+  snapshots the current stream state and hands it to your callback, which builds
+  the argument list for the next run. The callback is where you assemble the
+  full input — carry forward your own workflow state alongside the captured
   `state`:
 
   ```go
-  return stream.ContinueAsNew(ctx, MyWorkflow, func(state *workflowstreams.WorkflowStreamState) []any {
+  return stream.NewContinueAsNewError(ctx, MyWorkflow, func(state *workflowstreams.WorkflowStreamState) []any {
   	return []any{MyInput{
   		ItemsProcessed: itemsProcessed, // your own state, carried across the boundary
   		StreamState:    state,          // the captured stream state

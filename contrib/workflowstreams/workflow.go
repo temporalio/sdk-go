@@ -183,21 +183,22 @@ func (s *WorkflowStream) GetState(publisherTTL time.Duration) (*WorkflowStreamSt
 	}, nil
 }
 
-// ContinueAsNew drains pollers, waits for in-flight handlers to finish, then
-// returns a continue-as-new error for wfn. buildArgs receives the post-detach
-// stream state and returns the positional arguments for the new run; thread the
-// returned *WorkflowStreamState into your workflow input so the stream survives.
+// NewContinueAsNewError returns a continue-as-new error for wfn that you must
+// return from your workflow function to end the current run, mirroring
+// workflow.NewContinueAsNewError. Unlike that constructor it also drains pollers
+// and blocks until in-flight handlers finish before capturing state, so it can
+// take a moment to return. buildArgs receives the post-detach stream state and
+// returns the positional arguments for the new run; thread the returned
+// *WorkflowStreamState into your workflow input so the stream survives.
 //
-// Returning the result from your workflow function ends the current run:
-//
-//	return stream.ContinueAsNew(ctx, MyWorkflow, func(state *workflowstreams.WorkflowStreamState) []any {
+//	return stream.NewContinueAsNewError(ctx, MyWorkflow, func(state *workflowstreams.WorkflowStreamState) []any {
 //		return []any{state}
 //	})
 //
 // State is captured with the default 15-minute publisher TTL. For a custom TTL,
 // use the manual recipe: DetachPollers, Await(AllHandlersFinished), GetState,
 // then workflow.NewContinueAsNewError.
-func (s *WorkflowStream) ContinueAsNew(ctx workflow.Context, wfn any, buildArgs func(state *WorkflowStreamState) []any) error {
+func (s *WorkflowStream) NewContinueAsNewError(ctx workflow.Context, wfn any, buildArgs func(state *WorkflowStreamState) []any) error {
 	s.DetachPollers()
 	if err := workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) }); err != nil {
 		return err
