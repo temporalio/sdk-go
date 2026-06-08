@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/google/uuid"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -38,6 +38,63 @@ func (wth *countingTaskHandler) ProcessWorkflowTask(
 ) (*workflowTaskCompletion, error) {
 	wth.ProcessWorkflowTaskInvocationCount.Add(1)
 	return wth.WorkflowTaskHandler.ProcessWorkflowTask(task, wfctx, hb)
+}
+
+func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const (
+		namespace    = "test-ns"
+		taskQueue    = "test-task-queue"
+		identity     = "test-worker"
+		controlQueue = "temporal-sys/worker-commands/test-ns/grouping-key"
+	)
+
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			require.Equal(t, controlQueue, req.WorkerControlTaskQueue)
+			require.Equal(t, taskQueue, req.TaskQueue.GetName())
+			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+		})
+
+	base := basePoller{
+		metricsHandler:         metrics.NopHandler,
+		workerBuildID:          "test-build-id",
+		workerControlTaskQueue: controlQueue,
+	}
+	wtp := &workflowTaskPoller{
+		basePoller:            base,
+		mode:                  NonSticky,
+		namespace:             namespace,
+		taskQueueName:         taskQueue,
+		identity:              identity,
+		service:               service,
+		logger:                ilog.NewDefaultLogger(),
+		numNormalPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowTask),
+	}
+	_, err := wtp.poll(context.Background())
+	require.NoError(t, err)
+
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollActivityTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollActivityTaskQueueResponse, error) {
+			require.Equal(t, controlQueue, req.WorkerControlTaskQueue)
+			require.Equal(t, taskQueue, req.TaskQueue.GetName())
+			return &workflowservice.PollActivityTaskQueueResponse{}, nil
+		})
+
+	atp := &activityTaskPoller{
+		basePoller:      base,
+		namespace:       namespace,
+		taskQueueName:   taskQueue,
+		identity:        identity,
+		service:         service,
+		logger:          ilog.NewDefaultLogger(),
+		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeActivityTask),
+	}
+	_, err = atp.poll(context.Background())
+	require.NoError(t, err)
 }
 
 func TestWFTRacePrevention(t *testing.T) {

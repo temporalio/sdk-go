@@ -2,6 +2,7 @@ package test_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -458,6 +459,46 @@ func workflowWithFailingActivity(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, ao)
 
 	return workflow.ExecuteActivity(ctx, failingActivity).Get(ctx, nil)
+}
+
+func workerCommandCancelActivityWorkflow(ctx workflow.Context) error {
+	activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 30 * time.Second,
+		RetryPolicy: &temporal.RetryPolicy{
+			MaximumAttempts: 1,
+		},
+		WaitForCancellation: true,
+	})
+	activityCtx, cancelActivity := workflow.WithCancel(activityCtx)
+	activityDone := workflow.ExecuteActivity(activityCtx, workerCommandWaitForCancelActivity)
+
+	workflow.GetSignalChannel(ctx, "activity-started").Receive(ctx, nil)
+	cancelActivity()
+
+	err := activityDone.Get(ctx, nil)
+	if err == nil {
+		return errors.New("activity completed instead of canceling")
+	}
+	var canceled *temporal.CanceledError
+	if !errors.As(err, &canceled) {
+		return err
+	}
+	return nil
+}
+
+func workerCommandWaitForCancelActivity(ctx context.Context) error {
+	info := activity.GetInfo(ctx)
+	if err := activity.GetClient(ctx).SignalWorkflow(
+		context.Background(),
+		info.WorkflowExecution.ID,
+		info.WorkflowExecution.RunID,
+		"activity-started",
+		nil,
+	); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return ctx.Err()
 }
 
 // Workflow that panics to simulate a workflow task failure. The flag controls
@@ -1064,6 +1105,32 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 		ts.False(strings.Contains(err.Error(), "context canceled"),
 			"Poll should not receive context canceled with graceful shutdown; got: %v", err)
 	}
+}
+
+func (ts *WorkerHeartbeatTestSuite) TestActivityCancelDeliveredWithoutHeartbeat() {
+	ctx := context.Background()
+	internalClient := ts.client.(internal.Client)
+	workflowClient := internalClient.(*internal.WorkflowClient)
+	resp, err := workflowClient.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerCommands() {
+		ts.T().Skip("server does not support worker_commands namespace capability")
+	}
+
+	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DisableEagerActivities: true,
+	})
+	ts.worker.RegisterWorkflow(workerCommandCancelActivityWorkflow)
+	ts.worker.RegisterActivity(workerCommandWaitForCancelActivity)
+	ts.NoError(ts.worker.Start())
+
+	options := ts.startWorkflowOptions("test-worker-command-activity-cancel-" + uuid.NewString())
+	options.WorkflowExecutionTimeout = 10 * time.Second
+	run, err := ts.client.ExecuteWorkflow(ctx, options, workerCommandCancelActivityWorkflow)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
 }
 
 func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStorageDrivers() {
