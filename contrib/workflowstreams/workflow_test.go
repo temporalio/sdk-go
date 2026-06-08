@@ -45,6 +45,35 @@ func mustPublishInput(t *testing.T, publisherID string, seq int64, entries ...to
 	return in
 }
 
+// byteOnlyPublishWorkflow restricts the stream to the byte-slice converter and
+// returns whether publishing a string failed — it should, since that set has no
+// converter for strings, whereas the default set's JSON fallback would accept
+// it. A []byte must still publish cleanly.
+func byteOnlyPublishWorkflow(ctx workflow.Context) (bool, error) {
+	stream, err := NewWorkflowStream(ctx, nil, WithPayloadConverters(converter.NewByteSlicePayloadConverter()))
+	if err != nil {
+		return false, err
+	}
+	if err := stream.Topic("events").Publish([]byte("hi")); err != nil {
+		return false, err
+	}
+	return stream.Topic("events").Publish("not-bytes") != nil, nil
+}
+
+func TestWorkflowPublishUsesConfiguredConverters(t *testing.T) {
+	var ts testsuite.WorkflowTestSuite
+	env := ts.NewTestWorkflowEnvironment()
+
+	env.ExecuteWorkflow(byteOnlyPublishWorkflow)
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var stringPublishFailed bool
+	require.NoError(t, env.GetWorkflowResult(&stringPublishFailed))
+	require.True(t, stringPublishFailed,
+		"a string is unconvertible under the byte-slice-only set, proving WithPayloadConverters drives conversion")
+}
+
 func TestExternalPublishAndOffsetQuery(t *testing.T) {
 	var ts testsuite.WorkflowTestSuite
 	env := ts.NewTestWorkflowEnvironment()

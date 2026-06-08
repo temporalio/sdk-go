@@ -25,6 +25,7 @@ type internalEntry struct {
 // constructor registers all three handlers on the current workflow.
 type WorkflowStream struct {
 	ctx workflow.Context
+	dc  converter.DataConverter
 
 	log               []internalEntry
 	baseOffset        int64
@@ -35,12 +36,49 @@ type WorkflowStream struct {
 	topicHandles map[string]*WorkflowTopicHandle
 }
 
+// WorkflowStreamOption configures a WorkflowStream at construction.
+type WorkflowStreamOption func(*workflowStreamConfig)
+
+type workflowStreamConfig struct {
+	payloadConverters []converter.PayloadConverter
+}
+
+// WithPayloadConverters customizes how values published from workflow code (via
+// WorkflowTopicHandle.Publish) are serialized into per-item Payloads. They are
+// combined into a CompositeDataConverter in the order given, so the last one
+// should be a catch-all such as converter.NewJSONPayloadConverter.
+//
+// As on the client side, only payload conversion happens here — never a payload
+// codec. The worker's codec chain runs once on the poll-update response that
+// carries each batch to subscribers, so encoding items here too would
+// double-encode them; the []PayloadConverter type makes that impossible.
+//
+// Note: there is no public accessor for a converter set via
+// workflow.WithDataConverter, so it cannot be picked up automatically; pass the
+// matching payload converters here to keep workflow-side publishes consistent
+// with the rest of your workflow. Default: converter.GetDefaultDataConverter().
+func WithPayloadConverters(pcs ...converter.PayloadConverter) WorkflowStreamOption {
+	return func(c *workflowStreamConfig) { c.payloadConverters = pcs }
+}
+
 // NewWorkflowStream constructs a WorkflowStream and registers its signal, update, and
 // query handlers on the current workflow. Pass priorState (which may be nil) to
 // restore state carried across a continue-as-new boundary.
-func NewWorkflowStream(ctx workflow.Context, priorState *WorkflowStreamState) (*WorkflowStream, error) {
+func NewWorkflowStream(ctx workflow.Context, priorState *WorkflowStreamState, opts ...WorkflowStreamOption) (*WorkflowStream, error) {
+	var cfg workflowStreamConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	// A composite of PayloadConverters is codec-free, so workflow-published
+	// items are never double-encoded against the worker's response codec.
+	var dc converter.DataConverter = converter.GetDefaultDataConverter()
+	if len(cfg.payloadConverters) > 0 {
+		dc = converter.NewCompositeDataConverter(cfg.payloadConverters...)
+	}
+
 	s := &WorkflowStream{
 		ctx:               ctx,
+		dc:                dc,
 		publisherSeqs:     map[string]int64{},
 		publisherLastSeen: map[string]float64{},
 		topicHandles:      map[string]*WorkflowTopicHandle{},
@@ -289,13 +327,14 @@ type WorkflowTopicHandle struct {
 // Name returns the topic name.
 func (h *WorkflowTopicHandle) Name() string { return h.name }
 
-// Publish appends value to the stream on this topic. value goes through the
-// default data converter; a pre-built *commonpb.Payload bypasses conversion.
+// Publish appends value to the stream on this topic. value is serialized by the
+// stream's PayloadConverters (see WithPayloadConverters), defaulting to the
+// standard set; a pre-built *commonpb.Payload bypasses conversion.
 func (h *WorkflowTopicHandle) Publish(value any) error {
 	payload, ok := value.(*commonpb.Payload)
 	if !ok {
 		var err error
-		payload, err = converter.GetDefaultDataConverter().ToPayload(value)
+		payload, err = h.stream.dc.ToPayload(value)
 		if err != nil {
 			return fmt.Errorf("workflowstreams: convert value: %w", err)
 		}

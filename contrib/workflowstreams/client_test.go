@@ -69,6 +69,36 @@ func TestFlushSendsBufferedItems(t *testing.T) {
 	require.NoError(t, c.Close(context.Background()))
 }
 
+// TestPayloadConvertersDriveItemConversion proves that the configured
+// PayloadConverters (not the default set) serialize each item. With only the
+// byte-slice converter, a []byte round-trips but a string has no converter and
+// fails — whereas the default set's JSON fallback would have accepted it.
+func TestPayloadConvertersDriveItemConversion(t *testing.T) {
+	fc := &fakeClient{}
+	c := NewClient(fc, "wf-1", Options{
+		PayloadConverters: []converter.PayloadConverter{converter.NewByteSlicePayloadConverter()},
+	})
+
+	c.Topic("events").Publish([]byte("hi"), false)
+	require.NoError(t, c.Flush(context.Background()))
+	sigs := fc.recorded()
+	require.Len(t, sigs, 1)
+	payload, err := decodePayloadWire(sigs[0].Items[0].Data)
+	require.NoError(t, err)
+	require.Equal(t, "binary/plain", string(payload.Metadata[converter.MetadataEncoding]),
+		"item must be serialized by the configured byte-slice converter")
+	require.NoError(t, c.Close(context.Background()))
+
+	// A string is unconvertible under the byte-slice-only set, so the flush
+	// fails — the default set's JSON fallback would have accepted it. Use a
+	// fresh client since the unconvertible item stays buffered after the error.
+	c2 := NewClient(&fakeClient{}, "wf-1", Options{
+		PayloadConverters: []converter.PayloadConverter{converter.NewByteSlicePayloadConverter()},
+	})
+	c2.Topic("events").Publish("not-bytes", false)
+	require.Error(t, c2.Flush(context.Background()))
+}
+
 func TestFlushNoopWhenEmpty(t *testing.T) {
 	fc := &fakeClient{}
 	c := NewClient(fc, "wf-1", Options{})

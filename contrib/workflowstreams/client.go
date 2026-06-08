@@ -25,10 +25,21 @@ type Options struct {
 	// returning a FlushTimeoutError. Must be less than the workflow's publisher
 	// TTL (default 15m) to preserve exactly-once delivery. Default: 10m.
 	MaxRetryDuration time.Duration
-	// DataConverter is used to turn published values into Payloads and is the
-	// converter callers should use to decode subscribed items. Default:
-	// converter.GetDefaultDataConverter().
-	DataConverter converter.DataConverter
+	// PayloadConverters customize how published values are serialized into the
+	// per-item Payloads carried inside each batch. They are combined into a
+	// CompositeDataConverter in the order given (as with
+	// converter.NewCompositeDataConverter), so the last one should be a
+	// catch-all such as converter.NewJSONPayloadConverter.
+	//
+	// Only payload conversion happens here — never a payload codec
+	// (encryption, compression). The codec chain configured on the Temporal
+	// client runs once on the signal/update envelope that carries each batch,
+	// so encoding items here too would double-encode them; the
+	// []PayloadConverter type makes that mistake impossible. To decode
+	// subscribed items, use a converter built from the same PayloadConverters.
+	//
+	// Default: the converters from converter.GetDefaultDataConverter().
+	PayloadConverters []converter.PayloadConverter
 }
 
 // SubscribeOptions configures a subscription.
@@ -59,9 +70,12 @@ type Client struct {
 // NewClient creates a Client targeting workflowID through the given Temporal
 // client. The returned Client follows continue-as-new chains in Subscribe.
 func NewClient(c client.Client, workflowID string, opts Options) *Client {
-	dc := opts.DataConverter
-	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
+	// Build a codec-free converter for per-item serialization. A composite of
+	// PayloadConverters cannot apply a payload codec, so items are never
+	// double-encoded against the codec on the client's envelope.
+	var dc converter.DataConverter = converter.GetDefaultDataConverter()
+	if len(opts.PayloadConverters) > 0 {
+		dc = converter.NewCompositeDataConverter(opts.PayloadConverters...)
 	}
 	wsc := &Client{
 		c:            c,

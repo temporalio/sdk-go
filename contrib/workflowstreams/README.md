@@ -138,7 +138,7 @@ converter. Offsets are **global** (across all topics), not per-topic.
 | `BatchInterval` | 2s | Automatic flush interval |
 | `MaxBatchSize` | unset | Flush once the buffer reaches this size |
 | `MaxRetryDuration` | 10m | Max time to retry a failed flush before `FlushTimeoutError`. Must be < the workflow's publisher TTL (15m) to preserve exactly-once delivery |
-| `DataConverter` | default | Converter for publishing/decoding |
+| `PayloadConverters` | default set | Per-item serialization. Payload conversion only — the client's codec chain runs once on the envelope, never per item |
 | `SubscribeOptions.PollCooldown` | 100ms | Min interval between polls |
 
 ## Cross-language protocol
