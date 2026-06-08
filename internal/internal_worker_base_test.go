@@ -43,6 +43,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerSetsTaskPollerType() 
 	poller := newScalableTaskPoller(
 		blockingPoller,
 		ilog.NewNopLogger(),
+		metrics.NopHandler,
 		behavior,
 		metrics.PollerTypeWorkflowStickyTask,
 		&atomic.Bool{},
@@ -159,7 +160,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
 		maxTaskPerSecond: 1000,
@@ -205,7 +206,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}
 
 	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
 
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
@@ -236,6 +237,50 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 		permits, _ := readSemaphoreState(poller.pollerSemaphore)
 		return permits == 0
 	}, 200*time.Millisecond, 10*time.Millisecond, "should not scale below minimum")
+}
+
+// TestPollerTargetMetric verifies the temporal_poller_target gauge is emitted with
+// the poller-type tag, seeded with the initial target at construction, and updated
+// as the autoscaling target changes (here, halved on ResourceExhausted errors).
+func (s *ScalableTaskPollerSuite) TestPollerTargetMetric() {
+	const initialPollers = 16
+	behavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: initialPollers,
+		maximumNumberOfPollers: 100,
+		minimumNumberOfPollers: 1,
+	}
+	serverSupportsAutoscaling := &atomic.Bool{}
+	serverSupportsAutoscaling.Store(true)
+
+	capturingHandler := metrics.NewCapturingHandler()
+	poller := newScalableTaskPoller(
+		newSemaphoreProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		capturingHandler,
+		behavior,
+		metrics.PollerTypeActivityTask,
+		serverSupportsAutoscaling,
+	)
+
+	pollerTarget := func() float64 {
+		for _, g := range capturingHandler.Gauges() {
+			if g.Name == metrics.PollerTarget && g.Tags[metrics.PollerTypeTagName] == metrics.PollerTypeActivityTask {
+				return g.Value()
+			}
+		}
+		s.FailNow("temporal_poller_target gauge not found for activity_task")
+		return 0
+	}
+
+	// Initial target is emitted at construction.
+	s.Equal(float64(initialPollers), pollerTarget())
+
+	// The gauge tracks the target as it halves on ResourceExhausted errors.
+	resourceExhausted := serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, "")
+	poller.pollerAutoscalerReportHandle.handleError(resourceExhausted)
+	s.Equal(float64(8), pollerTarget())
+	poller.pollerAutoscalerReportHandle.handleError(resourceExhausted)
+	s.Equal(float64(4), pollerTarget())
 }
 
 type semaphoreProbeTaskPoller struct {
@@ -927,6 +972,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {
 			poller := newScalableTaskPoller(
 				newSemaphoreProbeTaskPoller(),
 				ilog.NewNopLogger(),
+				metrics.NopHandler,
 				behavior,
 				tc.ptype,
 				&atomic.Bool{},
