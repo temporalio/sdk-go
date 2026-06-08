@@ -410,6 +410,7 @@ func newWorkflowTaskWorkerInternal(
 			newScalableTaskPoller(
 				localActivityTaskPoller,
 				params.Logger,
+				params.MetricsHandler,
 				NewPollerBehaviorSimpleMaximum(
 					PollerBehaviorSimpleMaximumOptions{
 						MaximumNumberOfPollers: 2,
@@ -482,6 +483,7 @@ func buildWorkflowScalableTaskPollers(taskProcessor *workflowTaskProcessor, beha
 			newScalableTaskPoller(
 				taskProcessor.createPoller(NonSticky),
 				params.Logger,
+				params.MetricsHandler,
 				behavior,
 				metrics.PollerTypeWorkflowTask,
 				params.serverSupportsAutoscaling,
@@ -493,6 +495,7 @@ func buildWorkflowScalableTaskPollers(taskProcessor *workflowTaskProcessor, beha
 				newScalableTaskPoller(
 					taskProcessor.createPoller(Sticky),
 					params.Logger,
+					params.MetricsHandler,
 					behavior,
 					metrics.PollerTypeWorkflowStickyTask,
 					params.serverSupportsAutoscaling,
@@ -505,6 +508,7 @@ func buildWorkflowScalableTaskPollers(taskProcessor *workflowTaskProcessor, beha
 			newScalableTaskPoller(
 				taskProcessor.createPoller(Mixed),
 				params.Logger,
+				params.MetricsHandler,
 				behavior,
 				metrics.PollerTypeWorkflowTask,
 				params.serverSupportsAutoscaling,
@@ -680,6 +684,7 @@ func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
 		newScalableTaskPoller(
 			aw.poller,
 			aw.executionParameters.Logger,
+			aw.executionParameters.MetricsHandler,
 			behavior,
 			metrics.PollerTypeActivityTask,
 			aw.executionParameters.serverSupportsAutoscaling,

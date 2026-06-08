@@ -54,6 +54,7 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 			newScalableTaskPoller(
 				poller,
 				opts.executionParameters.Logger,
+				opts.executionParameters.MetricsHandler,
 				params.NexusTaskPollerBehavior,
 				metrics.PollerTypeNexusTask,
 				params.serverSupportsAutoscaling,
