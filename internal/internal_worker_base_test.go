@@ -222,6 +222,60 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}, 200*time.Millisecond, 10*time.Millisecond, "should not scale below minimum")
 }
 
+// TestAutoscalingHalvesOnResourceExhausted verifies that a ResourceExhausted poll
+// error HALVES the poller target (t/2) - as opposed to the -1 decrement applied to
+// other errors - and that the halved value reaches the live pollerSemaphore via the
+// scaleCallback wiring. Asserting the exact step sequence (16 -> 8 -> 4, then 4 -> 3
+// for a non-RE error, then 3 -> 1) is what distinguishes halving from a plain
+// scale-down: a -1 decrement would yield 15, 7, etc., failing these assertions.
+//
+// PollScalerReportHandleSuite.TestErrorScaleDown covers the same arithmetic against
+// a mock scaleCallback; this test additionally proves the real semaphore is resized.
+func (s *ScalableTaskPollerSuite) TestAutoscalingHalvesOnResourceExhausted() {
+	const initialPollers = 16
+	behavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: initialPollers,
+		maximumNumberOfPollers: 100,
+		minimumNumberOfPollers: 1,
+	}
+
+	// The server advertising poller autoscaling is what enables error-driven
+	// scale-down (the everSawScalingDecision || serverSupportsAutoscaling guard
+	// in handleError). Simulate that here.
+	serverSupportsAutoscaling := &atomic.Bool{}
+	serverSupportsAutoscaling.Store(true)
+
+	poller := newScalableTaskPoller(&semaphoreProbeTaskPoller{}, ilog.NewNopLogger(), behavior, serverSupportsAutoscaling)
+	handle := poller.pollerAutoscalerReportHandle
+
+	resourceExhausted := serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, "injected resource exhausted")
+	otherError := serviceerror.NewInternal("some other failure")
+
+	assertMaxPermits := func(want int) {
+		_, max := readSemaphoreState(poller.pollerSemaphore)
+		require.Equal(s.T(), want, max)
+	}
+
+	assertMaxPermits(initialPollers) // 16, before any error
+
+	handle.handleError(resourceExhausted)
+	assertMaxPermits(8) // 16 / 2 (halve)
+
+	handle.handleError(resourceExhausted)
+	assertMaxPermits(4) // 8 / 2 (halve)
+
+	// A non-ResourceExhausted error only decrements: 4 -> 3, NOT 4 / 2 == 2.
+	// This is the assertion that proves ResourceExhausted specifically halves.
+	handle.handleError(otherError)
+	assertMaxPermits(3)
+
+	handle.handleError(resourceExhausted)
+	assertMaxPermits(1) // 3 / 2 == 1, clamped at the configured minimum
+
+	handle.handleError(resourceExhausted)
+	assertMaxPermits(1) // already at minimum, stays clamped
+}
+
 type semaphoreProbeTaskPoller struct {
 	signals chan struct{}
 	done    chan struct{}
