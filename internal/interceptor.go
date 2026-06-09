@@ -712,6 +712,9 @@ type ClientExecuteNexusOperationInput struct {
 	Service       string
 	OperationType string
 	Input         interface{}
+	// NexusHeader is the Nexus header to attach to the operation request.
+	// Interceptors may read and write this header.
+	NexusHeader nexus.Header
 }
 
 // ClientGetNexusOperationHandleInput is the input to
