@@ -447,3 +447,148 @@ func TestConvertNexusLinkToLinkWorkflowEvent(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertLinkNexusOperationToNexusLink(t *testing.T) {
+	type testcase struct {
+		name      string
+		input     *commonpb.Link_NexusOperation
+		output    nexus.Link
+		outputURL string
+	}
+
+	cases := []testcase{
+		{
+			name: "valid",
+			input: &commonpb.Link_NexusOperation{
+				Namespace:   "ns",
+				OperationId: "op-id",
+				RunId:       "run-id",
+			},
+			output: nexus.Link{
+				URL: &url.URL{
+					Scheme:  "temporal",
+					Path:    "/namespaces/ns/nexus-operations/op-id/run-id/details",
+					RawPath: "/namespaces/ns/nexus-operations/op-id/run-id/details",
+				},
+				Type: "temporal.api.common.v1.Link.NexusOperation",
+			},
+			outputURL: "temporal:///namespaces/ns/nexus-operations/op-id/run-id/details",
+		},
+		{
+			name: "valid with slash in operation id",
+			input: &commonpb.Link_NexusOperation{
+				Namespace:   "ns",
+				OperationId: "op/id",
+				RunId:       "run-id",
+			},
+			output: nexus.Link{
+				URL: &url.URL{
+					Scheme:  "temporal",
+					Path:    "/namespaces/ns/nexus-operations/op/id/run-id/details",
+					RawPath: "/namespaces/ns/nexus-operations/op%2Fid/run-id/details",
+				},
+				Type: "temporal.api.common.v1.Link.NexusOperation",
+			},
+			outputURL: "temporal:///namespaces/ns/nexus-operations/op%2Fid/run-id/details",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			output := temporalnexus.ConvertLinkNexusOperationToNexusLink(tc.input)
+			require.Equal(t, tc.output, output)
+			require.Equal(t, tc.outputURL, output.URL.String())
+		})
+	}
+}
+
+func TestConvertNexusLinkToLinkNexusOperation(t *testing.T) {
+	type testcase struct {
+		name   string
+		input  nexus.Link
+		output *commonpb.Link_NexusOperation
+		errMsg string
+	}
+
+	cases := []testcase{
+		{
+			name: "valid",
+			input: nexus.Link{
+				URL: &url.URL{
+					Scheme:  "temporal",
+					Path:    "/namespaces/ns/nexus-operations/op-id/run-id/details",
+					RawPath: "/namespaces/ns/nexus-operations/op-id/run-id/details",
+				},
+				Type: "temporal.api.common.v1.Link.NexusOperation",
+			},
+			output: &commonpb.Link_NexusOperation{
+				Namespace:   "ns",
+				OperationId: "op-id",
+				RunId:       "run-id",
+			},
+		},
+		{
+			name: "valid with encoded slash in operation id",
+			input: nexus.Link{
+				URL: &url.URL{
+					Scheme:  "temporal",
+					Path:    "/namespaces/ns/nexus-operations/op/id/run-id/details",
+					RawPath: "/namespaces/ns/nexus-operations/op%2Fid/run-id/details",
+				},
+				Type: "temporal.api.common.v1.Link.NexusOperation",
+			},
+			output: &commonpb.Link_NexusOperation{
+				Namespace:   "ns",
+				OperationId: "op/id",
+				RunId:       "run-id",
+			},
+		},
+		{
+			name: "wrong link type",
+			input: nexus.Link{
+				URL: &url.URL{
+					Scheme: "temporal",
+					Path:   "/namespaces/ns/nexus-operations/op-id/run-id/details",
+				},
+				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+			},
+			errMsg: "cannot parse link type",
+		},
+		{
+			name: "invalid scheme",
+			input: nexus.Link{
+				URL: &url.URL{
+					Scheme: "random",
+					Path:   "/namespaces/ns/nexus-operations/op-id/run-id/details",
+				},
+				Type: "temporal.api.common.v1.Link.NexusOperation",
+			},
+			errMsg: "failed to parse link to Link_NexusOperation: invalid scheme",
+		},
+		{
+			name: "malformed path",
+			input: nexus.Link{
+				URL: &url.URL{
+					Scheme: "temporal",
+					Path:   "/namespaces/ns/nexus-operations/op-id/run-id/",
+				},
+				Type: "temporal.api.common.v1.Link.NexusOperation",
+			},
+			errMsg: "failed to parse link to Link_NexusOperation: malformed URL path",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			output, err := temporalnexus.ConvertNexusLinkToLinkNexusOperation(tc.input)
+			if tc.errMsg != "" {
+				require.ErrorContains(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+				if diff := cmp.Diff(tc.output, output, protocmp.Transform()); diff != "" {
+					assert.Fail(t, "Proto mismatch (-want +got):\n", diff)
+				}
+			}
+		})
+	}
+}
