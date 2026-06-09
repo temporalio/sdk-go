@@ -220,7 +220,10 @@ type (
 	baseWorker struct {
 		options              baseWorkerOptions
 		isWorkerStarted      bool
-		stopCh               chan struct{}  // Channel used to stop the go routines.
+		// stopCh is created by newBaseWorker and closed by baseWorker.Stop().
+		// It is internal to baseWorker and stops its poller, dispatcher, autoscaler,
+		// and throttling/backoff loops.
+		stopCh chan struct{}
 		stopWG               sync.WaitGroup // The WaitGroup for stopping existing routines.
 		pollLimiter          *rate.Limiter
 		taskLimiter          *rate.Limiter
