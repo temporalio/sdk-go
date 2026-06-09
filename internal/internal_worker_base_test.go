@@ -63,7 +63,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerUsesDynamicRunnerOnly
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
 	)
-	s.NotNil(autoscalingPoller.dynamicRunner)
+	s.NotNil(autoscalingPoller.autoscalingRunner)
 	s.Equal(0, autoscalingPoller.pollerCount)
 
 	simpleMaximumPoller := newScalableTaskPoller(
@@ -73,9 +73,71 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerUsesDynamicRunnerOnly
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
 	)
-	s.Nil(simpleMaximumPoller.dynamicRunner)
+	s.Nil(simpleMaximumPoller.autoscalingRunner)
 	s.Equal(2, simpleMaximumPoller.pollerCount)
 }
+
+func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind() {
+	autoscalingBehavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: 1,
+		maximumNumberOfPollers: 2,
+		minimumNumberOfPollers: 1,
+	}
+	bw := &baseWorker{
+		options: baseWorkerOptions{
+			slotReservationData: slotReservationData{
+				taskQueue:     "test-task-queue",
+				taskQueueKind: enumspb.TASK_QUEUE_KIND_UNSPECIFIED,
+			},
+		},
+	}
+
+	nonStickyPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		autoscalingBehavior,
+		metrics.PollerTypeWorkflowTask,
+		&atomic.Bool{},
+	)
+	s.Equal(enumspb.TASK_QUEUE_KIND_NORMAL, bw.slotReservationData(nonStickyPoller).taskQueueKind)
+
+	stickyPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		autoscalingBehavior,
+		metrics.PollerTypeWorkflowStickyTask,
+		&atomic.Bool{},
+	)
+	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, bw.slotReservationData(stickyPoller).taskQueueKind)
+
+	mixedPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 1},
+		metrics.PollerTypeWorkflowTask,
+		&atomic.Bool{},
+	)
+	s.Equal(enumspb.TASK_QUEUE_KIND_UNSPECIFIED, bw.slotReservationData(mixedPoller).taskQueueKind)
+}
+
+func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesTaskQueueKind() {
+	supplier := &captureReservationInfoSlotSupplier{}
+	trackingSupplier := newTrackingSlotSupplier(supplier, trackingSlotSupplierOptions{
+		logger:         ilog.NewNopLogger(),
+		metricsHandler: metrics.NopHandler,
+	})
+
+	permit, err := trackingSupplier.ReserveSlot(context.Background(), &slotReservationData{
+		taskQueue:     "test-task-queue",
+		taskQueueKind: enumspb.TASK_QUEUE_KIND_STICKY,
+	})
+
+	s.NoError(err)
+	s.NotNil(permit)
+	s.Equal("test-task-queue", supplier.taskQueue)
+	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, supplier.taskQueueKind)
+}
+
 func TestScalableTaskPollerSuite(t *testing.T) {
 	suite.Run(t, new(ScalableTaskPollerSuite))
 }
@@ -187,25 +249,25 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 
 	bw.Start()
 	defer func() {
-		blockingPoller.Allow(readDynamicPollerState(poller.dynamicRunner))
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
 		blockingPoller.Close()
 		bw.Stop()
 	}()
 
-	eventuallyDynamicPollerState(s.T(), poller.dynamicRunner, 2, "expected initial pollers to start")
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 2, "expected initial pollers to start")
 
 	require.Never(s.T(), func() bool {
-		blockingPoller.Allow(readDynamicPollerState(poller.dynamicRunner))
-		return readDynamicPollerState(poller.dynamicRunner) > 2
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		return readAutoscalingPollerState(poller.autoscalingRunner) > 2
 	}, 200*time.Millisecond, 10*time.Millisecond, "should not exceed initial concurrency")
 
 	poller.pollerAutoscaler.updateTarget(func(int64) int64 { return 3 })
 
-	eventuallyDynamicPollerState(s.T(), poller.dynamicRunner, 3, "expected concurrency to scale up to maximum")
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 3, "expected concurrency to scale up to maximum")
 
 	require.Never(s.T(), func() bool {
-		blockingPoller.Allow(readDynamicPollerState(poller.dynamicRunner))
-		return readDynamicPollerState(poller.dynamicRunner) > 3
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		return readAutoscalingPollerState(poller.autoscalingRunner) > 3
 	}, 200*time.Millisecond, 10*time.Millisecond, "should not exceed maximum concurrency")
 }
 
@@ -232,21 +294,21 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 
 	bw.Start()
 	defer func() {
-		blockingPoller.Allow(readDynamicPollerState(poller.dynamicRunner))
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
 		blockingPoller.Close()
 		bw.Stop()
 	}()
 
-	eventuallyDynamicPollerState(s.T(), poller.dynamicRunner, 2, "expected initial concurrency")
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 2, "expected initial concurrency")
 
 	poller.pollerAutoscaler.updateTarget(func(target int64) int64 { return 1 })
 	blockingPoller.Allow(2)
 
-	eventuallyDynamicPollerState(s.T(), poller.dynamicRunner, 1, "expected concurrency to reduce to minimum")
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected concurrency to reduce to minimum")
 
 	require.Never(s.T(), func() bool {
-		blockingPoller.Allow(readDynamicPollerState(poller.dynamicRunner))
-		return readDynamicPollerState(poller.dynamicRunner) == 0
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		return readAutoscalingPollerState(poller.autoscalingRunner) == 0
 	}, 200*time.Millisecond, 10*time.Millisecond, "should not scale below minimum")
 }
 
@@ -274,12 +336,12 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingDoesNotHoldSlotWhileWaitingForP
 
 	bw.Start()
 	defer func() {
-		blockingPoller.Allow(readDynamicPollerState(poller.dynamicRunner))
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
 		blockingPoller.Close()
 		bw.Stop()
 	}()
 
-	eventuallyDynamicPollerState(s.T(), poller.dynamicRunner, 1, "expected initial poller to start")
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected initial poller to start")
 
 	require.Never(s.T(), func() bool {
 		return slotSupplier.reserves.Load() > 1
@@ -318,12 +380,12 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingBalancerDoesNotHoldSlotsWhileBl
 
 	bw.Start()
 	defer func() {
-		blockingPoller.Allow(readDynamicPollerState(poller.dynamicRunner))
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
 		blockingPoller.Close()
 		bw.Stop()
 	}()
 
-	eventuallyDynamicPollerState(s.T(), poller.dynamicRunner, 1, "expected first poller to start")
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected first poller to start")
 
 	require.Never(s.T(), func() bool {
 		return slotSupplier.reserves.Load() > 1
@@ -370,13 +432,13 @@ func (p *blockingProbeTaskPoller) Close() {
 	}
 }
 
-func eventuallyDynamicPollerState(t *testing.T, runner *dynamicScalableTaskPollerRunner, expectedActive int, msg string) {
+func eventuallyAutoscalingPollerState(t *testing.T, runner *autoscalingTaskPollerRunner, expectedActive int, msg string) {
 	require.Eventually(t, func() bool {
-		return readDynamicPollerState(runner) == expectedActive
+		return readAutoscalingPollerState(runner) == expectedActive
 	}, time.Second, 10*time.Millisecond, msg)
 }
 
-func readDynamicPollerState(runner *dynamicScalableTaskPollerRunner) int {
+func readAutoscalingPollerState(runner *autoscalingTaskPollerRunner) int {
 	if runner == nil {
 		return 0
 	}
@@ -403,6 +465,37 @@ func (s *testSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
 func (s *testSlotSupplier) ReleaseSlot(SlotReleaseInfo) {}
 
 func (s *testSlotSupplier) MaxSlots() int { return 0 }
+
+type captureReservationInfoSlotSupplier struct {
+	taskQueue     string
+	taskQueueKind enumspb.TaskQueueKind
+}
+
+func (s *captureReservationInfoSlotSupplier) ReserveSlot(
+	ctx context.Context,
+	info SlotReservationInfo,
+) (*SlotPermit, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	s.taskQueue = info.TaskQueue()
+	s.taskQueueKind = info.TaskQueueKind()
+	return &SlotPermit{}, nil
+}
+
+func (s *captureReservationInfoSlotSupplier) TryReserveSlot(info SlotReservationInfo) *SlotPermit {
+	s.taskQueue = info.TaskQueue()
+	s.taskQueueKind = info.TaskQueueKind()
+	return &SlotPermit{}
+}
+
+func (s *captureReservationInfoSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+
+func (s *captureReservationInfoSlotSupplier) ReleaseSlot(SlotReleaseInfo) {}
+
+func (s *captureReservationInfoSlotSupplier) MaxSlots() int { return 0 }
 
 type limitedSlotSupplier struct {
 	slots    chan struct{}

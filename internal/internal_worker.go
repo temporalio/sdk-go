@@ -391,7 +391,8 @@ func newWorkflowTaskWorkerInternal(
 		metricsHandler:               params.MetricsHandler,
 		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_UNSPECIFIED,
 		},
 	}
 
@@ -439,7 +440,8 @@ func newWorkflowTaskWorkerInternal(
 		fatalErrCb:     laParams.WorkerFatalErrorCallback,
 		metricsHandler: laParams.MetricsHandler,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 	},
 	)
@@ -601,7 +603,8 @@ func newActivityWorker(
 		sessionTokenBucket:           sessionTokenBucket,
 		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 	}
 

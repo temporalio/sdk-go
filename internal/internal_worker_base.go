@@ -12,6 +12,7 @@ import (
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
@@ -187,10 +188,10 @@ type (
 		taskPollerType string
 		// pollerCount is the number of pollers tasks to start. There may be less than this
 		// due to limited slots, rate limiting, or poller autoscaling.
-		pollerCount      int
-		taskPoller       taskPoller
-		pollerAutoscaler *pollerAutoscaler
-		dynamicRunner    *dynamicScalableTaskPollerRunner
+		pollerCount       int
+		taskPoller        taskPoller
+		pollerAutoscaler  *pollerAutoscaler
+		autoscalingRunner *autoscalingTaskPollerRunner
 	}
 
 	// baseWorkerOptions options to configure base worker.
@@ -289,7 +290,7 @@ type (
 
 	barrier chan struct{}
 
-	dynamicScalableTaskPollerRunner struct {
+	autoscalingTaskPollerRunner struct {
 		autoscaler *pollerAutoscaler
 		wakeCh     chan struct{}
 		activeMu   sync.Mutex
@@ -422,7 +423,7 @@ func (bw *baseWorker) Start() {
 			bw.pollerBalancer.registerPollerType(taskWorker.taskPollerType)
 		}
 
-		if taskWorker.dynamicRunner != nil {
+		if taskWorker.autoscalingRunner != nil {
 			bw.stopWG.Add(1)
 			bw.pollerWG.Add(1)
 			go bw.runAutoscalingPoller(taskWorker)
@@ -499,7 +500,7 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 			}
 		}
 
-		bw.reserveSlotAsync(ctx, reserveChan)
+		bw.reserveSlotAsync(ctx, reserveChan, taskWorker)
 
 		select {
 		case <-bw.stopCh:
@@ -554,12 +555,12 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			}
 		}
 
-		releaseActive, err := taskWorker.dynamicRunner.acquire(bw.limiterContext)
+		releaseActive, err := taskWorker.autoscalingRunner.acquire(bw.limiterContext)
 		if err != nil {
 			return
 		}
 
-		bw.reserveSlotAsync(ctx, reserveChan)
+		bw.reserveSlotAsync(ctx, reserveChan, taskWorker)
 
 		var permit *SlotPermit
 		select {
@@ -598,11 +599,16 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 	}
 }
 
-func (bw *baseWorker) reserveSlotAsync(ctx context.Context, reserveChan chan<- *SlotPermit) {
+func (bw *baseWorker) reserveSlotAsync(
+	ctx context.Context,
+	reserveChan chan<- *SlotPermit,
+	taskWorker scalableTaskPoller,
+) {
 	bw.stopWG.Add(1)
 	go func() {
 		defer bw.stopWG.Done()
-		s, err := bw.slotSupplier.ReserveSlot(ctx, &bw.options.slotReservationData)
+		reservationData := bw.slotReservationData(taskWorker)
+		s, err := bw.slotSupplier.ReserveSlot(ctx, &reservationData)
 		if err != nil {
 			if !errors.Is(err, context.Canceled) {
 				bw.logger.Error("Error while trying to reserve slot", "error", err)
@@ -620,6 +626,30 @@ func (bw *baseWorker) reserveSlotAsync(ctx context.Context, reserveChan chan<- *
 			bw.releaseSlot(s, SlotReleaseReasonUnused)
 		}
 	}()
+}
+
+func (bw *baseWorker) slotReservationData(taskWorker scalableTaskPoller) slotReservationData {
+	data := bw.options.slotReservationData
+	if kind, ok := taskQueueKindForPoller(taskWorker); ok {
+		data.taskQueueKind = kind
+	}
+	return data
+}
+
+func taskQueueKindForPoller(taskWorker scalableTaskPoller) (enumspb.TaskQueueKind, bool) {
+	switch taskWorker.taskPollerType {
+	case metrics.PollerTypeWorkflowStickyTask:
+		return enumspb.TASK_QUEUE_KIND_STICKY, true
+	case metrics.PollerTypeWorkflowTask:
+		// Autoscaling workflow pollers are split by queue kind. SimpleMaximum
+		// workflow pollers are mixed, so their kind is not known at reservation time.
+		if taskWorker.autoscalingRunner != nil {
+			return enumspb.TASK_QUEUE_KIND_NORMAL, true
+		}
+	case metrics.PollerTypeActivityTask, metrics.PollerTypeNexusTask:
+		return enumspb.TASK_QUEUE_KIND_NORMAL, true
+	}
+	return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
 }
 
 func (bw *baseWorker) tryReserveSlot() *SlotPermit {
@@ -996,14 +1026,14 @@ func (prh *pollerAutoscaler) newPeriod() {
 	prh.scaleUpAllowed.Store(float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1)
 }
 
-func newDynamicScalableTaskPollerRunner(autoscaler *pollerAutoscaler) *dynamicScalableTaskPollerRunner {
-	return &dynamicScalableTaskPollerRunner{
+func newAutoscalingTaskPollerRunner(autoscaler *pollerAutoscaler) *autoscalingTaskPollerRunner {
+	return &autoscalingTaskPollerRunner{
 		autoscaler: autoscaler,
 		wakeCh:     make(chan struct{}, 1),
 	}
 }
 
-func (r *dynamicScalableTaskPollerRunner) acquire(ctx context.Context) (func(), error) {
+func (r *autoscalingTaskPollerRunner) acquire(ctx context.Context) (func(), error) {
 	for {
 		r.activeMu.Lock()
 		target := int(r.autoscaler.target.Load())
@@ -1022,21 +1052,21 @@ func (r *dynamicScalableTaskPollerRunner) acquire(ctx context.Context) (func(), 
 	}
 }
 
-func (r *dynamicScalableTaskPollerRunner) release() {
+func (r *autoscalingTaskPollerRunner) release() {
 	r.activeMu.Lock()
 	r.active--
 	r.activeMu.Unlock()
 	r.signal()
 }
 
-func (r *dynamicScalableTaskPollerRunner) signal() {
+func (r *autoscalingTaskPollerRunner) signal() {
 	select {
 	case r.wakeCh <- struct{}{}:
 	default:
 	}
 }
 
-func (r *dynamicScalableTaskPollerRunner) activePolls() int {
+func (r *autoscalingTaskPollerRunner) activePolls() int {
 	r.activeMu.Lock()
 	defer r.activeMu.Unlock()
 	return r.active
@@ -1062,9 +1092,9 @@ func newScalableTaskPoller(
 			logger:                    logger,
 			serverSupportsAutoscaling: serverSupportsAutoscaling,
 		})
-		tw.dynamicRunner = newDynamicScalableTaskPollerRunner(tw.pollerAutoscaler)
+		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler)
 		tw.pollerAutoscaler.targetChangedCallback = func() {
-			tw.dynamicRunner.signal()
+			tw.autoscalingRunner.signal()
 		}
 	case *pollerBehaviorSimpleMaximum:
 		tw.pollerCount = p.maximumNumberOfPollers

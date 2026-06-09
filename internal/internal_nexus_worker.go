@@ -2,6 +2,7 @@ package internal
 
 import (
 	"github.com/nexus-rpc/sdk-go/nexus"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 )
@@ -66,7 +67,8 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		metricsHandler:               params.MetricsHandler,
 		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 		isInternalWorker: params.isInternalWorker(),
 	}
