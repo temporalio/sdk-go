@@ -104,8 +104,9 @@ func (m *heartbeatManager) registerWorker(
 	defer m.workersMutex.Unlock()
 
 	hw := m.sharedNamespaceWorkerForLocked(namespace)
-	hw.workerCommandsSupported = nsData.capabilities.GetWorkerCommands()
+
 	if hw.started.CompareAndSwap(false, true) {
+		hw.workerCommandsSupported = nsData.capabilities.GetWorkerCommands()
 		go hw.run()
 	}
 
