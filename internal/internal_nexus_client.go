@@ -61,6 +61,10 @@ type (
 		//
 		// Optional: defaults to none/empty.
 		Summary string
+
+		// PROTOTYPE
+		// Completion callbacks to attach to the SANO operation.
+		CompletionCallbacks []*commonpb.Callback
 	}
 
 	// ClientNexusClientOptions contains options for creating a NexusClient.
@@ -432,6 +436,8 @@ func (nc *nexusClientImpl) ExecuteOperation(ctx context.Context, operation any, 
 		Service:       nc.service,
 		OperationType: operationName,
 		Input:         input,
+		// PROTOTYPE
+		CompletionCallbacks: options.CompletionCallbacks,
 	})
 }
 
@@ -702,6 +708,8 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		IdConflictPolicy: in.Options.IDConflictPolicy,
 		SearchAttributes: searchAttrs,
 		UserMetadata:     userMetadata,
+		// PROTOTYPE
+		CompletionCallbacks: in.CompletionCallbacks,
 	}
 	if in.Options.ScheduleToCloseTimeout > 0 {
 		request.ScheduleToCloseTimeout = durationpb.New(in.Options.ScheduleToCloseTimeout)

@@ -712,6 +712,9 @@ type ClientExecuteNexusOperationInput struct {
 	Service       string
 	OperationType string
 	Input         interface{}
+
+	// PROTOTYPE
+	CompletionCallbacks []*commonpb.Callback
 }
 
 // ClientGetNexusOperationHandleInput is the input to
