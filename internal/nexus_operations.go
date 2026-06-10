@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
@@ -42,6 +43,39 @@ type NexusOperationContext struct {
 	metricsHandler metrics.Handler
 	log            log.Logger
 	registry       *registry
+
+	// backlinksMu guards responseBacklinks. A Nexus operation handler is invoked from a single
+	// goroutine, but handlers are free to issue RPCs from other goroutines they spawn, so the
+	// accumulator is synchronized.
+	backlinksMu sync.Mutex
+	// responseBacklinks holds the backlinks returned by outbound RPCs the operation handler issues
+	// (such as SignalWorkflowExecutionResponse.link or
+	// SignalWithStartWorkflowExecutionResponse.signal_link). One entry per outbound RPC that
+	// returned a link. Drained by the task handler when building the StartOperationResponse so each
+	// RPC the handler issued gets a corresponding link on the caller workflow's history event.
+	responseBacklinks []*commonpb.Link
+}
+
+// AddResponseBacklink appends a backlink returned by an outbound RPC the operation handler issued
+// (e.g. signal, signalWithStart). nil links are ignored. The task handler drains the accumulated
+// backlinks when building the operation's StartOperationResponse.
+func (nc *NexusOperationContext) AddResponseBacklink(link *commonpb.Link) {
+	if link == nil {
+		return
+	}
+	nc.backlinksMu.Lock()
+	defer nc.backlinksMu.Unlock()
+	nc.responseBacklinks = append(nc.responseBacklinks, link)
+}
+
+// ResponseBacklinks returns a copy of the backlinks accumulated from every outbound RPC the handler
+// issued, in call order.
+func (nc *NexusOperationContext) ResponseBacklinks() []*commonpb.Link {
+	nc.backlinksMu.Lock()
+	defer nc.backlinksMu.Unlock()
+	out := make([]*commonpb.Link, len(nc.responseBacklinks))
+	copy(out, nc.responseBacklinks)
+	return out
 }
 
 func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
@@ -174,6 +208,33 @@ var NexusOperationRequestIDKey = nexusOperationRequestIDKeyType{}
 type nexusOperationLinksKeyType struct{}
 
 var NexusOperationLinksKey = nexusOperationLinksKeyType{}
+
+// workflowEventLinkToNexusLink converts a common.v1.Link with a WorkflowEvent variant into a
+// nexus.v1.Link (URL + Type). It is registered by the temporalnexus package via
+// SetWorkflowEventLinkToNexusLinkConverter to avoid an import cycle (temporalnexus imports
+// internal, so the link-conversion helpers in temporalnexus cannot be imported here directly). The
+// task handler uses it to drain response backlinks onto the StartOperationResponse. It returns
+// (nil, false) when the link is not a convertible WorkflowEvent link.
+var workflowEventLinkToNexusLink func(*commonpb.Link) (*nexuspb.Link, bool)
+
+// SetWorkflowEventLinkToNexusLinkConverter registers the converter used to turn response backlinks
+// into nexus.v1.Links. Called once from the temporalnexus package's init.
+func SetWorkflowEventLinkToNexusLinkConverter(fn func(*commonpb.Link) (*nexuspb.Link, bool)) {
+	workflowEventLinkToNexusLink = fn
+}
+
+// nexusLinkToWorkflowEventLink converts an inbound nexus.v1.Link into a common.v1.Link with a
+// WorkflowEvent variant. Registered by the temporalnexus package via
+// SetNexusLinkToWorkflowEventLinkConverter to avoid an import cycle. The task handler uses it to
+// forward inbound Nexus task links onto the RPCs (e.g. signal, signalWithStart) the handler issues.
+// It returns (nil, false) when the link is not a parseable WorkflowEvent link.
+var nexusLinkToWorkflowEventLink func(*nexuspb.Link) (*commonpb.Link, bool)
+
+// SetNexusLinkToWorkflowEventLinkConverter registers the converter used to turn inbound Nexus task
+// links into common.v1.Links. Called once from the temporalnexus package's init.
+func SetNexusLinkToWorkflowEventLinkConverter(fn func(*nexuspb.Link) (*commonpb.Link, bool)) {
+	nexusLinkToWorkflowEventLink = fn
+}
 
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
