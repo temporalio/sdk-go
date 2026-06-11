@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 )
@@ -136,6 +137,59 @@ func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesTaskQueueKind() 
 	s.NotNil(permit)
 	s.Equal("test-task-queue", supplier.taskQueue)
 	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, supplier.taskQueueKind)
+}
+
+func (s *ScalableTaskPollerSuite) TestSeedPollerGroupInfosRaisesSimpleMaximumPollerCount() {
+	behavior := NewPollerBehaviorSimpleMaximum(
+		PollerBehaviorSimpleMaximumOptions{
+			MaximumNumberOfPollers: 1,
+		},
+	)
+
+	pollers := []scalableTaskPoller{newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		behavior,
+		metrics.PollerTypeActivityTask,
+		&atomic.Bool{},
+	)}
+
+	seedScalableTaskPollerGroupInfos(pollers, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1.0},
+		{Id: "group-b", Weight: 1.0},
+		{Id: "group-c", Weight: 1.0},
+	})
+
+	s.Equal(3, pollers[0].pollerCount)
+}
+
+func (s *ScalableTaskPollerSuite) TestSeedPollerGroupInfosRaisesAutoscalingPollerCapacity() {
+	behavior := NewPollerBehaviorAutoscaling(
+		PollerBehaviorAutoscalingOptions{
+			InitialNumberOfPollers: 1,
+			MinimumNumberOfPollers: 1,
+			MaximumNumberOfPollers: 2,
+		},
+	)
+
+	pollers := []scalableTaskPoller{newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		behavior,
+		metrics.PollerTypeActivityTask,
+		&atomic.Bool{},
+	)}
+
+	seedScalableTaskPollerGroupInfos(pollers, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1.0},
+		{Id: "group-b", Weight: 1.0},
+		{Id: "group-c", Weight: 1.0},
+	})
+
+	s.Equal(3, pollers[0].pollerCount)
+	s.Equal(3, pollers[0].pollerAutoscaler.minPollerCount)
+	s.Equal(3, pollers[0].pollerAutoscaler.maxPollerCount)
+	s.Equal(int64(3), pollers[0].pollerAutoscaler.target.Load())
 }
 
 func TestScalableTaskPollerSuite(t *testing.T) {

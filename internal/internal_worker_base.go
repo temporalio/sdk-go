@@ -14,6 +14,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -26,6 +27,15 @@ import (
 	internallog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/log"
 )
+
+func seedScalableTaskPollerGroupInfos(pollers []scalableTaskPoller, groups []*taskqueuepb.PollerGroupInfo) {
+	for i := range pollers {
+		pollers[i].ensurePollerGroupCapacity(len(groups))
+		if seeder, ok := pollers[i].taskPoller.(pollerGroupSeeder); ok {
+			seeder.seedPollerGroupInfos(groups)
+		}
+	}
+}
 
 const (
 	retryPollOperationInitialInterval         = 200 * time.Millisecond
@@ -218,12 +228,12 @@ type (
 
 	// baseWorker that wraps worker activities.
 	baseWorker struct {
-		options              baseWorkerOptions
-		isWorkerStarted      bool
+		options         baseWorkerOptions
+		isWorkerStarted bool
 		// stopCh is created by newBaseWorker and closed by baseWorker.Stop().
 		// It is internal to baseWorker and stops its poller, dispatcher, autoscaler,
 		// and throttling/backoff loops.
-		stopCh chan struct{}
+		stopCh               chan struct{}
 		stopWG               sync.WaitGroup // The WaitGroup for stopping existing routines.
 		pollLimiter          *rate.Limiter
 		taskLimiter          *rate.Limiter
@@ -930,6 +940,32 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 	}
 	psr.target.Store(int64(options.initialPollerCount))
 	return psr
+}
+
+func (tw *scalableTaskPoller) ensurePollerGroupCapacity(groupCount int) {
+	if groupCount <= 0 {
+		return
+	}
+	if tw.pollerCount < groupCount {
+		tw.pollerCount = groupCount
+	}
+	if tw.pollerAutoscaler == nil {
+		return
+	}
+
+	autoscaler := tw.pollerAutoscaler
+	if autoscaler.minPollerCount < groupCount {
+		autoscaler.minPollerCount = groupCount
+	}
+	if autoscaler.maxPollerCount < groupCount {
+		autoscaler.maxPollerCount = groupCount
+	}
+	if autoscaler.target.Load() < int64(groupCount) {
+		autoscaler.target.Store(int64(groupCount))
+	}
+	if tw.autoscalingRunner != nil {
+		tw.autoscalingRunner.signal()
+	}
 }
 
 func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
