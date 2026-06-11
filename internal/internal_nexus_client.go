@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
@@ -432,6 +433,7 @@ func (nc *nexusClientImpl) ExecuteOperation(ctx context.Context, operation any, 
 		Service:       nc.service,
 		OperationType: operationName,
 		Input:         input,
+		NexusHeader:   nexus.Header{},
 	})
 }
 
@@ -702,6 +704,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		IdConflictPolicy: in.Options.IDConflictPolicy,
 		SearchAttributes: searchAttrs,
 		UserMetadata:     userMetadata,
+		NexusHeader:      in.NexusHeader,
 	}
 	if in.Options.ScheduleToCloseTimeout > 0 {
 		request.ScheduleToCloseTimeout = durationpb.New(in.Options.ScheduleToCloseTimeout)

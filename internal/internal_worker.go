@@ -85,9 +85,15 @@ type (
 		worker              *baseWorker
 		localActivityWorker *baseWorker
 		identity            string
-		stopC               chan struct{}
-		localActivityStopC  chan struct{}
-		stickyUUID          string // Used for ShutdownWorker call
+		// stopC is created by newWorkflowWorkerInternal, exposed through
+		// WorkerStopChannel to workflow task handling, passed to local activity
+		// contexts as the worker stop channel, and closed by workflowWorker.Stop().
+		stopC chan struct{}
+		// localActivityStopC is created by newWorkflowTaskWorkerInternal and exposed
+		// to the local activity tunnel. workflowWorker.Stop() closes it after the
+		// workflow worker stops, causing the tunnel to stop accepting local activity work.
+		localActivityStopC chan struct{}
+		stickyUUID         string // Used for ShutdownWorker call
 	}
 
 	// ActivityWorker wraps the code for hosting activity types.
@@ -98,7 +104,9 @@ type (
 		poller              taskPoller
 		worker              *baseWorker
 		identity            string
-		stopC               chan struct{}
+		// stopC is created by newActivityWorker, exposed through WorkerStopChannel
+		// to activity task polling/handling, and closed by activityWorker.Stop().
+		stopC chan struct{}
 	}
 
 	// sessionWorker wraps the code for hosting session creation, completion and
@@ -391,7 +399,8 @@ func newWorkflowTaskWorkerInternal(
 		metricsHandler:               params.MetricsHandler,
 		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_UNSPECIFIED,
 		},
 	}
 
@@ -439,7 +448,8 @@ func newWorkflowTaskWorkerInternal(
 		fatalErrCb:     laParams.WorkerFatalErrorCallback,
 		metricsHandler: laParams.MetricsHandler,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 	},
 	)
@@ -601,7 +611,8 @@ func newActivityWorker(
 		sessionTokenBucket:           sessionTokenBucket,
 		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 	}
 
@@ -1210,7 +1221,10 @@ type AggregatedWorker struct {
 	// Stores a boolean indicating whether the worker has already been started.
 	started      atomic.Bool
 	shuttingDown atomic.Bool
-	stopC        chan struct{}
+	// stopC is created in NewAggregatedWorker and closed by AggregatedWorker.Stop()
+	// to mark the aggregated worker stopped, unblock Run(), and prevent restart.
+	// Child worker stop channels are closed later by their own Stop methods.
+	stopC chan struct{}
 	fatalErr     error
 	fatalErrLock sync.Mutex
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities

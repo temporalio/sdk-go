@@ -2,6 +2,7 @@ package internal
 
 import (
 	"github.com/nexus-rpc/sdk-go/nexus"
+	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 )
@@ -18,7 +19,9 @@ type nexusWorker struct {
 	executionParameters workerExecutionParameters
 	workflowService     workflowservice.WorkflowServiceClient
 	worker              *baseWorker
-	stopC               chan struct{}
+	// stopC is created by newNexusWorker, exposed to the Nexus task poller through
+	// WorkerStopChannel, and closed by nexusWorker.Stop() during shutdown.
+	stopC chan struct{}
 }
 
 func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
@@ -66,7 +69,8 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		metricsHandler:               params.MetricsHandler,
 		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 		isInternalWorker: params.isInternalWorker(),
 	}

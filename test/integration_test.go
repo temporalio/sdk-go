@@ -695,6 +695,25 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 	ts.Equal("memoVal,searchAttr,123", result)
 }
 
+func (ts *IntegrationTestSuite) TestContinueAsNewOmitsUnsetSearchAttributes() {
+	var result string
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	startOptions := ts.startWorkflowOptions("test-continueasnew-omit-unset-search-attributes")
+	startOptions.TypedSearchAttributes = temporal.NewSearchAttributes(
+		stringKey.ValueSet("carry-over"),
+		keywordKey.ValueSet("drop-me"),
+	)
+	err := ts.executeWorkflowWithOption(
+		startOptions,
+		ts.workflows.ContinueAsNewAfterUnsetSearchAttribute,
+		&result,
+		false,
+	)
+	ts.NoError(err)
+	ts.Equal("carry-over", result)
+}
+
 func (ts *IntegrationTestSuite) TestContinueAsNewWithRetryPolicy() {
 	const (
 		initialMaximumAttempts = 3
@@ -9133,6 +9152,24 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		var serviceErr *serviceerror.DeadlineExceeded
 		ts.True(errors.Is(err, context.DeadlineExceeded) || errors.As(err, &serviceErr))
 		activityResultChan <- "" // allow activity to complete
+	})
+
+	ts.Run("Execute activity with start delay", func() {
+		startDelay := 2 * time.Second
+		options := makeOptions()
+		options.StartDelay = startDelay
+
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, options, activities.EmptyActivity)
+		ts.NoError(err)
+
+		err = handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+		ts.NoError(err)
+		ts.Greater(description.LastStartedTime.Sub(description.ScheduleTime), startDelay-500*time.Millisecond)
 	})
 }
 

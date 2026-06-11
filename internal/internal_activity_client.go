@@ -110,6 +110,8 @@ type (
 		//
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
+		// StartDelay - Time to wait before dispatching the activity. This delay is not applied to retry attempts.
+		StartDelay time.Duration
 	}
 
 	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
@@ -653,6 +655,7 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	request.SearchAttributes = searchAttrs
 	request.UserMetadata = userMetadata
 	request.Priority = convertToPBPriority(options.Priority)
+	request.StartDelay = durationpb.New(options.StartDelay)
 	return nil
 }
 

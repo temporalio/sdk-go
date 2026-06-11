@@ -78,7 +78,11 @@ type (
 	workflowTask struct {
 		task            *workflowservice.PollWorkflowTaskQueueResponse
 		historyIterator HistoryIterator
-		doneCh          chan struct{}
+		// doneCh is created by workflowTaskProcessor.processWorkflowTask and closed
+		// when that workflow task processing returns. Local activity result and retry
+		// delivery wait on it to avoid blocking forever if nobody is receiving on
+		// laResultCh or laRetryCh.
+		doneCh chan struct{}
 		laResultCh      chan *localActivityResult
 
 		// This channel must be initialized with a one-size buffer and is used to indicate when
@@ -1901,7 +1905,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			WorkflowTaskTimeout:       durationpb.New(contErr.WorkflowTaskTimeout),
 			Header:                    contErr.Header,
 			Memo:                      workflowContext.workflowInfo.Memo,
-			SearchAttributes:          workflowContext.workflowInfo.SearchAttributes,
+			SearchAttributes:          sanitizeSearchAttributesForStart(workflowContext.workflowInfo.SearchAttributes),
 			RetryPolicy:               convertToPBRetryPolicy(retryPolicy),
 			InheritBuildId:            useCompat,
 			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),
@@ -2117,8 +2121,12 @@ type temporalInvoker struct {
 	heartbeatThrottleInterval time.Duration
 	hbBatchEndTimer           *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
 	lastDetailsToReport       **commonpb.Payloads
-	closeCh                   chan struct{}
-	workerStopChannel         <-chan struct{}
+	// closeCh is closed by temporalInvoker.Close() when the activity execution finishes.
+	closeCh chan struct{}
+	// workerStopChannel is a read-only view of activityWorker.stopC.
+	// Heartbeat batching waits on it so pending heartbeat details can be flushed
+	// when activity worker shutdown starts.
+	workerStopChannel <-chan struct{}
 	namespace                 string
 	excludeInternalFromRetry  *atomic.Bool // borrowed from client in order to tell if internal errors are retriable
 	outboundPayloadVisitor    PayloadVisitor
