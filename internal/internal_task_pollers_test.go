@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/google/uuid"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
@@ -659,4 +662,62 @@ func TestDoPollGracefulShutdown(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWorkflowTaskStorageMetrics_WallClockDuration(t *testing.T) {
+	// Before Start() — should return 0
+	m := &workflowTaskStorageMetrics{}
+	assert.Zero(t, m.WallClockDuration(), "should return 0 before Start()")
+
+	// After Start() but before Stop() — still 0 (no end time yet)
+	m.Start()
+	assert.Zero(t, m.WallClockDuration(), "should return 0 before Stop()")
+
+	// After Stop() — should return a positive duration
+	time.Sleep(5 * time.Millisecond)
+	m.Stop()
+	d := m.WallClockDuration()
+	assert.Greater(t, d, time.Duration(0), "should return positive duration after Stop()")
+
+	// Second Stop() should not reset — duration only grows
+	time.Sleep(5 * time.Millisecond)
+	m.Stop()
+	d2 := m.WallClockDuration()
+	assert.GreaterOrEqual(t, d2, d, "duration should not shrink on second Stop()")
+}
+
+func TestWorkflowTaskStorageMetrics_PayloadBatchCompleted(t *testing.T) {
+	m := &workflowTaskStorageMetrics{}
+	m.Start()
+
+	// Simulate two concurrent batch callbacks
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		m.PayloadBatchCompleted(3, 100, 80*time.Millisecond, []string{"s3"})
+	}()
+	go func() {
+		defer wg.Done()
+		time.Sleep(10 * time.Millisecond)
+		m.PayloadBatchCompleted(2, 50, 60*time.Millisecond, []string{"gcs"})
+	}()
+
+	wg.Wait()
+	m.Stop()
+
+	// payloadCount and totalSize accumulate correctly
+	assert.Equal(t, 5, m.payloadCount)
+	assert.Equal(t, int64(150), m.totalSize)
+
+	// driver names collected from both callbacks
+	assert.Equal(t, []string{"gcs", "s3"}, m.GetDriverNames())
+
+	// Wall-clock duration is NOT the sum of individual durations (80+60=140ms)
+	// It is the time between Start() and Stop() — much less than 140ms
+	d := m.WallClockDuration()
+	assert.Less(t, d, 140*time.Millisecond,
+		"wall-clock should be less than sum of individual durations (edge detection, not summation)")
+	assert.Greater(t, d, time.Duration(0))
 }
