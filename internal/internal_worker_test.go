@@ -3384,6 +3384,45 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	require.Equal(t, "func1", executeWorkflow(true))
 }
 
+type aliasReproV1 struct{}
+func (aliasReproV1) MyActivity(context.Context) (string, error) { return "func1", nil }
+type aliasReproV2 struct{}
+func (aliasReproV2) MyActivity(context.Context) (string, error) { return "func2", nil }
+
+func TestAliasAntialiasing(t *testing.T) {
+	w := func(ctx Context) (string, error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		var str1 string
+		if err := ExecuteActivity(ctx, "MyActivity").Get(ctx, &str1); err != nil {
+			return "", err
+		}
+		var str2 string
+		if err := ExecuteActivity(ctx, "MyActivity_v2").Get(ctx, &str2); err != nil {
+			return "", err
+		}
+		return str1 + "-" + str2, nil
+	}
+
+	executeWorkflow := func(disableAlias bool) (result string) {
+		var suite WorkflowTestSuite
+		suite.SetDisableRegistrationAliasing(disableAlias)
+		env := suite.NewTestWorkflowEnvironment()
+		env.RegisterActivity(aliasReproV1{}.MyActivity)
+		env.RegisterActivityWithOptions(
+			aliasReproV2{}.MyActivity,
+			RegisterActivityOptions{Name: "MyActivity_v2"},
+		)
+		env.ExecuteWorkflow(w)
+		require.NoError(t, env.GetWorkflowResult(&result))
+		return
+	}
+
+	// Without disabling alias registration, the alias will choose aliasReproV2 both times.
+	// With disabling alias, we can disambiguate them properly.
+	require.Equal(t, "func2-func2", executeWorkflow(false))
+	require.Equal(t, "func1-func2", executeWorkflow(true))
+}
+
 func (s *internalWorkerTestSuite) TestReservedTemporalName() {
 	// workflow
 	worker := createWorker(s.service)
