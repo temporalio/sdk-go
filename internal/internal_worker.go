@@ -789,7 +789,12 @@ func (r *registry) RegisterActivityWithOptions(
 	}
 	r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: af}
 	if len(alias) > 0 && r.activityAliasMap != nil {
-		r.activityAliasMap[fnName] = alias
+		// Key by the full qualified function name (e.g.
+		// "github.com/org/pkg/activities_v2.Activity") rather than the short
+		// name returned by getFunctionName ("Activity"). Two functions from
+		// different packages can share the same short name; using it as the key
+		// causes one package's alias to silently match the other at dispatch.
+		r.activityAliasMap[getFullFunctionName(af)] = alias
 	}
 }
 
@@ -2638,9 +2643,26 @@ func getFunctionName(i interface{}) (name string, isMethod bool) {
 	return strings.TrimSuffix(shortName, "-fm"), isMethod
 }
 
+// getFullFunctionName returns the fully qualified function name including package
+// path (e.g. "github.com/org/pkg/activities_v1.Activity").
+// Used as the activityAliasMap key to avoid collisions between functions from
+// different packages that share the same short name. Compare with getFunctionName
+// which strips the package path and returns only the short name ("Activity").
+func getFullFunctionName(i interface{}) string {
+	if fullName, ok := i.(string); ok {
+		return fullName
+	}
+	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+}
+
 func getActivityFunctionName(r *registry, i interface{}) string {
 	result, _ := getFunctionName(i)
-	if alias, ok := r.getActivityAlias(result); ok {
+	// Use the full qualified name for alias lookup to avoid collisions between
+	// functions from different packages that share the same short name.
+	// e.g. activities_v1.Activity and activities_v2.Activity both resolve to
+	// short name "Activity" — using that as the key causes v2's alias to
+	// incorrectly match v1 at dispatch time.
+	if alias, ok := r.getActivityAlias(getFullFunctionName(i)); ok {
 		result = alias
 	}
 	return result
