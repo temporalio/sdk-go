@@ -393,6 +393,17 @@ func statsFromResponse(stats *taskqueuepb.TaskQueueStats) *TaskQueueStats {
 	}
 }
 
+func statsByPriorityKeyFromResponse(statsByPriorityKey map[int32]*taskqueuepb.TaskQueueStats) map[int32]TaskQueueStats {
+	if statsByPriorityKey == nil {
+		return nil
+	}
+	result := make(map[int32]TaskQueueStats, len(statsByPriorityKey))
+	for priority, stats := range statsByPriorityKey {
+		result[priority] = *statsFromResponse(stats)
+	}
+	return result
+}
+
 func taskQueueVersionInfoFromResponse(response *taskqueuepb.TaskQueueVersionInfo) TaskQueueVersionInfo {
 	if response == nil {
 		return TaskQueueVersionInfo{}
