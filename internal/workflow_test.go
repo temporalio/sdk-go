@@ -96,6 +96,20 @@ func TestConvertRetryPolicy(t *testing.T) {
 	assert.Equal(t, &pbRetryPolicy, convertToPBRetryPolicy(convertFromPBRetryPolicy(&pbRetryPolicy)))
 }
 
+func TestConvertPriority(t *testing.T) {
+	priority := newPriority()
+	assertNonZero(t, priority)
+	// Check that converting from/to commonpb.Priority is transparent
+	assert.Equal(t, priority, convertFromPBPriority(convertToPBPriority(priority)))
+}
+
+func TestConvertPriorityNil(t *testing.T) {
+	// Nil proto → zero SDK struct
+	assert.Equal(t, Priority{}, convertFromPBPriority(nil))
+	// Zero SDK struct → nil proto (omit from wire)
+	assert.Nil(t, convertToPBPriority(Priority{}))
+}
+
 func newTestWorkflowContext() Context {
 	_, ctx, err := newWorkflowContext(&workflowEnvironmentImpl{
 		dataConverter: converter.GetDefaultDataConverter(),

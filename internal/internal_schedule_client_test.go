@@ -7,8 +7,11 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/api/common/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
@@ -321,3 +324,165 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultCo
 		testFn()
 	})
 }
+
+// newDescribeResponseWithPriority builds a mock DescribeScheduleResponse with
+// the given priority set on the StartWorkflow action. This avoids duplicating
+// the protobuf scaffolding across multiple tests.
+func newDescribeResponseWithPriority(priority *commonpb.Priority) *workflowservice.DescribeScheduleResponse {
+	return &workflowservice.DescribeScheduleResponse{
+		Schedule: &schedulepb.Schedule{
+			Spec: &schedulepb.ScheduleSpec{
+				CronString: []string{"*"},
+			},
+			Action: &schedulepb.ScheduleAction{
+				Action: &schedulepb.ScheduleAction_StartWorkflow{
+					StartWorkflow: &workflowpb.NewWorkflowExecutionInfo{
+						WorkflowId: workflowID,
+						WorkflowType: &commonpb.WorkflowType{
+							Name: "test-workflow",
+						},
+						TaskQueue: &taskqueuepb.TaskQueue{
+							Name: taskqueue,
+						},
+						Priority: priority,
+					},
+				},
+			},
+			Policies: &schedulepb.SchedulePolicies{},
+		},
+		Info: &schedulepb.ScheduleInfo{},
+	}
+}
+
+func (s *scheduleClientTestSuite) TestCreateAndDescribeScheduleWithPriority() {
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	priority := Priority{
+		PriorityKey:    2,
+		FairnessKey:    "test-fairness-key",
+		FairnessWeight: 1.5,
+	}
+	options := ScheduleOptions{
+		ID: scheduleID,
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: &ScheduleWorkflowAction{
+			Workflow:                 wf,
+			ID:                       workflowID,
+			TaskQueue:                taskqueue,
+			WorkflowExecutionTimeout: timeoutInSeconds,
+			WorkflowTaskTimeout:      timeoutInSeconds,
+			Priority:                 priority,
+		},
+	}
+	createResp := &workflowservice.CreateScheduleResponse{}
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+			// Verify that the Priority was serialized correctly into CreateScheduleRequest
+			action := req.Schedule.Action.GetStartWorkflow()
+			s.NotNil(action)
+			s.Equal(int32(2), action.Priority.PriorityKey)
+			s.Equal("test-fairness-key", action.Priority.FairnessKey)
+			s.Equal(float32(1.5), action.Priority.FairnessWeight)
+		}).
+		Return(createResp, nil).
+		Times(1)
+
+	scheduleHandle, err := s.client.ScheduleClient().Create(context.Background(), options)
+	s.Nil(err)
+	s.Equal(scheduleHandle.GetID(), scheduleID)
+
+	// Now mock DescribeSchedule to return the schedule with the same priority
+	describeResp := newDescribeResponseWithPriority(&commonpb.Priority{
+		PriorityKey:    2,
+		FairnessKey:    "test-fairness-key",
+		FairnessWeight: 1.5,
+	})
+	s.service.EXPECT().DescribeSchedule(gomock.Any(), &workflowservice.DescribeScheduleRequest{
+		Namespace:  DefaultNamespace,
+		ScheduleId: scheduleID,
+	}, gomock.Any()).Return(describeResp, nil).Times(1)
+
+	desc, err := scheduleHandle.Describe(context.Background())
+	s.Nil(err)
+	s.NotNil(desc)
+
+	actionDesc, ok := desc.Schedule.Action.(*ScheduleWorkflowAction)
+	s.True(ok)
+	s.NotNil(actionDesc)
+	s.Equal(priority, actionDesc.Priority)
+}
+
+func (s *scheduleClientTestSuite) TestUpdateSchedulePreservesPriority() {
+	// Setup: Create a schedule with priority
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	priority := Priority{
+		PriorityKey:    2,
+		FairnessKey:    "test-fairness-key",
+		FairnessWeight: 1.5,
+	}
+	options := ScheduleOptions{
+		ID: scheduleID,
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: &ScheduleWorkflowAction{
+			Workflow:                 wf,
+			ID:                       workflowID,
+			TaskQueue:                taskqueue,
+			WorkflowExecutionTimeout: timeoutInSeconds,
+			WorkflowTaskTimeout:      timeoutInSeconds,
+			Priority:                 priority,
+		},
+	}
+	createResp := &workflowservice.CreateScheduleResponse{}
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).Times(1)
+
+	scheduleHandle, err := s.client.ScheduleClient().Create(context.Background(), options)
+	s.Nil(err)
+
+	// Mock DescribeSchedule (called internally by Update)
+	describeResp := newDescribeResponseWithPriority(&commonpb.Priority{
+		PriorityKey:    2,
+		FairnessKey:    "test-fairness-key",
+		FairnessWeight: 1.5,
+	})
+	s.service.EXPECT().DescribeSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResp, nil).Times(1)
+
+	// Mock UpdateSchedule and verify the priority is re-serialized correctly
+	updatedPriority := Priority{
+		PriorityKey:    5,
+		FairnessKey:    "updated-fairness-key",
+		FairnessWeight: 2.0,
+	}
+	s.service.EXPECT().UpdateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ interface{}, req *workflowservice.UpdateScheduleRequest, _ ...interface{}) {
+			// Verify the updated priority is serialized in the UpdateScheduleRequest
+			action := req.Schedule.Action.GetStartWorkflow()
+			s.NotNil(action)
+			s.Equal(int32(5), action.Priority.PriorityKey)
+			s.Equal("updated-fairness-key", action.Priority.FairnessKey)
+			s.Equal(float32(2.0), action.Priority.FairnessWeight)
+		}).
+		Return(&workflowservice.UpdateScheduleResponse{}, nil).
+		Times(1)
+
+	// Perform Update: read the described priority, modify it, and send back
+	err = scheduleHandle.Update(context.Background(), ScheduleUpdateOptions{
+		DoUpdate: func(input ScheduleUpdateInput) (*ScheduleUpdate, error) {
+			// Verify the describe deserialized priority correctly
+			action := input.Description.Schedule.Action.(*ScheduleWorkflowAction)
+			s.Equal(priority, action.Priority)
+
+			// Modify the priority
+			action.Priority = updatedPriority
+			return &ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
+		},
+	})
+	s.Nil(err)
+}
+
