@@ -450,7 +450,7 @@ func TestErrorToFailWorkflowTaskCause(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			resp := poller.errorToFailWorkflowTask([]byte("token"), tc.err)
+			resp := poller.errorToFailWorkflowTask([]byte("token"), "test-workflow", tc.err)
 			require.Equal(t, tc.cause, resp.Cause)
 		})
 	}

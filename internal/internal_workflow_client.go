@@ -521,7 +521,8 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, opts.TaskToken,
-		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
+		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil,
+		opts.WorkflowID, "")
 	if msg, ok := request.(proto.Message); ok {
 		storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 			Namespace:    cmp.Or(opts.Namespace, wc.namespace),
@@ -681,10 +682,11 @@ func (wc *WorkflowClient) RecordActivityHeartbeatWithOptions(ctx context.Context
 		return err
 	}
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
-		TaskToken: opts.TaskToken,
-		Details:   data,
-		Identity:  wc.identity,
-		Namespace: cmp.Or(opts.Namespace, wc.namespace),
+		TaskToken:  opts.TaskToken,
+		Details:    data,
+		Identity:   wc.identity,
+		Namespace:  cmp.Or(opts.Namespace, wc.namespace),
+		ResourceId: getActivityResourceId(opts.WorkflowID, ""),
 	}
 	if err := visitProtoPayloads(ctx, wc.newOutboundPayloadVisitor(), request, 0); err != nil {
 		return err
@@ -731,6 +733,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByIDWithOptions(ctx context.Con
 		ActivityId: opts.ActivityID,
 		Details:    data,
 		Identity:   wc.identity,
+		ResourceId: getActivityResourceId(opts.WorkflowID, opts.ActivityID),
 	}
 	if err := visitProtoPayloads(ctx, wc.newOutboundPayloadVisitor(), byIDRequest, 0); err != nil {
 		return err
@@ -2280,6 +2283,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			startOp,
 			updateOp,
 		},
+		ResourceId: fmt.Sprintf("workflow:%s", startRequest.WorkflowId),
 	}
 
 	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
