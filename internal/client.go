@@ -67,8 +67,13 @@ type (
 	GrpcCompressionNone struct{}
 )
 
-func (GrpcCompressionGzip) grpcCompression() {}
-func (GrpcCompressionNone) grpcCompression() {}
+func (*GrpcCompressionGzip) grpcCompression() {}
+func (*GrpcCompressionNone) grpcCompression() {}
+
+var (
+	_ GrpcCompression = (*GrpcCompressionGzip)(nil)
+	_ GrpcCompression = (*GrpcCompressionNone)(nil)
+)
 
 type (
 	// Client is the client for starting and getting information about a workflow executions as well as
@@ -1041,7 +1046,7 @@ type (
 		// GrpcCompression controls transport-level gRPC compression for requests
 		// sent to the Temporal server.
 		//
-		// default: GrpcCompressionGzip
+		// default: &GrpcCompressionGzip{}
 		GrpcCompression GrpcCompression
 
 		// Advanced dial options for gRPC connections. These are applied after the internal default dial options are

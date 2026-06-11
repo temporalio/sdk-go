@@ -103,9 +103,9 @@ func dial(params dialParameters) (*grpc.ClientConn, error) {
 	opts = append(opts, grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxPayloadSize)))
 
 	switch compression := params.UserConnectionOptions.GrpcCompression.(type) {
-	case nil, GrpcCompressionGzip:
+	case nil, *GrpcCompressionGzip:
 		opts = append(opts, grpc.WithDefaultCallOptions(grpc.UseCompressor(grpcgzip.Name)))
-	case GrpcCompressionNone:
+	case *GrpcCompressionNone:
 	default:
 		return nil, fmt.Errorf("unsupported gRPC compression option %T", compression)
 	}

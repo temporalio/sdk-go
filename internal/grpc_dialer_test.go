@@ -350,14 +350,14 @@ func TestGrpcCompression(t *testing.T) {
 		{
 			name: "explicit gzip",
 			connectionOptions: ConnectionOptions{
-				GrpcCompression: GrpcCompressionGzip{},
+				GrpcCompression: &GrpcCompressionGzip{},
 			},
 			wantCompression: "gzip",
 		},
 		{
 			name: "none",
 			connectionOptions: ConnectionOptions{
-				GrpcCompression: GrpcCompressionNone{},
+				GrpcCompression: &GrpcCompressionNone{},
 			},
 		},
 	} {
