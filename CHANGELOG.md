@@ -18,3 +18,8 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
+
+### Added
+
+* Exposed `BackoffStartInterval` when continuing as new, which will delay the first task of the
+  continued workflow by the configured interval.
