@@ -390,7 +390,25 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 			trimmedNextLine = nextLine
 		}
 
-		// Check for new doc links to add
+		// Track whether nextLine is inside a function or interface block.
+		// We update this first so the first line inside a block is not treated
+		// as a top-level definition.
+		if strings.HasPrefix(trimmedLine, "func ") {
+			funcSpaces = indentSize
+			inFunc = true
+		} else if inFunc && trimmedLine == "}" && funcSpaces == indentSize {
+			funcSpaces = -1
+			inFunc = false
+		}
+		if strings.HasSuffix(trimmedLine, "interface {") {
+			interfaceSpaces = indentSize
+			inInterface = true
+		} else if inInterface && trimmedLine == "}" && interfaceSpaces == indentSize {
+			interfaceSpaces = -1
+			inInterface = false
+		}
+
+		// Check for new doc links to add on top-level definitions only.
 		if !inFunc && !inInterface && isValidDefinition(trimmedNextLine, &inGroup, &inStruct) {
 			// Find the "Exposed As" line in the doc comment
 			var existingDoclink string
@@ -449,23 +467,6 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 				exposedLinks = ""
 
 			}
-		}
-
-		// update inFunc after we actually check for doclinks to allow us to check
-		// a function's definition, without checking anything inside the function
-		if strings.HasPrefix(trimmedLine, "func ") {
-			funcSpaces = indentSize
-			inFunc = true
-		} else if inFunc && trimmedLine == "}" && funcSpaces == indentSize {
-			funcSpaces = -1
-			inFunc = false
-		}
-		if strings.HasSuffix(trimmedLine, "interface {") {
-			interfaceSpaces = indentSize
-			inInterface = true
-		} else if inInterface && trimmedLine == "}" && interfaceSpaces == indentSize {
-			interfaceSpaces = -1
-			inInterface = false
 		}
 
 		newFile += line + "\n"
