@@ -139,6 +139,49 @@ func TestGaugeHandler(t *testing.T) {
 	metricdatatest.AssertEqual(t, want, metrics[0], metricdatatest.IgnoreTimestamp())
 }
 
+func TestMonotonicCounterHandler(t *testing.T) {
+	ctx := context.Background()
+	metricReader := metric.NewManualReader()
+	meterProvider := metric.NewMeterProvider(metric.WithReader(metricReader))
+	handler := opentelemetry.NewMetricsHandler(
+		opentelemetry.MetricsHandlerOptions{
+			Meter:                meterProvider.Meter("test"),
+			UseMonotonicCounters: true,
+		},
+	)
+	// Emit some values
+	testCounter := handler.WithTags(map[string]string{"tag1": "value1"}).Counter("testCounter")
+	testCounter.Inc(1)
+	testCounter.Inc(1)
+	// Emit some values with different tags
+	testCounter2 := handler.WithTags(map[string]string{"tag1": "value2"}).Counter("testCounter")
+	testCounter2.Inc(5)
+	// Assert result
+	var rm metricdata.ResourceMetrics
+	metricReader.Collect(ctx, &rm)
+	assert.Len(t, rm.ScopeMetrics, 1)
+	metrics := rm.ScopeMetrics[0].Metrics
+	assert.Len(t, metrics, 1)
+	want := metricdata.Metrics{
+		Name: "testCounter",
+		Data: metricdata.Sum[int64]{
+			Temporality: metricdata.CumulativeTemporality,
+			IsMonotonic: true,
+			DataPoints: []metricdata.DataPoint[int64]{
+				{
+					Value:      2,
+					Attributes: attribute.NewSet(attribute.String("tag1", "value1")),
+				},
+				{
+					Value:      5,
+					Attributes: attribute.NewSet(attribute.String("tag1", "value2")),
+				},
+			},
+		},
+	}
+	metricdatatest.AssertEqual(t, want, metrics[0], metricdatatest.IgnoreTimestamp())
+}
+
 func TestTimerHandler(t *testing.T) {
 	ctx := context.Background()
 	metricReader := metric.NewManualReader()
