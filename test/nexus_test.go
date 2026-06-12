@@ -3511,3 +3511,300 @@ func TestNexusTimeoutInteraction(t *testing.T) {
 		})
 	}
 }
+
+// callee is a workflow that completes once it receives a single signal. Used as the
+// callee of a signal issued by a Nexus operation handler.
+func callee(ctx workflow.Context) (string, error) {
+	var received string
+	workflow.GetSignalChannel(ctx, "test-signal").Receive(ctx, &received)
+	return received, nil
+}
+
+// TestNexusSignalOperationLinks verifies bidirectional link propagation when a Nexus operation
+// handler signals a workflow via signalWithStart: the inbound Nexus task links are forwarded onto
+// the SignalWithStartWorkflowExecution request (forward), and the server's backlink lands on the
+// caller's NexusOperationCompleted history event (backward).
+//
+// Requires a real server with history.enableCHASMSignalBacklinks=true; the backlink path is not
+// implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_BACKLINK_TESTS so it is
+// skipped by default.
+func TestNexusSignalOperationLinks(t *testing.T) {
+	if os.Getenv("ENABLE_SIGNAL_BACKLINK_TESTS") != "1" {
+		t.Skip("set ENABLE_SIGNAL_BACKLINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	calleeID := "callee-" + uuid.NewString()
+
+	// Sync operation handler that signalWithStarts the callee workflow, then returns.
+	signalOp := nexus.NewSyncOperation("signal-op", func(ctx context.Context, _ nexus.NoValue, _ nexus.StartOperationOptions) (nexus.NoValue, error) {
+		_, err := temporalnexus.GetClient(ctx).SignalWithStartWorkflow(ctx, calleeID, "test-signal", "from-nexus",
+			client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, callee)
+		return nil, err
+	})
+
+	caller := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, signalOp, nil, workflow.NexusOperationOptions{})
+		return fut.Get(ctx, nil)
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(signalOp))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(caller)
+	w.RegisterWorkflow(callee)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                  "caller-" + uuid.NewString(),
+		TaskQueue:           tc.taskQueue,
+		WorkflowTaskTimeout: time.Second,
+	}, caller)
+	require.NoError(t, err)
+	require.NoError(t, run.Get(ctx, nil))
+
+	// The callee should have completed with the forwarded signal value.
+	var calleeResult string
+	require.NoError(t, tc.client.GetWorkflow(ctx, calleeID, "").Get(ctx, &calleeResult))
+	require.Equal(t, "from-nexus", calleeResult)
+
+	// The backlink should land on the caller's NexusOperationCompleted event, pointing at the
+	// callee's WorkflowExecutionSignaled event.
+	iter := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var completedEvent *historypb.HistoryEvent
+	for iter.HasNext() {
+		event, err := iter.Next()
+		require.NoError(t, err)
+		if event.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED {
+			completedEvent = event
+			break
+		}
+	}
+	require.NotNil(t, completedEvent, "expected a NexusOperationCompleted event")
+	require.Len(t, completedEvent.GetLinks(), 1, "expected one backlink on the completed event")
+	we := completedEvent.GetLinks()[0].GetWorkflowEvent()
+	require.Equal(t, calleeID, we.GetWorkflowId())
+	// Server PR temporalio/temporal#9897 keys these backlinks via RequestIdReference rather than
+	// EventReference, so accept either oneof variant (matches the Java SignalOperationLinkingTest).
+	var backlinkEventType enumspb.EventType
+	if we.GetRequestIdRef() != nil {
+		backlinkEventType = we.GetRequestIdRef().GetEventType()
+	} else {
+		backlinkEventType = we.GetEventRef().GetEventType()
+	}
+	require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, backlinkEventType)
+}
+
+// TestNexusMultiSignalOperationLinks verifies that a single Nexus operation handler signalling
+// multiple workflows accumulates one backlink per callee onto the caller's NexusOperationCompleted
+// history event. This is the integration-level counterpart to the unit tests
+// TestMultipleSignalsAccumulateAllBacklinks and TestMixedSignalAndSignalWithStartAccumulateAllBacklinks,
+// and mirrors the Java SignalOperationLinkingTest.testMultiSignalOperationLinks scenario.
+//
+// Requires a real server with history.enableCHASMSignalBacklinks=true; gated behind
+// ENABLE_SIGNAL_BACKLINK_TESTS so it is skipped by default.
+func TestNexusMultiSignalOperationLinks(t *testing.T) {
+	if os.Getenv("ENABLE_SIGNAL_BACKLINK_TESTS") != "1" {
+		t.Skip("set ENABLE_SIGNAL_BACKLINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	calleeIDs := []string{
+		"multicallee-a-" + uuid.NewString(),
+		"multicallee-b-" + uuid.NewString(),
+		"multicallee-c-" + uuid.NewString(),
+	}
+
+	// Sync operation handler that signalWithStarts every callee workflow, then returns.
+	signalOp := nexus.NewSyncOperation("signal-op", func(ctx context.Context, _ nexus.NoValue, _ nexus.StartOperationOptions) (nexus.NoValue, error) {
+		for _, calleeID := range calleeIDs {
+			_, err := temporalnexus.GetClient(ctx).SignalWithStartWorkflow(ctx, calleeID, "test-signal", "from-nexus",
+				client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, callee)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return nil, nil
+	})
+
+	caller := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, signalOp, nil, workflow.NexusOperationOptions{})
+		return fut.Get(ctx, nil)
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(signalOp))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(caller)
+	w.RegisterWorkflow(callee)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                  "multicaller-" + uuid.NewString(),
+		TaskQueue:           tc.taskQueue,
+		WorkflowTaskTimeout: time.Second,
+	}, caller)
+	require.NoError(t, err)
+	require.NoError(t, run.Get(ctx, nil))
+
+	// Every callee should have completed with the forwarded signal value.
+	for _, calleeID := range calleeIDs {
+		var calleeResult string
+		require.NoError(t, tc.client.GetWorkflow(ctx, calleeID, "").Get(ctx, &calleeResult))
+		require.Equal(t, "from-nexus", calleeResult)
+	}
+
+	// One backlink per callee should land on the caller's NexusOperationCompleted event, each
+	// pointing at the corresponding callee's WorkflowExecutionSignaled event.
+	iter := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var completedEvent *historypb.HistoryEvent
+	for iter.HasNext() {
+		event, err := iter.Next()
+		require.NoError(t, err)
+		if event.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED {
+			completedEvent = event
+			break
+		}
+	}
+	require.NotNil(t, completedEvent, "expected a NexusOperationCompleted event")
+	require.Len(t, completedEvent.GetLinks(), len(calleeIDs), "expected one backlink per callee on the completed event")
+
+	linkedWorkflowIDs := make(map[string]struct{})
+	for _, link := range completedEvent.GetLinks() {
+		we := link.GetWorkflowEvent()
+		linkedWorkflowIDs[we.GetWorkflowId()] = struct{}{}
+		// Server PR temporalio/temporal#9897 keys these backlinks via RequestIdReference rather
+		// than EventReference, so accept either oneof variant (matches the Java
+		// SignalOperationLinkingTest).
+		var backlinkEventType enumspb.EventType
+		if we.GetRequestIdRef() != nil {
+			backlinkEventType = we.GetRequestIdRef().GetEventType()
+		} else {
+			backlinkEventType = we.GetEventRef().GetEventType()
+		}
+		require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, backlinkEventType)
+	}
+	for _, calleeID := range calleeIDs {
+		require.Contains(t, linkedWorkflowIDs, calleeID, "expected a backlink pointing at callee %s", calleeID)
+	}
+}
+
+// asyncHandler is the workflow backing the async Nexus operation in
+// TestNexusAsyncSignalOperationLinks. It exists only so the operation can return an async result;
+// the signal-to-callee (and thus the backlink) happens in the operation's start handler, not here.
+func asyncHandler(ctx workflow.Context, _ nexus.NoValue) (string, error) {
+	return "async-done", nil
+}
+
+// TestNexusAsyncSignalOperationLinks verifies backlink propagation for an async Nexus operation:
+// the handler signals a callee workflow while starting the operation, and the server's backlink
+// lands on the caller's NexusOperationStarted history event (the async counterpart to the sync
+// NexusOperationCompleted path covered by TestNexusSignalOperationLinks). This mirrors the unit
+// test TestAsyncResponseIncludesSignalBacklinks at the integration level.
+//
+// Requires a real server with history.enableCHASMSignalBacklinks=true; the backlink path is not
+// implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_BACKLINK_TESTS so it is
+// skipped by default.
+func TestNexusAsyncSignalOperationLinks(t *testing.T) {
+	if os.Getenv("ENABLE_SIGNAL_BACKLINK_TESTS") != "1" {
+		t.Skip("set ENABLE_SIGNAL_BACKLINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx)
+
+	calleeID := "async-callee-" + uuid.NewString()
+
+	// Async operation: the start handler signalWithStarts the callee (accumulating the backlink),
+	// then starts the backing handler workflow, yielding an async result.
+	signalOp := temporalnexus.NewWorkflowRunOperation(
+		"async-signal-op",
+		asyncHandler,
+		func(ctx context.Context, _ nexus.NoValue, soo nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			_, err := temporalnexus.GetClient(ctx).SignalWithStartWorkflow(ctx, calleeID, "test-signal", "from-nexus",
+				client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, callee)
+			if err != nil {
+				return client.StartWorkflowOptions{}, err
+			}
+			return client.StartWorkflowOptions{ID: soo.RequestID}, nil
+		},
+	)
+
+	caller := func(ctx workflow.Context) error {
+		c := workflow.NewNexusClient(tc.endpoint, "test")
+		fut := c.ExecuteOperation(ctx, signalOp, nil, workflow.NexusOperationOptions{})
+		// Wait for the operation to start (and thus the NexusOperationStarted event to be written),
+		// then for it to complete.
+		if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
+			return err
+		}
+		return fut.Get(ctx, nil)
+	}
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(signalOp))
+	w.RegisterNexusService(service)
+	w.RegisterWorkflow(caller)
+	w.RegisterWorkflow(callee)
+	w.RegisterWorkflow(asyncHandler)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:                  "async-caller-" + uuid.NewString(),
+		TaskQueue:           tc.taskQueue,
+		WorkflowTaskTimeout: time.Second,
+	}, caller)
+	require.NoError(t, err)
+	require.NoError(t, run.Get(ctx, nil))
+
+	// The callee should have completed with the forwarded signal value.
+	var calleeResult string
+	require.NoError(t, tc.client.GetWorkflow(ctx, calleeID, "").Get(ctx, &calleeResult))
+	require.Equal(t, "from-nexus", calleeResult)
+
+	// The backlink should land on the caller's NexusOperationStarted event, pointing at the callee's
+	// WorkflowExecutionSignaled event.
+	iter := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	var startedEvent *historypb.HistoryEvent
+	for iter.HasNext() {
+		event, err := iter.Next()
+		require.NoError(t, err)
+		if event.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
+			startedEvent = event
+			break
+		}
+	}
+	require.NotNil(t, startedEvent, "expected a NexusOperationStarted event")
+
+	// Find the backlink that points at the callee workflow (the started event may also carry an
+	// operation-start link to the handler workflow).
+	var calleeLink *common.Link_WorkflowEvent
+	for _, link := range startedEvent.GetLinks() {
+		if we := link.GetWorkflowEvent(); we.GetWorkflowId() == calleeID {
+			calleeLink = we
+			break
+		}
+	}
+	require.NotNil(t, calleeLink, "expected a backlink pointing at callee %s on the started event", calleeID)
+	// Server PR temporalio/temporal#9897 keys these backlinks via RequestIdReference rather than
+	// EventReference, so accept either oneof variant (matches the Java SignalOperationLinkingTest).
+	var backlinkEventType enumspb.EventType
+	if calleeLink.GetRequestIdRef() != nil {
+		backlinkEventType = calleeLink.GetRequestIdRef().GetEventType()
+	} else {
+		backlinkEventType = calleeLink.GetEventRef().GetEventType()
+	}
+	require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, backlinkEventType)
+}
