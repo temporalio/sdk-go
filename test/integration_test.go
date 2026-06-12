@@ -7251,7 +7251,15 @@ func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worke
 			return client.StartWorkflowOptions{ID: "nexus-async-echo-" + uuid.NewString()}, nil
 		},
 	)
-	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp))
+	// linkEchoOp uses the input string as the workflow ID so tests can predict it.
+	linkEchoOp := temporalnexus.NewWorkflowRunOperation(
+		"link-echo-op",
+		echoWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: "nexus-link-echo-" + input}, nil
+		},
+	)
+	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp, linkEchoOp))
 	w.RegisterNexusService(service)
 }
 
@@ -9598,6 +9606,47 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 		_, err = ts.client.NewNexusClient(client.NexusClientOptions{Endpoint: "ep"})
 		ts.Error(err)
 		ts.Contains(err.Error(), "service is required")
+	})
+
+	ts.Run("Link_NexusOperation forwarded to workflow completion callback", func() {
+		// Use operation ID as workflow input so we can derive the workflow ID.
+		opID := uuid.NewString()
+		workflowID := "nexus-link-echo-" + opID
+
+		handle := executeNexusOpWithRetry("link-echo-op", opID, client.StartNexusOperationOptions{
+			ID:                     opID,
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+		ts.NotEmpty(handle.GetRunID())
+
+		err := handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		// The link-echo-op handler starts a workflow; verify that the
+		// Link_NexusOperation pointing back to the SANO record is present
+		// in the workflow's completion callback links.
+		iter := ts.client.GetWorkflowHistory(ctx, workflowID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var nexusOpLink *commonpb.Link_NexusOperation
+		for iter.HasNext() {
+			event, err := iter.Next()
+			ts.NoError(err)
+			if event.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
+				continue
+			}
+			for _, cb := range event.GetWorkflowExecutionStartedEventAttributes().GetCompletionCallbacks() {
+				for _, link := range cb.GetLinks() {
+					if l := link.GetNexusOperation(); l != nil {
+						nexusOpLink = l
+					}
+				}
+			}
+			break
+		}
+		ts.Require().NotNil(nexusOpLink, "expected Link_NexusOperation in workflow completion callback")
+		ts.Equal(ts.config.Namespace, nexusOpLink.GetNamespace())
+		ts.Equal(opID, nexusOpLink.GetOperationId())
+		ts.Equal(handle.GetRunID(), nexusOpLink.GetRunId())
 	})
 }
 
