@@ -272,10 +272,9 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // If the activity is either canceled or workflow/activity doesn't exist, then we would cancel
 // the context with error context.Canceled.
 //
-//	TODO: Implement automatic heartbeating with cancellation through ctx.
-//
 // details - The details that you provided here can be seen in the workflow when it receives TimeoutError. You
-// can check error TimeoutType()/Details().
+// can check error TimeoutType()/Details(). Heartbeat responses may also deliver server requests such as activity
+// cancellation, pause, and reset to the activity context.
 //
 // Exposed as: [go.temporal.io/sdk/activity.RecordHeartbeat]
 func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
