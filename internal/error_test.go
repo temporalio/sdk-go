@@ -640,13 +640,14 @@ func Test_ContinueAsNewError(t *testing.T) {
 
 func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 	const (
-		a1                        = 1234
-		a2                        = "some random input"
-		continueAsNewWfName       = "continueAsNewWorkflowFn"
-		initialInterval           = 2 * time.Second
-		backoffCoefficient        = 1.1
-		maximumAttempts     int32 = 23
-		maximumInterval           = time.Minute
+		a1                         = 1234
+		a2                         = "some random input"
+		continueAsNewWfName        = "continueAsNewWorkflowFn"
+		initialInterval            = 2 * time.Second
+		backoffStartInterval       = 3 * time.Second
+		backoffCoefficient         = 1.1
+		maximumAttempts      int32 = 23
+		maximumInterval            = time.Minute
 	)
 
 	require := require.New(t)
@@ -658,7 +659,7 @@ func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 				InitialInterval:    initialInterval,
 				MaximumAttempts:    maximumAttempts,
 				MaximumInterval:    maximumInterval,
-			}},
+			}, BackoffStartInterval: backoffStartInterval},
 			continueAsNewWfName,
 			a1,
 			a2,
@@ -671,6 +672,9 @@ func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 
 		if continueAsNewErr.RetryPolicy.MaximumAttempts != maximumAttempts {
 			return errors.New("retry policy maximum attempts is not set")
+		}
+		if continueAsNewErr.BackoffStartInterval != backoffStartInterval {
+			return errors.New("backoff start interval is not set")
 		}
 
 		return err
