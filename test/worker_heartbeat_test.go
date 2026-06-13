@@ -3,6 +3,7 @@ package test_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -12,17 +13,19 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.temporal.io/api/enums/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/contrib/sysinfo"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -48,7 +51,7 @@ func (ts *WorkerHeartbeatTestSuite) SetupSuite() {
 		Namespace:               ts.config.Namespace,
 		Logger:                  ilog.NewDefaultLogger(),
 		WorkerHeartbeatInterval: 1 * time.Second,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
 		Identity:                "WorkerHeartbeatTest",
 	})
 	ts.NoError(err)
@@ -121,7 +124,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 			workerInfo.ActivityTaskSlotsInfo.CurrentUsedSlots >= 1
 	}, 5*time.Second, 200*time.Millisecond, "Should find worker with activity slot used")
 
-	ts.Equal(enums.WORKER_STATUS_RUNNING, workerInfo.Status)
+	ts.Equal(enumspb.WORKER_STATUS_RUNNING, workerInfo.Status)
 
 	workflowTaskSlots := workerInfo.WorkflowTaskSlotsInfo
 	ts.Equal(int32(1), workflowTaskSlots.TotalProcessedTasks)
@@ -204,7 +207,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatBasic() {
 	ts.Equal(ts.taskQueueName, workerInfo.TaskQueue)
 	ts.Equal(internal.SDKName, workerInfo.SdkName)
 	ts.Equal(internal.SDKVersion, workerInfo.SdkVersion)
-	ts.Equal(enums.WORKER_STATUS_SHUTTING_DOWN, workerInfo.Status)
+	ts.Equal(enumspb.WORKER_STATUS_SHUTTING_DOWN, workerInfo.Status)
 
 	// Timestamp validations - second heartbeat check (after shutdown)
 	// StartTime should be unchanged
@@ -309,7 +312,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatDisabled() {
 		Namespace:               ts.config.Namespace,
 		Logger:                  ilog.NewDefaultLogger(),
 		WorkerHeartbeatInterval: -1,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
 	})
 	ts.NoError(err)
 	defer clientNoHeartbeat.Close()
@@ -853,6 +856,53 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatResourceBasedTuner() {
 	ts.True(workerInfo.ActivityPollerInfo.IsAutoscaling)
 }
 
+// TestWorkerHeartbeatSysInfoProviderWithoutResourceTuner verifies that a worker using a
+// fixed-size tuner (not resource-based) still reports CPU/memory in heartbeats when the user
+// wires a SysInfoProvider into WorkerOptions directly.
+func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatSysInfoProviderWithoutResourceTuner() {
+	ctx := context.Background()
+
+	sysInfoWorkflow := func(ctx workflow.Context) error {
+		ao := workflow.ActivityOptions{StartToCloseTimeout: 10 * time.Second}
+		return workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, ao), "sysInfoActivity").Get(ctx, nil)
+	}
+	sysInfoActivity := func(ctx context.Context) error { return nil }
+
+	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{
+		MaxConcurrentWorkflowTaskExecutionSize: 5,
+		MaxConcurrentActivityExecutionSize:     5,
+		SysInfoProvider:                        sysinfo.SysInfoProvider(),
+	})
+	ts.worker.RegisterWorkflowWithOptions(sysInfoWorkflow, workflow.RegisterOptions{Name: "sysInfoWorkflow"})
+	ts.worker.RegisterActivityWithOptions(sysInfoActivity, activity.RegisterOptions{Name: "sysInfoActivity"})
+	ts.NoError(ts.worker.Start())
+
+	workflowOptions := client.StartWorkflowOptions{
+		ID:        "test-sysinfo-no-resource-tuner-" + uuid.NewString(),
+		TaskQueue: ts.taskQueueName,
+	}
+	run, err := ts.client.ExecuteWorkflow(ctx, workflowOptions, "sysInfoWorkflow")
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// Wait for a heartbeat that reports populated memory usage. Memory usage from sysinfo should
+	// always be > 0 on a running Go process; CPU may be near zero on an idle host, so we only
+	// gate on memory for the Eventually condition.
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, ts.taskQueueName)
+		return workerInfo != nil && workerInfo.HostInfo != nil &&
+			workerInfo.HostInfo.CurrentHostMemUsage > 0
+	}, 5*time.Second, 200*time.Millisecond, "Heartbeat should report non-zero memory usage")
+
+	// Confirm we're exercising the non-resource-based path.
+	ts.NotNil(workerInfo.WorkflowTaskSlotsInfo)
+	ts.Equal("Fixed", workerInfo.WorkflowTaskSlotsInfo.SlotSupplierKind)
+
+	ts.Greater(workerInfo.HostInfo.CurrentHostMemUsage, float32(0.0))
+	ts.GreaterOrEqual(workerInfo.HostInfo.CurrentHostCpuUsage, float32(0.0))
+}
+
 func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	ctx := context.Background()
 
@@ -877,7 +927,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 		Namespace:               ts.config.Namespace,
 		Logger:                  ilog.NewDefaultLogger(),
 		WorkerHeartbeatInterval: 1 * time.Second,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
 		Identity:                "PluginTest",
 		Plugins:                 []client.Plugin{clientPlugin},
 	})
@@ -912,4 +962,154 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	}
 	ts.True(pluginNames["test-client-plugin"])
 	ts.True(pluginNames["test-worker-plugin"])
+}
+
+func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
+	ctx := context.Background()
+	internalClient := ts.client.(internal.Client)
+	workflowClient := internalClient.(*internal.WorkflowClient)
+	resp, err := workflowClient.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
+	}
+
+	taskQueue := taskQueuePrefix + "-worker-poll-complete-on-shutdown-" + ts.T().Name()
+
+	var (
+		mu          sync.Mutex
+		shutdownReq *workflowservice.ShutdownWorkerRequest
+		pollErrors  []error
+	)
+
+	c, err := client.Dial(client.Options{
+		HostPort:                ts.config.ServiceAddr,
+		Namespace:               ts.config.Namespace,
+		Logger:                  ilog.NewDefaultLogger(),
+		WorkerHeartbeatInterval: 1 * time.Second,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS:                  ts.config.TLS,
+			GetSystemInfoTimeout: ctxTimeout,
+			DialOptions: []grpc.DialOption{
+				grpc.WithUnaryInterceptor(func(
+					ctx context.Context,
+					method string,
+					req any,
+					reply any,
+					cc *grpc.ClientConn,
+					invoker grpc.UnaryInvoker,
+					opts ...grpc.CallOption,
+				) error {
+					if strings.HasSuffix(method, "/ShutdownWorker") {
+						mu.Lock()
+						shutdownReq = req.(*workflowservice.ShutdownWorkerRequest)
+						mu.Unlock()
+					}
+
+					err := invoker(ctx, method, req, reply, cc, opts...)
+
+					isPoll := strings.HasSuffix(method, "/PollWorkflowTaskQueue") ||
+						strings.HasSuffix(method, "/PollActivityTaskQueue") ||
+						strings.HasSuffix(method, "/PollNexusTaskQueue")
+					if isPoll && err != nil {
+						mu.Lock()
+						pollErrors = append(pollErrors, err)
+						mu.Unlock()
+					}
+
+					return err
+				}),
+			},
+		},
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	w := worker.New(c, taskQueue, worker.Options{
+		WorkerStopTimeout: 2 * time.Second,
+	})
+	w.RegisterWorkflow(simpleWorkflow)
+	ts.NoError(w.Start())
+
+	// Wait for pollers to be registered on the server, ensuring polls are
+	// blocked in the matcher before we trigger shutdown.
+	ts.Eventually(func() bool {
+		resp, err := c.DescribeTaskQueue(context.Background(), taskQueue, enumspb.TASK_QUEUE_TYPE_WORKFLOW)
+		if err != nil {
+			return false
+		}
+		return len(resp.Pollers) > 0
+	}, 10*time.Second, 200*time.Millisecond, "Pollers never registered on server")
+
+	w.Stop()
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	ts.NotNil(shutdownReq, "ShutdownWorker RPC should have been called")
+	ts.Equal(taskQueue, shutdownReq.TaskQueue, "ShutdownWorker should include TaskQueue")
+	ts.NotEmpty(shutdownReq.TaskQueueTypes, "ShutdownWorker should include TaskQueueTypes")
+	ts.Contains(shutdownReq.TaskQueueTypes, enumspb.TASK_QUEUE_TYPE_WORKFLOW,
+		"ShutdownWorker should include WORKFLOW task queue type")
+
+	// With graceful shutdown, the SDK must not cancel poll contexts. Poll
+	// errors from connection closure during stop are expected, but
+	// context.Canceled would indicate the SDK cancelled a poll client-side.
+	for _, err := range pollErrors {
+		// We use string matching because gRPC wraps context cancellation into
+		// its own error types that don't preserve context.Canceled in the
+		// Unwrap() chain, so errors.Is(err, context.Canceled) won't detect it.
+		ts.False(strings.Contains(err.Error(), "context canceled"),
+			"Poll should not receive context canceled with graceful shutdown; got: %v", err)
+	}
+}
+
+func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStorageDrivers() {
+	ctx := context.Background()
+
+	driver1 := newMemDriver("test-driver1")
+	driver2 := newMemDriver("test-driver2")
+	driver3 := &panicMemDriver{memStorageDriver: newMemDriver("test-driver3")}
+	drivers := []converter.StorageDriver{driver1, driver2, driver3}
+
+	// Create a client with external storage configured
+	storageClient, err := client.Dial(client.Options{
+		HostPort:  ts.config.ServiceAddr,
+		Namespace: ts.config.Namespace,
+		Logger:    ilog.NewDefaultLogger(),
+		ExternalStorage: converter.ExternalStorage{
+			Drivers:        drivers,
+			DriverSelector: &roundRobinSelector{drivers: drivers},
+		},
+		WorkerHeartbeatInterval: 1 * time.Second,
+		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+		Identity:                "StorageDriverTest",
+	})
+	ts.NoError(err)
+	defer storageClient.Close()
+
+	taskQueue := ts.taskQueueName + "-storage-drivers"
+	ts.worker = worker.New(storageClient, taskQueue, worker.Options{})
+	ts.worker.RegisterWorkflow(simpleWorkflow)
+	ts.NoError(ts.worker.Start())
+
+	workflowOptions := client.StartWorkflowOptions{
+		ID:        "test-storage-drivers-" + uuid.NewString(),
+		TaskQueue: taskQueue,
+	}
+	run, err := storageClient.ExecuteWorkflow(ctx, workflowOptions, simpleWorkflow)
+	ts.NoError(err)
+	ts.NoError(run.Get(ctx, nil))
+
+	// Wait for heartbeat with driver info
+	var workerInfo *workerpb.WorkerHeartbeat
+	ts.Eventually(func() bool {
+		workerInfo = ts.getWorkerInfo(ctx, taskQueue)
+		return workerInfo != nil && len(workerInfo.Drivers) == 2
+	}, 5*time.Second, 200*time.Millisecond, "Should have 2 storage driver type")
+
+	ts.Equal("mem", workerInfo.Drivers[0].Type)
+	ts.Equal("panic", workerInfo.Drivers[1].Type)
 }

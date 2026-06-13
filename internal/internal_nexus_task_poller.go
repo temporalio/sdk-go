@@ -37,13 +37,15 @@ func newNexusTaskPoller(
 ) *nexusTaskPoller {
 	return &nexusTaskPoller{
 		basePoller: basePoller{
-			metricsHandler:          params.MetricsHandler,
-			stopC:                   params.WorkerStopChannel,
-			workerBuildID:           params.getBuildID(),
-			useBuildIDVersioning:    params.UseBuildIDForVersioning,
-			workerDeploymentVersion: params.DeploymentOptions.Version,
-			capabilities:            params.capabilities,
-			pollTimeTracker:         params.pollTimeTracker,
+			metricsHandler:               params.MetricsHandler,
+			stopC:                        params.WorkerStopChannel,
+			workerBuildID:                params.getBuildID(),
+			useBuildIDVersioning:         params.UseBuildIDForVersioning,
+			workerDeploymentVersion:      params.DeploymentOptions.Version,
+			capabilities:                 params.capabilities,
+			pollTimeTracker:              params.pollTimeTracker,
+			workerInstanceKey:            params.workerInstanceKey,
+			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:     taskHandler,
 		service:         service,
@@ -80,6 +82,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 			ntp.useBuildIDVersioning,
 			ntp.workerDeploymentVersion,
 		),
+		WorkerInstanceKey: ntp.workerInstanceKey,
 	}
 
 	response, err := ntp.pollNexusTaskQueue(ctx, request)
@@ -104,7 +107,7 @@ func (ntp *nexusTaskPoller) PollTask() (taskForWorker, error) {
 
 // ProcessTask processes a new task
 func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
-	if ntp.stopping() {
+	if !ntp.shouldDrainOnShutdown() && ntp.stopping() {
 		return errStop
 	}
 

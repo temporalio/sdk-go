@@ -12,14 +12,18 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"go.temporal.io/sdk/internal/common/metrics"
+	ilog "go.temporal.io/sdk/internal/log"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type countingTaskHandler struct {
@@ -408,4 +412,251 @@ func TestWFTPanicInTaskHandler(t *testing.T) {
 	require.Error(t, poller.processWorkflowTask(&task0))
 	// Workflow should not be in cache
 	require.Nil(t, cache.getWorkflowContext(runID))
+}
+
+func TestErrorToFailWorkflowTaskCause(t *testing.T) {
+	params := workerExecutionParameters{cache: NewWorkerCache()}
+	ensureRequiredParams(&params)
+
+	taskHandler := newWorkflowTaskHandler(params, nil, newRegistry())
+	poller := newWorkflowTaskProcessor(taskHandler, taskHandler, nil, params, "")
+
+	tests := []struct {
+		name  string
+		err   error
+		cause enumspb.WorkflowTaskFailedCause
+	}{
+		{
+			name:  "generic error",
+			err:   errors.New("something went wrong"),
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
+		},
+		{
+			name:  "history mismatch",
+			err:   historyMismatchError{},
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
+		},
+		{
+			name:  "unknown sdk flag",
+			err:   unknownSdkFlagError{},
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
+		},
+		{
+			name:  "payload size error",
+			err:   payloadSizeError{message: "too large", size: 100, limit: 50},
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := poller.errorToFailWorkflowTask([]byte("token"), tc.err)
+			require.Equal(t, tc.cause, resp.Cause)
+		})
+	}
+}
+
+type mockTask struct{}
+
+func (mockTask) scaleDecision() (pollerScaleDecision, bool) { return pollerScaleDecision{}, false }
+func (mockTask) isEmpty() bool                              { return false }
+
+func TestActivityTaskProcessedAfterStopForShutdownDrain(t *testing.T) {
+	stopC := make(chan struct{})
+	close(stopC)
+	graceful := &atomic.Bool{}
+	graceful.Store(true)
+
+	handler := &pendingActivityTaskHandler{executed: make(chan struct{})}
+	poller := &activityTaskPoller{
+		basePoller: basePoller{
+			stopC:                        stopC,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: graceful,
+		},
+		taskHandler:   handler,
+		taskQueueName: "test-task-queue",
+	}
+
+	now := timestamppb.Now()
+	err := poller.ProcessTask(&activityTask{task: &workflowservice.PollActivityTaskQueueResponse{
+		TaskToken:                   []byte("task-token"),
+		WorkflowType:                &commonpb.WorkflowType{Name: "workflow"},
+		ActivityType:                &commonpb.ActivityType{Name: "activity"},
+		StartedTime:                 now,
+		CurrentAttemptScheduledTime: now,
+		ScheduledTime:               now,
+	}})
+	require.NoError(t, err)
+
+	select {
+	case <-handler.executed:
+	case <-time.After(time.Second):
+		t.Fatal("activity task was not processed after shutdown started")
+	}
+}
+
+func TestActivityTaskNotProcessedAfterStopForLegacyShutdown(t *testing.T) {
+	stopC := make(chan struct{})
+	close(stopC)
+	graceful := &atomic.Bool{}
+
+	handler := &pendingActivityTaskHandler{executed: make(chan struct{})}
+	poller := &activityTaskPoller{
+		basePoller: basePoller{
+			stopC:                        stopC,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: graceful,
+		},
+		taskHandler:   handler,
+		taskQueueName: "test-task-queue",
+	}
+
+	now := timestamppb.Now()
+	err := poller.ProcessTask(&activityTask{task: &workflowservice.PollActivityTaskQueueResponse{
+		TaskToken:                   []byte("task-token"),
+		WorkflowType:                &commonpb.WorkflowType{Name: "workflow"},
+		ActivityType:                &commonpb.ActivityType{Name: "activity"},
+		StartedTime:                 now,
+		CurrentAttemptScheduledTime: now,
+		ScheduledTime:               now,
+	}})
+	require.ErrorIs(t, err, errStop)
+
+	select {
+	case <-handler.executed:
+		t.Fatal("activity task was processed after shutdown without drain capability")
+	default:
+	}
+}
+
+func TestWorkflowTaskProcessAfterStopMatchesShutdownMode(t *testing.T) {
+	tests := []struct {
+		name                         string
+		workerPollCompleteOnShutdown *atomic.Bool
+		wantErr                      error
+	}{
+		{
+			name:    "nil capability",
+			wantErr: errStop,
+		},
+		{
+			name:                         "false capability",
+			workerPollCompleteOnShutdown: &atomic.Bool{},
+			wantErr:                      errStop,
+		},
+		{
+			name: "true capability",
+			workerPollCompleteOnShutdown: func() *atomic.Bool {
+				enabled := &atomic.Bool{}
+				enabled.Store(true)
+				return enabled
+			}(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stopC := make(chan struct{})
+			close(stopC)
+			wtp := &workflowTaskProcessor{
+				basePoller: basePoller{
+					stopC:                        stopC,
+					workerPollCompleteOnShutdown: tt.workerPollCompleteOnShutdown,
+				},
+				logger: ilog.NewNopLogger(),
+			}
+
+			err := wtp.ProcessTask(&workflowTask{})
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+type pendingActivityTaskHandler struct {
+	executed chan struct{}
+}
+
+func (h *pendingActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
+	close(h.executed)
+	return ErrActivityResultPending, nil
+}
+
+func TestDoPollGracefulShutdown(t *testing.T) {
+	tests := []struct {
+		name            string
+		gracefulEnabled bool
+		wantErrStop     bool
+	}{
+		{
+			name:            "graceful enabled, waits for poll completion",
+			gracefulEnabled: true,
+		},
+		{
+			name:            "graceful disabled, returns errStop",
+			gracefulEnabled: false,
+			wantErrStop:     true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			stopC := make(chan struct{})
+			graceful := &atomic.Bool{}
+			graceful.Store(tc.gracefulEnabled)
+
+			bp := basePoller{
+				stopC:                        stopC,
+				workerPollCompleteOnShutdown: graceful,
+			}
+
+			pollStarted := make(chan struct{})
+			pollRelease := make(chan struct{})
+			expectedTask := &mockTask{}
+
+			pollFunc := func(ctx context.Context) (taskForWorker, error) {
+				close(pollStarted)
+				select {
+				case <-pollRelease:
+					return expectedTask, nil
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+
+			type pollResult struct {
+				task taskForWorker
+				err  error
+			}
+			resultC := make(chan pollResult, 1)
+
+			go func() {
+				task, err := bp.doPoll(pollFunc)
+				resultC <- pollResult{task, err}
+			}()
+
+			<-pollStarted
+			close(stopC)
+			if tc.gracefulEnabled {
+				// Graceful mode: doPoll waits for poll to finish
+				close(pollRelease)
+			}
+			// Legacy mode: doPoll cancels context and returns immediately;
+			// goroutine exits via ctx.Done()
+
+			r := <-resultC
+
+			if tc.wantErrStop {
+				require.ErrorIs(t, r.err, errStop)
+				require.Nil(t, r.task)
+			} else {
+				require.NoError(t, r.err)
+				require.Equal(t, expectedTask, r.task)
+			}
+		})
+	}
 }

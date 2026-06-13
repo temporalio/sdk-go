@@ -4754,10 +4754,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_SameWorkflowAndActivityNames() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_SignalNotLost() {
-	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
-	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
-
 	workflowFn := func(ctx Context) error {
 		ch1 := GetSignalChannel(ctx, "test-signal")
 		ch2 := GetSignalChannel(ctx, "test-signal-2")
@@ -4830,10 +4826,6 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalLost() {
 }
 
 func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
-	origBlockedSelectorSignalReceive := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
-	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = origBlockedSelectorSignalReceive }()
-
 	// Two workers listening on the same channel with multiple items sent quickly.
 	workflowFn := func(ctx Context) ([]int, error) {
 		ch := NewChannel(ctx)
@@ -4877,10 +4869,15 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 		return received, nil
 	}
 
-	s.Run("BuggyBehavior", func() {
+	s.Run("OldBehaviorWithOnlyBlockedSelectorFlag", func() {
+		origBlockedSelectorSignalReceive := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
 		origChannelLostMsg := sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages]
+		sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
 		sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = false
-		defer func() { sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg }()
+		defer func() {
+			sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = origBlockedSelectorSignalReceive
+			sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg
+		}()
 
 		env := s.NewTestWorkflowEnvironment()
 		env.ExecuteWorkflow(workflowFn)
@@ -4898,10 +4895,9 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 		s.ElementsMatch([]int{1, 3, 0}, received)
 	})
 
-	s.Run("FixedBehavior", func() {
-		origChannelLostMsg := sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages]
-		sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = true
-		defer func() { sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages] = origChannelLostMsg }()
+	s.Run("DefaultBehavior", func() {
+		s.Require().True(sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive])
+		s.Require().True(sdkFlagsAllowed[SDKFlagWorkflowNewChannelLostMessages])
 
 		env := s.NewTestWorkflowEnvironment()
 		env.ExecuteWorkflow(workflowFn)
@@ -4916,39 +4912,39 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 	})
 }
 func (s *WorkflowTestSuiteUnitTest) Test_OnWorkflowMockSeesHeaderContext() {
-    headerSeen := false
+	headerSeen := false
 
-    childWorkflowFn := func(ctx Context) error {
-        return nil
-    }
+	childWorkflowFn := func(ctx Context) error {
+		return nil
+	}
 
-    workflowFn := func(ctx Context) error {
-        cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour}
-        ctx = WithChildWorkflowOptions(ctx, cwo)
-        return ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
-    }
+	workflowFn := func(ctx Context) error {
+		cwo := ChildWorkflowOptions{WorkflowRunTimeout: time.Hour}
+		ctx = WithChildWorkflowOptions(ctx, cwo)
+		return ExecuteChildWorkflow(ctx, childWorkflowFn).Get(ctx, nil)
+	}
 
-    env := s.NewTestWorkflowEnvironment()
-    env.SetHeader(&commonpb.Header{
-        Fields: map[string]*commonpb.Payload{
-            testHeader: encodeString(s.T(), "test-data"),
-        },
-    })
-    env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
-    env.RegisterWorkflow(childWorkflowFn)
+	env := s.NewTestWorkflowEnvironment()
+	env.SetHeader(&commonpb.Header{
+		Fields: map[string]*commonpb.Payload{
+			testHeader: encodeString(s.T(), "test-data"),
+		},
+	})
+	env.SetContextPropagators([]ContextPropagator{NewKeysPropagator([]string{testHeader})})
+	env.RegisterWorkflow(childWorkflowFn)
 
-    env.OnWorkflow(childWorkflowFn, mock.MatchedBy(func(ctx Context) bool {
-        val := ctx.Value(contextKey(testHeader))
-        if v, ok := val.(string); ok && v == "test-data" {
-            headerSeen = true
-        }
-        return true
-    })).Return(nil)
+	env.OnWorkflow(childWorkflowFn, mock.MatchedBy(func(ctx Context) bool {
+		val := ctx.Value(contextKey(testHeader))
+		if v, ok := val.(string); ok && v == "test-data" {
+			headerSeen = true
+		}
+		return true
+	})).Return(nil)
 
-    env.ExecuteWorkflow(workflowFn)
+	env.ExecuteWorkflow(workflowFn)
 
-    s.True(env.IsWorkflowCompleted())
-    s.NoError(env.GetWorkflowError())
-    s.True(headerSeen, "OnWorkflow mock should see propagated header in context")
-    env.AssertExpectations(s.T())
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	s.True(headerSeen, "OnWorkflow mock should see propagated header in context")
+	env.AssertExpectations(s.T())
 }

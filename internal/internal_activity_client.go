@@ -14,6 +14,7 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/extstore"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -30,11 +31,11 @@ type (
 	ClientStartActivityOptions struct {
 		// ID - The business identifier of the activity.
 		//
-		// Mandatory: No default.
+		// Required
 		ID string
 		// TaskQueue - The task queue to schedule the activity on.
 		//
-		// Mandatory: No default.
+		// Required
 		TaskQueue string
 		// ScheduleToCloseTimeout - Total time that a workflow is willing to wait for an Activity to complete.
 		// ScheduleToCloseTimeout limits the total time of an Activity's execution including retries
@@ -109,6 +110,8 @@ type (
 		//
 		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
+		// StartDelay - Time to wait before dispatching the activity. This delay is not applied to retry attempts.
+		StartDelay time.Duration
 	}
 
 	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
@@ -276,6 +279,7 @@ type (
 		CanceledReason          string
 		dataConverter           converter.DataConverter
 		failureConverter        converter.FailureConverter
+		inboundPayloadVisitor   PayloadVisitor
 		summary                 string
 		details                 string
 	}
@@ -302,6 +306,9 @@ func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...an
 	if details == nil {
 		return ErrNoData
 	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, details, 0); err != nil {
+		return err
+	}
 	return d.dataConverter.FromPayloads(details, valuePtrs...)
 }
 
@@ -311,6 +318,9 @@ func (d *ClientActivityExecutionDescription) GetLastFailure() error {
 	failure := d.RawExecutionInfo.GetLastFailure()
 	if failure == nil {
 		return nil
+	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, failure, 0); err != nil {
+		return err
 	}
 	return d.failureConverter.FailureToError(failure)
 }
@@ -325,8 +335,12 @@ func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 	if payload == nil {
 		return "", nil
 	}
+	var err error
+	if payload, err = visitPayload(context.Background(), d.inboundPayloadVisitor, payload); err != nil {
+		return "", err
+	}
 	var summary string
-	err := d.dataConverter.FromPayload(payload, &summary)
+	err = d.dataConverter.FromPayload(payload, &summary)
 	if err != nil {
 		return "", err
 	}
@@ -344,8 +358,12 @@ func (d *ClientActivityExecutionDescription) GetDetails() (string, error) {
 	if payload == nil {
 		return "", nil
 	}
+	var err error
+	if payload, err = visitPayload(context.Background(), d.inboundPayloadVisitor, payload); err != nil {
+		return "", err
+	}
 	var details string
-	err := d.dataConverter.FromPayload(payload, &details)
+	err = d.dataConverter.FromPayload(payload, &details)
 	if err != nil {
 		return "", err
 	}
@@ -445,6 +463,9 @@ func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientSta
 	if err != nil {
 		return nil, err
 	}
+
+	// Set header before interceptor run so interceptors can access it
+	ctx = contextWithNewHeader(ctx)
 
 	return wc.interceptor.ExecuteActivity(ctx, &ClientExecuteActivityInput{
 		Options:      &options,
@@ -547,7 +568,6 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	ctx context.Context,
 	in *ClientExecuteActivityInput,
 ) (ClientActivityHandle, error) {
-	ctx = contextWithNewHeader(ctx)
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
@@ -567,6 +587,15 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		return nil, err
 	}
 	if request.Header, err = headerPropagated(ctx, w.client.contextPropagators); err != nil {
+		return nil, err
+	}
+
+	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverActivityInfo{
+		Namespace:    w.client.namespace,
+		ActivityID:   request.ActivityId,
+		ActivityType: in.ActivityType,
+	})
+	if err := visitProtoPayloads(storeCtx, w.outboundPayloadVisitor, request, 0); err != nil {
 		return nil, err
 	}
 
@@ -626,6 +655,7 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	request.SearchAttributes = searchAttrs
 	request.UserMetadata = userMetadata
 	request.Priority = convertToPBPriority(options.Priority)
+	request.StartDelay = durationpb.New(options.StartDelay)
 	return nil
 }
 
@@ -658,6 +688,10 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
+		return nil, err
 	}
 
 	switch v := resp.GetOutcome().GetValue().(type) {
@@ -727,6 +761,7 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			CanceledReason:          info.CanceledReason,
 			dataConverter:           WithContext(ctx, w.client.dataConverter),
 			failureConverter:        w.client.failureConverter,
+			inboundPayloadVisitor:   w.inboundPayloadVisitor,
 		},
 	}, nil
 }

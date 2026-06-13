@@ -193,12 +193,13 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewError]
 	ContinueAsNewError struct {
 		// params *ExecuteWorkflowParams
-		WorkflowType        *WorkflowType
-		Input               *commonpb.Payloads
-		Header              *commonpb.Header
-		TaskQueueName       string
-		WorkflowRunTimeout  time.Duration
-		WorkflowTaskTimeout time.Duration
+		WorkflowType         *WorkflowType
+		Input                *commonpb.Payloads
+		Header               *commonpb.Header
+		TaskQueueName        string
+		WorkflowRunTimeout   time.Duration
+		WorkflowTaskTimeout  time.Duration
+		BackoffStartInterval time.Duration
 
 		// Deprecated: WorkflowExecutionTimeout is deprecated and is never set or
 		// used internally.
@@ -234,6 +235,10 @@ type (
 		// RetryPolicy specifies the retry policy to be used for the next run.
 		// If nil, the current workflow's retry policy will be used.
 		RetryPolicy *RetryPolicy
+
+		// BackoffStartInterval specifies the delay before the first workflow task
+		// of the next run is scheduled.
+		BackoffStartInterval time.Duration
 
 		// InitialVersioningBehavior specifies the versioning behavior that the first task of the new run should use.
 		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
@@ -624,6 +629,7 @@ func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOpt
 		if options.RetryPolicy != nil {
 			continueAsNewErr.RetryPolicy = options.RetryPolicy
 		}
+		continueAsNewErr.BackoffStartInterval = options.BackoffStartInterval
 		continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
 	}
 
@@ -641,7 +647,8 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 		panic("context is missing required options for continue as new")
 	}
 	env := getWorkflowEnvironment(ctx)
-	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, options.DataConverter, env.GetRegistry())
+	dc := getDataConverterFromWorkflowContext(ctx)
+	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, dc, env.GetRegistry())
 	if err != nil {
 		panic(err)
 	}

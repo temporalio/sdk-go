@@ -1,68 +1,111 @@
-# Developing Temporal Go SDK
+# Contributing to Temporal Go SDK
 
 This doc is intended for contributors to Go SDK (hopefully that's you!)
 
-**Note:** All contributors also need to fill out the [Temporal Contributor License Agreement](https://gist.github.com/samarabbas/7dcd41eb1d847e12263cc961ccfdb197) before we can merge in any of your changes.
+All contributors must complete the Temporal Contributor License Agreement (CLA) before changes can be merged. A link to the CLA will be posted in the PR.
 
-## Development Environment
+## Prerequisites
 
-* [Go Lang](https://golang.org/) (minimum version required is 1.14):
-  - Ubuntu: `sudo apt install golang`.
-  - OS X: `brew install go` and add this to your `.bashrc`:
+- [Go](https://go.dev/) 1.24+ (see [go.mod](go.mod) for the minimum supported version)
 
-        ```
-        export GOPATH=$HOME/go
-        export GOROOT="$(brew --prefix go)/libexec"
-        export PATH="$PATH:${GOPATH}/bin:${GOROOT}/bin"
-        ```
+## Local development workflow
 
-## Checking out the code
+The canonical local commands are provided by the build tool in `internal/cmd/build`.
 
-Temporal GO SDK uses go modules, there is no dependency on `$GOPATH` variable. Clone the repo into the preferred location:
+Tests are managed through the build tool at `internal/cmd/build`. This tool handles starting an embedded Temporal dev
+server with the required dynamic configs and search attributes, enforces consistent test flags (`-race`, `-count 1`, no caching),
+and manages coverage collection — so you don't need to manually configure a server or remember the right flags.
 
 ```bash
-git clone https://github.com/temporalio/sdk-go.git
+cd internal/cmd/build
 ```
 
-## Commit Messages And Titles of Pull Requests
-
-Overcommit adds some requirements to your commit messages. At Temporal, we follow the
-[Chris Beams](http://chris.beams.io/posts/git-commit/) guide to writing git
-commit messages. Read it, follow it, learn it, love it.
-
-All commit messages are from the titles of your pull requests. So make sure follow the rules when titling them. 
-Please don't use very generic titles like "bug fixes". 
-
-All PR titles should start with Upper case.
-
-## Testing
-
-Run all static analysis tools:
+Run static analysis checks:
 
 ```bash
-cd ./internal/cmd/build
 go run . check
 ```
 
-Run the integration tests (requires local server running, or pass `-dev-server`):
+Run unit tests (all packages except `test/`):
 
 ```bash
-cd ./internal/cmd/build
-go run . integration-test
-```
-
-Run the unit tests:
-
-```bash
-cd ./internal/cmd/build
 go run . unit-test
 ```
 
-## Updating go mod files
+Run integration tests with an embedded Temporal dev server:
 
-Sometimes all go.mod files need to be tidied. For an easy way to do this on linux or (probably) mac,
-run:
+```bash
+go run . integration-test -dev-server
+```
+
+If you omit `-dev-server`, integration tests connect to a server already running on `localhost:7233`.
+
+## Running specific tests
+
+Use `-run` with the same semantics as `go test -run`.
+
+Unit tests:
+
+```bash
+go run . unit-test -run "TestMyFunction"
+```
+
+Integration tests:
+
+```bash
+# Single test in a suite
+go run . integration-test -dev-server -run "TestIntegrationSuite/TestMyTest"
+
+# Entire suite
+go run . integration-test -dev-server -run "TestWorkerTunerTestSuite"
+```
+
+## Coverage
+
+Unit test coverage (writes per-package profiles under `.build/coverage`):
+
+```bash
+go run . unit-test -coverage
+```
+
+Integration test coverage:
+
+```bash
+go run . integration-test -dev-server -coverage-file integration-test.out
+```
+
+Merge coverage files:
+
+```bash
+go run . merge-coverage-files coverage.out
+```
+
+## Go module housekeeping
+
+If dependencies change, tidy all modules:
 
 ```bash
 find . -name go.mod -execdir go mod tidy \;
 ```
+
+## Pull request checklist
+
+Before opening or updating a pull request:
+
+- Run `go run . check` from `internal/cmd/build`.
+- Run relevant tests (`unit-test` and, when needed, `integration-test -dev-server`).
+- Keep changes focused and include tests for behavior changes.
+- Update documentation/comments when public behavior changes.
+
+## Changelog
+
+User-facing changes are recorded in [`CHANGELOG.md`](CHANGELOG.md), loosely following the
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
+
+If your PR includes a user-facing change (new feature, behavior change, deprecation, breaking
+change, notable bug fix, or security fix), add a short, high-level entry to the `## [Unreleased]`
+section at the top of `CHANGELOG.md` under the appropriate heading, creating it if needed:
+Added, Changed, Deprecated, Breaking Changes, Fixed, or Security.
+
+Keep entries high-level and written for users. The full commit log is appended at release time,
+so internal-only changes (refactors, tests, CI, docs) don't need an entry.

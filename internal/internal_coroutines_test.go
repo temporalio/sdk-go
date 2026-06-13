@@ -528,7 +528,7 @@ func TestBlockingSelect(t *testing.T) {
 	require.EqualValues(t, expected, history)
 }
 
-func TestSelectBlockingDefault(t *testing.T) {
+func TestSelectBlockingDefaultWithOldFlagBehavior(t *testing.T) {
 	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
 	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = false
 	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
@@ -579,7 +579,7 @@ func TestSelectBlockingDefault(t *testing.T) {
 		history = append(history, "select1")
 		selector.Select(ctx)
 
-		// Default behavior this signal is lost
+		// Old behavior loses this signal when the selector default branch blocks.
 		require.True(t, c1.Len() == 0 && v == "two")
 
 		history = append(history, "select2")
@@ -602,11 +602,7 @@ func TestSelectBlockingDefault(t *testing.T) {
 	require.EqualValues(t, expected, history)
 }
 
-func TestSelectBlockingDefaultWithFlag(t *testing.T) {
-	orig := sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive]
-	sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = true
-	defer func() { sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = orig }()
-
+func TestSelectBlockingDefaultWithDefaultFlags(t *testing.T) {
 	var history []string
 	env := &workflowEnvironmentImpl{
 		sdkFlags:       newSDKFlagSet(&workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}),
@@ -617,6 +613,7 @@ func TestSelectBlockingDefaultWithFlag(t *testing.T) {
 			TaskQueueName: "taskqueue:" + t.Name(),
 		},
 	}
+	require.True(t, sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive])
 	require.True(t, env.TryUse(SDKFlagBlockedSelectorSignalReceive))
 
 	interceptor, ctx, err := newWorkflowContext(env, nil)
@@ -1942,4 +1939,48 @@ func TestDeadlockDetectorStackTrace(t *testing.T) {
 	require.Equal(t, `[TMPRL1101] Potential deadlock detected: workflow goroutine "sleeper" didn't yield for over a second`, wfPanic.Error())
 	require.Regexp(t, `^coroutine sleeper \[running\]:\ntime\.Sleep\(0x[\da-f]+\)\n`, wfPanic.StackTrace())
 	require.Equal(t, 4, strings.Count(wfPanic.StackTrace(), "\n"), "2 stack frames expected")
+}
+
+func TestChainAlreadyReadyFuture(t *testing.T) {
+	var result int
+
+	d := createNewDispatcher(func(ctx Context) {
+		source, sourceSettable := NewFuture(ctx)
+		sourceSettable.SetValue(42)
+
+		target, targetSettable := NewFuture(ctx)
+		targetSettable.Chain(source)
+
+		err := target.Get(ctx, &result)
+		require.NoError(t, err)
+	})
+
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.Equal(t, 42, result)
+}
+func TestChainAlreadyReadyFuturePropagates(t *testing.T) {
+	var result int
+
+	d := createNewDispatcher(func(ctx Context) {
+		source, sourceSettable := NewFuture(ctx)
+		mid, midSettable := NewFuture(ctx)
+		leaf, leafSettable := NewFuture(ctx)
+
+		// leaf depends on mid
+		leafSettable.Chain(mid)
+
+		// source is already ready
+		sourceSettable.SetValue(42)
+
+		// mid chains from already-ready source
+		midSettable.Chain(source)
+
+		err := leaf.Get(ctx, &result)
+		require.NoError(t, err)
+	})
+
+	defer d.Close()
+	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+	require.Equal(t, 42, result)
 }

@@ -94,6 +94,24 @@ func (_m *Client) CompleteActivity(ctx context.Context, taskToken []byte, result
 	return r0
 }
 
+// CompleteActivityWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) CompleteActivityWithOptions(ctx context.Context, opts client.CompleteActivityOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteActivityWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CompleteActivityOptions) error); ok {
+		r0 = rf(ctx, opts)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // CompleteActivityByID provides a mock function with given fields: ctx, namespace, workflowID, runID, activityID, result, err
 func (_m *Client) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result interface{}, err error) error {
 	ret := _m.Called(ctx, namespace, workflowID, runID, activityID, result, err)
@@ -112,7 +130,25 @@ func (_m *Client) CompleteActivityByID(ctx context.Context, namespace string, wo
 	return r0
 }
 
-// CompleteActivityByID provides a mock function with given fields: ctx, namespace, activityID, activityRunID, result, err
+// CompleteActivityByIDWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) CompleteActivityByIDWithOptions(ctx context.Context, opts client.CompleteActivityByIDOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteActivityByIDWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CompleteActivityByIDOptions) error); ok {
+		r0 = rf(ctx, opts)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// CompleteActivityByActivityID provides a mock function with given fields: ctx, namespace, activityID, activityRunID, result, err
 func (_m *Client) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result interface{}, err error) error {
 	ret := _m.Called(ctx, namespace, activityID, activityRunID, result, err)
 
@@ -123,6 +159,24 @@ func (_m *Client) CompleteActivityByActivityID(ctx context.Context, namespace st
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, interface{}, error) error); ok {
 		r0 = rf(ctx, namespace, activityID, activityRunID, result, err)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// CompleteActivityByActivityIDWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) CompleteActivityByActivityIDWithOptions(ctx context.Context, opts client.CompleteActivityByActivityIDOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CompleteActivityByActivityIDWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CompleteActivityByActivityIDOptions) error); ok {
+		r0 = rf(ctx, opts)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -753,6 +807,24 @@ func (_m *Client) RecordActivityHeartbeat(ctx context.Context, taskToken []byte,
 	return r0
 }
 
+// RecordActivityHeartbeatWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) RecordActivityHeartbeatWithOptions(ctx context.Context, opts client.RecordActivityHeartbeatOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RecordActivityHeartbeatWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.RecordActivityHeartbeatOptions) error); ok {
+		r0 = rf(ctx, opts)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // RecordActivityHeartbeatByID provides a mock function with given fields: ctx, namespace, workflowID, runID, activityID, details
 func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...interface{}) error {
 	var _ca []interface{}
@@ -767,6 +839,24 @@ func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, namespace str
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, ...interface{}) error); ok {
 		r0 = rf(ctx, namespace, workflowID, runID, activityID, details...)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// RecordActivityHeartbeatByIDWithOptions provides a mock function with given fields: ctx, opts
+func (_m *Client) RecordActivityHeartbeatByIDWithOptions(ctx context.Context, opts client.RecordActivityHeartbeatByIDOptions) error {
+	ret := _m.Called(ctx, opts)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RecordActivityHeartbeatByIDWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.RecordActivityHeartbeatByIDOptions) error); ok {
+		r0 = rf(ctx, opts)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -1196,6 +1286,104 @@ func (_m *Client) CountActivities(ctx context.Context, options client.CountActiv
 	}
 
 	if rf, ok := ret.Get(1).(func(context.Context, client.CountActivitiesOptions) error); ok {
+		r1 = rf(ctx, options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// NewNexusClient provides a mock function with given fields: options
+func (_m *Client) NewNexusClient(options client.NexusClientOptions) (client.NexusClient, error) {
+	ret := _m.Called(options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for NewNexusClient")
+	}
+
+	var r0 client.NexusClient
+	var r1 error
+	if rf, ok := ret.Get(0).(func(client.NexusClientOptions) (client.NexusClient, error)); ok {
+		return rf(options)
+	}
+	if rf, ok := ret.Get(0).(func(client.NexusClientOptions) client.NexusClient); ok {
+		r0 = rf(options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.NexusClient)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(client.NexusClientOptions) error); ok {
+		r1 = rf(options)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// GetNexusOperationHandle provides a mock function with given fields: options
+func (_m *Client) GetNexusOperationHandle(options client.GetNexusOperationHandleOptions) client.NexusOperationHandle {
+	ret := _m.Called(options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetNexusOperationHandle")
+	}
+
+	var r0 client.NexusOperationHandle
+	if rf, ok := ret.Get(0).(func(client.GetNexusOperationHandleOptions) client.NexusOperationHandle); ok {
+		r0 = rf(options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(client.NexusOperationHandle)
+		}
+	}
+
+	return r0
+}
+
+// ListNexusOperations provides a mock function with given fields: ctx, options
+func (_m *Client) ListNexusOperations(ctx context.Context, options client.ListNexusOperationsOptions) (client.ListNexusOperationsResult, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListNexusOperations")
+	}
+
+	var r0 client.ListNexusOperationsResult
+	if rf, ok := ret.Get(0).(func(context.Context, client.ListNexusOperationsOptions) client.ListNexusOperationsResult); ok {
+		r0 = rf(ctx, options)
+	} else {
+		r0 = ret.Get(0).(client.ListNexusOperationsResult)
+	}
+
+	return r0, nil
+}
+
+// CountNexusOperations provides a mock function with given fields: ctx, options
+func (_m *Client) CountNexusOperations(ctx context.Context, options client.CountNexusOperationsOptions) (*client.CountNexusOperationsResult, error) {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CountNexusOperations")
+	}
+
+	var r0 *client.CountNexusOperationsResult
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CountNexusOperationsOptions) (*client.CountNexusOperationsResult, error)); ok {
+		return rf(ctx, options)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, client.CountNexusOperationsOptions) *client.CountNexusOperationsResult); ok {
+		r0 = rf(ctx, options)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*client.CountNexusOperationsResult)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, client.CountNexusOperationsOptions) error); ok {
 		r1 = rf(ctx, options)
 	} else {
 		r1 = ret.Error(1)

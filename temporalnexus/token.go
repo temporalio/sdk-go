@@ -37,6 +37,28 @@ func generateWorkflowRunOperationToken(namespace, workflowID string) (string, er
 	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(data), nil
 }
 
+// loadTokenType decodes just the type field from an operation token without full validation.
+// This allows cancel dispatch to route by token type before deserializing the full token.
+func loadTokenType(data string) (operationTokenType, error) {
+	if len(data) == 0 {
+		return 0, errors.New("invalid operation token: token is empty")
+	}
+	b, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(data)
+	if err != nil {
+		return 0, fmt.Errorf("failed to decode token: %w", err)
+	}
+	var partial struct {
+		Type operationTokenType `json:"t"`
+	}
+	if err := json.Unmarshal(b, &partial); err != nil {
+		return 0, fmt.Errorf("failed to unmarshal operation token: %w", err)
+	}
+	if partial.Type == 0 {
+		return 0, errors.New("invalid operation token: missing or zero token type")
+	}
+	return partial.Type, nil
+}
+
 func loadWorkflowRunOperationToken(data string) (workflowRunOperationToken, error) {
 	var token workflowRunOperationToken
 	if len(data) == 0 {

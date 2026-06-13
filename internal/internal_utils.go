@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -32,6 +33,10 @@ const (
 	temporalPrefix      = "__temporal_"
 	temporalPrefixError = "__temporal_ is a reserved prefix"
 )
+
+func isWorkflowStreamReservedName(name string) bool {
+	return strings.HasPrefix(name, "__temporal_workflow_stream_")
+}
 
 // grpcContextBuilder stores all gRPC-specific parameters that will
 // be stored inside of a context.
