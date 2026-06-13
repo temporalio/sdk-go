@@ -571,6 +571,26 @@ func (e *temporalError) failure() *failurepb.Failure {
 	return e.originalFailure
 }
 
+// Failure returns the original proto Failure this error was created from, if one is available.
+//
+// This is intended for advanced callers that need structured failure data such as stack traces,
+// encoded details, or the full cause chain. Application code should generally
+// continue using errors.As with concrete SDK error types such as *ApplicationError.
+//
+// When working with an arbitrary error value, use errors.As with an interface:
+//
+//	type failureProvider interface {
+//		Failure() *failurepb.Failure
+//	}
+//
+//	var fp failureProvider
+//	if errors.As(err, &fp) {
+//		failure := fp.Failure()
+//	}
+func (e *temporalError) Failure() *failurepb.Failure {
+	return e.originalFailure
+}
+
 // IsCanceledError returns whether error in CanceledError.
 func IsCanceledError(err error) bool {
 	var canceledErr *CanceledError
