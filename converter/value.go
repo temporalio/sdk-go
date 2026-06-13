@@ -61,7 +61,7 @@ func (v *RawValue) UnmarshalJSON(b []byte) error {
 // ValuesPayloads is an optional interface that EncodedValue and EncodedValues may implement
 // to expose the underlying commonpb.Payloads without decoding.
 type ValuesPayloads interface {
-	// Payloads gets the underlying commonpb.Payloads
+	// Payloads gets the underlying commonpb.Payloads without decoding
 	Payloads() *commonpb.Payloads
 }
 
