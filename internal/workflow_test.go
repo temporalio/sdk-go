@@ -29,10 +29,10 @@ func TestGetChildWorkflowOptions(t *testing.T) {
 		WorkflowIDReusePolicy:    enums.WORKFLOW_ID_REUSE_POLICY_REJECT_DUPLICATE,
 		RetryPolicy:              newTestRetryPolicy(),
 		CronSchedule:             "todo",
-		Memo: map[string]interface{}{
+		Memo: map[string]any{
 			"foo": "bar",
 		},
-		SearchAttributes: map[string]interface{}{
+		SearchAttributes: map[string]any{
 			"foo": "bar",
 		},
 		ParentClosePolicy: enums.PARENT_CLOSE_POLICY_REQUEST_CANCEL,
@@ -129,7 +129,7 @@ func newPriority() Priority {
 }
 
 // assertNonZero checks that every top level value, struct field, and item in a slice is a non-zero value.
-func assertNonZero(t *testing.T, i interface{}) {
+func assertNonZero(t *testing.T, i any) {
 	_assertNonZero(t, i, reflect.ValueOf(i).Type().Name())
 }
 
@@ -137,7 +137,7 @@ func assertNonZero(t *testing.T, i interface{}) {
 // Sure, this only works for latin characters. It's fine enough for the test
 var isPrivate = regexp.MustCompile("^[a-z]")
 
-func _assertNonZero(t *testing.T, i interface{}, prefix string) {
+func _assertNonZero(t *testing.T, i any, prefix string) {
 	v := reflect.ValueOf(i)
 	vt := v.Type()
 	switch v.Kind() {

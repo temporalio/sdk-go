@@ -445,7 +445,7 @@ type (
 		// UpsertEntries - Metadata entries inserted or modified. When values are not
 		// of type *commonpb.Payload, the client data converter will be used to generate
 		// payloads.
-		UpsertEntries map[string]interface{}
+		UpsertEntries map[string]any
 
 		// RemoveEntries - List of keys to remove from the metadata.
 		RemoveEntries []string

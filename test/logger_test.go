@@ -30,7 +30,7 @@ func logWorkflow(ctx workflow.Context, name string) error {
 	logger := workflow.GetLogger(ctx)
 	logger.Info("Logging from workflow", "name", name)
 
-	var result interface{}
+	var result any
 	err := workflow.ExecuteActivity(ctx, loggingActivity, name).Get(ctx, &result)
 	if err != nil {
 		logger.Error("LoggingActivity failed.", "Error", err)

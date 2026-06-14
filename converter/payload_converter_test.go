@@ -223,7 +223,7 @@ func TestProtoJsonPayloadConverter_Nil(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, wt2)
 
-	var wt3 interface{}
+	var wt3 any
 	payload, err = pc.ToPayload(wt3)
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(payload.Data))
@@ -233,12 +233,12 @@ func TestProtoJsonPayloadConverter_Nil(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, wt3)
 
-	var wt4 *interface{}
+	var wt4 *any
 	payload, err = pc.ToPayload(wt4)
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(payload.Data))
 
-	i := interface{}(123)
+	i := any(123)
 	wt4 = &i
 	err = pc.FromPayload(payload, &wt4)
 	require.NoError(t, err)
@@ -258,7 +258,7 @@ func TestJsonPayloadConverter_Nil(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, wt1)
 
-	var wt3 interface{}
+	var wt3 any
 	payload, err = pc.ToPayload(wt3)
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(payload.Data))
@@ -268,12 +268,12 @@ func TestJsonPayloadConverter_Nil(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, wt3)
 
-	var wt4 *interface{}
+	var wt4 *any
 	payload, err = pc.ToPayload(wt4)
 	require.NoError(t, err)
 	assert.Equal(t, "null", string(payload.Data))
 
-	i := interface{}(123)
+	i := any(123)
 	wt4 = &i
 	err = pc.FromPayload(payload, &wt4)
 	require.NoError(t, err)
@@ -293,7 +293,7 @@ func TestNilPayloadConverter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, wt1)
 
-	var wt3 interface{}
+	var wt3 any
 	payload, err = pc.ToPayload(wt3)
 	require.NoError(t, err)
 	assert.Nil(t, payload.Data)
@@ -303,12 +303,12 @@ func TestNilPayloadConverter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, wt3)
 
-	var wt4 *interface{}
+	var wt4 *any
 	payload, err = pc.ToPayload(wt4)
 	require.NoError(t, err)
 	assert.Nil(t, payload.Data)
 
-	i := interface{}(123)
+	i := any(123)
 	wt4 = &i
 	err = pc.FromPayload(payload, &wt4)
 	require.NoError(t, err)
@@ -373,20 +373,20 @@ func TestProtoJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt33.Name)
 
-	var wt5 interface{}
+	var wt5 any
 	err = pc.FromPayload(payload, wt5)
 	require.Error(t, err)
 	assert.Equal(t, "type: <nil>: not a pointer type", err.Error())
 	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
 
-	var wt6 *interface{}
+	var wt6 *any
 	err = pc.FromPayload(payload, wt6)
 	require.Error(t, err)
 	assert.Equal(t, "type: *interface {}: unable to set value", err.Error())
 	assert.True(t, errors.Is(err, ErrUnableToSetValue))
 
 	// supported by JSON serializer but not by ProtoJson
-	var wt7 interface{}
+	var wt7 any
 	err = pc.FromPayload(payload, &wt7)
 	require.Error(t, err)
 	assert.Equal(t, "value type: interface {}: must be a concrete type, not interface", err.Error())
@@ -441,20 +441,20 @@ func TestProtoPayloadConverter_FromPayload_Errors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "qwe", wt33.Name)
 
-	var wt5 interface{}
+	var wt5 any
 	err = pc.FromPayload(payload, wt5)
 	require.Error(t, err)
 	assert.Equal(t, "type: <nil>: not a pointer type", err.Error())
 	assert.True(t, errors.Is(err, ErrValuePtrIsNotPointer))
 
-	var wt6 *interface{}
+	var wt6 *any
 	err = pc.FromPayload(payload, wt6)
 	require.Error(t, err)
 	assert.Equal(t, "type: *interface {}: unable to set value", err.Error())
 	assert.True(t, errors.Is(err, ErrUnableToSetValue))
 
 	// supported by JSON serializer but not by ProtoJson
-	var wt7 interface{}
+	var wt7 any
 	err = pc.FromPayload(payload, &wt7)
 	require.Error(t, err)
 	assert.Equal(t, "value type: interface {}: must be a concrete type, not interface", err.Error())
@@ -512,19 +512,19 @@ func TestJsonPayloadConverter_FromPayload_Errors(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, "unable to decode: json: Unmarshal(non-pointer converter.testStruct)", err.Error())
 
-	var wt5 interface{}
+	var wt5 any
 	err = pc.FromPayload(payload, wt5)
 	require.Error(t, err)
 	assert.Equal(t, "unable to decode: json: Unmarshal(nil)", err.Error())
 
-	var wt6 *interface{}
+	var wt6 *any
 	err = pc.FromPayload(payload, wt6)
 	require.Error(t, err)
 	assert.Equal(t, "unable to decode: json: Unmarshal(nil *interface {})", err.Error())
 
-	// supported by JSON serializer (wt7 will be map[string]interface{})
-	var wt7 interface{}
+	// supported by JSON serializer (wt7 will be map[string]any)
+	var wt7 any
 	err = pc.FromPayload(payload, &wt7)
 	require.NoError(t, err)
-	assert.Equal(t, "qwe", wt7.(map[string]interface{})["Name"])
+	assert.Equal(t, "qwe", wt7.(map[string]any)["Name"])
 }

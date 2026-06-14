@@ -239,11 +239,11 @@ type (
 		// Workflow - What workflow to run.
 		// Workflow can either be the function or workflow type name as a string.
 		// On ScheduleHandle.Describe() or ScheduleHandle.Update() it will be the workflow type name.
-		Workflow interface{}
+		Workflow any
 
 		// Args - Arguments to pass to the workflow.
 		// On ScheduleHandle.Describe() or ScheduleHandle.Update() Args will be returned as *commonpb.Payload.
-		Args []interface{}
+		Args []any
 
 		// TaskQueue - The workflow tasks of the workflow are scheduled on the queue with this name.
 		// This is also the name of the activity task queue on which activities are scheduled.
@@ -265,7 +265,7 @@ type (
 
 		// Memo - Optional non-indexed info that will be shown in list workflow.
 		// On ScheduleHandle.Describe() or ScheduleHandle.Update() Memo will be returned as *commonpb.Payload.
-		Memo map[string]interface{}
+		Memo map[string]any
 
 		// TypedSearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs. The key
 		// and value type must be registered on Temporal server side. For supported operations on different server versions
@@ -377,7 +377,7 @@ type (
 		ScheduleBackfill []ScheduleBackfill
 
 		// Memo - Optional non-indexed info that will be shown in list schedules.
-		Memo map[string]interface{}
+		Memo map[string]any
 
 		// SearchAttributes - Optional indexed info that can be used in query of List schedules APIs. The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
@@ -386,7 +386,7 @@ type (
 		// Deprecated: use TypedSearchAttributes instead.
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
-		SearchAttributes map[string]interface{}
+		SearchAttributes map[string]any
 
 		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Workflow. Search Attributes are
 		// additional indexed information attributed to workflow and used for search and visibility. The search attributes

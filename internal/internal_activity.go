@@ -23,7 +23,7 @@ type (
 	activity interface {
 		Execute(ctx context.Context, input *commonpb.Payloads) (*commonpb.Payloads, error)
 		ActivityType() ActivityType
-		GetFunction() interface{}
+		GetFunction() any
 	}
 
 	// ActivityID uniquely identifies an activity execution
@@ -78,9 +78,9 @@ type (
 	// ExecuteLocalActivityParams parameters for executing a local activity
 	ExecuteLocalActivityParams struct {
 		ExecuteLocalActivityOptions
-		ActivityFn       interface{} // local activity function pointer
+		ActivityFn       any // local activity function pointer
 		ActivityType     string      // local activity type
-		InputArgs        []interface{}
+		InputArgs        []any
 		WorkflowInfo     *WorkflowInfo
 		DataConverter    converter.DataConverter    // context-aware DC from ExecuteLocalActivity
 		FailureConverter converter.FailureConverter // context-aware FC from ExecuteLocalActivity
@@ -217,7 +217,7 @@ func getValidatedLocalActivityOptions(ctx Context) (*ExecuteLocalActivityOptions
 	return p, nil
 }
 
-func validateFunctionArgs(workflowFunc interface{}, args []interface{}, isWorkflow bool) error {
+func validateFunctionArgs(workflowFunc any, args []any, isWorkflow bool) error {
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
 	case reflect.String:
@@ -263,7 +263,7 @@ func validateFunctionArgs(workflowFunc interface{}, args []interface{}, isWorkfl
 	return nil
 }
 
-func getValidatedActivityFunction(f interface{}, args []interface{}, registry *registry) (*ActivityType, error) {
+func getValidatedActivityFunction(f any, args []any, registry *registry) (*ActivityType, error) {
 	fnName := ""
 	fType := reflect.TypeOf(f)
 	switch getKind(fType) {
@@ -323,7 +323,7 @@ type activityEnvironmentInterceptor struct {
 	env                 *activityEnvironment
 	inboundInterceptor  ActivityInboundInterceptor
 	outboundInterceptor ActivityOutboundInterceptor
-	fn                  interface{}
+	fn                  any
 }
 
 func getActivityEnvironmentInterceptor(ctx context.Context) *activityEnvironmentInterceptor {
@@ -350,7 +350,7 @@ func (a *activityEnvironmentInterceptor) Init(outbound ActivityOutboundIntercept
 func (a *activityEnvironmentInterceptor) ExecuteActivity(
 	ctx context.Context,
 	in *ExecuteActivityInput,
-) (interface{}, error) {
+) (any, error) {
 	// Remove header from context
 	ctx = contextWithoutHeader(ctx)
 
@@ -394,7 +394,7 @@ func (a *activityEnvironmentInterceptor) GetMetricsHandler(ctx context.Context) 
 	return a.env.metricsHandler
 }
 
-func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, details ...interface{}) {
+func (a *activityEnvironmentInterceptor) RecordHeartbeat(ctx context.Context, details ...any) {
 	if a.env.isLocalActivity {
 		// no-op for local activity
 		return
@@ -417,7 +417,7 @@ func (a *activityEnvironmentInterceptor) HasHeartbeatDetails(ctx context.Context
 	return a.env.heartbeatDetails != nil
 }
 
-func (a *activityEnvironmentInterceptor) GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
+func (a *activityEnvironmentInterceptor) GetHeartbeatDetails(ctx context.Context, d ...any) error {
 	if a.env.heartbeatDetails == nil {
 		return ErrNoData
 	}

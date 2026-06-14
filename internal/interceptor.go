@@ -52,7 +52,7 @@ type ActivityInboundInterceptor interface {
 
 	// ExecuteActivity is called when an activity is to be run on this worker.
 	// interceptor.Header will return a non-nil map for this context.
-	ExecuteActivity(ctx context.Context, in *ExecuteActivityInput) (interface{}, error)
+	ExecuteActivity(ctx context.Context, in *ExecuteActivityInput) (any, error)
 
 	mustEmbedActivityInboundInterceptorBase()
 }
@@ -61,7 +61,7 @@ type ActivityInboundInterceptor interface {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ExecuteActivityInput]
 type ExecuteActivityInput struct {
-	Args []interface{}
+	Args []any
 }
 
 // ActivityOutboundInterceptor is an interface for all activity calls
@@ -80,13 +80,13 @@ type ActivityOutboundInterceptor interface {
 	GetMetricsHandler(ctx context.Context) metrics.Handler
 
 	// RecordHeartbeat intercepts activity.RecordHeartbeat.
-	RecordHeartbeat(ctx context.Context, details ...interface{})
+	RecordHeartbeat(ctx context.Context, details ...any)
 
 	// HasHeartbeatDetails intercepts activity.HasHeartbeatDetails.
 	HasHeartbeatDetails(ctx context.Context) bool
 
 	// GetHeartbeatDetails intercepts activity.GetHeartbeatDetails.
-	GetHeartbeatDetails(ctx context.Context, d ...interface{}) error
+	GetHeartbeatDetails(ctx context.Context, d ...any) error
 
 	// GetWorkerStopChannel intercepts activity.GetWorkerStopChannel.
 	GetWorkerStopChannel(ctx context.Context) <-chan struct{}
@@ -109,7 +109,7 @@ type WorkflowInboundInterceptor interface {
 
 	// ExecuteWorkflow is called when a workflow is to be run on this worker.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
-	ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (interface{}, error)
+	ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (any, error)
 
 	// HandleSignal is called when a signal is sent to a workflow on this worker.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
@@ -117,7 +117,7 @@ type WorkflowInboundInterceptor interface {
 
 	// HandleQuery is called when a query is sent to a workflow on this worker.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
-	HandleQuery(ctx Context, in *HandleQueryInput) (interface{}, error)
+	HandleQuery(ctx Context, in *HandleQueryInput) (any, error)
 
 	// ValidateUpdate is always called prior to executing an update, even if the
 	// update handler for in.Name was not registered with a validation function
@@ -130,7 +130,7 @@ type WorkflowInboundInterceptor interface {
 	// returns nil. interceptor.WorkflowHeader will return a non-nil map for
 	// this context. ExecuteUpdate is allowed to mutate workflow state and
 	// perform workflow actions such as scheduling activities, timers, etc.
-	ExecuteUpdate(ctx Context, in *UpdateInput) (interface{}, error)
+	ExecuteUpdate(ctx Context, in *UpdateInput) (any, error)
 
 	mustEmbedWorkflowInboundInterceptorBase()
 }
@@ -140,7 +140,7 @@ type WorkflowInboundInterceptor interface {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ExecuteWorkflowInput]
 type ExecuteWorkflowInput struct {
-	Args []interface{}
+	Args []any
 }
 
 // HandleSignalInput is the input to WorkflowInboundInterceptor.HandleSignal.
@@ -158,7 +158,7 @@ type HandleSignalInput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.UpdateInput]
 type UpdateInput struct {
 	Name string
-	Args []interface{}
+	Args []any
 }
 
 // HandleQueryInput is the input to WorkflowInboundInterceptor.HandleQuery.
@@ -166,7 +166,7 @@ type UpdateInput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.HandleQueryInput]
 type HandleQueryInput struct {
 	QueryType string
-	Args      []interface{}
+	Args      []any
 }
 
 // ExecuteNexusOperationInput is the input to WorkflowOutboundInterceptor.ExecuteNexusOperation.
@@ -225,15 +225,15 @@ type WorkflowOutboundInterceptor interface {
 
 	// ExecuteActivity intercepts workflow.ExecuteActivity.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
-	ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future
+	ExecuteActivity(ctx Context, activityType string, args ...any) Future
 
 	// ExecuteLocalActivity intercepts workflow.ExecuteLocalActivity.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
-	ExecuteLocalActivity(ctx Context, activityType string, args ...interface{}) Future
+	ExecuteLocalActivity(ctx Context, activityType string, args ...any) Future
 
 	// ExecuteChildWorkflow intercepts workflow.ExecuteChildWorkflow.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
-	ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...interface{}) ChildWorkflowFuture
+	ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...any) ChildWorkflowFuture
 
 	// GetInfo intercepts workflow.GetInfo.
 	GetInfo(ctx Context) *WorkflowInfo
@@ -270,21 +270,21 @@ type WorkflowOutboundInterceptor interface {
 
 	// SignalExternalWorkflow intercepts workflow.SignalExternalWorkflow.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
-	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future
+	SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any) Future
 
 	// SignalChildWorkflow intercepts
 	// workflow.ChildWorkflowFuture.SignalChildWorkflow.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
-	SignalChildWorkflow(ctx Context, workflowID, signalName string, arg interface{}) Future
+	SignalChildWorkflow(ctx Context, workflowID, signalName string, arg any) Future
 
 	// UpsertSearchAttributes intercepts workflow.UpsertSearchAttributes.
-	UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error
+	UpsertSearchAttributes(ctx Context, attributes map[string]any) error
 
 	// UpsertTypedSearchAttributes intercepts workflow.UpsertTypedSearchAttributes.
 	UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdate) error
 
 	// UpsertMemo intercepts workflow.UpsertMemo.
-	UpsertMemo(ctx Context, memo map[string]interface{}) error
+	UpsertMemo(ctx Context, memo map[string]any) error
 
 	// GetSignalChannel intercepts workflow.GetSignalChannel.
 	GetSignalChannel(ctx Context, signalName string) ReceiveChannel
@@ -295,17 +295,17 @@ type WorkflowOutboundInterceptor interface {
 	GetSignalChannelWithOptions(ctx Context, signalName string, options SignalChannelOptions) ReceiveChannel
 
 	// SideEffect intercepts workflow.SideEffect.
-	SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue
+	SideEffect(ctx Context, f func(ctx Context) any) converter.EncodedValue
 
 	// SideEffectWithOptions intercepts workflow.SideEffectWithOptions.
-	SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue
+	SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) any) converter.EncodedValue
 
 	// MutableSideEffect intercepts workflow.MutableSideEffect.
 	MutableSideEffect(
 		ctx Context,
 		id string,
-		f func(ctx Context) interface{},
-		equals func(a, b interface{}) bool,
+		f func(ctx Context) any,
+		equals func(a, b any) bool,
 	) converter.EncodedValue
 
 	// MutableSideEffectWithOptions intercepts workflow.MutableSideEffectWithOptions.
@@ -313,23 +313,23 @@ type WorkflowOutboundInterceptor interface {
 		ctx Context,
 		id string,
 		options MutableSideEffectOptions,
-		f func(ctx Context) interface{},
-		equals func(a, b interface{}) bool,
+		f func(ctx Context) any,
+		equals func(a, b any) bool,
 	) converter.EncodedValue
 
 	// GetVersion intercepts workflow.GetVersion.
 	GetVersion(ctx Context, changeID string, minSupported, maxSupported Version) Version
 
 	// SetQueryHandler intercepts workflow.SetQueryHandler.
-	SetQueryHandler(ctx Context, queryType string, handler interface{}) error
+	SetQueryHandler(ctx Context, queryType string, handler any) error
 
 	// SetQueryHandlerWithOptions intercepts workflow.SetQueryHandlerWithOptions.
 	//
 	// NOTE: Experimental
-	SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error
+	SetQueryHandlerWithOptions(ctx Context, queryType string, handler any, options QueryHandlerOptions) error
 
 	// SetUpdateHandler intercepts workflow.SetUpdateHandler.
-	SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error
+	SetUpdateHandler(ctx Context, updateName string, handler any, opts UpdateHandlerOptions) error
 
 	// IsReplaying intercepts workflow.IsReplaying.
 	IsReplaying(ctx Context) bool
@@ -338,14 +338,14 @@ type WorkflowOutboundInterceptor interface {
 	HasLastCompletionResult(ctx Context) bool
 
 	// GetLastCompletionResult intercepts workflow.GetLastCompletionResult.
-	GetLastCompletionResult(ctx Context, d ...interface{}) error
+	GetLastCompletionResult(ctx Context, d ...any) error
 
 	// GetLastError intercepts workflow.GetLastError.
 	GetLastError(ctx Context) error
 
 	// NewContinueAsNewError intercepts workflow.NewContinueAsNewError.
 	// interceptor.WorkflowHeader will return a non-nil map for this context.
-	NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error
+	NewContinueAsNewError(ctx Context, wfn any, args ...any) error
 
 	// ExecuteNexusOperation intercepts NexusClient.ExecuteOperation.
 	//
@@ -491,7 +491,7 @@ type ClientUpdateWorkflowInput struct {
 	UpdateID            string
 	WorkflowID          string
 	UpdateName          string
-	Args                []interface{}
+	Args                []any
 	RunID               string
 	FirstExecutionRunID string
 	WaitForStage        WorkflowUpdateStage
@@ -533,7 +533,7 @@ type ScheduleClientCreateInput struct {
 type ClientExecuteWorkflowInput struct {
 	Options      *StartWorkflowOptions
 	WorkflowType string
-	Args         []interface{}
+	Args         []any
 }
 
 // ClientSignalWorkflowInput is the input to
@@ -544,7 +544,7 @@ type ClientSignalWorkflowInput struct {
 	WorkflowID string
 	RunID      string
 	SignalName string
-	Arg        interface{}
+	Arg        any
 }
 
 // ClientSignalWithStartWorkflowInput is the input to
@@ -553,10 +553,10 @@ type ClientSignalWorkflowInput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientSignalWithStartWorkflowInput]
 type ClientSignalWithStartWorkflowInput struct {
 	SignalName   string
-	SignalArg    interface{}
+	SignalArg    any
 	Options      *StartWorkflowOptions
 	WorkflowType string
-	Args         []interface{}
+	Args         []any
 }
 
 // ClientCancelWorkflowInput is the input to
@@ -576,7 +576,7 @@ type ClientTerminateWorkflowInput struct {
 	WorkflowID string
 	RunID      string
 	Reason     string
-	Details    []interface{}
+	Details    []any
 }
 
 // ClientQueryWorkflowInput is the input to
@@ -587,7 +587,7 @@ type ClientQueryWorkflowInput struct {
 	WorkflowID           string
 	RunID                string
 	QueryType            string
-	Args                 []interface{}
+	Args                 []any
 	QueryRejectCondition enumspb.QueryRejectCondition
 }
 
@@ -617,7 +617,7 @@ type ClientDescribeWorkflowOutput struct {
 type ClientExecuteActivityInput struct {
 	Options      *ClientStartActivityOptions
 	ActivityType string
-	Args         []interface{}
+	Args         []any
 }
 
 // ClientGetActivityHandleInput is the input to
@@ -711,7 +711,7 @@ type ClientExecuteNexusOperationInput struct {
 	Endpoint      string
 	Service       string
 	OperationType string
-	Input         interface{}
+	Input         any
 	// NexusHeader is the Nexus header to attach to the operation request.
 	// Interceptors may read and write this header.
 	NexusHeader nexus.Header

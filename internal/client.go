@@ -98,19 +98,19 @@ type (
 		// WorkflowRun has three methods:
 		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
-		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
+		//  - Get(ctx context.Context, valuePtr any) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
 		//
 		// NOTE: If the started workflow returns ContinueAsNewError during the workflow execution, the
 		// returned result of GetRunID() will be the started workflow run ID, not the new run ID caused by ContinueAsNewError.
-		// However, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
+		// However, Get(ctx context.Context, valuePtr any) will return result from the run which did not return ContinueAsNewError.
 		// Say ExecuteWorkflow started a workflow, in its first run, has run ID "run ID 1", and returned ContinueAsNewError,
 		// the second run has run ID "run ID 2" and return some result other than ContinueAsNewError:
-		// GetRunID() will always return "run ID 1" and  Get(ctx context.Context, valuePtr interface{}) will return the result of second run.
+		// GetRunID() will always return "run ID 1" and  Get(ctx context.Context, valuePtr any) will return the result of second run.
 		//
 		// NOTE: DO NOT USE THIS API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
-		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error)
+		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow any, args ...any) (WorkflowRun, error)
 
 		// GetWorkflow retrieves a workflow execution and return a WorkflowRun instance
 		//  - workflow ID of the workflow.
@@ -119,13 +119,13 @@ type (
 		// WorkflowRun has three methods:
 		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
-		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
+		//  - Get(ctx context.Context, valuePtr any) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
 		//
 		// NOTE: if the retrieved workflow returned ContinueAsNewError during the workflow execution, the
 		// return result of GetRunID() will be the retrieved workflow run ID, not the new run ID caused by ContinueAsNewError,
-		// however, Get(ctx context.Context, valuePtr interface{}) will return result from the run which did not return ContinueAsNewError.
+		// however, Get(ctx context.Context, valuePtr any) will return result from the run which did not return ContinueAsNewError.
 		GetWorkflow(ctx context.Context, workflowID string, runID string) WorkflowRun
 
 		// SignalWorkflow sends a signals to a running workflow.
@@ -136,7 +136,7 @@ type (
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error
+		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error
 
 		// SignalWithStartWorkflow sends a signal to a running workflow.
 		// If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
@@ -151,11 +151,11 @@ type (
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
-			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
+		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any,
+			options StartWorkflowOptions, workflow any, workflowArgs ...any) (WorkflowRun, error)
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation for use in UpdateWithStartWorkflow.
-		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
+		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow any, args ...any) WithStartWorkflowOperation
 
 		// CancelWorkflow cancels a workflow in execution
 		//  - workflow ID of the workflow.
@@ -176,7 +176,7 @@ type (
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
+		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...any) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		//  - workflow ID of the workflow.
@@ -215,7 +215,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// CompleteActivityWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
+		CompleteActivity(ctx context.Context, taskToken []byte, result any, err error) error
 
 		// CompleteActivityWithOptions reports activity completed with full context options.
 		// Similar to CompleteActivity but accepts a struct with optional ActivitySerializationContext
@@ -243,7 +243,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// CompleteActivityByIDWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result interface{}, err error) error
+		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result any, err error) error
 
 		// CompleteActivityByIDWithOptions reports activity completed with full context options.
 		// Similar to CompleteActivityByID but accepts a struct with optional ActivitySerializationContext
@@ -269,7 +269,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// CompleteActivityByActivityIDWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		CompleteActivityByActivityID(ctx context.Context, namespace, activityID, activityRunID string, result interface{}, err error) error
+		CompleteActivityByActivityID(ctx context.Context, namespace, activityID, activityRunID string, result any, err error) error
 
 		// CompleteActivityByActivityIDWithOptions reports standalone activity completed with full context options.
 		// Similar to CompleteActivityByActivityID but accepts a struct with optional
@@ -287,7 +287,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// RecordActivityHeartbeatWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
+		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...any) error
 
 		// RecordActivityHeartbeatWithOptions records heartbeat with full context options.
 		// Similar to RecordActivityHeartbeat but accepts a struct with optional
@@ -305,7 +305,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// RecordActivityHeartbeatByIDWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...interface{}) error
+		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...any) error
 
 		// RecordActivityHeartbeatByIDWithOptions records heartbeat with full context options.
 		// Similar to RecordActivityHeartbeatByID but accepts a struct with optional
@@ -392,7 +392,7 @@ type (
 		// run. By default, temporal supports "__stack_trace" as a standard query type, which will return string value
 		// representing the call stack of the target workflow. The target workflow could also setup different query handler
 		// to handle custom query types.
-		// See comments at workflow.SetQueryHandler(ctx Context, queryType string, handler interface{}) for more details
+		// See comments at workflow.SetQueryHandler(ctx Context, queryType string, handler any) for more details
 		// on how to setup query handler within the target workflow.
 		//  - workflowID is required.
 		//  - runID can be default(empty string). if empty string then it will pick the running execution of that workflow ID.
@@ -404,7 +404,7 @@ type (
 		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
 		//  - serviceerror.QueryFailed
-		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error)
+		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...any) (converter.EncodedValue, error)
 
 		// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
@@ -642,7 +642,7 @@ type (
 
 		// Result completes the Activity as successful with this value.
 		// If both Result and Err are set, Err takes precedence.
-		Result interface{}
+		Result any
 
 		// Err completes the Activity as failed with this error.
 		// If both Result and Err are set, Err takes precedence.
@@ -697,7 +697,7 @@ type (
 		// Details are the Activity heartbeat details to report.
 		// These values are encoded with the Client's DataConverter and may be
 		// stored externally if ExternalStorage is configured.
-		Details []interface{}
+		Details []any
 
 		// Optional fields for ActivitySerializationContext.
 
@@ -729,7 +729,7 @@ type (
 
 		// Result completes the Activity as successful with this value.
 		// If both Result and Err are set, Err takes precedence.
-		Result interface{}
+		Result any
 
 		// Err completes the Activity as failed or canceled with this error.
 		// If both Result and Err are set, Err takes precedence.
@@ -791,7 +791,7 @@ type (
 
 		// Result completes the Activity as successful with this value.
 		// If both Result and Err are set, Err takes precedence.
-		Result interface{}
+		Result any
 
 		// Err completes the Activity as failed or canceled with this error.
 		// If both Result and Err are set, Err takes precedence.
@@ -832,7 +832,7 @@ type (
 		// Details are the Activity heartbeat details to report.
 		// These values are encoded with the Client's DataConverter and may be
 		// stored externally if ExternalStorage is configured.
-		Details []interface{}
+		Details []any
 
 		// Optional fields for ActivitySerializationContext.
 
@@ -992,7 +992,7 @@ type (
 	// Result is either nil if API call is allowed or an error, in which case request would be interrupted and
 	// the error will be propagated back through the interceptor chain.
 	TrafficController interface {
-		CheckCallAllowed(ctx context.Context, method string, req, reply interface{}) error
+		CheckCallAllowed(ctx context.Context, method string, req, reply any) error
 	}
 
 	// ConnectionOptions is provided by SDK consumers to control optional connection params.
@@ -1163,7 +1163,7 @@ type (
 		CronSchedule string
 
 		// Memo - Optional non-indexed info that will be shown in list workflow.
-		Memo map[string]interface{}
+		Memo map[string]any
 
 		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs. The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
@@ -1172,7 +1172,7 @@ type (
 		// Deprecated: use TypedSearchAttributes instead.
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
-		SearchAttributes map[string]interface{}
+		SearchAttributes map[string]any
 
 		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Workflow. Search Attributes are
 		// additional indexed information attributed to workflow and used for search and visibility. The search attributes

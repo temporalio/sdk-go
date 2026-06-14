@@ -372,7 +372,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 
 func generateSessionID(ctx Context) (string, error) {
 	var sessionID string
-	err := SideEffect(ctx, func(ctx Context) interface{} {
+	err := SideEffect(ctx, func(ctx Context) any {
 		return uuid.NewString()
 	}).Get(&sessionID)
 	return sessionID, err
@@ -471,7 +471,7 @@ func sessionCompletionActivity(ctx context.Context, sessionID string) error {
 	return nil
 }
 
-func isSessionCreationActivity(activity interface{}) bool {
+func isSessionCreationActivity(activity any) bool {
 	activityName, ok := activity.(string)
 	return ok && activityName == sessionCreationActivityName
 }

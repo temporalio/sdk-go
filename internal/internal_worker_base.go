@@ -127,7 +127,7 @@ type (
 			runID string,
 			signalName string,
 			input *commonpb.Payloads,
-			arg interface{},
+			arg any,
 			header *commonpb.Header,
 			childWorkflowOnly bool,
 			callback ResultHandler,
@@ -139,15 +139,15 @@ type (
 			handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 		)
 		IsReplaying() bool
-		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool, summary string) converter.EncodedValue
+		MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
 		GetFailureConverter() converter.FailureConverter
 		AddSession(sessionInfo *SessionInfo)
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
-		UpsertSearchAttributes(attributes map[string]interface{}) error
+		UpsertSearchAttributes(attributes map[string]any) error
 		UpsertTypedSearchAttributes(attributes SearchAttributes) error
-		UpsertMemo(memoMap map[string]interface{}) error
+		UpsertMemo(memoMap map[string]any) error
 		GetRegistry() *registry
 		// QueueUpdate request of type name
 		QueueUpdate(name string, f func())

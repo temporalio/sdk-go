@@ -28,7 +28,7 @@ func TestEncodeWorkflowRunOperationTokenDoesNotIncludeVersion(t *testing.T) {
 	b, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(data)
 	require.NoError(t, err)
 
-	var token map[string]interface{}
+	var token map[string]any
 	err = json.Unmarshal(b, &token)
 	require.NoError(t, err)
 	require.NotContains(t, token, "v", "version field should not be present in the token")

@@ -14,7 +14,7 @@ import (
 type (
 	// SearchAttributes represents a collection of typed search attributes
 	SearchAttributes struct {
-		untypedValue map[SearchAttributeKey]interface{}
+		untypedValue map[SearchAttributeKey]any
 	}
 
 	// SearchAttributeUpdate represents a change to SearchAttributes
@@ -258,7 +258,7 @@ func (k SearchAttributeKeyKeywordList) ValueUnset() SearchAttributeUpdate {
 
 func NewSearchAttributes(attributes ...SearchAttributeUpdate) SearchAttributes {
 	sa := SearchAttributes{
-		untypedValue: make(map[SearchAttributeKey]interface{}),
+		untypedValue: make(map[SearchAttributeKey]any),
 	}
 	for _, attr := range attributes {
 		attr(&sa)
@@ -343,8 +343,8 @@ func (sa SearchAttributes) Size() int {
 }
 
 // GetUntypedValues gets a copy of the collection with raw types.
-func (sa SearchAttributes) GetUntypedValues() map[SearchAttributeKey]interface{} {
-	untypedValueCopy := make(map[SearchAttributeKey]interface{}, len(sa.untypedValue))
+func (sa SearchAttributes) GetUntypedValues() map[SearchAttributeKey]any {
+	untypedValueCopy := make(map[SearchAttributeKey]any, len(sa.untypedValue))
 	for key, value := range sa.untypedValue {
 		// Filter out nil values
 		if value == nil {
@@ -374,7 +374,7 @@ func (sa SearchAttributes) Copy() SearchAttributeUpdate {
 	}
 }
 
-func serializeUntypedSearchAttributes(input map[string]interface{}) (*commonpb.SearchAttributes, error) {
+func serializeUntypedSearchAttributes(input map[string]any) (*commonpb.SearchAttributes, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -396,7 +396,7 @@ func serializeUntypedSearchAttributes(input map[string]interface{}) (*commonpb.S
 	return &commonpb.SearchAttributes{IndexedFields: attr}, nil
 }
 
-func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]interface{}) (*commonpb.SearchAttributes, error) {
+func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]any) (*commonpb.SearchAttributes, error) {
 	if searchAttributes == nil {
 		return nil, nil
 	}
@@ -449,7 +449,7 @@ func sanitizeSearchAttributesForStart(attributes *commonpb.SearchAttributes) *co
 }
 
 func serializeSearchAttributes(
-	untypedAttributes map[string]interface{},
+	untypedAttributes map[string]any,
 	typedAttributes SearchAttributes,
 ) (*commonpb.SearchAttributes, error) {
 	var searchAttr *commonpb.SearchAttributes

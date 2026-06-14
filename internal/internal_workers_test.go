@@ -35,7 +35,7 @@ func newNoResponseActivityTaskHandler() *noResponseActivityTaskHandler {
 	return &noResponseActivityTaskHandler{isExecuteCalled: make(chan struct{})}
 }
 
-func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
+func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (any, error) {
 	close(ath.isExecuteCalled)
 	c := make(chan struct{})
 	<-c
@@ -156,12 +156,12 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 		unblockPollCh := make(chan struct{})
 		pollRespondedCh := make(chan struct{})
 		s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				<-unblockPollCh
 			}).
 			Return(task, nil).AnyTimes()
 		s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				pollRespondedCh <- struct{}{}
 			}).
 			Return(nil, nil).AnyTimes()
@@ -220,12 +220,12 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 		unblockPollCh := make(chan struct{})
 		pollRespondedCh := make(chan struct{})
 		s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				<-unblockPollCh
 			}).
 			Return(task, nil).AnyTimes()
 		s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				pollRespondedCh <- struct{}{}
 			}).
 			Return(nil, nil).AnyTimes()
@@ -299,12 +299,12 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 	unblockPollCh := make(chan struct{})
 	pollRespondedCh := make(chan struct{})
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(ctx, in interface{}, opts ...interface{}) {
+		Do(func(ctx, in any, opts ...any) {
 			<-unblockPollCh
 		}).
 		Return(task, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(ctx, in interface{}, opts ...interface{}) {
+		Do(func(ctx, in any, opts ...any) {
 			pollRespondedCh <- struct{}{}
 		}).
 		Return(nil, nil).AnyTimes()

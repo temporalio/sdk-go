@@ -53,7 +53,7 @@ type (
 		// Complete is called for an update with the result of executing the
 		// update function. If the provided error is non-nil then the overall
 		// outcome is understood to be a failure.
-		Complete(success interface{}, err error)
+		Complete(success any, err error)
 	}
 
 	// UpdateScheduler allows an update state machine to spawn coroutines and
@@ -97,8 +97,8 @@ type (
 	// for a given name. It offers the ability to invoke the associated
 	// execution and validation functions.
 	updateHandler struct {
-		fn               interface{}
-		validateFn       interface{}
+		fn               any
+		validateFn       any
 		name             string
 		unfinishedPolicy HandlerUnfinishedPolicy
 		description      string
@@ -184,7 +184,7 @@ func (up *updateProtocol) Reject(err error) {
 
 // Complete is called for an update with the result of executing the
 // update function.
-func (up *updateProtocol) Complete(success interface{}, outcomeErr error) {
+func (up *updateProtocol) Complete(success any, outcomeErr error) {
 	up.requireState("complete", updateStateAccepted)
 	outcome := &updatepb.Outcome{}
 	if outcomeErr != nil {
@@ -340,13 +340,13 @@ func defaultUpdateHandler(
 // differ by the presence/absence of a leading Context parameter).
 func newUpdateHandler(
 	updateName string,
-	handler interface{},
+	handler any,
 	opts UpdateHandlerOptions,
 ) (*updateHandler, error) {
 	if err := validateUpdateHandlerFn(handler); err != nil {
 		return nil, err
 	}
-	var validateFn interface{} = func(...interface{}) error { return nil }
+	var validateFn any = func(...any) error { return nil }
 	if opts.Validator != nil {
 		if err := validateValidatorFn(opts.Validator); err != nil {
 			return nil, err
@@ -366,7 +366,7 @@ func newUpdateHandler(
 }
 
 // validate invokes the update's validation function.
-func (h *updateHandler) validate(ctx Context, input []interface{}) (err error) {
+func (h *updateHandler) validate(ctx Context, input []any) (err error) {
 	defer func() {
 		if p := recover(); p != nil {
 			if p == panicIllegalAccessCoroutineState {
@@ -383,7 +383,7 @@ func (h *updateHandler) validate(ctx Context, input []interface{}) (err error) {
 }
 
 // execute executes the update itself.
-func (h *updateHandler) execute(ctx Context, input []interface{}) (result interface{}, err error) {
+func (h *updateHandler) execute(ctx Context, input []any) (result any, err error) {
 	return executeFunctionWithWorkflowContext(ctx, h.fn, input)
 }
 
@@ -398,7 +398,7 @@ func (up *updateProtocol) HasCompleted() bool {
 // 1. is a function
 // 2. has exactly one return parameter
 // 3. the one return parameter is of type `error`
-func validateValidatorFn(fn interface{}) error {
+func validateValidatorFn(fn any) error {
 	fnType := reflect.TypeOf(fn)
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("validator must be function but was %s", fnType.Kind())
@@ -426,7 +426,7 @@ func validateValidatorFn(fn interface{}) error {
 // 2. has at least one parameter, the first of which is of type `workflow.Context`
 // 3. has one or two return parameters, the last of which is of type `error`
 // 4. if there are two return parameters, the first is a serializable type
-func validateUpdateHandlerFn(fn interface{}) error {
+func validateUpdateHandlerFn(fn any) error {
 	fnType := reflect.TypeOf(fn)
 	if fnType.Kind() != reflect.Func {
 		return fmt.Errorf("handler must be function but was %s", fnType.Kind())

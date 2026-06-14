@@ -28,7 +28,7 @@ type (
 	}
 
 	// ErrorDetailsValues is a type alias used hold error details objects.
-	ErrorDetailsValues []interface{}
+	ErrorDetailsValues []any
 
 	// WorkflowTestSuite is the test suite to run unit tests for workflow/activity.
 	//
@@ -79,7 +79,7 @@ type (
 	TestUpdateCallback struct {
 		OnAccept   func()
 		OnReject   func(error)
-		OnComplete func(interface{}, error)
+		OnComplete func(any, error)
 	}
 )
 
@@ -91,7 +91,7 @@ func newEncodedValues(values *commonpb.Payloads, dc converter.DataConverter) con
 }
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
-func (b EncodedValues) Get(valuePtr ...interface{}) error {
+func (b EncodedValues) Get(valuePtr ...any) error {
 	if !b.HasValues() {
 		return ErrNoData
 	}
@@ -104,7 +104,7 @@ func (b EncodedValues) HasValues() bool {
 }
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
-func (b ErrorDetailsValues) Get(valuePtr ...interface{}) error {
+func (b ErrorDetailsValues) Get(valuePtr ...any) error {
 	if !b.HasValues() {
 		return ErrNoData
 	}
@@ -178,24 +178,24 @@ func (s *WorkflowTestSuite) SetDisableRegistrationAliasing(disableRegistrationAl
 }
 
 // RegisterActivity registers activity implementation with TestWorkflowEnvironment
-func (t *TestActivityEnvironment) RegisterActivity(a interface{}) {
+func (t *TestActivityEnvironment) RegisterActivity(a any) {
 	t.impl.RegisterActivity(a)
 }
 
 // RegisterActivityWithOptions registers activity implementation with TestWorkflowEnvironment
-func (t *TestActivityEnvironment) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+func (t *TestActivityEnvironment) RegisterActivityWithOptions(a any, options RegisterActivityOptions) {
 	t.impl.RegisterActivityWithOptions(a, options)
 }
 
 // ExecuteActivity executes an activity. The tested activity will be executed synchronously in the calling goroutinue.
 // Caller should use EncodedValue.Get() to extract strong typed result value.
-func (t *TestActivityEnvironment) ExecuteActivity(activityFn interface{}, args ...interface{}) (converter.EncodedValue, error) {
+func (t *TestActivityEnvironment) ExecuteActivity(activityFn any, args ...any) (converter.EncodedValue, error) {
 	return t.impl.executeActivity(activityFn, args...)
 }
 
 // ExecuteLocalActivity executes a local activity. The tested activity will be executed synchronously in the calling goroutinue.
 // Caller should use EncodedValue.Get() to extract strong typed result value.
-func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn interface{}, args ...interface{}) (val converter.EncodedValue, err error) {
+func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn any, args ...any) (val converter.EncodedValue, err error) {
 	return t.impl.executeLocalActivity(activityFn, args...)
 }
 
@@ -246,7 +246,7 @@ func (t *TestActivityEnvironment) SetTestTimeout(idleTimeout time.Duration) *Tes
 }
 
 // SetHeartbeatDetails sets the heartbeat details to be returned from activity.GetHeartbeatDetails()
-func (t *TestActivityEnvironment) SetHeartbeatDetails(details interface{}) {
+func (t *TestActivityEnvironment) SetHeartbeatDetails(details any) {
 	t.impl.setHeartbeatDetails(details)
 }
 
@@ -285,12 +285,12 @@ func (t *TestActivityEnvironment) SetExecuteActivitiesInWorkflow(executeActiviti
 }
 
 // RegisterWorkflow registers workflow implementation with the TestWorkflowEnvironment
-func (e *TestWorkflowEnvironment) RegisterWorkflow(w interface{}) {
+func (e *TestWorkflowEnvironment) RegisterWorkflow(w any) {
 	e.impl.RegisterWorkflow(w)
 }
 
 // RegisterWorkflowWithOptions registers workflow implementation with the TestWorkflowEnvironment
-func (e *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+func (e *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w any, options RegisterWorkflowOptions) {
 	if len(e.workflowMock.ExpectedCalls) > 0 {
 		panic("RegisterWorkflow calls cannot follow mock related ones like OnWorkflow or similar")
 	}
@@ -298,7 +298,7 @@ func (e *TestWorkflowEnvironment) RegisterWorkflowWithOptions(w interface{}, opt
 }
 
 // RegisterDynamicWorkflow registers a dynamic workflow implementation with the TestWorkflowEnvironment
-func (e *TestWorkflowEnvironment) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+func (e *TestWorkflowEnvironment) RegisterDynamicWorkflow(w any, options DynamicRegisterWorkflowOptions) {
 	if len(e.workflowMock.ExpectedCalls) > 0 {
 		panic("RegisterDynamicWorkflow calls cannot follow mock related ones like OnWorkflow or similar")
 	}
@@ -306,12 +306,12 @@ func (e *TestWorkflowEnvironment) RegisterDynamicWorkflow(w interface{}, options
 }
 
 // RegisterActivity registers activity implementation with TestWorkflowEnvironment
-func (e *TestWorkflowEnvironment) RegisterActivity(a interface{}) {
+func (e *TestWorkflowEnvironment) RegisterActivity(a any) {
 	e.impl.RegisterActivity(a)
 }
 
 // RegisterActivityWithOptions registers activity implementation with TestWorkflowEnvironment
-func (e *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+func (e *TestWorkflowEnvironment) RegisterActivityWithOptions(a any, options RegisterActivityOptions) {
 	if len(e.activityMock.ExpectedCalls) > 0 {
 		panic("RegisterActivity calls cannot follow mock related ones like OnActivity or similar")
 	}
@@ -319,7 +319,7 @@ func (e *TestWorkflowEnvironment) RegisterActivityWithOptions(a interface{}, opt
 }
 
 // RegisterDynamicActivity registers the dynamic activity implementation with the TestWorkflowEnvironment
-func (e *TestWorkflowEnvironment) RegisterDynamicActivity(a interface{}, options DynamicRegisterActivityOptions) {
+func (e *TestWorkflowEnvironment) RegisterDynamicActivity(a any, options DynamicRegisterActivityOptions) {
 	if len(e.workflowMock.ExpectedCalls) > 0 {
 		panic("RegisterDynamicActivity calls cannot follow mock related ones like OnWorkflow or similar")
 	}
@@ -419,7 +419,7 @@ func (e *TestWorkflowEnvironment) InOrderMockCalls(calls ...*MockCallWrapper) {
 //
 // Mock callbacks here are run on a separate goroutine than the workflow and
 // therefore are not concurrency-safe with workflow code.
-func (e *TestWorkflowEnvironment) OnActivity(activity interface{}, args ...interface{}) *MockCallWrapper {
+func (e *TestWorkflowEnvironment) OnActivity(activity any, args ...any) *MockCallWrapper {
 	fType := reflect.TypeOf(activity)
 	var call *mock.Call
 	switch fType.Kind() {
@@ -478,7 +478,7 @@ var ErrMockStartChildWorkflowFailed = fmt.Errorf("start child workflow failed: %
 //
 // Mock callbacks here are run on a separate goroutine than the workflow and
 // therefore are not concurrency-safe with workflow code.
-func (e *TestWorkflowEnvironment) OnWorkflow(workflow interface{}, args ...interface{}) *MockCallWrapper {
+func (e *TestWorkflowEnvironment) OnWorkflow(workflow any, args ...any) *MockCallWrapper {
 	fType := reflect.TypeOf(workflow)
 	var call *mock.Call
 	switch fType.Kind() {
@@ -525,14 +525,14 @@ const mockMethodForUpsertMemo = "workflow.UpsertMemo"
 //     env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(errors.New("unknown external workflow")).Once()
 //   - mock function for SignalExternalWorkflow
 //     env.OnSignalExternalWorkflow(mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
-//     func(namespace, workflowID, runID, signalName string, arg interface{}) error {
+//     func(namespace, workflowID, runID, signalName string, arg any) error {
 //     // you can do differently based on the parameters
 //     return nil
 //     })
 //
 // Mock callbacks here are run on a separate goroutine than the workflow and
 // therefore are not concurrency-safe with workflow code.
-func (e *TestWorkflowEnvironment) OnSignalExternalWorkflow(namespace, workflowID, runID, signalName, arg interface{}) *MockCallWrapper {
+func (e *TestWorkflowEnvironment) OnSignalExternalWorkflow(namespace, workflowID, runID, signalName, arg any) *MockCallWrapper {
 	call := e.workflowMock.On(mockMethodForSignalExternalWorkflow, namespace, workflowID, runID, signalName, arg)
 	return e.wrapWorkflowCall(call)
 }
@@ -605,7 +605,7 @@ func (e *TestWorkflowEnvironment) OnMutableSideEffect(id string) *MockCallWrappe
 // If mock is setup, all UpsertSearchAttributes calls in workflow have to be mocked.
 //
 // Deprecated: use OnUpsertTypedSearchAttributes instead.
-func (e *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes interface{}) *MockCallWrapper {
+func (e *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes any) *MockCallWrapper {
 	call := e.workflowMock.On(mockMethodForUpsertSearchAttributes, attributes)
 	return e.wrapWorkflowCall(call)
 }
@@ -615,7 +615,7 @@ func (e *TestWorkflowEnvironment) OnUpsertSearchAttributes(attributes interface{
 // If mock is setup, all UpsertTypedSearchAttributes calls in workflow have to be mocked.
 //
 // Note: The mock is called with a temporal.SearchAttributes constructed from the inputs to workflow.UpsertTypedSearchAttributes.
-func (e *TestWorkflowEnvironment) OnUpsertTypedSearchAttributes(attributes interface{}) *MockCallWrapper {
+func (e *TestWorkflowEnvironment) OnUpsertTypedSearchAttributes(attributes any) *MockCallWrapper {
 	call := e.workflowMock.On(mockMethodForUpsertTypedSearchAttributes, attributes)
 	return e.wrapWorkflowCall(call)
 }
@@ -623,7 +623,7 @@ func (e *TestWorkflowEnvironment) OnUpsertTypedSearchAttributes(attributes inter
 // OnUpsertMemo setup a mock for workflow.UpsertMemo call.
 // If mock is not setup, the UpsertMemo call will only validate input attributes.
 // If mock is setup, all UpsertMemo calls in workflow have to be mocked.
-func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes interface{}) *MockCallWrapper {
+func (e *TestWorkflowEnvironment) OnUpsertMemo(attributes any) *MockCallWrapper {
 	call := e.workflowMock.On(mockMethodForUpsertMemo, attributes)
 	return e.wrapWorkflowCall(call)
 }
@@ -829,7 +829,7 @@ func (c *MockCallWrapper) AfterFn(fn func() time.Duration) *MockCallWrapper {
 }
 
 // Return specifies the return arguments for the expectation.
-func (c *MockCallWrapper) Return(returnArguments ...interface{}) *MockCallWrapper {
+func (c *MockCallWrapper) Return(returnArguments ...any) *MockCallWrapper {
 	c.call.Return(returnArguments...)
 	return c
 }
@@ -863,7 +863,7 @@ func (uc *TestUpdateCallback) Reject(err error) {
 	}
 }
 
-func (uc *TestUpdateCallback) Complete(success interface{}, err error) {
+func (uc *TestUpdateCallback) Complete(success any, err error) {
 	if uc.OnComplete != nil {
 		uc.OnComplete(success, err)
 	}
@@ -871,7 +871,7 @@ func (uc *TestUpdateCallback) Complete(success interface{}, err error) {
 
 // ExecuteWorkflow executes a workflow, wait until workflow complete. It will fail the test if workflow is blocked and
 // cannot complete within TestTimeout (set by SetTestTimeout()).
-func (e *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn interface{}, args ...interface{}) {
+func (e *TestWorkflowEnvironment) ExecuteWorkflow(workflowFn any, args ...any) {
 	e.impl.workflowMock = &e.workflowMock
 	e.impl.activityMock = &e.activityMock
 	e.impl.nexusMock = &e.nexusMock
@@ -1070,7 +1070,7 @@ func (e *TestWorkflowEnvironment) SetOnTimerCanceledListener(listener func(timer
 //
 // Note: ActivityInfo is defined in internal package, use public type activity.Info instead.
 func (e *TestWorkflowEnvironment) SetOnLocalActivityStartedListener(
-	listener func(activityInfo *ActivityInfo, ctx context.Context, args []interface{})) *TestWorkflowEnvironment {
+	listener func(activityInfo *ActivityInfo, ctx context.Context, args []any)) *TestWorkflowEnvironment {
 	e.impl.onLocalActivityStartedListener = listener
 	return e
 }
@@ -1120,7 +1120,7 @@ func (e *TestWorkflowEnvironment) IsWorkflowCompleted() bool {
 }
 
 // GetWorkflowResult extracts the encoded result from test workflow, it returns error if the extraction failed.
-func (e *TestWorkflowEnvironment) GetWorkflowResult(valuePtr interface{}) error {
+func (e *TestWorkflowEnvironment) GetWorkflowResult(valuePtr any) error {
 	if !e.impl.isWorkflowCompleted {
 		panic("workflow is not completed")
 	}
@@ -1131,7 +1131,7 @@ func (e *TestWorkflowEnvironment) GetWorkflowResult(valuePtr interface{}) error 
 }
 
 // GetWorkflowResultByID extracts the encoded result from workflow by ID, it returns error if the extraction failed.
-func (e *TestWorkflowEnvironment) GetWorkflowResultByID(workflowID string, valuePtr interface{}) error {
+func (e *TestWorkflowEnvironment) GetWorkflowResultByID(workflowID string, valuePtr any) error {
 	if workflowHandle, ok := e.impl.runningWorkflows[workflowID]; ok {
 		if !workflowHandle.env.isWorkflowCompleted {
 			panic("workflow is not completed")
@@ -1158,7 +1158,7 @@ func (e *TestWorkflowEnvironment) GetWorkflowErrorByID(workflowID string) error 
 }
 
 // CompleteActivity complete an activity that had returned activity.ErrResultPending error
-func (e *TestWorkflowEnvironment) CompleteActivity(taskToken []byte, result interface{}, err error) error {
+func (e *TestWorkflowEnvironment) CompleteActivity(taskToken []byte, result any, err error) error {
 	return e.impl.CompleteActivity(taskToken, result, err)
 }
 
@@ -1173,55 +1173,55 @@ func (e *TestWorkflowEnvironment) CancelWorkflowByID(workflowID string, runID st
 }
 
 // SignalWorkflow sends signal to the currently running test workflow.
-func (e *TestWorkflowEnvironment) SignalWorkflow(name string, input interface{}) {
+func (e *TestWorkflowEnvironment) SignalWorkflow(name string, input any) {
 	e.impl.signalWorkflow(name, input, true)
 }
 
 // SignalWorkflowSkippingWorkflowTask sends signal to the currently running test workflow without invoking workflow code.
 // Used to test processing of multiple buffered signals before completing workflow.
 // It must be followed by SignalWorkflow, CancelWorkflow or CompleteActivity to force a workflow task.
-func (e *TestWorkflowEnvironment) SignalWorkflowSkippingWorkflowTask(name string, input interface{}) {
+func (e *TestWorkflowEnvironment) SignalWorkflowSkippingWorkflowTask(name string, input any) {
 	e.impl.signalWorkflow(name, input, false)
 }
 
 // SignalWorkflowByID signals a workflow by its ID.
-func (e *TestWorkflowEnvironment) SignalWorkflowByID(workflowID, signalName string, input interface{}) error {
+func (e *TestWorkflowEnvironment) SignalWorkflowByID(workflowID, signalName string, input any) error {
 	return e.impl.signalWorkflowByID(workflowID, signalName, input)
 }
 
 // QueryWorkflow queries to the currently running test workflow and returns result synchronously.
-func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...interface{}) (converter.EncodedValue, error) {
+func (e *TestWorkflowEnvironment) QueryWorkflow(queryType string, args ...any) (converter.EncodedValue, error) {
 	return e.impl.queryWorkflow(queryType, args...)
 }
 
 // UpdateWorkflow sends an update to the currently running workflow. The updateName is the name of the update handler
 // to be invoked. The updateID is a unique identifier for the update. If updateID is an empty string a UUID will be generated.
 // The update callbacks are used to handle the update. The args are the arguments to be passed to the update handler.
-func (e *TestWorkflowEnvironment) UpdateWorkflow(updateName, updateID string, uc UpdateCallbacks, args ...interface{}) {
+func (e *TestWorkflowEnvironment) UpdateWorkflow(updateName, updateID string, uc UpdateCallbacks, args ...any) {
 	e.impl.updateWorkflow(updateName, updateID, uc, args...)
 }
 
 // UpdateWorkflowByID sends an update to a running workflow by its ID.
-func (e *TestWorkflowEnvironment) UpdateWorkflowByID(workflowID, updateName, updateID string, uc UpdateCallbacks, args ...interface{}) error {
+func (e *TestWorkflowEnvironment) UpdateWorkflowByID(workflowID, updateName, updateID string, uc UpdateCallbacks, args ...any) error {
 	return e.impl.updateWorkflowByID(workflowID, updateName, updateID, uc, args...)
 }
 
 // UpdateWorkflowNoRejection is a convenience function that handles a common test scenario of only validating
 // that an update isn't rejected.
-func (e *TestWorkflowEnvironment) UpdateWorkflowNoRejection(updateName string, updateID string, t mock.TestingT, args ...interface{}) {
+func (e *TestWorkflowEnvironment) UpdateWorkflowNoRejection(updateName string, updateID string, t mock.TestingT, args ...any) {
 	uc := &TestUpdateCallback{
 		OnReject: func(err error) {
 			require.Fail(t, "update should not be rejected")
 		},
 		OnAccept:   func() {},
-		OnComplete: func(interface{}, error) {},
+		OnComplete: func(any, error) {},
 	}
 
 	e.UpdateWorkflow(updateName, updateID, uc, args...)
 }
 
 // QueryWorkflowByID queries a child workflow by its ID and returns the result synchronously
-func (e *TestWorkflowEnvironment) QueryWorkflowByID(workflowID, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+func (e *TestWorkflowEnvironment) QueryWorkflowByID(workflowID, queryType string, args ...any) (converter.EncodedValue, error) {
 	return e.impl.queryWorkflowByID(workflowID, queryType, args...)
 }
 
@@ -1239,12 +1239,12 @@ func (e *TestWorkflowEnvironment) RegisterDelayedCallback(callback func(), delay
 // SetActivityTaskQueue set the affinity between activity and taskqueue. By default, activity can be invoked by any taskqueue
 // in this test environment. Use this SetActivityTaskQueue() to set affinity between activity and a taskqueue. Once
 // activity is set to a particular taskqueue, that activity will only be available to that taskqueue.
-func (e *TestWorkflowEnvironment) SetActivityTaskQueue(taskqueue string, activityFn ...interface{}) {
+func (e *TestWorkflowEnvironment) SetActivityTaskQueue(taskqueue string, activityFn ...any) {
 	e.impl.setActivityTaskQueue(taskqueue, activityFn...)
 }
 
 // SetLastCompletionResult sets the result to be returned from workflow.GetLastCompletionResult().
-func (e *TestWorkflowEnvironment) SetLastCompletionResult(result interface{}) {
+func (e *TestWorkflowEnvironment) SetLastCompletionResult(result any) {
 	e.impl.setLastCompletionResult(result)
 }
 
@@ -1254,7 +1254,7 @@ func (e *TestWorkflowEnvironment) SetLastError(err error) {
 }
 
 // SetMemoOnStart sets the memo when start workflow.
-func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]interface{}) error {
+func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]any) error {
 	memoStruct, err := getWorkflowMemo(memo, e.impl.GetDataConverter(), e.impl.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		return err
@@ -1266,7 +1266,7 @@ func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]interface{}) er
 // SetSearchAttributesOnStart sets the search attributes when start workflow.
 //
 // Deprecated: Use SetTypedSearchAttributes instead.
-func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes map[string]interface{}) error {
+func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes map[string]any) error {
 	attr, err := serializeUntypedSearchAttributes(searchAttributes)
 	if err != nil {
 		return err
@@ -1303,7 +1303,7 @@ func (e *TestWorkflowEnvironment) AssertExpectations(t mock.TestingT) bool {
 //	env.AssertCalled(t, "namedActivity", mock.Anything, "Hello")
 //
 // It can produce a false result when an argument is a pointer type and the underlying value changed after calling the mocked method.
-func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName string, arguments ...any) bool {
 	dummyT := &testing.T{}
 	return e.AssertWorkflowCalled(dummyT, methodName, arguments...) ||
 		e.AssertActivityCalled(dummyT, methodName, arguments...) ||
@@ -1313,19 +1313,19 @@ func (e *TestWorkflowEnvironment) AssertCalled(t mock.TestingT, methodName strin
 
 // AssertWorkflowCalled asserts that the workflow method was called with the supplied arguments.
 // Special method for workflows, doesn't assert activity calls.
-func (e *TestWorkflowEnvironment) AssertWorkflowCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+func (e *TestWorkflowEnvironment) AssertWorkflowCalled(t mock.TestingT, methodName string, arguments ...any) bool {
 	return e.workflowMock.AssertCalled(t, methodName, arguments...)
 }
 
 // AssertActivityCalled asserts that the activity method was called with the supplied arguments.
 // Special method for activities, doesn't assert workflow calls.
-func (e *TestWorkflowEnvironment) AssertActivityCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+func (e *TestWorkflowEnvironment) AssertActivityCalled(t mock.TestingT, methodName string, arguments ...any) bool {
 	return e.activityMock.AssertCalled(t, methodName, arguments...)
 }
 
 // AssertNotCalled asserts that the method (workflow or activity) was not called with the given arguments.
 // See AssertCalled for more info.
-func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName string, arguments ...any) bool {
 	dummyT := &testing.T{}
 	// Calling the individual functions instead of negating AssertCalled so the error message is more clear.
 	return e.AssertWorkflowNotCalled(dummyT, methodName, arguments...) &&
@@ -1337,14 +1337,14 @@ func (e *TestWorkflowEnvironment) AssertNotCalled(t mock.TestingT, methodName st
 // AssertWorkflowNotCalled asserts that the workflow method was not called with the given arguments.
 // Special method for workflows, doesn't assert activity calls.
 // See AssertCalled for more info.
-func (e *TestWorkflowEnvironment) AssertWorkflowNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+func (e *TestWorkflowEnvironment) AssertWorkflowNotCalled(t mock.TestingT, methodName string, arguments ...any) bool {
 	return e.workflowMock.AssertNotCalled(t, methodName, arguments...)
 }
 
 // AssertActivityNotCalled asserts that the activity method was not called with the given arguments.
 // Special method for activities, doesn't assert workflow calls.
 // See AssertCalled for more info.
-func (e *TestWorkflowEnvironment) AssertActivityNotCalled(t mock.TestingT, methodName string, arguments ...interface{}) bool {
+func (e *TestWorkflowEnvironment) AssertActivityNotCalled(t mock.TestingT, methodName string, arguments ...any) bool {
 	return e.activityMock.AssertNotCalled(t, methodName, arguments...)
 }
 

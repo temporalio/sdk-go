@@ -3,7 +3,7 @@ package util
 import "sync"
 
 // A OnceCell attempts to match the semantics of Rust's `OnceCell`, but only stores strings, since that's what's needed
-// at the moment. Could be changed to use interface{} to be generic.
+// at the moment. Could be changed to use any to be generic.
 type OnceCell struct {
 	// Ensures we only call the fetcher one time
 	once sync.Once

@@ -90,7 +90,7 @@ func NewProtoJSONPayloadConverterWithOptions(options ProtoJSONPayloadConverterOp
 }
 
 // ToPayload converts single proto value to payload.
-func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (c *ProtoJSONPayloadConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	// Proto golang structs might be generated with 4 different protoc plugin versions:
 	//   1. github.com/golang/protobuf - ~v1.3.5 is the most recent pre-APIv2 version of APIv1.
 	//   2. github.com/golang/protobuf - ^v1.4.0 is a version of APIv1 implemented in terms of APIv2.
@@ -133,7 +133,7 @@ func (c *ProtoJSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 }
 
 // FromPayload converts single proto value from payload.
-func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (c *ProtoJSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	originalValue := reflect.ValueOf(valuePtr)
 	if originalValue.Kind() != reflect.Ptr {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)

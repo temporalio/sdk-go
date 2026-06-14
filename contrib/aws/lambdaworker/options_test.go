@@ -18,27 +18,27 @@ type mockWorker struct {
 
 var _ worker.Worker = (*mockWorker)(nil)
 
-func (m *mockWorker) RegisterWorkflow(w interface{}) {
+func (m *mockWorker) RegisterWorkflow(w any) {
 	m.Called(w)
 }
 
-func (m *mockWorker) RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions) {
+func (m *mockWorker) RegisterWorkflowWithOptions(w any, options workflow.RegisterOptions) {
 	m.Called(w, options)
 }
 
-func (m *mockWorker) RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions) {
+func (m *mockWorker) RegisterDynamicWorkflow(w any, options workflow.DynamicRegisterOptions) {
 	m.Called(w, options)
 }
 
-func (m *mockWorker) RegisterActivity(a interface{}) {
+func (m *mockWorker) RegisterActivity(a any) {
 	m.Called(a)
 }
 
-func (m *mockWorker) RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions) {
+func (m *mockWorker) RegisterActivityWithOptions(a any, options activity.RegisterOptions) {
 	m.Called(a, options)
 }
 
-func (m *mockWorker) RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions) {
+func (m *mockWorker) RegisterDynamicActivity(a any, options activity.DynamicRegisterOptions) {
 	m.Called(a, options)
 }
 
@@ -51,7 +51,7 @@ func (m *mockWorker) Start() error {
 	return args.Error(0)
 }
 
-func (m *mockWorker) Run(interruptCh <-chan interface{}) error {
+func (m *mockWorker) Run(interruptCh <-chan any) error {
 	args := m.Called(interruptCh)
 	if interruptCh != nil {
 		<-interruptCh

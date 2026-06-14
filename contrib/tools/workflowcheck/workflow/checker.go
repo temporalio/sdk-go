@@ -39,7 +39,7 @@ type Config struct {
 	// If empty, uses DefaultIdentRefs.
 	IdentRefs determinism.IdentRefs
 	// If nil, uses log.Printf.
-	DebugfFunc func(string, ...interface{})
+	DebugfFunc func(string, ...any)
 	// Must be set to true to see advanced debug logs.
 	Debug bool
 	// Must be set to true to see advanced determinism debug logs.
@@ -55,7 +55,7 @@ type Config struct {
 // Checker checks if functions passed RegisterWorkflow are non-deterministic
 // based on the results from the checker of the adjacent determinism package.
 type Checker struct {
-	DebugfFunc          func(string, ...interface{})
+	DebugfFunc          func(string, ...any)
 	Debug               bool
 	IncludePosOnMessage bool
 	Determinism         *determinism.Checker
@@ -88,7 +88,7 @@ func NewChecker(config Config) *Checker {
 	}
 }
 
-func (c *Checker) debugf(f string, v ...interface{}) {
+func (c *Checker) debugf(f string, v ...any) {
 	if c.Debug {
 		c.DebugfFunc(f, v...)
 	}
@@ -104,7 +104,7 @@ func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 	a := &analysis.Analyzer{
 		Name:      "workflowcheck",
 		Doc:       "Analyzes all Workflow functions for non-determinism",
-		Run:       func(p *analysis.Pass) (interface{}, error) { return nil, c.Run(p) },
+		Run:       func(p *analysis.Pass) (any, error) { return nil, c.Run(p) },
 		FactTypes: []analysis.Fact{&determinism.PackageNonDeterminisms{}, &determinism.NonDeterminisms{}},
 	}
 	// Set flags

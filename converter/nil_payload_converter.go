@@ -17,7 +17,7 @@ func NewNilPayloadConverter() *NilPayloadConverter {
 }
 
 // ToPayload converts single nil value to payload.
-func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (c *NilPayloadConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	if isInterfaceNil(value) {
 		return newPayload(nil, c), nil
 	}
@@ -25,7 +25,7 @@ func (c *NilPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, e
 }
 
 // FromPayload converts single nil value from payload.
-func (c *NilPayloadConverter) FromPayload(_ *commonpb.Payload, valuePtr interface{}) error {
+func (c *NilPayloadConverter) FromPayload(_ *commonpb.Payload, valuePtr any) error {
 	originalValue := reflect.ValueOf(valuePtr)
 	if originalValue.Kind() != reflect.Ptr {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)

@@ -4,7 +4,7 @@ import (
 	"reflect"
 )
 
-func pointerTo(val interface{}) reflect.Value {
+func pointerTo(val any) reflect.Value {
 	valPtr := reflect.New(reflect.TypeOf(val))
 	valPtr.Elem().Set(reflect.ValueOf(val))
 	return valPtr
@@ -17,7 +17,7 @@ func newOfSameType(val reflect.Value) reflect.Value {
 	return newValue
 }
 
-func isInterfaceNil(i interface{}) bool {
+func isInterfaceNil(i any) bool {
 	v := reflect.ValueOf(i)
 	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
 }

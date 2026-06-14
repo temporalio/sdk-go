@@ -20,37 +20,37 @@ func NewDefaultLogger() *DefaultLogger {
 	return &DefaultLogger{logger: golog.New(os.Stdout, "", golog.LstdFlags)}
 }
 
-func (l *DefaultLogger) println(level, msg string, keyvals []interface{}) {
+func (l *DefaultLogger) println(level, msg string, keyvals []any) {
 	// To avoid extra space when globalKeyvals is not specified.
 	if l.globalKeyvals == "" {
-		l.logger.Println(append([]interface{}{level, msg}, keyvals...)...)
+		l.logger.Println(append([]any{level, msg}, keyvals...)...)
 	} else {
-		l.logger.Println(append([]interface{}{level, msg, l.globalKeyvals}, keyvals...)...)
+		l.logger.Println(append([]any{level, msg, l.globalKeyvals}, keyvals...)...)
 	}
 }
 
 // Debug writes message to the log.
-func (l *DefaultLogger) Debug(msg string, keyvals ...interface{}) {
+func (l *DefaultLogger) Debug(msg string, keyvals ...any) {
 	l.println("DEBUG", msg, keyvals)
 }
 
 // Info writes message to the log.
-func (l *DefaultLogger) Info(msg string, keyvals ...interface{}) {
+func (l *DefaultLogger) Info(msg string, keyvals ...any) {
 	l.println("INFO ", msg, keyvals)
 }
 
 // Warn writes message to the log.
-func (l *DefaultLogger) Warn(msg string, keyvals ...interface{}) {
+func (l *DefaultLogger) Warn(msg string, keyvals ...any) {
 	l.println("WARN ", msg, keyvals)
 }
 
 // Error writes message to the log.
-func (l *DefaultLogger) Error(msg string, keyvals ...interface{}) {
+func (l *DefaultLogger) Error(msg string, keyvals ...any) {
 	l.println("ERROR", msg, keyvals)
 }
 
 // With returns new logger the prepend every log entry with keyvals.
-func (l *DefaultLogger) With(keyvals ...interface{}) log.Logger {
+func (l *DefaultLogger) With(keyvals ...any) log.Logger {
 	logger := &DefaultLogger{
 		logger: l.logger,
 	}

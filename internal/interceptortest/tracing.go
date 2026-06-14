@@ -24,7 +24,7 @@ var testWorkflowStartTime = time.Date(1969, 7, 20, 20, 17, 0, 0, time.UTC)
 type testUpdateCallbacks struct {
 	AcceptImpl   func()
 	RejectImpl   func(err error)
-	CompleteImpl func(success interface{}, err error)
+	CompleteImpl func(success any, err error)
 }
 
 // Accept implements internal.UpdateCallbacks.
@@ -32,7 +32,7 @@ func (t *testUpdateCallbacks) Accept() {
 }
 
 // Complete implements internal.UpdateCallbacks.
-func (t *testUpdateCallbacks) Complete(success interface{}, err error) {
+func (t *testUpdateCallbacks) Complete(success any, err error) {
 }
 
 // Reject implements internal.UpdateCallbacks.
@@ -89,7 +89,7 @@ func RunTestWorkflow(t *testing.T, tracer interceptor.Tracer) {
 			},
 			AcceptImpl: func() {
 			},
-			CompleteImpl: func(interface{}, error) {
+			CompleteImpl: func(any, error) {
 			},
 		})
 	}, 0*time.Second)

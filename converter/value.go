@@ -16,7 +16,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		Get(valuePtr interface{}) error
+		Get(valuePtr any) error
 	}
 
 	// EncodedValues is used to encapsulate/extract encoded one or more values from workflow/activity.
@@ -28,7 +28,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		Get(valuePtr ...interface{}) error
+		Get(valuePtr ...any) error
 	}
 
 	// RawValue is a representation of an unconverted, raw payload.

@@ -23,7 +23,7 @@ func TestChannelBuilderOptions(t *testing.T) {
 
 func TestNewValues(t *testing.T) {
 	t.Parallel()
-	var details []interface{}
+	var details []any
 	heartbeatDetail := "status-report-to-workflow"
 	heartbeatDetail2 := 1
 	heartbeatDetail3 := testStruct{
@@ -70,7 +70,7 @@ func TestFailureToError_ApplicationError(t *testing.T) {
 	require.Equal(t, val.values, failure.GetApplicationFailureInfo().GetDetails())
 
 	applicationErr2 := NewApplicationError(applicationErrReasonA, "", false, nil, testErrorDetails1)
-	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
+	val2, err := encodeArgs(dc, []any{testErrorDetails1})
 	require.NoError(t, err)
 	failure = fc.ErrorToFailure(applicationErr2)
 	require.Equal(t, applicationErrReasonA, failure.GetMessage())
@@ -91,7 +91,7 @@ func TestFailureToError_CancelError(t *testing.T) {
 	require.Equal(t, val.values, failure.GetCanceledFailureInfo().GetDetails())
 
 	canceledErr2 := NewCanceledError(testErrorDetails1)
-	val2, err := encodeArgs(dc, []interface{}{testErrorDetails1})
+	val2, err := encodeArgs(dc, []any{testErrorDetails1})
 	require.NoError(t, err)
 	failure = fc.ErrorToFailure(canceledErr2)
 	require.NotNil(t, failure.GetCanceledFailureInfo())
@@ -113,7 +113,7 @@ func TestErrorToFailure_TimeoutError(t *testing.T) {
 	require.Equal(t, val.values, failure.GetTimeoutFailureInfo().GetLastHeartbeatDetails())
 
 	timeoutErr2 := NewTimeoutError("timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, testErrorDetails4)
-	val2, err := encodeArgs(dc, []interface{}{testErrorDetails4})
+	val2, err := encodeArgs(dc, []any{testErrorDetails4})
 	require.NoError(t, err)
 	failure = fc.ErrorToFailure(timeoutErr2)
 	require.NotNil(t, failure.GetTimeoutFailureInfo())

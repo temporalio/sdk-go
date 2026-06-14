@@ -106,7 +106,7 @@ func (ntp *nexusTaskPoller) PollTask() (taskForWorker, error) {
 }
 
 // ProcessTask processes a new task
-func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
+func (ntp *nexusTaskPoller) ProcessTask(task any) error {
 	if !ntp.shouldDrainOnShutdown() && ntp.stopping() {
 		return errStop
 	}

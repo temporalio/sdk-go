@@ -35,7 +35,7 @@ type (
 		// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
 		// Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
 		// Pass nil to stop the worker with external Stop() call.
-		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
+		// Pass any other `<-chan any` and Run will wait for signal from that channel.
 		// Returns error if the worker fails to start or there is a fatal error
 		// during execution.
 		//
@@ -43,7 +43,7 @@ type (
 		// manually Stop(). Otherwise a race can occur if shutdown occurs before the
 		// worker is started. This Run() call is only best if shutdown is initiated
 		// via the interrupt channel.
-		Run(interruptCh <-chan interface{}) error
+		Run(interruptCh <-chan any) error
 
 		// Stop the worker.
 		//
@@ -70,7 +70,7 @@ type (
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 		// For global registration consider workflow.Register
 		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
-		RegisterWorkflow(w interface{})
+		RegisterWorkflow(w any)
 
 		// RegisterWorkflowWithOptions registers the workflow function with options.
 		// The user can use options to provide an external name for the workflow or leave it empty if no
@@ -79,10 +79,10 @@ type (
 		//  worker.RegisterWorkflowWithOptions(sampleWorkflow, RegisterWorkflowOptions{Name: "foo"})
 		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
 		// type name twice. Use workflow.RegisterOptions.DisableAlreadyRegisteredCheck to allow multiple registrations.
-		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+		RegisterWorkflowWithOptions(w any, options workflow.RegisterOptions)
 
 		// RegisterDynamicWorkflow registers the dynamic workflow function with options.
-		RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions)
+		RegisterDynamicWorkflow(w any, options workflow.DynamicRegisterOptions)
 	}
 
 	// ActivityRegistry exposes activity registration functions to consumers.
@@ -115,7 +115,7 @@ type (
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 		// This method panics if activityFunc doesn't comply with the expected format or an activity with the same
 		// type name is registered more than once.
-		RegisterActivity(a interface{})
+		RegisterActivity(a any)
 
 		// RegisterActivityWithOptions registers the activity function or struct pointer with options.
 		// The user can use options to provide an external name for the activity or leave it empty if no
@@ -133,11 +133,11 @@ type (
 		// The other use of options is to disable duplicated activity registration check
 		// which might be useful for integration tests.
 		// worker.RegisterActivityWithOptions(barActivity, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
-		RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions)
+		RegisterActivityWithOptions(a any, options activity.RegisterOptions)
 
 		// RegisterDynamicActivity registers the dynamic activity function with options.
 		// Registering activities via a structure is not supported for dynamic activities.
-		RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions)
+		RegisterDynamicActivity(a any, options activity.DynamicRegisterOptions)
 	}
 
 	// NexusServiceRegistry exposes Nexus Service registration functions.
@@ -157,13 +157,13 @@ type (
 	// to ensure that new deployments are not going to break open workflows.
 	WorkflowReplayer interface {
 		// RegisterWorkflow registers workflow that is going to be replayed
-		RegisterWorkflow(w interface{})
+		RegisterWorkflow(w any)
 
 		// RegisterWorkflowWithOptions registers workflow that is going to be replayed with user provided name
-		RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions)
+		RegisterWorkflowWithOptions(w any, options workflow.RegisterOptions)
 
 		// RegisterDynamicWorkflow registers dynamic workflow that is going to be replayed
-		RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions)
+		RegisterDynamicWorkflow(w any, options workflow.DynamicRegisterOptions)
 
 		// ReplayWorkflowHistory executes a single workflow task for the given json history file.
 		// Use for testing the backwards compatibility of code changes and troubleshooting workflows in a debugger.
@@ -310,7 +310,7 @@ func SetBinaryChecksum(checksum string) {
 }
 
 // InterruptCh returns channel which will get data when system receives interrupt signal from OS. Pass it to worker.Run() func to stop worker with Ctrl+C.
-func InterruptCh() <-chan interface{} {
+func InterruptCh() <-chan any {
 	return internal.InterruptCh()
 }
 

@@ -250,7 +250,7 @@ func (e workflowTaskHeartbeatError) Error() string {
 	return e.Message
 }
 
-func historyMismatchErrorf(f string, v ...interface{}) historyMismatchError {
+func historyMismatchErrorf(f string, v ...any) historyMismatchError {
 	return historyMismatchError{message: fmt.Sprintf(f, v...)}
 }
 
@@ -2315,7 +2315,7 @@ func newServiceInvoker(
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result interface{}, err error) {
+func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result any, err error) {
 	traceLog(func() {
 		if t.WorkflowExecution.GetWorkflowId() == "" {
 			ath.logger.Debug("Processing new standalone activity task",

@@ -59,7 +59,7 @@ func TestEncodingDataConverter(t *testing.T) {
 	assertEncodingDataConverter(t, &SomeStruct{MyValue: "somestring"})
 }
 
-func assertEncodingDataConverter(t *testing.T, data interface{}) {
+func assertEncodingDataConverter(t *testing.T, data any) {
 	defaultConv := GetDefaultDataConverter()
 	zlibConv := NewCodecDataConverter(
 		defaultConv,
@@ -71,7 +71,7 @@ func assertEncodingDataConverter(t *testing.T, data interface{}) {
 	compPayload, err := zlibConv.ToPayload(data)
 	require.NoError(t, err)
 	require.Equal(t, "binary/zlib", string(compPayload.Metadata[MetadataEncoding]))
-	var newData interface{}
+	var newData any
 	if data == nil {
 		newData = &newData
 	} else if data != nil {

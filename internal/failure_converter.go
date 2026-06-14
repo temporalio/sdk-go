@@ -239,7 +239,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 				ApplicationErrorOptions{
 					NonRetryable:   applicationFailureInfo.GetNonRetryable(),
 					Cause:          dfc.FailureToError(failure.GetCause()),
-					Details:        []interface{}{details},
+					Details:        []any{details},
 					NextRetryDelay: nextRetryDelay,
 					Category:       ApplicationErrorCategory(applicationFailureInfo.GetCategory()),
 				},
@@ -250,7 +250,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 		err = NewCanceledErrorWithOptions(
 			CanceledErrorOptions{
 				Message: message,
-				Details: []interface{}{details},
+				Details: []any{details},
 				Cause:   dfc.FailureToError(failure.GetCause()),
 			},
 		)

@@ -240,7 +240,7 @@ func IsActivity(ctx context.Context) bool {
 // of existing values may result in unexpected behavior similar to json.Unmarshal.
 //
 // Exposed as: [go.temporal.io/sdk/activity.GetHeartbeatDetails]
-func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
+func GetHeartbeatDetails(ctx context.Context, d ...any) error {
 	return getActivityOutboundInterceptor(ctx).GetHeartbeatDetails(ctx, d...)
 }
 
@@ -278,7 +278,7 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // can check error TimeoutType()/Details().
 //
 // Exposed as: [go.temporal.io/sdk/activity.RecordHeartbeat]
-func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
+func RecordActivityHeartbeat(ctx context.Context, details ...any) {
 	getActivityOutboundInterceptor(ctx).RecordHeartbeat(ctx, details...)
 }
 

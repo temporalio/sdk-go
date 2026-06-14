@@ -12,13 +12,13 @@ type Cache interface {
 
 	// Get retrieves an element based on a key, returning nil if the element
 	// does not exist
-	Get(key string) interface{}
+	Get(key string) any
 
 	// Put adds an element to the cache, returning the previous element
-	Put(key string, value interface{}) interface{}
+	Put(key string, value any) any
 
 	// PutIfNotExist puts a value associated with a given key if it does not exist
-	PutIfNotExist(key string, value interface{}) (interface{}, error)
+	PutIfNotExist(key string, value any) (any, error)
 
 	// Delete deletes an element in the cache
 	Delete(key string)
@@ -53,6 +53,6 @@ type Options struct {
 
 // RemovedFunc is a type for notifying applications when an item is
 // scheduled for removal from the Cache. If f is a function with the
-// appropriate signature and i is the interface{} scheduled for
+// appropriate signature and i is the any scheduled for
 // deletion, Cache calls go f(i)
-type RemovedFunc func(interface{})
+type RemovedFunc func(any)

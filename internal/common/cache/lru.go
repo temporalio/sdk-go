@@ -62,7 +62,7 @@ func (c *lru) Exist(key string) bool {
 }
 
 // Get retrieves the value stored under the given key
-func (c *lru) Get(key string) interface{} {
+func (c *lru) Get(key string) any {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
@@ -92,7 +92,7 @@ func (c *lru) Get(key string) interface{} {
 }
 
 // Put puts a new value associated with a given key, returning the existing value (if present)
-func (c *lru) Put(key string, value interface{}) interface{} {
+func (c *lru) Put(key string, value any) any {
 	if c.pin {
 		panic("Cannot use Put API in Pin mode. Use Delete and PutIfNotExist if necessary")
 	}
@@ -101,7 +101,7 @@ func (c *lru) Put(key string, value interface{}) interface{} {
 }
 
 // PutIfNotExist puts a value associated with a given key if it does not exist
-func (c *lru) PutIfNotExist(key string, value interface{}) (interface{}, error) {
+func (c *lru) PutIfNotExist(key string, value any) (any, error) {
 	existing, err := c.putInternal(key, value, false)
 	if err != nil {
 		return nil, err
@@ -166,7 +166,7 @@ func (c *lru) Clear() {
 
 // Put puts a new value associated with a given key, returning the existing value (if present)
 // allowUpdate flag is used to control overwrite behavior if the value exists
-func (c *lru) putInternal(key string, value interface{}, allowUpdate bool) (interface{}, error) {
+func (c *lru) putInternal(key string, value any, allowUpdate bool) (any, error) {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
@@ -226,6 +226,6 @@ func (c *lru) putInternal(key string, value interface{}, allowUpdate bool) (inte
 type cacheEntry struct {
 	key        string
 	expiration time.Time
-	value      interface{}
+	value      any
 	refCount   int
 }

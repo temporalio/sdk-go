@@ -382,7 +382,7 @@ The only way to fail [SideEffect] is to panic, which causes workflow task failur
 rescheduled and re-executed giving [SideEffect] another chance to succeed. Be careful to not return any data from the
 SideEffect function any other way than through its recorded return value.
 
-	encodedRandom := SideEffect(func(ctx workflow.Context) interface{} {
+	encodedRandom := SideEffect(func(ctx workflow.Context) any {
 		return rand.Intn(100)
 	})
 

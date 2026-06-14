@@ -257,7 +257,7 @@ type (
 // HeartbeatTimeout to appear or several minutes by default if that value is not set.
 //
 // ExecuteActivity immediately returns a Future that can be used to block waiting for activity result or failure.
-func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func ExecuteActivity(ctx Context, activity any, args ...any) Future {
 	return internal.ExecuteActivity(ctx, activity, args...)
 }
 
@@ -304,7 +304,7 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 // *CanceledError set as cause for *ActivityError.
 //
 // ExecuteLocalActivity returns Future with local activity result or failure.
-func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func ExecuteLocalActivity(ctx Context, activity any, args ...any) Future {
 	return internal.ExecuteLocalActivity(ctx, activity, args...)
 }
 
@@ -331,7 +331,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 // *CanceledError set as cause for *ChildWorkflowExecutionError.
 //
 // ExecuteChildWorkflow returns ChildWorkflowFuture.
-func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
+func ExecuteChildWorkflow(ctx Context, childWorkflow any, args ...any) ChildWorkflowFuture {
 	return internal.ExecuteChildWorkflow(ctx, childWorkflow, args...)
 }
 
@@ -395,7 +395,7 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 //	ctx := WithWorkflowNamespace(ctx, "namespace")
 //
 // SignalExternalWorkflow return Future with failure or empty success result.
-func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
+func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any) Future {
 	return internal.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
@@ -424,7 +424,7 @@ func GetSignalChannelWithOptions(ctx Context, signalName string, options SignalC
 //
 //	// Bad example:
 //	var random int
-//	workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+//	workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 //	       random = rand.Intn(100)
 //	       return nil
 //	})
@@ -441,7 +441,7 @@ func GetSignalChannelWithOptions(ctx Context, signalName string, options SignalC
 // Here is the correct way to use SideEffect:
 //
 //	// Good example:
-//	encodedRandom := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+//	encodedRandom := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 //	      return rand.Intn(100)
 //	})
 //	var random int
@@ -451,7 +451,7 @@ func GetSignalChannelWithOptions(ctx Context, signalName string, options SignalC
 //	} else {
 //	       ....
 //	}
-func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
+func SideEffect(ctx Context, f func(ctx Context) any) converter.EncodedValue {
 	return internal.SideEffect(ctx, f)
 }
 
@@ -460,7 +460,7 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 // This guarantees the deterministic requirement for workflow as the exact same result will be returned in replay.
 //
 // The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
-func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
+func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) any) converter.EncodedValue {
 	return internal.SideEffectWithOptions(ctx, options, f)
 }
 
@@ -479,13 +479,13 @@ func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Co
 // value as it was returning during the non-replay run.
 //
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
-func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+func MutableSideEffect(ctx Context, id string, f func(ctx Context) any, equals func(a, b any) bool) converter.EncodedValue {
 	return internal.MutableSideEffect(ctx, id, f, equals)
 }
 
 // MutableSideEffectWithOptions is like MutableSideEffect but allows specifying additional options
 // like a summary that will be displayed in UI/CLI.
-func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) any, equals func(a, b any) bool) converter.EncodedValue {
 	return internal.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }
 
@@ -602,7 +602,7 @@ func GetVersion(ctx Context, changeID string, minSupported, maxSupported Version
 //	}
 //
 // See [SetQueryHandlerWithOptions] to set additional options.
-func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
+func SetQueryHandler(ctx Context, queryType string, handler any) error {
 	return internal.SetQueryHandler(ctx, queryType, handler)
 }
 
@@ -610,14 +610,14 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 // [SetQueryHandler] documentation for details.
 //
 // NOTE: Experimental
-func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+func SetQueryHandlerWithOptions(ctx Context, queryType string, handler any, options QueryHandlerOptions) error {
 	return internal.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
 }
 
 // SetUpdateHandler forwards to SetUpdateHandlerWithOptions with an
 // zero-initialized UpdateHandlerOptions struct. See SetUpdateHandlerWithOptions
 // for more details.
-func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error {
+func SetUpdateHandler(ctx Context, updateName string, handler any) error {
 	return SetUpdateHandlerWithOptions(ctx, updateName, handler, UpdateHandlerOptions{})
 }
 
@@ -667,7 +667,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}) error
 //		_ = ctx.Done().Receive(ctx, nil)
 //		return counter, nil
 //	}
-func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
+func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler any, opts UpdateHandlerOptions) error {
 	return internal.SetUpdateHandler(ctx, updateName, handler, opts)
 }
 
@@ -726,7 +726,7 @@ func HasLastCompletionResult(ctx Context) bool {
 // Note, values should not be reused for extraction here because merging on top
 // of existing values may result in unexpected behavior similar to
 // json.Unmarshal.
-func GetLastCompletionResult(ctx Context, d ...interface{}) error {
+func GetLastCompletionResult(ctx Context, d ...any) error {
 	return internal.GetLastCompletionResult(ctx, d...)
 }
 
@@ -745,13 +745,13 @@ func GetLastError(ctx Context) error {
 // UpsertSearchAttributes will merge attributes to existing map in workflow, for example workflow code:
 //
 //	  func MyWorkflow(ctx workflow.Context, input string) error {
-//		   attr1 := map[string]interface{}{
+//		   attr1 := map[string]any{
 //			   "CustomIntField": 1,
 //			   "CustomBoolField": true,
 //		   }
 //		   workflow.UpsertSearchAttributes(ctx, attr1)
 //
-//		   attr2 := map[string]interface{}{
+//		   attr2 := map[string]any{
 //			   "CustomIntField": 2,
 //			   "CustomKeywordField": "seattle",
 //		   }
@@ -760,7 +760,7 @@ func GetLastError(ctx Context) error {
 //
 // will eventually have search attributes:
 //
-//	map[string]interface{}{
+//	map[string]any{
 //		"CustomIntField": 2,
 //		"CustomBoolField": true,
 //		"CustomKeywordField": "seattle",
@@ -771,7 +771,7 @@ func GetLastError(ctx Context) error {
 // Deprecated: use [UpsertTypedSearchAttributes] instead.
 //
 // [Visibility]: https://docs.temporal.io/visibility
-func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
+func UpsertSearchAttributes(ctx Context, attributes map[string]any) error {
 	return internal.UpsertSearchAttributes(ctx, attributes)
 }
 
@@ -802,13 +802,13 @@ func UpsertTypedSearchAttributes(ctx Context, searchAttributeUpdate ...temporal.
 // UpsertMemo will merge keys to the existing map in workflow. For example:
 //
 //	func MyWorkflow(ctx workflow.Context, input string) error {
-//		memo1 := map[string]interface{}{
+//		memo1 := map[string]any{
 //			"Key1": 1,
 //			"Key2": true,
 //		}
 //		workflow.UpsertMemo(ctx, memo1)
 //
-//		memo2 := map[string]interface{}{
+//		memo2 := map[string]any{
 //			"Key1": 2,
 //			"Key3": "seattle",
 //		}
@@ -817,14 +817,14 @@ func UpsertTypedSearchAttributes(ctx Context, searchAttributeUpdate ...temporal.
 //
 // The workflow memo will eventually be:
 //
-//	map[string]interface{}{
+//	map[string]any{
 //		"Key1": 2,
 //		"Key2": true,
 //		"Key3": "seattle",
 //	}
 //
 // This is only supported with Temporal Server 1.18+
-func UpsertMemo(ctx Context, memo map[string]interface{}) error {
+func UpsertMemo(ctx Context, memo map[string]any) error {
 	return internal.UpsertMemo(ctx, memo)
 }
 
@@ -840,12 +840,12 @@ func UpsertMemo(ctx Context, memo map[string]interface{}) error {
 //		  ctx := WithWorkflowTaskQueue(ctx, "example-group")
 //	 wfn - workflow function. for new execution it can be different from the currently running.
 //	 args - arguments for the new workflow.
-func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
+func NewContinueAsNewError(ctx Context, wfn any, args ...any) error {
 	return internal.NewContinueAsNewError(ctx, wfn, args...)
 }
 
 // NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
-func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
+func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn any, args ...any) error {
 	return internal.NewContinueAsNewErrorWithOptions(ctx, options, wfn, args...)
 }
 

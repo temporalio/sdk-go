@@ -11,7 +11,7 @@ import (
 )
 
 // encode multiple arguments(arguments to a function).
-func encodeArgs(dc converter.DataConverter, args []interface{}) (*commonpb.Payloads, error) {
+func encodeArgs(dc converter.DataConverter, args []any) (*commonpb.Payloads, error) {
 	return dc.ToPayloads(args...)
 }
 
@@ -27,7 +27,7 @@ func decodeArgs(dc converter.DataConverter, fnType reflect.Type, data *commonpb.
 	return
 }
 
-func decodeArgsToPointerValues(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []interface{}, err error) {
+func decodeArgsToPointerValues(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) (result []any, err error) {
 argsLoop:
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
@@ -44,9 +44,9 @@ argsLoop:
 	return
 }
 
-func decodeArgsToRawValues(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) ([]interface{}, error) {
+func decodeArgsToRawValues(dc converter.DataConverter, fnType reflect.Type, data *commonpb.Payloads) ([]any, error) {
 	// Build pointers to results
-	var pointers []interface{}
+	var pointers []any
 	for i := 0; i < fnType.NumIn(); i++ {
 		argT := fnType.In(i)
 		if i == 0 && (isActivityContext(argT) || isWorkflowContext(argT)) {
@@ -61,7 +61,7 @@ func decodeArgsToRawValues(dc converter.DataConverter, fnType reflect.Type, data
 	}
 
 	// Convert results back to non-pointer versions
-	results := make([]interface{}, len(pointers))
+	results := make([]any, len(pointers))
 	for i, pointer := range pointers {
 		result := reflect.ValueOf(pointer).Elem()
 		// Do not set nil pointers
@@ -74,16 +74,16 @@ func decodeArgsToRawValues(dc converter.DataConverter, fnType reflect.Type, data
 }
 
 // encode single value(like return parameter).
-func encodeArg(dc converter.DataConverter, arg interface{}) (*commonpb.Payloads, error) {
+func encodeArg(dc converter.DataConverter, arg any) (*commonpb.Payloads, error) {
 	return dc.ToPayloads(arg)
 }
 
 // decode single value(like return parameter).
-func decodeArg(dc converter.DataConverter, data *commonpb.Payloads, valuePtr interface{}) error {
+func decodeArg(dc converter.DataConverter, data *commonpb.Payloads, valuePtr any) error {
 	return dc.FromPayloads(data, valuePtr)
 }
 
-func decodeAndAssignValue(dc converter.DataConverter, from interface{}, toValuePtr interface{}) error {
+func decodeAndAssignValue(dc converter.DataConverter, from any, toValuePtr any) error {
 	if toValuePtr == nil {
 		return nil
 	}

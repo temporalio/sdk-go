@@ -13,7 +13,7 @@ import (
 
 var privateField = regexp.MustCompile("^[a-z]")
 
-func anyToString(d interface{}) string {
+func anyToString(d any) string {
 	v := reflect.ValueOf(d)
 	switch v.Kind() {
 	case reflect.Ptr:
@@ -69,7 +69,7 @@ func valueToString(v reflect.Value) string {
 
 // HistoryEventToString convert HistoryEvent to string
 func HistoryEventToString(e *historypb.HistoryEvent) string {
-	var data interface{}
+	var data any
 	switch e.GetEventType() {
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED:
 		data = e.GetWorkflowExecutionStartedEventAttributes()
@@ -140,7 +140,7 @@ func HistoryEventToString(e *historypb.HistoryEvent) string {
 
 // CommandToString convert Command to string
 func CommandToString(d *commandpb.Command) string {
-	var data interface{}
+	var data any
 	switch d.GetCommandType() {
 	case enumspb.COMMAND_TYPE_SCHEDULE_ACTIVITY_TASK:
 		data = d.GetScheduleActivityTaskCommandAttributes()

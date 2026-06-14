@@ -18,7 +18,7 @@ func NewByteSlicePayloadConverter() *ByteSlicePayloadConverter {
 }
 
 // ToPayload converts single []byte value to payload.
-func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (c *ByteSlicePayloadConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	if valueBytes, isByteSlice := value.([]byte); isByteSlice {
 		return newPayload(valueBytes, c), nil
 	}
@@ -27,7 +27,7 @@ func (c *ByteSlicePayloadConverter) ToPayload(value interface{}) (*commonpb.Payl
 }
 
 // FromPayload converts single []byte value from payload.
-func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (c *ByteSlicePayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	rv := reflect.ValueOf(valuePtr)
 	if rv.Kind() != reflect.Ptr || rv.IsNil() {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)

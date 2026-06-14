@@ -42,8 +42,8 @@ type Context interface {
 	//			return err
 	//		}
 	//		s := NewSelector(ctx)
-	//		s.AddReceive(ctx.Done(),  func(v interface{}) { err = ctx.Err() })
-	//		s.AddReceive(v, func(v interface{}, more bool) { out.Send(ctx, v) })
+	//		s.AddReceive(ctx.Done(),  func(v any) { err = ctx.Err() })
+	//		s.AddReceive(v, func(v any, more bool) { out.Send(ctx, v) })
 	//		s.Select(ctx)
 	//		if err != nil {
 	//			return err
@@ -106,7 +106,7 @@ type Context interface {
 	// 		u, ok := ctx.Value(userKey).(*User)
 	// 		return u, ok
 	// 	}
-	Value(key interface{}) interface{}
+	Value(key any) any
 }
 
 // An emptyCtx is never canceled, has no values, and has no deadline.  It is not
@@ -125,7 +125,7 @@ func (*emptyCtx) Err() error {
 	return nil
 }
 
-func (*emptyCtx) Value(_ interface{}) interface{} {
+func (*emptyCtx) Value(_ any) any {
 	return nil
 }
 
@@ -331,7 +331,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 // APIs, not for passing optional parameters to functions.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.WithValue]
-func WithValue(parent Context, key interface{}, val interface{}) Context {
+func WithValue(parent Context, key any, val any) Context {
 	return &valueCtx{parent, key, val}
 }
 
@@ -339,14 +339,14 @@ func WithValue(parent Context, key interface{}, val interface{}) Context {
 // delegates all other calls to the embedded Context.
 type valueCtx struct {
 	Context
-	key, val interface{}
+	key, val any
 }
 
 func (c *valueCtx) String() string {
 	return fmt.Sprintf("%v.WithValue(%#v, %#v)", c.Context, c.key, c.val)
 }
 
-func (c *valueCtx) Value(key interface{}) interface{} {
+func (c *valueCtx) Value(key any) any {
 	if c.key == key {
 		return c.val
 	}

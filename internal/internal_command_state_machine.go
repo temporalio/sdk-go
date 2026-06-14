@@ -41,15 +41,15 @@ type (
 		handleInitiatedEvent()
 
 		handleCommandSent()
-		setData(data interface{})
-		getData() interface{}
+		setData(data any)
+		getData() any
 	}
 
 	commandStateMachineBase struct {
 		id      commandID
 		state   commandState
 		history []string
-		data    interface{}
+		data    any
 		helper  *commandsHelper
 	}
 
@@ -472,11 +472,11 @@ func (d *commandStateMachineBase) isDone() bool {
 	return d.state == commandStateCompleted || d.state == commandStateCompletedAfterCancellationCommandSent
 }
 
-func (d *commandStateMachineBase) setData(data interface{}) {
+func (d *commandStateMachineBase) setData(data any) {
 	d.data = data
 }
 
-func (d *commandStateMachineBase) getData() interface{} {
+func (d *commandStateMachineBase) getData() any {
 	return d.data
 }
 

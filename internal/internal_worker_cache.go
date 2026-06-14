@@ -77,7 +77,7 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int)
 
 	if storeIn.workerRefcount == 0 {
 		newcache := cache.New(cacheSize-1, &cache.Options{
-			RemovedFunc: func(cachedEntity interface{}) {
+			RemovedFunc: func(cachedEntity any) {
 				wc := cachedEntity.(*workflowExecutionContextImpl)
 				wc.onEviction()
 			},

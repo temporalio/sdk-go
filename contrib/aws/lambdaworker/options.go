@@ -46,37 +46,37 @@ type Options struct {
 
 // RegisterWorkflow registers a workflow on the worker. See
 // [worker.WorkflowRegistry.RegisterWorkflow] for details.
-func (c *Options) RegisterWorkflow(w interface{}) {
+func (c *Options) RegisterWorkflow(w any) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterWorkflow(w) })
 }
 
 // RegisterWorkflowWithOptions registers a workflow with options on the worker. See
 // [worker.WorkflowRegistry.RegisterWorkflowWithOptions] for details.
-func (c *Options) RegisterWorkflowWithOptions(w interface{}, options workflow.RegisterOptions) {
+func (c *Options) RegisterWorkflowWithOptions(w any, options workflow.RegisterOptions) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterWorkflowWithOptions(w, options) })
 }
 
 // RegisterDynamicWorkflow registers a dynamic workflow on the worker. See
 // [worker.WorkflowRegistry.RegisterDynamicWorkflow] for details.
-func (c *Options) RegisterDynamicWorkflow(w interface{}, options workflow.DynamicRegisterOptions) {
+func (c *Options) RegisterDynamicWorkflow(w any, options workflow.DynamicRegisterOptions) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterDynamicWorkflow(w, options) })
 }
 
 // RegisterActivity registers an activity on the worker. See
 // [worker.ActivityRegistry.RegisterActivity] for details.
-func (c *Options) RegisterActivity(a interface{}) {
+func (c *Options) RegisterActivity(a any) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterActivity(a) })
 }
 
 // RegisterActivityWithOptions registers an activity with options on the worker. See
 // [worker.ActivityRegistry.RegisterActivityWithOptions] for details.
-func (c *Options) RegisterActivityWithOptions(a interface{}, options activity.RegisterOptions) {
+func (c *Options) RegisterActivityWithOptions(a any, options activity.RegisterOptions) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterActivityWithOptions(a, options) })
 }
 
 // RegisterDynamicActivity registers a dynamic activity on the worker. See
 // [worker.ActivityRegistry.RegisterDynamicActivity] for details.
-func (c *Options) RegisterDynamicActivity(a interface{}, options activity.DynamicRegisterOptions) {
+func (c *Options) RegisterDynamicActivity(a any, options activity.DynamicRegisterOptions) {
 	c.registrations = append(c.registrations, func(r worker.Registry) { r.RegisterDynamicActivity(a, options) })
 }
 

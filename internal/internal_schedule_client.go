@@ -704,12 +704,12 @@ func convertFromPBScheduleAction(
 			})
 		}
 
-		args := make([]interface{}, len(workflow.GetInput().GetPayloads()))
+		args := make([]any, len(workflow.GetInput().GetPayloads()))
 		for i, p := range workflow.GetInput().GetPayloads() {
 			args[i] = p
 		}
 
-		memos := make(map[string]interface{})
+		memos := make(map[string]any)
 		for key, element := range workflow.GetMemo().GetFields() {
 			memos[key] = element
 		}
@@ -889,7 +889,7 @@ func convertFromPBScheduleActionResultList(aa []*schedulepb.ScheduleActionResult
 	return recentActions
 }
 
-func encodeScheduleWorklowArgs(dc converter.DataConverter, args []interface{}) (*commonpb.Payloads, error) {
+func encodeScheduleWorklowArgs(dc converter.DataConverter, args []any) (*commonpb.Payloads, error) {
 	payloads := make([]*commonpb.Payload, len(args))
 	for i, arg := range args {
 		// arg is already encoded
@@ -908,7 +908,7 @@ func encodeScheduleWorklowArgs(dc converter.DataConverter, args []interface{}) (
 	}, nil
 }
 
-func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]interface{}) (*commonpb.Memo, error) {
+func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]any) (*commonpb.Memo, error) {
 	if input == nil {
 		return nil, nil
 	}

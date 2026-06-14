@@ -45,7 +45,7 @@ func AwaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 }
 
 // IsInterfaceNil check if interface is nil
-func IsInterfaceNil(i interface{}) bool {
+func IsInterfaceNil(i any) bool {
 	v := reflect.ValueOf(i)
 	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
 }

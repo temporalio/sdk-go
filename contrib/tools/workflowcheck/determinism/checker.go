@@ -24,7 +24,7 @@ type Config struct {
 	// If file matches any here, it is not checked at all.
 	SkipFiles []*regexp.Regexp
 	// If nil, uses log.Printf.
-	DebugfFunc func(string, ...interface{})
+	DebugfFunc func(string, ...any)
 	// Must be set to true to see advanced debug logs.
 	Debug bool
 	// Whether to export a *NonDeterminisms fact per object.
@@ -60,7 +60,7 @@ func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 	a := &analysis.Analyzer{
 		Name:       "determinism",
 		Doc:        "Analyzes all functions and marks whether they are deterministic",
-		Run:        func(p *analysis.Pass) (interface{}, error) { return c.Run(p) },
+		Run:        func(p *analysis.Pass) (any, error) { return c.Run(p) },
 		ResultType: reflect.TypeOf(PackageNonDeterminisms{}),
 		FactTypes:  []analysis.Fact{&PackageNonDeterminisms{}, &NonDeterminisms{}},
 	}
@@ -71,7 +71,7 @@ func (c *Checker) NewAnalyzer() *analysis.Analyzer {
 	return a
 }
 
-func (c *Checker) debugf(f string, v ...interface{}) {
+func (c *Checker) debugf(f string, v ...any) {
 	if c.Debug {
 		c.DebugfFunc(f, v...)
 	}

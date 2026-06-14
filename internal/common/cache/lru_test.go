@@ -90,7 +90,7 @@ func TestLRUCacheConcurrentAccess(t *testing.T) {
 func TestRemoveFunc(t *testing.T) {
 	ch := make(chan bool)
 	cache := New(5, &Options{
-		RemovedFunc: func(i interface{}) {
+		RemovedFunc: func(i any) {
 			_, ok := i.(*testing.T)
 			assert.True(t, ok)
 			ch <- true
@@ -114,7 +114,7 @@ func TestRemovedFuncWithTTL(t *testing.T) {
 	ch := make(chan bool)
 	cache := New(5, &Options{
 		TTL: time.Millisecond * 50,
-		RemovedFunc: func(i interface{}) {
+		RemovedFunc: func(i any) {
 			_, ok := i.(*testing.T)
 			assert.True(t, ok)
 			ch <- true
@@ -139,7 +139,7 @@ func TestClear(t *testing.T) {
 	ch := make(chan bool)
 	cache := New(5, &Options{
 		TTL: time.Millisecond * 50,
-		RemovedFunc: func(i interface{}) {
+		RemovedFunc: func(i any) {
 			_, ok := i.(*testing.T)
 			assert.True(t, ok)
 			ch <- true

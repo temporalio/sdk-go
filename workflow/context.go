@@ -48,7 +48,7 @@ func WithCancel(parent Context) (ctx Context, cancel CancelFunc) {
 //
 // Use context Values only for request-scoped data that transits processes and
 // APIs, not for passing optional parameters to functions.
-func WithValue(parent Context, key interface{}, val interface{}) Context {
+func WithValue(parent Context, key any, val any) Context {
 	return internal.WithValue(parent, key, val)
 }
 

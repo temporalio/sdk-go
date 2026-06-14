@@ -157,7 +157,7 @@ func (e *CodecDataConverter) decode(payloads []*commonpb.Payload) ([]*commonpb.P
 
 // ToPayload implements DataConverter.ToPayload performing encoding on the
 // result of the parent's ToPayload call.
-func (e *CodecDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (e *CodecDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	payload, err := e.parent.ToPayload(value)
 	if payload == nil || err != nil {
 		return payload, err
@@ -175,7 +175,7 @@ func (e *CodecDataConverter) ToPayload(value interface{}) (*commonpb.Payload, er
 
 // ToPayloads implements DataConverter.ToPayloads performing encoding on the
 // result of the parent's ToPayloads call.
-func (e *CodecDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
+func (e *CodecDataConverter) ToPayloads(value ...any) (*commonpb.Payloads, error) {
 	payloads, err := e.parent.ToPayloads(value...)
 	if payloads == nil || err != nil {
 		return payloads, err
@@ -186,7 +186,7 @@ func (e *CodecDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payload
 
 // FromPayload implements DataConverter.FromPayload performing decoding on the
 // given payload before sending to the parent FromPayload.
-func (e *CodecDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (e *CodecDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	if payload == nil {
 		return nil
 	}
@@ -202,7 +202,7 @@ func (e *CodecDataConverter) FromPayload(payload *commonpb.Payload, valuePtr int
 
 // FromPayloads implements DataConverter.FromPayloads performing decoding on the
 // given payloads before sending to the parent FromPayloads.
-func (e *CodecDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (e *CodecDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
 	if payloads == nil {
 		return e.parent.FromPayloads(payloads, valuePtrs...)
 	}
@@ -439,7 +439,7 @@ func NewRemoteDataConverter(parent DataConverter, options RemoteDataConverterOpt
 
 // ToPayload implements DataConverter.ToPayload performing remote encoding on the
 // result of the parent's ToPayload call.
-func (rdc *remoteDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (rdc *remoteDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	payload, err := rdc.parent.ToPayload(value)
 	if payload == nil || err != nil {
 		return payload, err
@@ -453,7 +453,7 @@ func (rdc *remoteDataConverter) ToPayload(value interface{}) (*commonpb.Payload,
 
 // ToPayloads implements DataConverter.ToPayloads performing remote encoding on the
 // result of the parent's ToPayloads call.
-func (rdc *remoteDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
+func (rdc *remoteDataConverter) ToPayloads(value ...any) (*commonpb.Payloads, error) {
 	payloads, err := rdc.parent.ToPayloads(value...)
 	if payloads == nil || err != nil {
 		return payloads, err
@@ -464,7 +464,7 @@ func (rdc *remoteDataConverter) ToPayloads(value ...interface{}) (*commonpb.Payl
 
 // FromPayload implements DataConverter.FromPayload performing remote decoding on the
 // given payload before sending to the parent FromPayload.
-func (rdc *remoteDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (rdc *remoteDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	decodedPayloads, err := rdc.payloadCodec.Decode([]*commonpb.Payload{payload})
 	if err != nil {
 		return err
@@ -474,7 +474,7 @@ func (rdc *remoteDataConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 
 // FromPayloads implements DataConverter.FromPayloads performing remote decoding on the
 // given payloads before sending to the parent FromPayloads.
-func (rdc *remoteDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (rdc *remoteDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
 	if payloads == nil {
 		return rdc.parent.FromPayloads(payloads, valuePtrs...)
 	}

@@ -105,7 +105,7 @@ type (
 		// Cause is the original error that caused this error.
 		Cause error
 		// Details is a list of arbitrary values that can be used to provide additional context to the error.
-		Details []interface{}
+		Details []any
 		// NextRetryInterval is a request from server to override retry interval calculated by the
 		// server according to the RetryPolicy set by the Workflow.
 		// It is impossible to specify immediate retry as it is indistinguishable from the default value. As a
@@ -177,14 +177,14 @@ type (
 	// Exposed as: [go.temporal.io/sdk/temporal.PanicError]
 	PanicError struct {
 		temporalError
-		value      interface{}
+		value      any
 		stackTrace string
 	}
 
 	// workflowPanicError contains information about panicked workflow.
 	// Used to distinguish go panic in the workflow code from a PanicError returned from a workflow function.
 	workflowPanicError struct {
-		value      interface{}
+		value      any
 		stackTrace string
 	}
 
@@ -405,7 +405,7 @@ const (
 )
 
 // NewApplicationError create new instance of *ApplicationError with message, type, and optional details.
-func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...interface{}) error {
+func NewApplicationError(msg string, errType string, nonRetryable bool, cause error, details ...any) error {
 	return NewApplicationErrorWithOptions(
 		msg,
 		errType,
@@ -441,7 +441,7 @@ func NewApplicationErrorWithOptions(msg string, errType string, options Applicat
 // Use NewHeartbeatTimeoutError to create heartbeat TimeoutError.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewTimeoutError]
-func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...interface{}) error {
+func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, lastHeartbeatDetails ...any) error {
 	timeoutErr := &TimeoutError{
 		msg:         msg,
 		timeoutType: timeoutType,
@@ -461,14 +461,14 @@ func NewTimeoutError(msg string, timeoutType enumspb.TimeoutType, cause error, l
 // NewHeartbeatTimeoutError creates TimeoutError instance.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewHeartbeatTimeoutError]
-func NewHeartbeatTimeoutError(details ...interface{}) error {
+func NewHeartbeatTimeoutError(details ...any) error {
 	return NewTimeoutError("heartbeat timeout", enumspb.TIMEOUT_TYPE_HEARTBEAT, nil, details...)
 }
 
 // NewCanceledError creates CanceledError instance.
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewCanceledError]
-func NewCanceledError(details ...interface{}) error {
+func NewCanceledError(details ...any) error {
 	return NewCanceledErrorWithOptions(CanceledErrorOptions{
 		Details: details,
 	})
@@ -591,7 +591,7 @@ func IsCanceledError(err error) bool {
 //	 args - arguments for the new workflow.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewContinueAsNewError]
-func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) error {
+func NewContinueAsNewError(ctx Context, wfn any, args ...any) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	// Put header on context before executing
 	ctx = workflowContextWithNewHeader(ctx)
@@ -601,7 +601,7 @@ func NewContinueAsNewError(ctx Context, wfn interface{}, args ...interface{}) er
 // NewContinueAsNewErrorWithOptions creates ContinueAsNewError instance with additional options.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewContinueAsNewErrorWithOptions]
-func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn interface{}, args ...interface{}) error {
+func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOptions, wfn any, args ...any) error {
 	err := NewContinueAsNewError(ctx, wfn, args...)
 
 	var continueAsNewErr *ContinueAsNewError
@@ -618,8 +618,8 @@ func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOpt
 
 func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 	ctx Context,
-	wfn interface{},
-	args ...interface{},
+	wfn any,
+	args ...any,
 ) error {
 	// Validate type and its arguments.
 	options := getWorkflowEnvOptions(ctx)
@@ -692,7 +692,7 @@ func (e *ApplicationError) HasDetails() bool {
 }
 
 // Details extracts strong typed detail data of this custom error. If there is no details, it will return ErrNoData.
-func (e *ApplicationError) Details(d ...interface{}) error {
+func (e *ApplicationError) Details(d ...any) error {
 	if !e.HasDetails() {
 		return ErrNoData
 	}
@@ -750,7 +750,7 @@ func (e *TimeoutError) HasLastHeartbeatDetails() bool {
 }
 
 // LastHeartbeatDetails extracts strong typed detail data of this error. If there is no details, it will return ErrNoData.
-func (e *TimeoutError) LastHeartbeatDetails(d ...interface{}) error {
+func (e *TimeoutError) LastHeartbeatDetails(d ...any) error {
 	if !e.HasLastHeartbeatDetails() {
 		return ErrNoData
 	}
@@ -776,18 +776,18 @@ func (e *CanceledError) HasDetails() bool {
 }
 
 // Details extracts strong typed detail data of this error.
-func (e *CanceledError) Details(d ...interface{}) error {
+func (e *CanceledError) Details(d ...any) error {
 	if !e.HasDetails() {
 		return ErrNoData
 	}
 	return e.details.Get(d...)
 }
 
-func newPanicError(value interface{}, stackTrace string) error {
+func newPanicError(value any, stackTrace string) error {
 	return &PanicError{value: value, stackTrace: stackTrace}
 }
 
-func newWorkflowPanicError(value interface{}, stackTrace string) error {
+func newWorkflowPanicError(value any, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
 }
 
