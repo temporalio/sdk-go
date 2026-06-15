@@ -52,14 +52,14 @@ func newSignalLinkTestClient(t *testing.T) (*workflowservicemock.MockWorkflowSer
 	return svc, client, ctx, nctx
 }
 
-// TestSignalForwardsInboundLinksAndCapturesResponseBacklink covers the happy path against a
+// TestSignalForwardsRequestLinksAndCapturesResponseLink covers the happy path against a
 // flag-enabled server: inbound nexus links are forwarded onto the SignalWorkflowExecutionRequest,
-// and the response's backlink is captured onto the operation context.
-func TestSignalForwardsInboundLinksAndCapturesResponseBacklink(t *testing.T) {
+// and the response's response link is captured onto the operation context.
+func TestSignalForwardsRequestLinksAndCapturesResponseLink(t *testing.T) {
 	svc, client, ctx, nctx := newSignalLinkTestClient(t)
 
-	inboundLink := workflowEventLink("caller-wf", "caller-run", enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED)
-	ctx = context.WithValue(ctx, NexusOperationLinksKey, []*commonpb.Link{inboundLink})
+	requestLink := workflowEventLink("caller-wf", "caller-run", enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED)
+	ctx = context.WithValue(ctx, NexusOperationRequestLinksKey, []*commonpb.Link{requestLink})
 
 	responseLink := workflowEventLink(signalLinkTestWorkflowID, "target-run", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
 
@@ -75,21 +75,21 @@ func TestSignalForwardsInboundLinksAndCapturesResponseBacklink(t *testing.T) {
 
 	// Forward direction: the request the SDK sent carries the inbound link.
 	require.Len(t, sent.GetLinks(), 1)
-	require.True(t, proto.Equal(sent.GetLinks()[0], inboundLink))
+	require.True(t, proto.Equal(sent.GetLinks()[0], requestLink))
 
-	// Backward direction: the response's link is captured onto the context.
-	captured := nctx.ResponseBacklinks()
+	// Response direction: the response's link is captured onto the context.
+	captured := nctx.ResponseLinks()
 	require.Len(t, captured, 1)
 	require.True(t, proto.Equal(captured[0], responseLink))
 }
 
-// TestSignalAgainstOlderServerCapturesNoBacklink covers older-server compatibility: the server
-// returns a response without a link. The SDK must not crash and must leave the backlink list empty.
-func TestSignalAgainstOlderServerCapturesNoBacklink(t *testing.T) {
+// TestSignalAgainstOlderServerCapturesNoResponseLink covers older-server compatibility: the server
+// returns a response without a link. The SDK must not crash and must leave the response link list empty.
+func TestSignalAgainstOlderServerCapturesNoResponseLink(t *testing.T) {
 	svc, client, ctx, nctx := newSignalLinkTestClient(t)
 
-	inboundLink := workflowEventLink("caller-wf", "caller-run", enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED)
-	ctx = context.WithValue(ctx, NexusOperationLinksKey, []*commonpb.Link{inboundLink})
+	requestLink := workflowEventLink("caller-wf", "caller-run", enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED)
+	ctx = context.WithValue(ctx, NexusOperationRequestLinksKey, []*commonpb.Link{requestLink})
 
 	var sent *workflowservice.SignalWorkflowExecutionRequest
 	svc.EXPECT().
@@ -104,13 +104,13 @@ func TestSignalAgainstOlderServerCapturesNoBacklink(t *testing.T) {
 
 	// Forward direction still works regardless of server version.
 	require.Len(t, sent.GetLinks(), 1)
-	// Backward direction: no backlink captured because the server didn't send one.
-	require.Empty(t, nctx.ResponseBacklinks())
+	// Response direction: no response link captured because the server didn't send one.
+	require.Empty(t, nctx.ResponseLinks())
 }
 
-// TestMultipleSignalsAccumulateAllBacklinks: two signal RPCs in a row each contribute a backlink;
+// TestMultipleSignalsAccumulateAllResponseLinks: two signal RPCs in a row each contribute a response link;
 // both must be captured in order on the context.
-func TestMultipleSignalsAccumulateAllBacklinks(t *testing.T) {
+func TestMultipleSignalsAccumulateAllResponseLinks(t *testing.T) {
 	svc, client, ctx, nctx := newSignalLinkTestClient(t)
 
 	firstResponseLink := workflowEventLink("callee-a", "run-a", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
@@ -125,20 +125,20 @@ func TestMultipleSignalsAccumulateAllBacklinks(t *testing.T) {
 	require.NoError(t, client.SignalWorkflow(ctx, signalLinkTestWorkflowID, "run-a", "test-signal", "payload"))
 	require.NoError(t, client.SignalWorkflow(ctx, signalLinkTestWorkflowID, "run-b", "test-signal", "payload"))
 
-	captured := nctx.ResponseBacklinks()
+	captured := nctx.ResponseLinks()
 	require.Len(t, captured, 2)
 	require.True(t, proto.Equal(captured[0], firstResponseLink))
 	require.True(t, proto.Equal(captured[1], secondResponseLink))
 }
 
-// TestSignalWithStartForwardsInboundLinksAndCapturesResponseBacklink mirrors the plain-signal happy
+// TestSignalWithStartForwardsRequestLinksAndCapturesResponseLink mirrors the plain-signal happy
 // path but for signalWithStart, which uses a different proto field (signal_link) and a different
 // code path inside the client.
-func TestSignalWithStartForwardsInboundLinksAndCapturesResponseBacklink(t *testing.T) {
+func TestSignalWithStartForwardsRequestLinksAndCapturesResponseLink(t *testing.T) {
 	svc, client, ctx, nctx := newSignalLinkTestClient(t)
 
-	inboundLink := workflowEventLink("caller-wf", "caller-run", enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED)
-	ctx = context.WithValue(ctx, NexusOperationLinksKey, []*commonpb.Link{inboundLink})
+	requestLink := workflowEventLink("caller-wf", "caller-run", enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED)
+	ctx = context.WithValue(ctx, NexusOperationRequestLinksKey, []*commonpb.Link{requestLink})
 
 	responseLink := workflowEventLink(signalLinkTestWorkflowID, "target-run", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
 
@@ -156,16 +156,16 @@ func TestSignalWithStartForwardsInboundLinksAndCapturesResponseBacklink(t *testi
 
 	// Forward direction: the SignalWithStartWorkflowExecutionRequest carries the inbound link.
 	require.Len(t, sent.GetLinks(), 1)
-	require.True(t, proto.Equal(sent.GetLinks()[0], inboundLink))
+	require.True(t, proto.Equal(sent.GetLinks()[0], requestLink))
 
-	// Backward direction: response.signal_link is captured onto the context.
-	captured := nctx.ResponseBacklinks()
+	// Response direction: response.signal_link is captured onto the context.
+	captured := nctx.ResponseLinks()
 	require.Len(t, captured, 1)
 	require.True(t, proto.Equal(captured[0], responseLink))
 }
 
-// TestSignalWithStartAgainstOlderServerCapturesNoBacklink: older server omits signal_link.
-func TestSignalWithStartAgainstOlderServerCapturesNoBacklink(t *testing.T) {
+// TestSignalWithStartAgainstOlderServerCapturesNoResponseLink: older server omits signal_link.
+func TestSignalWithStartAgainstOlderServerCapturesNoResponseLink(t *testing.T) {
 	svc, client, ctx, nctx := newSignalLinkTestClient(t)
 
 	svc.EXPECT().
@@ -175,12 +175,12 @@ func TestSignalWithStartAgainstOlderServerCapturesNoBacklink(t *testing.T) {
 	_, err := client.SignalWithStartWorkflow(ctx, signalLinkTestWorkflowID, "test-signal", "signal-payload",
 		StartWorkflowOptions{TaskQueue: "tq"}, "TestWorkflow")
 	require.NoError(t, err)
-	require.Empty(t, nctx.ResponseBacklinks())
+	require.Empty(t, nctx.ResponseLinks())
 }
 
-// TestMixedSignalAndSignalWithStartAccumulateAllBacklinks: a handler that issues one signal and one
-// signalWithStart against the same context must end up with both backlinks captured, in call order.
-func TestMixedSignalAndSignalWithStartAccumulateAllBacklinks(t *testing.T) {
+// TestMixedSignalAndSignalWithStartAccumulateAllResponseLinks: a handler that issues one signal and one
+// signalWithStart against the same context must end up with both response links captured, in call order.
+func TestMixedSignalAndSignalWithStartAccumulateAllResponseLinks(t *testing.T) {
 	svc, client, ctx, nctx := newSignalLinkTestClient(t)
 
 	signalResponseLink := workflowEventLink("callee-s", "run-s", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
@@ -196,15 +196,15 @@ func TestMixedSignalAndSignalWithStartAccumulateAllBacklinks(t *testing.T) {
 		StartWorkflowOptions{TaskQueue: "tq"}, "TestWorkflow")
 	require.NoError(t, err)
 
-	captured := nctx.ResponseBacklinks()
+	captured := nctx.ResponseLinks()
 	require.Len(t, captured, 2)
 	require.True(t, proto.Equal(captured[0], signalResponseLink))
 	require.True(t, proto.Equal(captured[1], signalWithStartResponseLink))
 }
 
-// TestSignalOutsideNexusContextCapturesNoBacklink: a plain signal not issued from a Nexus operation
-// context must not attempt to capture a backlink even if the server returns one.
-func TestSignalOutsideNexusContextCapturesNoBacklink(t *testing.T) {
+// TestSignalOutsideNexusContextCapturesNoResponseLink: a plain signal not issued from a Nexus operation
+// context must not attempt to capture a response link even if the server returns one.
+func TestSignalOutsideNexusContextCapturesNoResponseLink(t *testing.T) {
 	svc := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
 	svc.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any()).AnyTimes().Return(&workflowservice.GetSystemInfoResponse{}, nil)
 	client := NewServiceClient(svc, nil, ClientOptions{Namespace: signalLinkTestNamespace})

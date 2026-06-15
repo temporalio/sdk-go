@@ -44,37 +44,37 @@ type NexusOperationContext struct {
 	log            log.Logger
 	registry       *registry
 
-	// backlinksMu guards responseBacklinks. A Nexus operation handler is invoked from a single
+	// responseLinksMu guards responseLinks. A Nexus operation handler is invoked from a single
 	// goroutine, but handlers are free to issue RPCs from other goroutines they spawn, so the
 	// accumulator is synchronized.
-	backlinksMu sync.Mutex
-	// responseBacklinks holds the backlinks returned by outbound RPCs the operation handler issues
+	responseLinksMu sync.Mutex
+	// responseLinks holds the response links returned by outbound RPCs the operation handler issues
 	// (such as SignalWorkflowExecutionResponse.link or
 	// SignalWithStartWorkflowExecutionResponse.signal_link). One entry per outbound RPC that
 	// returned a link. Drained by the task handler when building the StartOperationResponse so each
 	// RPC the handler issued gets a corresponding link on the caller workflow's history event.
-	responseBacklinks []*commonpb.Link
+	responseLinks []*commonpb.Link
 }
 
-// AddResponseBacklink appends a backlink returned by an outbound RPC the operation handler issued
+// AddResponseLink appends a response link returned by an outbound RPC the operation handler issued
 // (e.g. signal, signalWithStart). nil links are ignored. The task handler drains the accumulated
-// backlinks when building the operation's StartOperationResponse.
-func (nc *NexusOperationContext) AddResponseBacklink(link *commonpb.Link) {
+// response links when building the operation's StartOperationResponse.
+func (nc *NexusOperationContext) AddResponseLink(link *commonpb.Link) {
 	if link == nil {
 		return
 	}
-	nc.backlinksMu.Lock()
-	defer nc.backlinksMu.Unlock()
-	nc.responseBacklinks = append(nc.responseBacklinks, link)
+	nc.responseLinksMu.Lock()
+	defer nc.responseLinksMu.Unlock()
+	nc.responseLinks = append(nc.responseLinks, link)
 }
 
-// ResponseBacklinks returns a copy of the backlinks accumulated from every outbound RPC the handler
+// ResponseLinks returns a copy of the response links accumulated from every outbound RPC the handler
 // issued, in call order.
-func (nc *NexusOperationContext) ResponseBacklinks() []*commonpb.Link {
-	nc.backlinksMu.Lock()
-	defer nc.backlinksMu.Unlock()
-	out := make([]*commonpb.Link, len(nc.responseBacklinks))
-	copy(out, nc.responseBacklinks)
+func (nc *NexusOperationContext) ResponseLinks() []*commonpb.Link {
+	nc.responseLinksMu.Lock()
+	defer nc.responseLinksMu.Unlock()
+	out := make([]*commonpb.Link, len(nc.responseLinks))
+	copy(out, nc.responseLinks)
 	return out
 }
 
@@ -205,19 +205,19 @@ type nexusOperationRequestIDKeyType struct{}
 
 var NexusOperationRequestIDKey = nexusOperationRequestIDKeyType{}
 
-type nexusOperationLinksKeyType struct{}
+type nexusOperationRequestLinksKeyType struct{}
 
-var NexusOperationLinksKey = nexusOperationLinksKeyType{}
+var NexusOperationRequestLinksKey = nexusOperationRequestLinksKeyType{}
 
 // workflowEventLinkToNexusLink converts a common.v1.Link with a WorkflowEvent variant into a
 // nexus.v1.Link (URL + Type). It is registered by the temporalnexus package via
 // SetWorkflowEventLinkToNexusLinkConverter to avoid an import cycle (temporalnexus imports
 // internal, so the link-conversion helpers in temporalnexus cannot be imported here directly). The
-// task handler uses it to drain response backlinks onto the StartOperationResponse. It returns
+// task handler uses it to drain response links onto the StartOperationResponse. It returns
 // (nil, false) when the link is not a convertible WorkflowEvent link.
 var workflowEventLinkToNexusLink func(*commonpb.Link) (*nexuspb.Link, bool)
 
-// SetWorkflowEventLinkToNexusLinkConverter registers the converter used to turn response backlinks
+// SetWorkflowEventLinkToNexusLinkConverter registers the converter used to turn response links
 // into nexus.v1.Links. Called once from the temporalnexus package's init.
 func SetWorkflowEventLinkToNexusLinkConverter(fn func(*commonpb.Link) (*nexuspb.Link, bool)) {
 	workflowEventLinkToNexusLink = fn

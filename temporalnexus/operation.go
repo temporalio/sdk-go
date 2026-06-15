@@ -34,7 +34,7 @@ import (
 )
 
 func init() {
-	// Register the link converter used by the internal task handler to drain response backlinks
+	// Register the link converter used by the internal task handler to drain response links
 	// (e.g. from SignalWorkflowExecutionResponse.link) onto the StartOperationResponse. Defined here
 	// because the conversion helpers live in this package, which the internal package cannot import.
 	internal.SetWorkflowEventLinkToNexusLinkConverter(func(link *common.Link) (*nexuspb.Link, bool) {

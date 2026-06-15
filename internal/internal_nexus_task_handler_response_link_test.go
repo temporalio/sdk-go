@@ -18,10 +18,10 @@ import (
 	ilog "go.temporal.io/sdk/internal/log"
 )
 
-// stubBacklinkConverter installs a converter that turns a WorkflowEvent backlink into a nexus link
-// whose URL references the workflow ID, mirroring the shape produced by the real temporalnexus
-// converter. It restores the previous converter on test cleanup.
-func stubBacklinkConverter(t *testing.T) {
+// stubResponseLinkConverter installs a converter that turns a WorkflowEvent response link into a
+// nexus link whose URL references the workflow ID, mirroring the shape produced by the real
+// temporalnexus converter. It restores the previous converter on test cleanup.
+func stubResponseLinkConverter(t *testing.T) {
 	t.Helper()
 	prev := workflowEventLinkToNexusLink
 	t.Cleanup(func() { workflowEventLinkToNexusLink = prev })
@@ -37,22 +37,22 @@ func stubBacklinkConverter(t *testing.T) {
 	})
 }
 
-// newBacklinkTestTaskHandler builds a nexusTaskHandler whose registered operation stashes a backlink
-// on the operation context (simulating what a real handler does after issuing a signal) and then
-// returns either a sync or async result.
-func newBacklinkTestTaskHandler(t *testing.T, async bool) *nexusTaskHandler {
+// newResponseLinkTestTaskHandler builds a nexusTaskHandler whose registered operation stashes a
+// response link on the operation context (simulating what a real handler does after issuing a
+// signal) and then returns either a sync or async result.
+func newResponseLinkTestTaskHandler(t *testing.T, async bool) *nexusTaskHandler {
 	t.Helper()
-	backlink := workflowEventLink("callee-wf", "callee-run-id", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
+	responseLink := workflowEventLink("callee-wf", "callee-run-id", enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED)
 
 	op := nexus.NewSyncOperation("operation", func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
 		nctx, _ := NexusOperationContextFromGoContext(ctx)
-		nctx.AddResponseBacklink(backlink)
+		nctx.AddResponseLink(responseLink)
 		return "result", nil
 	})
 
 	var nexusOp nexus.RegisterableOperation = op
 	if async {
-		nexusOp = &backlinkAsyncOperation{backlink: backlink}
+		nexusOp = &responseLinkAsyncOperation{responseLink: responseLink}
 	}
 
 	service := nexus.NewService("TestService")
@@ -78,21 +78,21 @@ func newBacklinkTestTaskHandler(t *testing.T, async bool) *nexusTaskHandler {
 	)
 }
 
-// backlinkAsyncOperation stashes a backlink then returns an async result.
-type backlinkAsyncOperation struct {
+// responseLinkAsyncOperation stashes a response link then returns an async result.
+type responseLinkAsyncOperation struct {
 	nexus.UnimplementedOperation[string, string]
-	backlink *commonpb.Link
+	responseLink *commonpb.Link
 }
 
-func (o *backlinkAsyncOperation) Name() string { return "operation" }
+func (o *responseLinkAsyncOperation) Name() string { return "operation" }
 
-func (o *backlinkAsyncOperation) Start(ctx context.Context, input string, _ nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[string], error) {
+func (o *responseLinkAsyncOperation) Start(ctx context.Context, input string, _ nexus.StartOperationOptions) (nexus.HandlerStartOperationResult[string], error) {
 	nctx, _ := NexusOperationContextFromGoContext(ctx)
-	nctx.AddResponseBacklink(o.backlink)
+	nctx.AddResponseLink(o.responseLink)
 	return &nexus.HandlerStartOperationResultAsync{OperationToken: "op-token"}, nil
 }
 
-func backlinkTestTask(t *testing.T, payload string) *workflowservice.PollNexusTaskQueueResponse {
+func responseLinkTestTask(t *testing.T, payload string) *workflowservice.PollNexusTaskQueueResponse {
 	t.Helper()
 	p, err := converter.GetDefaultDataConverter().ToPayload(payload)
 	require.NoError(t, err)
@@ -110,16 +110,16 @@ func backlinkTestTask(t *testing.T, payload string) *workflowservice.PollNexusTa
 	}
 }
 
-// TestAsyncResponseIncludesSignalBacklinks verifies that signal-response backlinks stashed on the
+// TestAsyncResponseIncludesSignalResponseLinks verifies that signal response links stashed on the
 // operation context during a handler invocation are merged into the resulting
 // StartOperationResponse.Async. No server required.
-func TestAsyncResponseIncludesSignalBacklinks(t *testing.T) {
-	stubBacklinkConverter(t)
-	h := newBacklinkTestTaskHandler(t, true)
+func TestAsyncResponseIncludesSignalResponseLinks(t *testing.T) {
+	stubResponseLinkConverter(t)
+	h := newResponseLinkTestTaskHandler(t, true)
 
-	nctx, handlerErr := h.newNexusOperationContext(backlinkTestTask(t, "op-token"))
+	nctx, handlerErr := h.newNexusOperationContext(responseLinkTestTask(t, "op-token"))
 	require.Nil(t, handlerErr)
-	completed, failed, err := h.ExecuteContext(nctx, backlinkTestTask(t, "op-token"))
+	completed, failed, err := h.ExecuteContext(nctx, responseLinkTestTask(t, "op-token"))
 	require.NoError(t, err)
 	require.Nil(t, failed)
 
@@ -130,15 +130,15 @@ func TestAsyncResponseIncludesSignalBacklinks(t *testing.T) {
 	require.Contains(t, async.GetLinks()[0].GetUrl(), "callee-wf")
 }
 
-// TestSyncResponseIncludesSignalBacklinks is the sync mirror, guarding against the sync and async
-// builders drifting (both must append the backlinks).
-func TestSyncResponseIncludesSignalBacklinks(t *testing.T) {
-	stubBacklinkConverter(t)
-	h := newBacklinkTestTaskHandler(t, false)
+// TestSyncResponseIncludesSignalResponseLinks is the sync mirror, guarding against the sync and async
+// builders drifting (both must append the response links).
+func TestSyncResponseIncludesSignalResponseLinks(t *testing.T) {
+	stubResponseLinkConverter(t)
+	h := newResponseLinkTestTaskHandler(t, false)
 
-	nctx, handlerErr := h.newNexusOperationContext(backlinkTestTask(t, "input"))
+	nctx, handlerErr := h.newNexusOperationContext(responseLinkTestTask(t, "input"))
 	require.Nil(t, handlerErr)
-	completed, failed, err := h.ExecuteContext(nctx, backlinkTestTask(t, "input"))
+	completed, failed, err := h.ExecuteContext(nctx, responseLinkTestTask(t, "input"))
 	require.NoError(t, err)
 	require.Nil(t, failed)
 
@@ -148,10 +148,10 @@ func TestSyncResponseIncludesSignalBacklinks(t *testing.T) {
 	require.Contains(t, sync.GetLinks()[0].GetUrl(), "callee-wf")
 }
 
-// TestResponseOmitsBacklinksWhenNoneStashed verifies the response carries no links when the handler
-// issued no link-returning RPCs.
-func TestResponseOmitsBacklinksWhenNoneStashed(t *testing.T) {
-	stubBacklinkConverter(t)
+// TestResponseOmitsResponseLinksWhenNoneStashed verifies the response carries no links when the
+// handler issued no link-returning RPCs.
+func TestResponseOmitsResponseLinksWhenNoneStashed(t *testing.T) {
+	stubResponseLinkConverter(t)
 	op := nexus.NewSyncOperation("operation", func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
 		return "result", nil
 	})
@@ -167,9 +167,9 @@ func TestResponseOmitsBacklinksWhenNoneStashed(t *testing.T) {
 		converter.GetDefaultDataConverter(), GetDefaultFailureConverter(), ilog.NewDefaultLogger(),
 		metrics.NopHandler, newRegistry())
 
-	nctx, handlerErr := h.newNexusOperationContext(backlinkTestTask(t, "input"))
+	nctx, handlerErr := h.newNexusOperationContext(responseLinkTestTask(t, "input"))
 	require.Nil(t, handlerErr)
-	completed, _, err := h.ExecuteContext(nctx, backlinkTestTask(t, "input"))
+	completed, _, err := h.ExecuteContext(nctx, responseLinkTestTask(t, "input"))
 	require.NoError(t, err)
 	require.Empty(t, completed.GetResponse().GetStartOperation().GetSyncSuccess().GetLinks())
 }

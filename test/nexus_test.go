@@ -3522,15 +3522,15 @@ func callee(ctx workflow.Context) (string, error) {
 
 // TestNexusSignalOperationLinks verifies bidirectional link propagation when a Nexus operation
 // handler signals a workflow via signalWithStart: the inbound Nexus task links are forwarded onto
-// the SignalWithStartWorkflowExecution request (forward), and the server's backlink lands on the
+// the SignalWithStartWorkflowExecution request (forward), and the server's response link lands on the
 // caller's NexusOperationCompleted history event (backward).
 //
-// Requires a real server with history.enableCHASMSignalBacklinks=true; the backlink path is not
-// implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_BACKLINK_TESTS so it is
+// Requires a real server with history.enableCHASMSignalBacklinks=true; the response link path is not
+// implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_RESPONSE_LINK_TESTS so it is
 // skipped by default.
 func TestNexusSignalOperationLinks(t *testing.T) {
-	if os.Getenv("ENABLE_SIGNAL_BACKLINK_TESTS") != "1" {
-		t.Skip("set ENABLE_SIGNAL_BACKLINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
+	if os.Getenv("ENABLE_SIGNAL_RESPONSE_LINK_TESTS") != "1" {
+		t.Skip("set ENABLE_SIGNAL_RESPONSE_LINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
@@ -3573,7 +3573,7 @@ func TestNexusSignalOperationLinks(t *testing.T) {
 	require.NoError(t, tc.client.GetWorkflow(ctx, calleeID, "").Get(ctx, &calleeResult))
 	require.Equal(t, "from-nexus", calleeResult)
 
-	// The backlink should land on the caller's NexusOperationCompleted event, pointing at the
+	// The response link should land on the caller's NexusOperationCompleted event, pointing at the
 	// callee's WorkflowExecutionSignaled event.
 	iter := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var completedEvent *historypb.HistoryEvent
@@ -3586,31 +3586,31 @@ func TestNexusSignalOperationLinks(t *testing.T) {
 		}
 	}
 	require.NotNil(t, completedEvent, "expected a NexusOperationCompleted event")
-	require.Len(t, completedEvent.GetLinks(), 1, "expected one backlink on the completed event")
+	require.Len(t, completedEvent.GetLinks(), 1, "expected one response link on the completed event")
 	we := completedEvent.GetLinks()[0].GetWorkflowEvent()
 	require.Equal(t, calleeID, we.GetWorkflowId())
-	// Server PR temporalio/temporal#9897 keys these backlinks via RequestIdReference rather than
+	// Server PR temporalio/temporal#9897 keys these response links via RequestIdReference rather than
 	// EventReference, so accept either oneof variant (matches the Java SignalOperationLinkingTest).
-	var backlinkEventType enumspb.EventType
+	var responseLinkEventType enumspb.EventType
 	if we.GetRequestIdRef() != nil {
-		backlinkEventType = we.GetRequestIdRef().GetEventType()
+		responseLinkEventType = we.GetRequestIdRef().GetEventType()
 	} else {
-		backlinkEventType = we.GetEventRef().GetEventType()
+		responseLinkEventType = we.GetEventRef().GetEventType()
 	}
-	require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, backlinkEventType)
+	require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, responseLinkEventType)
 }
 
 // TestNexusMultiSignalOperationLinks verifies that a single Nexus operation handler signalling
-// multiple workflows accumulates one backlink per callee onto the caller's NexusOperationCompleted
+// multiple workflows accumulates one response link per callee onto the caller's NexusOperationCompleted
 // history event. This is the integration-level counterpart to the unit tests
-// TestMultipleSignalsAccumulateAllBacklinks and TestMixedSignalAndSignalWithStartAccumulateAllBacklinks,
+// TestMultipleSignalsAccumulateAllResponseLinks and TestMixedSignalAndSignalWithStartAccumulateAllResponseLinks,
 // and mirrors the Java SignalOperationLinkingTest.testMultiSignalOperationLinks scenario.
 //
 // Requires a real server with history.enableCHASMSignalBacklinks=true; gated behind
-// ENABLE_SIGNAL_BACKLINK_TESTS so it is skipped by default.
+// ENABLE_SIGNAL_RESPONSE_LINK_TESTS so it is skipped by default.
 func TestNexusMultiSignalOperationLinks(t *testing.T) {
-	if os.Getenv("ENABLE_SIGNAL_BACKLINK_TESTS") != "1" {
-		t.Skip("set ENABLE_SIGNAL_BACKLINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
+	if os.Getenv("ENABLE_SIGNAL_RESPONSE_LINK_TESTS") != "1" {
+		t.Skip("set ENABLE_SIGNAL_RESPONSE_LINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
@@ -3664,7 +3664,7 @@ func TestNexusMultiSignalOperationLinks(t *testing.T) {
 		require.Equal(t, "from-nexus", calleeResult)
 	}
 
-	// One backlink per callee should land on the caller's NexusOperationCompleted event, each
+	// One response link per callee should land on the caller's NexusOperationCompleted event, each
 	// pointing at the corresponding callee's WorkflowExecutionSignaled event.
 	iter := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var completedEvent *historypb.HistoryEvent
@@ -3677,47 +3677,47 @@ func TestNexusMultiSignalOperationLinks(t *testing.T) {
 		}
 	}
 	require.NotNil(t, completedEvent, "expected a NexusOperationCompleted event")
-	require.Len(t, completedEvent.GetLinks(), len(calleeIDs), "expected one backlink per callee on the completed event")
+	require.Len(t, completedEvent.GetLinks(), len(calleeIDs), "expected one response link per callee on the completed event")
 
 	linkedWorkflowIDs := make(map[string]struct{})
 	for _, link := range completedEvent.GetLinks() {
 		we := link.GetWorkflowEvent()
 		linkedWorkflowIDs[we.GetWorkflowId()] = struct{}{}
-		// Server PR temporalio/temporal#9897 keys these backlinks via RequestIdReference rather
+		// Server PR temporalio/temporal#9897 keys these response links via RequestIdReference rather
 		// than EventReference, so accept either oneof variant (matches the Java
 		// SignalOperationLinkingTest).
-		var backlinkEventType enumspb.EventType
+		var responseLinkEventType enumspb.EventType
 		if we.GetRequestIdRef() != nil {
-			backlinkEventType = we.GetRequestIdRef().GetEventType()
+			responseLinkEventType = we.GetRequestIdRef().GetEventType()
 		} else {
-			backlinkEventType = we.GetEventRef().GetEventType()
+			responseLinkEventType = we.GetEventRef().GetEventType()
 		}
-		require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, backlinkEventType)
+		require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, responseLinkEventType)
 	}
 	for _, calleeID := range calleeIDs {
-		require.Contains(t, linkedWorkflowIDs, calleeID, "expected a backlink pointing at callee %s", calleeID)
+		require.Contains(t, linkedWorkflowIDs, calleeID, "expected a response link pointing at callee %s", calleeID)
 	}
 }
 
 // asyncHandler is the workflow backing the async Nexus operation in
 // TestNexusAsyncSignalOperationLinks. It exists only so the operation can return an async result;
-// the signal-to-callee (and thus the backlink) happens in the operation's start handler, not here.
+// the signal-to-callee (and thus the response link) happens in the operation's start handler, not here.
 func asyncHandler(ctx workflow.Context, _ nexus.NoValue) (string, error) {
 	return "async-done", nil
 }
 
-// TestNexusAsyncSignalOperationLinks verifies backlink propagation for an async Nexus operation:
-// the handler signals a callee workflow while starting the operation, and the server's backlink
+// TestNexusAsyncSignalOperationLinks verifies response link propagation for an async Nexus operation:
+// the handler signals a callee workflow while starting the operation, and the server's response link
 // lands on the caller's NexusOperationStarted history event (the async counterpart to the sync
 // NexusOperationCompleted path covered by TestNexusSignalOperationLinks). This mirrors the unit
-// test TestAsyncResponseIncludesSignalBacklinks at the integration level.
+// test TestAsyncResponseIncludesSignalResponseLinks at the integration level.
 //
-// Requires a real server with history.enableCHASMSignalBacklinks=true; the backlink path is not
-// implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_BACKLINK_TESTS so it is
+// Requires a real server with history.enableCHASMSignalBacklinks=true; the response link path is not
+// implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_RESPONSE_LINK_TESTS so it is
 // skipped by default.
 func TestNexusAsyncSignalOperationLinks(t *testing.T) {
-	if os.Getenv("ENABLE_SIGNAL_BACKLINK_TESTS") != "1" {
-		t.Skip("set ENABLE_SIGNAL_BACKLINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
+	if os.Getenv("ENABLE_SIGNAL_RESPONSE_LINK_TESTS") != "1" {
+		t.Skip("set ENABLE_SIGNAL_RESPONSE_LINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
@@ -3725,7 +3725,7 @@ func TestNexusAsyncSignalOperationLinks(t *testing.T) {
 
 	calleeID := "async-callee-" + uuid.NewString()
 
-	// Async operation: the start handler signalWithStarts the callee (accumulating the backlink),
+	// Async operation: the start handler signalWithStarts the callee (accumulating the response link),
 	// then starts the backing handler workflow, yielding an async result.
 	signalOp := temporalnexus.NewWorkflowRunOperation(
 		"async-signal-op",
@@ -3774,7 +3774,7 @@ func TestNexusAsyncSignalOperationLinks(t *testing.T) {
 	require.NoError(t, tc.client.GetWorkflow(ctx, calleeID, "").Get(ctx, &calleeResult))
 	require.Equal(t, "from-nexus", calleeResult)
 
-	// The backlink should land on the caller's NexusOperationStarted event, pointing at the callee's
+	// The response link should land on the caller's NexusOperationStarted event, pointing at the callee's
 	// WorkflowExecutionSignaled event.
 	iter := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var startedEvent *historypb.HistoryEvent
@@ -3788,7 +3788,7 @@ func TestNexusAsyncSignalOperationLinks(t *testing.T) {
 	}
 	require.NotNil(t, startedEvent, "expected a NexusOperationStarted event")
 
-	// Find the backlink that points at the callee workflow (the started event may also carry an
+	// Find the response link that points at the callee workflow (the started event may also carry an
 	// operation-start link to the handler workflow).
 	var calleeLink *common.Link_WorkflowEvent
 	for _, link := range startedEvent.GetLinks() {
@@ -3797,14 +3797,14 @@ func TestNexusAsyncSignalOperationLinks(t *testing.T) {
 			break
 		}
 	}
-	require.NotNil(t, calleeLink, "expected a backlink pointing at callee %s on the started event", calleeID)
-	// Server PR temporalio/temporal#9897 keys these backlinks via RequestIdReference rather than
+	require.NotNil(t, calleeLink, "expected a response link pointing at callee %s on the started event", calleeID)
+	// Server PR temporalio/temporal#9897 keys these response links via RequestIdReference rather than
 	// EventReference, so accept either oneof variant (matches the Java SignalOperationLinkingTest).
-	var backlinkEventType enumspb.EventType
+	var responseLinkEventType enumspb.EventType
 	if calleeLink.GetRequestIdRef() != nil {
-		backlinkEventType = calleeLink.GetRequestIdRef().GetEventType()
+		responseLinkEventType = calleeLink.GetRequestIdRef().GetEventType()
 	} else {
-		backlinkEventType = calleeLink.GetEventRef().GetEventType()
+		responseLinkEventType = calleeLink.GetEventRef().GetEventType()
 	}
-	require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, backlinkEventType)
+	require.Equal(t, enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, responseLinkEventType)
 }

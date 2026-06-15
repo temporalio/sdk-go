@@ -2411,7 +2411,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		return err
 	}
 
-	links, _ := ctx.Value(NexusOperationLinksKey).([]*commonpb.Link)
+	links, _ := ctx.Value(NexusOperationRequestLinksKey).([]*commonpb.Link)
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
@@ -2447,13 +2447,13 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 	if err != nil {
 		return err
 	}
-	// If this signal was issued from inside a Nexus operation handler, capture the server's backlink
-	// (pointing at the WorkflowExecutionSignaled event) so the task handler can attach it to the
+	// If this signal was issued from inside a Nexus operation handler, capture the server's response
+	// link (pointing at the WorkflowExecutionSignaled event) so the task handler can attach it to the
 	// StartOperationResponse, linking the caller workflow's history event to the callee. Servers
-	// without history.enableCHASMSignalBacklinks leave the link unset; AddResponseBacklink ignores
+	// without history.enableCHASMSignalBacklinks leave the link unset; AddResponseLink ignores
 	// nil.
 	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
-		nctx.AddResponseBacklink(response.GetLink())
+		nctx.AddResponseLink(response.GetLink())
 	}
 	return nil
 }
@@ -2525,7 +2525,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	// If this signalWithStart was issued from inside a Nexus operation handler, forward the inbound
 	// Nexus task links so both the WorkflowExecutionStarted and WorkflowExecutionSignaled events on
 	// the callee link back to the caller.
-	if links, ok := ctx.Value(NexusOperationLinksKey).([]*commonpb.Link); ok {
+	if links, ok := ctx.Value(NexusOperationRequestLinksKey).([]*commonpb.Link); ok {
 		signalWithStartRequest.Links = links
 	}
 
@@ -2559,11 +2559,11 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	}
 
 	// If this signalWithStart was issued from inside a Nexus operation handler, capture the server's
-	// backlink (pointing at the WorkflowExecutionSignaled event) so the task handler can attach it to
+	// response link (pointing at the WorkflowExecutionSignaled event) so the task handler can attach it to
 	// the StartOperationResponse. Servers without history.enableCHASMSignalBacklinks leave the link
-	// unset; AddResponseBacklink ignores nil.
+	// unset; AddResponseLink ignores nil.
 	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
-		nctx.AddResponseBacklink(response.GetSignalLink())
+		nctx.AddResponseLink(response.GetSignalLink())
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
