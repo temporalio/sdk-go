@@ -51,6 +51,8 @@ type (
 		Taskqueue string
 	}
 
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionState]
 	SessionState int
 
 	sessionTokenBucket struct {
@@ -71,7 +73,7 @@ type (
 		*sync.Mutex
 		// doneChanMap is keyed by sessionID. CreateSession creates and stores each
 		// channel, and CompleteSession deletes and closes it to signal session end.
-		doneChanMap map[string]chan struct{}
+		doneChanMap               map[string]chan struct{}
 		resourceID                string
 		resourceSpecificTaskqueue string
 		sessionTokenBucket        *sessionTokenBucket

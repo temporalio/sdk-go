@@ -572,7 +572,7 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 	if inGroup == "const" || inGroup == "var" {
 		return tokens[0] == private
 	} else if inGroup == "type" {
-		return len(tokens) > 2 && tokens[2] == private
+		return len(tokens) > 1 && (tokens[0] == private || len(tokens) > 2 && tokens[2] == private)
 	}
 
 	// Handle single-line struct, variable, or function definitions
