@@ -124,7 +124,11 @@ type sharedNamespaceWorker struct {
 	callbacksMutex sync.RWMutex
 	callbacks      map[string]func() *workerpb.WorkerHeartbeat // workerInstanceKey -> callback
 
-	stopC    chan struct{}
+	// stopC is created when the namespace heartbeat worker starts and closed by
+	// sharedNamespaceWorker.stop() to tell run() to exit.
+	stopC chan struct{}
+	// stoppedC is created with stopC and closed by sharedNamespaceWorker.run()
+	// after the heartbeat loop exits. stop() waits on it before returning.
 	stoppedC chan struct{}
 	started  atomic.Bool
 }

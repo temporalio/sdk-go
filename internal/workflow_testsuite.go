@@ -77,8 +77,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/testsuite.TestUpdateCallback]
 	TestUpdateCallback struct {
+		// OnAccept is called when the update is accepted.
 		OnAccept   func()
+		// OnReject is called when the update is rejected.
 		OnReject   func(error)
+		// OnComplete is called when the update completes.
 		OnComplete func(interface{}, error)
 	}
 )
@@ -1271,7 +1274,7 @@ func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes ma
 	if err != nil {
 		return err
 	}
-	e.impl.workflowInfo.SearchAttributes = attr
+	e.impl.workflowInfo.SearchAttributes = sanitizeSearchAttributesForStart(attr)
 	return nil
 }
 

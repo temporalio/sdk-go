@@ -193,12 +193,20 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewError]
 	ContinueAsNewError struct {
 		// params *ExecuteWorkflowParams
+		// WorkflowType is the type of the workflow.
 		WorkflowType        *WorkflowType
+		// Input is the arguments for the continued workflow execution.
 		Input               *commonpb.Payloads
+		// Header is the header of the workflow.
 		Header              *commonpb.Header
+		// TaskQueueName is the task queue that the workflow is running on.
 		TaskQueueName       string
+		// WorkflowRunTimeout is the timeout for a single run of the workflow execution.
 		WorkflowRunTimeout  time.Duration
+		// WorkflowTaskTimeout is the maximum execution time of a single Workflow Task.
 		WorkflowTaskTimeout time.Duration
+		// BackoffStartInterval is the initial backoff before the continued workflow execution starts.
+		BackoffStartInterval time.Duration
 
 		// Deprecated: WorkflowExecutionTimeout is deprecated and is never set or
 		// used internally.
@@ -234,6 +242,10 @@ type (
 		// RetryPolicy specifies the retry policy to be used for the next run.
 		// If nil, the current workflow's retry policy will be used.
 		RetryPolicy *RetryPolicy
+
+		// BackoffStartInterval specifies the delay before the first workflow task
+		// of the next run is scheduled.
+		BackoffStartInterval time.Duration
 
 		// InitialVersioningBehavior specifies the versioning behavior that the first task of the new run should use.
 		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
@@ -604,6 +616,7 @@ func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOpt
 		if options.RetryPolicy != nil {
 			continueAsNewErr.RetryPolicy = options.RetryPolicy
 		}
+		continueAsNewErr.BackoffStartInterval = options.BackoffStartInterval
 		continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
 	}
 

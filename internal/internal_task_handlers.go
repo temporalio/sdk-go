@@ -78,8 +78,12 @@ type (
 	workflowTask struct {
 		task            *workflowservice.PollWorkflowTaskQueueResponse
 		historyIterator HistoryIterator
-		doneCh          chan struct{}
-		laResultCh      chan *localActivityResult
+		// doneCh is created by workflowTaskProcessor.processWorkflowTask and closed
+		// when that workflow task processing returns. Local activity result and retry
+		// delivery wait on it to avoid blocking forever if nobody is receiving on
+		// laResultCh or laRetryCh.
+		doneCh     chan struct{}
+		laResultCh chan *localActivityResult
 
 		// This channel must be initialized with a one-size buffer and is used to indicate when
 		// it is time for a local activity to be retried
@@ -1893,15 +1897,20 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 		useCompat := determineInheritBuildIdFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
+		var backoffStartInterval *durationpb.Duration
+		if contErr.BackoffStartInterval != 0 {
+			backoffStartInterval = durationpb.New(contErr.BackoffStartInterval)
+		}
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
 			WorkflowType:              &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
 			Input:                     contErr.Input,
 			TaskQueue:                 &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 			WorkflowRunTimeout:        durationpb.New(contErr.WorkflowRunTimeout),
 			WorkflowTaskTimeout:       durationpb.New(contErr.WorkflowTaskTimeout),
+			BackoffStartInterval:      backoffStartInterval,
 			Header:                    contErr.Header,
 			Memo:                      workflowContext.workflowInfo.Memo,
-			SearchAttributes:          workflowContext.workflowInfo.SearchAttributes,
+			SearchAttributes:          sanitizeSearchAttributesForStart(workflowContext.workflowInfo.SearchAttributes),
 			RetryPolicy:               convertToPBRetryPolicy(retryPolicy),
 			InheritBuildId:            useCompat,
 			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),
@@ -2117,12 +2126,16 @@ type temporalInvoker struct {
 	heartbeatThrottleInterval time.Duration
 	hbBatchEndTimer           *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
 	lastDetailsToReport       **commonpb.Payloads
-	closeCh                   chan struct{}
-	workerStopChannel         <-chan struct{}
-	namespace                 string
-	excludeInternalFromRetry  *atomic.Bool // borrowed from client in order to tell if internal errors are retriable
-	outboundPayloadVisitor    PayloadVisitor
-	failureConverter          converter.FailureConverter
+	// closeCh is closed by temporalInvoker.Close() when the activity execution finishes.
+	closeCh chan struct{}
+	// workerStopChannel is a read-only view of activityWorker.stopC.
+	// Heartbeat batching waits on it so pending heartbeat details can be flushed
+	// when activity worker shutdown starts.
+	workerStopChannel        <-chan struct{}
+	namespace                string
+	excludeInternalFromRetry *atomic.Bool // borrowed from client in order to tell if internal errors are retriable
+	outboundPayloadVisitor   PayloadVisitor
+	failureConverter         converter.FailureConverter
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {

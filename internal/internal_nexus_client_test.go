@@ -65,6 +65,60 @@ func TestExecuteNexusOperationHeaderAvailableToInterceptors(t *testing.T) {
 		"Header should be set on context before interceptor chain runs")
 }
 
+// nexusHeaderWriteInterceptor verifies NexusHeader is non-nil on the input and
+// allows interceptors to write to it.
+type nexusHeaderWriteInterceptor struct {
+	ClientInterceptorBase
+	nexusHeaderWasPresent bool
+	writtenValue          string
+}
+
+func (h *nexusHeaderWriteInterceptor) InterceptClient(next ClientOutboundInterceptor) ClientOutboundInterceptor {
+	return &nexusHeaderWriteOutbound{
+		ClientOutboundInterceptorBase: ClientOutboundInterceptorBase{Next: next},
+		parent:                        h,
+	}
+}
+
+type nexusHeaderWriteOutbound struct {
+	ClientOutboundInterceptorBase
+	parent *nexusHeaderWriteInterceptor
+}
+
+func (h *nexusHeaderWriteOutbound) ExecuteNexusOperation(
+	ctx context.Context,
+	in *ClientExecuteNexusOperationInput,
+) (ClientNexusOperationHandle, error) {
+	h.parent.nexusHeaderWasPresent = in.NexusHeader != nil
+	if in.NexusHeader != nil {
+		in.NexusHeader["x-test-key"] = "test-value"
+		h.parent.writtenValue = in.NexusHeader["x-test-key"]
+	}
+	return nil, fmt.Errorf("short-circuit")
+}
+
+func TestExecuteNexusOperationNexusHeaderAvailableToInterceptors(t *testing.T) {
+	interceptor := &nexusHeaderWriteInterceptor{}
+
+	client := NewServiceClient(nil, nil, ClientOptions{
+		Interceptors: []ClientInterceptor{interceptor},
+	})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	nexusClient, err := client.NewNexusClient(ClientNexusClientOptions{
+		Endpoint: "test-endpoint",
+		Service:  "test-service",
+	})
+	require.NoError(t, err)
+
+	_, err = nexusClient.ExecuteOperation(context.Background(), "test-op", "test-input", ClientStartNexusOperationOptions{
+		ID: "test-op-id",
+	})
+	require.ErrorContains(t, err, "short-circuit")
+	require.True(t, interceptor.nexusHeaderWasPresent, "NexusHeader should be non-nil in interceptor input")
+	require.Equal(t, "test-value", interceptor.writtenValue, "interceptor should be able to write to NexusHeader")
+}
+
 func TestNexusClientValidation(t *testing.T) {
 	client := NewServiceClient(nil, nil, ClientOptions{})
 

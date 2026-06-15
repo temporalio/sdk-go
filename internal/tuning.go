@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	enumspb "go.temporal.io/api/enums/v1"
 	"golang.org/x/sync/semaphore"
 
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -46,6 +47,10 @@ type SlotReservationInfo interface {
 	// TaskQueue returns the task queue for which a slot is being reserved. In the case of local
 	// activities, this is the same as the workflow's task queue.
 	TaskQueue() string
+	// TaskQueueKind returns the kind of task queue for which a slot is being reserved.
+	// Workflow task reservations return unspecified for SimpleMaximum pollers because
+	// they may choose between normal and sticky queues after slot reservation.
+	TaskQueueKind() enumspb.TaskQueueKind
 	// WorkerBuildId returns the build ID of the worker that is reserving the slot.
 	WorkerBuildId() string
 	// WorkerBuildId returns the build ID of the worker that is reserving the slot.
@@ -297,11 +302,13 @@ func (f *FixedSizeSlotSupplier) MaxSlots() int {
 }
 
 type slotReservationData struct {
-	taskQueue string
+	taskQueue     string
+	taskQueueKind enumspb.TaskQueueKind
 }
 
 type slotReserveInfoImpl struct {
 	taskQueue      string
+	taskQueueKind  enumspb.TaskQueueKind
 	workerBuildId  string
 	workerIdentity string
 	issuedSlots    *atomic.Int32
@@ -311,6 +318,10 @@ type slotReserveInfoImpl struct {
 
 func (s slotReserveInfoImpl) TaskQueue() string {
 	return s.taskQueue
+}
+
+func (s slotReserveInfoImpl) TaskQueueKind() enumspb.TaskQueueKind {
+	return s.taskQueueKind
 }
 
 func (s slotReserveInfoImpl) WorkerBuildId() string {
@@ -416,6 +427,7 @@ func (t *trackingSlotSupplier) ReserveSlot(
 ) (*SlotPermit, error) {
 	permit, err := t.inner.ReserveSlot(ctx, slotReserveInfoImpl{
 		taskQueue:      data.taskQueue,
+		taskQueueKind:  data.taskQueueKind,
 		workerBuildId:  t.workerBuildId,
 		workerIdentity: t.workerIdentity,
 		issuedSlots:    &t.issuedSlotsAtomic,
@@ -439,6 +451,7 @@ func (t *trackingSlotSupplier) ReserveSlot(
 func (t *trackingSlotSupplier) TryReserveSlot(data *slotReservationData) *SlotPermit {
 	permit := t.inner.TryReserveSlot(slotReserveInfoImpl{
 		taskQueue:      data.taskQueue,
+		taskQueueKind:  data.taskQueueKind,
 		workerBuildId:  t.workerBuildId,
 		workerIdentity: t.workerIdentity,
 		issuedSlots:    &t.issuedSlotsAtomic,
