@@ -1780,6 +1780,48 @@ func (s *internalWorkerTestSuite) TestCreateWorker() {
 	assert.False(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 }
 
+func (s *internalWorkerTestSuite) TestWorkflowOutcomeCountersDeclaredOnStart() {
+	capture := metrics.NewCapturingHandler()
+	namespace := "testNamespace"
+	setupPollingMocks(namespace, s.service, 0.0)
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
+	client := NewServiceClient(s.service, nil, ClientOptions{
+		Namespace:      namespace,
+		MetricsHandler: capture,
+	})
+	worker := NewAggregatedWorker(client, "testGroupName2", WorkerOptions{
+		WorkerActivitiesPerSecond: 20,
+		EnableSessionWorker:       true,
+	})
+	const workflowType = "MyOrderWorkflow"
+	worker.RegisterWorkflowWithOptions(testWorkflowReturnStruct, RegisterWorkflowOptions{Name: workflowType})
+
+	err := worker.Start()
+	require.NoError(s.T(), err)
+	worker.Stop()
+
+	outcomeCounters := map[string]bool{
+		metrics.WorkflowCompletedCounter:     false,
+		metrics.WorkflowCanceledCounter:      false,
+		metrics.WorkflowFailedCounter:        false,
+		metrics.WorkflowContinueAsNewCounter: false,
+	}
+	for _, counter := range capture.Counters() {
+		if counter.Tags[metrics.WorkflowTypeNameTagName] != workflowType {
+			continue
+		}
+		if _, ok := outcomeCounters[counter.Name]; ok {
+			require.Equal(s.T(), int64(0), counter.Value())
+			outcomeCounters[counter.Name] = true
+		}
+	}
+	for name, found := range outcomeCounters {
+		require.True(s.T(), found, "counter %s not declared for workflow type %s", name, workflowType)
+	}
+}
+
 func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 	worker := createWorkerWithDataConverter(s.service)
 	worker.RegisterActivity(testActivityNoResult)

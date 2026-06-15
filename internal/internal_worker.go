@@ -1374,6 +1374,10 @@ func (aw *AggregatedWorker) start() error {
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
+		metrics.DeclareRegisteredWorkflowOutcomeCounters(
+			aw.executionParams.MetricsHandler,
+			aw.registry.getRegisteredWorkflowTypes(),
+		)
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
 		}
