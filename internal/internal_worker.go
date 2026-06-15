@@ -228,7 +228,8 @@ type (
 
 		workerInstanceKey string
 
-		workerControlTaskQueue        string
+		workerControlTaskQueue string
+
 		activityCancellationCallbacks *activityCancellationCallbacks
 
 		workerPollCompleteOnShutdown *atomic.Bool
@@ -2440,6 +2441,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			Name: sessionCompletionActivityName,
 		})
 	}
+
 	// Resolve the SysInfoProvider used for worker heartbeats. Prefer the explicit
 	// WorkerOptions.SysInfoProvider; otherwise fall back to the tuner's slot supplier if it
 	// implements HasSysInfoProvider. If both are set to different providers, that's a config

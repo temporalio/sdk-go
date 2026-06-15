@@ -69,7 +69,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		client:                        m.client,
 		namespace:                     namespace,
 		interval:                      m.interval,
-		heartbeatCtx:                  heartbeatCtx,
+		workerCtx:                     heartbeatCtx,
 		heartbeatCancel:               heartbeatCancel,
 		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
 		activityCancellationCallbacks: newActivityCancellationCallbacks(),
@@ -147,7 +147,7 @@ type sharedNamespaceWorker struct {
 	interval  time.Duration
 	logger    log.Logger
 
-	heartbeatCtx    context.Context
+	workerCtx       context.Context
 	heartbeatCancel context.CancelFunc
 
 	// callbacksMutex should only be unlocked under
@@ -220,7 +220,7 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 		heartbeats = append(heartbeats, hb)
 	}
 
-	_, err := hw.client.recordWorkerHeartbeat(hw.heartbeatCtx, &workflowservice.RecordWorkerHeartbeatRequest{
+	_, err := hw.client.recordWorkerHeartbeat(hw.workerCtx, &workflowservice.RecordWorkerHeartbeatRequest{
 		Namespace:       hw.namespace,
 		WorkerHeartbeat: heartbeats,
 	})
@@ -239,27 +239,32 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 func (hw *sharedNamespaceWorker) runWorkerCommands() {
 	for {
 		select {
-		case <-hw.heartbeatCtx.Done():
+		case <-hw.workerCtx.Done():
 			return
 		default:
 		}
 
 		task, err := hw.pollWorkerCommandTask()
 		if err != nil {
-			if hw.heartbeatCtx.Err() != nil {
+			if hw.workerCtx.Err() != nil {
 				return
 			}
 			hw.logger.Warn("Failed polling worker command task", "Error", err)
 			select {
 			case <-time.After(time.Second):
-			case <-hw.heartbeatCtx.Done():
+			case <-hw.workerCtx.Done():
 				return
 			}
 			continue
 		}
-		if task == nil || len(task.TaskToken) == 0 || task.GetRequest() == nil {
+		if task == nil || len(task.TaskToken) == 0 {
 			continue
 		}
+		if task.GetRequest() == nil {
+			hw.logger.Warn("Received worker command task with nil request")
+			continue
+		}
+
 		if err := hw.handleWorkerCommandTask(task); err != nil {
 			hw.logger.Warn("Failed handling worker command task", "Error", err)
 		}
@@ -269,11 +274,11 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 func (hw *sharedNamespaceWorker) pollWorkerCommandTask() (*workflowservice.PollNexusTaskQueueResponse, error) {
 	rpcMetricsHandler := hw.metricsHandler.WithTags(metrics.TaskQueueTags(hw.workerControlTaskQueue))
 	grpcCtx, cancel := newGRPCContext(
-		hw.heartbeatCtx,
+		hw.workerCtx,
 		grpcMetricsHandler(rpcMetricsHandler),
 		grpcLongPoll(true),
 		grpcTimeout(pollTaskServiceTimeOut),
-		defaultGrpcRetryParameters(hw.heartbeatCtx),
+		defaultGrpcRetryParameters(hw.workerCtx),
 	)
 	defer cancel()
 
