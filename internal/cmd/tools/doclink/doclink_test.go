@@ -58,7 +58,6 @@ type (
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer file.Close()
 
 	pairs := map[string]map[string]string{
 		"workflow": {
@@ -66,6 +65,9 @@ type (
 		},
 	}
 	if err := processInternal(config{fix: true}, file, pairs); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
 
