@@ -35,6 +35,7 @@ import (
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/contrib/sysinfo"
+	"go.temporal.io/sdk/temporalnexus"
 	"go.uber.org/goleak"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -56,7 +57,6 @@ import (
 	"go.temporal.io/sdk/internal/interceptortest"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
-	"go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -236,7 +236,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	if strings.Contains(ts.T().Name(), "GracefulActivityCompletion") ||
 		strings.Contains(ts.T().Name(), "LocalActivityCompleteWithinGracefulShutdown") ||
-		strings.Contains(ts.T().Name(), "LocalActivityTaskTimeoutHeartbeat") {
+		strings.Contains(ts.T().Name(), "LocalActivityTaskTimeoutHeartbeat") ||
+		strings.Contains(ts.T().Name(), "ShutdownDuringActiveTimerActivityWorkflows") ||
+		strings.Contains(ts.T().Name(), "SessionWorkerShutdownWithPollComplete") {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
@@ -397,6 +399,21 @@ func (ts *IntegrationTestSuite) getHistory(workflowID string, runID string) (*hi
 	return &historypb.History{Events: events}, nil
 }
 
+func (ts *IntegrationTestSuite) waitForHistoryEvent(workflowID string, runID string, eventType enumspb.EventType, timeout time.Duration) {
+	ts.Eventually(func() bool {
+		history, err := ts.getHistory(workflowID, runID)
+		if err != nil {
+			return false
+		}
+		for _, event := range history.Events {
+			if event.GetEventType() == eventType {
+				return true
+			}
+		}
+		return false
+	}, timeout, 100*time.Millisecond, "timed out waiting for history event %s", eventType)
+}
+
 func (ts *IntegrationTestSuite) TestPanicFailWorkflow() {
 	var expected []string
 	wfOpts := ts.startWorkflowOptions("test-panic")
@@ -510,7 +527,7 @@ func (ts *IntegrationTestSuite) TestActivityRetryOnError() {
 	ts.assertMetricCountAtLeast("temporal_activity_execution_failed", 2)
 	ts.assertMetricCountAtLeast("temporal_workflow_task_queue_poll_succeed", 1)
 	ts.assertMetricCountAtLeast("temporal_long_request", 4, "operation", "PollActivityTaskQueue")
-	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
+	ts.assertMetricCountAtLeastEventually("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
 	ts.Equal(ts.metricCount("temporal_long_request"), ts.metricCount("temporal_long_request_attempt"))
 }
 
@@ -676,6 +693,25 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 	err := ts.executeWorkflowWithOption(startOptions, ts.workflows.ContinueAsNewWithOptions, &result, 4, ts.taskQueueName)
 	ts.NoError(err)
 	ts.Equal("memoVal,searchAttr,123", result)
+}
+
+func (ts *IntegrationTestSuite) TestContinueAsNewOmitsUnsetSearchAttributes() {
+	var result string
+	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
+	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
+	startOptions := ts.startWorkflowOptions("test-continueasnew-omit-unset-search-attributes")
+	startOptions.TypedSearchAttributes = temporal.NewSearchAttributes(
+		stringKey.ValueSet("carry-over"),
+		keywordKey.ValueSet("drop-me"),
+	)
+	err := ts.executeWorkflowWithOption(
+		startOptions,
+		ts.workflows.ContinueAsNewAfterUnsetSearchAttribute,
+		&result,
+		false,
+	)
+	ts.NoError(err)
+	ts.Equal("carry-over", result)
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewWithRetryPolicy() {
@@ -1944,6 +1980,28 @@ func (ts *IntegrationTestSuite) TestBasicSession() {
 	// createSession activity, actual activity, completeSession activity.
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "HandleSignal", "Go", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
 		ts.tracer.GetTrace("BasicSession"))
+}
+
+func (ts *IntegrationTestSuite) TestSessionWorkerShutdownWithPollComplete() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	resp, err := ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
+	}
+
+	var expected []string
+	err = ts.executeWorkflow("test-session-worker-shutdown-poll-complete", ts.workflows.BasicSession, &expected)
+	ts.NoError(err)
+
+	shutdownStart := time.Now()
+	ts.worker.Stop()
+	ts.workerStopped = true
+	ts.Less(time.Since(shutdownStart), 5*time.Second)
 }
 
 func (ts *IntegrationTestSuite) TestEagerWorkflowDispatchRaceWithWorkerStop() {
@@ -3415,7 +3473,9 @@ func (ts *IntegrationTestSuite) TestSlotsAvailableCounter() {
 	ts.assertMetricGaugeEventually(metrics.WorkerTaskSlotsUsed, actWorkertags, 3)
 
 	// Signal the first and last to close and confirm increased by two
-	time.Sleep(2 * time.Second)
+	// Give the workflows enough time to enter the timer/activity loop so
+	// shutdown overlaps active polling and dispatch.
+	time.Sleep(500 * time.Millisecond)
 	ts.NoError(ts.client.SignalWorkflow(ctx, run1.GetID(), run1.GetRunID(), "cancel", nil))
 	ts.NoError(ts.client.SignalWorkflow(ctx, run3.GetID(), run3.GetRunID(), "cancel", nil))
 	ts.NoError(run1.Get(ctx, nil))
@@ -4321,7 +4381,9 @@ func (ts *IntegrationTestSuite) testUpdateOrderingCancel(cancelWf bool) {
 		}()
 	}
 
-	// The server does not support admitted updates, so we send the update in a separate goroutine
+	// The server does not support admitted updates, so we send the update in a separate goroutine.
+	// Keep this shorter than the activity's ScheduleToCloseTimeout (5s) so the new worker
+	// has time to execute activities before they time out.
 	time.Sleep(5 * time.Second)
 	// Now create a new worker on that same task queue to resume the work of the
 	// workflow
@@ -7159,6 +7221,7 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
 	ts.workflows.register(w)
 	ts.activities.register(w)
+	w.RegisterNexusService(temporalOpService)
 }
 
 func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worker) {
@@ -7386,6 +7449,18 @@ func (ts *IntegrationTestSuite) assertMetricCountAtLeast(name string, value int6
 	ts.GreaterOrEqual(ts.metricCount(name, tagFilterKeyValue...), value)
 }
 
+func (ts *IntegrationTestSuite) assertMetricCountAtLeastEventually(name string, value int64, tagFilterKeyValue ...string) {
+	var lastCount int64
+	for start := time.Now(); time.Since(start) <= 2*time.Second; {
+		lastCount = ts.metricCount(name, tagFilterKeyValue...)
+		if lastCount >= value {
+			return
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	ts.GreaterOrEqual(lastCount, value)
+}
+
 func (ts *IntegrationTestSuite) assertReportedOperationCount(metricName string, operation string, expectedCount int) {
 	count := ts.getReportedOperationCount(metricName, operation)
 	ts.EqualValues(expectedCount, count, fmt.Sprintf("Metric %v for operation %v has been reported unexpected number of times", metricName, operation))
@@ -7404,24 +7479,10 @@ func (ts *IntegrationTestSuite) getReportedOperationCount(metricName string, ope
 	return count
 }
 
-// TODO: remove once SDKFlagBlockedSelectorSignalReceive is enabled by default
-func (ts *IntegrationTestSuite) TestSelectorBlock() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	options := ts.startWorkflowOptions("test-selector-block")
-
-	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal)
-	ts.NoError(err)
-	var result string
-	ts.NoError(run.Get(ctx, &result))
-	ts.Equal("hello", result)
-}
-
 func (ts *IntegrationTestSuite) TestSelectorNoBlock() {
-	ts.T().Skip("Skip until SDKFlagBlockedSelectorSignalReceive is enabled by default")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	options := ts.startWorkflowOptions("test-selector-block")
+	options := ts.startWorkflowOptions("test-selector-no-block")
 
 	run, err := ts.client.ExecuteWorkflow(ctx, options, ts.workflows.SelectorBlockSignal)
 	ts.NoError(err)
@@ -7787,21 +7848,77 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
 }
 
+func (ts *IntegrationTestSuite) registerWorkerShutdownCancelWorkflow(w worker.Worker) (
+	workflowName string,
+	activityName string,
+	activityStarted <-chan struct{},
+	firstStarted *atomic.Bool,
+) {
+	workflowName = "worker-shutdown-cancel-workflow-" + uuid.NewString()
+	activityName = "worker-shutdown-cancel-activity-" + uuid.NewString()
+	activityStartedCh := make(chan struct{})
+	firstStarted = &atomic.Bool{}
+	ts.registerWorkerShutdownCancelWorkflowWithNames(w, workflowName, activityName, activityStartedCh, firstStarted)
+	return workflowName, activityName, activityStartedCh, firstStarted
+}
+
+func (ts *IntegrationTestSuite) registerWorkerShutdownCancelWorkflowWithNames(
+	w worker.Worker,
+	workflowName string,
+	activityName string,
+	activityStarted chan<- struct{},
+	firstStarted *atomic.Bool,
+) {
+	w.RegisterActivityWithOptions(func(ctx context.Context) error {
+		if firstStarted.CompareAndSwap(false, true) {
+			if activityStarted != nil {
+				close(activityStarted)
+			}
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		return nil
+	}, activity.RegisterOptions{Name: activityName})
+
+	w.RegisterWorkflowWithOptions(func(ctx workflow.Context, localActivity bool, activityName string) error {
+		retryPolicy := temporal.RetryPolicy{MaximumAttempts: 2}
+		if localActivity {
+			ctx = workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+				StartToCloseTimeout: 5 * time.Second,
+				RetryPolicy:         &retryPolicy,
+			})
+			return workflow.ExecuteLocalActivity(ctx, activityName).Get(ctx, nil)
+		}
+
+		ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+			StartToCloseTimeout: 5 * time.Second,
+			RetryPolicy:         &retryPolicy,
+		})
+		return workflow.ExecuteActivity(ctx, activityName).Get(ctx, nil)
+	}, workflow.RegisterOptions{Name: workflowName})
+}
+
 func (ts *IntegrationTestSuite) TestActivityCancelFromWorkerShutdown() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-activity-cancel"), ts.workflows.WorkflowReactToCancel, false)
+	workflowName, activityName, activityStarted, firstStarted := ts.registerWorkerShutdownCancelWorkflow(ts.worker)
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-activity-cancel"), workflowName, false, activityName)
 	ts.NoError(err)
 
-	// Give the workflow time to run and run activity
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-activityStarted:
+	case <-time.After(10 * time.Second):
+		ts.FailNow("timed out waiting for activity to start")
+	}
+
 	ts.worker.Stop()
 	ts.workerStopped = true
 	// Now create a new worker on that same task queue to resume the work of the
 	// activity retry
 	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.registerWorkerShutdownCancelWorkflowWithNames(nextWorker, workflowName, activityName, nil, firstStarted)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
 
@@ -7813,17 +7930,23 @@ func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-local-activity-cancel"), ts.workflows.WorkflowReactToCancel, true)
+	workflowName, activityName, activityStarted, firstStarted := ts.registerWorkerShutdownCancelWorkflow(ts.worker)
+	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("test-local-activity-cancel"), workflowName, true, activityName)
 	ts.NoError(err)
 
-	// Give the workflow time to run and run activity
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-activityStarted:
+	case <-time.After(10 * time.Second):
+		ts.FailNow("timed out waiting for local activity to start")
+	}
+
 	ts.worker.Stop()
 	ts.workerStopped = true
 	// Now create a new worker on that same task queue to resume the work of the
 	// activity retry
 	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
 	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.registerWorkerShutdownCancelWorkflowWithNames(nextWorker, workflowName, activityName, nil, firstStarted)
 	ts.NoError(nextWorker.Start())
 	defer nextWorker.Stop()
 
@@ -7838,7 +7961,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityCancelFromWorkerShutdown() {
 			break
 		}
 
-		// WFT timeout should come from first worker stopping and LA being canceled
+		// WFT timeout should come from the first worker stopping while the LA is blocked.
 		if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT {
 			timeout_count++
 		}
@@ -7984,6 +8107,62 @@ func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown(
 	ts.Equal(1, wftStarted)
 	ts.Equal(2, laCompleted)
 	ts.True(wfeCompleted)
+}
+
+func (ts *IntegrationTestSuite) TestShutdownDuringActiveTimerActivityWorkflows() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	resp, err := ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkerPollCompleteOnShutdown() {
+		ts.T().Skip("server does not support worker_poll_complete_on_shutdown namespace capability")
+	}
+
+	const numWorkflows = 5
+	runs := make([]client.WorkflowRun, 0, numWorkflows)
+	defer func() {
+		for _, run := range runs {
+			_ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "test complete")
+		}
+	}()
+	for i := 0; i < numWorkflows; i++ {
+		run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:                       fmt.Sprintf("shutdown-active-timer-activity-%s-%d", uuid.NewString(), i),
+			TaskQueue:                ts.taskQueueName,
+			WorkflowExecutionTimeout: 30 * time.Second,
+			WorkflowTaskTimeout:      time.Second,
+			WorkflowIDReusePolicy:    enumspb.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE,
+		}, ts.workflows.ShutdownDuringActiveTimerActivityWorkflow)
+		ts.NoError(err)
+		runs = append(runs, run)
+	}
+
+	for _, run := range runs {
+		// Wait until each workflow has entered the timer/activity loop so
+		// shutdown overlaps active polling and dispatch instead of racing
+		// workflow startup.
+		ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_ACTIVITY_TASK_SCHEDULED, 10*time.Second)
+	}
+
+	shutdownStart := time.Now()
+	ts.worker.Stop()
+	ts.workerStopped = true
+	ts.Less(time.Since(shutdownStart), 5*time.Second)
+
+	for _, run := range runs {
+		history, err := ts.getHistory(run.GetID(), run.GetRunID())
+		ts.NoError(err)
+		for _, event := range history.Events {
+			switch event.GetEventType() {
+			case enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED, enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT:
+				ts.Failf("unexpected workflow task failure during shutdown",
+					"workflowID=%s runID=%s event=%s", run.GetID(), run.GetRunID(), event)
+			}
+		}
+	}
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
@@ -8974,6 +9153,24 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		ts.True(errors.Is(err, context.DeadlineExceeded) || errors.As(err, &serviceErr))
 		activityResultChan <- "" // allow activity to complete
 	})
+
+	ts.Run("Execute activity with start delay", func() {
+		startDelay := 2 * time.Second
+		options := makeOptions()
+		options.StartDelay = startDelay
+
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+		handle, err := ts.client.ExecuteActivity(ctx, options, activities.EmptyActivity)
+		ts.NoError(err)
+
+		err = handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+		ts.NoError(err)
+		ts.Greater(description.LastStartedTime.Sub(description.ScheduleTime), startDelay-500*time.Millisecond)
+	})
 }
 
 // poisonDataConverter wraps a DataConverter and fails ToPayloads when any of the
@@ -9044,18 +9241,7 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 	// Wait for a workflow task failure to appear. The first WFT succeeds (commands from defer
 	// CompleteSession are committed), but the second WFT fails when the same panic recurs during
 	// replay of the new events.
-	ts.Eventually(func() bool {
-		history, err := ts.getHistory(run.GetID(), run.GetRunID())
-		if err != nil {
-			return false
-		}
-		for _, event := range history.Events {
-			if event.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED {
-				return true
-			}
-		}
-		return false
-	}, 20*time.Second, 200*time.Millisecond, "timed out waiting for workflow task failure")
+	ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_WORKFLOW_TASK_FAILED, 20*time.Second)
 
 	// Stop the poison worker and restart with a normal DataConverter.
 	// This simulates the transient DC failure resolving. The new worker
@@ -9413,4 +9599,55 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 		ts.Error(err)
 		ts.Contains(err.Error(), "service is required")
 	})
+}
+
+func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	endpoint := "temporal-op-test-ep-" + uuid.NewString()
+	_, err := ts.client.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: endpoint,
+			Target: &nexuspb.EndpointTarget{
+				Variant: &nexuspb.EndpointTarget_Worker_{
+					Worker: &nexuspb.EndpointTarget_Worker{
+						Namespace: ts.config.Namespace,
+						TaskQueue: ts.taskQueueName,
+					},
+				},
+			},
+		},
+	})
+	ts.NoError(err)
+	temporalOpEndpoint = endpoint
+
+	startOpts := client.StartWorkflowOptions{
+		TaskQueue: ts.taskQueueName, WorkflowTaskTimeout: time.Second,
+	}
+
+	typedInput := "typed-wf-" + uuid.NewString()
+	untypedInput := "untyped-wf-" + uuid.NewString()
+	signalInput := "signal-wf-" + uuid.NewString()
+	for _, tc := range []struct {
+		name     string
+		wf       func(workflow.Context, string) (string, error)
+		input    string
+		expected string
+	}{
+		{"Sync result", ts.workflows.TemporalOpSyncCaller, "hello", "sync-hello"},
+		{"Async with StartWorkflow", ts.workflows.TemporalOpAsyncTypedCaller, typedInput, typedInput},
+		{"Async with StartUntypedWorkflow", ts.workflows.TemporalOpAsyncUntypedCaller, untypedInput, untypedInput},
+		{"Cancel", ts.workflows.TemporalOpCancelCaller, "cancel-wf-" + uuid.NewString(), ""},
+		{"Custom cancel with GetWorkflowClient", ts.workflows.TemporalOpCustomCancelCaller, "custom-cancel-wf-" + uuid.NewString(), ""},
+		{"GetWorkflowClient in Start", ts.workflows.TemporalOpClientInStartCaller, signalInput, "signaled-" + signalInput},
+	} {
+		ts.Run(tc.name, func() {
+			run, err := ts.client.ExecuteWorkflow(ctx, startOpts, tc.wf, tc.input)
+			ts.NoError(err)
+			var result string
+			ts.NoError(run.Get(ctx, &result))
+			ts.Equal(tc.expected, result)
+		})
+	}
 }

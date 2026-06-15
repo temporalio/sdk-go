@@ -219,6 +219,16 @@ type (
 	// ConnectionOptions are optional parameters that can be specified in ClientOptions
 	ConnectionOptions = internal.ConnectionOptions
 
+	// GrpcCompression controls gRPC compression for connections to the Temporal server.
+	GrpcCompression = internal.GrpcCompression
+
+	// GrpcCompressionGzip compresses outbound gRPC request bodies with gzip and
+	// accepts gzip-compressed responses. This is the default.
+	GrpcCompressionGzip = internal.GrpcCompressionGzip
+
+	// GrpcCompressionNone disables gRPC request compression.
+	GrpcCompressionNone = internal.GrpcCompressionNone
+
 	// Credentials are optional credentials that can be specified in ClientOptions.
 	Credentials = internal.Credentials
 

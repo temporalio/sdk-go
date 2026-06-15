@@ -85,9 +85,15 @@ type (
 		worker              *baseWorker
 		localActivityWorker *baseWorker
 		identity            string
-		stopC               chan struct{}
-		localActivityStopC  chan struct{}
-		stickyUUID          string // Used for ShutdownWorker call
+		// stopC is created by newWorkflowWorkerInternal, exposed through
+		// WorkerStopChannel to workflow task handling, passed to local activity
+		// contexts as the worker stop channel, and closed by workflowWorker.Stop().
+		stopC chan struct{}
+		// localActivityStopC is created by newWorkflowTaskWorkerInternal and exposed
+		// to the local activity tunnel. workflowWorker.Stop() closes it after the
+		// workflow worker stops, causing the tunnel to stop accepting local activity work.
+		localActivityStopC chan struct{}
+		stickyUUID         string // Used for ShutdownWorker call
 	}
 
 	// ActivityWorker wraps the code for hosting activity types.
@@ -98,7 +104,9 @@ type (
 		poller              taskPoller
 		worker              *baseWorker
 		identity            string
-		stopC               chan struct{}
+		// stopC is created by newActivityWorker, exposed through WorkerStopChannel
+		// to activity task polling/handling, and closed by activityWorker.Stop().
+		stopC chan struct{}
 	}
 
 	// sessionWorker wraps the code for hosting session creation, completion and
@@ -376,21 +384,23 @@ func newWorkflowTaskWorkerInternal(
 	}
 
 	bwo := baseWorkerOptions{
-		pollerRate:        defaultPollerRate,
-		slotSupplier:      params.Tuner.GetWorkflowTaskSlotSupplier(),
-		maxTaskPerSecond:  defaultWorkerTaskExecutionRate,
-		taskPollers:       scalableTaskPollers,
-		taskProcessor:     taskProcessor,
-		workerType:        "WorkflowWorker",
-		identity:          params.Identity,
-		buildId:           params.getBuildID(),
-		deploymentOptions: params.DeploymentOptions,
-		logger:            params.Logger,
-		stopTimeout:       params.WorkerStopTimeout,
-		fatalErrCb:        params.WorkerFatalErrorCallback,
-		metricsHandler:    params.MetricsHandler,
+		pollerRate:                   defaultPollerRate,
+		slotSupplier:                 params.Tuner.GetWorkflowTaskSlotSupplier(),
+		maxTaskPerSecond:             defaultWorkerTaskExecutionRate,
+		taskPollers:                  scalableTaskPollers,
+		taskProcessor:                taskProcessor,
+		workerType:                   "WorkflowWorker",
+		identity:                     params.Identity,
+		buildId:                      params.getBuildID(),
+		deploymentOptions:            params.DeploymentOptions,
+		logger:                       params.Logger,
+		stopTimeout:                  params.WorkerStopTimeout,
+		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		metricsHandler:               params.MetricsHandler,
+		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_UNSPECIFIED,
 		},
 	}
 
@@ -438,7 +448,8 @@ func newWorkflowTaskWorkerInternal(
 		fatalErrCb:     laParams.WorkerFatalErrorCallback,
 		metricsHandler: laParams.MetricsHandler,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 	},
 	)
@@ -475,11 +486,6 @@ func (ww *workflowWorker) Stop() {
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
-	// Session workers poll on resource-specific task queues not included in
-	// ShutdownWorker, so the server will never cancel their polls. Use the
-	// legacy immediate-cancel path instead of graceful shutdown.
-	params.workerPollCompleteOnShutdown = &atomic.Bool{}
-
 	if params.Identity == "" {
 		params.Identity = getWorkerIdentity(params.TaskQueue)
 	}
@@ -543,6 +549,19 @@ func (sw *sessionWorker) Stop() {
 	sw.activityWorker.Stop()
 }
 
+func (sw *sessionWorker) getCreationWorkerTaskQueue() string {
+	return sw.creationWorker.executionParameters.TaskQueue
+}
+
+func (sw *sessionWorker) getActivityWorkerTaskQueue() string {
+	return sw.activityWorker.executionParameters.TaskQueue
+}
+
+func (sw *sessionWorker) stopPolling() {
+	sw.creationWorker.worker.stopPolling()
+	sw.activityWorker.worker.stopPolling()
+}
+
 func newActivityWorker(
 	client *WorkflowClient,
 	params workerExecutionParameters,
@@ -580,18 +599,20 @@ func newActivityWorker(
 		taskPollers: []scalableTaskPoller{
 			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, metrics.PollerTypeActivityTask, params.serverSupportsAutoscaling),
 		},
-		taskProcessor:           poller,
-		workerType:              "ActivityWorker",
-		identity:                params.Identity,
-		buildId:                 params.getBuildID(),
-		logger:                  params.Logger,
-		stopTimeout:             params.WorkerStopTimeout,
-		fatalErrCb:              params.WorkerFatalErrorCallback,
-		backgroundContextCancel: params.BackgroundContextCancel,
-		metricsHandler:          params.MetricsHandler,
-		sessionTokenBucket:      sessionTokenBucket,
+		taskProcessor:                poller,
+		workerType:                   "ActivityWorker",
+		identity:                     params.Identity,
+		buildId:                      params.getBuildID(),
+		logger:                       params.Logger,
+		stopTimeout:                  params.WorkerStopTimeout,
+		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		backgroundContextCancel:      params.BackgroundContextCancel,
+		metricsHandler:               params.MetricsHandler,
+		sessionTokenBucket:           sessionTokenBucket,
+		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
-			taskQueue: params.TaskQueue,
+			taskQueue:     params.TaskQueue,
+			taskQueueKind: enumspb.TASK_QUEUE_KIND_NORMAL,
 		},
 	}
 
@@ -1200,7 +1221,10 @@ type AggregatedWorker struct {
 	// Stores a boolean indicating whether the worker has already been started.
 	started      atomic.Bool
 	shuttingDown atomic.Bool
-	stopC        chan struct{}
+	// stopC is created in NewAggregatedWorker and closed by AggregatedWorker.Stop()
+	// to mark the aggregated worker stopped, unblock Run(), and prevent restart.
+	// Child worker stop channels are closed later by their own Stop methods.
+	stopC chan struct{}
 	fatalErr     error
 	fatalErrLock sync.Mutex
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities
@@ -1515,18 +1539,21 @@ func (aw *AggregatedWorker) Stop() {
 	// but before ShutdownWorker is sent, causing the poller to loop and
 	// re-poll.
 	if !util.IsInterfaceNil(aw.activityWorker) {
-		aw.activityWorker.worker.noRepoll.Store(true)
+		aw.activityWorker.worker.stopPolling()
 	}
 	if !util.IsInterfaceNil(aw.workflowWorker) {
-		aw.workflowWorker.worker.noRepoll.Store(true)
+		aw.workflowWorker.worker.stopPolling()
 	}
 	if !util.IsInterfaceNil(aw.nexusWorker) {
-		aw.nexusWorker.worker.noRepoll.Store(true)
+		aw.nexusWorker.worker.stopPolling()
+	}
+	if !util.IsInterfaceNil(aw.sessionWorker) {
+		aw.sessionWorker.stopPolling()
 	}
 
 	close(aw.stopC)
 
-	aw.shutdownWorker()
+	aw.sendShutdownWorkerRPC()
 
 	// Issue stop through plugins
 	stop := func(context.Context, WorkerPluginStopWorkerOptions) {
@@ -1576,12 +1603,12 @@ func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
 	aw.client.heartbeatManager.unregisterWorker(aw)
 }
 
-// shutdownWorker sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
+// sendShutdownWorkerRPC sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
 // When StickyTaskQueue is non-empty, this is a best-effort attempt to indicate to Matching service
 // that this workflow task poller's sticky queue will no longer be polled.
 //
 // NOTE: errors are logged but don't fail the shutdown.
-func (aw *AggregatedWorker) shutdownWorker() {
+func (aw *AggregatedWorker) sendShutdownWorkerRPC() {
 	aw.shuttingDown.Store(true)
 
 	ctx := context.Background()
@@ -1598,6 +1625,35 @@ func (aw *AggregatedWorker) shutdownWorker() {
 		stickyTaskQueue = getWorkerTaskQueue(aw.workflowWorker.stickyUUID)
 	}
 
+	aw.sendShutdownWorkerRPCForTaskQueue(grpcCtx, aw.executionParams.TaskQueue, stickyTaskQueue, aw.activeTaskQueueTypes(), heartbeat)
+
+	if util.IsInterfaceNil(aw.sessionWorker) {
+		return
+	}
+
+	aw.sendShutdownWorkerRPCForTaskQueue(
+		grpcCtx,
+		aw.sessionWorker.getCreationWorkerTaskQueue(),
+		"",
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		nil,
+	)
+	aw.sendShutdownWorkerRPCForTaskQueue(
+		grpcCtx,
+		aw.sessionWorker.getActivityWorkerTaskQueue(),
+		"",
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		nil,
+	)
+}
+
+func (aw *AggregatedWorker) sendShutdownWorkerRPCForTaskQueue(
+	grpcCtx context.Context,
+	taskQueue string,
+	stickyTaskQueue string,
+	taskQueueTypes []enumspb.TaskQueueType,
+	heartbeat *workerpb.WorkerHeartbeat,
+) {
 	_, err := aw.client.workflowService.ShutdownWorker(grpcCtx, &workflowservice.ShutdownWorkerRequest{
 		Namespace:         aw.executionParams.Namespace,
 		StickyTaskQueue:   stickyTaskQueue,
@@ -1605,8 +1661,8 @@ func (aw *AggregatedWorker) shutdownWorker() {
 		Reason:            "graceful shutdown",
 		WorkerHeartbeat:   heartbeat,
 		WorkerInstanceKey: aw.workerInstanceKey,
-		TaskQueue:         aw.executionParams.TaskQueue,
-		TaskQueueTypes:    aw.activeTaskQueueTypes(),
+		TaskQueue:         taskQueue,
+		TaskQueueTypes:    taskQueueTypes,
 	})
 
 	// Ignore unimplemented (server doesn't support it)
@@ -1632,7 +1688,6 @@ func (aw *AggregatedWorker) activeTaskQueueTypes() []enumspb.TaskQueueType {
 	}
 	return types
 }
-
 
 // WorkflowReplayer is used to replay workflow code from an event history
 type WorkflowReplayer struct {

@@ -766,11 +766,19 @@ type ClientPollActivityResultOutput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientExecuteNexusOperationInput]
 type ClientExecuteNexusOperationInput struct {
-	Options       *ClientStartNexusOperationOptions
-	Endpoint      string
-	Service       string
+	// Options are the options for starting the Nexus operation.
+	Options *ClientStartNexusOperationOptions
+	// Endpoint is the Nexus endpoint to invoke.
+	Endpoint string
+	// Service is the Nexus service to invoke.
+	Service string
+	// OperationType is the Nexus operation type to invoke.
 	OperationType string
-	Input         interface{}
+	// Input is the input to the Nexus operation.
+	Input interface{}
+	// NexusHeader is the Nexus header to attach to the operation request.
+	// Interceptors may read and write this header.
+	NexusHeader nexus.Header
 }
 
 // ClientGetNexusOperationHandleInput is the input to
@@ -780,8 +788,10 @@ type ClientExecuteNexusOperationInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientGetNexusOperationHandleInput]
 type ClientGetNexusOperationHandleInput struct {
+	// OperationID is the ID of the Nexus operation.
 	OperationID string
-	RunID       string
+	// RunID is the run ID of the Nexus operation.
+	RunID string
 }
 
 // ClientCancelNexusOperationInput is the input to
@@ -791,9 +801,12 @@ type ClientGetNexusOperationHandleInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientCancelNexusOperationInput]
 type ClientCancelNexusOperationInput struct {
+	// OperationID is the ID of the Nexus operation.
 	OperationID string
-	RunID       string
-	Reason      string
+	// RunID is the run ID of the Nexus operation to cancel.
+	RunID string
+	// Reason is the reason for cancellation.
+	Reason string
 }
 
 // ClientTerminateNexusOperationInput is the input to
@@ -803,9 +816,12 @@ type ClientCancelNexusOperationInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientTerminateNexusOperationInput]
 type ClientTerminateNexusOperationInput struct {
+	// OperationID is the ID of the Nexus operation.
 	OperationID string
-	RunID       string
-	Reason      string
+	// RunID is the run ID of the Nexus operation to terminate.
+	RunID string
+	// Reason is the reason for termination.
+	Reason string
 }
 
 // ClientDescribeNexusOperationInput is the input to
@@ -815,8 +831,10 @@ type ClientTerminateNexusOperationInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeNexusOperationInput]
 type ClientDescribeNexusOperationInput struct {
+	// OperationID is the ID of the Nexus operation.
 	OperationID string
-	RunID       string
+	// RunID is the run ID of the Nexus operation to describe.
+	RunID string
 }
 
 // ClientDescribeNexusOperationOutput is the output of
@@ -826,6 +844,7 @@ type ClientDescribeNexusOperationInput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeNexusOperationOutput]
 type ClientDescribeNexusOperationOutput struct {
+	// Description is the description of the Nexus operation.
 	Description *ClientNexusOperationExecutionDescription
 }
 
@@ -836,8 +855,10 @@ type ClientDescribeNexusOperationOutput struct {
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientPollNexusOperationResultInput]
 type ClientPollNexusOperationResultInput struct {
+	// OperationID is the ID of the Nexus operation.
 	OperationID string
-	RunID       string
+	// RunID is the run ID of the Nexus operation to poll results for.
+	RunID string
 }
 
 // ClientPollNexusOperationResultOutput is the output of

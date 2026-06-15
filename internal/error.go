@@ -205,6 +205,8 @@ type (
 		WorkflowRunTimeout  time.Duration
 		// WorkflowTaskTimeout is the maximum execution time of a single Workflow Task.
 		WorkflowTaskTimeout time.Duration
+		// BackoffStartInterval is the initial backoff before the continued workflow execution starts.
+		BackoffStartInterval time.Duration
 
 		// Deprecated: WorkflowExecutionTimeout is deprecated and is never set or
 		// used internally.
@@ -240,6 +242,10 @@ type (
 		// RetryPolicy specifies the retry policy to be used for the next run.
 		// If nil, the current workflow's retry policy will be used.
 		RetryPolicy *RetryPolicy
+
+		// BackoffStartInterval specifies the delay before the first workflow task
+		// of the next run is scheduled.
+		BackoffStartInterval time.Duration
 
 		// InitialVersioningBehavior specifies the versioning behavior that the first task of the new run should use.
 		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
@@ -610,6 +616,7 @@ func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOpt
 		if options.RetryPolicy != nil {
 			continueAsNewErr.RetryPolicy = options.RetryPolicy
 		}
+		continueAsNewErr.BackoffStartInterval = options.BackoffStartInterval
 		continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
 	}
 
