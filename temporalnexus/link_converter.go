@@ -82,6 +82,10 @@ func ConvertNexusLinkToLinkWorkflowEvent(link nexus.Link) (*commonpb.Link_Workfl
 		)
 	}
 
+	if link.URL == nil {
+		return nil, fmt.Errorf("failed to parse link to Link_WorkflowEvent: empty URL")
+	}
+
 	if link.URL.Scheme != urlSchemeTemporalKey {
 		return nil, fmt.Errorf(
 			"failed to parse link to Link_WorkflowEvent: invalid scheme: %s",
