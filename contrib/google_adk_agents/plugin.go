@@ -15,6 +15,7 @@ package googleadk
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"go.temporal.io/sdk/temporal"
@@ -88,6 +89,16 @@ type Options struct {
 	// MCP Activities. A zero StartToCloseTimeout defaults to one minute.
 	ToolActivityOptions workflow.ActivityOptions
 
+	// InWorkflowToolNames lists tool names whose handlers run inside the workflow
+	// coroutine instead of being dispatched to the CallTool Activity. Use it only
+	// for pure, deterministic, replay-safe tools — no network, clock, randomness,
+	// or goroutines — because their Run executes in the workflow and is re-executed
+	// on replay, with no Activity-level retry or timeout isolation. This is for
+	// plain function tools; ActivityAsTool and MCP tools are inherently
+	// activity-bound and will error if named here. ADK's built-in control tools
+	// (transfer_to_agent, exit_loop) always run in-workflow regardless of this list.
+	InWorkflowToolNames []string
+
 	// PerModelTimeouts overrides StartToCloseTimeout per model name, keyed by
 	// the model string carried in LLMRequest.Model. Use it to give thinking
 	// models a longer budget than fast models.
@@ -160,9 +171,10 @@ func (o Options) beforeModel(cctx agent.CallbackContext, req *model.LLMRequest) 
 func (o Options) beforeTool(tctx agent.ToolContext, t tool.Tool, args map[string]any) (map[string]any, error) {
 	// ADK's built-in control tools (agent transfer, loop exit) only mutate the
 	// invocation's actions — they are pure, deterministic and carry no I/O, so
-	// they run in-workflow. Returning (nil, nil) tells ADK to run the real tool
-	// rather than short-circuiting into an Activity.
-	if inWorkflowToolNames[t.Name()] {
+	// they run in-workflow. Callers may opt additional pure-compute tools into the
+	// same path via Options.InWorkflowToolNames. Returning (nil, nil) tells ADK to
+	// run the real tool rather than short-circuiting into an Activity.
+	if inWorkflowToolNames[t.Name()] || slices.Contains(o.InWorkflowToolNames, t.Name()) {
 		return nil, nil
 	}
 

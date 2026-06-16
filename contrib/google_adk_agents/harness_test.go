@@ -82,6 +82,11 @@ type runResult struct {
 // dispatch path rather than merely being stored on Options.
 var summaryFnCalled atomic.Bool
 
+// inWorkflowToolRan is flipped by the pure-compute tool that
+// inWorkflowToolWorkflow opts into in-workflow execution, proving its handler ran
+// inside the workflow coroutine rather than in a CallTool Activity.
+var inWorkflowToolRan atomic.Bool
+
 // agentBuild is the fully-built input to runAgent: a real ADK agent tree plus the
 // plugin options and context options used to drive it.
 type agentBuild struct {

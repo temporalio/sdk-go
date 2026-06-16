@@ -109,6 +109,47 @@ func TestActivityAsToolRoundTrip(t *testing.T) {
 	assert.Equal(t, 0, counter.get(googleadk.CallToolActivityName))
 }
 
+// TestInWorkflowToolRunsInWorkflow proves the Options.InWorkflowToolNames opt-in:
+// a pure-compute function tool named in that list has its Run executed inside the
+// workflow coroutine instead of being dispatched to the CallTool Activity. The
+// tool is deliberately absent from the worker-side Tools registry, so a clean
+// completion — with its result fed back to the model and zero CallTool Activities
+// scheduled — proves it never crossed the Activity boundary.
+func TestInWorkflowToolRunsInWorkflow(t *testing.T) {
+	inWorkflowToolRan.Store(false)
+
+	var s testsuite.WorkflowTestSuite
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(inWorkflowToolWorkflow)
+	// Only the model factory is wired worker-side; "compute" is intentionally not
+	// in the Tools registry, so a CallTool dispatch would fail as an unknown tool.
+	counter := wireActivities(t, env, googleadk.Config{
+		Models: map[string]googleadk.ModelFactory{
+			"fake-model": scriptedModelFactory(
+				googleadk.FunctionCallResponse("call-1", "compute", map[string]any{}),
+				googleadk.TextResponse("done"),
+			),
+		},
+	})
+
+	env.ExecuteWorkflow(inWorkflowToolWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var res runResult
+	require.NoError(t, env.GetWorkflowResult(&res))
+	assert.Contains(t, res.FunctionCalls, "compute")
+	assert.Contains(t, res.ToolResponses, "compute")
+	assert.Contains(t, res.Texts, "done")
+
+	// The handler ran inside the workflow coroutine, and the model still took its
+	// two turns — but no CallTool Activity was ever scheduled.
+	assert.True(t, inWorkflowToolRan.Load(), "in-workflow tool handler must have executed")
+	assert.Equal(t, 2, counter.get(googleadk.InvokeModelActivityName))
+	assert.Equal(t, 0, counter.get(googleadk.CallToolActivityName))
+}
+
 // TestToolStateViewIsImmutable proves the snapshot shipped to a tool Activity
 // exposes session state as read-only: a worker-side mutation attempt fails
 // loudly rather than silently evaporating.
@@ -180,6 +221,26 @@ func activityAsToolWorkflow(ctx workflow.Context) (runResult, error) {
 		modelName:   "fake-model",
 		userMessage: "weather in Paris",
 		tools:       []tool.Tool{weatherTool},
+	})
+}
+
+// inWorkflowToolWorkflow registers a pure-compute function tool and opts it into
+// in-workflow execution via Options.InWorkflowToolNames, then runs the agent. The
+// handler flips inWorkflowToolRan and returns a constant result; the tool is not
+// registered worker-side, so it can only succeed by running in-workflow.
+func inWorkflowToolWorkflow(ctx workflow.Context) (runResult, error) {
+	compute, err := funcTool("compute", func(agent.ToolContext, map[string]any) (map[string]any, error) {
+		inWorkflowToolRan.Store(true)
+		return map[string]any{"result": "computed-in-workflow"}, nil
+	})
+	if err != nil {
+		return runResult{}, err
+	}
+	return runAgent(ctx, agentBuild{
+		opts:        googleadk.Options{InWorkflowToolNames: []string{"compute"}},
+		modelName:   "fake-model",
+		userMessage: "compute it",
+		tools:       []tool.Tool{compute},
 	})
 }
 
