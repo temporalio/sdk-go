@@ -193,12 +193,19 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewError]
 	ContinueAsNewError struct {
 		// params *ExecuteWorkflowParams
-		WorkflowType         *WorkflowType
-		Input                *commonpb.Payloads
-		Header               *commonpb.Header
-		TaskQueueName        string
-		WorkflowRunTimeout   time.Duration
-		WorkflowTaskTimeout  time.Duration
+		// WorkflowType is the type of the workflow.
+		WorkflowType        *WorkflowType
+		// Input is the arguments for the continued workflow execution.
+		Input               *commonpb.Payloads
+		// Header is the header of the workflow.
+		Header              *commonpb.Header
+		// TaskQueueName is the task queue that the workflow is running on.
+		TaskQueueName       string
+		// WorkflowRunTimeout is the timeout for a single run of the workflow execution.
+		WorkflowRunTimeout  time.Duration
+		// WorkflowTaskTimeout is the maximum execution time of a single Workflow Task.
+		WorkflowTaskTimeout time.Duration
+		// BackoffStartInterval is the initial backoff before the continued workflow execution starts.
 		BackoffStartInterval time.Duration
 
 		// Deprecated: WorkflowExecutionTimeout is deprecated and is never set or
