@@ -2740,6 +2740,7 @@ func TestUpdate(t *testing.T) {
 		require.NotNil(t, output.Result)
 		payloads := converter.GetPayloads(output.Result)
 		require.NotNil(t, payloads)
+                require.Equal(t, outPayloads, payloads)
 		require.Len(t, payloads.GetPayloads(), 1)
 	})
 	t.Run("sync error exposes failure proto", func(t *testing.T) {
