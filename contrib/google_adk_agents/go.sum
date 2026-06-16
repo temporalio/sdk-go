@@ -4,6 +4,8 @@ cloud.google.com/go/auth v0.20.0 h1:kXTssoVb4azsVDoUiF8KvxAqrsQcQtB53DcSgta74CA=
 cloud.google.com/go/auth v0.20.0/go.mod h1:942/yi/itH1SsmpyrbnTMDgGfdy2BUqIKyd0cyYLc5Q=
 cloud.google.com/go/compute/metadata v0.9.0 h1:pDUj4QMoPejqq20dK0Pg2N4yG9zIkYGdBtwLoEkH9Zs=
 cloud.google.com/go/compute/metadata v0.9.0/go.mod h1:E0bWwX5wTnLPedCKqk3pJmVgCBSM6qQI1yTBdEb3C10=
+github.com/DABH/adk-go v1.4.1-0.20260615181608-33910a3715c2 h1:Zm9FjeMM+uTgGxqzoADa8jg8UWsSN63F5bftsD6GGy8=
+github.com/DABH/adk-go v1.4.1-0.20260615181608-33910a3715c2/go.mod h1:kmzzFxl787QWuKxdab74upPCeoM6u8BDSmQa/VvmQ7w=
 github.com/cespare/xxhash/v2 v2.3.0 h1:UL815xU9SqsFlibzuggzjXhog7bL6oX9BbNZnL2UFvs=
 github.com/cespare/xxhash/v2 v2.3.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
@@ -131,8 +133,6 @@ golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543/go.mod h1:I/5z698sn9Ka8T
 golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1/go.mod h1:I/5z698sn9Ka8TeJc9MKroUUfqBBauWjQqLJ2OPfmY0=
 gonum.org/v1/gonum v0.17.0 h1:VbpOemQlsSMrYmn7T2OUvQ4dqxQXU+ouZFQsZOx50z4=
 gonum.org/v1/gonum v0.17.0/go.mod h1:El3tOrEuMpv2UdMrbNlKEh9vd86bmQ6vqIcDwxEOc1E=
-google.golang.org/adk v1.4.1-0.20260615060117-c6f168f5fd62 h1:notxH26hHo6ZeLsuYmqzvjy9ZGuAVvR3dnlrF7SBFjs=
-google.golang.org/adk v1.4.1-0.20260615060117-c6f168f5fd62/go.mod h1:kmzzFxl787QWuKxdab74upPCeoM6u8BDSmQa/VvmQ7w=
 google.golang.org/api v0.279.0 h1:hsx2M2OaRcaKtVYK6vXEUnQvdjnend7ZYES+lYaot74=
 google.golang.org/api v0.279.0/go.mod h1:B9TqLBwJqVjp1mtt7WeoQwWRwvu/400y5lETOql+giQ=
 google.golang.org/genai v1.57.0 h1:qTyG2ynz5dQy2jF4CvZdLHHVslhR0heMue+zM1a4GNM=

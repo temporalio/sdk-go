@@ -1,43 +1,41 @@
-// Package google_adk_agents makes a Google Agent Development Kit (adk-go)
-// agent durable, recoverable, and replay-safe by running it under a Temporal
-// Go worker.
+// Copyright 2026 Google LLC, Temporal Technologies Inc.
 //
-// # What it does
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// You keep writing native adk-go: build a model with gemini.NewModel, an
-// agent with llmagent.New, register tools and sub-agents, and assemble a
-// runner with runner.New. You wrap that wiring in an [AgentFactory] and
-// register it under a name. The plugin then executes each conversational
-// turn — one full runner.Run — inside a Temporal Activity, orchestrated by a
-// durable [AgentSessionWorkflow] that owns the conversation state, retries
-// transient model failures, supports human-in-the-loop tool confirmation,
-// streams partial output, and continue-as-news long conversations.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// # Turn-as-activity model
-//
-// The Go Temporal SDK runs workflow code on a single cooperative coroutine
-// dispatcher: native goroutines, channels, time.Sleep, and context.Context
-// I/O are non-deterministic and disallowed inside a workflow. adk-go's flow
-// uses all of those (parallel tool execution, channel-based streaming, sleep
-// backoff, real network I/O). The two runtimes therefore cannot be
-// interleaved. Instead of reimplementing ADK's loop, this plugin runs one
-// complete runner.Run turn inside a single Activity ("turn-as-activity") and
-// lets a durable workflow orchestrate turns and own the durable session
-// snapshot.
-//
-// Durability and retry granularity are therefore per turn, not per LLM call:
-// a mid-turn failure re-runs the whole turn. The determinism seams in
-// [WithDeterministicProviders] give reproducible event IDs and timestamps
-// across Activity retries and continue-as-new.
-//
-// # Security
-//
-// Model credentials and live objects (the agent tree, model, tools, session
-// service) never cross the Activity boundary. A [TurnInput] carries only the
-// agent NAME; the worker-side [AgentFactory] reconstructs everything,
-// keeping API keys in the worker process.
-package google_adk_agents
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 
-// PluginName is the telemetry identifier for this integration, in
-// <library>.<plugin> form.
-const PluginName = "google.AdkAgentsPlugin"
+// Package googleadk makes Google ADK (adk-go) agents durable and replay-safe
+// under Temporal without forcing a rewrite of the agent.
+//
+// A user builds their agent the native ADK way — llmagent.New with a model.LLM,
+// tool.Tools / tool.Toolsets and SubAgents, wrapped in runner.New and driven by
+// Runner.Run. To make it durable they add exactly two things:
+//
+//  1. The ADK *plugin.Plugin returned by [Plugin] to their runner.Config, which
+//     routes every LLM call and every tool call through a Temporal Activity via
+//     ADK's BeforeModelCallback / BeforeToolCallback short-circuit seam.
+//  2. The bridged context.Context returned by [NewContext], passed to Runner.Run,
+//     which installs Temporal-deterministic providers for time, UUIDs and
+//     concurrent fan-out on the ADK platform seams.
+//
+// The agent's orchestration loop then runs inside a Temporal Workflow while the
+// real model and tool handlers live worker-side in the Activity registry built
+// by [NewActivities]. The user's model.LLM and tool handlers are never invoked
+// inside the workflow.
+//
+// This package depends on the deterministic platform seams
+// (platform.WithTimeProvider, platform.WithUUIDProvider and
+// platform.WithTaskRunner) that currently exist only on the
+// add-platform-task-runner-seam branch of github.com/DABH/adk-go. See go.mod.
+package googleadk
+
+// PluginName identifies this integration for Temporal telemetry and usage
+// attribution. It follows the library.PluginName convention used across the
+// Temporal SDK contrib plugins.
+const PluginName = "google_adk_agents"

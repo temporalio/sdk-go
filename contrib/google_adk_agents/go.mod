@@ -3,10 +3,12 @@ module go.temporal.io/sdk/contrib/google_adk_agents
 go 1.25.0
 
 require (
+	github.com/google/uuid v1.6.0
+	github.com/nexus-rpc/sdk-go v0.6.0
 	github.com/stretchr/testify v1.11.1
-	go.temporal.io/api v1.62.12
-	go.temporal.io/sdk v1.44.2-0.20260615053435-1955d18980da
-	google.golang.org/adk v1.4.1-0.20260615060117-c6f168f5fd62
+	go.temporal.io/sdk v1.44.1
+	go.temporal.io/sdk/contrib/workflowstreams v0.0.0-00010101000000-000000000000
+	google.golang.org/adk v0.0.0
 	google.golang.org/genai v1.57.0
 )
 
@@ -26,13 +28,11 @@ require (
 	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/safehtml v0.1.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.15 // indirect
 	github.com/googleapis/gax-go/v2 v2.22.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0 // indirect
-	github.com/nexus-rpc/sdk-go v0.6.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
@@ -42,6 +42,7 @@ require (
 	go.opentelemetry.io/otel/log v0.19.0 // indirect
 	go.opentelemetry.io/otel/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
+	go.temporal.io/api v1.62.12 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
@@ -58,4 +59,18 @@ require (
 	rsc.io/ordered v1.1.1 // indirect
 )
 
+// Build against the in-repo SDK and the sibling workflowstreams module. The SDK
+// at the repo root carries the exception that permits workflowstreams to register
+// handlers under the "__temporal_workflow_stream_" sub-namespace (rejected by the
+// released v1.44.1 as a reserved "__temporal_" prefix); workflowstreams publishes
+// streaming chunks by signaling the parent workflow.
 replace go.temporal.io/sdk => ../../
+
+replace go.temporal.io/sdk/contrib/workflowstreams => ../workflowstreams
+
+// The deterministic platform seams (WithTaskRunner / RunTasks alongside
+// WithTimeProvider / WithUUIDProvider) that this plugin depends on currently live
+// only on the add-platform-task-runner-seam branch of github.com/DABH/adk-go
+// (commit 33910a3). Drop this replace once the seams land on upstream
+// google/adk-go and google.golang.org/adk can be fetched directly with `go get`.
+replace google.golang.org/adk => github.com/DABH/adk-go v1.4.1-0.20260615181608-33910a3715c2

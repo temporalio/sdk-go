@@ -1,123 +1,197 @@
-package google_adk_agents_test
+// Copyright 2026 Google LLC, Temporal Technologies Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+
+package googleadk_test
 
 import (
 	"context"
-	"sort"
-	"sync/atomic"
+	"sync"
 	"testing"
+	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
 	"go.temporal.io/sdk/activity"
-	adk "go.temporal.io/sdk/contrib/google_adk_agents"
 	"go.temporal.io/sdk/testsuite"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
+	"go.temporal.io/sdk/workflow"
+
+	"google.golang.org/adk/agent"
 	"google.golang.org/adk/tool"
-	"google.golang.org/genai"
+
+	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 )
 
-// addArgs/addResult are the JSON-tagged shapes an activity-style tool function
-// exchanges with the model. functiontool derives the tool's parameter schema
-// from these by reflection.
-type addArgs struct {
-	A int `json:"a"`
-	B int `json:"b"`
-}
-type addResult struct {
-	Sum int `json:"sum"`
-}
-
-// TestActivityAsToolRunsInTurn proves the ActivityAsTool primitive end-to-end:
-// an existing Temporal-activity-shaped function (func(ctx, args) (res, error))
-// is wrapped as an adk-go tool, registered on a native agent, and actually
-// invoked by the model during a real turn driven through RunTurnActivity. The
-// model emits a function call, ADK executes the wrapped Go function in-process,
-// and the model's follow-up text lands in the durable snapshot.
-func TestActivityAsToolRunsInTurn(t *testing.T) {
-	var toolCalls int32
-
-	// An existing activity-shaped function. In production this is the body of
-	// an @activity.defn-style function the user already has.
-	add := func(_ context.Context, args addArgs) (addResult, error) {
-		atomic.AddInt32(&toolCalls, 1)
-		return addResult{Sum: args.A + args.B}, nil
-	}
-	addTool, err := adk.ActivityAsTool("add", "adds two integers a and b", add)
-	require.NoError(t, err)
-
-	// A model that first calls the tool, then replies with the answer.
-	factory := func(_ context.Context) (*adk.AgentRunner, error) {
-		fnCall := genai.NewContentFromParts([]*genai.Part{{
-			FunctionCall: &genai.FunctionCall{ID: "fc-1", Name: "add", Args: map[string]any{"a": 2, "b": 3}},
-		}}, genai.RoleModel)
-		m := adk.NewMockModelWithResponses("calc",
-			&model.LLMResponse{Content: fnCall},
-			&model.LLMResponse{Content: modelMessage("the sum is 5"), TurnComplete: true},
-		)
-		ag, aerr := llmagent.New(llmagent.Config{
-			Name:        "calc",
-			Description: "calculator",
-			Model:       m,
-			Tools:       []tool.Tool{addTool},
-		})
-		if aerr != nil {
-			return nil, aerr
-		}
-		svc := session.InMemoryService()
-		r, rerr := runner.New(runner.Config{AppName: "calc", Agent: ag, SessionService: svc})
-		if rerr != nil {
-			return nil, rerr
-		}
-		return &adk.AgentRunner{Runner: r, SessionService: svc, AppName: "calc"}, nil
-	}
-
-	reg := adk.NewAgentRegistry()
-	reg.Register("calc", factory)
-	acts := adk.NewActivities(reg, adk.Options{})
-
-	env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
-	env.RegisterActivityWithOptions(acts.RunTurnActivity, activity.RegisterOptions{Name: adk.ActivityNameRunTurn})
-
-	val, err := env.ExecuteActivity(adk.ActivityNameRunTurn, adk.TurnInput{
-		AgentName: "calc", AppName: "calc", UserID: "u", SessionID: "s",
-		Message: userMessage("what is 2 + 3?"),
+// TestFunctionToolRunsAsActivity is an end-to-end test of the tool path: the
+// model scripts a function call, the plugin short-circuits BeforeToolCallback
+// into the CallTool Activity, the worker-side tool runs and returns a result,
+// and the model's next turn produces the final answer.
+func TestFunctionToolRunsAsActivity(t *testing.T) {
+	var gotArgs map[string]any
+	var mu sync.Mutex
+	echo := recordingTool(t, "echo", map[string]any{"echoed": "hi"}, func(args map[string]any) {
+		mu.Lock()
+		gotArgs = args
+		mu.Unlock()
 	})
-	require.NoError(t, err)
-	var res adk.TurnResult
-	require.NoError(t, val.Get(&res))
 
-	require.Equal(t, int32(1), atomic.LoadInt32(&toolCalls), "the wrapped activity function must run in-process during the turn")
-	require.True(t, containsText(res.Events, "the sum is 5"), "the model's post-tool reply must be recorded")
-}
-
-// TestActivityAsToolRejectsNilFunc: a nil function is a programming error caught
-// at construction, not deferred to a turn.
-func TestActivityAsToolRejectsNilFunc(t *testing.T) {
-	_, err := adk.ActivityAsTool[addArgs, addResult]("add", "adds", nil)
-	require.Error(t, err)
-}
-
-// TestRegistryNamesAndMockCalls covers the registry's Names introspection and
-// MockModel's call counter — both used by operators wiring and asserting on a
-// worker.
-func TestRegistryNamesAndMockCalls(t *testing.T) {
-	m := adk.NewMockModel("m", modelMessage("hi"))
-	reg := adk.NewAgentRegistry()
-	reg.Register("english", newAgentFactory("english", m))
-	reg.Register("french", newAgentFactory("french", adk.NewMockModel("fr", modelMessage("bonjour"))))
-
-	names := reg.Names()
-	sort.Strings(names)
-	require.Equal(t, []string{"english", "french"}, names)
-
-	acts := adk.NewActivities(reg, adk.Options{})
-	env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
-	env.RegisterActivityWithOptions(acts.RunTurnActivity, activity.RegisterOptions{Name: adk.ActivityNameRunTurn})
-	_, err := env.ExecuteActivity(adk.ActivityNameRunTurn, adk.TurnInput{
-		AgentName: "english", AppName: "english", UserID: "u", SessionID: "s", Message: userMessage("hi"),
+	var s testsuite.WorkflowTestSuite
+	env, counter := newEnv(t, &s, googleadk.Config{
+		Models: map[string]googleadk.ModelFactory{
+			"fake-model": scriptedModelFactory(
+				googleadk.FunctionCallResponse("call-1", "echo", map[string]any{"msg": "hi"}),
+				googleadk.TextResponse("done"),
+			),
+		},
+		Tools: []tool.Tool{echo},
 	})
+
+	env.ExecuteWorkflow(agentRunWorkflow, runInput{
+		ModelName:   "fake-model",
+		UserMessage: "please echo",
+		Tools:       []toolSpec{{Name: "echo", Description: "echoes input"}},
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var res runResult
+	require.NoError(t, env.GetWorkflowResult(&res))
+	assert.Contains(t, res.FunctionCalls, "echo")
+	assert.Contains(t, res.Texts, "done")
+
+	mu.Lock()
+	assert.Equal(t, "hi", gotArgs["msg"])
+	mu.Unlock()
+
+	// Two model turns (initial + after tool) and exactly one tool call.
+	assert.Equal(t, 2, counter.get(googleadk.InvokeModelActivityName))
+	assert.Equal(t, 1, counter.get(googleadk.CallToolActivityName))
+}
+
+// TestActivityAsToolRoundTrip proves the ActivityAsTool adopter primitive: an
+// existing Temporal activity is exposed to the agent as a tool and dispatched
+// directly (by its own activity name), not through the generic CallTool registry.
+func TestActivityAsToolRoundTrip(t *testing.T) {
+	var s testsuite.WorkflowTestSuite
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(activityAsToolWorkflow)
+	env.RegisterActivityWithOptions(weatherActivity, activity.RegisterOptions{Name: "weather"})
+
+	// The model registry still serves the LLM turns.
+	counter := wireActivities(t, env, googleadk.Config{
+		Models: map[string]googleadk.ModelFactory{
+			"fake-model": scriptedModelFactory(
+				googleadk.FunctionCallResponse("call-1", "weather", map[string]any{"city": "Paris"}),
+				googleadk.TextResponse("it is sunny in Paris"),
+			),
+		},
+	})
+
+	env.ExecuteWorkflow(activityAsToolWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var res runResult
+	require.NoError(t, env.GetWorkflowResult(&res))
+	assert.Contains(t, res.Texts, "it is sunny in Paris")
+	// The user's own activity was dispatched directly, not via CallTool.
+	assert.Equal(t, 1, counter.get("weather"))
+	assert.Equal(t, 0, counter.get(googleadk.CallToolActivityName))
+}
+
+// TestToolStateViewIsImmutable proves the snapshot shipped to a tool Activity
+// exposes session state as read-only: a worker-side mutation attempt fails
+// loudly rather than silently evaporating.
+func TestToolStateViewIsImmutable(t *testing.T) {
+	mutateErr := make(chan error, 1)
+	mutating, err := mutatingStateTool(mutateErr)
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, m.Calls(), 1, "the model must have been invoked during the turn")
+
+	var s testsuite.WorkflowTestSuite
+	env, _ := newEnv(t, &s, googleadk.Config{
+		Models: map[string]googleadk.ModelFactory{
+			"fake-model": scriptedModelFactory(
+				googleadk.FunctionCallResponse("call-1", "mutate", map[string]any{}),
+				googleadk.TextResponse("done"),
+			),
+		},
+		Tools: []tool.Tool{mutating},
+	})
+
+	env.ExecuteWorkflow(agentRunWorkflow, runInput{
+		ModelName:   "fake-model",
+		UserMessage: "mutate state",
+		Tools:       []toolSpec{{Name: "mutate", Description: "tries to mutate state"}},
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+
+	// The state mutation attempt failed loudly with a read-only error rather than
+	// silently evaporating. (ADK feeds the tool error back to the model, so the
+	// run itself still completes.)
+	select {
+	case got := <-mutateErr:
+		require.Error(t, got)
+		assert.Contains(t, got.Error(), "read-only")
+		assert.True(t, googleadk.IsNonRetryable(got), "read-only state violation must be non-retryable")
+	case <-time.After(time.Second):
+		t.Fatal("tool was never invoked")
+	}
+}
+
+// ----------------------------------------------------------------------------
+// Helpers specific to the tool tests.
+// ----------------------------------------------------------------------------
+
+// weatherArgs is the input struct for weatherActivity; ActivityAsTool infers the
+// tool's parameter schema from it.
+type weatherArgs struct {
+	City string `json:"city"`
+}
+
+// weatherActivity is an ordinary Temporal activity the user already owns.
+func weatherActivity(_ context.Context, in weatherArgs) (map[string]any, error) {
+	return map[string]any{"forecast": "sunny in " + in.City}, nil
+}
+
+// activityAsToolWorkflow wires weatherActivity into the agent via ActivityAsTool.
+func activityAsToolWorkflow(ctx workflow.Context) (runResult, error) {
+	weatherTool, err := googleadk.ActivityAsTool(weatherActivity, googleadk.ActivityToolOptions{
+		Name:        "weather",
+		Description: "look up the weather for a city",
+		ActivityOptions: workflow.ActivityOptions{
+			StartToCloseTimeout: time.Minute,
+		},
+	})
+	if err != nil {
+		return runResult{}, err
+	}
+	return runAgent(ctx, agentBuild{
+		modelName:   "fake-model",
+		userMessage: "weather in Paris",
+		tools:       []tool.Tool{weatherTool},
+	})
+}
+
+// mutatingStateTool returns a worker-side tool that attempts to mutate the
+// read-only state view and reports the resulting error on the channel.
+func mutatingStateTool(report chan<- error) (tool.Tool, error) {
+	return funcTool("mutate", func(tctx agent.ToolContext, _ map[string]any) (map[string]any, error) {
+		err := tctx.State().Set("k", "v")
+		report <- err
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"ok": true}, nil
+	})
 }

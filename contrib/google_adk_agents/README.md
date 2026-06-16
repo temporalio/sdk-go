@@ -1,50 +1,44 @@
-# Google ADK (adk-go) plugin for the Temporal Go SDK
+# Google ADK agents — Temporal plugin (Go)
 
-Make a [Google Agent Development Kit](https://github.com/google/adk-go) agent
-durable, recoverable, and replay-safe by running it under a Temporal Go worker.
+Make a [Google ADK](https://google.github.io/adk-docs/) (`adk-go`) agent **durable
+and replay-safe under Temporal** without rewriting the agent. Every LLM call and
+every tool call becomes a Temporal Activity (retried, timed-out, visible in the
+Temporal UI, replayable), while the agent's orchestration loop runs inside a
+Temporal Workflow.
 
-You keep writing **native adk-go** — `gemini.NewModel`, `llmagent.New`, your
-tools and sub-agents, `runner.New`. This plugin runs each conversational turn
-inside a Temporal Activity, orchestrated by a durable workflow that owns the
-conversation state, retries transient model failures, pauses for
-human-in-the-loop tool confirmation, streams partial output, and
-continue-as-news long conversations. No agent, tool, or model rewrite.
+You keep building agents the native ADK way — `llmagent.New(...)` with a
+`model.LLM`, `tool.Tool`s / `tool.Toolset`s and `SubAgents`, wrapped in
+`runner.New(...)` and driven by `r.Run(...)`. You add exactly two things:
+
+1. the ADK `*plugin.Plugin` from `googleadk.Plugin(...)` on your `runner.Config`; and
+2. the bridged context from `googleadk.NewContext(workflowCtx)` passed to `r.Run`.
+
+The real model and tool handlers run **worker-side**, behind the Activity
+boundary, from a registry you build with `googleadk.NewActivities(...)`.
 
 ## Install
 
-```bash
-go get go.temporal.io/sdk/contrib/google_adk_agents
+```go
+import googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 ```
 
-The module pins adk-go to a commit on `main` that exposes the deterministic
-clock/UUID seams (`platform.WithTimeProvider` / `platform.WithUUIDProvider`).
+This package depends on the deterministic ADK `platform` seams
+(`WithTimeProvider`, `WithUUIDProvider`, `WithTaskRunner`) that currently live
+only on the `add-platform-task-runner-seam` branch of
+`github.com/DABH/adk-go`. The module's `go.mod` pins them with a `replace`
+directive:
 
-## Turn-as-activity model (read this first)
-
-The Temporal Go SDK runs workflow code on a single cooperative coroutine
-dispatcher: native goroutines, channels, `time.Sleep`, and `context.Context`
-network I/O are non-deterministic and **disallowed** inside a workflow. adk-go's
-flow uses all of them (parallel tool execution, channel-based streaming, sleep
-backoff, real network calls). The two runtimes cannot be interleaved.
-
-So this plugin does **not** reimplement ADK's loop inside the workflow. It runs
-one complete `runner.Run` turn inside a single Temporal Activity
-("turn-as-activity"), and a durable `AgentSessionWorkflow` orchestrates the
-turns and owns the durable session snapshot. Consequences:
-
-- Durability and retry granularity are **per turn**, not per LLM call. A
-  mid-turn failure re-runs the whole turn (re-issuing that turn's model and
-  tool calls).
-- Workflow replay determinism comes from Temporal recording each turn
-  Activity's result in history. The determinism seams additionally give
-  **reproducible ADK event IDs and timestamps across Activity retries and
-  continue-as-new**, so a retried turn re-emits identical event identity.
+```
+replace google.golang.org/adk => github.com/DABH/adk-go <pseudo-version>
+```
 
 ## Hello world
 
-A single `package main` that registers a native ADK agent, starts a worker, and
-drives one durable turn. Set `GOOGLE_API_KEY` and run a Temporal dev server
-(`temporal server start-dev`).
+Two halves: the **worker** registers the real model/tool handlers as Activities;
+the **workflow** builds a vanilla ADK agent and drives it through the plugin.
+Note the plugin is passed on **one side only** — the Temporal SDK propagates a
+client plugin to every worker built from that client, so do not also pass it to
+`Worker(...)`.
 
 ```go
 package main
@@ -52,304 +46,191 @@ package main
 import (
 	"context"
 	"log"
-	"os"
 
 	"go.temporal.io/sdk/client"
-	adk "go.temporal.io/sdk/contrib/google_adk_agents"
 	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
+
+	"google.golang.org/adk/agent"
 	"google.golang.org/adk/agent/llmagent"
+	"google.golang.org/adk/model"
 	"google.golang.org/adk/model/gemini"
+	"google.golang.org/adk/plugin"
 	"google.golang.org/adk/runner"
 	"google.golang.org/adk/session"
 	"google.golang.org/genai"
+
+	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 )
 
-const (
-	agentName = "assistant"
-	taskQueue = "adk-agents"
-)
+const taskQueue = "adk"
 
-// newAssistant is 100% native adk-go: it builds the model, agent, and runner.
-// API keys live here, in the worker process — never in workflow or Activity
-// inputs. The plugin calls this once per turn from inside the turn Activity.
-func newAssistant() adk.AgentFactory {
-	return func(ctx context.Context) (*adk.AgentRunner, error) {
-		m, err := gemini.NewModel(ctx, "gemini-2.0-flash", &genai.ClientConfig{
-			APIKey:  os.Getenv("GOOGLE_API_KEY"),
-			Backend: genai.BackendGeminiAPI,
-		})
-		if err != nil {
-			return nil, err
-		}
-		ag, err := llmagent.New(llmagent.Config{
-			Name:        agentName,
-			Description: "a helpful assistant",
-			Model:       m,
-		})
-		if err != nil {
-			return nil, err
-		}
-		svc := session.InMemoryService()
-		r, err := runner.New(runner.Config{AppName: agentName, Agent: ag, SessionService: svc})
-		if err != nil {
-			return nil, err
-		}
-		return &adk.AgentRunner{Runner: r, SessionService: svc, AppName: agentName}, nil
+// AgentWorkflow runs a native ADK agent. Every model/tool call inside r.Run is
+// short-circuited into a Temporal Activity by the plugin.
+func AgentWorkflow(ctx workflow.Context, question string) (string, error) {
+	pl, err := googleadk.Plugin(googleadk.Options{TaskQueue: taskQueue})
+	if err != nil {
+		return "", err
 	}
+
+	// Build the agent the ordinary ADK way. The model is referenced by name only;
+	// the real *gemini.Model is reconstructed worker-side by the ModelFactory.
+	root, err := llmagent.New(llmagent.Config{
+		Name:        "assistant",
+		Description: "a helpful assistant",
+		Model:       gemini.New("gemini-2.0-flash"),
+		Instruction: "Answer concisely.",
+	})
+	if err != nil {
+		return "", err
+	}
+
+	r, err := runner.New(runner.Config{
+		AppName:           "hello",
+		Agent:             root,
+		SessionService:    session.InMemoryService(),
+		AutoCreateSession: true,
+		PluginConfig:      runner.PluginConfig{Plugins: []*plugin.Plugin{pl}},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	// NewContext bridges the workflow.Context into the context ADK reads its
+	// determinism/executor seams from. Pass it straight to Run.
+	adkCtx := googleadk.NewContext(ctx)
+	msg := genai.NewContentFromText(question, genai.RoleUser)
+
+	var answer string
+	for ev, rerr := range r.Run(adkCtx, "user-1", "session-1", msg, agent.RunConfig{}) {
+		if rerr != nil {
+			return "", rerr
+		}
+		if ev != nil && ev.Content != nil {
+			for _, p := range ev.Content.Parts {
+				if p != nil && p.Text != "" {
+					answer = p.Text
+				}
+			}
+		}
+	}
+	return answer, nil
 }
 
 func main() {
-	ctx := context.Background()
-
-	// Pass the plugin's data converter so genai/session types round-trip
-	// losslessly and stay readable in workflow history.
-	c, err := client.Dial(client.Options{DataConverter: adk.NewDataConverter()})
+	c, err := client.Dial(client.Options{})
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer c.Close()
 
-	reg := adk.NewAgentRegistry()
-	reg.Register(agentName, newAssistant())
-
 	w := worker.New(c, taskQueue, worker.Options{})
-	adk.RegisterActivities(w, reg, adk.Options{})
-	adk.RegisterWorkflow(w)
-	if err := w.Start(); err != nil {
-		log.Fatal(err)
-	}
-	defer w.Stop()
+	w.RegisterWorkflow(AgentWorkflow)
 
-	// Start a durable session and send one turn, awaiting its result.
-	in := adk.NewAgentSessionInput(adk.Options{}, agentName, agentName, "user-1", "session-1")
-	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: taskQueue}, adk.AgentSessionWorkflow, in)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	handle, err := c.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
-		WorkflowID:   run.GetID(),
-		UpdateName:   adk.UpdateSendMessageAndWait,
-		WaitForStage: client.WorkflowUpdateStageCompleted,
-		Args: []interface{}{adk.TurnRequest{
-			Message: genai.NewContentFromText("Say hello in one sentence.", genai.RoleUser),
-		}},
+	// Worker-side registry: the real model lives here. API keys are captured in
+	// the factory closure and never cross the Activity boundary.
+	acts, err := googleadk.NewActivities(googleadk.Config{
+		Models: map[string]googleadk.ModelFactory{
+			"gemini-2.0-flash": func(ctx context.Context, name string) (model.LLM, error) {
+				return gemini.New(name), nil // reads GOOGLE_API_KEY from the env, worker-side
+			},
+		},
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	var res adk.TurnResult
-	if err := handle.Get(ctx, &res); err != nil {
-		log.Fatal(err)
-	}
+	acts.Register(w)
 
-	for _, ev := range res.Events {
-		if ev.Content != nil {
-			for _, p := range ev.Content.Parts {
-				if p.Text != "" {
-					log.Printf("%s: %s", ev.Author, p.Text)
-				}
-			}
-		}
+	if err := w.Run(worker.InterruptCh()); err != nil {
+		log.Fatal(err)
 	}
 }
 ```
-
-The plugin is propagated to the worker automatically because the worker is built
-from the same client. You drive the session from any client (CLI, HTTP handler,
-another workflow) via signals, queries, and updates — see below.
 
 ## What this plugin gives you
 
-- **Durable multi-turn sessions** — `AgentSessionWorkflow` owns the transcript;
-  a worker crash mid-turn resumes the turn, not the whole conversation.
-- **Drive sessions with Temporal primitives**:
-  - `SignalSendMessage` (`"send_message"`) — enqueue a turn, fire-and-forget.
-  - `UpdateSendMessageAndWait` (`"send_message_and_wait"`) — send a turn and
-    await its `TurnResult`; the validator rejects an empty message at the
-    workflow boundary.
-  - `QueryConversation` (`"conversation"`) — the full `[]*session.Event`
-    transcript.
-- **Human-in-the-loop tool confirmation** mapped onto ADK's native
-  `tool/toolconfirmation` pause/resume — see below.
-- **Token streaming** (SSE) surfaced to the workflow — see below.
-- **Continue-as-new** for long conversations — see below.
-- **Reproducible event identity** via `WithDeterministicProviders`, installed
-  inside the turn Activity and seeded from workflow-deterministic values.
-- **Lossless, readable serialization** via `NewDataConverter` for `*genai.Content`
-  and `[]*session.Event`.
-- **Reuse existing Temporal activities as tools** with
-  `ActivityAsTool[Args, Results](name, description, fn)` — wrap an
-  activity-shaped function as an adk-go `tool.Tool` in your factory and pass it
-  to `llmagent.Config.Tools`. (Because the agent runs inside one turn Activity,
-  the wrapped function executes in-process during the turn — it is not scheduled
-  as a nested Activity.)
-- **Network-free testing** with `MockModel` (see [Testing](#testing)).
-
-## Human-in-the-loop confirmation
-
-When a tool calls `ctx.RequestConfirmation(...)`, ADK ends the turn awaiting a
-user function-response. The plugin surfaces the pending request and resumes ADK's
-own confirmation path when the human decides:
-
-```go
-// 1. A UI polls for what needs approval.
-val, _ := c.QueryWorkflow(ctx, run.GetID(), "", adk.QueryPendingConfirmations)
-var pending []adk.ConfirmationRequest
-_ = val.Get(&pending) // each carries FunctionCallID, ToolName, Hint, Payload
-
-// 2. The human approves; ADK resumes on the next turn.
-h, _ := c.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
-	WorkflowID:   run.GetID(),
-	UpdateName:   adk.UpdateConfirm, // or fire-and-forget: adk.SignalConfirm
-	WaitForStage: client.WorkflowUpdateStageCompleted,
-	Args: []interface{}{adk.ToolConfirmationDecision{
-		FunctionCallID: pending[0].FunctionCallID,
-		ToolName:       pending[0].ToolName,
-		Confirmed:      true,
-	}},
-})
-var res adk.TurnResult
-_ = h.Get(ctx, &res)
-```
-
-A rejected confirmation surfaces as an `ApplicationError` of type
-`ADKConfirmationRejected`.
+- **Every LLM turn is a durable Activity.** `Plugin(...)` installs ADK's
+  `BeforeModelCallback`, which short-circuits the in-workflow model call into the
+  `InvokeModel` Activity. The workflow only ever ships a model **name**; the
+  Activity reconstructs the model from your `ModelFactory`. Underlying-SDK retries
+  should be disabled in the factory so Temporal's retry policy is the single
+  source of truth.
+- **Every tool call is a durable Activity.** `BeforeToolCallback` routes
+  `functiontool.New(...)` tools through `CallTool` and MCP tools through
+  `CallMcpTool`. ADK's pure control tools (`transfer_to_agent`, `exit_loop`) run
+  in-workflow so their action mutations are not lost across the boundary.
+- **Deterministic by construction.** `NewContext` binds ADK's `platform.Now` to
+  `workflow.Now`, `platform.NewUUID` to a deterministic seeded generator, and
+  `platform.RunTasks` to a `workflow.Go` fan-out — so the agent loop replays
+  deterministically. No determinism wiring leaks into your agent code.
+- **Concurrent tool fan-out.** When one LLM turn emits several tool calls they run
+  as concurrent durable Activities by default. Use
+  `NewContext(ctx, googleadk.WithSequentialToolFanout())` for the fully
+  determinism-safe serial fallback.
+- **MCP, statelessly.** `NewMCPToolset(...)` is a workflow-side proxy: it lists
+  remote tools (full declarations, **including parameters**) via `ListMcpTools`
+  and executes calls via `CallMcpTool`. The live, stateful `mcptoolset.New(...)`
+  runs worker-side, never in the workflow.
+- **Your existing Activities as tools.** `ActivityAsTool(myActivity, ...)` exposes
+  a `func(context.Context, TArgs) (TResults, error)` Temporal activity to the agent
+  as a tool, with the parameter schema inferred from `TArgs` — no re-declaring.
+- **Typed failures.** Model/tool/MCP failures surface as Temporal
+  `ApplicationError`s tagged `google_adk_agents.ModelError` /`.ToolError` /
+  `.McpError`. Classify them with `IsNonRetryable(err)`; never string-match.
+  Upstream HTTP status drives retryability (`429`/`5xx` retryable, other `4xx`
+  not).
+- **Per-model timeouts and UI summaries.** `Options.PerModelTimeouts` gives
+  thinking models a longer budget; every model/tool Activity carries a `summary`
+  for the Temporal UI (`Options.SummaryFn`, default = the ADK agent name).
+- **Test without a live LLM.** `testing.go` ships `FakeModel`, `FakeMCPServer`,
+  and `TextResponse` / `FunctionCallResponse` so you can unit-test your workflows
+  through the plugin with no network.
 
 ## Streaming
 
-Set `Settings.Streaming = true` on the `AgentSessionInput` to route turns
-through `RunTurnStreamingActivity`. The Activity forwards coalesced partial text
-to the workflow as `StreamChunk` signals; the workflow accumulates them and
-exposes them through the `QueryPendingStream` (`"pending_stream"`) query while
-the turn is in flight. Tune coalescing with `Options.StreamingBatchInterval`
-(default 200ms) and the signal name with `Options.StreamingSignalName`.
+Set `Options.StreamingTopic` to drive the model in streaming mode: the
+`InvokeModel` Activity calls the model with `stream=true`, heartbeats, and
+**publishes each chunk** to a per-run topic for external (UI) consumers via
+[`workflowstreams`](https://pkg.go.dev/go.temporal.io/sdk/contrib/workflowstreams),
+then returns the aggregated final response into the workflow so replay stays
+deterministic.
+
+Streaming has one extra workflow-side requirement: call `googleadk.StreamServer(ctx)`
+once near the top of the workflow that drives `r.Run`, so the published chunks
+have somewhere to land:
 
 ```go
-in := adk.NewAgentSessionInput(adk.Options{}, agentName, agentName, "user-1", "session-1")
-in.Settings.Streaming = true
-// ... ExecuteWorkflow(in), then poll QueryPendingStream for []adk.StreamChunk.
+func StreamingAgentWorkflow(ctx workflow.Context, q string) (string, error) {
+	if err := googleadk.StreamServer(ctx); err != nil { // required when streaming
+		return "", err
+	}
+	pl, _ := googleadk.Plugin(googleadk.Options{TaskQueue: taskQueue, StreamingTopic: "run-" + workflow.GetInfo(ctx).WorkflowExecution.ID})
+	// ... build agent + runner, set agent.RunConfig{StreamingMode: agent.StreamingModeSSE}, drive r.Run as above
+}
 ```
 
-Partial chunks are a live view of the in-flight turn; they reset at the start of
-each streaming turn. The authoritative record is always the `TurnResult.Events`
-transcript. Bidirectional/audio streaming (`Runner.RunLive`) is **not** supported
-in v1.
-
-## Continue-as-new and what state carries
-
-`AgentSessionWorkflow` continue-as-news when the first `CANThreshold` is
-crossed — `MaxTurns` (default 250) or `MaxSessionBytes` (default 2 MiB of
-JSON-encoded snapshot) — and only at a clean boundary (no in-flight turn, no
-pending confirmation).
-
-**Carried across the boundary** (in `ResumeState`):
-
-- the durable transcript (`PriorEvents`, i.e. the accumulated
-  `[]*session.Event`),
-- the ADK session state map (`SessionState`),
-- the turn counter (`TurnCount`), so the threshold does not reset.
-
-**NOT carried** (intentionally):
-
-- in-flight turns — continue-as-new waits for the active turn to finish first,
-- accumulated streaming `StreamChunk`s — they are a per-turn live view and are
-  reset,
-- any live ADK object — the next run's factory rebuilds the runner and replays
-  `PriorEvents` into a fresh session.
-
-Because each turn Activity replays `PriorEvents` into the session it builds, the
-resumed run sees the full conversation. If your factory uses an **external**
-session service (database/vertexai) rather than the in-memory one, the
-Temporal-owned snapshot and your external store can diverge ("double
-durability"); set `AgentRunner.ExternalSessionService = true` and
-`Options.WarnOnExternalSessionService = true` to get a warning, and treat one
-store as the source of truth.
-
-## MCP tools
-
-MCP toolsets are supported **natively and statefully within a turn**: build a
-fresh `mcptoolset.McpToolset` inside your `AgentFactory` and pass it to
-`llmagent.Config.Tools`. It connects, lists, and calls tools entirely inside the
-turn Activity, so full tool schemas never cross the wire. A **long-lived MCP
-session spanning turns is not supported** — each turn is an independent Activity
-process. If a factory sets `AgentRunner.RequiresStatefulMCP = true`, the turn
-fails non-retryably (`ADKNonRetryable`) by design.
-
-## Error classification
-
-Turn failures are surfaced as `temporal.ApplicationError` with a stable `Type`
-you can branch on (never string-match the message):
-
-| Type | Meaning | Retried |
-| --- | --- | --- |
-| `ADKAgentError` | transient model/network failure | yes (per `RetryPolicy`) |
-| `ADKNonRetryable` | config/programming error (unknown agent, bad factory, unsupported feature) | no |
-| `ADKConfirmationRejected` | human rejected a tool confirmation | no |
-
-Temporal owns turn-level retry via `ActivityOptions.RetryPolicy`; ADK's own
-in-call retries are left at their defaults. A turn that ultimately fails fails
-the workflow with the classified type as the outermost `ApplicationError`.
+External consumers read chunks with `workflowstreams.NewClient(c, workflowID, ...).Subscribe(...)`.
+The bidirectional `RunLive` path (hard-coded goroutines/channels) is **not**
+supported.
 
 ## Composing with other plugins
 
-This plugin configures the worker through the standard `RegisterActivities` /
-`RegisterWorkflow` calls and a data converter you pass to the client. To compose
-with another integration (for example `contrib/opentelemetry`):
+`googleadk.Plugin(...)` is an ADK `*plugin.Plugin`; add other ADK plugins to the
+same `runner.PluginConfig.Plugins` slice. On the Temporal side, the model/tool
+Activities use the default JSON data converter and ship no client/worker
+interceptor, so this plugin composes with Temporal interceptor- or
+converter-based plugins (e.g. `sdk-go/contrib/opentelemetry`) without conflict.
+ADK emits its own OpenTelemetry spans; register your tracing interceptor on the
+worker as usual.
 
-- Register both sets of activities/workflows on the same worker.
-- Add your interceptors via `worker.Options.Interceptors` and
-  `client.Options.Interceptors` as usual.
-- If you already use a custom `DataConverter`, wrap `NewDataConverter`'s payload
-  behavior into yours rather than passing two converters — only one converter is
-  used per client.
+## Determinism & limits
 
-## Per-agent tuning
-
-Give thinking models or long-tool agents longer timeouts than a chat agent:
-
-```go
-opts := adk.Options{
-	DefaultActivityOptions: adk.ActivityOptions{StartToCloseTimeout: 2 * time.Minute},
-	ActivityOptions: map[string]adk.ActivityOptions{
-		"researcher": {
-			StartToCloseTimeout: 15 * time.Minute,
-			SummaryFunc:         func(in adk.TurnInput) string { return "research: " + in.AgentName },
-		},
-	},
-}
-```
-
-Every turn Activity sets a `Summary` (the agent name by default, or
-`SummaryFunc`'s output) so it is identifiable in the Temporal UI.
-
-## Testing
-
-`MockModel` is a deterministic, network-free `model.LLM` for unit-testing
-workflows and factories without calling a billed model API:
-
-```go
-func newTestAgent() adk.AgentFactory {
-	return func(_ context.Context) (*adk.AgentRunner, error) {
-		m := adk.NewMockModel("mock", genai.NewContentFromText("hi", genai.RoleModel))
-		ag, _ := llmagent.New(llmagent.Config{Name: "chat", Model: m})
-		svc := session.InMemoryService()
-		r, _ := runner.New(runner.Config{AppName: "chat", Agent: ag, SessionService: svc})
-		return &adk.AgentRunner{Runner: r, SessionService: svc, AppName: "chat"}, nil
-	}
-}
-```
-
-Drive it through `testsuite.WorkflowTestSuite` (register a stub `RunTurnActivity`
-under `adk.ActivityNameRunTurn`) or the turn Activity directly.
-
-## Limitations
-
-- Durability is **per turn**, not per LLM call (see the turn-as-activity model).
-- No bidirectional/audio streaming (`Runner.RunLive`) in v1; SSE token streaming
-  only.
-- MCP is stateless per turn; no cross-turn MCP session.
-- Sub-agents, transfers, and `AgentTool` run in-process inside the turn Activity
-  (no child workflow per sub-agent in v1).
-- An external ADK session service can diverge from the Temporal-owned snapshot;
-  pick one source of truth.
+- **Supported:** single- and multi-agent (`SubAgents`) trees, `functiontool`,
+  stateless MCP, Gemini built-in tools (executed server-side inside `InvokeModel`),
+  pure control tools, the in-memory session service, and SSE streaming.
+- **Not in v1:** `RunLive` (bidi), agent-as-tool / sub-agent-as-child-workflow,
+  live memory/artifact tools, HITL tool confirmation, continue-as-new state carry,
+  and DB/Vertex session services (network I/O in-workflow). These raise or are
+  documented rather than silently degrading.
+- The state map handed to a tool Activity is an **immutable view**; mutations
+  inside an Activity do not propagate back into the workflow.
