@@ -183,6 +183,10 @@ jobs:
         working-directory: ./internal/cmd/build
 
   features-test:
+    permissions:
+      contents: read
+      checks: write
+      statuses: write
     uses: temporalio/features/.github/workflows/go.yaml@main
     with:
       go-repo-path: ${{github.event.pull_request.head.repo.full_name}}
