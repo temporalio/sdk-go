@@ -23,3 +23,11 @@ to docs, or any other relevant information.
 
 * Exposed `BackoffStartInterval` when continuing as new, which will delay the first task of the
   continued workflow by the configured interval.
+
+### Fixed
+
+* `contrib/opentelemetry`: counter metrics are now emitted as a monotonic OpenTelemetry
+  counter (`Int64Counter`) instead of an up/down counter (`Int64UpDownCounter`). Previously
+  Temporal SDK counters such as `temporal_workflow_completed` were reported downstream as
+  gauges (e.g. in Prometheus and Datadog) rather than counts, which could cause metric type
+  conflicts. (#2140)
