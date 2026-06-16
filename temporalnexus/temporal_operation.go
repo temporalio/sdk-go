@@ -191,6 +191,9 @@ func StartActivity[I, O any, AF func(context.Context, I) (O, error)](
 // activity function reference or string name. It always returns an async result with an
 // activity-execution operation token.
 //
+// Automatically propagates the callback, links, and request ID from the Nexus operation options
+// to the activity start request.
+//
 // See [StartActivity] for the type-safe variant.
 func StartUntypedActivity[R any](
 	ctx context.Context,
@@ -204,15 +207,102 @@ func StartUntypedActivity[R any](
 	}
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 
-	handle, err := ExecuteUntypedActivity[R](ctx, nc.startOperationOptions, activityOpts, activity, args...)
+	result, err := startActivity[R](ctx, nc.client, nc.startOperationOptions, activityOpts, activity, args...)
 	if err != nil {
 		if nc.asyncStarted != nil {
 			nc.asyncStarted.Store(false)
 		}
 		return TemporalOperationResult[R]{}, err
 	}
-	nexus.AddHandlerLinks(ctx, handle.link())
-	return NewAsyncResult[R](handle.token()), nil
+	return result, nil
+}
+
+func startActivity[R any](
+	ctx context.Context,
+	c client.Client,
+	nexusOptions nexus.StartOperationOptions,
+	activityOpts client.StartActivityOptions,
+	activity any,
+	args ...any,
+) (TemporalOperationResult[R], error) {
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+	}
+
+	if activityOpts.TaskQueue == "" {
+		activityOpts.TaskQueue = nctx.TaskQueue
+	}
+	if activityOpts.ID == "" {
+		activityOpts.ID = uuid.NewString()
+	}
+	if activityOpts.ScheduleToCloseTimeout == 0 && activityOpts.StartToCloseTimeout == 0 {
+		return TemporalOperationResult[R]{}, &nexus.HandlerError{
+			Type:    nexus.HandlerErrorTypeBadRequest,
+			Message: "at least one of StartToCloseTimeout or ScheduleToCloseTimeout is required",
+		}
+	}
+
+	if nexusOptions.RequestID != "" {
+		internal.SetRequestIDOnStartActivityOptions(&activityOpts, nexusOptions.RequestID)
+	}
+
+	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
+	if err != nil {
+		return TemporalOperationResult[R]{}, &nexus.HandlerError{
+			Type:    nexus.HandlerErrorTypeBadRequest,
+			Message: "could not convert links for activity start",
+			Cause:   err,
+		}
+	}
+
+	if nexusOptions.CallbackURL != "" {
+		// Callback token is generated without a run ID since the activity hasn't started yet.
+		callbackToken, err := generateActivityExecutionOperationToken(nctx.Namespace, activityOpts.ID, "")
+		if err != nil {
+			return TemporalOperationResult[R]{}, err
+		}
+		if nexusOptions.CallbackHeader == nil {
+			nexusOptions.CallbackHeader = make(nexus.Header)
+		}
+		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, callbackToken)
+		internal.SetCallbacksOnStartActivityOptions(&activityOpts, []*commonpb.Callback{
+			{
+				Variant: &commonpb.Callback_Nexus_{
+					Nexus: &commonpb.Callback_Nexus{
+						Url:    nexusOptions.CallbackURL,
+						Header: nexusOptions.CallbackHeader,
+					},
+				},
+				Links: links,
+			},
+		})
+	}
+
+	// Duplicated in links to be compatible with older servers that don't read links from callbacks.
+	internal.SetLinksOnStartActivityOptions(&activityOpts, links)
+	internal.SetOnConflictOptionsOnStartActivityOptions(&activityOpts)
+	responseInfo := internal.SetResponseInfoOnStartActivityOptions(&activityOpts)
+
+	handle, err := c.ExecuteActivity(ctx, activityOpts, activity, args...)
+	if err != nil {
+		return TemporalOperationResult[R]{}, err
+	}
+	encodedToken, err := generateActivityExecutionOperationToken(nctx.Namespace, handle.GetID(), handle.GetRunID())
+	if err != nil {
+		return TemporalOperationResult[R]{}, err
+	}
+
+	activityLink := internal.GetResponseLinkFromStartActivityResponseInfo(responseInfo).GetActivity()
+	if activityLink == nil {
+		activityLink = &commonpb.Link_Activity{
+			Namespace:  nctx.Namespace,
+			ActivityId: handle.GetID(),
+			RunId:      handle.GetRunID(),
+		}
+	}
+	nexus.AddHandlerLinks(ctx, ConvertLinkActivityToNexusLink(activityLink))
+	return NewAsyncResult[R](encodedToken), nil
 }
 
 // TemporalOperationOptions configures a generic Temporal Nexus operation.
@@ -387,157 +477,4 @@ func (o *temporalOperation[I, O]) Cancel(ctx context.Context, token string, opti
 	default:
 		return nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "unknown operation token type: %d", tokenType)
 	}
-}
-
-// ActivityHandle is a readonly representation of a stand-alone activity execution backing a Nexus
-// operation. It's created via [ExecuteActivity] and [ExecuteUntypedActivity].
-type ActivityHandle[T any] interface {
-	// ID is the activity's ID.
-	ID() string
-	// RunID is the activity execution's run ID.
-	RunID() string
-
-	/* Methods below intentionally not exposed, interface is not meant to be implementable outside of this package */
-
-	// Link to the started activity execution.
-	link() nexus.Link
-	token() string // Cached operation token
-
-	// typeMarker is a no-op method to associate the generic type T with the interface.
-	typeMarker(T)
-}
-
-type activityHandle[T any] struct {
-	namespace    string
-	id           string
-	runID        string
-	activityLink *commonpb.Link
-	cachedToken  string
-}
-
-func (h activityHandle[T]) ID() string {
-	return h.id
-}
-
-func (h activityHandle[T]) RunID() string {
-	return h.runID
-}
-
-func (h activityHandle[T]) link() nexus.Link {
-	al := h.activityLink.GetActivity()
-	if al == nil {
-		al = &commonpb.Link_Activity{
-			Namespace:  h.namespace,
-			ActivityId: h.id,
-			RunId:      h.runID,
-		}
-	}
-	return ConvertLinkActivityToNexusLink(al)
-}
-
-func (h activityHandle[T]) token() string {
-	return h.cachedToken
-}
-
-func (h activityHandle[T]) typeMarker(T) {}
-
-// ExecuteActivity schedules a stand-alone activity execution for a Nexus operation, linking the
-// execution chain to the Nexus operation (callbacks, links, request ID).
-//
-// The activity parameter must have the signature func(context.Context, I) (O, error). For
-// activities that don't follow this signature, use [ExecuteUntypedActivity].
-func ExecuteActivity[I, O any, AF func(context.Context, I) (O, error)](
-	ctx context.Context,
-	nexusOptions nexus.StartOperationOptions,
-	activityOpts client.StartActivityOptions,
-	activity AF,
-	arg I,
-) (ActivityHandle[O], error) {
-	return ExecuteUntypedActivity[O](ctx, nexusOptions, activityOpts, activity, arg)
-}
-
-// ExecuteUntypedActivity schedules a stand-alone activity execution by function reference or
-// string name, linking the execution chain to a Nexus operation. Useful for invoking activities
-// that don't follow the single argument / single return type signature. See [ExecuteActivity] for
-// the type-safe variant.
-//
-// Automatically propagates the callback, links, and request ID from the Nexus options to the
-// activity start request.
-func ExecuteUntypedActivity[R any](
-	ctx context.Context,
-	nexusOptions nexus.StartOperationOptions,
-	activityOpts client.StartActivityOptions,
-	activity any,
-	args ...any,
-) (ActivityHandle[R], error) {
-	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
-	if !ok {
-		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
-	}
-
-	if activityOpts.TaskQueue == "" {
-		activityOpts.TaskQueue = nctx.TaskQueue
-	}
-	if activityOpts.ID == "" {
-		activityOpts.ID = uuid.NewString()
-	}
-	if activityOpts.ScheduleToCloseTimeout == 0 && activityOpts.StartToCloseTimeout == 0 {
-		return nil, &nexus.HandlerError{
-			Type:    nexus.HandlerErrorTypeBadRequest,
-			Message: "at least one of StartToCloseTimeout or ScheduleToCloseTimeout is required",
-		}
-	}
-
-	if nexusOptions.RequestID != "" {
-		internal.SetRequestIDOnStartActivityOptions(&activityOpts, nexusOptions.RequestID)
-	}
-
-	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
-	if err != nil {
-		return nil, &nexus.HandlerError{
-			Type:    nexus.HandlerErrorTypeBadRequest,
-			Message: "could not convert links for activity start",
-			Cause:   err,
-		}
-	}
-
-	encodedToken, err := generateActivityExecutionOperationToken(nctx.Namespace, activityOpts.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	if nexusOptions.CallbackURL != "" {
-		if nexusOptions.CallbackHeader == nil {
-			nexusOptions.CallbackHeader = make(nexus.Header)
-		}
-		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, encodedToken)
-		internal.SetCallbacksOnStartActivityOptions(&activityOpts, []*commonpb.Callback{
-			{
-				Variant: &commonpb.Callback_Nexus_{
-					Nexus: &commonpb.Callback_Nexus{
-						Url:    nexusOptions.CallbackURL,
-						Header: nexusOptions.CallbackHeader,
-					},
-				},
-				Links: links,
-			},
-		})
-	}
-
-	// Duplicated in links to be compatible with older servers that don't read links from callbacks.
-	internal.SetLinksOnStartActivityOptions(&activityOpts, links)
-	internal.SetOnConflictOptionsOnStartActivityOptions(&activityOpts)
-	responseInfo := internal.SetResponseInfoOnStartActivityOptions(&activityOpts)
-
-	handle, err := GetClient(ctx).ExecuteActivity(ctx, activityOpts, activity, args...)
-	if err != nil {
-		return nil, err
-	}
-	return activityHandle[R]{
-		namespace:    nctx.Namespace,
-		id:           handle.GetID(),
-		runID:        handle.GetRunID(),
-		activityLink: internal.GetResponseLinkFromStartActivityResponseInfo(responseInfo),
-		cachedToken:  encodedToken,
-	}, nil
 }

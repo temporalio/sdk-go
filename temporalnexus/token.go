@@ -33,6 +33,9 @@ type activityExecutionOperationToken struct {
 	Type          operationTokenType `json:"t"`
 	NamespaceName string             `json:"ns"`
 	ActivityID    string             `json:"aid"`
+	// RunID of the activity execution. Omitted on the token used for the callback's
+	// HeaderOperationToken, since the run ID is only known after the activity has been started.
+	RunID string `json:"rid,omitempty"`
 }
 
 func generateWorkflowRunOperationToken(namespace, workflowID string) (string, error) {
@@ -70,11 +73,12 @@ func loadTokenType(data string) (operationTokenType, error) {
 	return partial.Type, nil
 }
 
-func generateActivityExecutionOperationToken(namespace, activityID string) (string, error) {
+func generateActivityExecutionOperationToken(namespace, activityID, runID string) (string, error) {
 	token := activityExecutionOperationToken{
 		Type:          operationTokenTypeActivityExecution,
 		NamespaceName: namespace,
 		ActivityID:    activityID,
+		RunID:         runID,
 	}
 	data, err := json.Marshal(token)
 	if err != nil {
