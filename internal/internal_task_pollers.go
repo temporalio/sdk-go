@@ -851,7 +851,7 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 		Identity:       wtp.identity,
 		BinaryChecksum: wtp.workerBuildID,
 		Namespace:      wtp.namespace,
-		ResourceId:     fmt.Sprintf("workflow:%s", workflowId),
+		ResourceId:     getWorkflowResourceId(workflowId),
 		WorkerVersion: &commonpb.WorkerVersionStamp{
 			BuildId:       wtp.workerBuildID,
 			UseVersioning: wtp.useBuildIDVersioning,
@@ -1580,12 +1580,19 @@ func reportActivityCompleteByID(
 
 func getActivityResourceId(workflowId, activityId string) string {
 	if workflowId != "" {
-		return fmt.Sprintf("workflow:%s", workflowId)
+		return getWorkflowResourceId(workflowId)
 	}
 	if activityId != "" {
 		return fmt.Sprintf("activity:%s", activityId)
 	}
 	return ""
+}
+
+func getWorkflowResourceId(workflowId string) string {
+	if workflowId == "" {
+		return ""
+	}
+	return fmt.Sprintf("workflow:%s", workflowId)
 }
 
 func convertActivityResultToRespondRequest(

@@ -686,7 +686,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatWithOptions(ctx context.Context
 		Details:    data,
 		Identity:   wc.identity,
 		Namespace:  cmp.Or(opts.Namespace, wc.namespace),
-		ResourceId: opts.WorkflowID,
+		ResourceId: getWorkflowResourceId(opts.WorkflowID),
 	}
 	if err := visitProtoPayloads(ctx, wc.newOutboundPayloadVisitor(), request, 0); err != nil {
 		return err
@@ -2283,7 +2283,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			startOp,
 			updateOp,
 		},
-		ResourceId: fmt.Sprintf("workflow:%s", startRequest.WorkflowId),
+		ResourceId: getWorkflowResourceId(startRequest.WorkflowId),
 	}
 
 	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{

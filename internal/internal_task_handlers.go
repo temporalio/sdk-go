@@ -1994,7 +1994,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		BinaryChecksum:             wth.workerBuildID,
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
-		ResourceId:                 fmt.Sprintf("workflow:%s", task.WorkflowExecution.GetWorkflowId()),
+		ResourceId:                 getWorkflowResourceId(task.WorkflowExecution.GetWorkflowId()),
 		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,

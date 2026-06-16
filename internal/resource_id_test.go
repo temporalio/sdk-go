@@ -47,6 +47,16 @@ func TestGetActivityResourceId_BothEmpty(t *testing.T) {
 	assert.Empty(t, result, "Expected empty resource ID when both workflowId and activityId are empty")
 }
 
+func TestGetWorkflowResourceId_Empty(t *testing.T) {
+	result := getWorkflowResourceId("")
+	assert.Empty(t, result, "Expected empty resource ID when workflowId is empty")
+}
+
+func TestGetActivityResourceIdFromCtx_NoActivityEnv(t *testing.T) {
+	result := getActivityResourceIdFromCtx(context.Background())
+	assert.Empty(t, result, "Expected empty resource ID when context has no activity environment")
+}
+
 // Test activity heartbeat resource_id population using actual SDK code path
 func testActivityHeartbeatResourceID(t *testing.T) {
 	testCases := []struct {
@@ -141,12 +151,6 @@ func testWorkflowTaskCompletedResourceID(t *testing.T) {
 			runID:              "test-run-completed-456",
 			expectedResourceID: "workflow:test-workflow-completed-123",
 		},
-		{
-			name:               "DifferentWorkflowID",
-			workflowID:         "another-workflow-789",
-			runID:              "another-run-999",
-			expectedResourceID: "workflow:another-workflow-789",
-		},
 	}
 
 	for _, tc := range testCases {
@@ -202,73 +206,46 @@ func testWorkflowTaskCompletedResourceID(t *testing.T) {
 // Test RespondWorkflowTaskFailedRequest resource_id field (resource_id = 11)
 // Expected: Workflow ID from original task
 func testWorkflowTaskFailedResourceID(t *testing.T) {
-	testCases := []struct {
-		name               string
-		workflowID         string
-		runID              string
-		expectedResourceID string
-		failureCause       enumspb.WorkflowTaskFailedCause
-	}{
-		{
-			name:               "UnknownWorkflowType",
-			workflowID:         "test-workflow-failed-123",
-			runID:              "test-run-failed-456",
-			expectedResourceID: "workflow:test-workflow-failed-123",
-			failureCause:       enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
-		},
-		{
-			name:               "NonDeterministicError",
-			workflowID:         "non-deterministic-workflow-789",
-			runID:              "non-deterministic-run-999",
-			expectedResourceID: "workflow:non-deterministic-workflow-789",
-			failureCause:       enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
-		},
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+
+	var capturedRequest *workflowservice.RespondWorkflowTaskFailedRequest
+	service.EXPECT().
+		RespondWorkflowTaskFailed(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(ctx context.Context, req *workflowservice.RespondWorkflowTaskFailedRequest, opts ...interface{}) {
+			capturedRequest = req
+		}).
+		Return(&workflowservice.RespondWorkflowTaskFailedResponse{}, nil).
+		Times(1)
+
+	// Create a workflow task that will fail (unregistered workflow type)
+	task := createTestWorkflowTaskWithType("test-workflow-failed-123", "test-run-failed-456", "UnregisteredWorkflow")
+
+	// Create workflow task handler without registering the workflow
+	params := workerExecutionParameters{
+		Namespace: "test-namespace",
+		Identity:  "test-identity",
+		cache:     NewWorkerCache(),
 	}
+	ensureRequiredParams(&params)
+	registry := newRegistry() // Empty registry to cause failure
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
+	handler := newWorkflowTaskHandler(params, nil, registry)
 
-			service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	// Process the workflow task through the poller to trigger the failure
+	poller := newWorkflowTaskProcessor(handler, handler, service, params, uuid.NewString())
 
-			var capturedRequest *workflowservice.RespondWorkflowTaskFailedRequest
-			service.EXPECT().
-				RespondWorkflowTaskFailed(gomock.Any(), gomock.Any(), gomock.Any()).
-				Do(func(ctx context.Context, req *workflowservice.RespondWorkflowTaskFailedRequest, opts ...interface{}) {
-					capturedRequest = req
-				}).
-				Return(&workflowservice.RespondWorkflowTaskFailedResponse{}, nil).
-				Times(1)
+	wt := &workflowTask{task: task}
+	err := poller.processWorkflowTask(wt)
 
-			// Create a workflow task that will fail (unregistered workflow type)
-			task := createTestWorkflowTaskWithType(tc.workflowID, tc.runID, "UnregisteredWorkflow")
+	// Task processing succeeds but should trigger failure request due to unregistered workflow
+	require.NoError(t, err)
 
-			// Create workflow task handler without registering the workflow
-			params := workerExecutionParameters{
-				Namespace: "test-namespace",
-				Identity:  "test-identity",
-				cache:     NewWorkerCache(),
-			}
-			ensureRequiredParams(&params)
-			registry := newRegistry() // Empty registry to cause failure
-
-			handler := newWorkflowTaskHandler(params, nil, registry)
-
-			// Process the workflow task through the poller to trigger the failure
-			poller := newWorkflowTaskProcessor(handler, handler, service, params, uuid.NewString())
-
-			wt := &workflowTask{task: task}
-			err := poller.processWorkflowTask(wt)
-
-			// Task processing succeeds but should trigger failure request due to unregistered workflow
-			require.NoError(t, err)
-
-			// Validate the captured request
-			require.NotNil(t, capturedRequest)
-			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId)
-		})
-	}
+	// Validate the captured request
+	require.NotNil(t, capturedRequest)
+	assert.Equal(t, "workflow:test-workflow-failed-123", capturedRequest.ResourceId)
 }
 
 // Test activity task request resource_id population using actual SDK code paths
@@ -399,6 +376,8 @@ func testConvertActivityResultValidation(t *testing.T) {
 					require.True(t, ok, "Result should be a RespondActivityTaskCanceledRequest")
 					assert.Equal(t, tc.expectedResourceID, canceledRequest.ResourceId, tc.description)
 				}
+			default:
+				t.Fatalf("unknown test type %q", tc.testType)
 			}
 		})
 	}
@@ -516,6 +495,8 @@ func testConvertActivityResultByIDValidation(t *testing.T) {
 					require.True(t, ok, "Result should be a RespondActivityTaskCanceledByIdRequest")
 					assert.Equal(t, tc.expectedResourceID, canceledRequest.ResourceId, tc.description)
 				}
+			default:
+				t.Fatalf("unknown test type %q", tc.testType)
 			}
 		})
 	}
@@ -744,82 +725,66 @@ func testExecuteMultiOperationResourceID(t *testing.T) {
 // Test RecordWorkerHeartbeatRequest resource_id field (resource_id = 4)
 // Expected: Contains the worker grouping key
 func testRecordWorkerHeartbeatResourceID(t *testing.T) {
-	testCases := []struct {
-		name               string
-		groupingKey        string
-		expectedResourceID string
-	}{
-		{
-			name:               "WorkerHeartbeat",
-			groupingKey:        "test-worker-grouping-key-123",
-			expectedResourceID: "worker:test-worker-grouping-key-123",
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+
+	// Mock GetSystemInfo which gets called during client operations
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+	var capturedRequest *workflowservice.RecordWorkerHeartbeatRequest
+	service.EXPECT().
+		RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(ctx context.Context, req *workflowservice.RecordWorkerHeartbeatRequest, opts ...interface{}) {
+			capturedRequest = req
+		}).
+		Return(&workflowservice.RecordWorkerHeartbeatResponse{}, nil).
+		Times(1)
+
+	// Create a client with a specific workerGroupingKey
+	wfClient := NewServiceClient(service, nil, ClientOptions{
+		Namespace: "test-namespace",
+	})
+
+	// Set the workerGroupingKey to our test value
+	wfClient.workerGroupingKey = "test-worker-grouping-key-123"
+
+	// Create a sharedNamespaceWorker and call sendHeartbeats
+	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+	defer heartbeatCancel()
+
+	hw := &sharedNamespaceWorker{
+		client:          wfClient,
+		namespace:       "test-namespace",
+		workerCtx:       heartbeatCtx,
+		heartbeatCancel: heartbeatCancel,
+		callbacks: map[string]func() *workerpb.WorkerHeartbeat{
+			"test-worker": func() *workerpb.WorkerHeartbeat {
+				return &workerpb.WorkerHeartbeat{
+					WorkerIdentity: "test-worker-identity",
+				}
+			},
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockCtrl := gomock.NewController(t)
-			defer mockCtrl.Finish()
+	// Call sendHeartbeats which should construct and send the request
+	err := hw.sendHeartbeats()
 
-			service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	// The operation should succeed
+	require.NoError(t, err)
 
-			// Mock GetSystemInfo which gets called during client operations
-			service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
-				Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	// Validate the captured request
+	require.NotNil(t, capturedRequest, "RecordWorkerHeartbeatRequest should have been captured")
+	assert.Equal(t, "worker:test-worker-grouping-key-123", capturedRequest.ResourceId,
+		"ResourceId should match the worker grouping key")
 
-			var capturedRequest *workflowservice.RecordWorkerHeartbeatRequest
-			service.EXPECT().
-				RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-				Do(func(ctx context.Context, req *workflowservice.RecordWorkerHeartbeatRequest, opts ...interface{}) {
-					capturedRequest = req
-				}).
-				Return(&workflowservice.RecordWorkerHeartbeatResponse{}, nil).
-				Times(1)
-
-			// Create a client with a specific workerGroupingKey
-			wfClient := NewServiceClient(service, nil, ClientOptions{
-				Namespace: "test-namespace",
-			})
-
-			// Set the workerGroupingKey to our test value
-			wfClient.workerGroupingKey = tc.groupingKey
-
-			// Create a sharedNamespaceWorker and call sendHeartbeats
-			heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
-			defer heartbeatCancel()
-
-			hw := &sharedNamespaceWorker{
-				client:          wfClient,
-				namespace:       "test-namespace",
-				workerCtx:       heartbeatCtx,
-				heartbeatCancel: heartbeatCancel,
-				callbacks: map[string]func() *workerpb.WorkerHeartbeat{
-					"test-worker": func() *workerpb.WorkerHeartbeat {
-						return &workerpb.WorkerHeartbeat{
-							WorkerIdentity: "test-worker-identity",
-						}
-					},
-				},
-			}
-
-			// Call sendHeartbeats which should construct and send the request
-			err := hw.sendHeartbeats()
-
-			// The operation should succeed
-			require.NoError(t, err)
-
-			// Validate the captured request
-			require.NotNil(t, capturedRequest, "RecordWorkerHeartbeatRequest should have been captured")
-			assert.Equal(t, tc.expectedResourceID, capturedRequest.ResourceId,
-				"ResourceId should match the worker grouping key")
-
-			// Additional validation
-			assert.Equal(t, "test-namespace", capturedRequest.Namespace,
-				"Namespace should be set correctly")
-			require.Len(t, capturedRequest.WorkerHeartbeat, 1,
-				"Should have one worker heartbeat")
-			assert.Equal(t, "test-worker-identity", capturedRequest.WorkerHeartbeat[0].WorkerIdentity,
-				"Worker identity should be set correctly")
-		})
-	}
+	// Additional validation
+	assert.Equal(t, "test-namespace", capturedRequest.Namespace,
+		"Namespace should be set correctly")
+	require.Len(t, capturedRequest.WorkerHeartbeat, 1,
+		"Should have one worker heartbeat")
+	assert.Equal(t, "test-worker-identity", capturedRequest.WorkerHeartbeat[0].WorkerIdentity,
+		"Worker identity should be set correctly")
 }
