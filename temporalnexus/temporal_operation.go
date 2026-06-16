@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/client"
@@ -232,9 +231,6 @@ func startActivity[R any](
 
 	if activityOpts.TaskQueue == "" {
 		activityOpts.TaskQueue = nctx.TaskQueue
-	}
-	if activityOpts.ID == "" {
-		activityOpts.ID = uuid.NewString()
 	}
 	if activityOpts.ScheduleToCloseTimeout == 0 && activityOpts.StartToCloseTimeout == 0 {
 		return TemporalOperationResult[R]{}, &nexus.HandlerError{

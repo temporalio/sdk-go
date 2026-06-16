@@ -9715,6 +9715,8 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 // TIMEOUT_TYPE_HEARTBEAT branch builds the terminal failure via createHeartbeatTimeoutFailure()
 // without copying a.LastHeartbeat.Details into TimeoutFailureInfo.LastHeartbeatDetails.
 func (ts *IntegrationTestSuite) TestStandaloneActivityHeartbeatDetailsRegression() {
+	ts.T().Skip("NEXUS-400: server does not surface LastHeartbeatDetails on stand-alone activity heartbeat timeouts (chasm/lib/activity/statemachine.go TIMEOUT_TYPE_HEARTBEAT branch)")
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -9980,6 +9982,8 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 	// which only populates TimeoutFailureInfo.TimeoutType — LastHeartbeatDetails is never
 	// copied from a.LastHeartbeat. Server bug. See review memo for details.
 	ts.Run("Heartbeat timeout delivers LastHeartbeatDetails", func() {
+		ts.T().Skip("NEXUS-400: server does not populate LastHeartbeatDetails on stand-alone activity heartbeat timeouts (chasm/lib/activity/statemachine.go TIMEOUT_TYPE_HEARTBEAT branch)")
+
 		input := "hb-details-" + uuid.NewString()
 		run, err := ts.client.ExecuteWorkflow(ctx, startOpts, ts.workflows.TemporalOpHeartbeatDetailsTimeoutCaller, input)
 		ts.NoError(err)
