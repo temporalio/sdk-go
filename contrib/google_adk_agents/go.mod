@@ -68,9 +68,10 @@ replace go.temporal.io/sdk => ../../
 
 replace go.temporal.io/sdk/contrib/workflowstreams => ../workflowstreams
 
-// The deterministic platform seams (WithTaskRunner / RunTasks alongside
-// WithTimeProvider / WithUUIDProvider) that this plugin depends on currently live
-// only on the add-platform-task-runner-seam branch of github.com/DABH/adk-go
-// (commit 33910a3). Drop this replace once the seams land on upstream
-// google/adk-go and google.golang.org/adk can be fetched directly with `go get`.
-replace google.golang.org/adk => github.com/DABH/adk-go v1.4.1-0.20260615181608-33910a3715c2
+// The deterministic platform seams (WithTaskRunner / RunTasks — which carry a
+// per-task context.Context — alongside WithTimeProvider / WithUUIDProvider) that
+// this plugin depends on currently live only on the add-platform-task-runner-seam
+// branch of github.com/DABH/adk-go (commit 291f11c). Drop this replace once the
+// seams land on upstream google/adk-go and google.golang.org/adk can be fetched
+// directly with `go get`.
+replace google.golang.org/adk => github.com/DABH/adk-go v1.4.1-0.20260616183949-291f11cf07fe

@@ -25,29 +25,15 @@ import (
 	"google.golang.org/adk/platform"
 )
 
-// wfCtxKey is the private context key under which NewContext stashes the
-// workflow-context holder so the plugin's BeforeModelCallback /
-// BeforeToolCallback can recover the *currently active* workflow.Context from
-// the ADK context they are handed.
+// wfCtxKey is the private context key under which the workflow.Context for
+// blocking Activity dispatch is stashed. NewContext stores the root
+// workflow.Context here; during concurrent tool fan-out the task runner stores
+// each coroutine's own workflow.Context on that task's context. The plugin's
+// BeforeModelCallback / BeforeToolCallback recover it so their blocking calls
+// (Future.Get / Channel.Receive) run on the coroutine they belong to — blocking
+// on another coroutine's context triggers "trying to block on coroutine which
+// is already blocked ... wrong Context".
 type wfCtxKey struct{}
-
-// wfCtxHolder carries the workflow.Context that plugin callbacks should use for
-// their blocking Activity dispatch. It exists because concurrent tool fan-out
-// runs each ADK task in its own workflow.Go coroutine, and Temporal requires a
-// blocking call (Future.Get / Channel.Receive) to use the *coroutine-local*
-// context — blocking on the parent coroutine's context from a child triggers
-// "trying to block on coroutine which is already blocked ... wrong Context".
-//
-// The opaque ADK task closures (func()) give us no way to thread a per-task
-// context in, so the task runner swaps holder.current to the coroutine's gctx
-// just before invoking each task. Workflow coroutines are cooperatively
-// scheduled (never truly parallel), and a callback reads holder.current exactly
-// once — synchronously, before its first blocking call — so the value it reads
-// is always the coroutine it is running on. After fan-out completes the runner
-// restores the root context for subsequent main-coroutine work.
-type wfCtxHolder struct {
-	current workflow.Context
-}
 
 // ContextOption customizes the bridged context produced by NewContext.
 type ContextOption func(*contextConfig)
@@ -97,27 +83,26 @@ func NewContext(ctx workflow.Context, opts ...ContextOption) context.Context {
 		o(&cfg)
 	}
 
-	holder := &wfCtxHolder{current: ctx}
-	base := context.WithValue(context.Background(), wfCtxKey{}, holder)
+	base := context.WithValue(context.Background(), wfCtxKey{}, ctx)
 	base = platform.WithTimeProvider(base, func() time.Time { return workflow.Now(ctx) })
 	base = platform.WithUUIDProvider(base, newDeterministicUUIDProvider(ctx))
-	base = platform.WithTaskRunner(base, newWorkflowTaskRunner(ctx, holder, cfg.sequentialToolFanout))
+	base = platform.WithTaskRunner(base, newWorkflowTaskRunner(ctx, cfg.sequentialToolFanout))
 	return base
 }
 
 // workflowContext recovers the currently active workflow.Context from an ADK
 // context (CallbackContext / ToolContext both embed context.Context). During
-// concurrent tool fan-out this is the per-coroutine context set by the task
-// runner; otherwise it is the root context stashed by NewContext.
+// concurrent tool fan-out this is the per-coroutine context the task runner put
+// on each task; otherwise it is the root context stashed by NewContext.
 func workflowContext(ctx context.Context) (workflow.Context, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	holder, ok := ctx.Value(wfCtxKey{}).(*wfCtxHolder)
-	if !ok || holder == nil || holder.current == nil {
+	wfCtx, ok := ctx.Value(wfCtxKey{}).(workflow.Context)
+	if !ok || wfCtx == nil {
 		return nil, false
 	}
-	return holder.current, true
+	return wfCtx, true
 }
 
 // newDeterministicUUIDProvider returns a platform.UUIDProvider whose output is
@@ -153,37 +138,35 @@ func newDeterministicUUIDProvider(ctx workflow.Context) platform.UUIDProvider {
 // batched tool tasks on the Temporal workflow dispatcher rather than on real
 // OS goroutines. Concurrent mode runs each task in its own workflow.Go
 // coroutine and joins them through a workflow.Channel; sequential mode runs
-// them in order on the calling coroutine.
-func newWorkflowTaskRunner(ctx workflow.Context, holder *wfCtxHolder, sequential bool) platform.TaskRunner {
-	return func(_ context.Context, tasks []func()) {
+// them in order on the calling coroutine. Each task is invoked with its own
+// context carrying the workflow.Context it must dispatch Activities on, so the
+// plugin callbacks block on the right coroutine without any shared mutable state.
+func newWorkflowTaskRunner(ctx workflow.Context, sequential bool) platform.TaskRunner {
+	return func(runnerCtx context.Context, tasks []func(context.Context)) {
 		switch {
 		case len(tasks) == 0:
 			return
 		case sequential || len(tasks) == 1:
+			// Tasks run on the calling coroutine, so they dispatch on whatever
+			// workflow.Context runnerCtx already carries (the root context).
 			for _, t := range tasks {
-				t()
+				t(runnerCtx)
 			}
 		default:
-			root := holder.current
 			done := workflow.NewChannel(ctx)
 			for _, t := range tasks {
 				t := t
 				workflow.Go(ctx, func(gctx workflow.Context) {
-					// Make this coroutine's context the one the plugin callbacks
-					// dispatch on, so their Future.Get blocks on gctx (this
-					// coroutine) rather than the parent that is blocked on the
-					// join below. Cooperative scheduling guarantees the callback
-					// reads holder.current before any other coroutine runs.
-					holder.current = gctx
-					t()
+					// Hand this task gctx (this coroutine) so its Activity
+					// Future.Get blocks here, not on the parent coroutine that is
+					// blocked on the join below.
+					t(context.WithValue(runnerCtx, wfCtxKey{}, gctx))
 					done.Send(gctx, nil)
 				})
 			}
 			for range tasks {
 				done.Receive(ctx, nil)
 			}
-			// Restore the root context for subsequent main-coroutine dispatch.
-			holder.current = root
 		}
 	}
 }
