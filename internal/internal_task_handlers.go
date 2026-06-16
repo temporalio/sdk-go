@@ -145,6 +145,12 @@ type (
 		cache                     *WorkerCache
 		deadlockDetectionTimeout  time.Duration
 		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
+		workerControlTaskQueue    string
+	}
+
+	activityCancellationCallbacks struct {
+		sync.Mutex
+		cancels map[string]context.CancelCauseFunc
 	}
 
 	activityProvider func(name string) activity
@@ -172,6 +178,7 @@ type (
 		inboundPayloadVisitor            PayloadVisitor
 		outboundPayloadVisitor           PayloadVisitor
 		payloadVisitorConcurrency        int
+		activityCancellationCallbacks    *activityCancellationCallbacks
 	}
 
 	// history wrapper method to help information about events.
@@ -587,6 +594,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		cache:                     params.cache,
 		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
 		capabilities:              params.capabilities,
+		workerControlTaskQueue:    params.workerControlTaskQueue,
 	}
 }
 
@@ -2007,6 +2015,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			wth.useBuildIDForVersioning,
 			wth.workerDeploymentVersion,
 		),
+		WorkerControlTaskQueue: wth.workerControlTaskQueue,
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -2100,10 +2109,38 @@ func newActivityTaskHandlerWithCustomProvider(
 			params.UseBuildIDForVersioning,
 			params.DeploymentOptions.Version,
 		),
-		inboundPayloadVisitor:     params.inboundPayloadVisitor,
-		outboundPayloadVisitor:    params.outboundPayloadVisitor,
-		payloadVisitorConcurrency: params.payloadVisitorConcurrency,
+		inboundPayloadVisitor:         params.inboundPayloadVisitor,
+		outboundPayloadVisitor:        params.outboundPayloadVisitor,
+		payloadVisitorConcurrency:     params.payloadVisitorConcurrency,
+		activityCancellationCallbacks: params.activityCancellationCallbacks,
 	}
+}
+
+func newActivityCancellationCallbacks() *activityCancellationCallbacks {
+	return &activityCancellationCallbacks{cancels: make(map[string]context.CancelCauseFunc)}
+}
+
+func (r *activityCancellationCallbacks) register(taskToken []byte, cancel context.CancelCauseFunc) func() {
+	key := string(taskToken)
+	r.Lock()
+	r.cancels[key] = cancel
+	r.Unlock()
+	return func() {
+		r.Lock()
+		delete(r.cancels, key)
+		r.Unlock()
+	}
+}
+
+func (r *activityCancellationCallbacks) cancel(taskToken []byte) bool {
+	r.Lock()
+	cancel, ok := r.cancels[string(taskToken)]
+	r.Unlock()
+	if !ok {
+		return false
+	}
+	cancel(NewCanceledError())
+	return true
 }
 
 // heartbeatVisitorError wraps an outbound payload visitor error from a heartbeat.
@@ -2120,7 +2157,8 @@ type temporalInvoker struct {
 	service        workflowservice.WorkflowServiceClient
 	metricsHandler metrics.Handler
 	taskToken      []byte
-	// cancelHandler is called when the activity is canceled by a heartbeat request.
+	// cancelHandler is called when the activity is canceled by a heartbeat response
+	// or worker command.
 	cancelHandler context.CancelCauseFunc
 	// Amount of time to wait between each pending heartbeat send
 	heartbeatThrottleInterval time.Duration
@@ -2351,6 +2389,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}
 	canCtx, cancel := context.WithCancelCause(rootCtx)
 	defer cancel(nil)
+	if ath.activityCancellationCallbacks != nil {
+		unregister := ath.activityCancellationCallbacks.register(t.TaskToken, cancel)
+		defer unregister()
+	}
 
 	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.payloadVisitorConcurrency); err != nil {
 		return ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err), nil

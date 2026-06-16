@@ -135,6 +135,19 @@ func TestTaskHandlersTestSuite(t *testing.T) {
 	})
 }
 
+func TestActivityCancellationCallbacksCancel(t *testing.T) {
+	registry := newActivityCancellationCallbacks()
+	taskToken := []byte{1, 2, 3}
+	ctx, cancel := context.WithCancelCause(context.Background())
+
+	unregister := registry.register(taskToken, cancel)
+	require.True(t, registry.cancel([]byte{1, 2, 3}))
+	require.True(t, IsCanceledError(context.Cause(ctx)))
+
+	unregister()
+	require.False(t, registry.cancel(taskToken))
+}
+
 func createTestEventWorkflowExecutionCompleted(eventID int64, attr *historypb.WorkflowExecutionCompletedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
