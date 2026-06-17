@@ -19,55 +19,17 @@ package temporalnexus
 import (
 	"context"
 	"errors"
-	"net/url"
 	"strings"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
-	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
-
-func init() {
-	// Register the link converter used by the internal task handler to drain response links
-	// (e.g. from SignalWorkflowExecutionResponse.link) onto the StartOperationResponse. Defined here
-	// because the conversion helpers live in this package, which the internal package cannot import.
-	internal.SetWorkflowEventLinkToNexusLinkConverter(func(link *common.Link) (*nexuspb.Link, bool) {
-		we := link.GetWorkflowEvent()
-		if we == nil {
-			return nil, false
-		}
-		nexusLink := ConvertLinkWorkflowEventToNexusLink(we)
-		return &nexuspb.Link{
-			Url:  nexusLink.URL.String(),
-			Type: nexusLink.Type,
-		}, true
-	})
-	// Register the inbound converter used by the internal task handler to forward inbound Nexus task
-	// links onto the RPCs (signal, signalWithStart) the handler issues.
-	internal.SetNexusLinkToWorkflowEventLinkConverter(func(link *nexuspb.Link) (*common.Link, bool) {
-		nexusLink := nexus.Link{Type: link.GetType()}
-		if link.GetUrl() != "" {
-			u, err := url.Parse(link.GetUrl())
-			if err != nil {
-				return nil, false
-			}
-			nexusLink.URL = u
-		}
-		we, err := ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
-		if err != nil {
-			return nil, false
-		}
-		return &common.Link{
-			Variant: &common.Link_WorkflowEvent_{WorkflowEvent: we},
-		}, true
-	})
-}
 
 // OperationInfo contains information about a currently executing Nexus operation.
 type OperationInfo = internal.NexusOperationInfo

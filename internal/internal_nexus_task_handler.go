@@ -207,10 +207,8 @@ func (h *nexusTaskHandler) handleStartOperation(
 		})
 		// Only WorkflowEvent-shaped links can be forwarded onto the RPCs the handler issues; other
 		// link shapes come back unconvertible and are intentionally skipped.
-		if nexusLinkToWorkflowEventLink != nil {
-			if commonLink, ok := nexusLinkToWorkflowEventLink(link); ok {
-				requestLinks = append(requestLinks, commonLink)
-			}
+		if commonLink, ok := nexusLinkToWorkflowEventLink(link); ok {
+			requestLinks = append(requestLinks, commonLink)
 		}
 	}
 	if len(requestLinks) > 0 {
@@ -366,12 +364,10 @@ func (h *nexusTaskHandler) handleStartOperation(
 
 // responseLinks converts the response links accumulated on the operation context (from outbound RPCs
 // the handler issued, such as signal or signalWithStart) into nexus.v1.Links to attach to the
-// StartOperationResponse. Non-WorkflowEvent links are skipped. If no converter has been registered
-// (i.e. the temporalnexus package was not imported), the response links are dropped, which is safe
-// because they are only ever produced through temporalnexus-driven handlers.
+// StartOperationResponse. Non-WorkflowEvent links are skipped.
 func (h *nexusTaskHandler) responseLinks(nctx *NexusOperationContext) []*nexuspb.Link {
 	responseLinks := nctx.ResponseLinks()
-	if len(responseLinks) == 0 || workflowEventLinkToNexusLink == nil {
+	if len(responseLinks) == 0 {
 		return nil
 	}
 	out := make([]*nexuspb.Link, 0, len(responseLinks))

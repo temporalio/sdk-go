@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -17,25 +16,6 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 )
-
-// stubResponseLinkConverter installs a converter that turns a WorkflowEvent response link into a
-// nexus link whose URL references the workflow ID, mirroring the shape produced by the real
-// temporalnexus converter. It restores the previous converter on test cleanup.
-func stubResponseLinkConverter(t *testing.T) {
-	t.Helper()
-	prev := workflowEventLinkToNexusLink
-	t.Cleanup(func() { workflowEventLinkToNexusLink = prev })
-	SetWorkflowEventLinkToNexusLinkConverter(func(link *commonpb.Link) (*nexuspb.Link, bool) {
-		we := link.GetWorkflowEvent()
-		if we == nil {
-			return nil, false
-		}
-		return &nexuspb.Link{
-			Url:  fmt.Sprintf("temporal:///namespaces/%s/workflows/%s/%s/history", we.GetNamespace(), we.GetWorkflowId(), we.GetRunId()),
-			Type: string(we.ProtoReflect().Descriptor().FullName()),
-		}, true
-	})
-}
 
 // newResponseLinkTestTaskHandler builds a nexusTaskHandler whose registered operation stashes a
 // response link on the operation context (simulating what a real handler does after issuing a
@@ -114,7 +94,6 @@ func responseLinkTestTask(t *testing.T, payload string) *workflowservice.PollNex
 // operation context during a handler invocation are merged into the resulting
 // StartOperationResponse.Async. No server required.
 func TestAsyncResponseIncludesSignalResponseLinks(t *testing.T) {
-	stubResponseLinkConverter(t)
 	h := newResponseLinkTestTaskHandler(t, true)
 
 	nctx, handlerErr := h.newNexusOperationContext(responseLinkTestTask(t, "op-token"))
@@ -133,7 +112,6 @@ func TestAsyncResponseIncludesSignalResponseLinks(t *testing.T) {
 // TestSyncResponseIncludesSignalResponseLinks is the sync mirror, guarding against the sync and async
 // builders drifting (both must append the response links).
 func TestSyncResponseIncludesSignalResponseLinks(t *testing.T) {
-	stubResponseLinkConverter(t)
 	h := newResponseLinkTestTaskHandler(t, false)
 
 	nctx, handlerErr := h.newNexusOperationContext(responseLinkTestTask(t, "input"))
@@ -151,7 +129,6 @@ func TestSyncResponseIncludesSignalResponseLinks(t *testing.T) {
 // TestResponseOmitsResponseLinksWhenNoneStashed verifies the response carries no links when the
 // handler issued no link-returning RPCs.
 func TestResponseOmitsResponseLinksWhenNoneStashed(t *testing.T) {
-	stubResponseLinkConverter(t)
 	op := nexus.NewSyncOperation("operation", func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
 		return "result", nil
 	})

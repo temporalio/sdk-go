@@ -209,33 +209,6 @@ type nexusOperationRequestLinksKeyType struct{}
 
 var NexusOperationRequestLinksKey = nexusOperationRequestLinksKeyType{}
 
-// workflowEventLinkToNexusLink converts a common.v1.Link with a WorkflowEvent variant into a
-// nexus.v1.Link (URL + Type). It is registered by the temporalnexus package via
-// SetWorkflowEventLinkToNexusLinkConverter to avoid an import cycle (temporalnexus imports
-// internal, so the link-conversion helpers in temporalnexus cannot be imported here directly). The
-// task handler uses it to drain response links onto the StartOperationResponse. It returns
-// (nil, false) when the link is not a convertible WorkflowEvent link.
-var workflowEventLinkToNexusLink func(*commonpb.Link) (*nexuspb.Link, bool)
-
-// SetWorkflowEventLinkToNexusLinkConverter registers the converter used to turn response links
-// into nexus.v1.Links. Called once from the temporalnexus package's init.
-func SetWorkflowEventLinkToNexusLinkConverter(fn func(*commonpb.Link) (*nexuspb.Link, bool)) {
-	workflowEventLinkToNexusLink = fn
-}
-
-// nexusLinkToWorkflowEventLink converts an inbound nexus.v1.Link into a common.v1.Link with a
-// WorkflowEvent variant. Registered by the temporalnexus package via
-// SetNexusLinkToWorkflowEventLinkConverter to avoid an import cycle. The task handler uses it to
-// forward inbound Nexus task links onto the RPCs (e.g. signal, signalWithStart) the handler issues.
-// It returns (nil, false) when the link is not a parseable WorkflowEvent link.
-var nexusLinkToWorkflowEventLink func(*nexuspb.Link) (*commonpb.Link, bool)
-
-// SetNexusLinkToWorkflowEventLinkConverter registers the converter used to turn inbound Nexus task
-// links into common.v1.Links. Called once from the temporalnexus package's init.
-func SetNexusLinkToWorkflowEventLinkConverter(fn func(*nexuspb.Link) (*commonpb.Link, bool)) {
-	nexusLinkToWorkflowEventLink = fn
-}
-
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {
 	nctx, ok = ctx.Value(nexusOperationContextKey).(*NexusOperationContext)
