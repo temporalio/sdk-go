@@ -174,9 +174,10 @@ func StartUntypedWorkflow[R any](
 // The activity parameter must have the signature func(context.Context, I) (O, error). For
 // activities that don't follow this signature, use [StartUntypedActivity].
 //
-// activityOpts must specify a TaskQueue (defaults to the current worker's task queue when empty)
-// and at least one of StartToCloseTimeout or ScheduleToCloseTimeout. ID is auto-generated when
-// omitted.
+// activityOpts must specify an ID (required — auto-generation would produce a non-deterministic
+// activity ID embedded in the operation token, which is not safe for retried starts), a TaskQueue
+// (defaults to the current worker's task queue when empty), and at least one of StartToCloseTimeout
+// or ScheduleToCloseTimeout.
 //
 // These are free functions because Go does not allow generic methods on non-generic structs.
 func StartActivity[I, O any, AF func(context.Context, I) (O, error)](
