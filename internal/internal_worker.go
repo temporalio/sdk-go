@@ -228,6 +228,10 @@ type (
 
 		workerInstanceKey string
 
+		workerControlTaskQueue string
+
+		activityCancellationCallbacks *activityCancellationCallbacks
+
 		workerPollCompleteOnShutdown *atomic.Bool
 
 		// Set to true during start() when the namespace has the poller_autoscaling capability.
@@ -312,6 +316,10 @@ func (params *workerExecutionParameters) getBuildID() string {
 // Returns true if this worker is part of our system namespace or per-namespace system task queue
 func (params *workerExecutionParameters) isInternalWorker() bool {
 	return params.Namespace == "temporal-system" || params.TaskQueue == "temporal-sys-per-ns-tq"
+}
+
+func workerControlTaskQueue(namespace, groupingKey string) string {
+	return fmt.Sprintf("temporal-sys/worker-commands/%s/%s", namespace, groupingKey)
 }
 
 func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
@@ -1224,7 +1232,7 @@ type AggregatedWorker struct {
 	// stopC is created in NewAggregatedWorker and closed by AggregatedWorker.Stop()
 	// to mark the aggregated worker stopped, unblock Run(), and prevent restart.
 	// Child worker stop channels are closed later by their own Stop methods.
-	stopC chan struct{}
+	stopC        chan struct{}
 	fatalErr     error
 	fatalErrLock sync.Mutex
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities
@@ -2269,6 +2277,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// All worker systems that depend on the capabilities to process workflow/activity tasks
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
+	var activityCancellationCallbacks *activityCancellationCallbacks
+	if client.heartbeatManager != nil {
+		activityCancellationCallbacks = client.heartbeatManager.
+			sharedNamespaceWorkerFor(client.namespace).
+			activityCancellationCallbacks
+	}
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
 	var metricsHandler metrics.Handler
@@ -2338,12 +2352,14 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 		}),
-		capabilities:                 &capabilities,
-		pollTimeTracker:              &pollTimeTracker{},
-		workerInstanceKey:            workerInstanceKey,
-		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
-		serverSupportsAutoscaling:    &atomic.Bool{},
-		inboundPayloadVisitor:        extstore.NewExternalRetrievalVisitor(client.storageParams),
+		capabilities:                  &capabilities,
+		pollTimeTracker:               &pollTimeTracker{},
+		workerInstanceKey:             workerInstanceKey,
+		workerControlTaskQueue:        workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		activityCancellationCallbacks: activityCancellationCallbacks,
+		workerPollCompleteOnShutdown:  workerPollCompleteOnShutdown,
+		serverSupportsAutoscaling:     &atomic.Bool{},
+		inboundPayloadVisitor:         extstore.NewExternalRetrievalVisitor(client.storageParams),
 		outboundPayloadVisitor: newCompositePayloadVisitor(
 			extstore.NewExternalStorageVisitor(client.storageParams),
 			payloadLimitVisitor,

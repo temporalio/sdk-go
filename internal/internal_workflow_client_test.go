@@ -9,6 +9,7 @@ import (
 	"time"
 
 	activitypb "go.temporal.io/api/activity/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"google.golang.org/grpc"
@@ -2712,6 +2713,147 @@ func TestUpdate(t *testing.T) {
 		// Verify that calling Get with nil does not panic
 		err = handle.Get(context.TODO(), nil)
 		require.NoError(t, err)
+	})
+	t.Run("sync success exposes payloads", func(t *testing.T) {
+		svc, client := init(t)
+		want := "payloads-test-value"
+		req := newRequest(t, sync)
+		outPayloads, err := dc.ToPayloads(want)
+		require.NoError(t, err)
+		svc.EXPECT().
+			PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).Return(
+			&workflowservice.PollWorkflowExecutionUpdateResponse{
+				Outcome: &updatepb.Outcome{
+					Value: &updatepb.Outcome_Success{
+						Success: outPayloads,
+					},
+				},
+			},
+			nil,
+		)
+		// Use PollWorkflowUpdate directly to access the raw output.
+		output, err := client.PollWorkflowUpdate(
+			context.TODO(),
+			refFromRequest(req),
+		)
+		require.NoError(t, err)
+		require.NotNil(t, output.Result)
+		payloads := converter.GetPayloads(output.Result)
+		require.NotNil(t, payloads)
+                require.Equal(t, outPayloads, payloads)
+		require.Len(t, payloads.GetPayloads(), 1)
+	})
+	t.Run("sync error exposes failure proto", func(t *testing.T) {
+		svc, client := init(t)
+		want := NewApplicationError("update-failed", "TestType", true, nil, "detail-val")
+		req := newRequest(t, sync)
+		svc.EXPECT().
+			PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).Return(
+			&workflowservice.PollWorkflowExecutionUpdateResponse{
+				Outcome: &updatepb.Outcome{
+					Value: &updatepb.Outcome_Failure{
+						Failure: fc.ErrorToFailure(want),
+					},
+				},
+			},
+			nil,
+		)
+		// Use PollWorkflowUpdate directly to access the raw output.
+		output, err := client.PollWorkflowUpdate(
+			context.TODO(),
+			refFromRequest(req),
+		)
+		require.NoError(t, err)
+		require.Error(t, output.Error)
+		// Verify Failure() is accessible through the error.
+		type failureProvider interface {
+			Failure() *failurepb.Failure
+		}
+		var fp failureProvider
+		require.True(t, errors.As(output.Error, &fp))
+		failure := fp.Failure()
+		require.NotNil(t, failure)
+		require.Equal(t, "update-failed", failure.GetMessage())
+		require.Equal(t, "TestType", failure.GetApplicationFailureInfo().GetType())
+		require.True(t, failure.GetApplicationFailureInfo().GetNonRetryable())
+	})
+}
+
+func TestPollActivityResult(t *testing.T) {
+	dc := converter.GetDefaultDataConverter()
+	fc := GetDefaultFailureConverter()
+
+	init := func(t *testing.T) (*workflowservicemock.MockWorkflowServiceClient, *WorkflowClient) {
+		svc := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+		client := NewServiceClient(svc, nil, ClientOptions{})
+		svc.EXPECT().
+			GetSystemInfo(gomock.Any(), gomock.Any()).
+			AnyTimes().
+			Return(&workflowservice.GetSystemInfoResponse{}, nil)
+		return svc, client
+	}
+
+	t.Run("success exposes payloads", func(t *testing.T) {
+		svc, client := init(t)
+		resultPayloads, err := dc.ToPayloads("activity-result")
+		require.NoError(t, err)
+		svc.EXPECT().
+			PollActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollActivityExecutionResponse{
+					Outcome: &activitypb.ActivityExecutionOutcome{
+						Value: &activitypb.ActivityExecutionOutcome_Result{
+							Result: resultPayloads,
+						},
+					},
+				},
+				nil,
+			)
+		out, err := client.interceptor.PollActivityResult(
+			context.Background(),
+			&ClientPollActivityResultInput{ActivityID: "test-id", RunID: "run-id"},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, out.Result)
+		payloads := converter.GetPayloads(out.Result)
+		require.NotNil(t, payloads)
+		require.Equal(t, resultPayloads, payloads)
+	})
+
+	t.Run("failure exposes failure proto", func(t *testing.T) {
+		svc, client := init(t)
+		failureProto := fc.ErrorToFailure(
+			NewApplicationError("activity-failed", "ActivityValidationError", true, nil, "some-detail"),
+		)
+		svc.EXPECT().
+			PollActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollActivityExecutionResponse{
+					Outcome: &activitypb.ActivityExecutionOutcome{
+						Value: &activitypb.ActivityExecutionOutcome_Failure{
+							Failure: failureProto,
+						},
+					},
+				},
+				nil,
+			)
+		out, err := client.interceptor.PollActivityResult(
+			context.Background(),
+			&ClientPollActivityResultInput{ActivityID: "test-id", RunID: "run-id"},
+		)
+		require.NoError(t, err)
+		require.Error(t, out.Error)
+		// Verify Failure() is accessible through the error.
+		type failureProvider interface {
+			Failure() *failurepb.Failure
+		}
+		var fp failureProvider
+		require.True(t, errors.As(out.Error, &fp))
+		failure := fp.Failure()
+		require.NotNil(t, failure)
+		require.Equal(t, "activity-failed", failure.GetMessage())
+		require.Equal(t, "ActivityValidationError", failure.GetApplicationFailureInfo().GetType())
+		require.True(t, failure.GetApplicationFailureInfo().GetNonRetryable())
 	})
 }
 

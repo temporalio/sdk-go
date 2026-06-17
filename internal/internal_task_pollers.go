@@ -89,6 +89,8 @@ type (
 		pollTimeTracker *pollTimeTracker
 		// Unique identifier for worker
 		workerInstanceKey string
+		// Per-client queue used by the server to send worker commands.
+		workerControlTaskQueue string
 		// Server cancels polls on shutdown
 		workerPollCompleteOnShutdown *atomic.Bool
 	}
@@ -369,6 +371,7 @@ func newWorkflowTaskProcessor(
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
+			workerControlTaskQueue:       params.workerControlTaskQueue,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		service:                      service,
@@ -1151,7 +1154,8 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 			wtp.useBuildIDVersioning,
 			wtp.workerDeploymentVersion,
 		),
-		WorkerInstanceKey: wtp.workerInstanceKey,
+		WorkerInstanceKey:      wtp.workerInstanceKey,
+		WorkerControlTaskQueue: wtp.workerControlTaskQueue,
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1368,6 +1372,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
+			workerControlTaskQueue:       params.workerControlTaskQueue,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:         taskHandler,
@@ -1408,7 +1413,8 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 			atp.useBuildIDVersioning,
 			atp.workerDeploymentVersion,
 		),
-		WorkerInstanceKey: atp.workerInstanceKey,
+		WorkerInstanceKey:      atp.workerInstanceKey,
+		WorkerControlTaskQueue: atp.workerControlTaskQueue,
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)

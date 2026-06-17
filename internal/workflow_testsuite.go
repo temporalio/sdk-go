@@ -77,8 +77,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/testsuite.TestUpdateCallback]
 	TestUpdateCallback struct {
+		// OnAccept is called when the update is accepted.
 		OnAccept   func()
+		// OnReject is called when the update is rejected.
 		OnReject   func(error)
+		// OnComplete is called when the update completes.
 		OnComplete func(interface{}, error)
 	}
 )
@@ -98,9 +101,14 @@ func (b EncodedValues) Get(valuePtr ...interface{}) error {
 	return b.dataConverter.FromPayloads(b.values, valuePtr...)
 }
 
-// HasValues return whether there are values
+// HasValues return whether there are values encoded.
 func (b EncodedValues) HasValues() bool {
 	return b.values != nil
+}
+
+// Payloads gets the underlying commonpb.Payloads
+func (b EncodedValues) Payloads() *commonpb.Payloads {
+	return b.values
 }
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
@@ -117,9 +125,14 @@ func (b ErrorDetailsValues) Get(valuePtr ...interface{}) error {
 	return nil
 }
 
-// HasValues return whether there are values.
+// HasValues return whether there are values encoded.
 func (b ErrorDetailsValues) HasValues() bool {
 	return len(b) != 0
+}
+
+// Payloads gets the underlying commonpb.Payloads
+func (b ErrorDetailsValues) Payloads() *commonpb.Payloads {
+	return nil
 }
 
 // NewTestWorkflowEnvironment creates a new instance of TestWorkflowEnvironment. Use the returned TestWorkflowEnvironment
