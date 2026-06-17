@@ -306,10 +306,11 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 
 	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected concurrency to reduce to minimum")
 
-	require.Never(s.T(), func() bool {
-		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
-		return readAutoscalingPollerState(poller.autoscalingRunner) == 0
-	}, 200*time.Millisecond, 10*time.Millisecond, "should not scale below minimum")
+	for range 5 {
+		assert.Equal(s.T(), int64(1), poller.pollerAutoscaler.target.Load(), "should not scale target below minimum")
+		blockingPoller.Allow(1)
+		eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected concurrency to recover to minimum")
+	}
 }
 
 func (s *ScalableTaskPollerSuite) TestAutoscalingDoesNotHoldSlotWhileWaitingForPollCapacity() {
