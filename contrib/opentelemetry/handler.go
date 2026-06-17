@@ -95,8 +95,13 @@ func (m MetricsHandler) WithTags(tags map[string]string) client.MetricsHandler {
 	}
 }
 
+// Counter returns a monotonic counter. The underlying OpenTelemetry instrument
+// is an Int64Counter, so the series reported downstream is a monotonic sum
+// (e.g. a Prometheus counter, a Datadog count) rather than a gauge. Negative
+// deltas are not valid for a monotonic counter; their handling is delegated to
+// the OpenTelemetry SDK (the wrapper does not panic on them).
 func (m MetricsHandler) Counter(name string) client.MetricsCounter {
-	c, err := m.meter.Int64UpDownCounter(name)
+	c, err := m.meter.Int64Counter(name)
 	if err != nil {
 		m.onError(err)
 		return client.MetricsNopHandler.Counter(name)

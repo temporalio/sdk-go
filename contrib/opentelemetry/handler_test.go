@@ -37,7 +37,7 @@ func TestTags(t *testing.T) {
 		Name: "testCounter",
 		Data: metricdata.Sum[int64]{
 			Temporality: metricdata.CumulativeTemporality,
-			IsMonotonic: false,
+			IsMonotonic: true,
 			DataPoints: []metricdata.DataPoint[int64]{
 				{
 					Attributes: attribute.NewSet(attribute.String("tag1", "value1")),
@@ -64,7 +64,6 @@ func TestCounterHandler(t *testing.T) {
 	testCounter := handler.WithTags(map[string]string{"tag1": "value1"}).Counter("testCounter")
 	testCounter.Inc(1)
 	testCounter.Inc(1)
-	testCounter.Inc(-1)
 	// Emit some values with different tags
 	testCounter2 := handler.WithTags(map[string]string{"tag1": "value2"}).Counter("testCounter")
 	testCounter2.Inc(5)
@@ -78,10 +77,10 @@ func TestCounterHandler(t *testing.T) {
 		Name: "testCounter",
 		Data: metricdata.Sum[int64]{
 			Temporality: metricdata.CumulativeTemporality,
-			IsMonotonic: false,
+			IsMonotonic: true,
 			DataPoints: []metricdata.DataPoint[int64]{
 				{
-					Value:      1,
+					Value:      2,
 					Attributes: attribute.NewSet(attribute.String("tag1", "value1")),
 				},
 				{
@@ -92,6 +91,46 @@ func TestCounterHandler(t *testing.T) {
 		},
 	}
 	metricdatatest.AssertEqual(t, want, metrics[0], metricdatatest.IgnoreTimestamp())
+}
+
+// TestCounterHandlerNegativeDeltaDoesNotPanic verifies that a negative increment
+// on a monotonic counter is handled gracefully under the default handler options.
+// The default OnError panics, so this exercises that path: a negative delta must
+// not be routed through OnError. The exact recorded value is governed by the
+// OpenTelemetry SDK and intentionally not asserted; what matters is that the
+// instrument stays monotonic and emission never panics.
+func TestCounterHandlerNegativeDeltaDoesNotPanic(t *testing.T) {
+	ctx := context.Background()
+	metricReader := metric.NewManualReader()
+	meterProvider := metric.NewMeterProvider(metric.WithReader(metricReader))
+	// Default options: OnError defaults to panic. A negative delta must not reach it.
+	handler := opentelemetry.NewMetricsHandler(opentelemetry.MetricsHandlerOptions{
+		Meter: meterProvider.Meter("test"),
+	})
+	testCounter := handler.WithTags(map[string]string{"tag1": "value1"}).Counter("testCounter")
+	assert.NotPanics(t, func() {
+		testCounter.Inc(1)
+		testCounter.Inc(-1) // not valid for a monotonic counter; must not panic
+		testCounter.Inc(2)
+	})
+	var rm metricdata.ResourceMetrics
+	metricReader.Collect(ctx, &rm)
+	assert.Len(t, rm.ScopeMetrics, 1)
+	metrics := rm.ScopeMetrics[0].Metrics
+	assert.Len(t, metrics, 1)
+	want := metricdata.Metrics{
+		Name: "testCounter",
+		Data: metricdata.Sum[int64]{
+			Temporality: metricdata.CumulativeTemporality,
+			IsMonotonic: true,
+			DataPoints: []metricdata.DataPoint[int64]{
+				{
+					Attributes: attribute.NewSet(attribute.String("tag1", "value1")),
+				},
+			},
+		},
+	}
+	metricdatatest.AssertEqual(t, want, metrics[0], metricdatatest.IgnoreTimestamp(), metricdatatest.IgnoreValue())
 }
 
 func TestGaugeHandler(t *testing.T) {
