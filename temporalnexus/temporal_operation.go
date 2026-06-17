@@ -51,6 +51,9 @@ type CancelTemporalWorkflowRunOptions struct {
 type CancelTemporalActivityExecutionOptions struct {
 	// ActivityID extracted from the operation token.
 	ActivityID string
+	// RunID extracted from the operation token. May be empty for tokens generated before the
+	// activity was started (e.g. callback tokens).
+	RunID string
 }
 
 // TemporalOperationResult encapsulates either a synchronous result or an asynchronous operation token.
@@ -383,7 +386,10 @@ func defaultCancelWorkflowRun(ctx context.Context, c client.Client, options Canc
 
 // defaultCancelActivityExecution is the default cancel handler for activity-execution operation tokens.
 func defaultCancelActivityExecution(ctx context.Context, c client.Client, options CancelTemporalActivityExecutionOptions, _ nexus.CancelOperationOptions) error {
-	handle := c.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: options.ActivityID})
+	handle := c.GetActivityHandle(client.GetActivityHandleOptions{
+		ActivityID: options.ActivityID,
+		RunID:      options.RunID,
+	})
 	return handle.Cancel(ctx, client.CancelActivityOptions{})
 }
 
@@ -469,6 +475,7 @@ func (o *temporalOperation[I, O]) Cancel(ctx context.Context, token string, opti
 		}
 		return o.options.CancelActivityExecution(ctx, GetClient(ctx), CancelTemporalActivityExecutionOptions{
 			ActivityID: actToken.ActivityID,
+			RunID:      actToken.RunID,
 		}, options)
 	default:
 		return nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "unknown operation token type: %d", tokenType)
