@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"sync"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
@@ -42,6 +43,39 @@ type NexusOperationContext struct {
 	metricsHandler metrics.Handler
 	log            log.Logger
 	registry       *registry
+
+	// responseLinksMu guards responseLinks. A Nexus operation handler is invoked from a single
+	// goroutine, but handlers are free to issue RPCs from other goroutines they spawn, so the
+	// accumulator is synchronized.
+	responseLinksMu sync.Mutex
+	// responseLinks holds the response links returned by outbound RPCs the operation handler issues
+	// (such as SignalWorkflowExecutionResponse.link or
+	// SignalWithStartWorkflowExecutionResponse.signal_link). One entry per outbound RPC that
+	// returned a link. Drained by the task handler when building the StartOperationResponse so each
+	// RPC the handler issued gets a corresponding link on the caller workflow's history event.
+	responseLinks []*commonpb.Link
+}
+
+// AddResponseLink appends a response link returned by an outbound RPC the operation handler issued
+// (e.g. signal, signalWithStart). nil links are ignored. The task handler drains the accumulated
+// response links when building the operation's StartOperationResponse.
+func (nc *NexusOperationContext) AddResponseLink(link *commonpb.Link) {
+	if link == nil {
+		return
+	}
+	nc.responseLinksMu.Lock()
+	defer nc.responseLinksMu.Unlock()
+	nc.responseLinks = append(nc.responseLinks, link)
+}
+
+// ResponseLinks returns a copy of the response links accumulated from every outbound RPC the handler
+// issued, in call order.
+func (nc *NexusOperationContext) ResponseLinks() []*commonpb.Link {
+	nc.responseLinksMu.Lock()
+	defer nc.responseLinksMu.Unlock()
+	out := make([]*commonpb.Link, len(nc.responseLinks))
+	copy(out, nc.responseLinks)
+	return out
 }
 
 func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
@@ -171,9 +205,9 @@ type nexusOperationRequestIDKeyType struct{}
 
 var NexusOperationRequestIDKey = nexusOperationRequestIDKeyType{}
 
-type nexusOperationLinksKeyType struct{}
+type nexusOperationRequestLinksKeyType struct{}
 
-var NexusOperationLinksKey = nexusOperationLinksKeyType{}
+var NexusOperationRequestLinksKey = nexusOperationRequestLinksKeyType{}
 
 // NexusOperationContextFromGoContext gets the [NexusOperationContext] associated with the given [context.Context].
 func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperationContext, ok bool) {

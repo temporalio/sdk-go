@@ -298,6 +298,14 @@ func TestConvertNexusLinkToLinkWorkflowEvent(t *testing.T) {
 			},
 		},
 		{
+			name: "invalid nil URL",
+			input: nexus.Link{
+				URL:  nil,
+				Type: "temporal.api.common.v1.Link.WorkflowEvent",
+			},
+			errMsg: "failed to parse link to Link_WorkflowEvent",
+		},
+		{
 			name: "invalid scheme",
 			input: nexus.Link{
 				URL: &url.URL{
