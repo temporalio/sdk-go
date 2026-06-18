@@ -40,7 +40,11 @@ type MCPFactory func(ctx context.Context) (tool.Toolset, error)
 type Config struct {
 	// Models maps a model name (the string the user sets on their model.LLM and
 	// that ADK copies into LLMRequest.Model) to a factory that rebuilds it
-	// worker-side. The InvokeModel Activity looks the factory up by name.
+	// worker-side. The InvokeModel Activity looks the factory up by name. It is
+	// optional: when a name is absent here, InvokeModel falls back to ADK's
+	// name-based model registry (model.NewLLM), so providers the registry already
+	// knows (e.g. gemini) need no entry. Use Models to supply custom credentials,
+	// disable SDK retries, or override what the registry would otherwise build.
 	Models map[string]ModelFactory
 
 	// Tools is the set of runnable tools (functiontool.New(...), ActivityAsTool,

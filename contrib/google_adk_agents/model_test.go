@@ -13,6 +13,7 @@
 package googleadk_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -20,6 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/testsuite"
+
+	"google.golang.org/adk/model"
 
 	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 )
@@ -138,4 +141,31 @@ func TestDefaultSummaryIsAgentName(t *testing.T) {
 	env.ExecuteWorkflow(agentRunWorkflow, runInput{ModelName: "fake-model", UserMessage: "hi"})
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
+}
+
+// TestModelResolvedViaRegistry proves Config.Models is optional: when a model
+// name has no registered ModelFactory, InvokeModel falls back to ADK's name-based
+// model registry (model.NewLLM), mirroring adk-python's LLMRegistry. Here the
+// model is registered only in the adk registry — not in Config.Models — yet the
+// run resolves it worker-side and returns its response.
+func TestModelResolvedViaRegistry(t *testing.T) {
+	model.Register("^registry-only-model$", func(context.Context, string) (model.LLM, error) {
+		return googleadk.NewFakeModel(googleadk.TextResponse("hello from the registry")), nil
+	})
+
+	var s testsuite.WorkflowTestSuite
+	// Config.Models is intentionally empty: the model must resolve via the registry.
+	env, counter := newEnv(t, &s, googleadk.Config{})
+
+	env.ExecuteWorkflow(agentRunWorkflow, runInput{
+		ModelName:   "registry-only-model",
+		UserMessage: "hi",
+	})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var res runResult
+	require.NoError(t, env.GetWorkflowResult(&res))
+	assert.Contains(t, res.Texts, "hello from the registry")
+	assert.Equal(t, 1, counter.get(googleadk.InvokeModelActivityName))
 }

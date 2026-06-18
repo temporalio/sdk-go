@@ -23,6 +23,7 @@ import (
 	"google.golang.org/adk/agent"
 	"google.golang.org/adk/model"
 	"google.golang.org/adk/tool"
+	"google.golang.org/adk/tool/toolutils"
 )
 
 // MCPToolsetOptions configures NewMCPToolset.
@@ -210,50 +211,19 @@ func (a *Activities) mcpToolset(ctx context.Context, name string) (tool.Toolset,
 	return ts, nil
 }
 
-// packable is the structural subset of a tool that packTool needs.
-type packable interface {
-	Name() string
-	Declaration() *genai.FunctionDeclaration
-}
-
-// packTool consolidates a tool's declaration into req — replicating ADK's
-// internal toolutils.PackTool (which is not importable) so proxy/activity tools
-// are advertised to the model exactly as native tools are. It also records the
-// live tool under req.Tools (json:"-", so it never crosses the wire) keyed by
-// name, which is how ADK later resolves the tool to dispatch.
-func packTool(req *model.LLMRequest, t packable) error {
-	if req.Tools == nil {
-		req.Tools = make(map[string]any)
-	}
-	name := t.Name()
-	if _, ok := req.Tools[name]; ok {
-		// Idempotent: ADK runs both toolPreprocess (each expanded toolset tool's
-		// ProcessRequest) and toolsetPreprocess (the toolset's own ProcessRequest),
-		// so a toolset tool is packed twice. The declarations are identical; skip
-		// the duplicate rather than erroring or double-advertising it to the model.
-		return nil
-	}
-	req.Tools[name] = t
-	if req.Config == nil {
-		req.Config = &genai.GenerateContentConfig{}
-	}
-	decl := t.Declaration()
-	if decl == nil {
-		return nil
-	}
-	var funcTool *genai.Tool
-	for _, gt := range req.Config.Tools {
-		if gt != nil && gt.FunctionDeclarations != nil {
-			funcTool = gt
-			break
+// packTool advertises a proxy tool's declaration to the model via ADK's public
+// tool-declaration packer (tool/toolutils), recording the live tool under
+// req.Tools (json:"-", so it never crosses the wire) so ADK can later resolve it
+// to dispatch. It is idempotent: ADK runs both toolPreprocess (each expanded
+// toolset tool's ProcessRequest) and toolsetPreprocess (the toolset's own
+// ProcessRequest), so a toolset tool is packed twice with identical
+// declarations. A name already present is skipped, rather than erroring as
+// toolutils.PackTool does on a duplicate.
+func packTool(req *model.LLMRequest, t toolutils.Packable) error {
+	if req.Tools != nil {
+		if _, ok := req.Tools[t.Name()]; ok {
+			return nil
 		}
 	}
-	if funcTool == nil {
-		req.Config.Tools = append(req.Config.Tools, &genai.Tool{
-			FunctionDeclarations: []*genai.FunctionDeclaration{decl},
-		})
-	} else {
-		funcTool.FunctionDeclarations = append(funcTool.FunctionDeclarations, decl)
-	}
-	return nil
+	return toolutils.PackTool(req, t)
 }

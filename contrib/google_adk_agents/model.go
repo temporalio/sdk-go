@@ -68,15 +68,20 @@ func (a *Activities) InvokeModel(ctx context.Context, in invokeModelInput) (*mod
 	if in.Request == nil {
 		return nil, newApplicationError(ErrorTypeModel, false, nil, "InvokeModel: nil request")
 	}
-	factory, ok := a.models[in.Request.Model]
-	if !ok {
-		return nil, newApplicationError(ErrorTypeModel, false, nil,
-			"no ModelFactory registered for model %q; register it in Config.Models", in.Request.Model)
+	// Resolve the model worker-side: an explicit ModelFactory (custom credentials,
+	// disabled SDK retries, etc.) wins; otherwise fall back to ADK's name-based
+	// model registry, so callers need not hand-wire a factory for providers the
+	// registry already knows (e.g. gemini). Mirrors adk-python's LLMRegistry.
+	var llm model.LLM
+	var err error
+	if factory, ok := a.models[in.Request.Model]; ok {
+		llm, err = factory(ctx, in.Request.Model)
+	} else {
+		llm, err = model.NewLLM(ctx, in.Request.Model)
 	}
-	llm, err := factory(ctx, in.Request.Model)
 	if err != nil {
 		return nil, newApplicationError(ErrorTypeModel, false, err,
-			"construct model %q: %v", in.Request.Model, err)
+			"resolve model %q (add it to Config.Models or register its provider): %v", in.Request.Model, err)
 	}
 
 	if in.Stream && in.StreamingTopic != "" {
