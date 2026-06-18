@@ -150,9 +150,13 @@ func (a *Activities) invokeModelStreaming(ctx context.Context, llm model.LLM, in
 	return agg, nil
 }
 
-// aggregateResponses folds streamed/partial responses into one. The latest
-// non-text metadata wins; text parts are concatenated so the returned response
-// carries the full message even when the model streamed it in chunks.
+// aggregateResponses folds streamed/partial responses into one: text parts are
+// concatenated so the returned response carries the full message, and for every
+// other field the latest chunk that sets it wins. All metadata fields are folded
+// (not just usage/finish/grounding) because a model commonly emits citations,
+// logprobs, transcriptions, custom metadata, or an error/finish only on a later
+// chunk; dropping those would lose data from the single response handed back into
+// the workflow. (Partial/TurnComplete are managed by the streaming caller.)
 func aggregateResponses(agg, next *model.LLMResponse) *model.LLMResponse {
 	if next == nil {
 		return agg
@@ -186,6 +190,36 @@ func aggregateResponses(agg, next *model.LLMResponse) *model.LLMResponse {
 	}
 	if next.ModelVersion != "" {
 		agg.ModelVersion = next.ModelVersion
+	}
+	if next.CitationMetadata != nil {
+		agg.CitationMetadata = next.CitationMetadata
+	}
+	if next.LogprobsResult != nil {
+		agg.LogprobsResult = next.LogprobsResult
+	}
+	if next.CustomMetadata != nil {
+		agg.CustomMetadata = next.CustomMetadata
+	}
+	if next.InputTranscription != nil {
+		agg.InputTranscription = next.InputTranscription
+	}
+	if next.OutputTranscription != nil {
+		agg.OutputTranscription = next.OutputTranscription
+	}
+	if next.AvgLogprobs != 0 {
+		agg.AvgLogprobs = next.AvgLogprobs
+	}
+	if next.ErrorCode != "" {
+		agg.ErrorCode = next.ErrorCode
+	}
+	if next.ErrorMessage != "" {
+		agg.ErrorMessage = next.ErrorMessage
+	}
+	if next.Interrupted {
+		agg.Interrupted = true
+	}
+	if next.SessionResumptionHandle != "" {
+		agg.SessionResumptionHandle = next.SessionResumptionHandle
 	}
 	return agg
 }

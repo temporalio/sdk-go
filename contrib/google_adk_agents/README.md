@@ -183,6 +183,10 @@ func main() {
   `.McpError`. Classify them with `IsNonRetryable(err)`; never string-match.
   Upstream HTTP status drives retryability (`429`/`5xx` retryable, other `4xx`
   not).
+- **Disable model-SDK retries in your `ModelFactory`.** The `InvokeModel` Activity
+  already runs under Temporal's `RetryPolicy`, so leaving the model client's own
+  retries enabled retries a transient failure twice over (SDK × Temporal). Let
+  Temporal own retries — it is the single source of truth.
 - **Per-model timeouts and UI summaries.** `Options.PerModelTimeouts` gives
   thinking models a longer budget; every model/tool Activity carries a `summary`
   for the Temporal UI (`Options.SummaryFn`, default = the ADK agent name).

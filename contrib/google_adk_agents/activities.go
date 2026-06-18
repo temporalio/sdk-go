@@ -27,6 +27,12 @@ import (
 // in LLMRequest.Model. API keys and other credentials are captured in the
 // closure and therefore live only on the worker — they are never serialized
 // into Activity inputs.
+//
+// IMPORTANT: disable the model SDK's own client-side retries inside the factory.
+// The InvokeModel Activity already runs under Temporal's RetryPolicy, so leaving
+// SDK retries enabled means a transient failure is retried twice over (SDK
+// attempts × Temporal attempts) — inflating latency and cost and blurring the
+// retry contract. Temporal should be the single source of truth for retries.
 type ModelFactory func(ctx context.Context, modelName string) (model.LLM, error)
 
 // MCPFactory constructs a live MCP tool.Toolset worker-side. The real

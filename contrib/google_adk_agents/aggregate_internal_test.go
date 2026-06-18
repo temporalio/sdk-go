@@ -108,3 +108,31 @@ func TestClassifyModelErrorRetryability(t *testing.T) {
 		assert.Equal(t, !tc.retryable, IsNonRetryable(classified), "code %d", tc.code)
 	}
 }
+
+// TestAggregateResponsesFoldsAllLateFields proves metadata a model emits only on
+// a later streaming chunk — citations, logprobs, transcriptions, custom metadata,
+// error fields — is carried onto the aggregate rather than dropped.
+func TestAggregateResponsesFoldsAllLateFields(t *testing.T) {
+	agg := aggregateResponses(nil, partial("hi"))
+
+	last := partial(" there")
+	last.CitationMetadata = &genai.CitationMetadata{}
+	last.LogprobsResult = &genai.LogprobsResult{}
+	last.CustomMetadata = map[string]any{"trace": "xyz"}
+	last.OutputTranscription = &genai.Transcription{}
+	last.AvgLogprobs = -0.25
+	last.ErrorCode = "SAFETY"
+	last.ErrorMessage = "blocked by safety"
+
+	agg = aggregateResponses(agg, last)
+
+	assert.Equal(t, "hi there", concatText(agg.Content))
+	assert.NotNil(t, agg.CitationMetadata, "citation metadata from a later chunk must survive")
+	assert.NotNil(t, agg.LogprobsResult)
+	assert.NotNil(t, agg.OutputTranscription)
+	require.NotNil(t, agg.CustomMetadata)
+	assert.Equal(t, "xyz", agg.CustomMetadata["trace"])
+	assert.Equal(t, -0.25, agg.AvgLogprobs)
+	assert.Equal(t, "SAFETY", agg.ErrorCode)
+	assert.Equal(t, "blocked by safety", agg.ErrorMessage)
+}
