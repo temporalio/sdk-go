@@ -556,6 +556,8 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 		return false
 	}
 
+	line, _, _ = strings.Cut(line, "//")
+	line = strings.TrimSpace(line)
 	tokens := strings.Fields(line)
 	if strings.HasPrefix(line, "func "+private+"(") {
 		return true
