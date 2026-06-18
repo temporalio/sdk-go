@@ -73,12 +73,15 @@ func AgentWorkflow(ctx workflow.Context, question string) (string, error) {
 		return "", err
 	}
 
-	// Build the agent the ordinary ADK way. The model is referenced by name only;
-	// the real *gemini.Model is reconstructed worker-side by the ModelFactory.
+	// Build the agent the ordinary ADK way. In-workflow the model only needs to
+	// report the model name: the plugin intercepts the call and the real gemini
+	// model is reconstructed worker-side by the ModelFactory (see main).
+	// NewFakeModel().WithName is a lightweight, deterministic name-carrier for the
+	// workflow side, so no real model client is constructed inside the workflow.
 	root, err := llmagent.New(llmagent.Config{
 		Name:        "assistant",
 		Description: "a helpful assistant",
-		Model:       gemini.New("gemini-2.0-flash"),
+		Model:       googleadk.NewFakeModel().WithName("gemini-2.0-flash"),
 		Instruction: "Answer concisely.",
 	})
 	if err != nil {
@@ -132,7 +135,8 @@ func main() {
 	acts, err := googleadk.NewActivities(googleadk.Config{
 		Models: map[string]googleadk.ModelFactory{
 			"gemini-2.0-flash": func(ctx context.Context, name string) (model.LLM, error) {
-				return gemini.New(name), nil // reads GOOGLE_API_KEY from the env, worker-side
+				// nil config reads GEMINI_API_KEY / GOOGLE_API_KEY from the env, worker-side.
+				return gemini.NewModel(ctx, name, nil)
 			},
 		},
 	})
