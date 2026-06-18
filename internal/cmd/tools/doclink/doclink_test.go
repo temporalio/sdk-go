@@ -75,9 +75,6 @@ type (
 	if err := processInternal(config{fix: true}, file, pairs); err != nil {
 		t.Fatal(err)
 	}
-	if err := file.Close(); err != nil {
-		t.Fatal(err)
-	}
 
 	updatedBytes, err := os.ReadFile(path)
 	if err != nil {
@@ -123,9 +120,6 @@ type (
 		},
 	}
 	if err := processInternal(config{fix: true}, file, pairs); err != nil {
-		t.Fatal(err)
-	}
-	if err := file.Close(); err != nil {
 		t.Fatal(err)
 	}
 

@@ -116,19 +116,20 @@ func run() error {
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %v", path, err)
 			}
-			defer func() {
-				err = file.Close()
-				if err != nil {
-					log.Fatalf("failed to close file %s: %v", path, err)
-				}
-			}()
 
 			err = processInternal(cfg, file, publicToInternal)
 			if err != nil {
 				return fmt.Errorf("error while parsing internal files: %v", err)
 			}
 
+			file, err = os.Open(path)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %v", path, err)
+			}
 			err = checkInternalDocs(path, file, publicToInternal)
+			if closeErr := file.Close(); closeErr != nil {
+				return fmt.Errorf("failed to close file %s: %v", path, closeErr)
+			}
 			if err != nil {
 				return fmt.Errorf("error while checking internal docs: %v", err)
 			}
@@ -477,6 +478,9 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 	}
 
 	newFile += nextLine + "\n"
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("failed to close file %s: %v", file.Name(), err)
+	}
 
 	if changesMade {
 		absPath, err := filepath.Abs(file.Name())
