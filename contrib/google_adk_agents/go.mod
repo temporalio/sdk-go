@@ -6,8 +6,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/nexus-rpc/sdk-go v0.6.0
 	github.com/stretchr/testify v1.11.1
-	go.temporal.io/sdk v1.44.1
-	go.temporal.io/sdk/contrib/workflowstreams v0.0.0-00010101000000-000000000000
+	go.temporal.io/sdk v1.45.0
+	go.temporal.io/sdk/contrib/workflowstreams v0.1.1
 	google.golang.org/adk v0.0.0
 	google.golang.org/genai v1.57.0
 )
@@ -58,15 +58,6 @@ require (
 	rsc.io/omap v1.2.0 // indirect
 	rsc.io/ordered v1.1.1 // indirect
 )
-
-// Build against the in-repo SDK and the sibling workflowstreams module. The SDK
-// at the repo root carries the exception that permits workflowstreams to register
-// handlers under the "__temporal_workflow_stream_" sub-namespace (rejected by the
-// released v1.44.1 as a reserved "__temporal_" prefix); workflowstreams publishes
-// streaming chunks by signaling the parent workflow.
-replace go.temporal.io/sdk => ../../
-
-replace go.temporal.io/sdk/contrib/workflowstreams => ../workflowstreams
 
 // google.golang.org/adk is pinned to the temporal-integration branch of
 // github.com/DABH/adk-go (commit 4a566e4), which bundles the platform TaskRunner
