@@ -526,10 +526,13 @@ func (t *trackingSlotSupplier) stopMetrics() {
 	t.slotsMutex.Lock()
 	defer t.slotsMutex.Unlock()
 
-	if t.metricsStopped || !t.metricsPublished {
+	if t.metricsStopped {
 		return
 	}
 	t.metricsStopped = true
+	if !t.metricsPublished {
+		return
+	}
 	if t.inner.MaxSlots() != 0 {
 		t.taskSlotsAvailableGauge.Update(0)
 	}
