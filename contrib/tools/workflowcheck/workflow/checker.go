@@ -9,9 +9,10 @@ import (
 	"regexp"
 	"strings"
 
-	"go.temporal.io/sdk/contrib/tools/workflowcheck/determinism"
 	"golang.org/x/tools/go/analysis"
 	"gopkg.in/yaml.v2"
+
+	"go.temporal.io/sdk/contrib/tools/workflowcheck/determinism"
 )
 
 // DefaultIdentRefs are additional overrides of determinism.DefaultIdentRefs for
@@ -79,11 +80,16 @@ func NewChecker(config Config) *Checker {
 		Debug:               config.Debug,
 		IncludePosOnMessage: config.IncludePosOnMessage,
 		Determinism: determinism.NewChecker(determinism.Config{
-			IdentRefs:                         config.IdentRefs,
-			DebugfFunc:                        config.DebugfFunc,
-			Debug:                             config.DeterminismDebug,
-			EnableObjectFacts:                 config.EnableObjectFacts,
-			AcceptsNonDeterministicParameters: map[string][]string{"go.temporal.io/sdk/workflow": {"SideEffect", "MutableSideEffect"}},
+			IdentRefs:         config.IdentRefs,
+			DebugfFunc:        config.DebugfFunc,
+			Debug:             config.DeterminismDebug,
+			EnableObjectFacts: config.EnableObjectFacts,
+			AcceptsNonDeterministicParameters: map[string][]string{
+				"go.temporal.io/sdk/workflow": {
+					"SideEffect", "SideEffectWithOptions",
+					"MutableSideEffect", "MutableSideEffectWithOptions",
+				},
+			},
 		}),
 	}
 }
