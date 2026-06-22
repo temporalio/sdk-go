@@ -33,6 +33,51 @@ func WorkflowCallTimeInSideEffectAndNot(ctx workflow.Context) error { // want "a
 	return nil
 }
 
+func WorkflowCallTimeInSideEffectWithOptions(ctx workflow.Context) error {
+	workflow.SideEffectWithOptions(ctx, workflow.SideEffectOptions{}, func(ctx workflow.Context) interface{} {
+		return time.Now()
+	})
+	return nil
+}
+
+func WorkflowCallTimeInSideEffectWithOptionsAndNot(ctx workflow.Context) error { // want "a.WorkflowCallTimeInSideEffectWithOptionsAndNot is non-deterministic, reason: calls non-deterministic function time.Now"
+	workflow.SideEffectWithOptions(ctx, workflow.SideEffectOptions{}, func(ctx workflow.Context) interface{} {
+		return time.Now()
+	})
+	time.Now()
+	return nil
+}
+
+func WorkflowCallTimeInMutableSideEffect(ctx workflow.Context) error {
+	workflow.MutableSideEffect(ctx, "id", func(ctx workflow.Context) interface{} {
+		return time.Now()
+	}, func(a, b interface{}) bool { return a == b })
+	return nil
+}
+
+func WorkflowCallTimeInMutableSideEffectAndNot(ctx workflow.Context) error { // want "a.WorkflowCallTimeInMutableSideEffectAndNot is non-deterministic, reason: calls non-deterministic function time.Now"
+	workflow.MutableSideEffect(ctx, "id", func(ctx workflow.Context) interface{} {
+		return time.Now()
+	}, func(a, b interface{}) bool { return a == b })
+	time.Now()
+	return nil
+}
+
+func WorkflowCallTimeInMutableSideEffectWithOptions(ctx workflow.Context) error {
+	workflow.MutableSideEffectWithOptions(ctx, "id", workflow.MutableSideEffectOptions{}, func(ctx workflow.Context) interface{} {
+		return time.Now()
+	}, func(a, b interface{}) bool { return a == b })
+	return nil
+}
+
+func WorkflowCallTimeInMutableSideEffectWithOptionsAndNot(ctx workflow.Context) error { // want "a.WorkflowCallTimeInMutableSideEffectWithOptionsAndNot is non-deterministic, reason: calls non-deterministic function time.Now"
+	workflow.MutableSideEffectWithOptions(ctx, "id", workflow.MutableSideEffectOptions{}, func(ctx workflow.Context) interface{} {
+		return time.Now()
+	}, func(a, b interface{}) bool { return a == b })
+	time.Now()
+	return nil
+}
+
 func WorkflowCallTimeTransitively(ctx workflow.Context) error { // want "a.WorkflowCallTimeTransitively is non-deterministic, reason: calls non-deterministic function a.SomeTimeCall"
 	SomeTimeCall()
 	return nil
@@ -71,34 +116,4 @@ func NotWorkflow(ctx context.Context) {
 func WorkflowWithSearchAttributes(workflow.Context) {
 	sa := temporal.SearchAttributes{}
 	_ = sa.Copy()
-}
-
-func WorkflowCallTimeInSideEffectWithOptions(ctx workflow.Context) error {
-	workflow.SideEffectWithOptions(ctx, workflow.SideEffectOptions{}, func(ctx workflow.Context) interface{} {
-		return time.Now()
-	})
-	return nil
-}
-
-func WorkflowCallTimeInSideEffectWithOptionsAndNot(ctx workflow.Context) error { // want "a.WorkflowCallTimeInSideEffectWithOptionsAndNot is non-deterministic, reason: calls non-deterministic function time.Now"
-	workflow.SideEffectWithOptions(ctx, workflow.SideEffectOptions{}, func(ctx workflow.Context) interface{} {
-		return time.Now()
-	})
-	time.Now()
-	return nil
-}
-
-func WorkflowCallTimeInMutableSideEffectWithOptions(ctx workflow.Context) error {
-	workflow.MutableSideEffectWithOptions(ctx, "id", workflow.MutableSideEffectOptions{}, func(ctx workflow.Context) interface{} {
-		return time.Now()
-	}, func(a, b interface{}) bool { return a == b })
-	return nil
-}
-
-func WorkflowCallTimeInMutableSideEffectWithOptionsAndNot(ctx workflow.Context) error { // want "a.WorkflowCallTimeInMutableSideEffectWithOptionsAndNot is non-deterministic, reason: calls non-deterministic function time.Now"
-	workflow.MutableSideEffectWithOptions(ctx, "id", workflow.MutableSideEffectOptions{}, func(ctx workflow.Context) interface{} {
-		return time.Now()
-	}, func(a, b interface{}) bool { return a == b })
-	time.Now()
-	return nil
 }
