@@ -56,7 +56,8 @@ The first parameter to an activity function can be an optional context.Context. 
 * The activity function returns.
 * The context deadline is exceeded. The deadline is calculated based on the minimum of the ScheduleToClose timeout plus
 the activity task scheduled time and the StartToClose timeout plus the activity task start time.
-* The activity calls RecordHeartbeat after being cancelled by the Temporal server.
+* The Temporal server requests cancellation. On supported servers this can be delivered directly to the worker; on older
+servers the activity observes cancellation when it calls RecordHeartbeat after the request.
 
 # Failing the Activity
 
@@ -97,7 +98,8 @@ payload containing progress information.
 
 When an Activity is canceled (or its Workflow execution is completed or failed) the context passed into its function
 is canceled which sets its Done channel’s closed state. So an Activity can use that to perform any necessary cleanup
-and abort its execution. Currently cancellation is delivered only to Activities that call RecordHeartbeat.
+and abort its execution. On supported servers, cancellation can be delivered directly to the worker. Heartbeats are still
+recommended for long-running Activities and may be the cancellation delivery path on older servers.
 
 # Async/Manual Activity Completion
 

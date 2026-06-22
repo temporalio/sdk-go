@@ -17,13 +17,13 @@ import (
 )
 
 type (
-	PollScalerReportHandleSuite struct {
+	PollerAutoscalerSuite struct {
 		suite.Suite
 	}
 )
 
-func TestPollScalerReportHandleSuite(t *testing.T) {
-	suite.Run(t, new(PollScalerReportHandleSuite))
+func TestPollerAutoscalerSuite(t *testing.T) {
+	suite.Run(t, new(PollerAutoscalerSuite))
 }
 
 type (
@@ -39,7 +39,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerSetsTaskPollerType() 
 		},
 	)
 
-	blockingPoller := newSemaphoreProbeTaskPoller()
+	blockingPoller := newBlockingProbeTaskPoller()
 	poller := newScalableTaskPoller(
 		blockingPoller,
 		ilog.NewNopLogger(),
@@ -51,6 +51,99 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerSetsTaskPollerType() 
 
 	s.Equal(metrics.PollerTypeWorkflowStickyTask, poller.taskPollerType)
 }
+
+func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerUsesDynamicRunnerOnlyForAutoscaling() {
+	autoscalingPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		metrics.NopHandler,
+		&pollerBehaviorAutoscaling{
+			initialNumberOfPollers: 1,
+			maximumNumberOfPollers: 2,
+			minimumNumberOfPollers: 1,
+		},
+		metrics.PollerTypeWorkflowTask,
+		&atomic.Bool{},
+	)
+	s.NotNil(autoscalingPoller.autoscalingRunner)
+	s.Equal(0, autoscalingPoller.pollerCount)
+
+	simpleMaximumPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		metrics.NopHandler,
+		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 2},
+		metrics.PollerTypeWorkflowTask,
+		&atomic.Bool{},
+	)
+	s.Nil(simpleMaximumPoller.autoscalingRunner)
+	s.Equal(2, simpleMaximumPoller.pollerCount)
+}
+
+func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind() {
+	autoscalingBehavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: 1,
+		maximumNumberOfPollers: 2,
+		minimumNumberOfPollers: 1,
+	}
+	bw := &baseWorker{
+		options: baseWorkerOptions{
+			slotReservationData: slotReservationData{
+				taskQueue:     "test-task-queue",
+				taskQueueKind: enumspb.TASK_QUEUE_KIND_UNSPECIFIED,
+			},
+		},
+	}
+
+	nonStickyPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		metrics.NopHandler,
+		autoscalingBehavior,
+		metrics.PollerTypeWorkflowTask,
+		&atomic.Bool{},
+	)
+	s.Equal(enumspb.TASK_QUEUE_KIND_NORMAL, bw.slotReservationData(nonStickyPoller).taskQueueKind)
+
+	stickyPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		metrics.NopHandler,
+		autoscalingBehavior,
+		metrics.PollerTypeWorkflowStickyTask,
+		&atomic.Bool{},
+	)
+	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, bw.slotReservationData(stickyPoller).taskQueueKind)
+
+	mixedPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		metrics.NopHandler,
+		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 1},
+		metrics.PollerTypeWorkflowTask,
+		&atomic.Bool{},
+	)
+	s.Equal(enumspb.TASK_QUEUE_KIND_UNSPECIFIED, bw.slotReservationData(mixedPoller).taskQueueKind)
+}
+
+func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesTaskQueueKind() {
+	supplier := &captureReservationInfoSlotSupplier{}
+	trackingSupplier := newTrackingSlotSupplier(supplier, trackingSlotSupplierOptions{
+		logger:         ilog.NewNopLogger(),
+		metricsHandler: metrics.NopHandler,
+	})
+
+	permit, err := trackingSupplier.ReserveSlot(context.Background(), &slotReservationData{
+		taskQueue:     "test-task-queue",
+		taskQueueKind: enumspb.TASK_QUEUE_KIND_STICKY,
+	})
+
+	s.NoError(err)
+	s.NotNil(permit)
+	s.Equal("test-task-queue", supplier.taskQueue)
+	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, supplier.taskQueueKind)
+}
+
 func TestScalableTaskPollerSuite(t *testing.T) {
 	suite.Run(t, new(ScalableTaskPollerSuite))
 }
@@ -93,174 +186,70 @@ func (t *emptyTask) scaleDecision() (pollerScaleDecision, bool) {
 	return pollerScaleDecision{}, false
 }
 
-func (s *PollScalerReportHandleSuite) TestErrorScaleDown() {
-	targetSuggestion := 0
-	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+func (s *PollerAutoscalerSuite) TestErrorScaleDown() {
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount: 8,
 		maxPollerCount:     10,
 		minPollerCount:     2,
-		scaleCallback: func(suggestion int) {
-			targetSuggestion = suggestion
-		},
 	})
 	ps.handleTask(newTestTask(0))
 	ps.handleError(serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, ""))
-	assert.Equal(s.T(), 4, targetSuggestion, "should suggest scaling down on resource exhausted error")
+	assert.Equal(s.T(), int64(4), ps.target.Load(), "should suggest scaling down on resource exhausted error")
 	// Non resource exhausted errors should scale down by 1
 	ps.handleError(serviceerror.NewInternal("test error"))
-	assert.Equal(s.T(), 3, targetSuggestion)
+	assert.Equal(s.T(), int64(3), ps.target.Load())
 	ps.handleError(serviceerror.NewInternal("test error"))
-	assert.Equal(s.T(), 2, targetSuggestion)
+	assert.Equal(s.T(), int64(2), ps.target.Load())
 	// We should not scale down below minPollerCount
 	ps.handleError(serviceerror.NewInternal("test error"))
-	assert.Equal(s.T(), 2, targetSuggestion)
+	assert.Equal(s.T(), int64(2), ps.target.Load())
 	ps.handleError(serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, ""))
-	assert.Equal(s.T(), 2, targetSuggestion)
+	assert.Equal(s.T(), int64(2), ps.target.Load())
 }
 
-func (s *PollScalerReportHandleSuite) TestScaleDownOnEmptyTask() {
-	targetSuggestion := 0
-	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+func (s *PollerAutoscalerSuite) TestScaleDownOnEmptyTask() {
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount: 8,
 		maxPollerCount:     10,
 		minPollerCount:     2,
-		scaleCallback: func(suggestion int) {
-			targetSuggestion = suggestion
-		},
 	})
 	ps.handleTask(newTestTask(0))
 	ps.handleTask(newEmptyTask())
-	assert.Equal(s.T(), 7, targetSuggestion)
+	assert.Equal(s.T(), int64(7), ps.target.Load())
 }
 
-func (s *PollScalerReportHandleSuite) TestScaleUpOnDelay() {
-	targetSuggestion := 0
-	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+func (s *PollerAutoscalerSuite) TestScaleUpOnDelay() {
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount: 8,
 		maxPollerCount:     10,
 		minPollerCount:     2,
-		scaleCallback: func(suggestion int) {
-			targetSuggestion = suggestion
-		},
 	})
 	ps.handleTask(newTestTask(10))
-	assert.Equal(s.T(), 0, targetSuggestion)
+	assert.Equal(s.T(), int64(8), ps.target.Load())
 	ps.newPeriod()
 	ps.handleTask(newTestTask(100))
 	// We should scale up to but not past the max poller count
-	assert.Equal(s.T(), 10, targetSuggestion)
+	assert.Equal(s.T(), int64(10), ps.target.Load())
 
-}
-
-func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() {
-	behavior := &pollerBehaviorAutoscaling{
-		initialNumberOfPollers: 2,
-		maximumNumberOfPollers: 3,
-		minimumNumberOfPollers: 1,
-	}
-
-	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     &testSlotSupplier{},
-		maxTaskPerSecond: 1000,
-		taskPollers:      []scalableTaskPoller{poller},
-		taskProcessor:    noopTaskProcessor{},
-		workerType:       "AutoscalingTest",
-		logger:           ilog.NewNopLogger(),
-		stopTimeout:      time.Second,
-		metricsHandler:   metrics.NopHandler,
-	})
-
-	bw.Start()
-	defer func() {
-		allowBlockedPollers(blockingPoller, poller.pollerSemaphore)
-		blockingPoller.Close()
-		bw.Stop()
-	}()
-
-	eventuallySemaphoreState(s.T(), blockingPoller, poller.pollerSemaphore, 2, 2, "expected initial poller to start")
-
-	require.Never(s.T(), func() bool {
-		allowBlockedPollers(blockingPoller, poller.pollerSemaphore)
-		permits, _ := readSemaphoreState(poller.pollerSemaphore)
-		return permits > 2
-	}, 200*time.Millisecond, 10*time.Millisecond, "should not exceed initial concurrency")
-
-	poller.pollerAutoscalerReportHandle.updateTarget(func(int64) int64 { return 3 })
-
-	eventuallySemaphoreState(s.T(), blockingPoller, poller.pollerSemaphore, 3, 3, "expected concurrency to scale up to maximum")
-
-	require.Never(s.T(), func() bool {
-		allowBlockedPollers(blockingPoller, poller.pollerSemaphore)
-		permits, _ := readSemaphoreState(poller.pollerSemaphore)
-		return permits > 3
-	}, 200*time.Millisecond, 10*time.Millisecond, "should not exceed maximum concurrency")
-}
-
-func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
-	behavior := &pollerBehaviorAutoscaling{
-		initialNumberOfPollers: 2,
-		maximumNumberOfPollers: 3,
-		minimumNumberOfPollers: 1,
-	}
-
-	blockingPoller := newSemaphoreProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
-
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     &testSlotSupplier{},
-		maxTaskPerSecond: 1000,
-		taskPollers:      []scalableTaskPoller{poller},
-		taskProcessor:    noopTaskProcessor{},
-		workerType:       "AutoscalingTest",
-		logger:           ilog.NewNopLogger(),
-		stopTimeout:      time.Second,
-		metricsHandler:   metrics.NopHandler,
-	})
-
-	bw.Start()
-	defer func() {
-		allowBlockedPollers(blockingPoller, poller.pollerSemaphore)
-		blockingPoller.Close()
-		bw.Stop()
-	}()
-
-	eventuallySemaphoreState(s.T(), blockingPoller, poller.pollerSemaphore, 2, 2, "expected initial concurrency")
-
-	poller.pollerAutoscalerReportHandle.updateTarget(func(target int64) int64 { return 1 })
-
-	eventuallySemaphoreState(s.T(), blockingPoller, poller.pollerSemaphore, 1, 1, "expected concurrency to reduce to minimum")
-
-	require.Never(s.T(), func() bool {
-		allowBlockedPollers(blockingPoller, poller.pollerSemaphore)
-		permits, _ := readSemaphoreState(poller.pollerSemaphore)
-		return permits == 0
-	}, 200*time.Millisecond, 10*time.Millisecond, "should not scale below minimum")
 }
 
 // TestPollerTargetMetric verifies the temporal_poller_target gauge is emitted with
 // the poller-type tag, seeded with the initial target at construction, and updated
 // as the autoscaling target changes (here, halved on ResourceExhausted errors).
-func (s *ScalableTaskPollerSuite) TestPollerTargetMetric() {
+func (s *PollerAutoscalerSuite) TestPollerTargetMetric() {
 	const initialPollers = 16
-	behavior := &pollerBehaviorAutoscaling{
-		initialNumberOfPollers: initialPollers,
-		maximumNumberOfPollers: 100,
-		minimumNumberOfPollers: 1,
-	}
+	capturingHandler := metrics.NewCapturingHandler()
 	serverSupportsAutoscaling := &atomic.Bool{}
 	serverSupportsAutoscaling.Store(true)
 
-	capturingHandler := metrics.NewCapturingHandler()
-	poller := newScalableTaskPoller(
-		newSemaphoreProbeTaskPoller(),
-		ilog.NewNopLogger(),
-		capturingHandler,
-		behavior,
-		metrics.PollerTypeActivityTask,
-		serverSupportsAutoscaling,
-	)
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
+		initialPollerCount:        initialPollers,
+		maxPollerCount:            100,
+		minPollerCount:            1,
+		metricsHandler:            capturingHandler,
+		pollerType:                metrics.PollerTypeActivityTask,
+		serverSupportsAutoscaling: serverSupportsAutoscaling,
+	})
 
 	pollerTarget := func() float64 {
 		for _, g := range capturingHandler.Gauges() {
@@ -277,27 +266,193 @@ func (s *ScalableTaskPollerSuite) TestPollerTargetMetric() {
 
 	// The gauge tracks the target as it halves on ResourceExhausted errors.
 	resourceExhausted := serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, "")
-	poller.pollerAutoscalerReportHandle.handleError(resourceExhausted)
+	ps.handleError(resourceExhausted)
 	s.Equal(float64(8), pollerTarget())
-	poller.pollerAutoscalerReportHandle.handleError(resourceExhausted)
+	ps.handleError(resourceExhausted)
 	s.Equal(float64(4), pollerTarget())
 }
 
-type semaphoreProbeTaskPoller struct {
+func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() {
+	behavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: 2,
+		maximumNumberOfPollers: 3,
+		minimumNumberOfPollers: 1,
+	}
+
+	blockingPoller := newBlockingProbeTaskPoller()
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &testSlotSupplier{},
+		maxTaskPerSecond: 1000,
+		taskPollers:      []scalableTaskPoller{poller},
+		taskProcessor:    noopTaskProcessor{},
+		workerType:       "AutoscalingTest",
+		logger:           ilog.NewNopLogger(),
+		stopTimeout:      time.Second,
+		metricsHandler:   metrics.NopHandler,
+	})
+
+	bw.Start()
+	defer func() {
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		blockingPoller.Close()
+		bw.Stop()
+	}()
+
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 2, "expected initial pollers to start")
+
+	require.Never(s.T(), func() bool {
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		return readAutoscalingPollerState(poller.autoscalingRunner) > 2
+	}, 200*time.Millisecond, 10*time.Millisecond, "should not exceed initial concurrency")
+
+	poller.pollerAutoscaler.updateTarget(func(int64) int64 { return 3 })
+
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 3, "expected concurrency to scale up to maximum")
+
+	require.Never(s.T(), func() bool {
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		return readAutoscalingPollerState(poller.autoscalingRunner) > 3
+	}, 200*time.Millisecond, 10*time.Millisecond, "should not exceed maximum concurrency")
+}
+
+func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
+	behavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: 2,
+		maximumNumberOfPollers: 3,
+		minimumNumberOfPollers: 1,
+	}
+
+	blockingPoller := newBlockingProbeTaskPoller()
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &testSlotSupplier{},
+		maxTaskPerSecond: 1000,
+		taskPollers:      []scalableTaskPoller{poller},
+		taskProcessor:    noopTaskProcessor{},
+		workerType:       "AutoscalingTest",
+		logger:           ilog.NewNopLogger(),
+		stopTimeout:      time.Second,
+		metricsHandler:   metrics.NopHandler,
+	})
+
+	bw.Start()
+	defer func() {
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		blockingPoller.Close()
+		bw.Stop()
+	}()
+
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 2, "expected initial concurrency")
+
+	poller.pollerAutoscaler.updateTarget(func(target int64) int64 { return 1 })
+	blockingPoller.Allow(2)
+
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected concurrency to reduce to minimum")
+
+	require.Never(s.T(), func() bool {
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		return readAutoscalingPollerState(poller.autoscalingRunner) == 0
+	}, 200*time.Millisecond, 10*time.Millisecond, "should not scale below minimum")
+}
+
+func (s *ScalableTaskPollerSuite) TestAutoscalingDoesNotHoldSlotWhileWaitingForPollCapacity() {
+	behavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: 1,
+		maximumNumberOfPollers: 2,
+		minimumNumberOfPollers: 1,
+	}
+
+	blockingPoller := newBlockingProbeTaskPoller()
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
+	slotSupplier := newLimitedSlotSupplier(2)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     slotSupplier,
+		maxTaskPerSecond: 1000,
+		taskPollers:      []scalableTaskPoller{poller},
+		taskProcessor:    noopTaskProcessor{},
+		workerType:       "AutoscalingSlotCapacityTest",
+		logger:           ilog.NewNopLogger(),
+		stopTimeout:      time.Second,
+		metricsHandler:   metrics.NopHandler,
+	})
+
+	bw.Start()
+	defer func() {
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		blockingPoller.Close()
+		bw.Stop()
+	}()
+
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected initial poller to start")
+
+	require.Never(s.T(), func() bool {
+		return slotSupplier.reserves.Load() > 1
+	}, 200*time.Millisecond, 10*time.Millisecond,
+		"autoscaling poller should not reserve another slot while blocked by its target")
+
+	permit := slotSupplier.TryReserveSlot(nil)
+	require.NotNil(s.T(), permit, "unused slot should remain available while autoscaling target is full")
+	slotSupplier.ReleaseSlot(nil)
+}
+
+func (s *ScalableTaskPollerSuite) TestAutoscalingBalancerDoesNotHoldSlotsWhileBlocked() {
+	behavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: 2,
+		maximumNumberOfPollers: 2,
+		minimumNumberOfPollers: 1,
+	}
+
+	blockingPoller := newBlockingProbeTaskPoller()
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "a", nil)
+	slotSupplier := newLimitedSlotSupplier(2)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     slotSupplier,
+		maxTaskPerSecond: 1000,
+		taskPollers: []scalableTaskPoller{
+			poller,
+			{taskPollerType: "b"},
+		},
+		taskProcessor:  noopTaskProcessor{},
+		workerType:     "AutoscalingBalancerTest",
+		logger:         ilog.NewNopLogger(),
+		stopTimeout:    time.Second,
+		metricsHandler: metrics.NopHandler,
+	})
+
+	bw.Start()
+	defer func() {
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		blockingPoller.Close()
+		bw.Stop()
+	}()
+
+	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected first poller to start")
+
+	require.Never(s.T(), func() bool {
+		return slotSupplier.reserves.Load() > 1
+	}, 200*time.Millisecond, 10*time.Millisecond,
+		"autoscaling poller should not reserve another slot while blocked by poller balancer")
+}
+
+type blockingProbeTaskPoller struct {
 	signals chan struct{}
 	done    chan struct{}
 	closed  atomic.Bool
 }
 
-func newSemaphoreProbeTaskPoller() *semaphoreProbeTaskPoller {
-	return &semaphoreProbeTaskPoller{
+func newBlockingProbeTaskPoller() *blockingProbeTaskPoller {
+	return &blockingProbeTaskPoller{
 		signals: make(chan struct{}, 32),
 		done:    make(chan struct{}),
 	}
 }
 
-// PollTask implements taskPoller and blocks until a signal is provided so the semaphore permits stay acquired.
-func (p *semaphoreProbeTaskPoller) PollTask() (taskForWorker, error) {
+// PollTask implements taskPoller and blocks until a signal is provided so active polls stay acquired.
+func (p *blockingProbeTaskPoller) PollTask() (taskForWorker, error) {
 	select {
 	case <-p.signals:
 		return nil, nil
@@ -306,7 +461,7 @@ func (p *semaphoreProbeTaskPoller) PollTask() (taskForWorker, error) {
 	}
 }
 
-func (p *semaphoreProbeTaskPoller) Allow(n int) {
+func (p *blockingProbeTaskPoller) Allow(n int) {
 	for range n {
 		select {
 		case p.signals <- struct{}{}:
@@ -316,39 +471,23 @@ func (p *semaphoreProbeTaskPoller) Allow(n int) {
 	}
 }
 
-func (p *semaphoreProbeTaskPoller) Close() {
+func (p *blockingProbeTaskPoller) Close() {
 	if p.closed.CompareAndSwap(false, true) {
 		close(p.done)
 	}
 }
 
-func allowBlockedPollers(p *semaphoreProbeTaskPoller, sem *pollerSemaphore) {
-	if p == nil || sem == nil {
-		return
-	}
-	permits, _ := readSemaphoreState(sem)
-	if permits > 0 {
-		p.Allow(permits)
-	}
-}
-
-func eventuallySemaphoreState(t *testing.T, blockingPoller *semaphoreProbeTaskPoller, sem *pollerSemaphore, expectedPermits, expectedMax int, msg string) {
+func eventuallyAutoscalingPollerState(t *testing.T, runner *autoscalingTaskPollerRunner, expectedActive int, msg string) {
 	require.Eventually(t, func() bool {
-		allowBlockedPollers(blockingPoller, sem)
-		permits, max := readSemaphoreState(sem)
-		return permits == expectedPermits && max == expectedMax
+		return readAutoscalingPollerState(runner) == expectedActive
 	}, time.Second, 10*time.Millisecond, msg)
 }
 
-func readSemaphoreState(ps *pollerSemaphore) (permits int, max int) {
-	if ps == nil {
-		return 0, 0
+func readAutoscalingPollerState(runner *autoscalingTaskPollerRunner) int {
+	if runner == nil {
+		return 0
 	}
-	barrier := <-ps.bs
-	permits = ps.permits
-	max = ps.maxPermits
-	ps.bs <- barrier
-	return
+	return runner.activePolls()
 }
 
 type testSlotSupplier struct{}
@@ -371,6 +510,80 @@ func (s *testSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
 func (s *testSlotSupplier) ReleaseSlot(SlotReleaseInfo) {}
 
 func (s *testSlotSupplier) MaxSlots() int { return 0 }
+
+type captureReservationInfoSlotSupplier struct {
+	taskQueue     string
+	taskQueueKind enumspb.TaskQueueKind
+}
+
+func (s *captureReservationInfoSlotSupplier) ReserveSlot(
+	ctx context.Context,
+	info SlotReservationInfo,
+) (*SlotPermit, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	s.taskQueue = info.TaskQueue()
+	s.taskQueueKind = info.TaskQueueKind()
+	return &SlotPermit{}, nil
+}
+
+func (s *captureReservationInfoSlotSupplier) TryReserveSlot(info SlotReservationInfo) *SlotPermit {
+	s.taskQueue = info.TaskQueue()
+	s.taskQueueKind = info.TaskQueueKind()
+	return &SlotPermit{}
+}
+
+func (s *captureReservationInfoSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+
+func (s *captureReservationInfoSlotSupplier) ReleaseSlot(SlotReleaseInfo) {}
+
+func (s *captureReservationInfoSlotSupplier) MaxSlots() int { return 0 }
+
+type limitedSlotSupplier struct {
+	slots    chan struct{}
+	reserves atomic.Int32
+	releases atomic.Int32
+}
+
+func newLimitedSlotSupplier(slots int) *limitedSlotSupplier {
+	s := &limitedSlotSupplier{slots: make(chan struct{}, slots)}
+	for i := 0; i < slots; i++ {
+		s.slots <- struct{}{}
+	}
+	return s
+}
+
+func (s *limitedSlotSupplier) ReserveSlot(ctx context.Context, info SlotReservationInfo) (*SlotPermit, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case <-s.slots:
+		s.reserves.Add(1)
+		return &SlotPermit{}, nil
+	}
+}
+
+func (s *limitedSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
+	select {
+	case <-s.slots:
+		s.reserves.Add(1)
+		return &SlotPermit{}
+	default:
+		return nil
+	}
+}
+
+func (s *limitedSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+
+func (s *limitedSlotSupplier) ReleaseSlot(SlotReleaseInfo) {
+	s.releases.Add(1)
+	s.slots <- struct{}{}
+}
+
+func (s *limitedSlotSupplier) MaxSlots() int { return cap(s.slots) }
 
 type noopTaskProcessor struct{}
 
@@ -444,6 +657,70 @@ func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 	select {
 	case <-stopDone:
 		// Stop completed cleanly
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop() did not return in time")
+	}
+}
+
+func TestAutoscalingTaskNotDroppedDuringShutdown(t *testing.T) {
+	taskProcessed := make(chan struct{}, 1)
+	pollStarted := make(chan struct{})
+	tp := &shutdownTaskPoller{
+		pollStarted: pollStarted,
+		returnTask:  make(chan struct{}),
+		task:        &testTask{},
+	}
+	processor := &recordingTaskProcessor{
+		processed: taskProcessed,
+	}
+	workerPollCompleteOnShutdown := &atomic.Bool{}
+	workerPollCompleteOnShutdown.Store(true)
+	poller := newScalableTaskPoller(
+		tp,
+		ilog.NewNopLogger(),
+		metrics.NopHandler,
+		&pollerBehaviorAutoscaling{
+			initialNumberOfPollers: 1,
+			maximumNumberOfPollers: 2,
+			minimumNumberOfPollers: 1,
+		},
+		"test",
+		&atomic.Bool{},
+	)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:                 &testSlotSupplier{},
+		maxTaskPerSecond:             1000,
+		taskPollers:                  []scalableTaskPoller{poller},
+		taskProcessor:                processor,
+		workerType:                   "AutoscalingShutdownTest",
+		logger:                       ilog.NewNopLogger(),
+		stopTimeout:                  5 * time.Second,
+		metricsHandler:               metrics.NopHandler,
+		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	})
+
+	bw.Start()
+	<-pollStarted
+	bw.noRepoll.Store(true)
+
+	stopDone := make(chan struct{})
+	go func() {
+		bw.Stop()
+		close(stopDone)
+	}()
+
+	<-bw.stopCh
+	close(tp.returnTask)
+
+	select {
+	case <-taskProcessed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("task polled during autoscaling shutdown was not processed")
+	}
+
+	select {
+	case <-stopDone:
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop() did not return in time")
 	}
@@ -795,16 +1072,12 @@ func (p *stopAwareShutdownPoller) PollTask() (taskForWorker, error) {
 	return nil, errStop
 }
 
-func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithCapability() {
-	targetSuggestion := 0
-	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+func (s *PollerAutoscalerSuite) TestAutoscaleDownOnTimeoutWithCapability() {
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount:        10,
 		maxPollerCount:            10,
 		minPollerCount:            1,
 		serverSupportsAutoscaling: &atomic.Bool{},
-		scaleCallback: func(suggestion int) {
-			targetSuggestion = suggestion
-		},
 	})
 	ps.serverSupportsAutoscaling.Store(true)
 
@@ -812,19 +1085,15 @@ func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithCapability()
 	for i := 0; i < 20; i++ {
 		ps.handleTask(newEmptyTask())
 	}
-	assert.Equal(s.T(), 1, targetSuggestion)
+	assert.Equal(s.T(), int64(1), ps.target.Load())
 	assert.False(s.T(), ps.everSawScalingDecision.Load())
 }
 
-func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithoutCapability() {
-	targetSuggestion := 0
-	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+func (s *PollerAutoscalerSuite) TestAutoscaleDownOnTimeoutWithoutCapability() {
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount: 10,
 		maxPollerCount:     10,
 		minPollerCount:     1,
-		scaleCallback: func(suggestion int) {
-			targetSuggestion = suggestion
-		},
 	})
 
 	// Send 20 empty polls - should NOT scale down because we haven't seen a
@@ -832,21 +1101,16 @@ func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutWithoutCapabilit
 	for i := 0; i < 20; i++ {
 		ps.handleTask(newEmptyTask())
 	}
-	// target never changed from initial, callback was never called
-	assert.Equal(s.T(), 0, targetSuggestion)
+	// target never changed from initial
 	assert.Equal(s.T(), int64(10), ps.target.Load())
 }
 
-func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutClampsToMin() {
-	targetSuggestion := 0
-	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+func (s *PollerAutoscalerSuite) TestAutoscaleDownOnTimeoutClampsToMin() {
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount:        10,
 		maxPollerCount:            10,
 		minPollerCount:            3,
 		serverSupportsAutoscaling: &atomic.Bool{},
-		scaleCallback: func(suggestion int) {
-			targetSuggestion = suggestion
-		},
 	})
 	ps.serverSupportsAutoscaling.Store(true)
 
@@ -854,28 +1118,24 @@ func (s *PollScalerReportHandleSuite) TestAutoscaleDownOnTimeoutClampsToMin() {
 	for i := 0; i < 20; i++ {
 		ps.handleTask(newEmptyTask())
 	}
-	assert.Equal(s.T(), 3, targetSuggestion)
+	assert.Equal(s.T(), int64(3), ps.target.Load())
 	assert.False(s.T(), ps.everSawScalingDecision.Load())
 }
 
-func (s *PollScalerReportHandleSuite) TestErrorScaleDownWithCapability() {
-	targetSuggestion := 0
-	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+func (s *PollerAutoscalerSuite) TestErrorScaleDownWithCapability() {
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount:        8,
 		maxPollerCount:            10,
 		minPollerCount:            2,
 		serverSupportsAutoscaling: &atomic.Bool{},
-		scaleCallback: func(suggestion int) {
-			targetSuggestion = suggestion
-		},
 	})
 	ps.serverSupportsAutoscaling.Store(true)
 
 	// Should scale down on errors even without having seen a scaling decision
 	ps.handleError(serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, ""))
-	assert.Equal(s.T(), 4, targetSuggestion)
+	assert.Equal(s.T(), int64(4), ps.target.Load())
 	ps.handleError(serviceerror.NewInternal("test error"))
-	assert.Equal(s.T(), 3, targetSuggestion)
+	assert.Equal(s.T(), int64(3), ps.target.Load())
 }
 
 // TestPollerBalancerReturnsNilWhenOwnCountZero is a regression test for
@@ -970,7 +1230,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {
 	for _, tc := range cases {
 		s.Run(tc.name, func() {
 			poller := newScalableTaskPoller(
-				newSemaphoreProbeTaskPoller(),
+				newBlockingProbeTaskPoller(),
 				ilog.NewNopLogger(),
 				metrics.NopHandler,
 				behavior,
