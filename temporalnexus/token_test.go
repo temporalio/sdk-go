@@ -10,7 +10,9 @@ import (
 
 func TestEncodeDecodeWorkflowRunOperationToken(t *testing.T) {
 	wrt := workflowRunOperationToken{
-		Type:          operationTokenTypeWorkflowRun,
+		operationToken: operationToken{
+			Type: operationTokenTypeWorkflowRun,
+		},
 		NamespaceName: "ns",
 		WorkflowID:    "w",
 	}
@@ -50,9 +52,9 @@ func TestDecodeWorkflowRunOperationTokenErrors(t *testing.T) {
 	_, err = loadWorkflowRunOperationToken(invalidJSONToken)
 	require.ErrorContains(t, err, "failed to unmarshal workflow run operation token: invalid character 'i' looking for beginning of value")
 
-	invalidTypeToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":2}`))
+	invalidTypeToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":3}`))
 	_, err = loadWorkflowRunOperationToken(invalidTypeToken)
-	require.ErrorContains(t, err, "invalid workflow token type: 2, expected: 1")
+	require.ErrorContains(t, err, "invalid workflow token type")
 
 	missingWIDToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":1}`))
 	_, err = loadWorkflowRunOperationToken(missingWIDToken)

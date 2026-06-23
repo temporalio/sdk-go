@@ -1855,6 +1855,22 @@ func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonp
 	opts.links = links
 }
 
+// interface utility wrapper to allow setting links and callbacks
+// on temporal primitive operation options (UpdateWorkflowOptions, etc)
+// draft-review: set it on StartWorkflowOptions above as well
+type nexusOperationOptions interface {
+	setLinks(links []*commonpb.Link)
+	setCallbacks(callbacks []*commonpb.Callback)
+}
+
+func SetLinksOnNexusOperation(opts nexusOperationOptions, links []*commonpb.Link) {
+	opts.setLinks(links)
+}
+
+func SetCallbacksOnNexusOperation(opts nexusOperationOptions, callbacks []*commonpb.Callback) {
+	opts.setCallbacks(callbacks)
+}
+
 // SetOnConflictOptionsOnStartWorkflowOptions is an internal only method for setting conflict
 // options on StartWorkflowOptions.
 // OnConflictOptions are purposefully not exposed to users for the time being.
@@ -1872,6 +1888,16 @@ func SetOnConflictOptionsOnStartWorkflowOptions(opts *StartWorkflowOptions) {
 func SetResponseInfoOnStartWorkflowOptions(opts *StartWorkflowOptions) *startWorkflowResponseInfo {
 	if opts.responseInfo == nil {
 		opts.responseInfo = &startWorkflowResponseInfo{}
+	}
+	return opts.responseInfo
+}
+
+// SetResponseInfoOnUpdateWorkflowOptions is an internal only method to set and return a
+// responseInfo pointer. This is done to capture links from the response RPC to be used
+// for nexus forward links on UpdateWorkflow Nexus Operations
+func SetResponseInfoOnUpdateWorkflowOptions(opts *UpdateWorkflowOptions) *updateWorkflowResponseInfo {
+	if opts.responseInfo == nil {
+		opts.responseInfo = &updateWorkflowResponseInfo{}
 	}
 	return opts.responseInfo
 }

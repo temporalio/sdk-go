@@ -10,31 +10,63 @@ import (
 type operationTokenType int
 
 const (
-	operationTokenTypeWorkflowRun = operationTokenType(1)
+	operationTokenTypeReserved operationTokenType = iota
+	operationTokenTypeWorkflowRun
+	operationTokenTypeUpdateWorkflow
+	// also Update With Start, Get Workflow Result, Stand Alone Activities
+	operationTokenTypeMaxVal
 )
 
-// workflowRunOperationToken is the decoded form of the workflow run operation token.
-type workflowRunOperationToken struct {
+func (o operationTokenType) IsValid() bool {
+	return 0 < o && o < operationTokenTypeMaxVal
+}
+
+// commmon meta for all operation token types
+type operationToken struct {
 	// Version of the token, by default we assume we're on version 1, this field is not emitted as part of the output,
 	// it's only used to reject newer token versions on load.
 	Version int `json:"v,omitempty"`
-	// Type of the operation. Must be operationTypeWorkflowRun.
-	Type          operationTokenType `json:"t"`
-	NamespaceName string             `json:"ns"`
-	WorkflowID    string             `json:"wid"`
+	// Type of the operation.
+	Type operationTokenType `json:"t"`
+}
+
+// workflowRunOperationToken is the decoded form of the workflow run operation token.
+type workflowRunOperationToken struct {
+	operationToken
+	NamespaceName string `json:"ns"`
+	WorkflowID    string `json:"wid"`
+}
+
+// updateWorkflow contains only meta - because it cannot be cancelled
+type updateWorkflowOperationToken struct {
+	operationToken
 }
 
 func generateWorkflowRunOperationToken(namespace, workflowID string) (string, error) {
 	token := workflowRunOperationToken{
-		Type:          operationTokenTypeWorkflowRun,
 		NamespaceName: namespace,
 		WorkflowID:    workflowID,
 	}
+	token.Type = operationTokenTypeWorkflowRun
 	data, err := json.Marshal(token)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal workflow run operation token: %w", err)
 	}
-	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(data), nil
+	return base64EncodedString(data), nil
+}
+
+func generateUpdateOperationToken() (string, error) {
+	token := updateWorkflowOperationToken{}
+	token.Type = operationTokenTypeUpdateWorkflow
+	data, err := json.Marshal(token)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal operation token: %w", err)
+	}
+	return base64EncodedString(data), nil
+}
+
+func base64EncodedString(data []byte) string {
+	return base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString(data)
 }
 
 // loadTokenType decodes just the type field from an operation token without full validation.
@@ -53,8 +85,8 @@ func loadTokenType(data string) (operationTokenType, error) {
 	if err := json.Unmarshal(b, &partial); err != nil {
 		return 0, fmt.Errorf("failed to unmarshal operation token: %w", err)
 	}
-	if partial.Type == 0 {
-		return 0, errors.New("invalid operation token: missing or zero token type")
+	if !partial.Type.IsValid() {
+		return 0, fmt.Errorf("invalid operation token: %d", partial.Type)
 	}
 	return partial.Type, nil
 }
