@@ -510,6 +510,13 @@ type ClientUpdateWorkflowInput struct {
 	FirstExecutionRunID string
 	// WaitForStage is the stage to wait for.
 	WaitForStage        WorkflowUpdateStage
+
+	// links. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+	links     []*commonpb.Link
+	// for backward links from the target namespace sent via operation options. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+	callbacks []*commonpb.Callback
+	// gRPC request response trap for nexus forward links
+	responseInfo *updateWorkflowResponseInfo
 }
 
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateWithStartWorkflowInput]

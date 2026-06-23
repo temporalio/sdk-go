@@ -995,6 +995,26 @@ type UpdateWorkflowOptions struct {
 	// then the server will reject the update request with an error.
 	// Note that it is incompatible with UpdateWithStartWorkflowOperation.
 	FirstExecutionRunID string
+
+	// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+	callbacks []*commonpb.Callback
+	// for backward links from the target namespace sent via operation options. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+	links []*commonpb.Link
+	// gRPC request response trap for nexus forward links
+	responseInfo *updateWorkflowResponseInfo
+}
+
+type updateWorkflowResponseInfo struct {
+	// Link to the workflow event.
+	Link *commonpb.Link
+}
+
+func (u *UpdateWorkflowOptions) setLinks(links []*commonpb.Link) {
+	u.links = links
+}
+
+func (u *UpdateWorkflowOptions) setCallbacks(callbacks []*commonpb.Callback) {
+	u.callbacks = callbacks
 }
 
 // UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
@@ -2846,6 +2866,10 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		return nil, err
 	}
 
+	if responseInfo := in.responseInfo; responseInfo != nil {
+		responseInfo.Link = resp.GetLink()
+	}
+
 	// Here we know the update is at least accepted
 	desiredLifecycleStage := updateLifeCycleStageToProto(in.WaitForStage)
 	return w.updateHandleFromResponse(ctx, desiredLifecycleStage, resp)
@@ -2873,6 +2897,12 @@ func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWor
 		return nil, errors.New("WaitForStage WorkflowUpdateStageAdmitted is not supported")
 	}
 
+	// draft-review: check if this could be valid for some edge cases 
+	if options.WaitForStage == WorkflowUpdateStageCompleted && len(options.callbacks) > 0 {
+		return nil, errors.New("WaitForStage WorkflowUpdateStageCompleted does not support callbacks " +
+			"as it is already a synchronous operation")
+	}
+
 	return &ClientUpdateWorkflowInput{
 		UpdateID:            updateID,
 		WorkflowID:          options.WorkflowID,
@@ -2881,6 +2911,9 @@ func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWor
 		RunID:               options.RunID,
 		FirstExecutionRunID: options.FirstExecutionRunID,
 		WaitForStage:        options.WaitForStage,
+		links:               options.links,
+		callbacks:           options.callbacks,
+		responseInfo:        options.responseInfo,
 	}, nil
 }
 
@@ -2915,6 +2948,9 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 		},
 		FirstExecutionRunId: in.FirstExecutionRunID,
 		Request: &updatepb.Request{
+			RequestId:           in.UpdateID,
+			CompletionCallbacks: in.callbacks,
+			Links:               in.links,
 			Meta: &updatepb.Meta{
 				UpdateId: in.UpdateID,
 				Identity: w.client.identity,

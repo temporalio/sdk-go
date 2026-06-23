@@ -30,6 +30,12 @@ const (
 	WorkflowUpdateStageCompleted
 )
 
+// workflow is async iff update stage is WorkflowUpdateStageAccepted-
+// as WorkflowUpdateStageCompleted blocks on UpdateWorkflow itself
+func (w WorkflowUpdateStage) IsAsyncUpdateWorkflow() bool {
+	return w == WorkflowUpdateStageAccepted
+}
+
 const (
 	updateStateNew              updateState = "New"
 	updateStateRequestInitiated updateState = "RequestScheduled"
