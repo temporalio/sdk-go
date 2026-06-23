@@ -3083,11 +3083,15 @@ func NewNexusClient(endpoint, service string) NexusClient {
 	if service == "" {
 		panic("service must not be empty")
 	}
-	if strings.HasPrefix(endpoint, temporalPrefix) {
-		panic("endpoint cannot use reserved __temporal_ prefix")
-	}
-	if strings.HasPrefix(service, temporalPrefix) {
-		panic("service cannot use reserved __temporal_ prefix")
+	// The built-in system Nexus endpoint/service pair is Temporal's own use of
+	// the otherwise reserved __temporal_ prefix and is therefore permitted.
+	if !isSystemNexusClient(endpoint, service) {
+		if strings.HasPrefix(endpoint, temporalPrefix) {
+			panic("endpoint cannot use reserved __temporal_ prefix")
+		}
+		if strings.HasPrefix(service, temporalPrefix) {
+			panic("service cannot use reserved __temporal_ prefix")
+		}
 	}
 	return nexusClient{endpoint, service}
 }
