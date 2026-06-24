@@ -3111,7 +3111,19 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
-	payload, err := dc.ToPayload(input.Input)
+	var payload *commonpb.Payload
+	var err error
+	if isSystemNexusClient(input.Client.Endpoint(), input.Client.Service()) {
+		// System Nexus envelopes are encoded as proto-binary (not through the
+		// workflow data converter or any codec): the request is a proto message
+		// whose own fields carry the user payloads, and temporal-api-go's
+		// payload visitor descends into those inner payloads. Encoding the
+		// envelope with the proto converter tags it with the message type that
+		// the visitor reads to decode it.
+		payload, err = converter.NewProtoPayloadConverter().ToPayload(input.Input)
+	} else {
+		payload, err = dc.ToPayload(input.Input)
+	}
 	if err != nil {
 		return ExecuteNexusOperationParams{}, err
 	}
