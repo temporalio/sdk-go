@@ -9,6 +9,7 @@ import (
 	commandpb "go.temporal.io/api/command/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
+	"go.temporal.io/sdk/converter"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -30,17 +31,23 @@ func TestSignalWithStartEnvelopeVisitedByAPIGoProxy(t *testing.T) {
 		Memo:       map[string]any{"memo-key": "memo-value"},
 	}
 
-	envelope, err := proto.Marshal(req.ToProto())
+	// Encode the request proto as the SDK does for system Nexus envelopes:
+	// through the proto (binary) converter, which produces a binary/protobuf
+	// payload tagged with the message type. The api-go visitor reads that
+	// messageType metadata to decode the envelope -- no registry required.
+	envelope, err := converter.NewProtoPayloadConverter().ToPayload(req.ToProto())
 	require.NoError(t, err)
+	require.Equal(t, []byte("binary/protobuf"), envelope.GetMetadata()["encoding"])
+	require.Equal(t,
+		[]byte("temporal.api.workflowservice.v1.SignalWithStartWorkflowExecutionRequest"),
+		envelope.GetMetadata()["messageType"],
+	)
 
 	attrs := &commandpb.ScheduleNexusOperationCommandAttributes{
 		Endpoint:  Endpoint,
 		Service:   ServiceName,
 		Operation: SignalWithStartWorkflowOp,
-		Input: &commonpb.Payload{
-			Metadata: map[string][]byte{"encoding": []byte("binary/protobuf")},
-			Data:     envelope,
-		},
+		Input:     envelope,
 	}
 
 	var seen []string
