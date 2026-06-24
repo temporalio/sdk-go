@@ -3064,7 +3064,6 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
 	immediateActivity := func() (string, error) { return "result", nil }
 	ts.worker.RegisterActivityWithOptions(immediateActivity, activity.RegisterOptions{Name: "tracingTestStandaloneActivity"})
 
-	// Start a top-level span so the standalone-activity span has a parent we can locate.
 	ctx, rootSpan := ts.openTelemetryTracer.Start(ctx, "root-span")
 
 	activityID := "tracing-test-" + uuid.NewString()
@@ -3081,8 +3080,6 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
 	rootSpan.End()
 	spans := ts.openTelemetrySpanRecorder.Ended()
 
-	// Find the StartActivity span and confirm it is a child of the root span and
-	// carries the activity ID tag.
 	var startActivitySpan sdktrace.ReadOnlySpan
 	for _, s := range spans {
 		if s.Name() == "StartActivity:tracingTestStandaloneActivity" {
