@@ -23,10 +23,6 @@ func contextWithNewHeader(ctx context.Context) context.Context {
 	return context.WithValue(ctx, headerKey{}, map[string]*commonpb.Payload{})
 }
 
-func NewHeaderContext(ctx context.Context) context.Context {
-	return contextWithNewHeader(ctx)
-}
-
 func contextWithoutHeader(ctx context.Context) context.Context {
 	return context.WithValue(ctx, headerKey{}, nil)
 }

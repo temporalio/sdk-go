@@ -14,10 +14,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
-	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/interceptor"
-	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/internal/interceptortest"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
@@ -35,34 +33,6 @@ func TestSpanPropagation(t *testing.T) {
 	testTracer := &testTracer{Tracer: tracer, rec: &rec}
 	interceptortest.RunTestWorkflow(t, testTracer)
 	interceptortest.AssertSpanPropagation(t, testTracer)
-}
-
-func TestStandaloneActivitySpanCreation(t *testing.T) {
-	rec := tracetest.NewSpanRecorder()
-	tracer, err := opentelemetry.NewTracer(opentelemetry.TracerOptions{
-		Tracer: sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(rec)).Tracer(""),
-	})
-	require.NoError(t, err)
-
-	ctx := internal.NewHeaderContext(context.Background())
-	outbound := interceptor.NewTracingInterceptor(tracer).InterceptClient(&testNoopClientOutbound{})
-	_, _ = outbound.ExecuteActivity(ctx, &interceptor.ClientExecuteActivityInput{
-		ActivityType: "test-saa",
-		Options:      &client.StartActivityOptions{ID: "test-saa-123"},
-	})
-
-	spans := rec.Ended()
-	require.Len(t, spans, 1)
-	assert.Equal(t, "StartActivity:test-saa", spans[0].Name())
-
-	var foundActivityID bool
-	for _, attr := range spans[0].Attributes() {
-		if string(attr.Key) == "temporalActivityID" {
-			foundActivityID = true
-			assert.Equal(t, "test-saa-123", attr.Value.AsString())
-		}
-	}
-	require.True(t, foundActivityID, "expected activity ID span attribute")
 }
 
 type testTracer struct {
@@ -264,12 +234,4 @@ func TestSpanFromWorkflowContextNoOpSpan(t *testing.T) {
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
-}
-
-type testNoopClientOutbound struct {
-	interceptor.ClientOutboundInterceptorBase
-}
-
-func (n *testNoopClientOutbound) ExecuteActivity(_ context.Context, _ *interceptor.ClientExecuteActivityInput) (client.ActivityHandle, error) {
-	return nil, nil
 }
