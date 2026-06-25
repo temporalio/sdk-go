@@ -9757,6 +9757,10 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityHeartbeatDetailsRegression
 // and sync operations) so the failure/timeout/retry surface for activity-backed operations
 // can grow without bloating the workflow-backed table.
 func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
+	if os.Getenv("DISABLE_ACTIVITY_BACKED_NEXUS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 

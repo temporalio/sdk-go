@@ -13,6 +13,8 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+const errMultipleAsyncOperationsMsg = "only one async operation can be started per operation invocation"
+
 // StartTemporalOperationOptions are options provided to the Start callback of a Temporal Nexus operation.
 // Mirrors [nexus.StartOperationOptions].
 //
@@ -151,7 +153,7 @@ func StartUntypedWorkflow[R any](
 	args ...any,
 ) (TemporalOperationResult[R], error) {
 	if nc.asyncStarted != nil && !nc.asyncStarted.CompareAndSwap(false, true) {
-		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "only one async operation can be started per operation invocation")
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, errMultipleAsyncOperationsMsg)
 	}
 
 	// Prevent the test env client from panicking when we try to use it from an operation.
@@ -206,7 +208,7 @@ func StartUntypedActivity[R any](
 	args ...any,
 ) (TemporalOperationResult[R], error) {
 	if nc.asyncStarted != nil && !nc.asyncStarted.CompareAndSwap(false, true) {
-		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "only one async operation can be started per operation invocation")
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, errMultipleAsyncOperationsMsg)
 	}
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 
