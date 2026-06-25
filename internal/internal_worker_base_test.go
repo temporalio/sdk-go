@@ -549,7 +549,7 @@ func (noopTaskProcessor) ProcessTask(any) error { return nil }
 // processed rather than silently dropped.
 func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 	taskProcessed := make(chan struct{}, 1)
-	pollStarted := make(chan struct{})
+	pollStarted := make(chan struct{}, 1)
 
 	// A poller that blocks until returnTask is closed, then returns a task
 	// exactly once. Subsequent polls return nil so the poller can exit.
@@ -619,7 +619,7 @@ func TestTaskNotDroppedDuringShutdown(t *testing.T) {
 
 func TestAutoscalingTaskNotDroppedDuringShutdown(t *testing.T) {
 	taskProcessed := make(chan struct{}, 1)
-	pollStarted := make(chan struct{})
+	pollStarted := make(chan struct{}, 1)
 	tp := &shutdownTaskPoller{
 		pollStarted: pollStarted,
 		returnTask:  make(chan struct{}),
@@ -816,7 +816,7 @@ func TestTaskNotProcessedDuringLegacyShutdown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			taskProcessed := make(chan struct{}, 1)
-			pollStarted := make(chan struct{})
+			pollStarted := make(chan struct{}, 1)
 
 			// This poller simulates a poll returning a task after shutdown has
 			// already started. Legacy shutdown should not dispatch that task.
@@ -904,7 +904,7 @@ func (p *recordingTaskProcessor) ProcessTask(any) error {
 }
 
 func TestStopTimeoutBoundsPollerDrain(t *testing.T) {
-	pollStarted := make(chan struct{})
+	pollStarted := make(chan struct{}, 1)
 	releasePoll := make(chan struct{})
 	var releasePollOnce sync.Once
 	releaseBlockedPoller := func() {
@@ -964,7 +964,7 @@ func TestStopTimeoutBoundsPollerDrain(t *testing.T) {
 }
 
 func TestLegacyStopReturnsPromptlyWithBlockedPoller(t *testing.T) {
-	pollStarted := make(chan struct{})
+	pollStarted := make(chan struct{}, 1)
 	tp := &stopAwareShutdownPoller{
 		pollStarted: pollStarted,
 	}
