@@ -1862,17 +1862,38 @@ func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonp
 // interface utility wrapper to allow setting links and callbacks
 // on temporal primitive operation options (UpdateWorkflowOptions, etc)
 // draft-review: set it on StartWorkflowOptions above as well
-type nexusOperationOptions interface {
+type nexusTemporalOperationOptions interface {
+	setRequestID(requestID string)
 	setLinks(links []*commonpb.Link)
 	setCallbacks(callbacks []*commonpb.Callback)
 }
 
-func SetLinksOnNexusOperation(opts nexusOperationOptions, links []*commonpb.Link) {
+// Set links on any [nexusTemporalOperationOptions] interface via the setLinks API.
+//
+// Intended to be used only internally as a consistent way of setting
+// links on all Nexus Operations
+func SetLinksOnNexusOperation(opts nexusTemporalOperationOptions, links []*commonpb.Link) {
 	opts.setLinks(links)
 }
 
-func SetCallbacksOnNexusOperation(opts nexusOperationOptions, callbacks []*commonpb.Callback) {
+// Set callbacks on any [nexusTemporalOperationOptions] interface via the setCallbacks API.
+//
+// Intended to be used only internally as a consistent way of setting
+// callbacks on all Nexus Operations
+func SetCallbacksOnNexusOperation(opts nexusTemporalOperationOptions, callbacks []*commonpb.Callback) {
 	opts.setCallbacks(callbacks)
+}
+
+// Set non-empty requestID on any [nexusTemporalOperationOptions] interface via the setRequestID API.
+// Used for deduping requests server-side
+//
+// Intended to be used only internally as a consistent way of setting
+// requestIDs on all Nexus Operations
+func SetRequestIDOnNexusOperation(opts nexusTemporalOperationOptions, requestID string) {
+	if requestID == "" {
+		return
+	}
+	opts.setRequestID(requestID)
 }
 
 // SetOnConflictOptionsOnStartWorkflowOptions is an internal only method for setting conflict

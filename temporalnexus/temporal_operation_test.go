@@ -9,6 +9,7 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -161,7 +162,10 @@ func TestStartUpdateWorkflowGuards(t *testing.T) {
 	}
 	// attempt running async with an exhuasted nexusClient handler
 	nc.asyncStarted.Store(true)
-	_, err := StartUpdateWorkflow[string](context.Background(), nc, client.UpdateWorkflowOptions{
+	ctx := internal.ContextWithNexusOperationContext(context.Background(), &internal.NexusOperationContext{})
+	_, err := StartUpdateWorkflow[string](ctx, nc, client.UpdateWorkflowOptions{
+		WorkflowID:   "emptyWorkflowID!",
+		UpdateName:   "upd",
 		WaitForStage: client.WorkflowUpdateStageAccepted,
 	})
 	var handlerErr *nexus.HandlerError
@@ -170,17 +174,33 @@ func TestStartUpdateWorkflowGuards(t *testing.T) {
 	require.ErrorContains(t, err, "only one async operation")
 	// attempt to run async without callback
 	_, err = StartUpdateWorkflow[string](
-		context.Background(),
+		ctx,
 		NexusClient{
 			asyncStarted: &atomic.Bool{},
 		},
 		client.UpdateWorkflowOptions{
+			WorkflowID:   "anotherEmptyWorkflowID!",
+			UpdateName:   "upd",
 			WaitForStage: client.WorkflowUpdateStageAccepted,
 		},
 	)
 	require.ErrorAs(t, err, &handlerErr)
 	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
 	require.ErrorContains(t, err, "callback URL required")
+	// attempt running an invalid update
+	_, err = StartUpdateWorkflow[string](
+		ctx,
+		NexusClient{
+			asyncStarted: &atomic.Bool{},
+		},
+		client.UpdateWorkflowOptions{
+			WorkflowID: "dontTriggerValidation",
+			UpdateName: "upd",
+		},
+	)
+	var opError *nexus.OperationError
+	require.ErrorAs(t, err, &opError)
+	require.Equal(t, opError.Message, "nexus op workflow updates only support WorkflowUpdateStageAccepted for async updates")
 }
 
 func strPtr(s string) *string {

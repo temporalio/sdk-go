@@ -996,9 +996,11 @@ type UpdateWorkflowOptions struct {
 	// Note that it is incompatible with UpdateWithStartWorkflowOperation.
 	FirstExecutionRunID string
 
-	// workflow completion callback. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+	// request ID for de-duplication during server processing. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
+	requestID string
+	// callbacks. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
 	callbacks []*commonpb.Callback
-	// for backward links from the target namespace sent via operation options. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+	// for backward links from the target namespace sent via operation options. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
 	links []*commonpb.Link
 	// gRPC request response trap for nexus forward links
 	responseInfo *updateWorkflowResponseInfo
@@ -1015,6 +1017,10 @@ func (u *UpdateWorkflowOptions) setLinks(links []*commonpb.Link) {
 
 func (u *UpdateWorkflowOptions) setCallbacks(callbacks []*commonpb.Callback) {
 	u.callbacks = callbacks
+}
+
+func (u *UpdateWorkflowOptions) setRequestID(requestID string) {
+	u.requestID = requestID
 }
 
 // UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
@@ -1074,6 +1080,16 @@ type completedUpdateHandle struct {
 type lazyUpdateHandle struct {
 	baseUpdateHandle
 	client *WorkflowClient
+}
+
+// IsUpdateWorkflowCompleted is a utility to detect if an operation has immediately
+// completed. Used for Nexus operations that back into operations at a later stage
+// in a non-retriable manner. Eg. UpdateWorkflow could fail at Accepted(failed validation)
+// but its still Admitted and isnt captured in the rpc errors and keeps getting retried
+// draft-review: is there a better way to do it instead?
+func IsUpdateWorkflowCompleted(handle WorkflowUpdateHandle) bool {
+	_, ok := handle.(*completedUpdateHandle)
+	return ok
 }
 
 // QueryWorkflowWithOptionsRequest is the request to QueryWorkflowWithOptions
@@ -2897,12 +2913,6 @@ func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWor
 		return nil, errors.New("WaitForStage WorkflowUpdateStageAdmitted is not supported")
 	}
 
-	// draft-review: check if this could be valid for some edge cases 
-	if options.WaitForStage == WorkflowUpdateStageCompleted && len(options.callbacks) > 0 {
-		return nil, errors.New("WaitForStage WorkflowUpdateStageCompleted does not support callbacks " +
-			"as it is already a synchronous operation")
-	}
-
 	return &ClientUpdateWorkflowInput{
 		UpdateID:            updateID,
 		WorkflowID:          options.WorkflowID,
@@ -2914,6 +2924,7 @@ func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWor
 		links:               options.links,
 		callbacks:           options.callbacks,
 		responseInfo:        options.responseInfo,
+		requestID:           options.requestID,
 	}, nil
 }
 
@@ -2948,7 +2959,7 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 		},
 		FirstExecutionRunId: in.FirstExecutionRunID,
 		Request: &updatepb.Request{
-			RequestId:           in.UpdateID,
+			RequestId:           in.requestID,
 			CompletionCallbacks: in.callbacks,
 			Links:               in.links,
 			Meta: &updatepb.Meta{

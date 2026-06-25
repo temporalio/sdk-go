@@ -80,6 +80,22 @@ func ConvertLinkWorkflowEventToNexusLink(we *commonpb.Link_WorkflowEvent) nexus.
 	}
 }
 
+func ConvertWorkflowlinkToNexusLink(wl *commonpb.Link_Workflow) nexus.Link {
+	return nexus.Link{
+		URL: &url.URL{
+			Scheme: urlSchemeTemporalKey,
+			Path:   fmt.Sprintf(urlPathWorkflowEventTemplate, wl.GetNamespace(), wl.GetWorkflowId(), wl.GetRunId()),
+			RawPath: fmt.Sprintf(
+				urlPathWorkflowEventTemplate,
+				url.PathEscape(wl.GetNamespace()),
+				url.PathEscape(wl.GetWorkflowId()),
+				url.PathEscape(wl.GetRunId()),
+			),
+		},
+		Type: string(wl.ProtoReflect().Descriptor().FullName()),
+	}
+}
+
 // ConvertNexusLinkToLinkWorkflowEvent converts a Nexus Link to Link_WorkflowEvent.
 //
 // NOTE: Experimental

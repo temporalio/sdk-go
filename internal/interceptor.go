@@ -511,9 +511,11 @@ type ClientUpdateWorkflowInput struct {
 	// WaitForStage is the stage to wait for.
 	WaitForStage        WorkflowUpdateStage
 
-	// links. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+	// request ID for server de-duplication. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
+	requestID string
+	// links. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
 	links     []*commonpb.Link
-	// for backward links from the target namespace sent via operation options. Only settable by the SDK - e.g. [temporalnexus.workflowRunOperation].
+	// callbacks. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
 	callbacks []*commonpb.Callback
 	// gRPC request response trap for nexus forward links
 	responseInfo *updateWorkflowResponseInfo
