@@ -12,12 +12,16 @@ type operationTokenType int
 const (
 	operationTokenTypeReserved operationTokenType = iota
 	operationTokenTypeWorkflowRun
+	operationTokenTypeActivity
 	operationTokenTypeUpdateWorkflow
 	// also Update With Start, Get Workflow Result, Stand Alone Activities
 	operationTokenTypeMaxVal
 )
 
 func (o operationTokenType) IsValid() bool {
+	if o == operationTokenTypeActivity { // temporary until activity is added
+		return false
+	}
 	return 0 < o && o < operationTokenTypeMaxVal
 }
 
@@ -27,27 +31,47 @@ type operationToken struct {
 	// it's only used to reject newer token versions on load.
 	Version int `json:"v,omitempty"`
 	// Type of the operation.
-	Type operationTokenType `json:"t"`
+	Type          operationTokenType `json:"t"`
+	NamespaceName string             `json:"ns"`
+}
+
+type operationTokenI interface {
+	getOperationToken() operationToken
 }
 
 // workflowRunOperationToken is the decoded form of the workflow run operation token.
 type workflowRunOperationToken struct {
 	operationToken
-	NamespaceName string `json:"ns"`
-	WorkflowID    string `json:"wid"`
+	WorkflowID string `json:"wid"`
+}
+
+func (w workflowRunOperationToken) getOperationToken() operationToken {
+	return w.operationToken
 }
 
 // updateWorkflow contains only meta - because it cannot be cancelled
 type updateWorkflowOperationToken struct {
 	operationToken
+	WorkflowID string `json:"wid"`
+	UpdateID   string `json:"uid"`
+}
+
+func (w updateWorkflowOperationToken) getOperationToken() operationToken {
+	return w.operationToken
+}
+
+func generateOperationToken(opType operationTokenType, namespace string) operationToken {
+	return operationToken{
+		Type:          opType,
+		NamespaceName: namespace,
+	}
 }
 
 func generateWorkflowRunOperationToken(namespace, workflowID string) (string, error) {
 	token := workflowRunOperationToken{
-		NamespaceName: namespace,
-		WorkflowID:    workflowID,
+		WorkflowID: workflowID,
 	}
-	token.Type = operationTokenTypeWorkflowRun
+	token.operationToken = generateOperationToken(operationTokenTypeWorkflowRun, namespace)
 	data, err := json.Marshal(token)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal workflow run operation token: %w", err)
@@ -55,9 +79,16 @@ func generateWorkflowRunOperationToken(namespace, workflowID string) (string, er
 	return base64EncodedString(data), nil
 }
 
-func generateUpdateOperationToken() (string, error) {
-	token := updateWorkflowOperationToken{}
+func generateUpdateOperationToken(namespace, workflowID, updateID string) (string, error) {
+	if namespace == "" || workflowID == "" || updateID == "" {
+		return "", fmt.Errorf("missing required param[s]: ns %s, wid: %s, uid: %s", namespace, workflowID, updateID)
+	}
+	token := updateWorkflowOperationToken{
+		WorkflowID: workflowID,
+		UpdateID:   updateID,
+	}
 	token.Type = operationTokenTypeUpdateWorkflow
+	token.operationToken = generateOperationToken(operationTokenTypeUpdateWorkflow, namespace)
 	data, err := json.Marshal(token)
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal operation token: %w", err)
@@ -93,25 +124,61 @@ func loadTokenType(data string) (operationTokenType, error) {
 
 func loadWorkflowRunOperationToken(data string) (workflowRunOperationToken, error) {
 	var token workflowRunOperationToken
-	if len(data) == 0 {
-		return token, errors.New("invalid workflow run token: token is empty")
-	}
-	b, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(data)
-	if err != nil {
-		return token, fmt.Errorf("failed to decode token: %w", err)
-	}
-	if err := json.Unmarshal(b, &token); err != nil {
-		return token, fmt.Errorf("failed to unmarshal workflow run operation token: %w", err)
-	}
-	if token.Type != operationTokenTypeWorkflowRun {
-		return token, fmt.Errorf("invalid workflow token type: %v, expected: %v", token.Type, operationTokenTypeWorkflowRun)
-	}
-	if token.Version != 0 {
-		return token, fmt.Errorf(`invalid workflow run token: "v" field should not be present`)
+	if err := loadOperationToken(data, &token); err != nil {
+		return token, err
 	}
 	if token.WorkflowID == "" {
 		return token, errors.New("invalid workflow run token: missing workflow ID (wid)")
 	}
-
 	return token, nil
+}
+
+func loadUpdateWorkflowOperationToken(data string) (updateWorkflowOperationToken, error) {
+	var token updateWorkflowOperationToken
+	if err := loadOperationToken(data, &token); err != nil {
+		return token, err
+	}
+	if token.WorkflowID == "" {
+		return token, errors.New("invalid token: missing workflow ID (wid)")
+	}
+	if token.UpdateID == "" {
+		return token, errors.New("invalid token: missing update ID (uid)")
+	}
+	return token, nil
+}
+
+func loadOperationToken(data string, token any) error {
+	if len(data) == 0 {
+		return errors.New("invalid token: token is empty")
+	}
+	var opType operationTokenType
+	switch token.(type) {
+	case *workflowRunOperationToken:
+		opType = operationTokenTypeWorkflowRun
+	case *updateWorkflowOperationToken:
+		opType = operationTokenTypeUpdateWorkflow
+	default:
+		return errors.New("unknown op token type")
+	}
+	b, err := base64.URLEncoding.WithPadding(base64.NoPadding).DecodeString(data)
+	if err != nil {
+		return fmt.Errorf("failed to decode token: %w", err)
+	}
+	if err := json.Unmarshal(b, token); err != nil {
+		return fmt.Errorf("failed to unmarshal operation token: %w", err)
+	}
+	tokenOpMeta, ok := token.(operationTokenI)
+	if !ok {
+		return errors.New("failed to load operation token metadata")
+	}
+	if tokenOpMeta.getOperationToken().Version != 0 {
+		return fmt.Errorf(`invalid token: "v" field should not be present`)
+	}
+	if tokenOpMeta.getOperationToken().NamespaceName == "" {
+		return errors.New("invalid token: missing namespace")
+	}
+	if tokenOpMeta.getOperationToken().Type != opType {
+		return fmt.Errorf("invalid token type: %v, expected: %v", tokenOpMeta.getOperationToken().Type, opType)
+	}
+	return nil
 }

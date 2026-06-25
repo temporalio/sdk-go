@@ -215,6 +215,14 @@ func NexusOperationContextFromGoContext(ctx context.Context) (nctx *NexusOperati
 	return
 }
 
+// ContextWithNexusOperationContext adds the [NexusOperationContext] into the given [context.Context]
+func ContextWithNexusOperationContext(ctx context.Context, nctx *NexusOperationContext) context.Context {
+	if nctx == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, nexusOperationContextKey, nctx)
+}
+
 // nexusMiddleware constructs an adapter from Temporal WorkerInterceptors to a Nexus MiddlewareFunc.
 func nexusMiddleware(interceptors []WorkerInterceptor) nexus.MiddlewareFunc {
 	return func(ctx context.Context, next nexus.OperationHandler[any, any]) (nexus.OperationHandler[any, any], error) {
