@@ -5,6 +5,7 @@
 package internal
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -17,11 +18,13 @@ import (
 )
 
 const (
-	urlSchemeTemporalKey = "temporal"
-	urlPathNamespaceKey  = "namespace"
-	urlPathWorkflowIDKey = "workflowID"
-	urlPathRunIDKey      = "runID"
-	urlPathTemplate      = "/namespaces/%s/workflows/%s/%s/history"
+	urlSchemeTemporalKey          = "temporal"
+	urlPathNamespaceKey           = "namespace"
+	urlPathWorkflowIDKey          = "workflowID"
+	urlPathOperationIDKey         = "operationID"
+	urlPathRunIDKey               = "runID"
+	urlPathWorkflowEventTemplate  = "/namespaces/%s/workflows/%s/%s/history"
+	urlPathNexusOperationTemplate = "/namespaces/%s/nexus-operations/%s/%s/details"
 
 	linkWorkflowEventReferenceTypeKey = "referenceType"
 	linkEventIDKey                    = "eventID"
@@ -30,13 +33,20 @@ const (
 )
 
 var (
-	rePatternNamespace  = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathNamespaceKey)
-	rePatternWorkflowID = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathWorkflowIDKey)
-	rePatternRunID      = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathRunIDKey)
-	urlPathRE           = regexp.MustCompile(fmt.Sprintf(
+	rePatternNamespace   = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathNamespaceKey)
+	rePatternWorkflowID  = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathWorkflowIDKey)
+	rePatternOperationID = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathOperationIDKey)
+	rePatternRunID       = fmt.Sprintf(`(?P<%s>[^/]+)`, urlPathRunIDKey)
+	urlPathRE            = regexp.MustCompile(fmt.Sprintf(
 		`^/namespaces/%s/workflows/%s/%s/history$`,
 		rePatternNamespace,
 		rePatternWorkflowID,
+		rePatternRunID,
+	))
+	urlPathNexusOperationRE = regexp.MustCompile(fmt.Sprintf(
+		`^/namespaces/%s/nexus-operations/%s/%s/details$`,
+		rePatternNamespace,
+		rePatternOperationID,
 		rePatternRunID,
 	))
 	eventReferenceType     = string((&commonpb.Link_WorkflowEvent_EventReference{}).ProtoReflect().Descriptor().Name())
@@ -49,9 +59,9 @@ var (
 func ConvertLinkWorkflowEventToNexusLink(we *commonpb.Link_WorkflowEvent) nexus.Link {
 	u := &url.URL{
 		Scheme: urlSchemeTemporalKey,
-		Path:   fmt.Sprintf(urlPathTemplate, we.GetNamespace(), we.GetWorkflowId(), we.GetRunId()),
+		Path:   fmt.Sprintf(urlPathWorkflowEventTemplate, we.GetNamespace(), we.GetWorkflowId(), we.GetRunId()),
 		RawPath: fmt.Sprintf(
-			urlPathTemplate,
+			urlPathWorkflowEventTemplate,
 			url.PathEscape(we.GetNamespace()),
 			url.PathEscape(we.GetWorkflowId()),
 			url.PathEscape(we.GetRunId()),
@@ -142,6 +152,70 @@ func ConvertNexusLinkToLinkWorkflowEvent(link nexus.Link) (*commonpb.Link_Workfl
 	return we, nil
 }
 
+// ConvertLinkNexusOperationToNexusLink converts a Link_NexusOperation type to Nexus Link.
+//
+// NOTE: Experimental
+func ConvertLinkNexusOperationToNexusLink(no *commonpb.Link_NexusOperation) nexus.Link {
+	u := &url.URL{
+		Scheme: urlSchemeTemporalKey,
+		Path:   fmt.Sprintf(urlPathNexusOperationTemplate, no.GetNamespace(), no.GetOperationId(), no.GetRunId()),
+		RawPath: fmt.Sprintf(
+			urlPathNexusOperationTemplate,
+			url.PathEscape(no.GetNamespace()),
+			url.PathEscape(no.GetOperationId()),
+			url.PathEscape(no.GetRunId()),
+		),
+	}
+	return nexus.Link{
+		URL:  u,
+		Type: string(no.ProtoReflect().Descriptor().FullName()),
+	}
+}
+
+// ConvertNexusLinkToLinkNexusOperation converts a Nexus Link to Link_NexusOperation.
+//
+// NOTE: Experimental
+func ConvertNexusLinkToLinkNexusOperation(link nexus.Link) (*commonpb.Link_NexusOperation, error) {
+	no := &commonpb.Link_NexusOperation{}
+	if link.Type != string(no.ProtoReflect().Descriptor().FullName()) {
+		return nil, fmt.Errorf(
+			"cannot parse link type %q to %q",
+			link.Type,
+			no.ProtoReflect().Descriptor().FullName(),
+		)
+	}
+
+	if link.URL.Scheme != urlSchemeTemporalKey {
+		return nil, fmt.Errorf(
+			"failed to parse link to Link_NexusOperation: invalid scheme: %s",
+			link.URL.Scheme,
+		)
+	}
+
+	matches := urlPathNexusOperationRE.FindStringSubmatch(link.URL.EscapedPath())
+	if len(matches) != 4 {
+		return nil, errors.New("failed to parse link to Link_NexusOperation: malformed URL path")
+	}
+
+	var err error
+	no.Namespace, err = url.PathUnescape(matches[urlPathNexusOperationRE.SubexpIndex(urlPathNamespaceKey)])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse link to Link_NexusOperation: %w", err)
+	}
+
+	no.OperationId, err = url.PathUnescape(matches[urlPathNexusOperationRE.SubexpIndex(urlPathOperationIDKey)])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse link to Link_NexusOperation: %w", err)
+	}
+
+	no.RunId, err = url.PathUnescape(matches[urlPathNexusOperationRE.SubexpIndex(urlPathRunIDKey)])
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse link to Link_NexusOperation: %w", err)
+	}
+
+	return no, nil
+}
+
 func convertLinkWorkflowEventEventReferenceToURLQuery(eventRef *commonpb.Link_WorkflowEvent_EventReference) string {
 	values := url.Values{}
 	values.Set(linkWorkflowEventReferenceTypeKey, eventReferenceType)
@@ -189,27 +263,14 @@ func convertURLQueryToLinkWorkflowEventRequestIdReference(queryValues url.Values
 	return requestIDRef, nil
 }
 
-// workflowEventLinkToNexusLink converts a common.v1.Link with a WorkflowEvent variant into a
-// nexus.v1.Link (URL + Type). The task handler uses it to drain response links onto the
-// StartOperationResponse. It returns (nil, false) when the link is not a convertible WorkflowEvent
-// link.
-func workflowEventLinkToNexusLink(link *commonpb.Link) (*nexuspb.Link, bool) {
-	we := link.GetWorkflowEvent()
-	if we == nil {
-		return nil, false
-	}
-	nexusLink := ConvertLinkWorkflowEventToNexusLink(we)
-	return &nexuspb.Link{
-		Url:  nexusLink.URL.String(),
-		Type: nexusLink.Type,
-	}, true
-}
+var (
+	workflowEventLinkType  = string((&commonpb.Link_WorkflowEvent{}).ProtoReflect().Descriptor().FullName())
+	nexusOperationLinkType = string((&commonpb.Link_NexusOperation{}).ProtoReflect().Descriptor().FullName())
+)
 
-// nexusLinkToWorkflowEventLink converts an inbound nexus.v1.Link into a common.v1.Link with a
-// WorkflowEvent variant. The task handler uses it to forward inbound Nexus task links onto the RPCs
-// (e.g. signal, signalWithStart) the handler issues. It returns (nil, false) when the link is not a
-// parseable WorkflowEvent link.
-func nexusLinkToWorkflowEventLink(link *nexuspb.Link) (*commonpb.Link, bool) {
+// nexusLinkToCommonLink converts a nexus.v1.Link into a common.v1.Link, dispatching on link.Type.
+// Returns (nil, false) for any link type not handled here.
+func nexusLinkToCommonLink(link *nexuspb.Link) (*commonpb.Link, bool) {
 	nexusLink := nexus.Link{Type: link.GetType()}
 	if link.GetUrl() != "" {
 		u, err := url.Parse(link.GetUrl())
@@ -218,11 +279,39 @@ func nexusLinkToWorkflowEventLink(link *nexuspb.Link) (*commonpb.Link, bool) {
 		}
 		nexusLink.URL = u
 	}
-	we, err := ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
-	if err != nil {
+	switch nexusLink.Type {
+	case workflowEventLinkType:
+		we, err := ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
+		if err != nil {
+			return nil, false
+		}
+		return &commonpb.Link{
+			Variant: &commonpb.Link_WorkflowEvent_{WorkflowEvent: we},
+		}, true
+	case nexusOperationLinkType:
+		no, err := ConvertNexusLinkToLinkNexusOperation(nexusLink)
+		if err != nil {
+			return nil, false
+		}
+		return &commonpb.Link{
+			Variant: &commonpb.Link_NexusOperation_{NexusOperation: no},
+		}, true
+	default:
 		return nil, false
 	}
-	return &commonpb.Link{
-		Variant: &commonpb.Link_WorkflowEvent_{WorkflowEvent: we},
-	}, true
+}
+
+// commonLinkToNexusLink converts a common.v1.Link into a nexus.v1.Link, dispatching on the link's
+// variant. Returns (nil, false) for any variant not handled here.
+func commonLinkToNexusLink(link *commonpb.Link) (*nexuspb.Link, bool) {
+	switch v := link.GetVariant().(type) {
+	case *commonpb.Link_WorkflowEvent_:
+		nexusLink := ConvertLinkWorkflowEventToNexusLink(v.WorkflowEvent)
+		return &nexuspb.Link{Url: nexusLink.URL.String(), Type: nexusLink.Type}, true
+	case *commonpb.Link_NexusOperation_:
+		nexusLink := ConvertLinkNexusOperationToNexusLink(v.NexusOperation)
+		return &nexuspb.Link{Url: nexusLink.URL.String(), Type: nexusLink.Type}, true
+	default:
+		return nil, false
+	}
 }

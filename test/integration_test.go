@@ -7251,7 +7251,26 @@ func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worke
 			return client.StartWorkflowOptions{ID: "nexus-async-echo-" + uuid.NewString()}, nil
 		},
 	)
-	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp))
+	// linkEchoOp uses the input string as the workflow ID so tests can predict it.
+	linkEchoOp := temporalnexus.NewWorkflowRunOperation(
+		"link-echo-op",
+		echoWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: "nexus-link-echo-" + input}, nil
+		},
+	)
+	// signalEchoOp signals the workflow named by its input, exercising the bi-directional
+	// Link_NexusOperation <-> Link_WorkflowEvent flow between the SANO record and the signal event.
+	signalEchoOp := nexus.NewSyncOperation(
+		"signal-echo-op",
+		func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
+			if err := temporalnexus.GetClient(ctx).SignalWorkflow(ctx, input, "", "nexus-signal", input); err != nil {
+				return "", err
+			}
+			return input, nil
+		},
+	)
+	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp, linkEchoOp, signalEchoOp))
 	w.RegisterNexusService(service)
 }
 
@@ -9598,6 +9617,124 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 		_, err = ts.client.NewNexusClient(client.NexusClientOptions{Endpoint: "ep"})
 		ts.Error(err)
 		ts.Contains(err.Error(), "service is required")
+	})
+
+	ts.Run("Link_NexusOperation forwarded to workflow completion callback", func() {
+		// Use operation ID as workflow input so we can derive the workflow ID.
+		opID := uuid.NewString()
+		workflowID := "nexus-link-echo-" + opID
+
+		handle := executeNexusOpWithRetry("link-echo-op", opID, client.StartNexusOperationOptions{
+			ID:                     opID,
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+		ts.NotEmpty(handle.GetRunID())
+
+		err := handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		// The link-echo-op handler starts a workflow; verify that the
+		// Link_NexusOperation pointing back to the SANO record is present
+		// in the workflow's completion callback links.
+		iter := ts.client.GetWorkflowHistory(ctx, workflowID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var nexusOpLink *commonpb.Link_NexusOperation
+		for iter.HasNext() {
+			event, err := iter.Next()
+			ts.NoError(err)
+			if event.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
+				continue
+			}
+			for _, cb := range event.GetWorkflowExecutionStartedEventAttributes().GetCompletionCallbacks() {
+				for _, link := range cb.GetLinks() {
+					if l := link.GetNexusOperation(); l != nil {
+						nexusOpLink = l
+					}
+				}
+			}
+			break
+		}
+		ts.Require().NotNil(nexusOpLink, "expected Link_NexusOperation in workflow completion callback")
+		ts.Equal(ts.config.Namespace, nexusOpLink.GetNamespace())
+		ts.Equal(opID, nexusOpLink.GetOperationId())
+		ts.Equal(handle.GetRunID(), nexusOpLink.GetRunId())
+	})
+
+	ts.Run("Bi-directional Signal+SANO links", func() {
+		// Start a target workflow that just needs to be alive to receive the signal.
+		targetWfID := "nexus-sano-signal-target-" + uuid.NewString()
+		targetRun, err := ts.client.ExecuteWorkflow(ctx,
+			client.StartWorkflowOptions{ID: targetWfID, TaskQueue: ts.taskQueueName},
+			"block-forever-wf",
+			targetWfID,
+		)
+		ts.NoError(err)
+		defer func() {
+			_ = ts.client.TerminateWorkflow(ctx, targetWfID, targetRun.GetRunID(), "test cleanup")
+		}()
+
+		handle := executeNexusOpWithRetry("signal-echo-op", targetWfID, client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+
+		var result string
+		err = handle.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal(targetWfID, result)
+
+		// Signal -> SANO direction: target workflow's WorkflowExecutionSignaled event should carry a
+		// Link_NexusOperation pointing back to the SANO record.
+		iter := ts.client.GetWorkflowHistory(ctx, targetWfID, targetRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var sanoBacklink *commonpb.Link_NexusOperation
+		var signalEvent *historypb.HistoryEvent
+		for iter.HasNext() {
+			event, err := iter.Next()
+			ts.NoError(err)
+			if event.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED {
+				continue
+			}
+			signalEvent = event
+			for _, link := range event.GetLinks() {
+				if l := link.GetNexusOperation(); l != nil {
+					sanoBacklink = l
+				}
+			}
+		}
+		ts.Require().NotNil(signalEvent, "expected WorkflowExecutionSignaled event in target workflow")
+		ts.Require().NotNil(sanoBacklink, "expected Link_NexusOperation on signal event pointing back to SANO")
+		ts.Equal(ts.config.Namespace, sanoBacklink.GetNamespace())
+		ts.Equal(handle.GetID(), sanoBacklink.GetOperationId())
+		ts.Equal(handle.GetRunID(), sanoBacklink.GetRunId())
+
+		// SANO -> Signal direction: SANO record should carry a Link_WorkflowEvent pointing to the
+		// signal event in the target workflow's history.
+		description, err := handle.Describe(ctx, client.DescribeNexusOperationOptions{})
+		ts.NoError(err)
+		var signalEventLink *commonpb.Link_WorkflowEvent
+		for _, link := range description.RawInfo.GetLinks() {
+			if l := link.GetWorkflowEvent(); l != nil && l.GetWorkflowId() == targetWfID {
+				signalEventLink = l
+			}
+		}
+		ts.Require().NotNil(signalEventLink, "expected Link_WorkflowEvent on SANO pointing to signal event")
+		ts.Equal(ts.config.Namespace, signalEventLink.GetNamespace())
+		ts.Equal(targetWfID, signalEventLink.GetWorkflowId())
+		ts.Equal(targetRun.GetRunID(), signalEventLink.GetRunId())
+		// The server may return either an EventRef (with EventId) or a RequestIdRef (with RequestId),
+		// depending on history.enableRequestIdRefLinks. Either way, the referenced event type must
+		// identify the signal event we delivered.
+		switch ref := signalEventLink.GetReference().(type) {
+		case *commonpb.Link_WorkflowEvent_EventRef:
+			ts.Equal(signalEvent.GetEventId(), ref.EventRef.GetEventId())
+			ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, ref.EventRef.GetEventType())
+		case *commonpb.Link_WorkflowEvent_RequestIdRef:
+			ts.NotEmpty(ref.RequestIdRef.GetRequestId())
+			ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, ref.RequestIdRef.GetEventType())
+		default:
+			ts.Failf("unexpected reference type", "got %T", ref)
+		}
 	})
 }
 
