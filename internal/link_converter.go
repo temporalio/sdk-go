@@ -185,6 +185,10 @@ func ConvertNexusLinkToLinkNexusOperation(link nexus.Link) (*commonpb.Link_Nexus
 		)
 	}
 
+	if link.URL == nil {
+		return nil, fmt.Errorf("failed to parse link to Link_NexusOperation: empty URL")
+	}
+
 	if link.URL.Scheme != urlSchemeTemporalKey {
 		return nil, fmt.Errorf(
 			"failed to parse link to Link_NexusOperation: invalid scheme: %s",
