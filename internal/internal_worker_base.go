@@ -294,10 +294,12 @@ type (
 	barrier chan struct{}
 
 	autoscalingTaskPollerRunner struct {
-		autoscaler *pollerAutoscaler
-		wakeCh     chan struct{}
-		activeMu   sync.Mutex
-		active     int
+		autoscaler   *pollerAutoscaler
+		pollerGroups *pollerGroupManager
+		queueKind    enumspb.TaskQueueKind
+		wakeCh       chan struct{}
+		activeMu     sync.Mutex
+		active       int
 	}
 
 	// pollerBalancer is used to balance the number of poll requests from different poller types
@@ -981,19 +983,21 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 func (prh *pollerAutoscaler) updateTarget(f func(int64) int64) {
 	target := prh.target.Load()
 	newTarget := f(target)
-	if newTarget < int64(prh.minPollerCount) {
-		newTarget = int64(prh.minPollerCount)
-	} else if newTarget > int64(prh.maxPollerCount) {
-		newTarget = int64(prh.maxPollerCount)
-	}
+	newTarget = int64(effectivePollerTarget(
+		int(newTarget),
+		prh.minPollerCount,
+		prh.maxPollerCount,
+		0,
+	))
 	for !prh.target.CompareAndSwap(target, newTarget) {
 		target = prh.target.Load()
 		newTarget = f(target)
-		if newTarget < int64(prh.minPollerCount) {
-			newTarget = int64(prh.minPollerCount)
-		} else if newTarget > int64(prh.maxPollerCount) {
-			newTarget = int64(prh.maxPollerCount)
-		}
+		newTarget = int64(effectivePollerTarget(
+			int(newTarget),
+			prh.minPollerCount,
+			prh.maxPollerCount,
+			0,
+		))
 	}
 	if prh.targetChangedCallback != nil {
 		traceLog(func() {
@@ -1045,17 +1049,23 @@ func (prh *pollerAutoscaler) newPeriod() {
 	prh.scaleUpAllowed.Store(float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1)
 }
 
-func newAutoscalingTaskPollerRunner(autoscaler *pollerAutoscaler) *autoscalingTaskPollerRunner {
+func newAutoscalingTaskPollerRunner(
+	autoscaler *pollerAutoscaler,
+	pollerGroups *pollerGroupManager,
+	queueKind enumspb.TaskQueueKind,
+) *autoscalingTaskPollerRunner {
 	return &autoscalingTaskPollerRunner{
-		autoscaler: autoscaler,
-		wakeCh:     make(chan struct{}, 1),
+		autoscaler:   autoscaler,
+		pollerGroups: pollerGroups,
+		queueKind:    queueKind,
+		wakeCh:       make(chan struct{}, 1),
 	}
 }
 
 func (r *autoscalingTaskPollerRunner) acquire(ctx context.Context) (func(), error) {
 	for {
 		r.activeMu.Lock()
-		target := int(r.autoscaler.target.Load())
+		target := r.effectiveTarget()
 		if r.active < target {
 			r.active++
 			r.activeMu.Unlock()
@@ -1069,6 +1079,30 @@ func (r *autoscalingTaskPollerRunner) acquire(ctx context.Context) (func(), erro
 		case <-r.wakeCh:
 		}
 	}
+}
+
+// effectiveTarget expects the r.activeMu lock to already be held
+func (r *autoscalingTaskPollerRunner) effectiveTarget() int {
+	target := int(r.autoscaler.target.Load())
+	return effectivePollerTarget(
+		target,
+		r.autoscaler.minPollerCount,
+		r.autoscaler.maxPollerCount,
+		r.pollerGroups.requiredMin(r.queueKind),
+	)
+}
+
+func effectivePollerTarget(current, configuredMin, configuredMax, requiredMin int) int {
+	effectiveMin := max(configuredMin, requiredMin)
+	effectiveMax := max(configuredMax, effectiveMin)
+
+	if current < effectiveMin {
+		return effectiveMin
+	}
+	if current > effectiveMax {
+		return effectiveMax
+	}
+	return current
 }
 
 func (r *autoscalingTaskPollerRunner) release() {
@@ -1097,6 +1131,7 @@ func newScalableTaskPoller(
 	pollerBehavior PollerBehavior,
 	taskPollerType string,
 	serverSupportsAutoscaling *atomic.Bool,
+	pollerGroups *pollerGroupManager,
 ) scalableTaskPoller {
 	tw := scalableTaskPoller{
 		taskPoller:     poller,
@@ -1111,7 +1146,9 @@ func newScalableTaskPoller(
 			logger:                    logger,
 			serverSupportsAutoscaling: serverSupportsAutoscaling,
 		})
-		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler)
+		queueKind, _ := taskQueueKindForPoller(tw)
+		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler, pollerGroups, queueKind)
+		pollerGroups.addListener(tw.autoscalingRunner.signal)
 		tw.pollerAutoscaler.targetChangedCallback = func() {
 			tw.autoscalingRunner.signal()
 		}
