@@ -150,3 +150,43 @@ func TestResponseOmitsResponseLinksWhenNoneStashed(t *testing.T) {
 	require.NoError(t, err)
 	require.Empty(t, completed.GetResponse().GetStartOperation().GetSyncSuccess().GetLinks())
 }
+
+func TestNexusCompletionForwardsPollerGroupID(t *testing.T) {
+	h := newResponseLinkTestTaskHandler(t, false)
+	task := responseLinkTestTask(t, "input")
+	task.PollerGroupId = "nexus-pg-complete"
+
+	nctx, handlerErr := h.newNexusOperationContext(task)
+	require.Nil(t, handlerErr)
+	completed, failed, err := h.ExecuteContext(nctx, task)
+	require.NoError(t, err)
+	require.Nil(t, failed)
+	require.NotNil(t, completed)
+	require.Equal(t, "nexus-pg-complete", completed.PollerGroupId)
+}
+
+func TestNexusFailureForwardsPollerGroupID(t *testing.T) {
+	h := newNexusTaskHandler(
+		nil,
+		"identity",
+		signalLinkTestNamespace,
+		"tq",
+		nil,
+		converter.GetDefaultDataConverter(),
+		GetDefaultFailureConverter(),
+		ilog.NewDefaultLogger(),
+		metrics.NopHandler,
+		newRegistry(),
+	)
+	task := &workflowservice.PollNexusTaskQueueResponse{
+		TaskToken:     []byte("token"),
+		PollerGroupId: "nexus-pg-fail",
+		Request:       &nexuspb.Request{},
+	}
+
+	completed, failed, err := h.Execute(task)
+	require.NoError(t, err)
+	require.Nil(t, completed)
+	require.NotNil(t, failed)
+	require.Equal(t, "nexus-pg-fail", failed.PollerGroupId)
+}

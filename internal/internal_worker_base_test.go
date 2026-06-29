@@ -46,6 +46,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerSetsTaskPollerType() 
 		behavior,
 		metrics.PollerTypeWorkflowStickyTask,
 		&atomic.Bool{},
+		nil,
 	)
 
 	s.Equal(metrics.PollerTypeWorkflowStickyTask, poller.taskPollerType)
@@ -62,6 +63,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerUsesDynamicRunnerOnly
 		},
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
+		nil,
 	)
 	s.NotNil(autoscalingPoller.autoscalingRunner)
 	s.Equal(0, autoscalingPoller.pollerCount)
@@ -72,6 +74,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerUsesDynamicRunnerOnly
 		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 2},
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
+		nil,
 	)
 	s.Nil(simpleMaximumPoller.autoscalingRunner)
 	s.Equal(2, simpleMaximumPoller.pollerCount)
@@ -98,6 +101,7 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 		autoscalingBehavior,
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
+		nil,
 	)
 	s.Equal(enumspb.TASK_QUEUE_KIND_NORMAL, bw.slotReservationData(nonStickyPoller).taskQueueKind)
 
@@ -107,6 +111,7 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 		autoscalingBehavior,
 		metrics.PollerTypeWorkflowStickyTask,
 		&atomic.Bool{},
+		nil,
 	)
 	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, bw.slotReservationData(stickyPoller).taskQueueKind)
 
@@ -116,6 +121,7 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 1},
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
+		nil,
 	)
 	s.Equal(enumspb.TASK_QUEUE_KIND_UNSPECIFIED, bw.slotReservationData(mixedPoller).taskQueueKind)
 }
@@ -235,7 +241,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 	}
 
 	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil, nil)
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
 		maxTaskPerSecond: 1000,
@@ -279,7 +285,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}
 
 	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil, nil)
 
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
@@ -320,7 +326,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingDoesNotHoldSlotWhileWaitingForP
 	}
 
 	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil, nil)
 	slotSupplier := newLimitedSlotSupplier(2)
 
 	bw := newBaseWorker(baseWorkerOptions{
@@ -361,7 +367,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingBalancerDoesNotHoldSlotsWhileBl
 	}
 
 	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "a", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "a", nil, nil)
 	slotSupplier := newLimitedSlotSupplier(2)
 
 	bw := newBaseWorker(baseWorkerOptions{
@@ -640,6 +646,7 @@ func TestAutoscalingTaskNotDroppedDuringShutdown(t *testing.T) {
 		},
 		"test",
 		&atomic.Bool{},
+		nil,
 	)
 
 	bw := newBaseWorker(baseWorkerOptions{
@@ -1189,6 +1196,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {
 				behavior,
 				tc.ptype,
 				&atomic.Bool{},
+				nil,
 			)
 			s.Equal(tc.ptype, poller.taskPollerType)
 		})
