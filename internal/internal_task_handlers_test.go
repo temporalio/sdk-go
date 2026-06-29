@@ -833,6 +833,32 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	t.Contains(queryResp.ErrorMessage, "unknown queryType")
 }
 
+func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryResponseForwardsPollerGroupID() {
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+	task := createQueryTask(testEvents, 3, "HelloWorld_Workflow", queryType)
+	task.PollerGroupId = "test-poller-group-42"
+
+	taskHandler := newWorkflowTaskHandler(t.getTestWorkerExecutionParams(), nil, t.registry)
+	wftask := workflowTask{task: task}
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+	response, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+	wfctx.Unlock(err)
+	t.NoError(err)
+	t.NotNil(response)
+
+	queryResp, ok := response.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
+	t.True(ok)
+	t.Equal("test-poller-group-42", queryResp.PollerGroupId)
+}
+
 func (t *TaskHandlersTestSuite) verifyQueryResult(response *workflowTaskCompletion, expectedResult string) {
 	t.NotNil(response)
 	queryResp, ok := response.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)

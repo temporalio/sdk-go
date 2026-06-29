@@ -26,6 +26,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/temporalproto"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -85,6 +86,7 @@ type (
 		worker              *baseWorker
 		localActivityWorker *baseWorker
 		identity            string
+		pollerGroups        *pollerGroupManager
 		// stopC is created by newWorkflowWorkerInternal, exposed through
 		// WorkerStopChannel to workflow task handling, passed to local activity
 		// contexts as the worker stop channel, and closed by workflowWorker.Stop().
@@ -104,6 +106,7 @@ type (
 		poller              taskPoller
 		worker              *baseWorker
 		identity            string
+		pollerGroups        *pollerGroupManager
 		// stopC is created by newActivityWorker, exposed through WorkerStopChannel
 		// to activity task polling/handling, and closed by activityWorker.Stop().
 		stopC chan struct{}
@@ -361,7 +364,11 @@ func newWorkflowTaskWorkerInternal(
 	stickyUUID := uuid.NewString()
 	taskProcessor := newWorkflowTaskProcessor(taskHandler, contextManager, service, params, stickyUUID)
 
-	scalableTaskPollers := buildWorkflowScalableTaskPollers(taskProcessor, params.WorkflowTaskPollerBehavior, params)
+	scalableTaskPollers, pollerGroups := buildWorkflowScalableTaskPollers(
+		taskProcessor,
+		params.WorkflowTaskPollerBehavior,
+		params,
+	)
 
 	bwo := baseWorkerOptions{
 		pollerRate:                   defaultPollerRate,
@@ -417,6 +424,7 @@ func newWorkflowTaskWorkerInternal(
 				),
 				"",
 				nil,
+				nil,
 			),
 		},
 		taskProcessor:  localActivityTaskPoller,
@@ -443,10 +451,18 @@ func newWorkflowTaskWorkerInternal(
 		worker:              worker,
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
+		pollerGroups:        pollerGroups,
 		stopC:               stopC,
 		localActivityStopC:  laStopChannel,
 		stickyUUID:          stickyUUID,
 	}
+}
+
+func (ww *workflowWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	if ww == nil || ww.pollerGroups == nil || len(groups) == 0 {
+		return
+	}
+	ww.pollerGroups.updateGroups(groups)
 }
 
 // Start the worker.
@@ -469,41 +485,49 @@ func (ww *workflowWorker) Stop() {
 // the given behavior. A simple-maximum behavior uses a single Mixed poller,
 // while an autoscaling behavior uses a NonSticky poller plus a Sticky poller
 // when the sticky cache is enabled.
-func buildWorkflowScalableTaskPollers(taskProcessor *workflowTaskProcessor, behavior PollerBehavior, params workerExecutionParameters) []scalableTaskPoller {
+func buildWorkflowScalableTaskPollers(
+	taskProcessor *workflowTaskProcessor,
+	behavior PollerBehavior,
+	params workerExecutionParameters,
+) ([]scalableTaskPoller, *pollerGroupManager) {
 	switch behavior.(type) {
 	case *pollerBehaviorAutoscaling:
+		pollerGroups := newPollerGroupManager(true)
 		scalableTaskPollers := []scalableTaskPoller{
 			newScalableTaskPoller(
-				taskProcessor.createPoller(NonSticky),
+				taskProcessor.createPoller(NonSticky, pollerGroups),
 				params.Logger,
 				behavior,
 				metrics.PollerTypeWorkflowTask,
 				params.serverSupportsAutoscaling,
+				pollerGroups,
 			),
 		}
 		if taskProcessor.stickyCacheSize > 0 {
 			scalableTaskPollers = append(
 				scalableTaskPollers,
 				newScalableTaskPoller(
-					taskProcessor.createPoller(Sticky),
+					taskProcessor.createPoller(Sticky, pollerGroups),
 					params.Logger,
 					behavior,
 					metrics.PollerTypeWorkflowStickyTask,
 					params.serverSupportsAutoscaling,
+					pollerGroups,
 				),
 			)
 		}
-		return scalableTaskPollers
+		return scalableTaskPollers, pollerGroups
 	default: // *pollerBehaviorSimpleMaximum
 		return []scalableTaskPoller{
 			newScalableTaskPoller(
-				taskProcessor.createPoller(Mixed),
+				taskProcessor.createPoller(Mixed, nil),
 				params.Logger,
 				behavior,
 				metrics.PollerTypeWorkflowTask,
 				params.serverSupportsAutoscaling,
+				nil,
 			),
-		}
+		}, nil
 	}
 }
 
@@ -516,7 +540,9 @@ func (ww *workflowWorker) applyPollerBehavior(behavior PollerBehavior) {
 		return
 	}
 	ww.executionParameters.WorkflowTaskPollerBehavior = behavior
-	ww.worker.setTaskPollers(buildWorkflowScalableTaskPollers(taskProcessor, behavior, ww.executionParameters))
+	taskPollers, pollerGroups := buildWorkflowScalableTaskPollers(taskProcessor, behavior, ww.executionParameters)
+	ww.pollerGroups = pollerGroups
+	ww.worker.setTaskPollers(taskPollers)
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
@@ -619,7 +645,11 @@ func newActivityWorker(
 		taskHandler = newActivityTaskHandler(client, params, env)
 	}
 
-	poller := newActivityTaskPoller(taskHandler, service, params)
+	var pollerGroups *pollerGroupManager
+	if _, ok := params.ActivityTaskPollerBehavior.(*pollerBehaviorAutoscaling); ok {
+		pollerGroups = newPollerGroupManager(false)
+	}
+	poller := newActivityTaskPoller(taskHandler, service, params, pollerGroups)
 	var slotSupplier SlotSupplier
 	if overrides != nil && overrides.slotSupplier != nil {
 		slotSupplier = overrides.slotSupplier
@@ -631,7 +661,14 @@ func newActivityWorker(
 		slotSupplier:     slotSupplier,
 		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, metrics.PollerTypeActivityTask, params.serverSupportsAutoscaling),
+			newScalableTaskPoller(
+				poller,
+				params.Logger,
+				params.ActivityTaskPollerBehavior,
+				metrics.PollerTypeActivityTask,
+				params.serverSupportsAutoscaling,
+				pollerGroups,
+			),
 		},
 		taskProcessor:                poller,
 		workerType:                   "ActivityWorker",
@@ -657,8 +694,16 @@ func newActivityWorker(
 		worker:              base,
 		poller:              poller,
 		identity:            params.Identity,
+		pollerGroups:        pollerGroups,
 		stopC:               workerStopChannel,
 	}
+}
+
+func (aw *activityWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	if aw == nil || aw.pollerGroups == nil || len(groups) == 0 {
+		return
+	}
+	aw.pollerGroups.updateGroups(groups)
 }
 
 // Start the worker.
@@ -678,6 +723,14 @@ func (aw *activityWorker) Stop() {
 // the poller list is still dormant.
 func (aw *activityWorker) applyPollerBehavior(behavior PollerBehavior) {
 	aw.executionParameters.ActivityTaskPollerBehavior = behavior
+	var pollerGroups *pollerGroupManager
+	if _, ok := behavior.(*pollerBehaviorAutoscaling); ok {
+		pollerGroups = newPollerGroupManager(false)
+	}
+	if poller, ok := aw.poller.(*activityTaskPoller); ok {
+		poller.pollerGroups = pollerGroups
+	}
+	aw.pollerGroups = pollerGroups
 	aw.worker.setTaskPollers([]scalableTaskPoller{
 		newScalableTaskPoller(
 			aw.poller,
@@ -685,6 +738,7 @@ func (aw *activityWorker) applyPollerBehavior(behavior PollerBehavior) {
 			behavior,
 			metrics.PollerTypeActivityTask,
 			aw.executionParameters.serverSupportsAutoscaling,
+			pollerGroups,
 		),
 	})
 }
@@ -1456,6 +1510,8 @@ func (aw *AggregatedWorker) start() error {
 		}
 	}
 
+	aw.seedPollerGroupInfos(nsData.pollerGroupInfos)
+
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
@@ -1519,6 +1575,7 @@ func (aw *AggregatedWorker) start() error {
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
 		}
+		aw.nexusWorker.seedPollerGroupInfos(nsData.pollerGroupInfos)
 		if err := aw.nexusWorker.Start(); err != nil {
 			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
@@ -1531,6 +1588,18 @@ func (aw *AggregatedWorker) start() error {
 	}
 	aw.logger.Info("Started Worker")
 	return nil
+}
+
+func (aw *AggregatedWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	if len(groups) == 0 {
+		return
+	}
+	if !util.IsInterfaceNil(aw.workflowWorker) {
+		aw.workflowWorker.seedPollerGroupInfos(groups)
+	}
+	if !util.IsInterfaceNil(aw.activityWorker) {
+		aw.activityWorker.seedPollerGroupInfos(groups)
+	}
 }
 
 func (aw *AggregatedWorker) assertNotStopped() {
