@@ -3,6 +3,7 @@ package internal
 import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	enumspb "go.temporal.io/api/enums/v1"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 )
@@ -19,6 +20,7 @@ type nexusWorker struct {
 	executionParameters workerExecutionParameters
 	workflowService     workflowservice.WorkflowServiceClient
 	worker              *baseWorker
+	pollerGroups        *pollerGroupManager
 	// stopC is created by newNexusWorker, exposed to the Nexus task poller through
 	// WorkerStopChannel, and closed by nexusWorker.Stop() during shutdown.
 	stopC chan struct{}
@@ -29,6 +31,10 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 	params := opts.executionParameters
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
+	var pollerGroups *pollerGroupManager
+	if _, ok := params.NexusTaskPollerBehavior.(*pollerBehaviorAutoscaling); ok {
+		pollerGroups = newPollerGroupManager(false)
+	}
 	poller := newNexusTaskPoller(
 		newNexusTaskHandler(
 			opts.handler,
@@ -44,6 +50,7 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		),
 		opts.workflowService,
 		params,
+		pollerGroups,
 	)
 
 	bwo := baseWorkerOptions{
@@ -57,6 +64,7 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 				params.NexusTaskPollerBehavior,
 				metrics.PollerTypeNexusTask,
 				params.serverSupportsAutoscaling,
+				pollerGroups,
 			),
 		},
 		taskProcessor:                poller,
@@ -81,8 +89,16 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		executionParameters: opts.executionParameters,
 		workflowService:     opts.workflowService,
 		worker:              baseWorker,
+		pollerGroups:        pollerGroups,
 		stopC:               workerStopChannel,
 	}, nil
+}
+
+func (w *nexusWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
+	if w == nil || w.pollerGroups == nil || len(groups) == 0 {
+		return
+	}
+	w.pollerGroups.updateGroups(groups)
 }
 
 // Start the worker.
