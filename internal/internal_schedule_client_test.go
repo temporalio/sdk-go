@@ -7,8 +7,11 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
+	commonpb "go.temporal.io/api/common/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
+	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
@@ -320,4 +323,36 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultCo
 		s.True(sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 		testFn()
 	})
+}
+
+func (s *scheduleClientTestSuite) TestDescribeSchedulePopulatesPriority() {
+	describeResponse := &workflowservice.DescribeScheduleResponse{
+		Schedule: &schedulepb.Schedule{
+			Action: &schedulepb.ScheduleAction{
+				Action: &schedulepb.ScheduleAction_StartWorkflow{
+					StartWorkflow: &workflowpb.NewWorkflowExecutionInfo{
+						WorkflowId:   workflowID,
+						WorkflowType: &commonpb.WorkflowType{Name: "wf-type"},
+						TaskQueue:    &taskqueuepb.TaskQueue{Name: taskqueue},
+						Priority: &commonpb.Priority{
+							PriorityKey:    3,
+							FairnessKey:    "fairness-key",
+							FairnessWeight: 2.5,
+						},
+					},
+				},
+			},
+		},
+		Info: &schedulepb.ScheduleInfo{},
+	}
+	s.service.EXPECT().DescribeSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResponse, nil).Times(1)
+
+	description, err := s.client.ScheduleClient().GetHandle(context.Background(), scheduleID).Describe(context.Background())
+	s.NoError(err)
+
+	action, ok := description.Schedule.Action.(*ScheduleWorkflowAction)
+	s.True(ok)
+	s.Equal(3, action.Priority.PriorityKey)
+	s.Equal("fairness-key", action.Priority.FairnessKey)
+	s.Equal(float32(2.5), action.Priority.FairnessWeight)
 }
