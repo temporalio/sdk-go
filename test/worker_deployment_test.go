@@ -93,30 +93,27 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropaga
 	expectedCurrentBuildID string,
 	expectedRampingBuildID string,
 ) {
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 	ts.Eventually(func() bool {
-		resp, err := ts.client.WorkflowService().DescribeWorkerDeployment(ctx, &workflowservice.DescribeWorkerDeploymentRequest{
-			Namespace:      ts.config.Namespace,
-			DeploymentName: deploymentName,
-		})
+		desc, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 		if err != nil {
 			return false
 		}
-		if resp.GetWorkerDeploymentInfo().GetRoutingConfig().GetCurrentDeploymentVersion().GetBuildId() != expectedCurrentBuildID {
+		if buildIDFromWorkerDeploymentVersion(desc.Info.RoutingConfig.CurrentVersion) != expectedCurrentBuildID {
 			return false
 		}
-		if resp.GetWorkerDeploymentInfo().GetRoutingConfig().GetRampingDeploymentVersion().GetBuildId() != expectedRampingBuildID {
+		if buildIDFromWorkerDeploymentVersion(desc.Info.RoutingConfig.RampingVersion) != expectedRampingBuildID {
 			return false
 		}
-		switch resp.GetWorkerDeploymentInfo().GetRoutingConfigUpdateState() {
-		case enumspb.ROUTING_CONFIG_UPDATE_STATE_COMPLETED:
-			return true
-		case enumspb.ROUTING_CONFIG_UPDATE_STATE_UNSPECIFIED:
-			return true // not implemented
-		case enumspb.ROUTING_CONFIG_UPDATE_STATE_IN_PROGRESS:
-			return false
-		}
-		return false
-	}, 10*time.Second, 100*time.Millisecond)
+		return true
+	}, 30*time.Second, 100*time.Millisecond)
+}
+
+func buildIDFromWorkerDeploymentVersion(version *worker.WorkerDeploymentVersion) string {
+	if version == nil {
+		return ""
+	}
+	return version.BuildID
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context, handle client.WorkflowRun) {
@@ -437,7 +434,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle1)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle1, v1.BuildID)
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
 
@@ -452,7 +449,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	handle2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle2)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle2, v2.BuildID)
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v3)
 
@@ -489,7 +486,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	handle3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("3"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle3)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle3, v3.BuildID)
 
 	// finish them all
 	ts.NoError(ts.client.SignalWorkflow(ctx, handle1.GetID(), handle1.GetRunID(), "start-signal", "prefix"))

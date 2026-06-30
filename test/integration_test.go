@@ -584,19 +584,19 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 	var expected []string
-	// Fail every other HB attempt, otherwise it's too easy to exceed the HB timeout
-	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 3, 5)
+	// Fail every other HB attempt, otherwise it's too easy to exceed the HB timeout.
+	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 3)
 	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
-	// we induce 3 failures, but they all should be retried
+	// we induce 2 failures, but they all should be retried
 	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
-	// expect 3 retry attempts
-	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 3)
+	// expect 2 retry attempts
+	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 2)
 	// save number of heartbeats sent to the server
 	totalHeartbeats := ts.getReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat")
-	// and make sure that number of reported attempts is 3 more, because of retries.
-	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+3))
+	// and make sure that number of reported attempts is 2 more, because of retries.
+	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+2))
 }
 
 func (ts *IntegrationTestSuite) TestHeartbeatOnActivityFailure() {

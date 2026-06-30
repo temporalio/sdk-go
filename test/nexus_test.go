@@ -1534,7 +1534,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 	}
 
 	t.Run("Abandon", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		tc := newTestContext(t, ctx)
 

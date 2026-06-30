@@ -842,7 +842,11 @@ func TestTaskNotProcessedDuringLegacyShutdown(t *testing.T) {
 			})
 
 			bw.Start()
-			<-pollStarted
+			select {
+			case <-pollStarted:
+			case <-time.After(5 * time.Second):
+				t.Fatal("poller did not start in time")
+			}
 
 			// AggregatedWorker.Stop sets noRepoll before stopping base workers.
 			bw.noRepoll.Store(true)
