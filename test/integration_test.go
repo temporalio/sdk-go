@@ -3080,14 +3080,18 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
 	rootSpan.End()
 	spans := ts.openTelemetrySpanRecorder.Ended()
 
-	var startActivitySpan sdktrace.ReadOnlySpan
+	var startActivitySpan, runActivitySpan sdktrace.ReadOnlySpan
 	for _, s := range spans {
-		if s.Name() == "StartActivity:tracingTestStandaloneActivity" {
+		switch s.Name() {
+		case "StartActivity:tracingTestStandaloneActivity":
 			startActivitySpan = s
-			break
+		case "RunActivity:tracingTestStandaloneActivity":
+			runActivitySpan = s
 		}
 	}
+
 	ts.Require().NotNil(startActivitySpan, "expected a StartActivity span for the standalone activity")
+	ts.Equal("StartActivity:tracingTestStandaloneActivity", startActivitySpan.Name())
 	ts.Equal(rootSpan.SpanContext().SpanID(), startActivitySpan.Parent().SpanID())
 
 	var foundActivityID bool
@@ -3098,6 +3102,11 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
 		}
 	}
 	ts.True(foundActivityID, "expected temporalActivityID span attribute")
+
+	ts.Require().NotNil(runActivitySpan, "expected a RunActivity span for the standalone activity")
+	ts.Equal("RunActivity:tracingTestStandaloneActivity", runActivitySpan.Name())
+	ts.Equal(startActivitySpan.SpanContext().SpanID(), runActivitySpan.Parent().SpanID())
+	ts.Equal(startActivitySpan.SpanContext().TraceID(), runActivitySpan.SpanContext().TraceID())
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
