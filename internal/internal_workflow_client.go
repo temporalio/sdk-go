@@ -1611,8 +1611,11 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 
 func isUnknownMethodUnimplemented(err error) bool {
 	var unimplemented *serviceerror.Unimplemented
-	return (errors.As(err, &unimplemented) || status.Code(err) == codes.Unimplemented) &&
-		strings.Contains(strings.ToLower(err.Error()), "unknown method")
+	if !errors.As(err, &unimplemented) && status.Code(err) != codes.Unimplemented {
+		return false
+	}
+	errMsg := strings.ToLower(err.Error())
+	return strings.Contains(errMsg, "unknown method") || strings.Contains(errMsg, "not implemented")
 }
 
 // Get namespace capabilities, lazily fetching from server if not already obtained.
