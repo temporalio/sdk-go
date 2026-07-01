@@ -19,6 +19,11 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Fixed
+
+- Respect SDK flags already recorded in workflow history even when `GetSystemInfo` does not report
+  SDK metadata support.
+
 ### Added
 
 - Exposed `BackoffStartInterval` when continuing as new, which will delay the first task of the
