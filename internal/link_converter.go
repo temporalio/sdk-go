@@ -312,11 +312,18 @@ func commonLinkToNexusLink(link *commonpb.Link) (*nexuspb.Link, bool) {
 	if variant == nil {
 		return nil, false
 	}
+
 	switch v := variant.(type) {
 	case *commonpb.Link_WorkflowEvent_:
+		if v.WorkflowEvent == nil {
+			return nil, false
+		}
 		nexusLink := ConvertLinkWorkflowEventToNexusLink(v.WorkflowEvent)
 		return &nexuspb.Link{Url: nexusLink.URL.String(), Type: nexusLink.Type}, true
 	case *commonpb.Link_NexusOperation_:
+		if v.NexusOperation == nil {
+			return nil, false
+		}
 		nexusLink := ConvertLinkNexusOperationToNexusLink(v.NexusOperation)
 		return &nexuspb.Link{Url: nexusLink.URL.String(), Type: nexusLink.Type}, true
 	default:
