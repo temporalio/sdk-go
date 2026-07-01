@@ -57,7 +57,8 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerUsesDynamicRunnerOnly
 	autoscalingPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
-		metrics.NopHandler,		&pollerBehaviorAutoscaling{
+		metrics.NopHandler,
+		&pollerBehaviorAutoscaling{
 			initialNumberOfPollers: 1,
 			maximumNumberOfPollers: 2,
 			minimumNumberOfPollers: 1,
@@ -71,7 +72,8 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerUsesDynamicRunnerOnly
 	simpleMaximumPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
-		metrics.NopHandler,		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 2},
+		metrics.NopHandler,
+		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 2},
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
 	)
@@ -97,7 +99,8 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 	nonStickyPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
-		metrics.NopHandler,		autoscalingBehavior,
+		metrics.NopHandler,
+		autoscalingBehavior,
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
 	)
@@ -106,7 +109,8 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 	stickyPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
-		metrics.NopHandler,		autoscalingBehavior,
+		metrics.NopHandler,
+		autoscalingBehavior,
 		metrics.PollerTypeWorkflowStickyTask,
 		&atomic.Bool{},
 	)
@@ -115,7 +119,8 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 	mixedPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
-		metrics.NopHandler,		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 1},
+		metrics.NopHandler,
+		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 1},
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
 	)
@@ -145,7 +150,8 @@ func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersCreatesBalancerForMul
 		return newScalableTaskPoller(
 			newBlockingProbeTaskPoller(),
 			ilog.NewNopLogger(),
-			metrics.NopHandler,			&pollerBehaviorAutoscaling{initialNumberOfPollers: 1, maximumNumberOfPollers: 2, minimumNumberOfPollers: 1},
+			metrics.NopHandler,
+			&pollerBehaviorAutoscaling{initialNumberOfPollers: 1, maximumNumberOfPollers: 2, minimumNumberOfPollers: 1},
 			pollerType,
 			&atomic.Bool{},
 		)
@@ -797,7 +803,8 @@ func TestAutoscalingTaskNotDroppedDuringShutdown(t *testing.T) {
 		poller := newScalableTaskPoller(
 			tp,
 			ilog.NewNopLogger(),
-			metrics.NopHandler,			&pollerBehaviorAutoscaling{
+			metrics.NopHandler,
+			&pollerBehaviorAutoscaling{
 				initialNumberOfPollers: 1,
 				maximumNumberOfPollers: 2,
 				minimumNumberOfPollers: 1,
