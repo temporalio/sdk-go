@@ -1,6 +1,6 @@
 module go.temporal.io/sdk
 
-go 1.25.4
+go 1.24.0
 
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a
@@ -12,7 +12,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.6.0
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.63.0
+	go.temporal.io/api v1.63.1-0.20260630215314-778d41d2e499
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.45.0
 	golang.org/x/time v0.3.0
@@ -32,5 +32,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace go.temporal.io/api => ../temporal-api-go
