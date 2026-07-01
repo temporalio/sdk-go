@@ -25,6 +25,8 @@ to docs, or any other relevant information.
   SDK metadata support.
 - Only treat `GetSystemInfo` `UNIMPLEMENTED` responses as missing server capability support when
   the error indicates an unknown method.
+- Retry server RPCs without gzip compression when a method reports that gzip decompression is
+  unsupported, while continuing to use gzip for other methods.
 
 ### Added
 
