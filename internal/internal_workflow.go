@@ -1036,19 +1036,24 @@ func (s *coroutineState) initialYield(stackDepth int, status string) {
 	s.blocked.Swap(false)
 }
 
-// isPanicking reports whether the current goroutine is executing during panic unwinding. It checks
-// for runtime.gopanic on the call stack via runtime.Callers().
+// isPanicking reports whether the current goroutine is executing during panic
+// unwinding. It checks for runtime.gopanic on the call stack using
+// runtime.Callers() and runtime.FuncForPC().
+//
+// This is called on every coroutine yield to detect deferred functions that
+// attempt to block while a panic is in progress. Using FuncForPC (a simple
+// binary search with zero allocations) instead of CallersFrames+Next avoids
+// the ~254 MB of allocations and ~14% CPU overhead of the previous
+// implementation under load.
 func isPanicking() bool {
 	var pcs [20]uintptr
 	n := runtime.Callers(1, pcs[:])
-	frames := runtime.CallersFrames(pcs[:n])
-	for {
-		frame, more := frames.Next()
-		if frame.Function == "runtime.gopanic" {
+	for i := 0; i < n; i++ {
+		// Subtract 1 from the PC to get the call site rather than the
+		// return address, which ensures FuncForPC resolves the correct
+		// function even at function boundaries.
+		if fn := runtime.FuncForPC(pcs[i] - 1); fn != nil && fn.Name() == "runtime.gopanic" {
 			return true
-		}
-		if !more {
-			break
 		}
 	}
 	return false
