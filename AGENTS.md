@@ -149,8 +149,7 @@ externally.
   gogo/protobuf to golang/protobuf migration and proto JSON compatibility
   concerns; keep those compatibility notes in mind when changing converters or
   encoded payload behavior.
-- The integration-test dev server currently uses a standalone Temporal CLI
-  version with Nexus-operation support and many dynamic-config flags. Prefer the
-  build tool so tests run against the intended server shape.
+- When the integration-test dev server uses a custom version, prefer the build
+  tool so tests run against the intended server shape.
 - `test/` is its own Go module. Several `contrib/*` directories are also Go
   modules. Remember module boundaries when running tests or tidying.
