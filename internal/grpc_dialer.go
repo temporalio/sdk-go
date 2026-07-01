@@ -195,7 +195,6 @@ func newGzipDowngradeInterceptor() grpc.UnaryClientInterceptor {
 		}
 		msg := strings.ToLower(err.Error())
 		if status.Code(err) != codes.Unimplemented ||
-			!strings.Contains(msg, grpcgzip.Name) ||
 			(!strings.Contains(msg, "decompress") &&
 				!strings.Contains(msg, "grpc-encoding") &&
 				!strings.Contains(msg, "compressor")) {
