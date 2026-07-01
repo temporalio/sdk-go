@@ -3083,15 +3083,11 @@ func NewNexusClient(endpoint, service string) NexusClient {
 	if service == "" {
 		panic("service must not be empty")
 	}
-	// The built-in system Nexus endpoint/service pair is Temporal's own use of
-	// the otherwise reserved __temporal_ prefix and is therefore permitted.
-	if !isSystemNexusClient(endpoint, service) {
-		if strings.HasPrefix(endpoint, temporalPrefix) {
-			panic("endpoint cannot use reserved __temporal_ prefix")
-		}
-		if strings.HasPrefix(service, temporalPrefix) {
-			panic("service cannot use reserved __temporal_ prefix")
-		}
+	if strings.HasPrefix(endpoint, temporalPrefix) && endpoint != systemNexusEndpoint  {
+		panic("endpoint cannot use reserved __temporal_ prefix")
+	}
+	if strings.HasPrefix(service, temporalPrefix) {
+		panic("service cannot use reserved __temporal_ prefix")
 	}
 	return nexusClient{endpoint, service}
 }
@@ -3137,13 +3133,9 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 
 	var payload *commonpb.Payload
 	var err error
-	if isSystemNexusClient(input.Client.Endpoint(), input.Client.Service()) {
-		// System Nexus envelopes are encoded as proto-binary (not through the
-		// workflow data converter or any codec): the request is a proto message
-		// whose own fields carry the user payloads, and temporal-api-go's
-		// payload visitor descends into those inner payloads. Encoding the
-		// envelope with the proto converter tags it with the message type that
-		// the visitor reads to decode it.
+	if input.Client.Endpoint() == systemNexusEndpoint {
+		// System Nexus envelopes are encoded as proto-binary because they're
+		// consumed by Temporal, not by user code.
 		payload, err = converter.NewProtoPayloadConverter().ToPayload(input.Input)
 	} else {
 		payload, err = dc.ToPayload(input.Input)
