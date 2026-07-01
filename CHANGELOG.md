@@ -23,6 +23,8 @@ to docs, or any other relevant information.
 
 - Respect SDK flags already recorded in workflow history even when `GetSystemInfo` does not report
   SDK metadata support.
+- Only treat `GetSystemInfo` `UNIMPLEMENTED` responses as missing server capability support when
+  the error indicates an unknown method.
 
 ### Added
 

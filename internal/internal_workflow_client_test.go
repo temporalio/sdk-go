@@ -1409,6 +1409,77 @@ func (s *workflowClientTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
+func TestLoadCapabilitiesUnknownMethodUnimplementedUsesEmptyCapabilities(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().
+		GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewUnimplemented("unknown method GetSystemInfo")).
+		Times(1)
+
+	client := &WorkflowClient{
+		workflowService:          service,
+		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
+	}
+
+	capabilities, err := client.loadCapabilities(context.Background())
+	require.NoError(t, err)
+	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, capabilities))
+}
+
+func TestLoadCapabilitiesNonUnknownMethodUnimplementedRetries(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	wantCapabilities := &workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	gomock.InOrder(
+		service.EXPECT().
+			GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(nil, serviceerror.NewUnimplemented("frontend has not loaded GetSystemInfo")),
+		service.EXPECT().
+			GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&workflowservice.GetSystemInfoResponse{Capabilities: wantCapabilities}, nil),
+	)
+
+	client := &WorkflowClient{
+		workflowService:          service,
+		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
+	}
+
+	capabilities, err := client.loadCapabilities(context.Background())
+	require.NoError(t, err)
+	require.True(t, proto.Equal(wantCapabilities, capabilities))
+}
+
+func TestLoadCapabilitiesNonUnknownMethodUnimplementedFails(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().
+		GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewUnimplemented("frontend has not loaded GetSystemInfo")).
+		Times(1)
+
+	client := &WorkflowClient{
+		workflowService:          service,
+		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+
+	_, err := client.loadCapabilities(ctx)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed reaching server")
+	require.ErrorContains(t, err, "frontend has not loaded GetSystemInfo")
+}
+
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	signalName := "my signal"
 	signalInput := []byte("my signal input")

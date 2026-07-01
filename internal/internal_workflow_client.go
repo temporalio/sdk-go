@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -34,6 +35,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/common/serializer"
@@ -1585,12 +1587,20 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 		return capabilities, nil
 	}
 
-	// Fetch the capabilities
-	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
-	defer cancel()
-	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
-	// We ignore unimplemented
-	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
+	var resp *workflowservice.GetSystemInfoResponse
+	err := backoff.Retry(ctx, func() error {
+		grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
+		defer cancel()
+		var err error
+		resp, err = wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
+		if isUnknownMethodUnimplemented(err) {
+			return nil
+		}
+		return err
+	}, createDynamicServiceRetryPolicy(ctx), func(err error) bool {
+		return isUnimplemented(err)
+	})
+	if err != nil {
 		return nil, fmt.Errorf("failed reaching server: %w", err)
 	}
 	if resp != nil && resp.Capabilities != nil {
@@ -1607,6 +1617,16 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	wc.excludeInternalFromRetry.Store(capabilities.InternalErrorDifferentiation)
 	wc.capabilitiesLock.Unlock()
 	return capabilities, nil
+}
+
+func isUnknownMethodUnimplemented(err error) bool {
+	return isUnimplemented(err) &&
+		strings.Contains(strings.ToLower(err.Error()), "unknown method")
+}
+
+func isUnimplemented(err error) bool {
+	var unimplemented *serviceerror.Unimplemented
+	return errors.As(err, &unimplemented) || status.Code(err) == codes.Unimplemented
 }
 
 // Get namespace capabilities, lazily fetching from server if not already obtained.

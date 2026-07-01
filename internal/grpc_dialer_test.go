@@ -117,12 +117,15 @@ func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 }
 
 func TestMissingGetServerInfo(t *testing.T) {
-	// Make a gRPC server that has everything unimplemented
+	// Make a gRPC server that responds like an older server missing GetSystemInfo.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpc.UnknownServiceHandler(func(_ interface{}, _ grpc.ServerStream) error {
+		return status.Error(codes.Unimplemented, "unknown method GetSystemInfo")
+	}))
+	defer srv.Stop()
 	go func() {
-		if err := srv.Serve(l); err != nil {
+		if err := srv.Serve(l); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			log.Fatal(err)
 		}
 	}()
