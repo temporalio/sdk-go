@@ -1430,32 +1430,6 @@ func TestLoadCapabilitiesUnknownMethodUnimplementedUsesEmptyCapabilities(t *test
 	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, capabilities))
 }
 
-func TestLoadCapabilitiesNonUnknownMethodUnimplementedRetries(t *testing.T) {
-	mockCtrl := gomock.NewController(t)
-	defer mockCtrl.Finish()
-
-	wantCapabilities := &workflowservice.GetSystemInfoResponse_Capabilities{SdkMetadata: true}
-	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-	gomock.InOrder(
-		service.EXPECT().
-			GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(nil, serviceerror.NewUnimplemented("frontend has not loaded GetSystemInfo")),
-		service.EXPECT().
-			GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&workflowservice.GetSystemInfoResponse{Capabilities: wantCapabilities}, nil),
-	)
-
-	client := &WorkflowClient{
-		workflowService:          service,
-		excludeInternalFromRetry: &atomic.Bool{},
-		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
-	}
-
-	capabilities, err := client.loadCapabilities(context.Background())
-	require.NoError(t, err)
-	require.True(t, proto.Equal(wantCapabilities, capabilities))
-}
-
 func TestLoadCapabilitiesNonUnknownMethodUnimplementedFails(t *testing.T) {
 	mockCtrl := gomock.NewController(t)
 	defer mockCtrl.Finish()
@@ -1471,10 +1445,8 @@ func TestLoadCapabilitiesNonUnknownMethodUnimplementedFails(t *testing.T) {
 		excludeInternalFromRetry: &atomic.Bool{},
 		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
-	defer cancel()
 
-	_, err := client.loadCapabilities(ctx)
+	_, err := client.loadCapabilities(context.Background())
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed reaching server")
 	require.ErrorContains(t, err, "frontend has not loaded GetSystemInfo")
@@ -2811,7 +2783,7 @@ func TestUpdate(t *testing.T) {
 		require.NotNil(t, output.Result)
 		payloads := converter.GetPayloads(output.Result)
 		require.NotNil(t, payloads)
-                require.Equal(t, outPayloads, payloads)
+		require.Equal(t, outPayloads, payloads)
 		require.Len(t, payloads.GetPayloads(), 1)
 	})
 	t.Run("sync error exposes failure proto", func(t *testing.T) {

@@ -35,7 +35,6 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/internal/common/backoff"
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/common/serializer"
@@ -1587,20 +1586,11 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 		return capabilities, nil
 	}
 
-	var resp *workflowservice.GetSystemInfoResponse
-	err := backoff.Retry(ctx, func() error {
-		grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
-		defer cancel()
-		var err error
-		resp, err = wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
-		if isUnknownMethodUnimplemented(err) {
-			return nil
-		}
-		return err
-	}, createDynamicServiceRetryPolicy(ctx), func(err error) bool {
-		return isUnimplemented(err)
-	})
-	if err != nil {
+	// Fetch the capabilities
+	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
+	defer cancel()
+	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
+	if err != nil && !isUnknownMethodUnimplemented(err) {
 		return nil, fmt.Errorf("failed reaching server: %w", err)
 	}
 	if resp != nil && resp.Capabilities != nil {
@@ -1620,13 +1610,9 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 }
 
 func isUnknownMethodUnimplemented(err error) bool {
-	return isUnimplemented(err) &&
-		strings.Contains(strings.ToLower(err.Error()), "unknown method")
-}
-
-func isUnimplemented(err error) bool {
 	var unimplemented *serviceerror.Unimplemented
-	return errors.As(err, &unimplemented) || status.Code(err) == codes.Unimplemented
+	return (errors.As(err, &unimplemented) || status.Code(err) == codes.Unimplemented) &&
+		strings.Contains(strings.ToLower(err.Error()), "unknown method")
 }
 
 // Get namespace capabilities, lazily fetching from server if not already obtained.
