@@ -33,24 +33,11 @@ const (
 	temporalPrefix      = "__temporal_"
 	temporalPrefixError = "__temporal_ is a reserved prefix"
 
-	// systemNexusEndpoint and systemNexusService identify the built-in "system
-	// Nexus" endpoint/service pair. These intentionally use the otherwise
-	// reserved __temporal_ prefix because they are Temporal's own internal use
-	// of that prefix (e.g. workflow.SignalWithStartWorkflow). NewNexusClient
-	// permits this specific pair despite the reserved-prefix guard.
 	systemNexusEndpoint = "__temporal_system"
-	systemNexusService  = "temporal.api.workflowservice.v1.WorkflowService"
 )
 
 func isWorkflowStreamReservedName(name string) bool {
 	return strings.HasPrefix(name, "__temporal_workflow_stream_")
-}
-
-// isSystemNexusClient reports whether the given endpoint/service pair is the
-// built-in system Nexus pair, which is allowed to use the reserved __temporal_
-// prefix.
-func isSystemNexusClient(endpoint, service string) bool {
-	return endpoint == systemNexusEndpoint && service == systemNexusService
 }
 
 // grpcContextBuilder stores all gRPC-specific parameters that will
