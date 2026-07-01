@@ -586,7 +586,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
 		emitFailMetric = true
-		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
+		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, task.WorkflowExecution.GetWorkflowId(), taskErr)
 		failureReason = "WorkflowError"
 		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
 			failureReason = "NonDeterminismError"
@@ -628,7 +628,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		if errors.As(taskErr, new(payloadSizeError)) {
 			failureReason = "PayloadsTooLarge"
 		}
-		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
+		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, task.WorkflowExecution.GetWorkflowId(), taskErr)}
 	}
 
 	taskDuration := time.Since(startTime)
@@ -774,7 +774,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 	switch taskCompletion.rawRequest.(type) {
 	case *workflowservice.RespondWorkflowTaskCompletedRequest, *workflowservice.RespondWorkflowTaskFailedRequest:
 		emitFailMetric = true
-		request := wtp.errorToFailWorkflowTask(task.TaskToken, sendErr)
+		request := wtp.errorToFailWorkflowTask(task.TaskToken, task.WorkflowExecution.GetWorkflowId(), sendErr)
 		request.Cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE
 		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.payloadVisitorConcurrency); err != nil {
 			wtp.logger.Error("Failed to visit payloads for GRPC message too large failure response.", tagError, err)
@@ -818,13 +818,13 @@ func (wtp *workflowTaskProcessor) handleInboundVisitorError(task *workflowservic
 	wtp.logger.Warn("Workflow task preprocess error: "+visitErr.Error(), keyvals...)
 	// Submit an explicit WFT failure so the server records the error immediately
 	// rather than waiting for the task to time out.
-	failReq := wtp.errorToFailWorkflowTask(task.TaskToken, visitErr)
+	failReq := wtp.errorToFailWorkflowTask(task.TaskToken, task.WorkflowExecution.GetWorkflowId(), visitErr)
 	if _, submitErr := wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failReq}, task); submitErr != nil {
 		wtp.logger.Warn("Failed to submit WFT failure after inbound visitor error.", tagError, submitErr)
 	}
 }
 
-func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
+func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, workflowId string, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
 	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
 	// If it was a panic due to a bad state machine or if it was a history
 	// mismatch error, mark as non-deterministic
@@ -840,10 +840,10 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
 	}
 
-	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, cause)
+	return wtp.errorToFailWorkflowTaskWithCause(taskToken, workflowId, err, cause)
 }
 
-func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []byte, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondWorkflowTaskFailedRequest {
+func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []byte, workflowId string, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondWorkflowTaskFailedRequest {
 	builtRequest := &workflowservice.RespondWorkflowTaskFailedRequest{
 		TaskToken:      taskToken,
 		Cause:          cause,
@@ -851,6 +851,7 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 		Identity:       wtp.identity,
 		BinaryChecksum: wtp.workerBuildID,
 		Namespace:      wtp.namespace,
+		ResourceId:     getWorkflowResourceId(workflowId),
 		WorkerVersion: &commonpb.WorkerVersionStamp{
 			BuildId:       wtp.workerBuildID,
 			UseVersioning: wtp.useBuildIDVersioning,
@@ -1577,6 +1578,23 @@ func reportActivityCompleteByID(
 	return reportErr
 }
 
+func getActivityResourceId(workflowId, activityId string) string {
+	if workflowId != "" {
+		return getWorkflowResourceId(workflowId)
+	}
+	if activityId != "" {
+		return fmt.Sprintf("activity:%s", activityId)
+	}
+	return ""
+}
+
+func getWorkflowResourceId(workflowId string) string {
+	if workflowId == "" {
+		return ""
+	}
+	return fmt.Sprintf("workflow:%s", workflowId)
+}
+
 func convertActivityResultToRespondRequest(
 	identity string,
 	taskToken []byte,
@@ -1589,6 +1607,8 @@ func convertActivityResultToRespondRequest(
 	versionStamp *commonpb.WorkerVersionStamp,
 	deployment *deploymentpb.Deployment,
 	workerDeploymentOptions *deploymentpb.WorkerDeploymentOptions,
+	workflowId string,
+	activityId string,
 ) interface{} {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
@@ -1602,6 +1622,7 @@ func convertActivityResultToRespondRequest(
 			Result:            result,
 			Identity:          identity,
 			Namespace:         namespace,
+			ResourceId:        getActivityResourceId(workflowId, activityId),
 			WorkerVersion:     versionStamp,
 			Deployment:        deployment,
 			DeploymentOptions: workerDeploymentOptions,
@@ -1617,6 +1638,7 @@ func convertActivityResultToRespondRequest(
 				Details:           convertErrDetailsToPayloads(canceledErr.details, dataConverter),
 				Identity:          identity,
 				Namespace:         namespace,
+				ResourceId:        getActivityResourceId(workflowId, activityId),
 				WorkerVersion:     versionStamp,
 				Deployment:        deployment,
 				DeploymentOptions: workerDeploymentOptions,
@@ -1627,6 +1649,7 @@ func convertActivityResultToRespondRequest(
 				TaskToken:         taskToken,
 				Identity:          identity,
 				Namespace:         namespace,
+				ResourceId:        getActivityResourceId(workflowId, activityId),
 				WorkerVersion:     versionStamp,
 				Deployment:        deployment,
 				DeploymentOptions: workerDeploymentOptions,
@@ -1645,6 +1668,7 @@ func convertActivityResultToRespondRequest(
 		Failure:           failureConverter.ErrorToFailure(err),
 		Identity:          identity,
 		Namespace:         namespace,
+		ResourceId:        getActivityResourceId(workflowId, activityId),
 		WorkerVersion:     versionStamp,
 		Deployment:        deployment,
 		DeploymentOptions: workerDeploymentOptions,
@@ -1677,6 +1701,7 @@ func convertActivityResultToRespondRequestByID(
 			ActivityId: activityID,
 			Result:     result,
 			Identity:   identity,
+			ResourceId: getActivityResourceId(workflowID, activityID),
 		}
 	}
 
@@ -1691,6 +1716,7 @@ func convertActivityResultToRespondRequestByID(
 				ActivityId: activityID,
 				Details:    convertErrDetailsToPayloads(canceledErr.details, dataConverter),
 				Identity:   identity,
+				ResourceId: getActivityResourceId(workflowID, activityID),
 			}
 		}
 		if errors.Is(err, context.Canceled) {
@@ -1700,6 +1726,7 @@ func convertActivityResultToRespondRequestByID(
 				RunId:      runID,
 				ActivityId: activityID,
 				Identity:   identity,
+				ResourceId: getActivityResourceId(workflowID, activityID),
 			}
 		}
 	}
@@ -1717,6 +1744,7 @@ func convertActivityResultToRespondRequestByID(
 		ActivityId: activityID,
 		Failure:    failureConverter.ErrorToFailure(err),
 		Identity:   identity,
+		ResourceId: getActivityResourceId(workflowID, activityID),
 	}
 }
 
