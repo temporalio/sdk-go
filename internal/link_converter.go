@@ -204,17 +204,17 @@ func ConvertNexusLinkToLinkNexusOperation(link nexus.Link) (*commonpb.Link_Nexus
 	var err error
 	no.Namespace, err = url.PathUnescape(matches[urlPathNexusOperationRE.SubexpIndex(urlPathNamespaceKey)])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse link to Link_NexusOperation: %w", err)
+		return nil, fmt.Errorf("failed to parse namespace in Link_NexusOperation: %w", err)
 	}
 
 	no.OperationId, err = url.PathUnescape(matches[urlPathNexusOperationRE.SubexpIndex(urlPathOperationIDKey)])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse link to Link_NexusOperation: %w", err)
+		return nil, fmt.Errorf("failed to parse operation id in Link_NexusOperation: %w", err)
 	}
 
 	no.RunId, err = url.PathUnescape(matches[urlPathNexusOperationRE.SubexpIndex(urlPathRunIDKey)])
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse link to Link_NexusOperation: %w", err)
+		return nil, fmt.Errorf("failed to parse run id in Link_NexusOperation: %w", err)
 	}
 
 	return no, nil
@@ -308,7 +308,11 @@ func nexusLinkToCommonLink(link *nexuspb.Link) (*commonpb.Link, bool) {
 // commonLinkToNexusLink converts a common.v1.Link into a nexus.v1.Link, dispatching on the link's
 // variant. Returns (nil, false) for any variant not handled here.
 func commonLinkToNexusLink(link *commonpb.Link) (*nexuspb.Link, bool) {
-	switch v := link.GetVariant().(type) {
+	variant := link.GetVariant()
+	if variant == nil {
+		return nil, false
+	}
+	switch v := variant.(type) {
 	case *commonpb.Link_WorkflowEvent_:
 		nexusLink := ConvertLinkWorkflowEventToNexusLink(v.WorkflowEvent)
 		return &nexuspb.Link{Url: nexusLink.URL.String(), Type: nexusLink.Type}, true
