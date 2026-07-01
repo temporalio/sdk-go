@@ -10,9 +10,9 @@ func TestNewNexusClientAllowsSystemPair(t *testing.T) {
 	// The built-in system Nexus endpoint/service pair is permitted despite the
 	// reserved __temporal_ prefix.
 	require.NotPanics(t, func() {
-		c := NewNexusClient(systemNexusEndpoint, systemNexusService)
+		c := NewNexusClient(systemNexusEndpoint, "WorkflowService")
 		require.Equal(t, systemNexusEndpoint, c.Endpoint())
-		require.Equal(t, systemNexusService, c.Service())
+		require.Equal(t, "WorkflowService", c.Service())
 	})
 }
 

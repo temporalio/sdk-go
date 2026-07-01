@@ -40,13 +40,6 @@ func isWorkflowStreamReservedName(name string) bool {
 	return strings.HasPrefix(name, "__temporal_workflow_stream_")
 }
 
-// isSystemNexusClient reports whether the given endpoint/service pair is the
-// built-in system Nexus pair, which is allowed to use the reserved __temporal_
-// prefix.
-func isSystemNexusClient(endpoint, service string) bool {
-	return endpoint == systemNexusEndpoint && service == systemNexusService
-}
-
 // grpcContextBuilder stores all gRPC-specific parameters that will
 // be stored inside of a context.
 type grpcContextBuilder struct {
