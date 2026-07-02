@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2
 
-go 1.24.0
+go 1.25.4
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
@@ -8,7 +8,7 @@ require (
 	github.com/aws/smithy-go v1.24.2
 	github.com/johannesboyne/gofakes3 v0.0.0-20260208201424-4c385a1f6a73
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.62.12
+	go.temporal.io/api v1.63.1-0.20260630215314-778d41d2e499
 	go.temporal.io/sdk v1.25.1
 	go.temporal.io/sdk/contrib/aws/s3driver v0.0.0
 )
@@ -25,6 +25,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
+	github.com/nexus-rpc/nexus-proto-annotations v0.1.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/ryszard/goskiplist v0.0.0-20150312221310-2dfbae5fcf46 // indirect
 	go.shabbyrobe.org/gocovmerge v0.0.0-20230507111327-fa4f82cfbf4d // indirect
