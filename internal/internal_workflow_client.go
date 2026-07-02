@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1589,8 +1590,7 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
 	defer cancel()
 	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
-	// We ignore unimplemented
-	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
+	if err != nil && !isUnknownMethodUnimplemented(err) {
 		return nil, fmt.Errorf("failed reaching server: %w", err)
 	}
 	if resp != nil && resp.Capabilities != nil {
@@ -1607,6 +1607,15 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	wc.excludeInternalFromRetry.Store(capabilities.InternalErrorDifferentiation)
 	wc.capabilitiesLock.Unlock()
 	return capabilities, nil
+}
+
+func isUnknownMethodUnimplemented(err error) bool {
+	var unimplemented *serviceerror.Unimplemented
+	if !errors.As(err, &unimplemented) && status.Code(err) != codes.Unimplemented {
+		return false
+	}
+	errMsg := strings.ToLower(err.Error())
+	return strings.Contains(errMsg, "unknown method") || strings.Contains(errMsg, "not implemented")
 }
 
 // Get namespace capabilities, lazily fetching from server if not already obtained.

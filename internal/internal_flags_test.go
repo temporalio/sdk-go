@@ -41,10 +41,11 @@ func TestLoadFlagOverridesFromEnv(t *testing.T) {
 }
 
 func TestSet(t *testing.T) {
-	t.Run("metadata disabled drops flags", func(t *testing.T) {
+	t.Run("metadata disabled keeps flags from history", func(t *testing.T) {
 		flags := newSDKFlagSet(&metadataDisabled)
 		flags.set(SDKFlagChildWorkflowErrorExecution)
-		require.False(t, flags.currentFlags[SDKFlagChildWorkflowErrorExecution])
+		require.True(t, flags.currentFlags[SDKFlagChildWorkflowErrorExecution])
+		require.Empty(t, flags.gatherNewSDKFlags(), "set() flags are not 'new'")
 	})
 
 	t.Run("metadata enabled keeps flags", func(t *testing.T) {
@@ -58,6 +59,7 @@ func TestSet(t *testing.T) {
 func TestTryUse(t *testing.T) {
 	tests := []struct {
 		name        string
+		capability  *workflowservice.GetSystemInfoResponse_Capabilities
 		inHistory   bool
 		record      bool
 		flagDefault bool
@@ -66,6 +68,7 @@ func TestTryUse(t *testing.T) {
 	}{
 		{
 			name:        "in history returns true regardless of default or record",
+			capability:  &metadataEnabled,
 			inHistory:   true,
 			record:      false,
 			flagDefault: false,
@@ -74,6 +77,7 @@ func TestTryUse(t *testing.T) {
 		},
 		{
 			name:        "default=true record=true enables and records flag",
+			capability:  &metadataEnabled,
 			inHistory:   false,
 			record:      true,
 			flagDefault: true,
@@ -82,6 +86,7 @@ func TestTryUse(t *testing.T) {
 		},
 		{
 			name:        "default=true record=false returns false",
+			capability:  &metadataEnabled,
 			inHistory:   false,
 			record:      false,
 			flagDefault: true,
@@ -90,9 +95,28 @@ func TestTryUse(t *testing.T) {
 		},
 		{
 			name:        "default=false record=true returns false",
+			capability:  &metadataEnabled,
 			inHistory:   false,
 			record:      true,
 			flagDefault: false,
+			wantResult:  false,
+			wantNewFlag: false,
+		},
+		{
+			name:        "metadata disabled in history returns true",
+			capability:  &metadataDisabled,
+			inHistory:   true,
+			record:      false,
+			flagDefault: false,
+			wantResult:  true,
+			wantNewFlag: false,
+		},
+		{
+			name:        "metadata disabled record=true returns false",
+			capability:  &metadataDisabled,
+			inHistory:   false,
+			record:      true,
+			flagDefault: true,
 			wantResult:  false,
 			wantNewFlag: false,
 		},
@@ -105,7 +129,7 @@ func TestTryUse(t *testing.T) {
 
 			sdkFlagsAllowed[SDKFlagBlockedSelectorSignalReceive] = tt.flagDefault
 
-			flags := newSDKFlagSet(&metadataEnabled)
+			flags := newSDKFlagSet(tt.capability)
 			if tt.inHistory {
 				flags.set(SDKFlagBlockedSelectorSignalReceive)
 			}
