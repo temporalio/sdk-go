@@ -1,21 +1,21 @@
 // Hand-written proto converter functions for Temporal semantic types.
 //
-// The generated `api.go` references these converters by name when a WIT type is
-// replaced with a native Temporal Go SDK type (via `@nexus.type go=...`). Each
-// function translates between the native value and the protobuf message that
-// the Temporal SDK serializes onto the wire, keeping the Go bindings
-// wire-compatible with the Python and TypeScript bindings.
+// The generated service file references these converters by name when a WIT
+// type is replaced with a native Temporal Go SDK type (via `@nexus.type
+// go=...`). Each function translates between the native value and the protobuf
+// message that the Temporal SDK serializes onto the wire, keeping the Go
+// bindings wire-compatible with the Python and TypeScript bindings.
 //
 // Converters are pure structural translations: a `nil` input always produces a
 // `nil` output. They never invent zero values for absent data. The generated
-// `api.go` owns all presence/optionality logic -- it passes a pointer for
+// service file owns all presence/optionality logic: it passes pointers for
 // required values and dereferences results with a zero fallback, and it stores
 // optional values directly as pointers so that "unset" and "set to zero" remain
 // distinguishable.
 //
 // The `package` declaration below is replaced with the generated package name
-// when this file is emitted alongside `api.go`.
-package model
+// when this file is emitted alongside the generated service file.
+package support
 
 import (
 	"time"
