@@ -6,6 +6,7 @@ require (
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
 	github.com/kisielk/errcheck v1.8.0
 	go.temporal.io/sdk v1.32.1
+	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.6.0
 )
 
@@ -36,7 +37,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect
 	google.golang.org/grpc v1.79.3 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 replace go.temporal.io/sdk => ../../../

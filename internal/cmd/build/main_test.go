@@ -116,3 +116,53 @@ func TestAppendTestFailureSummary(t *testing.T) {
 		t.Fatalf("summary not written correctly:\n%s", string(data))
 	}
 }
+
+func TestParseGoTestListOutput(t *testing.T) {
+	tests := parseGoTestListOutput(strings.Join([]string{
+		"TestB",
+		"ok  \tgo.temporal.io/sdk/test\t0.001s",
+		"?   \tgo.temporal.io/sdk/test/nexusclient\t[no test files]",
+		"TestA",
+		"TestB",
+	}, "\n"))
+
+	if got, want := strings.Join(tests, ","), "TestA,TestB"; got != want {
+		t.Fatalf("unexpected tests: got %q want %q", got, want)
+	}
+}
+
+func TestValidateIntegrationShardManifest(t *testing.T) {
+	manifest := &integrationShardManifest{
+		IntegrationShards: map[string][]string{
+			"a": {"TestA"},
+			"b": {"TestB"},
+		},
+	}
+
+	if err := validateIntegrationShardManifest(manifest, []string{"TestA", "TestB"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateIntegrationShardManifestDetectsProblems(t *testing.T) {
+	manifest := &integrationShardManifest{
+		IntegrationShards: map[string][]string{
+			"a": {"TestA", "TestUnknown"},
+			"b": {"TestA"},
+		},
+	}
+
+	err := validateIntegrationShardManifest(manifest, []string{"TestA", "TestMissing"})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	for _, want := range []string{
+		"unassigned integration tests: TestMissing",
+		"unknown integration tests in shard manifest: TestUnknown",
+		"integration tests assigned to multiple shards: TestA in a, b",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected error to contain %q, got %q", want, err.Error())
+		}
+	}
+}

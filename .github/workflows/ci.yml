@@ -52,6 +52,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
+        shard: [core, payload, nexus, worker, replay]
         include:
           - os: macos-intel
             runsOn: macos-15-intel
@@ -74,7 +75,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
 
       - name: Integration tests (without cache)
-        run: go run . integration-test -dev-server
+        run: go run . integration-test -dev-server -shard ${{ matrix.shard }}
         working-directory: ./internal/cmd/build
         env:
           WORKFLOW_CACHE_SIZE: "0"
@@ -85,6 +86,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
+        shard: [core, payload, nexus, worker, replay]
         include:
           - os: macos-intel
             runsOn: macos-15-intel
@@ -107,7 +109,7 @@ jobs:
           go-version: ${{ matrix.go-version }}
 
       - name: Integration tests (with cache)
-        run: go run . integration-test -dev-server
+        run: go run . integration-test -dev-server -shard ${{ matrix.shard }}
         working-directory: ./internal/cmd/build
 
   docker-compose-test:
