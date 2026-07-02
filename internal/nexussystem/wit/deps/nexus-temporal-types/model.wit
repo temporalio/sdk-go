@@ -5,11 +5,21 @@ interface model {
   type placeholder = string;
 
   /// @nexus.proto "temporal.api.common.v1.Payload" typescript-package="@temporalio/proto"
-  /// @nexus.type python="typing.Any" typescript="common.Payload" typescript-package="@temporalio/common" go="any"
+  /// @nexus.type
+  ///   python="typing.Any"
+  ///   typescript="common.Payload"
+  ///   typescript-package="@temporalio/common"
+  ///   go="any"
+  ///   go-from="payloadFromProto"
+  ///   go-to="payloadToProto"
   type payload = placeholder;
 
   /// @nexus.proto "temporal.api.common.v1.Payloads"
   ///   typescript-package="@temporalio/proto"
+  /// @nexus.type
+  ///   go="[]any"
+  ///   go-from="payloadsFromProto"
+  ///   go-to="payloadsToProto"
   type payloads = list<payload>;
 
   /// Callable result annotation for workflow functions.
@@ -40,7 +50,12 @@ interface model {
   signal-call: func(callable-prefix: callable-prefix, signal-args: payloads) -> signal-result;
 
   /// @nexus.proto "temporal.api.common.v1.WorkflowType" typescript-package="@temporalio/proto"
-  /// @nexus.type python="str" typescript="string" go="string"
+  /// @nexus.type
+  ///   python="str"
+  ///   typescript="string"
+  ///   go="string"
+  ///   go-from="workflowTypeFromProto"
+  ///   go-to="workflowTypeToProto"
   type workflow-type = placeholder;
 
   /// @nexus.function
@@ -75,14 +90,26 @@ interface model {
   ///   typescript="common.RetryPolicy"
   ///   typescript-package="@temporalio/common"
   ///   go="go.temporal.io/sdk/temporal.RetryPolicy"
+  ///   go-from="retryPolicyFromProto"
+  ///   go-to="retryPolicyToProto"
   type retry-policy = placeholder;
 
   /// @nexus.proto "temporal.api.taskqueue.v1.TaskQueue" typescript-package="@temporalio/proto"
-  /// @nexus.type python="str" typescript="string" go="string"
+  /// @nexus.type
+  ///   python="str"
+  ///   typescript="string"
+  ///   go="string"
+  ///   go-from="taskQueueFromProto"
+  ///   go-to="taskQueueToProto"
   type task-queue = placeholder;
 
   /// @nexus.proto "temporal.api.common.v1.Memo" typescript-package="@temporalio/proto"
-  /// @nexus.type python="collections.abc.Mapping[str, typing.Any]" typescript="Record<string, unknown>" go="map[string]any"
+  /// @nexus.type
+  ///   python="collections.abc.Mapping[str, typing.Any]"
+  ///   typescript="Record<string, unknown>"
+  ///   go="map[string]any"
+  ///   go-from="memoFromProto"
+  ///   go-to="memoToProto"
   type memo = placeholder;
 
   /// @nexus.proto "temporal.api.common.v1.SearchAttributes" typescript-package="@temporalio/proto"
@@ -90,6 +117,8 @@ interface model {
   ///   python="temporalio.common.TypedSearchAttributes"
   ///   typescript="common.TypedSearchAttributes"
   ///   typescript-package="@temporalio/common"
+  ///   go="string"
+  ///   go-to="searchAttributesToProto"
   type search-attributes = placeholder;
 
   /// @nexus.proto "temporal.api.common.v1.Priority" typescript-package="@temporalio/proto"
@@ -98,6 +127,8 @@ interface model {
   ///   typescript="common.Priority"
   ///   typescript-package="@temporalio/common"
   ///   go="go.temporal.io/sdk/temporal.Priority"
+  ///   go-from="priorityFromProto"
+  ///   go-to="priorityToProto"
   type priority = placeholder;
 
   /// @nexus.proto "temporal.api.workflow.v1.VersioningOverride" typescript-package="@temporalio/proto"
@@ -106,6 +137,7 @@ interface model {
   ///   typescript="common.VersioningOverride"
   ///   typescript-package="@temporalio/common"
   ///   go="go.temporal.io/sdk/client.VersioningOverride"
+  ///   go-to="versioningOverrideToProto"
   type versioning-override = placeholder;
 
   /// @nexus.proto "google.protobuf.Duration" typescript-package="@temporalio/proto"
@@ -114,6 +146,8 @@ interface model {
   ///   typescript="common.Duration"
   ///   typescript-package="@temporalio/common"
   ///   go="time.Duration"
+  ///   go-from="durationFromProto"
+  ///   go-to="durationToProto"
   type duration = placeholder;
 
   /// @nexus.proto "temporal.api.enums.v1.WorkflowIdReusePolicy" typescript-package="@temporalio/proto"
