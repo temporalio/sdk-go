@@ -12,9 +12,6 @@
 // required values and dereferences results with a zero fallback, and it stores
 // optional values directly as pointers so that "unset" and "set to zero" remain
 // distinguishable.
-//
-// The `package` declaration below is replaced with the generated package name
-// when this file is emitted alongside the generated service file.
 package workflow
 
 import (
