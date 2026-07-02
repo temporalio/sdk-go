@@ -1,5 +1,3 @@
-/// @nexus.support
-///   go="go/model_overrides.go"
 package nexus:temporal-types@1.0.0;
 
 interface model {
