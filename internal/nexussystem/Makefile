@@ -1,5 +1,4 @@
-# Regenerates the system Nexus client bindings (api.go, model_overrides.go) and
-# the public workflow re-export (../../workflow/system_nexus_gen.go) from the
+# Regenerates the system Nexus client bindings in ../../workflow from the
 # checked-in WIT under ./wit.
 #
 # Generation runs nex-gen (located via NEX_GEN_BIN, else `nex-gen` on PATH) and
