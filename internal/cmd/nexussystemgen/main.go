@@ -53,7 +53,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	nexGen := os.Getenv("NEX_GEN_BIN")
 	if nexGen == "" {
@@ -114,7 +114,7 @@ func copyFile(dst, src string) error {
 	if err != nil {
 		return fmt.Errorf("opening %s: %w", src, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
 	out, err := os.Create(dst)
 	if err != nil {
