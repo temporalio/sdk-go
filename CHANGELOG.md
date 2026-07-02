@@ -19,6 +19,15 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Fixed
+
+- Respect SDK flags already recorded in workflow history even when `GetSystemInfo` does not report
+  SDK metadata support.
+- Only treat `GetSystemInfo` `UNIMPLEMENTED` responses as missing server capability support when
+  the error indicates an unknown method.
+- Retry server RPCs without gzip compression when a method reports that gzip decompression is
+  unsupported, while continuing to use gzip for other methods.
+
 ### Added
 
 - Exposed `BackoffStartInterval` when continuing as new, which will delay the first task of the
