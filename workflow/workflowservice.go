@@ -11,14 +11,9 @@ import (
 	"go.temporal.io/sdk/temporal"
 )
 
-const ServiceName = "temporal.api.workflowservice.v1.WorkflowService"
-const Endpoint = "__temporal_system"
-
-const SignalWithStartWorkflowOp = "SignalWithStartWorkflowExecution"
-
 // --- Datatypes ---
 
-type SignalWithStartWorkflowRequest struct {
+type signalWithStartWorkflowRequest struct {
 	// Required.
 	Workflow string
 	// Arguments for the workflow.
@@ -64,7 +59,7 @@ type SignalWithStartWorkflowRequest struct {
 	UserMetadata *UserMetadata
 }
 
-func (m SignalWithStartWorkflowRequest) ToProto() *workflowservice.SignalWithStartWorkflowExecutionRequest {
+func (m signalWithStartWorkflowRequest) toProto() *workflowservice.SignalWithStartWorkflowExecutionRequest {
 	message := &workflowservice.SignalWithStartWorkflowExecutionRequest{}
 	message.WorkflowType = workflowTypeToProto(&m.Workflow)
 	message.Input = payloadsToProto(m.Args)
@@ -94,11 +89,26 @@ func (m SignalWithStartWorkflowRequest) ToProto() *workflowservice.SignalWithSta
 	message.VersioningOverride = versioningOverrideToProto(m.VersioningOverride)
 	message.WorkflowStartDelay = durationToProto(m.StartDelay)
 	if m.UserMetadata != nil {
-		message.UserMetadata = (*m.UserMetadata).ToProto()
+		message.UserMetadata = (*m.UserMetadata).toProto()
 	}
 	message.Namespace = workflowNamespace()
 	return message
 }
+
+// --- Operations (internal) ---
+
+func signalWithStartWorkflow(ctx Context, request signalWithStartWorkflowRequest) (*SignalWithStartWorkflowResponse, error) {
+	c := NewNexusClient("__temporal_system", "temporal.api.workflowservice.v1.WorkflowService")
+	fut := c.ExecuteOperation(ctx, "SignalWithStartWorkflowExecution", request.toProto(), NexusOperationOptions{})
+	var result workflowservice.SignalWithStartWorkflowExecutionResponse
+	if err := fut.Get(ctx, &result); err != nil {
+		return nil, err
+	}
+	value := signalWithStartWorkflowResponseFromProto(&result)
+	return &value, nil
+}
+
+// --- Operations (public API) ---
 
 type UserMetadata struct {
 	// Single-line fixed summary for the workflow execution that may appear in UI and CLI.
@@ -110,14 +120,14 @@ type UserMetadata struct {
 	StaticDetails any
 }
 
-func (m UserMetadata) ToProto() *sdk.UserMetadata {
+func (m UserMetadata) toProto() *sdk.UserMetadata {
 	message := &sdk.UserMetadata{}
 	message.Summary = payloadToProto(m.StaticSummary)
 	message.Details = payloadToProto(m.StaticDetails)
 	return message
 }
 
-func UserMetadataFromProto(proto *sdk.UserMetadata) UserMetadata {
+func userMetadataFromProto(proto *sdk.UserMetadata) UserMetadata {
 	value := UserMetadata{}
 	value.StaticSummary = payloadFromProto(proto.GetSummary())
 	value.StaticDetails = payloadFromProto(proto.GetDetails())
@@ -127,30 +137,15 @@ func UserMetadataFromProto(proto *sdk.UserMetadata) UserMetadata {
 type SignalWithStartWorkflowResponse struct {
 }
 
-func (m SignalWithStartWorkflowResponse) ToProto() *workflowservice.SignalWithStartWorkflowExecutionResponse {
+func (m SignalWithStartWorkflowResponse) toProto() *workflowservice.SignalWithStartWorkflowExecutionResponse {
 	message := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
 	return message
 }
 
-func SignalWithStartWorkflowResponseFromProto(proto *workflowservice.SignalWithStartWorkflowExecutionResponse) SignalWithStartWorkflowResponse {
+func signalWithStartWorkflowResponseFromProto(proto *workflowservice.SignalWithStartWorkflowExecutionResponse) SignalWithStartWorkflowResponse {
 	value := SignalWithStartWorkflowResponse{}
 	return value
 }
-
-// --- Operations (internal) ---
-
-func signalWithStartWorkflow(ctx Context, request SignalWithStartWorkflowRequest) (*SignalWithStartWorkflowResponse, error) {
-	c := NewNexusClient(Endpoint, ServiceName)
-	fut := c.ExecuteOperation(ctx, SignalWithStartWorkflowOp, request.ToProto(), NexusOperationOptions{})
-	var result workflowservice.SignalWithStartWorkflowExecutionResponse
-	if err := fut.Get(ctx, &result); err != nil {
-		return nil, err
-	}
-	value := SignalWithStartWorkflowResponseFromProto(&result)
-	return &value, nil
-}
-
-// --- Operations (public API) ---
 
 type SignalWithStartWorkflowOptions struct {
 	// Arguments for the workflow.
@@ -201,7 +196,7 @@ func SignalWithStartWorkflow(
 	signal string,
 	opts SignalWithStartWorkflowOptions,
 ) (*SignalWithStartWorkflowResponse, error) {
-	return signalWithStartWorkflow(ctx, SignalWithStartWorkflowRequest{
+	return signalWithStartWorkflow(ctx, signalWithStartWorkflowRequest{
 		Workflow:           workflow,
 		Args:               opts.Args,
 		Id:                 id,
