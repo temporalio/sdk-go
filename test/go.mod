@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/test
 
-go 1.24.0
+go 1.25.4
 
 require (
 	github.com/golang/mock v1.6.0
@@ -13,7 +13,7 @@ require (
 	go.opentelemetry.io/otel v1.41.0
 	go.opentelemetry.io/otel/sdk v1.41.0
 	go.opentelemetry.io/otel/trace v1.41.0
-	go.temporal.io/api v1.62.12
+	go.temporal.io/api v1.63.1-0.20260630215314-778d41d2e499
 	go.temporal.io/sdk v1.29.1
 	go.temporal.io/sdk/contrib/opentelemetry v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
@@ -39,6 +39,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
+	github.com/nexus-rpc/nexus-proto-annotations v0.1.0 // indirect
 	github.com/opencontainers/runtime-spec v1.0.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect
