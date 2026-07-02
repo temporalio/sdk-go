@@ -817,7 +817,7 @@ func TestTaskNotProcessedDuringLegacyShutdown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			taskProcessed := make(chan struct{}, 1)
-			pollStarted := make(chan struct{})
+			pollStarted := make(chan struct{}, 1)
 
 			// This poller simulates a poll returning a task after shutdown has
 			// already started. Legacy shutdown should not dispatch that task.
