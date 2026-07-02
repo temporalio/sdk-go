@@ -178,6 +178,8 @@ var (
 
 type (
 	// SendChannel is a write only view of the Channel
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SendChannel]
 	SendChannel interface {
 		// Name returns the name of the Channel.
 		// If the Channel was retrieved from a GetSignalChannel call, Name returns the signal name.
@@ -197,6 +199,8 @@ type (
 	}
 
 	// ReceiveChannel is a read only view of the Channel
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ReceiveChannel]
 	ReceiveChannel interface {
 		// Name returns the name of the Channel.
 		// If the Channel was retrieved from a GetSignalChannel call, Name returns the signal name.
@@ -252,6 +256,8 @@ type (
 
 	// Channel must be used by workflow code instead of native go channels.
 	// Use workflow.NewChannel(ctx) method to create Channel instance.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Channel]
 	Channel interface {
 		SendChannel
 		ReceiveChannel
@@ -259,6 +265,8 @@ type (
 
 	// Selector must be used by workflow code instead of native go select.
 	// Use workflow.NewSelector(ctx) to create a selector.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Selector]
 	Selector interface {
 		// AddReceive registers a callback function to be called when a channel has a message to receive.
 		// The callback is called when Select(ctx) is called.
@@ -290,6 +298,8 @@ type (
 	// WaitGroup must be used instead of native go sync.WaitGroup by
 	// workflow code. Use workflow.NewWaitGroup(ctx) method to create
 	// a new WaitGroup instance
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.WaitGroup]
 	WaitGroup interface {
 		// Add adds delta, which may be negative, to the WaitGroup task counter.
 		// If the counter becomes zero, all goroutines blocked on WaitGroup.Wait are released.
@@ -313,6 +323,8 @@ type (
 	// Mutex must be used instead of native go sync.Mutex by
 	// workflow code. Use workflow.NewMutex(ctx) method to create
 	// a new Mutex instance
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Mutex]
 	Mutex interface {
 		// Lock blocks until the mutex is acquired.
 		// Returns CanceledError if the ctx is canceled.
@@ -330,6 +342,8 @@ type (
 	// Semaphore must be used instead of semaphore.Weighted by
 	// workflow code. Use workflow.NewSemaphore(ctx) method to create
 	// a new Semaphore instance
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Semaphore]
 	Semaphore interface {
 		// Acquire acquires the semaphore with a weight of n.
 		// On success, returns nil. On failure, returns CanceledError and leaves the semaphore unchanged.
@@ -342,6 +356,8 @@ type (
 	}
 
 	// Future represents the result of an asynchronous computation.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Future]
 	Future interface {
 		// Get blocks until the future is ready. When ready it either returns non nil error or assigns result value to
 		// the provided pointer.
@@ -366,6 +382,8 @@ type (
 
 	// Settable is used to set value or error on a future.
 	// See more: workflow.NewFuture(ctx).
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Settable]
 	Settable interface {
 		Set(value interface{}, err error)
 		SetValue(value interface{})
@@ -374,6 +392,8 @@ type (
 	}
 
 	// ChildWorkflowFuture represents the result of a child workflow execution
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ChildWorkflowFuture]
 	ChildWorkflowFuture interface {
 		Future
 		// GetChildWorkflowExecution returns a future that will be ready when child workflow execution started. You can
@@ -414,6 +434,8 @@ type (
 		dataConverter converter.DataConverter
 	}
 	// Version represents a change version. See GetVersion call.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Version]
 	Version int
 
 	// ChildWorkflowOptions stores all child workflow specific parameters that will be stored inside of a Context.
@@ -587,6 +609,8 @@ type (
 	}
 
 	// DynamicRegisterActivityOptions consists of options for registering a dynamic activity
+	//
+	// Exposed as: [go.temporal.io/sdk/activity.DynamicRegisterOptions]
 	DynamicRegisterActivityOptions struct{}
 
 	// DynamicRuntimeWorkflowOptions are options for a dynamic workflow.
