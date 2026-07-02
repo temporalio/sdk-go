@@ -66,15 +66,15 @@ type SignalWithStartWorkflowRequest struct {
 
 func (m SignalWithStartWorkflowRequest) ToProto() *workflowservice.SignalWithStartWorkflowExecutionRequest {
 	message := &workflowservice.SignalWithStartWorkflowExecutionRequest{}
-	message.WorkflowType = WorkflowTypeToProto(&m.Workflow)
-	message.Input = PayloadsToProto(m.Args)
+	message.WorkflowType = workflowTypeToProto(&m.Workflow)
+	message.Input = payloadsToProto(m.Args)
 	message.WorkflowId = m.Id
-	message.TaskQueue = TaskQueueToProto(&m.TaskQueue)
+	message.TaskQueue = taskQueueToProto(&m.TaskQueue)
 	message.SignalName = m.Signal
-	message.SignalInput = PayloadsToProto(m.SignalArgs)
-	message.WorkflowExecutionTimeout = DurationToProto(m.ExecutionTimeout)
-	message.WorkflowRunTimeout = DurationToProto(m.RunTimeout)
-	message.WorkflowTaskTimeout = DurationToProto(m.TaskTimeout)
+	message.SignalInput = payloadsToProto(m.SignalArgs)
+	message.WorkflowExecutionTimeout = durationToProto(m.ExecutionTimeout)
+	message.WorkflowRunTimeout = durationToProto(m.RunTimeout)
+	message.WorkflowTaskTimeout = durationToProto(m.TaskTimeout)
 	if m.RequestId != nil {
 		message.RequestId = (*m.RequestId)
 	}
@@ -84,19 +84,19 @@ func (m SignalWithStartWorkflowRequest) ToProto() *workflowservice.SignalWithSta
 	if m.IdConflictPolicy != nil {
 		message.WorkflowIdConflictPolicy = enums.WorkflowIdConflictPolicy((*m.IdConflictPolicy))
 	}
-	message.RetryPolicy = RetryPolicyToProto(m.RetryPolicy)
+	message.RetryPolicy = retryPolicyToProto(m.RetryPolicy)
 	if m.CronSchedule != nil {
 		message.CronSchedule = (*m.CronSchedule)
 	}
-	message.Memo = MemoToProto(m.Memo)
-	message.SearchAttributes = SearchAttributesToProto(m.SearchAttributes)
-	message.Priority = PriorityToProto(m.Priority)
-	message.VersioningOverride = VersioningOverrideToProto(m.VersioningOverride)
-	message.WorkflowStartDelay = DurationToProto(m.StartDelay)
+	message.Memo = memoToProto(m.Memo)
+	message.SearchAttributes = searchAttributesToProto(m.SearchAttributes)
+	message.Priority = priorityToProto(m.Priority)
+	message.VersioningOverride = versioningOverrideToProto(m.VersioningOverride)
+	message.WorkflowStartDelay = durationToProto(m.StartDelay)
 	if m.UserMetadata != nil {
 		message.UserMetadata = (*m.UserMetadata).ToProto()
 	}
-	message.Namespace = WorkflowNamespace()
+	message.Namespace = workflowNamespace()
 	return message
 }
 
@@ -112,15 +112,15 @@ type UserMetadata struct {
 
 func (m UserMetadata) ToProto() *sdk.UserMetadata {
 	message := &sdk.UserMetadata{}
-	message.Summary = PayloadToProto(m.StaticSummary)
-	message.Details = PayloadToProto(m.StaticDetails)
+	message.Summary = payloadToProto(m.StaticSummary)
+	message.Details = payloadToProto(m.StaticDetails)
 	return message
 }
 
 func UserMetadataFromProto(proto *sdk.UserMetadata) UserMetadata {
 	value := UserMetadata{}
-	value.StaticSummary = PayloadFromProto(proto.GetSummary())
-	value.StaticDetails = PayloadFromProto(proto.GetDetails())
+	value.StaticSummary = payloadFromProto(proto.GetSummary())
+	value.StaticDetails = payloadFromProto(proto.GetDetails())
 	return value
 }
 
