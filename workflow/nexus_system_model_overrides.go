@@ -28,14 +28,14 @@ import (
 
 // --- Duration (google.protobuf.Duration) ---
 
-func DurationToProto(d *time.Duration) *durationpb.Duration {
+func durationToProto(d *time.Duration) *durationpb.Duration {
 	if d == nil {
 		return nil
 	}
 	return durationpb.New(*d)
 }
 
-func DurationFromProto(d *durationpb.Duration) *time.Duration {
+func durationFromProto(d *durationpb.Duration) *time.Duration {
 	if d == nil {
 		return nil
 	}
@@ -45,14 +45,14 @@ func DurationFromProto(d *durationpb.Duration) *time.Duration {
 
 // --- TaskQueue (temporal.api.taskqueue.v1.TaskQueue) ---
 
-func TaskQueueToProto(name *string) *taskqueue.TaskQueue {
+func taskQueueToProto(name *string) *taskqueue.TaskQueue {
 	if name == nil {
 		return nil
 	}
 	return &taskqueue.TaskQueue{Name: *name}
 }
 
-func TaskQueueFromProto(tq *taskqueue.TaskQueue) *string {
+func taskQueueFromProto(tq *taskqueue.TaskQueue) *string {
 	if tq == nil {
 		return nil
 	}
@@ -62,7 +62,7 @@ func TaskQueueFromProto(tq *taskqueue.TaskQueue) *string {
 
 // --- RetryPolicy (temporal.api.common.v1.RetryPolicy) ---
 
-func RetryPolicyToProto(p *temporal.RetryPolicy) *common.RetryPolicy {
+func retryPolicyToProto(p *temporal.RetryPolicy) *common.RetryPolicy {
 	if p == nil {
 		return nil
 	}
@@ -80,7 +80,7 @@ func RetryPolicyToProto(p *temporal.RetryPolicy) *common.RetryPolicy {
 	return proto
 }
 
-func RetryPolicyFromProto(p *common.RetryPolicy) *temporal.RetryPolicy {
+func retryPolicyFromProto(p *common.RetryPolicy) *temporal.RetryPolicy {
 	if p == nil {
 		return nil
 	}
@@ -100,7 +100,7 @@ func RetryPolicyFromProto(p *common.RetryPolicy) *temporal.RetryPolicy {
 
 // --- Priority (temporal.api.common.v1.Priority) ---
 
-func PriorityToProto(p *temporal.Priority) *common.Priority {
+func priorityToProto(p *temporal.Priority) *common.Priority {
 	if p == nil {
 		return nil
 	}
@@ -111,7 +111,7 @@ func PriorityToProto(p *temporal.Priority) *common.Priority {
 	}
 }
 
-func PriorityFromProto(p *common.Priority) *temporal.Priority {
+func priorityFromProto(p *common.Priority) *temporal.Priority {
 	if p == nil {
 		return nil
 	}
@@ -124,14 +124,14 @@ func PriorityFromProto(p *common.Priority) *temporal.Priority {
 
 // --- WorkflowType (temporal.api.common.v1.WorkflowType) ---
 
-func WorkflowTypeToProto(name *string) *common.WorkflowType {
+func workflowTypeToProto(name *string) *common.WorkflowType {
 	if name == nil {
 		return nil
 	}
 	return &common.WorkflowType{Name: *name}
 }
 
-func WorkflowTypeFromProto(t *common.WorkflowType) *string {
+func workflowTypeFromProto(t *common.WorkflowType) *string {
 	if t == nil {
 		return nil
 	}
@@ -146,7 +146,7 @@ func WorkflowTypeFromProto(t *common.WorkflowType) *string {
 // converter; these helpers provide a context-free default suitable for the
 // common JSON encoding shared with the Python and TypeScript bindings.
 
-func PayloadToProto(value any) *common.Payload {
+func payloadToProto(value any) *common.Payload {
 	payload, err := converter.GetDefaultDataConverter().ToPayload(value)
 	if err != nil {
 		panic(err)
@@ -154,7 +154,7 @@ func PayloadToProto(value any) *common.Payload {
 	return payload
 }
 
-func PayloadFromProto(payload *common.Payload) any {
+func payloadFromProto(payload *common.Payload) any {
 	if payload == nil {
 		return nil
 	}
@@ -165,7 +165,7 @@ func PayloadFromProto(payload *common.Payload) any {
 	return value
 }
 
-func PayloadsToProto(values []any) *common.Payloads {
+func payloadsToProto(values []any) *common.Payloads {
 	if len(values) == 0 {
 		return nil
 	}
@@ -176,37 +176,37 @@ func PayloadsToProto(values []any) *common.Payloads {
 	return payloads
 }
 
-func PayloadsFromProto(payloads *common.Payloads) []any {
+func payloadsFromProto(payloads *common.Payloads) []any {
 	if payloads == nil {
 		return nil
 	}
 	values := make([]any, 0, len(payloads.GetPayloads()))
 	for _, payload := range payloads.GetPayloads() {
-		values = append(values, PayloadFromProto(payload))
+		values = append(values, payloadFromProto(payload))
 	}
 	return values
 }
 
 // --- Memo (temporal.api.common.v1.Memo) ---
 
-func MemoToProto(memo map[string]any) *common.Memo {
+func memoToProto(memo map[string]any) *common.Memo {
 	if len(memo) == 0 {
 		return nil
 	}
 	fields := make(map[string]*common.Payload, len(memo))
 	for key, value := range memo {
-		fields[key] = PayloadToProto(value)
+		fields[key] = payloadToProto(value)
 	}
 	return &common.Memo{Fields: fields}
 }
 
-func MemoFromProto(memo *common.Memo) map[string]any {
+func memoFromProto(memo *common.Memo) map[string]any {
 	if memo == nil {
 		return nil
 	}
 	result := make(map[string]any, len(memo.GetFields()))
 	for key, payload := range memo.GetFields() {
-		result[key] = PayloadFromProto(payload)
+		result[key] = payloadFromProto(payload)
 	}
 	return result
 }
@@ -217,7 +217,7 @@ func MemoFromProto(memo *common.Memo) map[string]any {
 // SDK's search-attribute encoder. This placeholder keeps the bindings
 // compiling; populate it when search-attribute support lands.
 
-func SearchAttributesToProto(_ *string) *common.SearchAttributes {
+func searchAttributesToProto(_ *string) *common.SearchAttributes {
 	return nil
 }
 
@@ -226,7 +226,7 @@ func SearchAttributesToProto(_ *string) *common.SearchAttributes {
 // Versioning-override encoding is deferred. This placeholder keeps the bindings
 // compiling; populate it when versioning-override support lands.
 
-func VersioningOverrideToProto(_ *client.VersioningOverride) *workflowpb.VersioningOverride {
+func versioningOverrideToProto(_ *client.VersioningOverride) *workflowpb.VersioningOverride {
 	return nil
 }
 
@@ -237,6 +237,6 @@ func VersioningOverrideToProto(_ *client.VersioningOverride) *workflowpb.Version
 // the server fills in the caller's namespace. Populate this when sourced fields
 // gain access to the workflow context.
 
-func WorkflowNamespace() string {
+func workflowNamespace() string {
 	return ""
 }
