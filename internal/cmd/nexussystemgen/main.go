@@ -7,8 +7,8 @@
 //
 //	go run ./internal/cmd/nexussystemgen
 //
-// Requires buf on PATH to build Temporal API descriptors. nex-gen is located via
-// NEX_GEN_BIN, then PATH, then `cargo install`.
+// Requires buf on PATH to build Temporal API descriptors.
+// nex-gen is automatically installed unless NEX_GEN_BIN is set.
 package main
 
 import (
@@ -39,7 +39,6 @@ func run() error {
 		return fmt.Errorf("WIT input must be a file, got directory %s", witMain)
 	}
 	witDeps := filepath.Join(filepath.Dir(witMain), "deps")
-	supportFile := filepath.Join(repoRoot, "internal", "cmd", "nexussystemgen", "support", "model_overrides.go")
 	outPkgDir := filepath.Join(repoRoot, "workflow")
 
 	tmpDir, err := os.MkdirTemp("", "nexussystemgen-")
@@ -72,7 +71,6 @@ func run() error {
 		"--descriptors", descriptors,
 		"--output", tmpDir,
 		"--go-package", "go.temporal.io/sdk/workflow",
-		"--support-file", supportFile,
 	)
 
 	cmd := exec.Command(nexGen, args...)
@@ -82,25 +80,16 @@ func run() error {
 		return fmt.Errorf("running nex-gen: %w", err)
 	}
 
-	serviceFile, err := generatedServiceFile(tmpDir, "model_overrides.go")
+	serviceFile, err := generatedServiceFile(tmpDir)
 	if err != nil {
 		return err
 	}
-	for _, file := range []struct {
-		srcName string
-		dstName string
-	}{
-		{srcName: serviceFile, dstName: serviceFile},
-		{srcName: "model_overrides.go", dstName: "system_nexus_model_overrides_gen.go"},
-	} {
-		src := filepath.Join(tmpDir, file.srcName)
-		dst := filepath.Join(outPkgDir, file.dstName)
-		if err := copyFile(dst, src); err != nil {
-			return err
-		}
-		if err := gofmt(dst); err != nil {
-			return err
-		}
+	dst := filepath.Join(outPkgDir, serviceFile)
+	if err := copyFile(dst, filepath.Join(tmpDir, serviceFile)); err != nil {
+		return err
+	}
+	if err := gofmt(dst); err != nil {
+		return err
 	}
 	return nil
 }
@@ -140,12 +129,7 @@ func nexGenBinary() (string, error) {
 	return "nex-gen", nil
 }
 
-func generatedServiceFile(dir string, supportFileNames ...string) (string, error) {
-	supportFiles := make(map[string]struct{}, len(supportFileNames))
-	for _, name := range supportFileNames {
-		supportFiles[name] = struct{}{}
-	}
-
+func generatedServiceFile(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", fmt.Errorf("reading generated output dir %s: %w", dir, err)
@@ -157,9 +141,6 @@ func generatedServiceFile(dir string, supportFileNames ...string) (string, error
 		}
 		name := entry.Name()
 		if filepath.Ext(name) != ".go" {
-			continue
-		}
-		if _, ok := supportFiles[name]; ok {
 			continue
 		}
 		serviceFiles = append(serviceFiles, name)
