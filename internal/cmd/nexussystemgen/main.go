@@ -1,20 +1,17 @@
 // Command nexussystemgen runs nex-gen to generate the System Nexus API.
 //
+// Must be invoked from the root of the Go SDK repo.
 // The generated bindings are emitted directly into go.temporal.io/sdk/workflow.
 //
 // Usage:
 //
-//	NEX_GEN_BIN=/path/to/nex-gen \
-//	  go run ./internal/cmd/nexussystemgen \
-//	  -input internal/nexussystem/wit/workflow-service.wit \
-//	  -descriptors /path/to/descriptor_set.pb
+//	go run ./internal/cmd/nexussystemgen
 //
-// nex-gen is located via the NEX_GEN_BIN environment variable, falling back to
-// a `nex-gen` binary on PATH, then to `cargo install`.
+// Requires buf on PATH to build Temporal API descriptors. nex-gen is located via
+// NEX_GEN_BIN, then PATH, then `cargo install`.
 package main
 
 import (
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -30,29 +27,16 @@ func main() {
 }
 
 func run() error {
-	input := flag.String("input", "", "path to the WIT service file")
-	descriptors := flag.String("descriptors", "", "path to the proto descriptor set (FileDescriptorSet)")
-	flag.Parse()
-	if *input == "" {
-		return fmt.Errorf("-input is required")
-	}
-	if *descriptors == "" {
-		return fmt.Errorf("-descriptors is required")
-	}
-
 	repoRoot, err := repoRoot()
 	if err != nil {
 		return err
 	}
 
-	witMain, err := filepath.Abs(*input)
-	if err != nil {
-		return fmt.Errorf("resolving -input: %w", err)
-	}
+	witMain := filepath.Join(repoRoot, "internal", "nexussystem", "wit", "workflow-service.wit")
 	if info, err := os.Stat(witMain); err != nil {
 		return fmt.Errorf("stat %s: %w", witMain, err)
 	} else if info.IsDir() {
-		return fmt.Errorf("-input must be a WIT file, got directory %s", witMain)
+		return fmt.Errorf("WIT input must be a file, got directory %s", witMain)
 	}
 	witDeps := filepath.Join(filepath.Dir(witMain), "deps")
 	supportFile := filepath.Join(repoRoot, "internal", "cmd", "nexussystemgen", "support", "model_overrides.go")
@@ -63,6 +47,11 @@ func run() error {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	descriptors, err := buildDescriptorSet(tmpDir)
+	if err != nil {
+		return err
+	}
 
 	nexGen, err := nexGenBinary()
 	if err != nil {
@@ -80,7 +69,7 @@ func run() error {
 		return fmt.Errorf("stat %s: %w", witDeps, err)
 	}
 	args = append(args,
-		"--descriptors", *descriptors,
+		"--descriptors", descriptors,
 		"--output", tmpDir,
 		"--go-package", "go.temporal.io/sdk/workflow",
 		"--support-file", supportFile,
@@ -114,6 +103,21 @@ func run() error {
 		}
 	}
 	return nil
+}
+
+func buildDescriptorSet(tmpDir string) (string, error) {
+	if _, err := exec.LookPath("buf"); err != nil {
+		return "", fmt.Errorf("buf is required to build Temporal API descriptors; install it with `go install github.com/bufbuild/buf/cmd/buf@v1.27.0`: %w", err)
+	}
+
+	path := filepath.Join(tmpDir, "descriptor_set.pb")
+	cmd := exec.Command("buf", "build", "buf.build/temporalio/api", "--as-file-descriptor-set", "-o", path)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("building Temporal API descriptors with buf failed; install or update buf with `go install github.com/bufbuild/buf/cmd/buf@v1.27.0`: %w", err)
+	}
+	return path, nil
 }
 
 func nexGenBinary() (string, error) {
@@ -201,12 +205,12 @@ func gofmt(path string) error {
 func repoRoot() (string, error) {
 	// This file lives at <repo>/internal/cmd/nexussystemgen/main.go.
 	_, err := os.Stat("go.mod")
-	if err == nil {
-		abs, err := filepath.Abs(".")
-		if err != nil {
-			return "", err
-		}
-		return abs, nil
+	if err != nil {
+		return "", fmt.Errorf("nexussystemgen must be run from the repository root")
 	}
-	return "", fmt.Errorf("nexussystemgen must be run from the repository root (where go.mod lives)")
+	abs, err := filepath.Abs(".")
+	if err != nil {
+		return "", err
+	}
+	return abs, nil
 }
