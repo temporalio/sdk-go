@@ -1,0 +1,58 @@
+integration-shards:
+  core-a:
+    - TestChildWorkflowByName_NoGoroutineLeak
+    - TestDynamicWorkflowTestSuite
+    - Test_StructuredLogger
+    - TestInterceptors
+    - TestWorkflowTestSuite_NexusSyncOperation
+    - TestWorkflowTestSuite_WorkflowRunOperation
+    - TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout
+    - TestWorkflowTestSuite_WorkflowRunOperation_WithCancel
+    - TestWorkflowTestSuite_WorkflowRunOperation_MultipleCallers
+    - TestWorkflowTestSuite_NexusSyncOperation_ScheduleToCloseTimeout
+    - TestWorkflowTestSuite_NexusSyncOperation_ClientMethods_Panic
+    - TestWorkflowTestSuite_MockNexusOperation
+    - TestWorkflowTestSuite_NexusListeners
+    - TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToStartTimeout
+    - TestWorkflowTestSuite_WorkflowRunOperation_StartToCloseTimeout
+
+  core-b:
+    - "@regex:TestIntegrationSuite/Test(A|B|C|D|E|F|G|H|I|J|K|L|M).*"
+
+  core-c:
+    - "@regex:TestIntegrationSuite/Test(N|O|P|Q|R|S|T|U|V|W|X|Y|Z).*"
+
+  payload:
+    - TestExternalStorageSuite
+    - TestPayloadLimitsTestSuite
+
+  nexus:
+    - TestNexusSyncOperation
+    - TestNexusWorkflowRunOperation
+    - TestOperationSummary
+    - TestOperationInfo
+    - TestSyncOperationFromWorkflow
+    - TestInvalidOperationInput
+    - TestAsyncOperationFromWorkflow
+    - TestAsyncOperationFromWorkflow_CancellationTypes
+    - TestAsyncOperationFromWorkflow_MultipleCallers
+    - TestAsyncOperationCompletionCustomFailureConverter
+    - TestNewNexusClientValidation
+    - TestNexusTracingInterceptor
+    - TestNexusTimeoutInteraction
+    - TestNexusSignalOperationLinks
+    - TestNexusMultiSignalOperationLinks
+    - TestNexusAsyncSignalOperationLinks
+
+  worker:
+    - TestAsyncBindingsTestSuite
+    - TestWorkerDeploymentTestSuite
+    - TestWorkerHeartbeatSuite
+    - TestWorkerTunerTestSuite
+    - TestWorkerVersioningTestSuite
+
+  replay:
+    - TestReplay
+    - TestReplayTestSuite
+    - TestReplayCustomConverter
+    - TestReplayDeadlockDetection

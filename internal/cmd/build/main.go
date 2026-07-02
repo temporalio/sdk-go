@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
@@ -20,6 +21,7 @@ import (
 
 	_ "github.com/BurntSushi/toml"
 	_ "github.com/kisielk/errcheck/errcheck"
+	"gopkg.in/yaml.v3"
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
@@ -35,6 +37,8 @@ func main() {
 
 const coverageDir = ".build/coverage"
 const githubStepSummaryMaxDetailBytes = 64 * 1024
+const integrationShardManifestPath = ".github/integration-shards.yml"
+const integrationShardRegexPrefix = "@regex:"
 
 type builder struct {
 	thisDir string
@@ -52,19 +56,23 @@ func newBuilder() *builder {
 
 func (b *builder) run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("missing command name, 'check', 'integration-test', or 'unit-test' required")
+		return fmt.Errorf("missing command name, 'check', 'integration-test', 'integration-shard-regex', 'integration-shard-validate', or 'unit-test' required")
 	}
 	switch os.Args[1] {
 	case "check":
 		return b.check()
 	case "integration-test":
 		return b.integrationTest()
+	case "integration-shard-regex":
+		return b.integrationShardRegex()
+	case "integration-shard-validate":
+		return b.integrationShardValidate()
 	case "merge-coverage-files":
 		return b.mergeCoverageFiles()
 	case "unit-test":
 		return b.unitTest()
 	default:
-		return fmt.Errorf("unrecognized command %q, 'check', 'integration-test', or 'unit-test' required", os.Args[1])
+		return fmt.Errorf("unrecognized command %q, 'check', 'integration-test', 'integration-shard-regex', 'integration-shard-validate', or 'unit-test' required", os.Args[1])
 	}
 }
 
@@ -100,8 +108,19 @@ func (b *builder) integrationTest() error {
 	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
+	shardFlag := flagSet.String("shard", "", "Integration test shard from "+integrationShardManifestPath)
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
+	}
+	if *shardFlag != "" {
+		if *runFlag != "" {
+			return fmt.Errorf("-shard cannot be combined with -run")
+		}
+		shardRegex, err := b.integrationShardRegexForName(*shardFlag)
+		if err != nil {
+			return err
+		}
+		*runFlag = shardRegex
 	}
 
 	// Also accept coverage file as env var
@@ -176,8 +195,13 @@ func (b *builder) integrationTest() error {
 		defer func() { _ = devServer.Stop() }()
 	}
 
+	testTimeout := "15m"
+	if *shardFlag != "" {
+		testTimeout = "10m"
+	}
+
 	// Run integration test
-	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
+	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", testTimeout}
 	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
@@ -201,6 +225,225 @@ func (b *builder) integrationTest() error {
 		return fmt.Errorf("integration test failed: %w", err)
 	}
 
+	return nil
+}
+
+type integrationShardManifest struct {
+	IntegrationShards map[string][]string `yaml:"integration-shards"`
+}
+
+func (b *builder) integrationShardRegex() error {
+	if len(os.Args) != 3 {
+		return fmt.Errorf("integration-shard-regex requires a shard name")
+	}
+
+	shardRegex, err := b.integrationShardRegexForName(os.Args[2])
+	if err != nil {
+		return err
+	}
+	fmt.Println(shardRegex)
+	return nil
+}
+
+func (b *builder) integrationShardRegexForName(shardName string) (string, error) {
+	manifest, discovered, err := b.loadAndValidateIntegrationShards()
+	if err != nil {
+		return "", err
+	}
+
+	tests, ok := manifest.IntegrationShards[shardName]
+	if !ok {
+		var shardNames []string
+		for name := range manifest.IntegrationShards {
+			shardNames = append(shardNames, name)
+		}
+		sort.Strings(shardNames)
+		return "", fmt.Errorf("unknown integration shard %q, available shards: %s", shardName, strings.Join(shardNames, ", "))
+	}
+	if len(tests) == 0 {
+		return "", fmt.Errorf("integration shard %q has no tests", shardName)
+	}
+	if len(tests) > 1 {
+		for _, testName := range tests {
+			if strings.HasPrefix(testName, integrationShardRegexPrefix) {
+				return "", fmt.Errorf("integration shard %q cannot mix an explicit regex with other entries", shardName)
+			}
+		}
+	}
+
+	discoveredSet := map[string]struct{}{}
+	for _, testName := range discovered {
+		discoveredSet[testName] = struct{}{}
+	}
+	parts := make([]string, 0, len(tests))
+	hasExplicitRegex := false
+	for _, testName := range tests {
+		if regex, ok := strings.CutPrefix(testName, integrationShardRegexPrefix); ok {
+			if _, err := regexp.Compile(regex); err != nil {
+				return "", fmt.Errorf("integration shard %q includes invalid regex %q: %w", shardName, regex, err)
+			}
+			hasExplicitRegex = true
+			parts = append(parts, regex)
+			continue
+		}
+		if _, ok := discoveredSet[testName]; !ok {
+			return "", fmt.Errorf("integration shard %q includes unknown test %q", shardName, testName)
+		}
+		parts = append(parts, regexp.QuoteMeta(testName))
+	}
+	if hasExplicitRegex {
+		return strings.Join(parts, "|"), nil
+	}
+	return fmt.Sprintf("^(%s)$", strings.Join(parts, "|")), nil
+}
+
+func (b *builder) integrationShardValidate() error {
+	_, _, err := b.loadAndValidateIntegrationShards()
+	return err
+}
+
+func (b *builder) loadAndValidateIntegrationShards() (*integrationShardManifest, []string, error) {
+	manifest, err := b.loadIntegrationShardManifest()
+	if err != nil {
+		return nil, nil, err
+	}
+	discovered, err := b.discoverIntegrationTests()
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateIntegrationShardManifest(manifest, discovered); err != nil {
+		return nil, nil, err
+	}
+	return manifest, discovered, nil
+}
+
+func (b *builder) loadIntegrationShardManifest() (*integrationShardManifest, error) {
+	manifestPath := filepath.Join(b.rootDir, integrationShardManifestPath)
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading %s: %w", integrationShardManifestPath, err)
+	}
+	var manifest integrationShardManifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return nil, fmt.Errorf("failed parsing %s: %w", integrationShardManifestPath, err)
+	}
+	if len(manifest.IntegrationShards) == 0 {
+		return nil, fmt.Errorf("%s must define at least one integration shard", integrationShardManifestPath)
+	}
+	return &manifest, nil
+}
+
+func (b *builder) discoverIntegrationTests() ([]string, error) {
+	cmd := b.cmdFromRoot("go", "test", "-list", ".", "./...")
+	cmd.Dir = filepath.Join(b.rootDir, "test")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("failed listing integration tests: %w\n%s", err, string(output))
+	}
+	return parseGoTestListOutput(string(output)), nil
+}
+
+func parseGoTestListOutput(output string) []string {
+	testSet := map[string]struct{}{}
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Test") {
+			testSet[line] = struct{}{}
+		}
+	}
+	tests := make([]string, 0, len(testSet))
+	for testName := range testSet {
+		tests = append(tests, testName)
+	}
+	sort.Strings(tests)
+	return tests
+}
+
+func validateIntegrationShardManifest(manifest *integrationShardManifest, discovered []string) error {
+	discoveredSet := map[string]struct{}{}
+	for _, testName := range discovered {
+		discoveredSet[testName] = struct{}{}
+	}
+
+	assignments := map[string][]string{}
+	regexAssignments := map[string][]string{}
+	for shardName, tests := range manifest.IntegrationShards {
+		if len(tests) == 0 {
+			return fmt.Errorf("integration shard %q has no tests", shardName)
+		}
+		regexCount := 0
+		for _, testName := range tests {
+			if strings.TrimSpace(testName) == "" {
+				return fmt.Errorf("integration shard %q contains an empty test name", shardName)
+			}
+			if regex, ok := strings.CutPrefix(testName, integrationShardRegexPrefix); ok {
+				regexCount++
+				if _, err := regexp.Compile(regex); err != nil {
+					return fmt.Errorf("integration shard %q contains invalid regex %q: %w", shardName, regex, err)
+				}
+				topLevelTest := regex
+				if slashIndex := strings.IndexByte(topLevelTest, '/'); slashIndex >= 0 {
+					topLevelTest = topLevelTest[:slashIndex]
+				}
+				if topLevelTest == "" {
+					return fmt.Errorf("integration shard %q contains regex %q without a top-level test prefix", shardName, regex)
+				}
+				regexAssignments[topLevelTest] = append(regexAssignments[topLevelTest], shardName)
+				continue
+			}
+			assignments[testName] = append(assignments[testName], shardName)
+		}
+		if regexCount > 0 && len(tests) > 1 {
+			return fmt.Errorf("integration shard %q cannot mix an explicit regex with other entries", shardName)
+		}
+	}
+
+	var unknown []string
+	var duplicates []string
+	for testName, shardNames := range assignments {
+		if _, ok := discoveredSet[testName]; !ok {
+			unknown = append(unknown, testName)
+		}
+		if _, ok := regexAssignments[testName]; ok {
+			duplicates = append(duplicates, fmt.Sprintf("%s assigned both directly and by regex", testName))
+		}
+		if len(shardNames) > 1 {
+			sort.Strings(shardNames)
+			duplicates = append(duplicates, fmt.Sprintf("%s in %s", testName, strings.Join(shardNames, ", ")))
+		}
+	}
+	for testName := range regexAssignments {
+		if _, ok := discoveredSet[testName]; !ok {
+			unknown = append(unknown, testName)
+		}
+	}
+
+	var missing []string
+	for _, testName := range discovered {
+		_, assignedDirectly := assignments[testName]
+		_, assignedByRegex := regexAssignments[testName]
+		if !assignedDirectly && !assignedByRegex {
+			missing = append(missing, testName)
+		}
+	}
+
+	sort.Strings(unknown)
+	sort.Strings(duplicates)
+	sort.Strings(missing)
+
+	var problems []string
+	if len(missing) > 0 {
+		problems = append(problems, "unassigned integration tests: "+strings.Join(missing, ", "))
+	}
+	if len(unknown) > 0 {
+		problems = append(problems, "unknown integration tests in shard manifest: "+strings.Join(unknown, ", "))
+	}
+	if len(duplicates) > 0 {
+		problems = append(problems, "integration tests assigned to multiple shards: "+strings.Join(duplicates, "; "))
+	}
+	if len(problems) > 0 {
+		return fmt.Errorf("%s is out of sync: %s", integrationShardManifestPath, strings.Join(problems, "; "))
+	}
 	return nil
 }
 
