@@ -52,7 +52,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
-        shard: [core, payload, nexus, worker, replay]
+        shard: [core-a, core-b, core-c, payload, nexus, worker, replay]
         include:
           - os: macos-intel
             runsOn: macos-15-intel
@@ -86,7 +86,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-intel, macos-arm, windows-latest]
         go-version: ["oldstable", "stable"]
-        shard: [core, payload, nexus, worker, replay]
+        shard: [core-a, core-b, core-c, payload, nexus, worker, replay]
         include:
           - os: macos-intel
             runsOn: macos-15-intel

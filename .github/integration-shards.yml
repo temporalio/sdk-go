@@ -1,8 +1,7 @@
 integration-shards:
-  core:
+  core-a:
     - TestChildWorkflowByName_NoGoroutineLeak
     - TestDynamicWorkflowTestSuite
-    - TestIntegrationSuite
     - Test_StructuredLogger
     - TestInterceptors
     - TestWorkflowTestSuite_NexusSyncOperation
@@ -16,6 +15,12 @@ integration-shards:
     - TestWorkflowTestSuite_NexusListeners
     - TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToStartTimeout
     - TestWorkflowTestSuite_WorkflowRunOperation_StartToCloseTimeout
+
+  core-b:
+    - "@regex:TestIntegrationSuite/Test(A|B|C|D|E|F|G|H|I|J|K|L|M).*"
+
+  core-c:
+    - "@regex:TestIntegrationSuite/Test(N|O|P|Q|R|S|T|U|V|W|X|Y|Z).*"
 
   payload:
     - TestExternalStorageSuite

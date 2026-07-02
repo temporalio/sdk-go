@@ -38,6 +38,7 @@ func main() {
 const coverageDir = ".build/coverage"
 const githubStepSummaryMaxDetailBytes = 64 * 1024
 const integrationShardManifestPath = ".github/integration-shards.yml"
+const integrationShardRegexPrefix = "@regex:"
 
 type builder struct {
 	thisDir string
@@ -194,8 +195,13 @@ func (b *builder) integrationTest() error {
 		defer func() { _ = devServer.Stop() }()
 	}
 
+	testTimeout := "15m"
+	if *shardFlag != "" {
+		testTimeout = "10m"
+	}
+
 	// Run integration test
-	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
+	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", testTimeout}
 	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
@@ -257,17 +263,36 @@ func (b *builder) integrationShardRegexForName(shardName string) (string, error)
 	if len(tests) == 0 {
 		return "", fmt.Errorf("integration shard %q has no tests", shardName)
 	}
+	if len(tests) > 1 {
+		for _, testName := range tests {
+			if strings.HasPrefix(testName, integrationShardRegexPrefix) {
+				return "", fmt.Errorf("integration shard %q cannot mix an explicit regex with other entries", shardName)
+			}
+		}
+	}
 
 	discoveredSet := map[string]struct{}{}
 	for _, testName := range discovered {
 		discoveredSet[testName] = struct{}{}
 	}
 	parts := make([]string, 0, len(tests))
+	hasExplicitRegex := false
 	for _, testName := range tests {
+		if regex, ok := strings.CutPrefix(testName, integrationShardRegexPrefix); ok {
+			if _, err := regexp.Compile(regex); err != nil {
+				return "", fmt.Errorf("integration shard %q includes invalid regex %q: %w", shardName, regex, err)
+			}
+			hasExplicitRegex = true
+			parts = append(parts, regex)
+			continue
+		}
 		if _, ok := discoveredSet[testName]; !ok {
 			return "", fmt.Errorf("integration shard %q includes unknown test %q", shardName, testName)
 		}
 		parts = append(parts, regexp.QuoteMeta(testName))
+	}
+	if hasExplicitRegex {
+		return strings.Join(parts, "|"), nil
 	}
 	return fmt.Sprintf("^(%s)$", strings.Join(parts, "|")), nil
 }
@@ -341,15 +366,35 @@ func validateIntegrationShardManifest(manifest *integrationShardManifest, discov
 	}
 
 	assignments := map[string][]string{}
+	regexAssignments := map[string][]string{}
 	for shardName, tests := range manifest.IntegrationShards {
 		if len(tests) == 0 {
 			return fmt.Errorf("integration shard %q has no tests", shardName)
 		}
+		regexCount := 0
 		for _, testName := range tests {
 			if strings.TrimSpace(testName) == "" {
 				return fmt.Errorf("integration shard %q contains an empty test name", shardName)
 			}
+			if regex, ok := strings.CutPrefix(testName, integrationShardRegexPrefix); ok {
+				regexCount++
+				if _, err := regexp.Compile(regex); err != nil {
+					return fmt.Errorf("integration shard %q contains invalid regex %q: %w", shardName, regex, err)
+				}
+				topLevelTest := regex
+				if slashIndex := strings.IndexByte(topLevelTest, '/'); slashIndex >= 0 {
+					topLevelTest = topLevelTest[:slashIndex]
+				}
+				if topLevelTest == "" {
+					return fmt.Errorf("integration shard %q contains regex %q without a top-level test prefix", shardName, regex)
+				}
+				regexAssignments[topLevelTest] = append(regexAssignments[topLevelTest], shardName)
+				continue
+			}
 			assignments[testName] = append(assignments[testName], shardName)
+		}
+		if regexCount > 0 && len(tests) > 1 {
+			return fmt.Errorf("integration shard %q cannot mix an explicit regex with other entries", shardName)
 		}
 	}
 
@@ -359,15 +404,25 @@ func validateIntegrationShardManifest(manifest *integrationShardManifest, discov
 		if _, ok := discoveredSet[testName]; !ok {
 			unknown = append(unknown, testName)
 		}
+		if _, ok := regexAssignments[testName]; ok {
+			duplicates = append(duplicates, fmt.Sprintf("%s assigned both directly and by regex", testName))
+		}
 		if len(shardNames) > 1 {
 			sort.Strings(shardNames)
 			duplicates = append(duplicates, fmt.Sprintf("%s in %s", testName, strings.Join(shardNames, ", ")))
 		}
 	}
+	for testName := range regexAssignments {
+		if _, ok := discoveredSet[testName]; !ok {
+			unknown = append(unknown, testName)
+		}
+	}
 
 	var missing []string
 	for _, testName := range discovered {
-		if _, ok := assignments[testName]; !ok {
+		_, assignedDirectly := assignments[testName]
+		_, assignedByRegex := regexAssignments[testName]
+		if !assignedDirectly && !assignedByRegex {
 			missing = append(missing, testName)
 		}
 	}

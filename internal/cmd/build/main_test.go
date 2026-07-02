@@ -144,6 +144,35 @@ func TestValidateIntegrationShardManifest(t *testing.T) {
 	}
 }
 
+func TestValidateIntegrationShardManifestAllowsRegexShard(t *testing.T) {
+	manifest := &integrationShardManifest{
+		IntegrationShards: map[string][]string{
+			"a": {integrationShardRegexPrefix + "TestA/(One|Two)"},
+			"b": {"TestB"},
+		},
+	}
+
+	if err := validateIntegrationShardManifest(manifest, []string{"TestA", "TestB"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestValidateIntegrationShardManifestRejectsMixedRegexShard(t *testing.T) {
+	manifest := &integrationShardManifest{
+		IntegrationShards: map[string][]string{
+			"a": {integrationShardRegexPrefix + "TestA/One", "TestB"},
+		},
+	}
+
+	err := validateIntegrationShardManifest(manifest, []string{"TestA", "TestB"})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), `integration shard "a" cannot mix an explicit regex with other entries`) {
+		t.Fatalf("unexpected error: %q", err.Error())
+	}
+}
+
 func TestValidateIntegrationShardManifestDetectsProblems(t *testing.T) {
 	manifest := &integrationShardManifest{
 		IntegrationShards: map[string][]string{
@@ -165,4 +194,97 @@ func TestValidateIntegrationShardManifestDetectsProblems(t *testing.T) {
 			t.Fatalf("expected error to contain %q, got %q", want, err.Error())
 		}
 	}
+}
+
+func TestValidateIntegrationShardManifestDetectsDirectAndRegexDuplicate(t *testing.T) {
+	manifest := &integrationShardManifest{
+		IntegrationShards: map[string][]string{
+			"a": {integrationShardRegexPrefix + "TestA/One"},
+			"b": {"TestA"},
+		},
+	}
+
+	err := validateIntegrationShardManifest(manifest, []string{"TestA"})
+	if err == nil {
+		t.Fatal("expected validation error")
+	}
+	if !strings.Contains(err.Error(), "TestA assigned both directly and by regex") {
+		t.Fatalf("unexpected error: %q", err.Error())
+	}
+}
+
+func TestIntegrationShardRegexForNameAnchorsDirectTests(t *testing.T) {
+	builder := newTestIntegrationShardBuilder(t, strings.Join([]string{
+		"integration-shards:",
+		"  a:",
+		"    - TestA",
+		"    - TestB",
+		"    - TestIntegrationSuite",
+		"",
+	}, "\n"))
+
+	got, err := builder.integrationShardRegexForName("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "^(TestA|TestB|TestIntegrationSuite)$" {
+		t.Fatalf("unexpected shard regex: %q", got)
+	}
+}
+
+func TestIntegrationShardRegexForNamePreservesExplicitRegex(t *testing.T) {
+	builder := newTestIntegrationShardBuilder(t, strings.Join([]string{
+		"integration-shards:",
+		"  a:",
+		"    - \"@regex:TestIntegrationSuite/Test(A|B).*\"",
+		"  b:",
+		"    - TestA",
+		"    - TestB",
+		"",
+	}, "\n"))
+
+	got, err := builder.integrationShardRegexForName("a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "TestIntegrationSuite/Test(A|B).*" {
+		t.Fatalf("unexpected shard regex: %q", got)
+	}
+}
+
+func newTestIntegrationShardBuilder(t *testing.T, manifest string) *builder {
+	t.Helper()
+
+	rootDir := t.TempDir()
+	for _, dir := range []string{
+		filepath.Join(rootDir, ".github"),
+		filepath.Join(rootDir, "test"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	files := map[string]string{
+		filepath.Join(rootDir, "go.mod"):                            "module example.com/integration-shards\n\ngo 1.24\n",
+		filepath.Join(rootDir, ".github", "integration-shards.yml"): manifest,
+		filepath.Join(rootDir, "test", "integration_test.go"): strings.Join([]string{
+			"package test",
+			"",
+			"import \"testing\"",
+			"",
+			"func TestA(t *testing.T) {}",
+			"func TestB(t *testing.T) {}",
+			"func TestIntegrationSuite(t *testing.T) {",
+			"\tt.Run(\"TestA\", func(t *testing.T) {})",
+			"\tt.Run(\"TestB\", func(t *testing.T) {})",
+			"}",
+			"",
+		}, "\n"),
+	}
+	for path, content := range files {
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return &builder{rootDir: rootDir}
 }
