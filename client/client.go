@@ -681,6 +681,13 @@ type (
 	// NOTE: Experimental
 	AutoUpgradeVersioningOverride = internal.AutoUpgradeVersioningOverride
 
+	// OneTimeVersioningOverride routes the workflow to a specific deployment version until one
+	// workflow task completes there. After that workflow task completes, the override is cleared and
+	// the workflow follows the versioning behavior reported by the worker.
+	//
+	// NOTE: Experimental
+	OneTimeVersioningOverride = internal.OneTimeVersioningOverride
+
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.
 	WorkflowUpdateHandle = internal.WorkflowUpdateHandle

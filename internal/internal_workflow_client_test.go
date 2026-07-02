@@ -1883,6 +1883,37 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
 
+func (s *workflowClientTestSuite) TestStartWorkflowWithOneTimeVersioningOverride() {
+	versioningOverride := &OneTimeVersioningOverride{
+		TargetVersion: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildID:        "build1",
+		},
+	}
+
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		VersioningOverride:       versioningOverride,
+	}
+
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	startResp := &workflowservice.StartWorkflowExecutionResponse{}
+
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+			s.Nil(req.VersioningOverride.GetPinned())
+			s.False(req.VersioningOverride.GetAutoUpgrade())
+			s.Equal("deployment1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetDeploymentName())
+			s.Equal("build1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetBuildId())
+		})
+	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
+}
+
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverride() {
 	versioningOverride := &PinnedVersioningOverride{
 		Version: WorkerDeploymentVersion{
@@ -1916,6 +1947,36 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 
 			s.Equal("deployment1", req.VersioningOverride.GetPinned().GetVersion().DeploymentName)
 			s.Equal("build1", req.VersioningOverride.GetPinned().GetVersion().BuildId)
+		})
+	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
+}
+
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithOneTimeVersioningOverride() {
+	versioningOverride := &OneTimeVersioningOverride{
+		TargetVersion: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildID:        "build1",
+		},
+	}
+
+	options := StartWorkflowOptions{
+		ID:                       "wid",
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		VersioningOverride:       versioningOverride,
+	}
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	startResp := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
+
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+			s.Nil(req.VersioningOverride.GetPinned())
+			s.False(req.VersioningOverride.GetAutoUpgrade())
+			s.Equal("deployment1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetDeploymentName())
+			s.Equal("build1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetBuildId())
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
 }
