@@ -360,6 +360,7 @@ func newWorkflowTaskWorkerInternal(
 			newScalableTaskPoller(
 				taskProcessor.createPoller(Mixed),
 				params.Logger,
+				params.MetricsHandler,
 				params.WorkflowTaskPollerBehavior,
 				metrics.PollerTypeWorkflowTask,
 				params.serverSupportsAutoscaling,
@@ -371,6 +372,7 @@ func newWorkflowTaskWorkerInternal(
 			newScalableTaskPoller(
 				taskProcessor.createPoller(NonSticky),
 				params.Logger,
+				params.MetricsHandler,
 				params.WorkflowTaskPollerBehavior,
 				metrics.PollerTypeWorkflowTask,
 				params.serverSupportsAutoscaling,
@@ -383,6 +385,7 @@ func newWorkflowTaskWorkerInternal(
 				newScalableTaskPoller(
 					taskProcessor.createPoller(Sticky),
 					params.Logger,
+					params.MetricsHandler,
 					params.WorkflowTaskPollerBehavior,
 					metrics.PollerTypeWorkflowStickyTask,
 					params.serverSupportsAutoscaling,
@@ -438,6 +441,7 @@ func newWorkflowTaskWorkerInternal(
 			newScalableTaskPoller(
 				localActivityTaskPoller,
 				params.Logger,
+				params.MetricsHandler,
 				NewPollerBehaviorSimpleMaximum(
 					PollerBehaviorSimpleMaximumOptions{
 						MaximumNumberOfPollers: 2,
@@ -605,7 +609,7 @@ func newActivityWorker(
 		slotSupplier:     slotSupplier,
 		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
 		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, metrics.PollerTypeActivityTask, params.serverSupportsAutoscaling),
+			newScalableTaskPoller(poller, params.Logger, params.MetricsHandler, params.ActivityTaskPollerBehavior, metrics.PollerTypeActivityTask, params.serverSupportsAutoscaling),
 		},
 		taskProcessor:                poller,
 		workerType:                   "ActivityWorker",

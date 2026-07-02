@@ -42,6 +42,9 @@ const (
 	WorkerTaskSlotsUsed      = TemporalMetricsPrefix + "worker_task_slots_used"
 	PollerStartCounter       = TemporalMetricsPrefix + "poller_start"
 	NumPoller                = TemporalMetricsPrefix + "num_pollers"
+	PollerTarget             = TemporalMetricsPrefix + "poller_target"
+	PollerScaleDecision      = TemporalMetricsPrefix + "poller_scale_decision"
+	PollerScaleUpAllowed     = TemporalMetricsPrefix + "poller_scale_up_allowed"
 
 	TemporalRequest                      = TemporalMetricsPrefix + "request"
 	TemporalRequestFailure               = TemporalRequest + "_failure"
@@ -71,6 +74,7 @@ const (
 	NamespaceTagName        = "namespace"
 	ClientTagName           = "client_name"
 	PollerTypeTagName       = "poller_type"
+	ScaleReasonTagName      = "reason"
 	WorkerTypeTagName       = "worker_type"
 	WorkflowTypeNameTagName = "workflow_type"
 	ActivityTypeNameTagName = "activity_type"

@@ -274,6 +274,8 @@ type (
 		maxPollerCount            int
 		minPollerCount            int
 		logger                    log.Logger
+		metricsHandler            metrics.Handler
+		pollerType                string
 		targetChangedCallback     func()
 		serverSupportsAutoscaling *atomic.Bool
 	}
@@ -283,6 +285,9 @@ type (
 		maxPollerCount            int
 		logger                    log.Logger
 		target                    atomic.Int64
+		targetGauge               metrics.Gauge
+		decision                  map[string]metrics.Counter // scale-decision counter keyed by reason
+		scaleUpAllowedGauge       metrics.Gauge              // 0/1 gauge mirroring scaleUpAllowed
 		targetChangedCallback     func()
 		everSawScalingDecision    atomic.Bool
 		serverSupportsAutoscaling *atomic.Bool
@@ -923,15 +928,71 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 	if serverSupportsAutoscaling == nil {
 		serverSupportsAutoscaling = &atomic.Bool{}
 	}
+	metricsHandler := options.metricsHandler
+	if metricsHandler == nil {
+		metricsHandler = metrics.NopHandler
+	}
+	// Mirror newNumPollerMetric: route through the per-poller heartbeat handler
+	// when present so the target gauge is tagged consistently with num_pollers.
+	if heartbeatHandler, isHeartbeat := metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
+		metricsHandler = heartbeatHandler.forPoller(options.pollerType)
+	}
+	// base is tagged with poller_type; all autoscaler metrics derive from it so they
+	// share the poller_type tag consistently with num_pollers / poller_target.
+	base := metricsHandler.WithTags(metrics.PollerTags(options.pollerType))
+	decision := make(map[string]metrics.Counter, len(pollerScaleReasons))
+	for _, reason := range pollerScaleReasons {
+		decision[reason] = base.
+			WithTags(map[string]string{metrics.ScaleReasonTagName: reason}).
+			Counter(metrics.PollerScaleDecision)
+	}
 	psr := &pollerAutoscaler{
 		maxPollerCount:            options.maxPollerCount,
 		minPollerCount:            options.minPollerCount,
 		logger:                    logger,
+		targetGauge:               base.Gauge(metrics.PollerTarget),
+		decision:                  decision,
+		scaleUpAllowedGauge:       base.Gauge(metrics.PollerScaleUpAllowed),
 		targetChangedCallback:     options.targetChangedCallback,
 		serverSupportsAutoscaling: serverSupportsAutoscaling,
 	}
 	psr.target.Store(int64(options.initialPollerCount))
+	psr.targetGauge.Update(float64(options.initialPollerCount))
 	return psr
+}
+
+// pollerScaleReasons enumerates the reason tag values for temporal_poller_scale_decision.
+var pollerScaleReasons = []string{
+	pollerScaleServerUp,
+	pollerScaleServerUpSuppressed,
+	pollerScaleServerDown,
+	pollerScaleEmptyPollDown,
+	pollerScaleReHalve,
+	pollerScaleErrorDown,
+	pollerScaleClampMin,
+	pollerScaleClampMax,
+}
+
+const (
+	pollerScaleServerUp           = "server_up"
+	pollerScaleServerUpSuppressed = "server_up_suppressed"
+	pollerScaleServerDown         = "server_down"
+	pollerScaleEmptyPollDown      = "empty_poll_down"
+	pollerScaleReHalve            = "re_halve"
+	pollerScaleErrorDown          = "error_down"
+	pollerScaleClampMin           = "clamp_min"
+	pollerScaleClampMax           = "clamp_max"
+)
+
+// recordDecision increments the scale-decision counter for the given reason. Nil-safe
+// so pollerAutoscalers constructed directly in tests (without the map) don't panic.
+func (prh *pollerAutoscaler) recordDecision(reason string) {
+	if prh.decision == nil {
+		return
+	}
+	if c, ok := prh.decision[reason]; ok {
+		c.Inc(1)
+	}
 }
 
 func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
@@ -944,11 +1005,17 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 		ds := sd.pollRequestDeltaSuggestion
 		if ds > 0 {
 			if prh.scaleUpAllowed.Load() {
+				prh.recordDecision(pollerScaleServerUp)
 				prh.updateTarget(func(target int64) int64 {
 					return target + int64(ds)
 				})
+			} else {
+				// Server asked to scale up but the throughput gate is closed, so the
+				// +1 is dropped. No target change — recorded for attribution.
+				prh.recordDecision(pollerScaleServerUpSuppressed)
 			}
 		} else if ds < 0 {
+			prh.recordDecision(pollerScaleServerDown)
 			prh.updateTarget(func(target int64) int64 {
 				return target + int64(ds)
 			})
@@ -958,6 +1025,7 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 		// scaling decisions - otherwise we might never scale up again. If the server
 		// supports poller autoscaling, it's safe to scale down without having seen a
 		// decision.
+		prh.recordDecision(pollerScaleEmptyPollDown)
 		prh.updateTarget(func(target int64) int64 {
 			return target - 1
 		})
@@ -965,22 +1033,27 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 }
 
 func (prh *pollerAutoscaler) updateTarget(f func(int64) int64) {
-	target := prh.target.Load()
-	newTarget := f(target)
-	if newTarget < int64(prh.minPollerCount) {
-		newTarget = int64(prh.minPollerCount)
-	} else if newTarget > int64(prh.maxPollerCount) {
-		newTarget = int64(prh.maxPollerCount)
+	// clampReason records whether the final computed target hit a bound; emitted after
+	// the CAS loop settles. clamp_min/clamp_max fire in addition to the triggering
+	// reason (e.g. an empty_poll_down that lands on the floor also records clamp_min).
+	clamp := func(v int64) (int64, string) {
+		if v < int64(prh.minPollerCount) {
+			return int64(prh.minPollerCount), pollerScaleClampMin
+		} else if v > int64(prh.maxPollerCount) {
+			return int64(prh.maxPollerCount), pollerScaleClampMax
+		}
+		return v, ""
 	}
+	target := prh.target.Load()
+	newTarget, clampReason := clamp(f(target))
 	for !prh.target.CompareAndSwap(target, newTarget) {
 		target = prh.target.Load()
-		newTarget = f(target)
-		if newTarget < int64(prh.minPollerCount) {
-			newTarget = int64(prh.minPollerCount)
-		} else if newTarget > int64(prh.maxPollerCount) {
-			newTarget = int64(prh.maxPollerCount)
-		}
+		newTarget, clampReason = clamp(f(target))
 	}
+	if clampReason != "" {
+		prh.recordDecision(clampReason)
+	}
+	prh.targetGauge.Update(float64(newTarget))
 	if prh.targetChangedCallback != nil {
 		traceLog(func() {
 			prh.logger.Debug("Updating poller autoscaler target", "target", int(newTarget))
@@ -996,10 +1069,12 @@ func (prh *pollerAutoscaler) handleError(err error) {
 	if prh.everSawScalingDecision.Load() || prh.serverSupportsAutoscaling.Load() {
 		_, resourceExhausted := err.(*serviceerror.ResourceExhausted)
 		if resourceExhausted {
+			prh.recordDecision(pollerScaleReHalve)
 			prh.updateTarget(func(target int64) int64 {
 				return target / 2
 			})
 		} else {
+			prh.recordDecision(pollerScaleErrorDown)
 			prh.updateTarget(func(target int64) int64 {
 				return target - 1
 			})
@@ -1028,7 +1103,18 @@ func (prh *pollerAutoscaler) run(stopCh <-chan struct{}) {
 func (prh *pollerAutoscaler) newPeriod() {
 	ingestedThisPeriod := prh.ingestedThisPeriod.Swap(0)
 	ingestedLastPeriod := prh.ingestedLastPeriod.Swap(ingestedThisPeriod)
-	prh.scaleUpAllowed.Store(float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1)
+	allowed := float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1
+	prh.scaleUpAllowed.Store(allowed)
+	if prh.scaleUpAllowedGauge != nil {
+		prh.scaleUpAllowedGauge.Update(boolToFloat(allowed))
+	}
+}
+
+func boolToFloat(b bool) float64 {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func newAutoscalingTaskPollerRunner(autoscaler *pollerAutoscaler) *autoscalingTaskPollerRunner {
@@ -1080,6 +1166,7 @@ func (r *autoscalingTaskPollerRunner) activePolls() int {
 func newScalableTaskPoller(
 	poller taskPoller,
 	logger log.Logger,
+	metricsHandler metrics.Handler,
 	pollerBehavior PollerBehavior,
 	taskPollerType string,
 	serverSupportsAutoscaling *atomic.Bool,
@@ -1095,6 +1182,8 @@ func newScalableTaskPoller(
 			maxPollerCount:            p.maximumNumberOfPollers,
 			minPollerCount:            p.minimumNumberOfPollers,
 			logger:                    logger,
+			metricsHandler:            metricsHandler,
+			pollerType:                taskPollerType,
 			serverSupportsAutoscaling: serverSupportsAutoscaling,
 		})
 		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler)

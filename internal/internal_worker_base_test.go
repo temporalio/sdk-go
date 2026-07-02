@@ -43,6 +43,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerSetsTaskPollerType() 
 	poller := newScalableTaskPoller(
 		blockingPoller,
 		ilog.NewNopLogger(),
+		metrics.NopHandler,
 		behavior,
 		metrics.PollerTypeWorkflowStickyTask,
 		&atomic.Bool{},
@@ -55,6 +56,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerUsesDynamicRunnerOnly
 	autoscalingPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
+		metrics.NopHandler,
 		&pollerBehaviorAutoscaling{
 			initialNumberOfPollers: 1,
 			maximumNumberOfPollers: 2,
@@ -69,6 +71,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerUsesDynamicRunnerOnly
 	simpleMaximumPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
+		metrics.NopHandler,
 		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 2},
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
@@ -95,6 +98,7 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 	nonStickyPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
+		metrics.NopHandler,
 		autoscalingBehavior,
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
@@ -104,6 +108,7 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 	stickyPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
+		metrics.NopHandler,
 		autoscalingBehavior,
 		metrics.PollerTypeWorkflowStickyTask,
 		&atomic.Bool{},
@@ -113,6 +118,7 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 	mixedPoller := newScalableTaskPoller(
 		newBlockingProbeTaskPoller(),
 		ilog.NewNopLogger(),
+		metrics.NopHandler,
 		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 1},
 		metrics.PollerTypeWorkflowTask,
 		&atomic.Bool{},
@@ -227,6 +233,45 @@ func (s *PollerAutoscalerSuite) TestScaleUpOnDelay() {
 
 }
 
+// TestPollerTargetMetric verifies the temporal_poller_target gauge is emitted with
+// the poller-type tag, seeded with the initial target at construction, and updated
+// as the autoscaling target changes (here, halved on ResourceExhausted errors).
+func (s *PollerAutoscalerSuite) TestPollerTargetMetric() {
+	const initialPollers = 16
+	capturingHandler := metrics.NewCapturingHandler()
+	serverSupportsAutoscaling := &atomic.Bool{}
+	serverSupportsAutoscaling.Store(true)
+
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
+		initialPollerCount:        initialPollers,
+		maxPollerCount:            100,
+		minPollerCount:            1,
+		metricsHandler:            capturingHandler,
+		pollerType:                metrics.PollerTypeActivityTask,
+		serverSupportsAutoscaling: serverSupportsAutoscaling,
+	})
+
+	pollerTarget := func() float64 {
+		for _, g := range capturingHandler.Gauges() {
+			if g.Name == metrics.PollerTarget && g.Tags[metrics.PollerTypeTagName] == metrics.PollerTypeActivityTask {
+				return g.Value()
+			}
+		}
+		s.FailNow("temporal_poller_target gauge not found for activity_task")
+		return 0
+	}
+
+	// Initial target is emitted at construction.
+	s.Equal(float64(initialPollers), pollerTarget())
+
+	// The gauge tracks the target as it halves on ResourceExhausted errors.
+	resourceExhausted := serviceerror.NewResourceExhausted(enumspb.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT, "")
+	ps.handleError(resourceExhausted)
+	s.Equal(float64(8), pollerTarget())
+	ps.handleError(resourceExhausted)
+	s.Equal(float64(4), pollerTarget())
+}
+
 func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() {
 	behavior := &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: 2,
@@ -235,7 +280,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 	}
 
 	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
 		maxTaskPerSecond: 1000,
@@ -279,7 +324,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}
 
 	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
 
 	bw := newBaseWorker(baseWorkerOptions{
 		slotSupplier:     &testSlotSupplier{},
@@ -321,7 +366,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingDoesNotHoldSlotWhileWaitingForP
 	}
 
 	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "", nil)
 	slotSupplier := newLimitedSlotSupplier(2)
 
 	bw := newBaseWorker(baseWorkerOptions{
@@ -362,7 +407,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingBalancerDoesNotHoldSlotsWhileBl
 	}
 
 	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "a", nil)
+	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), metrics.NopHandler, behavior, "a", nil)
 	slotSupplier := newLimitedSlotSupplier(2)
 
 	bw := newBaseWorker(baseWorkerOptions{
@@ -634,6 +679,7 @@ func TestAutoscalingTaskNotDroppedDuringShutdown(t *testing.T) {
 	poller := newScalableTaskPoller(
 		tp,
 		ilog.NewNopLogger(),
+		metrics.NopHandler,
 		&pollerBehaviorAutoscaling{
 			initialNumberOfPollers: 1,
 			maximumNumberOfPollers: 2,
@@ -1191,6 +1237,7 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {
 			poller := newScalableTaskPoller(
 				newBlockingProbeTaskPoller(),
 				ilog.NewNopLogger(),
+				metrics.NopHandler,
 				behavior,
 				tc.ptype,
 				&atomic.Bool{},
