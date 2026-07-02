@@ -16,9 +16,10 @@ var _ client.MetricsHandler = MetricsHandler{}
 // MetricsHandler is an implementation of client.MetricsHandler
 // for open telemetry.
 type MetricsHandler struct {
-	meter      metric.Meter
-	attributes attribute.Set
-	onError    func(error)
+	meter                metric.Meter
+	attributes           attribute.Set
+	onError              func(error)
+	useMonotonicCounters bool
 }
 
 // MetricsHandlerOptions are options provided to NewMetricsHandler.
@@ -34,6 +35,13 @@ type MetricsHandlerOptions struct {
 	//
 	// Optional: Defaults to panicking on any error.
 	OnError func(error)
+	// UseMonotonicCounters controls whether counters are created as monotonic
+	// Int64Counter (true) or non-monotonic Int64UpDownCounter (false).
+	// When true, Prometheus will correctly report counters with the _total
+	// suffix instead of treating them as gauges.
+	//
+	// Optional: Defaults to false for backward compatibility.
+	UseMonotonicCounters bool
 }
 
 // NewMetricsHandler returns a client.MetricsHandler that is backed by the given Meter
@@ -45,9 +53,10 @@ func NewMetricsHandler(options MetricsHandlerOptions) MetricsHandler {
 		options.OnError = func(err error) { panic(err) }
 	}
 	return MetricsHandler{
-		meter:      options.Meter,
-		attributes: options.InitialAttributes,
-		onError:    options.OnError,
+		meter:                options.Meter,
+		attributes:           options.InitialAttributes,
+		onError:              options.OnError,
+		useMonotonicCounters: options.UseMonotonicCounters,
 	}
 }
 
@@ -89,13 +98,24 @@ func (m MetricsHandler) WithTags(tags map[string]string) client.MetricsHandler {
 		attributes = append(attributes, attribute.String(k, v))
 	}
 	return MetricsHandler{
-		meter:      m.meter,
-		attributes: attribute.NewSet(attributes...),
-		onError:    m.onError,
+		meter:                m.meter,
+		attributes:           attribute.NewSet(attributes...),
+		onError:              m.onError,
+		useMonotonicCounters: m.useMonotonicCounters,
 	}
 }
 
 func (m MetricsHandler) Counter(name string) client.MetricsCounter {
+	if m.useMonotonicCounters {
+		c, err := m.meter.Int64Counter(name)
+		if err != nil {
+			m.onError(err)
+			return client.MetricsNopHandler.Counter(name)
+		}
+		return metrics.CounterFunc(func(d int64) {
+			c.Add(context.Background(), d, metric.WithAttributeSet(m.attributes))
+		})
+	}
 	c, err := m.meter.Int64UpDownCounter(name)
 	if err != nil {
 		m.onError(err)
