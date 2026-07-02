@@ -22,7 +22,7 @@ func TestStartDevServer_Defaults(t *testing.T) {
 }
 
 func TestStartDevServer_SpecificVersion(t *testing.T) {
-	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{CachedDownload: testsuite.CachedDownload{Version: "v0.3.0"}})
+	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{CachedDownload: testsuite.CachedDownload{Version: "v1.6.1"}})
 	require.NoError(t, err)
 	defer func() { _ = server.Stop() }()
 	info, err := server.Client().WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})

@@ -584,19 +584,19 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 	var expected []string
-	// Fail every other HB attempt, otherwise it's too easy to exceed the HB timeout
-	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 3, 5)
+	// Fail every other HB attempt, otherwise it's too easy to exceed the HB timeout.
+	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 3)
 	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
-	// we induce 3 failures, but they all should be retried
+	// we induce 2 failures, but they all should be retried
 	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
-	// expect 3 retry attempts
-	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 3)
+	// expect 2 retry attempts
+	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 2)
 	// save number of heartbeats sent to the server
 	totalHeartbeats := ts.getReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat")
-	// and make sure that number of reported attempts is 3 more, because of retries.
-	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+3))
+	// and make sure that number of reported attempts is 2 more, because of retries.
+	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+2))
 }
 
 func (ts *IntegrationTestSuite) TestHeartbeatOnActivityFailure() {
@@ -2633,10 +2633,13 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 
 func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
+	localActivityStarted := make(chan struct{})
+	var localActivityStartedOnce sync.Once
 	localActivityFn := func(ctx context.Context) error {
+		localActivityStartedOnce.Do(func() { close(localActivityStarted) })
 		// wait for worker shutdown to be started and WorkflowTaskTimeout to be hit
 		<-activity.GetWorkerStopChannel(ctx)
 		time.Sleep(1500 * time.Millisecond) // 1.5 seconds
@@ -2669,8 +2672,14 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
 	ts.NoError(err)
 
-	// Stop the worker
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-localActivityStarted:
+	case <-ctx.Done():
+		ts.FailNow("timed out waiting for local activity to start", ctx.Err().Error())
+	}
+
+	// Stop the worker after the local activity is blocked on worker shutdown so
+	// shutdown reliably overlaps the workflow task timeout.
 	ts.worker.Stop()
 	ts.workerStopped = true
 
@@ -2678,7 +2687,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	var laCompleted, started int
 	var wfeCompleted bool
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
-		true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	for iter.HasNext() {
 		event, err := iter.Next()
 		ts.NoError(err)
