@@ -15,7 +15,7 @@
 //
 // The `package` declaration below is replaced with the generated package name
 // when this file is emitted alongside `api.go`.
-package nexussystem
+package workflow
 
 import (
 	"time"
@@ -23,10 +23,9 @@ import (
 	common "go.temporal.io/api/common/v1"
 	taskqueue "go.temporal.io/api/taskqueue/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
-
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
-
-	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/temporal"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
@@ -66,7 +65,7 @@ func TaskQueueFromProto(tq *taskqueue.TaskQueue) *string {
 
 // --- RetryPolicy (temporal.api.common.v1.RetryPolicy) ---
 
-func RetryPolicyToProto(p *internal.RetryPolicy) *common.RetryPolicy {
+func RetryPolicyToProto(p *temporal.RetryPolicy) *common.RetryPolicy {
 	if p == nil {
 		return nil
 	}
@@ -84,11 +83,11 @@ func RetryPolicyToProto(p *internal.RetryPolicy) *common.RetryPolicy {
 	return proto
 }
 
-func RetryPolicyFromProto(p *common.RetryPolicy) *internal.RetryPolicy {
+func RetryPolicyFromProto(p *common.RetryPolicy) *temporal.RetryPolicy {
 	if p == nil {
 		return nil
 	}
-	policy := internal.RetryPolicy{
+	policy := temporal.RetryPolicy{
 		BackoffCoefficient:     p.GetBackoffCoefficient(),
 		MaximumAttempts:        p.GetMaximumAttempts(),
 		NonRetryableErrorTypes: p.GetNonRetryableErrorTypes(),
@@ -104,7 +103,7 @@ func RetryPolicyFromProto(p *common.RetryPolicy) *internal.RetryPolicy {
 
 // --- Priority (temporal.api.common.v1.Priority) ---
 
-func PriorityToProto(p *internal.Priority) *common.Priority {
+func PriorityToProto(p *temporal.Priority) *common.Priority {
 	if p == nil {
 		return nil
 	}
@@ -115,11 +114,11 @@ func PriorityToProto(p *internal.Priority) *common.Priority {
 	}
 }
 
-func PriorityFromProto(p *common.Priority) *internal.Priority {
+func PriorityFromProto(p *common.Priority) *temporal.Priority {
 	if p == nil {
 		return nil
 	}
-	return &internal.Priority{
+	return &temporal.Priority{
 		PriorityKey:    int(p.GetPriorityKey()),
 		FairnessKey:    p.GetFairnessKey(),
 		FairnessWeight: p.GetFairnessWeight(),
@@ -230,7 +229,7 @@ func SearchAttributesToProto(_ *string) *common.SearchAttributes {
 // Versioning-override encoding is deferred. This placeholder keeps the bindings
 // compiling; populate it when versioning-override support lands.
 
-func VersioningOverrideToProto(_ *internal.VersioningOverride) *workflowpb.VersioningOverride {
+func VersioningOverrideToProto(_ *client.VersioningOverride) *workflowpb.VersioningOverride {
 	return nil
 }
 
