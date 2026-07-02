@@ -6,10 +6,16 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
+	"go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/workflow"
+)
+
+const (
+	nexusHeaderOperationId = "nexus-operation-id" // draft-review: check if this belongs in some other package/use this in workflow as well
 )
 
 // StartTemporalOperationOptions are options provided to the Start callback of a Temporal Nexus operation.
@@ -41,6 +47,16 @@ type StartTemporalOperationOptions struct {
 type CancelTemporalWorkflowRunOptions struct {
 	// WorkflowID extracted from the operation token.
 	WorkflowID string
+}
+
+// CancelTemporalUpdateWorkflowOptions are options provided to CancelWorkflowUpdate callback
+// of a Temporal Nexus Operation
+//
+// NOTE: Experimental
+type CancelTemporalUpdateWorkflowOptions struct {
+	// WorkflowID extracted from the operation token.
+	WorkflowID string
+	UpdateID   string
 }
 
 // TemporalOperationResult encapsulates either a synchronous result or an asynchronous operation token.
@@ -155,6 +171,158 @@ func StartUntypedWorkflow[R any](
 	return NewAsyncResult[R](handle.token()), nil
 }
 
+// StartUpdateWorkflow starts a type-safe workflow update run for a Nexus operation
+// linking the execution chain to the Nexus operation (callbacks, links, request ID).
+// It returns either an async result with a workflow-run operation token for pending
+// operations or a sync response if the update is already completed(retried updates)
+//
+// These are free functions because Go does not allow generic methods on non-generic structs.
+//
+// NOTE: Experimental
+func StartUpdateWorkflow[R any](
+	ctx context.Context,
+	nc NexusClient,
+	updateWorkflowOptions client.UpdateWorkflowOptions,
+) (TemporalOperationResult[R], error) {
+	if updateWorkflowOptions.UpdateID == "" {
+		// If an Update ID is not provided, use the RequestID. This is done to protect
+		// against cases where an unset UpdateID request with the same RequestID is
+		// retried due to n/w failure and gets new IDs in createUpdateWorkflowInput
+		updateWorkflowOptions.UpdateID = nc.startOperationOptions.RequestID
+	}
+
+	if err := validateUpdateWorkflowNexusOperation(updateWorkflowOptions); err != nil {
+		return TemporalOperationResult[R]{}, &nexus.OperationError{
+			State:   nexus.OperationStateFailed,
+			Message: err.Error(),
+			Cause:   err,
+		}
+	}
+
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(
+			nexus.HandlerErrorTypeInternal, "internal error")
+	}
+
+	var encodedToken string
+	opFailed := true
+	if nc.startOperationOptions.CallbackURL == "" {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
+			"callback URL required for async UpdateWorkflow operation invocations")
+	}
+	if nc.asyncStarted == nil {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal,
+			"unexpected error initializing async UpdateWorkflow operation")
+	}
+	if !nc.asyncStarted.CompareAndSwap(false, true) {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
+			"only one async operation can be started per operation invocation")
+	}
+	defer func() {
+		if opFailed {
+			nc.asyncStarted.Store(false)
+		}
+	}()
+	token, err := generateUpdateOperationToken(nctx.Namespace, updateWorkflowOptions.WorkflowID,
+		updateWorkflowOptions.UpdateID)
+	if err != nil {
+		return TemporalOperationResult[R]{}, err
+	}
+	encodedToken = token
+
+	links, err := convertNexusLinks(nc.startOperationOptions.Links, GetLogger(ctx))
+	if err != nil {
+		return TemporalOperationResult[R]{}, &nexus.HandlerError{
+			Type:    nexus.HandlerErrorTypeBadRequest,
+			Message: "could not convert links for update workflow",
+			Cause:   err,
+		}
+	}
+	internal.SetLinksOnNexusOperation(&updateWorkflowOptions, links)
+	internal.SetRequestIDOnNexusOperation(&updateWorkflowOptions, nc.startOperationOptions.RequestID)
+	header := nc.startOperationOptions.CallbackHeader
+	if header == nil {
+		header = make(nexus.Header)
+	}
+	// This field is expected to be populated by servers older than 1.27.0.
+	// draft-review: can this check be removed now? at least for UpdateWorkflow
+	header.Set(nexusHeaderOperationId, encodedToken)
+	header.Set(nexus.HeaderOperationToken, encodedToken)
+	internal.SetCallbacksOnNexusOperation(&updateWorkflowOptions, []*common.Callback{
+		{
+			Variant: &common.Callback_Nexus_{
+				Nexus: &common.Callback_Nexus{
+					Url:    nc.startOperationOptions.CallbackURL,
+					Header: header,
+				},
+			},
+			Links: links,
+		},
+	})
+
+	responseInfo := internal.SetResponseInfoOnUpdateWorkflowOptions(&updateWorkflowOptions)
+
+	handle, err := GetClient(ctx).UpdateWorkflow(ctx, updateWorkflowOptions)
+	if err != nil {
+		return TemporalOperationResult[R]{}, err
+	}
+
+	if internal.IsUpdateWorkflowCompleted(handle) {
+		// if workflow handle is completed and it has an error => its an unretriable error
+		// like validation failing on the update handler
+		if err := handle.Get(ctx, nil); err != nil {
+			return TemporalOperationResult[R]{}, &nexus.OperationError{
+				State:   nexus.OperationStateFailed,
+				Message: err.Error(),
+				Cause:   err,
+			}
+		}
+	}
+
+	if responseInfo.Link == nil {
+		return TemporalOperationResult[R]{}, &nexus.HandlerError{
+			Type:  nexus.HandlerErrorTypeInternal,
+			Cause: errors.New("unexpected error retrieving links from UpdateWorkflow response"),
+		}
+	}
+
+	nexus.AddHandlerLinks(ctx, ConvertLinkWorkflowEventToNexusLink(responseInfo.Link.GetWorkflowEvent()))
+
+	if internal.IsUpdateWorkflowCompleted(handle) {
+		// if the update workflow handle is completed already, return a sync response.
+		// This is required for correctness on retried UpdateWorkflow rpc with same updateID.
+		// Also handles case where multiple update workflows with same updateID are pending-
+		// in that case, both get back same token(updateID+workflowID+ns) as async result
+		var result R
+		if err := handle.Get(ctx, &result); err != nil {
+			return TemporalOperationResult[R]{}, err
+		}
+		return NewSyncResult(result), nil
+	}
+	opFailed = false
+	return NewAsyncResult[R](encodedToken), nil
+}
+
+// validations to be performed specifically for UpdateWorkflow as a Nexus Operation.
+// Acts as a no-retriable fast fail for cases where invalid configurations were
+// submitted that would have (100%) failed later on required because there isnt a
+// way for handler to otherwise tell that something has failed in a non-recoverable way.
+// NOTE: UpdateID will never be empty now that RequestID for nexus op is generated if empty
+// draft-review: should there be some kind of error from handler that can inform better
+func validateUpdateWorkflowNexusOperation(u client.UpdateWorkflowOptions) error {
+	switch {
+	case u.WorkflowID == "":
+		return errors.New("workflow ID cannot be empty")
+	case u.UpdateName == "":
+		return errors.New("update name cannot be empty")
+	case u.WaitForStage != client.WorkflowUpdateStageAccepted:
+		return errors.New("nexus op workflow updates only support WorkflowUpdateStageAccepted for async updates")
+	default:
+		return nil
+	}
+}
+
 // TemporalOperationOptions configures a generic Temporal Nexus operation.
 //
 // Asynchronous workflow-backed operation:
@@ -189,6 +357,10 @@ type TemporalOperationOptions[I, O any] struct {
 	// It receives the Temporal client, the workflow-run options extracted from the token, and the
 	// Nexus cancel options. If nil, defaults to cancelling the workflow via the Temporal client.
 	CancelWorkflowRun func(ctx context.Context, c client.Client, options CancelTemporalWorkflowRunOptions, cancelOptions nexus.CancelOperationOptions) error
+	// CancelWorkflowUpdate handles cancel for UpdateWorkflow operation tokens.
+	// It receives the Temporal client, the update-workflow options extracted from the token, and the
+	// Nexus cancel options. If nil, will error out as there is no default behavior for cancelling an UpdateWorkflow.
+	CancelWorkflowUpdate func(ctx context.Context, c client.Client, options CancelTemporalUpdateWorkflowOptions, cancelOptions nexus.CancelOperationOptions) error
 }
 
 // NewTemporalOperation creates a generic Nexus operation backed by Temporal.
@@ -208,6 +380,9 @@ func NewTemporalOperation[I, O any](opts TemporalOperationOptions[I, O]) (nexus.
 	if opts.CancelWorkflowRun == nil {
 		opts.CancelWorkflowRun = defaultCancelWorkflowRun
 	}
+	if opts.CancelWorkflowUpdate == nil {
+		opts.CancelWorkflowUpdate = defaultCancelWorkflowUpdate
+	}
 	return &temporalOperation[I, O]{options: opts}, nil
 }
 
@@ -226,6 +401,14 @@ func MustNewTemporalOperation[I, O any](opts TemporalOperationOptions[I, O]) nex
 // defaultCancelWorkflowRun is the default cancel handler for workflow-run operation tokens.
 func defaultCancelWorkflowRun(ctx context.Context, c client.Client, options CancelTemporalWorkflowRunOptions, _ nexus.CancelOperationOptions) error {
 	return c.CancelWorkflow(ctx, options.WorkflowID, "")
+}
+
+// default cancel function for UpdateWorkflow returns an error
+func defaultCancelWorkflowUpdate(ctx context.Context, c client.Client, options CancelTemporalUpdateWorkflowOptions, _ nexus.CancelOperationOptions) error {
+	return &nexus.HandlerError{
+		Type:  nexus.HandlerErrorTypeNotImplemented,
+		Cause: errors.New("cannot cancel an UpdateWorkflow operation"),
+	}
 }
 
 // temporalOperation implements nexus.Operation[I, O] for a generic Temporal-backed operation.
@@ -250,6 +433,10 @@ func (o *temporalOperation[I, O]) Start(
 
 	if _, ok := internal.NexusOperationContextFromGoContext(ctx); !ok {
 		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+	}
+
+	if options.RequestID == "" {
+		options.RequestID = uuid.NewString()
 	}
 
 	nc := NexusClient{
@@ -298,6 +485,19 @@ func (o *temporalOperation[I, O]) Cancel(ctx context.Context, token string, opti
 		}
 		return o.options.CancelWorkflowRun(ctx, GetClient(ctx), CancelTemporalWorkflowRunOptions{
 			WorkflowID: wfToken.WorkflowID,
+		}, options)
+	case operationTokenTypeUpdateWorkflow:
+		uwfToken, err := loadUpdateWorkflowOperationToken(token)
+		if err != nil {
+			return &nexus.HandlerError{
+				Type:    nexus.HandlerErrorTypeBadRequest,
+				Message: "invalid operation token",
+				Cause:   err,
+			}
+		}
+		return o.options.CancelWorkflowUpdate(ctx, GetClient(ctx), CancelTemporalUpdateWorkflowOptions{
+			WorkflowID: uwfToken.WorkflowID,
+			UpdateID:   uwfToken.UpdateID,
 		}, options)
 	default:
 		return nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "unknown operation token type: %d", tokenType)
