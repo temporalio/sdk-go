@@ -306,10 +306,11 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 
 	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected concurrency to reduce to minimum")
 
-	require.Never(s.T(), func() bool {
-		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
-		return readAutoscalingPollerState(poller.autoscalingRunner) == 0
-	}, 200*time.Millisecond, 10*time.Millisecond, "should not scale below minimum")
+	for range 5 {
+		assert.Equal(s.T(), int64(1), poller.pollerAutoscaler.target.Load(), "should not scale target below minimum")
+		blockingPoller.Allow(1)
+		eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected concurrency to recover to minimum")
+	}
 }
 
 func (s *ScalableTaskPollerSuite) TestAutoscalingDoesNotHoldSlotWhileWaitingForPollCapacity() {
@@ -816,7 +817,7 @@ func TestTaskNotProcessedDuringLegacyShutdown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			taskProcessed := make(chan struct{}, 1)
-			pollStarted := make(chan struct{})
+			pollStarted := make(chan struct{}, 1)
 
 			// This poller simulates a poll returning a task after shutdown has
 			// already started. Legacy shutdown should not dispatch that task.
@@ -841,7 +842,11 @@ func TestTaskNotProcessedDuringLegacyShutdown(t *testing.T) {
 			})
 
 			bw.Start()
-			<-pollStarted
+			select {
+			case <-pollStarted:
+			case <-time.After(5 * time.Second):
+				t.Fatal("poller did not start in time")
+			}
 
 			// AggregatedWorker.Stop sets noRepoll before stopping base workers.
 			bw.noRepoll.Store(true)

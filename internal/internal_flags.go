@@ -113,15 +113,14 @@ func newSDKFlagSet(capabilities *workflowservice.GetSystemInfoResponse_Capabilit
 	}
 }
 
-// tryUse returns true if this flag may currently be used. If record is true, always returns
-// true and records the flag as being used.
+// tryUse returns true if this flag may currently be used.
 func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
-	if !sf.capabilities.GetSdkMetadata() {
-		return false
-	}
-
 	if sf.currentFlags[flag] || sf.newFlags[flag] {
 		return true
+	}
+
+	if !sf.capabilities.GetSdkMetadata() {
+		return false
 	}
 
 	if !record {
@@ -138,9 +137,6 @@ func (sf *sdkFlags) tryUse(flag sdkFlag, record bool) bool {
 
 // set marks a flag as in current use regardless of replay status.
 func (sf *sdkFlags) set(flags ...sdkFlag) {
-	if !sf.capabilities.GetSdkMetadata() {
-		return
-	}
 	for _, flag := range flags {
 		sf.currentFlags[flag] = true
 	}
