@@ -156,7 +156,8 @@ func requiredInterceptors(
 	case nil, *GrpcCompressionGzip:
 		interceptors = append(interceptors, newGzipDowngradeInterceptor())
 	}
-	interceptors = append(interceptors,
+	interceptors = append(
+		interceptors,
 		// Performs retries *IF* retry options are set for the call.
 		grpc_retry.UnaryClientInterceptor(),
 		// Prevents retrying grpc message too large errors, while allowing retries of other resource exhausted errors.
