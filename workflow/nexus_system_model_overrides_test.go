@@ -131,7 +131,7 @@ func TestSystemNexusSignalWithStartUsesConverters(t *testing.T) {
 	searchAttributes := temporal.NewSearchAttributes(searchAttributeKey.ValueSet("search-value"))
 
 	env.ExecuteWorkflow(func(ctx workflow.Context) (*workflow.SignalWithStartWorkflowResponse, error) {
-		return workflow.SignalWithStartWorkflow(ctx, "TargetWorkflow", "workflow-id", "task-queue", "signal-name", workflow.SignalWithStartWorkflowOptions{
+		fut := workflow.SignalWithStartWorkflow(ctx, "TargetWorkflow", "workflow-id", "task-queue", "signal-name", workflow.SignalWithStartWorkflowOptions{
 			Args:               []any{"workflow-arg"},
 			SignalArgs:         []any{"signal-arg"},
 			Memo:               map[string]any{"memo-key": "memo-value"},
@@ -142,6 +142,11 @@ func TestSystemNexusSignalWithStartUsesConverters(t *testing.T) {
 				StaticDetails: "details",
 			},
 		})
+		var result workflow.SignalWithStartWorkflowResponse
+		if err := fut.Get(ctx, &result); err != nil {
+			return nil, err
+		}
+		return &result, nil
 	})
 
 	require.True(t, env.IsWorkflowCompleted())
