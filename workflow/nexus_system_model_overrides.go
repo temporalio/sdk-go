@@ -15,9 +15,12 @@
 package workflow
 
 import (
+	"fmt"
 	"time"
 
 	common "go.temporal.io/api/common/v1"
+	deployment "go.temporal.io/api/deployment/v1"
+	enums "go.temporal.io/api/enums/v1"
 	taskqueue "go.temporal.io/api/taskqueue/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/sdk/client"
@@ -28,43 +31,43 @@ import (
 
 // --- Duration (google.protobuf.Duration) ---
 
-func durationToProto(d *time.Duration) *durationpb.Duration {
+func durationToProto(_ Context, d *time.Duration) (*durationpb.Duration, error) {
 	if d == nil {
-		return nil
+		return nil, nil
 	}
-	return durationpb.New(*d)
+	return durationpb.New(*d), nil
 }
 
-func durationFromProto(d *durationpb.Duration) *time.Duration {
+func durationFromProto(_ Context, d *durationpb.Duration) (*time.Duration, error) {
 	if d == nil {
-		return nil
+		return nil, nil
 	}
 	value := d.AsDuration()
-	return &value
+	return &value, nil
 }
 
 // --- TaskQueue (temporal.api.taskqueue.v1.TaskQueue) ---
 
-func taskQueueToProto(name *string) *taskqueue.TaskQueue {
+func taskQueueToProto(_ Context, name *string) (*taskqueue.TaskQueue, error) {
 	if name == nil {
-		return nil
+		return nil, nil
 	}
-	return &taskqueue.TaskQueue{Name: *name}
+	return &taskqueue.TaskQueue{Name: *name}, nil
 }
 
-func taskQueueFromProto(tq *taskqueue.TaskQueue) *string {
+func taskQueueFromProto(_ Context, tq *taskqueue.TaskQueue) (*string, error) {
 	if tq == nil {
-		return nil
+		return nil, nil
 	}
 	value := tq.GetName()
-	return &value
+	return &value, nil
 }
 
 // --- RetryPolicy (temporal.api.common.v1.RetryPolicy) ---
 
-func retryPolicyToProto(p *temporal.RetryPolicy) *common.RetryPolicy {
+func retryPolicyToProto(_ Context, p *temporal.RetryPolicy) (*common.RetryPolicy, error) {
 	if p == nil {
-		return nil
+		return nil, nil
 	}
 	proto := &common.RetryPolicy{
 		BackoffCoefficient:     p.BackoffCoefficient,
@@ -77,12 +80,12 @@ func retryPolicyToProto(p *temporal.RetryPolicy) *common.RetryPolicy {
 	if p.MaximumInterval != 0 {
 		proto.MaximumInterval = durationpb.New(p.MaximumInterval)
 	}
-	return proto
+	return proto, nil
 }
 
-func retryPolicyFromProto(p *common.RetryPolicy) *temporal.RetryPolicy {
+func retryPolicyFromProto(_ Context, p *common.RetryPolicy) (*temporal.RetryPolicy, error) {
 	if p == nil {
-		return nil
+		return nil, nil
 	}
 	policy := temporal.RetryPolicy{
 		BackoffCoefficient:     p.GetBackoffCoefficient(),
@@ -95,139 +98,182 @@ func retryPolicyFromProto(p *common.RetryPolicy) *temporal.RetryPolicy {
 	if interval := p.GetMaximumInterval(); interval != nil {
 		policy.MaximumInterval = interval.AsDuration()
 	}
-	return &policy
+	return &policy, nil
 }
 
 // --- Priority (temporal.api.common.v1.Priority) ---
 
-func priorityToProto(p *temporal.Priority) *common.Priority {
+func priorityToProto(_ Context, p *temporal.Priority) (*common.Priority, error) {
 	if p == nil {
-		return nil
+		return nil, nil
 	}
 	return &common.Priority{
 		PriorityKey:    int32(p.PriorityKey),
 		FairnessKey:    p.FairnessKey,
 		FairnessWeight: p.FairnessWeight,
-	}
+	}, nil
 }
 
-func priorityFromProto(p *common.Priority) *temporal.Priority {
+func priorityFromProto(_ Context, p *common.Priority) (*temporal.Priority, error) {
 	if p == nil {
-		return nil
+		return nil, nil
 	}
 	return &temporal.Priority{
 		PriorityKey:    int(p.GetPriorityKey()),
 		FairnessKey:    p.GetFairnessKey(),
 		FairnessWeight: p.GetFairnessWeight(),
-	}
+	}, nil
 }
 
 // --- WorkflowType (temporal.api.common.v1.WorkflowType) ---
 
-func workflowTypeToProto(name *string) *common.WorkflowType {
+func workflowTypeToProto(_ Context, name *string) (*common.WorkflowType, error) {
 	if name == nil {
-		return nil
+		return nil, nil
 	}
-	return &common.WorkflowType{Name: *name}
+	return &common.WorkflowType{Name: *name}, nil
 }
 
-func workflowTypeFromProto(t *common.WorkflowType) *string {
+func workflowTypeFromProto(_ Context, t *common.WorkflowType) (*string, error) {
 	if t == nil {
-		return nil
+		return nil, nil
 	}
 	value := t.GetName()
-	return &value
+	return &value, nil
 }
 
 // --- Payload / Payloads (temporal.api.common.v1.Payload[s]) ---
-//
-// Payload conversion uses the default data converter. When running inside a
-// workflow, callers may prefer a converter bound to the workflow's data
-// converter; these helpers provide a context-free default suitable for the
-// common JSON encoding shared with the Python and TypeScript bindings.
-
-func payloadToProto(value any) *common.Payload {
-	payload, err := converter.GetDefaultDataConverter().ToPayload(value)
-	if err != nil {
-		panic(err)
-	}
-	return payload
+func payloadToProto(ctx Context, value any) (*common.Payload, error) {
+	return GetDataConverter(ctx).ToPayload(value)
 }
 
-func payloadFromProto(payload *common.Payload) any {
+func payloadFromProto(ctx Context, payload *common.Payload) (any, error) {
 	if payload == nil {
-		return nil
+		return nil, nil
 	}
 	var value any
-	if err := converter.GetDefaultDataConverter().FromPayload(payload, &value); err != nil {
-		panic(err)
+	if err := GetDataConverter(ctx).FromPayload(payload, &value); err != nil {
+		return nil, err
 	}
-	return value
+	return value, nil
 }
 
-func payloadsToProto(values []any) *common.Payloads {
+func payloadsToProto(ctx Context, values []any) (*common.Payloads, error) {
 	if len(values) == 0 {
-		return nil
+		return nil, nil
 	}
-	payloads, err := converter.GetDefaultDataConverter().ToPayloads(values...)
+	payloads, err := GetDataConverter(ctx).ToPayloads(values...)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return payloads
+	return payloads, nil
 }
 
-func payloadsFromProto(payloads *common.Payloads) []any {
+func payloadsFromProto(ctx Context, payloads *common.Payloads) ([]any, error) {
 	if payloads == nil {
-		return nil
+		return nil, nil
 	}
 	values := make([]any, 0, len(payloads.GetPayloads()))
 	for _, payload := range payloads.GetPayloads() {
-		values = append(values, payloadFromProto(payload))
+		value, err := payloadFromProto(ctx, payload)
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, value)
 	}
-	return values
+	return values, nil
 }
 
 // --- Memo (temporal.api.common.v1.Memo) ---
 
-func memoToProto(memo map[string]any) *common.Memo {
-	if len(memo) == 0 {
-		return nil
+func memoToProto(ctx Context, memo map[string]any) (*common.Memo, error) {
+	if memo == nil {
+		return nil, nil
 	}
 	fields := make(map[string]*common.Payload, len(memo))
 	for key, value := range memo {
-		fields[key] = payloadToProto(value)
+		payload, err := payloadToProto(ctx, value)
+		if err != nil {
+			return nil, fmt.Errorf("encode workflow memo error: %v", err)
+		}
+		fields[key] = payload
 	}
-	return &common.Memo{Fields: fields}
+	return &common.Memo{Fields: fields}, nil
 }
 
-func memoFromProto(memo *common.Memo) map[string]any {
+func memoFromProto(ctx Context, memo *common.Memo) (map[string]any, error) {
 	if memo == nil {
-		return nil
+		return nil, nil
 	}
 	result := make(map[string]any, len(memo.GetFields()))
 	for key, payload := range memo.GetFields() {
-		result[key] = payloadFromProto(payload)
+		value, err := payloadFromProto(ctx, payload)
+		if err != nil {
+			return nil, err
+		}
+		result[key] = value
 	}
-	return result
+	return result, nil
 }
 
 // --- SearchAttributes (temporal.api.common.v1.SearchAttributes) ---
-//
-// Search-attribute encoding is deferred: typed search attributes require the
-// SDK's search-attribute encoder. This placeholder keeps the bindings
-// compiling; populate it when search-attribute support lands.
 
-func searchAttributesToProto(_ *string) *common.SearchAttributes {
-	return nil
+func searchAttributesToProto(_ Context, searchAttributes *temporal.SearchAttributes) (*common.SearchAttributes, error) {
+	if searchAttributes == nil || searchAttributes.Size() == 0 {
+		return nil, nil
+	}
+	fields := make(map[string]*common.Payload, searchAttributes.Size())
+	for key, value := range searchAttributes.GetUntypedValues() {
+		payload, err := converter.GetDefaultDataConverter().ToPayload(value)
+		if err != nil {
+			return nil, fmt.Errorf("encode search attribute [%s] error: %v", key, err)
+		}
+		if payload.GetData() != nil {
+			if payload.Metadata == nil {
+				payload.Metadata = map[string][]byte{}
+			}
+			payload.Metadata["type"] = []byte(key.GetValueType().String())
+		}
+		fields[key.GetName()] = payload
+	}
+	return &common.SearchAttributes{IndexedFields: fields}, nil
 }
 
 // --- VersioningOverride (temporal.api.workflow.v1.VersioningOverride) ---
-//
-// Versioning-override encoding is deferred. This placeholder keeps the bindings
-// compiling; populate it when versioning-override support lands.
 
-func versioningOverrideToProto(_ *client.VersioningOverride) *workflowpb.VersioningOverride {
-	return nil
+func versioningOverrideToProto(_ Context, versioningOverride *client.VersioningOverride) (*workflowpb.VersioningOverride, error) {
+	if versioningOverride == nil || *versioningOverride == nil {
+		return nil, nil
+	}
+	switch v := (*versioningOverride).(type) {
+	case *client.PinnedVersioningOverride:
+		return &workflowpb.VersioningOverride{
+			Behavior:      enums.VERSIONING_BEHAVIOR_PINNED,
+			PinnedVersion: v.Version.DeploymentName + "." + v.Version.BuildID,
+			Deployment: &deployment.Deployment{
+				SeriesName: v.Version.DeploymentName,
+				BuildId:    v.Version.BuildID,
+			},
+			Override: &workflowpb.VersioningOverride_Pinned{
+				Pinned: &workflowpb.VersioningOverride_PinnedOverride{
+					Behavior: workflowpb.VersioningOverride_PINNED_OVERRIDE_BEHAVIOR_PINNED,
+					Version: &deployment.WorkerDeploymentVersion{
+						DeploymentName: v.Version.DeploymentName,
+						BuildId:        v.Version.BuildID,
+					},
+				},
+			},
+		}, nil
+	case *client.AutoUpgradeVersioningOverride:
+		return &workflowpb.VersioningOverride{
+			Behavior: enums.VERSIONING_BEHAVIOR_AUTO_UPGRADE,
+			Override: &workflowpb.VersioningOverride_AutoUpgrade{
+				AutoUpgrade: true,
+			},
+		}, nil
+	default:
+		return nil, nil
+	}
 }
 
 // --- Workflow namespace (sourced field) ---

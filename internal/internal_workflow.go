@@ -1635,6 +1635,14 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	return WithWorkflowContext(ctx, dataConverter)
 }
 
+// GetDataConverterFromWorkflowContext returns the data converter associated
+// with the workflow context, with workflow serialization context applied.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.GetDataConverter]
+func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
+	return getDataConverterFromWorkflowContext(ctx)
+}
+
 func getRegistryFromWorkflowContext(ctx Context) *registry {
 	env := getWorkflowEnvironment(ctx)
 	return env.GetRegistry()
