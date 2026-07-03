@@ -2,6 +2,7 @@
 package workflow
 
 import (
+	"errors"
 	"time"
 
 	enums "go.temporal.io/api/enums/v1"
@@ -179,22 +180,32 @@ func (m signalWithStartWorkflowRequest) toProto(ctx Context) (*workflowservice.S
 
 // --- Operations (internal) ---
 
-func signalWithStartWorkflow(ctx Context, request signalWithStartWorkflowRequest) (*SignalWithStartWorkflowResponse, error) {
+func signalWithStartWorkflow(ctx Context, request signalWithStartWorkflowRequest) NexusOperationFuture {
 	requestProto, err := request.toProto(ctx)
 	if err != nil {
-		return nil, err
+		return nexGenFailedNexusOperationFuture(ctx, err)
 	}
 	c := NewNexusClient("__temporal_system", "temporal.api.workflowservice.v1.WorkflowService")
 	fut := c.ExecuteOperation(ctx, "SignalWithStartWorkflowExecution", requestProto, NexusOperationOptions{})
-	var result workflowservice.SignalWithStartWorkflowExecutionResponse
-	if err := fut.Get(ctx, &result); err != nil {
-		return nil, err
-	}
-	value, err := signalWithStartWorkflowResponseFromProto(ctx, &result)
-	if err != nil {
-		return nil, err
-	}
-	return &value, nil
+	return &nexGenNexusOperationFuture{operation: fut, get: func(ctx Context, valuePtr any) error {
+		if valuePtr == nil {
+			return fut.Get(ctx, nil)
+		}
+		var result workflowservice.SignalWithStartWorkflowExecutionResponse
+		if err := fut.Get(ctx, &result); err != nil {
+			return err
+		}
+		value, err := signalWithStartWorkflowResponseFromProto(ctx, &result)
+		if err != nil {
+			return err
+		}
+		typedValue, ok := valuePtr.(*SignalWithStartWorkflowResponse)
+		if !ok {
+			return nexGenFutureResultTypeError()
+		}
+		*typedValue = value
+		return nil
+	}}
 }
 
 // --- Operations (public API) ---
@@ -300,21 +311,78 @@ type SignalWithStartWorkflowOptions struct {
 
 // Signal a workflow, starting it first if needed.
 //
+// Input id: Unique identifier for the workflow execution.
+// Input taskQueue: Task queue to run the workflow on.
+//
 // Returns: A workflow handle to the started workflow.
-func SignalWithStartWorkflow(
+func SignalWithStartWorkflow[WorkflowF interface {
+	~string | func(string, ...any) any
+}, SignalF interface {
+	~string | func(string, ...any) any
+}](
 	ctx Context,
-	workflow string,
+	workflow WorkflowF,
 	id string,
 	taskQueue string,
-	signal string,
+	signal SignalF,
 	opts SignalWithStartWorkflowOptions,
-) (*SignalWithStartWorkflowResponse, error) {
+) NexusOperationFuture {
 	return signalWithStartWorkflow(ctx, signalWithStartWorkflowRequest{
-		Workflow:           workflow,
+		Workflow:           nexGenFunctionName(workflow),
 		Args:               opts.Args,
 		Id:                 id,
 		TaskQueue:          taskQueue,
-		Signal:             signal,
+		Signal:             nexGenFunctionName(signal),
+		SignalArgs:         opts.SignalArgs,
+		ExecutionTimeout:   opts.ExecutionTimeout,
+		RunTimeout:         opts.RunTimeout,
+		TaskTimeout:        opts.TaskTimeout,
+		RequestId:          opts.RequestId,
+		IdReusePolicy:      opts.IdReusePolicy,
+		IdConflictPolicy:   opts.IdConflictPolicy,
+		RetryPolicy:        opts.RetryPolicy,
+		CronSchedule:       opts.CronSchedule,
+		Memo:               opts.Memo,
+		SearchAttributes:   opts.SearchAttributes,
+		Priority:           opts.Priority,
+		VersioningOverride: opts.VersioningOverride,
+		StartDelay:         opts.StartDelay,
+		UserMetadata:       &opts.UserMetadata,
+	})
+}
+
+// Signal a workflow, starting it first if needed.
+//
+// Input id: Unique identifier for the workflow execution.
+// Input taskQueue: Task queue to run the workflow on.
+// Input args: Arguments for the workflow.
+//
+// Returns: A workflow handle to the started workflow.
+func SignalWithStartWorkflowWithArgs[WorkflowF interface {
+	~string | func(string, ...any) any
+}, SignalF interface {
+	~string | func(string, ...any) any
+}](
+	ctx Context,
+	workflow WorkflowF,
+	id string,
+	taskQueue string,
+	signal SignalF,
+	opts SignalWithStartWorkflowOptions,
+	args ...any,
+) NexusOperationFuture {
+	if len(args) > 0 && opts.Args != nil {
+		return nexGenFailedNexusOperationFuture(ctx, errors.New("cannot specify both positional arguments and args"))
+	}
+	if len(args) == 0 {
+		args = opts.Args
+	}
+	return signalWithStartWorkflow(ctx, signalWithStartWorkflowRequest{
+		Workflow:           nexGenFunctionName(workflow),
+		Args:               args,
+		Id:                 id,
+		TaskQueue:          taskQueue,
+		Signal:             nexGenFunctionName(signal),
 		SignalArgs:         opts.SignalArgs,
 		ExecutionTimeout:   opts.ExecutionTimeout,
 		RunTimeout:         opts.RunTimeout,

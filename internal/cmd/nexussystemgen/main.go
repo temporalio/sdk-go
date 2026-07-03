@@ -40,6 +40,7 @@ func run() error {
 	}
 	witDeps := filepath.Join(filepath.Dir(witMain), "deps")
 	outPkgDir := filepath.Join(repoRoot, "workflow")
+	overrideDst := filepath.Join(outPkgDir, "nexus_system_model_overrides.go")
 
 	tmpDir, err := os.MkdirTemp("", "nexussystemgen-")
 	if err != nil {
@@ -57,10 +58,16 @@ func run() error {
 		return err
 	}
 
+	overrideSupport := filepath.Join(tmpDir, "model_overrides.go")
+	if err := copyFile(overrideSupport, overrideDst); err != nil {
+		return err
+	}
+
 	args := []string{
 		"generate",
 		"--lang", "go",
 		"--input", witMain,
+		"--support-file", overrideSupport,
 	}
 	if info, err := os.Stat(witDeps); err == nil && info.IsDir() {
 		args = append(args, "--input", witDeps)
@@ -80,15 +87,17 @@ func run() error {
 		return fmt.Errorf("running nex-gen: %w", err)
 	}
 
-	serviceFile, err := generatedServiceFile(tmpDir)
-	if err != nil {
+	serviceDst := filepath.Join(outPkgDir, "workflowservice.go")
+	if err := copyFile(serviceDst, filepath.Join(tmpDir, "workflowservice.go")); err != nil {
 		return err
 	}
-	dst := filepath.Join(outPkgDir, serviceFile)
-	if err := copyFile(dst, filepath.Join(tmpDir, serviceFile)); err != nil {
+	if err := gofmt(serviceDst); err != nil {
 		return err
 	}
-	if err := gofmt(dst); err != nil {
+	if err := copyFile(overrideDst, filepath.Join(tmpDir, "model_overrides.go")); err != nil {
+		return err
+	}
+	if err := gofmt(overrideDst); err != nil {
 		return err
 	}
 	return nil
@@ -127,28 +136,6 @@ func nexGenBinary() (string, error) {
 		return path, nil
 	}
 	return "nex-gen", nil
-}
-
-func generatedServiceFile(dir string) (string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", fmt.Errorf("reading generated output dir %s: %w", dir, err)
-	}
-	var serviceFiles []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		if filepath.Ext(name) != ".go" {
-			continue
-		}
-		serviceFiles = append(serviceFiles, name)
-	}
-	if len(serviceFiles) != 1 {
-		return "", fmt.Errorf("expected one generated service file in %s, got %v", dir, serviceFiles)
-	}
-	return serviceFiles[0], nil
 }
 
 func copyFile(dst, src string) error {
