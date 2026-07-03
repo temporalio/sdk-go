@@ -117,7 +117,7 @@ interface model {
   ///   python="temporalio.common.TypedSearchAttributes"
   ///   typescript="common.TypedSearchAttributes"
   ///   typescript-package="@temporalio/common"
-  ///   go="string"
+  ///   go="go.temporal.io/sdk/temporal.SearchAttributes"
   ///   go-to="searchAttributesToProto"
   type search-attributes = placeholder;
 

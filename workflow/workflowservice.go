@@ -48,28 +48,70 @@ type signalWithStartWorkflowRequest struct {
 	// Memo for the workflow.
 	Memo map[string]any
 	// Typed search attributes for the workflow.
-	SearchAttributes *string
+	SearchAttributes temporal.SearchAttributes
 	// Priority of the workflow execution.
 	Priority *temporal.Priority
 	// Override for workflow versioning behavior.
-	VersioningOverride *client.VersioningOverride
+	VersioningOverride client.VersioningOverride
 	// Amount of time to wait before starting the workflow. This does not work with
 	// cron-schedule.
 	StartDelay   *time.Duration
 	UserMetadata *UserMetadata
 }
 
-func (m signalWithStartWorkflowRequest) toProto() *workflowservice.SignalWithStartWorkflowExecutionRequest {
+func (m signalWithStartWorkflowRequest) toProto(ctx Context) (*workflowservice.SignalWithStartWorkflowExecutionRequest, error) {
 	message := &workflowservice.SignalWithStartWorkflowExecutionRequest{}
-	message.WorkflowType = workflowTypeToProto(&m.Workflow)
-	message.Input = payloadsToProto(m.Args)
+	{
+		converted, err := workflowTypeToProto(ctx, &m.Workflow)
+		if err != nil {
+			return nil, err
+		}
+		message.WorkflowType = converted
+	}
+	{
+		converted, err := payloadsToProto(ctx, m.Args)
+		if err != nil {
+			return nil, err
+		}
+		message.Input = converted
+	}
 	message.WorkflowId = m.Id
-	message.TaskQueue = taskQueueToProto(&m.TaskQueue)
+	{
+		converted, err := taskQueueToProto(ctx, &m.TaskQueue)
+		if err != nil {
+			return nil, err
+		}
+		message.TaskQueue = converted
+	}
 	message.SignalName = m.Signal
-	message.SignalInput = payloadsToProto(m.SignalArgs)
-	message.WorkflowExecutionTimeout = durationToProto(m.ExecutionTimeout)
-	message.WorkflowRunTimeout = durationToProto(m.RunTimeout)
-	message.WorkflowTaskTimeout = durationToProto(m.TaskTimeout)
+	{
+		converted, err := payloadsToProto(ctx, m.SignalArgs)
+		if err != nil {
+			return nil, err
+		}
+		message.SignalInput = converted
+	}
+	{
+		converted, err := durationToProto(ctx, m.ExecutionTimeout)
+		if err != nil {
+			return nil, err
+		}
+		message.WorkflowExecutionTimeout = converted
+	}
+	{
+		converted, err := durationToProto(ctx, m.RunTimeout)
+		if err != nil {
+			return nil, err
+		}
+		message.WorkflowRunTimeout = converted
+	}
+	{
+		converted, err := durationToProto(ctx, m.TaskTimeout)
+		if err != nil {
+			return nil, err
+		}
+		message.WorkflowTaskTimeout = converted
+	}
 	if m.RequestId != nil {
 		message.RequestId = (*m.RequestId)
 	}
@@ -79,32 +121,79 @@ func (m signalWithStartWorkflowRequest) toProto() *workflowservice.SignalWithSta
 	if m.IdConflictPolicy != nil {
 		message.WorkflowIdConflictPolicy = enums.WorkflowIdConflictPolicy((*m.IdConflictPolicy))
 	}
-	message.RetryPolicy = retryPolicyToProto(m.RetryPolicy)
+	{
+		converted, err := retryPolicyToProto(ctx, m.RetryPolicy)
+		if err != nil {
+			return nil, err
+		}
+		message.RetryPolicy = converted
+	}
 	if m.CronSchedule != nil {
 		message.CronSchedule = (*m.CronSchedule)
 	}
-	message.Memo = memoToProto(m.Memo)
-	message.SearchAttributes = searchAttributesToProto(m.SearchAttributes)
-	message.Priority = priorityToProto(m.Priority)
-	message.VersioningOverride = versioningOverrideToProto(m.VersioningOverride)
-	message.WorkflowStartDelay = durationToProto(m.StartDelay)
+	{
+		converted, err := memoToProto(ctx, m.Memo)
+		if err != nil {
+			return nil, err
+		}
+		message.Memo = converted
+	}
+	{
+		converted, err := searchAttributesToProto(ctx, &m.SearchAttributes)
+		if err != nil {
+			return nil, err
+		}
+		message.SearchAttributes = converted
+	}
+	{
+		converted, err := priorityToProto(ctx, m.Priority)
+		if err != nil {
+			return nil, err
+		}
+		message.Priority = converted
+	}
+	{
+		converted, err := versioningOverrideToProto(ctx, &m.VersioningOverride)
+		if err != nil {
+			return nil, err
+		}
+		message.VersioningOverride = converted
+	}
+	{
+		converted, err := durationToProto(ctx, m.StartDelay)
+		if err != nil {
+			return nil, err
+		}
+		message.WorkflowStartDelay = converted
+	}
 	if m.UserMetadata != nil {
-		message.UserMetadata = (*m.UserMetadata).toProto()
+		converted, err := (*m.UserMetadata).toProto(ctx)
+		if err != nil {
+			return nil, err
+		}
+		message.UserMetadata = converted
 	}
 	message.Namespace = workflowNamespace()
-	return message
+	return message, nil
 }
 
 // --- Operations (internal) ---
 
 func signalWithStartWorkflow(ctx Context, request signalWithStartWorkflowRequest) (*SignalWithStartWorkflowResponse, error) {
+	requestProto, err := request.toProto(ctx)
+	if err != nil {
+		return nil, err
+	}
 	c := NewNexusClient("__temporal_system", "temporal.api.workflowservice.v1.WorkflowService")
-	fut := c.ExecuteOperation(ctx, "SignalWithStartWorkflowExecution", request.toProto(), NexusOperationOptions{})
+	fut := c.ExecuteOperation(ctx, "SignalWithStartWorkflowExecution", requestProto, NexusOperationOptions{})
 	var result workflowservice.SignalWithStartWorkflowExecutionResponse
 	if err := fut.Get(ctx, &result); err != nil {
 		return nil, err
 	}
-	value := signalWithStartWorkflowResponseFromProto(&result)
+	value, err := signalWithStartWorkflowResponseFromProto(ctx, &result)
+	if err != nil {
+		return nil, err
+	}
 	return &value, nil
 }
 
@@ -120,31 +209,55 @@ type UserMetadata struct {
 	StaticDetails any
 }
 
-func (m UserMetadata) toProto() *sdk.UserMetadata {
+func (m UserMetadata) toProto(ctx Context) (*sdk.UserMetadata, error) {
 	message := &sdk.UserMetadata{}
-	message.Summary = payloadToProto(m.StaticSummary)
-	message.Details = payloadToProto(m.StaticDetails)
-	return message
+	{
+		converted, err := payloadToProto(ctx, m.StaticSummary)
+		if err != nil {
+			return nil, err
+		}
+		message.Summary = converted
+	}
+	{
+		converted, err := payloadToProto(ctx, m.StaticDetails)
+		if err != nil {
+			return nil, err
+		}
+		message.Details = converted
+	}
+	return message, nil
 }
 
-func userMetadataFromProto(proto *sdk.UserMetadata) UserMetadata {
+func userMetadataFromProto(ctx Context, proto *sdk.UserMetadata) (UserMetadata, error) {
 	value := UserMetadata{}
-	value.StaticSummary = payloadFromProto(proto.GetSummary())
-	value.StaticDetails = payloadFromProto(proto.GetDetails())
-	return value
+	{
+		converted, err := payloadFromProto(ctx, proto.GetSummary())
+		if err != nil {
+			return value, err
+		}
+		value.StaticSummary = converted
+	}
+	{
+		converted, err := payloadFromProto(ctx, proto.GetDetails())
+		if err != nil {
+			return value, err
+		}
+		value.StaticDetails = converted
+	}
+	return value, nil
 }
 
 type SignalWithStartWorkflowResponse struct {
 }
 
-func (m SignalWithStartWorkflowResponse) toProto() *workflowservice.SignalWithStartWorkflowExecutionResponse {
+func (m SignalWithStartWorkflowResponse) toProto(ctx Context) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
 	message := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
-	return message
+	return message, nil
 }
 
-func signalWithStartWorkflowResponseFromProto(proto *workflowservice.SignalWithStartWorkflowExecutionResponse) SignalWithStartWorkflowResponse {
+func signalWithStartWorkflowResponseFromProto(ctx Context, proto *workflowservice.SignalWithStartWorkflowExecutionResponse) (SignalWithStartWorkflowResponse, error) {
 	value := SignalWithStartWorkflowResponse{}
-	return value
+	return value, nil
 }
 
 type SignalWithStartWorkflowOptions struct {
@@ -174,11 +287,11 @@ type SignalWithStartWorkflowOptions struct {
 	// Memo for the workflow.
 	Memo map[string]any
 	// Typed search attributes for the workflow.
-	SearchAttributes *string
+	SearchAttributes temporal.SearchAttributes
 	// Priority of the workflow execution.
 	Priority *temporal.Priority
 	// Override for workflow versioning behavior.
-	VersioningOverride *client.VersioningOverride
+	VersioningOverride client.VersioningOverride
 	// Amount of time to wait before starting the workflow. This does not work with
 	// cron-schedule.
 	StartDelay *time.Duration
