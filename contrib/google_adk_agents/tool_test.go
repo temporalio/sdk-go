@@ -25,8 +25,8 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/tool"
 
 	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 )
@@ -229,7 +229,7 @@ func activityAsToolWorkflow(ctx workflow.Context) (runResult, error) {
 // handler flips inWorkflowToolRan and returns a constant result; the tool is not
 // registered worker-side, so it can only succeed by running in-workflow.
 func inWorkflowToolWorkflow(ctx workflow.Context) (runResult, error) {
-	compute, err := funcTool("compute", func(agent.ToolContext, map[string]any) (map[string]any, error) {
+	compute, err := funcTool("compute", func(agent.Context, map[string]any) (map[string]any, error) {
 		inWorkflowToolRan.Store(true)
 		return map[string]any{"result": "computed-in-workflow"}, nil
 	})
@@ -247,7 +247,7 @@ func inWorkflowToolWorkflow(ctx workflow.Context) (runResult, error) {
 // mutatingStateTool returns a worker-side tool that attempts to mutate the
 // read-only state view and reports the resulting error on the channel.
 func mutatingStateTool(report chan<- error) (tool.Tool, error) {
-	return funcTool("mutate", func(tctx agent.ToolContext, _ map[string]any) (map[string]any, error) {
+	return funcTool("mutate", func(tctx agent.Context, _ map[string]any) (map[string]any, error) {
 		err := tctx.State().Set("k", "v")
 		report <- err
 		if err != nil {

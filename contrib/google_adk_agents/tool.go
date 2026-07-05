@@ -26,25 +26,25 @@ import (
 
 	"google.golang.org/genai"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/memory"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/toolconfirmation"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/memory"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/toolconfirmation"
 )
 
 // runnable is the structural subset of ADK's internal FunctionTool that the
 // CallTool Activity needs: the ability to execute the tool worker-side. Every
 // functiontool.New(...) tool and every ActivityAsTool tool satisfies it.
 type runnable interface {
-	Run(ctx agent.ToolContext, args any) (map[string]any, error)
+	Run(ctx agent.Context, args any) (map[string]any, error)
 }
 
 // contextSnapshot is the serializable, read-only view of an ADK ToolContext that
 // crosses the Activity boundary. Live references (services, the embedded
 // context, mutable EventActions) are deliberately omitted: state mutations made
-// inside an Activity do not propagate back into the workflow in v1.
+// inside an Activity do not propagate back into the workflow.
 type contextSnapshot struct {
 	FunctionCallID string
 	InvocationID   string
@@ -59,7 +59,7 @@ type contextSnapshot struct {
 
 // snapshotContext copies the serializable fields out of a live ToolContext on
 // the workflow side, before dispatch.
-func snapshotContext(tctx agent.ToolContext) contextSnapshot {
+func snapshotContext(tctx agent.Context) contextSnapshot {
 	st := map[string]any{}
 	if rs := tctx.ReadonlyState(); rs != nil {
 		for k, v := range rs.All() {
@@ -190,14 +190,14 @@ func (t *activityTool) Declaration() *genai.FunctionDeclaration { return t.decl 
 
 // ProcessRequest packs this tool's declaration into the request so the model
 // sees it. It lets an activityTool be placed directly in an agent's Tools list.
-func (t *activityTool) ProcessRequest(ctx agent.ToolContext, req *model.LLMRequest) error {
+func (t *activityTool) ProcessRequest(ctx agent.Context, req *model.LLMRequest) error {
 	return packTool(req, t)
 }
 
 // Run is never invoked in-workflow: BeforeToolCallback dispatches the underlying
 // Temporal activity directly. It exists so the tool satisfies ADK's runnable
 // interface and is recognized as callable.
-func (t *activityTool) Run(ctx agent.ToolContext, args any) (map[string]any, error) {
+func (t *activityTool) Run(ctx agent.Context, args any) (map[string]any, error) {
 	return nil, newApplicationError(ErrorTypeTool, false, nil,
 		"activity tool %q must run via its Temporal activity, not in-workflow", t.activityName)
 }
@@ -270,15 +270,20 @@ func toResultMap(raw any) map[string]any {
 }
 
 // ----------------------------------------------------------------------------
-// Worker-side synthetic ToolContext over a read-only snapshot.
+// Worker-side synthetic agent.Context over a read-only snapshot.
 // ----------------------------------------------------------------------------
 
-// activityToolContext implements agent.ToolContext worker-side over a
+// activityToolContext implements ADK's unified agent.Context worker-side over a
 // contextSnapshot. State is immutable (see immutableState); live facilities
 // (artifacts, memory, HITL confirmation) are unavailable across the Activity
-// boundary and report a typed error rather than silently no-op.
+// boundary and report a typed error rather than silently no-op. It embeds
+// agent.StrictContextMock so it keeps satisfying agent.Context as that interface
+// grows; only the methods a reconstructed, read-only tool context can honor are
+// overridden below. Any un-overridden method is one a tool cannot meaningfully
+// use across the Activity boundary and panics loudly rather than silently
+// returning a zero value.
 type activityToolContext struct {
-	context.Context
+	agent.StrictContextMock
 	snap  contextSnapshot
 	state *immutableState
 	acts  *session.EventActions
@@ -286,10 +291,10 @@ type activityToolContext struct {
 
 func newActivityToolContext(ctx context.Context, snap contextSnapshot) *activityToolContext {
 	return &activityToolContext{
-		Context: ctx,
-		snap:    snap,
-		state:   &immutableState{data: snap.State},
-		acts:    &session.EventActions{StateDelta: map[string]any{}},
+		StrictContextMock: agent.NewStrictContextMock(ctx),
+		snap:              snap,
+		state:             &immutableState{data: snap.State},
+		acts:              &session.EventActions{StateDelta: map[string]any{}},
 	}
 }
 
@@ -306,16 +311,22 @@ func (c *activityToolContext) State() session.State                 { return c.s
 func (c *activityToolContext) Actions() *session.EventActions       { return c.acts }
 func (c *activityToolContext) Artifacts() agent.Artifacts           { return nil }
 
+// IsolationScope and ResumedInput carry no meaning for a reconstructed tool
+// context, so return their empty forms instead of panicking like the embedded
+// mock: a tool that reads them across the Activity boundary should see "unset".
+func (c *activityToolContext) IsolationScope() string             { return "" }
+func (c *activityToolContext) ResumedInput(string) (any, bool)    { return nil, false }
+
 func (c *activityToolContext) SearchMemory(context.Context, string) (*memory.SearchResponse, error) {
 	return nil, newApplicationError(ErrorTypeTool, false, nil,
-		"SearchMemory is not available inside a Temporal Activity in v1")
+		"SearchMemory is not available inside a Temporal Activity")
 }
 
 func (c *activityToolContext) ToolConfirmation() *toolconfirmation.ToolConfirmation { return nil }
 
 func (c *activityToolContext) RequestConfirmation(string, any) error {
 	return newApplicationError(ErrorTypeTool, false, nil,
-		"RequestConfirmation (HITL) is not supported inside a Temporal Activity in v1")
+		"RequestConfirmation (HITL) is not supported inside a Temporal Activity")
 }
 
 // errImmutableState is returned when tool code attempts to mutate the read-only

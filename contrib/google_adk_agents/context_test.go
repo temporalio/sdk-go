@@ -26,10 +26,10 @@ import (
 
 	"google.golang.org/genai"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/platform"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/platform"
+	"google.golang.org/adk/v2/tool"
 
 	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 )
@@ -97,7 +97,7 @@ func (p *concurrencyProbe) max() int {
 // probeTool builds a worker-side tool whose handler signals the probe.
 func probeTool(t *testing.T, name string, p *concurrencyProbe) tool.Tool {
 	t.Helper()
-	ft, err := funcTool(name, func(agent.ToolContext, map[string]any) (map[string]any, error) {
+	ft, err := funcTool(name, func(agent.Context, map[string]any) (map[string]any, error) {
 		p.enter()
 		return map[string]any{"ok": true}, nil
 	})

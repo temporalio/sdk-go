@@ -26,9 +26,9 @@ import (
 
 	"go.temporal.io/sdk/testsuite"
 
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/model/gemini"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/model/gemini"
+	"google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 
 	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"

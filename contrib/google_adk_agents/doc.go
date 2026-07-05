@@ -29,10 +29,10 @@
 // by [NewActivities]. The user's model.LLM and tool handlers are never invoked
 // inside the workflow.
 //
-// This package depends on the deterministic platform seams
-// (platform.WithTimeProvider, platform.WithUUIDProvider and
-// platform.WithTaskRunner) that currently exist only on the
-// add-platform-task-runner-seam branch of github.com/DABH/adk-go. See go.mod.
+// This package targets Google ADK for Go v2 (google.golang.org/adk/v2). It
+// depends on the deterministic platform seams (platform.WithTimeProvider,
+// platform.WithUUIDProvider and platform.WithTaskRunner) and the public
+// tool-declaration packer (tool/toolutils.PackTool). See go.mod.
 package googleadk
 
 // PluginName identifies this integration for Temporal telemetry and usage

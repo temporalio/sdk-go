@@ -38,15 +38,15 @@ import (
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/model/gemini"
-	"google.golang.org/adk/plugin"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/model/gemini"
+	"google.golang.org/adk/v2/plugin"
+	"google.golang.org/adk/v2/runner"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	"google.golang.org/genai"
 
 	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
@@ -62,7 +62,7 @@ const (
 func newWeatherTool() (tool.Tool, error) {
 	return functiontool.New[map[string]any, map[string]any](
 		functiontool.Config{Name: "get_weather", Description: "Look up the current weather for a city."},
-		func(_ agent.ToolContext, args map[string]any) (map[string]any, error) {
+		func(_ agent.Context, args map[string]any) (map[string]any, error) {
 			city, _ := args["city"].(string)
 			// A real implementation would call a weather API. This handler runs
 			// worker-side (inside an Activity), so network I/O is fine here.

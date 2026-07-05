@@ -20,10 +20,10 @@ import (
 
 	"google.golang.org/genai"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/toolutils"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/toolutils"
 )
 
 // MCPToolsetOptions configures NewMCPToolset.
@@ -88,7 +88,7 @@ func (m *mcpToolset) Tools(ctx agent.ReadonlyContext) ([]tool.Tool, error) {
 
 // ProcessRequest packs every advertised proxy tool's declaration into the model
 // request. ADK calls this during toolset preprocessing.
-func (m *mcpToolset) ProcessRequest(ctx agent.ToolContext, req *model.LLMRequest) error {
+func (m *mcpToolset) ProcessRequest(ctx agent.Context, req *model.LLMRequest) error {
 	tools, err := m.Tools(ctx)
 	if err != nil {
 		return err
@@ -114,11 +114,11 @@ func (t *mcpProxyTool) Description() string                     { return t.decl.
 func (t *mcpProxyTool) IsLongRunning() bool                     { return false }
 func (t *mcpProxyTool) Declaration() *genai.FunctionDeclaration { return t.decl }
 
-func (t *mcpProxyTool) ProcessRequest(ctx agent.ToolContext, req *model.LLMRequest) error {
+func (t *mcpProxyTool) ProcessRequest(ctx agent.Context, req *model.LLMRequest) error {
 	return packTool(req, t)
 }
 
-func (t *mcpProxyTool) Run(ctx agent.ToolContext, args any) (map[string]any, error) {
+func (t *mcpProxyTool) Run(ctx agent.Context, args any) (map[string]any, error) {
 	return nil, newApplicationError(ErrorTypeMCP, false, nil,
 		"mcp proxy tool %q must run via the CallMcpTool activity, not in-workflow", t.decl.Name)
 }
@@ -219,7 +219,7 @@ func (a *Activities) mcpToolset(ctx context.Context, name string) (tool.Toolset,
 // ProcessRequest), so a toolset tool is packed twice with identical
 // declarations. A name already present is skipped, rather than erroring as
 // toolutils.PackTool does on a duplicate.
-func packTool(req *model.LLMRequest, t toolutils.Packable) error {
+func packTool(req *model.LLMRequest, t toolutils.Tool) error {
 	if req.Tools != nil {
 		if _, ok := req.Tools[t.Name()]; ok {
 			return nil

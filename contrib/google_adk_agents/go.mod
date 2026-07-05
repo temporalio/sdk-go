@@ -8,7 +8,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go.temporal.io/sdk v1.45.0
 	go.temporal.io/sdk/contrib/workflowstreams v0.1.1
-	google.golang.org/adk v0.0.0
+	google.golang.org/adk/v2 v2.0.0
 	google.golang.org/genai v1.57.0
 )
 
@@ -59,10 +59,11 @@ require (
 	rsc.io/ordered v1.1.1 // indirect
 )
 
-// google.golang.org/adk is pinned to the temporal-integration branch of
-// github.com/DABH/adk-go (commit 4a566e4), which bundles the platform TaskRunner
-// seam this plugin consumes (per-task context.Context fan-out via
-// WithTaskRunner/RunTasks) along with other in-flight adk-go improvements not yet
-// on upstream google/adk-go. Drop this replace once they land upstream and
-// google.golang.org/adk can be fetched directly with `go get`.
-replace google.golang.org/adk => github.com/DABH/adk-go v1.4.1-0.20260618195158-4a566e4ba2a0
+// google.golang.org/adk/v2 carries the platform TaskRunner/time/UUID seams,
+// tool/toolutils.PackTool, and the model registry this plugin consumes, none of
+// which are on upstream google/adk-go yet. Point this at a local checkout of
+// github.com/DABH/adk-go on the temporal-integration-v2 branch, cloned as a
+// sibling of this repo. A v2 fork keeps the google.golang.org/adk/v2 module
+// path, so Go cannot pull it in via a pinned pseudo-version — hence the local
+// replace. Once the seams land upstream, drop this and require adk/v2 directly.
+replace google.golang.org/adk/v2 => ../../../adk-go

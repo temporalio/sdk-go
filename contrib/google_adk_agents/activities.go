@@ -15,13 +15,31 @@ package googleadk
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/worker"
 
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/model/gemini"
+	"google.golang.org/adk/v2/tool"
 )
+
+// registerGeminiOnce registers a Gemini factory in ADK's model registry the
+// first time Activities are set up. In ADK v2 model/gemini no longer
+// self-registers, yet InvokeModel resolves unmapped model names via
+// model.NewLLM; without this, "gemini-*" names would not resolve unless the
+// caller supplied an explicit Config.Models factory. It runs once because
+// model.NewLLM treats two patterns matching the same name as ambiguous.
+var registerGeminiOnce sync.Once
+
+func registerGemini() {
+	registerGeminiOnce.Do(func() {
+		model.Register("^(?i)gemini-.*", func(ctx context.Context, name string) (model.LLM, error) {
+			return gemini.NewModel(ctx, name, nil)
+		})
+	})
+}
 
 // ModelFactory reconstructs a model.LLM worker-side from the model name carried
 // in LLMRequest.Model. API keys and other credentials are captured in the
@@ -77,6 +95,7 @@ type Activities struct {
 // an error if a registered tool is nil or not runnable, so misconfiguration
 // surfaces at worker start rather than mid-run inside an Activity.
 func NewActivities(cfg Config) (*Activities, error) {
+	registerGemini()
 	a := &Activities{
 		models: make(map[string]ModelFactory, len(cfg.Models)),
 		tools:  make(map[string]tool.Tool, len(cfg.Tools)),

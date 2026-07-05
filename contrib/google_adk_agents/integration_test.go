@@ -35,7 +35,7 @@ import (
 	"go.temporal.io/sdk/worker"
 	sdkworkflow "go.temporal.io/sdk/workflow"
 
-	"google.golang.org/adk/model"
+	"google.golang.org/adk/v2/model"
 
 	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 )

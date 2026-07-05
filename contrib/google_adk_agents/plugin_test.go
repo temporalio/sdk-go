@@ -28,9 +28,9 @@ import (
 
 	"google.golang.org/genai"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/tool"
 
 	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 )
@@ -146,7 +146,7 @@ func boomActivityWorkflow(ctx workflow.Context) (runResult, error) {
 // attempts) on a retryable failure, then — per ADK's tool-error contract — the
 // error is handed back to the model rather than failing the workflow.
 func TestToolErrorRetryThenFail(t *testing.T) {
-	boomHandler, err := funcTool("boom", func(agent.ToolContext, map[string]any) (map[string]any, error) {
+	boomHandler, err := funcTool("boom", func(agent.Context, map[string]any) (map[string]any, error) {
 		return nil, errors.New("transient boom")
 	})
 	require.NoError(t, err)

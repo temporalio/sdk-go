@@ -29,14 +29,14 @@ import (
 
 	"google.golang.org/genai"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/agent/llmagent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/plugin"
-	"google.golang.org/adk/runner"
-	"google.golang.org/adk/session"
-	"google.golang.org/adk/tool"
-	"google.golang.org/adk/tool/functiontool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/plugin"
+	"google.golang.org/adk/v2/runner"
+	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 
 	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 )
@@ -245,12 +245,12 @@ func agentRunWorkflow(ctx workflow.Context, in runInput) (runResult, error) {
 func stubTool(name, description string) (tool.Tool, error) {
 	return functiontool.New[map[string]any, map[string]any](
 		functiontool.Config{Name: name, Description: description},
-		func(agent.ToolContext, map[string]any) (map[string]any, error) { return nil, nil },
+		func(agent.Context, map[string]any) (map[string]any, error) { return nil, nil },
 	)
 }
 
 // funcTool builds a real function tool with the given handler.
-func funcTool(name string, handler func(agent.ToolContext, map[string]any) (map[string]any, error)) (tool.Tool, error) {
+func funcTool(name string, handler func(agent.Context, map[string]any) (map[string]any, error)) (tool.Tool, error) {
 	return functiontool.New[map[string]any, map[string]any](
 		functiontool.Config{Name: name, Description: name + " tool"},
 		handler,
@@ -329,7 +329,7 @@ func scriptedModelFactory(responses ...*model.LLMResponse) googleadk.ModelFactor
 // the args it was called with and returns the supplied result.
 func recordingTool(t *testing.T, name string, result map[string]any, onCall func(map[string]any)) tool.Tool {
 	t.Helper()
-	ft, err := funcTool(name, func(_ agent.ToolContext, args map[string]any) (map[string]any, error) {
+	ft, err := funcTool(name, func(_ agent.Context, args map[string]any) (map[string]any, error) {
 		if onCall != nil {
 			onCall(args)
 		}

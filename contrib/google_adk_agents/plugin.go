@@ -21,10 +21,10 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/plugin"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/plugin"
+	"google.golang.org/adk/v2/tool"
 )
 
 // Activity type names registered worker-side by Activities.Register and
@@ -139,7 +139,7 @@ func Plugin(opts Options) (*plugin.Plugin, error) {
 // beforeModel is ADK's BeforeModelCallback. Returning a non-nil response (or
 // error) short-circuits the real model call, so the user's model.LLM is never
 // invoked inside the workflow — the InvokeModel Activity calls it worker-side.
-func (o Options) beforeModel(cctx agent.CallbackContext, req *model.LLMRequest) (*model.LLMResponse, error) {
+func (o Options) beforeModel(cctx agent.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
 	wfCtx, ok := workflowContext(cctx)
 	if !ok {
 		return nil, errMissingContext
@@ -168,7 +168,7 @@ func (o Options) beforeModel(cctx agent.CallbackContext, req *model.LLMRequest) 
 // skips the in-workflow tool.Run; the registered tool runs worker-side in the
 // CallTool / CallMcpTool Activity instead. MCP proxy tools route to CallMcpTool;
 // every other tool routes to the generic CallTool.
-func (o Options) beforeTool(tctx agent.ToolContext, t tool.Tool, args map[string]any) (map[string]any, error) {
+func (o Options) beforeTool(tctx agent.Context, t tool.Tool, args map[string]any) (map[string]any, error) {
 	// ADK's built-in control tools (agent transfer, loop exit) only mutate the
 	// invocation's actions — they are pure, deterministic and carry no I/O, so
 	// they run in-workflow. Callers may opt additional pure-compute tools into the

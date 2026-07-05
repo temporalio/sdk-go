@@ -22,7 +22,7 @@ import (
 
 	"go.temporal.io/sdk/workflow"
 
-	"google.golang.org/adk/platform"
+	"google.golang.org/adk/v2/platform"
 )
 
 // wfCtxKey is the private context key under which the workflow.Context for

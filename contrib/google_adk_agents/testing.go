@@ -19,9 +19,9 @@ import (
 
 	"google.golang.org/genai"
 
-	"google.golang.org/adk/agent"
-	"google.golang.org/adk/model"
-	"google.golang.org/adk/tool"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/tool"
 )
 
 // FakeModel is a model.LLM that replays a scripted sequence of responses, so
@@ -142,7 +142,7 @@ func (t *fakeMCPTool) Description() string                     { return t.decl.D
 func (t *fakeMCPTool) IsLongRunning() bool                     { return false }
 func (t *fakeMCPTool) Declaration() *genai.FunctionDeclaration { return t.decl }
 
-func (t *fakeMCPTool) Run(ctx agent.ToolContext, args any) (map[string]any, error) {
+func (t *fakeMCPTool) Run(ctx agent.Context, args any) (map[string]any, error) {
 	m, _ := args.(map[string]any)
 	return t.handler(m)
 }
