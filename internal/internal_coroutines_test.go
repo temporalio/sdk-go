@@ -1225,7 +1225,7 @@ func TestDeadlockDetectorAndAwaitRace(t *testing.T) {
 	defer d.Close()
 	// Expecting deadlock detection timeout instead of a data race.
 	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
-	require.EqualError(t, err, "[TMPRL1101] Potential deadlock detected: workflow goroutine \"root\" didn't yield for over a second")
+	require.EqualError(t, err, "[TMPRL1101] Potential deadlock detected: workflow goroutine \"root\" didn't yield for over 1s")
 }
 
 func TestAwaitCancellation(t *testing.T) {
@@ -1936,7 +1936,7 @@ func TestDeadlockDetectorStackTrace(t *testing.T) {
 
 	var wfPanic *workflowPanicError
 	require.ErrorAs(t, err, &wfPanic)
-	require.Equal(t, `[TMPRL1101] Potential deadlock detected: workflow goroutine "sleeper" didn't yield for over a second`, wfPanic.Error())
+	require.Equal(t, `[TMPRL1101] Potential deadlock detected: workflow goroutine "sleeper" didn't yield for over 1s`, wfPanic.Error())
 	require.Regexp(t, `^coroutine sleeper \[running\]:\ntime\.Sleep\(0x[\da-f]+\)\n`, wfPanic.StackTrace())
 	require.Equal(t, 4, strings.Count(wfPanic.StackTrace(), "\n"), "2 stack frames expected")
 }

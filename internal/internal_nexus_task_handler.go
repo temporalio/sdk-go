@@ -190,7 +190,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 	nexusLinks := make([]nexus.Link, 0, len(req.GetLinks()))
 	// requestLinks holds the inbound links in common.v1.Link form so the RPCs the handler
 	// issues (e.g. signal, signalWithStart) can attach them to their request's links field, linking
-	// the callee's history events back to the caller workflow.
+	// the callee's history events back to the caller.
 	var requestLinks []*common.Link
 	for _, link := range req.GetLinks() {
 		if link == nil {
@@ -205,9 +205,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 			URL:  linkURL,
 			Type: link.GetType(),
 		})
-		// Only WorkflowEvent-shaped links can be forwarded onto the RPCs the handler issues; other
-		// link shapes come back unconvertible and are intentionally skipped.
-		if commonLink, ok := nexusLinkToWorkflowEventLink(link); ok {
+		if commonLink, ok := nexusLinkToCommonLink(link); ok {
 			requestLinks = append(requestLinks, commonLink)
 		}
 	}
@@ -364,7 +362,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 
 // responseLinks converts the response links accumulated on the operation context (from outbound RPCs
 // the handler issued, such as signal or signalWithStart) into nexus.v1.Links to attach to the
-// StartOperationResponse. Non-WorkflowEvent links are skipped.
+// StartOperationResponse. Unsupported variants are skipped.
 func (h *nexusTaskHandler) responseLinks(nctx *NexusOperationContext) []*nexuspb.Link {
 	responseLinks := nctx.ResponseLinks()
 	if len(responseLinks) == 0 {
@@ -372,8 +370,7 @@ func (h *nexusTaskHandler) responseLinks(nctx *NexusOperationContext) []*nexuspb
 	}
 	out := make([]*nexuspb.Link, 0, len(responseLinks))
 	for _, responseLink := range responseLinks {
-		nexusLink, ok := workflowEventLinkToNexusLink(responseLink)
-		if ok {
+		if nexusLink, ok := commonLinkToNexusLink(responseLink); ok {
 			out = append(out, nexusLink)
 		}
 	}

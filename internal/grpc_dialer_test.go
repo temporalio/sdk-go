@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	grpcgzip "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/metadata"
@@ -107,22 +108,25 @@ func TestHeadersProvider_Error(t *testing.T) {
 
 func TestHeadersProvider_NotIncludedWhenNil(t *testing.T) {
 	interceptors := requiredInterceptors(&ClientOptions{}, nil)
-	require.Equal(t, 7, len(interceptors))
+	require.Equal(t, 8, len(interceptors))
 }
 
 func TestHeadersProvider_IncludedWithHeadersProvider(t *testing.T) {
 	opts := &ClientOptions{HeadersProvider: authHeadersProvider{token: "test-auth-token"}}
 	interceptors := requiredInterceptors(opts, nil)
-	require.Equal(t, 8, len(interceptors))
+	require.Equal(t, 9, len(interceptors))
 }
 
 func TestMissingGetServerInfo(t *testing.T) {
-	// Make a gRPC server that has everything unimplemented
+	// Make a gRPC server that responds like an older server missing GetSystemInfo.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpc.UnknownServiceHandler(func(_ interface{}, _ grpc.ServerStream) error {
+		return status.Error(codes.Unimplemented, "unknown method GetSystemInfo")
+	}))
+	defer srv.Stop()
 	go func() {
-		if err := srv.Serve(l); err != nil {
+		if err := srv.Serve(l); err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			log.Fatal(err)
 		}
 	}()
@@ -389,6 +393,83 @@ func TestGrpcCompression(t *testing.T) {
 			)
 		})
 	}
+}
+
+func TestGrpcCompressionDowngradesUnsupportedMethod(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.rejectGzipGetSystemInfo = true
+	srv.statsHandler.reset()
+
+	client, err := DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	getSystemInfoMethod := workflowServiceMethod("GetSystemInfo")
+	getSystemInfoHistory := srv.statsHandler.compressionHistoryForMethod(getSystemInfoMethod)
+	require.Len(t, getSystemInfoHistory, 2)
+	require.Equal(t, grpcgzip.Name, getSystemInfoHistory[0])
+	require.NotEqual(t, grpcgzip.Name, getSystemInfoHistory[1])
+
+	_, err = client.WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
+	require.NoError(t, err)
+	getSystemInfoHistory = srv.statsHandler.compressionHistoryForMethod(getSystemInfoMethod)
+	require.Len(t, getSystemInfoHistory, 3)
+	require.Equal(t, 1, countCompression(getSystemInfoHistory, grpcgzip.Name))
+	require.NotEqual(t, grpcgzip.Name, getSystemInfoHistory[2])
+
+	_, err = client.WorkflowService().SignalWorkflowExecution(context.Background(),
+		&workflowservice.SignalWorkflowExecutionRequest{
+			Namespace:  "test-namespace",
+			SignalName: strings.Repeat("test-signal", 100),
+		},
+	)
+	require.NoError(t, err)
+	require.Equal(t,
+		grpcgzip.Name,
+		srv.statsHandler.compressionForMethod(workflowServiceMethod("SignalWorkflowExecution")),
+	)
+}
+
+func TestGrpcCompressionNoneDoesNotInstallDowngrade(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.rejectGzipGetSystemInfo = true
+	srv.statsHandler.reset()
+
+	client, err := DialClient(context.Background(), ClientOptions{
+		HostPort: srv.addr,
+		ConnectionOptions: ConnectionOptions{
+			GrpcCompression: &GrpcCompressionNone{},
+		},
+	})
+	require.NoError(t, err)
+	defer client.Close()
+
+	getSystemInfoHistory := srv.statsHandler.compressionHistoryForMethod(workflowServiceMethod("GetSystemInfo"))
+	require.Len(t, getSystemInfoHistory, 1)
+	require.NotEqual(t, grpcgzip.Name, getSystemInfoHistory[0])
+}
+
+func TestGrpcCompressionDoesNotDowngradeGenericUnimplemented(t *testing.T) {
+	srv, err := startTestGRPCServer()
+	require.NoError(t, err)
+	defer srv.Stop()
+	srv.getSystemInfoResponseError = status.Error(codes.Unimplemented, "gzip feature is not implemented")
+	srv.statsHandler.reset()
+
+	client, err := NewLazyClient(ClientOptions{HostPort: srv.addr})
+	require.NoError(t, err)
+	defer client.Close()
+
+	_, err = client.WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
+	require.Error(t, err)
+
+	getSystemInfoHistory := srv.statsHandler.compressionHistoryForMethod(workflowServiceMethod("GetSystemInfo"))
+	require.Len(t, getSystemInfoHistory, 1)
+	require.Equal(t, grpcgzip.Name, getSystemInfoHistory[0])
 }
 
 func TestCustomResolver(t *testing.T) {
@@ -663,6 +744,7 @@ type testGRPCServer struct {
 	healthServer                         *health.Server
 	statsHandler                         *compressionStatsHandler
 	sigWfCount                           int32
+	rejectGzipGetSystemInfo              bool
 	getSystemInfoRequestContext          context.Context
 	getSystemInfoResponse                workflowservice.GetSystemInfoResponse
 	getSystemInfoResponseError           error
@@ -724,6 +806,10 @@ func (t *testGRPCServer) GetSystemInfo(
 	req *workflowservice.GetSystemInfoRequest,
 ) (*workflowservice.GetSystemInfoResponse, error) {
 	t.getSystemInfoRequestContext = ctx
+	if t.rejectGzipGetSystemInfo &&
+		t.statsHandler.compressionForMethod(workflowServiceMethod("GetSystemInfo")) == grpcgzip.Name {
+		return nil, status.Error(codes.Unimplemented, `grpc: Decompressor is not installed for grpc-encoding "gzip"`)
+	}
 	return &t.getSystemInfoResponse, t.getSystemInfoResponseError
 }
 
@@ -745,8 +831,9 @@ func (t *testGRPCServer) resetSignalWorkflowInvokeCount() {
 }
 
 type compressionStatsHandler struct {
-	mu                  sync.Mutex
-	compressionByMethod map[string]string
+	mu                         sync.Mutex
+	compressionByMethod        map[string]string
+	compressionHistoryByMethod map[string][]string
 }
 
 func (h *compressionStatsHandler) TagRPC(ctx context.Context, _ *stats.RPCTagInfo) context.Context {
@@ -763,7 +850,14 @@ func (h *compressionStatsHandler) HandleRPC(_ context.Context, s stats.RPCStats)
 	if h.compressionByMethod == nil {
 		h.compressionByMethod = make(map[string]string)
 	}
+	if h.compressionHistoryByMethod == nil {
+		h.compressionHistoryByMethod = make(map[string][]string)
+	}
 	h.compressionByMethod[inHeader.FullMethod] = inHeader.Compression
+	h.compressionHistoryByMethod[inHeader.FullMethod] = append(
+		h.compressionHistoryByMethod[inHeader.FullMethod],
+		inHeader.Compression,
+	)
 }
 
 func (h *compressionStatsHandler) TagConn(ctx context.Context, _ *stats.ConnTagInfo) context.Context {
@@ -776,4 +870,31 @@ func (h *compressionStatsHandler) compressionForMethod(method string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return h.compressionByMethod[method]
+}
+
+func (h *compressionStatsHandler) compressionHistoryForMethod(method string) []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.compressionHistoryByMethod[method]...)
+}
+
+func (h *compressionStatsHandler) reset() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.compressionByMethod = nil
+	h.compressionHistoryByMethod = nil
+}
+
+func workflowServiceMethod(method string) string {
+	return "/" + workflowservice.WorkflowService_ServiceDesc.ServiceName + "/" + method
+}
+
+func countCompression(history []string, compression string) int {
+	var count int
+	for _, c := range history {
+		if c == compression {
+			count++
+		}
+	}
+	return count
 }
