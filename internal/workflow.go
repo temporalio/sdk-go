@@ -1171,7 +1171,10 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	i := getWorkflowOutboundInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
 	activityType, isMethod := getFunctionName(activity)
-	if alias, ok := env.GetRegistry().getActivityAlias(activityType); ok {
+	reg := env.GetRegistry()
+	if reg.antiAliasing {
+		activityType = getActivityFunctionName(reg, activity)
+	} else if alias, ok := reg.getActivityAlias(activityType); ok {
 		activityType = alias
 	}
 	var fn interface{}

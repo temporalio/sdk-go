@@ -3384,6 +3384,176 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	require.Equal(t, "func1", executeWorkflow(true))
 }
 
+// The following types simulate the scenario from
+// https://github.com/temporalio/sdk-go/issues/2379: two activity functions from
+// different packages that share the same short name ("MyActivity"). Distinct
+// struct types stand in for distinct packages: the short name collides but the
+// fully qualified name does not.
+type antiAliasV1 struct{}
+
+func (antiAliasV1) MyActivity(context.Context) (string, error) { return "func1", nil }
+
+type antiAliasV2 struct{}
+
+func (antiAliasV2) MyActivity(context.Context) (string, error) { return "func2", nil }
+
+// TestAntiAliasingByFunctionReference covers the core promise of anti-aliasing:
+// given a function, invoke that function under the name it was registered with —
+// even when a different registration shares its short name (issue #2379 and
+// "New issue 1"). It also confirms strings are used verbatim ("New issue 5").
+func TestAntiAliasingByFunctionReference(t *testing.T) {
+	wf := func(ctx Context) ([]string, error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		out := make([]string, 4)
+		// By function reference: each must reach its own registration despite the
+		// shared short name "MyActivity".
+		if err := ExecuteActivity(ctx, antiAliasV1{}.MyActivity).Get(ctx, &out[0]); err != nil {
+			return nil, err
+		}
+		if err := ExecuteActivity(ctx, antiAliasV2{}.MyActivity).Get(ctx, &out[1]); err != nil {
+			return nil, err
+		}
+		// By string: used verbatim, never redirected through an alias map.
+		if err := ExecuteActivity(ctx, "MyActivity").Get(ctx, &out[2]); err != nil {
+			return nil, err
+		}
+		if err := ExecuteActivity(ctx, "MyActivity_v2").Get(ctx, &out[3]); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+
+	var suite WorkflowTestSuite
+	suite.SetRegistrationAntiAliasing(true)
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(antiAliasV1{}.MyActivity) // registered as "MyActivity"
+	env.RegisterActivityWithOptions(antiAliasV2{}.MyActivity, RegisterActivityOptions{Name: "MyActivity_v2"})
+	env.ExecuteWorkflow(wf)
+	require.NoError(t, env.GetWorkflowError())
+	var result []string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, []string{"func1", "func2", "func1", "func2"}, result)
+}
+
+// TestAntiAliasingLocalActivity confirms anti-aliasing resolution also applies
+// to the ExecuteLocalActivity code path ("New issue 2" — path consistency).
+func TestAntiAliasingLocalActivity(t *testing.T) {
+	wf := func(ctx Context) ([]string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		out := make([]string, 2)
+		if err := ExecuteLocalActivity(ctx, antiAliasV1{}.MyActivity).Get(ctx, &out[0]); err != nil {
+			return nil, err
+		}
+		if err := ExecuteLocalActivity(ctx, antiAliasV2{}.MyActivity).Get(ctx, &out[1]); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+
+	var suite WorkflowTestSuite
+	suite.SetRegistrationAntiAliasing(true)
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(antiAliasV1{}.MyActivity)
+	env.RegisterActivityWithOptions(antiAliasV2{}.MyActivity, RegisterActivityOptions{Name: "MyActivity_v2"})
+	env.ExecuteWorkflow(wf)
+	require.NoError(t, env.GetWorkflowError())
+	var result []string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, []string{"func1", "func2"}, result)
+}
+
+type antiAliasStruct struct{}
+
+func (antiAliasStruct) DoWork(context.Context) (string, error) { return "struct", nil }
+
+// antiAliasDoWork is a top-level activity whose short name ("antiAliasDoWork")
+// differs from the struct method; to force the "New issue 4" collision we
+// register it under the bare name "DoWork".
+func antiAliasDoWork(context.Context) (string, error) { return "plain", nil }
+
+// TestAntiAliasingStructRegistration covers "New issue 4": struct-based
+// registration must record its methods so they are reachable by function
+// reference and do not collide with a same-short-named standalone activity.
+func TestAntiAliasingStructRegistration(t *testing.T) {
+	wf := func(ctx Context) ([]string, error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		out := make([]string, 2)
+		if err := ExecuteActivity(ctx, antiAliasDoWork).Get(ctx, &out[0]); err != nil {
+			return nil, err
+		}
+		if err := ExecuteActivity(ctx, antiAliasStruct{}.DoWork).Get(ctx, &out[1]); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+
+	var suite WorkflowTestSuite
+	suite.SetRegistrationAntiAliasing(true)
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(antiAliasDoWork, RegisterActivityOptions{Name: "DoWork"})
+	env.RegisterActivityWithOptions(&antiAliasStruct{}, RegisterActivityOptions{Name: "Prefix_"})
+	env.ExecuteWorkflow(wf)
+	require.NoError(t, env.GetWorkflowError())
+	var result []string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	// Function reference to the struct method must reach "Prefix_DoWork", not the
+	// standalone "DoWork".
+	require.Equal(t, []string{"plain", "struct"}, result)
+}
+
+func antiAliasWorkflowV1(ctx Context) (string, error) { return "wf1", nil }
+func antiAliasWorkflowV2(ctx Context) (string, error) { return "wf2", nil }
+
+// TestAntiAliasingWorkflowDispatch covers "New issue 3": with anti-aliasing the
+// workflow scheduling side and the getWorkflowDefinition dispatch side agree,
+// because scheduling emits the registered name and dispatch is an exact lookup.
+func TestAntiAliasingWorkflowDispatch(t *testing.T) {
+	parent := func(ctx Context) (string, error) {
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{WorkflowRunTimeout: 5 * time.Second})
+		var got string
+		// Dispatch the v1 child by function reference; must reach v1's
+		// registration, not v2's aliased one.
+		if err := ExecuteChildWorkflow(ctx, antiAliasWorkflowV1).Get(ctx, &got); err != nil {
+			return "", err
+		}
+		return got, nil
+	}
+
+	var suite WorkflowTestSuite
+	suite.SetRegistrationAntiAliasing(true)
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(parent)
+	env.RegisterWorkflow(antiAliasWorkflowV1)
+	env.RegisterWorkflowWithOptions(antiAliasWorkflowV2, RegisterWorkflowOptions{Name: "antiAliasWorkflowV1_v2"})
+	env.ExecuteWorkflow(parent)
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, "wf1", result)
+}
+
+// TestDetectRegistrationAmbiguities verifies the startup detection: in the
+// default (non-anti-aliasing) mode the collisions from the issue are flagged,
+// while anti-aliasing mode reports none.
+func TestDetectRegistrationAmbiguities(t *testing.T) {
+	register := func(r *registry) {
+		// "New issue 1": two functions with the same short name, one aliased —
+		// the plain one becomes unreachable by function reference.
+		r.RegisterActivityWithOptions(antiAliasV1{}.MyActivity, RegisterActivityOptions{Name: "MyActivity_v1"})
+		r.RegisterActivityWithOptions(antiAliasV2{}.MyActivity, RegisterActivityOptions{Name: "MyActivity_v2"})
+	}
+
+	// Default mode: at least one ambiguity is detected.
+	def := newRegistryWithOptions(registryOptions{})
+	register(def)
+	require.NotEmpty(t, def.detectRegistrationAmbiguities())
+
+	// Anti-aliasing mode: no ambiguities.
+	anti := newRegistryWithOptions(registryOptions{antiAliasing: true})
+	register(anti)
+	require.Empty(t, anti.detectRegistrationAmbiguities())
+}
+
 func (s *internalWorkerTestSuite) TestReservedTemporalName() {
 	// workflow
 	worker := createWorker(s.service)

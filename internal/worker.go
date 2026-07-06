@@ -331,7 +331,45 @@ type (
 		// false, the historical default, ambiguity can occur between function names
 		// and aliased names when not using string names when executing child
 		// workflow or activities.
+		//
+		// Deprecated: prefer RegistrationAntiAliasing, which resolves function
+		// references to the name they were registered under instead of dropping
+		// the custom name. This option only stops applying the alias map; a
+		// function reference still resolves to its (unqualified) short name, which
+		// can still collide with another registration. See RegistrationAntiAliasing.
 		DisableRegistrationAliasing bool
+
+		// Optional: Resolve workflow and activity function references to the exact
+		// name they were registered under, and treat string arguments as registered
+		// names verbatim (no alias substitution).
+		//
+		// This is the recommended setting. It removes the ambiguities that occur in
+		// the default mode (and in DisableRegistrationAliasing mode) when function
+		// short names collide across packages, when a short name overlaps a
+		// registered/aliased name, or when activities are registered via a struct.
+		// Concretely:
+		//   - Given a function, the worker schedules and dispatches the name it was
+		//     registered under (its custom name if one was given, otherwise its
+		//     short name).
+		//   - Given a string, the worker uses it as-is; it is never redirected
+		//     through the alias map.
+		//
+		// This mode is opt-in and does not change the name resolution of any other
+		// mode, so enabling it will not retroactively alter histories of workflows
+		// that never relied on the ambiguous behavior. However, a workflow that was
+		// (perhaps unknowingly) relying on the ambiguous resolution — for example
+		// invoking one function by reference and silently reaching a different
+		// registration — will schedule a different activity/workflow type name once
+		// this is enabled, which can cause a non-determinism error on replay of
+		// in-flight executions. Enable it for new workers/task queues, or after
+		// confirming no open workflows depend on the ambiguous behavior.
+		//
+		// When this is false, the worker checks for such ambiguities at startup and
+		// logs a warning recommending this option if any are found.
+		//
+		// If both this and DisableRegistrationAliasing are set, this takes
+		// precedence.
+		RegistrationAntiAliasing bool
 
 		// Assign a BuildID to this worker. This replaces the deprecated binary checksum concept,
 		// and is used to provide a unique identifier for a set of worker code, and is necessary
