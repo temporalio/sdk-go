@@ -2828,10 +2828,14 @@ func structMethodRegistryKey(structType reflect.Type, methodName string) string 
 	return elem.PkgPath() + "." + elem.Name() + "." + methodName
 }
 
-func getActivityFunctionName(r *registry, i interface{}) string {
-	if r.antiAliasing {
-		// A string is a registered name and is used verbatim; a function
-		// resolves to the name it was registered under.
+// resolveActivityName resolves an activity (a func or a string) to the type name
+// to schedule/dispatch under. When antiAliasing is true a string is used
+// verbatim and a function resolves to its registered name; otherwise the legacy
+// short-name-plus-alias-map behavior is used. The mode is passed explicitly
+// because during workflow execution it is a per-execution decision (see
+// WorkflowEnvironment.UseRegistrationAntiAliasing), not the worker-wide setting.
+func resolveActivityName(r *registry, i interface{}, antiAliasing bool) string {
+	if antiAliasing {
 		if s, ok := i.(string); ok {
 			return s
 		}
@@ -2850,14 +2854,23 @@ func getActivityFunctionName(r *registry, i interface{}) string {
 	return result
 }
 
-func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, error) {
+// getActivityFunctionName resolves using the worker-wide setting. Use this only
+// outside of workflow execution (client, schedule, test-env, ambiguity
+// detection); in-workflow scheduling must use resolveActivityName with the
+// per-execution decision to stay replay-safe.
+func getActivityFunctionName(r *registry, i interface{}) string {
+	return resolveActivityName(r, i, r.antiAliasing)
+}
+
+// resolveWorkflowName is the workflow counterpart of resolveActivityName.
+func resolveWorkflowName(r *registry, workflowFunc interface{}, antiAliasing bool) (string, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
 	case reflect.String:
 		fnName = reflect.ValueOf(workflowFunc).String()
 	case reflect.Func:
-		if r.antiAliasing {
+		if antiAliasing {
 			if name, ok := r.getWorkflowRegisteredName(funcRegistryKey(workflowFunc)); ok {
 				return name, nil
 			}
@@ -2874,6 +2887,12 @@ func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, err
 	}
 
 	return fnName, nil
+}
+
+// getWorkflowFunctionName resolves using the worker-wide setting. See the note
+// on getActivityFunctionName about in-workflow use.
+func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, error) {
+	return resolveWorkflowName(r, workflowFunc, r.antiAliasing)
 }
 
 func getReadOnlyChannel(c chan struct{}) <-chan struct{} {

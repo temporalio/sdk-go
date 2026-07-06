@@ -694,6 +694,12 @@ func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 	return env.sdkFlags.tryUse(flag, true)
 }
 
+func (env *testWorkflowEnvironmentImpl) UseRegistrationAntiAliasing() bool {
+	// The test environment does not replay against recorded history, so the
+	// configured mode is used directly.
+	return env.registry.antiAliasing
+}
+
 func (env *testWorkflowEnvironmentImpl) GenerateSequence() int64 {
 	return env.nextID()
 }
