@@ -254,6 +254,8 @@ type (
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.UnknownExternalWorkflowExecutionError]
 	UnknownExternalWorkflowExecutionError struct{}
 
 	// ServerError can be returned from server.
@@ -322,9 +324,13 @@ type (
 	// ChildWorkflowExecutionAlreadyStartedError is set as the cause of
 	// ChildWorkflowExecutionError when failure is due the child workflow having
 	// already started.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.ChildWorkflowExecutionAlreadyStartedError]
 	ChildWorkflowExecutionAlreadyStartedError struct{}
 
 	// NamespaceNotFoundError is set as the cause when failure is due namespace not found.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.NamespaceNotFoundError]
 	NamespaceNotFoundError struct{}
 
 	// WorkflowExecutionError is returned from workflow.
