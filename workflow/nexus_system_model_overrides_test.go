@@ -152,6 +152,7 @@ func TestSystemNexusSignalWithStartUsesConverters(t *testing.T) {
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 	require.NotNil(t, captured)
+	require.Equal(t, "default-test-namespace", captured.GetNamespace())
 
 	requirePayloadMarked(t, captured.GetInput().GetPayloads()[0])
 	requirePayloadMarked(t, captured.GetSignalInput().GetPayloads()[0])

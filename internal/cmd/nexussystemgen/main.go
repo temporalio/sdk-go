@@ -77,7 +77,6 @@ func run() error {
 	args = append(args,
 		"--descriptors", descriptors,
 		"--output", tmpDir,
-		"--go-package", "go.temporal.io/sdk/workflow",
 	)
 
 	cmd := exec.Command(nexGen, args...)
