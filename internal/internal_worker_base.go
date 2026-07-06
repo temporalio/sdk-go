@@ -218,12 +218,12 @@ type (
 
 	// baseWorker that wraps worker activities.
 	baseWorker struct {
-		options              baseWorkerOptions
-		isWorkerStarted      bool
+		options         baseWorkerOptions
+		isWorkerStarted bool
 		// stopCh is created by newBaseWorker and closed by baseWorker.Stop().
 		// It is internal to baseWorker and stops its poller, dispatcher, autoscaler,
 		// and throttling/backoff loops.
-		stopCh chan struct{}
+		stopCh               chan struct{}
 		stopWG               sync.WaitGroup // The WaitGroup for stopping existing routines.
 		pollLimiter          *rate.Limiter
 		taskLimiter          *rate.Limiter
@@ -421,11 +421,13 @@ func (bw *baseWorker) Start() {
 
 	bw.metricsHandler.Counter(metrics.WorkerStartCounter).Inc(1)
 
-	for _, taskWorker := range bw.options.taskPollers {
-		if bw.pollerBalancer != nil {
+	if bw.pollerBalancer != nil {
+		for _, taskWorker := range bw.options.taskPollers {
 			bw.pollerBalancer.registerPollerType(taskWorker.taskPollerType)
 		}
+	}
 
+	for _, taskWorker := range bw.options.taskPollers {
 		if taskWorker.autoscalingRunner != nil {
 			bw.stopWG.Add(1)
 			bw.pollerWG.Add(1)

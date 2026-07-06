@@ -19,7 +19,21 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Fixed
+
+- Respect SDK flags already recorded in workflow history even when `GetSystemInfo` does not report
+  SDK metadata support.
+- Only treat `GetSystemInfo` `UNIMPLEMENTED` responses as missing server capability support when
+  the error indicates an unknown method.
+- Retry server RPCs without gzip compression when a method reports that gzip decompression is
+  unsupported, while continuing to use gzip for other methods.
+
 ### Added
 
-* Exposed `BackoffStartInterval` when continuing as new, which will delay the first task of the
+- Exposed `BackoffStartInterval` when continuing as new, which will delay the first task of the
   continued workflow by the configured interval.
+- Nexus operation link propagation for signals. When a Nexus operation handler signals a workflow
+  (including signal-with-start), the inbound Nexus request links are now forwarded onto the signaled
+  workflow so its history events link back to the caller, and the link the server returns for the
+  signaled event is attached to the caller workflow's Nexus operation history event. This makes the
+  caller and callee mutually navigable in the UI for signal-based Nexus operations.

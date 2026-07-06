@@ -1162,7 +1162,7 @@ func (s *coroutineState) call(timeout time.Duration) {
 			st = fmt.Sprintf("<%s>", err)
 		}
 		msg := fmt.Sprintf("[TMPRL1101] Potential deadlock detected: "+
-			"workflow goroutine %q didn't yield for over a second", s.name)
+			"workflow goroutine %q didn't yield for over %s", s.name, timeout)
 		s.closed.Store(true)
 		s.panicError = newWorkflowPanicError(msg, st)
 	}

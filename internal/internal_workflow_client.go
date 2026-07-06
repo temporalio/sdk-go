@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1589,8 +1590,7 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
 	defer cancel()
 	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
-	// We ignore unimplemented
-	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
+	if err != nil && !isUnknownMethodUnimplemented(err) {
 		return nil, fmt.Errorf("failed reaching server: %w", err)
 	}
 	if resp != nil && resp.Capabilities != nil {
@@ -1607,6 +1607,15 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	wc.excludeInternalFromRetry.Store(capabilities.InternalErrorDifferentiation)
 	wc.capabilitiesLock.Unlock()
 	return capabilities, nil
+}
+
+func isUnknownMethodUnimplemented(err error) bool {
+	var unimplemented *serviceerror.Unimplemented
+	if !errors.As(err, &unimplemented) && status.Code(err) != codes.Unimplemented {
+		return false
+	}
+	errMsg := strings.ToLower(err.Error())
+	return strings.Contains(errMsg, "unknown method") || strings.Contains(errMsg, "not implemented")
 }
 
 // Get namespace capabilities, lazily fetching from server if not already obtained.
@@ -2411,7 +2420,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		return err
 	}
 
-	links, _ := ctx.Value(NexusOperationLinksKey).([]*commonpb.Link)
+	links, _ := ctx.Value(NexusOperationRequestLinksKey).([]*commonpb.Link)
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
@@ -2443,8 +2452,19 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
-	_, err = w.client.workflowService.SignalWorkflowExecution(grpcCtx, request)
-	return err
+	response, err := w.client.workflowService.SignalWorkflowExecution(grpcCtx, request)
+	if err != nil {
+		return err
+	}
+	// If this signal was issued from inside a Nexus operation handler, capture the server's response
+	// link (pointing at the WorkflowExecutionSignaled event) so the task handler can attach it to the
+	// StartOperationResponse, linking the caller workflow's history event to the callee. Servers
+	// without history.enableCHASMSignalBacklinks leave the link unset; AddResponseLink ignores
+	// nil.
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(response.GetLink())
+	}
+	return nil
 }
 
 func (w *workflowClientInterceptor) SignalWithStartWorkflow(
@@ -2511,6 +2531,13 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		Priority:                 convertToPBPriority(in.Options.Priority),
 	}
 
+	// If this signalWithStart was issued from inside a Nexus operation handler, forward the inbound
+	// Nexus task links so both the WorkflowExecutionStarted and WorkflowExecutionSignaled events on
+	// the callee link back to the caller.
+	if links, ok := ctx.Value(NexusOperationRequestLinksKey).([]*commonpb.Link); ok {
+		signalWithStartRequest.Links = links
+	}
+
 	if in.Options.StartDelay != 0 {
 		signalWithStartRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
 	}
@@ -2538,6 +2565,14 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	response, err = w.client.workflowService.SignalWithStartWorkflowExecution(grpcCtx, signalWithStartRequest)
 	if err != nil {
 		return nil, err
+	}
+
+	// If this signalWithStart was issued from inside a Nexus operation handler, capture the server's
+	// response link (pointing at the WorkflowExecutionSignaled event) so the task handler can attach it to
+	// the StartOperationResponse. Servers without history.enableCHASMSignalBacklinks leave the link
+	// unset; AddResponseLink ignores nil.
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(response.GetSignalLink())
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {

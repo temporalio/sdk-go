@@ -761,6 +761,7 @@ func convertFromPBScheduleAction(
 			VersioningOverride:       versioningOverrideFromProto(workflow.VersioningOverride),
 			StaticSummary:            *convertedSummary,
 			StaticDetails:            *convertedDetails,
+			Priority:                 convertFromPBPriority(workflow.GetPriority()),
 		}, nil
 	default:
 		// TODO maybe just panic instead?

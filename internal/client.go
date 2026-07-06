@@ -55,7 +55,9 @@ type GrpcCompression interface {
 
 type (
 	// GrpcCompressionGzip compresses outbound gRPC request bodies with gzip and
-	// accepts gzip-compressed responses. This is the default.
+	// accepts gzip-compressed responses. This is the default. If a specific
+	// server RPC does not support gzip, the client may retry that RPC without
+	// compression and continue using gzip for other RPCs.
 	//
 	// Exposed as: [go.temporal.io/sdk/client.GrpcCompressionGzip]
 	GrpcCompressionGzip struct{}
@@ -1044,7 +1046,9 @@ type (
 		MaxPayloadSize int
 
 		// GrpcCompression controls transport-level gRPC compression for requests
-		// sent to the Temporal server.
+		// sent to the Temporal server. If gzip is enabled and a specific server
+		// RPC does not support gzip, the client may retry that RPC without
+		// compression and continue using gzip for other RPCs.
 		//
 		// default: &GrpcCompressionGzip{}
 		GrpcCompression GrpcCompression
