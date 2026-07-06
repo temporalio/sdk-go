@@ -6,6 +6,7 @@ world system {
 
 /// @nexus.endpoint "__temporal_system"
 /// @nexus.service-name "temporal.api.workflowservice.v1.WorkflowService"
+/// @nexus.namespace go="go.temporal.io/sdk/workflow"
 /// @nexus.delay-load-temporalio-workflow
 /// @nexus.experimental
 interface workflow-service {
@@ -81,7 +82,7 @@ interface workflow-service {
     /// @nexus.proto-field "workflow_start_delay"
     start-delay: option<duration>,
     user-metadata: option<user-metadata>,
-    /// @nexus.source python="workflow_namespace" typescript="workflowNamespace" go="workflowNamespace"
+    /// @nexus.source python="workflow_namespace" typescript="workflowNamespace" go="workflowNamespace(ctx)"
     namespace: string,
     /// @nexus.omit
     control: placeholder,

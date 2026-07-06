@@ -174,7 +174,7 @@ func (m signalWithStartWorkflowRequest) toProto(ctx Context) (*workflowservice.S
 		}
 		message.UserMetadata = converted
 	}
-	message.Namespace = workflowNamespace()
+	message.Namespace = workflowNamespace(ctx)
 	return message, nil
 }
 

@@ -163,7 +163,7 @@ func workflowTypeFromProto(_ Context, t *common.WorkflowType) (*string, error) {
 
 // --- Payload / Payloads (temporal.api.common.v1.Payload[s]) ---
 func payloadToProto(ctx Context, value any) (*common.Payload, error) {
-	return GetDataConverter(ctx).ToPayload(value)
+	return nexGenWorkflowDataConverter(ctx).ToPayload(value)
 }
 
 func payloadFromProto(ctx Context, payload *common.Payload) (any, error) {
@@ -171,7 +171,7 @@ func payloadFromProto(ctx Context, payload *common.Payload) (any, error) {
 		return nil, nil
 	}
 	var value any
-	if err := GetDataConverter(ctx).FromPayload(payload, &value); err != nil {
+	if err := nexGenWorkflowDataConverter(ctx).FromPayload(payload, &value); err != nil {
 		return nil, err
 	}
 	return value, nil
@@ -181,7 +181,7 @@ func payloadsToProto(ctx Context, values []any) (*common.Payloads, error) {
 	if len(values) == 0 {
 		return nil, nil
 	}
-	payloads, err := GetDataConverter(ctx).ToPayloads(values...)
+	payloads, err := nexGenWorkflowDataConverter(ctx).ToPayloads(values...)
 	if err != nil {
 		return nil, err
 	}
@@ -201,6 +201,28 @@ func payloadsFromProto(ctx Context, payloads *common.Payloads) ([]any, error) {
 		values = append(values, value)
 	}
 	return values, nil
+}
+
+func nexGenWorkflowDataConverter(ctx Context) converter.DataConverter {
+	dataConverter := converter.GetDefaultDataConverter()
+	if options := ctx.Value("wfEnvOptions"); options != nil {
+		optionsValue := reflect.ValueOf(options)
+		if optionsValue.Kind() == reflect.Pointer && !optionsValue.IsNil() {
+			optionsValue = optionsValue.Elem()
+		}
+		if optionsValue.Kind() == reflect.Struct {
+			field := optionsValue.FieldByName("DataConverter")
+			if field.IsValid() && field.CanInterface() && !field.IsNil() {
+				if value, ok := field.Interface().(converter.DataConverter); ok {
+					dataConverter = value
+				}
+			}
+		}
+	}
+	if contextAware, ok := dataConverter.(ContextAware); ok {
+		return contextAware.WithWorkflowContext(ctx)
+	}
+	return dataConverter
 }
 
 // --- Memo (temporal.api.common.v1.Memo) ---
@@ -296,13 +318,20 @@ func versioningOverrideToProto(_ Context, versioningOverride *client.VersioningO
 }
 
 // --- Workflow namespace (sourced field) ---
-//
-// The namespace is sourced at runtime from the workflow context. Conversion in
-// a context-free `ToProto` cannot access it, so this returns the empty string;
-// the server fills in the caller's namespace. Populate this when sourced fields
-// gain access to the workflow context.
 
-func workflowNamespace() string {
+func workflowNamespace(ctx Context) string {
+	if options := ctx.Value("wfEnvOptions"); options != nil {
+		optionsValue := reflect.ValueOf(options)
+		if optionsValue.Kind() == reflect.Pointer && !optionsValue.IsNil() {
+			optionsValue = optionsValue.Elem()
+		}
+		if optionsValue.Kind() == reflect.Struct {
+			field := optionsValue.FieldByName("Namespace")
+			if field.IsValid() && field.Kind() == reflect.String {
+				return field.String()
+			}
+		}
+	}
 	return ""
 }
 
