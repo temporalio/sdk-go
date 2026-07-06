@@ -46,7 +46,7 @@ jobs:
         run: go run . unit-test
         working-directory: ./internal/cmd/build
 
-  integration-test-no-cache:
+  integ-test:
     strategy:
       fail-fast: false
       matrix:
@@ -79,7 +79,7 @@ jobs:
         env:
           WORKFLOW_CACHE_SIZE: "0"
 
-  integration-test-with-cache:
+  integ-test-cache:
     strategy:
       fail-fast: false
       matrix:
