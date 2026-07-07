@@ -19,6 +19,12 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Added
+
+- Added the `contrib/google_adk_agents` plugin, which makes Google ADK (`adk-go`) agents durable
+  and replay-safe under Temporal: each LLM call and tool call runs as a Temporal Activity while the
+  agent's orchestration loop runs inside a Workflow.
+
 
 ## [1.46.0] - 2026-07-07
 
