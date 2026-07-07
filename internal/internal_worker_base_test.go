@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/suite"
 	enumspb "go.temporal.io/api/enums/v1"
 	"go.temporal.io/api/serviceerror"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 )
@@ -346,6 +347,209 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}
 }
 
+func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupAddRaisesRequiredMinimum() {
+	pollerGroups := newPollerGroupManager(true)
+	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	})
+	autoscaler := newPollerAutoscaler(pollerAutoscalerOptions{
+		initialPollerCount: 1,
+		maxPollerCount:     1,
+		minPollerCount:     1,
+	})
+	runner := newAutoscalingTaskPollerRunner(
+		autoscaler,
+		pollerGroups,
+		enumspb.TASK_QUEUE_KIND_NORMAL,
+	)
+	pollerGroups.addListener(runner.signal)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	release, err := runner.acquire(ctx)
+	require.NoError(s.T(), err)
+	defer release()
+	assert.Equal(s.T(), 1, runner.activePolls(), "expected one active poll for one group")
+
+	type acquireResult struct {
+		release func()
+		err     error
+	}
+	acquired := make(chan acquireResult, 1)
+	go func() {
+		acquiredRelease, err := runner.acquire(ctx)
+		acquired <- acquireResult{release: acquiredRelease, err: err}
+	}()
+	require.Never(s.T(), func() bool {
+		return len(acquired) > 0
+	}, 100*time.Millisecond, 10*time.Millisecond, "second acquire should wait before group add")
+
+	assert.Equal(s.T(), 1, runner.effectiveTarget(), "expected one effective poller before group add")
+	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+		{Id: "group-b", Weight: 1},
+	})
+
+	var result acquireResult
+	require.Eventually(s.T(), func() bool {
+		select {
+		case result = <-acquired:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond, "expected group add to signal runner")
+	require.NoError(s.T(), result.err)
+	defer result.release()
+	assert.Equal(s.T(), 2, runner.activePolls(), "expected group add to raise required minimum")
+	assert.Equal(s.T(), int64(1), autoscaler.target.Load(), "group add should not mutate autoscaler target")
+}
+
+func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupRemovalLowersRequiredMinimum() {
+	pollerGroups := newPollerGroupManager(true)
+	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+		{Id: "group-b", Weight: 100},
+	})
+	autoscaler := newPollerAutoscaler(pollerAutoscalerOptions{
+		initialPollerCount: 1,
+		maxPollerCount:     1,
+		minPollerCount:     1,
+	})
+	runner := newAutoscalingTaskPollerRunner(
+		autoscaler,
+		pollerGroups,
+		enumspb.TASK_QUEUE_KIND_NORMAL,
+	)
+
+	assert.Equal(s.T(), 2, runner.effectiveTarget(), "expected two effective pollers for two groups")
+	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	})
+
+	assert.Equal(s.T(), 1, runner.effectiveTarget(), "expected group removal to lower required minimum")
+	lease := pollerGroups.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, false)
+	defer lease.release()
+	assert.Equal(s.T(), "group-a", lease.groupIDOrEmpty(), "future reservations should not use removed groups")
+	assert.Equal(s.T(), int64(1), autoscaler.target.Load(), "group removal should not mutate autoscaler target")
+}
+
+func (s *ScalableTaskPollerSuite) TestAutoscalingEffectiveTargetUsesMCNRequiredMinimumAsFloor() {
+	tests := []struct {
+		name          string
+		current       int
+		configuredMin int
+		configuredMax int
+		requiredMin   int
+		expected      int
+	}{
+		{
+			name:          "configured min below required minimum",
+			current:       1,
+			configuredMin: 1,
+			configuredMax: 10,
+			requiredMin:   3,
+			expected:      3,
+		},
+		{
+			name:          "configured max below required minimum",
+			current:       1,
+			configuredMin: 1,
+			configuredMax: 2,
+			requiredMin:   4,
+			expected:      4,
+		},
+		{
+			name:          "current target respected within effective bounds",
+			current:       3,
+			configuredMin: 1,
+			configuredMax: 5,
+			requiredMin:   2,
+			expected:      3,
+		},
+		{
+			name:          "current target capped at configured max when above effective bounds",
+			current:       6,
+			configuredMin: 1,
+			configuredMax: 5,
+			requiredMin:   2,
+			expected:      5,
+		},
+	}
+
+	for _, tt := range tests {
+		s.Run(tt.name, func() {
+			s.Equal(tt.expected, effectivePollerTarget(
+				tt.current,
+				tt.configuredMin,
+				tt.configuredMax,
+				tt.requiredMin,
+			))
+		})
+	}
+}
+
+func (s *ScalableTaskPollerSuite) TestAutoscalingMCNRequiredFloorStillGatedBySlots() {
+	behavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: 1,
+		maximumNumberOfPollers: 1,
+		minimumNumberOfPollers: 1,
+	}
+	pollerGroups := newPollerGroupManager(true)
+	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+		{Id: "group-b", Weight: 1},
+	})
+
+	blockingPoller := newBlockingProbeTaskPoller()
+	poller := newScalableTaskPoller(
+		blockingPoller,
+		ilog.NewNopLogger(),
+		behavior,
+		metrics.PollerTypeWorkflowTask,
+		&atomic.Bool{},
+		pollerGroups,
+	)
+	slotSupplier := newLimitedSlotSupplier(1)
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     slotSupplier,
+		maxTaskPerSecond: 1000,
+		taskPollers:      []scalableTaskPoller{poller},
+		taskProcessor:    noopTaskProcessor{},
+		workerType:       "AutoscalingMCNSlotCapacityTest",
+		logger:           ilog.NewNopLogger(),
+		stopTimeout:      time.Second,
+		metricsHandler:   metrics.NopHandler,
+	})
+
+	bw.Start()
+	defer func() {
+		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+		blockingPoller.Close()
+		bw.Stop()
+	}()
+
+	assert.Equal(s.T(), 2, poller.autoscalingRunner.effectiveTarget(),
+		"expected MCN required floor to raise the effective target")
+	require.Eventually(s.T(), func() bool {
+		return blockingPoller.startedPolls() == 1
+	}, time.Second, 10*time.Millisecond, "expected first poll to start")
+	require.Equal(s.T(), int32(1), slotSupplier.reserves.Load(), "expected only one slot to be reserved")
+	require.Nil(s.T(), slotSupplier.TryReserveSlot(nil), "expected no spare slot while first poll is running")
+
+	require.Never(s.T(), func() bool {
+		return blockingPoller.startedPolls() > 1
+	}, 200*time.Millisecond, 10*time.Millisecond, "MCN required floor should not bypass slot capacity")
+
+	blockingPoller.Allow(1)
+
+	require.Eventually(s.T(), func() bool {
+		return blockingPoller.startedPolls() == 2
+	}, time.Second, 10*time.Millisecond, "expected second poll to start after a slot is released")
+}
+
 func (s *ScalableTaskPollerSuite) TestAutoscalingDoesNotHoldSlotWhileWaitingForPollCapacity() {
 	behavior := &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: 1,
@@ -431,6 +635,7 @@ type blockingProbeTaskPoller struct {
 	signals chan struct{}
 	done    chan struct{}
 	closed  atomic.Bool
+	started atomic.Int32
 }
 
 func newBlockingProbeTaskPoller() *blockingProbeTaskPoller {
@@ -442,6 +647,7 @@ func newBlockingProbeTaskPoller() *blockingProbeTaskPoller {
 
 // PollTask implements taskPoller and blocks until a signal is provided so active polls stay acquired.
 func (p *blockingProbeTaskPoller) PollTask() (taskForWorker, error) {
+	p.started.Add(1)
 	select {
 	case <-p.signals:
 		return nil, nil
@@ -458,6 +664,10 @@ func (p *blockingProbeTaskPoller) Allow(n int) {
 			return
 		}
 	}
+}
+
+func (p *blockingProbeTaskPoller) startedPolls() int32 {
+	return p.started.Load()
 }
 
 func (p *blockingProbeTaskPoller) Close() {
