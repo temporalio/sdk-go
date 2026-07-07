@@ -658,19 +658,21 @@ func (bw *baseWorker) slotReservationData(taskWorker scalableTaskPoller) slotRes
 }
 
 func taskQueueKindForPoller(taskWorker scalableTaskPoller) (enumspb.TaskQueueKind, bool) {
-	switch taskWorker.taskPollerType {
+	if taskWorker.autoscalingRunner == nil {
+		return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
+	}
+	return taskQueueKindForAutoscalingPollerType(taskWorker.taskPollerType)
+}
+
+func taskQueueKindForAutoscalingPollerType(taskPollerType string) (enumspb.TaskQueueKind, bool) {
+	switch taskPollerType {
 	case metrics.PollerTypeWorkflowStickyTask:
 		return enumspb.TASK_QUEUE_KIND_STICKY, true
-	case metrics.PollerTypeWorkflowTask:
-		// Autoscaling workflow pollers are split by queue kind. SimpleMaximum
-		// workflow pollers are mixed, so their kind is not known at reservation time.
-		if taskWorker.autoscalingRunner != nil {
-			return enumspb.TASK_QUEUE_KIND_NORMAL, true
-		}
-	case metrics.PollerTypeActivityTask, metrics.PollerTypeNexusTask:
+	case metrics.PollerTypeWorkflowTask, metrics.PollerTypeActivityTask, metrics.PollerTypeNexusTask:
 		return enumspb.TASK_QUEUE_KIND_NORMAL, true
+	default:
+		return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
 	}
-	return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
 }
 
 func (bw *baseWorker) tryReserveSlot() *SlotPermit {
@@ -1146,7 +1148,7 @@ func newScalableTaskPoller(
 			logger:                    logger,
 			serverSupportsAutoscaling: serverSupportsAutoscaling,
 		})
-		queueKind, _ := taskQueueKindForPoller(tw)
+		queueKind, _ := taskQueueKindForAutoscalingPollerType(taskPollerType)
 		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler, pollerGroups, queueKind)
 		pollerGroups.addListener(tw.autoscalingRunner.signal)
 		tw.pollerAutoscaler.targetChangedCallback = func() {

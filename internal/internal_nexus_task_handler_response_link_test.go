@@ -4,13 +4,18 @@ import (
 	"context"
 	"testing"
 
+	"github.com/golang/mock/gomock"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/api/workflowservicemock/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
@@ -163,6 +168,64 @@ func TestNexusCompletionForwardsPollerGroupID(t *testing.T) {
 	require.Nil(t, failed)
 	require.NotNil(t, completed)
 	require.Equal(t, "nexus-pg-complete", completed.PollerGroupId)
+}
+
+func TestNexusPollerCompletionUsesResponsePollerGroupID(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const (
+		requestGroupID  = "request-poller-group"
+		responseGroupID = "response-poller-group"
+		namespace       = "test-ns"
+		taskQueue       = "test-task-queue"
+		identity        = "test-worker"
+	)
+
+	task := responseLinkTestTask(t, "input")
+	task.PollerGroupId = responseGroupID
+	task.Request.ScheduledTime = timestamppb.Now()
+
+	service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+			require.Equal(t, requestGroupID, req.GetPollerGroupId())
+			return task, nil
+		})
+	service.EXPECT().RespondNexusTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.RespondNexusTaskCompletedRequest, _ ...grpc.CallOption) (*workflowservice.RespondNexusTaskCompletedResponse, error) {
+			require.Equal(t, responseGroupID, req.GetPollerGroupId())
+			return &workflowservice.RespondNexusTaskCompletedResponse{}, nil
+		})
+
+	pollerGroups := newPollerGroupManager(false)
+	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+		{Id: requestGroupID, Weight: 1},
+	})
+	handler := newResponseLinkTestTaskHandler(t, false)
+	handler.client = &WorkflowClient{
+		workflowService: service,
+		identity:        identity,
+	}
+	poller := &nexusTaskPoller{
+		basePoller: basePoller{
+			metricsHandler:  metrics.NopHandler,
+			pollTimeTracker: &pollTimeTracker{},
+		},
+		namespace:       namespace,
+		taskQueueName:   taskQueue,
+		identity:        identity,
+		service:         service,
+		taskHandler:     handler,
+		logger:          ilog.NewDefaultLogger(),
+		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeNexusTask),
+		pollerGroups:    pollerGroups,
+	}
+
+	polledTask, err := poller.poll(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, polledTask)
+	require.NoError(t, poller.ProcessTask(polledTask))
 }
 
 func TestNexusFailureForwardsPollerGroupID(t *testing.T) {

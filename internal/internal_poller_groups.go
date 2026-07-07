@@ -91,7 +91,7 @@ func (m *pollerGroupManager) reserveWorkflowPoll(preferredQueueKind enumspb.Task
 }
 
 func (m *pollerGroupManager) updateGroups(groups []*taskqueuepb.PollerGroupInfo) {
-	if m == nil || m.tracker == nil || len(groups) == 0 {
+	if m == nil || m.tracker == nil {
 		return
 	}
 	if m.tracker.updateGroups(groups) {
@@ -199,12 +199,12 @@ func (t *pollerGroupTracker) reserve(queueKind enumspb.TaskQueueKind) string {
 	return groupID
 }
 
-// reserveWorkflowPoll first satisfies per-group MCN coverage by selecting a
-// group that is missing normal or sticky coverage. For that selected group, it
-// uses preferredQueueKind first when that kind's coverage is missing, then
-// fills whichever required kind is still missing. Once coverage is met, it
-// chooses a group by server-provided weight and then chooses that group's
-// workflow queue kind from its sticky backlog state.
+// reserveWorkflowPoll first satisfies per-group MCN coverage by selecting the
+// highest-weight group that is missing normal or sticky coverage. For that
+// selected group, it uses preferredQueueKind first when that kind's coverage is
+// missing, then fills whichever required kind is still missing. Once coverage
+// is met, it chooses a group by server-provided weight and then chooses that
+// group's workflow queue kind from its sticky backlog state.
 func (t *pollerGroupTracker) reserveWorkflowPoll(preferredQueueKind enumspb.TaskQueueKind, stickyEnabled bool) (string, enumspb.TaskQueueKind) {
 	if t == nil {
 		return "", preferredQueueKind
@@ -216,7 +216,7 @@ func (t *pollerGroupTracker) reserveWorkflowPoll(preferredQueueKind enumspb.Task
 		return "", preferredQueueKind
 	}
 
-	if groupID := choosePollerGroup(t.workflowCoverageCandidates(stickyEnabled)); groupID != "" {
+	if groupID := chooseHighestWeightPollerGroup(t.workflowCoverageCandidates(stickyEnabled)); groupID != "" {
 		queueKind := t.workflowCoverageQueueKind(t.groups[groupID], preferredQueueKind, stickyEnabled)
 		t.incrementPending(t.groups[groupID], queueKind)
 		return groupID, queueKind
@@ -246,7 +246,7 @@ func (t *pollerGroupTracker) release(groupID string, queueKind enumspb.TaskQueue
 }
 
 func (t *pollerGroupTracker) updateGroups(groups []*taskqueuepb.PollerGroupInfo) bool {
-	if t == nil || len(groups) == 0 {
+	if t == nil {
 		return false
 	}
 	t.mu.Lock()
@@ -254,6 +254,11 @@ func (t *pollerGroupTracker) updateGroups(groups []*taskqueuepb.PollerGroupInfo)
 
 	if t.groups == nil {
 		t.groups = make(map[string]*pollerGroupState)
+	}
+	if len(groups) == 0 {
+		membershipChanged := len(t.groups) > 0
+		t.groups = make(map[string]*pollerGroupState)
+		return membershipChanged
 	}
 
 	seen := make(map[string]struct{}, len(groups))
@@ -376,6 +381,21 @@ func (t *pollerGroupTracker) decrementPending(group *pollerGroupState, queueKind
 	} else if group.workflowPendingNormal > 0 {
 		group.workflowPendingNormal--
 	}
+}
+
+func chooseHighestWeightPollerGroup(groups map[string]*pollerGroupState) string {
+	var selectedID string
+	var selectedWeight float32
+	for groupID, group := range groups {
+		if group == nil {
+			continue
+		}
+		if selectedID == "" || group.weight > selectedWeight {
+			selectedID = groupID
+			selectedWeight = group.weight
+		}
+	}
+	return selectedID
 }
 
 // choosePollerGroup picks a random group using the configured weights.
