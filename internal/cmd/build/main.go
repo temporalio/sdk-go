@@ -127,7 +127,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.7.1-standalone-nexus-operations",
+				Version: "v1.7.2-one-time-versioning-override",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
@@ -158,7 +158,7 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "frontend.activityAPIsEnabled=true",
 				"--dynamic-config-value", "frontend.enableCancelWorkerPollsOnShutdown=true",
 				"--http-port", "7243", // Nexus tests use the HTTP port directly
-				"--dynamic-config-value", `component.callbacks.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
+				"--dynamic-config-value", `callback.allowedAddresses=[{"Pattern":"*","AllowInsecure":true}]`, // SDK tests use arbitrary callback URLs, permit that on the server
 				"--dynamic-config-value", `system.refreshNexusEndpointsMinWait="0s"`, // Make Nexus tests faster
 				"--dynamic-config-value", `component.nexusoperations.recordCancelRequestCompletionEvents=true`, // Defaults to false until after OSS 1.28 is released
 				"--dynamic-config-value", `history.enableRequestIdRefLinks=true`,
@@ -278,7 +278,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
+		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "5m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}

@@ -116,19 +116,20 @@ func run() error {
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %v", path, err)
 			}
-			defer func() {
-				err = file.Close()
-				if err != nil {
-					log.Fatalf("failed to close file %s: %v", path, err)
-				}
-			}()
 
 			err = processInternal(cfg, file, publicToInternal)
 			if err != nil {
 				return fmt.Errorf("error while parsing internal files: %v", err)
 			}
 
+			file, err = os.Open(path)
+			if err != nil {
+				return fmt.Errorf("failed to read file %s: %v", path, err)
+			}
 			err = checkInternalDocs(path, file, publicToInternal)
+			if closeErr := file.Close(); closeErr != nil {
+				return fmt.Errorf("failed to close file %s: %v", path, closeErr)
+			}
 			if err != nil {
 				return fmt.Errorf("error while checking internal docs: %v", err)
 			}
@@ -395,7 +396,25 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 			trimmedNextLine = nextLine
 		}
 
-		// Check for new doc links to add
+		// Track whether nextLine is inside a function or interface block.
+		// We update this first so the first line inside a block is not treated
+		// as a top-level definition.
+		if strings.HasPrefix(trimmedLine, "func ") {
+			funcSpaces = indentSize
+			inFunc = true
+		} else if inFunc && trimmedLine == "}" && funcSpaces == indentSize {
+			funcSpaces = -1
+			inFunc = false
+		}
+		if strings.HasSuffix(trimmedLine, "interface {") {
+			interfaceSpaces = indentSize
+			inInterface = true
+		} else if inInterface && trimmedLine == "}" && interfaceSpaces == indentSize {
+			interfaceSpaces = -1
+			inInterface = false
+		}
+
+		// Check for new doc links to add on top-level definitions only.
 		if !inFunc && !inInterface && isValidDefinition(trimmedNextLine, &inGroup, &inStruct) {
 			// Find the "Exposed As" line in the doc comment
 			var existingDoclink string
@@ -456,27 +475,13 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 			}
 		}
 
-		// update inFunc after we actually check for doclinks to allow us to check
-		// a function's definition, without checking anything inside the function
-		if strings.HasPrefix(trimmedLine, "func ") {
-			funcSpaces = indentSize
-			inFunc = true
-		} else if inFunc && trimmedLine == "}" && funcSpaces == indentSize {
-			funcSpaces = -1
-			inFunc = false
-		}
-		if strings.HasSuffix(trimmedLine, "interface {") {
-			interfaceSpaces = indentSize
-			inInterface = true
-		} else if inInterface && trimmedLine == "}" && interfaceSpaces == indentSize {
-			interfaceSpaces = -1
-			inInterface = false
-		}
-
 		newFile += line + "\n"
 	}
 
 	newFile += nextLine + "\n"
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("failed to close file %s: %v", file.Name(), err)
+	}
 
 	if changesMade {
 		absPath, err := filepath.Abs(file.Name())
@@ -556,6 +561,8 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 		return false
 	}
 
+	line, _, _ = strings.Cut(line, "//")
+	line = strings.TrimSpace(line)
 	tokens := strings.Fields(line)
 	if strings.HasPrefix(line, "func "+private+"(") {
 		return true
@@ -577,7 +584,7 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 	if inGroup == "const" || inGroup == "var" {
 		return tokens[0] == private
 	} else if inGroup == "type" {
-		return len(tokens) > 2 && tokens[2] == private
+		return len(tokens) > 1 && (tokens[0] == private || len(tokens) > 2 && tokens[2] == private)
 	}
 
 	// Handle single-line struct, variable, or function definitions

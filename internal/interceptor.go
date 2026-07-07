@@ -426,6 +426,7 @@ type ClientOutboundInterceptor interface {
 	DescribeWorkflow(context.Context, *ClientDescribeWorkflowInput) (*ClientDescribeWorkflowOutput, error)
 
 	// ExecuteActivity intercepts client.Client.ExecuteActivity.
+	// interceptor.Header will return a non-nil map for this context.
 	//
 	// NOTE: Experimental
 	ExecuteActivity(context.Context, *ClientExecuteActivityInput) (ClientActivityHandle, error)

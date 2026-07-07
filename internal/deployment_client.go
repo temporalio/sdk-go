@@ -140,6 +140,8 @@ type (
 	// DeploymentListIterator is an iterator for deployments.
 	//
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentListIterator]
 	DeploymentListIterator interface {
 		// HasNext - Return whether this iterator has next value.
 		HasNext() bool
@@ -269,6 +271,8 @@ type (
 	// DeploymentClient is the client that manages deployments.
 	//
 	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DeploymentClient]
 	DeploymentClient interface {
 		// Describes an existing deployment.
 		//

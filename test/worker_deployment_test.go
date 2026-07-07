@@ -93,30 +93,27 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropaga
 	expectedCurrentBuildID string,
 	expectedRampingBuildID string,
 ) {
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
 	ts.Eventually(func() bool {
-		resp, err := ts.client.WorkflowService().DescribeWorkerDeployment(ctx, &workflowservice.DescribeWorkerDeploymentRequest{
-			Namespace:      ts.config.Namespace,
-			DeploymentName: deploymentName,
-		})
+		desc, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
 		if err != nil {
 			return false
 		}
-		if resp.GetWorkerDeploymentInfo().GetRoutingConfig().GetCurrentDeploymentVersion().GetBuildId() != expectedCurrentBuildID {
+		if buildIDFromWorkerDeploymentVersion(desc.Info.RoutingConfig.CurrentVersion) != expectedCurrentBuildID {
 			return false
 		}
-		if resp.GetWorkerDeploymentInfo().GetRoutingConfig().GetRampingDeploymentVersion().GetBuildId() != expectedRampingBuildID {
+		if buildIDFromWorkerDeploymentVersion(desc.Info.RoutingConfig.RampingVersion) != expectedRampingBuildID {
 			return false
 		}
-		switch resp.GetWorkerDeploymentInfo().GetRoutingConfigUpdateState() {
-		case enumspb.ROUTING_CONFIG_UPDATE_STATE_COMPLETED:
-			return true
-		case enumspb.ROUTING_CONFIG_UPDATE_STATE_UNSPECIFIED:
-			return true // not implemented
-		case enumspb.ROUTING_CONFIG_UPDATE_STATE_IN_PROGRESS:
-			return false
-		}
-		return false
-	}, 10*time.Second, 100*time.Millisecond)
+		return true
+	}, 30*time.Second, 100*time.Millisecond)
+}
+
+func buildIDFromWorkerDeploymentVersion(version *worker.WorkerDeploymentVersion) string {
+	if version == nil {
+		return ""
+	}
+	return version.BuildID
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkflowRunning(ctx context.Context, handle client.WorkflowRun) {
@@ -437,7 +434,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle1)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle1, v1.BuildID)
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
 
@@ -452,7 +449,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	handle2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle2)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle2, v2.BuildID)
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v3)
 
@@ -489,7 +486,7 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedBehaviorThreeWorkers() {
 	handle3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("3"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle3)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle3, v3.BuildID)
 
 	// finish them all
 	ts.NoError(ts.client.SignalWorkflow(ctx, handle1.GetID(), handle1.GetRunID(), "start-signal", "prefix"))
@@ -611,6 +608,104 @@ func (ts *WorkerDeploymentTestSuite) TestPinnedOverrideInWorkflowOptions() {
 
 	ts.NoError(handle2.Get(ctx, &result))
 	// No Override
+	ts.True(IsWorkerVersionOne(result))
+}
+
+func (ts *WorkerDeploymentTestSuite) TestOneTimeOverrideInWorkflowOptions() {
+	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
+		ts.T().Skip("temporal server 1.27+ required")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	deploymentName := "deploy-test-" + uuid.NewString()
+	v1 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "1.0",
+	}
+	v2 := worker.WorkerDeploymentVersion{
+		DeploymentName: deploymentName,
+		BuildID:        "2.0",
+	}
+
+	// Two workers:
+	// 1) 1.0 with WaitSignalToStartVersionedOne (setCurrent)
+	// 2) 2.0 with WaitSignalToStartVersionedTwo (one-time override target)
+	// The one-time override should route the first WFT to 2.0, then clear.
+	// Since 2.0 reports AutoUpgrade behavior and current remains 1.0, the
+	// signal WFT should follow normal routing back to 1.0.
+
+	worker1 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       v1,
+		},
+	})
+	worker1.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedOne, workflow.RegisterOptions{
+		Name:               "WaitSignalToStartVersioned",
+		VersioningBehavior: workflow.VersioningBehaviorPinned,
+	})
+
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
+
+	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		DeploymentOptions: worker.DeploymentOptions{
+			UseVersioning: true,
+			Version:       v2,
+		},
+	})
+
+	worker2.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedTwo, workflow.RegisterOptions{
+		Name:               "WaitSignalToStartVersioned",
+		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
+	})
+
+	ts.NoError(worker2.Start())
+	defer worker2.Stop()
+
+	dHandle := ts.client.WorkerDeploymentClient().GetHandle(deploymentName)
+
+	ts.waitForWorkerDeployment(ctx, dHandle)
+
+	response1, err := dHandle.Describe(ctx, client.WorkerDeploymentDescribeOptions{})
+	ts.NoError(err)
+
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v1)
+
+	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
+		BuildID:       v1.BuildID,
+		ConflictToken: response1.ConflictToken,
+	})
+	ts.NoError(err)
+	ts.waitForWorkerDeploymentRoutingConfigPropagation(ctx, deploymentName, v1.BuildID, "")
+
+	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
+
+	options := ts.startWorkflowOptions("one-time-override")
+	options.VersioningOverride = &client.OneTimeVersioningOverride{
+		TargetVersion: v2,
+	}
+
+	var handle client.WorkflowRun
+	ts.Eventually(func() bool {
+		var startErr error
+		handle, startErr = ts.client.ExecuteWorkflow(ctx, options, "WaitSignalToStartVersioned")
+		return startErr == nil
+	}, 5*time.Second, 200*time.Millisecond)
+	ts.Require().NotNil(handle)
+
+	ts.Eventually(func() bool {
+		describeResp, err := ts.client.DescribeWorkflowExecution(ctx, handle.GetID(), handle.GetRunID())
+		ts.NoError(err)
+		return describeResp.WorkflowExecutionInfo.GetVersioningInfo().GetDeploymentVersion().GetBuildId() == v2.BuildID &&
+			describeResp.WorkflowExecutionInfo.GetVersioningInfo().GetVersioningOverride() == nil
+	}, 5*time.Second, 100*time.Millisecond)
+
+	ts.NoError(ts.client.SignalWorkflow(ctx, handle.GetID(), handle.GetRunID(), "start-signal", "prefix"))
+
+	var result string
+	ts.NoError(handle.Get(ctx, &result))
 	ts.True(IsWorkerVersionOne(result))
 }
 

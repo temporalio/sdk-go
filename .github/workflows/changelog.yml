@@ -1,0 +1,42 @@
+name: Changelog
+
+on:
+  pull_request:
+    # `labeled`/`unlabeled` are included so applying the `skip-changelog`
+    # label re-runs this check. They are not in the default set of activity
+    # types, and this lives in its own workflow so a label change re-runs only
+    # this cheap check rather than the full CI matrix.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  changelog-check:
+    name: Changelog checkpoint
+    runs-on: ubuntu-latest
+    steps:
+      # Reminds contributors to record user-facing changes. Passes when the PR
+      # touches CHANGELOG.md, or when a maintainer applies the
+      # `skip-changelog` label to confirm no entry is needed. Otherwise
+      # fails with guidance. It does not judge whether the entry is meaningful,
+      # it is purely a nudge.
+      - name: Require CHANGELOG.md update or override label
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          if echo "$LABELS" | grep -q '"skip-changelog"'; then
+            echo "Found 'skip-changelog' label; no CHANGELOG.md entry required."
+            exit 0
+          fi
+          if gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename' \
+            | grep -qx 'CHANGELOG.md'; then
+            echo "CHANGELOG.md was updated."
+            exit 0
+          fi
+          echo "::error::This PR does not update CHANGELOG.md. If it includes a user-facing change, add an entry under [Unreleased] in CHANGELOG.md. If no changelog entry is needed, a maintainer can apply the 'skip-changelog' label."
+          exit 1

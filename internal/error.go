@@ -254,6 +254,8 @@ type (
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.UnknownExternalWorkflowExecutionError]
 	UnknownExternalWorkflowExecutionError struct{}
 
 	// ServerError can be returned from server.
@@ -322,9 +324,13 @@ type (
 	// ChildWorkflowExecutionAlreadyStartedError is set as the cause of
 	// ChildWorkflowExecutionError when failure is due the child workflow having
 	// already started.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.ChildWorkflowExecutionAlreadyStartedError]
 	ChildWorkflowExecutionAlreadyStartedError struct{}
 
 	// NamespaceNotFoundError is set as the cause when failure is due namespace not found.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.NamespaceNotFoundError]
 	NamespaceNotFoundError struct{}
 
 	// WorkflowExecutionError is returned from workflow.
@@ -575,6 +581,26 @@ func (e *temporalError) setFailure(f *failurepb.Failure) {
 }
 
 func (e *temporalError) failure() *failurepb.Failure {
+	return e.originalFailure
+}
+
+// Failure returns the original proto Failure this error was created from, if one is available.
+//
+// This is intended for advanced callers that need structured failure data such as stack traces,
+// encoded details, or the full cause chain. Application code should generally
+// continue using errors.As with concrete SDK error types such as *ApplicationError.
+//
+// When working with an arbitrary error value, use errors.As with an interface:
+//
+//	type failureProvider interface {
+//		Failure() *failurepb.Failure
+//	}
+//
+//	var fp failureProvider
+//	if errors.As(err, &fp) {
+//		failure := fp.Failure()
+//	}
+func (e *temporalError) Failure() *failurepb.Failure {
 	return e.originalFailure
 }
 

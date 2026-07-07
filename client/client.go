@@ -223,7 +223,9 @@ type (
 	GrpcCompression = internal.GrpcCompression
 
 	// GrpcCompressionGzip compresses outbound gRPC request bodies with gzip and
-	// accepts gzip-compressed responses. This is the default.
+	// accepts gzip-compressed responses. This is the default. If a specific
+	// server RPC does not support gzip, the client may retry that RPC without
+	// compression and continue using gzip for other RPCs.
 	GrpcCompressionGzip = internal.GrpcCompressionGzip
 
 	// GrpcCompressionNone disables gRPC request compression.
@@ -680,6 +682,13 @@ type (
 	//
 	// NOTE: Experimental
 	AutoUpgradeVersioningOverride = internal.AutoUpgradeVersioningOverride
+
+	// OneTimeVersioningOverride routes the workflow to a specific deployment version until one
+	// workflow task completes there. After that workflow task completes, the override is cleared and
+	// the workflow follows the versioning behavior reported by the worker.
+	//
+	// NOTE: Experimental
+	OneTimeVersioningOverride = internal.OneTimeVersioningOverride
 
 	// WorkflowUpdateHandle represents a running or completed workflow
 	// execution update and gives the holder access to the outcome of the same.

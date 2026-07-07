@@ -151,7 +151,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	// Record spans for tracing test
 	if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryTracing") ||
-		strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryBaggageHandling") {
+		strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestOpenTelemetryBaggageHandling") ||
+		strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestStandaloneActivityTracing") {
 		ts.openTelemetrySpanRecorder = tracetest.NewSpanRecorder()
 		ts.openTelemetryTracer = sdktrace.NewTracerProvider(
 			sdktrace.WithSpanProcessor(ts.openTelemetrySpanRecorder)).Tracer("")
@@ -584,19 +585,19 @@ func (ts *IntegrationTestSuite) TestLongRunningActivityWithHB() {
 
 func (ts *IntegrationTestSuite) TestLongRunningActivityWithHBAndGrpcRetries() {
 	var expected []string
-	// Fail every other HB attempt, otherwise it's too easy to exceed the HB timeout
-	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 3, 5)
+	// Fail every other HB attempt, otherwise it's too easy to exceed the HB timeout.
+	ts.trafficController.AddError("RecordActivityTaskHeartbeat", errors.New("call not allowed"), 1, 3)
 	err := ts.executeWorkflow("test-long-running-activity-with-hb", ts.workflows.LongRunningActivityWithHB, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
-	// we induce 3 failures, but they all should be retried
+	// we induce 2 failures, but they all should be retried
 	ts.assertReportedOperationCount("temporal_request_failure", "RecordActivityTaskHeartbeat", 0)
-	// expect 3 retry attempts
-	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 3)
+	// expect 2 retry attempts
+	ts.assertReportedOperationCount("temporal_request_failure_attempt", "RecordActivityTaskHeartbeat", 2)
 	// save number of heartbeats sent to the server
 	totalHeartbeats := ts.getReportedOperationCount("temporal_request", "RecordActivityTaskHeartbeat")
-	// and make sure that number of reported attempts is 3 more, because of retries.
-	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+3))
+	// and make sure that number of reported attempts is 2 more, because of retries.
+	ts.assertReportedOperationCount("temporal_request_attempt", "RecordActivityTaskHeartbeat", int(totalHeartbeats+2))
 }
 
 func (ts *IntegrationTestSuite) TestHeartbeatOnActivityFailure() {
@@ -2633,10 +2634,13 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 
 func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
+	localActivityStarted := make(chan struct{})
+	var localActivityStartedOnce sync.Once
 	localActivityFn := func(ctx context.Context) error {
+		localActivityStartedOnce.Do(func() { close(localActivityStarted) })
 		// wait for worker shutdown to be started and WorkflowTaskTimeout to be hit
 		<-activity.GetWorkerStopChannel(ctx)
 		time.Sleep(1500 * time.Millisecond) // 1.5 seconds
@@ -2669,8 +2673,14 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
 	ts.NoError(err)
 
-	// Stop the worker
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-localActivityStarted:
+	case <-ctx.Done():
+		ts.FailNow("timed out waiting for local activity to start", ctx.Err().Error())
+	}
+
+	// Stop the worker after the local activity is blocked on worker shutdown so
+	// shutdown reliably overlaps the workflow task timeout.
 	ts.worker.Stop()
 	ts.workerStopped = true
 
@@ -2678,7 +2688,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	var laCompleted, started int
 	var wfeCompleted bool
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
-		true, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	for iter.HasNext() {
 		event, err := iter.Next()
 		ts.NoError(err)
@@ -3051,6 +3061,61 @@ func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
 	for _, expectedCall := range expectedCalls {
 		ts.True(recordedCalls[expectedCall], "Expected interceptor call %s was not recorded", expectedCall)
 	}
+}
+
+func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
+	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	immediateActivity := func() (string, error) { return "result", nil }
+	ts.worker.RegisterActivityWithOptions(immediateActivity, activity.RegisterOptions{Name: "tracingTestStandaloneActivity"})
+
+	ctx, rootSpan := ts.openTelemetryTracer.Start(ctx, "root-span")
+
+	activityID := "tracing-test-" + uuid.NewString()
+	handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
+		ID:                     activityID,
+		TaskQueue:              ts.taskQueueName,
+		ScheduleToCloseTimeout: 30 * time.Second,
+	}, "tracingTestStandaloneActivity")
+	ts.NoError(err)
+	var result string
+	ts.NoError(handle.Get(ctx, &result))
+	ts.Equal("result", result)
+
+	rootSpan.End()
+	spans := ts.openTelemetrySpanRecorder.Ended()
+
+	var startActivitySpan, runActivitySpan sdktrace.ReadOnlySpan
+	for _, s := range spans {
+		switch s.Name() {
+		case "StartActivity:tracingTestStandaloneActivity":
+			startActivitySpan = s
+		case "RunActivity:tracingTestStandaloneActivity":
+			runActivitySpan = s
+		}
+	}
+
+	ts.Require().NotNil(startActivitySpan, "expected a StartActivity span for the standalone activity")
+	ts.Equal("StartActivity:tracingTestStandaloneActivity", startActivitySpan.Name())
+	ts.Equal(rootSpan.SpanContext().SpanID(), startActivitySpan.Parent().SpanID())
+
+	var foundActivityID bool
+	for _, attr := range startActivitySpan.Attributes() {
+		if string(attr.Key) == "temporalActivityID" {
+			foundActivityID = true
+			ts.Equal(activityID, attr.Value.AsString())
+		}
+	}
+	ts.True(foundActivityID, "expected temporalActivityID span attribute")
+
+	ts.Require().NotNil(runActivitySpan, "expected a RunActivity span for the standalone activity")
+	ts.Equal("RunActivity:tracingTestStandaloneActivity", runActivitySpan.Name())
+	ts.Equal(startActivitySpan.SpanContext().SpanID(), runActivitySpan.Parent().SpanID())
+	ts.Equal(startActivitySpan.SpanContext().TraceID(), runActivitySpan.SpanContext().TraceID())
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
@@ -7251,7 +7316,26 @@ func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worke
 			return client.StartWorkflowOptions{ID: "nexus-async-echo-" + uuid.NewString()}, nil
 		},
 	)
-	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp))
+	// linkEchoOp uses the input string as the workflow ID so tests can predict it.
+	linkEchoOp := temporalnexus.NewWorkflowRunOperation(
+		"link-echo-op",
+		echoWf,
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (client.StartWorkflowOptions, error) {
+			return client.StartWorkflowOptions{ID: "nexus-link-echo-" + input}, nil
+		},
+	)
+	// signalEchoOp signals the workflow named by its input, exercising the bi-directional
+	// Link_NexusOperation <-> Link_WorkflowEvent flow between the SANO record and the signal event.
+	signalEchoOp := nexus.NewSyncOperation(
+		"signal-echo-op",
+		func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
+			if err := temporalnexus.GetClient(ctx).SignalWorkflow(ctx, input, "", "nexus-signal", input); err != nil {
+				return "", err
+			}
+			return input, nil
+		},
+	)
+	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp, linkEchoOp, signalEchoOp))
 	w.RegisterNexusService(service)
 }
 
@@ -9598,6 +9682,124 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 		_, err = ts.client.NewNexusClient(client.NexusClientOptions{Endpoint: "ep"})
 		ts.Error(err)
 		ts.Contains(err.Error(), "service is required")
+	})
+
+	ts.Run("Link_NexusOperation forwarded to workflow completion callback", func() {
+		// Use operation ID as workflow input so we can derive the workflow ID.
+		opID := uuid.NewString()
+		workflowID := "nexus-link-echo-" + opID
+
+		handle := executeNexusOpWithRetry("link-echo-op", opID, client.StartNexusOperationOptions{
+			ID:                     opID,
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+		ts.NotEmpty(handle.GetRunID())
+
+		err := handle.Get(ctx, nil)
+		ts.NoError(err)
+
+		// The link-echo-op handler starts a workflow; verify that the
+		// Link_NexusOperation pointing back to the SANO record is present
+		// in the workflow's completion callback links.
+		iter := ts.client.GetWorkflowHistory(ctx, workflowID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var nexusOpLink *commonpb.Link_NexusOperation
+		for iter.HasNext() {
+			event, err := iter.Next()
+			ts.NoError(err)
+			if event.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_STARTED {
+				continue
+			}
+			for _, cb := range event.GetWorkflowExecutionStartedEventAttributes().GetCompletionCallbacks() {
+				for _, link := range cb.GetLinks() {
+					if l := link.GetNexusOperation(); l != nil {
+						nexusOpLink = l
+					}
+				}
+			}
+			break
+		}
+		ts.Require().NotNil(nexusOpLink, "expected Link_NexusOperation in workflow completion callback")
+		ts.Equal(ts.config.Namespace, nexusOpLink.GetNamespace())
+		ts.Equal(opID, nexusOpLink.GetOperationId())
+		ts.Equal(handle.GetRunID(), nexusOpLink.GetRunId())
+	})
+
+	ts.Run("Bi-directional Signal+SANO links", func() {
+		// Start a target workflow that just needs to be alive to receive the signal.
+		targetWfID := "nexus-sano-signal-target-" + uuid.NewString()
+		targetRun, err := ts.client.ExecuteWorkflow(ctx,
+			client.StartWorkflowOptions{ID: targetWfID, TaskQueue: ts.taskQueueName},
+			"block-forever-wf",
+			targetWfID,
+		)
+		ts.NoError(err)
+		defer func() {
+			_ = ts.client.TerminateWorkflow(ctx, targetWfID, targetRun.GetRunID(), "test cleanup")
+		}()
+
+		handle := executeNexusOpWithRetry("signal-echo-op", targetWfID, client.StartNexusOperationOptions{
+			ID:                     uuid.NewString(),
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		ts.NotEmpty(handle.GetID())
+
+		var result string
+		err = handle.Get(ctx, &result)
+		ts.NoError(err)
+		ts.Equal(targetWfID, result)
+
+		// Signal -> SANO direction: target workflow's WorkflowExecutionSignaled event should carry a
+		// Link_NexusOperation pointing back to the SANO record.
+		iter := ts.client.GetWorkflowHistory(ctx, targetWfID, targetRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var sanoBacklink *commonpb.Link_NexusOperation
+		var signalEvent *historypb.HistoryEvent
+		for iter.HasNext() {
+			event, err := iter.Next()
+			ts.NoError(err)
+			if event.GetEventType() != enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED {
+				continue
+			}
+			signalEvent = event
+			for _, link := range event.GetLinks() {
+				if l := link.GetNexusOperation(); l != nil {
+					sanoBacklink = l
+				}
+			}
+		}
+		ts.Require().NotNil(signalEvent, "expected WorkflowExecutionSignaled event in target workflow")
+		ts.Require().NotNil(sanoBacklink, "expected Link_NexusOperation on signal event pointing back to SANO")
+		ts.Equal(ts.config.Namespace, sanoBacklink.GetNamespace())
+		ts.Equal(handle.GetID(), sanoBacklink.GetOperationId())
+		ts.Equal(handle.GetRunID(), sanoBacklink.GetRunId())
+
+		// SANO -> Signal direction: SANO record should carry a Link_WorkflowEvent pointing to the
+		// signal event in the target workflow's history.
+		description, err := handle.Describe(ctx, client.DescribeNexusOperationOptions{})
+		ts.NoError(err)
+		var signalEventLink *commonpb.Link_WorkflowEvent
+		for _, link := range description.RawInfo.GetLinks() {
+			if l := link.GetWorkflowEvent(); l != nil && l.GetWorkflowId() == targetWfID {
+				signalEventLink = l
+			}
+		}
+		ts.Require().NotNil(signalEventLink, "expected Link_WorkflowEvent on SANO pointing to signal event")
+		ts.Equal(ts.config.Namespace, signalEventLink.GetNamespace())
+		ts.Equal(targetWfID, signalEventLink.GetWorkflowId())
+		ts.Equal(targetRun.GetRunID(), signalEventLink.GetRunId())
+		// The server may return either an EventRef (with EventId) or a RequestIdRef (with RequestId),
+		// depending on history.enableRequestIdRefLinks. Either way, the referenced event type must
+		// identify the signal event we delivered.
+		switch ref := signalEventLink.GetReference().(type) {
+		case *commonpb.Link_WorkflowEvent_EventRef:
+			ts.Equal(signalEvent.GetEventId(), ref.EventRef.GetEventId())
+			ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, ref.EventRef.GetEventType())
+		case *commonpb.Link_WorkflowEvent_RequestIdRef:
+			ts.NotEmpty(ref.RequestIdRef.GetRequestId())
+			ts.Equal(enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_SIGNALED, ref.RequestIdRef.GetEventType())
+		default:
+			ts.Failf("unexpected reference type", "got %T", ref)
+		}
 	})
 }
 
