@@ -23,6 +23,7 @@ package googleadk_test
 
 import (
 	"context"
+	"io"
 	"testing"
 	"time"
 
@@ -49,7 +50,19 @@ func devServer(t *testing.T) (client.Client, func()) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	srv, err := testsuite.StartDevServer(ctx, testsuite.DevServerOptions{})
+	// Redirect the dev-server process's stdio to io.Discard rather than letting it
+	// inherit the test binary's os.Stdout/os.Stderr (testsuite's default on every
+	// platform). On Windows, DevServer.Stop() shuts the server down with a console
+	// CTRL_BREAK event, which fails when the test process has no attached console
+	// (as under `go test` in CI) — Stop() then returns early without killing the
+	// process. A lingering server that inherited our stdio would hold the pipe
+	// `go test` reads, tripping its "test I/O incomplete after exiting" WaitDelay
+	// check and failing the package even though every test passed. Detaching its
+	// stdio makes that harmless (and the CI runner reaps the orphan on job exit).
+	srv, err := testsuite.StartDevServer(ctx, testsuite.DevServerOptions{
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	})
 	if err != nil {
 		t.Skipf("dev server unavailable (capability skip): %v", err)
 	}
