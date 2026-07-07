@@ -62,6 +62,14 @@ type (
 		//
 		// Optional: defaults to none/empty.
 		Summary string
+
+		// HACK: Expose the completion callbacks and pass them along
+		// in the gRPC API.
+		//
+		// We'll want to update this to expose something more friendly, like a
+		// CallbackRef interface. And have the SDK generate the commonpb.Callback
+		// at runtime.
+		HackRawCompletionCallbacks []*commonpb.Callback
 	}
 
 	// ClientNexusClientOptions contains options for creating a NexusClient.
@@ -705,6 +713,8 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		SearchAttributes: searchAttrs,
 		UserMetadata:     userMetadata,
 		NexusHeader:      in.NexusHeader,
+
+		CompletionCallbacks: in.Options.HackRawCompletionCallbacks,
 	}
 	if in.Options.ScheduleToCloseTimeout > 0 {
 		request.ScheduleToCloseTimeout = durationpb.New(in.Options.ScheduleToCloseTimeout)
