@@ -8,7 +8,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go.temporal.io/sdk v1.45.0
 	go.temporal.io/sdk/contrib/workflowstreams v0.1.1
-	google.golang.org/adk/v2 v2.0.0
+	google.golang.org/adk/v2 v2.0.1-0.20260707195420-2a04f92f1776
 	google.golang.org/genai v1.57.0
 )
 
@@ -59,11 +59,8 @@ require (
 	rsc.io/ordered v1.1.1 // indirect
 )
 
-// google.golang.org/adk/v2 carries the platform TaskRunner/time/UUID seams,
-// tool/toolutils.PackTool, and the model registry this plugin consumes, none of
-// which are on upstream google/adk-go yet. Point this at a local checkout of
-// github.com/DABH/adk-go on the temporal-integration-v2 branch, cloned as a
-// sibling of this repo. A v2 fork keeps the google.golang.org/adk/v2 module
-// path, so Go cannot pull it in via a pinned pseudo-version — hence the local
-// replace. Once the seams land upstream, drop this and require adk/v2 directly.
-replace google.golang.org/adk/v2 => ../../../adk-go
+// google.golang.org/adk/v2 is pinned to a main-branch pseudo-version because the
+// seams this plugin consumes — the platform TaskRunner/time/UUID providers,
+// tool/toolutils.PackTool, and the model.Register/NewLLM registry — merged to
+// upstream google/adk-go after the latest tagged release (v2.0.0). Bump this to a
+// tagged release once one ships that includes them.

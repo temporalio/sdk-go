@@ -23,14 +23,11 @@ import googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
 ```
 
 This package depends on the deterministic ADK `platform` seams
-(`WithTimeProvider`, `WithUUIDProvider`, `WithTaskRunner`) that currently live
-only on the `add-platform-task-runner-seam` branch of
-`github.com/DABH/adk-go`. The module's `go.mod` pins them with a `replace`
-directive:
-
-```
-replace google.golang.org/adk => github.com/DABH/adk-go <pseudo-version>
-```
+(`WithTimeProvider`, `WithUUIDProvider`, `WithTaskRunner`) from upstream
+`google.golang.org/adk/v2`. These merged after the latest tagged ADK release
+(v2.0.0), so the module's `go.mod` pins `adk/v2` to a `main`-branch
+pseudo-version for now; it reverts to an ordinary tagged version once a release
+ships that includes them.
 
 ## Hello world
 
