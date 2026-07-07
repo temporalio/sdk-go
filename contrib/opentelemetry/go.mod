@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/contrib/opentelemetry
 
-go 1.24.0
+go 1.25.4
 
 require (
 	github.com/stretchr/testify v1.11.1
@@ -15,6 +15,7 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
+	github.com/nexus-rpc/nexus-proto-annotations v0.1.0 // indirect
 	github.com/nexus-rpc/sdk-go v0.6.0 // indirect
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	golang.org/x/sync v0.19.0 // indirect
@@ -32,7 +33,7 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	go.opentelemetry.io/otel/metric v1.41.0
 	go.opentelemetry.io/otel/sdk/metric v1.41.0
-	go.temporal.io/api v1.62.12 // indirect
+	go.temporal.io/api v1.63.0 // indirect
 	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.33.0 // indirect

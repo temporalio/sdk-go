@@ -40,6 +40,9 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `OneTimeVersioningOverride` support for workflow start and workflow execution options,
+  allowing a workflow to route to a target Worker Deployment Version until one Workflow Task
+  completes there.
 - Nexus operation link propagation for signals. When a Nexus operation handler signals a workflow
   (including signal-with-start), the inbound Nexus request links are now forwarded onto the signaled
   workflow so its history events link back to the caller, and the link the server returns for the
