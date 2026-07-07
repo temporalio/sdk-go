@@ -1508,6 +1508,19 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 		_, descErr := tc.client.DescribeWorkflow(ctx, handlerID, "")
 		return descErr == nil
 	}, 2*time.Second, 20*time.Millisecond, "timed out waiting for handler wf to start")
+	require.Eventuallyf(t, func() bool {
+		history := tc.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for history.HasNext() {
+			event, err := history.Next()
+			if err != nil {
+				return false
+			}
+			if event.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
+				return true
+			}
+		}
+		return false
+	}, 5*time.Second, 100*time.Millisecond, "timed out waiting for caller Nexus operation to start")
 	require.NoError(t, tc.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
 	err = run.Get(ctx, nil)

@@ -995,13 +995,12 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 			Version:       v1,
 		},
 	})
-	ts.NoError(worker1.Start())
-	defer worker1.Stop()
-
 	worker1.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedOne, workflow.RegisterOptions{
 		Name:               "WaitSignalToStartVersioned",
 		VersioningBehavior: workflow.VersioningBehaviorPinned,
 	})
+	ts.NoError(worker1.Start())
+	defer worker1.Stop()
 
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
 		DeploymentOptions: worker.DeploymentOptions{
@@ -1009,14 +1008,10 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 			Version:       v2,
 		},
 	})
-	ts.NoError(worker2.Start())
-	defer worker2.Stop()
-
 	worker2.RegisterWorkflowWithOptions(ts.workflows.WaitSignalToStartVersionedTwo, workflow.RegisterOptions{
 		Name:               "WaitSignalToStartVersioned",
 		VersioningBehavior: workflow.VersioningBehaviorAutoUpgrade,
 	})
-
 	ts.NoError(worker2.Start())
 	defer worker2.Stop()
 
@@ -1057,10 +1052,16 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 
 	// Start workflow on 1.0)
 
-	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
-	ts.NoError(err)
-
-	ts.waitForWorkflowRunning(ctx, handle1)
+	options := ts.startWorkflowOptions("1")
+	options.VersioningOverride = &client.PinnedVersioningOverride{Version: v1}
+	var handle1 client.WorkflowRun
+	ts.Eventually(func() bool {
+		var startErr error
+		handle1, startErr = ts.client.ExecuteWorkflow(ctx, options, "WaitSignalToStartVersioned")
+		return startErr == nil
+	}, 5*time.Second, 200*time.Millisecond)
+	ts.Require().NotNil(handle1)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle1, v1.BuildID)
 
 	// SetCurrent to 2.0)
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{

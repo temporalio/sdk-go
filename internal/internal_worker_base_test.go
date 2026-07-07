@@ -167,6 +167,85 @@ func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersCreatesBalancerForMul
 	})
 }
 
+type blockingGaugeMetricsHandler struct {
+	metrics.Handler
+	blockMarkUpdates  atomic.Bool
+	firstMarkStarted  chan struct{}
+	secondMarkStarted chan struct{}
+	unblockFirstMark  chan struct{}
+	markCount         atomic.Int32
+}
+
+func (h *blockingGaugeMetricsHandler) Gauge(name string) metrics.Gauge {
+	gauge := h.Handler.Gauge(name)
+	if name != metrics.WorkerTaskSlotsUsed {
+		return gauge
+	}
+	return metrics.GaugeFunc(func(value float64) {
+		if h.blockMarkUpdates.Load() {
+			switch h.markCount.Add(1) {
+			case 1:
+				close(h.firstMarkStarted)
+				<-h.unblockFirstMark
+			case 2:
+				close(h.secondMarkStarted)
+			}
+		}
+		gauge.Update(value)
+	})
+}
+
+func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPublishesLatestConcurrentState() {
+	inner, err := NewFixedSizeSlotSupplier(2)
+	s.Require().NoError(err)
+	capturingHandler := metrics.NewCapturingHandler()
+	metricsHandler := &blockingGaugeMetricsHandler{
+		Handler:           capturingHandler,
+		firstMarkStarted:  make(chan struct{}),
+		secondMarkStarted: make(chan struct{}),
+		unblockFirstMark:  make(chan struct{}),
+	}
+	trackingSupplier := newTrackingSlotSupplier(inner, trackingSlotSupplierOptions{
+		logger:         ilog.NewNopLogger(),
+		metricsHandler: metricsHandler,
+	})
+
+	permit1, err := trackingSupplier.ReserveSlot(context.Background(), &slotReservationData{})
+	s.Require().NoError(err)
+	permit2, err := trackingSupplier.ReserveSlot(context.Background(), &slotReservationData{})
+	s.Require().NoError(err)
+	metricsHandler.blockMarkUpdates.Store(true)
+
+	firstMarkDone := make(chan struct{})
+	go func() {
+		trackingSupplier.MarkSlotUsed(permit1)
+		close(firstMarkDone)
+	}()
+	<-metricsHandler.firstMarkStarted
+	secondMarkDone := make(chan struct{})
+	go func() {
+		trackingSupplier.MarkSlotUsed(permit2)
+		close(secondMarkDone)
+	}()
+	select {
+	case <-metricsHandler.secondMarkStarted:
+	case <-time.After(time.Second):
+		close(metricsHandler.unblockFirstMark)
+		s.FailNow("second slot state change blocked behind the first metric update")
+	}
+	close(metricsHandler.unblockFirstMark)
+	<-firstMarkDone
+	<-secondMarkDone
+
+	var usedSlots float64
+	for _, gauge := range capturingHandler.Gauges() {
+		if gauge.Name == metrics.WorkerTaskSlotsUsed {
+			usedSlots = gauge.Value()
+		}
+	}
+	s.Equal(float64(2), usedSlots)
+}
+
 func TestScalableTaskPollerSuite(t *testing.T) {
 	suite.Run(t, new(ScalableTaskPollerSuite))
 }

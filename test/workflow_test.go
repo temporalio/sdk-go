@@ -3506,23 +3506,21 @@ func (w *Workflows) AwaitWithOptions(ctx workflow.Context) (bool, error) {
 
 func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, numOfEachActKind int, actFailTimes int) error {
 	var activities *Activities
-	futures := make([]workflow.Future, 0)
+	futures := make([]workflow.Future, 0, 2*numOfEachActKind)
+	localActivityCtx := workflow.WithLocalActivityOptions(ctx, workflow.LocalActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+	})
 	for i := 0; i < numOfEachActKind; i++ {
-		ao := workflow.LocalActivityOptions{
-			StartToCloseTimeout: time.Minute,
-			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
-		}
-		ctx = workflow.WithLocalActivityOptions(ctx, ao)
-		a := workflow.ExecuteLocalActivity(ctx, activities.failNTimes, actFailTimes, i)
+		a := workflow.ExecuteLocalActivity(localActivityCtx, activities.failNTimes, actFailTimes, i)
 		futures = append(futures, a)
 	}
+	activityCtx := workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: time.Minute,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
+	})
 	for i := 0; i < numOfEachActKind; i++ {
-		ao := workflow.ActivityOptions{
-			StartToCloseTimeout: time.Minute,
-			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
-		}
-		ctx = workflow.WithActivityOptions(ctx, ao)
-		a := workflow.ExecuteActivity(ctx, activities.failNTimes, actFailTimes, i)
+		a := workflow.ExecuteActivity(activityCtx, activities.failNTimes, actFailTimes, i)
 		futures = append(futures, a)
 	}
 

@@ -49,6 +49,7 @@ to docs, or any other relevant information.
 - Resource-based tuner: `TryReserveSlot` (used for eager task dispatch) no longer blocks for up to
   `RampThrottle` while a concurrent `ReserveSlot` waits out the ramp throttle. The throttle behavior
   is unchanged; only the unnecessary lock contention on the eager path is removed.
+- Fixed worker task slot metrics reporting stale values when slot state changes concurrently.
 
 ## [1.46.0] - 2026-07-07
 

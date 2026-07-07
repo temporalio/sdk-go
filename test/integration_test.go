@@ -8311,9 +8311,11 @@ func (ts *IntegrationTestSuite) TestLocalActivityWorkerShutdownNoHeartbeat() {
 
 func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
+	localActivityStarted := make(chan struct{}, 1)
 	localActivityFn := func(ctx context.Context) error {
+		localActivityStarted <- struct{}{}
 		<-activity.GetWorkerStopChannel(ctx)
 		return ctx.Err()
 	}
@@ -8346,11 +8348,15 @@ func (ts *IntegrationTestSuite) TestLocalActivityCompleteWithinGracefulShutdown(
 	// Start workflow
 	run, err := ts.client.ExecuteWorkflow(ctx, startOptions, workflowFn)
 	ts.NoError(err)
+	select {
+	case <-localActivityStarted:
+	case <-ctx.Done():
+		ts.FailNow("timed out waiting for local activity to start")
+	}
 	// Stop the worker
-	time.Sleep(100 * time.Millisecond)
 	ts.worker.Stop()
 	ts.workerStopped = true
-	time.Sleep(1200 * time.Millisecond)
+	ts.NoError(run.Get(ctx, nil))
 
 	// Look for any Local Activity heartbeat from the history
 	var wftStarted, laCompleted int
