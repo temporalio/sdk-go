@@ -19,6 +19,9 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+
+## [1.46.0] - 2026-07-07
+
 ### Fixed
 
 - Respect SDK flags already recorded in workflow history even when `GetSystemInfo` does not report
@@ -27,14 +30,21 @@ to docs, or any other relevant information.
   the error indicates an unknown method.
 - Retry server RPCs without gzip compression when a method reports that gzip decompression is
   unsupported, while continuing to use gzip for other methods.
+- Populate `Priority` on `ScheduleWorkflowAction` values returned by `ScheduleHandle.Describe()`.
+- Report the configured deadlock detection timeout in potential deadlock errors instead of always
+  saying "over a second".
+- Register all poller types before starting autoscaling pollers to avoid an autoscaling worker
+  startup race.
+- Treat `workflow.SideEffectWithOptions` and `workflow.MutableSideEffectWithOptions` as valid
+  deterministic wrappers in `workflowcheck`.
 
 ### Added
 
-- Exposed `BackoffStartInterval` when continuing as new, which will delay the first task of the
-  continued workflow by the configured interval.
 - Nexus operation link propagation for signals. When a Nexus operation handler signals a workflow
   (including signal-with-start), the inbound Nexus request links are now forwarded onto the signaled
   workflow so its history events link back to the caller, and the link the server returns for the
   signaled event is attached to the caller workflow's Nexus operation history event. This makes the
   caller and callee mutually navigable in the UI for signal-based Nexus operations.
+- Support propagating standalone Nexus operation links.
+- OpenTelemetry tracing support for standalone activities started from the client.
 - Doclink now links interfaces when they're re-exported from `private` to a public package.
