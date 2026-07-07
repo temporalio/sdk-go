@@ -30,6 +30,9 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `OneTimeVersioningOverride` support for workflow start and workflow execution options,
+  allowing a workflow to route to a target Worker Deployment Version until one Workflow Task
+  completes there.
 - Exposed `BackoffStartInterval` when continuing as new, which will delay the first task of the
   continued workflow by the configured interval.
 - Nexus operation link propagation for signals. When a Nexus operation handler signals a workflow

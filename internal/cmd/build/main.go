@@ -127,7 +127,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.7.2-standalone-nexus-operations",
+				Version: "v1.7.2-one-time-versioning-override",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
