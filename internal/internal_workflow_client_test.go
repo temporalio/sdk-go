@@ -1409,6 +1409,49 @@ func (s *workflowClientTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
+func TestLoadCapabilitiesUnknownMethodUnimplementedUsesEmptyCapabilities(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().
+		GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewUnimplemented("unknown method GetSystemInfo")).
+		Times(1)
+
+	client := &WorkflowClient{
+		workflowService:          service,
+		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
+	}
+
+	capabilities, err := client.loadCapabilities(context.Background())
+	require.NoError(t, err)
+	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, capabilities))
+}
+
+func TestLoadCapabilitiesNonUnknownMethodUnimplementedFails(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().
+		GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewUnimplemented("frontend has not loaded GetSystemInfo")).
+		Times(1)
+
+	client := &WorkflowClient{
+		workflowService:          service,
+		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
+	}
+
+	_, err := client.loadCapabilities(context.Background())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed reaching server")
+	require.ErrorContains(t, err, "frontend has not loaded GetSystemInfo")
+}
+
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	signalName := "my signal"
 	signalInput := []byte("my signal input")
@@ -2801,7 +2844,7 @@ func TestUpdate(t *testing.T) {
 		require.NotNil(t, output.Result)
 		payloads := converter.GetPayloads(output.Result)
 		require.NotNil(t, payloads)
-                require.Equal(t, outPayloads, payloads)
+		require.Equal(t, outPayloads, payloads)
 		require.Len(t, payloads.GetPayloads(), 1)
 	})
 	t.Run("sync error exposes failure proto", func(t *testing.T) {

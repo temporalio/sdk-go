@@ -19,6 +19,15 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Fixed
+
+- Respect SDK flags already recorded in workflow history even when `GetSystemInfo` does not report
+  SDK metadata support.
+- Only treat `GetSystemInfo` `UNIMPLEMENTED` responses as missing server capability support when
+  the error indicates an unknown method.
+- Retry server RPCs without gzip compression when a method reports that gzip decompression is
+  unsupported, while continuing to use gzip for other methods.
+
 ### Added
 
 - Added `OneTimeVersioningOverride` support for workflow start and workflow execution options,
@@ -31,3 +40,4 @@ to docs, or any other relevant information.
   workflow so its history events link back to the caller, and the link the server returns for the
   signaled event is attached to the caller workflow's Nexus operation history event. This makes the
   caller and callee mutually navigable in the UI for signal-based Nexus operations.
+- Doclink now links interfaces when they're re-exported from `private` to a public package.

@@ -223,7 +223,9 @@ type (
 	GrpcCompression = internal.GrpcCompression
 
 	// GrpcCompressionGzip compresses outbound gRPC request bodies with gzip and
-	// accepts gzip-compressed responses. This is the default.
+	// accepts gzip-compressed responses. This is the default. If a specific
+	// server RPC does not support gzip, the client may retry that RPC without
+	// compression and continue using gzip for other RPCs.
 	GrpcCompressionGzip = internal.GrpcCompressionGzip
 
 	// GrpcCompressionNone disables gRPC request compression.

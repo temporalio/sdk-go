@@ -384,7 +384,15 @@ func convertNexusLinks(nexusLinks []nexus.Link, log log.Logger) ([]*common.Link,
 				},
 			})
 		case string((&common.Link_NexusOperation{}).ProtoReflect().Descriptor().FullName()):
-			// TODO: forward Link_NexusOperation variants once frontend validateLinks accepts them.
+			link, err := ConvertNexusLinkToLinkNexusOperation(nexusLink)
+			if err != nil {
+				return nil, err
+			}
+			links = append(links, &common.Link{
+				Variant: &common.Link_NexusOperation_{
+					NexusOperation: link,
+				},
+			})
 		default:
 			log.Warn("ignoring unsupported link data type", "LinkType", nexusLink.Type)
 		}

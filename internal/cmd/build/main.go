@@ -278,7 +278,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
+		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "5m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}

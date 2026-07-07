@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -13,8 +15,10 @@ import (
 	"go.temporal.io/sdk/internal/common/retry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/encoding"
 	grpcgzip "google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
@@ -147,13 +151,20 @@ func requiredInterceptors(
 		// By default the grpc retry interceptor *is disabled*, preventing accidental use of retries.
 		// We add call options for retry configuration based on the values present in the context.
 		retry.NewRetryOptionsInterceptor(excludeInternalFromRetry),
+	}
+	switch clientOptions.ConnectionOptions.GrpcCompression.(type) {
+	case nil, *GrpcCompressionGzip:
+		interceptors = append(interceptors, newGzipDowngradeInterceptor())
+	}
+	interceptors = append(
+		interceptors,
 		// Performs retries *IF* retry options are set for the call.
 		grpc_retry.UnaryClientInterceptor(),
 		// Prevents retrying grpc message too large errors, while allowing retries of other resource exhausted errors.
 		retry.GrpcMessageTooLargeErrorInterceptor,
 		// Report metrics for every call made to the server.
 		metrics.NewGRPCInterceptor(clientOptions.MetricsHandler, attemptSuffix, clientOptions.DisableErrorCodeMetricTags),
-	}
+	)
 	if clientOptions.HeadersProvider != nil {
 		interceptors = append(interceptors, headersProviderInterceptor(clientOptions.HeadersProvider))
 	}
@@ -170,6 +181,36 @@ func requiredInterceptors(
 	// Add namespace provider interceptor
 	interceptors = append(interceptors, namespaceProviderInterceptor())
 	return interceptors
+}
+
+func newGzipDowngradeInterceptor() grpc.UnaryClientInterceptor {
+	var gzipUnsupportedMethods sync.Map
+	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if _, ok := gzipUnsupportedMethods.Load(method); ok {
+			return invoker(ctx, method, req, reply, cc, appendIdentityCompressor(opts)...)
+		}
+
+		err := invoker(ctx, method, req, reply, cc, opts...)
+		if err == nil {
+			return nil
+		}
+		msg := strings.ToLower(err.Error())
+		if status.Code(err) != codes.Unimplemented ||
+			(!strings.Contains(msg, "decompress") &&
+				!strings.Contains(msg, "grpc-encoding") &&
+				!strings.Contains(msg, "compressor")) {
+			return err
+		}
+
+		gzipUnsupportedMethods.Store(method, struct{}{})
+		return invoker(ctx, method, req, reply, cc, appendIdentityCompressor(opts)...)
+	}
+}
+
+func appendIdentityCompressor(opts []grpc.CallOption) []grpc.CallOption {
+	identityOpts := make([]grpc.CallOption, len(opts), len(opts)+1)
+	copy(identityOpts, opts)
+	return append(identityOpts, grpc.UseCompressor(encoding.Identity))
 }
 
 func namespaceProviderInterceptor() grpc.UnaryClientInterceptor {
