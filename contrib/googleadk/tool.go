@@ -21,7 +21,6 @@ import (
 	"runtime"
 	"strings"
 
-	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
 
 	"google.golang.org/genai"
@@ -34,17 +33,19 @@ import (
 	"google.golang.org/adk/v2/tool/toolconfirmation"
 )
 
-// runnable is the structural subset of ADK's internal FunctionTool that the
-// CallTool Activity needs: the ability to execute the tool worker-side. Every
-// functiontool.New(...) tool and every ActivityAsTool tool satisfies it.
+// runnable is the structural subset of an ADK tool the worker-side CallMcpTool
+// Activity needs: the ability to execute the tool. The live MCP tools returned
+// by mcptoolset.New(...) satisfy it.
 type runnable interface {
 	Run(ctx agent.Context, args any) (map[string]any, error)
 }
 
 // contextSnapshot is the serializable, read-only view of an ADK ToolContext that
-// crosses the Activity boundary. Live references (services, the embedded
-// context, mutable EventActions) are deliberately omitted: state mutations made
-// inside an Activity do not propagate back into the workflow.
+// crosses the Activity boundary for MCP tool execution. Live references
+// (services, the embedded context, mutable EventActions) are deliberately
+// omitted: state mutations made inside an Activity do not propagate back into
+// the workflow. Ordinary function tools run in-workflow and therefore see the
+// real, mutable context instead of this snapshot.
 type contextSnapshot struct {
 	FunctionCallID string
 	InvocationID   string
@@ -78,36 +79,6 @@ func snapshotContext(tctx agent.Context) contextSnapshot {
 	}
 }
 
-// toolInvocation is the serializable payload for the CallTool Activity.
-type toolInvocation struct {
-	ToolName string
-	Args     map[string]any
-	Ctx      contextSnapshot
-}
-
-// CallTool runs a registered tool worker-side over a reconstructed, read-only
-// ToolContext. The user's tool handler is therefore never invoked inside the
-// workflow.
-func (a *Activities) CallTool(ctx context.Context, in toolInvocation) (map[string]any, error) {
-	log := activity.GetLogger(ctx)
-	t, ok := a.tools[in.ToolName]
-	if !ok {
-		return nil, newApplicationError(ErrorTypeTool, false, nil,
-			"no tool %q registered; add it to Config.Tools", in.ToolName)
-	}
-	rt, ok := t.(runnable)
-	if !ok {
-		return nil, newApplicationError(ErrorTypeTool, false, nil,
-			"tool %q is not runnable", in.ToolName)
-	}
-	log.Debug("running tool", "tool", in.ToolName)
-	res, err := rt.Run(newActivityToolContext(ctx, in.Ctx), in.Args)
-	if err != nil {
-		return nil, classifyToolError(ErrorTypeTool, in.ToolName, err)
-	}
-	return res, nil
-}
-
 // classifyToolError maps a tool failure to Temporal's retry contract. Tool
 // failures default to retryable; a tool can opt out by returning an error that
 // is already a non-retryable ApplicationError, which is passed through.
@@ -131,13 +102,14 @@ type ActivityToolOptions struct {
 	// Description is the tool description the model sees.
 	Description string
 	// ActivityOptions overrides the per-call Activity options for this tool. A
-	// zero StartToCloseTimeout falls back to the plugin's default tool timeout.
+	// zero StartToCloseTimeout falls back to the default one-minute tool timeout.
 	ActivityOptions workflow.ActivityOptions
 }
 
-// activityTool is an ADK tool backed by an existing Temporal activity. The
-// plugin's BeforeToolCallback recognizes it and dispatches the user's activity
-// directly (by name) rather than routing through the generic CallTool registry.
+// activityTool is an ADK tool backed by an existing Temporal activity. It runs
+// in-workflow like any other tool, and its Run dispatches the user's activity
+// (by name) to make the call durable. This is the opt-in way to run a tool as a
+// Temporal Activity; plain function tools otherwise execute in-workflow.
 type activityTool struct {
 	activityName    string
 	description     string
@@ -149,16 +121,16 @@ type activityTool struct {
 // agents can call code the user already runs as durable activities without
 // re-declaring it. The activity must be func(context.Context, TArgs) (TResults,
 // error); the tool's parameter schema is inferred from TArgs. Register the same
-// activity on the worker as usual — it is dispatched directly, not through
-// CallTool.
+// activity on the worker as usual — the tool dispatches it as a Temporal
+// Activity when the agent calls it.
 func ActivityAsTool(activityFn any, opts ActivityToolOptions) (tool.Tool, error) {
 	v := reflect.ValueOf(activityFn)
 	if v.Kind() != reflect.Func {
-		return nil, fmt.Errorf("google_adk_agents: ActivityAsTool requires a function, got %T", activityFn)
+		return nil, fmt.Errorf("googleadk: ActivityAsTool requires a function, got %T", activityFn)
 	}
 	ft := v.Type()
 	if ft.NumIn() < 2 {
-		return nil, fmt.Errorf("google_adk_agents: ActivityAsTool function must take (context.Context, TArgs)")
+		return nil, fmt.Errorf("googleadk: ActivityAsTool function must take (context.Context, TArgs)")
 	}
 	name := opts.Name
 	if name == "" {
@@ -169,7 +141,7 @@ func ActivityAsTool(activityFn any, opts ActivityToolOptions) (tool.Tool, error)
 		argsType = argsType.Elem()
 	}
 	if argsType.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("google_adk_agents: ActivityAsTool args type must be a struct, got %s", argsType.Kind())
+		return nil, fmt.Errorf("googleadk: ActivityAsTool args type must be a struct, got %s", argsType.Kind())
 	}
 	return &activityTool{
 		activityName:    name,
@@ -194,12 +166,24 @@ func (t *activityTool) ProcessRequest(ctx agent.Context, req *model.LLMRequest) 
 	return packTool(req, t)
 }
 
-// Run is never invoked in-workflow: BeforeToolCallback dispatches the underlying
-// Temporal activity directly. It exists so the tool satisfies ADK's runnable
-// interface and is recognized as callable.
+// Run executes in-workflow (ADK invokes it there via the deterministic task
+// runner) and dispatches the underlying Temporal activity by name, so the user's
+// code runs worker-side under Temporal's retry/timeout policy. Only the args
+// cross the boundary; they are converted to the activity's TArgs by the data
+// converter.
 func (t *activityTool) Run(ctx agent.Context, args any) (map[string]any, error) {
-	return nil, newApplicationError(ErrorTypeTool, false, nil,
-		"activity tool %q must run via its Temporal activity, not in-workflow", t.activityName)
+	wfCtx, ok := workflowContext(ctx)
+	if !ok {
+		return nil, errMissingContext
+	}
+	ao := resolveToolActivityOptions(t.activityOptions, "")
+	ao.Summary = toolSummary(ctx, t.Name())
+	actx := workflow.WithActivityOptions(wfCtx, ao)
+	var raw any
+	if err := workflow.ExecuteActivity(actx, t.activityName, args).Get(wfCtx, &raw); err != nil {
+		return nil, err
+	}
+	return toResultMap(raw), nil
 }
 
 func activityFuncName(v reflect.Value) string {
@@ -314,8 +298,8 @@ func (c *activityToolContext) Artifacts() agent.Artifacts           { return nil
 // IsolationScope and ResumedInput carry no meaning for a reconstructed tool
 // context, so return their empty forms instead of panicking like the embedded
 // mock: a tool that reads them across the Activity boundary should see "unset".
-func (c *activityToolContext) IsolationScope() string             { return "" }
-func (c *activityToolContext) ResumedInput(string) (any, bool)    { return nil, false }
+func (c *activityToolContext) IsolationScope() string          { return "" }
+func (c *activityToolContext) ResumedInput(string) (any, bool) { return nil, false }
 
 func (c *activityToolContext) SearchMemory(context.Context, string) (*memory.SearchResponse, error) {
 	return nil, newApplicationError(ErrorTypeTool, false, nil,
@@ -333,7 +317,7 @@ func (c *activityToolContext) RequestConfirmation(string, any) error {
 // state view shipped across the Activity boundary. The mutation would evaporate
 // (Activities do not propagate state back into the workflow), so it fails loudly.
 var errImmutableState = errors.New(
-	"google_adk_agents: tool state is read-only inside a Temporal Activity; " +
+	"googleadk: tool state is read-only inside a Temporal Activity; " +
 		"mutations do not propagate back to the workflow")
 
 // immutableState implements session.State and session.ReadonlyState over a

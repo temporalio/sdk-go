@@ -28,7 +28,7 @@ import (
 
 	"google.golang.org/adk/v2/model"
 
-	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
+	"go.temporal.io/sdk/contrib/googleadk"
 )
 
 // chunkedModel is a streaming-capable fake model. When called with stream=true it

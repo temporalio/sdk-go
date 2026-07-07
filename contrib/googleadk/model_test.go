@@ -24,7 +24,7 @@ import (
 
 	"google.golang.org/adk/v2/model"
 
-	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
+	"go.temporal.io/sdk/contrib/googleadk"
 )
 
 // TestSingleAgentRoutesModelToActivity is the cardinal end-to-end test: a real
@@ -50,9 +50,8 @@ func TestSingleAgentRoutesModelToActivity(t *testing.T) {
 	var res runResult
 	require.NoError(t, env.GetWorkflowResult(&res))
 	assert.Contains(t, res.Texts, "hello from the worker")
-	// Exactly one model turn => exactly one InvokeModel Activity, no tool calls.
+	// Exactly one model turn => exactly one InvokeModel Activity.
 	assert.Equal(t, 1, counter.get(googleadk.InvokeModelActivityName))
-	assert.Equal(t, 0, counter.get(googleadk.CallToolActivityName))
 }
 
 // TestModelFactoryLookupByName proves the Activity reconstructs the model from

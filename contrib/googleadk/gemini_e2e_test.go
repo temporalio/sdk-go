@@ -25,13 +25,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
 
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/model/gemini"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 
-	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
+	"go.temporal.io/sdk/contrib/googleadk"
 )
 
 // stubGeminiAPI is an http.RoundTripper standing in for the Gemini
@@ -94,15 +95,30 @@ const geminiFinalTextResponse = `{
   "modelVersion": "gemini-2.5-flash"
 }`
 
+// geminiWeatherTool is set by TestGeminiModelEndToEnd before executing
+// geminiWeatherWorkflow (the test does not run in parallel), so the in-workflow
+// tool can carry a test-owned handler across the workflow boundary.
+var geminiWeatherTool tool.Tool
+
+// geminiWeatherWorkflow drives the agent with the test's in-workflow weather
+// tool against a real gemini model.
+func geminiWeatherWorkflow(ctx workflow.Context) (runResult, error) {
+	return runAgent(ctx, agentBuild{
+		modelName:   "gemini-2.5-flash",
+		userMessage: "What is the weather in Paris?",
+		tools:       []tool.Tool{geminiWeatherTool},
+	})
+}
+
 // TestGeminiModelEndToEnd drives a REAL ADK gemini model
 // (google.golang.org/adk/model/gemini) through the plugin: the genai client builds
 // and serializes a real generateContent request, the model call happens worker-side
 // inside the InvokeModel Activity, the canned response is parsed by the real genai
-// client, and a real function-calling loop dispatches the tool through the CallTool
-// Activity before the model returns its final answer. Only the HTTP backend is
-// stubbed (canned generateContent JSON), exactly as adk-go's own gemini tests inject
-// an httprr transport — so this exercises the genuine ADK<->Temporal seam end to end,
-// not a FakeModel.
+// client, and a real function-calling loop runs the tool in-workflow before the
+// model returns its final answer. Only the HTTP backend is stubbed (canned
+// generateContent JSON), exactly as adk-go's own gemini tests inject an httprr
+// transport — so this exercises the genuine ADK<->Temporal seam end to end, not a
+// FakeModel.
 func TestGeminiModelEndToEnd(t *testing.T) {
 	stub := &stubGeminiAPI{}
 	geminiFactory := func(ctx context.Context, name string) (model.LLM, error) {
@@ -112,19 +128,16 @@ func TestGeminiModelEndToEnd(t *testing.T) {
 		})
 	}
 
-	weather := recordingTool(t, "get_weather", map[string]any{"forecast": "sunny and 24C"}, nil)
+	geminiWeatherTool = recordingTool(t, "get_weather", map[string]any{"forecast": "sunny and 24C"}, nil)
 
 	var s testsuite.WorkflowTestSuite
-	env, counter := newEnv(t, &s, googleadk.Config{
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(geminiWeatherWorkflow)
+	counter := wireActivities(t, env, googleadk.Config{
 		Models: map[string]googleadk.ModelFactory{"gemini-2.5-flash": geminiFactory},
-		Tools:  []tool.Tool{weather},
 	})
 
-	env.ExecuteWorkflow(agentRunWorkflow, runInput{
-		ModelName:   "gemini-2.5-flash",
-		UserMessage: "What is the weather in Paris?",
-		Tools:       []toolSpec{{Name: "get_weather", Description: "look up the weather for a city"}},
-	})
+	env.ExecuteWorkflow(geminiWeatherWorkflow)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
@@ -132,12 +145,11 @@ func TestGeminiModelEndToEnd(t *testing.T) {
 	var res runResult
 	require.NoError(t, env.GetWorkflowResult(&res))
 
-	// The real gemini model emitted a function call, the tool ran via its Activity,
-	// and the model produced a final answer on the following turn.
+	// The real gemini model emitted a function call, the tool ran in-workflow, and
+	// the model produced a final answer on the following turn.
 	assert.Contains(t, res.FunctionCalls, "get_weather")
 	assert.Contains(t, strings.Join(res.Texts, " "), "sunny")
 	assert.Equal(t, 2, counter.get(googleadk.InvokeModelActivityName), "two real model turns")
-	assert.Equal(t, 1, counter.get(googleadk.CallToolActivityName), "one tool round-trip")
 
 	// Two real generateContent round-trips: the genai client serialized the tool
 	// declaration into the first request and the tool result into the second.

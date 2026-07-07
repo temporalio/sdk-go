@@ -28,11 +28,11 @@ import (
 // wfCtxKey is the private context key under which the workflow.Context for
 // blocking Activity dispatch is stashed. NewContext stores the root
 // workflow.Context here; during concurrent tool fan-out the task runner stores
-// each coroutine's own workflow.Context on that task's context. The plugin's
-// BeforeModelCallback / BeforeToolCallback recover it so their blocking calls
-// (Future.Get / Channel.Receive) run on the coroutine they belong to — blocking
-// on another coroutine's context triggers "trying to block on coroutine which
-// is already blocked ... wrong Context".
+// each coroutine's own workflow.Context on that task's context. The TemporalModel
+// and the activity/MCP tools recover it (via workflowContext) so their blocking
+// calls (Future.Get / Channel.Receive) run on the coroutine they belong to —
+// blocking on another coroutine's context triggers "trying to block on coroutine
+// which is already blocked ... wrong Context".
 type wfCtxKey struct{}
 
 // ContextOption customizes the bridged context produced by NewContext.

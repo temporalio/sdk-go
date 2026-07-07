@@ -15,6 +15,7 @@ package googleadk
 import (
 	"context"
 	"errors"
+	"iter"
 	"strings"
 	"time"
 
@@ -36,6 +37,110 @@ import (
 func StreamServer(ctx workflow.Context) error {
 	_, err := workflowstreams.NewWorkflowStream(ctx, nil)
 	return err
+}
+
+// TemporalModel is a model.LLM that makes an ADK agent's model calls durable:
+// its GenerateContent dispatches to the InvokeModel Activity instead of calling
+// a real model inside the workflow. Set it as your agent's Model; the real
+// model.LLM is reconstructed worker-side by a ModelFactory (see Config.Models /
+// NewActivities) keyed by the model name. Only the model name crosses into the
+// workflow — credentials never leave the worker.
+type TemporalModel struct {
+	name                   string
+	activityOptions        workflow.ActivityOptions
+	summaryFn              func(*model.LLMRequest) string
+	streamingTopic         string
+	streamingBatchInterval time.Duration
+}
+
+// ModelOption customizes a TemporalModel.
+type ModelOption func(*TemporalModel)
+
+// WithModelActivityOptions sets the base Activity options for the InvokeModel
+// Activity (StartToCloseTimeout, RetryPolicy, TaskQueue, ...). A zero
+// StartToCloseTimeout defaults to two minutes.
+func WithModelActivityOptions(o workflow.ActivityOptions) ModelOption {
+	return func(m *TemporalModel) { m.activityOptions = o }
+}
+
+// WithModelSummary sets a function that computes the Temporal UI summary for the
+// model Activity from its request. When unset the summary is the model name.
+func WithModelSummary(fn func(*model.LLMRequest) string) ModelOption {
+	return func(m *TemporalModel) { m.summaryFn = fn }
+}
+
+// WithStreaming makes the InvokeModel Activity call the model in streaming mode
+// and publish each chunk to the given workflowstreams topic for external (UI)
+// consumers; the aggregated final response is still returned into the workflow
+// so replay stays deterministic. Call StreamServer(ctx) once in the workflow
+// when you use this. batchInterval coalesces published chunks (zero uses the
+// library default).
+func WithStreaming(topic string, batchInterval time.Duration) ModelOption {
+	return func(m *TemporalModel) {
+		m.streamingTopic = topic
+		m.streamingBatchInterval = batchInterval
+	}
+}
+
+// NewModel returns a TemporalModel for the given model name. Use it as the Model
+// on your llmagent.Config; the matching real model is built worker-side by a
+// ModelFactory registered in NewActivities (or, for providers ADK's registry
+// already knows such as gemini, resolved automatically).
+func NewModel(name string, opts ...ModelOption) *TemporalModel {
+	m := &TemporalModel{name: name}
+	for _, o := range opts {
+		o(m)
+	}
+	return m
+}
+
+// Name reports the model name. ADK copies it into LLMRequest.Model, which the
+// InvokeModel Activity uses to resolve the worker-side model.
+func (m *TemporalModel) Name() string { return m.name }
+
+// GenerateContent dispatches the model call to the InvokeModel Activity and
+// yields the (aggregated) response. It runs on the workflow side; the real model
+// never executes in-workflow. The stream argument from ADK is honored via the
+// TemporalModel's own streaming configuration (WithStreaming): a single
+// aggregated response is always returned into the workflow for replay safety,
+// while chunks (if streaming) are published to the workflowstreams topic.
+func (m *TemporalModel) GenerateContent(ctx context.Context, req *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		wfCtx, ok := workflowContext(ctx)
+		if !ok {
+			yield(nil, errMissingContext)
+			return
+		}
+		ao := m.activityOptions
+		if ao.StartToCloseTimeout == 0 {
+			ao.StartToCloseTimeout = defaultModelTimeout
+		}
+		if m.streamingTopic != "" && ao.HeartbeatTimeout == 0 {
+			ao.HeartbeatTimeout = defaultStreamHeartbeat
+		}
+		ao.Summary = m.modelSummary(req)
+		actx := workflow.WithActivityOptions(wfCtx, ao)
+
+		in := invokeModelInput{
+			Request:                req,
+			Stream:                 m.streamingTopic != "",
+			StreamingTopic:         m.streamingTopic,
+			StreamingBatchInterval: m.streamingBatchInterval,
+		}
+		var resp model.LLMResponse
+		if err := workflow.ExecuteActivity(actx, InvokeModelActivityName, in).Get(wfCtx, &resp); err != nil {
+			yield(nil, err)
+			return
+		}
+		yield(&resp, nil)
+	}
+}
+
+func (m *TemporalModel) modelSummary(req *model.LLMRequest) string {
+	if m.summaryFn != nil {
+		return m.summaryFn(req)
+	}
+	return "InvokeModel: " + m.name
 }
 
 // invokeModelInput is the serializable payload for the InvokeModel Activity. The

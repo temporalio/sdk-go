@@ -1,4 +1,4 @@
-module go.temporal.io/sdk/contrib/google_adk_agents
+module go.temporal.io/sdk/contrib/googleadk
 
 go 1.25.0
 

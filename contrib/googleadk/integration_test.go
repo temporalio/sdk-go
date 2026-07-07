@@ -38,7 +38,7 @@ import (
 
 	"google.golang.org/adk/v2/model"
 
-	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
+	"go.temporal.io/sdk/contrib/googleadk"
 )
 
 const integrationTaskQueue = "google-adk-integration"

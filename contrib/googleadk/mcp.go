@@ -34,6 +34,10 @@ type MCPToolsetOptions struct {
 	// ToolFilter optionally restricts which advertised MCP tools are exposed to
 	// the model. It runs on the workflow side over declaration-only proxy tools.
 	ToolFilter tool.Predicate
+	// ActivityOptions overrides the per-call Activity options for the ListMcpTools
+	// and CallMcpTool Activities. A zero StartToCloseTimeout falls back to the
+	// default one-minute tool timeout.
+	ActivityOptions workflow.ActivityOptions
 }
 
 // NewMCPToolset returns a workflow-side, stateless proxy for an MCP toolset. It
@@ -49,15 +53,16 @@ type MCPToolsetOptions struct {
 //	    Toolsets: []tool.Toolset{googleadk.NewMCPToolset(googleadk.MCPToolsetOptions{Name: "filesystem"})},
 //	})
 func NewMCPToolset(opts MCPToolsetOptions) tool.Toolset {
-	return &mcpToolset{name: opts.Name, filter: opts.ToolFilter}
+	return &mcpToolset{name: opts.Name, filter: opts.ToolFilter, activityOptions: opts.ActivityOptions}
 }
 
 // mcpToolset is the workflow-side proxy. It implements tool.Toolset and ADK's
 // internal RequestProcessor (so its proxy tools are packed into the model
 // request).
 type mcpToolset struct {
-	name   string
-	filter tool.Predicate
+	name            string
+	filter          tool.Predicate
+	activityOptions workflow.ActivityOptions
 }
 
 func (m *mcpToolset) Name() string { return m.name }
@@ -69,16 +74,14 @@ func (m *mcpToolset) Tools(ctx agent.ReadonlyContext) ([]tool.Tool, error) {
 	if !ok {
 		return nil, errMissingContext
 	}
-	actx := workflow.WithActivityOptions(wfCtx, workflow.ActivityOptions{
-		StartToCloseTimeout: defaultToolTimeout,
-	})
+	actx := workflow.WithActivityOptions(wfCtx, resolveToolActivityOptions(m.activityOptions, ""))
 	var decls []*genai.FunctionDeclaration
 	if err := workflow.ExecuteActivity(actx, ListMcpToolsActivityName, mcpListInput{Toolset: m.name}).Get(wfCtx, &decls); err != nil {
 		return nil, err
 	}
 	tools := make([]tool.Tool, 0, len(decls))
 	for _, d := range decls {
-		pt := &mcpProxyTool{toolset: m.name, decl: d}
+		pt := &mcpProxyTool{toolset: m.name, decl: d, activityOptions: m.activityOptions}
 		if m.filter == nil || m.filter(ctx, pt) {
 			tools = append(tools, pt)
 		}
@@ -102,11 +105,13 @@ func (m *mcpToolset) ProcessRequest(ctx agent.Context, req *model.LLMRequest) er
 }
 
 // mcpProxyTool is a declaration-only stand-in for a remote MCP tool. The model
-// sees its declaration; execution is short-circuited by BeforeToolCallback into
-// the CallMcpTool Activity, so Run is never called in-workflow.
+// sees its declaration; when the model calls it, Run (invoked in-workflow by
+// ADK) dispatches the CallMcpTool Activity so the live, stateful MCP session
+// runs worker-side, never in the workflow.
 type mcpProxyTool struct {
-	toolset string
-	decl    *genai.FunctionDeclaration
+	toolset         string
+	decl            *genai.FunctionDeclaration
+	activityOptions workflow.ActivityOptions
 }
 
 func (t *mcpProxyTool) Name() string                            { return t.decl.Name }
@@ -118,9 +123,28 @@ func (t *mcpProxyTool) ProcessRequest(ctx agent.Context, req *model.LLMRequest) 
 	return packTool(req, t)
 }
 
+// Run executes in-workflow and dispatches the CallMcpTool Activity, which builds
+// the live MCP toolset worker-side and runs the named tool over a reconstructed,
+// read-only context. MCP calls are inherently I/O, so they always run as an
+// Activity.
 func (t *mcpProxyTool) Run(ctx agent.Context, args any) (map[string]any, error) {
-	return nil, newApplicationError(ErrorTypeMCP, false, nil,
-		"mcp proxy tool %q must run via the CallMcpTool activity, not in-workflow", t.decl.Name)
+	wfCtx, ok := workflowContext(ctx)
+	if !ok {
+		return nil, errMissingContext
+	}
+	ao := resolveToolActivityOptions(t.activityOptions, "")
+	ao.Summary = toolSummary(ctx, t.Name())
+	actx := workflow.WithActivityOptions(wfCtx, ao)
+	argsMap, _ := args.(map[string]any)
+	in := mcpCallInput{Toolset: t.toolset, Tool: t.Name(), Args: argsMap, Ctx: snapshotContext(ctx)}
+	var res map[string]any
+	if err := workflow.ExecuteActivity(actx, CallMcpToolActivityName, in).Get(wfCtx, &res); err != nil {
+		return nil, err
+	}
+	if res == nil {
+		res = map[string]any{}
+	}
+	return res, nil
 }
 
 // mcpListInput is the serializable payload for ListMcpTools.

@@ -15,19 +15,25 @@
 //
 // A user builds their agent the native ADK way — llmagent.New with a model.LLM,
 // tool.Tools / tool.Toolsets and SubAgents, wrapped in runner.New and driven by
-// Runner.Run. To make it durable they add exactly two things:
+// Runner.Run. To make it durable they change two things:
 //
-//  1. The ADK *plugin.Plugin returned by [Plugin] to their runner.Config, which
-//     routes every LLM call and every tool call through a Temporal Activity via
-//     ADK's BeforeModelCallback / BeforeToolCallback short-circuit seam.
-//  2. The bridged context.Context returned by [NewContext], passed to Runner.Run,
+//  1. Use [NewModel] as the agent's Model. It is a model.LLM whose calls are
+//     dispatched to the InvokeModel Temporal Activity, so the real model runs
+//     worker-side (reconstructed by a ModelFactory) and never in the workflow.
+//  2. Pass the bridged context.Context returned by [NewContext] to Runner.Run,
 //     which installs Temporal-deterministic providers for time, UUIDs and
 //     concurrent fan-out on the ADK platform seams.
 //
-// The agent's orchestration loop then runs inside a Temporal Workflow while the
-// real model and tool handlers live worker-side in the Activity registry built
-// by [NewActivities]. The user's model.LLM and tool handlers are never invoked
-// inside the workflow.
+// Tools run in-workflow by default, on the deterministic Temporal dispatcher —
+// the idiomatic Temporal model. A tool that does I/O opts into a durable
+// Activity: wrap an existing Temporal activity with [ActivityAsTool], or use
+// [NewMCPToolset] for MCP. The real model and any activity/MCP tool handlers live
+// worker-side in the Activity registry built by [NewActivities].
+//
+// Human-in-the-loop (HITL) tool confirmation and continue-as-new state carry are
+// supported; see the confirmation helpers ([PendingConfirmations],
+// [ConfirmationResponse]) and the session-snapshot helpers ([ExportSession],
+// [ImportSession]).
 //
 // This package targets Google ADK for Go v2 (google.golang.org/adk/v2). It
 // depends on the deterministic platform seams (platform.WithTimeProvider,
@@ -36,6 +42,5 @@
 package googleadk
 
 // PluginName identifies this integration for Temporal telemetry and usage
-// attribution. It follows the library.PluginName convention used across the
-// Temporal SDK contrib plugins.
-const PluginName = "google_adk_agents"
+// attribution.
+const PluginName = "googleadk"

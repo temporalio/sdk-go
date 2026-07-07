@@ -71,67 +71,52 @@ type Config struct {
 	// disable SDK retries, or override what the registry would otherwise build.
 	Models map[string]ModelFactory
 
-	// Tools is the set of runnable tools (functiontool.New(...), ActivityAsTool,
-	// etc.) the agent may call. The CallTool Activity dispatches to the matching
-	// tool by name. Every tool must be runnable (expose a Run method).
-	Tools []tool.Tool
-
 	// MCPToolsets maps the logical name passed to NewMCPToolset to a factory that
 	// builds the live stateless MCP toolset worker-side. The ListMcpTools and
 	// CallMcpTool Activities use it.
 	MCPToolsets map[string]MCPFactory
 }
 
-// Activities holds the worker-side registries and implements the four Temporal
-// Activities the plugin dispatches: InvokeModel, CallTool, ListMcpTools and
-// CallMcpTool. Build one with NewActivities and register it with Register.
+// Activities holds the worker-side registries and implements the Temporal
+// Activities dispatched from the workflow side: InvokeModel (by TemporalModel),
+// and ListMcpTools / CallMcpTool (by the MCP proxy). Ordinary function tools run
+// in-workflow and need no registration here; ActivityAsTool dispatches the
+// user's own already-registered activity by name. Build one with NewActivities
+// and register it with Register.
 type Activities struct {
 	models map[string]ModelFactory
-	tools  map[string]tool.Tool
 	mcp    map[string]MCPFactory
 }
 
 // NewActivities validates cfg and returns the worker-side Activities. It returns
-// an error if a registered tool is nil or not runnable, so misconfiguration
-// surfaces at worker start rather than mid-run inside an Activity.
+// an error if a registered factory is nil, so misconfiguration surfaces at
+// worker start rather than mid-run inside an Activity.
 func NewActivities(cfg Config) (*Activities, error) {
 	registerGemini()
 	a := &Activities{
 		models: make(map[string]ModelFactory, len(cfg.Models)),
-		tools:  make(map[string]tool.Tool, len(cfg.Tools)),
 		mcp:    make(map[string]MCPFactory, len(cfg.MCPToolsets)),
 	}
 	for name, f := range cfg.Models {
 		if f == nil {
-			return nil, fmt.Errorf("google_adk_agents: nil ModelFactory registered for model %q", name)
+			return nil, fmt.Errorf("googleadk: nil ModelFactory registered for model %q", name)
 		}
 		a.models[name] = f
 	}
-	for _, t := range cfg.Tools {
-		if t == nil {
-			return nil, fmt.Errorf("google_adk_agents: nil tool registered in Config.Tools")
-		}
-		if _, ok := t.(runnable); !ok {
-			return nil, fmt.Errorf("google_adk_agents: tool %q is not runnable (no Run method); "+
-				"only functiontool.New(...) tools and ActivityAsTool(...) can execute as Activities", t.Name())
-		}
-		a.tools[t.Name()] = t
-	}
 	for name, f := range cfg.MCPToolsets {
 		if f == nil {
-			return nil, fmt.Errorf("google_adk_agents: nil MCPFactory registered for toolset %q", name)
+			return nil, fmt.Errorf("googleadk: nil MCPFactory registered for toolset %q", name)
 		}
 		a.mcp[name] = f
 	}
 	return a, nil
 }
 
-// Register wires InvokeModel, CallTool, ListMcpTools and CallMcpTool onto the
-// worker under their stable Activity names. Call it once per worker that should
-// be able to service ADK model/tool calls.
+// Register wires InvokeModel, ListMcpTools and CallMcpTool onto the worker under
+// their stable Activity names. Call it once per worker that should be able to
+// service ADK model and MCP calls.
 func (a *Activities) Register(r worker.Registry) {
 	r.RegisterActivityWithOptions(a.InvokeModel, activity.RegisterOptions{Name: InvokeModelActivityName})
-	r.RegisterActivityWithOptions(a.CallTool, activity.RegisterOptions{Name: CallToolActivityName})
 	r.RegisterActivityWithOptions(a.ListMcpTools, activity.RegisterOptions{Name: ListMcpToolsActivityName})
 	r.RegisterActivityWithOptions(a.CallMcpTool, activity.RegisterOptions{Name: CallMcpToolActivityName})
 }

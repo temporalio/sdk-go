@@ -21,9 +21,11 @@ to docs, or any other relevant information.
 
 ### Added
 
-- Added the `contrib/google_adk_agents` plugin, which makes Google ADK (`adk-go`) agents durable
-  and replay-safe under Temporal: each LLM call and tool call runs as a Temporal Activity while the
-  agent's orchestration loop runs inside a Workflow.
+- Added the `contrib/googleadk` package, which makes Google ADK (`adk-go`) agents durable and
+  replay-safe under Temporal: the agent loop runs inside a Workflow, model calls run as Temporal
+  Activities (via `googleadk.NewModel`), tools run in-workflow by default with `ActivityAsTool` and
+  MCP as the opt-in Activity paths, and human-in-the-loop tool confirmation and continue-as-new
+  state carry are supported.
 
 
 ## [1.46.0] - 2026-07-07

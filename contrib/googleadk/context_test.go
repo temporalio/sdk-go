@@ -13,6 +13,7 @@
 package googleadk_test
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -21,17 +22,17 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 
 	"google.golang.org/genai"
 
-	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/platform"
 	"google.golang.org/adk/v2/tool"
 
-	googleadk "go.temporal.io/sdk/contrib/google_adk_agents"
+	"go.temporal.io/sdk/contrib/googleadk"
 )
 
 // twoFunctionCalls is a single LLM response carrying two parallel function calls,
@@ -49,10 +50,13 @@ func twoFunctionCalls() *model.LLMResponse {
 	}
 }
 
-// concurrencyProbe records the peak number of tool handlers running at once. Each
-// handler blocks at a barrier until `target` handlers have entered (or a timeout
+// concurrencyProbe records the peak number of tool Activities running at once.
+// Each Activity blocks at a barrier until `target` have entered (or a timeout
 // elapses), so concurrent fan-out reaches the barrier (max == target) while
-// sequential fan-out never does (max == 1).
+// sequential fan-out never does (max == 1). The two fan-out tools are exposed as
+// ActivityAsTool tools, so their handlers run worker-side on real goroutines —
+// where a wall-clock barrier is meaningful — while the fan-out scheduling being
+// exercised is exactly NewContext's workflow.Go TaskRunner.
 type concurrencyProbe struct {
 	mu      sync.Mutex
 	active  int
@@ -94,42 +98,83 @@ func (p *concurrencyProbe) max() int {
 	return p.maxSeen
 }
 
-// probeTool builds a worker-side tool whose handler signals the probe.
-func probeTool(t *testing.T, name string, p *concurrencyProbe) tool.Tool {
-	t.Helper()
-	ft, err := funcTool(name, func(agent.Context, map[string]any) (map[string]any, error) {
-		p.enter()
-		return map[string]any{"ok": true}, nil
+// activeProbe is the probe the fan-out activities signal. It is set by each
+// fan-out test before executing its workflow (the tests do not run in parallel).
+var activeProbe *concurrencyProbe
+
+// probeArgs is the (empty) argument struct for the fan-out probe activities;
+// ActivityAsTool infers the tool schema from it.
+type probeArgs struct{}
+
+// probeActivityT1 / probeActivityT2 are two distinct Temporal activities so the
+// agent can call two independent tools that fan out in parallel. Each signals
+// the active probe.
+func probeActivityT1(context.Context, probeArgs) (map[string]any, error) {
+	activeProbe.enter()
+	return map[string]any{"ok": true}, nil
+}
+
+func probeActivityT2(context.Context, probeArgs) (map[string]any, error) {
+	activeProbe.enter()
+	return map[string]any{"ok": true}, nil
+}
+
+// fanoutWorkflow wires probeActivityT1/T2 as ActivityAsTool tools and drives the
+// agent. Sequential selects NewContext's sequential fan-out.
+func fanoutWorkflow(ctx workflow.Context, sequential bool) (runResult, error) {
+	ao := workflow.ActivityOptions{StartToCloseTimeout: 10 * time.Second}
+	t1, err := googleadk.ActivityAsTool(probeActivityT1, googleadk.ActivityToolOptions{Name: "t1", Description: "tool one", ActivityOptions: ao})
+	if err != nil {
+		return runResult{}, err
+	}
+	t2, err := googleadk.ActivityAsTool(probeActivityT2, googleadk.ActivityToolOptions{Name: "t2", Description: "tool two", ActivityOptions: ao})
+	if err != nil {
+		return runResult{}, err
+	}
+	var ctxOpts []googleadk.ContextOption
+	if sequential {
+		ctxOpts = append(ctxOpts, googleadk.WithSequentialToolFanout())
+	}
+	return runAgent(ctx, agentBuild{
+		ctxOpts:     ctxOpts,
+		modelName:   "fake-model",
+		userMessage: "call both",
+		tools:       []tool.Tool{t1, t2},
 	})
-	require.NoError(t, err)
-	return ft
+}
+
+// newFanoutEnv builds an env with fanoutWorkflow and the probe activities
+// registered.
+func newFanoutEnv(t *testing.T, s *testsuite.WorkflowTestSuite) (*testsuite.TestWorkflowEnvironment, *activityCounter) {
+	t.Helper()
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(fanoutWorkflow)
+	env.RegisterActivityWithOptions(probeActivityT1, activity.RegisterOptions{Name: "t1"})
+	env.RegisterActivityWithOptions(probeActivityT2, activity.RegisterOptions{Name: "t2"})
+	counter := wireActivities(t, env, googleadk.Config{
+		Models: map[string]googleadk.ModelFactory{
+			"fake-model": scriptedModelFactory(twoFunctionCalls(), googleadk.TextResponse("done")),
+		},
+	})
+	return env, counter
 }
 
 // TestConcurrentFanoutSchedulesParallel flips to the default concurrent
 // TaskRunner (workflow.Go) and observes two tool Activities running at the same
 // time when a single LLM turn fans out to two tool calls.
 func TestConcurrentFanoutSchedulesParallel(t *testing.T) {
-	probe := newConcurrencyProbe(2, 3*time.Second)
+	activeProbe = newConcurrencyProbe(2, 3*time.Second)
 
 	var s testsuite.WorkflowTestSuite
-	env, counter := newEnv(t, &s, googleadk.Config{
-		Models: map[string]googleadk.ModelFactory{
-			"fake-model": scriptedModelFactory(twoFunctionCalls(), googleadk.TextResponse("done")),
-		},
-		Tools: []tool.Tool{probeTool(t, "t1", probe), probeTool(t, "t2", probe)},
-	})
-
-	env.ExecuteWorkflow(agentRunWorkflow, runInput{
-		ModelName:   "fake-model",
-		UserMessage: "call both",
-		Tools:       []toolSpec{{Name: "t1", Description: "tool one"}, {Name: "t2", Description: "tool two"}},
-	})
+	env, counter := newFanoutEnv(t, &s)
+	env.ExecuteWorkflow(fanoutWorkflow, false)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 
-	assert.Equal(t, 2, probe.max(), "concurrent fan-out should run both tools at once")
-	assert.Equal(t, 2, counter.get(googleadk.CallToolActivityName))
+	assert.Equal(t, 2, activeProbe.max(), "concurrent fan-out should run both tools at once")
+	assert.Equal(t, 1, counter.get("t1"))
+	assert.Equal(t, 1, counter.get("t2"))
 	assert.Equal(t, 2, counter.get(googleadk.InvokeModelActivityName))
 }
 
@@ -139,28 +184,18 @@ func TestConcurrentFanoutSchedulesParallel(t *testing.T) {
 func TestSequentialFanoutSchedulesSerially(t *testing.T) {
 	// Target 2 is never reached in sequential mode, so each handler hits the
 	// (short) timeout; peak concurrency stays at 1.
-	probe := newConcurrencyProbe(2, 300*time.Millisecond)
+	activeProbe = newConcurrencyProbe(2, 300*time.Millisecond)
 
 	var s testsuite.WorkflowTestSuite
-	env, counter := newEnv(t, &s, googleadk.Config{
-		Models: map[string]googleadk.ModelFactory{
-			"fake-model": scriptedModelFactory(twoFunctionCalls(), googleadk.TextResponse("done")),
-		},
-		Tools: []tool.Tool{probeTool(t, "t1", probe), probeTool(t, "t2", probe)},
-	})
-
-	env.ExecuteWorkflow(agentRunWorkflow, runInput{
-		ModelName:   "fake-model",
-		UserMessage: "call both",
-		Tools:       []toolSpec{{Name: "t1", Description: "tool one"}, {Name: "t2", Description: "tool two"}},
-		Sequential:  true,
-	})
+	env, counter := newFanoutEnv(t, &s)
+	env.ExecuteWorkflow(fanoutWorkflow, true)
 
 	require.True(t, env.IsWorkflowCompleted())
 	require.NoError(t, env.GetWorkflowError())
 
-	assert.Equal(t, 1, probe.max(), "sequential fan-out should never overlap tool calls")
-	assert.Equal(t, 2, counter.get(googleadk.CallToolActivityName))
+	assert.Equal(t, 1, activeProbe.max(), "sequential fan-out should never overlap tool calls")
+	assert.Equal(t, 1, counter.get("t1"))
+	assert.Equal(t, 1, counter.get("t2"))
 }
 
 // timeProviderWorkflow reports whether ADK's platform.Now, bound by NewContext,
