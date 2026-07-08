@@ -1,15 +1,3 @@
-// Copyright 2026 Google LLC, Temporal Technologies Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-
 package googleadk
 
 import (
@@ -72,7 +60,8 @@ func WithSequentialToolFanout() ContextOption {
 //     fan-out never spawns real goroutines inside the workflow.
 //
 // The workflow.Context itself is also stashed on the returned context so the
-// plugin callbacks can dispatch Activities. Pass the result straight to Run:
+// TemporalModel and the activity/MCP tools can dispatch Activities. Pass the
+// result straight to Run:
 //
 //	for ev, err := range r.Run(googleadk.NewContext(ctx), userID, sessionID, msg, cfg) {
 //	    // ...
@@ -91,7 +80,7 @@ func NewContext(ctx workflow.Context, opts ...ContextOption) context.Context {
 }
 
 // workflowContext recovers the currently active workflow.Context from an ADK
-// context (CallbackContext / ToolContext both embed context.Context). During
+// agent context (which embeds context.Context). During
 // concurrent tool fan-out this is the per-coroutine context the task runner put
 // on each task; otherwise it is the root context stashed by NewContext.
 func workflowContext(ctx context.Context) (workflow.Context, bool) {
@@ -140,7 +129,7 @@ func newDeterministicUUIDProvider(ctx workflow.Context) platform.UUIDProvider {
 // coroutine and joins them through a workflow.Channel; sequential mode runs
 // them in order on the calling coroutine. Each task is invoked with its own
 // context carrying the workflow.Context it must dispatch Activities on, so the
-// plugin callbacks block on the right coroutine without any shared mutable state.
+// model/tool dispatch blocks on the right coroutine without any shared mutable state.
 func newWorkflowTaskRunner(ctx workflow.Context, sequential bool) platform.TaskRunner {
 	return func(runnerCtx context.Context, tasks []func(context.Context)) {
 		switch {
