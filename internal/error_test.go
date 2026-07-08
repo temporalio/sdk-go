@@ -1461,11 +1461,14 @@ func TestHandlerError_EncodeCommonAttributes_MultipleRoundTrips(t *testing.T) {
 	// This test verifies that common attributes (message, stack trace) are preserved
 	// even when passing through a converter that doesn't doesn't have the right codec
 
-	// Create a converter that encodes common attributes
+	// Create a converter that encodes common attributes. AlwaysEncode ensures the zlib codec
+	// actually replaces the payload — for very small inputs zlib falls back to the original
+	// payload, which would let the codec-less middle converter decode the attributes and
+	// defeat the round-trip preservation being tested here.
 	encodingConverter := NewDefaultFailureConverter(DefaultFailureConverterOptions{
 		DataConverter: converter.NewCodecDataConverter(
 			converter.GetDefaultDataConverter(),
-			converter.NewZlibCodec(converter.ZlibCodecOptions{}),
+			converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
 		),
 		EncodeCommonAttributes: true,
 	})
