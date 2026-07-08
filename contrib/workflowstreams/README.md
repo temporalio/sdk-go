@@ -9,6 +9,12 @@ Temporal's durable execution, giving ordered, durable, exactly-once delivery
 with client-side batching, publisher dedup, continue-as-new survival,
 truncation, and ~1 MB response paging.
 
+## Installation
+
+```
+go get go.temporal.io/sdk/contrib/workflowstreams
+```
+
 It is well suited to durable event streams whose cost scales with durable
 batches rather than message count. Each poll round-trip costs ~100 ms of
 latency, so it is not intended for ultra-low-latency streaming.

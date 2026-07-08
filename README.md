@@ -6,6 +6,12 @@
 
 "Temporal Go SDK" is Temporal's framework for authoring workflows and activities using the Go language.
 
+## Installation
+
+```
+go get go.temporal.io/sdk
+```
+
 ## How to use
 
 Clone this repo into the preferred location.
