@@ -497,8 +497,9 @@ const DefaultVersion Version = internal.DefaultVersion
 // It is not allowed to update workflow code while there are workflows running as it is going to break
 // determinism. The solution is to have both old code that is used to replay existing workflows
 // as well as the new one that is used when it is executed for the first time.
-// GetVersion returns maxSupported version when is executed for the first time. This version is recorded into the
-// workflow history as a marker event. Even if maxSupported version is changed the version that was recorded is
+// GetVersion returns maxSupported version when it is executed for the first time, unless the worker configures a
+// [worker.Options.PreferredVersionProvider] that selects a different supported version. This version is recorded into
+// the workflow history as a marker event. Even if maxSupported version is changed, the version that was recorded is
 // returned on replay. DefaultVersion constant contains version of code that wasn't versioned before.
 // For example initially workflow has the following code:
 //

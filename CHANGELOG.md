@@ -19,6 +19,11 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Added
+
+- Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
+  newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
+  `GetVersion` call before activating its new behavior.
 
 ## [1.46.0] - 2026-07-07
 

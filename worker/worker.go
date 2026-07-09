@@ -208,6 +208,21 @@ type (
 	// WorkerDeploymentVersion represents a specific version of a worker in a deployment.
 	WorkerDeploymentVersion = internal.WorkerDeploymentVersion
 
+	// PreferredVersionProvider provides the version to record when a GetVersion marker is first created.
+	//
+	// NOTE: Experimental
+	PreferredVersionProvider = internal.PreferredVersionProvider
+
+	// PreferredVersionProviderInput is the input passed to a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	PreferredVersionProviderInput = internal.PreferredVersionProviderInput
+
+	// VersionPreference is the version preference returned by a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	VersionPreference = internal.VersionPreference
+
 	// Options is used to configure a worker instance.
 	Options = internal.WorkerOptions
 

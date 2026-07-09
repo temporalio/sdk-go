@@ -94,6 +94,52 @@ type (
 		DefaultVersioningBehavior VersioningBehavior
 	}
 
+	// PreferredVersionProvider provides the version to record for a GetVersion call when the
+	// version marker is created for the first time.
+	//
+	// It is called only during non-replay workflow task execution, before the SDK records a
+	// version marker for the change ID. It is not called during replay or after a version was
+	// already recorded for the same change ID. Returning nil uses the default of MaxSupported.
+	//
+	// The provider runs on a workflow goroutine. It can read a configuration file or another
+	// nondeterministic source because the selected version is recorded in workflow history.
+	// A panic from the provider fails the current workflow task, which Temporal retries.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PreferredVersionProvider]
+	PreferredVersionProvider func(PreferredVersionProviderInput) *VersionPreference
+
+	// PreferredVersionProviderInput is the input passed to a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PreferredVersionProviderInput]
+	PreferredVersionProviderInput struct {
+		// WorkflowInfo is information about the workflow execution handling the GetVersion call.
+		WorkflowInfo *WorkflowInfo
+		// ChangeID is the change ID passed to GetVersion.
+		ChangeID string
+		// MinSupported is the minimum version supported by the GetVersion call.
+		MinSupported Version
+		// MaxSupported is the maximum version supported by the GetVersion call.
+		MaxSupported Version
+	}
+
+	// VersionPreference is the version preference returned by a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.VersionPreference]
+	VersionPreference struct {
+		// Version is the version to record. It must be in the range passed to GetVersion unless
+		// ClampToSupportedRange is true.
+		Version Version
+		// ClampToSupportedRange controls whether Version is clamped to the range passed to
+		// GetVersion instead of failing the workflow task when it is out of range.
+		ClampToSupportedRange bool
+	}
+
 	// WorkerOptions is used to configure a worker instance.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
@@ -352,6 +398,15 @@ type (
 		// Optional: If set it configures Worker Versioning for this worker. See [WorkerDeploymentOptions]
 		// for more.
 		DeploymentOptions WorkerDeploymentOptions
+
+		// Optional: Provides the version to record the first time a non-replay
+		// [workflow.GetVersion] call is encountered for a change ID. If unset, or if the provider
+		// returns nil, the SDK records maxSupported. This can support a rolling deployment that
+		// introduces a GetVersion call: initially return [workflow.DefaultVersion] so workers with
+		// the old code can replay, then return the desired version after the new code is deployed.
+		//
+		// NOTE: Experimental
+		PreferredVersionProvider PreferredVersionProvider
 
 		// Optional: If set, use a custom tuner for this worker. See WorkerTuner for more.
 		// Mutually exclusive with MaxConcurrentWorkflowTaskExecutionSize,

@@ -135,6 +135,7 @@ type (
 		useBuildIDForVersioning   bool
 		workerDeploymentVersion   WorkerDeploymentVersion
 		defaultVersioningBehavior VersioningBehavior
+		preferredVersionProvider  PreferredVersionProvider
 		enableLoggingInReplay     bool
 		registry                  *registry
 		laTunnel                  *localActivityTunnel
@@ -585,6 +586,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
 		workerDeploymentVersion:   params.DeploymentOptions.Version,
 		defaultVersioningBehavior: params.DeploymentOptions.DefaultVersioningBehavior,
+		preferredVersionProvider:  params.PreferredVersionProvider,
 		enableLoggingInReplay:     params.EnableLoggingInReplay,
 		registry:                  registry,
 		workflowPanicPolicy:       params.WorkflowPanicPolicy,
@@ -706,6 +708,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.contextPropagators,
 		w.wth.deadlockDetectionTimeout,
 		w.wth.capabilities,
+		w.wth.preferredVersionProvider,
 	)
 
 	w.eventHandler = &eventHandler
