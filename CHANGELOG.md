@@ -34,6 +34,9 @@ to docs, or any other relevant information.
   declining slots. Previously the retry loop observed the context only while the ramp throttle was making
   the caller wait, so a poller goroutine could outlive worker shutdown, keeping the worker's stop
   `WaitGroup` from draining and continuing to sample system resources for the life of the process.
+- Resource-based tuner: `TryReserveSlot` (used for eager task dispatch) no longer blocks for up to
+  `RampThrottle` while a concurrent `ReserveSlot` waits out the ramp throttle. The throttle behavior
+  is unchanged; only the unnecessary lock contention on the eager path is removed.
 
 ## [1.46.0] - 2026-07-07
 
