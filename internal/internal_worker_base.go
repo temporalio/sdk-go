@@ -289,6 +289,10 @@ type (
 		ingestedThisPeriod        atomic.Int64
 		ingestedLastPeriod        atomic.Int64
 		scaleUpAllowed            atomic.Bool
+		// decisions counts scale decisions since the last worker heartbeat, keyed by reason
+		// (see pollerScaleReasons). Pre-populated in newPollerAutoscaler so recording is a
+		// lock-free atomic increment; drainDecisions reads and resets the counts each heartbeat.
+		decisions map[string]*atomic.Int64
 	}
 
 	barrier chan struct{}
@@ -914,6 +918,26 @@ func (bw *baseWorker) stopPolling() {
 	bw.noRepoll.Store(true)
 }
 
+// pollerScaleReasons enumerates the reasons the poller autoscaler adjusts (or declines
+// to adjust) its target, reported per poller type in the worker heartbeat.
+var pollerScaleReasons = []string{
+	pollerScaleServerUp,
+	pollerScaleServerUpSuppressed,
+	pollerScaleServerDown,
+	pollerScaleEmptyPollDown,
+	pollerScaleReHalve,
+	pollerScaleErrorDown,
+}
+
+const (
+	pollerScaleServerUp           = "server_up"
+	pollerScaleServerUpSuppressed = "server_up_suppressed"
+	pollerScaleServerDown         = "server_down"
+	pollerScaleEmptyPollDown      = "empty_poll_down"
+	pollerScaleReHalve            = "re_halve"
+	pollerScaleErrorDown          = "error_down"
+)
+
 func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 	logger := options.logger
 	if logger == nil {
@@ -923,15 +947,44 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 	if serverSupportsAutoscaling == nil {
 		serverSupportsAutoscaling = &atomic.Bool{}
 	}
+	decisions := make(map[string]*atomic.Int64, len(pollerScaleReasons))
+	for _, reason := range pollerScaleReasons {
+		decisions[reason] = new(atomic.Int64)
+	}
 	psr := &pollerAutoscaler{
 		maxPollerCount:            options.maxPollerCount,
 		minPollerCount:            options.minPollerCount,
 		logger:                    logger,
 		targetChangedCallback:     options.targetChangedCallback,
 		serverSupportsAutoscaling: serverSupportsAutoscaling,
+		decisions:                 decisions,
 	}
 	psr.target.Store(int64(options.initialPollerCount))
 	return psr
+}
+
+// recordDecision increments the cumulative count for a scale-decision reason. Reasons are
+// pre-populated in newPollerAutoscaler, so an unrecognized reason is a no-op, not a panic.
+func (prh *pollerAutoscaler) recordDecision(reason string) {
+	if c, ok := prh.decisions[reason]; ok {
+		c.Add(1)
+	}
+}
+
+// drainDecisions returns the scale-decision counts recorded since the previous call and
+// resets them, so each worker heartbeat reports the per-interval breakdown. Reasons with no
+// new decisions are omitted; returns nil if there were none (so the heartbeat stays compact).
+func (prh *pollerAutoscaler) drainDecisions() map[string]int64 {
+	var m map[string]int64
+	for reason, c := range prh.decisions {
+		if v := c.Swap(0); v > 0 {
+			if m == nil {
+				m = make(map[string]int64, len(prh.decisions))
+			}
+			m[reason] = v
+		}
+	}
+	return m
 }
 
 func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
@@ -944,11 +997,17 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 		ds := sd.pollRequestDeltaSuggestion
 		if ds > 0 {
 			if prh.scaleUpAllowed.Load() {
+				prh.recordDecision(pollerScaleServerUp)
 				prh.updateTarget(func(target int64) int64 {
 					return target + int64(ds)
 				})
+			} else {
+				// Server asked to scale up but the throughput gate is closed, so the
+				// suggestion is dropped. No target change — recorded for attribution.
+				prh.recordDecision(pollerScaleServerUpSuppressed)
 			}
 		} else if ds < 0 {
+			prh.recordDecision(pollerScaleServerDown)
 			prh.updateTarget(func(target int64) int64 {
 				return target + int64(ds)
 			})
@@ -958,6 +1017,7 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 		// scaling decisions - otherwise we might never scale up again. If the server
 		// supports poller autoscaling, it's safe to scale down without having seen a
 		// decision.
+		prh.recordDecision(pollerScaleEmptyPollDown)
 		prh.updateTarget(func(target int64) int64 {
 			return target - 1
 		})
@@ -996,10 +1056,12 @@ func (prh *pollerAutoscaler) handleError(err error) {
 	if prh.everSawScalingDecision.Load() || prh.serverSupportsAutoscaling.Load() {
 		_, resourceExhausted := err.(*serviceerror.ResourceExhausted)
 		if resourceExhausted {
+			prh.recordDecision(pollerScaleReHalve)
 			prh.updateTarget(func(target int64) int64 {
 				return target / 2
 			})
 		} else {
+			prh.recordDecision(pollerScaleErrorDown)
 			prh.updateTarget(func(target int64) int64 {
 				return target - 1
 			})

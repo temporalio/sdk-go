@@ -2516,6 +2516,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			if aw.nexusWorker != nil {
 				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
+			// Drain each autoscaler's scale decisions since the last heartbeat, grouped by
+			// poller type.
+			populateOpts.scaleDecisionsByPollerType = aw.collectScaleDecisions()
 			heartbeatTime := time.Now()
 			elapsedSinceLastHeartbeat := heartbeatTime.Sub(previousHeartbeatTime)
 			previousHeartbeatTime = heartbeatTime
@@ -2586,6 +2589,51 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		})
 	})
 	return aw
+}
+
+// collectScaleDecisions drains and aggregates each poller autoscaler's scale-decision counts
+// since the last heartbeat, keyed by poller type then reason. Pollers of the same type (e.g.
+// the mixed and non-sticky workflow pollers) are summed. Returns nil if no autoscaling poller
+// recorded a decision this interval.
+func (aw *AggregatedWorker) collectScaleDecisions() map[string]map[string]int64 {
+	var out map[string]map[string]int64
+	addWorker := func(bw *baseWorker) {
+		if bw == nil {
+			return
+		}
+		for i := range bw.options.taskPollers {
+			tp := &bw.options.taskPollers[i]
+			if tp.pollerAutoscaler == nil {
+				continue
+			}
+			interval := tp.pollerAutoscaler.drainDecisions()
+			if len(interval) == 0 {
+				continue
+			}
+			if out == nil {
+				out = make(map[string]map[string]int64)
+			}
+			byReason := out[tp.taskPollerType]
+			if byReason == nil {
+				byReason = make(map[string]int64, len(interval))
+				out[tp.taskPollerType] = byReason
+			}
+			for reason, count := range interval {
+				byReason[reason] += count
+			}
+		}
+	}
+	if aw.workflowWorker != nil {
+		addWorker(aw.workflowWorker.worker)
+		addWorker(aw.workflowWorker.localActivityWorker)
+	}
+	if aw.activityWorker != nil {
+		addWorker(aw.activityWorker.worker)
+	}
+	if aw.nexusWorker != nil {
+		addWorker(aw.nexusWorker.worker)
+	}
+	return out
 }
 
 func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
