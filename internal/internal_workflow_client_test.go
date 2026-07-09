@@ -1409,6 +1409,49 @@ func (s *workflowClientTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
+func TestLoadCapabilitiesUnknownMethodUnimplementedUsesEmptyCapabilities(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().
+		GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewUnimplemented("unknown method GetSystemInfo")).
+		Times(1)
+
+	client := &WorkflowClient{
+		workflowService:          service,
+		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
+	}
+
+	capabilities, err := client.loadCapabilities(context.Background())
+	require.NoError(t, err)
+	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, capabilities))
+}
+
+func TestLoadCapabilitiesNonUnknownMethodUnimplementedFails(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().
+		GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewUnimplemented("frontend has not loaded GetSystemInfo")).
+		Times(1)
+
+	client := &WorkflowClient{
+		workflowService:          service,
+		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
+	}
+
+	_, err := client.loadCapabilities(context.Background())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed reaching server")
+	require.ErrorContains(t, err, "frontend has not loaded GetSystemInfo")
+}
+
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	signalName := "my signal"
 	signalInput := []byte("my signal input")
@@ -1883,6 +1926,37 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
 
+func (s *workflowClientTestSuite) TestStartWorkflowWithOneTimeVersioningOverride() {
+	versioningOverride := &OneTimeVersioningOverride{
+		TargetVersion: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildID:        "build1",
+		},
+	}
+
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		VersioningOverride:       versioningOverride,
+	}
+
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	startResp := &workflowservice.StartWorkflowExecutionResponse{}
+
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+			s.Nil(req.VersioningOverride.GetPinned())
+			s.False(req.VersioningOverride.GetAutoUpgrade())
+			s.Equal("deployment1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetDeploymentName())
+			s.Equal("build1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetBuildId())
+		})
+	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
+}
+
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverride() {
 	versioningOverride := &PinnedVersioningOverride{
 		Version: WorkerDeploymentVersion{
@@ -1916,6 +1990,36 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 
 			s.Equal("deployment1", req.VersioningOverride.GetPinned().GetVersion().DeploymentName)
 			s.Equal("build1", req.VersioningOverride.GetPinned().GetVersion().BuildId)
+		})
+	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
+}
+
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithOneTimeVersioningOverride() {
+	versioningOverride := &OneTimeVersioningOverride{
+		TargetVersion: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildID:        "build1",
+		},
+	}
+
+	options := StartWorkflowOptions{
+		ID:                       "wid",
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		VersioningOverride:       versioningOverride,
+	}
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	startResp := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
+
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+			s.Nil(req.VersioningOverride.GetPinned())
+			s.False(req.VersioningOverride.GetAutoUpgrade())
+			s.Equal("deployment1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetDeploymentName())
+			s.Equal("build1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetBuildId())
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
 }
@@ -2740,7 +2844,7 @@ func TestUpdate(t *testing.T) {
 		require.NotNil(t, output.Result)
 		payloads := converter.GetPayloads(output.Result)
 		require.NotNil(t, payloads)
-                require.Equal(t, outPayloads, payloads)
+		require.Equal(t, outPayloads, payloads)
 		require.Len(t, payloads.GetPayloads(), 1)
 	})
 	t.Run("sync error exposes failure proto", func(t *testing.T) {

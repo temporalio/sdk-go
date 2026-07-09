@@ -127,7 +127,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.7.2-standalone-nexus-operations",
+				Version: "v1.7.2-one-time-versioning-override",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
@@ -278,7 +278,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
+		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "5m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}

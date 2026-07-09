@@ -109,3 +109,7 @@ Added, Changed, Deprecated, Breaking Changes, Fixed, or Security.
 
 Keep entries high-level and written for users. The full commit log is appended at release time,
 so internal-only changes (refactors, tests, CI, docs) don't need an entry.
+
+This is enforced by the `Changelog checkpoint` CI check, which fails when a PR does not modify
+`CHANGELOG.md`. If your PR has no user-facing change, a maintainer can apply the `skip-changelog`
+label to the PR to satisfy the check (applying the label automatically re-runs it).
