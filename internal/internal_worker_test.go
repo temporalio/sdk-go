@@ -2357,7 +2357,10 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByIDWithOptions_Ser
 	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatByIdResponse{CancelRequested: false}
-	s.service.EXPECT().RecordActivityTaskHeartbeatById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+	s.service.EXPECT().RecordActivityTaskHeartbeatById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
+		Do(func(_ interface{}, req *workflowservice.RecordActivityTaskHeartbeatByIdRequest, _ ...interface{}) {
+			s.Equal("workflow:wid", req.ResourceId)
+		})
 
 	err := client.RecordActivityHeartbeatByIDWithOptions(context.Background(), RecordActivityHeartbeatByIDOptions{
 		Namespace:    DefaultNamespace,
@@ -2387,7 +2390,10 @@ func (s *internalWorkerTestSuite) TestCompleteActivityWithOptions_SerializationC
 	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
 	response := &workflowservice.RespondActivityTaskCompletedResponse{}
-	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil)
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
+		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...interface{}) {
+			s.Equal("workflow:wid", req.ResourceId)
+		})
 
 	err := client.CompleteActivityWithOptions(context.Background(), CompleteActivityOptions{
 		TaskToken:    []byte("token"),
@@ -2418,6 +2424,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivity_DelegatesToWithOptions() 
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
 		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...interface{}) {
 			s.Equal([]byte("token"), req.TaskToken)
+			s.Empty(req.ResourceId)
 		})
 
 	err := client.CompleteActivity(context.Background(), []byte("token"), "result", nil)
@@ -2471,7 +2478,10 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithOptions_Seriali
 	client := NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
-	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
+		Do(func(_ interface{}, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...interface{}) {
+			s.Equal("workflow:wid", req.ResourceId)
+		})
 
 	err := client.RecordActivityHeartbeatWithOptions(context.Background(), RecordActivityHeartbeatOptions{
 		TaskToken:    []byte("token"),
@@ -2502,6 +2512,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_DelegatesToWithOpt
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
 		Do(func(_ interface{}, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...interface{}) {
 			s.Equal([]byte("token"), req.TaskToken)
+			s.Empty(req.ResourceId)
 		})
 
 	err := client.RecordActivityHeartbeat(context.Background(), []byte("token"), "progress")

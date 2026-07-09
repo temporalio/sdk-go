@@ -1997,6 +1997,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		BinaryChecksum:             wth.workerBuildID,
 		QueryResults:               queryResults,
 		Namespace:                  wth.namespace,
+		ResourceId:                 getWorkflowResourceId(task.WorkflowExecution.GetWorkflowId()),
 		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,
@@ -2248,10 +2249,11 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	defer cancel()
 
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
-		TaskToken: i.taskToken,
-		Details:   details,
-		Identity:  i.identity,
-		Namespace: i.namespace,
+		TaskToken:  i.taskToken,
+		Details:    details,
+		Identity:   i.identity,
+		Namespace:  i.namespace,
+		ResourceId: getActivityResourceIdFromCtx(ctx),
 	}
 	var err error
 	if visitErr := visitProtoPayloads(ctx, i.outboundPayloadVisitor, request, 0); visitErr != nil {
@@ -2259,10 +2261,11 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		// waiting for the heartbeat timeout. Errors are ignored — if the RPC fails the
 		// activity will still be timed out by the server.
 		failReq := &workflowservice.RespondActivityTaskFailedRequest{
-			TaskToken: i.taskToken,
-			Failure:   i.failureConverter.ErrorToFailure(visitErr),
-			Identity:  i.identity,
-			Namespace: i.namespace,
+			TaskToken:  i.taskToken,
+			Failure:    i.failureConverter.ErrorToFailure(visitErr),
+			Identity:   i.identity,
+			Namespace:  i.namespace,
+			ResourceId: getActivityResourceIdFromCtx(ctx),
 		}
 		failCtx, failCancel := context.WithTimeout(context.Background(), recordTimeout)
 		defer failCancel()
@@ -2429,7 +2432,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+			dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+			t.WorkflowExecution.GetWorkflowId(), t.ActivityId), nil
 	}
 
 	// panic handler
@@ -2447,7 +2451,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
 			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
+				dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+				t.WorkflowExecution.GetWorkflowId(), t.ActivityId)
 		}
 	}()
 
@@ -2500,9 +2505,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			tagError, err,
 		)
 	}
-
 	response := convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
+		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+		t.WorkflowExecution.GetWorkflowId(), t.ActivityId)
 
 	if msg, ok := response.(proto.Message); ok {
 		var storageTarget converter.StorageDriverTargetInfo
@@ -2561,6 +2566,7 @@ func (ath *activityTaskHandlerImpl) visitorErrorToActivityFailure(msgPrefix stri
 		WorkerVersion:     ath.versionStamp,
 		Deployment:        ath.deployment,
 		DeploymentOptions: ath.workerDeploymentOptions,
+		ResourceId:        getActivityResourceId(t.WorkflowExecution.GetWorkflowId(), t.ActivityId),
 	}
 }
 
@@ -2619,6 +2625,14 @@ func createNewCommandWithMetadata(commandType enumspb.CommandType, metadata *sdk
 		CommandType:  commandType,
 		UserMetadata: metadata,
 	}
+}
+
+func getActivityResourceIdFromCtx(ctx context.Context) string {
+	env := getActivityEnvironmentFromCtx(ctx)
+	if env == nil {
+		return ""
+	}
+	return getActivityResourceId(env.workflowExecution.ID, env.activityID)
 }
 
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
