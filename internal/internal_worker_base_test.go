@@ -138,6 +138,32 @@ func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesTaskQueueKind() 
 	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, supplier.taskQueueKind)
 }
 
+func (s *ScalableTaskPollerSuite) TestSetTaskPollersCreatesBalancerForMultiplePollers() {
+	newPoller := func(pollerType string) scalableTaskPoller {
+		return newScalableTaskPoller(
+			newBlockingProbeTaskPoller(),
+			ilog.NewNopLogger(),
+			&pollerBehaviorAutoscaling{initialNumberOfPollers: 1, maximumNumberOfPollers: 2, minimumNumberOfPollers: 1},
+			pollerType,
+			&atomic.Bool{},
+		)
+	}
+
+	// A single poller does not need a balancer.
+	bw := &baseWorker{}
+	bw.setTaskPollers([]scalableTaskPoller{newPoller(metrics.PollerTypeWorkflowTask)})
+	s.Len(bw.options.taskPollers, 1)
+	s.Nil(bw.pollerBalancer)
+
+	// Growing to more than one poller creates the balancer.
+	bw.setTaskPollers([]scalableTaskPoller{
+		newPoller(metrics.PollerTypeWorkflowTask),
+		newPoller(metrics.PollerTypeWorkflowStickyTask),
+	})
+	s.Len(bw.options.taskPollers, 2)
+	s.NotNil(bw.pollerBalancer)
+}
+
 func TestScalableTaskPollerSuite(t *testing.T) {
 	suite.Run(t, new(ScalableTaskPollerSuite))
 }

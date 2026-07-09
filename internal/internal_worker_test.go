@@ -1792,6 +1792,103 @@ func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 	worker.Stop()
 }
 
+// newWorkerWithNamespaceCapabilities builds an AggregatedWorker whose namespace
+// DescribeNamespace response reports the given capabilities, with permissive
+// polling/shutdown mocks so the worker can be started and stopped.
+func (s *internalWorkerTestSuite) newWorkerWithNamespaceCapabilities(
+	caps *namespacepb.NamespaceInfo_Capabilities, options WorkerOptions,
+) *AggregatedWorker {
+	namespace := "testNamespace"
+	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:         namespace,
+			State:        enumspb.NAMESPACE_STATE_REGISTERED,
+			Capabilities: caps,
+		},
+	}
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).AnyTimes()
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: namespace})
+	return NewAggregatedWorker(client, "testGroupName", options)
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+		WorkerOptions{},
+	)
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	// All defaulted poller behaviors are switched to autoscaling.
+	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.WorkflowTaskPollerBehavior)
+	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.ActivityTaskPollerBehavior)
+	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.NexusTaskPollerBehavior)
+
+	// The actual running pollers reflect the autoscaling structure.
+	for _, p := range worker.workflowWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+	for _, p := range worker.activityWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+
+	// Auto-enroll implies full autoscaling support, including scale-down.
+	s.True(worker.executionParams.serverSupportsAutoscaling.Load())
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollDisabled() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: false},
+		WorkerOptions{},
+	)
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	// Without the capability, defaulted pollers stay at the fixed default of 2.
+	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.WorkflowTaskPollerBehavior)
+	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.ActivityTaskPollerBehavior)
+
+	require.Len(s.T(), worker.workflowWorker.worker.options.taskPollers, 1)
+	wfPoller := worker.workflowWorker.worker.options.taskPollers[0]
+	s.Nil(wfPoller.autoscalingRunner)
+	s.Equal(defaultConcurrentPollRoutineSize, wfPoller.pollerCount)
+
+	require.Len(s.T(), worker.activityWorker.worker.options.taskPollers, 1)
+	actPoller := worker.activityWorker.worker.options.taskPollers[0]
+	s.Nil(actPoller.autoscalingRunner)
+	s.Equal(defaultConcurrentPollRoutineSize, actPoller.pollerCount)
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollRespectsExplicitConfig() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+		WorkerOptions{
+			MaxConcurrentWorkflowTaskPollers: 5,
+			MaxConcurrentActivityTaskPollers: 3,
+		},
+	)
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	// The user explicitly set fixed poller counts, so auto-enroll must not touch them.
+	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.WorkflowTaskPollerBehavior)
+	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.ActivityTaskPollerBehavior)
+
+	require.Len(s.T(), worker.workflowWorker.worker.options.taskPollers, 1)
+	s.Nil(worker.workflowWorker.worker.options.taskPollers[0].autoscalingRunner)
+	s.Equal(5, worker.workflowWorker.worker.options.taskPollers[0].pollerCount)
+
+	require.Len(s.T(), worker.activityWorker.worker.options.taskPollers, 1)
+	s.Nil(worker.activityWorker.worker.options.taskPollers[0].autoscalingRunner)
+	s.Equal(3, worker.activityWorker.worker.options.taskPollers[0].pollerCount)
+}
+
 type throwsOneErrSlotSupplier struct {
 	didThrow atomic.Bool
 }
