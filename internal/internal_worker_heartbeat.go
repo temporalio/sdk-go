@@ -229,6 +229,7 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 		Namespace:       hw.namespace,
 		Identity:        hw.client.identity,
 		WorkerHeartbeat: heartbeats,
+		ResourceId:      fmt.Sprintf("worker:%s", hw.client.workerGroupingKey),
 	})
 
 	if err != nil {
