@@ -19,6 +19,14 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Fixed
+
+- Dynamic workflows registered as a `WorkflowDefinitionFactory` are now executed via
+  `NewWorkflowDefinition()` rather than being wrapped as a function and reflected on (which panicked
+  with `reflect: call of reflect.Value.Call on ptr Value`), in both the worker registry and the test
+  environment. This lets host processes that register a single shared factory (e.g.
+  `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
+
 
 ## [1.46.0] - 2026-07-07
 

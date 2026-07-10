@@ -978,6 +978,13 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 		wf = r.dynamicWorkflow
 		dynamic = true
 	}
+	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
+	// RoadRunner PHP host process registers one shared factory). Honor it here,
+	// as the named-workflow path above does, rather than wrapping it in a
+	// reflection-based workflowExecutor, which panics on the non-func value.
+	if wdf, ok := wf.(WorkflowDefinitionFactory); ok {
+		return wdf.NewWorkflowDefinition(), nil
+	}
 	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors, dynamic: dynamic}
 	return newSyncWorkflowDefinition(executor), nil
 }
