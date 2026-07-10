@@ -208,7 +208,7 @@ type (
 	// WorkerDeploymentVersion represents a specific version of a worker in a deployment.
 	WorkerDeploymentVersion = internal.WorkerDeploymentVersion
 
-	// PreferredVersionProvider provides the version to record when a GetVersion marker is first created.
+	// PreferredVersionProvider provides the version to record when a [workflow.GetVersion] marker is first created.
 	//
 	// NOTE: Experimental
 	PreferredVersionProvider = internal.PreferredVersionProvider

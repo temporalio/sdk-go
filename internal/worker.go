@@ -99,7 +99,8 @@ type (
 	//
 	// It is called only during non-replay workflow task execution, before the SDK records a
 	// version marker for the change ID. It is not called during replay or after a version was
-	// already recorded for the same change ID. Returning nil uses the default of MaxSupported.
+	// already recorded for the same change ID. Returning nil is equivalent to choosing
+	// [PreferredVersionProviderInput.MaxSupported].
 	//
 	// The provider runs on a workflow goroutine. It can read a configuration file or another
 	// nondeterministic source because the selected version is recorded in workflow history.
@@ -400,9 +401,9 @@ type (
 		DeploymentOptions WorkerDeploymentOptions
 
 		// Optional: Provides the version to record the first time a non-replay
-		// [workflow.GetVersion] call is encountered for a change ID. If unset, or if the provider
-		// returns nil, the SDK records maxSupported. This can support a rolling deployment that
-		// introduces a GetVersion call: initially return [workflow.DefaultVersion] so workers with
+		// workflow.GetVersion call is encountered for a change ID. If unset, or if the provider
+		// returns nil, the SDK records GetVersion's maxSupported argument. This can support a rolling deployment that
+		// introduces a GetVersion call: initially return workflow.DefaultVersion so workers with
 		// the old code can replay, then return the desired version after the new code is deployed.
 		//
 		// NOTE: Experimental
