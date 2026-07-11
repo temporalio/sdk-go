@@ -16,6 +16,10 @@ const (
 	resourceSlotsMemUsage = "temporal_resource_slots_mem_usage"
 )
 
+// retryReserveInterval is how long ReserveSlot waits before re-asking the controller for a slot
+// after it has declined one.
+const retryReserveInterval = 10 * time.Millisecond
+
 // SysInfoProvider implementations provide information about system resources.
 //
 // Exposed as: [go.temporal.io/sdk/worker.SysInfoProvider]
@@ -180,6 +184,9 @@ func NewResourceBasedSlotSupplier(
 
 func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, info SlotReservationInfo) (*SlotPermit, error) {
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		if info.NumIssuedSlots() < r.options.MinSlots {
 			return &SlotPermit{}, nil
 		}
@@ -201,7 +208,11 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, info SlotRe
 		if maybePermit != nil {
 			return maybePermit, nil
 		}
-		time.Sleep(10 * time.Millisecond)
+		select {
+		case <-time.After(retryReserveInterval):
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
 	}
 }
 
