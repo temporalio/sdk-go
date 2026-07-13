@@ -1,5 +1,6 @@
 <!--
-High-level release notes.
+High-level release notes for the main Go SDK module. Changes to independently
+released modules under `contrib` belong in the `CHANGELOG.md` for that module.
 Loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 When your PR includes a user-facing change, add an entry below under the
@@ -19,6 +20,11 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Added
+
+- Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
+  newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
+  `GetVersion` call before activating its new behavior.
 
 ## [1.46.0] - 2026-07-07
 
