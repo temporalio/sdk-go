@@ -1,5 +1,6 @@
 <!--
-High-level release notes.
+High-level release notes for the main Go SDK module. Changes to independently
+released modules under `contrib` belong in the `CHANGELOG.md` for that module.
 Loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 When your PR includes a user-facing change, add an entry below under the
