@@ -5,6 +5,19 @@ A wrapper for running [Temporal](https://temporal.io) workers inside AWS Lambda.
 worker with Lambda-tuned defaults, polling for tasks, and gracefully shutting down before the
 invocation deadline.
 
+## Add to your project
+
+From your application's Go module, run:
+
+```bash
+go get go.temporal.io/sdk/contrib/aws/lambdaworker@latest
+```
+
+## Releases
+
+`lambdaworker` is released as a separate Go module from the core Temporal Go
+SDK. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
 ## Quick start
 
 ```go
@@ -27,6 +40,12 @@ func main() {
     })
 }
 ```
+
+## Complete example
+
+See the [Lambda Worker sample](https://github.com/temporalio/samples-go/tree/main/lambda-worker)
+for a deployable example including AWS configuration, IAM setup, and optional
+OpenTelemetry instrumentation.
 
 ## Configuration
 
@@ -53,6 +72,12 @@ docstrings for more. Eager activities are always disabled.
 
 Metrics and tracing are opt-in. The `otel` sub-package provides convenience
 helpers for AWS Distro for OpenTelemetry (ADOT):
+
+The `otel` helper is also released as a separate Go module. Add it with:
+
+```bash
+go get go.temporal.io/sdk/contrib/aws/lambdaworker/otel@latest
+```
 
 ```go
 import "go.temporal.io/sdk/contrib/aws/lambdaworker/otel"

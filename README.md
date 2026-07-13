@@ -6,13 +6,31 @@
 
 "Temporal Go SDK" is Temporal's framework for authoring workflows and activities using the Go language.
 
-## How to use
+## Add the SDK to your project
 
-Clone this repo into the preferred location.
+The core Temporal Go SDK packages, including `client`, `worker`, and `workflow`,
+are released together as the `go.temporal.io/sdk` module.
+
+From your application's Go module, run:
 
 ```bash
-git clone https://github.com/temporalio/sdk-go.git
+go get go.temporal.io/sdk@latest
 ```
+
+Then import the packages you need, such as:
+
+```go
+import (
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
+)
+```
+
+The integrations and tools under [`contrib`](contrib) are released as separate
+Go modules. See each package's README for its module path and version.
+
+## Getting started
 
 See [samples](https://github.com/temporalio/samples-go) to get started.
 
