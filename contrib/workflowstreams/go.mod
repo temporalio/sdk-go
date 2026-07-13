@@ -5,7 +5,7 @@ go 1.25.4
 require (
 	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.11.1
-	go.temporal.io/api v1.63.2-0.20260707233821-0a5e3ce5812f
+	go.temporal.io/api v1.63.2-0.20260713193440-9f335c1c4c81
 	go.temporal.io/sdk v1.45.0
 	google.golang.org/protobuf v1.36.11
 )
