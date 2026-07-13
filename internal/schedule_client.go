@@ -221,6 +221,8 @@ type (
 	}
 
 	// ScheduleAction represents an action a schedule can take.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleAction]
 	ScheduleAction interface {
 		isScheduleAction()
 	}
@@ -597,6 +599,8 @@ type (
 	}
 
 	// ScheduleHandle represents a created schedule.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleHandle]
 	ScheduleHandle interface {
 		// GetID returns the schedule ID associated with this handle.
 		GetID() string
@@ -700,6 +704,8 @@ type (
 
 	// ScheduleListIterator represents the interface for
 	// schedule iterator
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleListIterator]
 	ScheduleListIterator interface {
 		// HasNext return whether this iterator has next value
 		HasNext() bool
@@ -709,6 +715,8 @@ type (
 	}
 
 	// Client for creating Schedules and creating Schedule handles
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ScheduleClient]
 	ScheduleClient interface {
 		// Create a new Schedule.
 		Create(ctx context.Context, options ScheduleOptions) (ScheduleHandle, error)
