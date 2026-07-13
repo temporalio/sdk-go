@@ -12,7 +12,7 @@ require (
 	github.com/nexus-rpc/sdk-go v0.6.0
 	github.com/robfig/cron v1.2.0
 	github.com/stretchr/testify v1.10.0
-	go.temporal.io/api v1.63.2-0.20260707233821-0a5e3ce5812f // DO NOT SUBMIT, api-go repo branch "feature/worker-callbacks"
+	go.temporal.io/api v1.63.2-0.20260713193440-9f335c1c4c81 // DO NOT SUBMIT, api-go repo branch "feature/worker-callbacks"
 	golang.org/x/sync v0.20.0
 	golang.org/x/sys v0.45.0
 	golang.org/x/time v0.3.0
