@@ -187,6 +187,11 @@ func (hw *sharedNamespaceWorker) run() {
 	ticker := time.NewTicker(hw.interval)
 	defer ticker.Stop()
 
+	if err := hw.sendHeartbeats(); err != nil {
+		hw.logger.Warn("Stopping heartbeat worker", "error", err)
+		return
+	}
+
 	for {
 		select {
 		case <-ticker.C:

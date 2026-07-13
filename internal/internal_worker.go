@@ -2466,7 +2466,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		startTime := timestamppb.New(time.Now())
 		hostname, _ := os.Hostname()
 		pid := strconv.Itoa(os.Getpid())
-		previousHeartbeatTime := time.Now()
+		var previousHeartbeatTime time.Time
 		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
 		driverInfos := collectStorageDriverInfos(client.storageDriverTypes)
 
@@ -2517,8 +2517,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
 			heartbeatTime := time.Now()
-			elapsedSinceLastHeartbeat := heartbeatTime.Sub(previousHeartbeatTime)
-			previousHeartbeatTime = heartbeatTime
 
 			status := enumspb.WORKER_STATUS_RUNNING
 			if aw.shuttingDown.Load() {
@@ -2535,17 +2533,20 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 					CurrentHostCpuUsage: cpuUsage,
 					CurrentHostMemUsage: memUsage,
 				},
-				TaskQueue:                 aw.executionParams.TaskQueue,
-				DeploymentVersion:         deploymentVersion,
-				SdkName:                   SDKName,
-				SdkVersion:                SDKVersion,
-				Status:                    status,
-				StartTime:                 startTime,
-				HeartbeatTime:             timestamppb.New(heartbeatTime),
-				ElapsedSinceLastHeartbeat: durationpb.New(elapsedSinceLastHeartbeat),
-				Plugins:                   pluginInfos,
-				Drivers:                   driverInfos,
+				TaskQueue:         aw.executionParams.TaskQueue,
+				DeploymentVersion: deploymentVersion,
+				SdkName:           SDKName,
+				SdkVersion:        SDKVersion,
+				Status:            status,
+				StartTime:         startTime,
+				HeartbeatTime:     timestamppb.New(heartbeatTime),
+				Plugins:           pluginInfos,
+				Drivers:           driverInfos,
 			}
+			if !previousHeartbeatTime.IsZero() {
+				hb.ElapsedSinceLastHeartbeat = durationpb.New(heartbeatTime.Sub(previousHeartbeatTime))
+			}
+			previousHeartbeatTime = heartbeatTime
 			aw.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
 
 			return hb
