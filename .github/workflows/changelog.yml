@@ -18,11 +18,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Reminds contributors to record user-facing changes. Passes when the PR
-      # touches CHANGELOG.md, or when a maintainer applies the
+      # touches any CHANGELOG.md, or when a maintainer applies the
       # `skip-changelog` label to confirm no entry is needed. Otherwise
       # fails with guidance. It does not judge whether the entry is meaningful,
       # it is purely a nudge.
-      - name: Require CHANGELOG.md update or override label
+      - name: Require a CHANGELOG.md update or override label
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -34,9 +34,9 @@ jobs:
             exit 0
           fi
           if gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate --jq '.[].filename' \
-            | grep -qx 'CHANGELOG.md'; then
-            echo "CHANGELOG.md was updated."
+            | grep -Eq '(^|/)CHANGELOG\.md$'; then
+            echo "A CHANGELOG.md was updated."
             exit 0
           fi
-          echo "::error::This PR does not update CHANGELOG.md. If it includes a user-facing change, add an entry under [Unreleased] in CHANGELOG.md. If no changelog entry is needed, a maintainer can apply the 'skip-changelog' label."
+          echo "::error::This PR does not update a CHANGELOG.md. If it includes a user-facing change, add an entry under [Unreleased] in the affected module's CHANGELOG.md. If no changelog entry is needed, a maintainer can apply the 'skip-changelog' label."
           exit 1
