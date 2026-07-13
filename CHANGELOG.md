@@ -19,6 +19,10 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Changed
+
+- Send the initial Worker heartbeat immediately on startup, include the client identity, and omit
+  elapsed-since-last-heartbeat until a previous heartbeat exists.
 
 ## [1.46.0] - 2026-07-07
 
