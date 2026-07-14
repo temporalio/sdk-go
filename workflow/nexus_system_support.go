@@ -1,29 +1,12 @@
-// Hand-written proto converter functions for Temporal semantic types.
-//
-// The generated service file references these converters by name when a WIT
-// type is replaced with a native Temporal Go SDK type (via `@nexus.type
-// go=...`). Each function translates between the native value and the protobuf
-// message that the Temporal SDK serializes onto the wire, keeping the Go
-// bindings wire-compatible with the Python and TypeScript bindings.
-//
-// Converters are pure structural translations: a `nil` input always produces a
-// `nil` output. They never invent zero values for absent data. The generated
-// service file owns all presence/optionality logic: it passes pointers for
-// required values and dereferences results with a zero fallback, and it stores
-// optional values directly as pointers so that "unset" and "set to zero" remain
-// distinguishable.
 package workflow
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
-	"runtime"
-	"strings"
 	"time"
 
 	common "go.temporal.io/api/common/v1"
-	deployment "go.temporal.io/api/deployment/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	enums "go.temporal.io/api/enums/v1"
 	taskqueue "go.temporal.io/api/taskqueue/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
@@ -32,21 +15,6 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
-
-func nexGenFunctionName[F any](value F) string {
-	rv := reflect.ValueOf(value)
-	switch rv.Kind() {
-	case reflect.String:
-		return rv.String()
-	case reflect.Func:
-		fullName := runtime.FuncForPC(rv.Pointer()).Name()
-		elements := strings.Split(fullName, ".")
-		shortName := elements[len(elements)-1]
-		return strings.TrimSuffix(shortName, "-fm")
-	default:
-		panic("nex-gen function name requires string or function")
-	}
-}
 
 // --- Duration (google.protobuf.Duration) ---
 
@@ -163,7 +131,7 @@ func workflowTypeFromProto(_ Context, t *common.WorkflowType) (*string, error) {
 
 // --- Payload / Payloads (temporal.api.common.v1.Payload[s]) ---
 func payloadToProto(ctx Context, value any) (*common.Payload, error) {
-	return nexGenWorkflowDataConverter(ctx).ToPayload(value)
+	return getWorkflowDataConverter(ctx).ToPayload(value)
 }
 
 func payloadFromProto(ctx Context, payload *common.Payload) (any, error) {
@@ -171,21 +139,14 @@ func payloadFromProto(ctx Context, payload *common.Payload) (any, error) {
 		return nil, nil
 	}
 	var value any
-	if err := nexGenWorkflowDataConverter(ctx).FromPayload(payload, &value); err != nil {
+	if err := getWorkflowDataConverter(ctx).FromPayload(payload, &value); err != nil {
 		return nil, err
 	}
 	return value, nil
 }
 
 func payloadsToProto(ctx Context, values []any) (*common.Payloads, error) {
-	if len(values) == 0 {
-		return nil, nil
-	}
-	payloads, err := nexGenWorkflowDataConverter(ctx).ToPayloads(values...)
-	if err != nil {
-		return nil, err
-	}
-	return payloads, nil
+	return getWorkflowDataConverter(ctx).ToPayloads(values...)
 }
 
 func payloadsFromProto(ctx Context, payloads *common.Payloads) ([]any, error) {
@@ -203,7 +164,7 @@ func payloadsFromProto(ctx Context, payloads *common.Payloads) ([]any, error) {
 	return values, nil
 }
 
-func nexGenWorkflowDataConverter(ctx Context) converter.DataConverter {
+func getWorkflowDataConverter(ctx Context) converter.DataConverter {
 	dataConverter := converter.GetDefaultDataConverter()
 	if options := ctx.Value("wfEnvOptions"); options != nil {
 		optionsValue := reflect.ValueOf(options)
@@ -260,9 +221,10 @@ func memoFromProto(ctx Context, memo *common.Memo) (map[string]any, error) {
 // --- SearchAttributes (temporal.api.common.v1.SearchAttributes) ---
 
 func searchAttributesToProto(_ Context, searchAttributes *temporal.SearchAttributes) (*common.SearchAttributes, error) {
-	if searchAttributes == nil || searchAttributes.Size() == 0 {
+	if searchAttributes == nil {
 		return nil, nil
 	}
+
 	fields := make(map[string]*common.Payload, searchAttributes.Size())
 	for key, value := range searchAttributes.GetUntypedValues() {
 		payload, err := converter.GetDefaultDataConverter().ToPayload(value)
@@ -286,19 +248,20 @@ func versioningOverrideToProto(_ Context, versioningOverride *client.VersioningO
 	if versioningOverride == nil || *versioningOverride == nil {
 		return nil, nil
 	}
+
 	switch v := (*versioningOverride).(type) {
 	case *client.PinnedVersioningOverride:
 		return &workflowpb.VersioningOverride{
 			Behavior:      enums.VERSIONING_BEHAVIOR_PINNED,
 			PinnedVersion: v.Version.DeploymentName + "." + v.Version.BuildID,
-			Deployment: &deployment.Deployment{
+			Deployment: &deploymentpb.Deployment{
 				SeriesName: v.Version.DeploymentName,
 				BuildId:    v.Version.BuildID,
 			},
 			Override: &workflowpb.VersioningOverride_Pinned{
 				Pinned: &workflowpb.VersioningOverride_PinnedOverride{
 					Behavior: workflowpb.VersioningOverride_PINNED_OVERRIDE_BEHAVIOR_PINNED,
-					Version: &deployment.WorkerDeploymentVersion{
+					Version: &deploymentpb.WorkerDeploymentVersion{
 						DeploymentName: v.Version.DeploymentName,
 						BuildId:        v.Version.BuildID,
 					},
@@ -317,60 +280,114 @@ func versioningOverrideToProto(_ Context, versioningOverride *client.VersioningO
 	}
 }
 
+// --- Workflow context options (sourced fields) ---
+
+// WorkflowContextOptions configures a workflow started from workflow code.
+type WorkflowContextOptions struct {
+	// Namespace is the namespace in which to start or signal the workflow.
+	// The current workflow's namespace is used when this is empty.
+	Namespace string
+	// ID is the required workflow ID.
+	ID string
+	// TaskQueue is the required task queue for a newly started workflow.
+	TaskQueue string
+	// WorkflowExecutionTimeout is the end-to-end timeout, including retries and continue-as-new.
+	WorkflowExecutionTimeout time.Duration
+	// WorkflowRunTimeout is the timeout for a single workflow run.
+	WorkflowRunTimeout time.Duration
+	// WorkflowTaskTimeout is the timeout for a single workflow task.
+	WorkflowTaskTimeout time.Duration
+	// WorkflowIDReusePolicy controls reuse of an ID from a closed workflow.
+	WorkflowIDReusePolicy enums.WorkflowIdReusePolicy
+	// RetryPolicy configures retries for the workflow.
+	RetryPolicy *temporal.RetryPolicy
+	// CronSchedule starts the workflow on the given cron schedule.
+	CronSchedule string
+	// Memo is the non-indexed information attached to the workflow.
+	Memo map[string]any
+	// SearchAttributes contains the typed search attributes attached to the workflow.
+	SearchAttributes temporal.SearchAttributes
+	// Priority configures the workflow's task priority.
+	Priority temporal.Priority
+}
+
+type workflowContextOptionsKey struct{}
+
+// WithWorkflowContextOptions returns a context carrying options for starting a workflow.
+func WithWorkflowContextOptions(ctx Context, options WorkflowContextOptions) Context {
+	return WithValue(ctx, workflowContextOptionsKey{}, options)
+}
+
+func workflowContextOptions(ctx Context) WorkflowContextOptions {
+	options, _ := ctx.Value(workflowContextOptionsKey{}).(WorkflowContextOptions)
+	return options
+}
+
+func workflowStartWorkflowID(ctx Context) string {
+	id := workflowContextOptions(ctx).ID
+	if id == "" {
+		panic("workflow ID is required in WorkflowContextOptions")
+	}
+	return id
+}
+
+func workflowStartTaskQueue(ctx Context) string {
+	taskQueue := workflowContextOptions(ctx).TaskQueue
+	if taskQueue == "" {
+		panic("task queue is required in WorkflowContextOptions")
+	}
+	return taskQueue
+}
+
+func workflowStartExecutionTimeout(ctx Context) time.Duration {
+	return workflowContextOptions(ctx).WorkflowExecutionTimeout
+}
+
+func workflowStartRunTimeout(ctx Context) time.Duration {
+	return workflowContextOptions(ctx).WorkflowRunTimeout
+}
+
+func workflowStartTaskTimeout(ctx Context) time.Duration {
+	return workflowContextOptions(ctx).WorkflowTaskTimeout
+}
+
+func workflowStartIDReusePolicy(ctx Context) enums.WorkflowIdReusePolicy {
+	return workflowContextOptions(ctx).WorkflowIDReusePolicy
+}
+
+func workflowStartRetryPolicy(ctx Context) temporal.RetryPolicy {
+	if retryPolicy := workflowContextOptions(ctx).RetryPolicy; retryPolicy != nil {
+		return *retryPolicy
+	}
+	return temporal.RetryPolicy{}
+}
+
+func workflowStartCronSchedule(ctx Context) string {
+	return workflowContextOptions(ctx).CronSchedule
+}
+
+func workflowStartMemo(ctx Context) map[string]any {
+	return workflowContextOptions(ctx).Memo
+}
+
+func workflowStartSearchAttributes(ctx Context) temporal.SearchAttributes {
+	return workflowContextOptions(ctx).SearchAttributes
+}
+
+func workflowStartPriority(ctx Context) temporal.Priority {
+	return workflowContextOptions(ctx).Priority
+}
+
+func workflowStartNamespace(ctx Context) string {
+	namespace := workflowContextOptions(ctx).Namespace
+	if namespace != "" {
+		return namespace
+	}
+	return workflowNamespace(ctx)
+}
+
 // --- Workflow namespace (sourced field) ---
 
 func workflowNamespace(ctx Context) string {
-	if options := ctx.Value("wfEnvOptions"); options != nil {
-		optionsValue := reflect.ValueOf(options)
-		if optionsValue.Kind() == reflect.Pointer && !optionsValue.IsNil() {
-			optionsValue = optionsValue.Elem()
-		}
-		if optionsValue.Kind() == reflect.Struct {
-			field := optionsValue.FieldByName("Namespace")
-			if field.IsValid() && field.Kind() == reflect.String {
-				return field.String()
-			}
-		}
-	}
-	return ""
-}
-
-type nexGenNexusOperationFuture struct {
-	operation NexusOperationFuture
-	result    Future
-	execution Future
-	get       func(Context, any) error
-}
-
-func (f *nexGenNexusOperationFuture) Get(ctx Context, valuePtr any) error {
-	if f.get != nil {
-		return f.get(ctx, valuePtr)
-	}
-	return f.result.Get(ctx, valuePtr)
-}
-
-func (f *nexGenNexusOperationFuture) IsReady() bool {
-	if f.operation != nil {
-		return f.operation.IsReady()
-	}
-	return f.result.IsReady()
-}
-
-func (f *nexGenNexusOperationFuture) GetNexusOperationExecution() Future {
-	if f.operation != nil {
-		return f.operation.GetNexusOperationExecution()
-	}
-	return f.execution
-}
-
-func nexGenFailedNexusOperationFuture(ctx Context, err error) NexusOperationFuture {
-	result, resultSettable := NewFuture(ctx)
-	resultSettable.SetError(err)
-	execution, executionSettable := NewFuture(ctx)
-	executionSettable.SetError(err)
-	return &nexGenNexusOperationFuture{result: result, execution: execution}
-}
-
-func nexGenFutureResultTypeError() error {
-	return errors.New("nex-gen future result pointer has unexpected type")
+	return GetInfo(ctx).Namespace
 }
