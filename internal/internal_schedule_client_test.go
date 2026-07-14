@@ -66,7 +66,12 @@ func (s *scheduleClientTestSuite) TestCreateScheduleClient() {
 		},
 	}
 	createResp := &workflowservice.CreateScheduleResponse{}
-	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).Times(1)
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+		Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+			s.Nil(req.Schedule.Policies.CatchupWindow)
+		}).
+		Return(createResp, nil).
+		Times(1)
 
 	scheduleHandle, err := s.client.ScheduleClient().Create(context.Background(), options)
 	s.Nil(err)
