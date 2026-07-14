@@ -6,7 +6,8 @@ world system {
 
 /// @nexus.endpoint "__temporal_system"
 /// @nexus.service-name "temporal.api.workflowservice.v1.WorkflowService"
-/// @nexus.namespace go="go.temporal.io/sdk/workflow"
+/// @nexus.namespace dotnet="Temporalio.Workflows" go="go.temporal.io/sdk/workflow"
+/// @nexus.operations-class dotnet="Workflow"
 /// @nexus.delay-load-temporalio-workflow
 /// @nexus.experimental
 interface workflow-service {
@@ -29,31 +30,40 @@ interface workflow-service {
 
   /// @nexus.doc "Request fields for signaling a workflow, starting it first if needed."
   /// @nexus.experimental
-  /// @nexus.proto "temporal.api.workflowservice.v1.SignalWithStartWorkflowExecutionRequest" typescript-package="@temporalio/proto"
+  /// @nexus.proto "temporal.api.workflowservice.v1.SignalWithStartWorkflowExecutionRequest" typescript-import="@temporalio/proto"
   record signal-with-start-workflow-request {
     /// @nexus.doc
     ///   python="Workflow type name or callable identifying the workflow to start."
     ///   typescript="Workflow type name or workflow function identifying the workflow to start."
+    ///   dotnet="Workflow type name or workflow expression identifying the workflow to start."
+    ///   go="Workflow function identifying the workflow to start."
     /// @nexus.proto-field "workflow_type"
     workflow: workflow-function,
     /// @nexus.doc "Unique identifier for the workflow execution."
     /// @nexus.proto-field "workflow_id"
+    /// @nexus.source go="workflowStartWorkflowID(ctx)"
     id: string,
     /// @nexus.doc "Task queue to run the workflow on."
+    /// @nexus.source go="workflowStartTaskQueue(ctx)"
     task-queue: task-queue,
     /// @nexus.doc
     ///   python="Signal name or callable to send with the start request."
     ///   typescript="Signal name or signal definition to send with the start request."
+    ///   dotnet="Signal name or signal expression to send with the start request."
+    ///   go="Signal name to send with the start request."
     /// @nexus.proto-field "signal_name"
     signal: signal-function,
     /// @nexus.doc "Total workflow execution timeout, including retries and continue-as-new."
     /// @nexus.proto-field "workflow_execution_timeout"
+    /// @nexus.source go="workflowStartExecutionTimeout(ctx)"
     execution-timeout: option<duration>,
     /// @nexus.doc "Timeout of a single workflow run."
     /// @nexus.proto-field "workflow_run_timeout"
+    /// @nexus.source go="workflowStartRunTimeout(ctx)"
     run-timeout: option<duration>,
     /// @nexus.doc "Timeout of a single workflow task."
     /// @nexus.proto-field "workflow_task_timeout"
+    /// @nexus.source go="workflowStartTaskTimeout(ctx)"
     task-timeout: option<duration>,
     /// @nexus.omit
     identity: placeholder,
@@ -62,19 +72,25 @@ interface workflow-service {
     /// @nexus.doc "Behavior when a closed workflow with the same ID exists. Default is allow-duplicate."
     /// @nexus.proto-field "workflow_id_reuse_policy"
     /// @nexus.default "allow-duplicate"
+    /// @nexus.source go="workflowStartIDReusePolicy(ctx)"
     id-reuse-policy: workflow-id-reuse-policy,
     /// @nexus.doc "Behavior when a workflow is currently running with the same ID. Set to use-existing for idempotent deduplication on workflow ID. Cannot be set if id-reuse-policy is terminate-if-running."
     /// @nexus.proto-field "workflow_id_conflict_policy"
     id-conflict-policy: option<workflow-id-conflict-policy>,
     /// @nexus.doc "Retry policy for the workflow."
+    /// @nexus.source go="workflowStartRetryPolicy(ctx)"
     retry-policy: option<retry-policy>,
     /// @nexus.doc "Cron schedule for recurring workflow executions. See https://docs.temporal.io/cron-job."
+    /// @nexus.source go="workflowStartCronSchedule(ctx)"
     cron-schedule: option<string>,
     /// @nexus.doc "Memo for the workflow."
+    /// @nexus.source go="workflowStartMemo(ctx)"
     memo: option<memo>,
     /// @nexus.doc "Typed search attributes for the workflow."
+    /// @nexus.source go="workflowStartSearchAttributes(ctx)"
     search-attributes: option<search-attributes>,
     /// @nexus.doc "Priority of the workflow execution."
+    /// @nexus.source go="workflowStartPriority(ctx)"
     priority: option<priority>,
     /// @nexus.doc "Override for workflow versioning behavior."
     versioning-override: option<versioning-override>,
@@ -82,7 +98,7 @@ interface workflow-service {
     /// @nexus.proto-field "workflow_start_delay"
     start-delay: option<duration>,
     user-metadata: option<user-metadata>,
-    /// @nexus.source python="workflow_namespace" typescript="workflowNamespace" go="workflowNamespace(ctx)"
+    /// @nexus.source python="workflow_namespace()" typescript="workflowNamespace()" go="workflowStartNamespace(ctx)" dotnet="TemporalWorkflowContext.WorkflowNamespace()"
     namespace: string,
     /// @nexus.omit
     control: placeholder,
@@ -95,7 +111,7 @@ interface workflow-service {
   }
 
   /// @nexus.experimental
-  /// @nexus.proto "temporal.api.workflowservice.v1.SignalWithStartWorkflowExecutionResponse" typescript-package="@temporalio/proto"
+  /// @nexus.proto "temporal.api.workflowservice.v1.SignalWithStartWorkflowExecutionResponse" typescript-import="@temporalio/proto"
   record signal-with-start-workflow-response {
     run-id: option<string>,
     started: option<bool>,
@@ -105,13 +121,16 @@ interface workflow-service {
 
   /// @nexus.doc
   ///   "Signal a workflow, starting it first if needed."
+  ///   go="Signal a workflow, starting it first if needed. Configure workflow start fields with WithWorkflowContextOptions."
   ///   returns="A workflow handle to the started workflow."
   /// @nexus.output-transform
   ///   python-type="temporalio.workflow.ExternalWorkflowHandle[WorkflowResult]"
   ///   python="temporalio.workflow.get_external_workflow_handle(request.id, run_id=result.run_id)"
   ///   typescript-type="workflow.ExternalWorkflowHandle"
   ///   typescript="workflow.getExternalWorkflowHandle(request.id, result.runId ?? undefined)"
-  ///   typescript-package="@temporalio/workflow"
+  ///   typescript-import="@temporalio/workflow"
+  ///   dotnet-type="Temporalio.Workflows.ExternalWorkflowHandle"
+  ///   dotnet="Temporalio.Workflows.Workflow.GetExternalWorkflowHandle(request.Id, result.RunId)"
   /// @nexus.operation name="SignalWithStartWorkflowExecution"
   /// @nexus.experimental
   signal-with-start-workflow: func(

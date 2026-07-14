@@ -55,6 +55,10 @@ type nexusSystemOperationTrace struct {
 	input     any
 }
 
+func targetWorkflow(_ string, input string) string {
+	return input
+}
+
 type nexusSystemTracingInterceptor struct {
 	interceptor.WorkerInterceptorBase
 	traces *[]nexusSystemOperationTrace
@@ -130,18 +134,22 @@ func TestSystemNexusSignalWithStartUsesConverters(t *testing.T) {
 	searchAttributeKey := temporal.NewSearchAttributeKeyKeyword("CustomKeyword")
 	searchAttributes := temporal.NewSearchAttributes(searchAttributeKey.ValueSet("search-value"))
 
-	env.ExecuteWorkflow(func(ctx workflow.Context) (*workflow.SignalWithStartWorkflowResponse, error) {
-		fut := workflow.SignalWithStartWorkflow(ctx, "TargetWorkflow", "workflow-id", "task-queue", "signal-name", workflow.SignalWithStartWorkflowOptions{
-			Args:               []any{"workflow-arg"},
-			SignalArgs:         []any{"signal-arg"},
-			Memo:               map[string]any{"memo-key": "memo-value"},
-			SearchAttributes:   searchAttributes,
+		env.ExecuteWorkflow(func(ctx workflow.Context) (*workflow.SignalWithStartWorkflowResponse, error) {
+		ctx = workflow.WithWorkflowContextOptions(ctx, workflow.WorkflowContextOptions{
+			ID:               "workflow-id",
+			TaskQueue:        "task-queue",
+			Memo:             map[string]any{"memo-key": "memo-value"},
+			SearchAttributes: searchAttributes,
+		})
+		summary := "summary"
+		details := "details"
+		fut := workflow.SignalWithStartWorkflowWithArgs(ctx, workflow.SignalWithStartWorkflowOptions{
 			VersioningOverride: &client.AutoUpgradeVersioningOverride{},
 			UserMetadata: workflow.UserMetadata{
-				StaticSummary: "summary",
-				StaticDetails: "details",
+				StaticSummary: summary,
+				StaticDetails: details,
 			},
-		})
+		}, "signal-name", "signal-arg", targetWorkflow, "workflow-arg")
 		var result workflow.SignalWithStartWorkflowResponse
 		if err := fut.Get(ctx, &result); err != nil {
 			return nil, err
@@ -153,6 +161,14 @@ func TestSystemNexusSignalWithStartUsesConverters(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	require.NotNil(t, captured)
 	require.Equal(t, "default-test-namespace", captured.GetNamespace())
+	require.NotNil(t, captured.GetWorkflowExecutionTimeout())
+	require.Zero(t, captured.GetWorkflowExecutionTimeout().AsDuration())
+	require.NotNil(t, captured.GetWorkflowRunTimeout())
+	require.Zero(t, captured.GetWorkflowRunTimeout().AsDuration())
+	require.NotNil(t, captured.GetWorkflowTaskTimeout())
+	require.Zero(t, captured.GetWorkflowTaskTimeout().AsDuration())
+	require.NotNil(t, captured.GetRetryPolicy())
+	require.NotNil(t, captured.GetPriority())
 
 	requirePayloadMarked(t, captured.GetInput().GetPayloads()[0])
 	requirePayloadMarked(t, captured.GetSignalInput().GetPayloads()[0])
