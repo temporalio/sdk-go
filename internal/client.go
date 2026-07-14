@@ -1841,32 +1841,19 @@ func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Error() string {
 
 func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Unwrap() error { return e.cause }
 
-// SetRequestIDOnStartWorkflowOptions is an internal only method for setting a requestID on StartWorkflowOptions.
-// RequestID is purposefully not exposed to users for the time being.
-func SetRequestIDOnStartWorkflowOptions(opts *StartWorkflowOptions, requestID string) {
-	opts.requestID = requestID
-}
-
-// SetCallbacksOnStartWorkflowOptions is an internal only method for setting callbacks on StartWorkflowOptions.
-// Callbacks are purposefully not exposed to users for the time being.
-func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []*commonpb.Callback) {
-	opts.callbacks = callbacks
-}
-
-// SetLinksOnStartWorkflowOptions is an internal only method for setting links on StartWorkflowOptions.
-// Links are purposefully not exposed to users for the time being.
-func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonpb.Link) {
-	opts.links = links
-}
-
 // interface utility wrapper to allow setting links and callbacks
-// on temporal primitive operation options (UpdateWorkflowOptions, etc)
-// draft-review: set it on StartWorkflowOptions above as well
+// on temporal primitive operation options (UpdateWorkflowOptions, StartWorkflowOptions)
 type nexusTemporalOperationOptions interface {
 	setRequestID(requestID string)
 	setLinks(links []*commonpb.Link)
 	setCallbacks(callbacks []*commonpb.Callback)
 }
+
+// nexusTemporalOperationOptions conforming interfaces
+var (
+	_ nexusTemporalOperationOptions = (*UpdateWorkflowOptions)(nil)
+	_ nexusTemporalOperationOptions = (*StartWorkflowOptions)(nil)
+)
 
 // Set links on any [nexusTemporalOperationOptions] interface via the setLinks API.
 //

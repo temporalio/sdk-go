@@ -198,9 +198,9 @@ func TestStartUpdateWorkflowGuards(t *testing.T) {
 			UpdateName: "upd",
 		},
 	)
-	var opError *nexus.OperationError
+	var opError *nexus.HandlerError
 	require.ErrorAs(t, err, &opError)
-	require.Equal(t, opError.Message, "nexus op workflow updates only support WorkflowUpdateStageAccepted for async updates")
+	require.Equal(t, opError.Cause.Error(), "nexus op workflow updates only support WorkflowUpdateStageAccepted for async updates")
 }
 
 func strPtr(s string) *string {

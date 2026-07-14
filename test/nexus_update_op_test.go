@@ -21,6 +21,10 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+const (
+	nexusUpdateTestTimeout = 20 * time.Second
+)
+
 var (
 	invalidIncrementError = errors.New("invalid increment")
 )
@@ -47,7 +51,7 @@ const (
 )
 
 func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultNexusTestTimeout)
+	ctx, cancel := context.WithTimeout(context.TODO(), nexusUpdateTestTimeout)
 	defer cancel()
 
 	addOp, err := temporalnexus.NewTemporalOperation(temporalnexus.TemporalOperationOptions[updateAddInput, updateAddOutput]{
@@ -250,7 +254,7 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
 
 // separate from [IntegrationTestSuite.TestNexusUpdateWorkflowOperation] as this is a more complicated scenario
 func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
-	ctx, cancel := context.WithTimeout(context.TODO(), defaultNexusTestTimeout)
+	ctx, cancel := context.WithTimeout(context.TODO(), nexusUpdateTestTimeout)
 	defer cancel()
 
 	handlerTaskQueue, callerTaskQueue := "counterTQ", "updaterTQ"

@@ -179,8 +179,8 @@ func StartUntypedWorkflow[R any](
 
 // StartUpdateWorkflow starts a type-safe workflow update run for a Nexus operation
 // linking the execution chain to the Nexus operation (callbacks, links, request ID).
-// It returns either an async result with a workflow-run operation token for pending
-// operations or a sync response if the update is already completed(retried updates)
+// It returns either an async result with a workflow update operation token for pending
+// operations or a sync response if the update is already completed.
 //
 // These are free functions because Go does not allow generic methods on non-generic structs.
 //
@@ -193,16 +193,13 @@ func StartUpdateWorkflow[R any](
 	if updateWorkflowOptions.UpdateID == "" {
 		// If an Update ID is not provided, use the RequestID. This is done to protect
 		// against cases where an unset UpdateID request with the same RequestID is
-		// retried due to n/w failure and gets new IDs in createUpdateWorkflowInput
+		// retried due to network glitch and gets new IDs in createUpdateWorkflowInput
 		updateWorkflowOptions.UpdateID = nc.startOperationOptions.RequestID
 	}
 
 	if err := validateUpdateWorkflowNexusOperation(updateWorkflowOptions); err != nil {
-		return TemporalOperationResult[R]{}, &nexus.OperationError{
-			State:   nexus.OperationStateFailed,
-			Message: err.Error(),
-			Cause:   err,
-		}
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(
+			nexus.HandlerErrorTypeInternal, "invalid update request: %w", err)
 	}
 
 	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
@@ -313,18 +310,13 @@ func StartUpdateWorkflow[R any](
 }
 
 // Validations to be performed specifically for UpdateWorkflow as a Nexus Operation.
-// Currently only guards against a sync Update being passed to the server. Invalid
-// updates - missing workflowID/updateName/etc - are expected to be retried forever.
 // NOTE: UpdateID will never be empty now that RequestID for nexus op is generated if empty
-// TBD: confirm one more time if retry-forever-on-invalid-config is ok before merge
-// and/or set WaitForStage after receiving the options (not done now to avoid silently
-// overwriting user provided options)
 func validateUpdateWorkflowNexusOperation(u client.UpdateWorkflowOptions) error {
 	switch {
-	// case u.WorkflowID == "":
-	// 	return errors.New("workflow ID cannot be empty")
-	// case u.UpdateName == "":
-	// 	return errors.New("update name cannot be empty")
+	case u.WorkflowID == "":
+		return errors.New("workflow ID cannot be empty")
+	case u.UpdateName == "":
+		return errors.New("update name cannot be empty")
 	case u.WaitForStage != client.WorkflowUpdateStageAccepted:
 		return errors.New("nexus op workflow updates only support WorkflowUpdateStageAccepted for async updates")
 	default:

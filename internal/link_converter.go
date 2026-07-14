@@ -80,7 +80,10 @@ func ConvertLinkWorkflowEventToNexusLink(we *commonpb.Link_WorkflowEvent) nexus.
 	}
 }
 
-func ConvertWorkflowlinkToNexusLink(wl *commonpb.Link_Workflow) nexus.Link {
+// ConvertWorkflowLinkToNexusLink converts a Link_Workflow into a Nexus Link.
+//
+// NOTE: Experimental
+func ConvertWorkflowLinkToNexusLink(wl *commonpb.Link_Workflow) nexus.Link {
 	return nexus.Link{
 		URL: &url.URL{
 			Scheme: urlSchemeTemporalKey,

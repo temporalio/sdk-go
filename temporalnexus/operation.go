@@ -307,7 +307,7 @@ func ExecuteUntypedWorkflow[R any](
 	}
 
 	if nexusOptions.RequestID != "" {
-		internal.SetRequestIDOnStartWorkflowOptions(&startWorkflowOptions, nexusOptions.RequestID)
+		internal.SetRequestIDOnNexusOperation(&startWorkflowOptions, nexusOptions.RequestID)
 	}
 
 	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
@@ -331,7 +331,7 @@ func ExecuteUntypedWorkflow[R any](
 		// This field is expected to be populated by servers older than 1.27.0.
 		nexusOptions.CallbackHeader.Set("nexus-operation-id", encodedToken)
 		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, encodedToken)
-		internal.SetCallbacksOnStartWorkflowOptions(&startWorkflowOptions, []*common.Callback{
+		internal.SetCallbacksOnNexusOperation(&startWorkflowOptions, []*common.Callback{
 			{
 				Variant: &common.Callback_Nexus_{
 					Nexus: &common.Callback_Nexus{
@@ -346,7 +346,7 @@ func ExecuteUntypedWorkflow[R any](
 
 	// Links are duplicated in startWorkflowOptions to backwards compatibility with older servers that
 	// don't support links in callbacks.
-	internal.SetLinksOnStartWorkflowOptions(&startWorkflowOptions, links)
+	internal.SetLinksOnNexusOperation(&startWorkflowOptions, links)
 	internal.SetOnConflictOptionsOnStartWorkflowOptions(&startWorkflowOptions)
 	responseInfo := internal.SetResponseInfoOnStartWorkflowOptions(&startWorkflowOptions)
 
