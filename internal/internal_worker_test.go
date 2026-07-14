@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 
 	"github.com/golang/mock/gomock"
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -1809,6 +1810,7 @@ func (s *internalWorkerTestSuite) newWorkerWithNamespaceCapabilities(
 	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).AnyTimes()
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollNexusTaskQueueResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
 	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
 	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
@@ -1822,6 +1824,17 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
 		WorkerOptions{},
 	)
+	// Register a nexus service so start() builds a nexus worker whose pollers we
+	// can inspect.
+	nexusService := nexus.NewService("TestService")
+	require.NoError(s.T(), nexusService.Register(nexus.NewSyncOperation(
+		"operation",
+		func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
+			return "result", nil
+		},
+	)))
+	worker.RegisterNexusService(nexusService)
+
 	require.NoError(s.T(), worker.Start())
 	defer worker.Stop()
 
@@ -1835,6 +1848,11 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 		s.NotNil(p.autoscalingRunner)
 	}
 	for _, p := range worker.activityWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+	require.NotNil(s.T(), worker.nexusWorker)
+	require.NotEmpty(s.T(), worker.nexusWorker.worker.options.taskPollers)
+	for _, p := range worker.nexusWorker.worker.options.taskPollers {
 		s.NotNil(p.autoscalingRunner)
 	}
 

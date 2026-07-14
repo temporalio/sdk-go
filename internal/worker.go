@@ -433,14 +433,6 @@ type (
 		//
 		// NOTE: Experimental
 		DisablePayloadErrorLimit bool
-
-		// The following unexported flags are set by setWorkerOptionsDefaults when a
-		// poller type is left at its default (neither a fixed poller count nor a
-		// poller behavior was set). They gate poller-autoscaling auto-enrollment
-		// when the namespace advertises the PollerAutoscalingAutoEnroll capability.
-		workflowTaskPollerBehaviorDefaulted bool
-		activityTaskPollerBehaviorDefaulted bool
-		nexusTaskPollerBehaviorDefaulted    bool
 	}
 )
 
