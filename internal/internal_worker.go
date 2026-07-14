@@ -1439,9 +1439,18 @@ func (aw *AggregatedWorker) start() error {
 			aw.executionParams.WorkflowTaskPollerBehavior = autoscaling
 			aw.workflowWorker.applyPollerBehavior(autoscaling)
 		}
-		if aw.executionParams.pollerBehaviorDefaulted.activityTask && !util.IsInterfaceNil(aw.activityWorker) {
-			aw.executionParams.ActivityTaskPollerBehavior = autoscaling
-			aw.activityWorker.applyPollerBehavior(autoscaling)
+		if aw.executionParams.pollerBehaviorDefaulted.activityTask {
+			if !util.IsInterfaceNil(aw.activityWorker) {
+				aw.executionParams.ActivityTaskPollerBehavior = autoscaling
+				aw.activityWorker.applyPollerBehavior(autoscaling)
+			}
+			// The session activity worker polls a normal task queue and is
+			// enrolled like any other activity worker. The session creation
+			// worker is deliberately pinned to a single poller, so it is left
+			// unchanged.
+			if !util.IsInterfaceNil(aw.sessionWorker) {
+				aw.sessionWorker.activityWorker.applyPollerBehavior(autoscaling)
+			}
 		}
 	}
 

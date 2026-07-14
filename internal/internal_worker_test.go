@@ -1907,6 +1907,34 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollRespectsExplici
 	s.Equal(3, worker.activityWorker.worker.options.taskPollers[0].pollerCount)
 }
 
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+		WorkerOptions{EnableSessionWorker: true},
+	)
+	// A registered activity lets the session worker start.
+	worker.RegisterActivity(testActivityNoResult)
+
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	require.NotNil(s.T(), worker.sessionWorker)
+
+	// The session activity worker polls a normal task queue and is enrolled into
+	// autoscaling like any other activity worker.
+	require.NotEmpty(s.T(), worker.sessionWorker.activityWorker.worker.options.taskPollers)
+	for _, p := range worker.sessionWorker.activityWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+
+	// The session creation worker is deliberately pinned to a single fixed
+	// poller and must not be converted.
+	require.Len(s.T(), worker.sessionWorker.creationWorker.worker.options.taskPollers, 1)
+	creationPoller := worker.sessionWorker.creationWorker.worker.options.taskPollers[0]
+	s.Nil(creationPoller.autoscalingRunner)
+	s.Equal(1, creationPoller.pollerCount)
+}
+
 type throwsOneErrSlotSupplier struct {
 	didThrow atomic.Bool
 }
