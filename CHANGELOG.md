@@ -19,6 +19,13 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Added
+
+- Automatically enroll workers into poller autoscaling when the namespace advertises the
+  `PollerAutoscalingAutoEnroll` capability. This only applies to poller types left at their default
+  (i.e. the worker set neither `MaxConcurrent<Type>TaskPollers` nor `<Type>TaskPollerBehavior`);
+  explicitly configured pollers are left unchanged.
+
 
 ## [1.46.0] - 2026-07-07
 
