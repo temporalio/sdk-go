@@ -5970,11 +5970,14 @@ func (ts *IntegrationTestSuite) TestScheduleCreate() {
 	})
 	ts.NoError(err)
 	ts.EqualValues("test-schedule-create-schedule", handle.GetID())
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.Equal(365*24*time.Hour, description.Schedule.Policy.CatchupWindow)
 
 	err = handle.Delete(ctx)
 	ts.NoError(err)
 
-	description, err := handle.Describe(ctx)
+	description, err = handle.Describe(ctx)
 	ts.IsType(&serviceerror.NotFound{}, err)
 	ts.Nil(description)
 }

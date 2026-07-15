@@ -26,6 +26,15 @@ to docs, or any other relevant information.
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
   `GetVersion` call before activating its new behavior.
 
+### Fixed
+
+- Correct schedule catch-up window documentation to state that an unset value is omitted and the
+  server applies its one-year default.
+- Resource-based tuner: `ReserveSlot` now honors context cancellation while the resource controller is
+  declining slots. Previously the retry loop observed the context only while the ramp throttle was making
+  the caller wait, so a poller goroutine could outlive worker shutdown, keeping the worker's stop
+  `WaitGroup` from draining and continuing to sample system resources for the life of the process.
+
 ## [1.46.0] - 2026-07-07
 
 ### Fixed
