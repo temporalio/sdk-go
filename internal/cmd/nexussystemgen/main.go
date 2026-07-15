@@ -39,11 +39,6 @@ func run() error {
 	}
 
 	witMain := filepath.Join(repoRoot, "internal", "nexussystem", "wit", "workflow-service.wit")
-	if info, err := os.Stat(witMain); err != nil {
-		return fmt.Errorf("stat %s: %w", witMain, err)
-	} else if info.IsDir() {
-		return fmt.Errorf("WIT input must be a file, got directory %s", witMain)
-	}
 	witDeps := filepath.Join(filepath.Dir(witMain), "deps")
 	outPkgDir := filepath.Join(repoRoot, "workflow")
 
@@ -52,6 +47,9 @@ func run() error {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	serviceDst := filepath.Join(outPkgDir, "workflowservice.go")
+	serviceTmp := filepath.Join(tmpDir, "workflowservice.go")
 
 	descriptors, err := buildDescriptorSet(tmpDir)
 	if err != nil {
@@ -63,20 +61,21 @@ func run() error {
 		return err
 	}
 
-	args, err := nexGenArgs(witMain, witDeps, descriptors, tmpDir)
-	if err != nil {
-		return err
-	}
-
-	cmd := exec.Command(nexGen, args...)
+	cmd := exec.Command(nexGen,
+		"generate",
+		"--lang", "go",
+		"--input", witMain,
+		"--input", witDeps,
+		"--descriptors", descriptors,
+		"--output", tmpDir,
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("running nex-gen: %w", err)
 	}
 
-	serviceDst := filepath.Join(outPkgDir, "workflowservice.go")
-	if err := copyFile(serviceDst, filepath.Join(tmpDir, "workflowservice.go")); err != nil {
+	if err := copyFile(serviceDst, serviceTmp); err != nil {
 		return err
 	}
 	if err := gofmt(serviceDst); err != nil {
@@ -85,26 +84,11 @@ func run() error {
 	return nil
 }
 
-func nexGenArgs(witMain, witDeps, descriptors, output string) ([]string, error) {
-	args := []string{
-		"generate",
-		"--lang", "go",
-		"--input", witMain,
-	}
-	if info, err := os.Stat(witDeps); err == nil && info.IsDir() {
-		args = append(args, "--input", witDeps)
-	} else if err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("stat %s: %w", witDeps, err)
-	}
-	return append(args,
-		"--descriptors", descriptors,
-		"--output", output,
-	), nil
-}
-
+// buildDescriptorSet generates a proto descriptor set for the workflowservice API.
+// Equivalent to running protoc with --include_imports.
+// Returns the path to the generated descriptor set file.
 func buildDescriptorSet(tmpDir string) (string, error) {
-	path := filepath.Join(tmpDir, "descriptor_set.pb")
-	// Generated API Go types retain their source descriptors, so no API checkout is needed.
+	path := filepath.Join(tmpDir, "descriptors.bin")
 	set := &descriptorpb.FileDescriptorSet{}
 	seen := make(map[string]struct{})
 	addFileDescriptor(set, seen, workflowservice.File_temporal_api_workflowservice_v1_request_response_proto)
@@ -131,6 +115,7 @@ func addFileDescriptor(set *descriptorpb.FileDescriptorSet, seen map[string]stru
 	set.File = append(set.File, protodesc.ToFileDescriptorProto(file))
 }
 
+// nexGenBinary returns the path to the nex-gen binary, installing it with cargo if necessary.
 func nexGenBinary() (string, error) {
 	if nexGen := os.Getenv("NEX_GEN_BIN"); nexGen != "" {
 		return nexGen, nil
@@ -151,6 +136,7 @@ func nexGenBinary() (string, error) {
 	return "nex-gen", nil
 }
 
+// copyFile copies a file from src to dst, creating dst if necessary.
 func copyFile(dst, src string) error {
 	in, err := os.Open(src)
 	if err != nil {
@@ -183,8 +169,9 @@ func gofmt(path string) error {
 	return nil
 }
 
+// repoRoot returns the absolute path to the root of the Go SDK repository,
+// assuming this script lives at <repo>/internal/cmd/nexussystemgen/main.go.
 func repoRoot() (string, error) {
-	// This file lives at <repo>/internal/cmd/nexussystemgen/main.go.
 	goMod, err := os.ReadFile("go.mod")
 	if err != nil {
 		return "", fmt.Errorf("nexussystemgen must be run from the repository root")
