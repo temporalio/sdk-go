@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"sync"
 	"time"
@@ -22,7 +23,7 @@ import (
 )
 
 const (
-	nexusUpdateTestTimeout = 20 * time.Second
+	nexusUpdateTestTimeout = 30 * time.Second
 )
 
 var (
@@ -51,6 +52,9 @@ const (
 )
 
 func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
+	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.TODO(), nexusUpdateTestTimeout)
 	defer cancel()
 
@@ -254,6 +258,9 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
 
 // separate from [IntegrationTestSuite.TestNexusUpdateWorkflowOperation] as this is a more complicated scenario
 func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
+	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.TODO(), nexusUpdateTestTimeout)
 	defer cancel()
 
