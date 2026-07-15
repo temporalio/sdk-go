@@ -64,6 +64,7 @@ type (
 	sessionTokenBucket struct {
 		*sync.Cond
 		availableToken int
+		closed         bool
 	}
 
 	sessionEnvironment interface {
@@ -505,12 +506,23 @@ func newSessionTokenBucket(concurrentSessionExecutionSize int) *sessionTokenBuck
 	}
 }
 
-func (t *sessionTokenBucket) waitForAvailableToken() {
+// waitForAvailableToken blocks until a session token is free, returning true, or the bucket is closed,
+// returning false so a stopping worker does not wait for a session to finish.
+func (t *sessionTokenBucket) waitForAvailableToken() bool {
 	t.L.Lock()
 	defer t.L.Unlock()
-	for t.availableToken == 0 {
+	for t.availableToken == 0 && !t.closed {
 		t.Wait()
 	}
+	return !t.closed
+}
+
+// close wakes every poller parked in waitForAvailableToken and makes it report closed.
+func (t *sessionTokenBucket) close() {
+	t.L.Lock()
+	t.closed = true
+	t.L.Unlock()
+	t.Broadcast()
 }
 
 func (t *sessionTokenBucket) addToken() {
