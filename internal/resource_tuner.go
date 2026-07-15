@@ -193,15 +193,17 @@ func (r *ResourceBasedSlotSupplier) ReserveSlot(ctx context.Context, info SlotRe
 		if r.options.RampThrottle > 0 {
 			r.lastIssuedMu.Lock()
 			mustWaitFor := r.options.RampThrottle - time.Since(r.lastSlotIssuedAt)
+			// Release before waiting: holding lastIssuedMu across the wait would stall the
+			// non-blocking TryReserveSlot used for eager dispatch. The throttle is still
+			// enforced by TryReserveSlot's own lastSlotIssuedAt check.
+			r.lastIssuedMu.Unlock()
 			if mustWaitFor > 0 {
 				select {
 				case <-time.After(mustWaitFor):
 				case <-ctx.Done():
-					r.lastIssuedMu.Unlock()
 					return nil, ctx.Err()
 				}
 			}
-			r.lastIssuedMu.Unlock()
 		}
 
 		maybePermit := r.TryReserveSlot(info)
