@@ -35,12 +35,12 @@ type MetricsHandlerOptions struct {
 	//
 	// Optional: Defaults to panicking on any error.
 	OnError func(error)
-	// UseMonotonicCounters causes Counter to use OpenTelemetry's Int64Counter
+	// UseMonotonicCounters causes [MetricsHandler.Counter] to use OpenTelemetry's Int64Counter
 	// instead of Int64UpDownCounter. This allows exporters to identify SDK
 	// counters as monotonic sums.
 	//
-	// MetricsCounter is documented as ever-increasing, so values passed to Inc
-	// must be non-negative. Negative values may produce invalid or
+	// [client.MetricsCounter] is documented as ever-increasing, so values passed to
+	// [client.MetricsCounter.Inc] must be non-negative. Negative values may produce invalid or
 	// backend-dependent metric data.
 	//
 	// Optional: Defaults to false
