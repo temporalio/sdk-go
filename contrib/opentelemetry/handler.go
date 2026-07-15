@@ -109,17 +109,13 @@ func (m MetricsHandler) WithTags(tags map[string]string) client.MetricsHandler {
 }
 
 func (m MetricsHandler) Counter(name string) client.MetricsCounter {
+	var c interface { Add(context.Context, int64, ...metric.AddOption) }
+	var err error
 	if m.useMonotonicCounters {
-		c, err := m.meter.Int64Counter(name)
-		if err != nil {
-			m.onError(err)
-			return client.MetricsNopHandler.Counter(name)
-		}
-		return metrics.CounterFunc(func(d int64) {
-			c.Add(context.Background(), d, metric.WithAttributeSet(m.attributes))
-		})
+	    c, err = m.meter.Int64Counter(name)
+	} else {
+	    c, err = m.meter.Int64UpDownCounter(name)
 	}
-	c, err := m.meter.Int64UpDownCounter(name)
 	if err != nil {
 		m.onError(err)
 		return client.MetricsNopHandler.Counter(name)
