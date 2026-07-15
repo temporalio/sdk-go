@@ -217,11 +217,11 @@ type (
 		// NexusTaskPollerBehavior defines the behavior of the nexus task poller.
 		NexusTaskPollerBehavior PollerBehavior
 
-		// pollerBehaviorDefaulted records, per poller type, whether the poller
-		// behavior was left at its default. It gates poller-autoscaling
+		// pollerAutoEnrollEligibility records, per poller type, whether the poller
+		// was left at its default and is therefore eligible for poller-autoscaling
 		// auto-enrollment when the namespace advertises the
 		// PollerAutoscalingAutoEnroll capability.
-		pollerBehaviorDefaulted pollerBehaviorDefaulted
+		pollerAutoEnrollEligibility autoEnrollEligibility
 
 		// Pointer to the shared worker cache
 		cache *WorkerCache
@@ -1432,14 +1432,14 @@ func (aw *AggregatedWorker) start() error {
 	if nsData.capabilities.GetPollerAutoscalingAutoEnroll() {
 		aw.executionParams.serverSupportsAutoscaling.Store(true)
 		autoscaling := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{})
-		if aw.executionParams.pollerBehaviorDefaulted.nexusTask {
+		if aw.executionParams.pollerAutoEnrollEligibility.nexusTask {
 			aw.executionParams.NexusTaskPollerBehavior = autoscaling
 		}
-		if aw.executionParams.pollerBehaviorDefaulted.workflowTask && !util.IsInterfaceNil(aw.workflowWorker) {
+		if aw.executionParams.pollerAutoEnrollEligibility.workflowTask && !util.IsInterfaceNil(aw.workflowWorker) {
 			aw.executionParams.WorkflowTaskPollerBehavior = autoscaling
 			aw.workflowWorker.applyPollerBehavior(autoscaling)
 		}
-		if aw.executionParams.pollerBehaviorDefaulted.activityTask {
+		if aw.executionParams.pollerAutoEnrollEligibility.activityTask {
 			if !util.IsInterfaceNil(aw.activityWorker) {
 				aw.executionParams.ActivityTaskPollerBehavior = autoscaling
 				aw.activityWorker.applyPollerBehavior(autoscaling)
@@ -2282,7 +2282,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	}
 
 	setClientDefaults(client)
-	pollerDefaults := setWorkerOptionsDefaults(&options)
+	pollerEligibility := setWorkerOptionsDefaults(&options)
 	ctx := options.BackgroundActivityContext
 	if ctx == nil {
 		ctx = context.Background()
@@ -2475,10 +2475,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("must set either MaxConcurrentNexusTaskPollers or NexusTaskPollerBehavior")
 	}
 
-	// Carry through whether each poller behavior was left at its default so that
-	// start() can auto-enroll defaulted pollers into autoscaling when the
-	// namespace advertises the PollerAutoscalingAutoEnroll capability.
-	workerParams.pollerBehaviorDefaulted = pollerDefaults
+	// Carry through which poller types are eligible for auto-enrollment so that
+	// start() can enroll them into autoscaling when the namespace advertises the
+	// PollerAutoscalingAutoEnroll capability.
+	workerParams.pollerAutoEnrollEligibility = pollerEligibility
 
 	ensureRequiredParams(&workerParams)
 
@@ -2767,20 +2767,22 @@ func getReadOnlyChannel(c chan struct{}) <-chan struct{} {
 	return c
 }
 
-// pollerBehaviorDefaulted records, per poller type, whether the poller behavior
+// autoEnrollEligibility records, per poller type, whether the poller behavior
 // was left at its default (the user set neither a fixed poller count nor a
-// poller behavior). It gates poller-autoscaling auto-enrollment when the
-// namespace advertises the PollerAutoscalingAutoEnroll capability.
-type pollerBehaviorDefaulted struct {
+// poller behavior) and is therefore eligible for poller-autoscaling
+// auto-enrollment when the namespace advertises the PollerAutoscalingAutoEnroll
+// capability.
+type autoEnrollEligibility struct {
 	workflowTask bool
 	activityTask bool
 	nexusTask    bool
 }
 
 // setWorkerOptionsDefaults populates unset worker options with their defaults
-// and reports which poller behaviors were left at their default.
-func setWorkerOptionsDefaults(options *WorkerOptions) pollerBehaviorDefaulted {
-	var defaulted pollerBehaviorDefaulted
+// and reports which poller types are eligible for auto-enrollment (i.e. were
+// left at their default).
+func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
+	var eligibility autoEnrollEligibility
 	if options.Tuner != nil {
 		if options.MaxConcurrentWorkflowTaskExecutionSize != 0 ||
 			options.MaxConcurrentActivityExecutionSize != 0 ||
@@ -2803,7 +2805,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) pollerBehaviorDefaulted {
 		panic("cannot set both MaxConcurrentActivityTaskPollers and ActivityTaskPollerBehavior")
 	} else if options.ActivityTaskPollerBehavior == nil && options.MaxConcurrentActivityTaskPollers <= 0 {
 		options.MaxConcurrentActivityTaskPollers = defaultConcurrentPollRoutineSize
-		defaulted.activityTask = true
+		eligibility.activityTask = true
 	}
 	if options.MaxConcurrentWorkflowTaskExecutionSize <= 0 {
 		maxConcurrentWFT = defaultMaxConcurrentTaskExecutionSize
@@ -2812,7 +2814,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) pollerBehaviorDefaulted {
 		panic("cannot set both MaxConcurrentWorkflowTaskPollers and WorkflowTaskPollerBehavior")
 	} else if options.WorkflowTaskPollerBehavior == nil && options.MaxConcurrentWorkflowTaskPollers <= 0 {
 		options.MaxConcurrentWorkflowTaskPollers = defaultConcurrentPollRoutineSize
-		defaulted.workflowTask = true
+		eligibility.workflowTask = true
 	}
 	if options.MaxConcurrentLocalActivityExecutionSize <= 0 {
 		maxConcurrentLA = defaultMaxConcurrentLocalActivityExecutionSize
@@ -2831,7 +2833,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) pollerBehaviorDefaulted {
 		panic("cannot set both MaxConcurrentNexusTaskExecutionSize and NexusTaskPollerBehavior")
 	} else if options.NexusTaskPollerBehavior == nil && options.MaxConcurrentNexusTaskPollers <= 0 {
 		options.MaxConcurrentNexusTaskPollers = defaultConcurrentPollRoutineSize
-		defaulted.nexusTask = true
+		eligibility.nexusTask = true
 	}
 	if options.MaxConcurrentNexusTaskExecutionSize <= 0 {
 		maxConcurrentNexus = defaultMaxConcurrentTaskExecutionSize
@@ -2867,7 +2869,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) pollerBehaviorDefaulted {
 			NumNexusSlots:         maxConcurrentNexus})
 
 	}
-	return defaulted
+	return eligibility
 }
 
 // setClientDefaults should be needed only in unit tests.

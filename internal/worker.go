@@ -391,6 +391,11 @@ type (
 		//
 		// NOTE: This option is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
 		//
+		// NOTE: If this is left unset (i.e. neither this nor MaxConcurrentWorkflowTaskPollers
+		// is set) and the worker's namespace is configured to auto-enroll workers into poller
+		// autoscaling, the worker will automatically use poller autoscaling for workflow tasks
+		// instead of a fixed number of pollers.
+		//
 		// NOTE: Experimental
 		WorkflowTaskPollerBehavior PollerBehavior
 
@@ -399,6 +404,11 @@ type (
 		//
 		// NOTE: This option is mutually exclusive with MaxConcurrentActivityTaskPollers.
 		//
+		// NOTE: If this is left unset (i.e. neither this nor MaxConcurrentActivityTaskPollers
+		// is set) and the worker's namespace is configured to auto-enroll workers into poller
+		// autoscaling, the worker will automatically use poller autoscaling for activity tasks
+		// instead of a fixed number of pollers.
+		//
 		// NOTE: Experimental
 		ActivityTaskPollerBehavior PollerBehavior
 
@@ -406,6 +416,11 @@ type (
 		// This is mutually exclusive with MaxConcurrentNexusTaskPollers.
 		//
 		// NOTE: This option is mutually exclusive with MaxConcurrentNexusTaskPollers.
+		//
+		// NOTE: If this is left unset (i.e. neither this nor MaxConcurrentNexusTaskPollers
+		// is set) and the worker's namespace is configured to auto-enroll workers into poller
+		// autoscaling, the worker will automatically use poller autoscaling for nexus tasks
+		// instead of a fixed number of pollers.
 		//
 		// NOTE: Experimental
 		NexusTaskPollerBehavior PollerBehavior

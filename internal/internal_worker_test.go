@@ -1797,7 +1797,8 @@ func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 // DescribeNamespace response reports the given capabilities, with permissive
 // polling/shutdown mocks so the worker can be started and stopped.
 func (s *internalWorkerTestSuite) newWorkerWithNamespaceCapabilities(
-	caps *namespacepb.NamespaceInfo_Capabilities, options WorkerOptions,
+	caps *namespacepb.NamespaceInfo_Capabilities,
+	options WorkerOptions,
 ) *AggregatedWorker {
 	namespace := "testNamespace"
 	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
@@ -1884,27 +1885,70 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollDisabled() {
 }
 
 func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollRespectsExplicitConfig() {
-	worker := s.newWorkerWithNamespaceCapabilities(
-		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
-		WorkerOptions{
-			MaxConcurrentWorkflowTaskPollers: 5,
-			MaxConcurrentActivityTaskPollers: 3,
-		},
-	)
-	require.NoError(s.T(), worker.Start())
-	defer worker.Stop()
+	// registerNexus registers a nexus service so start() builds a nexus worker
+	// whose pollers can be inspected.
+	registerNexus := func(worker *AggregatedWorker) {
+		service := nexus.NewService("TestService")
+		require.NoError(s.T(), service.Register(nexus.NewSyncOperation(
+			"operation",
+			func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
+				return "result", nil
+			},
+		)))
+		worker.RegisterNexusService(service)
+	}
 
-	// The user explicitly set fixed poller counts, so auto-enroll must not touch them.
-	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.WorkflowTaskPollerBehavior)
-	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.ActivityTaskPollerBehavior)
+	// assertFixedPollers verifies that none of the poller types was switched to
+	// autoscaling and that each keeps its explicitly-configured poller count.
+	assertFixedPollers := func(worker *AggregatedWorker, wfCount, actCount, nexusCount int) {
+		require.NoError(s.T(), worker.Start())
+		defer worker.Stop()
 
-	require.Len(s.T(), worker.workflowWorker.worker.options.taskPollers, 1)
-	s.Nil(worker.workflowWorker.worker.options.taskPollers[0].autoscalingRunner)
-	s.Equal(5, worker.workflowWorker.worker.options.taskPollers[0].pollerCount)
+		s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.WorkflowTaskPollerBehavior)
+		s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.ActivityTaskPollerBehavior)
+		s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.NexusTaskPollerBehavior)
 
-	require.Len(s.T(), worker.activityWorker.worker.options.taskPollers, 1)
-	s.Nil(worker.activityWorker.worker.options.taskPollers[0].autoscalingRunner)
-	s.Equal(3, worker.activityWorker.worker.options.taskPollers[0].pollerCount)
+		require.Len(s.T(), worker.workflowWorker.worker.options.taskPollers, 1)
+		s.Nil(worker.workflowWorker.worker.options.taskPollers[0].autoscalingRunner)
+		s.Equal(wfCount, worker.workflowWorker.worker.options.taskPollers[0].pollerCount)
+
+		require.Len(s.T(), worker.activityWorker.worker.options.taskPollers, 1)
+		s.Nil(worker.activityWorker.worker.options.taskPollers[0].autoscalingRunner)
+		s.Equal(actCount, worker.activityWorker.worker.options.taskPollers[0].pollerCount)
+
+		require.NotNil(s.T(), worker.nexusWorker)
+		require.Len(s.T(), worker.nexusWorker.worker.options.taskPollers, 1)
+		s.Nil(worker.nexusWorker.worker.options.taskPollers[0].autoscalingRunner)
+		s.Equal(nexusCount, worker.nexusWorker.worker.options.taskPollers[0].pollerCount)
+	}
+
+	// Explicit fixed poller counts must not be switched to autoscaling.
+	s.Run("MaxConcurrentTaskPollers", func() {
+		worker := s.newWorkerWithNamespaceCapabilities(
+			&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+			WorkerOptions{
+				MaxConcurrentWorkflowTaskPollers: 5,
+				MaxConcurrentActivityTaskPollers: 3,
+				MaxConcurrentNexusTaskPollers:    4,
+			},
+		)
+		registerNexus(worker)
+		assertFixedPollers(worker, 5, 3, 4)
+	})
+
+	// Explicit poller behaviors must not be switched to autoscaling either.
+	s.Run("TaskPollerBehavior", func() {
+		worker := s.newWorkerWithNamespaceCapabilities(
+			&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+			WorkerOptions{
+				WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 5}),
+				ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 3}),
+				NexusTaskPollerBehavior:    NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 4}),
+			},
+		)
+		registerNexus(worker)
+		assertFixedPollers(worker, 5, 3, 4)
+	})
 }
 
 func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker() {
@@ -1912,7 +1956,6 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker()
 		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
 		WorkerOptions{EnableSessionWorker: true},
 	)
-	// A registered activity lets the session worker start.
 	worker.RegisterActivity(testActivityNoResult)
 
 	require.NoError(s.T(), worker.Start())
@@ -1920,15 +1963,11 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker()
 
 	require.NotNil(s.T(), worker.sessionWorker)
 
-	// The session activity worker polls a normal task queue and is enrolled into
-	// autoscaling like any other activity worker.
 	require.NotEmpty(s.T(), worker.sessionWorker.activityWorker.worker.options.taskPollers)
 	for _, p := range worker.sessionWorker.activityWorker.worker.options.taskPollers {
 		s.NotNil(p.autoscalingRunner)
 	}
 
-	// The session creation worker is deliberately pinned to a single fixed
-	// poller and must not be converted.
 	require.Len(s.T(), worker.sessionWorker.creationWorker.worker.options.taskPollers, 1)
 	creationPoller := worker.sessionWorker.creationWorker.worker.options.taskPollers[0]
 	s.Nil(creationPoller.autoscalingRunner)
