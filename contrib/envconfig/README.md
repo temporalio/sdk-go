@@ -12,7 +12,7 @@ From your application's Go module, run:
 go get go.temporal.io/sdk/contrib/envconfig@latest
 ```
 
-## Releases
+## Module versioning
 
 `envconfig` is released as a separate Go module from the core Temporal Go SDK.
 See [CHANGELOG.md](CHANGELOG.md) for release notes.

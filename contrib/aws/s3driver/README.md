@@ -14,7 +14,7 @@ go get go.temporal.io/sdk/contrib/aws/s3driver@latest
 go get go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2@latest
 ```
 
-## Releases
+## Module versioning
 
 The S3 driver is released as a separate Go module from the core Temporal Go
 SDK. See [CHANGELOG.md](CHANGELOG.md) for release notes.

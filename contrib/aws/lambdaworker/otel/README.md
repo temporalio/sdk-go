@@ -15,7 +15,7 @@ go get go.temporal.io/sdk/contrib/aws/lambdaworker@latest
 go get go.temporal.io/sdk/contrib/aws/lambdaworker/otel@latest
 ```
 
-## Releases
+## Module versioning
 
 The OpenTelemetry helper is released separately from the core Temporal Go SDK
 and `lambdaworker`. See [CHANGELOG.md](CHANGELOG.md) for release notes.

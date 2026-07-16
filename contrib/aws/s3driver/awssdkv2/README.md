@@ -14,7 +14,7 @@ go get go.temporal.io/sdk/contrib/aws/s3driver@latest
 go get go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2@latest
 ```
 
-## Releases
+## Module versioning
 
 The AWS SDK v2 adapter is released separately from the core Temporal Go SDK and
 the S3 driver. See [CHANGELOG.md](CHANGELOG.md) for release notes.

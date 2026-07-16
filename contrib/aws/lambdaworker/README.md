@@ -13,7 +13,7 @@ From your application's Go module, run:
 go get go.temporal.io/sdk/contrib/aws/lambdaworker@latest
 ```
 
-## Releases
+## Module versioning
 
 `lambdaworker` is released as a separate Go module from the core Temporal Go
 SDK. See [CHANGELOG.md](CHANGELOG.md) for release notes.
@@ -71,13 +71,10 @@ docstrings for more. Eager activities are always disabled.
 ## Observability
 
 Metrics and tracing are opt-in. The `otel` sub-package provides convenience
-helpers for AWS Distro for OpenTelemetry (ADOT):
-
-The `otel` helper is also released as a separate Go module. Add it with:
-
-```bash
-go get go.temporal.io/sdk/contrib/aws/lambdaworker/otel@latest
-```
+helpers for AWS Distro for OpenTelemetry (ADOT) and is released as a separate Go module. The separately
+versioned [`otel`](otel) module provides convenience helpers for AWS Distro
+for OpenTelemetry (ADOT). See the [OpenTelemetry helper README](otel/README.md) for
+installation and usage instructions.
 
 ```go
 import "go.temporal.io/sdk/contrib/aws/lambdaworker/otel"

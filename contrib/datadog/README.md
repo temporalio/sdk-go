@@ -11,7 +11,7 @@ From your application's Go module, run:
 go get go.temporal.io/sdk/contrib/datadog/tracing@latest
 ```
 
-## Releases
+## Module versioning
 
 The Datadog integration is released as a separate Go module from the core
 Temporal Go SDK. See [CHANGELOG.md](CHANGELOG.md) for release notes.

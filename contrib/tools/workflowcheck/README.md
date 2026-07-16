@@ -16,7 +16,7 @@ To install with [Go](https://golang.org/) installed and on the `PATH`, run:
 
 Or you can simply build by running `go build` inside of this directory.
 
-## Releases
+## Module versioning
 
 `workflowcheck` is released separately from the core Temporal Go SDK. See
 [CHANGELOG.md](CHANGELOG.md) for release notes.
