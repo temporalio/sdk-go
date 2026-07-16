@@ -6,17 +6,21 @@
 // Usage:
 //
 //	go run ./internal/cmd/nexussystemgen
+//	go run ./internal/cmd/nexussystemgen --check
 //
-// nex-gen is automatically installed unless NEX_GEN_BIN is set.
+// A pinned nex-gen revision is automatically installed unless NEX_GEN_BIN is set.
 package main
 
 import (
+	"bytes"
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	workflowservice "go.temporal.io/api/workflowservice/v1"
@@ -26,13 +30,25 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
+const (
+	nexGenRepo     = "https://github.com/temporalio/nex-gen"
+	nexGenRevision = "62ef7c01e54871bcffc7f678e9b3fc25c28d1e25"
+)
+
+type generatedFile struct {
+	generated string
+	checkedIn string
+}
+
 func main() {
-	if err := run(); err != nil {
+	check := flag.Bool("check", false, "verify generated files are current without modifying them")
+	flag.Parse()
+	if err := run(*check); err != nil {
 		log.Fatalf("nexussystemgen: %v", err)
 	}
 }
 
-func run() error {
+func run(check bool) error {
 	repoRoot, err := repoRoot()
 	if err != nil {
 		return err
@@ -58,7 +74,7 @@ func run() error {
 		return err
 	}
 
-	nexGen, err := nexGenBinary()
+	nexGen, err := nexGenBinary(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -77,17 +93,51 @@ func run() error {
 		return fmt.Errorf("running nex-gen: %w", err)
 	}
 
-	if err := copyFile(serviceDst, serviceTmp); err != nil {
-		return err
+	files := []generatedFile{
+		{generated: serviceTmp, checkedIn: serviceDst},
+		{generated: supportTmp, checkedIn: supportDst},
 	}
-	if err := gofmt(serviceDst); err != nil {
+	for _, file := range files {
+		if err := gofmt(file.generated); err != nil {
+			return err
+		}
+	}
+	if check {
+		return checkGeneratedFiles(repoRoot, files)
+	}
+	if err := copyFile(serviceDst, serviceTmp); err != nil {
 		return err
 	}
 	if err := copyFile(supportDst, supportTmp); err != nil {
 		return err
 	}
-	if err := gofmt(supportDst); err != nil {
-		return err
+	return nil
+}
+
+func checkGeneratedFiles(repoRoot string, files []generatedFile) error {
+	var stale []string
+	for _, file := range files {
+		generated, err := os.ReadFile(file.generated)
+		if err != nil {
+			return fmt.Errorf("reading generated file %s: %w", file.generated, err)
+		}
+		checkedIn, err := os.ReadFile(file.checkedIn)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("reading checked-in file %s: %w", file.checkedIn, err)
+		}
+		if err != nil || !bytes.Equal(generated, checkedIn) {
+			path, relErr := filepath.Rel(repoRoot, file.checkedIn)
+			if relErr != nil {
+				path = file.checkedIn
+			}
+			stale = append(stale, filepath.ToSlash(path))
+		}
+	}
+	if len(stale) != 0 {
+		return fmt.Errorf(
+			"generated files are stale: %s; run `go run ./internal/cmd/nexussystemgen`",
+			strings.Join(stale, ", "),
+		)
 	}
 	return nil
 }
@@ -123,25 +173,39 @@ func addFileDescriptor(set *descriptorpb.FileDescriptorSet, seen map[string]stru
 	set.File = append(set.File, protodesc.ToFileDescriptorProto(file))
 }
 
-// nexGenBinary returns the path to the nex-gen binary, installing it with cargo if necessary.
-func nexGenBinary() (string, error) {
+// nexGenBinary returns the path to the pinned nex-gen binary, installing it with cargo if necessary.
+func nexGenBinary(repoRoot string) (string, error) {
 	if nexGen := os.Getenv("NEX_GEN_BIN"); nexGen != "" {
 		return nexGen, nil
 	}
-	if path, err := exec.LookPath("nex-gen"); err == nil {
-		return path, nil
+	toolRoot := filepath.Join(repoRoot, ".build", "tools", "nex-gen-"+nexGenRevision)
+	binaryName := "nex-gen"
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+	binary := filepath.Join(toolRoot, "bin", binaryName)
+	if _, err := os.Stat(binary); err == nil {
+		return binary, nil
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("checking nex-gen binary %s: %w", binary, err)
 	}
 
-	cmd := exec.Command("cargo", "install", "--locked", "nex-gen", "--force")
+	cmd := exec.Command(
+		"cargo", "install", "--locked",
+		"--git", nexGenRepo,
+		"--rev", nexGenRevision,
+		"--root", toolRoot,
+		"nex-gen",
+	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("installing nex-gen with cargo: %w", err)
+		return "", fmt.Errorf("installing nex-gen revision %s with cargo: %w", nexGenRevision, err)
 	}
-	if path, err := exec.LookPath("nex-gen"); err == nil {
-		return path, nil
+	if _, err := os.Stat(binary); err != nil {
+		return "", fmt.Errorf("checking installed nex-gen binary %s: %w", binary, err)
 	}
-	return "nex-gen", nil
+	return binary, nil
 }
 
 // copyFile copies a file from src to dst, creating dst if necessary.
