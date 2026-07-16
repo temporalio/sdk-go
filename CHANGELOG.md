@@ -1,5 +1,6 @@
 <!--
-High-level release notes.
+High-level release notes for the main Go SDK module. Changes to independently
+released modules under `contrib` belong in the `CHANGELOG.md` for that module.
 Loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 When your PR includes a user-facing change, add an entry below under the
@@ -18,6 +19,7 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
+- Add support for Workflow Updates as Nexus Operations 
 
 ### Added
 
@@ -26,6 +28,21 @@ to docs, or any other relevant information.
   (i.e. the worker set neither `MaxConcurrent<Type>TaskPollers` nor `<Type>TaskPollerBehavior`);
   explicitly configured pollers are left unchanged.
 
+- Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
+  newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
+  `GetVersion` call before activating its new behavior.
+
+### Fixed
+
+- Correct schedule catch-up window documentation to state that an unset value is omitted and the
+  server applies its one-year default.
+- Resource-based tuner: `ReserveSlot` now honors context cancellation while the resource controller is
+  declining slots. Previously the retry loop observed the context only while the ramp throttle was making
+  the caller wait, so a poller goroutine could outlive worker shutdown, keeping the worker's stop
+  `WaitGroup` from draining and continuing to sample system resources for the life of the process.
+- Resource-based tuner: `TryReserveSlot` (used for eager task dispatch) no longer blocks for up to
+  `RampThrottle` while a concurrent `ReserveSlot` waits out the ramp throttle. The throttle behavior
+  is unchanged; only the unnecessary lock contention on the eager path is removed.
 
 ## [1.46.0] - 2026-07-07
 

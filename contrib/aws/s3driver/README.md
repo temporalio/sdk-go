@@ -4,6 +4,21 @@
 
 Package `go.temporal.io/sdk/contrib/aws/s3driver` provides an S3-backed [`converter.StorageDriver`](https://pkg.go.dev/go.temporal.io/sdk/converter#StorageDriver) for the Temporal Go SDK's [external storage](https://pkg.go.dev/go.temporal.io/sdk/converter#ExternalStorage) system. Large payloads are offloaded to Amazon S3 and replaced with a storage reference in the Temporal history event; the reference is resolved back to the original payload before it reaches application code.
 
+## Add to your project
+
+The example below uses both the S3 driver and its AWS SDK v2 adapter. Add both
+from your application's Go module:
+
+```bash
+go get go.temporal.io/sdk/contrib/aws/s3driver@latest
+go get go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2@latest
+```
+
+## Module versioning
+
+The S3 driver is released as a separate Go module from the core Temporal Go
+SDK. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
 ## Usage
 
 The `go.temporal.io/sdk/contrib/aws/s3driver` package defines the driver and its configuration. Use the companion package `go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2` to wrap an AWS SDK v2 S3 client.
