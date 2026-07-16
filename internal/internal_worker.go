@@ -161,6 +161,8 @@ type (
 		// Worker deployment options containing all deployment versioning configuration.
 		DeploymentOptions WorkerDeploymentOptions
 
+		PreferredVersionProvider PreferredVersionProvider
+
 		MetricsHandler metrics.Handler
 
 		Logger log.Logger
@@ -2330,6 +2332,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		WorkerBuildID:                    options.BuildID,
 		UseBuildIDForVersioning:          options.UseBuildIDForVersioning || options.DeploymentOptions.UseVersioning,
 		DeploymentOptions:                options.DeploymentOptions,
+		PreferredVersionProvider:         options.PreferredVersionProvider,
 		MetricsHandler:                   metricsHandler,
 		Logger:                           logger,
 		EnableLoggingInReplay:            options.EnableLoggingInReplay,
