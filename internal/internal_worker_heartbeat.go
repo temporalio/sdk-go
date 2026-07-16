@@ -105,14 +105,14 @@ func (m *heartbeatManager) registerWorker(
 
 	hw := m.sharedNamespaceWorkerForLocked(namespace)
 
+	hw.callbacksMutex.Lock()
+	hw.callbacks[worker.workerInstanceKey] = worker.heartbeatCallback
+	hw.callbacksMutex.Unlock()
+
 	if hw.started.CompareAndSwap(false, true) {
 		hw.workerCommandsSupported = nsData.capabilities.GetWorkerCommands()
 		go hw.run()
 	}
-
-	hw.callbacksMutex.Lock()
-	hw.callbacks[worker.workerInstanceKey] = worker.heartbeatCallback
-	hw.callbacksMutex.Unlock()
 
 	return nil
 }

@@ -9,6 +9,7 @@ import (
 	"github.com/golang/mock/gomock"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	namespacepb "go.temporal.io/api/namespace/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	workerservicepb "go.temporal.io/api/nexusservices/workerservice/v1"
 	workerpb "go.temporal.io/api/worker/v1"
@@ -266,27 +267,19 @@ func TestWorkerHeartbeatSendsImmediatelyWithIdentity(t *testing.T) {
 			return &workflowservice.RecordWorkerHeartbeatResponse{}, nil
 		}).AnyTimes()
 
-	wfClient := NewServiceClient(mockService, nil, ClientOptions{Identity: "test-client-identity"})
-
-	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
-	hw := &sharedNamespaceWorker{
-		client:          wfClient,
-		namespace:       "test-ns",
-		interval:        time.Hour,
-		workerCtx:       heartbeatCtx,
-		heartbeatCancel: heartbeatCancel,
-		callbacks: map[string]func() *workerpb.WorkerHeartbeat{
-			"worker1": func() *workerpb.WorkerHeartbeat {
-				return &workerpb.WorkerHeartbeat{WorkerInstanceKey: "worker1"}
-			},
-		},
-		stopC:    make(chan struct{}),
-		stoppedC: make(chan struct{}),
-		logger:   ilog.NewDefaultLogger(),
+	wfClient := NewServiceClient(mockService, nil, ClientOptions{
+		Namespace:               "test-ns",
+		Identity:                "test-client-identity",
+		WorkerHeartbeatInterval: time.Minute,
+	})
+	wfClient.namespaceData = &namespaceData{
+		capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
 	}
-	hw.started.Store(true)
-	go hw.run()
-	defer hw.stop()
+	worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+	if err := worker.registerHeartbeatWorker(); err != nil {
+		t.Fatal(err)
+	}
+	defer worker.unregisterHeartbeatWorker()
 
 	select {
 	case request := <-requestCh:
