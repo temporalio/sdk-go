@@ -13,6 +13,19 @@ It is well suited to durable event streams whose cost scales with durable
 batches rather than message count. Each poll round-trip costs ~100 ms of
 latency, so it is not intended for ultra-low-latency streaming.
 
+## Add to your project
+
+From your application's Go module, run:
+
+```bash
+go get go.temporal.io/sdk/contrib/workflowstreams@latest
+```
+
+## Module versioning
+
+`workflowstreams` is released as a separate Go module from the core Temporal Go
+SDK. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
 ## Workflow side
 
 Construct a `WorkflowStream` once at the start of your workflow. The constructor
