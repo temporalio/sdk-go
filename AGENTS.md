@@ -36,6 +36,8 @@ quick reference for coding-agent work and pull requests.
   change is explicit and reviewed. User-facing changes, including new features,
   behavior changes, deprecations, breaking changes, notable bug fixes, and
   security fixes, require a `CHANGELOG.md` entry under `## [Unreleased]`.
+  Use the affected module's `CHANGELOG.md` for independently released `contrib`
+  modules and the repository-root `CHANGELOG.md` for the main SDK module.
 - Behavior changes require tests. Public API or public behavior changes also
   need documentation or examples when existing user-facing guidance would become
   incomplete or misleading.
@@ -120,7 +122,8 @@ externally.
 - For workflow execution, replay/cache, worker lifecycle, cancellation, update,
   or local activity changes, run focused integration tests in both default-cache
   mode and with `WORKFLOW_CACHE_SIZE=0`.
-- Update public docs, examples, and `CHANGELOG.md` for user-facing changes.
+- Update public docs, examples, and the affected module's `CHANGELOG.md` for
+  user-facing changes.
 - Keep commit messages short and imperative.
 
 ## Where things are
@@ -141,7 +144,8 @@ externally.
 - `contrib/` - optional integrations such as OpenTelemetry, OpenTracing, Tally,
   Datadog, envconfig, sysinfo, and workflow streams.
 - `mocks/` - generated or maintained mocks used by tests.
-- `CHANGELOG.md` - user-facing release notes.
+- `CHANGELOG.md` - user-facing release notes for the main SDK module. Each
+  independently released `contrib` module has its own `CHANGELOG.md`.
 
 ## Notes
 

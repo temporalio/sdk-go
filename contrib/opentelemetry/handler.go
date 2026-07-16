@@ -16,9 +16,10 @@ var _ client.MetricsHandler = MetricsHandler{}
 // MetricsHandler is an implementation of client.MetricsHandler
 // for open telemetry.
 type MetricsHandler struct {
-	meter      metric.Meter
-	attributes attribute.Set
-	onError    func(error)
+	meter                metric.Meter
+	attributes           attribute.Set
+	onError              func(error)
+	useMonotonicCounters bool
 }
 
 // MetricsHandlerOptions are options provided to NewMetricsHandler.
@@ -34,6 +35,16 @@ type MetricsHandlerOptions struct {
 	//
 	// Optional: Defaults to panicking on any error.
 	OnError func(error)
+	// UseMonotonicCounters causes [MetricsHandler.Counter] to use OpenTelemetry's Int64Counter
+	// instead of Int64UpDownCounter. This allows exporters to identify SDK
+	// counters as monotonic sums.
+	//
+	// [client.MetricsCounter] is documented as ever-increasing, so values passed to
+	// [client.MetricsCounter.Inc] must be non-negative. Negative values may produce invalid or
+	// backend-dependent metric data.
+	//
+	// Optional: Defaults to false
+	UseMonotonicCounters bool
 }
 
 // NewMetricsHandler returns a client.MetricsHandler that is backed by the given Meter
@@ -45,9 +56,10 @@ func NewMetricsHandler(options MetricsHandlerOptions) MetricsHandler {
 		options.OnError = func(err error) { panic(err) }
 	}
 	return MetricsHandler{
-		meter:      options.Meter,
-		attributes: options.InitialAttributes,
-		onError:    options.OnError,
+		meter:                options.Meter,
+		attributes:           options.InitialAttributes,
+		onError:              options.OnError,
+		useMonotonicCounters: options.UseMonotonicCounters,
 	}
 }
 
@@ -89,14 +101,21 @@ func (m MetricsHandler) WithTags(tags map[string]string) client.MetricsHandler {
 		attributes = append(attributes, attribute.String(k, v))
 	}
 	return MetricsHandler{
-		meter:      m.meter,
-		attributes: attribute.NewSet(attributes...),
-		onError:    m.onError,
+		meter:                m.meter,
+		attributes:           attribute.NewSet(attributes...),
+		onError:              m.onError,
+		useMonotonicCounters: m.useMonotonicCounters,
 	}
 }
 
 func (m MetricsHandler) Counter(name string) client.MetricsCounter {
-	c, err := m.meter.Int64UpDownCounter(name)
+	var c interface { Add(context.Context, int64, ...metric.AddOption) }
+	var err error
+	if m.useMonotonicCounters {
+	    c, err = m.meter.Int64Counter(name)
+	} else {
+	    c, err = m.meter.Int64UpDownCounter(name)
+	}
 	if err != nil {
 		m.onError(err)
 		return client.MetricsNopHandler.Counter(name)
