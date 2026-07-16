@@ -310,6 +310,189 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
 }
 
+func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	providerInputs := make(chan worker.PreferredVersionProviderInput, 1)
+	var providerCalls atomic.Int32
+	preferredWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		PreferredVersionProvider: func(input worker.PreferredVersionProviderInput) *worker.VersionPreference {
+			if providerCalls.Add(1) == 1 {
+				providerInputs <- input
+			}
+			return &worker.VersionPreference{Version: workflow.DefaultVersion}
+		},
+	})
+	defer preferredWorker.Stop()
+
+	preferredWorkflow := func(ctx workflow.Context) (string, error) {
+		version := workflow.GetVersion(ctx, "preferred-version", workflow.DefaultVersion, 1)
+		if version != workflow.DefaultVersion {
+			return "", fmt.Errorf("unexpected version: %v", version)
+		}
+		if workflow.GetVersion(ctx, "preferred-version", workflow.DefaultVersion, 1) != version {
+			return "", errors.New("GetVersion returned different versions for the same change ID")
+		}
+		return "old", nil
+	}
+	preferredWorker.RegisterWorkflow(preferredWorkflow)
+	ts.NoError(preferredWorker.Start())
+
+	var result string
+	ts.NoError(ts.executeWorkflow("preferred-version-provider", preferredWorkflow, &result))
+	ts.Equal("old", result)
+	ts.Equal(int32(1), providerCalls.Load())
+	input := <-providerInputs
+	ts.Equal("preferred-version-provider", input.WorkflowInfo.WorkflowExecution.ID)
+	ts.Equal("preferred-version", input.ChangeID)
+	ts.Equal(workflow.DefaultVersion, input.MinSupported)
+	ts.Equal(workflow.Version(1), input.MaxSupported)
+}
+
+func (ts *IntegrationTestSuite) TestPreferredVersionProviderRollout() {
+	const (
+		workflowName = "preferred-version-provider-rollout"
+		changeID     = "preferred-version"
+		signalName   = "release"
+		queryName    = "state"
+	)
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	newWorkflow := func(ctx workflow.Context) (string, error) {
+		releases := 0
+		if err := workflow.SetQueryHandler(ctx, queryName, func() (string, error) {
+			return fmt.Sprintf("new-%d", releases), nil
+		}); err != nil {
+			return "", err
+		}
+
+		version := workflow.GetVersion(ctx, changeID, workflow.DefaultVersion, 1)
+		release := workflow.GetSignalChannel(ctx, signalName)
+		release.Receive(ctx, nil)
+		releases++
+		if replayedVersion := workflow.GetVersion(ctx, changeID, workflow.DefaultVersion, 1); replayedVersion != version {
+			return "", fmt.Errorf("GetVersion returned %v after returning %v", replayedVersion, version)
+		}
+		release.Receive(ctx, nil)
+		releases++
+		if version == workflow.DefaultVersion {
+			return "old", nil
+		}
+		return "new", nil
+	}
+	oldWorkflow := func(ctx workflow.Context) (string, error) {
+		releases := 0
+		if err := workflow.SetQueryHandler(ctx, queryName, func() (string, error) {
+			return fmt.Sprintf("old-%d", releases), nil
+		}); err != nil {
+			return "", err
+		}
+
+		release := workflow.GetSignalChannel(ctx, signalName)
+		release.Receive(ctx, nil)
+		releases++
+		release.Receive(ctx, nil)
+		return "old", nil
+	}
+
+	startWorker := func(options worker.Options, workflowFn interface{}) worker.Worker {
+		w := worker.New(ts.client, ts.taskQueueName, options)
+		w.RegisterWorkflowWithOptions(workflowFn, workflow.RegisterOptions{Name: workflowName})
+		ts.NoError(w.Start())
+		return w
+	}
+	assertState := func(ctx context.Context, run client.WorkflowRun, expected string) {
+		ts.Eventually(func() bool {
+			value, err := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), queryName)
+			if err != nil {
+				return false
+			}
+			var state string
+			return value.Get(&state) == nil && state == expected
+		}, 10*time.Second, 100*time.Millisecond, "timed out waiting for workflow state %q", expected)
+	}
+	startWorkflow := func(ctx context.Context, workflowID string) client.WorkflowRun {
+		options := ts.startWorkflowOptions(workflowID)
+		options.EnableEagerStart = false
+		run, err := ts.client.ExecuteWorkflow(ctx, options, workflowName)
+		ts.NoError(err)
+		return run
+	}
+	signal := func(ctx context.Context, run client.WorkflowRun) {
+		ts.NoError(ts.client.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), signalName, nil))
+	}
+
+	ts.Run("unactivated new code replays on old worker", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+
+		var unactivatedProviderCalls atomic.Int32
+		newWorker := startWorker(worker.Options{
+			PreferredVersionProvider: func(worker.PreferredVersionProviderInput) *worker.VersionPreference {
+				unactivatedProviderCalls.Add(1)
+				return &worker.VersionPreference{Version: workflow.DefaultVersion}
+			},
+		}, newWorkflow)
+		defer newWorker.Stop()
+
+		run := startWorkflow(ctx, "preferred-version-provider-unactivated-"+uuid.NewString())
+		ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_MARKER_RECORDED, 10*time.Second)
+		assertState(ctx, run, "new-0")
+		ts.Equal(int32(1), unactivatedProviderCalls.Load())
+
+		newWorker.Stop()
+		oldWorker := startWorker(worker.Options{}, oldWorkflow)
+		defer oldWorker.Stop()
+
+		signal(ctx, run)
+		assertState(ctx, run, "old-1")
+		signal(ctx, run)
+		var result string
+		ts.NoError(run.Get(ctx, &result))
+		ts.Equal("old", result)
+	})
+
+	ts.Run("activated marker replays on unactivated new worker", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+
+		var activatedProviderCalls atomic.Int32
+		activatedWorker := startWorker(worker.Options{
+			PreferredVersionProvider: func(worker.PreferredVersionProviderInput) *worker.VersionPreference {
+				activatedProviderCalls.Add(1)
+				return &worker.VersionPreference{Version: 1}
+			},
+		}, newWorkflow)
+		defer activatedWorker.Stop()
+
+		run := startWorkflow(ctx, "preferred-version-provider-activated-"+uuid.NewString())
+		ts.waitForHistoryEvent(run.GetID(), run.GetRunID(), enumspb.EVENT_TYPE_MARKER_RECORDED, 10*time.Second)
+		assertState(ctx, run, "new-0")
+		ts.Equal(int32(1), activatedProviderCalls.Load())
+
+		activatedWorker.Stop()
+		var unactivatedProviderCalls atomic.Int32
+		unactivatedWorker := startWorker(worker.Options{
+			PreferredVersionProvider: func(worker.PreferredVersionProviderInput) *worker.VersionPreference {
+				unactivatedProviderCalls.Add(1)
+				return &worker.VersionPreference{Version: workflow.DefaultVersion}
+			},
+		}, newWorkflow)
+		defer unactivatedWorker.Stop()
+
+		signal(ctx, run)
+		assertState(ctx, run, "new-1")
+		signal(ctx, run)
+		var result string
+		ts.NoError(run.Get(ctx, &result))
+		ts.Equal("new", result)
+		ts.Zero(unactivatedProviderCalls.Load())
+	})
+}
+
 // TestLocalActivityRetryBehavior verifies local activity retry behaviors:
 // 1) local activity retry with local timer backoff when backoff duration is less than or equal to workflow task timeout
 // 2) workflow task heartbeat is happening when local activity takes longer than workflow task timeout
@@ -5787,11 +5970,14 @@ func (ts *IntegrationTestSuite) TestScheduleCreate() {
 	})
 	ts.NoError(err)
 	ts.EqualValues("test-schedule-create-schedule", handle.GetID())
+	description, err := handle.Describe(ctx)
+	ts.NoError(err)
+	ts.Equal(365*24*time.Hour, description.Schedule.Policy.CatchupWindow)
 
 	err = handle.Delete(ctx)
 	ts.NoError(err)
 
-	description, err := handle.Describe(ctx)
+	description, err = handle.Describe(ctx)
 	ts.IsType(&serviceerror.NotFound{}, err)
 	ts.Nil(description)
 }

@@ -1781,6 +1781,34 @@ func (s *WorkflowTestSuiteUnitTest) Test_GetVersion() {
 	env.AssertExpectations(s.T())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_PreferredVersionProvider() {
+	providerCalls := 0
+	var providerInput PreferredVersionProviderInput
+	env := s.NewTestWorkflowEnvironment()
+	env.SetWorkerOptions(WorkerOptions{
+		PreferredVersionProvider: func(input PreferredVersionProviderInput) *VersionPreference {
+			providerCalls++
+			providerInput = input
+			return &VersionPreference{Version: DefaultVersion}
+		},
+	})
+	env.ExecuteWorkflow(func(ctx Context) (Version, error) {
+		version := GetVersion(ctx, "preferred-version", DefaultVersion, 1)
+		s.Equal(version, GetVersion(ctx, "preferred-version", DefaultVersion, 1))
+		return version, nil
+	})
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result Version
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal(DefaultVersion, result)
+	s.Equal(1, providerCalls)
+	s.Equal("preferred-version", providerInput.ChangeID)
+	s.Equal(DefaultVersion, providerInput.MinSupported)
+	s.Equal(Version(1), providerInput.MaxSupported)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 	oldActivity := func(ctx context.Context, msg string) (string, error) {
 		return "hello" + "_" + msg, nil

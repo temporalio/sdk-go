@@ -1,115 +1,122 @@
-# Contributing to Temporal Go SDK
+# Contributing to Temporal SDKs
 
-This doc is intended for contributors to Go SDK (hopefully that's you!)
+Thanks for your interest in contributing to Temporal SDKs.
 
-All contributors must complete the Temporal Contributor License Agreement (CLA) before changes can be merged. A link to the CLA will be posted in the PR.
+This guide describes expectations that apply across Temporal SDK repositories. Each
+repository may have additional local conventions, but the guidance below should help
+you open issues and pull requests that maintainers can evaluate efficiently.
 
-## Prerequisites
+## Before You Open an Issue
 
-- [Go](https://go.dev/) 1.24+ (see [go.mod](go.mod) for the minimum supported version)
+Search the existing issues first. If you find an issue that describes the same bug,
+feature request, or design topic, add any relevant details there instead of opening a
+duplicate. Use an upvote on the issue to show that it affects you too.
 
-## Local development workflow
+Issues are assigned to people when they are actively working on them. Before taking
+on an issue, check whether it is already assigned so you do not duplicate someone
+else's work.
 
-The canonical local commands are provided by the build tool in `internal/cmd/build`.
+Use GitHub issues for actionable bugs and feature work. For usage questions, help
+debugging an application, or general discussion, join the relevant
+language-specific channel in the
+[Temporal community Slack](https://temporal.io/slack) or use the support channel
+available to you.
 
-Tests are managed through the build tool at `internal/cmd/build`. This tool handles starting an embedded Temporal dev
-server with the required dynamic configs and search attributes, enforces consistent test flags (`-race`, `-count 1`, no caching),
-and manages coverage collection — so you don't need to manually configure a server or remember the right flags.
+## Bug Reports
 
-```bash
-cd internal/cmd/build
-```
+When reporting a bug, include enough detail for someone else to reproduce or
+understand the problem:
 
-Run static analysis checks:
+* A short summary of the problem.
+* A minimal reproduction, preferably as code that can be copied into a small
+  project or test.
+* What you expected to happen and what actually happened.
+* The SDK version.
+* The language runtime version.
+* The operating system and architecture.
+* Temporal Server or Temporal Cloud details, if the issue depends on service
+  behavior.
+* Logs, stack traces, workflow histories, or other diagnostics that show the
+  failure.
+* Whether the behavior is a regression, and the last version where it worked if
+  known.
 
-```bash
-go run . check
-```
+## Feature Requests and Design Changes
 
-Run unit tests (all packages except `test/`):
+Open or join a GitHub issue before starting substantial feature work, behavior
+changes, or API design changes. This gives maintainers and other SDK users a chance
+to discuss the approach before you invest in a larger implementation.
 
-```bash
-go run . unit-test
-```
+The relevant language-specific channel in Temporal community Slack is also a good
+place for early discussion, but important decisions should still be captured in a
+GitHub issue so they are visible and searchable.
 
-Run integration tests with an embedded Temporal dev server:
+Small bug fixes, documentation fixes, and narrowly scoped maintenance changes can go
+straight to a pull request.
 
-```bash
-go run . integration-test -dev-server
-```
+## Pull Requests
 
-If you omit `-dev-server`, integration tests connect to a server already running on `localhost:7233`.
+Good pull requests are focused and easy to review:
 
-## Running specific tests
+* Keep each pull request scoped to one logical change.
+* Include tests for behavior changes.
+* Update public API documentation or doc comments when public behavior changes.
+* Add a high-level changelog entry for user-facing changes according to the
+  repository's local changelog convention.
+* Describe what changed, why it changed, and what validation you ran.
 
-Use `-run` with the same semantics as `go test -run`.
+Run the relevant local checks when practical. CI must pass before a pull request can
+be merged.
 
-Unit tests:
+## Things to Avoid
 
-```bash
-go run . unit-test -run "TestMyFunction"
-```
+Avoid changes that make review harder without improving the contribution:
 
-Integration tests:
+* Unrelated refactors mixed into a behavior change.
+* Style-only churn.
+* Large feature pull requests that were not discussed first.
+* License, copyright, or other legal changes without maintainer discussion.
 
-```bash
-# Single test in a suite
-go run . integration-test -dev-server -run "TestIntegrationSuite/TestMyTest"
+## AI-Generated Contributions
 
-# Entire suite
-go run . integration-test -dev-server -run "TestWorkerTunerTestSuite"
-```
+Using AI tools while contributing is acceptable. You are responsible for the
+correctness, quality, and maintainability of everything you submit.
 
-## Coverage
+Thoroughly self-review AI-generated code and documentation before opening a pull
+request. Make sure it is correct, tested where appropriate, and consistent with the
+style and patterns of the codebase.
 
-Unit test coverage (writes per-package profiles under `.build/coverage`):
+Keep AI-assisted changes concise and scoped. Avoid verbose generated prose,
+unnecessary comments, or broad rewrites that make the change harder to review.
 
-```bash
-go run . unit-test -coverage
-```
+## Contributor License Agreement
 
-Integration test coverage:
+All contributors must complete the Temporal Contributor License Agreement (CLA)
+before changes can be merged. A link to the CLA will be posted in the pull request.
 
-```bash
-go run . integration-test -dev-server -coverage-file integration-test.out
-```
+## Security Issues
 
-Merge coverage files:
+Do not open public GitHub issues for suspected security vulnerabilities. Report them
+to security@temporal.io instead.
 
-```bash
-go run . merge-coverage-files coverage.out
-```
+## Review and CI
 
-## Go module housekeeping
+Maintainers review pull requests for correctness, compatibility, test coverage,
+documentation, and long-term maintainability. Review may require changes before a
+pull request can be merged, and it may take maintainers some time to review a
+contribution.
 
-If dependencies change, tidy all modules:
+CI is the final validation gate. If CI fails, update the pull request or ask for help
+if the failure appears unrelated to your change. Some CI gates may wait for a
+maintainer to approve or run them.
 
-```bash
-find . -name go.mod -execdir go mod tidy \;
-```
+## Inactive Pull Requests
 
-## Pull request checklist
+Maintainers may close inactive pull requests after follow-up if they are no longer
+moving forward. If that happens, you are welcome to reopen the pull request or open a
+new one when you are ready to continue.
 
-Before opening or updating a pull request:
+## Community Conduct
 
-- Run `go run . check` from `internal/cmd/build`.
-- Run relevant tests (`unit-test` and, when needed, `integration-test -dev-server`).
-- Keep changes focused and include tests for behavior changes.
-- Update documentation/comments when public behavior changes.
-
-## Changelog
-
-User-facing changes are recorded in [`CHANGELOG.md`](CHANGELOG.md), loosely following the
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format.
-
-If your PR includes a user-facing change (new feature, behavior change, deprecation, breaking
-change, notable bug fix, or security fix), add a short, high-level entry to the `## [Unreleased]`
-section at the top of `CHANGELOG.md` under the appropriate heading, creating it if needed:
-Added, Changed, Deprecated, Breaking Changes, Fixed, or Security.
-
-Keep entries high-level and written for users. The full commit log is appended at release time,
-so internal-only changes (refactors, tests, CI, docs) don't need an entry.
-
-This is enforced by the `Changelog checkpoint` CI check, which fails when a PR does not modify
-`CHANGELOG.md`. If your PR has no user-facing change, a maintainer can apply the `skip-changelog`
-label to the PR to satisfy the check (applying the label automatically re-runs it).
+Keep discussions respectful, constructive, and focused on the work. Clear context,
+specific examples, and patience with review feedback help everyone move faster.
