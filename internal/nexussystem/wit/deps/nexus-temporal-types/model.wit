@@ -1,3 +1,4 @@
+/// @nexus.support go="go/temporal_model_converters.go"
 package nexus:temporal-types@1.0.0;
 
 interface model {
