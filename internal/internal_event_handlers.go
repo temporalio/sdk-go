@@ -160,6 +160,7 @@ type (
 		failureConverter         converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
+		preferredVersionProvider PreferredVersionProvider
 		sdkFlags                 *sdkFlags
 		sdkVersionUpdated        bool
 		sdkVersion               string
@@ -223,6 +224,7 @@ func newWorkflowExecutionEventHandler(
 	contextPropagators []ContextPropagator,
 	deadlockDetectionTimeout time.Duration,
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities,
+	preferredVersionProvider PreferredVersionProvider,
 ) workflowExecutionEventHandler {
 	wfCtx := converter.WorkflowSerializationContext{
 		Namespace:  workflowInfo.Namespace,
@@ -247,6 +249,7 @@ func newWorkflowExecutionEventHandler(
 		failureConverter:             failureConverter,
 		contextPropagators:           contextPropagators,
 		deadlockDetectionTimeout:     deadlockDetectionTimeout,
+		preferredVersionProvider:     preferredVersionProvider,
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
 		sdkFlags:                     newSDKFlagSet(capabilities),
@@ -931,7 +934,12 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 	} else {
 		// GetVersion for changeID is called first time (non-replay mode), generate a marker command for it.
 		// Also upsert search attributes to enable ability to search by changeVersion.
-		version = maxSupported
+		version = resolvePreferredVersion(wc.preferredVersionProvider, PreferredVersionProviderInput{
+			WorkflowInfo: wc.workflowInfo,
+			ChangeID:     changeID,
+			MinSupported: minSupported,
+			MaxSupported: maxSupported,
+		})
 		changeVersionSA := createSearchAttributesForChangeVersion(changeID, version, wc.changeVersions)
 		attr, err := validateAndSerializeSearchAttributes(changeVersionSA)
 		if err != nil {
@@ -957,6 +965,38 @@ func (wc *workflowEnvironmentImpl) GetVersion(changeID string, minSupported, max
 	validateVersion(changeID, version, minSupported, maxSupported)
 	wc.changeVersions[changeID] = version
 	return version
+}
+
+func resolvePreferredVersion(
+	preferredVersionProvider PreferredVersionProvider,
+	input PreferredVersionProviderInput,
+) Version {
+	if preferredVersionProvider == nil {
+		return input.MaxSupported
+	}
+
+	preference := preferredVersionProvider(input)
+	if preference == nil {
+		return input.MaxSupported
+	}
+	if preference.Version >= input.MinSupported && preference.Version <= input.MaxSupported {
+		return preference.Version
+	}
+	if preference.ClampToSupportedRange {
+		if preference.Version < input.MinSupported {
+			return input.MinSupported
+		}
+		return input.MaxSupported
+	}
+
+	panicIllegalState(fmt.Sprintf(
+		"[TMPRL1100] Preferred version %v for %q change ID is not supported. Supported versions are between %v and %v.",
+		preference.Version,
+		input.ChangeID,
+		input.MinSupported,
+		input.MaxSupported,
+	))
+	return input.MaxSupported
 }
 
 func createSearchAttributesForChangeVersion(changeID string, version Version, existingChangeVersions map[string]Version) map[string]interface{} {

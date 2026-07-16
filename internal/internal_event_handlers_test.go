@@ -126,6 +126,37 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 	require.Equal(t, 1, resp)
 }
 
+func TestPreferredVersionProviderOutOfRange(t *testing.T) {
+	input := PreferredVersionProviderInput{
+		WorkflowInfo: &WorkflowInfo{},
+		ChangeID:     "change-id",
+		MinSupported: DefaultVersion,
+		MaxSupported: 1,
+	}
+
+	t.Run("fails", func(t *testing.T) {
+		require.Panics(t, func() {
+			resolvePreferredVersion(
+				func(PreferredVersionProviderInput) *VersionPreference {
+					return &VersionPreference{Version: 2}
+				},
+				input,
+			)
+		})
+	})
+
+	t.Run("clamps", func(t *testing.T) {
+		provider := func(input PreferredVersionProviderInput) *VersionPreference {
+			return &VersionPreference{Version: 2, ClampToSupportedRange: true}
+		}
+		require.Equal(
+			t,
+			Version(1),
+			resolvePreferredVersion(provider, input),
+		)
+	})
+}
+
 func Test_UpsertSearchAttributes(t *testing.T) {
 	t.Parallel()
 	helper := newCommandsHelper()
