@@ -995,6 +995,44 @@ type UpdateWorkflowOptions struct {
 	// then the server will reject the update request with an error.
 	// Note that it is incompatible with UpdateWithStartWorkflowOperation.
 	FirstExecutionRunID string
+
+	// request ID for de-duplication during server processing. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
+	requestID string
+	// callbacks. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
+	callbacks []*commonpb.Callback
+	// for backward links from the target namespace sent via operation options. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
+	links []*commonpb.Link
+	// gRPC request response trap for nexus forward links
+	responseInfo *updateWorkflowResponseInfo
+}
+
+type updateWorkflowResponseInfo struct {
+	// Link to the workflow event.
+	Link *commonpb.Link
+}
+
+func (u *UpdateWorkflowOptions) setLinks(links []*commonpb.Link) {
+	u.links = links
+}
+
+func (u *UpdateWorkflowOptions) setCallbacks(callbacks []*commonpb.Callback) {
+	u.callbacks = callbacks
+}
+
+func (u *UpdateWorkflowOptions) setRequestID(requestID string) {
+	u.requestID = requestID
+}
+
+func (s *StartWorkflowOptions) setLinks(links []*commonpb.Link) {
+	s.links = links
+}
+
+func (s *StartWorkflowOptions) setCallbacks(callbacks []*commonpb.Callback) {
+	s.callbacks = callbacks
+}
+
+func (s *StartWorkflowOptions) setRequestID(requestID string) {
+	s.requestID = requestID
 }
 
 // UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
@@ -1054,6 +1092,15 @@ type completedUpdateHandle struct {
 type lazyUpdateHandle struct {
 	baseUpdateHandle
 	client *WorkflowClient
+}
+
+// IsUpdateWorkflowCompleted is a utility to detect if an operation has immediately
+// completed. Used for Nexus operations that back into operations at a later stage
+// in a non-retriable manner. Eg. UpdateWorkflow could fail at Accepted(failed validation)
+// but its still Admitted and isnt captured in the rpc errors and keeps getting retried
+func IsUpdateWorkflowCompleted(handle WorkflowUpdateHandle) bool {
+	_, ok := handle.(*completedUpdateHandle)
+	return ok
 }
 
 // QueryWorkflowWithOptionsRequest is the request to QueryWorkflowWithOptions
@@ -2846,6 +2893,10 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		return nil, err
 	}
 
+	if responseInfo := in.responseInfo; responseInfo != nil {
+		responseInfo.Link = resp.GetLink()
+	}
+
 	// Here we know the update is at least accepted
 	desiredLifecycleStage := updateLifeCycleStageToProto(in.WaitForStage)
 	return w.updateHandleFromResponse(ctx, desiredLifecycleStage, resp)
@@ -2881,6 +2932,10 @@ func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWor
 		RunID:               options.RunID,
 		FirstExecutionRunID: options.FirstExecutionRunID,
 		WaitForStage:        options.WaitForStage,
+		links:               options.links,
+		callbacks:           options.callbacks,
+		responseInfo:        options.responseInfo,
+		requestID:           options.requestID,
 	}, nil
 }
 
@@ -2915,6 +2970,9 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 		},
 		FirstExecutionRunId: in.FirstExecutionRunID,
 		Request: &updatepb.Request{
+			RequestId:           in.requestID,
+			CompletionCallbacks: in.callbacks,
+			Links:               in.links,
 			Meta: &updatepb.Meta{
 				UpdateId: in.UpdateID,
 				Identity: w.client.identity,
