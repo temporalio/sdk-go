@@ -15,3 +15,7 @@ or Security.
 
 - Added the `contrib/googleadk` package, which makes Google ADK (`adk-go`) agents durable and
   replay-safe under Temporal.
+
+### Fixed
+
+- Fixed Gemini streaming responses duplicating text and dropping completed tool calls.

@@ -243,22 +243,17 @@ func (a *Activities) invokeModelStreaming(ctx context.Context, llm model.LLM, in
 	return agg, nil
 }
 
-// aggregateResponses folds streamed/partial responses into one: text parts are
-// concatenated so the returned response carries the full message, and for every
-// other field the latest chunk that sets it wins. All metadata fields are folded
-// (not just usage/finish/grounding) because a model commonly emits citations,
-// logprobs, transcriptions, custom metadata, or an error/finish only on a later
-// chunk; dropping those would lose data from the single response handed back into
-// the workflow. (Partial/TurnComplete are managed by the streaming caller.)
+// aggregateResponses folds partial responses into one, unless the model emits a
+// non-partial terminal response that is already authoritative. For partials,
+// text is concatenated and the latest metadata value wins. (Partial/TurnComplete
+// are managed by the streaming caller.)
 func aggregateResponses(agg, next *model.LLMResponse) *model.LLMResponse {
 	if next == nil {
 		return agg
 	}
-	if agg == nil {
-		// Deep-copy on the first fold so later appendText/metadata folds never
-		// mutate the model's own response buffer. A shallow struct copy would
-		// leave cp.Content (and its Parts) aliased to next.Content, so the next
-		// chunk's appendText would corrupt the source ("a" -> "ab").
+	if agg == nil || !next.Partial {
+		// Deep-copy the first response and any authoritative terminal response so
+		// later folds never mutate the model's own response buffer.
 		cp := *next
 		cp.Content = cloneContent(next.Content)
 		return &cp

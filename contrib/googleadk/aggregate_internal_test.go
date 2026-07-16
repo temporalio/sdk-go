@@ -8,6 +8,9 @@ package googleadk
 // publish side channel is exercised by the dev-server-gated integration test.
 
 import (
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -16,7 +19,28 @@ import (
 	"google.golang.org/genai"
 
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/model/gemini"
 )
+
+type geminiSSETransport struct{}
+
+func (geminiSSETransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	const stream = `data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Checking weather. "}]}}],"modelVersion":"gemini-2.5-flash"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"name":"get_weather","args":{"city":"Paris"}}}]},"finishReason":"STOP"}],"usageMetadata":{"totalTokenCount":10},"modelVersion":"gemini-2.5-flash"}
+
+`
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Status:     "200 OK",
+		Proto:      "HTTP/1.1",
+		ProtoMajor: 1,
+		ProtoMinor: 1,
+		Header:     http.Header{"Content-Type": []string{"text/event-stream"}},
+		Body:       io.NopCloser(strings.NewReader(stream)),
+		Request:    req,
+	}, nil
+}
 
 func partial(text string) *model.LLMResponse {
 	return &model.LLMResponse{
@@ -35,6 +59,46 @@ func TestAggregateResponsesConcatenatesText(t *testing.T) {
 	require.NotNil(t, agg)
 	require.NotNil(t, agg.Content)
 	assert.Equal(t, "Hello, world", concatText(agg.Content))
+}
+
+func TestAggregateResponsesUsesGeminiTerminalResponse(t *testing.T) {
+	llm, err := gemini.NewModel(t.Context(), "gemini-2.5-flash", &genai.ClientConfig{
+		APIKey:     "stub-key",
+		HTTPClient: &http.Client{Transport: geminiSSETransport{}},
+	})
+	require.NoError(t, err)
+
+	req := &model.LLMRequest{
+		Model:    "gemini-2.5-flash",
+		Contents: []*genai.Content{genai.NewContentFromText("weather?", genai.RoleUser)},
+	}
+	var responses []*model.LLMResponse
+	var agg *model.LLMResponse
+	for resp, streamErr := range llm.GenerateContent(t.Context(), req, true) {
+		require.NoError(t, streamErr)
+		responses = append(responses, resp)
+		agg = aggregateResponses(agg, resp)
+	}
+
+	require.Len(t, responses, 3)
+	assert.True(t, responses[0].Partial)
+	assert.Equal(t, "Checking weather. ", concatText(responses[0].Content))
+	assert.True(t, responses[1].Partial)
+	require.Len(t, responses[1].Content.Parts, 1)
+	require.NotNil(t, responses[1].Content.Parts[0].FunctionCall)
+	assert.Equal(t, "get_weather", responses[1].Content.Parts[0].FunctionCall.Name)
+	assert.False(t, responses[2].Partial)
+	assert.Equal(t, "Checking weather. ", concatText(responses[2].Content))
+	require.Len(t, responses[2].Content.Parts, 2)
+	require.NotNil(t, responses[2].Content.Parts[1].FunctionCall)
+	assert.Equal(t, "Paris", responses[2].Content.Parts[1].FunctionCall.Args["city"])
+
+	require.NotNil(t, agg)
+	assert.Equal(t, "Checking weather. ", concatText(agg.Content))
+	require.Len(t, agg.Content.Parts, 2)
+	require.NotNil(t, agg.Content.Parts[1].FunctionCall)
+	assert.Equal(t, "get_weather", agg.Content.Parts[1].FunctionCall.Name)
+	assert.Equal(t, "Paris", agg.Content.Parts[1].FunctionCall.Args["city"])
 }
 
 // TestAggregateResponsesCopiesFirst proves the first fold copies the response so
