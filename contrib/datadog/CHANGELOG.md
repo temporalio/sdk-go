@@ -10,3 +10,8 @@ or Security.
 # Changelog
 
 ## [Unreleased]
+
+### Security
+
+- Upgrade `github.com/DataDog/dd-trace-go/v2` to v2.8.1 to address a potential
+  denial of service when extracting W3C baggage headers.
