@@ -11,6 +11,23 @@ permissions:
   actions: read
 
 jobs:
+  check-generated:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        with:
+          go-version: stable
+
+      - name: Check generated files
+        run: go run . check-generated
+        working-directory: ./internal/cmd/build
+
   check:
     strategy:
       fail-fast: false
