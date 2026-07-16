@@ -11,7 +11,13 @@ or Security.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-16
+
+### Changed
+
+- Increased the module's minimum required Go version from 1.24 to 1.25.4.
+
 ### Security
 
-- Upgrade `github.com/DataDog/dd-trace-go/v2` to v2.8.1 to address a potential
+- Upgraded `github.com/DataDog/dd-trace-go/v2` from v2.4.0 to v2.8.1 to address a potential
   denial of service when extracting W3C baggage headers.
