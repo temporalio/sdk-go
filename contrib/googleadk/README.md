@@ -22,10 +22,12 @@ through an Activity. Opt a tool into an Activity with `googleadk.ActivityAsTool`
 or use `googleadk.NewMCPToolset` for MCP. The real model and any activity/MCP tool
 handlers live worker-side in the registry built by `googleadk.NewActivities(...)`.
 
-## Install
+## Add to your project
+
+From your application's Go module, run:
 
 ```sh
-go get go.temporal.io/sdk/contrib/googleadk
+go get go.temporal.io/sdk/contrib/googleadk@latest
 ```
 
 ```go
@@ -38,6 +40,11 @@ and the `model.Register`/`NewLLM` registry from upstream `google.golang.org/adk/
 These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins
 `adk/v2` to a `main`-branch pseudo-version for now; it reverts to an ordinary
 tagged version once a release ships that includes them.
+
+## Module versioning
+
+The Google ADK integration is released as a separate Go module from the core
+Temporal Go SDK. See [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Hello world
 
