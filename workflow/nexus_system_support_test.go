@@ -134,16 +134,13 @@ func TestSystemNexusSignalWithStartUsesConverters(t *testing.T) {
 	searchAttributeKey := temporal.NewSearchAttributeKeyKeyword("CustomKeyword")
 	searchAttributes := temporal.NewSearchAttributes(searchAttributeKey.ValueSet("search-value"))
 
-		env.ExecuteWorkflow(func(ctx workflow.Context) (*workflow.SignalWithStartWorkflowResponse, error) {
-		ctx = workflow.WithWorkflowContextOptions(ctx, workflow.WorkflowContextOptions{
-			ID:               "workflow-id",
-			TaskQueue:        "task-queue",
-			Memo:             map[string]any{"memo-key": "memo-value"},
-			SearchAttributes: searchAttributes,
-		})
+	env.ExecuteWorkflow(func(ctx workflow.Context) (*workflow.SignalWithStartWorkflowResponse, error) {
 		summary := "summary"
 		details := "details"
-		fut := workflow.SignalWithStartWorkflowWithArgs(ctx, workflow.SignalWithStartWorkflowOptions{
+		fut := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
+			Id:                 "workflow-id",
+			Memo:               map[string]any{"memo-key": "memo-value"},
+			SearchAttributes:   searchAttributes,
 			VersioningOverride: &client.AutoUpgradeVersioningOverride{},
 			UserMetadata: workflow.UserMetadata{
 				StaticSummary: summary,
@@ -151,8 +148,12 @@ func TestSystemNexusSignalWithStartUsesConverters(t *testing.T) {
 			},
 		}, "signal-name", "signal-arg", targetWorkflow, "workflow-arg")
 		var result workflow.SignalWithStartWorkflowResponse
-		if err := fut.Get(ctx, &result); err != nil {
-			return nil, err
+		var resultErr error
+		workflow.NewSelector(ctx).AddFuture(fut, func(ready workflow.Future) {
+			resultErr = ready.Get(ctx, &result)
+		}).Select(ctx)
+		if resultErr != nil {
+			return nil, resultErr
 		}
 		return &result, nil
 	})
@@ -161,14 +162,12 @@ func TestSystemNexusSignalWithStartUsesConverters(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 	require.NotNil(t, captured)
 	require.Equal(t, "default-test-namespace", captured.GetNamespace())
-	require.NotNil(t, captured.GetWorkflowExecutionTimeout())
-	require.Zero(t, captured.GetWorkflowExecutionTimeout().AsDuration())
-	require.NotNil(t, captured.GetWorkflowRunTimeout())
-	require.Zero(t, captured.GetWorkflowRunTimeout().AsDuration())
-	require.NotNil(t, captured.GetWorkflowTaskTimeout())
-	require.Zero(t, captured.GetWorkflowTaskTimeout().AsDuration())
-	require.NotNil(t, captured.GetRetryPolicy())
-	require.NotNil(t, captured.GetPriority())
+	require.Equal(t, "default-test-taskqueue", captured.GetTaskQueue().GetName())
+	require.Nil(t, captured.GetWorkflowExecutionTimeout())
+	require.Nil(t, captured.GetWorkflowRunTimeout())
+	require.Nil(t, captured.GetWorkflowTaskTimeout())
+	require.Nil(t, captured.GetRetryPolicy())
+	require.Nil(t, captured.GetPriority())
 
 	requirePayloadMarked(t, captured.GetInput().GetPayloads()[0])
 	requirePayloadMarked(t, captured.GetSignalInput().GetPayloads()[0])

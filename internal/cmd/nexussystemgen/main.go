@@ -50,6 +50,8 @@ func run() error {
 
 	serviceDst := filepath.Join(outPkgDir, "workflowservice.go")
 	serviceTmp := filepath.Join(tmpDir, "workflowservice.go")
+	supportDst := filepath.Join(outPkgDir, "nexus_system_support.go")
+	supportTmp := filepath.Join(tmpDir, "support.go")
 
 	descriptors, err := buildDescriptorSet(tmpDir)
 	if err != nil {
@@ -79,6 +81,12 @@ func run() error {
 		return err
 	}
 	if err := gofmt(serviceDst); err != nil {
+		return err
+	}
+	if err := copyFile(supportDst, supportTmp); err != nil {
+		return err
+	}
+	if err := gofmt(supportDst); err != nil {
 		return err
 	}
 	return nil
