@@ -10,3 +10,10 @@ or Security.
 # Changelog
 
 ## [Unreleased]
+
+### Added
+
+- Added `UseMonotonicCounters` to `MetricsHandlerOptions`. When enabled, SDK counters use
+  OpenTelemetry monotonic counters so exporters can classify them as counters. The option defaults
+  to false to preserve existing metric types and names. Custom counters used with this option must
+  not decrement; doing so may produce invalid or backend-dependent metric data.
