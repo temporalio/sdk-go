@@ -62,7 +62,10 @@ func WithModelSummary(fn func(*model.LLMRequest) string) ModelOption {
 // consumers; the aggregated final response is still returned into the workflow
 // so replay stays deterministic. Call StreamServer(ctx) once in the workflow
 // when you use this. batchInterval coalesces published chunks (zero uses the
-// library default).
+// library default). Streaming installs a 30-second HeartbeatTimeout default
+// (override via WithModelActivityOptions); InvokeModel heartbeats on a timer
+// derived from the heartbeat timeout, so a model that is slow to produce its
+// first chunk is not falsely timed out.
 func WithStreaming(topic string, batchInterval time.Duration) ModelOption {
 	return func(m *TemporalModel) {
 		m.streamingTopic = topic
@@ -72,8 +75,9 @@ func WithStreaming(topic string, batchInterval time.Duration) ModelOption {
 
 // NewModel returns a TemporalModel for the given model name. Use it as the Model
 // on your llmagent.Config; the matching real model is built worker-side by a
-// ModelFactory registered in NewActivities (or, for providers ADK's registry
-// already knows such as gemini, resolved automatically).
+// ModelFactory registered in NewActivities, by the application-owned ADK model
+// registry (model.Register), or — for gemini-* names neither of those knows —
+// by a built-in zero-config Gemini fallback.
 func NewModel(name string, opts ...ModelOption) *TemporalModel {
 	m := &TemporalModel{name: name}
 	for _, o := range opts {
@@ -103,6 +107,11 @@ func (m *TemporalModel) GenerateContent(ctx context.Context, req *model.LLMReque
 		if ao.StartToCloseTimeout == 0 {
 			ao.StartToCloseTimeout = defaultModelTimeout
 		}
+		// Streamed calls default to a 30s heartbeat timeout so a stuck worker is
+		// detected well before the StartToCloseTimeout. InvokeModel heartbeats on
+		// a timer derived from the heartbeat timeout (not per chunk), so a model
+		// that legitimately takes longer than this to produce its first chunk is
+		// not falsely timed out and retried.
 		if m.streamingTopic != "" && ao.HeartbeatTimeout == 0 {
 			ao.HeartbeatTimeout = defaultStreamHeartbeat
 		}
@@ -161,17 +170,20 @@ func (a *Activities) InvokeModel(ctx context.Context, in invokeModelInput) (*mod
 	if in.Request == nil {
 		return nil, newApplicationError(ErrorTypeModel, false, nil, "InvokeModel: nil request")
 	}
+	// The Activity's HeartbeatTimeout (the streaming default, or one the user set
+	// themselves) counts from Activity start, and a model can legitimately stay
+	// silent past it before its first output (thinking models, large-context
+	// prefill). Heartbeat on a timer for the whole call — model resolution (which
+	// runs user factory code) and both branches — so a healthy-but-slow call is
+	// not heartbeat-timed-out and retried, which would duplicate a paid model call.
+	stopHeartbeats := startPeriodicHeartbeats(ctx)
+	defer stopHeartbeats()
+
 	// Resolve the model worker-side: an explicit ModelFactory (custom credentials,
-	// disabled SDK retries, etc.) wins; otherwise fall back to ADK's name-based
-	// model registry, so callers need not hand-wire a factory for providers the
-	// registry already knows (e.g. gemini). Mirrors adk-python's LLMRegistry.
-	var llm model.LLM
-	var err error
-	if factory, ok := a.models[in.Request.Model]; ok {
-		llm, err = factory(ctx, in.Request.Model)
-	} else {
-		llm, err = model.NewLLM(ctx, in.Request.Model)
-	}
+	// disabled SDK retries, etc.) wins; otherwise the application-owned ADK model
+	// registry, then the built-in zero-config gemini-* fallback (see
+	// resolveModel). Mirrors adk-python's LLMRegistry.
+	llm, err := a.resolveModel(ctx, in.Request.Model)
 	if err != nil {
 		return nil, newApplicationError(ErrorTypeModel, false, err,
 			"resolve model %q (add it to Config.Models or register its provider): %v", in.Request.Model, err)
@@ -197,9 +209,50 @@ func (a *Activities) InvokeModel(ctx context.Context, in invokeModelInput) (*mod
 	return agg, nil
 }
 
-// invokeModelStreaming calls the model with stream=true, heartbeats and
-// publishes each chunk to the workflowstreams topic for external (UI) consumers,
-// and returns the aggregated final response into the workflow.
+// startPeriodicHeartbeats records Activity heartbeats on a fixed interval until
+// the returned stop function is called. The interval is a third of the
+// Activity's HeartbeatTimeout; when no heartbeat timeout is set it does
+// nothing. A model can legitimately take longer than the heartbeat timeout to
+// produce its first output (thinking models, large-context prefill), so
+// heartbeating only on chunk arrival would let the server time out and retry a
+// healthy — and paid — model call. The SDK throttles outgoing heartbeats to
+// 80% of the heartbeat timeout, so the short interval does not spam the server.
+func startPeriodicHeartbeats(ctx context.Context) (stop func()) {
+	timeout := activity.GetInfo(ctx).HeartbeatTimeout
+	if timeout <= 0 {
+		return func() {}
+	}
+	interval := timeout / 3
+	if interval < time.Millisecond {
+		interval = time.Millisecond
+	}
+	done := make(chan struct{})
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			// Heartbeat first so the window opens covered: the timeout counts from
+			// Activity start, not from the first recorded heartbeat.
+			activity.RecordHeartbeat(ctx)
+			select {
+			case <-done:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	// stop joins the goroutine so no heartbeat can race past Activity completion.
+	return func() { close(done); <-stopped }
+}
+
+// invokeModelStreaming calls the model with stream=true, publishes each chunk to
+// the workflowstreams topic for external (UI) consumers, and returns the
+// aggregated final response into the workflow. Liveness heartbeating is handled
+// by the caller's periodic heartbeater (see InvokeModel), not per chunk.
 func (a *Activities) invokeModelStreaming(ctx context.Context, llm model.LLM, in invokeModelInput) (*model.LLMResponse, error) {
 	log := activity.GetLogger(ctx)
 	opts := workflowstreams.Options{}
@@ -224,9 +277,6 @@ func (a *Activities) invokeModelStreaming(ctx context.Context, llm model.LLM, in
 		if gerr != nil {
 			return nil, classifyModelError(gerr)
 		}
-		// Heartbeat keeps a slow streaming call alive against the activity's
-		// HeartbeatTimeout instead of looking stuck to the scheduler.
-		activity.RecordHeartbeat(ctx, resp.Partial)
 		if topic != nil {
 			topic.Publish(resp, false)
 		}
@@ -243,13 +293,21 @@ func (a *Activities) invokeModelStreaming(ctx context.Context, llm model.LLM, in
 	return agg, nil
 }
 
-// aggregateResponses folds streamed/partial responses into one: text parts are
-// concatenated so the returned response carries the full message, and for every
-// other field the latest chunk that sets it wins. All metadata fields are folded
+// aggregateResponses folds streamed responses into one. A NON-partial response
+// is authoritative for content: per ADK's contract (model.LLMResponse.Partial)
+// the runner fully processes only non-partial events, and Gemini's streaming
+// iterator ends with a non-partial response already carrying the fully
+// aggregated text and function calls — so its content REPLACES anything
+// accumulated from partial display chunks, and a stream carrying several
+// non-partial responses keeps every part. Partial chunks folding onto a
+// partial-built aggregate concatenate text so the returned response carries the
+// full message even when the model never sends a terminal aggregate. For every
+// metadata field the latest chunk that sets it wins — all of them are folded
 // (not just usage/finish/grounding) because a model commonly emits citations,
 // logprobs, transcriptions, custom metadata, or an error/finish only on a later
-// chunk; dropping those would lose data from the single response handed back into
-// the workflow. (Partial/TurnComplete are managed by the streaming caller.)
+// chunk, and Gemini's terminal aggregate omits fields (e.g. ModelVersion) that
+// earlier chunks carried. (Partial/TurnComplete are managed by the streaming
+// caller; internally agg.Partial tracks whether the aggregate is partial-built.)
 func aggregateResponses(agg, next *model.LLMResponse) *model.LLMResponse {
 	if next == nil {
 		return agg
@@ -258,15 +316,37 @@ func aggregateResponses(agg, next *model.LLMResponse) *model.LLMResponse {
 		// Deep-copy on the first fold so later appendText/metadata folds never
 		// mutate the model's own response buffer. A shallow struct copy would
 		// leave cp.Content (and its Parts) aliased to next.Content, so the next
-		// chunk's appendText would corrupt the source ("a" -> "ab").
+		// chunk's appendText would corrupt the source ("a" -> "ab"). The copy
+		// retains next.Partial, which then tracks whether the aggregate was
+		// built from partial chunks.
 		cp := *next
 		cp.Content = cloneContent(next.Content)
 		return &cp
 	}
-	if next.Content != nil {
+	switch {
+	case next.Content == nil:
+		// Nothing content-wise; metadata still folds below.
+	case !next.Partial && agg.Partial:
+		// Authoritative response supersedes content accumulated from partial
+		// display chunks: folding it in would duplicate the text and drop
+		// function-call parts. Metadata still folds below, so fields the
+		// terminal response omits (Gemini's aggregate carries no ModelVersion)
+		// survive from earlier chunks. Deep copy: the caller mutates the
+		// aggregate afterwards, and the published chunks alias the original.
+		agg.Content = cloneContent(next.Content)
+		agg.Partial = false
+	case !next.Partial:
+		// A further authoritative response in the same stream (a model that
+		// yields complete responses without marking partials): keep every part,
+		// mirroring how ADK's flow fully processes each non-partial event.
+		agg.Content = appendParts(agg.Content, next.Content)
+	case agg.Partial:
+		// Partial chunk onto a partial-built aggregate: concatenate text. Once
+		// the aggregate is authoritative, later partials are display-only and
+		// their content is ignored (no case matches).
 		if agg.Content == nil {
-			// Clone rather than alias: a later chunk's appendText must not reach
-			// back into the model's buffer.
+			// Clone rather than alias: a later chunk's appendText must not
+			// reach back into the model's buffer.
 			agg.Content = cloneContent(next.Content)
 		} else if text := concatText(next.Content); text != "" {
 			appendText(agg.Content, text)
@@ -337,6 +417,20 @@ func cloneContent(c *genai.Content) *genai.Content {
 		}
 	}
 	return &cp
+}
+
+// appendParts appends deep-enough copies of next's parts onto agg (a clone of
+// next when agg is nil): each non-partial response is a complete event in ADK's
+// contract, so a stream carrying several keeps all their parts.
+func appendParts(agg, next *genai.Content) *genai.Content {
+	if next == nil {
+		return agg
+	}
+	if agg == nil {
+		return cloneContent(next)
+	}
+	agg.Parts = append(agg.Parts, cloneContent(next).Parts...)
+	return agg
 }
 
 func concatText(c *genai.Content) string {

@@ -129,23 +129,38 @@ func newDeterministicUUIDProvider(ctx workflow.Context) platform.UUIDProvider {
 // coroutine and joins them through a workflow.Channel; sequential mode runs
 // them in order on the calling coroutine. Each task is invoked with its own
 // context carrying the workflow.Context it must dispatch Activities on, so the
-// model/tool dispatch blocks on the right coroutine without any shared mutable state.
+// model/tool dispatch blocks on the right coroutine without any shared mutable
+// state. The runner itself joins on the coroutine that invoked it (recovered
+// from runnerCtx), so nested fan-out — an agent tool whose sub-agent fans out
+// again from inside a task coroutine — blocks on the invoking coroutine rather
+// than the captured root one.
 func newWorkflowTaskRunner(ctx workflow.Context, sequential bool) platform.TaskRunner {
 	return func(runnerCtx context.Context, tasks []func(context.Context)) {
+		// Join on the coroutine actually invoking the runner. During nested
+		// fan-out (an agent tool whose sub-agent fans out again) runnerCtx
+		// carries that coroutine's workflow.Context (stored per task below);
+		// blocking on the captured root context from a child coroutine panics
+		// the dispatcher ("trying to block on coroutine which is already
+		// blocked"). At top level runnerCtx carries the root context stashed
+		// by NewContext, so the fallback is pure defense.
+		wfCtx := ctx
+		if active, ok := workflowContext(runnerCtx); ok {
+			wfCtx = active
+		}
 		switch {
 		case len(tasks) == 0:
 			return
 		case sequential || len(tasks) == 1:
 			// Tasks run on the calling coroutine, so they dispatch on whatever
-			// workflow.Context runnerCtx already carries (the root context).
+			// workflow.Context runnerCtx already carries.
 			for _, t := range tasks {
 				t(runnerCtx)
 			}
 		default:
-			done := workflow.NewChannel(ctx)
+			done := workflow.NewChannel(wfCtx)
 			for _, t := range tasks {
 				t := t
-				workflow.Go(ctx, func(gctx workflow.Context) {
+				workflow.Go(wfCtx, func(gctx workflow.Context) {
 					// Hand this task gctx (this coroutine) so its Activity
 					// Future.Get blocks here, not on the parent coroutine that is
 					// blocked on the join below.
@@ -154,7 +169,7 @@ func newWorkflowTaskRunner(ctx workflow.Context, sequential bool) platform.TaskR
 				})
 			}
 			for range tasks {
-				done.Receive(ctx, nil)
+				done.Receive(wfCtx, nil)
 			}
 		}
 	}

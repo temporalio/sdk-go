@@ -18,8 +18,10 @@ import (
 // Only session-scoped state is captured. App- and user-scoped state (the "app:"
 // and "user:" key prefixes), which the session service manages across sessions
 // rather than within one, is not carried; persist that in a durable session
-// service if you need it. Every value in State and every event must be
-// JSON-serializable.
+// service if you need it. Event state deltas are likewise filtered to session
+// scope in the snapshot's copies — the live session's events are not modified —
+// so re-appending them on import cannot resurrect app-, user-, or temp-scoped
+// state. Every value in State and every event must be JSON-serializable.
 type SessionSnapshot struct {
 	AppName   string
 	UserID    string
@@ -52,17 +54,52 @@ func ExportSession(ctx context.Context, svc session.Service, appName, userID, se
 	for k, v := range s.State().All() {
 		// Skip app/user (cross-session) and temp (transient) scopes; only
 		// session-scoped keys belong to this session's continuation.
-		if strings.HasPrefix(k, session.KeyPrefixApp) ||
-			strings.HasPrefix(k, session.KeyPrefixUser) ||
-			strings.HasPrefix(k, session.KeyPrefixTemp) {
+		if nonSessionScoped(k) {
 			continue
 		}
 		snap.State[k] = v
 	}
 	for ev := range s.Events().All() {
-		snap.Events = append(snap.Events, ev)
+		snap.Events = append(snap.Events, sanitizeEvent(ev))
 	}
 	return snap, nil
+}
+
+// nonSessionScoped reports whether a state key belongs to the app (cross-session),
+// user (cross-session), or temp (transient) scope — the scopes a session snapshot
+// must not carry.
+func nonSessionScoped(key string) bool {
+	return strings.HasPrefix(key, session.KeyPrefixApp) ||
+		strings.HasPrefix(key, session.KeyPrefixUser) ||
+		strings.HasPrefix(key, session.KeyPrefixTemp)
+}
+
+// sanitizeEvent returns ev with app:-, user:-, and temp:-scoped entries removed
+// from its state delta, so re-appending it on import cannot resurrect
+// cross-session state the snapshot excludes. When stripping is needed the event
+// is shallow-copied with a fresh Actions.StateDelta (Actions is a value field,
+// so the copy shares nothing mutable with the original delta map); the live
+// session's events are never modified.
+func sanitizeEvent(ev *session.Event) *session.Event {
+	needsStrip := false
+	for k := range ev.Actions.StateDelta {
+		if nonSessionScoped(k) {
+			needsStrip = true
+			break
+		}
+	}
+	if !needsStrip {
+		return ev
+	}
+	cp := *ev
+	delta := make(map[string]any, len(ev.Actions.StateDelta))
+	for k, v := range ev.Actions.StateDelta {
+		if !nonSessionScoped(k) {
+			delta[k] = v
+		}
+	}
+	cp.Actions.StateDelta = delta
+	return &cp
 }
 
 // ImportSession recreates a session in svc from a snapshot: it creates the

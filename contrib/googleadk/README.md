@@ -36,7 +36,8 @@ import "go.temporal.io/sdk/contrib/googleadk"
 
 This package depends on the deterministic ADK `platform` seams
 (`WithTimeProvider`, `WithUUIDProvider`, `WithTaskRunner`), `tool/toolutils.PackTool`,
-and the `model.Register`/`NewLLM` registry from upstream `google.golang.org/adk/v2`.
+and the `model.NewLLM` registry lookup from upstream `google.golang.org/adk/v2`
+(the registry itself stays application-owned; this package never registers into it).
 These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins
 `adk/v2` to a `main`-branch pseudo-version for now; it reverts to an ordinary
 tagged version once a release ships that includes them.
@@ -45,6 +46,11 @@ tagged version once a release ships that includes them.
 
 The Google ADK integration is released as a separate Go module from the core
 Temporal Go SDK. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
+## Samples
+
+Runnable end-to-end samples live in
+[temporalio/samples-go](https://github.com/temporalio/samples-go/tree/main/googleadk).
 
 ## Hello world
 
@@ -152,10 +158,13 @@ func main() {
 }
 ```
 
-`Config.Models` is optional for providers ADK's registry already knows (e.g.
-`gemini-*`): when a model name is absent, `InvokeModel` falls back to
-`model.NewLLM`. Supply a factory to inject credentials, disable the model SDK's
-own retries (see below), or override the default.
+`Config.Models` is optional: when a model name is absent, `InvokeModel` falls
+back to ADK's model registry (`model.NewLLM`), which stays application-owned —
+this package never registers into it, so your own `model.Register` calls are
+honored — and `gemini-*` names the registry does not know resolve via a
+built-in zero-config Gemini fallback (a `nil` config reads `GEMINI_API_KEY` /
+`GOOGLE_API_KEY` worker-side). Supply a factory to inject credentials, disable
+the model SDK's own retries (see below), or override the fallbacks.
 
 ## What you get
 
@@ -174,7 +183,10 @@ own retries (see below), or override the default.
 - **MCP, statelessly.** `NewMCPToolset(...)` is a workflow-side proxy: it lists
   remote tools (full declarations, including parameters) via `ListMcpTools` and
   executes calls via `CallMcpTool`. The live, stateful `mcptoolset.New(...)` runs
-  worker-side, never in the workflow.
+  worker-side, never in the workflow. Your `MCPFactory` runs at most once per
+  toolset name — the toolset is cached on the `Activities` value and shared
+  across calls — and calling `Activities.Close` after `worker.Run` returns
+  closes any cached toolset that implements `Close() error`.
 - **Deterministic by construction.** `NewContext` binds ADK's `platform.Now` to
   `workflow.Now`, `platform.NewUUID` to a deterministic seeded generator, and
   `platform.RunTasks` to a `workflow.Go` fan-out, so the agent loop replays
@@ -201,7 +213,10 @@ own retries (see below), or override the default.
 A tool that needs approval calls ADK's `ctx.RequestConfirmation(hint, payload)`.
 ADK records the request and emits a function call named `adk_request_confirmation`,
 ending the turn. Because the tool runs in-workflow, the request lands in the
-workflow's own event actions. Drive it from your workflow like this:
+workflow's own event actions. MCP tools participate too: a confirmation the
+worker-side tool requests (e.g. via `mcptoolset`'s `RequireConfirmation` option)
+is tunneled back across the Activity boundary and re-recorded workflow-side, so
+the agent pauses the same way. Drive it from your workflow like this:
 
 ```go
 for {

@@ -52,7 +52,11 @@ type PendingConfirmation struct {
 //
 // This works because tools run in-workflow: a tool's RequestConfirmation call
 // records the request in the workflow's own EventActions, which the runner then
-// surfaces through these events.
+// surfaces through these events. MCP proxy tools participate too, even though
+// the real tool runs worker-side: the CallMcpTool Activity returns the tool's
+// pending confirmation (e.g. from mcptoolset's RequireConfirmation option) and
+// the workflow-side proxy re-records it here — so an MCP tool pauses, and
+// resumes on the human's decision, exactly like an in-workflow tool.
 func PendingConfirmations(events []*session.Event) []PendingConfirmation {
 	var pending []PendingConfirmation
 	for _, ev := range events {
@@ -78,6 +82,14 @@ func PendingConfirmations(events []*session.Event) []PendingConfirmation {
 // one or more human decisions. Pass it as the new message to runner.Run: ADK
 // matches each FunctionResponse to its adk_request_confirmation call by ID and
 // then executes or blocks the original tool call.
+//
+// Prefer resuming ONE decision per Run pass when the confirmed tools dispatch
+// Temporal Activities (MCP proxy tools, ActivityAsTool): upstream ADK re-queues
+// a batch of approved calls in Go map iteration order, which is not
+// replay-stable, so a multi-decision resume can schedule the resulting
+// Activities in a different order on replay and fail with a nondeterminism
+// error. A single decision per pass sidesteps the hazard; in-workflow function
+// tools are unaffected.
 func ConfirmationResponse(decisions ...ConfirmationDecision) *genai.Content {
 	parts := make([]*genai.Part, 0, len(decisions))
 	for _, d := range decisions {

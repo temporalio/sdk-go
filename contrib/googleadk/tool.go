@@ -44,6 +44,11 @@ type contextSnapshot struct {
 	Branch         string
 	// State is a read-only copy of the session state visible to the tool.
 	State map[string]any
+	// Confirmation is the human's decision for this call, carried across the
+	// Activity boundary so ADK's standard ctx.ToolConfirmation() check works
+	// worker-side. Its Payload round-trips through the data converter, so typed
+	// payloads arrive as map[string]any.
+	Confirmation *toolconfirmation.ToolConfirmation
 }
 
 // snapshotContext copies the serializable fields out of a live ToolContext on
@@ -64,6 +69,7 @@ func snapshotContext(tctx agent.Context) contextSnapshot {
 		SessionID:      tctx.SessionID(),
 		Branch:         tctx.Branch(),
 		State:          st,
+		Confirmation:   tctx.ToolConfirmation(),
 	}
 }
 
@@ -108,17 +114,34 @@ type activityTool struct {
 // ActivityAsTool wraps an existing Temporal activity function as an ADK tool, so
 // agents can call code the user already runs as durable activities without
 // re-declaring it. The activity must be func(context.Context, TArgs) (TResults,
-// error); the tool's parameter schema is inferred from TArgs. Register the same
-// activity on the worker as usual — the tool dispatches it as a Temporal
-// Activity when the agent calls it.
+// error) (or just error); the tool's parameter schema is inferred from TArgs.
+// Register the same activity on the worker as usual — the tool dispatches it as
+// a Temporal Activity when the agent calls it.
 func ActivityAsTool(activityFn any, opts ActivityToolOptions) (tool.Tool, error) {
 	v := reflect.ValueOf(activityFn)
 	if v.Kind() != reflect.Func {
 		return nil, fmt.Errorf("googleadk: ActivityAsTool requires a function, got %T", activityFn)
 	}
 	ft := v.Type()
-	if ft.NumIn() < 2 {
-		return nil, fmt.Errorf("googleadk: ActivityAsTool function must take (context.Context, TArgs)")
+	// Enforce the full documented signature at construction time: Run dispatches
+	// exactly one TArgs value, so a mis-shaped function would otherwise fail
+	// silently at dispatch (the data converter zero-fills missing arguments
+	// rather than erroring). Outputs mirror Temporal's own activity contract —
+	// one or two return values, the last implementing error.
+	if ft.NumIn() != 2 {
+		return nil, fmt.Errorf("googleadk: ActivityAsTool function must take exactly (context.Context, TArgs), got %d input arguments", ft.NumIn())
+	}
+	// Implements (not type equality) accepts custom context.Context
+	// implementations while still rejecting workflow.Context, whose Done()
+	// returns a workflow.Channel.
+	if !ft.In(0).Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
+		return nil, fmt.Errorf("googleadk: ActivityAsTool function must take context.Context as its first argument, got %s", ft.In(0))
+	}
+	if ft.NumOut() < 1 || ft.NumOut() > 2 {
+		return nil, fmt.Errorf("googleadk: ActivityAsTool function must return (TResults, error) or just error, got %d return values", ft.NumOut())
+	}
+	if !ft.Out(ft.NumOut() - 1).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+		return nil, fmt.Errorf("googleadk: ActivityAsTool function must return error as its last return value, got %s", ft.Out(ft.NumOut()-1))
 	}
 	name := opts.Name
 	if name == "" {
@@ -183,8 +206,9 @@ func activityFuncName(v reflect.Value) string {
 }
 
 // schemaFromStruct builds a genai object schema from a Go struct, honoring json
-// tags for field names. It is intentionally shallow — enough for the model to
-// produce well-formed arguments — and recurses into nested structs and slices.
+// tags for field names and exclusion (json:"-"). It is intentionally shallow —
+// enough for the model to produce well-formed arguments — and recurses into
+// nested structs and slices.
 func schemaFromStruct(t reflect.Type) *genai.Schema {
 	s := &genai.Schema{Type: genai.TypeObject, Properties: map[string]*genai.Schema{}}
 	for i := 0; i < t.NumField(); i++ {
@@ -193,7 +217,15 @@ func schemaFromStruct(t reflect.Type) *genai.Schema {
 			continue
 		}
 		name := f.Name
-		if tag := f.Tag.Get("json"); tag != "" && tag != "-" {
+		if tag := f.Tag.Get("json"); tag != "" {
+			// A json tag of exactly "-" excludes the field from JSON entirely
+			// (encoding/json semantics), so the data converter can never deliver
+			// it to the activity — do not advertise it to the model. The check
+			// runs on the raw tag, before comma-splitting, because json:"-,"
+			// means a field literally named "-".
+			if tag == "-" {
+				continue
+			}
 			if comma := strings.Index(tag, ","); comma >= 0 {
 				tag = tag[:comma]
 			}
@@ -247,8 +279,12 @@ func toResultMap(raw any) map[string]any {
 
 // activityToolContext implements ADK's unified agent.Context worker-side over a
 // contextSnapshot. State is immutable (see immutableState); live facilities
-// (artifacts, memory, HITL confirmation) are unavailable across the Activity
-// boundary and report a typed error rather than silently no-op. It embeds
+// (artifacts, memory) are unavailable across the Activity boundary and report a
+// typed error rather than silently no-op. HITL confirmation, by contrast, is
+// tunneled: ToolConfirmation returns the human decision carried in the
+// snapshot, and RequestConfirmation records into the local EventActions exactly
+// like ADK's own tool context, so CallMcpTool can hand the pending request back
+// to the workflow to be replayed there. It embeds
 // agent.StrictContextMock so it keeps satisfying agent.Context as that interface
 // grows; only the methods a reconstructed, read-only tool context can honor are
 // overridden below. Any un-overridden method is one a tool cannot meaningfully
@@ -294,11 +330,29 @@ func (c *activityToolContext) SearchMemory(context.Context, string) (*memory.Sea
 		"SearchMemory is not available inside a Temporal Activity")
 }
 
-func (c *activityToolContext) ToolConfirmation() *toolconfirmation.ToolConfirmation { return nil }
+// ToolConfirmation returns the human decision carried across the Activity
+// boundary in the snapshot (nil when none), so ADK's standard worker-side
+// confirmation check (e.g. mcptoolset's RequireConfirmation) sees the decision
+// on the resume pass.
+func (c *activityToolContext) ToolConfirmation() *toolconfirmation.ToolConfirmation {
+	return c.snap.Confirmation
+}
 
-func (c *activityToolContext) RequestConfirmation(string, any) error {
-	return newApplicationError(ErrorTypeTool, false, nil,
-		"RequestConfirmation (HITL) is not supported inside a Temporal Activity")
+// RequestConfirmation mirrors ADK's own tool context: it records the pending
+// confirmation into the local EventActions keyed by the function call ID. The
+// CallMcpTool Activity returns it to the workflow, whose proxy re-records it
+// workflow-side so the runner pauses for the human.
+func (c *activityToolContext) RequestConfirmation(hint string, payload any) error {
+	if c.snap.FunctionCallID == "" {
+		return newApplicationError(ErrorTypeTool, false, nil,
+			"function call id not set when requesting confirmation")
+	}
+	if c.acts.RequestedToolConfirmations == nil {
+		c.acts.RequestedToolConfirmations = make(map[string]toolconfirmation.ToolConfirmation)
+	}
+	c.acts.RequestedToolConfirmations[c.snap.FunctionCallID] = toolconfirmation.ToolConfirmation{Hint: hint, Payload: payload}
+	c.acts.SkipSummarization = true
+	return nil
 }
 
 // errImmutableState is returned when tool code attempts to mutate the read-only
