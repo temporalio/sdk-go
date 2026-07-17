@@ -32,7 +32,7 @@ import (
 
 const (
 	nexGenRepo     = "https://github.com/temporalio/nex-gen"
-	nexGenRevision = "62ef7c01e54871bcffc7f678e9b3fc25c28d1e25"
+	nexGenRevision = "696374363f1c57f66a6b5508c4b347b89aacaa0a"
 )
 
 type generatedFile struct {

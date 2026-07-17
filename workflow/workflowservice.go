@@ -146,12 +146,12 @@ func (m signalWithStartWorkflowRequest) toProto(ctx Context) (*workflowservice.S
 		}
 		message.UserMetadata = converted
 	}
-	sourcedTaskQueue := GetInfo(ctx).TaskQueueName
-	convertedTaskQueue, err := taskQueueToProto(ctx, &sourcedTaskQueue)
+	sourced := GetInfo(ctx).TaskQueueName
+	converted, err := taskQueueToProto(ctx, &sourced)
 	if err != nil {
 		return nil, err
 	}
-	message.TaskQueue = convertedTaskQueue
+	message.TaskQueue = converted
 	message.Namespace = GetInfo(ctx).Namespace
 	return message, nil
 }
@@ -187,12 +187,14 @@ func signalWithStartWorkflow(ctx Context, request signalWithStartWorkflowRequest
 // --- Operations (public API) ---
 
 type UserMetadata struct {
-	// Optional. Single-line fixed summary for the workflow execution that may appear in UI
-	// and CLI. This can be in single-line Temporal Markdown format.
+	// Optional.
+	// Single-line fixed summary for the workflow execution that may appear in UI and CLI.
+	// This can be in single-line Temporal Markdown format.
 	StaticSummary string
-	// Optional. General fixed details for the workflow execution that may appear in UI and
-	// CLI. This can be in Temporal Markdown format and can span multiple lines. This value
-	// is fixed on the workflow execution and cannot be updated.
+	// Optional.
+	// General fixed details for the workflow execution that may appear in UI and CLI. This
+	// can be in Temporal Markdown format and can span multiple lines. This value is fixed
+	// on the workflow execution and cannot be updated.
 	StaticDetails string
 }
 
