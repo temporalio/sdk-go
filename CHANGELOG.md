@@ -23,6 +23,11 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Automatically enroll workers into poller autoscaling when the namespace advertises the
+  `PollerAutoscalingAutoEnroll` capability. This only applies to poller types left at their default
+  (i.e. the worker set neither `MaxConcurrent<Type>TaskPollers` nor `<Type>TaskPollerBehavior`);
+  explicitly configured pollers are left unchanged.
+
 - Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
   `GetVersion` call before activating its new behavior.
