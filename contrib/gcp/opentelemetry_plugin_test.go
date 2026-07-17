@@ -25,6 +25,7 @@ func TestOpenTelemetryPluginDefaults(t *testing.T) {
 	require.Equal(t, DefaultOTLPEndpoint, plugin.Endpoint())
 	require.Equal(t, DefaultServiceName, plugin.ServiceName())
 	require.Equal(t, OpenTelemetryPluginName, plugin.Name())
+	require.Equal(t, 60*time.Second, defaultMetricExportInterval)
 }
 
 func TestOpenTelemetryPluginResolutionPrecedence(t *testing.T) {

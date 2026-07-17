@@ -57,6 +57,10 @@ The OTLP endpoint is resolved in this order:
 2. `OTEL_EXPORTER_OTLP_ENDPOINT`.
 3. `http://localhost:4317`.
 
+Metrics are exported every 60 seconds by default, matching the OpenTelemetry SDK default. Keep a
+custom `MetricExportInterval` longer than the collector's batch timeout so a single Google
+Monitoring write does not contain multiple cumulative snapshots of the same time series.
+
 The OpenTelemetry service name is resolved in this order:
 
 1. `OpenTelemetryPluginOptions.ServiceName`.

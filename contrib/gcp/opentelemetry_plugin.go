@@ -42,7 +42,10 @@ const (
 	// DefaultServiceName is used when no explicit or Cloud Run service name is available.
 	DefaultServiceName = "temporal-worker"
 
-	defaultMetricExportInterval = time.Second
+	// Match the OpenTelemetry SDK default. A shorter interval can cause a collector batch processor
+	// to combine multiple cumulative snapshots of the same series into one Google Monitoring write,
+	// which Google Managed Service for Prometheus rejects as duplicate time series.
+	defaultMetricExportInterval = 60 * time.Second
 	defaultFlushTimeout         = 10 * time.Second
 	instrumentationScopeName    = "temporal-sdk"
 )
@@ -57,7 +60,7 @@ type OpenTelemetryPluginOptions struct {
 	// OTEL_SERVICE_NAME, CLOUD_RUN_WORKER_POOL, K_SERVICE, then [DefaultServiceName].
 	ServiceName string
 
-	// MetricExportInterval controls how often metrics are exported. Defaults to one second.
+	// MetricExportInterval controls how often metrics are exported. Defaults to 60 seconds.
 	MetricExportInterval time.Duration
 
 	// MeterProvider and TracerProvider supply application-owned providers. Set both or neither.
