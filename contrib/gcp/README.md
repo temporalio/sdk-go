@@ -57,9 +57,11 @@ The OTLP endpoint is resolved in this order:
 2. `OTEL_EXPORTER_OTLP_ENDPOINT`.
 3. `http://localhost:4317`.
 
-Metrics are exported every 60 seconds by default, matching the OpenTelemetry SDK default. Keep a
-custom `MetricExportInterval` longer than the collector's batch timeout so a single Google
-Monitoring write does not contain multiple cumulative snapshots of the same time series.
+Metrics are exported every 60 seconds by default, matching the OpenTelemetry SDK default. When
+exporting cumulative metrics to Google Managed Service for Prometheus, do not put a collector
+`batch` processor in the metrics pipeline. It can combine periodic and forced-shutdown snapshots
+of the same time series into one Google Monitoring write, which is rejected as duplicate data.
+Batching can remain enabled independently in the traces pipeline.
 
 The OpenTelemetry service name is resolved in this order:
 
@@ -76,6 +78,11 @@ The collector should use its GCP resource detector to add the Google Cloud attri
 ## Collector sidecar
 
 Google publishes the Google-Built OpenTelemetry Collector as a container image. Configure it as a second Cloud Run container, listen for OTLP gRPC on `localhost:4317`, and use its GCP exporters for metrics and traces. For the image, recommended collector configuration, IAM roles, health check, and Secret Manager mount, see [Deploy Google-Built OpenTelemetry Collector on Cloud Run](https://cloud.google.com/stackdriver/docs/instrumentation/opentelemetry-collector-cloud-run). That guide demonstrates a Cloud Run service; adapt its collector container and configuration when deploying a worker pool.
+
+Use separate metrics and traces pipelines. Send cumulative metrics to the
+`googlemanagedprometheus` exporter without a `batch` processor, and use a trace-specific batch
+processor if desired. This also keeps `ForceFlush` during worker shutdown from colliding with a
+still-open metrics batch.
 
 Cloud Run worker pools support sidecar containers over localhost and are intended for continuous background work. The deployment should start the collector before the Temporal worker and use the collector health extension as its startup probe.
 
