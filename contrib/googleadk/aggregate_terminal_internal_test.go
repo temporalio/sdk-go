@@ -11,7 +11,6 @@ package googleadk
 // terminal response omits fields (e.g. ModelVersion) that earlier chunks
 // carried — and a stream carrying several non-partial responses must keep
 // every part, mirroring how ADK's flow fully processes each non-partial event.
-// The SSE reproduction is adopted from PR #2466.
 
 import (
 	"io"
@@ -31,7 +30,7 @@ import (
 // geminiSSEStubTransport replays a canned Gemini SSE stream (text chunk, then a
 // function-call chunk with finish/usage metadata) so the REAL gemini model —
 // including its internal stream aggregator, which appends the terminal
-// non-partial response — runs offline. Fixture credit: PR #2466.
+// non-partial response — runs offline.
 type geminiSSEStubTransport struct{}
 
 // RoundTrip implements http.RoundTripper.

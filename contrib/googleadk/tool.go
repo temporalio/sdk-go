@@ -131,10 +131,12 @@ func ActivityAsTool(activityFn any, opts ActivityToolOptions) (tool.Tool, error)
 	if ft.NumIn() != 2 {
 		return nil, fmt.Errorf("googleadk: ActivityAsTool function must take exactly (context.Context, TArgs), got %d input arguments", ft.NumIn())
 	}
-	// Implements (not type equality) accepts custom context.Context
-	// implementations while still rejecting workflow.Context, whose Done()
-	// returns a workflow.Channel.
-	if !ft.In(0).Implements(reflect.TypeOf((*context.Context)(nil)).Elem()) {
+	// The first argument must be exactly context.Context: the Activity is
+	// invoked with a plain context.Context value, so a narrower type that
+	// merely implements it (a custom interface or a concrete implementation)
+	// would pass construction and then fail reflection at dispatch.
+	contextType := reflect.TypeOf((*context.Context)(nil)).Elem()
+	if ft.In(0) != contextType {
 		return nil, fmt.Errorf("googleadk: ActivityAsTool function must take context.Context as its first argument, got %s", ft.In(0))
 	}
 	if ft.NumOut() < 1 || ft.NumOut() > 2 {

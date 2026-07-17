@@ -51,10 +51,27 @@ func TestActivityAsToolRejectsExtraInputs(t *testing.T) {
 }
 
 // TestActivityAsToolRejectsWorkflowContextArg proves a workflow.Context first
-// argument (a workflow function, not an activity) is rejected: it does not
-// implement context.Context, so the Implements check catches it.
+// argument (a workflow function, not an activity) is rejected.
 func TestActivityAsToolRejectsWorkflowContextArg(t *testing.T) {
 	fn := func(workflow.Context, validationArgs) (map[string]any, error) { return nil, nil }
+	_, err := googleadk.ActivityAsTool(fn, googleadk.ActivityToolOptions{})
+	require.ErrorContains(t, err, "context.Context as its first argument")
+}
+
+// richContext embeds context.Context: it implements it, but is a narrower
+// type — the SDK invokes activities with a plain context.Context value, which
+// cannot be assigned to a richContext parameter.
+type richContext interface {
+	context.Context
+	SessionID() string
+}
+
+// TestActivityAsToolRejectsNarrowerContextArg proves the first argument must be
+// exactly context.Context: a custom interface that embeds it passes an
+// Implements check but would fail reflect.Call at dispatch, so it is rejected
+// at construction instead.
+func TestActivityAsToolRejectsNarrowerContextArg(t *testing.T) {
+	fn := func(richContext, validationArgs) (map[string]any, error) { return nil, nil }
 	_, err := googleadk.ActivityAsTool(fn, googleadk.ActivityToolOptions{})
 	require.ErrorContains(t, err, "context.Context as its first argument")
 }
