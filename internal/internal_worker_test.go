@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 
 	"github.com/golang/mock/gomock"
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -1790,6 +1791,187 @@ func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 	assert.True(s.T(), worker.activityWorker.worker.isWorkerStarted)
 	assert.True(s.T(), worker.workflowWorker.worker.isWorkerStarted)
 	worker.Stop()
+}
+
+// newWorkerWithNamespaceCapabilities builds an AggregatedWorker whose namespace
+// DescribeNamespace response reports the given capabilities, with permissive
+// polling/shutdown mocks so the worker can be started and stopped.
+func (s *internalWorkerTestSuite) newWorkerWithNamespaceCapabilities(
+	caps *namespacepb.NamespaceInfo_Capabilities,
+	options WorkerOptions,
+) *AggregatedWorker {
+	namespace := "testNamespace"
+	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:         namespace,
+			State:        enumspb.NAMESPACE_STATE_REGISTERED,
+			Capabilities: caps,
+		},
+	}
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).AnyTimes()
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollNexusTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: namespace})
+	return NewAggregatedWorker(client, "testGroupName", options)
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+		WorkerOptions{},
+	)
+	// Register a nexus service so start() builds a nexus worker whose pollers we
+	// can inspect.
+	nexusService := nexus.NewService("TestService")
+	require.NoError(s.T(), nexusService.Register(nexus.NewSyncOperation(
+		"operation",
+		func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
+			return "result", nil
+		},
+	)))
+	worker.RegisterNexusService(nexusService)
+
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	// All defaulted poller behaviors are switched to autoscaling.
+	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.WorkflowTaskPollerBehavior)
+	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.ActivityTaskPollerBehavior)
+	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.NexusTaskPollerBehavior)
+
+	// The actual running pollers reflect the autoscaling structure.
+	for _, p := range worker.workflowWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+	for _, p := range worker.activityWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+	require.NotNil(s.T(), worker.nexusWorker)
+	require.NotEmpty(s.T(), worker.nexusWorker.worker.options.taskPollers)
+	for _, p := range worker.nexusWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+
+	// Auto-enroll implies full autoscaling support, including scale-down.
+	s.True(worker.executionParams.serverSupportsAutoscaling.Load())
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollDisabled() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: false},
+		WorkerOptions{},
+	)
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	// Without the capability, defaulted pollers stay at the fixed default of 2.
+	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.WorkflowTaskPollerBehavior)
+	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.ActivityTaskPollerBehavior)
+
+	require.Len(s.T(), worker.workflowWorker.worker.options.taskPollers, 1)
+	wfPoller := worker.workflowWorker.worker.options.taskPollers[0]
+	s.Nil(wfPoller.autoscalingRunner)
+	s.Equal(defaultConcurrentPollRoutineSize, wfPoller.pollerCount)
+
+	require.Len(s.T(), worker.activityWorker.worker.options.taskPollers, 1)
+	actPoller := worker.activityWorker.worker.options.taskPollers[0]
+	s.Nil(actPoller.autoscalingRunner)
+	s.Equal(defaultConcurrentPollRoutineSize, actPoller.pollerCount)
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollRespectsExplicitConfig() {
+	// registerNexus registers a nexus service so start() builds a nexus worker
+	// whose pollers can be inspected.
+	registerNexus := func(worker *AggregatedWorker) {
+		service := nexus.NewService("TestService")
+		require.NoError(s.T(), service.Register(nexus.NewSyncOperation(
+			"operation",
+			func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
+				return "result", nil
+			},
+		)))
+		worker.RegisterNexusService(service)
+	}
+
+	// assertFixedPollers verifies that none of the poller types was switched to
+	// autoscaling and that each keeps its explicitly-configured poller count.
+	assertFixedPollers := func(worker *AggregatedWorker, wfCount, actCount, nexusCount int) {
+		require.NoError(s.T(), worker.Start())
+		defer worker.Stop()
+
+		s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.WorkflowTaskPollerBehavior)
+		s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.ActivityTaskPollerBehavior)
+		s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.NexusTaskPollerBehavior)
+
+		require.Len(s.T(), worker.workflowWorker.worker.options.taskPollers, 1)
+		s.Nil(worker.workflowWorker.worker.options.taskPollers[0].autoscalingRunner)
+		s.Equal(wfCount, worker.workflowWorker.worker.options.taskPollers[0].pollerCount)
+
+		require.Len(s.T(), worker.activityWorker.worker.options.taskPollers, 1)
+		s.Nil(worker.activityWorker.worker.options.taskPollers[0].autoscalingRunner)
+		s.Equal(actCount, worker.activityWorker.worker.options.taskPollers[0].pollerCount)
+
+		require.NotNil(s.T(), worker.nexusWorker)
+		require.Len(s.T(), worker.nexusWorker.worker.options.taskPollers, 1)
+		s.Nil(worker.nexusWorker.worker.options.taskPollers[0].autoscalingRunner)
+		s.Equal(nexusCount, worker.nexusWorker.worker.options.taskPollers[0].pollerCount)
+	}
+
+	// Explicit fixed poller counts must not be switched to autoscaling.
+	s.Run("MaxConcurrentTaskPollers", func() {
+		worker := s.newWorkerWithNamespaceCapabilities(
+			&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+			WorkerOptions{
+				MaxConcurrentWorkflowTaskPollers: 5,
+				MaxConcurrentActivityTaskPollers: 3,
+				MaxConcurrentNexusTaskPollers:    4,
+			},
+		)
+		registerNexus(worker)
+		assertFixedPollers(worker, 5, 3, 4)
+	})
+
+	// Explicit poller behaviors must not be switched to autoscaling either.
+	s.Run("TaskPollerBehavior", func() {
+		worker := s.newWorkerWithNamespaceCapabilities(
+			&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+			WorkerOptions{
+				WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 5}),
+				ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 3}),
+				NexusTaskPollerBehavior:    NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 4}),
+			},
+		)
+		registerNexus(worker)
+		assertFixedPollers(worker, 5, 3, 4)
+	})
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+		WorkerOptions{EnableSessionWorker: true},
+	)
+	worker.RegisterActivity(testActivityNoResult)
+
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	require.NotNil(s.T(), worker.sessionWorker)
+
+	require.NotEmpty(s.T(), worker.sessionWorker.activityWorker.worker.options.taskPollers)
+	for _, p := range worker.sessionWorker.activityWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+
+	require.Len(s.T(), worker.sessionWorker.creationWorker.worker.options.taskPollers, 1)
+	creationPoller := worker.sessionWorker.creationWorker.worker.options.taskPollers[0]
+	s.Nil(creationPoller.autoscalingRunner)
+	s.Equal(1, creationPoller.pollerCount)
 }
 
 type throwsOneErrSlotSupplier struct {
