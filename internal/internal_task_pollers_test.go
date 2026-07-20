@@ -97,6 +97,46 @@ func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestReportGrpcMessageTooLargeQueryForwardsPollerGroupID(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const pollerGroupID = "poller-group"
+
+	service.EXPECT().RespondQueryTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.RespondQueryTaskCompletedRequest, _ ...grpc.CallOption) (*workflowservice.RespondQueryTaskCompletedResponse, error) {
+			require.Equal(t, pollerGroupID, req.GetPollerGroupId())
+			require.Equal(t, enumspb.QUERY_RESULT_TYPE_FAILED, req.GetCompletedType())
+			require.Equal(t, enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE, req.GetCause())
+			return &workflowservice.RespondQueryTaskCompletedResponse{}, nil
+		})
+
+	processor := &workflowTaskProcessor{
+		basePoller:       basePoller{metricsHandler: metrics.NopHandler},
+		namespace:        "test-namespace",
+		service:          service,
+		logger:           ilog.NewDefaultLogger(),
+		failureConverter: GetDefaultFailureConverter(),
+	}
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
+		TaskToken:     []byte("task-token"),
+		PollerGroupId: pollerGroupID,
+	}
+	taskCompletion := &workflowTaskCompletion{
+		rawRequest: &workflowservice.RespondQueryTaskCompletedRequest{},
+	}
+
+	emitFailMetric, err := processor.reportGrpcMessageTooLarge(
+		context.Background(),
+		taskCompletion,
+		task,
+		errors.New("message too large"),
+	)
+	require.NoError(t, err)
+	require.False(t, emitFailMetric)
+}
+
 func TestFixedActivityPollerPublishesPollerGroupsToSharedStore(t *testing.T) {
 	t.Parallel()
 
