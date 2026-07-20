@@ -9,16 +9,19 @@ import (
 )
 
 type (
-	// pollerGroupManager gives concrete pollers a lease-based API for assigning
-	// poll requests to groups. This gives autoscaling runners access to the
-	// MCN-required minimum, and notifies registered listeners when poller group membership changes. The
-	// underlying tracker still owns the synchronized group state and selection
-	// algorithm.
-	pollerGroupManager struct {
-		tracker *pollerGroupTracker
+	pollerGroupInfoStore struct {
+		mu         sync.RWMutex
+		weights    map[string]float32
+		version    int64
+		versionSet bool
+	}
 
-		listenersMu sync.Mutex
-		listeners   []func()
+	// pollerGroupManager gives concrete pollers a lease-based API for assigning
+	// poll requests to groups. Group membership and weights are shared across
+	// managers, while each tracker owns its poll coverage and sticky backlog.
+	pollerGroupManager struct {
+		groupInfos *pollerGroupInfoStore
+		tracker    *pollerGroupTracker
 	}
 
 	// pollerGroupLease represents the SDK-local group reservation for one
@@ -38,8 +41,6 @@ type (
 	}
 
 	pollerGroupState struct {
-		weight float32
-
 		// Activity/Nexus use total pending
 		pendingPollCount int
 
@@ -53,24 +54,35 @@ type (
 	}
 )
 
-func newPollerGroupManager(workflow bool) *pollerGroupManager {
+func newPollerGroupInfoStore() *pollerGroupInfoStore {
+	return &pollerGroupInfoStore{weights: make(map[string]float32)}
+}
+
+func newPollerGroupManager(workflow bool, groupInfos *pollerGroupInfoStore) *pollerGroupManager {
+	if groupInfos == nil {
+		groupInfos = newPollerGroupInfoStore()
+	}
 	return &pollerGroupManager{
-		tracker: newPollerGroupTracker(workflow),
+		groupInfos: groupInfos,
+		tracker:    newPollerGroupTracker(workflow),
 	}
 }
 
 func (m *pollerGroupManager) requiredMin(queueKind enumspb.TaskQueueKind) int {
-	if m == nil || m.tracker == nil {
+	if m == nil || m.groupInfos == nil || m.tracker == nil {
 		return 0
 	}
-	return m.tracker.requiredMin(queueKind)
+	if m.tracker.workflow && queueKind != enumspb.TASK_QUEUE_KIND_NORMAL && queueKind != enumspb.TASK_QUEUE_KIND_STICKY {
+		return 0
+	}
+	return m.groupInfos.len()
 }
 
 func (m *pollerGroupManager) reserve() pollerGroupLease {
-	if m == nil || m.tracker == nil {
+	if m == nil || m.groupInfos == nil || m.tracker == nil {
 		return pollerGroupLease{}
 	}
-	groupID := m.tracker.reserve()
+	groupID := m.tracker.reserve(m.groupInfos.snapshot())
 	return pollerGroupLease{
 		manager: m,
 		groupID: groupID,
@@ -78,10 +90,10 @@ func (m *pollerGroupManager) reserve() pollerGroupLease {
 }
 
 func (m *pollerGroupManager) reserveWorkflowPoll(preferredQueueKind enumspb.TaskQueueKind, stickyEnabled bool) pollerGroupLease {
-	if m == nil || m.tracker == nil {
+	if m == nil || m.groupInfos == nil || m.tracker == nil {
 		return pollerGroupLease{queueKind: preferredQueueKind}
 	}
-	groupID, queueKind := m.tracker.reserveWorkflowPoll(preferredQueueKind, stickyEnabled)
+	groupID, queueKind := m.tracker.reserveWorkflowPoll(m.groupInfos.snapshot(), preferredQueueKind, stickyEnabled)
 	return pollerGroupLease{
 		manager:   m,
 		groupID:   groupID,
@@ -89,39 +101,18 @@ func (m *pollerGroupManager) reserveWorkflowPoll(preferredQueueKind enumspb.Task
 	}
 }
 
-func (m *pollerGroupManager) updateGroups(groups []*taskqueuepb.PollerGroupInfo) {
-	if m == nil || m.tracker == nil {
+func (m *pollerGroupManager) updateGroups(info *taskqueuepb.PollerGroupsInfo) {
+	if m == nil || m.groupInfos == nil {
 		return
 	}
-	if m.tracker.updateGroups(groups) {
-		m.signal()
-	}
+	m.groupInfos.updateGroups(info)
 }
 
 func (m *pollerGroupManager) updateStickyBacklog(groupID string, backlogCountHint int64) {
-	if m == nil || m.tracker == nil || groupID == "" {
+	if m == nil || m.groupInfos == nil || m.tracker == nil || groupID == "" {
 		return
 	}
-	m.tracker.updateStickyBacklog(groupID, backlogCountHint)
-}
-
-func (m *pollerGroupManager) addListener(fn func()) {
-	if m == nil || fn == nil {
-		return
-	}
-	m.listenersMu.Lock()
-	defer m.listenersMu.Unlock()
-	m.listeners = append(m.listeners, fn)
-}
-
-func (m *pollerGroupManager) signal() {
-	m.listenersMu.Lock()
-	listeners := append([]func(){}, m.listeners...)
-	m.listenersMu.Unlock()
-
-	for _, fn := range listeners {
-		fn()
-	}
+	m.tracker.updateStickyBacklog(m.groupInfos.snapshot(), groupID, backlogCountHint)
 }
 
 func (l pollerGroupLease) groupIDOrEmpty() string {
@@ -150,44 +141,26 @@ func newPollerGroupTracker(workflow bool) *pollerGroupTracker {
 	}
 }
 
-func (t *pollerGroupTracker) requiredMin(queueKind enumspb.TaskQueueKind) int {
-	if t == nil {
-		return 0
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if !t.workflow {
-		return len(t.groups)
-	}
-
-	switch queueKind {
-	case enumspb.TASK_QUEUE_KIND_NORMAL, enumspb.TASK_QUEUE_KIND_STICKY:
-		return len(t.groups)
-	default:
-		return 0
-	}
-}
-
-func (t *pollerGroupTracker) reserve() string {
+func (t *pollerGroupTracker) reserve(weights map[string]float32) string {
 	if t == nil {
 		return ""
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.syncGroups(weights)
 
 	if len(t.groups) == 0 {
 		return ""
 	}
 
-	candidates := make(map[string]*pollerGroupState, len(t.groups))
+	candidates := make(map[string]float32, len(t.groups))
 	for groupID, group := range t.groups {
 		if group.pendingPollCount == 0 {
-			candidates[groupID] = group
+			candidates[groupID] = weights[groupID]
 		}
 	}
 	if len(candidates) == 0 {
-		candidates = t.groups
+		candidates = weights
 	}
 
 	groupID := choosePollerGroup(candidates)
@@ -204,23 +177,28 @@ func (t *pollerGroupTracker) reserve() string {
 // missing, then fills whichever required kind is still missing. Once coverage
 // is met, it chooses a group by server-provided weight and then chooses that
 // group's workflow queue kind from its sticky backlog state.
-func (t *pollerGroupTracker) reserveWorkflowPoll(preferredQueueKind enumspb.TaskQueueKind, stickyEnabled bool) (string, enumspb.TaskQueueKind) {
+func (t *pollerGroupTracker) reserveWorkflowPoll(
+	weights map[string]float32,
+	preferredQueueKind enumspb.TaskQueueKind,
+	stickyEnabled bool,
+) (string, enumspb.TaskQueueKind) {
 	if t == nil {
 		return "", preferredQueueKind
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.syncGroups(weights)
 
 	if len(t.groups) == 0 {
 		return "", preferredQueueKind
 	}
 
-	groupID := chooseHighestWeightPollerGroup(t.workflowCoverageCandidates(stickyEnabled))
+	groupID := chooseHighestWeightPollerGroup(t.workflowCoverageCandidates(weights, stickyEnabled))
 	var queueKind enumspb.TaskQueueKind
 	if groupID != "" {
 		queueKind = t.workflowCoverageQueueKind(t.groups[groupID], preferredQueueKind, stickyEnabled)
 	} else {
-		groupID = choosePollerGroup(t.groups)
+		groupID = choosePollerGroup(weights)
 		if groupID == "" {
 			return "", preferredQueueKind
 		}
@@ -249,55 +227,13 @@ func (t *pollerGroupTracker) release(groupID string, queueKind enumspb.TaskQueue
 	t.decrementPending(group, queueKind)
 }
 
-func (t *pollerGroupTracker) updateGroups(groups []*taskqueuepb.PollerGroupInfo) bool {
-	if t == nil {
-		return false
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if t.groups == nil {
-		t.groups = make(map[string]*pollerGroupState)
-	}
-	if len(groups) == 0 {
-		membershipChanged := len(t.groups) > 0
-		t.groups = make(map[string]*pollerGroupState)
-		return membershipChanged
-	}
-
-	seen := make(map[string]struct{}, len(groups))
-	membershipChanged := false
-	for _, incoming := range groups {
-		groupID := incoming.GetId()
-		if groupID == "" {
-			continue
-		}
-		seen[groupID] = struct{}{}
-
-		if existing, ok := t.groups[groupID]; ok {
-			existing.weight = incoming.GetWeight()
-			continue
-		}
-		t.groups[groupID] = &pollerGroupState{weight: incoming.GetWeight()}
-		membershipChanged = true
-	}
-
-	for groupID := range t.groups {
-		if _, ok := seen[groupID]; !ok {
-			delete(t.groups, groupID)
-			membershipChanged = true
-		}
-	}
-
-	return membershipChanged
-}
-
-func (t *pollerGroupTracker) updateStickyBacklog(groupID string, backlogCountHint int64) {
+func (t *pollerGroupTracker) updateStickyBacklog(weights map[string]float32, groupID string, backlogCountHint int64) {
 	if t == nil || !t.workflow || groupID == "" {
 		return
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.syncGroups(weights)
 
 	group, ok := t.groups[groupID]
 	if !ok {
@@ -306,11 +242,27 @@ func (t *pollerGroupTracker) updateStickyBacklog(groupID string, backlogCountHin
 	group.workflowStickyBacklog = backlogCountHint
 }
 
-func (t *pollerGroupTracker) workflowCoverageCandidates(stickyEnabled bool) map[string]*pollerGroupState {
-	candidates := make(map[string]*pollerGroupState)
+func (t *pollerGroupTracker) syncGroups(weights map[string]float32) {
+	if t.groups == nil {
+		t.groups = make(map[string]*pollerGroupState)
+	}
+	for groupID := range weights {
+		if _, ok := t.groups[groupID]; !ok {
+			t.groups[groupID] = &pollerGroupState{}
+		}
+	}
+	for groupID := range t.groups {
+		if _, ok := weights[groupID]; !ok {
+			delete(t.groups, groupID)
+		}
+	}
+}
+
+func (t *pollerGroupTracker) workflowCoverageCandidates(weights map[string]float32, stickyEnabled bool) map[string]float32 {
+	candidates := make(map[string]float32)
 	for groupID, group := range t.groups {
 		if group.workflowPendingNormal == 0 || stickyEnabled && group.workflowPendingSticky == 0 {
-			candidates[groupID] = group
+			candidates[groupID] = weights[groupID]
 		}
 	}
 	return candidates
@@ -359,16 +311,13 @@ func (t *pollerGroupTracker) decrementPending(group *pollerGroupState, queueKind
 	}
 }
 
-func chooseHighestWeightPollerGroup(groups map[string]*pollerGroupState) string {
+func chooseHighestWeightPollerGroup(groups map[string]float32) string {
 	var selectedID string
 	var selectedWeight float32
-	for groupID, group := range groups {
-		if group == nil {
-			continue
-		}
-		if selectedID == "" || group.weight > selectedWeight {
+	for groupID, weight := range groups {
+		if selectedID == "" || weight > selectedWeight {
 			selectedID = groupID
-			selectedWeight = group.weight
+			selectedWeight = weight
 		}
 	}
 	return selectedID
@@ -378,15 +327,15 @@ func chooseHighestWeightPollerGroup(groups map[string]*pollerGroupState) string 
 // If all weights are zero or negative, it picks uniformly from all groups.
 // If floating-point rounding prevents the weighted walk from selecting a group,
 // it falls back to the last positive-weight candidate encountered.
-func choosePollerGroup(groups map[string]*pollerGroupState) string {
+func choosePollerGroup(groups map[string]float32) string {
 	if len(groups) == 0 {
 		return ""
 	}
 
 	totalWeight := float32(0)
-	for _, group := range groups {
-		if group.weight > 0 {
-			totalWeight += group.weight
+	for _, weight := range groups {
+		if weight > 0 {
+			totalWeight += weight
 		}
 	}
 
@@ -404,17 +353,63 @@ func choosePollerGroup(groups map[string]*pollerGroupState) string {
 
 	point := rand.Float32() * totalWeight
 	var lastCandidate string
-	for groupID, group := range groups {
-		if group.weight <= 0 {
+	for groupID, weight := range groups {
+		if weight <= 0 {
 			continue
 		}
 		lastCandidate = groupID
-		if point < group.weight {
+		if point < weight {
 			return groupID
 		}
-		point -= group.weight
+		point -= weight
 	}
 
 	// Floating-point rounding fallback.
 	return lastCandidate
+}
+
+func (s *pollerGroupInfoStore) len() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.weights)
+}
+
+func (s *pollerGroupInfoStore) snapshot() map[string]float32 {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	weights := make(map[string]float32, len(s.weights))
+	for groupID, weight := range s.weights {
+		weights[groupID] = weight
+	}
+	return weights
+}
+
+func (s *pollerGroupInfoStore) updateGroups(info *taskqueuepb.PollerGroupsInfo) {
+	if s == nil || info == nil {
+		return
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.versionSet && info.GetVersion() <= s.version {
+		return
+	}
+
+	weights := make(map[string]float32, len(info.GetPollerGroups()))
+	for _, group := range info.GetPollerGroups() {
+		if groupID := group.GetId(); groupID != "" {
+			weights[groupID] = group.GetWeight()
+		}
+	}
+
+	s.weights = weights
+	s.version = info.GetVersion()
+	s.versionSet = true
 }

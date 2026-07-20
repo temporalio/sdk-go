@@ -91,6 +91,8 @@ type (
 		workerInstanceKey string
 		// Per-client queue used by the server to send worker commands.
 		workerControlTaskQueue string
+		// Per-client poller-group snapshots received from poll responses.
+		pollerGroupInfoStore *pollerGroupInfoStore
 		// Server cancels polls on shutdown
 		workerPollCompleteOnShutdown *atomic.Bool
 	}
@@ -352,6 +354,16 @@ func (bp *basePoller) getCapabilities() *workflowservice.GetSystemInfoResponse_C
 	return bp.capabilities
 }
 
+func (bp *basePoller) updatePollerGroups(manager *pollerGroupManager, info *taskqueuepb.PollerGroupsInfo) {
+	if manager != nil {
+		manager.updateGroups(info)
+		return
+	}
+	if bp != nil {
+		bp.pollerGroupInfoStore.updateGroups(info)
+	}
+}
+
 func (bp *basePoller) getDeploymentName() string {
 	return bp.workerDeploymentVersion.DeploymentName
 }
@@ -375,6 +387,7 @@ func newWorkflowTaskProcessor(
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
 			workerControlTaskQueue:       params.workerControlTaskQueue,
+			pollerGroupInfoStore:         params.pollerGroupInfoStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		service:                      service,
@@ -1221,7 +1234,7 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	}
 
 	if response != nil {
-		wtp.pollerGroups.updateGroups(response.GetPollerGroupInfos())
+		wtp.updatePollerGroups(wtp.pollerGroups, response.GetPollerGroupsInfo())
 		if queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
 			wtp.pollerGroups.updateStickyBacklog(response.GetPollerGroupId(), response.GetBacklogCountHint())
 		}
@@ -1420,6 +1433,7 @@ func newActivityTaskPoller(
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
 			workerControlTaskQueue:       params.workerControlTaskQueue,
+			pollerGroupInfoStore:         params.pollerGroupInfoStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:         taskHandler,
@@ -1475,7 +1489,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		return nil, err
 	}
 	if response != nil {
-		atp.pollerGroups.updateGroups(response.GetPollerGroupInfos())
+		atp.updatePollerGroups(atp.pollerGroups, response.GetPollerGroupsInfo())
 	}
 	if response == nil || len(response.TaskToken) == 0 {
 		// No activity info is available on empty poll.  Emit using base scope.

@@ -3,7 +3,6 @@ package internal
 import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	enumspb "go.temporal.io/api/enums/v1"
-	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/internal/common/metrics"
 )
@@ -33,7 +32,11 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 	ensureRequiredParams(&params)
 	var pollerGroups *pollerGroupManager
 	if _, ok := params.NexusTaskPollerBehavior.(*pollerBehaviorAutoscaling); ok {
-		pollerGroups = newPollerGroupManager(false)
+		var groupInfos *pollerGroupInfoStore
+		if client, ok := opts.client.(*WorkflowClient); ok {
+			groupInfos = client.pollerGroupInfoStore
+		}
+		pollerGroups = newPollerGroupManager(false, groupInfos)
 	}
 	poller := newNexusTaskPoller(
 		newNexusTaskHandler(
@@ -92,13 +95,6 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		pollerGroups:        pollerGroups,
 		stopC:               workerStopChannel,
 	}, nil
-}
-
-func (w *nexusWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
-	if w == nil || w.pollerGroups == nil || len(groups) == 0 {
-		return
-	}
-	w.pollerGroups.updateGroups(groups)
 }
 
 // Start the worker.

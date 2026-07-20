@@ -198,10 +198,10 @@ func TestNexusPollerCompletionUsesResponsePollerGroupID(t *testing.T) {
 			return &workflowservice.RespondNexusTaskCompletedResponse{}, nil
 		})
 
-	pollerGroups := newPollerGroupManager(false)
-	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	pollerGroups := newPollerGroupManager(false, nil)
+	pollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: requestGroupID, Weight: 1},
-	})
+	}))
 	handler := newResponseLinkTestTaskHandler(t, false)
 	handler.client = &WorkflowClient{
 		workflowService: service,

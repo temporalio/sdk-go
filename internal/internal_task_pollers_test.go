@@ -97,6 +97,39 @@ func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestFixedActivityPollerPublishesPollerGroupsToSharedStore(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const groupID = "poller-group"
+	groupInfos := newPollerGroupInfoStore()
+
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollActivityTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollActivityTaskQueueResponse, error) {
+			require.Empty(t, req.GetPollerGroupId(), "fixed poller should remain ungrouped")
+			return &workflowservice.PollActivityTaskQueueResponse{
+				PollerGroupsInfo: testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: groupID, Weight: 1}}),
+			}, nil
+		})
+
+	poller := &activityTaskPoller{
+		basePoller: basePoller{
+			metricsHandler:       metrics.NopHandler,
+			pollerGroupInfoStore: groupInfos,
+		},
+		service:         service,
+		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeActivityTask),
+	}
+	_, err := poller.poll(context.Background())
+	require.NoError(t, err)
+
+	internalManager := newPollerGroupManager(false, groupInfos)
+	lease := internalManager.reserve()
+	defer lease.release()
+	require.Equal(t, groupID, lease.groupIDOrEmpty())
+}
+
 // This test simulates a namespace going from non-MCN to MCN
 func TestWorkflowPollResponseSeedsPollerGroupsAfterUngroupedTaskPoll(t *testing.T) {
 	t.Parallel()
@@ -122,9 +155,9 @@ func TestWorkflowPollResponseSeedsPollerGroupsAfterUngroupedTaskPoll(t *testing.
 				ScheduledTime:     now,
 				StartedTime:       now,
 				PollerGroupId:     groupID,
-				PollerGroupInfos: []*taskqueuepb.PollerGroupInfo{
+				PollerGroupsInfo: testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 					{Id: groupID, Weight: 1},
-				},
+				}),
 			}, nil
 		})
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -146,7 +179,7 @@ func TestWorkflowPollResponseSeedsPollerGroupsAfterUngroupedTaskPoll(t *testing.
 		identity:              identity,
 		service:               service,
 		logger:                ilog.NewDefaultLogger(),
-		pollerGroups:          newPollerGroupManager(true),
+		pollerGroups:          newPollerGroupManager(true, nil),
 		numNormalPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowTask),
 		numStickyPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowStickyTask),
 	}
@@ -191,7 +224,7 @@ func TestWorkflowPollWithoutPollerGroupsRemainsUngrouped(t *testing.T) {
 		identity:              identity,
 		service:               service,
 		logger:                ilog.NewDefaultLogger(),
-		pollerGroups:          newPollerGroupManager(true),
+		pollerGroups:          newPollerGroupManager(true, nil),
 		numNormalPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowTask),
 		numStickyPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowStickyTask),
 	}
@@ -217,16 +250,18 @@ func TestWorkflowPollEmptyPollerGroupsClearsKnownPollerGroups(t *testing.T) {
 		groupID   = "poller-group"
 	)
 
-	pollerGroups := newPollerGroupManager(true)
-	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	pollerGroups := newPollerGroupManager(true, nil)
+	pollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: groupID, Weight: 1},
-	})
+	}))
 
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
 			require.Equal(t, groupID, req.GetPollerGroupId())
 			require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, req.GetTaskQueue().GetKind())
-			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+			return &workflowservice.PollWorkflowTaskQueueResponse{
+				PollerGroupsInfo: testPollerGroupsInfo(2, nil),
+			}, nil
 		})
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
@@ -276,19 +311,19 @@ func TestWorkflowEmptyPollResponseReplacesInvalidPollerGroup(t *testing.T) {
 		newGroupID = "new-poller-group"
 	)
 
-	pollerGroups := newPollerGroupManager(true)
-	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	pollerGroups := newPollerGroupManager(true, nil)
+	pollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: oldGroupID, Weight: 1},
-	})
+	}))
 
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
 			require.Equal(t, oldGroupID, req.GetPollerGroupId())
 			require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, req.GetTaskQueue().GetKind())
 			return &workflowservice.PollWorkflowTaskQueueResponse{
-				PollerGroupInfos: []*taskqueuepb.PollerGroupInfo{
+				PollerGroupsInfo: testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
 					{Id: newGroupID, Weight: 1},
-				},
+				}),
 			}, nil
 		})
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -336,21 +371,21 @@ func TestWorkflowPollerGroupUpdateFromOnePollerAffectsAnotherPoller(t *testing.T
 		secondGroupID = "second-poller-group"
 	)
 
-	pollerGroups := newPollerGroupManager(true)
-	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	pollerGroups := newPollerGroupManager(true, nil)
+	pollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: firstGroupID, Weight: 100},
 		{Id: secondGroupID, Weight: 0},
-	})
+	}))
 
 	gomock.InOrder(
 		service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 			DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
 				require.Equal(t, firstGroupID, req.GetPollerGroupId())
 				return &workflowservice.PollWorkflowTaskQueueResponse{
-					PollerGroupInfos: []*taskqueuepb.PollerGroupInfo{
+					PollerGroupsInfo: testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
 						{Id: firstGroupID, Weight: 0},
 						{Id: secondGroupID, Weight: 100},
-					},
+					}),
 				}, nil
 			}),
 		service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).

@@ -26,7 +26,6 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/serviceerror"
-	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/temporalproto"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -243,6 +242,7 @@ type (
 		workerInstanceKey string
 
 		workerControlTaskQueue string
+		pollerGroupInfoStore   *pollerGroupInfoStore
 
 		activityCancellationCallbacks *activityCancellationCallbacks
 
@@ -454,13 +454,6 @@ func newWorkflowTaskWorkerInternal(
 	}
 }
 
-func (ww *workflowWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
-	if ww == nil || ww.pollerGroups == nil || len(groups) == 0 {
-		return
-	}
-	ww.pollerGroups.updateGroups(groups)
-}
-
 // Start the worker.
 func (ww *workflowWorker) Start() error {
 	// AggregatedWorker initializes pollers after resolving namespace capabilities.
@@ -493,7 +486,7 @@ func buildWorkflowScalableTaskPollers(
 ) ([]scalableTaskPoller, *pollerGroupManager) {
 	switch behavior.(type) {
 	case *pollerBehaviorAutoscaling:
-		pollerGroups := newPollerGroupManager(true)
+		pollerGroups := newPollerGroupManager(true, params.pollerGroupInfoStore)
 		scalableTaskPollers := []scalableTaskPoller{
 			newScalableTaskPoller(
 				taskProcessor.createPoller(NonSticky, pollerGroups),
@@ -679,13 +672,6 @@ func newActivityWorker(
 	}
 }
 
-func (aw *activityWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
-	if aw == nil || aw.pollerGroups == nil || len(groups) == 0 {
-		return
-	}
-	aw.pollerGroups.updateGroups(groups)
-}
-
 // Start the worker.
 func (aw *activityWorker) Start() error {
 	// AggregatedWorker initializes pollers after resolving namespace capabilities.
@@ -707,7 +693,7 @@ func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
 	aw.executionParameters.ActivityTaskPollerBehavior = behavior
 	var pollerGroups *pollerGroupManager
 	if _, ok := behavior.(*pollerBehaviorAutoscaling); ok {
-		pollerGroups = newPollerGroupManager(false)
+		pollerGroups = newPollerGroupManager(false, aw.executionParameters.pollerGroupInfoStore)
 	}
 	if poller, ok := aw.poller.(*activityTaskPoller); ok {
 		poller.pollerGroups = pollerGroups
@@ -1492,7 +1478,6 @@ func (aw *AggregatedWorker) start() error {
 	if !util.IsInterfaceNil(aw.activityWorker) {
 		aw.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
 	}
-	aw.seedPollerGroupInfos(nsData.pollerGroupInfos)
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {
@@ -1563,7 +1548,6 @@ func (aw *AggregatedWorker) start() error {
 		if err != nil {
 			return fmt.Errorf("failed to create a nexus worker: %w", err)
 		}
-		aw.nexusWorker.seedPollerGroupInfos(nsData.pollerGroupInfos)
 		if err := aw.nexusWorker.Start(); err != nil {
 			return fmt.Errorf("failed to start a nexus worker: %w", err)
 		}
@@ -1576,18 +1560,6 @@ func (aw *AggregatedWorker) start() error {
 	}
 	aw.logger.Info("Started Worker")
 	return nil
-}
-
-func (aw *AggregatedWorker) seedPollerGroupInfos(groups []*taskqueuepb.PollerGroupInfo) {
-	if len(groups) == 0 {
-		return
-	}
-	if !util.IsInterfaceNil(aw.workflowWorker) {
-		aw.workflowWorker.seedPollerGroupInfos(groups)
-	}
-	if !util.IsInterfaceNil(aw.activityWorker) {
-		aw.activityWorker.seedPollerGroupInfos(groups)
-	}
 }
 
 func (aw *AggregatedWorker) assertNotStopped() {
@@ -2490,6 +2462,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:               &pollTimeTracker{},
 		workerInstanceKey:             workerInstanceKey,
 		workerControlTaskQueue:        workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		pollerGroupInfoStore:          client.pollerGroupInfoStore,
 		activityCancellationCallbacks: activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:  workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:     &atomic.Bool{},

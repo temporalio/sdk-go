@@ -1150,7 +1150,6 @@ func newScalableTaskPoller(
 		})
 		queueKind, _ := taskQueueKindForAutoscalingPollerType(taskPollerType)
 		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler, pollerGroups, queueKind)
-		pollerGroups.addListener(tw.autoscalingRunner.signal)
 		tw.pollerAutoscaler.targetChangedCallback = func() {
 			tw.autoscalingRunner.signal()
 		}

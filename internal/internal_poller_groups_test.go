@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -9,200 +10,220 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 )
 
-func TestPollerGroupTrackerReserveActivityNexusPollFillsCoverageBeforeWeights(t *testing.T) {
-	tracker := newPollerGroupTracker(false)
-	tracker.updateGroups([]*taskqueuepb.PollerGroupInfo{
-		{Id: "uncovered", Weight: 0},
-		{Id: "covered", Weight: 100},
-	})
-
-	groupID := tracker.reserve()
-	require.Equal(t, "covered", groupID)
-	require.Equal(t, 1, tracker.groups["covered"].pendingPollCount)
-
-	groupID = tracker.reserve()
-	require.Equal(t, "uncovered", groupID)
-	require.Equal(t, 1, tracker.groups["uncovered"].pendingPollCount)
-
-	groupID = tracker.reserve()
-	require.Equal(t, "covered", groupID)
-	require.Equal(t, 2, tracker.groups["covered"].pendingPollCount)
+func testPollerGroupsInfo(version int64, groups []*taskqueuepb.PollerGroupInfo) *taskqueuepb.PollerGroupsInfo {
+	return &taskqueuepb.PollerGroupsInfo{Version: version, PollerGroups: groups}
 }
 
-func TestPollerGroupTrackerEmptyUpdateClearsGroups(t *testing.T) {
-	tracker := newPollerGroupTracker(true)
-	require.False(t, tracker.updateGroups(nil))
+func TestPollerGroupManagerReserveActivityNexusPollFillsCoverageBeforeWeights(t *testing.T) {
+	manager := newPollerGroupManager(false, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "uncovered", Weight: 0},
+		{Id: "covered", Weight: 100},
+	}))
 
-	require.True(t, tracker.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	lease := manager.reserve()
+	require.Equal(t, "covered", lease.groupIDOrEmpty())
+	require.Equal(t, 1, manager.tracker.groups["covered"].pendingPollCount)
+
+	lease = manager.reserve()
+	require.Equal(t, "uncovered", lease.groupIDOrEmpty())
+	require.Equal(t, 1, manager.tracker.groups["uncovered"].pendingPollCount)
+
+	lease = manager.reserve()
+	require.Equal(t, "covered", lease.groupIDOrEmpty())
+	require.Equal(t, 2, manager.tracker.groups["covered"].pendingPollCount)
+}
+
+func TestPollerGroupManagerEmptyUpdateClearsGroups(t *testing.T) {
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, nil))
+	require.Equal(t, 0, manager.requiredMin(enumspb.TASK_QUEUE_KIND_NORMAL))
+
+	manager.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 1},
 	}))
-	require.Equal(t, 1, tracker.requiredMin(enumspb.TASK_QUEUE_KIND_NORMAL))
+	require.Equal(t, 1, manager.requiredMin(enumspb.TASK_QUEUE_KIND_NORMAL))
 
-	require.True(t, tracker.updateGroups(nil))
-	require.Equal(t, 0, tracker.requiredMin(enumspb.TASK_QUEUE_KIND_NORMAL))
+	manager.updateGroups(testPollerGroupsInfo(3, nil))
+	require.Equal(t, 0, manager.requiredMin(enumspb.TASK_QUEUE_KIND_NORMAL))
 
-	groupID, queueKind := tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Empty(t, groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, queueKind)
+	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Empty(t, lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
 }
 
-// Signaling is only needed when group membership changes, not when weight-only changes occur
-func TestPollerGroupManagerUpdateSignalsOnlyOnMembershipChanges(t *testing.T) {
-	manager := newPollerGroupManager(true)
-	signals := 0
-	manager.addListener(func() {
-		signals++
-	})
+func TestPollerGroupInfoStoreOnlyAppliesNewerVersions(t *testing.T) {
+	groupInfos := newPollerGroupInfoStore()
+	groupInfos.updateGroups(testPollerGroupsInfo(10, []*taskqueuepb.PollerGroupInfo{
+		{Id: "current", Weight: 1},
+	}))
 
-	manager.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	groupInfos.updateGroups(testPollerGroupsInfo(9, []*taskqueuepb.PollerGroupInfo{
+		{Id: "stale", Weight: 1},
+	}))
+	groupInfos.updateGroups(testPollerGroupsInfo(10, []*taskqueuepb.PollerGroupInfo{
+		{Id: "duplicate", Weight: 1},
+	}))
+	groupInfos.updateGroups(nil)
+	require.Equal(t, map[string]float32{"current": 1}, groupInfos.snapshot())
+
+	groupInfos.updateGroups(testPollerGroupsInfo(11, []*taskqueuepb.PollerGroupInfo{
+		{Id: "new", Weight: 1},
+	}))
+	require.Equal(t, map[string]float32{"new": 1}, groupInfos.snapshot())
+}
+
+func TestPollerGroupInfoStoreAppliesFirstZeroVersion(t *testing.T) {
+	groupInfos := newPollerGroupInfoStore()
+	groupInfos.updateGroups(testPollerGroupsInfo(0, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	}))
+
+	require.Equal(t, map[string]float32{"group-a": 1}, groupInfos.snapshot())
+}
+
+func TestPollerGroupManagersShareWeightsAndKeepCoverageSeparate(t *testing.T) {
+	groupInfos := newPollerGroupInfoStore()
+	external := newPollerGroupManager(false, groupInfos)
+	internal := newPollerGroupManager(false, groupInfos)
+
+	external.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 100},
 		{Id: "group-b", Weight: 0},
-	})
-	require.Equal(t, 1, signals)
+	}))
 
-	manager.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	externalLease := external.reserve()
+	defer externalLease.release()
+	require.Equal(t, "group-a", externalLease.groupIDOrEmpty())
+
+	internalALease := internal.reserve()
+	defer internalALease.release()
+	require.Equal(t, "group-a", internalALease.groupIDOrEmpty(), "external coverage must not satisfy internal coverage")
+
+	internalBLease := internal.reserve()
+	defer internalBLease.release()
+	require.Equal(t, "group-b", internalBLease.groupIDOrEmpty())
+
+	external.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 0},
 		{Id: "group-b", Weight: 100},
-	})
-	require.Equal(t, 1, signals, "weight-only updates should not signal listeners")
+	}))
 
-	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, false)
-	defer lease.release()
-	require.Equal(t, "group-b", lease.groupIDOrEmpty(), "weight-only updates should affect future reservations")
-
-	manager.updateGroups([]*taskqueuepb.PollerGroupInfo{
-		{Id: "group-a", Weight: 0},
-		{Id: "group-b", Weight: 100},
-		{Id: "group-c", Weight: 1},
-	})
-	require.Equal(t, 2, signals, "adding a group should signal listeners")
-
-	manager.updateGroups([]*taskqueuepb.PollerGroupInfo{
-		{Id: "group-b", Weight: 100},
-		{Id: "group-c", Weight: 1},
-	})
-	require.Equal(t, 3, signals, "removing a group should signal listeners")
-
-	manager.updateGroups(nil)
-	require.Equal(t, 4, signals, "clearing groups should signal listeners")
-
-	manager.updateGroups(nil)
-	require.Equal(t, 4, signals, "empty update should not signal when groups are already empty")
+	floatingLease := internal.reserve()
+	defer floatingLease.release()
+	require.Equal(t, "group-b", floatingLease.groupIDOrEmpty(), "external weight update must affect the internal manager's next floating poll")
+	require.Equal(t, 1, external.tracker.groups["group-a"].pendingPollCount)
+	require.Equal(t, 1, internal.tracker.groups["group-a"].pendingPollCount)
+	require.Equal(t, 2, internal.tracker.groups["group-b"].pendingPollCount)
 }
 
-func TestPollerGroupTrackerReserveWorkflowPollSatisfiesCoverageFirst(t *testing.T) {
-	tracker := newPollerGroupTracker(true)
-	tracker.updateGroups([]*taskqueuepb.PollerGroupInfo{
-		{Id: "group-a", Weight: 1},
-	})
+func TestPollerGroupManagerReserveWorkflowPollSatisfiesCoverageFirst(t *testing.T) {
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
 
-	groupID, queueKind := tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "group-a", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, queueKind)
+	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "group-a", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
 
-	groupID, queueKind = tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "group-a", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, queueKind)
+	lease = manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "group-a", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, lease.queueKind)
 }
 
-func TestPollerGroupTrackerReserveWorkflowPollFillsCoverageBeforeWeights(t *testing.T) {
-	tracker := newPollerGroupTracker(true)
-	tracker.updateGroups([]*taskqueuepb.PollerGroupInfo{
+func TestPollerGroupManagerReserveWorkflowPollFillsCoverageBeforeWeights(t *testing.T) {
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: "uncovered", Weight: 0},
 		{Id: "covered", Weight: 100},
-	})
+	}))
 
-	groupID, queueKind := tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "covered", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, queueKind)
+	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "covered", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
 
-	groupID, queueKind = tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "covered", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, queueKind)
+	lease = manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "covered", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, lease.queueKind)
 
-	groupID, queueKind = tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "uncovered", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, queueKind)
+	lease = manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "uncovered", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
 
-	groupID, queueKind = tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "uncovered", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, queueKind)
+	lease = manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "uncovered", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, lease.queueKind)
 
-	groupID, queueKind = tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "covered", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, queueKind)
+	lease = manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "covered", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
 }
 
-func TestPollerGroupTrackerReserveWorkflowPollPrefersFallbackKindForCoverage(t *testing.T) {
-	tracker := newPollerGroupTracker(true)
-	tracker.updateGroups([]*taskqueuepb.PollerGroupInfo{
-		{Id: "group-a", Weight: 1},
-	})
+func TestPollerGroupManagerReserveWorkflowPollPrefersFallbackKindForCoverage(t *testing.T) {
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
 
-	groupID, queueKind := tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY, true)
-	require.Equal(t, "group-a", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, queueKind)
+	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY, true)
+	require.Equal(t, "group-a", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, lease.queueKind)
 
-	groupID, queueKind = tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "group-a", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, queueKind)
+	lease = manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "group-a", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
 }
 
-func TestPollerGroupTrackerReserveWorkflowPollStickyCoverageAfterNormalRelease(t *testing.T) {
-	tracker := newPollerGroupTracker(true)
-	tracker.updateGroups([]*taskqueuepb.PollerGroupInfo{
-		{Id: "group-a", Weight: 1},
-	})
+func TestPollerGroupManagerReserveWorkflowPollStickyCoverageAfterNormalRelease(t *testing.T) {
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
 
-	groupID, queueKind := tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "group-a", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, queueKind)
-	tracker.release(groupID, queueKind)
+	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "group-a", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
+	lease.release()
 
-	groupID, queueKind = tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY, true)
-	require.Equal(t, "group-a", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, queueKind)
+	lease = manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY, true)
+	require.Equal(t, "group-a", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, lease.queueKind)
 }
 
-func TestPollerGroupTrackerReserveWorkflowPollUsesGroupStickyBacklogForFloatingPoll(t *testing.T) {
-	tracker := newPollerGroupTracker(true)
-	tracker.updateGroups([]*taskqueuepb.PollerGroupInfo{
+func TestPollerGroupManagerReserveWorkflowPollUsesGroupStickyBacklogForFloatingPoll(t *testing.T) {
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 0},
 		{Id: "group-b", Weight: 1},
-	})
-	tracker.groups["group-a"].workflowPendingNormal = 1
-	tracker.groups["group-a"].workflowPendingSticky = 1
-	tracker.groups["group-b"].workflowPendingNormal = 1
-	tracker.groups["group-b"].workflowPendingSticky = 1
-	tracker.groups["group-b"].workflowStickyBacklog = 2
+	}))
 
-	groupID, queueKind := tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "group-b", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, queueKind)
-	require.Equal(t, 2, tracker.groups["group-b"].workflowPendingSticky)
+	for range 4 {
+		manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	}
+	manager.updateStickyBacklog("group-b", 2)
+
+	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "group-b", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, lease.queueKind)
+	require.Equal(t, 2, manager.tracker.groups["group-b"].workflowPendingSticky)
 }
 
-func TestPollerGroupTrackerReserveWorkflowPollUsesNormalWhenStickyBacklogCovered(t *testing.T) {
-	tracker := newPollerGroupTracker(true)
-	tracker.updateGroups([]*taskqueuepb.PollerGroupInfo{
-		{Id: "group-a", Weight: 1},
-	})
-	tracker.groups["group-a"].workflowPendingNormal = 1
-	tracker.groups["group-a"].workflowPendingSticky = 2
-	tracker.groups["group-a"].workflowStickyBacklog = 2
+func TestPollerGroupManagerReserveWorkflowPollUsesNormalWhenStickyBacklogCovered(t *testing.T) {
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
 
-	groupID, queueKind := tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
-	require.Equal(t, "group-a", groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, queueKind)
-	require.Equal(t, 2, tracker.groups["group-a"].workflowPendingNormal)
+	manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY, true)
+	manager.updateStickyBacklog("group-a", 2)
+	manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+
+	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
+	require.Equal(t, "group-a", lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
+	require.Equal(t, 2, manager.tracker.groups["group-a"].workflowPendingNormal)
 }
 
 func TestPollerGroupManagerWorkflowStickyBacklogUsesResponseGroupID(t *testing.T) {
-	manager := newPollerGroupManager(true)
-	manager.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: "request-group", Weight: 100},
 		{Id: "response-group", Weight: 0},
-	})
+	}))
 
 	requestNormalLease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
 	defer requestNormalLease.release()
@@ -224,10 +245,10 @@ func TestPollerGroupManagerWorkflowStickyBacklogUsesResponseGroupID(t *testing.T
 	require.Equal(t, "response-group", responseStickyLease.groupIDOrEmpty())
 	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, responseStickyLease.queueKind)
 
-	manager.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	manager.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
 		{Id: "request-group", Weight: 0},
 		{Id: "response-group", Weight: 100},
-	})
+	}))
 	manager.updateStickyBacklog("response-group", 2)
 
 	require.Equal(t, int64(0), manager.tracker.groups["request-group"].workflowStickyBacklog)
@@ -240,42 +261,82 @@ func TestPollerGroupManagerWorkflowStickyBacklogUsesResponseGroupID(t *testing.T
 }
 
 func TestPollerGroupLeaseReleaseUsesRequestGroupID(t *testing.T) {
-	manager := newPollerGroupManager(true)
-	manager.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: "request-group", Weight: 100},
 		{Id: "response-group", Weight: 0},
-	})
+	}))
 
 	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true)
 	require.Equal(t, "request-group", lease.groupIDOrEmpty())
 	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
 
 	manager.tracker.groups["response-group"].workflowPendingNormal = 1
-
 	lease.release()
 
 	require.Equal(t, 0, manager.tracker.groups["request-group"].workflowPendingNormal)
 	require.Equal(t, 1, manager.tracker.groups["response-group"].workflowPendingNormal)
 }
 
-func TestPollerGroupTrackerUpdateStickyBacklogUsesKnownWorkflowGroup(t *testing.T) {
-	tracker := newPollerGroupTracker(true)
-	tracker.updateGroups([]*taskqueuepb.PollerGroupInfo{
+func TestPollerGroupManagerUpdateStickyBacklogUsesKnownWorkflowGroup(t *testing.T) {
+	manager := newPollerGroupManager(true, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 1},
 		{Id: "group-b", Weight: 1},
-	})
+	}))
 
-	tracker.updateStickyBacklog("group-b", 42)
-	tracker.updateStickyBacklog("unknown", 100)
+	manager.updateStickyBacklog("group-b", 42)
+	manager.updateStickyBacklog("unknown", 100)
 
-	require.Equal(t, int64(0), tracker.groups["group-a"].workflowStickyBacklog)
-	require.Equal(t, int64(42), tracker.groups["group-b"].workflowStickyBacklog)
+	require.Equal(t, int64(0), manager.tracker.groups["group-a"].workflowStickyBacklog)
+	require.Equal(t, int64(42), manager.tracker.groups["group-b"].workflowStickyBacklog)
 }
 
-func TestPollerGroupTrackerReserveWorkflowPollFallsBackBeforeGroupsKnown(t *testing.T) {
-	tracker := newPollerGroupTracker(true)
+func TestPollerGroupManagerReserveWorkflowPollFallsBackBeforeGroupsKnown(t *testing.T) {
+	manager := newPollerGroupManager(true, nil)
 
-	groupID, queueKind := tracker.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY, true)
-	require.Empty(t, groupID)
-	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, queueKind)
+	lease := manager.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY, true)
+	require.Empty(t, lease.groupIDOrEmpty())
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, lease.queueKind)
+}
+
+func TestPollerGroupManagerRemovedGroupLeaseReleaseIsSafe(t *testing.T) {
+	manager := newPollerGroupManager(false, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
+	lease := manager.reserve()
+
+	manager.updateGroups(testPollerGroupsInfo(2, nil))
+	require.Empty(t, manager.reserve().groupIDOrEmpty())
+	require.NotPanics(t, lease.release)
+}
+
+func TestPollerGroupManagersConcurrentSharedUpdatesAndReservations(t *testing.T) {
+	groupInfos := newPollerGroupInfoStore()
+	activity := newPollerGroupManager(false, groupInfos)
+	workflow := newPollerGroupManager(true, groupInfos)
+	groupInfos.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
+
+	var wg sync.WaitGroup
+	for i := range 100 {
+		wg.Add(3)
+		go func() {
+			defer wg.Done()
+			activity.reserve().release()
+		}()
+		go func() {
+			defer wg.Done()
+			workflow.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, true).release()
+		}()
+		go func() {
+			defer wg.Done()
+			groupInfos.updateGroups(testPollerGroupsInfo(int64(i+2), []*taskqueuepb.PollerGroupInfo{
+				{Id: "group-a", Weight: 1},
+				{Id: "group-b", Weight: 2},
+			}))
+		}()
+	}
+	wg.Wait()
+
+	require.Equal(t, 2, activity.requiredMin(enumspb.TASK_QUEUE_KIND_NORMAL))
+	require.Equal(t, 2, workflow.requiredMin(enumspb.TASK_QUEUE_KIND_NORMAL))
 }
