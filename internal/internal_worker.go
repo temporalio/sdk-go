@@ -361,13 +361,10 @@ func newWorkflowTaskWorkerInternal(
 	stickyUUID := uuid.NewString()
 	taskProcessor := newWorkflowTaskProcessor(taskHandler, contextManager, service, params, stickyUUID)
 
-	scalableTaskPollers := buildWorkflowScalableTaskPollers(taskProcessor, params.WorkflowTaskPollerBehavior, params)
-
 	bwo := baseWorkerOptions{
 		pollerRate:                   defaultPollerRate,
 		slotSupplier:                 params.Tuner.GetWorkflowTaskSlotSupplier(),
 		maxTaskPerSecond:             defaultWorkerTaskExecutionRate,
-		taskPollers:                  scalableTaskPollers,
 		taskProcessor:                taskProcessor,
 		workerType:                   "WorkflowWorker",
 		identity:                     params.Identity,
@@ -507,16 +504,10 @@ func buildWorkflowScalableTaskPollers(taskProcessor *workflowTaskProcessor, beha
 	}
 }
 
-// applyPollerBehavior rebuilds the workflow worker's task pollers to use the
-// given behavior. It must only be called before the worker is started, while
-// the poller list is still dormant.
-func (ww *workflowWorker) applyPollerBehavior(behavior PollerBehavior) {
-	taskProcessor, ok := ww.worker.options.taskProcessor.(*workflowTaskProcessor)
-	if !ok {
-		return
-	}
+func (ww *workflowWorker) initializeTaskPollers(behavior PollerBehavior) {
+	taskProcessor := ww.worker.options.taskProcessor.(*workflowTaskProcessor)
 	ww.executionParameters.WorkflowTaskPollerBehavior = behavior
-	ww.worker.setTaskPollers(buildWorkflowScalableTaskPollers(taskProcessor, behavior, ww.executionParameters))
+	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(taskProcessor, behavior, ww.executionParameters))
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
@@ -627,12 +618,9 @@ func newActivityWorker(
 		slotSupplier = params.Tuner.GetActivityTaskSlotSupplier()
 	}
 	bwo := baseWorkerOptions{
-		pollerRate:       defaultPollerRate,
-		slotSupplier:     slotSupplier,
-		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
-		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, metrics.PollerTypeActivityTask, params.serverSupportsAutoscaling),
-		},
+		pollerRate:                   defaultPollerRate,
+		slotSupplier:                 slotSupplier,
+		maxTaskPerSecond:             params.WorkerActivitiesPerSecond,
 		taskProcessor:                poller,
 		workerType:                   "ActivityWorker",
 		identity:                     params.Identity,
@@ -673,12 +661,9 @@ func (aw *activityWorker) Stop() {
 	aw.worker.Stop()
 }
 
-// applyPollerBehavior rebuilds the activity worker's task poller to use the
-// given behavior. It must only be called before the worker is started, while
-// the poller list is still dormant.
-func (aw *activityWorker) applyPollerBehavior(behavior PollerBehavior) {
+func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
 	aw.executionParameters.ActivityTaskPollerBehavior = behavior
-	aw.worker.setTaskPollers([]scalableTaskPoller{
+	aw.worker.initializeTaskPollers([]scalableTaskPoller{
 		newScalableTaskPoller(
 			aw.poller,
 			aw.executionParameters.Logger,
@@ -1427,10 +1412,6 @@ func (aw *AggregatedWorker) start() error {
 	// poller type that was left at its default (the user set neither a fixed
 	// poller count nor a poller behavior). Auto-enroll implies full autoscaling
 	// support, including scaling down, so it also enables serverSupportsAutoscaling.
-	// The workers are constructed but dormant at this point (no baseWorker.Start
-	// has run yet), so swapping their poller lists in place is safe. The nexus
-	// worker is built further below from aw.executionParams, so mutating the
-	// parameter is sufficient for it.
 	if nsData.capabilities.GetPollerAutoscalingAutoEnroll() {
 		aw.executionParams.serverSupportsAutoscaling.Store(true)
 		autoscaling := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{})
@@ -1439,24 +1420,19 @@ func (aw *AggregatedWorker) start() error {
 		}
 		if aw.executionParams.pollerAutoEnrollEligibility.workflowTask && !util.IsInterfaceNil(aw.workflowWorker) {
 			aw.executionParams.WorkflowTaskPollerBehavior = autoscaling
-			aw.workflowWorker.applyPollerBehavior(autoscaling)
 		}
 		if aw.executionParams.pollerAutoEnrollEligibility.activityTask {
 			if !util.IsInterfaceNil(aw.activityWorker) {
 				aw.executionParams.ActivityTaskPollerBehavior = autoscaling
-				aw.activityWorker.applyPollerBehavior(autoscaling)
-			}
-			// The session activity worker polls a normal task queue and is
-			// enrolled like any other activity worker. The session creation
-			// worker is deliberately pinned to a single poller, so it is left
-			// unchanged.
-			if !util.IsInterfaceNil(aw.sessionWorker) {
-				aw.sessionWorker.activityWorker.applyPollerBehavior(autoscaling)
 			}
 		}
 	}
 
+	// Poller behavior can depend on namespace capabilities, so workflow and
+	// activity scalable task pollers are initialized only after those capabilities
+	// have been resolved.
 	if !util.IsInterfaceNil(aw.workflowWorker) {
+		aw.workflowWorker.initializeTaskPollers(aw.executionParams.WorkflowTaskPollerBehavior)
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
 		}
@@ -1465,6 +1441,7 @@ func (aw *AggregatedWorker) start() error {
 		}
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
+		aw.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
 		if err := aw.activityWorker.Start(); err != nil {
 			// stop workflow worker.
 			if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1481,6 +1458,12 @@ func (aw *AggregatedWorker) start() error {
 
 	if !util.IsInterfaceNil(aw.sessionWorker) && len(aw.registry.getRegisteredActivities()) > 0 {
 		aw.logger.Info("Starting session worker")
+		// The session activity worker uses the effective activity poller behavior.
+		// The session creation worker retains its fixed single-poller behavior.
+		aw.sessionWorker.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
+		aw.sessionWorker.creationWorker.initializeTaskPollers(
+			aw.sessionWorker.creationWorker.executionParameters.ActivityTaskPollerBehavior,
+		)
 		if err := aw.sessionWorker.Start(); err != nil {
 			// stop workflow worker and activity worker.
 			if !util.IsInterfaceNil(aw.workflowWorker) {

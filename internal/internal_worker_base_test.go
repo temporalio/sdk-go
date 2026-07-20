@@ -138,7 +138,7 @@ func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesTaskQueueKind() 
 	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, supplier.taskQueueKind)
 }
 
-func (s *ScalableTaskPollerSuite) TestSetTaskPollersCreatesBalancerForMultiplePollers() {
+func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersCreatesBalancerForMultiplePollers() {
 	newPoller := func(pollerType string) scalableTaskPoller {
 		return newScalableTaskPoller(
 			newBlockingProbeTaskPoller(),
@@ -149,19 +149,21 @@ func (s *ScalableTaskPollerSuite) TestSetTaskPollersCreatesBalancerForMultiplePo
 		)
 	}
 
-	// A single poller does not need a balancer.
-	bw := &baseWorker{}
-	bw.setTaskPollers([]scalableTaskPoller{newPoller(metrics.PollerTypeWorkflowTask)})
-	s.Len(bw.options.taskPollers, 1)
-	s.Nil(bw.pollerBalancer)
+	singlePollerWorker := &baseWorker{}
+	singlePollerWorker.initializeTaskPollers([]scalableTaskPoller{newPoller(metrics.PollerTypeWorkflowTask)})
+	s.Len(singlePollerWorker.options.taskPollers, 1)
+	s.Nil(singlePollerWorker.pollerBalancer)
 
-	// Growing to more than one poller creates the balancer.
-	bw.setTaskPollers([]scalableTaskPoller{
+	bw := &baseWorker{}
+	bw.initializeTaskPollers([]scalableTaskPoller{
 		newPoller(metrics.PollerTypeWorkflowTask),
 		newPoller(metrics.PollerTypeWorkflowStickyTask),
 	})
 	s.Len(bw.options.taskPollers, 2)
 	s.NotNil(bw.pollerBalancer)
+	s.Panics(func() {
+		bw.initializeTaskPollers([]scalableTaskPoller{newPoller(metrics.PollerTypeWorkflowTask)})
+	})
 }
 
 func TestScalableTaskPollerSuite(t *testing.T) {

@@ -1836,6 +1836,11 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	)))
 	worker.RegisterNexusService(nexusService)
 
+	// Workflow and activity scalable task pollers are not created until Start
+	// resolves the namespace capabilities.
+	s.Nil(worker.workflowWorker.worker.options.taskPollers)
+	s.Nil(worker.activityWorker.worker.options.taskPollers)
+
 	require.NoError(s.T(), worker.Start())
 	defer worker.Stop()
 
@@ -1845,9 +1850,11 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.NexusTaskPollerBehavior)
 
 	// The actual running pollers reflect the autoscaling structure.
+	require.NotEmpty(s.T(), worker.workflowWorker.worker.options.taskPollers)
 	for _, p := range worker.workflowWorker.worker.options.taskPollers {
 		s.NotNil(p.autoscalingRunner)
 	}
+	require.NotEmpty(s.T(), worker.activityWorker.worker.options.taskPollers)
 	for _, p := range worker.activityWorker.worker.options.taskPollers {
 		s.NotNil(p.autoscalingRunner)
 	}
@@ -1957,6 +1964,9 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker()
 		WorkerOptions{EnableSessionWorker: true},
 	)
 	worker.RegisterActivity(testActivityNoResult)
+
+	s.Nil(worker.sessionWorker.activityWorker.worker.options.taskPollers)
+	s.Nil(worker.sessionWorker.creationWorker.worker.options.taskPollers)
 
 	require.NoError(s.T(), worker.Start())
 	defer worker.Stop()
