@@ -88,7 +88,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		WorkerInstanceKey: ntp.workerInstanceKey,
 	}
 
-	lease := ntp.pollerGroups.reserve(enumspb.TASK_QUEUE_KIND_NORMAL)
+	lease := ntp.pollerGroups.reserve()
 	defer lease.release()
 	request.PollerGroupId = lease.groupIDOrEmpty()
 

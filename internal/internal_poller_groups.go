@@ -66,15 +66,14 @@ func (m *pollerGroupManager) requiredMin(queueKind enumspb.TaskQueueKind) int {
 	return m.tracker.requiredMin(queueKind)
 }
 
-func (m *pollerGroupManager) reserve(queueKind enumspb.TaskQueueKind) pollerGroupLease {
+func (m *pollerGroupManager) reserve() pollerGroupLease {
 	if m == nil || m.tracker == nil {
 		return pollerGroupLease{}
 	}
-	groupID := m.tracker.reserve(queueKind)
+	groupID := m.tracker.reserve()
 	return pollerGroupLease{
-		manager:   m,
-		groupID:   groupID,
-		queueKind: queueKind,
+		manager: m,
+		groupID: groupID,
 	}
 }
 
@@ -170,7 +169,7 @@ func (t *pollerGroupTracker) requiredMin(queueKind enumspb.TaskQueueKind) int {
 	}
 }
 
-func (t *pollerGroupTracker) reserve(queueKind enumspb.TaskQueueKind) string {
+func (t *pollerGroupTracker) reserve() string {
 	if t == nil {
 		return ""
 	}
@@ -183,7 +182,7 @@ func (t *pollerGroupTracker) reserve(queueKind enumspb.TaskQueueKind) string {
 
 	candidates := make(map[string]*pollerGroupState, len(t.groups))
 	for groupID, group := range t.groups {
-		if t.pendingCount(group, queueKind) == 0 {
+		if group.pendingPollCount == 0 {
 			candidates[groupID] = group
 		}
 	}
@@ -195,7 +194,7 @@ func (t *pollerGroupTracker) reserve(queueKind enumspb.TaskQueueKind) string {
 	if groupID == "" {
 		return ""
 	}
-	t.incrementPending(t.groups[groupID], queueKind)
+	t.groups[groupID].pendingPollCount++
 	return groupID
 }
 
@@ -216,18 +215,23 @@ func (t *pollerGroupTracker) reserveWorkflowPoll(preferredQueueKind enumspb.Task
 		return "", preferredQueueKind
 	}
 
-	if groupID := chooseHighestWeightPollerGroup(t.workflowCoverageCandidates(stickyEnabled)); groupID != "" {
-		queueKind := t.workflowCoverageQueueKind(t.groups[groupID], preferredQueueKind, stickyEnabled)
-		t.incrementPending(t.groups[groupID], queueKind)
-		return groupID, queueKind
+	groupID := chooseHighestWeightPollerGroup(t.workflowCoverageCandidates(stickyEnabled))
+	var queueKind enumspb.TaskQueueKind
+	if groupID != "" {
+		queueKind = t.workflowCoverageQueueKind(t.groups[groupID], preferredQueueKind, stickyEnabled)
+	} else {
+		groupID = choosePollerGroup(t.groups)
+		if groupID == "" {
+			return "", preferredQueueKind
+		}
+		queueKind = t.workflowFloatingQueueKind(t.groups[groupID], stickyEnabled)
 	}
 
-	groupID := choosePollerGroup(t.groups)
-	if groupID == "" {
-		return "", preferredQueueKind
+	if queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
+		t.groups[groupID].workflowPendingSticky++
+	} else {
+		t.groups[groupID].workflowPendingNormal++
 	}
-	queueKind := t.workflowFloatingQueueKind(t.groups[groupID], stickyEnabled)
-	t.incrementPending(t.groups[groupID], queueKind)
 	return groupID, queueKind
 }
 
@@ -334,34 +338,6 @@ func (t *pollerGroupTracker) workflowFloatingQueueKind(group *pollerGroupState, 
 		return enumspb.TASK_QUEUE_KIND_STICKY
 	}
 	return enumspb.TASK_QUEUE_KIND_NORMAL
-}
-
-func (t *pollerGroupTracker) pendingCount(group *pollerGroupState, queueKind enumspb.TaskQueueKind) int {
-	if group == nil {
-		return 0
-	}
-	if !t.workflow {
-		return group.pendingPollCount
-	}
-	if queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
-		return group.workflowPendingSticky
-	}
-	return group.workflowPendingNormal
-}
-
-func (t *pollerGroupTracker) incrementPending(group *pollerGroupState, queueKind enumspb.TaskQueueKind) {
-	if group == nil {
-		return
-	}
-	if !t.workflow {
-		group.pendingPollCount++
-		return
-	}
-	if queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
-		group.workflowPendingSticky++
-	} else {
-		group.workflowPendingNormal++
-	}
 }
 
 func (t *pollerGroupTracker) decrementPending(group *pollerGroupState, queueKind enumspb.TaskQueueKind) {
