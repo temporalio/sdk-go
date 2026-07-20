@@ -1472,11 +1472,11 @@ func (aw *AggregatedWorker) start() error {
 		}
 	}
 
+	// Poller behavior can depend on namespace capabilities, so workflow and
+	// activity scalable task pollers are initialized only after those capabilities
+	// have been resolved.
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		aw.workflowWorker.initializeTaskPollers(aw.executionParams.WorkflowTaskPollerBehavior)
-	}
-	if !util.IsInterfaceNil(aw.activityWorker) {
-		aw.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
 	}
 
 	if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1488,6 +1488,7 @@ func (aw *AggregatedWorker) start() error {
 		}
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
+		aw.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
 		if err := aw.activityWorker.Start(); err != nil {
 			// stop workflow worker.
 			if !util.IsInterfaceNil(aw.workflowWorker) {

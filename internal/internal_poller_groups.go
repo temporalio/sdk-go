@@ -171,8 +171,8 @@ func (t *pollerGroupTracker) reserve(weights map[string]float32) string {
 	return groupID
 }
 
-// reserveWorkflowPoll first satisfies per-group MCN coverage by selecting the
-// highest-weight group that is missing normal or sticky coverage. For that
+// reserveWorkflowPoll first satisfies per-group MCN coverage by selecting by
+// weight among groups that are missing normal or sticky coverage. For that
 // selected group, it uses preferredQueueKind first when that kind's coverage is
 // missing, then fills whichever required kind is still missing. Once coverage
 // is met, it chooses a group by server-provided weight and then chooses that
@@ -193,7 +193,7 @@ func (t *pollerGroupTracker) reserveWorkflowPoll(
 		return "", preferredQueueKind
 	}
 
-	groupID := chooseHighestWeightPollerGroup(t.workflowCoverageCandidates(weights, stickyEnabled))
+	groupID := choosePollerGroup(t.workflowCoverageCandidates(weights, stickyEnabled))
 	var queueKind enumspb.TaskQueueKind
 	if groupID != "" {
 		queueKind = t.workflowCoverageQueueKind(t.groups[groupID], preferredQueueKind, stickyEnabled)
@@ -309,18 +309,6 @@ func (t *pollerGroupTracker) decrementPending(group *pollerGroupState, queueKind
 	} else if group.workflowPendingNormal > 0 {
 		group.workflowPendingNormal--
 	}
-}
-
-func chooseHighestWeightPollerGroup(groups map[string]float32) string {
-	var selectedID string
-	var selectedWeight float32
-	for groupID, weight := range groups {
-		if selectedID == "" || weight > selectedWeight {
-			selectedID = groupID
-			selectedWeight = weight
-		}
-	}
-	return selectedID
 }
 
 // choosePollerGroup picks a random group using the configured weights.

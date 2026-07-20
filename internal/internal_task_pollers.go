@@ -809,6 +809,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 			Namespace:     wtp.namespace,
 			Failure:       wtp.failureConverter.ErrorToFailure(sendErr),
 			Cause:         enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE,
+			PollerGroupId: task.GetPollerGroupId(),
 		}
 		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.payloadVisitorConcurrency); err != nil {
 			wtp.logger.Error("Failed to visit payloads for GRPC message too large query failure response.", tagError, err)
