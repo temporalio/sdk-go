@@ -25,8 +25,9 @@ jobs:
           go-version: stable
 
       - name: Check generated files
-        run: go run . check-generated
-        working-directory: ./internal/cmd/build
+        run: |
+          go run ./internal/cmd/nexussystemgen
+          git diff --exit-code
 
   check:
     strategy:

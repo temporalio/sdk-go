@@ -52,13 +52,11 @@ func newBuilder() *builder {
 
 func (b *builder) run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("missing command name, 'check', 'check-generated', 'integration-test', or 'unit-test' required")
+		return fmt.Errorf("missing command name, 'check', 'integration-test', or 'unit-test' required")
 	}
 	switch os.Args[1] {
 	case "check":
 		return b.check()
-	case "check-generated":
-		return b.checkGenerated()
 	case "integration-test":
 		return b.integrationTest()
 	case "merge-coverage-files":
@@ -66,15 +64,8 @@ func (b *builder) run() error {
 	case "unit-test":
 		return b.unitTest()
 	default:
-		return fmt.Errorf("unrecognized command %q, 'check', 'check-generated', 'integration-test', or 'unit-test' required", os.Args[1])
+		return fmt.Errorf("unrecognized command %q, 'check', 'integration-test', or 'unit-test' required", os.Args[1])
 	}
-}
-
-func (b *builder) checkGenerated() error {
-	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/nexussystemgen", "--check")); err != nil {
-		return fmt.Errorf("generated file check failed: %w", err)
-	}
-	return nil
 }
 
 func (b *builder) check() error {
