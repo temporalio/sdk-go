@@ -19,6 +19,8 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
+- Add support for Workflow Updates as Nexus Operations
+- Add SignalWithStartWorkflow to the workflow package
 
 ### Added
 
