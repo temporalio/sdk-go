@@ -11,6 +11,8 @@ or Security.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-07-20
+
 ### Added
 
 - Added the `contrib/googleadk` package, which makes Google ADK (`adk-go`) agents durable and
