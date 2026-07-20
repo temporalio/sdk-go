@@ -3,17 +3,12 @@
 // Must be invoked from the root of the Go SDK repo.
 // The generated bindings are emitted directly into go.temporal.io/sdk/workflow.
 //
-// Usage:
-//
-//	go run ./internal/cmd/nexussystemgen
-//	go run ./internal/cmd/nexussystemgen --check
+// Usage: go run ./internal/cmd/nexussystemgen
 //
 // A pinned nex-gen revision is automatically installed unless NEX_GEN_BIN is set.
 package main
 
 import (
-	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -35,20 +30,13 @@ const (
 	nexGenRevision = "696374363f1c57f66a6b5508c4b347b89aacaa0a"
 )
 
-type generatedFile struct {
-	generated string
-	checkedIn string
-}
-
 func main() {
-	check := flag.Bool("check", false, "verify generated files are current without modifying them")
-	flag.Parse()
-	if err := run(*check); err != nil {
+	if err := run(); err != nil {
 		log.Fatalf("nexussystemgen: %v", err)
 	}
 }
 
-func run(check bool) error {
+func run() error {
 	repoRoot, err := repoRoot()
 	if err != nil {
 		return err
@@ -91,47 +79,11 @@ func run(check bool) error {
 		return fmt.Errorf("running nex-gen: %w", err)
 	}
 
-	files := []generatedFile{
-		{generated: serviceTmp, checkedIn: serviceDst},
-	}
-	for _, file := range files {
-		if err := gofmt(file.generated); err != nil {
-			return err
-		}
-	}
-	if check {
-		return checkGeneratedFiles(repoRoot, files)
+	if err := gofmt(serviceTmp); err != nil {
+		return err
 	}
 	if err := copyFile(serviceDst, serviceTmp); err != nil {
 		return err
-	}
-	return nil
-}
-
-func checkGeneratedFiles(repoRoot string, files []generatedFile) error {
-	var stale []string
-	for _, file := range files {
-		generated, err := os.ReadFile(file.generated)
-		if err != nil {
-			return fmt.Errorf("reading generated file %s: %w", file.generated, err)
-		}
-		checkedIn, err := os.ReadFile(file.checkedIn)
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("reading checked-in file %s: %w", file.checkedIn, err)
-		}
-		if err != nil || !bytes.Equal(generated, checkedIn) {
-			path, relErr := filepath.Rel(repoRoot, file.checkedIn)
-			if relErr != nil {
-				path = file.checkedIn
-			}
-			stale = append(stale, filepath.ToSlash(path))
-		}
-	}
-	if len(stale) != 0 {
-		return fmt.Errorf(
-			"generated files are stale: %s; run `go run ./internal/cmd/nexussystemgen`",
-			strings.Join(stale, ", "),
-		)
 	}
 	return nil
 }
