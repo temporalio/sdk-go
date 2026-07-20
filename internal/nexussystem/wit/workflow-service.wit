@@ -43,7 +43,6 @@ interface workflow-service {
     /// @nexus.proto-field "workflow_id"
     id: string,
     /// @nexus.doc "Task queue to run the workflow on."
-    /// @nexus.source go="GetInfo(ctx).TaskQueueName"
     task-queue: task-queue,
     /// @nexus.doc
     ///   python="Signal name or callable to send with the start request."

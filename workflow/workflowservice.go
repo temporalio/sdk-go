@@ -21,6 +21,7 @@ type signalWithStartWorkflowRequest struct {
 	Workflow           string
 	Args               []any
 	Id                 string
+	TaskQueue          string
 	Signal             string
 	SignalArgs         []any
 	ExecutionTimeout   *time.Duration
@@ -56,6 +57,13 @@ func (m signalWithStartWorkflowRequest) toProto(ctx Context) (*workflowservice.S
 		message.Input = converted
 	}
 	message.WorkflowId = m.Id
+	{
+		converted, err := taskQueueToProto(ctx, &m.TaskQueue)
+		if err != nil {
+			return nil, err
+		}
+		message.TaskQueue = converted
+	}
 	message.SignalName = m.Signal
 	{
 		converted, err := payloadsToProto(ctx, m.SignalArgs)
@@ -146,12 +154,6 @@ func (m signalWithStartWorkflowRequest) toProto(ctx Context) (*workflowservice.S
 		}
 		message.UserMetadata = converted
 	}
-	sourced := GetInfo(ctx).TaskQueueName
-	converted, err := taskQueueToProto(ctx, &sourced)
-	if err != nil {
-		return nil, err
-	}
-	message.TaskQueue = converted
 	message.Namespace = GetInfo(ctx).Namespace
 	return message, nil
 }
@@ -260,6 +262,8 @@ func signalWithStartWorkflowResponseFromProto(ctx Context, proto *workflowservic
 type SignalWithStartWorkflowOptions struct {
 	// Required. Unique identifier for the workflow execution.
 	Id string
+	// Required. Task queue to run the workflow on.
+	TaskQueue string
 	// Optional.
 	// Total workflow execution timeout, including retries and continue-as-new.
 	ExecutionTimeout time.Duration
@@ -373,6 +377,7 @@ func SignalWithStartWorkflow(
 		Workflow:           workflowName,
 		Args:               args,
 		Id:                 opts.Id,
+		TaskQueue:          opts.TaskQueue,
 		Signal:             signal,
 		SignalArgs:         []any{signalArg},
 		ExecutionTimeout:   executionTimeout,
@@ -452,6 +457,7 @@ func SignalWithStartWorkflowTyped[WorkflowArg any, WorkflowResult any](
 		Workflow:           workflowName,
 		Args:               []any{arg},
 		Id:                 opts.Id,
+		TaskQueue:          opts.TaskQueue,
 		Signal:             signal,
 		SignalArgs:         []any{signalArg},
 		ExecutionTimeout:   executionTimeout,
