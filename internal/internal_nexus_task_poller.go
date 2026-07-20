@@ -47,6 +47,7 @@ func newNexusTaskPoller(
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
+			pollerGroupInfoStore:         params.pollerGroupInfoStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:     taskHandler,
@@ -97,7 +98,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		return nil, err
 	}
 	if response != nil {
-		ntp.pollerGroups.updateGroups(response.GetPollerGroupInfos())
+		ntp.updatePollerGroups(ntp.pollerGroups, response.GetPollerGroupsInfo())
 	}
 	if response == nil || len(response.TaskToken) == 0 {
 		// No operation info is available on empty poll. Emit using base scope.

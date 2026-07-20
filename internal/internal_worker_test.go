@@ -1845,16 +1845,25 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.NexusTaskPollerBehavior)
 
 	// The actual running pollers reflect the autoscaling structure.
+	require.NotNil(s.T(), worker.workflowWorker.pollerGroups)
+	require.Same(s.T(), worker.client.pollerGroupInfoStore, worker.workflowWorker.pollerGroups.groupInfos)
 	for _, p := range worker.workflowWorker.worker.options.taskPollers {
 		s.NotNil(p.autoscalingRunner)
+		require.Same(s.T(), worker.workflowWorker.pollerGroups, p.autoscalingRunner.pollerGroups)
 	}
+	require.NotNil(s.T(), worker.activityWorker.pollerGroups)
+	require.Same(s.T(), worker.client.pollerGroupInfoStore, worker.activityWorker.pollerGroups.groupInfos)
 	for _, p := range worker.activityWorker.worker.options.taskPollers {
 		s.NotNil(p.autoscalingRunner)
+		require.Same(s.T(), worker.activityWorker.pollerGroups, p.autoscalingRunner.pollerGroups)
 	}
 	require.NotNil(s.T(), worker.nexusWorker)
 	require.NotEmpty(s.T(), worker.nexusWorker.worker.options.taskPollers)
+	require.NotNil(s.T(), worker.nexusWorker.pollerGroups)
+	require.Same(s.T(), worker.client.pollerGroupInfoStore, worker.nexusWorker.pollerGroups.groupInfos)
 	for _, p := range worker.nexusWorker.worker.options.taskPollers {
 		s.NotNil(p.autoscalingRunner)
+		require.Same(s.T(), worker.nexusWorker.pollerGroups, p.autoscalingRunner.pollerGroups)
 	}
 
 	// Auto-enroll implies full autoscaling support, including scale-down.
@@ -1964,8 +1973,11 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker()
 	require.NotNil(s.T(), worker.sessionWorker)
 
 	require.NotEmpty(s.T(), worker.sessionWorker.activityWorker.worker.options.taskPollers)
+	require.NotNil(s.T(), worker.sessionWorker.activityWorker.pollerGroups)
+	require.Same(s.T(), worker.client.pollerGroupInfoStore, worker.sessionWorker.activityWorker.pollerGroups.groupInfos)
 	for _, p := range worker.sessionWorker.activityWorker.worker.options.taskPollers {
 		s.NotNil(p.autoscalingRunner)
+		require.Same(s.T(), worker.sessionWorker.activityWorker.pollerGroups, p.autoscalingRunner.pollerGroups)
 	}
 
 	require.Len(s.T(), worker.sessionWorker.creationWorker.worker.options.taskPollers, 1)
@@ -2362,9 +2374,9 @@ func expectDescribeNamespaceWithPollerGroup(service *workflowservicemock.MockWor
 				PollerAutoscaling: true,
 			},
 		},
-		PollerGroupInfos: []*taskqueuepb.PollerGroupInfo{
+		PollerGroupsInfo: testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 			{Id: groupID, Weight: 1},
-		},
+		}),
 	}, nil).AnyTimes()
 }
 

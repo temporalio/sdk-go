@@ -347,11 +347,11 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	}
 }
 
-func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupAddRaisesRequiredMinimum() {
-	pollerGroups := newPollerGroupManager(true)
-	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupAddRaisesRequiredMinimumAfterPollCompletion() {
+	pollerGroups := newPollerGroupManager(true, nil)
+	pollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 1},
-	})
+	}))
 	autoscaler := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount: 1,
 		maxPollerCount:     1,
@@ -362,56 +362,39 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupAddRaisesRequiredMin
 		pollerGroups,
 		enumspb.TASK_QUEUE_KIND_NORMAL,
 	)
-	pollerGroups.addListener(runner.signal)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	release, err := runner.acquire(ctx)
 	require.NoError(s.T(), err)
-	defer release()
 	assert.Equal(s.T(), 1, runner.activePolls(), "expected one active poll for one group")
 
-	type acquireResult struct {
-		release func()
-		err     error
-	}
-	acquired := make(chan acquireResult, 1)
-	go func() {
-		acquiredRelease, err := runner.acquire(ctx)
-		acquired <- acquireResult{release: acquiredRelease, err: err}
-	}()
-	require.Never(s.T(), func() bool {
-		return len(acquired) > 0
-	}, 100*time.Millisecond, 10*time.Millisecond, "second acquire should wait before group add")
-
 	assert.Equal(s.T(), 1, runner.effectiveTarget(), "expected one effective poller before group add")
-	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	pollerGroups.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 1},
 		{Id: "group-b", Weight: 1},
-	})
+	}))
 
-	var result acquireResult
-	require.Eventually(s.T(), func() bool {
-		select {
-		case result = <-acquired:
-			return true
-		default:
-			return false
-		}
-	}, time.Second, 10*time.Millisecond, "expected group add to signal runner")
-	require.NoError(s.T(), result.err)
-	defer result.release()
+	assert.Equal(s.T(), 2, runner.effectiveTarget(), "expected group add to raise required minimum")
+	release()
+
+	firstRelease, err := runner.acquire(ctx)
+	require.NoError(s.T(), err)
+	defer firstRelease()
+	secondRelease, err := runner.acquire(ctx)
+	require.NoError(s.T(), err)
+	defer secondRelease()
 	assert.Equal(s.T(), 2, runner.activePolls(), "expected group add to raise required minimum")
 	assert.Equal(s.T(), int64(1), autoscaler.target.Load(), "group add should not mutate autoscaler target")
 }
 
 func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupRemovalLowersRequiredMinimum() {
-	pollerGroups := newPollerGroupManager(true)
-	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	pollerGroups := newPollerGroupManager(true, nil)
+	pollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 1},
 		{Id: "group-b", Weight: 100},
-	})
+	}))
 	autoscaler := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount: 1,
 		maxPollerCount:     1,
@@ -424,9 +407,9 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupRemovalLowersRequire
 	)
 
 	assert.Equal(s.T(), 2, runner.effectiveTarget(), "expected two effective pollers for two groups")
-	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	pollerGroups.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 1},
-	})
+	}))
 
 	assert.Equal(s.T(), 1, runner.effectiveTarget(), "expected group removal to lower required minimum")
 	lease := pollerGroups.reserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL, false)
@@ -496,11 +479,11 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingMCNRequiredFloorStillGatedBySlo
 		maximumNumberOfPollers: 1,
 		minimumNumberOfPollers: 1,
 	}
-	pollerGroups := newPollerGroupManager(true)
-	pollerGroups.updateGroups([]*taskqueuepb.PollerGroupInfo{
+	pollerGroups := newPollerGroupManager(true, nil)
+	pollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
 		{Id: "group-a", Weight: 1},
 		{Id: "group-b", Weight: 1},
-	})
+	}))
 
 	blockingPoller := newBlockingProbeTaskPoller()
 	poller := newScalableTaskPoller(

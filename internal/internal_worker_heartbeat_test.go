@@ -3,14 +3,18 @@ package internal
 import (
 	"bytes"
 	"context"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	namespacepb "go.temporal.io/api/namespace/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	workerservicepb "go.temporal.io/api/nexusservices/workerservice/v1"
+	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	workerpb "go.temporal.io/api/worker/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
@@ -91,22 +95,23 @@ func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
 
 	const (
-		namespace    = "test-ns"
-		controlQueue = "temporal-sys/worker-commands/test-ns/grouping-key"
-		workerKey    = "worker-command-worker"
-		workerIdent  = "worker-identity"
+		namespace      = "test-ns"
+		groupingKey    = "grouping-key"
+		controlQueue   = "temporal-sys/worker-commands/test-ns/grouping-key"
+		workerIdentity = "worker-identity"
 	)
+	var workerInstanceKey string
 
 	mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
 			if req.Namespace != namespace {
 				t.Fatalf("namespace = %q, want %q", req.Namespace, namespace)
 			}
-			if req.Identity != workerIdent {
-				t.Fatalf("identity = %q, want %q", req.Identity, workerIdent)
+			if req.Identity != workerIdentity {
+				t.Fatalf("identity = %q, want %q", req.Identity, workerIdentity)
 			}
-			if req.WorkerInstanceKey != workerKey {
-				t.Fatalf("worker instance key = %q, want %q", req.WorkerInstanceKey, workerKey)
+			if req.WorkerInstanceKey != workerInstanceKey {
+				t.Fatalf("worker instance key = %q, want %q", req.WorkerInstanceKey, workerInstanceKey)
 			}
 			if req.TaskQueue.GetName() != controlQueue {
 				t.Fatalf("task queue = %q, want %q", req.TaskQueue.GetName(), controlQueue)
@@ -117,22 +122,198 @@ func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 			return &workflowservice.PollNexusTaskQueueResponse{}, nil
 		})
 
+	client := NewServiceClient(mockService, nil, ClientOptions{Namespace: namespace, Identity: workerIdentity})
+	client.workerGroupingKey = groupingKey
+	hw := client.heartbeatManager.sharedNamespaceWorkerFor(namespace)
+	defer hw.heartbeatCancel()
+	workerInstanceKey = hw.workerInstanceKey
+	require.NotEmpty(t, workerInstanceKey)
+
+	if _, err := hw.pollWorkerCommandTask(""); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkerCommandFirstPollUsesDescribeNamespacePollerGroups(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const (
+		namespace = "test-ns"
+		groupID   = "described-poller-group"
+	)
+
+	mockService.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.DescribeNamespaceResponse{
+			NamespaceInfo:    &namespacepb.NamespaceInfo{},
+			PollerGroupsInfo: testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: groupID, Weight: 1}}),
+		}, nil)
+	mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+			require.Equal(t, groupID, req.GetPollerGroupId())
+			return &workflowservice.PollNexusTaskQueueResponse{}, nil
+		})
+
+	client := NewServiceClient(mockService, nil, ClientOptions{Namespace: namespace})
+	_, err := client.loadNamespaceData(metrics.NopHandler)
+	require.NoError(t, err)
+
+	hw := client.heartbeatManager.sharedNamespaceWorkerFor(namespace)
+	defer hw.heartbeatCancel()
+	_, err = hw.pollWorkerCommand()
+	require.NoError(t, err)
+}
+
+func TestWorkerCommandPollUsesPollerGroups(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const groupID = "poller-group"
+
+	gomock.InOrder(
+		mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+				if req.GetPollerGroupId() != "" {
+					t.Fatalf("first poller group = %q, want empty", req.GetPollerGroupId())
+				}
+				return &workflowservice.PollNexusTaskQueueResponse{
+					PollerGroupsInfo: testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: groupID, Weight: 1}}),
+				}, nil
+			}),
+		mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+				if req.GetPollerGroupId() != groupID {
+					t.Fatalf("second poller group = %q, want %q", req.GetPollerGroupId(), groupID)
+				}
+				return &workflowservice.PollNexusTaskQueueResponse{}, nil
+			}),
+	)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	hw := &sharedNamespaceWorker{
 		client: &WorkflowClient{
 			workflowService: mockService,
-			identity:        workerIdent,
 		},
-		namespace:              namespace,
 		workerCtx:              ctx,
-		workerControlTaskQueue: controlQueue,
-		workerInstanceKey:      workerKey,
+		workerControlTaskQueue: "worker-commands",
 		metricsHandler:         metrics.NopHandler,
+		pollerGroups:           newPollerGroupManager(false, nil),
 	}
 
-	if _, err := hw.pollWorkerCommandTask(); err != nil {
+	if _, err := hw.pollWorkerCommand(); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := hw.pollWorkerCommand(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkerCommandPollUsesExternalPollerGroupUpdate(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const groupID = "external-poller-group"
+
+	mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+			if req.GetPollerGroupId() != groupID {
+				t.Fatalf("worker command poller group = %q, want %q", req.GetPollerGroupId(), groupID)
+			}
+			return &workflowservice.PollNexusTaskQueueResponse{
+				PollerGroupsInfo: testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{{Id: groupID, Weight: 1}}),
+			}, nil
+		})
+
+	client := NewServiceClient(mockService, nil, ClientOptions{Namespace: "test-ns"})
+	hw := client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
+	defer hw.heartbeatCancel()
+
+	externalPollerGroups := newPollerGroupManager(false, client.pollerGroupInfoStore)
+	externalPollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: groupID, Weight: 1}}))
+	require.Same(t, externalPollerGroups.groupInfos, hw.pollerGroups.groupInfos)
+
+	if _, err := hw.pollWorkerCommand(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestWorkerCommandsMaintainPollerGroupCoverage(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	groups := []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+		{Id: "group-b", Weight: 1},
+	}
+	started := make(chan string, len(groups))
+	var pollCount atomic.Int32
+
+	mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, req *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+			if pollCount.Add(1) == 1 {
+				if req.GetPollerGroupId() != groups[0].GetId() {
+					t.Errorf("initial poller group = %q, want %q", req.GetPollerGroupId(), groups[0].GetId())
+				}
+				return &workflowservice.PollNexusTaskQueueResponse{
+					PollerGroupsInfo: testPollerGroupsInfo(2, groups),
+				}, nil
+			}
+			select {
+			case started <- req.GetPollerGroupId():
+			default:
+			}
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}).AnyTimes()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	pollerGroups := newPollerGroupManager(false, nil)
+	pollerGroups.updateGroups(testPollerGroupsInfo(1, groups[:1]))
+	hw := &sharedNamespaceWorker{
+		client: &WorkflowClient{
+			workflowService: mockService,
+		},
+		workerCtx:              ctx,
+		workerControlTaskQueue: "worker-commands",
+		metricsHandler:         metrics.NopHandler,
+		logger:                 ilog.NewNopLogger(),
+		pollerGroups:           pollerGroups,
+	}
+	done := make(chan struct{})
+	go func() {
+		hw.runWorkerCommands()
+		close(done)
+	}()
+
+	seen := make(map[string]struct{}, len(groups))
+	for len(seen) < len(groups) {
+		select {
+		case groupID := <-started:
+			seen[groupID] = struct{}{}
+		case <-time.After(5 * time.Second):
+			cancel()
+			<-done
+			t.Fatalf("timed out waiting for group coverage; saw %v", seen)
+		}
+	}
+	for _, group := range groups {
+		if _, ok := seen[group.GetId()]; !ok {
+			cancel()
+			<-done
+			t.Fatalf("missing pending poll for group %q; saw %v", group.GetId(), seen)
+		}
+	}
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out stopping worker command pollers")
 	}
 }
 

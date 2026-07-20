@@ -43,6 +43,7 @@ to docs, or any other relevant information.
 - Resource-based tuner: `TryReserveSlot` (used for eager task dispatch) no longer blocks for up to
   `RampThrottle` while a concurrent `ReserveSlot` waits out the ramp throttle. The throttle behavior
   is unchanged; only the unnecessary lock contention on the eager path is removed.
+- Added poller-group-aware autoscaling for multi-cell namespaces. Autoscaling workers maintain poll coverage for every server-provided group and distribute additional polls according to the provided weights.
 
 ## [1.46.0] - 2026-07-07
 
