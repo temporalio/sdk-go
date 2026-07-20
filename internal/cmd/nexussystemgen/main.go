@@ -27,7 +27,7 @@ import (
 
 const (
 	nexGenRepo     = "https://github.com/temporalio/nex-gen"
-	nexGenRevision = "696374363f1c57f66a6b5508c4b347b89aacaa0a"
+	nexGenRevision = "910abd5af733f7f8d86a3e74ebb5a9ff851a38e1"
 )
 
 func main() {

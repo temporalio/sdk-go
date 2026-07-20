@@ -247,15 +247,33 @@ func userMetadataFromProto(ctx Context, proto *sdk.UserMetadata) (UserMetadata, 
 }
 
 type SignalWithStartWorkflowResponse struct {
+	// Optional.
+	RunId *string
+	// Optional.
+	Started *bool
 }
 
 func (m SignalWithStartWorkflowResponse) toProto(ctx Context) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
 	message := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
+	if m.RunId != nil {
+		message.RunId = (*m.RunId)
+	}
+	if m.Started != nil {
+		message.Started = (*m.Started)
+	}
 	return message, nil
 }
 
 func signalWithStartWorkflowResponseFromProto(ctx Context, proto *workflowservice.SignalWithStartWorkflowExecutionResponse) (SignalWithStartWorkflowResponse, error) {
 	value := SignalWithStartWorkflowResponse{}
+	{
+		converted := proto.GetRunId()
+		value.RunId = &converted
+	}
+	{
+		converted := proto.GetStarted()
+		value.Started = &converted
+	}
 	return value, nil
 }
 
