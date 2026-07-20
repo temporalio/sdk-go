@@ -1466,7 +1466,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		WorkerControlTaskQueue: atp.workerControlTaskQueue,
 	}
 
-	lease := atp.pollerGroups.reserve(enumspb.TASK_QUEUE_KIND_NORMAL)
+	lease := atp.pollerGroups.reserve()
 	defer lease.release()
 	request.PollerGroupId = lease.groupIDOrEmpty()
 

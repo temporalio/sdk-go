@@ -16,15 +16,15 @@ func TestPollerGroupTrackerReserveActivityNexusPollFillsCoverageBeforeWeights(t 
 		{Id: "covered", Weight: 100},
 	})
 
-	groupID := tracker.reserve(enumspb.TASK_QUEUE_KIND_NORMAL)
+	groupID := tracker.reserve()
 	require.Equal(t, "covered", groupID)
 	require.Equal(t, 1, tracker.groups["covered"].pendingPollCount)
 
-	groupID = tracker.reserve(enumspb.TASK_QUEUE_KIND_NORMAL)
+	groupID = tracker.reserve()
 	require.Equal(t, "uncovered", groupID)
 	require.Equal(t, 1, tracker.groups["uncovered"].pendingPollCount)
 
-	groupID = tracker.reserve(enumspb.TASK_QUEUE_KIND_NORMAL)
+	groupID = tracker.reserve()
 	require.Equal(t, "covered", groupID)
 	require.Equal(t, 2, tracker.groups["covered"].pendingPollCount)
 }
