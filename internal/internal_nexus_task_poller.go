@@ -22,6 +22,7 @@ type nexusTaskPoller struct {
 	taskHandler     *nexusTaskHandler
 	logger          log.Logger
 	numPollerMetric *numPollerMetric
+	pollerGroups    *pollerGroupManager
 }
 
 type nexusTask struct {
@@ -34,6 +35,7 @@ func newNexusTaskPoller(
 	taskHandler *nexusTaskHandler,
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
+	pollerGroups *pollerGroupManager,
 ) *nexusTaskPoller {
 	return &nexusTaskPoller{
 		basePoller: basePoller{
@@ -45,6 +47,7 @@ func newNexusTaskPoller(
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
+			pollerGroupInfoStore:         params.pollerGroupInfoStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:     taskHandler,
@@ -54,6 +57,7 @@ func newNexusTaskPoller(
 		identity:        params.Identity,
 		logger:          params.Logger,
 		numPollerMetric: newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeNexusTask),
+		pollerGroups:    pollerGroups,
 	}
 }
 
@@ -85,9 +89,16 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		WorkerInstanceKey: ntp.workerInstanceKey,
 	}
 
+	lease := ntp.pollerGroups.reserve()
+	defer lease.release()
+	request.PollerGroupId = lease.groupIDOrEmpty()
+
 	response, err := ntp.pollNexusTaskQueue(ctx, request)
 	if err != nil {
 		return nil, err
+	}
+	if response != nil {
+		ntp.updatePollerGroups(ntp.pollerGroups, response.GetPollerGroupsInfo())
 	}
 	if response == nil || len(response.TaskToken) == 0 {
 		// No operation info is available on empty poll. Emit using base scope.
@@ -131,7 +142,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
 		// context wasn't propagated to us, use a background context.
-		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()))
+		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()), response.GetPollerGroupId())
 		if err != nil {
 			return err
 		}

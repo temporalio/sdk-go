@@ -294,10 +294,12 @@ type (
 	barrier chan struct{}
 
 	autoscalingTaskPollerRunner struct {
-		autoscaler *pollerAutoscaler
-		wakeCh     chan struct{}
-		activeMu   sync.Mutex
-		active     int
+		autoscaler   *pollerAutoscaler
+		pollerGroups *pollerGroupManager
+		queueKind    enumspb.TaskQueueKind
+		wakeCh       chan struct{}
+		activeMu     sync.Mutex
+		active       int
 	}
 
 	// pollerBalancer is used to balance the number of poll requests from different poller types
@@ -413,13 +415,13 @@ func newBaseWorker(
 	return bw
 }
 
-// setTaskPollers replaces the worker's task pollers. It must only be called
-// before Start(), while no poller goroutines are reading the poller list, so it
-// needs no synchronization. It (re)creates the poller balancer when the new
-// poller list has more than one poller, mirroring newBaseWorker.
-func (bw *baseWorker) setTaskPollers(taskPollers []scalableTaskPoller) {
+// initializeTaskPollers must be called at most once and before Start().
+func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
+	if bw.options.taskPollers != nil {
+		panic("task pollers already initialized")
+	}
 	bw.options.taskPollers = taskPollers
-	if len(taskPollers) > 1 && bw.pollerBalancer == nil {
+	if len(taskPollers) > 1 {
 		bw.pollerBalancer = &pollerBalancer{
 			pollerCount:   make(map[string]int),
 			pollerBarrier: make(map[string]barrier),
@@ -656,19 +658,21 @@ func (bw *baseWorker) slotReservationData(taskWorker scalableTaskPoller) slotRes
 }
 
 func taskQueueKindForPoller(taskWorker scalableTaskPoller) (enumspb.TaskQueueKind, bool) {
-	switch taskWorker.taskPollerType {
+	if taskWorker.autoscalingRunner == nil {
+		return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
+	}
+	return taskQueueKindForAutoscalingPollerType(taskWorker.taskPollerType)
+}
+
+func taskQueueKindForAutoscalingPollerType(taskPollerType string) (enumspb.TaskQueueKind, bool) {
+	switch taskPollerType {
 	case metrics.PollerTypeWorkflowStickyTask:
 		return enumspb.TASK_QUEUE_KIND_STICKY, true
-	case metrics.PollerTypeWorkflowTask:
-		// Autoscaling workflow pollers are split by queue kind. SimpleMaximum
-		// workflow pollers are mixed, so their kind is not known at reservation time.
-		if taskWorker.autoscalingRunner != nil {
-			return enumspb.TASK_QUEUE_KIND_NORMAL, true
-		}
-	case metrics.PollerTypeActivityTask, metrics.PollerTypeNexusTask:
+	case metrics.PollerTypeWorkflowTask, metrics.PollerTypeActivityTask, metrics.PollerTypeNexusTask:
 		return enumspb.TASK_QUEUE_KIND_NORMAL, true
+	default:
+		return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
 	}
-	return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
 }
 
 func (bw *baseWorker) tryReserveSlot() *SlotPermit {
@@ -981,19 +985,21 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 func (prh *pollerAutoscaler) updateTarget(f func(int64) int64) {
 	target := prh.target.Load()
 	newTarget := f(target)
-	if newTarget < int64(prh.minPollerCount) {
-		newTarget = int64(prh.minPollerCount)
-	} else if newTarget > int64(prh.maxPollerCount) {
-		newTarget = int64(prh.maxPollerCount)
-	}
+	newTarget = int64(effectivePollerTarget(
+		int(newTarget),
+		prh.minPollerCount,
+		prh.maxPollerCount,
+		0,
+	))
 	for !prh.target.CompareAndSwap(target, newTarget) {
 		target = prh.target.Load()
 		newTarget = f(target)
-		if newTarget < int64(prh.minPollerCount) {
-			newTarget = int64(prh.minPollerCount)
-		} else if newTarget > int64(prh.maxPollerCount) {
-			newTarget = int64(prh.maxPollerCount)
-		}
+		newTarget = int64(effectivePollerTarget(
+			int(newTarget),
+			prh.minPollerCount,
+			prh.maxPollerCount,
+			0,
+		))
 	}
 	if prh.targetChangedCallback != nil {
 		traceLog(func() {
@@ -1045,17 +1051,23 @@ func (prh *pollerAutoscaler) newPeriod() {
 	prh.scaleUpAllowed.Store(float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1)
 }
 
-func newAutoscalingTaskPollerRunner(autoscaler *pollerAutoscaler) *autoscalingTaskPollerRunner {
+func newAutoscalingTaskPollerRunner(
+	autoscaler *pollerAutoscaler,
+	pollerGroups *pollerGroupManager,
+	queueKind enumspb.TaskQueueKind,
+) *autoscalingTaskPollerRunner {
 	return &autoscalingTaskPollerRunner{
-		autoscaler: autoscaler,
-		wakeCh:     make(chan struct{}, 1),
+		autoscaler:   autoscaler,
+		pollerGroups: pollerGroups,
+		queueKind:    queueKind,
+		wakeCh:       make(chan struct{}, 1),
 	}
 }
 
 func (r *autoscalingTaskPollerRunner) acquire(ctx context.Context) (func(), error) {
 	for {
 		r.activeMu.Lock()
-		target := int(r.autoscaler.target.Load())
+		target := r.effectiveTarget()
 		if r.active < target {
 			r.active++
 			r.activeMu.Unlock()
@@ -1069,6 +1081,30 @@ func (r *autoscalingTaskPollerRunner) acquire(ctx context.Context) (func(), erro
 		case <-r.wakeCh:
 		}
 	}
+}
+
+// effectiveTarget expects the r.activeMu lock to already be held
+func (r *autoscalingTaskPollerRunner) effectiveTarget() int {
+	target := int(r.autoscaler.target.Load())
+	return effectivePollerTarget(
+		target,
+		r.autoscaler.minPollerCount,
+		r.autoscaler.maxPollerCount,
+		r.pollerGroups.requiredMin(r.queueKind),
+	)
+}
+
+func effectivePollerTarget(current, configuredMin, configuredMax, requiredMin int) int {
+	effectiveMin := max(configuredMin, requiredMin)
+	effectiveMax := max(configuredMax, effectiveMin)
+
+	if current < effectiveMin {
+		return effectiveMin
+	}
+	if current > effectiveMax {
+		return effectiveMax
+	}
+	return current
 }
 
 func (r *autoscalingTaskPollerRunner) release() {
@@ -1097,6 +1133,7 @@ func newScalableTaskPoller(
 	pollerBehavior PollerBehavior,
 	taskPollerType string,
 	serverSupportsAutoscaling *atomic.Bool,
+	pollerGroups *pollerGroupManager,
 ) scalableTaskPoller {
 	tw := scalableTaskPoller{
 		taskPoller:     poller,
@@ -1111,7 +1148,8 @@ func newScalableTaskPoller(
 			logger:                    logger,
 			serverSupportsAutoscaling: serverSupportsAutoscaling,
 		})
-		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler)
+		queueKind, _ := taskQueueKindForAutoscalingPollerType(taskPollerType)
+		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler, pollerGroups, queueKind)
 		tw.pollerAutoscaler.targetChangedCallback = func() {
 			tw.autoscalingRunner.signal()
 		}
