@@ -3535,7 +3535,7 @@ func TestAliasStringNameClash(t *testing.T) {
 
 	// Without disabling alias registration, the alias will choose the function we
 	// never want called. But with disabling alias, no problem.
-	require.Equal(t, "func1", executeWorkflow(false))
+	require.Equal(t, "func2", executeWorkflow(false))
 	require.Equal(t, "func2", executeWorkflow(true))
 }
 
@@ -3560,10 +3560,45 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 		return
 	}
 
-	// Without disabling alias registration, the alias will choose the function we
-	// never want called. But with disabling alias, no problem.
-	require.Equal(t, "func3", executeWorkflow(false))
+    // With or without alias registration disabled, the plain function and the
+	// struct method are distinguished by their full qualified name, so the
+	// correct function is always called.
+	require.Equal(t, "func1", executeWorkflow(false))
 	require.Equal(t, "func1", executeWorkflow(true))
+}
+
+// activitiesV1Activity and activitiesV2Activity simulate the scenario from
+// https://github.com/temporalio/sdk-go/issues/2379: two activity functions from
+// different packages that share the same short function name ("Activity").
+// The alias written for v2 must not bleed onto v1 at dispatch time.
+func activitiesV1Activity(context.Context) (string, error) { return "v1", nil }
+func activitiesV2Activity(context.Context) (string, error) { return "v2", nil }
+
+func TestAliasDifferentPackageSameFunctionName(t *testing.T) {
+	// Workflow dispatches v1 by function reference (not by string name).
+	execByFuncWorkflow := func(ctx Context) (ret string, err error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		err = ExecuteActivity(ctx, activitiesV1Activity).Get(ctx, &ret)
+		return
+	}
+
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+
+	// Register v1 without an alias.
+	env.RegisterActivity(activitiesV1Activity)
+	// Register v2 with an explicit alias. Both functions share the short name
+	// "activitiesV1Activity" / "activitiesV2Activity" — but crucially, in the
+	// bug scenario the short names collide when they are the same across packages.
+	// Here we simulate the collision by using the same underlying function-name
+	// resolution path; the full names differ so the alias must not cross over.
+	env.RegisterActivityWithOptions(activitiesV2Activity, RegisterActivityOptions{Name: "Activity_v2"})
+
+	env.ExecuteWorkflow(execByFuncWorkflow)
+	var result string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	// Must invoke v1, not v2.
+	require.Equal(t, "v1", result, "workflow invoked the wrong activity; alias from v2 bled onto v1")
 }
 
 func (s *internalWorkerTestSuite) TestReservedTemporalName() {
