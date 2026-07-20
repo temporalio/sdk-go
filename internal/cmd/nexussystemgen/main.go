@@ -66,8 +66,6 @@ func run(check bool) error {
 
 	serviceDst := filepath.Join(outPkgDir, "workflowservice.go")
 	serviceTmp := filepath.Join(tmpDir, "workflowservice.go")
-	supportDst := filepath.Join(outPkgDir, "nexus_system_support.go")
-	supportTmp := filepath.Join(tmpDir, "support.go")
 
 	descriptors, err := buildDescriptorSet(tmpDir)
 	if err != nil {
@@ -95,7 +93,6 @@ func run(check bool) error {
 
 	files := []generatedFile{
 		{generated: serviceTmp, checkedIn: serviceDst},
-		{generated: supportTmp, checkedIn: supportDst},
 	}
 	for _, file := range files {
 		if err := gofmt(file.generated); err != nil {
@@ -106,9 +103,6 @@ func run(check bool) error {
 		return checkGeneratedFiles(repoRoot, files)
 	}
 	if err := copyFile(serviceDst, serviceTmp); err != nil {
-		return err
-	}
-	if err := copyFile(supportDst, supportTmp); err != nil {
 		return err
 	}
 	return nil
