@@ -1206,8 +1206,6 @@ type (
 		// in single-line Temporal markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticSummary string
 
 		// Details - General fixed details for this workflow execution that will appear in UI/CLI. This can be in
@@ -1215,8 +1213,6 @@ type (
 		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticDetails string
 
 		// VersioningOverride - Sets the versioning configuration of a specific workflow execution, ignoring current

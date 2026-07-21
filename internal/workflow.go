@@ -552,8 +552,6 @@ type (
 		// in single-line Temporal Markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticSummary string
 
 		// Details - General fixed details for this child workflow execution that will appear in UI/CLI. This can be in
@@ -561,8 +559,6 @@ type (
 		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticDetails string
 
 		// Priority - Optional priority settings that control relative ordering of
@@ -678,31 +674,21 @@ type (
 
 	// TimerOptions are options set when creating a timer.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/workflow.TimerOptions]
 	TimerOptions struct {
 		// Summary is a simple string identifying this timer. While it can be
 		// normal text, it is best to treat as a timer ID. This value will be
 		// visible in UI and CLI.
-		//
-		// NOTE: Experimental
 		Summary string
 	}
 
 	// AwaitOptions are options set when creating an await.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/workflow.AwaitOptions]
 	AwaitOptions struct {
 		// Timeout is the await timeout if the await condition is not met.
-		//
-		// NOTE: Experimental
 		Timeout time.Duration
 		// TimerOptions are options set for the underlying timer created.
-		//
-		// NOTE: Experimental
 		TimerOptions TimerOptions
 	}
 
