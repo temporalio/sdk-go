@@ -139,6 +139,7 @@ func TestSystemNexusSignalWithStartUsesConverters(t *testing.T) {
 		details := "details"
 		fut := workflow.SignalWithStartWorkflow(ctx, workflow.SignalWithStartWorkflowOptions{
 			Id:                 "workflow-id",
+			TaskQueue:          "default-test-taskqueue",
 			Memo:               map[string]any{"memo-key": "memo-value"},
 			SearchAttributes:   searchAttributes,
 			VersioningOverride: &client.AutoUpgradeVersioningOverride{},
