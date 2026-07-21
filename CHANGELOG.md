@@ -34,6 +34,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Allow query results to use external storage before payload size enforcement.
 - Correct schedule catch-up window documentation to state that an unset value is omitted and the
   server applies its one-year default.
 - Resource-based tuner: `ReserveSlot` now honors context cancellation while the resource controller is

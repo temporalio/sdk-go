@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -326,7 +327,7 @@ func (s *ExternalStorageTestSuite) TestQuery() {
 	s.worker.RegisterWorkflow(extStoreQueryWorkflow)
 	s.NoError(s.worker.Start())
 
-	large := oversized(72)
+	large := strings.Repeat("a", 2_000_000+1024)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
