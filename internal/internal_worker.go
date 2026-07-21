@@ -697,6 +697,9 @@ type registry struct {
 	workflowVersioningBehaviorMap map[string]VersioningBehavior
 	activityFuncMap               map[string]activity
 	activityAliasMap              map[string]string
+	workflowRegisteredNameMap     map[string]string
+	activityRegisteredNameMap     map[string]string
+	antiAliasing                  bool
 	dynamicWorkflow               interface{}
 	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
 	dynamicActivity               activity
@@ -706,6 +709,7 @@ type registry struct {
 
 type registryOptions struct {
 	disableAliasing bool
+	antiAliasing    bool
 }
 
 func (r *registry) RegisterWorkflow(af interface{}) {
@@ -760,6 +764,9 @@ func (r *registry) RegisterWorkflowWithOptions(
 
 	if len(alias) > 0 && r.workflowAliasMap != nil {
 		r.workflowAliasMap[fnName] = alias
+	}
+	if r.antiAliasing {
+		r.workflowRegisteredNameMap[funcRegistryKey(wf)] = registerName
 	}
 }
 
@@ -841,6 +848,9 @@ func (r *registry) RegisterActivityWithOptions(
 	if len(alias) > 0 && r.activityAliasMap != nil {
 		r.activityAliasMap[fnName] = alias
 	}
+	if r.antiAliasing {
+		r.activityRegisteredNameMap[funcRegistryKey(af)] = registerName
+	}
 }
 
 func (r *registry) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
@@ -872,6 +882,14 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 			}
 		}
 		r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: methodValue.Interface()}
+		if r.antiAliasing {
+			// Struct-registered methods must also be resolvable by function
+			// reference (e.g. ExecuteActivity(ctx, s.DoWork)); record their
+			// registered name here since this path never touches the alias map.
+			// A reflect-created method value has no usable runtime name, so build
+			// the key from the struct type and method name instead.
+			r.activityRegisteredNameMap[structMethodRegistryKey(structType, name)] = registerName
+		}
 		count++
 	}
 	if count == 0 {
@@ -949,6 +967,99 @@ func (r *registry) getActivityAlias(fnName string) (string, bool) {
 	defer r.Unlock()
 	alias, ok := r.activityAliasMap[fnName]
 	return alias, ok
+}
+
+// getActivityRegisteredName returns the name an activity function was registered
+// under, keyed by its fully qualified name. Only populated in anti-aliasing mode.
+func (r *registry) getActivityRegisteredName(fullName string) (string, bool) {
+	r.Lock()
+	defer r.Unlock()
+	name, ok := r.activityRegisteredNameMap[fullName]
+	return name, ok
+}
+
+// getWorkflowRegisteredName returns the name a workflow function was registered
+// under, keyed by its fully qualified name. Only populated in anti-aliasing mode.
+func (r *registry) getWorkflowRegisteredName(fullName string) (string, bool) {
+	r.Lock()
+	defer r.Unlock()
+	name, ok := r.workflowRegisteredNameMap[fullName]
+	return name, ok
+}
+
+// detectRegistrationAmbiguities returns a warning for each registered function
+// whose registered name differs from the name that a reference to that function
+// resolves to under the current mode. When they differ, invoking the
+// activity/workflow by function reference (or by a string that collides with
+// another function's short name) silently reaches a different registration —
+// this is the class of bug that anti-aliasing eliminates. Returns nil in
+// anti-aliasing mode, which has no such ambiguity.
+func (r *registry) detectRegistrationAmbiguities() []string {
+	if r.antiAliasing {
+		return nil
+	}
+
+	type entry struct {
+		registeredName string
+		fn             interface{}
+	}
+	var activities, workflows []entry
+
+	// Snapshot the registered functions under lock; the resolver helpers below
+	// acquire the same (non-reentrant) lock, so they must run outside it.
+	r.Lock()
+	for name, a := range r.activityFuncMap {
+		ae, ok := a.(*activityExecutor)
+		if !ok || ae.fn == nil || reflect.TypeOf(ae.fn).Kind() != reflect.Func {
+			continue
+		}
+		activities = append(activities, entry{name, ae.fn})
+	}
+	for name, wf := range r.workflowFuncMap {
+		if wf == nil || reflect.TypeOf(wf).Kind() != reflect.Func {
+			continue
+		}
+		workflows = append(workflows, entry{name, wf})
+	}
+	r.Unlock()
+
+	var warnings []string
+	for _, e := range activities {
+		if resolved := getActivityFunctionName(r, e.fn); resolved != e.registeredName {
+			warnings = append(warnings, fmt.Sprintf(
+				"activity registered as %q is unreachable by function reference: a reference to it resolves to %q instead",
+				e.registeredName, resolved))
+		}
+	}
+	for _, e := range workflows {
+		if resolved, err := getWorkflowFunctionName(r, e.fn); err == nil && resolved != e.registeredName {
+			warnings = append(warnings, fmt.Sprintf(
+				"workflow registered as %q is unreachable by function reference: a reference to it resolves to %q instead",
+				e.registeredName, resolved))
+		}
+	}
+	return warnings
+}
+
+// warnOnRegistrationAmbiguities prints a warning to stdout if any registration
+// ambiguities are detected, recommending the anti-aliasing mode. It is a no-op
+// in anti-aliasing mode or when no ambiguities exist.
+func (r *registry) warnOnRegistrationAmbiguities() {
+	warnings := r.detectRegistrationAmbiguities()
+	if len(warnings) == 0 {
+		return
+	}
+	var b strings.Builder
+	b.WriteString("WARNING: Ambiguous workflow/activity registration detected. ")
+	b.WriteString("The following functions cannot be invoked by function reference because their name collides with another registration:\n")
+	for _, w := range warnings {
+		b.WriteString("  - ")
+		b.WriteString(w)
+		b.WriteString("\n")
+	}
+	b.WriteString("To resolve this, set worker.Options.RegistrationAntiAliasing = true, which resolves function references to the exact name they were registered under. ")
+	b.WriteString("Note: enabling it changes the scheduled type names for the affected registrations, so enable it on a new worker/task queue or after confirming no in-flight workflows depend on the current (ambiguous) behavior.\n")
+	fmt.Print(b.String())
 }
 
 func (r *registry) addActivityWithLock(fnName string, a activity) {
@@ -1127,7 +1238,15 @@ func newRegistryWithOptions(options registryOptions) *registry {
 		activityFuncMap:               make(map[string]activity),
 		nexusServices:                 make(map[string]*nexus.Service),
 	}
-	if !options.disableAliasing {
+	// Anti-aliasing takes precedence over the legacy DisableRegistrationAliasing
+	// option. In anti-aliasing mode the legacy short-name alias maps are left nil
+	// (so no alias substitution ever happens); we instead track each function's
+	// registered name keyed by its unique fully qualified name.
+	if options.antiAliasing {
+		r.antiAliasing = true
+		r.workflowRegisteredNameMap = make(map[string]string)
+		r.activityRegisteredNameMap = make(map[string]string)
+	} else if !options.disableAliasing {
 		r.workflowAliasMap = make(map[string]string)
 		r.activityAliasMap = make(map[string]string)
 	}
@@ -1382,6 +1501,10 @@ func (aw *AggregatedWorker) Start() error {
 // start the worker. This method is memoized using sync.OnceValue in memoizedStart.
 func (aw *AggregatedWorker) start() error {
 	aw.started.Store(true)
+
+	// Warn about registration ambiguities now that all registrations are done.
+	// No-op in anti-aliasing mode or when there are no ambiguities.
+	aw.registry.warnOnRegistrationAmbiguities()
 
 	if err := initBinaryChecksum(); err != nil {
 		return fmt.Errorf("failed to get executable checksum: %v", err)
@@ -1810,6 +1933,11 @@ type WorkflowReplayerOptions struct {
 	// documentation for that field for more information.
 	DisableRegistrationAliasing bool
 
+	// Resolve function references to their registered name during registration.
+	// This should be set if it was set on worker.Options.RegistrationAntiAliasing
+	// when originally run. See documentation for that field for more information.
+	RegistrationAntiAliasing bool
+
 	// Optional: Enable logging in replay.
 	// In the workflow code you can use workflow.GetLogger(ctx) to write logs. By default, the logger will skip log
 	// entry during replay mode so you won't see duplicate logs. This option will enable the logging in replay mode.
@@ -1866,7 +1994,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 		return nil, fmt.Errorf("invalid ExternalStorage options: %w", err)
 	}
 
-	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
+	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing, antiAliasing: options.RegistrationAntiAliasing})
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
 		registry:                    registry,
@@ -2488,7 +2616,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	processTestTags(&options, &workerParams)
 
 	// worker specific registry
-	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
+	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing, antiAliasing: options.RegistrationAntiAliasing})
 	// Build set of interceptors using the applicable client ones first (being
 	// careful not to append to the existing slice)
 	registry.interceptors = make([]WorkerInterceptor, 0, len(client.workerInterceptors)+len(options.Interceptors))
@@ -2740,7 +2868,71 @@ func getFunctionName(i interface{}) (name string, isMethod bool) {
 	return strings.TrimSuffix(shortName, "-fm"), isMethod
 }
 
-func getActivityFunctionName(r *registry, i interface{}) string {
+// getFullFunctionName returns the fully qualified runtime name of a function
+// (e.g. "github.com/org/pkg/activities_v2.Activity"), or the string itself if a
+// string is passed. Unlike getFunctionName, it does not strip the package path,
+// so it is unique across functions that share a short name.
+func getFullFunctionName(i interface{}) string {
+	if fullName, ok := i.(string); ok {
+		return fullName
+	}
+	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+}
+
+// normalizeFuncName canonicalizes a runtime function name so that the same
+// method produces the same key regardless of how it was referenced. It strips
+// the "-fm" suffix that Go adds to bound method values and removes the pointer
+// marker from a pointer receiver, so "pkg.(*T).M-fm" and "pkg.T.M-fm" both
+// normalize to "pkg.T.M".
+func normalizeFuncName(name string) string {
+	name = strings.TrimSuffix(name, "-fm")
+	name = strings.ReplaceAll(name, "(*", "")
+	name = strings.ReplaceAll(name, ")", "")
+	return name
+}
+
+// funcRegistryKey returns the key used for the anti-aliasing registered-name
+// maps. It is the normalized fully qualified name, which is unique per
+// function/method and stable across value/pointer receiver references. Struct
+// registration cannot use this (a reflect-created method value has no usable
+// runtime name); it builds the equivalent key via structMethodRegistryKey.
+func funcRegistryKey(i interface{}) string {
+	if _, ok := i.(string); ok {
+		return getFullFunctionName(i)
+	}
+	return normalizeFuncName(getFullFunctionName(i))
+}
+
+// structMethodRegistryKey builds the same key funcRegistryKey would produce for
+// a bound method value of the given struct type, so activities registered via a
+// struct are reachable by function reference in anti-aliasing mode.
+func structMethodRegistryKey(structType reflect.Type, methodName string) string {
+	elem := structType
+	if elem.Kind() == reflect.Ptr {
+		elem = elem.Elem()
+	}
+	return elem.PkgPath() + "." + elem.Name() + "." + methodName
+}
+
+// resolveActivityName resolves an activity (a func or a string) to the type name
+// to schedule/dispatch under. When antiAliasing is true a string is used
+// verbatim and a function resolves to its registered name; otherwise the legacy
+// short-name-plus-alias-map behavior is used. The mode is passed explicitly
+// because during workflow execution it is a per-execution decision (see
+// WorkflowEnvironment.UseRegistrationAntiAliasing), not the worker-wide setting.
+func resolveActivityName(r *registry, i interface{}, antiAliasing bool) string {
+	if antiAliasing {
+		if s, ok := i.(string); ok {
+			return s
+		}
+		if name, ok := r.getActivityRegisteredName(funcRegistryKey(i)); ok {
+			return name
+		}
+		// Unregistered function: fall back to its short name, matching how an
+		// unregistered function is treated in the other modes.
+		result, _ := getFunctionName(i)
+		return result
+	}
 	result, _ := getFunctionName(i)
 	if alias, ok := r.getActivityAlias(result); ok {
 		result = alias
@@ -2748,13 +2940,30 @@ func getActivityFunctionName(r *registry, i interface{}) string {
 	return result
 }
 
-func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, error) {
+// getActivityFunctionName resolves using the worker-wide setting. Use this only
+// outside of workflow execution (client, schedule, test-env, ambiguity
+// detection); in-workflow scheduling must use resolveActivityName with the
+// per-execution decision to stay replay-safe.
+func getActivityFunctionName(r *registry, i interface{}) string {
+	return resolveActivityName(r, i, r.antiAliasing)
+}
+
+// resolveWorkflowName is the workflow counterpart of resolveActivityName.
+func resolveWorkflowName(r *registry, workflowFunc interface{}, antiAliasing bool) (string, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
 	case reflect.String:
 		fnName = reflect.ValueOf(workflowFunc).String()
 	case reflect.Func:
+		if antiAliasing {
+			if name, ok := r.getWorkflowRegisteredName(funcRegistryKey(workflowFunc)); ok {
+				return name, nil
+			}
+			// Unregistered function: fall back to its short name.
+			fnName, _ = getFunctionName(workflowFunc)
+			return fnName, nil
+		}
 		fnName, _ = getFunctionName(workflowFunc)
 		if alias, ok := r.getWorkflowAlias(fnName); ok {
 			fnName = alias
@@ -2764,6 +2973,12 @@ func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, err
 	}
 
 	return fnName, nil
+}
+
+// getWorkflowFunctionName resolves using the worker-wide setting. See the note
+// on getActivityFunctionName about in-workflow use.
+func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, error) {
+	return resolveWorkflowName(r, workflowFunc, r.antiAliasing)
 }
 
 func getReadOnlyChannel(c chan struct{}) <-chan struct{} {

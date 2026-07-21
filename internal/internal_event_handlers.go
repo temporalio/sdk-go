@@ -1059,6 +1059,13 @@ func (wc *workflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 	return wc.sdkFlags.tryUse(flag, !wc.isReplay)
 }
 
+func (wc *workflowEnvironmentImpl) UseRegistrationAntiAliasing() bool {
+	// Read-only: never record here. The flag is recorded once, at workflow start
+	// (handleWorkflowExecutionStarted), so an execution that started before the
+	// worker enabled anti-aliasing keeps using legacy resolution on replay.
+	return wc.sdkFlags.tryUse(SDKFlagRegistrationAntiAliasing, false)
+}
+
 func (wc *workflowEnvironmentImpl) QueueUpdate(name string, f func()) {
 	wc.bufferedUpdateRequests[name] = append(wc.bufferedUpdateRequests[name], f)
 }
@@ -1535,6 +1542,15 @@ func (weh *workflowExecutionEventHandlerImpl) handleWorkflowExecutionStarted(
 	// replay sees the _final_ value of applied flags, not intermediate values
 	// as the value varies by WFT)
 	weh.sdkFlags.tryUse(SDKFlagProtocolMessageCommand, !weh.isReplay)
+
+	// Record anti-aliasing at workflow start (and only when the worker opted in),
+	// for the same reason: name resolution regenerates commands on every replay,
+	// so the mode must be fixed for the whole execution. An execution that
+	// started before the worker enabled anti-aliasing has no flag in its history
+	// and therefore keeps using legacy resolution on replay — no NDE.
+	if weh.registry.antiAliasing {
+		weh.sdkFlags.tryUse(SDKFlagRegistrationAntiAliasing, !weh.isReplay)
+	}
 
 	// Invoke the workflow.
 	weh.workflowDefinition.Execute(weh, attributes.Header, attributes.Input)

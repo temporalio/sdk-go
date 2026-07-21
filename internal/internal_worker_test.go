@@ -23,6 +23,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	namespacepb "go.temporal.io/api/namespace/v1"
+	"go.temporal.io/api/sdk/v1"
 	"go.temporal.io/api/serviceerror"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -3564,6 +3565,307 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	// never want called. But with disabling alias, no problem.
 	require.Equal(t, "func3", executeWorkflow(false))
 	require.Equal(t, "func1", executeWorkflow(true))
+}
+
+// The following types simulate the scenario from
+// https://github.com/temporalio/sdk-go/issues/2379: two activity functions from
+// different packages that share the same short name ("MyActivity"). Distinct
+// struct types stand in for distinct packages: the short name collides but the
+// fully qualified name does not.
+type antiAliasV1 struct{}
+
+func (antiAliasV1) MyActivity(context.Context) (string, error) { return "func1", nil }
+
+type antiAliasV2 struct{}
+
+func (antiAliasV2) MyActivity(context.Context) (string, error) { return "func2", nil }
+
+// TestAntiAliasingByFunctionReference covers the core promise of anti-aliasing:
+// given a function, invoke that function under the name it was registered with —
+// even when a different registration shares its short name (issue #2379 and
+// "New issue 1"). It also confirms strings are used verbatim ("New issue 5").
+func TestAntiAliasingByFunctionReference(t *testing.T) {
+	wf := func(ctx Context) ([]string, error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		out := make([]string, 4)
+		// By function reference: each must reach its own registration despite the
+		// shared short name "MyActivity".
+		if err := ExecuteActivity(ctx, antiAliasV1{}.MyActivity).Get(ctx, &out[0]); err != nil {
+			return nil, err
+		}
+		if err := ExecuteActivity(ctx, antiAliasV2{}.MyActivity).Get(ctx, &out[1]); err != nil {
+			return nil, err
+		}
+		// By string: used verbatim, never redirected through an alias map.
+		if err := ExecuteActivity(ctx, "MyActivity").Get(ctx, &out[2]); err != nil {
+			return nil, err
+		}
+		if err := ExecuteActivity(ctx, "MyActivity_v2").Get(ctx, &out[3]); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+
+	var suite WorkflowTestSuite
+	suite.SetRegistrationAntiAliasing(true)
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(antiAliasV1{}.MyActivity) // registered as "MyActivity"
+	env.RegisterActivityWithOptions(antiAliasV2{}.MyActivity, RegisterActivityOptions{Name: "MyActivity_v2"})
+	env.ExecuteWorkflow(wf)
+	require.NoError(t, env.GetWorkflowError())
+	var result []string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, []string{"func1", "func2", "func1", "func2"}, result)
+}
+
+// TestAntiAliasingLocalActivity confirms anti-aliasing resolution also applies
+// to the ExecuteLocalActivity code path ("New issue 2" — path consistency).
+func TestAntiAliasingLocalActivity(t *testing.T) {
+	wf := func(ctx Context) ([]string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		out := make([]string, 2)
+		if err := ExecuteLocalActivity(ctx, antiAliasV1{}.MyActivity).Get(ctx, &out[0]); err != nil {
+			return nil, err
+		}
+		if err := ExecuteLocalActivity(ctx, antiAliasV2{}.MyActivity).Get(ctx, &out[1]); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+
+	var suite WorkflowTestSuite
+	suite.SetRegistrationAntiAliasing(true)
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(antiAliasV1{}.MyActivity)
+	env.RegisterActivityWithOptions(antiAliasV2{}.MyActivity, RegisterActivityOptions{Name: "MyActivity_v2"})
+	env.ExecuteWorkflow(wf)
+	require.NoError(t, env.GetWorkflowError())
+	var result []string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, []string{"func1", "func2"}, result)
+}
+
+type antiAliasStruct struct{}
+
+func (antiAliasStruct) DoWork(context.Context) (string, error) { return "struct", nil }
+
+// antiAliasDoWork is a top-level activity whose short name ("antiAliasDoWork")
+// differs from the struct method; to force the "New issue 4" collision we
+// register it under the bare name "DoWork".
+func antiAliasDoWork(context.Context) (string, error) { return "plain", nil }
+
+// TestAntiAliasingStructRegistration covers "New issue 4": struct-based
+// registration must record its methods so they are reachable by function
+// reference and do not collide with a same-short-named standalone activity.
+func TestAntiAliasingStructRegistration(t *testing.T) {
+	wf := func(ctx Context) ([]string, error) {
+		ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 5 * time.Second})
+		out := make([]string, 2)
+		if err := ExecuteActivity(ctx, antiAliasDoWork).Get(ctx, &out[0]); err != nil {
+			return nil, err
+		}
+		if err := ExecuteActivity(ctx, antiAliasStruct{}.DoWork).Get(ctx, &out[1]); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+
+	var suite WorkflowTestSuite
+	suite.SetRegistrationAntiAliasing(true)
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivityWithOptions(antiAliasDoWork, RegisterActivityOptions{Name: "DoWork"})
+	env.RegisterActivityWithOptions(&antiAliasStruct{}, RegisterActivityOptions{Name: "Prefix_"})
+	env.ExecuteWorkflow(wf)
+	require.NoError(t, env.GetWorkflowError())
+	var result []string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	// Function reference to the struct method must reach "Prefix_DoWork", not the
+	// standalone "DoWork".
+	require.Equal(t, []string{"plain", "struct"}, result)
+}
+
+func antiAliasWorkflowV1(ctx Context) (string, error) { return "wf1", nil }
+func antiAliasWorkflowV2(ctx Context) (string, error) { return "wf2", nil }
+
+// TestAntiAliasingWorkflowDispatch covers "New issue 3": with anti-aliasing the
+// workflow scheduling side and the getWorkflowDefinition dispatch side agree,
+// because scheduling emits the registered name and dispatch is an exact lookup.
+func TestAntiAliasingWorkflowDispatch(t *testing.T) {
+	parent := func(ctx Context) (string, error) {
+		ctx = WithChildWorkflowOptions(ctx, ChildWorkflowOptions{WorkflowRunTimeout: 5 * time.Second})
+		var got string
+		// Dispatch the v1 child by function reference; must reach v1's
+		// registration, not v2's aliased one.
+		if err := ExecuteChildWorkflow(ctx, antiAliasWorkflowV1).Get(ctx, &got); err != nil {
+			return "", err
+		}
+		return got, nil
+	}
+
+	var suite WorkflowTestSuite
+	suite.SetRegistrationAntiAliasing(true)
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(parent)
+	env.RegisterWorkflow(antiAliasWorkflowV1)
+	env.RegisterWorkflowWithOptions(antiAliasWorkflowV2, RegisterWorkflowOptions{Name: "antiAliasWorkflowV1_v2"})
+	env.ExecuteWorkflow(parent)
+	require.NoError(t, env.GetWorkflowError())
+	var result string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, "wf1", result)
+}
+
+// TestDetectRegistrationAmbiguities verifies the startup detection: in the
+// default (non-anti-aliasing) mode the collisions from the issue are flagged,
+// while anti-aliasing mode reports none.
+func TestDetectRegistrationAmbiguities(t *testing.T) {
+	register := func(r *registry) {
+		// "New issue 1": two functions with the same short name, one aliased —
+		// the plain one becomes unreachable by function reference.
+		r.RegisterActivityWithOptions(antiAliasV1{}.MyActivity, RegisterActivityOptions{Name: "MyActivity_v1"})
+		r.RegisterActivityWithOptions(antiAliasV2{}.MyActivity, RegisterActivityOptions{Name: "MyActivity_v2"})
+	}
+
+	// Default mode: at least one ambiguity is detected.
+	def := newRegistryWithOptions(registryOptions{})
+	register(def)
+	require.NotEmpty(t, def.detectRegistrationAmbiguities())
+
+	// Anti-aliasing mode: no ambiguities.
+	anti := newRegistryWithOptions(registryOptions{antiAliasing: true})
+	register(anti)
+	require.Empty(t, anti.detectRegistrationAmbiguities())
+}
+
+// antiAliasReproWorkflow schedules antiAliasV1{}.MyActivity by function
+// reference. In the default (aliasing) mode this schedules "MyActivity_v2" (the
+// bug from #2379); in anti-aliasing mode it schedules "MyActivity".
+func antiAliasReproWorkflow(ctx Context) error {
+	ctx = WithActivityOptions(ctx, ActivityOptions{
+		ScheduleToStartTimeout: time.Second,
+		StartToCloseTimeout:    time.Second,
+	})
+	return ExecuteActivity(ctx, antiAliasV1{}.MyActivity).Get(ctx, nil)
+}
+
+// makeAntiAliasReproHistory builds a workflow history for antiAliasReproWorkflow.
+// The activity is recorded under activityName (a legacy worker records
+// "MyActivity_v2"; an anti-aliasing worker records "MyActivity"). If flagged, the
+// first WorkflowTaskCompleted carries the anti-aliasing SDK flag, as an
+// anti-aliasing worker would persist. If partial, the history ends at a pending
+// (not-yet-completed) workflow task, modelling an in-flight execution.
+func makeAntiAliasReproHistory(activityName string, flagged bool, partial bool) *historypb.History {
+	taskQueue := "taskQueue1"
+	var firstCompletedMetadata *sdk.WorkflowTaskCompletedMetadata
+	if flagged {
+		firstCompletedMetadata = &sdk.WorkflowTaskCompletedMetadata{
+			LangUsedFlags: []uint32{uint32(SDKFlagRegistrationAntiAliasing)},
+		}
+	}
+	events := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "antiAliasReproWorkflow"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
+			SdkMetadata: firstCompletedMetadata,
+		}),
+		createTestEventActivityTaskScheduled(5, &historypb.ActivityTaskScheduledEventAttributes{
+			ActivityId:   "5",
+			ActivityType: &commonpb.ActivityType{Name: activityName},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+		}),
+		createTestEventActivityTaskStarted(6, &historypb.ActivityTaskStartedEventAttributes{ScheduledEventId: 5}),
+		createTestEventActivityTaskCompleted(7, &historypb.ActivityTaskCompletedEventAttributes{
+			ScheduledEventId: 5,
+			StartedEventId:   6,
+		}),
+		createTestEventWorkflowTaskScheduled(8, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(9),
+	}
+	if !partial {
+		events = append(events,
+			createTestEventWorkflowTaskCompleted(10, &historypb.WorkflowTaskCompletedEventAttributes{
+				ScheduledEventId: 8,
+				StartedEventId:   9,
+			}),
+			createTestEventWorkflowExecutionCompleted(11, &historypb.WorkflowExecutionCompletedEventAttributes{
+				WorkflowTaskCompletedEventId: 10,
+			}),
+		)
+	}
+	return &historypb.History{Events: events}
+}
+
+// TestAntiAliasingReplayNonDeterminism demonstrates why flipping a worker to
+// anti-aliasing is NOT safe if it changed resolution unconditionally: a history
+// recorded by a legacy (aliasing) worker no longer matches the commands an
+// anti-aliasing worker produces for the same workflow code. This replays a
+// COMPLETE legacy history, which the replayer validates by re-producing the
+// first workflow task fresh (as if the workflow had started under the new code),
+// so the anti-aliasing flag is set and the divergence surfaces as an NDE. This
+// is the divergence that the SDK flag gating (see the following tests) contains
+// to genuinely new executions.
+func TestAntiAliasingReplayNonDeterminism(t *testing.T) {
+	// First, prove the two modes resolve the SAME function reference to DIFFERENT
+	// scheduled activity type names. This divergence is the root cause of the NDE.
+	makeReg := func(antiAliasing bool) *registry {
+		r := newRegistryWithOptions(registryOptions{antiAliasing: antiAliasing})
+		r.RegisterActivity(antiAliasV1{}.MyActivity)
+		r.RegisterActivityWithOptions(antiAliasV2{}.MyActivity, RegisterActivityOptions{Name: "MyActivity_v2"})
+		return r
+	}
+	// Legacy worker records "MyActivity_v2" for antiAliasV1{}.MyActivity (the bug).
+	require.Equal(t, "MyActivity_v2", getActivityFunctionName(makeReg(false), antiAliasV1{}.MyActivity))
+	// Anti-aliasing worker records "MyActivity" for the very same reference.
+	require.Equal(t, "MyActivity", getActivityFunctionName(makeReg(true), antiAliasV1{}.MyActivity))
+
+	// A complete history as a legacy worker would have written it (no flag,
+	// activity scheduled under "MyActivity_v2"). Replaying it with an
+	// anti-aliasing worker fails: re-producing the first task fresh sets the flag,
+	// so the worker schedules "MyActivity", which mismatches "MyActivity_v2".
+	history := makeAntiAliasReproHistory("MyActivity_v2", false /*flagged*/, false /*partial*/)
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{RegistrationAntiAliasing: true})
+	require.NoError(t, err)
+	replayer.RegisterWorkflow(antiAliasReproWorkflow)
+	err = replayer.ReplayWorkflowHistory(getLogger(), history)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "nondeterministic")
+}
+
+// TestAntiAliasingReplaySafeForInFlight is the payoff: an in-flight execution
+// that STARTED under a legacy worker (no anti-aliasing flag in history, activity
+// recorded as "MyActivity_v2") is replayed by an anti-aliasing worker without a
+// non-determinism error. Because the flag is set only at genuine workflow start
+// (which is replayed here with isReplay=true), the anti-aliasing worker keeps
+// using legacy resolution for this execution and reproduces "MyActivity_v2". The
+// history is partial (ends at a pending workflow task) to model an open
+// execution, which is exactly what a live worker replays.
+func TestAntiAliasingReplaySafeForInFlight(t *testing.T) {
+	history := makeAntiAliasReproHistory("MyActivity_v2", false /*flagged*/, true /*partial*/)
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{RegistrationAntiAliasing: true})
+	require.NoError(t, err)
+	replayer.RegisterWorkflow(antiAliasReproWorkflow)
+	require.NoError(t, replayer.ReplayWorkflowHistory(getLogger(), history))
+}
+
+// TestAntiAliasingReplayWithFlagIsConsistent shows that once a workflow started
+// under anti-aliasing (the flag is present in history, activity recorded as
+// "MyActivity"), it replays cleanly regardless of the replaying worker's own
+// setting. The flag in history is the source of truth, so a mixed fleet of
+// anti-aliasing and legacy workers stays deterministic.
+func TestAntiAliasingReplayWithFlagIsConsistent(t *testing.T) {
+	history := makeAntiAliasReproHistory("MyActivity", true /*flagged*/, false /*partial*/)
+	for _, workerAntiAliasing := range []bool{true, false} {
+		replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{RegistrationAntiAliasing: workerAntiAliasing})
+		require.NoError(t, err)
+		replayer.RegisterWorkflow(antiAliasReproWorkflow)
+		require.NoError(t, replayer.ReplayWorkflowHistory(getLogger(), history),
+			"flagged history must replay cleanly with worker anti-aliasing=%v", workerAntiAliasing)
+	}
 }
 
 func (s *internalWorkerTestSuite) TestReservedTemporalName() {

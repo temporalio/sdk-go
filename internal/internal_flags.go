@@ -38,7 +38,15 @@ const (
 	// we will fallback onto the default data converter. If the default DC fails, the user DC error will be returned.
 	SDKFlagMemoUserDCEncode               = 7
 	SDKFlagWorkflowNewChannelLostMessages = 8
-	SDKFlagUnknown                        = math.MaxUint32
+	// SDKFlagRegistrationAntiAliasing records that a workflow execution resolves
+	// workflow/activity function references to their registered name (see
+	// worker.Options.RegistrationAntiAliasing). It is set once, at genuine
+	// workflow start, and only when the worker opted in. Because it is persisted
+	// in history, an execution that started before the worker enabled
+	// anti-aliasing (no flag) keeps using the legacy resolution on replay, so
+	// enabling the mode never breaks in-flight workflows.
+	SDKFlagRegistrationAntiAliasing = 9
+	SDKFlagUnknown                  = math.MaxUint32
 )
 
 // sdkFlagsAllowed holds the enabled state for each flag.
@@ -55,6 +63,10 @@ var sdkFlagsAllowed = map[sdkFlag]bool{
 	SDKFlagCancelAwaitTimerOnCondition:    false,
 	SDKFlagMemoUserDCEncode:               true,
 	SDKFlagWorkflowNewChannelLostMessages: true,
+	// Allowed so opted-in workers can record it; recording is additionally gated
+	// on worker.Options.RegistrationAntiAliasing, so it never activates for
+	// workers that did not opt in.
+	SDKFlagRegistrationAntiAliasing: true,
 }
 
 func init() {

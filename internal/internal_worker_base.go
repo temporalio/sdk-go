@@ -159,6 +159,11 @@ type (
 		DrainUnhandledUpdates() bool
 		// TryUse returns true if this flag may currently be used.
 		TryUse(flag sdkFlag) bool
+		// UseRegistrationAntiAliasing reports whether this workflow execution
+		// resolves function references to their registered name. The decision is
+		// fixed at workflow start and read (never recorded) here, so it is stable
+		// across replays and does not change for in-flight executions.
+		UseRegistrationAntiAliasing() bool
 		GenerateSequence() int64
 	}
 

@@ -1044,7 +1044,10 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
-	activityType := getActivityFunctionName(registry, activity)
+	// Use the per-execution anti-aliasing decision (fixed at workflow start), not
+	// the worker-wide setting, so enabling the mode never changes the scheduled
+	// type name of an already-running execution on replay.
+	activityType := resolveActivityName(registry, activity, getWorkflowEnvironment(ctx).UseRegistrationAntiAliasing())
 	// Put header on context before executing
 	ctx = workflowContextWithNewHeader(ctx)
 	return i.ExecuteActivity(ctx, activityType, args...)
@@ -1194,10 +1197,9 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
-	activityType, isMethod := getFunctionName(activity)
-	if alias, ok := env.GetRegistry().getActivityAlias(activityType); ok {
-		activityType = alias
-	}
+	_, isMethod := getFunctionName(activity)
+	// Use the per-execution anti-aliasing decision (see ExecuteActivity).
+	activityType := resolveActivityName(env.GetRegistry(), activity, env.UseRegistrationAntiAliasing())
 	var fn interface{}
 	if _, ok := activity.(string); ok {
 		fn = nil
@@ -1398,7 +1400,8 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
-	workflowType, err := getWorkflowFunctionName(env.GetRegistry(), childWorkflow)
+	// Use the per-execution anti-aliasing decision (see ExecuteActivity).
+	workflowType, err := resolveWorkflowName(env.GetRegistry(), childWorkflow, env.UseRegistrationAntiAliasing())
 	if err != nil {
 		panic(err)
 	}
