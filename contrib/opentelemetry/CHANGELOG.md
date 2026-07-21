@@ -11,6 +11,13 @@ or Security.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-07-21
+
+### Fixed
+
+- Fixed the module's published dependency metadata to require Temporal Go SDK v1.46.0 instead of
+  v1.12.0.
+
 ## [0.8.0] - 2026-07-16
 
 ### Added
