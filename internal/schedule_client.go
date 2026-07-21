@@ -295,8 +295,6 @@ type (
 		// in single-line Temporal Markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticSummary string
 
 		// Details - General fixed details for this child workflow execution that will appear in UI/CLI. This can be in
@@ -304,8 +302,6 @@ type (
 		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticDetails string
 
 		// Priority - Optional priority settings that control relative ordering of
