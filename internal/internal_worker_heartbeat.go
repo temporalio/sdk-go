@@ -60,7 +60,6 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 	}
 	// If this is the first worker on the namespace, start a new shared namespace worker.
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
-	controlTaskQueue := workerControlTaskQueue(namespace, m.client.workerGroupingKey)
 	metricsHandler := m.client.metricsHandler
 	if metricsHandler == nil {
 		metricsHandler = metrics.NopHandler
@@ -73,12 +72,14 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		heartbeatCancel:               heartbeatCancel,
 		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
 		activityCancellationCallbacks: newActivityCancellationCallbacks(),
-		workerControlTaskQueue:        controlTaskQueue,
-		workerInstanceKey:             uuid.NewString(),
-		metricsHandler:                metricsHandler,
-		stopC:                         make(chan struct{}),
-		stoppedC:                      make(chan struct{}),
-		logger:                        m.logger,
+		workerControlTaskQueue: workerControlTaskQueueState{
+			name: workerControlTaskQueue(namespace, m.client.workerGroupingKey),
+		},
+		workerInstanceKey: uuid.NewString(),
+		metricsHandler:    metricsHandler,
+		stopC:             make(chan struct{}),
+		stoppedC:          make(chan struct{}),
+		logger:            m.logger,
 	}
 	m.workers[namespace] = hw
 	return hw
@@ -156,7 +157,7 @@ type sharedNamespaceWorker struct {
 
 	activityCancellationCallbacks *activityCancellationCallbacks
 	workerCommandsSupported       bool
-	workerControlTaskQueue        string
+	workerControlTaskQueue        workerControlTaskQueueState
 	workerInstanceKey             string
 	metricsHandler                metrics.Handler
 
@@ -176,6 +177,8 @@ func (hw *sharedNamespaceWorker) run() {
 		workerCommandsDone := make(chan struct{})
 		go func() {
 			defer close(workerCommandsDone)
+			hw.workerControlTaskQueue.enabled.Store(true)
+			defer hw.workerControlTaskQueue.enabled.Store(false)
 			hw.runWorkerCommands()
 		}()
 		defer func() {
@@ -272,7 +275,7 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 }
 
 func (hw *sharedNamespaceWorker) pollWorkerCommandTask() (*workflowservice.PollNexusTaskQueueResponse, error) {
-	rpcMetricsHandler := hw.metricsHandler.WithTags(metrics.TaskQueueTags(hw.workerControlTaskQueue))
+	rpcMetricsHandler := hw.metricsHandler.WithTags(metrics.TaskQueueTags(hw.workerControlTaskQueue.name))
 	grpcCtx, cancel := newGRPCContext(
 		hw.workerCtx,
 		grpcMetricsHandler(rpcMetricsHandler),
@@ -285,7 +288,7 @@ func (hw *sharedNamespaceWorker) pollWorkerCommandTask() (*workflowservice.PollN
 	return hw.client.workflowService.PollNexusTaskQueue(grpcCtx, &workflowservice.PollNexusTaskQueueRequest{
 		Namespace: hw.namespace,
 		TaskQueue: &taskqueuepb.TaskQueue{
-			Name: hw.workerControlTaskQueue,
+			Name: hw.workerControlTaskQueue.name,
 			Kind: enumspb.TASK_QUEUE_KIND_WORKER_COMMANDS,
 		},
 		Identity:          hw.client.identity,

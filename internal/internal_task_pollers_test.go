@@ -40,7 +40,7 @@ func (wth *countingTaskHandler) ProcessWorkflowTask(
 	return wth.WorkflowTaskHandler.ProcessWorkflowTask(task, wfctx, hb)
 }
 
-func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
+func TestPollRequestsAdvertiseWorkerControlTaskQueueOnlyWhenEnabled(t *testing.T) {
 	t.Parallel()
 
 	ctrl := gomock.NewController(t)
@@ -52,17 +52,19 @@ func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
 		controlQueue = "temporal-sys/worker-commands/test-ns/grouping-key"
 	)
 
+	controlQueueState := &workerControlTaskQueueState{name: controlQueue}
+	expectedControlQueue := ""
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
-			require.Equal(t, controlQueue, req.WorkerControlTaskQueue)
+			require.Equal(t, expectedControlQueue, req.WorkerControlTaskQueue)
 			require.Equal(t, taskQueue, req.TaskQueue.GetName())
 			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
-		})
+		}).Times(2)
 
 	base := basePoller{
 		metricsHandler:         metrics.NopHandler,
 		workerBuildID:          "test-build-id",
-		workerControlTaskQueue: controlQueue,
+		workerControlTaskQueue: controlQueueState,
 	}
 	wtp := &workflowTaskPoller{
 		basePoller:            base,
@@ -76,13 +78,19 @@ func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
 	}
 	_, err := wtp.poll(context.Background())
 	require.NoError(t, err)
+	controlQueueState.enabled.Store(true)
+	expectedControlQueue = controlQueue
+	_, err = wtp.poll(context.Background())
+	require.NoError(t, err)
 
+	controlQueueState.enabled.Store(false)
+	expectedControlQueue = ""
 	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollActivityTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollActivityTaskQueueResponse, error) {
-			require.Equal(t, controlQueue, req.WorkerControlTaskQueue)
+			require.Equal(t, expectedControlQueue, req.WorkerControlTaskQueue)
 			require.Equal(t, taskQueue, req.TaskQueue.GetName())
 			return &workflowservice.PollActivityTaskQueueResponse{}, nil
-		})
+		}).Times(2)
 
 	atp := &activityTaskPoller{
 		basePoller:      base,
@@ -93,6 +101,10 @@ func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
 		logger:          ilog.NewDefaultLogger(),
 		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeActivityTask),
 	}
+	_, err = atp.poll(context.Background())
+	require.NoError(t, err)
+	controlQueueState.enabled.Store(true)
+	expectedControlQueue = controlQueue
 	_, err = atp.poll(context.Background())
 	require.NoError(t, err)
 }

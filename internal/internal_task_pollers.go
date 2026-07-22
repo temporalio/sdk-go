@@ -90,7 +90,7 @@ type (
 		// Unique identifier for worker
 		workerInstanceKey string
 		// Per-client queue used by the server to send worker commands.
-		workerControlTaskQueue string
+		workerControlTaskQueue *workerControlTaskQueueState
 		// Server cancels polls on shutdown
 		workerPollCompleteOnShutdown *atomic.Bool
 	}
@@ -1155,7 +1155,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 			wtp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey:      wtp.workerInstanceKey,
-		WorkerControlTaskQueue: wtp.workerControlTaskQueue,
+		WorkerControlTaskQueue: wtp.workerControlTaskQueue.get(),
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1414,7 +1414,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 			atp.workerDeploymentVersion,
 		),
 		WorkerInstanceKey:      atp.workerInstanceKey,
-		WorkerControlTaskQueue: atp.workerControlTaskQueue,
+		WorkerControlTaskQueue: atp.workerControlTaskQueue.get(),
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)

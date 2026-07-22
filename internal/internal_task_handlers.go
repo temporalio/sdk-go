@@ -146,7 +146,7 @@ type (
 		cache                     *WorkerCache
 		deadlockDetectionTimeout  time.Duration
 		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
-		workerControlTaskQueue    string
+		workerControlTaskQueue    *workerControlTaskQueueState
 	}
 
 	activityCancellationCallbacks struct {
@@ -2018,7 +2018,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			wth.useBuildIDForVersioning,
 			wth.workerDeploymentVersion,
 		),
-		WorkerControlTaskQueue: wth.workerControlTaskQueue,
+		WorkerControlTaskQueue: wth.workerControlTaskQueue.get(),
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs

@@ -236,7 +236,7 @@ type (
 
 		workerInstanceKey string
 
-		workerControlTaskQueue string
+		workerControlTaskQueue *workerControlTaskQueueState
 
 		activityCancellationCallbacks *activityCancellationCallbacks
 
@@ -328,6 +328,20 @@ func (params *workerExecutionParameters) isInternalWorker() bool {
 
 func workerControlTaskQueue(namespace, groupingKey string) string {
 	return fmt.Sprintf("temporal-sys/worker-commands/%s/%s", namespace, groupingKey)
+}
+
+// workerControlTaskQueueState shares command-poller availability with every worker that may
+// advertise the queue. get may be called concurrently by pollers and task handlers.
+type workerControlTaskQueueState struct {
+	name    string
+	enabled atomic.Bool
+}
+
+func (s *workerControlTaskQueueState) get() string {
+	if s == nil || !s.enabled.Load() {
+		return ""
+	}
+	return s.name
 }
 
 func newWorkflowWorkerInternal(client *WorkflowClient, params workerExecutionParameters, ppMgr pressurePointMgr, overrides *workerOverrides, registry *registry) *workflowWorker {
@@ -2353,10 +2367,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	// should take a pointer to this struct and wait for it to be populated when the worker is run.
 	var capabilities workflowservice.GetSystemInfoResponse_Capabilities
 	var activityCancellationCallbacks *activityCancellationCallbacks
+	var controlTaskQueueState *workerControlTaskQueueState
 	if client.heartbeatManager != nil {
-		activityCancellationCallbacks = client.heartbeatManager.
-			sharedNamespaceWorkerFor(client.namespace).
-			activityCancellationCallbacks
+		sharedWorker := client.heartbeatManager.sharedNamespaceWorkerFor(client.namespace)
+		activityCancellationCallbacks = sharedWorker.activityCancellationCallbacks
+		controlTaskQueueState = &sharedWorker.workerControlTaskQueue
 	}
 
 	baseMetricsHandler := client.metricsHandler.WithTags(metrics.TaskQueueTags(taskQueue))
@@ -2431,7 +2446,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		capabilities:                  &capabilities,
 		pollTimeTracker:               &pollTimeTracker{},
 		workerInstanceKey:             workerInstanceKey,
-		workerControlTaskQueue:        workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		workerControlTaskQueue:        controlTaskQueueState,
 		activityCancellationCallbacks: activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:  workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:     &atomic.Bool{},

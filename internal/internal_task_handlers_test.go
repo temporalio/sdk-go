@@ -43,6 +43,43 @@ const (
 	testNamespace = "test-namespace"
 )
 
+func TestWorkflowTaskCompletionAdvertisesWorkerControlTaskQueueOnlyWhenEnabled(t *testing.T) {
+	t.Parallel()
+
+	const controlQueue = "temporal-sys/worker-commands/test-namespace/grouping-key"
+	controlQueueState := &workerControlTaskQueueState{name: controlQueue}
+	workflowInfo := &WorkflowInfo{WorkflowType: WorkflowType{Name: "test-workflow"}}
+	eventHandler := &workflowExecutionEventHandlerImpl{
+		workflowEnvironmentImpl: &workflowEnvironmentImpl{
+			workflowInfo: workflowInfo,
+			sdkFlags:     newSDKFlagSet(nil),
+		},
+	}
+	taskHandler := &workflowTaskHandlerImpl{
+		namespace:              testNamespace,
+		metricsHandler:         metrics.NopHandler,
+		workerControlTaskQueue: controlQueueState,
+	}
+	workflowContext := &workflowExecutionContextImpl{workflowInfo: workflowInfo}
+	complete := func() *workflowservice.RespondWorkflowTaskCompletedRequest {
+		completion := taskHandler.completeWorkflow(
+			eventHandler,
+			&workflowservice.PollWorkflowTaskQueueResponse{},
+			workflowContext,
+			nil,
+			nil,
+			false,
+		)
+		return completion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+	}
+
+	require.Empty(t, complete().GetWorkerControlTaskQueue())
+	controlQueueState.enabled.Store(true)
+	require.Equal(t, controlQueue, complete().GetWorkerControlTaskQueue())
+	controlQueueState.enabled.Store(false)
+	require.Empty(t, complete().GetWorkerControlTaskQueue())
+}
+
 type (
 	TaskHandlersTestSuite struct {
 		suite.Suite

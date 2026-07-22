@@ -124,15 +124,74 @@ func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 			workflowService: mockService,
 			identity:        workerIdent,
 		},
-		namespace:              namespace,
-		workerCtx:              ctx,
-		workerControlTaskQueue: controlQueue,
-		workerInstanceKey:      workerKey,
-		metricsHandler:         metrics.NopHandler,
+		namespace: namespace,
+		workerCtx: ctx,
+		workerControlTaskQueue: workerControlTaskQueueState{
+			name: controlQueue,
+		},
+		workerInstanceKey: workerKey,
+		metricsHandler:    metrics.NopHandler,
 	}
 
 	if _, err := hw.pollWorkerCommandTask(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestWorkerControlTaskQueueAdvertisedOnlyWhileCommandPollerRuns(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	pollStarted := make(chan struct{})
+	mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(ctx context.Context, _ *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+			close(pollStarted)
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})
+
+	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+	hw := &sharedNamespaceWorker{
+		client: &WorkflowClient{
+			workflowService: mockService,
+			identity:        "worker-identity",
+		},
+		namespace:               "test-ns",
+		interval:                time.Hour,
+		workerCtx:               heartbeatCtx,
+		heartbeatCancel:         heartbeatCancel,
+		callbacks:               make(map[string]func() *workerpb.WorkerHeartbeat),
+		workerCommandsSupported: true,
+		workerControlTaskQueue: workerControlTaskQueueState{
+			name: "temporal-sys/worker-commands/test-ns/grouping-key",
+		},
+		workerInstanceKey: "worker-command-worker",
+		metricsHandler:    metrics.NopHandler,
+		stopC:             make(chan struct{}),
+		stoppedC:          make(chan struct{}),
+		logger:            ilog.NewDefaultLogger(),
+	}
+
+	if got := hw.workerControlTaskQueue.get(); got != "" {
+		t.Fatalf("control task queue before command polling = %q, want empty", got)
+	}
+	hw.started.Store(true)
+	go hw.run()
+	t.Cleanup(hw.stop)
+
+	select {
+	case <-pollStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for worker-command poll to start")
+	}
+	if got, want := hw.workerControlTaskQueue.get(), hw.workerControlTaskQueue.name; got != want {
+		t.Fatalf("control task queue while command polling = %q, want %q", got, want)
+	}
+
+	hw.stop()
+	if got := hw.workerControlTaskQueue.get(); got != "" {
+		t.Fatalf("control task queue after command polling = %q, want empty", got)
 	}
 }
 
@@ -234,15 +293,19 @@ func TestWorkerCommandsDisabledDoesNotPoll(t *testing.T) {
 		heartbeatCancel:         heartbeatCancel,
 		callbacks:               map[string]func() *workerpb.WorkerHeartbeat{"worker1": func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} }},
 		workerCommandsSupported: false,
-		workerControlTaskQueue:  "temporal-sys/worker-commands/test-ns/grouping-key",
-		workerInstanceKey:       "worker-command-worker",
-		metricsHandler:          metrics.NopHandler,
-		stopC:                   make(chan struct{}),
-		stoppedC:                make(chan struct{}),
-		logger:                  ilog.NewDefaultLogger(),
+		workerControlTaskQueue: workerControlTaskQueueState{
+			name: "temporal-sys/worker-commands/test-ns/grouping-key",
+		},
+		workerInstanceKey: "worker-command-worker",
+		metricsHandler:    metrics.NopHandler,
+		stopC:             make(chan struct{}),
+		stoppedC:          make(chan struct{}),
+		logger:            ilog.NewDefaultLogger(),
+	}
+	if got := hw.workerControlTaskQueue.get(); got != "" {
+		t.Fatalf("control task queue with commands disabled = %q, want empty", got)
 	}
 	hw.started.Store(true)
 	go hw.run()
-	time.Sleep(25 * time.Millisecond)
 	hw.stop()
 }
