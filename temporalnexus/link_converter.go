@@ -34,3 +34,28 @@ func ConvertLinkNexusOperationToNexusLink(no *commonpb.Link_NexusOperation) nexu
 func ConvertNexusLinkToLinkNexusOperation(link nexus.Link) (*commonpb.Link_NexusOperation, error) {
 	return internal.ConvertNexusLinkToLinkNexusOperation(link)
 }
+
+// ConvertWorkflowLinkToNexusLink converts a Link_Workflow to a Nexus Link.
+//
+// NOTE: Experimental
+func ConvertWorkflowLinkToNexusLink(workflowLink *commonpb.Link_Workflow) nexus.Link {
+	return internal.ConvertWorkflowLinkToNexusLink(workflowLink)
+}
+
+// ConvertCommonLinkToNexusLink converts a Common Link to a Nexus Link. Will be used
+// to safely point to non-workflow event links for cases where Nexus operations fail.
+// Eg. UpdateWorkflow fails validation -> point to Workflow instead of WorkflowEvent
+// as there will not be a history event. Returns an empty link if commonLink is neither
+// a WorkflowEventLink nor a WorkflowLink
+//
+// NOTE: Experimental
+func ConvertCommonLinkToNexusLink(commonLink *commonpb.Link) nexus.Link {
+	switch commonLink.GetVariant().(type) {
+	case *commonpb.Link_WorkflowEvent_:
+		return ConvertLinkWorkflowEventToNexusLink(commonLink.GetWorkflowEvent())
+	case *commonpb.Link_Workflow_:
+		return ConvertWorkflowLinkToNexusLink(commonLink.GetWorkflow())
+	default:
+		return nexus.Link{}
+	}
+}

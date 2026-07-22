@@ -413,6 +413,20 @@ func newBaseWorker(
 	return bw
 }
 
+// setTaskPollers replaces the worker's task pollers. It must only be called
+// before Start(), while no poller goroutines are reading the poller list, so it
+// needs no synchronization. It (re)creates the poller balancer when the new
+// poller list has more than one poller, mirroring newBaseWorker.
+func (bw *baseWorker) setTaskPollers(taskPollers []scalableTaskPoller) {
+	bw.options.taskPollers = taskPollers
+	if len(taskPollers) > 1 && bw.pollerBalancer == nil {
+		bw.pollerBalancer = &pollerBalancer{
+			pollerCount:   make(map[string]int),
+			pollerBarrier: make(map[string]barrier),
+		}
+	}
+}
+
 // Start starts a fixed set of routines to do the work.
 func (bw *baseWorker) Start() {
 	if bw.isWorkerStarted {

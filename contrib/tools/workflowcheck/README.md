@@ -14,7 +14,12 @@ To install with [Go](https://golang.org/) installed and on the `PATH`, run:
 
     go install go.temporal.io/sdk/contrib/tools/workflowcheck@latest
 
-Or you can simply build by running `go build` inside of this directory. 
+Or you can simply build by running `go build` inside of this directory.
+
+## Module versioning
+
+`workflowcheck` is released separately from the core Temporal Go SDK. See
+[CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## CLI Usage
 

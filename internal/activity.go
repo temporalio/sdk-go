@@ -179,8 +179,6 @@ type (
 		// in single-line Temporal Markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		Summary string
 
 		// Priority - Optional priority settings that control relative ordering of
@@ -214,8 +212,6 @@ type (
 		// in single-line Temporal Markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		Summary string
 	}
 )

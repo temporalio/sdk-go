@@ -9,6 +9,7 @@ import (
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -116,9 +117,8 @@ func TestLoadTokenType(t *testing.T) {
 
 	// Unknown type=99
 	unknownToken := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"t":99}`))
-	tokenType, err = loadTokenType(unknownToken)
-	require.NoError(t, err)
-	require.Equal(t, operationTokenType(99), tokenType)
+	_, err = loadTokenType(unknownToken)
+	require.EqualError(t, err, "invalid operation token: 99")
 
 	// Empty token
 	_, err = loadTokenType("")
@@ -136,7 +136,7 @@ func TestLoadTokenType(t *testing.T) {
 	// Missing type field (t=0)
 	missingType := base64.URLEncoding.WithPadding(base64.NoPadding).EncodeToString([]byte(`{"ns":"ns"}`))
 	_, err = loadTokenType(missingType)
-	require.ErrorContains(t, err, "missing or zero token type")
+	require.ErrorContains(t, err, "invalid operation token: 0")
 }
 
 func TestDoubleStartGuard(t *testing.T) {
@@ -153,6 +153,54 @@ func TestDoubleStartGuard(t *testing.T) {
 	_, err = StartWorkflow(context.Background(), nc, client.StartWorkflowOptions{}, func(_ workflow.Context, _ string) (string, error) { return "", nil }, "ignored")
 	require.ErrorAs(t, err, &handlerErr)
 	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+}
+
+func TestStartUpdateWorkflowGuards(t *testing.T) {
+	nc := NexusClient{
+		asyncStarted:          &atomic.Bool{},
+		startOperationOptions: nexus.StartOperationOptions{CallbackURL: "temporal://dummy"},
+	}
+	// attempt running async with an exhuasted nexusClient handler
+	nc.asyncStarted.Store(true)
+	ctx := internal.ContextWithNexusOperationContext(context.Background(), &internal.NexusOperationContext{})
+	_, err := StartUpdateWorkflow[string](ctx, nc, client.UpdateWorkflowOptions{
+		WorkflowID:   "emptyWorkflowID!",
+		UpdateName:   "upd",
+		WaitForStage: client.WorkflowUpdateStageAccepted,
+	})
+	var handlerErr *nexus.HandlerError
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+	require.ErrorContains(t, err, "only one async operation")
+	// attempt to run async without callback
+	_, err = StartUpdateWorkflow[string](
+		ctx,
+		NexusClient{
+			asyncStarted: &atomic.Bool{},
+		},
+		client.UpdateWorkflowOptions{
+			WorkflowID:   "anotherEmptyWorkflowID!",
+			UpdateName:   "upd",
+			WaitForStage: client.WorkflowUpdateStageAccepted,
+		},
+	)
+	require.ErrorAs(t, err, &handlerErr)
+	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+	require.ErrorContains(t, err, "callback URL required")
+	// attempt running an invalid update
+	_, err = StartUpdateWorkflow[string](
+		ctx,
+		NexusClient{
+			asyncStarted: &atomic.Bool{},
+		},
+		client.UpdateWorkflowOptions{
+			WorkflowID: "dontTriggerValidation",
+			UpdateName: "upd",
+		},
+	)
+	var opError *nexus.HandlerError
+	require.ErrorAs(t, err, &opError)
+	require.Equal(t, opError.Cause.Error(), "nexus op workflow updates only support WorkflowUpdateStageAccepted for async updates")
 }
 
 func strPtr(s string) *string {

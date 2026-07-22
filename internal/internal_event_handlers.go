@@ -28,7 +28,6 @@ import (
 )
 
 const (
-	queryResultSizeLimit             = 2000000 // 2MB
 	changeVersionSearchAttrSizeLimit = 2048
 )
 
@@ -1505,14 +1504,6 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessQuery(
 		result, err := weh.queryHandler(queryType, queryArgs, header)
 		if err != nil {
 			return nil, err
-		}
-
-		if result.Size() > queryResultSizeLimit {
-			weh.logger.Error("Query result size exceeds limit.",
-				tagQueryType, queryType,
-				tagWorkflowID, weh.workflowInfo.WorkflowExecution.ID,
-				tagRunID, weh.workflowInfo.WorkflowExecution.RunID)
-			return nil, fmt.Errorf("query result size (%v) exceeds limit (%v)", result.Size(), queryResultSizeLimit)
 		}
 
 		return result, nil

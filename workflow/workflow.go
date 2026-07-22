@@ -676,8 +676,6 @@ func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interfa
 // GetCurrentDetails gets the current details for this workflow. This is simply
 // the value set by [SetCurrentDetails] or empty if never set. See that function
 // for more details.
-//
-// NOTE: Experimental
 func GetCurrentDetails(ctx Context) string {
 	return internal.GetCurrentDetails(ctx)
 }
@@ -685,8 +683,6 @@ func GetCurrentDetails(ctx Context) string {
 // SetCurrentDetails sets the current details for this workflow. This is
 // typically an arbitrary string in Temporal markdown format may be displayed in
 // the UI or CLI.
-//
-// NOTE: Experimental
 func SetCurrentDetails(ctx Context, details string) {
 	internal.SetCurrentDetails(ctx, details)
 }
