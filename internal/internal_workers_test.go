@@ -92,7 +92,9 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
 	client := &WorkflowClient{workflowService: s.service}
 	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
+	s.Nil(workflowWorker.worker.options.taskPollers)
 	_ = workflowWorker.Start()
+	s.NotEmpty(workflowWorker.worker.options.taskPollers)
 	workflowWorker.Stop()
 
 	s.NoError(ctx.Err())
@@ -361,7 +363,9 @@ func (s *WorkersTestSuite) TestActivityWorker() {
 	registry.addActivityWithLock(a.ActivityType().Name, a)
 	client := WorkflowClient{workflowService: s.service}
 	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
+	s.Nil(activityWorker.worker.options.taskPollers)
 	_ = activityWorker.Start()
+	s.NotEmpty(activityWorker.worker.options.taskPollers)
 	activityWorker.Stop()
 }
 

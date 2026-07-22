@@ -448,6 +448,11 @@ func newWorkflowTaskWorkerInternal(
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
+	// AggregatedWorker initializes pollers after resolving namespace capabilities.
+	// Fall back to the configured behavior for direct internal starts.
+	if ww.worker.options.taskPollers == nil {
+		ww.initializeTaskPollers(ww.executionParameters.WorkflowTaskPollerBehavior)
+	}
 	ww.localActivityWorker.Start()
 	ww.worker.Start()
 	return nil // TODO: propagate error
@@ -651,6 +656,11 @@ func newActivityWorker(
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
+	// AggregatedWorker initializes pollers after resolving namespace capabilities.
+	// Fall back to the configured behavior for direct internal starts.
+	if aw.worker.options.taskPollers == nil {
+		aw.initializeTaskPollers(aw.executionParameters.ActivityTaskPollerBehavior)
+	}
 	aw.worker.Start()
 	return nil // TODO: propagate errors
 }
