@@ -853,6 +853,12 @@ func IsContinueAsNewError(err error) bool {
 	return errors.As(err, &continueAsNewErr)
 }
 
+// GetDataConverter returns the data converter associated with the workflow
+// context, with workflow serialization context applied.
+func GetDataConverter(ctx Context) converter.DataConverter {
+	return internal.GetDataConverterFromWorkflowContext(ctx)
+}
+
 // DataConverterWithoutDeadlockDetection returns a data converter that disables
 // workflow deadlock detection for each call on the data converter. This should
 // be used for advanced data converters that may perform remote calls or
