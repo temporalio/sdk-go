@@ -15,8 +15,12 @@ or Security.
 
 ### Fixed
 
-- Fixed the module's published dependency metadata to require Temporal Go SDK v1.46.0 instead of
-  v1.12.0.
+- Corrected the module's minimum Temporal Go SDK requirement from v1.12.0 to v1.46.0. The stale
+  minimum could select SDK v1.12.0 alongside the modern Temporal API, gRPC, protobuf, and split
+  `genproto` dependencies used by this release, producing compilation failures or, in legacy
+  dependency graphs, ambiguous `genproto` imports. Applications already selecting a compatible
+  newer SDK are unaffected; this does not resolve `genproto` conflicts introduced by unrelated
+  dependencies.
 
 ## [0.8.0] - 2026-07-16
 
