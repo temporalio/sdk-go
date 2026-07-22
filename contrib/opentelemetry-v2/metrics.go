@@ -1,0 +1,150 @@
+package opentelemetry
+
+import (
+	"context"
+	"time"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/common/metrics"
+)
+
+var _ client.MetricsHandler = MetricsHandler{}
+
+// MetricsHandler is an implementation of client.MetricsHandler
+// for open telemetry.
+type MetricsHandler struct {
+	meter                metric.Meter
+	attributes           attribute.Set
+	onError              func(error)
+	useMonotonicCounters bool
+}
+
+// MetricsHandlerOptions are options provided to NewMetricsHandler.
+type MetricsHandlerOptions struct {
+	// Meter is the Meter to use. If not set, one is obtained from the global
+	// meter provider using the name "temporal-sdk-go".
+	Meter metric.Meter
+	// InitialAttributes to set on the handler
+	//
+	// Optional: Defaults to the empty set.
+	InitialAttributes attribute.Set
+	// OnError Callback to invoke if the provided meter returns an error.
+	//
+	// Optional: Defaults to panicking on any error.
+	OnError func(error)
+	// UseMonotonicCounters causes [MetricsHandler.Counter] to use OpenTelemetry's Int64Counter
+	// instead of Int64UpDownCounter. This allows exporters to identify SDK
+	// counters as monotonic sums.
+	//
+	// [client.MetricsCounter] is documented as ever-increasing, so values passed to
+	// [client.MetricsCounter.Inc] must be non-negative. Negative values may produce invalid or
+	// backend-dependent metric data.
+	//
+	// Optional: Defaults to false
+	UseMonotonicCounters bool
+}
+
+// NewMetricsHandler returns a client.MetricsHandler that is backed by the given Meter
+func NewMetricsHandler(options MetricsHandlerOptions) MetricsHandler {
+	if options.Meter == nil {
+		options.Meter = otel.GetMeterProvider().Meter("temporal-sdk-go")
+	}
+	if options.OnError == nil {
+		options.OnError = func(err error) { panic(err) }
+	}
+	return MetricsHandler{
+		meter:                options.Meter,
+		attributes:           options.InitialAttributes,
+		onError:              options.OnError,
+		useMonotonicCounters: options.UseMonotonicCounters,
+	}
+}
+
+// ExtractMetricsHandler gets the underlying Open Telemetry MetricsHandler from a MetricsHandler
+// if any is present.
+//
+// Raw use of the MetricHandler is discouraged but may be used for Histograms or other
+// advanced features. This scope does not skip metrics during replay like the
+// metrics handler does. Therefore the caller should check replay state.
+func ExtractMetricsHandler(handler client.MetricsHandler) *MetricsHandler {
+	// Continually unwrap until we find an instance of our own handler
+	for {
+		otelHandler, ok := handler.(MetricsHandler)
+		if ok {
+			return &otelHandler
+		}
+		// If unwrappable, do so, otherwise return noop
+		unwrappable, _ := handler.(interface{ Unwrap() client.MetricsHandler })
+		if unwrappable == nil {
+			return nil
+		}
+		handler = unwrappable.Unwrap()
+	}
+}
+
+// GetMeter returns the meter used by this handler.
+func (m MetricsHandler) GetMeter() metric.Meter {
+	return m.meter
+}
+
+// GetAttributes returns the attributes set on this handler.
+func (m MetricsHandler) GetAttributes() attribute.Set {
+	return m.attributes
+}
+
+func (m MetricsHandler) WithTags(tags map[string]string) client.MetricsHandler {
+	attributes := m.attributes.ToSlice()
+	for k, v := range tags {
+		attributes = append(attributes, attribute.String(k, v))
+	}
+	return MetricsHandler{
+		meter:                m.meter,
+		attributes:           attribute.NewSet(attributes...),
+		onError:              m.onError,
+		useMonotonicCounters: m.useMonotonicCounters,
+	}
+}
+
+func (m MetricsHandler) Counter(name string) client.MetricsCounter {
+	var c interface {
+		Add(context.Context, int64, ...metric.AddOption)
+	}
+	var err error
+	if m.useMonotonicCounters {
+		c, err = m.meter.Int64Counter(name)
+	} else {
+		c, err = m.meter.Int64UpDownCounter(name)
+	}
+	if err != nil {
+		m.onError(err)
+		return client.MetricsNopHandler.Counter(name)
+	}
+	return metrics.CounterFunc(func(d int64) {
+		c.Add(context.Background(), d, metric.WithAttributeSet(m.attributes))
+	})
+}
+
+func (m MetricsHandler) Gauge(name string) client.MetricsGauge {
+	g, err := m.meter.Float64Gauge(name)
+	if err != nil {
+		m.onError(err)
+		return client.MetricsNopHandler.Gauge(name)
+	}
+	return metrics.GaugeFunc(func(f float64) {
+		g.Record(context.Background(), f, metric.WithAttributeSet(m.attributes))
+	})
+}
+
+func (m MetricsHandler) Timer(name string) client.MetricsTimer {
+	h, err := m.meter.Float64Histogram(name, metric.WithUnit("s"))
+	if err != nil {
+		m.onError(err)
+		return client.MetricsNopHandler.Timer(name)
+	}
+	return metrics.TimerFunc(func(t time.Duration) {
+		h.Record(context.Background(), t.Seconds(), metric.WithAttributeSet(m.attributes))
+	})
+}
