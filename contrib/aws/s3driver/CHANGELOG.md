@@ -10,3 +10,9 @@ or Security.
 # Changelog
 
 ## [Unreleased]
+
+### Changed
+
+- S3 object key path segments are now percent-encoded against S3's safe
+  character set (alphanumerics and `!-_.*'()`), encoding all other bytes of
+  their UTF-8 representation as `%XX`.
