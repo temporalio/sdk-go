@@ -20,7 +20,8 @@ Tools run **in-workflow by default** — the idiomatic Temporal model: your work
 is deterministic, and anything that touches the network, clock, or disk goes
 through an Activity. Opt a tool into an Activity with `googleadk.ActivityAsTool`,
 or use `googleadk.NewMCPToolset` for MCP. The real model and any activity/MCP tool
-handlers live worker-side in the registry built by `googleadk.NewActivities(...)`.
+handlers live worker-side in the registry declared by `googleadk.Config` and
+wired onto the worker by `googleadk.NewPlugin(...)`.
 
 ## Add to your project
 
@@ -134,12 +135,11 @@ func main() {
 	}
 	defer c.Close()
 
-	w := worker.New(c, taskQueue, worker.Options{})
-	w.RegisterWorkflow(AgentWorkflow)
-
-	// Worker-side registry: the real model lives here. API keys are captured in
-	// the factory closure and never cross the Activity boundary.
-	acts, err := googleadk.NewActivities(googleadk.Config{
+	// Worker-side registry, wired as a worker plugin: the real model lives here.
+	// API keys are captured in the factory closure and never cross the Activity
+	// boundary. The plugin registers the Activities at worker start and closes
+	// cached MCP toolsets at worker stop.
+	adkPlugin, err := googleadk.NewPlugin(googleadk.Config{
 		Models: map[string]googleadk.ModelFactory{
 			"gemini-2.0-flash": func(ctx context.Context, name string) (model.LLM, error) {
 				// nil config reads GEMINI_API_KEY / GOOGLE_API_KEY from the env, worker-side.
@@ -150,7 +150,9 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	acts.Register(w)
+
+	w := worker.New(c, taskQueue, worker.Options{Plugins: []worker.Plugin{adkPlugin}})
+	w.RegisterWorkflow(AgentWorkflow)
 
 	if err := w.Run(worker.InterruptCh()); err != nil {
 		log.Fatal(err)
@@ -184,9 +186,10 @@ the model SDK's own retries (see below), or override the fallbacks.
   remote tools (full declarations, including parameters) via `ListMcpTools` and
   executes calls via `CallMcpTool`. The live, stateful `mcptoolset.New(...)` runs
   worker-side, never in the workflow. Your `MCPFactory` runs at most once per
-  toolset name — the toolset is cached on the `Activities` value and shared
-  across calls — and calling `Activities.Close` after `worker.Run` returns
-  closes any cached toolset that implements `Close() error`.
+  toolset name — the toolset is cached and shared across calls — and the plugin
+  closes any cached toolset that implements `Close() error` at worker stop
+  automatically; with manual wiring, call `Activities.Close` yourself after
+  `worker.Run` returns.
 - **Deterministic by construction.** `NewContext` binds ADK's `platform.Now` to
   `workflow.Now`, `platform.NewUUID` to a deterministic seeded generator, and
   `platform.RunTasks` to a `workflow.Go` fan-out, so the agent loop replays
@@ -201,7 +204,8 @@ the model SDK's own retries (see below), or override the fallbacks.
   a transient failure twice over. Let Temporal own retries.
 - **Test without a live LLM.** `testing.go` ships `FakeModel`, `FakeMCPServer`, and
   `TextResponse` / `FunctionCallResponse` so you can unit-test workflows with no
-  network.
+  network. The test environments do not run plugins; register the Activities
+  directly with `NewActivities` + `Register` (as this repo's own tests do).
 
 > **Determinism note.** Because plain tools run in-workflow, their code must be
 > deterministic and replay-safe — no direct network, clock, randomness, or
@@ -311,9 +315,10 @@ The bidirectional `RunLive` path (hard-coded goroutines/channels) is **not** sup
 
 ## Composing with other plugins
 
-The Temporal-side Activities use the default JSON data converter and ship no
-client/worker interceptor, so this integration composes with Temporal interceptor-
-or converter-based plugins (e.g. `sdk-go/contrib/opentelemetry`) without conflict.
+This integration's plugin only registers its Activities at worker start and
+closes cached MCP toolsets at worker stop — no interceptors, no data converter —
+so it composes with other entries in `worker.Options.Plugins` (e.g. interceptor-
+or converter-based plugins like `sdk-go/contrib/opentelemetry`) without conflict.
 On the ADK side, add other ADK plugins to `runner.PluginConfig.Plugins` as usual.
 ADK emits its own OpenTelemetry spans; register your tracing interceptor on the
 worker as usual.
