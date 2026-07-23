@@ -161,6 +161,7 @@ func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersCreatesBalancerForMul
 	})
 	s.Len(bw.options.taskPollers, 2)
 	s.NotNil(bw.pollerBalancer)
+	// Panic if task pollers are initialized more than once
 	s.Panics(func() {
 		bw.initializeTaskPollers([]scalableTaskPoller{newPoller(metrics.PollerTypeWorkflowTask)})
 	})

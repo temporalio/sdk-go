@@ -82,6 +82,7 @@ type (
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     workflowservice.WorkflowServiceClient
+		taskProcessor       *workflowTaskProcessor
 		worker              *baseWorker
 		localActivityWorker *baseWorker
 		identity            string
@@ -437,6 +438,7 @@ func newWorkflowTaskWorkerInternal(
 	return &workflowWorker{
 		executionParameters: params,
 		workflowService:     service,
+		taskProcessor:       taskProcessor,
 		worker:              worker,
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
@@ -510,9 +512,8 @@ func buildWorkflowScalableTaskPollers(taskProcessor *workflowTaskProcessor, beha
 }
 
 func (ww *workflowWorker) initializeTaskPollers(behavior PollerBehavior) {
-	taskProcessor := ww.worker.options.taskProcessor.(*workflowTaskProcessor)
 	ww.executionParameters.WorkflowTaskPollerBehavior = behavior
-	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(taskProcessor, behavior, ww.executionParameters))
+	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(ww.taskProcessor, behavior, ww.executionParameters))
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
