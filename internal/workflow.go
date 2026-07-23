@@ -3202,6 +3202,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 					if !executionFuture.IsReady() {
 						executionSettable.Set(nil, ErrCanceled)
 					}
+					wc.env.AbandonNexusOperation(seq)
 				} else {
 					// Go back to the top of the interception chain.
 					getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{
