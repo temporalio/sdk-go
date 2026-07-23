@@ -1,4 +1,4 @@
-<!-- This file is symlinked to AGENTS.md — they are the same file. -->
+<!-- AGENTS.md is symlinked to CLAUDE.md — they are the same file. -->
 
 # Contributor Guidance for `sdk-go`
 
