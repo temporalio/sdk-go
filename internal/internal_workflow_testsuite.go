@@ -2873,6 +2873,15 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 	}
 }
 
+func (env *testWorkflowEnvironmentImpl) AbandonNexusOperation(seq int64) {
+	handle, ok := env.getNexusOperationHandle(seq)
+	if !ok {
+		return
+	}
+	handle.onStarted = func(string, error) {}
+	handle.onCompleted = func(*commonpb.Payload, error) {}
+}
+
 func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 	service string,
 	operation string,

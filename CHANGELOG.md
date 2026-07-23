@@ -43,6 +43,8 @@ to docs, or any other relevant information.
 - Resource-based tuner: `TryReserveSlot` (used for eager task dispatch) no longer blocks for up to
   `RampThrottle` while a concurrent `ReserveSlot` waits out the ramp throttle. The throttle behavior
   is unchanged; only the unnecessary lock contention on the eager path is removed.
+- Nexus operations with `NexusOperationCancellationTypeAbandon` no longer panic the workflow task when
+  the operation later starts or completes after the caller is canceled.
 
 ## [1.46.0] - 2026-07-07
 
