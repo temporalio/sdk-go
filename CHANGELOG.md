@@ -49,6 +49,9 @@ to docs, or any other relevant information.
 - Resource-based tuner: `TryReserveSlot` (used for eager task dispatch) no longer blocks for up to
   `RampThrottle` while a concurrent `ReserveSlot` waits out the ramp throttle. The throttle behavior
   is unchanged; only the unnecessary lock contention on the eager path is removed.
+- Session worker: stopping a worker while it is at its maximum concurrent session count no longer blocks
+  for the stop timeout. The session creation poller waited for an available session token without
+  observing the stop signal, so shutdown could not interrupt it and the poller goroutine leaked.
 
 ## [1.46.0] - 2026-07-07
 

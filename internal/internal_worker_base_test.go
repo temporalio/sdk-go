@@ -1225,3 +1225,60 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {
 		})
 	}
 }
+
+// signalOnReserveSlotSupplier grants a permit and signals once, so a test can tell the poller has a
+// permit and is committed to the session-token wait before it calls Stop().
+type signalOnReserveSlotSupplier struct{ reserved chan struct{} }
+
+func (s *signalOnReserveSlotSupplier) ReserveSlot(ctx context.Context, _ SlotReservationInfo) (*SlotPermit, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	select {
+	case s.reserved <- struct{}{}:
+	default:
+	}
+	return &SlotPermit{}, nil
+}
+func (s *signalOnReserveSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
+	return &SlotPermit{}
+}
+func (s *signalOnReserveSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+func (s *signalOnReserveSlotSupplier) ReleaseSlot(SlotReleaseInfo)   {}
+func (s *signalOnReserveSlotSupplier) MaxSlots() int                 { return 0 }
+
+// TestStopReturnsPromptlyWithPollerAwaitingSessionToken covers a session worker at its maximum session
+// count: the creation poller parks in sessionTokenBucket.waitForAvailableToken. Stop() must wake it,
+// rather than block for the whole stopTimeout while the poller goroutine leaks.
+func TestStopReturnsPromptlyWithPollerAwaitingSessionToken(t *testing.T) {
+	bucket := newSessionTokenBucket(1)
+	require.True(t, bucket.getToken(), "drain the only token so the poller parks in the token wait")
+
+	reserved := make(chan struct{}, 1)
+	tp := newBlockingProbeTaskPoller()
+	defer tp.Close()
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &signalOnReserveSlotSupplier{reserved: reserved},
+		maxTaskPerSecond: 1000,
+		taskPollers: []scalableTaskPoller{
+			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+		},
+		taskProcessor:      noopTaskProcessor{},
+		workerType:         "SessionTokenStopTest",
+		logger:             ilog.NewNopLogger(),
+		stopTimeout:        5 * time.Second,
+		metricsHandler:     metrics.NopHandler,
+		sessionTokenBucket: bucket,
+	})
+
+	bw.Start()
+	<-reserved // the poller holds a permit and is committed to the token wait
+
+	start := time.Now()
+	bw.Stop()
+	require.Less(t, time.Since(start), time.Second,
+		"Stop() should wake a poller waiting for a session token, not block for the full stopTimeout")
+}
