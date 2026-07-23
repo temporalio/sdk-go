@@ -1225,3 +1225,40 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {
 		})
 	}
 }
+
+func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierStopsSlotMetrics() {
+	metricsHandler := metrics.NewCapturingHandler()
+	supplier, err := NewFixedSizeSlotSupplier(2)
+	s.NoError(err)
+
+	trackingSupplier := newTrackingSlotSupplier(supplier, trackingSlotSupplierOptions{
+		logger:         ilog.NewNopLogger(),
+		metricsHandler: metricsHandler,
+	})
+
+	permit := trackingSupplier.TryReserveSlot(&slotReservationData{})
+	s.NotNil(permit)
+
+	trackingSupplier.MarkSlotUsed(permit)
+	s.Equal(1.0, capturedWorkerSlotGaugeValue(s.T(), metricsHandler, metrics.WorkerTaskSlotsAvailable))
+	s.Equal(1.0, capturedWorkerSlotGaugeValue(s.T(), metricsHandler, metrics.WorkerTaskSlotsUsed))
+
+	trackingSupplier.stopMetrics()
+	s.Equal(0.0, capturedWorkerSlotGaugeValue(s.T(), metricsHandler, metrics.WorkerTaskSlotsAvailable))
+	s.Equal(0.0, capturedWorkerSlotGaugeValue(s.T(), metricsHandler, metrics.WorkerTaskSlotsUsed))
+
+	trackingSupplier.ReleaseSlot(permit, SlotReleaseReasonTaskProcessed)
+	s.Equal(0.0, capturedWorkerSlotGaugeValue(s.T(), metricsHandler, metrics.WorkerTaskSlotsAvailable))
+	s.Equal(0.0, capturedWorkerSlotGaugeValue(s.T(), metricsHandler, metrics.WorkerTaskSlotsUsed))
+}
+
+func capturedWorkerSlotGaugeValue(t *testing.T, handler *metrics.CapturingHandler, name string) float64 {
+	t.Helper()
+	for _, gauge := range handler.Gauges() {
+		if gauge.Name == name {
+			return gauge.Value()
+		}
+	}
+	t.Fatalf("gauge %s not found", name)
+	return 0
+}
