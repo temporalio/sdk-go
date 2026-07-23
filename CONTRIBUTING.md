@@ -97,7 +97,7 @@ before changes can be merged. A link to the CLA will be posted in the pull reque
 ## Security Issues
 
 Do not open public GitHub issues for suspected security vulnerabilities. Report them
-to security@temporal.io instead.
+to [security@temporal.io](mailto:security@temporal.io) instead.
 
 ## Review and CI
 
