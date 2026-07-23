@@ -1855,7 +1855,7 @@ func (ts *IntegrationTestSuite) TestLargeQueryResultError() {
 	ts.Error(err)
 
 	ts.IsType(&serviceerror.QueryFailed{}, err)
-	ts.Equal("query result size (3000036) exceeds limit (2000000)", err.Error())
+	ts.Equal("Blob data size exceeds limit.", err.Error())
 	ts.Nil(value)
 }
 

@@ -21,6 +21,11 @@ to docs, or any other relevant information.
 ## [Unreleased]
 - Add support for Workflow Updates as Nexus Operations 
 
+### Changed
+
+- User metadata fields (StaticSummary, StaticDetails, CurrentDetails, Activity Summary, Timer
+  Summary, AwaitOptions) are no longer marked as experimental.
+
 ### Added
 
 - Automatically enroll workers into poller autoscaling when the namespace advertises the
@@ -34,6 +39,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Allow query results to use external storage before payload size enforcement.
 - Correct schedule catch-up window documentation to state that an unset value is omitted and the
   server applies its one-year default.
 - Resource-based tuner: `ReserveSlot` now honors context cancellation while the resource controller is
