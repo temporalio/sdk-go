@@ -62,6 +62,8 @@ to docs, or any other relevant information.
   environment. This lets host processes that register a single shared factory (e.g.
   `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
 - Merged link-converter class in the server and sdk-go and moved it to api-go
+- Nexus operations with `NexusOperationCancellationTypeAbandon` no longer panic the workflow task when
+  the operation later starts or completes after the caller is canceled.
 
 ## [1.46.0] - 2026-07-07
 
