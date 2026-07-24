@@ -2167,6 +2167,11 @@ type temporalInvoker struct {
 	heartbeatThrottleInterval time.Duration
 	hbBatchEndTimer           *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
 	lastDetailsToReport       **commonpb.Payloads
+	// lastHeartbeatCtx is the most recent context a caller passed to Heartbeat that
+	// was not already cancelled. Callers may heartbeat with different contexts, and
+	// the context that opens a batch window is often cancelled before the window
+	// closes, so the batched flush uses this instead of the opening context.
+	lastHeartbeatCtx context.Context
 	// closeCh is closed by temporalInvoker.Close() when the activity execution finishes.
 	closeCh chan struct{}
 	// workerStopChannel is a read-only view of activityWorker.stopC.
@@ -2180,6 +2185,18 @@ type temporalInvoker struct {
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
+	i.Lock()
+	if ctx.Err() == nil {
+		i.lastHeartbeatCtx = ctx
+	}
+	i.Unlock()
+	return i.heartbeat(ctx, details, skipBatching)
+}
+
+// heartbeat is Heartbeat without the caller-context bookkeeping. The batching
+// goroutine calls this so the context it derives for a flush is not itself
+// recorded as a caller context.
+func (i *temporalInvoker) heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
 	i.Lock()
 	defer i.Unlock()
 
@@ -2216,6 +2233,7 @@ func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Paylo
 
 			i.Lock()
 			detailsToReport = i.lastDetailsToReport
+			reportCtx := i.reportContextLocked(ctx)
 			i.hbBatchEndTimer.Stop()
 			i.hbBatchEndTimer = nil
 			i.Unlock()
@@ -2225,12 +2243,33 @@ func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Paylo
 				// locked again in the Hearbeat() method. This possible that a heartbeat call from
 				// user activity grabs the lock first and calls internalHeartBeat before this
 				// batching goroutine, which means some activity progress will be lost.
-				_ = i.Heartbeat(ctx, *detailsToReport, false)
+				_ = i.heartbeat(reportCtx, *detailsToReport, false)
 			}
 		}()
 	}
 
 	return err
+}
+
+// reportContextLocked picks the context used to flush a batched heartbeat. The
+// caller must hold i's lock.
+//
+// batchCtx is the context that opened the batch window and is only used when no
+// caller context was ever live. When every recorded context has since been
+// cancelled the values are kept but the cancellation is dropped: cancellation of
+// a context a caller passed says nothing about whether the activity is still
+// running, and the batching goroutine already returns on closeCh so a flush is
+// only sent while the activity is alive. internalHeartBeat still bounds the RPC
+// with its own timeout.
+func (i *temporalInvoker) reportContextLocked(batchCtx context.Context) context.Context {
+	switch {
+	case i.lastHeartbeatCtx == nil:
+		return batchCtx
+	case i.lastHeartbeatCtx.Err() == nil:
+		return i.lastHeartbeatCtx
+	default:
+		return context.WithoutCancel(i.lastHeartbeatCtx)
+	}
 }
 
 func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *commonpb.Payloads) (bool, error) {
