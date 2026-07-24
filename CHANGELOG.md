@@ -32,6 +32,10 @@ to docs, or any other relevant information.
   `PollerAutoscalingAutoEnroll` capability. This only applies to poller types left at their default
   (i.e. the worker set neither `MaxConcurrent<Type>TaskPollers` nor `<Type>TaskPollerBehavior`);
   explicitly configured pollers are left unchanged.
+- Added `go.temporal.io/sdk/interceptor/tracing`, a reworked tracing interceptor with
+  corrected span parenting, span directions for span-kind mapping, and idempotency keys
+  for deterministic span identity. It backs the new `contrib/opentelemetry-v2` module and
+  is not span-compatible with the tracing interceptor used by `contrib/opentelemetry` (v1).
 
 - Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
