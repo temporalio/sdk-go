@@ -30,7 +30,7 @@ type eagerActivityExecutorOptions struct {
 // before it will be able to execute activities.
 func newEagerActivityExecutor(options eagerActivityExecutorOptions) *eagerActivityExecutor {
 	if options.maxPerTask <= 0 {
-		options.maxPerTask = defaultMaxEagerActivityReservationsPerWorkflowTask
+		panic("maxPerTask must be positive")
 	}
 	return &eagerActivityExecutor{eagerActivityExecutorOptions: options}
 }

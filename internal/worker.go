@@ -373,9 +373,9 @@ type (
 		// Optional: Maximum number of activity slots that may be reserved for
 		// eager execution when completing a workflow task.
 		//
-		// The default is 3. A non-positive value uses the default. To disable
-		// eager activity execution, set DisableEagerActivities.
-		MaxEagerActivityReservationsPerWorkflowTask int
+		// The default is 3. A configured value must be positive. To disable eager
+		// activity execution, set DisableEagerActivities.
+		MaxEagerActivityReservationsPerWorkflowTask *int
 
 		// Optional: Maximum number of eager activities that can be running.
 		//

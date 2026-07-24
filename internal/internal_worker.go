@@ -2423,7 +2423,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			disabled:      options.DisableEagerActivities,
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
-			maxPerTask:    options.MaxEagerActivityReservationsPerWorkflowTask,
+			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
 		capabilities:                  &capabilities,
 		pollTimeTracker:               &pollTimeTracker{},
@@ -2844,9 +2844,11 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
 	}
-	if options.MaxEagerActivityReservationsPerWorkflowTask <= 0 {
-		options.MaxEagerActivityReservationsPerWorkflowTask =
-			defaultMaxEagerActivityReservationsPerWorkflowTask
+	if options.MaxEagerActivityReservationsPerWorkflowTask == nil {
+		defaultValue := defaultMaxEagerActivityReservationsPerWorkflowTask
+		options.MaxEagerActivityReservationsPerWorkflowTask = &defaultValue
+	} else if *options.MaxEagerActivityReservationsPerWorkflowTask <= 0 {
+		panic("MaxEagerActivityReservationsPerWorkflowTask must be positive; set DisableEagerActivities to disable eager activity execution")
 	}
 	if options.DeadlockDetectionTimeout == 0 {
 		if debugMode {

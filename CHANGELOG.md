@@ -29,7 +29,8 @@ to docs, or any other relevant information.
 ### Added
 
 - Added `worker.Options.MaxEagerActivityReservationsPerWorkflowTask` to configure the maximum
-  number of eager activity slots reserved per workflow task. The default remains three.
+  number of eager activity slots reserved per workflow task. The default remains three. Configured
+  values must be positive; use `DisableEagerActivities` to disable eager activity execution.
 
 - Automatically enroll workers into poller autoscaling when the namespace advertises the
   `PollerAutoscalingAutoEnroll` capability. This only applies to poller types left at their default

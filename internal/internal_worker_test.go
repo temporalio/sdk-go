@@ -3143,6 +3143,20 @@ func TestWorkerOptionInvalid(t *testing.T) {
 	require.Panics(t, func() {
 		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskExternalStorageVisits: -1})
 	})
+	for _, value := range []int{0, -1} {
+		value := value
+		require.PanicsWithValue(
+			t,
+			"MaxEagerActivityReservationsPerWorkflowTask must be positive; set DisableEagerActivities to disable eager activity execution",
+			func() {
+				NewAggregatedWorker(
+					&WorkflowClient{},
+					"worker-options-tq",
+					WorkerOptions{MaxEagerActivityReservationsPerWorkflowTask: &value},
+				)
+			},
+		)
+	}
 }
 
 func TestWorkerOptionDefaults(t *testing.T) {
@@ -3204,6 +3218,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 
 func TestWorkerOptionNonDefaults(t *testing.T) {
 	taskQueue := "worker-options-tq"
+	maxEagerActivityReservationsPerWorkflowTask := 17
 
 	client := &WorkflowClient{
 		workflowService:    nil,
@@ -3230,7 +3245,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		StickyScheduleToStartTimeout:                   555 * time.Minute,
 		BackgroundActivityContext:                      context.Background(),
 		MaxConcurrentWorkflowTaskExternalStorageVisits: 7,
-		MaxEagerActivityReservationsPerWorkflowTask:    17,
+		MaxEagerActivityReservationsPerWorkflowTask:    &maxEagerActivityReservationsPerWorkflowTask,
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
@@ -3238,7 +3253,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	workflowWorker := aggWorker.workflowWorker
 	require.Equal(
 		t,
-		options.MaxEagerActivityReservationsPerWorkflowTask,
+		*options.MaxEagerActivityReservationsPerWorkflowTask,
 		workflowWorker.executionParameters.eagerActivityExecutor.maxPerTask,
 	)
 	require.Len(t, workflowWorker.executionParameters.ContextPropagators, 0)
