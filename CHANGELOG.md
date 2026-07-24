@@ -19,7 +19,6 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
-- Add support for Workflow Updates as Nexus Operations 
 
 ### Changed
 
@@ -36,6 +35,8 @@ to docs, or any other relevant information.
 - Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
   `GetVersion` call before activating its new behavior.
+  
+- Add support for Workflow Updates as Nexus Operations 
 
 ### Fixed
 
@@ -49,6 +50,9 @@ to docs, or any other relevant information.
 - Resource-based tuner: `TryReserveSlot` (used for eager task dispatch) no longer blocks for up to
   `RampThrottle` while a concurrent `ReserveSlot` waits out the ramp throttle. The throttle behavior
   is unchanged; only the unnecessary lock contention on the eager path is removed.
+- Stand-alone activity-backed Nexus operations. `temporalnexus.MustNewTemporalOperation` can now
+  back an async Nexus operation with a stand-alone activity execution via `StartActivity` /
+  `StartUntypedActivity`. Activity-backed Nexus operations are also supported in `TestWorkflowEnvironment`.
 - Fixed worker task slot metrics reporting stale values when slot state changes concurrently.
 
 ## [1.46.0] - 2026-07-07
