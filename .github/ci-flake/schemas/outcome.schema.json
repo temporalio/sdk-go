@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CI flake workflow outcome",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "workflow_run_id",
+    "workflow_run_attempt",
+    "workflow_run_url",
+    "created_at",
+    "trigger_mode",
+    "publication_mode",
+    "outcome",
+    "pr_opened",
+    "pr_url",
+    "manual_fix_handoff_produced",
+    "normalized_signature_hash",
+    "payload_valid",
+    "fallback_used",
+    "linked_human_pr_url"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "workflow_run_id": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "workflow_run_attempt": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "workflow_run_url": {
+      "type": "string",
+      "maxLength": 500
+    },
+    "created_at": {
+      "type": "string",
+      "maxLength": 40
+    },
+    "trigger_mode": {
+      "type": "string",
+      "enum": [
+        "daily-reconciliation",
+        "main-failure-fast-path",
+        "manual-reconciliation"
+      ]
+    },
+    "publication_mode": {
+      "type": "string",
+      "enum": ["report-only", "github-token-prototype", "github-app"]
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "no-failures",
+        "no-credible-flake",
+        "credible-flake-no-fix",
+        "patch-ready",
+        "draft-pr-opened",
+        "partial",
+        "error"
+      ]
+    },
+    "pr_opened": {
+      "type": "boolean"
+    },
+    "pr_url": {
+      "type": ["string", "null"],
+      "maxLength": 500
+    },
+    "manual_fix_handoff_produced": {
+      "type": "boolean"
+    },
+    "normalized_signature_hash": {
+      "type": ["string", "null"],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "payload_valid": {
+      "type": "boolean"
+    },
+    "fallback_used": {
+      "type": "boolean"
+    },
+    "linked_human_pr_url": {
+      "type": ["string", "null"],
+      "maxLength": 500
+    }
+  }
+}

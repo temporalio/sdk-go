@@ -1,0 +1,318 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CI flake investigation result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "outcome",
+    "headline",
+    "confidence",
+    "decision",
+    "primary_signature",
+    "findings",
+    "recommended_fix",
+    "missing_evidence",
+    "next_experiment",
+    "verification",
+    "manual_fix"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1"
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "no-failures",
+        "no-credible-flake",
+        "credible-flake-no-fix",
+        "patch-ready",
+        "partial",
+        "error"
+      ]
+    },
+    "headline": {
+      "type": "string",
+      "maxLength": 240
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["none", "low", "medium", "high"]
+    },
+    "decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reason_code", "explanation"],
+      "properties": {
+        "reason_code": {
+          "type": "string",
+          "enum": [
+            "no-failures",
+            "deterministic-failures",
+            "known-infrastructure",
+            "duplicate",
+            "insufficient-evidence",
+            "fix-not-safe",
+            "patch-ready",
+            "limit-reached",
+            "investigator-error"
+          ]
+        },
+        "explanation": {
+          "type": "string",
+          "maxLength": 1600
+        }
+      }
+    },
+    "primary_signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["normalized", "sha256"],
+      "properties": {
+        "normalized": {
+          "type": ["string", "null"],
+          "maxLength": 1200
+        },
+        "sha256": {
+          "type": ["string", "null"],
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "signature",
+          "classification",
+          "confidence",
+          "root_cause",
+          "facts",
+          "inferences",
+          "evidence_for_flake",
+          "evidence_against_flake",
+          "last_good_url",
+          "first_bad_url",
+          "relevant_urls"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 240
+          },
+          "signature": {
+            "type": "string",
+            "maxLength": 1200
+          },
+          "classification": {
+            "type": "string",
+            "enum": [
+              "credible-flake",
+              "deterministic",
+              "infrastructure",
+              "duplicate",
+              "insufficient-evidence"
+            ]
+          },
+          "confidence": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "root_cause": {
+            "type": "string",
+            "maxLength": 2400
+          },
+          "facts": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "maxLength": 800
+            }
+          },
+          "inferences": {
+            "type": "array",
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "maxLength": 800
+            }
+          },
+          "evidence_for_flake": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "maxLength": 800
+            }
+          },
+          "evidence_against_flake": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "maxLength": 800
+            }
+          },
+          "last_good_url": {
+            "type": ["string", "null"],
+            "maxLength": 500
+          },
+          "first_bad_url": {
+            "type": ["string", "null"],
+            "maxLength": 500
+          },
+          "relevant_urls": {
+            "type": "array",
+            "maxItems": 12,
+            "items": {
+              "type": "string",
+              "maxLength": 500
+            }
+          }
+        }
+      }
+    },
+    "recommended_fix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "affected_files", "affected_symbols"],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "maxLength": 2400
+        },
+        "affected_files": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        },
+        "affected_symbols": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "maxLength": 300
+          }
+        }
+      }
+    },
+    "missing_evidence": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "string",
+        "maxLength": 800
+      }
+    },
+    "next_experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["summary", "commands"],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "maxLength": 1600
+        },
+        "commands": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "maxLength": 800
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "array",
+      "maxItems": 12,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "attempts", "passed", "summary"],
+        "properties": {
+          "command": {
+            "type": "string",
+            "maxLength": 800
+          },
+          "attempts": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "passed": {
+            "type": ["boolean", "null"]
+          },
+          "summary": {
+            "type": "string",
+            "maxLength": 800
+          }
+        }
+      }
+    },
+    "manual_fix": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "eligible",
+        "branch_name",
+        "commit_message",
+        "pr_title",
+        "pr_body",
+        "labels",
+        "changelog_required",
+        "reviewer_notes"
+      ],
+      "properties": {
+        "eligible": {
+          "type": "boolean"
+        },
+        "branch_name": {
+          "type": ["string", "null"],
+          "maxLength": 200
+        },
+        "commit_message": {
+          "type": ["string", "null"],
+          "maxLength": 200
+        },
+        "pr_title": {
+          "type": ["string", "null"],
+          "maxLength": 240
+        },
+        "pr_body": {
+          "type": ["string", "null"],
+          "maxLength": 3000
+        },
+        "labels": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "changelog_required": {
+          "type": "boolean"
+        },
+        "reviewer_notes": {
+          "type": "array",
+          "maxItems": 12,
+          "items": {
+            "type": "string",
+            "maxLength": 800
+          }
+        }
+      }
+    }
+  }
+}

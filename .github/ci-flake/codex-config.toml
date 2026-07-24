@@ -1,0 +1,16 @@
+default_permissions = "ci_flake_investigator"
+web_search = "disabled"
+
+[permissions.ci_flake_investigator]
+description = "Edit the sdk-go checkout while protecting investigator control files."
+extends = ":workspace"
+
+[permissions.ci_flake_investigator.filesystem.":workspace_roots"]
+".ci-flake-runtime" = "read"
+".ci-flake-runtime/go" = "write"
+".ci-flake-runtime/output" = "write"
+".ci-flake-runtime/tmp" = "write"
+".github/ci-flake" = "read"
+".github/workflows/ci-flake-investigator.yml" = "read"
+"AGENTS.md" = "read"
+"CLAUDE.md" = "read"
