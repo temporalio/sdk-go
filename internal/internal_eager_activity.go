@@ -22,20 +22,22 @@ type eagerActivityExecutorOptions struct {
 	taskQueue string
 	// If 0, there is no maximum
 	maxConcurrent int
+	maxPerTask    int
 }
 
 // newEagerActivityExecutor creates a new worker-scoped executor without an
 // activityWorker set. The activityWorker must be set on the responding executor
 // before it will be able to execute activities.
 func newEagerActivityExecutor(options eagerActivityExecutorOptions) *eagerActivityExecutor {
+	if options.maxPerTask <= 0 {
+		panic("maxPerTask must be positive")
+	}
 	return &eagerActivityExecutor{eagerActivityExecutorOptions: options}
 }
 
 func (e *eagerActivityExecutor) applyToRequest(
 	req *workflowservice.RespondWorkflowTaskCompletedRequest,
 ) []*SlotPermit {
-	// Don't allow more than this hardcoded amount per workflow task for now
-	const maxPerTask = 3
 	reservedPermits := make([]*SlotPermit, 0)
 
 	// Go over every command checking for activities that can be eagerly executed
@@ -50,7 +52,7 @@ func (e *eagerActivityExecutor) applyToRequest(
 				!attrs.RequestEagerExecution ||
 				e.activityWorker == nil ||
 				e.taskQueue != attrs.TaskQueue.GetName() ||
-				eagerRequestsThisTask >= maxPerTask
+				eagerRequestsThisTask >= e.maxPerTask
 			if eagerDisallowed {
 				attrs.RequestEagerExecution = false
 			} else {

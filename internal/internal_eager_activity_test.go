@@ -13,7 +13,11 @@ import (
 )
 
 func TestEagerActivityDisabled(t *testing.T) {
-	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{disabled: true, taskQueue: "task-queue1"})
+	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{
+		disabled:   true,
+		taskQueue:  "task-queue1",
+		maxPerTask: defaultMaxEagerActivityReservationsPerWorkflowTask,
+	})
 	exec.activityWorker = newActivityWorker(nil,
 		workerExecutionParameters{TaskQueue: "task-queue1"}, nil, newRegistry(), nil).worker
 
@@ -25,7 +29,10 @@ func TestEagerActivityDisabled(t *testing.T) {
 }
 
 func TestEagerActivityNoActivityWorker(t *testing.T) {
-	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
+	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{
+		taskQueue:  "task-queue1",
+		maxPerTask: defaultMaxEagerActivityReservationsPerWorkflowTask,
+	})
 
 	// Turns requests to false without activity worker
 	var req workflowservice.RespondWorkflowTaskCompletedRequest
@@ -35,7 +42,10 @@ func TestEagerActivityNoActivityWorker(t *testing.T) {
 }
 
 func TestEagerActivityWrongTaskQueue(t *testing.T) {
-	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
+	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{
+		taskQueue:  "task-queue1",
+		maxPerTask: defaultMaxEagerActivityReservationsPerWorkflowTask,
+	})
 	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
 		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
 		NumActivitySlots:      10,
@@ -59,7 +69,10 @@ func TestEagerActivityWrongTaskQueue(t *testing.T) {
 }
 
 func TestEagerActivityMaxPerTask(t *testing.T) {
-	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
+	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{
+		taskQueue:  "task-queue1",
+		maxPerTask: 2,
+	})
 	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
 		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
 		NumActivitySlots:      10,
@@ -73,14 +86,14 @@ func TestEagerActivityMaxPerTask(t *testing.T) {
 
 	exec.activityWorker = activityWorker.worker
 
-	// Add 8, but it limits to only the first 3
+	// Add 8, but it limits to only the first 2
 	var req workflowservice.RespondWorkflowTaskCompletedRequest
 	for i := 0; i < 8; i++ {
 		addScheduleTaskCommand(&req, "task-queue1")
 	}
-	require.Equal(t, 3, len(exec.applyToRequest(&req)))
+	require.Equal(t, 2, len(exec.applyToRequest(&req)))
 	for i := 0; i < 8; i++ {
-		require.Equal(t, i < 3, req.Commands[i].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
+		require.Equal(t, i < 2, req.Commands[i].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	}
 }
 
@@ -88,7 +101,8 @@ func TestEagerActivityCounts(t *testing.T) {
 	// We'll create an eager activity executor with 3 max eager concurrent and 5
 	// max concurrent
 	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1",
-		maxConcurrent: 3})
+		maxConcurrent: 3,
+		maxPerTask:    defaultMaxEagerActivityReservationsPerWorkflowTask})
 	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
 		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
 		NumActivitySlots:      5,
