@@ -47,12 +47,7 @@ func (t *testTracer) ContextWithSpan(ctx context.Context, span interceptor.Trace
 func (t *testTracer) StartSpan(options *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {
 	// Require start time to be set
 	if options.Time.IsZero() {
-		switch options.Operation {
-		case "RunWorkflow", "RunActivity":
-		// Do nothing; the test env doesn't set these at the moment.
-		default:
-			t.T.Errorf("Got zero value for span start time: %v", options)
-		}
+		t.T.Errorf("Got zero value for span start time: %v", options)
 	}
 	return testSpan{}, nil
 }

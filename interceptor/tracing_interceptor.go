@@ -114,8 +114,7 @@ type TracerStartSpanOptions struct {
 
 	// Time indicates the start time of the span.
 	//
-	// For RunWorkflow and RunActivity operation types, this will match workflow.Info.WorkflowStartTime and
-	// activity.Info.StartedTime respectively. All other operations use time.Now().
+	// The tracing interceptor uses the worker's time.Now() for all operations.
 	Time time.Time
 
 	// DependedOn is true if the parent depends on this span or false if it just
@@ -455,7 +454,7 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 			activityIDTagKey: info.ActivityID,
 		},
 		FromHeader: true,
-		Time:       info.StartedTime,
+		Time:       time.Now(),
 	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
 	if err != nil {
 		return nil, err
@@ -505,7 +504,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 			runIDTagKey:      t.info.WorkflowExecution.RunID,
 		},
 		FromHeader:     true,
-		Time:           t.info.WorkflowStartTime,
+		Time:           time.Now(),
 		IdempotencyKey: t.newIdempotencyKey(),
 	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
 	if err != nil {
