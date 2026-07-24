@@ -2168,8 +2168,8 @@ type temporalInvoker struct {
 	hbBatchEndTimer           *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
 	lastDetailsToReport       **commonpb.Payloads
 	// lastHeartbeatCtx is the most recent context a caller passed to Heartbeat that
-	// was not already cancelled. Callers may heartbeat with different contexts, and
-	// the context that opens a batch window is often cancelled before the window
+	// was not already canceled. Callers may heartbeat with different contexts, and
+	// the context that opens a batch window is often canceled before the window
 	// closes, so the batched flush uses this instead of the opening context.
 	lastHeartbeatCtx context.Context
 	// closeCh is closed by temporalInvoker.Close() when the activity execution finishes.
@@ -2185,12 +2185,20 @@ type temporalInvoker struct {
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
+	i.recordHeartbeatContext(ctx)
+	return i.heartbeat(ctx, details, skipBatching)
+}
+
+// recordHeartbeatContext remembers ctx if it is still usable, so a batched
+// heartbeat flushed later does not depend on a context the caller has since
+// canceled. It is separate from heartbeat because that method takes the same
+// non-reentrant lock.
+func (i *temporalInvoker) recordHeartbeatContext(ctx context.Context) {
 	i.Lock()
+	defer i.Unlock()
 	if ctx.Err() == nil {
 		i.lastHeartbeatCtx = ctx
 	}
-	i.Unlock()
-	return i.heartbeat(ctx, details, skipBatching)
 }
 
 // heartbeat is Heartbeat without the caller-context bookkeeping. The batching
@@ -2256,7 +2264,7 @@ func (i *temporalInvoker) heartbeat(ctx context.Context, details *commonpb.Paylo
 //
 // batchCtx is the context that opened the batch window and is only used when no
 // caller context was ever live. When every recorded context has since been
-// cancelled the values are kept but the cancellation is dropped: cancellation of
+// canceled the values are kept but the cancellation is dropped: cancellation of
 // a context a caller passed says nothing about whether the activity is still
 // running, and the batching goroutine already returns on closeCh so a flush is
 // only sent while the activity is alive. internalHeartBeat still bounds the RPC

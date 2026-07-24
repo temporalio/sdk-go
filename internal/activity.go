@@ -292,8 +292,8 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // Heartbeats are throttled, so a call does not always send a request to the server. A call made
 // inside a throttling window records the details and the SDK sends them when the window closes.
 // Cancelling ctx does not cancel a heartbeat that is already recorded: the deferred send uses the
-// most recent context passed to RecordActivityHeartbeat that was not cancelled. If every context
-// passed has been cancelled by the time the window closes, the SDK still sends the heartbeat using
+// most recent context passed to RecordActivityHeartbeat that was not canceled. If every context
+// passed has been canceled by the time the window closes, the SDK still sends the heartbeat using
 // the values from the most recent one.
 //
 // Exposed as: [go.temporal.io/sdk/activity.RecordHeartbeat]
