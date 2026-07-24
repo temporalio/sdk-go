@@ -52,6 +52,7 @@ to docs, or any other relevant information.
 - Stand-alone activity-backed Nexus operations. `temporalnexus.MustNewTemporalOperation` can now
   back an async Nexus operation with a stand-alone activity execution via `StartActivity` /
   `StartUntypedActivity`. Activity-backed Nexus operations are also supported in `TestWorkflowEnvironment`.
+- Merged link-converter class in the server and sdk-go and moved it to api-go
 
 ## [1.46.0] - 2026-07-07
 
