@@ -17,6 +17,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
+	apinexus "go.temporal.io/api/temporalnexus"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -205,7 +206,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 			URL:  linkURL,
 			Type: link.GetType(),
 		})
-		if commonLink, ok := nexusLinkToCommonLink(link); ok {
+		if commonLink, ok := apinexus.NexusLinkToCommonLink(link); ok {
 			requestLinks = append(requestLinks, commonLink)
 		}
 	}
@@ -370,7 +371,7 @@ func (h *nexusTaskHandler) responseLinks(nctx *NexusOperationContext) []*nexuspb
 	}
 	out := make([]*nexuspb.Link, 0, len(responseLinks))
 	for _, responseLink := range responseLinks {
-		if nexusLink, ok := commonLinkToNexusLink(responseLink); ok {
+		if nexusLink, ok := apinexus.CommonLinkToNexusLink(responseLink); ok {
 			out = append(out, nexusLink)
 		}
 	}
