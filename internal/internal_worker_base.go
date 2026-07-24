@@ -115,6 +115,7 @@ type (
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		ExecuteNexusOperation(params ExecuteNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(token string, e error)) int64
 		RequestCancelNexusOperation(seq int64)
+		AbandonNexusOperation(seq int64)
 		GetLogger() log.Logger
 		GetMetricsHandler() metrics.Handler
 		// Must be called before WorkflowDefinition.Execute returns

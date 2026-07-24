@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"sync"
 	"time"
 
@@ -692,6 +693,20 @@ func (wc *workflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 		}
 	}
 	wc.logger.Debug("RequestCancelNexusOperation",
+		tagNexusEndpoint, data.endpoint,
+		tagNexusService, data.service,
+		tagNexusOperation, data.operation,
+	)
+}
+
+func (wc *workflowEnvironmentImpl) AbandonNexusOperation(seq int64) {
+	command := wc.commandsHelper.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	data := command.getData().(*scheduledNexusOperation)
+
+	data.startedCallback = nil
+	data.completedCallback = nil
+
+	wc.logger.Debug("AbandonNexusOperation",
 		tagNexusEndpoint, data.endpoint,
 		tagNexusService, data.service,
 		tagNexusOperation, data.operation,
