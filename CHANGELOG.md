@@ -39,6 +39,11 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- `activity.RecordHeartbeat` no longer loses a throttled heartbeat when the context it was called
+  with is canceled before the throttling window closes. The deferred send now uses the most recent
+  context passed to `RecordHeartbeat` that was not canceled. This fixes activities that heartbeat
+  from a short-lived context, such as one from `errgroup.WithContext`, timing out with
+  `activity Heartbeat timeout`.
 - Allow query results to use external storage before payload size enforcement.
 - Correct schedule catch-up window documentation to state that an unset value is omitted and the
   server applies its one-year default.

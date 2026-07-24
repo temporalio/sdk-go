@@ -72,6 +72,14 @@ func GetMetricsHandler(ctx context.Context) metrics.Handler {
 // details - The details that you provide here can be seen in the workflow when it receives TimeoutError. You
 // can check error with TimeoutType()/Details().
 //
+// Heartbeats are throttled, so a call does not always send a request to the server. A call made
+// inside a throttling window records the details and the SDK sends them when the window closes.
+// Cancelling ctx does not cancel a heartbeat that is already recorded: the deferred send uses the
+// most recent context passed to RecordHeartbeat that was not cancelled, so passing a short-lived
+// context, such as a context from [golang.org/x/sync/errgroup.WithContext], does not drop progress
+// recorded through it. If every context passed has been cancelled by the time the window closes,
+// the SDK still sends the heartbeat using the values from the most recent one.
+//
 // Note: If using asynchronous activity completion,
 // after returning [ErrResultPending] users should heartbeat with [go.temporal.io/sdk/client.Client.RecordActivityHeartbeat]
 func RecordHeartbeat(ctx context.Context, details ...interface{}) {
