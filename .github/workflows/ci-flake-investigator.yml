@@ -1,0 +1,316 @@
+name: CI flake investigator
+run-name: CI flake investigation (${{ github.event_name }})
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+      timezone: "America/New_York"
+  workflow_dispatch:
+    inputs:
+      lookback_hours:
+        description: Completed CI history to inspect
+        required: true
+        default: "72"
+        type: choice
+        options:
+          - "24"
+          - "72"
+          - "168"
+
+permissions:
+  actions: read
+  contents: read
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: ci-flake-investigator-${{ github.repository }}
+  cancel-in-progress: false
+
+env:
+  CI_FLAKE_LOOKBACK_HOURS: ${{ github.event_name == 'workflow_dispatch' && inputs.lookback_hours || '72' }}
+  CI_FLAKE_MAX_RUNS: "80"
+  CI_FLAKE_MAX_FAILED_JOBS: "20"
+  CI_FLAKE_MAX_LOG_BYTES: "8388608"
+  CI_FLAKE_STATS_WINDOW: "30"
+  CI_FLAKE_TRIGGER_MODE: ${{ github.event_name == 'schedule' && 'daily-reconciliation' || 'manual-reconciliation' }}
+  CI_FLAKE_PUBLICATION_MODE: report-only
+  CI_FLAKE_RUNBOOK_VERSION: "1"
+  CI_FLAKE_RUNTIME: .ci-flake-runtime
+
+jobs:
+  investigate:
+    name: Investigate recent CI
+    if: ${{ vars.CI_FLAKE_AUTOMATION_ENABLED != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    outputs:
+      trigger_mode: ${{ steps.render.outputs.trigger_mode }}
+      outcome: ${{ steps.render.outputs.outcome }}
+      publication_mode: ${{ steps.render.outputs.publication_mode }}
+      pr_opened: ${{ steps.render.outputs.pr_opened }}
+      pr_url: ${{ steps.render.outputs.pr_url }}
+      manual_fix_handoff_produced: ${{ steps.render.outputs.handoff_ready }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Prepare isolated runtime
+        run: |
+          mkdir -p \
+            "$CI_FLAKE_RUNTIME/codex-home" \
+            "$CI_FLAKE_RUNTIME/go/bin" \
+            "$CI_FLAKE_RUNTIME/go/build" \
+            "$CI_FLAKE_RUNTIME/go/mod" \
+            "$CI_FLAKE_RUNTIME/go/staticcheck" \
+            "$CI_FLAKE_RUNTIME/history" \
+            "$CI_FLAKE_RUNTIME/input" \
+            "$CI_FLAKE_RUNTIME/output" \
+            "$CI_FLAKE_RUNTIME/tmp" \
+            "$RUNNER_TEMP/ci-flake-tools"
+          cp .github/ci-flake/codex-config.toml "$CI_FLAKE_RUNTIME/codex-home/config.toml"
+          printf '\n.ci-flake-runtime/\n/internal/cmd/build/temporal.sqlite*\n' \
+            >> .git/info/exclude
+
+      - name: Build trusted CI flake helper
+        run: |
+          go build -trimpath \
+            -o "$RUNNER_TEMP/ci-flake-tools/ci-flake" \
+            ./.github/ci-flake/scripts
+          chmod 0555 "$RUNNER_TEMP/ci-flake-tools/ci-flake"
+
+      - name: Require an OpenAI API key
+        env:
+          OPENAI_API_KEY_CONFIGURED: ${{ secrets.OPENAI_API_KEY != '' }}
+        run: |
+          if [ "$OPENAI_API_KEY_CONFIGURED" != "true" ]; then
+            echo "The OPENAI_API_KEY repository secret is required." >&2
+            exit 1
+          fi
+
+      - name: Collect bounded CI evidence
+        id: collect_evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          "$RUNNER_TEMP/ci-flake-tools/ci-flake" collect-ci \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow "CI" \
+            --lookback-hours "$CI_FLAKE_LOOKBACK_HOURS" \
+            --max-runs "$CI_FLAKE_MAX_RUNS" \
+            --max-failed-jobs "$CI_FLAKE_MAX_FAILED_JOBS" \
+            --max-log-bytes "$CI_FLAKE_MAX_LOG_BYTES" \
+            --output "$CI_FLAKE_RUNTIME/input"
+
+      - name: Preload Go dependencies
+        env:
+          GOCACHE: ${{ github.workspace }}/.ci-flake-runtime/go/build
+          GOBIN: ${{ github.workspace }}/.ci-flake-runtime/go/bin
+          GOMODCACHE: ${{ github.workspace }}/.ci-flake-runtime/go/mod
+          GOTOOLCHAIN: local
+          STATICCHECK_CACHE: ${{ github.workspace }}/.ci-flake-runtime/go/staticcheck
+          TMPDIR: ${{ github.workspace }}/.ci-flake-runtime/tmp
+        run: find . -name go.mod -not -path './.ci-flake-runtime/*' -execdir go mod download \;
+
+      - name: Preload check tools and embedded dev server
+        working-directory: .ci-flake-runtime/tmp
+        env:
+          GOCACHE: ${{ github.workspace }}/.ci-flake-runtime/go/build
+          GOBIN: ${{ github.workspace }}/.ci-flake-runtime/go/bin
+          GOMODCACHE: ${{ github.workspace }}/.ci-flake-runtime/go/mod
+          GOTOOLCHAIN: local
+          STATICCHECK_CACHE: ${{ github.workspace }}/.ci-flake-runtime/go/staticcheck
+          TMPDIR: ${{ github.workspace }}/.ci-flake-runtime/tmp
+        run: |
+          go -C "$GITHUB_WORKSPACE/internal/cmd/build" install github.com/kisielk/errcheck
+          go -C "$GITHUB_WORKSPACE/internal/cmd/build" install honnef.co/go/tools/cmd/staticcheck
+          go -C "$GITHUB_WORKSPACE/internal/cmd/build" run . integration-test -dev-server -run "a^"
+          rm -f \
+            "$GITHUB_WORKSPACE/internal/cmd/build/temporal.sqlite" \
+            "$GITHUB_WORKSPACE/internal/cmd/build/temporal.sqlite-shm" \
+            "$GITHUB_WORKSPACE/internal/cmd/build/temporal.sqlite-wal"
+
+      - name: Investigate with Codex
+        id: investigate
+        uses: openai/codex-action@b11346a6fa031e2e164ab4b7c7ea201afffd7d59 # v1
+        env:
+          CI_FLAKE_BASE_SHA: ${{ github.sha }}
+          CI_FLAKE_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GOCACHE: ${{ github.workspace }}/.ci-flake-runtime/go/build
+          GOBIN: ${{ github.workspace }}/.ci-flake-runtime/go/bin
+          GOMODCACHE: ${{ github.workspace }}/.ci-flake-runtime/go/mod
+          GOTOOLCHAIN: local
+          STATICCHECK_CACHE: ${{ github.workspace }}/.ci-flake-runtime/go/staticcheck
+          TMPDIR: ${{ github.workspace }}/.ci-flake-runtime/tmp
+        with:
+          allow-bots: true
+          codex-home: ${{ github.workspace }}/.ci-flake-runtime/codex-home
+          codex-version: 0.145.0
+          effort: high
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          output-file: ${{ github.workspace }}/.ci-flake-runtime/output/result.json
+          output-schema-file: .github/ci-flake/schemas/investigation-result.schema.json
+          permission-profile: ci_flake_investigator
+          prompt-file: .github/ci-flake/investigator.md
+          safety-strategy: drop-sudo
+
+      - name: Capture candidate patch
+        id: capture_patch
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          "$RUNNER_TEMP/ci-flake-tools/ci-flake" capture-patch \
+            --output "$CI_FLAKE_RUNTIME/output"
+
+      - name: Collect prior outcomes
+        id: collect_history
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          "$RUNNER_TEMP/ci-flake-tools/ci-flake" collect-outcomes \
+            --repository "$GITHUB_REPOSITORY" \
+            --branch "$GITHUB_REF_NAME" \
+            --prefix "ci-flake-outcome-" \
+            --max-candidates "60" \
+            --output "$CI_FLAKE_RUNTIME/history"
+
+      - name: Render validated report
+        id: render
+        if: ${{ always() }}
+        continue-on-error: true
+        env:
+          CI_FLAKE_BASE_SHA: ${{ github.sha }}
+          CI_FLAKE_CODEX_CONCLUSION: ${{ steps.investigate.outcome }}
+          CI_FLAKE_PUBLICATION_MODE: ${{ env.CI_FLAKE_PUBLICATION_MODE }}
+          CI_FLAKE_RUN_ID: ${{ github.run_id }}
+          CI_FLAKE_RUN_ATTEMPT: ${{ github.run_attempt }}
+          CI_FLAKE_RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CI_FLAKE_TRIGGER_MODE: ${{ env.CI_FLAKE_TRIGGER_MODE }}
+        run: |
+          "$RUNNER_TEMP/ci-flake-tools/ci-flake" render \
+            --result "$CI_FLAKE_RUNTIME/output/result.json" \
+            --snapshot "$CI_FLAKE_RUNTIME/input/snapshot.json" \
+            --patch "$CI_FLAKE_RUNTIME/output/candidate.patch" \
+            --changes "$CI_FLAKE_RUNTIME/output/changed-files.json" \
+            --output "$CI_FLAKE_RUNTIME/output"
+
+      - name: Render rolling statistics
+        id: render_stats
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          "$RUNNER_TEMP/ci-flake-tools/ci-flake" stats \
+            --current "$CI_FLAKE_RUNTIME/output/outcome.json" \
+            --history "$CI_FLAKE_RUNTIME/history" \
+            --limit "$CI_FLAKE_STATS_WINDOW" \
+            --output "$CI_FLAKE_RUNTIME/output/statistics.md"
+
+      - name: Publish run summary
+        id: publish_summary
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          if [ -s "$CI_FLAKE_RUNTIME/output/summary.md" ]; then
+            cat "$CI_FLAKE_RUNTIME/output/summary.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "# CI flake investigation" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "❌ Automation error — the validated summary was not produced." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ -s "$CI_FLAKE_RUNTIME/output/statistics.md" ]; then
+            cat "$CI_FLAKE_RUNTIME/output/statistics.md" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "## Rolling outcomes" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Statistics were unavailable because post-processing failed." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload outcome record
+        id: upload_outcome
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-flake-outcome-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-flake-runtime/output/outcome.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 90
+
+      - name: Upload detailed report
+        id: upload_report
+        if: ${{ always() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-flake-report-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .ci-flake-runtime/output/detailed-report.md
+            .ci-flake-runtime/output/result.json
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+
+      - name: Upload manual fix handoff
+        id: upload_handoff
+        if: ${{ always() && steps.render.outputs.handoff_ready == 'true' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ci-flake-manual-fix-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .ci-flake-runtime/output/manual-fix/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 30
+
+      - name: Enforce automation health
+        if: ${{ always() }}
+        env:
+          CAPTURE_PATCH: ${{ steps.capture_patch.outcome }}
+          COLLECT_EVIDENCE: ${{ steps.collect_evidence.outcome }}
+          COLLECT_HISTORY: ${{ steps.collect_history.outcome }}
+          INVESTIGATE: ${{ steps.investigate.outcome }}
+          PUBLISH_SUMMARY: ${{ steps.publish_summary.outcome }}
+          RENDER: ${{ steps.render.outcome }}
+          RENDER_STATS: ${{ steps.render_stats.outcome }}
+          HANDOFF_READY: ${{ steps.render.outputs.handoff_ready }}
+          UPLOAD_HANDOFF: ${{ steps.upload_handoff.outcome }}
+          UPLOAD_OUTCOME: ${{ steps.upload_outcome.outcome }}
+          UPLOAD_REPORT: ${{ steps.upload_report.outcome }}
+        run: |
+          for outcome in \
+            "$COLLECT_EVIDENCE" \
+            "$INVESTIGATE" \
+            "$CAPTURE_PATCH" \
+            "$COLLECT_HISTORY" \
+            "$RENDER" \
+            "$RENDER_STATS" \
+            "$PUBLISH_SUMMARY" \
+            "$UPLOAD_OUTCOME" \
+            "$UPLOAD_REPORT"
+          do
+            if [ "$outcome" != "success" ]; then
+              echo "A required automation step did not succeed: $outcome" >&2
+              exit 1
+            fi
+          done
+
+          if [ "$HANDOFF_READY" = "true" ] && [ "$UPLOAD_HANDOFF" != "success" ]; then
+            echo "The manual fix handoff was not uploaded successfully." >&2
+            exit 1
+          fi
