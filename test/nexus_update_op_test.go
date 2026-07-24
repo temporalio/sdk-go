@@ -35,6 +35,7 @@ type updateAddInput struct {
 	WorkflowID         string
 	Amount             int
 	SleepDuration      time.Duration
+	WaitForSignal      string
 	ExpectSyncResponse bool // hint to the caller workflow that the async token will not be set (a retried completed update is sync)
 }
 
@@ -65,7 +66,7 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
 				WorkflowID:   input.WorkflowID,
 				UpdateID:     input.UpdateID,
 				UpdateName:   addUpdate,
-				Args:         []any{input.Amount, input.SleepDuration},
+				Args:         []any{input.Amount, input.SleepDuration, input.WaitForSignal},
 				WaitForStage: client.WorkflowUpdateStageAccepted,
 			})
 		},
@@ -196,37 +197,37 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
 	})
 
 	ts.Run("Verify concurrent Updates with same UpdateID are idempotent and finish", func() {
-		// simulate multiple updates with same ID hitting at same time
-		// the counter sleeps for second so all of them should get
-		// an async result- dont set the ExpectSyncResponse for that reason
 		gate := make(chan struct{})
 		wg := sync.WaitGroup{}
 		parallelUpdateID := "consistent-" + uuid.NewString()
+		releaseSignal := "release-" + uuid.NewString()
+		callerIDPrefix := "parallel-caller-" + uuid.NewString()
 		numParallelUpdates := 3
 		wg.Add(numParallelUpdates)
 		errs := make([]error, numParallelUpdates)
+		runs := make([]client.WorkflowRun, numParallelUpdates)
 		vals := make([]updateAddOutput, numParallelUpdates)
 		for i := range numParallelUpdates {
 			go func(i int) {
 				defer wg.Done()
 				<-gate
-				run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-					ID:                  fmt.Sprintf("parallel-caller-%d", i),
+				runs[i], errs[i] = ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+					ID:                  fmt.Sprintf("%s-%d", callerIDPrefix, i),
 					TaskQueue:           taskQueue,
 					WorkflowTaskTimeout: time.Second,
 				}, callerWorkflow, updateAddInput{WorkflowID: counterWorkflowID, Amount: 5, UpdateID: parallelUpdateID,
-					SleepDuration: defaultSleep})
-				if err != nil {
-					errs[i] = err
-					return
-				}
-				errs[i] = run.Get(ctx, &vals[i])
+					WaitForSignal: releaseSignal})
 			}(i)
 		}
 		close(gate)
 		wg.Wait()
 		for i := range numParallelUpdates {
-			ts.NoError(errs[i])
+			ts.Require().NoError(errs[i])
+			ts.waitForHistoryEvent(runs[i].GetID(), runs[i].GetRunID(), enums.EVENT_TYPE_NEXUS_OPERATION_STARTED, 10*time.Second)
+		}
+		ts.NoError(ts.client.SignalWorkflow(ctx, counterWorkflowID, "", releaseSignal, nil))
+		for i := range numParallelUpdates {
+			ts.NoError(runs[i].Get(ctx, &vals[i]))
 			ts.Equal(15, vals[i].Count)
 		}
 	})
@@ -273,7 +274,7 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 				WorkflowID:   input.WorkflowID,
 				UpdateID:     input.UpdateID,
 				UpdateName:   addUpdate,
-				Args:         []any{input.Amount, input.SleepDuration},
+				Args:         []any{input.Amount, input.SleepDuration, input.WaitForSignal},
 				WaitForStage: client.WorkflowUpdateStageAccepted,
 			})
 		},
@@ -318,11 +319,16 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 	}
 
 	// start the update, it will get admitted
+	releaseSignal := "release-" + uuid.NewString()
 	callerWorkflowRun, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                  "delayed-" + uuid.NewString(),
 		TaskQueue:           callerTaskQueue,
 		WorkflowTaskTimeout: time.Second,
-	}, callerWorkflow, updateAddInput{WorkflowID: handlerWorkflowID, Amount: 5})
+	}, callerWorkflow, updateAddInput{
+		WorkflowID:    handlerWorkflowID,
+		Amount:        5,
+		WaitForSignal: releaseSignal,
+	})
 	ts.NoError(err)
 
 	// now, start the worker so that counter workflow can actually handle the update
@@ -335,6 +341,14 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 	defer handlerWorker.Stop()
 	defer stopCounterWf()
 
+	ts.waitForHistoryEvent(
+		callerWorkflowRun.GetID(),
+		callerWorkflowRun.GetRunID(),
+		enums.EVENT_TYPE_NEXUS_OPERATION_STARTED,
+		10*time.Second,
+	)
+	ts.NoError(ts.client.SignalWorkflow(ctx, handlerWorkflowID, "", releaseSignal, nil))
+
 	// verify count, no errors
 	var out updateAddOutput
 	ts.NoError(callerWorkflowRun.Get(ctx, &out))
@@ -344,17 +358,24 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 func counterWorkflow(ctx workflow.Context) (int, error) {
 	counter := 0
 
-	updateHandler := func(ctx workflow.Context, amount int, sleepDuration time.Duration) (updateAddOutput, error) {
+	updateHandler := func(
+		ctx workflow.Context,
+		amount int,
+		sleepDuration time.Duration,
+		waitForSignal string,
+	) (updateAddOutput, error) {
 		counter += amount
 		newCounterVal := counter
-		if sleepDuration != 0 {
+		if waitForSignal != "" {
+			workflow.GetSignalChannel(ctx, waitForSignal).Receive(ctx, nil)
+		} else if sleepDuration != 0 {
 			_ = workflow.Sleep(ctx, sleepDuration)
 		}
 		return updateAddOutput{Count: newCounterVal}, nil
 	}
 
 	// used for testing invalid updates
-	updateValidator := func(ctx workflow.Context, amount int, sleepDuration time.Duration) error {
+	updateValidator := func(ctx workflow.Context, amount int, sleepDuration time.Duration, waitForSignal string) error {
 		if amount%5 != 0 {
 			return invalidIncrementError
 		}

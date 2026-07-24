@@ -162,9 +162,11 @@ func (ts *PayloadLimitsTestSuite) assertPayloadLimitWFTFailed(ctx context.Contex
 
 // assertLogContains verifies that the logger contains a line with the specified message.
 func (ts *PayloadLimitsTestSuite) assertLogContains(logger *ilog.MemoryLogger, message string) {
-	ts.True(slices.ContainsFunc(logger.Lines(), func(line string) bool {
-		return strings.Contains(line, message)
-	}))
+	ts.Eventually(func() bool {
+		return slices.ContainsFunc(logger.Lines(), func(line string) bool {
+			return strings.Contains(line, message)
+		})
+	}, 5*time.Second, 10*time.Millisecond)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorWorkflowResult() {
@@ -468,11 +470,9 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
 		},
 		workflow.RegisterOptions{Name: wfname},
 	)
-	run, err := ts.client.ExecuteWorkflow(
-		ctx,
-		ts.startWorkflowOptions(ts.T().Name()),
-		wfname,
-	)
+	options := ts.startWorkflowOptions(ts.T().Name())
+	options.WorkflowExecutionTimeout = 25 * time.Second
+	run, err := ts.client.ExecuteWorkflow(ctx, options, wfname)
 	ts.NoError(err)
 
 	var res string
@@ -550,13 +550,14 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityHeartbeat() {
 		activity.RegisterOptions{Name: actName},
 	)
 
-	run, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions(ts.T().Name()), wfName)
+	options := ts.startWorkflowOptions(ts.T().Name())
+	options.WorkflowExecutionTimeout = 25 * time.Second
+	run, err := ts.client.ExecuteWorkflow(ctx, options, wfName)
 	ts.NoError(err)
 
 	ts.assertActivityTaskFailed(ctx, run)
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
-
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningClientCustom() {
 	ctx, cancel := context.WithCancel(context.Background())
