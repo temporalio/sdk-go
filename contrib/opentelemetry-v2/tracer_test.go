@@ -8,6 +8,7 @@ import (
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.temporal.io/sdk/contrib/opentelemetry-v2/internal/spantree"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 )
@@ -124,7 +125,7 @@ func TestTracerProviderSpanTree(t *testing.T) {
 			"outer",
 			"  middle",
 			"    inner",
-		}, SpanTree(recorder.Ended()))
+		}, spantree.Format(recorder.Ended()))
 	})
 
 	t.Run("multiple tracers", func(t *testing.T) {
@@ -140,7 +141,7 @@ func TestTracerProviderSpanTree(t *testing.T) {
 			"outer",
 			"  inner",
 			"    leaf",
-		}, SpanTree(recorder.Ended()))
+		}, spantree.Format(recorder.Ended()))
 	})
 
 	t.Run("query handler", func(t *testing.T) {
@@ -161,7 +162,7 @@ func TestTracerProviderSpanTree(t *testing.T) {
 		require.Equal(t, []string{
 			"root",
 			"  query-span",
-		}, SpanTree(recorder.Ended()))
+		}, spantree.Format(recorder.Ended()))
 	})
 
 	t.Run("update validator", func(t *testing.T) {
@@ -181,7 +182,7 @@ func TestTracerProviderSpanTree(t *testing.T) {
 		require.Equal(t, []string{
 			"root",
 			"  validate-span",
-		}, SpanTree(recorder.Ended()))
+		}, spantree.Format(recorder.Ended()))
 	})
 
 	t.Run("global provider", func(t *testing.T) {
@@ -199,6 +200,6 @@ func TestTracerProviderSpanTree(t *testing.T) {
 		require.Equal(t, []string{
 			"outer",
 			"  inner",
-		}, SpanTree(recorder.Ended()))
+		}, spantree.Format(recorder.Ended()))
 	})
 }

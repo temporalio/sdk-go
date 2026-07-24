@@ -30,18 +30,14 @@ type TracerOptions struct {
 	// DisableBaggage disables baggage propagation.
 	DisableBaggage bool
 
-	// AllowInvalidParentSpans swallows errors interpreting parent spans from
-	// headers. Useful when migrating tracing libraries while workflows/activities
-	// may be in progress.
+	// AllowInvalidParentSpans ignores malformed parent headers during migrations.
 	AllowInvalidParentSpans bool
 
-	// TextMapPropagator serializes spans. If unset, DefaultTextMapPropagator is
-	// used (not the OpenTelemetry global). To use the global, set this to the
-	// result of the global call.
+	// TextMapPropagator serializes spans. It defaults to
+	// DefaultTextMapPropagator, not the OpenTelemetry global.
 	TextMapPropagator propagation.TextMapPropagator
 
-	// HeaderKey is the Temporal header field key used to serialize spans. Empty
-	// defaults to "_tracer-data".
+	// HeaderKey stores serialized spans. It defaults to "_tracer-data".
 	HeaderKey string
 }
 

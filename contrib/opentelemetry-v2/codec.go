@@ -2,7 +2,6 @@ package opentelemetry
 
 import (
 	"context"
-	"fmt"
 
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
@@ -29,8 +28,8 @@ type spanCodec struct {
 }
 
 func (c *spanCodec) MarshalSpan(span tracing.TracerSpan) (map[string]string, error) {
-	tSpan, ok := span.(*tracerSpan)
-	if !ok || tSpan == nil {
+	tSpan := asTracerSpan(span)
+	if tSpan == nil {
 		return nil, nil
 	}
 
@@ -44,14 +43,12 @@ func (c *spanCodec) MarshalSpan(span tracing.TracerSpan) (map[string]string, err
 }
 
 func (c *spanCodec) UnmarshalSpan(m map[string]string) (tracing.TracerSpanRef, error) {
-	// No W3C traceparent means there is simply no parent span in the headers.
-	if _, ok := m["traceparent"]; !ok {
-		return nil, nil
-	}
 	ctx := c.options.TextMapPropagator.Extract(context.Background(), textMapCarrier(m))
 	spanCtx := trace.SpanContextFromContext(ctx)
+	// No valid span context means there is simply no parent span in the headers,
+	// regardless of which propagator/header format is in use.
 	if !spanCtx.IsValid() {
-		return nil, fmt.Errorf("failed extracting OpenTelemetry span from map")
+		return nil, nil
 	}
 	spanRef := &tracerSpanRef{SpanContext: spanCtx}
 	if !c.options.DisableBaggage {
@@ -61,8 +58,8 @@ func (c *spanCodec) UnmarshalSpan(m map[string]string) (tracing.TracerSpanRef, e
 }
 
 func (c *spanCodec) GetLogger(logger log.Logger, ref tracing.TracerSpanRef) log.Logger {
-	span, ok := ref.(*tracerSpan)
-	if !ok {
+	span := asTracerSpan(ref)
+	if span == nil {
 		return logger
 	}
 

@@ -12,31 +12,24 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// Idempotency key prefixes for deterministic span/trace IDs. The format is
-// load-bearing: changing it breaks span identity across SDK versions for
-// in-flight workflows.
+// These prefixes preserve span identity across SDK versions.
 const (
-	sdkIDPrefix = "tracing.sdk" // plugin/interceptor workflow spans
-	appIDPrefix = "tracing.app" // user spans from NewTracer
+	sdkIDPrefix = "tracing.sdk"
+	appIDPrefix = "tracing.app"
 )
 
-// NewTracerProvider creates a TracerProvider whose ID generator produces
-// deterministic workflow span and trace IDs (stable across retries and
-// replays) when an id key is present on the start context. Spans started
-// without a key — client/activity spans, and StartUnsequenced — get random
-// IDs so they never collide with the deterministic stream.
+// NewTracerProvider creates a provider with replay-stable workflow span IDs.
+// Spans without an ID key receive random IDs.
 //
 // NOTE: Experimental
 func NewTracerProvider(opts ...sdktrace.TracerProviderOption) *sdktrace.TracerProvider {
 	return sdktrace.NewTracerProvider(append(opts, sdktrace.WithIDGenerator(&generator{}))...)
 }
 
-// otelIdKey carries the opaque id the generator hashes into span/trace IDs.
+// otelIdKey carries the value hashed into span and trace IDs.
 type otelIdKey struct{}
 
-// idStream mints per-run deterministic keys from workflow identity, a prefix,
-// and a monotonically increasing counter. One stream is shared per prefix on a
-// workflow.Context so concurrent Tracers do not reuse the same counter value.
+// idStream generates deterministic per-run keys from a shared counter.
 type idStream struct {
 	prefix  string
 	counter uint64
@@ -57,9 +50,7 @@ func (s *idStream) next(ctx workflow.Context) string {
 		s.counter)
 }
 
-// generator implements sdk/trace.IDGenerator. When otelIdKey is set it hashes
-// that id into fixed span and trace IDs; otherwise it uses a random UUID so
-// unsequenced and non-workflow spans stay unique without advancing any stream.
+// generator hashes an ID key or falls back to random IDs.
 type generator struct{}
 
 func (g *generator) NewSpanID(ctx context.Context, _ trace.TraceID) trace.SpanID {
@@ -79,7 +70,7 @@ func (g *generator) idFromContext(ctx context.Context) string {
 	return uuid.NewString()
 }
 
-// span: / trace: prefixes domain-separate the two IDs derived from the same key.
+// Prefixes keep span and trace hashes in separate domains.
 func (g *generator) spanID(id string) trace.SpanID {
 	sum := sha256.Sum256([]byte("span:" + id))
 	var sid trace.SpanID

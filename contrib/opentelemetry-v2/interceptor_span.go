@@ -12,8 +12,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 )
 
-// tracerSpanRef is a parent extracted from headers: span context + baggage, no
-// live span to End/Finish.
+// tracerSpanRef is a parent context extracted from headers.
 type tracerSpanRef struct {
 	trace.SpanContext
 	baggage.Baggage
@@ -27,7 +26,7 @@ type tracerSpan struct {
 func (t *tracerSpan) Finish(opts *tracing.TracerFinishSpanOptions) {
 	t.RecordError(opts.Error)
 
-	// Benign application errors are recorded but do not flip the span to Error.
+	// Benign application errors do not mark spans as failed.
 	if opts.Error != nil && !isBenignApplicationError(opts.Error) {
 		t.SetStatus(codes.Error, opts.Error.Error())
 	}
@@ -44,11 +43,25 @@ type parentContext struct {
 	baggage     baggage.Baggage
 }
 
-func parentFromRef(ref tracing.TracerSpanRef) parentContext {
+// asTracerSpan unwraps a live tracerSpan. It returns nil for references and
+// unknown span types.
+func asTracerSpan(ref tracing.TracerSpanRef) *tracerSpan {
 	switch p := ref.(type) {
 	case *tracerSpan:
-		return parentContext{spanContext: p.SpanContext(), baggage: p.Baggage}
-	case *tracerSpanRef:
+		return p
+	case *interceptorWorkflowSpan:
+		return p.tracerSpan
+	case *workflowSpan:
+		return p.tracerSpan
+	}
+	return nil
+}
+
+func parentFromRef(ref tracing.TracerSpanRef) parentContext {
+	if span := asTracerSpan(ref); span != nil {
+		return parentContext{spanContext: span.SpanContext(), baggage: span.Baggage}
+	}
+	if p, ok := ref.(*tracerSpanRef); ok {
 		return parentContext{spanContext: p.SpanContext, baggage: p.Baggage}
 	}
 	return parentContext{}
@@ -64,8 +77,7 @@ func (c *tracerConfig) contextWithParent(ctx context.Context, parent parentConte
 	return ctx
 }
 
-// buildSpan starts an OTel span. Non-empty key is placed on the start context
-// for the deterministic ID generator; empty key yields a random id.
+// buildSpan starts an OTel span, using key for deterministic IDs when set.
 func (c *tracerConfig) buildSpan(
 	otel trace.Tracer,
 	parent parentContext,

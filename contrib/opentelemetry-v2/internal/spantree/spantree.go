@@ -1,14 +1,15 @@
-package opentelemetry
+// Package spantree provides a test helper for formatting finished spans as an
+// indented tree. It lives in internal/ so both the internal and external test
+// packages can share it without exposing it in the public API.
+package spantree
 
 import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
 
-// SpanTree returns finished spans as an indented parent/child tree for tests.
-//
-// NOTE: Experimental
-func SpanTree(spans []sdktrace.ReadOnlySpan) []string {
+// Format formats finished spans as an indented tree.
+func Format(spans []sdktrace.ReadOnlySpan) []string {
 	var out []string
 	var walk func(parentID trace.SpanID, indent string)
 	walk = func(parentID trace.SpanID, indent string) {

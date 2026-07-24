@@ -12,8 +12,7 @@ import (
 
 type spanContextKey struct{}
 
-// contextBridge stores/loads TracerSpans on a standard context.Context via the
-// OTel active-span APIs (and baggage when enabled).
+// contextBridge stores spans and optional baggage on context.Context.
 type contextBridge struct {
 	tracerConfig
 }
@@ -43,9 +42,7 @@ func (b *contextBridge) ContextWithSpan(ctx context.Context, span tracing.Tracer
 	return trace.ContextWithSpan(ctx, tSpan.Span)
 }
 
-// workflowContextBridge stores/loads TracerSpans on workflow.Context. Unlike
-// context.Context, workflow.Context has no OTel span APIs, so spans are kept
-// under spanContextKey.
+// workflowContextBridge stores spans on workflow.Context under spanContextKey.
 type workflowContextBridge struct{}
 
 func (workflowContextBridge) SpanFromContext(ctx workflow.Context) tracing.TracerSpan {

@@ -24,10 +24,8 @@ func TestTags(t *testing.T) {
 		},
 	)
 	handlerWithTag := handler.WithTags(map[string]string{"tag1": "value1"})
-	// Emit some values with multiple tags
 	handlerWithTag.WithTags(map[string]string{"tag2": "value2"}).Counter("testCounter").Inc(1)
 	handlerWithTag.Counter("testCounter").Inc(1)
-	// Assert result
 	var rm metricdata.ResourceMetrics
 	metricReader.Collect(ctx, &rm)
 	assert.Len(t, rm.ScopeMetrics, 1)
@@ -60,15 +58,12 @@ func TestCounterHandler(t *testing.T) {
 			Meter: meterProvider.Meter("test"),
 		},
 	)
-	// Emit some values
 	testCounter := handler.WithTags(map[string]string{"tag1": "value1"}).Counter("testCounter")
 	testCounter.Inc(1)
 	testCounter.Inc(1)
 	testCounter.Inc(-1)
-	// Emit some values with different tags
 	testCounter2 := handler.WithTags(map[string]string{"tag1": "value2"}).Counter("testCounter")
 	testCounter2.Inc(5)
-	// Assert result
 	var rm metricdata.ResourceMetrics
 	metricReader.Collect(ctx, &rm)
 	assert.Len(t, rm.ScopeMetrics, 1)
@@ -137,18 +132,14 @@ func TestGaugeHandler(t *testing.T) {
 		},
 	)
 
-	// Emit some values
 	testGauge := handler.WithTags(map[string]string{"tag1": "value1"}).Gauge("testGauge")
 	testGauge.Update(1)
 	testGauge.Update(5)
 	testGauge.Update(100)
-	// Emit some values with different tags
 	testGauge2 := handler.WithTags(map[string]string{"tag1": "value2"}).Gauge("testGauge")
 	testGauge2.Update(1000)
-	// Create a gauge, but don't set a value
 	_ = handler.Gauge("testGaugeNoValue")
 
-	// Assert result
 	var rm metricdata.ResourceMetrics
 	metricReader.Collect(ctx, &rm)
 	assert.Len(t, rm.ScopeMetrics, 1)
@@ -185,7 +176,6 @@ func TestTimerHandler(t *testing.T) {
 	testTimer.Record(time.Millisecond)
 	testTimer.Record(time.Second)
 	testTimer.Record(time.Hour)
-	// Emit some values with different tags
 	testTimer2 := handler.WithTags(map[string]string{"tag1": "value2"}).Timer("testTimer")
 	testTimer2.Record(time.Millisecond)
 

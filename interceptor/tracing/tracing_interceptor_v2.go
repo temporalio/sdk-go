@@ -23,24 +23,21 @@ const (
 	updateIDTagKey   = "temporalUpdateID"
 )
 
-// tracerCommon is the context-independent surface shared by Tracer and
-// WorkflowTracer.
+// tracerCommon contains context-independent tracing operations.
 type tracerCommon interface {
 	Options() TracerOptions
 	UnmarshalSpan(map[string]string) (TracerSpanRef, error)
-	// MarshalSpan marshals a span into a map. An empty map with no error means
-	// the span is not set on the header.
+	// MarshalSpan returns no fields when a header should be omitted.
 	MarshalSpan(TracerSpan) (map[string]string, error)
 	// GetLogger may add fields that correlate logs with traces.
 	GetLogger(log.Logger, TracerSpanRef) log.Logger
-	// SpanName names a span from options, or defer to BaseTracer.
+	// SpanName names a span or delegates to BaseTracer.
 	SpanName(options *TracerStartSpanOptions) string
 	mustEmbedBaseTracer()
 }
 
-// Tracer traces client, activity, and Nexus operations on context.Context.
-// Workflow operations use WorkflowTracer. Most callers should use a contrib
-// integration such as go.temporal.io/sdk/contrib/opentelemetry-v2 instead.
+// Tracer traces client, activity, and Nexus operations.
+// Most callers should use a contrib tracing integration.
 //
 // All implementations must embed BaseTracer to safely handle future changes.
 type Tracer interface {
@@ -49,19 +46,13 @@ type Tracer interface {
 	SpanFromContext(context.Context) TracerSpan
 	ContextWithSpan(context.Context, TracerSpan) context.Context
 
-	// CreateSpan creates a span whose parent is options.Parent (or none).
-	// Implementations must not fail the Temporal operation for tracing problems;
-	// treat a missing or unrecognized parent as no parent and return a span
-	// (possibly no-op).
+	// CreateSpan must not fail the Temporal operation. Invalid parents should
+	// produce a root span, which may be a no-op.
 	CreateSpan(context.Context, *TracerStartSpanOptions) TracerSpan
 }
 
-// WorkflowTracer traces workflow operations on workflow.Context. Implementors
-// that support deterministic IDs should honor TracerStartSpanOptions.Unsequenced
-// (skip the id stream) and suppress Finish during workflow.IsReplaying for
-// sequenced spans so wall-clock end times are not shifted on replay.
-// Application code creating custom workflow spans should use the vendor helper
-// (e.g. opentelemetry-v2.NewTracer) rather than this interface.
+// WorkflowTracer traces workflow operations. Unsequenced spans must not consume
+// deterministic IDs. Sequenced spans should not finish during replay.
 //
 // All implementations must embed BaseTracer to safely handle future changes.
 type WorkflowTracer interface {
@@ -70,13 +61,11 @@ type WorkflowTracer interface {
 	SpanFromContext(workflow.Context) TracerSpan
 	ContextWithSpan(workflow.Context, TracerSpan) workflow.Context
 
-	// CreateSpan creates a span whose parent is options.Parent (or none). Same
-	// rules as Tracer.CreateSpan. When Unsequenced is false, prefer deterministic
-	// IDs and a Finish that is a no-op during replay.
+	// CreateSpan follows Tracer.CreateSpan and the replay rules above.
 	CreateSpan(workflow.Context, *TracerStartSpanOptions) TracerSpan
 }
 
-// BaseTracer is a default Tracer/WorkflowTracer implementation meant for embedding.
+// BaseTracer provides defaults for embedded Tracer implementations.
 type BaseTracer struct{}
 
 func (BaseTracer) GetLogger(logger log.Logger, ref TracerSpanRef) log.Logger {
@@ -89,13 +78,12 @@ func (BaseTracer) SpanName(options *TracerStartSpanOptions) string {
 	return fmt.Sprintf("%s:%s", options.Operation, options.Name)
 }
 
-//lint:ignore U1000 Ignore unused method; it is only required to implement the Tracer interface but will never be called.
+//lint:ignore U1000 Required only to implement Tracer.
 func (BaseTracer) mustEmbedBaseTracer() {}
 
 // TracerOptions are options returned from Tracer.Options.
 type TracerOptions struct {
-	// HeaderKey is the Temporal header key used to serialize the span. Must not
-	// be empty.
+	// HeaderKey stores serialized spans and must not be empty.
 	HeaderKey string
 
 	// DisableSignalTracing disables signal tracing.
@@ -107,13 +95,11 @@ type TracerOptions struct {
 	// DisableUpdateTracing disables update tracing.
 	DisableUpdateTracing bool
 
-	// AllowInvalidParentSpans swallows errors interpreting parent spans from
-	// headers. Useful when migrating tracing libraries while workflows/activities
-	// may be in progress.
+	// AllowInvalidParentSpans ignores malformed parent headers during migrations.
 	AllowInvalidParentSpans bool
 }
 
-// SpanDirection is whether a span is for an inbound or outbound interceptor.
+// SpanDirection identifies inbound or outbound spans.
 type SpanDirection int
 
 const (
@@ -124,41 +110,33 @@ const (
 
 // TracerStartSpanOptions are options for Tracer/WorkflowTracer.CreateSpan.
 type TracerStartSpanOptions struct {
-	// Parent is the optional parent. The interceptor sets this from the header
-	// for inbound spans and from the context for outbound spans; nil means no
-	// parent.
+	// Parent comes from inbound headers or the outbound context.
 	Parent TracerSpanRef
 
-	// Operation is the general operation name (e.g. "RunWorkflow").
+	// Operation is the general operation name, such as "RunWorkflow".
 	Operation string
 
-	// Name is the specific workflow, activity, etc. for the operation.
+	// Name identifies the workflow, activity, or other target.
 	Name string
 
-	// Time is the span start time. For RunWorkflow and RunActivity this matches
-	// WorkflowStartTime / StartedTime. Other workflow-path operations should use
-	// workflow.Now so start times stay deterministic across replay; non-workflow
-	// and Unsequenced operations typically use wall-clock time.Now().
+	// Time is the span start time. Workflow spans should use workflow.Now.
 	Time time.Time
 
-	// DependedOn is true if the parent depends on this span (OpenTracing
-	// ChildOf), false if only related (FollowsFrom).
+	// DependedOn distinguishes ChildOf from FollowsFrom relationships.
 	DependedOn bool
 
-	// Direction is inbound or outbound. Tracers may use this for span kind.
+	// Direction is inbound or outbound.
 	Direction SpanDirection
 
 	// Tags are span tags.
 	Tags map[string]string
 
-	// Unsequenced opts out of deterministic span IDs and replay-safe Finish.
-	// Set for operations not recorded in workflow history (HandleQuery,
-	// ValidateUpdate): those may run any number of times and must not advance
-	// the workflow tracer's id stream or rely on IsReplaying to suppress End.
+	// Unsequenced marks operations outside workflow history, such as queries and
+	// update validation.
 	Unsequenced bool
 }
 
-// TracerSpanRef is a span reference such as a parent.
+// TracerSpanRef references a span, such as a parent.
 type TracerSpanRef interface {
 }
 
@@ -184,9 +162,7 @@ type tracingInterceptor struct {
 	newWorkflowTracer WorkflowTracerFactory
 }
 
-// NewTracingInterceptor creates a tracing interceptor from the given factories.
-// Most callers should use a contrib integration such as
-// go.temporal.io/sdk/contrib/opentelemetry-v2 instead.
+// NewTracingInterceptor creates a tracing interceptor from tracer factories.
 func NewTracingInterceptor(newTracer TracerFactory, newWorkflowTracer WorkflowTracerFactory) interceptor.Interceptor {
 	return &tracingInterceptor{newTracer: newTracer, newWorkflowTracer: newWorkflowTracer}
 }
@@ -493,8 +469,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	if t.workflowTracer.Options().DisableQueryTracing {
 		return t.Next.HandleQuery(ctx, in)
 	}
-	// Queries are not in workflow history and may run repeatedly; do not consume
-	// the deterministic id stream or suppress Finish on replay.
+	// Queries run outside history and must not consume deterministic IDs.
 	info := workflow.GetInfo(ctx)
 	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation:   "HandleQuery",
@@ -517,8 +492,7 @@ func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 	if t.workflowTracer.Options().DisableUpdateTracing {
 		return t.Next.ValidateUpdate(ctx, in)
 	}
-	// Update validation is not recorded in history and is not replayed; same
-	// Unsequenced rules as HandleQuery.
+	// Update validation run outside history and must not consume deterministic IDs.
 	info := workflow.GetInfo(ctx)
 	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
 	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
@@ -890,6 +864,7 @@ func startOutboundSpan(
 
 	span := t.CreateSpan(ctx, options)
 	if err := headerWriter(span); err != nil {
+		finishSpan(span)(nil)
 		return nil, err
 	}
 
@@ -907,6 +882,7 @@ func startOutboundWorkflowSpan(
 
 	span := t.CreateSpan(ctx, options)
 	if err := headerWriter(span); err != nil {
+		finishSpan(span)(nil)
 		return nil, err
 	}
 
@@ -923,10 +899,16 @@ func parentFromHeader(t tracerCommon, read func() (TracerSpanRef, error)) (Trace
 
 func finishSpan(span TracerSpan) func(err *error) {
 	return func(err *error) {
+		// CreateSpan may return a nil (no-op) span
+		if span == nil {
+			return
+		}
+
 		opts := &TracerFinishSpanOptions{}
 		if err != nil {
 			opts.Error = *err
 		}
+
 		span.Finish(opts)
 	}
 }

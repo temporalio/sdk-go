@@ -13,8 +13,7 @@ import (
 
 var _ client.MetricsHandler = MetricsHandler{}
 
-// MetricsHandler is an implementation of client.MetricsHandler
-// for open telemetry.
+// MetricsHandler implements client.MetricsHandler with OpenTelemetry.
 type MetricsHandler struct {
 	meter                metric.Meter
 	attributes           attribute.Set
@@ -22,32 +21,20 @@ type MetricsHandler struct {
 	useMonotonicCounters bool
 }
 
-// MetricsHandlerOptions are options provided to NewMetricsHandler.
+// MetricsHandlerOptions configure NewMetricsHandler.
 type MetricsHandlerOptions struct {
-	// Meter is the Meter to use. If not set, one is obtained from the global
-	// meter provider using the name "temporal-sdk-go".
+	// Meter defaults to the global provider's "temporal-sdk-go" meter.
 	Meter metric.Meter
-	// InitialAttributes to set on the handler
-	//
-	// Optional: Defaults to the empty set.
+	// InitialAttributes are added to every metric.
 	InitialAttributes attribute.Set
-	// OnError Callback to invoke if the provided meter returns an error.
-	//
-	// Optional: Defaults to panicking on any error.
+	// OnError handles meter errors. It defaults to panic.
 	OnError func(error)
-	// UseMonotonicCounters causes [MetricsHandler.Counter] to use OpenTelemetry's Int64Counter
-	// instead of Int64UpDownCounter. This allows exporters to identify SDK
-	// counters as monotonic sums.
-	//
-	// [client.MetricsCounter] is documented as ever-increasing, so values passed to
-	// [client.MetricsCounter.Inc] must be non-negative. Negative values may produce invalid or
-	// backend-dependent metric data.
-	//
-	// Optional: Defaults to false
+	// UseMonotonicCounters uses Int64Counter instead of Int64UpDownCounter.
+	// Counter increments must then be non-negative. It defaults to false.
 	UseMonotonicCounters bool
 }
 
-// NewMetricsHandler returns a client.MetricsHandler that is backed by the given Meter
+// NewMetricsHandler returns a metrics handler backed by the configured meter.
 func NewMetricsHandler(options MetricsHandlerOptions) MetricsHandler {
 	if options.Meter == nil {
 		options.Meter = otel.GetMeterProvider().Meter("temporal-sdk-go")
@@ -63,20 +50,15 @@ func NewMetricsHandler(options MetricsHandlerOptions) MetricsHandler {
 	}
 }
 
-// ExtractMetricsHandler gets the underlying Open Telemetry MetricsHandler from a MetricsHandler
-// if any is present.
+// ExtractMetricsHandler returns the wrapped OpenTelemetry handler, if present.
 //
-// Raw use of the MetricHandler is discouraged but may be used for Histograms or other
-// advanced features. This scope does not skip metrics during replay like the
-// metrics handler does. Therefore the caller should check replay state.
+// Direct use does not suppress metrics during replay.
 func ExtractMetricsHandler(handler client.MetricsHandler) *MetricsHandler {
-	// Continually unwrap until we find an instance of our own handler
 	for {
 		otelHandler, ok := handler.(MetricsHandler)
 		if ok {
 			return &otelHandler
 		}
-		// If unwrappable, do so, otherwise return noop
 		unwrappable, _ := handler.(interface{ Unwrap() client.MetricsHandler })
 		if unwrappable == nil {
 			return nil

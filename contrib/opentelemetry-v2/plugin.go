@@ -17,30 +17,20 @@ const PluginName = "opentelemetry"
 //
 // NOTE: Experimental
 type PluginOptions struct {
-	// TracerOptions configure tracing installed by the plugin.
+	// TracerOptions configure plugin tracing.
 	TracerOptions TracerOptions
 
-	// ProviderOptions configure the tracer provider the plugin builds (exporters,
-	// resources, etc.). Workflow spans started by the interceptor use
-	// deterministic IDs so they survive retries and replays; client and activity
-	// spans fall back to random IDs.
+	// ProviderOptions configure the plugin's tracer provider.
 	ProviderOptions []sdktrace.TracerProviderOption
 
-	// MetricsHandlerOptions, if non-nil, installs an OpenTelemetry metrics
-	// handler on the client, overriding any existing metrics handler. If nil,
-	// client metrics are left untouched.
+	// MetricsHandlerOptions replaces the client's metrics handler when set.
 	MetricsHandlerOptions *MetricsHandlerOptions
 }
 
-// NewPlugin creates a plugin implementing both
-// [go.temporal.io/sdk/client.Plugin] and [go.temporal.io/sdk/worker.Plugin]
-// that configures OpenTelemetry tracing on the client and on workers created
-// from that client.
+// NewPlugin configures OpenTelemetry tracing for a client and its workers.
 //
-// The plugin builds a NewTracerProvider so interceptor workflow spans get
-// deterministic IDs. For custom spans inside workflow code, use NewTracer with
-// that same kind of provider (see NewTracerProvider). The returned function
-// shuts the provider down; call it when the process exits.
+// Use NewTracer with the same provider for custom workflow spans. Call the
+// returned shutdown function on exit.
 //
 // NOTE: Experimental
 func NewPlugin(options PluginOptions) (*temporal.SimplePlugin, func(context.Context) error, error) {

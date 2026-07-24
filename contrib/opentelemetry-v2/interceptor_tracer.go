@@ -16,8 +16,7 @@ func newTracingInterceptor(options TracerOptions, provider trace.TracerProvider)
 
 	codec := spanCodec{tracerConfig: cfg}
 
-	// One WorkflowTracer (and thus one id stream) per workflow run so
-	// deterministic counters reset per execution and do not leak across runs.
+	// Keep one deterministic ID stream per workflow run.
 	workflowTracerFactory := func() tracing.WorkflowTracer {
 		return &workflowInterceptorTracer{
 			tracerConfig: cfg,
@@ -39,9 +38,7 @@ func newTracingInterceptor(options TracerOptions, provider trace.TracerProvider)
 	return tracing.NewTracingInterceptor(tracerFactory, workflowTracerFactory)
 }
 
-// workflowInterceptorTracer implements tracing.WorkflowTracer for SDK-managed
-// workflow spans. Sequenced spans take a slot in stream (deterministic IDs) and
-// are wrapped so Finish is a no-op during replay.
+// workflowInterceptorTracer creates replay-safe SDK workflow spans.
 type workflowInterceptorTracer struct {
 	tracerConfig
 	workflowContextBridge
@@ -66,8 +63,7 @@ func (t *workflowInterceptorTracer) CreateSpan(ctx workflow.Context, opts *traci
 		opts,
 	)
 
-	// Unsequenced spans (queries, update validation) are not in history: random
-	// IDs, no replay wrap — Finish always records the wall-clock end.
+	// Unsequenced spans use random IDs and finish during replay.
 	if opts.Unsequenced {
 		return span
 	}
@@ -75,8 +71,7 @@ func (t *workflowInterceptorTracer) CreateSpan(ctx workflow.Context, opts *traci
 	return &interceptorWorkflowSpan{tracerSpan: span, ctx: ctx}
 }
 
-// interceptorWorkflowSpan suppresses Finish during replay so the original
-// wall-clock end time from the first execution is kept.
+// interceptorWorkflowSpan suppresses Finish during replay.
 type interceptorWorkflowSpan struct {
 	*tracerSpan
 	ctx workflow.Context
@@ -89,9 +84,7 @@ func (s *interceptorWorkflowSpan) Finish(opts *tracing.TracerFinishSpanOptions) 
 	s.tracerSpan.Finish(opts)
 }
 
-// interceptorTracer implements tracing.Tracer for client, activity, and Nexus
-// spans. It always passes an empty id key so the provider issues random IDs
-// (these paths are not replayed from workflow history).
+// interceptorTracer creates random-ID spans outside workflow history.
 type interceptorTracer struct {
 	tracerConfig
 	contextBridge
