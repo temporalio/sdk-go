@@ -1846,11 +1846,10 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	go func() {
 		for {
 			task, _ := laTaskPoller.PollTask()
-			_ = laTaskPoller.ProcessTask(task)
-			// Quit after we've polled enough times
-			if laFailures.Load() == 4 {
+			if task == nil {
 				return
 			}
+			_ = laTaskPoller.ProcessTask(task)
 		}
 	}()
 
