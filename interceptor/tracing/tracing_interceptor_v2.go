@@ -1,4 +1,4 @@
-package interceptor
+package tracing
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
@@ -22,51 +23,69 @@ const (
 	updateIDTagKey   = "temporalUpdateID"
 )
 
-// Tracer is an interface for tracing implementations as used by
-// NewTracingInterceptor. Most callers do not use this directly, but rather use
-// the opentracing or opentelemetry packages.
-//
-// All implementations must embed BaseTracer to safely
-// handle future changes.
-type Tracer interface {
-	// Options returns the options for the tracer. This is only called once on
-	// initialization.
+// tracerCommon is the context-independent surface shared by Tracer and
+// WorkflowTracer.
+type tracerCommon interface {
 	Options() TracerOptions
-
-	// UnmarshalSpan unmarshals the given map into a span reference.
 	UnmarshalSpan(map[string]string) (TracerSpanRef, error)
-
-	// MarshalSpan marshals the given span into a map. If the map is empty with no
-	// error, the span is simply not set.
+	// MarshalSpan marshals a span into a map. An empty map with no error means
+	// the span is not set on the header.
 	MarshalSpan(TracerSpan) (map[string]string, error)
-
-	// SpanFromContext returns the span from the general Go context or nil if not
-	// present.
-	SpanFromContext(context.Context) TracerSpan
-
-	// ContextWithSpan creates a general Go context with the given span set.
-	ContextWithSpan(context.Context, TracerSpan) context.Context
-
-	// StartSpan starts and returns a span with the given options.
-	StartSpan(*TracerStartSpanOptions) (TracerSpan, error)
-
-	// GetLogger returns a log.Logger which may include additional fields in its
-	// output in order to support correlation of tracing and log data.
+	// GetLogger may add fields that correlate logs with traces.
 	GetLogger(log.Logger, TracerSpanRef) log.Logger
-	// SpanName can be used to give a custom name to a Span according to the input TracerStartSpanOptions,
-	// or the decision can be deferred to the BaseTracer implementation.
+	// SpanName names a span from options, or defer to BaseTracer.
 	SpanName(options *TracerStartSpanOptions) string
-
 	mustEmbedBaseTracer()
 }
 
-// BaseTracer is a default implementation of Tracer meant for embedding.
+// Tracer traces client, activity, and Nexus operations on context.Context.
+// Workflow operations use WorkflowTracer. Most callers should use a contrib
+// integration such as go.temporal.io/sdk/contrib/opentelemetry-v2 instead.
+//
+// All implementations must embed BaseTracer to safely handle future changes.
+type Tracer interface {
+	tracerCommon
+
+	SpanFromContext(context.Context) TracerSpan
+	ContextWithSpan(context.Context, TracerSpan) context.Context
+
+	// CreateSpan creates a span whose parent is options.Parent (or none).
+	// Implementations must not fail the Temporal operation for tracing problems;
+	// treat a missing or unrecognized parent as no parent and return a span
+	// (possibly no-op).
+	CreateSpan(context.Context, *TracerStartSpanOptions) TracerSpan
+}
+
+// WorkflowTracer traces workflow operations on workflow.Context. Implementors
+// that support deterministic IDs should honor TracerStartSpanOptions.Unsequenced
+// (skip the id stream) and suppress Finish during workflow.IsReplaying for
+// sequenced spans so wall-clock end times are not shifted on replay.
+// Application code creating custom workflow spans should use the vendor helper
+// (e.g. opentelemetry-v2.NewTracer) rather than this interface.
+//
+// All implementations must embed BaseTracer to safely handle future changes.
+type WorkflowTracer interface {
+	tracerCommon
+
+	SpanFromContext(workflow.Context) TracerSpan
+	ContextWithSpan(workflow.Context, TracerSpan) workflow.Context
+
+	// CreateSpan creates a span whose parent is options.Parent (or none). Same
+	// rules as Tracer.CreateSpan. When Unsequenced is false, prefer deterministic
+	// IDs and a Finish that is a no-op during replay.
+	CreateSpan(workflow.Context, *TracerStartSpanOptions) TracerSpan
+}
+
+// BaseTracer is a default Tracer/WorkflowTracer implementation meant for embedding.
 type BaseTracer struct{}
 
 func (BaseTracer) GetLogger(logger log.Logger, ref TracerSpanRef) log.Logger {
 	return logger
 }
 func (BaseTracer) SpanName(options *TracerStartSpanOptions) string {
+	if options.Operation == "" {
+		return options.Name
+	}
 	return fmt.Sprintf("%s:%s", options.Operation, options.Name)
 }
 
@@ -75,377 +94,317 @@ func (BaseTracer) mustEmbedBaseTracer() {}
 
 // TracerOptions are options returned from Tracer.Options.
 type TracerOptions struct {
-	// SpanContextKey provides a key to put a span on a context unrelated to how a
-	// span might otherwise be put on a context by ContextWithSpan. This should
-	// never be nil.
-	//
-	// This is used internally to set the span on contexts not natively supported
-	// by tracing systems such as [workflow.Context].
-	SpanContextKey interface{}
-
-	// HeaderKey is the key name on the Temporal header to serialize the span to.
-	// This should never be empty.
+	// HeaderKey is the Temporal header key used to serialize the span. Must not
+	// be empty.
 	HeaderKey string
 
-	// DisableSignalTracing can be set to disable signal tracing.
+	// DisableSignalTracing disables signal tracing.
 	DisableSignalTracing bool
 
-	// DisableQueryTracing can be set to disable query tracing.
+	// DisableQueryTracing disables query tracing.
 	DisableQueryTracing bool
 
-	// DisableUpdateTracing can be set to disable update tracing.
+	// DisableUpdateTracing disables update tracing.
 	DisableUpdateTracing bool
 
-	// AllowInvalidParentSpans will swallow errors interpreting parent
-	// spans from headers. Useful when migrating from one tracing library
-	// to another, while workflows/activities may be in progress.
+	// AllowInvalidParentSpans swallows errors interpreting parent spans from
+	// headers. Useful when migrating tracing libraries while workflows/activities
+	// may be in progress.
 	AllowInvalidParentSpans bool
 }
 
-// TracerStartSpanOptions are options for Tracer.StartSpan.
+// SpanDirection is whether a span is for an inbound or outbound interceptor.
+type SpanDirection int
+
+const (
+	SpanDirectionUnspecified SpanDirection = iota
+	SpanDirectionInbound
+	SpanDirectionOutbound
+)
+
+// TracerStartSpanOptions are options for Tracer/WorkflowTracer.CreateSpan.
 type TracerStartSpanOptions struct {
-	// Parent is the optional parent reference of the span.
+	// Parent is the optional parent. The interceptor sets this from the header
+	// for inbound spans and from the context for outbound spans; nil means no
+	// parent.
 	Parent TracerSpanRef
-	// Operation is the general operation name without the specific name.
+
+	// Operation is the general operation name (e.g. "RunWorkflow").
 	Operation string
 
-	// Name is the specific activity, workflow, etc for the operation.
+	// Name is the specific workflow, activity, etc. for the operation.
 	Name string
 
-	// Time indicates the start time of the span.
-	//
-	// For RunWorkflow and RunActivity operation types, this will match workflow.Info.WorkflowStartTime and
-	// activity.Info.StartedTime respectively. All other operations use time.Now().
+	// Time is the span start time. For RunWorkflow and RunActivity this matches
+	// WorkflowStartTime / StartedTime. Other workflow-path operations should use
+	// workflow.Now so start times stay deterministic across replay; non-workflow
+	// and Unsequenced operations typically use wall-clock time.Now().
 	Time time.Time
 
-	// DependedOn is true if the parent depends on this span or false if it just
-	// is related to the parent. In OpenTracing terms, this is true for "ChildOf"
-	// reference types and false for "FollowsFrom" reference types.
+	// DependedOn is true if the parent depends on this span (OpenTracing
+	// ChildOf), false if only related (FollowsFrom).
 	DependedOn bool
 
-	// Tags are a set of span tags.
+	// Direction is inbound or outbound. Tracers may use this for span kind.
+	Direction SpanDirection
+
+	// Tags are span tags.
 	Tags map[string]string
 
-	// FromHeader is used internally, not by tracer implementations, to determine
-	// whether the parent span can be retrieved from the Temporal header.
-	FromHeader bool
-
-	// ToHeader is used internally, not by tracer implementations, to determine
-	// whether the span should be placed on the Temporal header.
-	ToHeader bool
-
-	// IdempotencyKey may optionally be used by tracing implementations to generate
-	// deterministic span IDs.
-	//
-	// This is useful in workflow contexts where spans may need to be "resumed" before
-	// ultimately being reported. Generating a deterministic span ID ensures that any
-	// child spans created before the parent span is resumed do not become orphaned.
-	//
-	// IdempotencyKey is not guaranteed to be set for all operations; Tracer
-	// implementations MUST therefore ignore zero values for this field.
-	//
-	// IdempotencyKey should be treated as opaque data by Tracer implementations.
-	// Do not attempt to parse it, as the format is subject to change.
-	IdempotencyKey string
+	// Unsequenced opts out of deterministic span IDs and replay-safe Finish.
+	// Set for operations not recorded in workflow history (HandleQuery,
+	// ValidateUpdate): those may run any number of times and must not advance
+	// the workflow tracer's id stream or rely on IsReplaying to suppress End.
+	Unsequenced bool
 }
 
-// TracerSpanRef represents a span reference such as a parent.
+// TracerSpanRef is a span reference such as a parent.
 type TracerSpanRef interface {
 }
 
-// TracerSpan represents a span.
+// TracerSpan is a started span.
 type TracerSpan interface {
 	TracerSpanRef
-
-	// Finish is called when the span is complete.
 	Finish(*TracerFinishSpanOptions)
 }
 
 // TracerFinishSpanOptions are options for TracerSpan.Finish.
 type TracerFinishSpanOptions struct {
-	// Error is present if there was an error in the code traced by this specific
-	// span.
+	// Error is set if the traced code failed.
 	Error error
 }
 
+type TracerFactory func() Tracer
+
+type WorkflowTracerFactory func() WorkflowTracer
+
 type tracingInterceptor struct {
-	InterceptorBase
-	tracer  Tracer
-	options TracerOptions
+	interceptor.InterceptorBase
+	newTracer         TracerFactory
+	newWorkflowTracer WorkflowTracerFactory
 }
 
-// NewTracingInterceptor creates a new interceptor using the given tracer. Most
-// callers do not use this directly, but rather use the opentracing or
-// opentelemetry packages. This panics if options are not set as expected.
-func NewTracingInterceptor(tracer Tracer) Interceptor {
-	options := tracer.Options()
-	if options.SpanContextKey == nil {
-		panic("missing span context key")
-	} else if options.HeaderKey == "" {
-		panic("missing header key")
-	}
-	return &tracingInterceptor{tracer: tracer, options: options}
+// NewTracingInterceptor creates a tracing interceptor from the given factories.
+// Most callers should use a contrib integration such as
+// go.temporal.io/sdk/contrib/opentelemetry-v2 instead.
+func NewTracingInterceptor(newTracer TracerFactory, newWorkflowTracer WorkflowTracerFactory) interceptor.Interceptor {
+	return &tracingInterceptor{newTracer: newTracer, newWorkflowTracer: newWorkflowTracer}
 }
 
-func (t *tracingInterceptor) InterceptClient(next ClientOutboundInterceptor) ClientOutboundInterceptor {
-	i := &tracingClientOutboundInterceptor{root: t}
+func (t *tracingInterceptor) InterceptClient(next interceptor.ClientOutboundInterceptor) interceptor.ClientOutboundInterceptor {
+	i := &tracingClientOutboundInterceptor{root: t, tracer: t.newTracer()}
 	i.Next = next
 	return i
 }
 
 func (t *tracingInterceptor) InterceptActivity(
 	ctx context.Context,
-	next ActivityInboundInterceptor,
-) ActivityInboundInterceptor {
-	i := &tracingActivityInboundInterceptor{root: t}
+	next interceptor.ActivityInboundInterceptor,
+) interceptor.ActivityInboundInterceptor {
+	i := &tracingActivityInboundInterceptor{root: t, tracer: t.newTracer()}
 	i.Next = next
 	return i
 }
 
 func (t *tracingInterceptor) InterceptWorkflow(
 	ctx workflow.Context,
-	next WorkflowInboundInterceptor,
-) WorkflowInboundInterceptor {
-	i := &tracingWorkflowInboundInterceptor{root: t, info: workflow.GetInfo(ctx)}
+	next interceptor.WorkflowInboundInterceptor,
+) interceptor.WorkflowInboundInterceptor {
+	i := &tracingWorkflowInboundInterceptor{
+		root:           t,
+		workflowTracer: t.newWorkflowTracer(),
+	}
 	i.Next = next
 	return i
 }
 
 func (t *tracingInterceptor) InterceptNexusOperation(
 	ctx context.Context,
-	next NexusOperationInboundInterceptor,
-) NexusOperationInboundInterceptor {
-	i := &tracingNexusOperationInboundInterceptor{root: t}
+	next interceptor.NexusOperationInboundInterceptor,
+) interceptor.NexusOperationInboundInterceptor {
+	i := &tracingNexusOperationInboundInterceptor{root: t, tracer: t.newTracer()}
 	i.Next = next
 	return i
 }
 
 type tracingClientOutboundInterceptor struct {
-	ClientOutboundInterceptorBase
-	root *tracingInterceptor
+	interceptor.ClientOutboundInterceptorBase
+	root   *tracingInterceptor
+	tracer Tracer
 }
 
-func (t *tracingClientOutboundInterceptor) CreateSchedule(ctx context.Context, in *ScheduleClientCreateInput) (client.ScheduleHandle, error) {
-	// Start span and write to header
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+func (t *tracingClientOutboundInterceptor) CreateSchedule(ctx context.Context, in *interceptor.ScheduleClientCreateInput) (run client.ScheduleHandle, err error) {
+	endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "CreateSchedule",
 		Name:      in.Options.ID,
-		ToHeader:  true,
-		Time:      time.Now(),
-	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	}, t.root.headerWriter(t.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	run, err := t.Next.CreateSchedule(ctx, in)
-	finishOpts.Error = err
-	return run, err
+	return t.Next.CreateSchedule(ctx, in)
 }
 
 func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 	ctx context.Context,
-	in *ClientExecuteWorkflowInput,
-) (client.WorkflowRun, error) {
-	// Start span and write to header
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+	in *interceptor.ClientExecuteWorkflowInput,
+) (run client.WorkflowRun, err error) {
+	endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "StartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
-		ToHeader:  true,
-		Time:      time.Now(),
-	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	}, t.root.headerWriter(t.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	run, err := t.Next.ExecuteWorkflow(ctx, in)
-	finishOpts.Error = err
-	return run, err
+	return t.Next.ExecuteWorkflow(ctx, in)
 }
 
-func (t *tracingClientOutboundInterceptor) SignalWorkflow(ctx context.Context, in *ClientSignalWorkflowInput) error {
-	// Only add tracing if enabled
-	if t.root.options.DisableSignalTracing {
+func (t *tracingClientOutboundInterceptor) SignalWorkflow(ctx context.Context, in *interceptor.ClientSignalWorkflowInput) (err error) {
+	if t.tracer.Options().DisableSignalTracing {
 		return t.Next.SignalWorkflow(ctx, in)
 	}
-	// Start span and write to header
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+	endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "SignalWorkflow",
 		Name:      in.SignalName,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
-		ToHeader:  true,
-		Time:      time.Now(),
-	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	}, t.root.headerWriter(t.tracer, ctx))
 	if err != nil {
 		return err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	err = t.Next.SignalWorkflow(ctx, in)
-	finishOpts.Error = err
-	return err
+	return t.Next.SignalWorkflow(ctx, in)
 }
 
 func (t *tracingClientOutboundInterceptor) SignalWithStartWorkflow(
 	ctx context.Context,
-	in *ClientSignalWithStartWorkflowInput,
-) (client.WorkflowRun, error) {
-	// Start span and write to header
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+	in *interceptor.ClientSignalWithStartWorkflowInput,
+) (run client.WorkflowRun, err error) {
+	endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "SignalWithStartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
-		ToHeader:  true,
-	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	}, t.root.headerWriter(t.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	run, err := t.Next.SignalWithStartWorkflow(ctx, in)
-	finishOpts.Error = err
-	return run, err
+	return t.Next.SignalWithStartWorkflow(ctx, in)
 }
 
 func (t *tracingClientOutboundInterceptor) QueryWorkflow(
 	ctx context.Context,
-	in *ClientQueryWorkflowInput,
-) (converter.EncodedValue, error) {
-	// Only add tracing if enabled
-	if t.root.options.DisableQueryTracing {
+	in *interceptor.ClientQueryWorkflowInput,
+) (val converter.EncodedValue, err error) {
+	if t.tracer.Options().DisableQueryTracing {
 		return t.Next.QueryWorkflow(ctx, in)
 	}
-	// Start span and write to header
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+	endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "QueryWorkflow",
 		Name:      in.QueryType,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
-		ToHeader:  true,
-		Time:      time.Now(),
-	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	}, t.root.headerWriter(t.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	val, err := t.Next.QueryWorkflow(ctx, in)
-	finishOpts.Error = err
-	return val, err
+	return t.Next.QueryWorkflow(ctx, in)
 }
 
 func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
 	ctx context.Context,
-	in *ClientUpdateWorkflowInput,
-) (client.WorkflowUpdateHandle, error) {
-	// Only add tracing if enabled
-	if t.root.options.DisableUpdateTracing {
+	in *interceptor.ClientUpdateWorkflowInput,
+) (val client.WorkflowUpdateHandle, err error) {
+	if t.tracer.Options().DisableUpdateTracing {
 		return t.Next.UpdateWorkflow(ctx, in)
 	}
-	// Start span and write to header
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+	endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "UpdateWorkflow",
 		Name:      in.UpdateName,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
-		ToHeader:  true,
-		Time:      time.Now(),
-	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	}, t.root.headerWriter(t.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	val, err := t.Next.UpdateWorkflow(ctx, in)
-	finishOpts.Error = err
-	return val, err
+	return t.Next.UpdateWorkflow(ctx, in)
 }
 
 func (t *tracingClientOutboundInterceptor) UpdateWithStartWorkflow(
 	ctx context.Context,
-	in *ClientUpdateWithStartWorkflowInput,
-) (client.WorkflowUpdateHandle, error) {
-	// Only add tracing if enabled
-	if t.root.options.DisableUpdateTracing {
+	in *interceptor.ClientUpdateWithStartWorkflowInput,
+) (val client.WorkflowUpdateHandle, err error) {
+	if t.tracer.Options().DisableUpdateTracing {
 		return t.Next.UpdateWithStartWorkflow(ctx, in)
 	}
-	// Start span and write to header
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+	endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "UpdateWithStartWorkflow",
 		Name:      in.UpdateOptions.UpdateName,
 		Tags:      map[string]string{workflowIDTagKey: in.UpdateOptions.WorkflowID, updateIDTagKey: in.UpdateOptions.UpdateID},
-		ToHeader:  true,
-		Time:      time.Now(),
-	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	}, t.root.headerWriter(t.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	val, err := t.Next.UpdateWithStartWorkflow(ctx, in)
-	finishOpts.Error = err
-	return val, err
+	return t.Next.UpdateWithStartWorkflow(ctx, in)
 }
 
 func (t *tracingClientOutboundInterceptor) ExecuteActivity(
 	ctx context.Context,
-	in *ClientExecuteActivityInput,
-) (client.ActivityHandle, error) {
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+	in *interceptor.ClientExecuteActivityInput,
+) (handle client.ActivityHandle, err error) {
+	endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "StartActivity",
 		Name:      in.ActivityType,
 		Tags:      map[string]string{activityIDTagKey: in.Options.ID},
-		ToHeader:  true,
-		Time:      time.Now(),
-	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+	}, t.root.headerWriter(t.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	handle, err := t.Next.ExecuteActivity(ctx, in)
-	finishOpts.Error = err
-	return handle, err
+	return t.Next.ExecuteActivity(ctx, in)
 }
 
 type tracingActivityOutboundInterceptor struct {
-	ActivityOutboundInterceptorBase
-	root *tracingInterceptor
+	interceptor.ActivityOutboundInterceptorBase
+	root   *tracingInterceptor
+	tracer Tracer
 }
 
 func (t *tracingActivityOutboundInterceptor) GetLogger(ctx context.Context) log.Logger {
-	if span := t.root.tracer.SpanFromContext(ctx); span != nil {
-		return t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
+	if span := t.tracer.SpanFromContext(ctx); span != nil {
+		return t.tracer.GetLogger(t.Next.GetLogger(ctx), span)
 	}
 	return t.Next.GetLogger(ctx)
 }
 
 type tracingActivityInboundInterceptor struct {
-	ActivityInboundInterceptorBase
-	root *tracingInterceptor
+	interceptor.ActivityInboundInterceptorBase
+	root   *tracingInterceptor
+	tracer Tracer
 }
 
-func (t *tracingActivityInboundInterceptor) Init(outbound ActivityOutboundInterceptor) error {
-	i := &tracingActivityOutboundInterceptor{root: t.root}
+func (t *tracingActivityInboundInterceptor) Init(outbound interceptor.ActivityOutboundInterceptor) error {
+	i := &tracingActivityOutboundInterceptor{root: t.root, tracer: t.tracer}
 	i.Next = outbound
 	return t.Next.Init(i)
 }
 
 func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 	ctx context.Context,
-	in *ExecuteActivityInput,
-) (interface{}, error) {
-	// Start span reading from header
+	in *interceptor.ExecuteActivityInput,
+) (ret interface{}, err error) {
 	info := activity.GetInfo(ctx)
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation:  "RunActivity",
 		Name:       info.ActivityType.Name,
 		DependedOn: true,
@@ -454,210 +413,155 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 			runIDTagKey:      info.WorkflowExecution.RunID,
 			activityIDTagKey: info.ActivityID,
 		},
-		FromHeader: true,
-		Time:       info.StartedTime,
-	}, t.root.headerReader(ctx), t.root.headerWriter(ctx))
+		Time: info.StartedTime,
+	}, t.root.headerReader(t.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	ret, err := t.Next.ExecuteActivity(ctx, in)
-	finishOpts.Error = err
-	return ret, err
+	return t.Next.ExecuteActivity(ctx, in)
+}
+
+func workflowTags(info *workflow.Info) map[string]string {
+	return map[string]string{
+		workflowIDTagKey: info.WorkflowExecution.ID,
+		runIDTagKey:      info.WorkflowExecution.RunID,
+	}
+}
+
+func workflowTagsWithUpdate(info *workflow.Info, updateID string) map[string]string {
+	tags := workflowTags(info)
+	tags[updateIDTagKey] = updateID
+	return tags
 }
 
 type tracingWorkflowInboundInterceptor struct {
-	WorkflowInboundInterceptorBase
-	root        *tracingInterceptor
-	spanCounter uint16
-	info        *workflow.Info
+	interceptor.WorkflowInboundInterceptorBase
+	root           *tracingInterceptor
+	workflowTracer WorkflowTracer
 }
 
-// newIdempotencyKey returns a new idempotency key by incrementing the span counter and interpolating
-// this new value into a string that includes the workflow namespace/id/run id and the interceptor type.
-func (t *tracingWorkflowInboundInterceptor) newIdempotencyKey() string {
-	t.spanCounter++
-	return fmt.Sprintf("WorkflowInboundInterceptor:%s:%s:%s:%d",
-		t.info.Namespace,
-		t.info.WorkflowExecution.ID,
-		t.info.WorkflowExecution.RunID,
-		t.spanCounter)
-}
-
-func (t *tracingWorkflowInboundInterceptor) Init(outbound WorkflowOutboundInterceptor) error {
-	i := &tracingWorkflowOutboundInterceptor{root: t.root}
+func (t *tracingWorkflowInboundInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
+	i := &tracingWorkflowOutboundInterceptor{root: t.root, tracer: t.workflowTracer}
 	i.Next = outbound
 	return t.Next.Init(i)
 }
 
 func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 	ctx workflow.Context,
-	in *ExecuteWorkflowInput,
-) (interface{}, error) {
-	// Start span reading from header
-	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
+	in *interceptor.ExecuteWorkflowInput,
+) (ret interface{}, err error) {
+	info := workflow.GetInfo(ctx)
+	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "RunWorkflow",
-		Name:      t.info.WorkflowType.Name,
-		Tags: map[string]string{
-			workflowIDTagKey: t.info.WorkflowExecution.ID,
-			runIDTagKey:      t.info.WorkflowExecution.RunID,
-		},
-		FromHeader:     true,
-		Time:           t.info.WorkflowStartTime,
-		IdempotencyKey: t.newIdempotencyKey(),
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+		Name:      info.WorkflowType.Name,
+		Tags:      workflowTags(info),
+		Time:      info.WorkflowStartTime,
+	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	ret, err := t.Next.ExecuteWorkflow(ctx, in)
-	finishOpts.Error = err
-	return ret, err
+	return t.Next.ExecuteWorkflow(ctx, in)
 }
 
-func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *HandleSignalInput) error {
-	// Only add tracing if enabled and not replaying
-	if t.root.options.DisableSignalTracing || workflow.IsReplaying(ctx) {
+func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *interceptor.HandleSignalInput) (err error) {
+	if t.workflowTracer.Options().DisableSignalTracing {
 		return t.Next.HandleSignal(ctx, in)
 	}
-	// Start span reading from header
 	info := workflow.GetInfo(ctx)
-	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "HandleSignal",
 		Name:      in.SignalName,
-		Tags: map[string]string{
-			workflowIDTagKey: info.WorkflowExecution.ID,
-			runIDTagKey:      info.WorkflowExecution.RunID,
-		},
-		FromHeader:     true,
-		Time:           time.Now(),
-		IdempotencyKey: t.newIdempotencyKey(),
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+		Tags:      workflowTags(info),
+		Time:      workflow.Now(ctx),
+	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	err = t.Next.HandleSignal(ctx, in)
-	finishOpts.Error = err
-	return err
+	return t.Next.HandleSignal(ctx, in)
 }
 
 func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	ctx workflow.Context,
-	in *HandleQueryInput,
-) (interface{}, error) {
-	// Only add tracing if enabled and not replaying
-	if t.root.options.DisableQueryTracing || workflow.IsReplaying(ctx) {
+	in *interceptor.HandleQueryInput,
+) (val interface{}, err error) {
+	if t.workflowTracer.Options().DisableQueryTracing {
 		return t.Next.HandleQuery(ctx, in)
 	}
-	// Start span reading from header
+	// Queries are not in workflow history and may run repeatedly; do not consume
+	// the deterministic id stream or suppress Finish on replay.
 	info := workflow.GetInfo(ctx)
-	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
-		Operation: "HandleQuery",
-		Name:      in.QueryType,
-		Tags: map[string]string{
-			workflowIDTagKey: info.WorkflowExecution.ID,
-			runIDTagKey:      info.WorkflowExecution.RunID,
-		},
-		FromHeader: true,
-		Time:       time.Now(),
-		// We intentionally do not set IdempotencyKey here because queries are not recorded in
-		// workflow history. When the tracing interceptor's span counter is reset between workflow
-		// replays, old queries will not be processed which could result in idempotency key
-		// collisions with other queries or signals.
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
+		Operation:   "HandleQuery",
+		Name:        in.QueryType,
+		Tags:        workflowTags(info),
+		Unsequenced: true,
+	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	val, err := t.Next.HandleQuery(ctx, in)
-	finishOpts.Error = err
-	return val, err
+	return t.Next.HandleQuery(ctx, in)
 }
 
 func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 	ctx workflow.Context,
-	in *UpdateInput,
-) error {
-	// Only add tracing if enabled and not replaying
-	if t.root.options.DisableUpdateTracing {
+	in *interceptor.UpdateInput,
+) (err error) {
+	if t.workflowTracer.Options().DisableUpdateTracing {
 		return t.Next.ValidateUpdate(ctx, in)
 	}
-	// Start span reading from header
+	// Update validation is not recorded in history and is not replayed; same
+	// Unsequenced rules as HandleQuery.
 	info := workflow.GetInfo(ctx)
 	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
-	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
-		Operation: "ValidateUpdate",
-		Name:      in.Name,
-		Tags: map[string]string{
-			workflowIDTagKey: info.WorkflowExecution.ID,
-			runIDTagKey:      info.WorkflowExecution.RunID,
-			updateIDTagKey:   currentUpdateInfo.ID,
-		},
-		FromHeader: true,
-		Time:       time.Now(),
-		// We intentionally do not set IdempotencyKey here because validation is not run on
-		// replay. When the tracing interceptor's span counter is reset between workflow
-		// replays, the validator will not be processed which could result in impotency key
-		// collisions with other requests.
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
+		Operation:   "ValidateUpdate",
+		Name:        in.Name,
+		Tags:        workflowTagsWithUpdate(info, currentUpdateInfo.ID),
+		Unsequenced: true,
+	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	err = t.Next.ValidateUpdate(ctx, in)
-	finishOpts.Error = err
-	return err
+	return t.Next.ValidateUpdate(ctx, in)
 }
 
 func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 	ctx workflow.Context,
-	in *UpdateInput,
-) (interface{}, error) {
-	// Only add tracing if enabled and not replaying
-	if t.root.options.DisableUpdateTracing {
+	in *interceptor.UpdateInput,
+) (val interface{}, err error) {
+	if t.workflowTracer.Options().DisableUpdateTracing {
 		return t.Next.ExecuteUpdate(ctx, in)
 	}
-	// Start span reading from header
 	info := workflow.GetInfo(ctx)
 	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
-	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
-		// Using operation name "HandleUpdate" to match other SDKs and by consistence with other operations
+	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "HandleUpdate",
 		Name:      in.Name,
-		Tags: map[string]string{
-			workflowIDTagKey: info.WorkflowExecution.ID,
-			runIDTagKey:      info.WorkflowExecution.RunID,
-			updateIDTagKey:   currentUpdateInfo.ID,
-		},
-		FromHeader:     true,
-		Time:           time.Now(),
-		IdempotencyKey: t.newIdempotencyKey(),
-	}, t.root.workflowHeaderReader(ctx), t.root.workflowHeaderWriter(ctx))
+		Tags:      workflowTagsWithUpdate(info, currentUpdateInfo.ID),
+		Time:      workflow.Now(ctx),
+	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	val, err := t.Next.ExecuteUpdate(ctx, in)
-	finishOpts.Error = err
-	return val, err
+	return t.Next.ExecuteUpdate(ctx, in)
 }
 
 type tracingWorkflowOutboundInterceptor struct {
-	WorkflowOutboundInterceptorBase
-	root *tracingInterceptor
+	interceptor.WorkflowOutboundInterceptorBase
+	root   *tracingInterceptor
+	tracer WorkflowTracer
 }
 
 func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
@@ -665,12 +569,18 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
 	activityType string,
 	args ...interface{},
 ) workflow.Future {
-	// Start span writing to header
-	span, ctx, err := t.startNonReplaySpan(ctx, "StartActivity", activityType, true, t.root.workflowHeaderWriter(ctx))
+	info := workflow.GetInfo(ctx)
+	endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+		Operation:  "StartActivity",
+		Name:       activityType,
+		Tags:       workflowTags(info),
+		DependedOn: true,
+		Time:       workflow.Now(ctx),
+	}, t.root.workflowHeaderWriter(t.tracer, ctx))
 	if err != nil {
-		return err
+		return workflowFutureFromErr(ctx, err)
 	}
-	defer span.Finish(&TracerFinishSpanOptions{})
+	defer endSpan(nil)
 
 	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }
@@ -680,19 +590,25 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 	activityType string,
 	args ...interface{},
 ) workflow.Future {
-	// Start span writing to header
-	span, ctx, err := t.startNonReplaySpan(ctx, "StartActivity", activityType, true, t.root.workflowHeaderWriter(ctx))
+	info := workflow.GetInfo(ctx)
+	endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+		Operation:  "StartActivity",
+		Name:       activityType,
+		Tags:       workflowTags(info),
+		DependedOn: true,
+		Time:       workflow.Now(ctx),
+	}, t.root.workflowHeaderWriter(t.tracer, ctx))
 	if err != nil {
-		return err
+		return workflowFutureFromErr(ctx, err)
 	}
-	defer span.Finish(&TracerFinishSpanOptions{})
+	defer endSpan(nil)
 
 	return t.Next.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
 func (t *tracingWorkflowOutboundInterceptor) GetLogger(ctx workflow.Context) log.Logger {
-	if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
-		return t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
+	if span := t.tracer.SpanFromContext(ctx); span != nil {
+		return t.tracer.GetLogger(t.Next.GetLogger(ctx), span)
 	}
 	return t.Next.GetLogger(ctx)
 }
@@ -702,12 +618,17 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
 	childWorkflowType string,
 	args ...interface{},
 ) workflow.ChildWorkflowFuture {
-	// Start span writing to header
-	span, ctx, errFut := t.startNonReplaySpan(ctx, "StartChildWorkflow", childWorkflowType, false, t.root.workflowHeaderWriter(ctx))
-	if errFut != nil {
-		return childWorkflowFuture{errFut}
+	info := workflow.GetInfo(ctx)
+	endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+		Operation: "StartChildWorkflow",
+		Name:      childWorkflowType,
+		Tags:      workflowTags(info),
+		Time:      workflow.Now(ctx),
+	}, t.root.workflowHeaderWriter(t.tracer, ctx))
+	if err != nil {
+		return childWorkflowFuture{workflowFutureFromErr(ctx, err)}
 	}
-	defer span.Finish(&TracerFinishSpanOptions{})
+	defer endSpan(nil)
 
 	return t.Next.ExecuteChildWorkflow(ctx, childWorkflowType, args...)
 }
@@ -719,16 +640,20 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	signalName string,
 	arg interface{},
 ) workflow.Future {
-	// Start span writing to header if enabled
-	if !t.root.options.DisableSignalTracing {
-		var span TracerSpan
-		var futErr workflow.Future
-		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalExternalWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
-		if futErr != nil {
-			return futErr
-		}
-		defer span.Finish(&TracerFinishSpanOptions{})
+	if t.tracer.Options().DisableSignalTracing {
+		return t.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 	}
+	info := workflow.GetInfo(ctx)
+	endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+		Operation: "SignalExternalWorkflow",
+		Name:      signalName,
+		Tags:      workflowTags(info),
+		Time:      workflow.Now(ctx),
+	}, t.root.workflowHeaderWriter(t.tracer, ctx))
+	if err != nil {
+		return workflowFutureFromErr(ctx, err)
+	}
+	defer endSpan(nil)
 
 	return t.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
@@ -739,22 +664,26 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	signalName string,
 	arg interface{},
 ) workflow.Future {
-	// Start span writing to header if enabled
-	if !t.root.options.DisableSignalTracing {
-		var span TracerSpan
-		var futErr workflow.Future
-		span, ctx, futErr = t.startNonReplaySpan(ctx, "SignalChildWorkflow", signalName, false, t.root.workflowHeaderWriter(ctx))
-		if futErr != nil {
-			return futErr
-		}
-		defer span.Finish(&TracerFinishSpanOptions{})
+	if t.tracer.Options().DisableSignalTracing {
+		return t.Next.SignalChildWorkflow(ctx, workflowID, signalName, arg)
 	}
+
+	info := workflow.GetInfo(ctx)
+	endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+		Operation: "SignalChildWorkflow",
+		Name:      signalName,
+		Tags:      workflowTags(info),
+		Time:      workflow.Now(ctx),
+	}, t.root.workflowHeaderWriter(t.tracer, ctx))
+	if err != nil {
+		return workflowFutureFromErr(ctx, err)
+	}
+	defer endSpan(nil)
 
 	return t.Next.SignalChildWorkflow(ctx, workflowID, signalName, arg)
 }
 
-func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.Context, input ExecuteNexusOperationInput) workflow.NexusOperationFuture {
-	// Start span writing to header
+func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.Context, input interceptor.ExecuteNexusOperationInput) workflow.NexusOperationFuture {
 	var ok bool
 	var operationName string
 	if operationName, ok = input.Operation.(string); ok {
@@ -763,11 +692,17 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.
 	} else {
 		return nexusOperationFuture{workflowFutureFromErr(ctx, fmt.Errorf("unexpected operation type: %v", input.Operation))}
 	}
-	span, ctx, futErr := t.startNonReplaySpan(ctx, "StartNexusOperation", input.Client.Service()+"/"+operationName, false, t.root.nexusHeaderWriter(input.NexusHeader))
-	if futErr != nil {
-		return nexusOperationFuture{futErr}
+	info := workflow.GetInfo(ctx)
+	endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+		Operation: "StartNexusOperation",
+		Name:      input.Client.Service() + "/" + operationName,
+		Tags:      workflowTags(info),
+		Time:      workflow.Now(ctx),
+	}, t.root.nexusHeaderWriter(t.tracer, input.NexusHeader))
+	if err != nil {
+		return nexusOperationFuture{workflowFutureFromErr(ctx, err)}
 	}
-	defer span.Finish(&TracerFinishSpanOptions{})
+	defer endSpan(nil)
 
 	return t.Next.ExecuteNexusOperation(ctx, input)
 }
@@ -777,253 +712,223 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 	wfn interface{},
 	args ...interface{},
 ) error {
-	err := t.Next.NewContinueAsNewError(ctx, wfn, args...)
-	if !workflow.IsReplaying(ctx) {
-		if contErr, _ := err.(*workflow.ContinueAsNewError); contErr != nil {
-			// Get the current span and write header
-			if span, _ := ctx.Value(t.root.options.SpanContextKey).(TracerSpan); span != nil {
-				if writeErr := t.root.writeSpanToHeader(span, WorkflowHeader(ctx)); writeErr != nil {
-					return fmt.Errorf("failed writing span when creating continue as new error: %w", writeErr)
-				}
-			}
-		}
-	}
-	return err
-}
-
-type nopSpan struct{}
-
-func (nopSpan) Finish(*TracerFinishSpanOptions) {}
-
-// Span always returned, even in replay. futErr is non-nil on error.
-func (t *tracingWorkflowOutboundInterceptor) startNonReplaySpan(
-	ctx workflow.Context,
-	operation string,
-	name string,
-	dependedOn bool,
-	headerWriter func(TracerSpan) error,
-) (span TracerSpan, newCtx workflow.Context, futErr workflow.Future) {
-	// Noop span if replaying
-	if workflow.IsReplaying(ctx) {
-		return nopSpan{}, ctx, nil
-	}
 	info := workflow.GetInfo(ctx)
-	span, newCtx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
-		Operation:  operation,
-		Name:       name,
-		DependedOn: dependedOn,
-		Tags: map[string]string{
-			workflowIDTagKey: info.WorkflowExecution.ID,
-			runIDTagKey:      info.WorkflowExecution.RunID,
-		},
-		ToHeader: true,
-		Time:     time.Now(),
-	}, t.root.workflowHeaderReader(ctx), headerWriter)
-	if err != nil {
-		return nopSpan{}, ctx, workflowFutureFromErr(ctx, err)
-	}
-	return span, newCtx, nil
-}
-
-type tracingNexusOperationInboundInterceptor struct {
-	NexusOperationInboundInterceptorBase
-	root *tracingInterceptor
-}
-
-// CancelOperation implements internal.NexusOperationInboundInterceptor.
-func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Context, input NexusCancelOperationInput) error {
-	info := nexus.ExtractHandlerInfo(ctx)
-	// Start span reading from header
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
-		Operation:  "RunCancelNexusOperationHandler",
-		Name:       info.Service + "/" + info.Operation,
-		DependedOn: true,
-		FromHeader: true,
-		Time:       time.Now(),
-	}, t.root.nexusHeaderReader(input.Options.Header), t.root.headerWriter(ctx))
+	endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+		Operation: "ContinueAsNew",
+		Name:      info.WorkflowType.Name,
+		Tags:      workflowTags(info),
+		Time:      workflow.Now(ctx),
+	}, t.root.workflowHeaderWriter(t.tracer, ctx))
 	if err != nil {
 		return err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(nil)
 
-	err = t.Next.CancelOperation(ctx, input)
-	finishOpts.Error = err
-	return err
+	return t.Next.NewContinueAsNewError(ctx, wfn, args...)
 }
 
-// StartOperation implements internal.NexusOperationInboundInterceptor.
-func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Context, input NexusStartOperationInput) (nexus.HandlerStartOperationResult[any], error) {
+type tracingNexusOperationInboundInterceptor struct {
+	interceptor.NexusOperationInboundInterceptorBase
+	root   *tracingInterceptor
+	tracer Tracer
+}
+
+func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Context, input interceptor.NexusCancelOperationInput) (err error) {
 	info := nexus.ExtractHandlerInfo(ctx)
-	// Start span reading from header
-	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+		Operation:  "RunCancelNexusOperationHandler",
+		Name:       info.Service + "/" + info.Operation,
+		DependedOn: true,
+	}, t.root.nexusHeaderReader(t.tracer, input.Options.Header))
+	if err != nil {
+		return err
+	}
+	defer endSpan(&err)
+
+	return t.Next.CancelOperation(ctx, input)
+}
+
+func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Context, input interceptor.NexusStartOperationInput) (ret nexus.HandlerStartOperationResult[any], err error) {
+	info := nexus.ExtractHandlerInfo(ctx)
+	ctx, endSpan, err := startInboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
 		Operation:  "RunStartNexusOperationHandler",
 		Name:       info.Service + "/" + info.Operation,
 		DependedOn: true,
-		FromHeader: true,
-		Time:       time.Now(),
-	}, t.root.nexusHeaderReader(input.Options.Header), t.root.headerWriter(ctx))
+	}, t.root.nexusHeaderReader(t.tracer, input.Options.Header))
 	if err != nil {
 		return nil, err
 	}
-	var finishOpts TracerFinishSpanOptions
-	defer span.Finish(&finishOpts)
+	defer endSpan(&err)
 
-	ret, err := t.Next.StartOperation(ctx, input)
-	finishOpts.Error = err
-	return ret, err
+	return t.Next.StartOperation(ctx, input)
 }
 
-func (t *tracingInterceptor) startSpanFromContext(
-	ctx context.Context,
-	options *TracerStartSpanOptions,
-	headerReader func() (TracerSpanRef, error),
-	headerWriter func(span TracerSpan) error,
-) (TracerSpan, context.Context, error) {
-	// Try to get parent from context
-	options.Parent = t.tracer.SpanFromContext(ctx)
-	span, err := t.startSpan(ctx, options, headerReader, headerWriter)
-	if err != nil {
-		return nil, nil, err
-	}
-	return span, t.tracer.ContextWithSpan(context.WithValue(ctx, t.options.SpanContextKey, span), span), nil
-}
-
-func (t *tracingInterceptor) startSpanFromWorkflowContext(
-	ctx workflow.Context,
-	options *TracerStartSpanOptions,
-	headerReader func() (TracerSpanRef, error),
-	headerWriter func(span TracerSpan) error,
-) (TracerSpan, workflow.Context, error) {
-	span, err := t.startSpan(ctx, options, headerReader, headerWriter)
-	if err != nil {
-		return nil, nil, err
-	}
-	return span, workflow.WithValue(ctx, t.options.SpanContextKey, span), nil
-}
-
-// Note, this does not put the span on the context
-func (t *tracingInterceptor) startSpan(
-	ctx interface{ Value(interface{}) interface{} },
-	options *TracerStartSpanOptions,
-	headerReader func() (TracerSpanRef, error),
-	headerWriter func(span TracerSpan) error,
-) (TracerSpan, error) {
-	// Get parent span from header if not already present and allowed
-	if options.Parent == nil && options.FromHeader {
-		if span, err := headerReader(); err != nil && !t.options.AllowInvalidParentSpans {
-			return nil, err
-		} else if span != nil {
-			options.Parent = span
-		}
-	}
-
-	// If no parent span, try to get from context
-	if options.Parent == nil {
-		options.Parent, _ = ctx.Value(t.options.SpanContextKey).(TracerSpan)
-	}
-
-	// Start the span
-	span, err := t.tracer.StartSpan(options)
-	if err != nil {
-		return nil, err
-	}
-
-	// Put span in header if wanted
-	if options.ToHeader {
-		if err := headerWriter(span); err != nil {
-			return nil, err
-		}
-	}
-	return span, nil
-}
-
-func (t *tracingInterceptor) headerReader(ctx context.Context) func() (TracerSpanRef, error) {
-	header := Header(ctx)
+func (t *tracingInterceptor) headerReader(tracer Tracer, ctx context.Context) func() (TracerSpanRef, error) {
+	header := interceptor.Header(ctx)
 	return func() (TracerSpanRef, error) {
-		return t.readSpanFromHeader(header)
+		return t.readSpanFromHeader(tracer, header)
 	}
 }
 
-func (t *tracingInterceptor) headerWriter(ctx context.Context) func(TracerSpan) error {
-	header := Header(ctx)
+func (t *tracingInterceptor) headerWriter(tracer Tracer, ctx context.Context) func(TracerSpan) error {
+	header := interceptor.Header(ctx)
 	return func(span TracerSpan) error {
-		return t.writeSpanToHeader(span, header)
+		return t.writeSpanToHeader(tracer, span, header)
 	}
 }
 
-func (t *tracingInterceptor) workflowHeaderReader(ctx workflow.Context) func() (TracerSpanRef, error) {
-	header := WorkflowHeader(ctx)
+func (t *tracingInterceptor) workflowHeaderReader(tracer WorkflowTracer, ctx workflow.Context) func() (TracerSpanRef, error) {
+	header := interceptor.WorkflowHeader(ctx)
 	return func() (TracerSpanRef, error) {
-		return t.readSpanFromHeader(header)
+		return t.readSpanFromHeader(tracer, header)
 	}
 }
 
-func (t *tracingInterceptor) workflowHeaderWriter(ctx workflow.Context) func(TracerSpan) error {
-	header := WorkflowHeader(ctx)
+func (t *tracingInterceptor) workflowHeaderWriter(tracer WorkflowTracer, ctx workflow.Context) func(TracerSpan) error {
+	header := interceptor.WorkflowHeader(ctx)
 	return func(span TracerSpan) error {
-		return t.writeSpanToHeader(span, header)
+		return t.writeSpanToHeader(tracer, span, header)
 	}
 }
 
-func (t *tracingInterceptor) nexusHeaderReader(header nexus.Header) func() (TracerSpanRef, error) {
+func (t *tracingInterceptor) nexusHeaderReader(tracer tracerCommon, header nexus.Header) func() (TracerSpanRef, error) {
 	return func() (TracerSpanRef, error) {
-		return t.readSpanFromNexusHeader(header)
+		return t.readSpanFromNexusHeader(tracer, header)
 	}
 }
 
-func (t *tracingInterceptor) nexusHeaderWriter(header nexus.Header) func(TracerSpan) error {
+func (t *tracingInterceptor) nexusHeaderWriter(tracer tracerCommon, header nexus.Header) func(TracerSpan) error {
 	return func(span TracerSpan) error {
-		return t.writeSpanToNexusHeader(span, header)
+		return t.writeSpanToNexusHeader(tracer, span, header)
 	}
 }
 
-func (t *tracingInterceptor) readSpanFromHeader(header map[string]*commonpb.Payload) (TracerSpanRef, error) {
-	// Get from map
-	payload := header[t.options.HeaderKey]
+func (t *tracingInterceptor) readSpanFromHeader(tracer tracerCommon, header map[string]*commonpb.Payload) (TracerSpanRef, error) {
+	payload := header[tracer.Options().HeaderKey]
 	if payload == nil {
 		return nil, nil
 	}
-	// Convert from the payload
 	var data map[string]string
 	if err := converter.GetDefaultDataConverter().FromPayload(payload, &data); err != nil {
 		return nil, err
 	}
-	// Unmarshal
-	return t.tracer.UnmarshalSpan(data)
+	return tracer.UnmarshalSpan(data)
 }
 
-func (t *tracingInterceptor) writeSpanToHeader(span TracerSpan, header map[string]*commonpb.Payload) error {
-	// Serialize span to map
-	data, err := t.tracer.MarshalSpan(span)
+func (t *tracingInterceptor) writeSpanToHeader(tracer tracerCommon, span TracerSpan, header map[string]*commonpb.Payload) error {
+	data, err := tracer.MarshalSpan(span)
 	if err != nil || len(data) == 0 {
 		return err
 	}
-	// Convert to payload
 	payload, err := converter.GetDefaultDataConverter().ToPayload(data)
 	if err != nil {
 		return err
 	}
-	// Put on header
-	header[t.options.HeaderKey] = payload
+	header[tracer.Options().HeaderKey] = payload
 	return nil
 }
 
-func (t *tracingInterceptor) writeSpanToNexusHeader(span TracerSpan, header nexus.Header) error {
-	// Serialize span to map
-	data, err := t.tracer.MarshalSpan(span)
+func (t *tracingInterceptor) writeSpanToNexusHeader(tracer tracerCommon, span TracerSpan, header nexus.Header) error {
+	data, err := tracer.MarshalSpan(span)
 	if err != nil || len(data) == 0 {
 		return err
 	}
-	// Put on header
 	for k, v := range data {
 		header.Set(k, v)
 	}
 	return nil
 }
 
-func (t *tracingInterceptor) readSpanFromNexusHeader(header nexus.Header) (TracerSpanRef, error) {
-	return t.tracer.UnmarshalSpan(header)
+func (t *tracingInterceptor) readSpanFromNexusHeader(tracer tracerCommon, header nexus.Header) (TracerSpanRef, error) {
+	return tracer.UnmarshalSpan(header)
+}
+
+func startInboundSpan(
+	t Tracer,
+	ctx context.Context,
+	options *TracerStartSpanOptions,
+	headerReader func() (TracerSpanRef, error),
+) (context.Context, func(err *error), error) {
+	options.Direction = SpanDirectionInbound
+
+	parent, err := parentFromHeader(t, headerReader)
+	if err != nil {
+		return ctx, nil, err
+	}
+	options.Parent = parent
+
+	span := t.CreateSpan(ctx, options)
+	return t.ContextWithSpan(ctx, span), finishSpan(span), nil
+}
+
+func startInboundWorkflowSpan(
+	t WorkflowTracer,
+	ctx workflow.Context,
+	options *TracerStartSpanOptions,
+	headerReader func() (TracerSpanRef, error),
+) (workflow.Context, func(err *error), error) {
+	options.Direction = SpanDirectionInbound
+
+	parent, err := parentFromHeader(t, headerReader)
+	if err != nil {
+		return ctx, nil, err
+	}
+	options.Parent = parent
+
+	span := t.CreateSpan(ctx, options)
+	return t.ContextWithSpan(ctx, span), finishSpan(span), nil
+}
+
+func startOutboundSpan(
+	t Tracer,
+	ctx context.Context,
+	options *TracerStartSpanOptions,
+	headerWriter func(TracerSpan) error,
+) (func(err *error), error) {
+	options.Direction = SpanDirectionOutbound
+	options.Parent = t.SpanFromContext(ctx)
+
+	span := t.CreateSpan(ctx, options)
+	if err := headerWriter(span); err != nil {
+		return nil, err
+	}
+
+	return finishSpan(span), nil
+}
+
+func startOutboundWorkflowSpan(
+	t WorkflowTracer,
+	ctx workflow.Context,
+	options *TracerStartSpanOptions,
+	headerWriter func(TracerSpan) error,
+) (func(err *error), error) {
+	options.Direction = SpanDirectionOutbound
+	options.Parent = t.SpanFromContext(ctx)
+
+	span := t.CreateSpan(ctx, options)
+	if err := headerWriter(span); err != nil {
+		return nil, err
+	}
+
+	return finishSpan(span), nil
+}
+
+func parentFromHeader(t tracerCommon, read func() (TracerSpanRef, error)) (TracerSpanRef, error) {
+	span, err := read()
+	if err != nil && !t.Options().AllowInvalidParentSpans {
+		return nil, err
+	}
+	return span, nil
+}
+
+func finishSpan(span TracerSpan) func(err *error) {
+	return func(err *error) {
+		opts := &TracerFinishSpanOptions{}
+		if err != nil {
+			opts.Error = *err
+		}
+		span.Finish(opts)
+	}
 }
 
 func workflowFutureFromErr(ctx workflow.Context, err error) workflow.Future {
