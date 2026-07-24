@@ -10017,18 +10017,65 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 	typedInput := "typed-wf-" + uuid.NewString()
 	untypedInput := "untyped-wf-" + uuid.NewString()
 	signalInput := "signal-wf-" + uuid.NewString()
+	callerNexusStartedLinks := func(run client.WorkflowRun) []*commonpb.Link {
+		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for iter.HasNext() {
+			e, err := iter.Next()
+			ts.NoError(err)
+			if e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
+				return e.GetLinks()
+			}
+		}
+		return nil
+	}
+
+	verifyWorkflowLinks := func(startedWorkflowID string) func(run client.WorkflowRun) {
+		return func(run client.WorkflowRun) {
+			// Forward: caller's NexusOperationStarted → started workflow event.
+			var fwd *commonpb.Link_WorkflowEvent
+			for _, link := range callerNexusStartedLinks(run) {
+				if w := link.GetWorkflowEvent(); w != nil {
+					fwd = w
+				}
+			}
+			ts.NotNil(fwd, "caller's NexusOperationStarted should have a Link_WorkflowEvent to started workflow")
+			if fwd != nil {
+				ts.Equal(startedWorkflowID, fwd.GetWorkflowId())
+			}
+
+			// Backward: started workflow's WorkflowExecutionStarted completion callback links back to caller.
+			siter := ts.client.GetWorkflowHistory(ctx, startedWorkflowID, "", false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+			ts.True(siter.HasNext())
+			startedEvent, err := siter.Next()
+			ts.NoError(err)
+			var back *commonpb.Link_WorkflowEvent
+			for _, cb := range startedEvent.GetWorkflowExecutionStartedEventAttributes().GetCompletionCallbacks() {
+				for _, link := range cb.GetLinks() {
+					if w := link.GetWorkflowEvent(); w != nil {
+						back = w
+					}
+				}
+			}
+			ts.NotNil(back, "started workflow's completion callback should link back to caller's NexusOperationScheduled")
+			if back != nil {
+				ts.Equal(run.GetID(), back.GetWorkflowId())
+			}
+		}
+	}
+
 	for _, tc := range []struct {
 		name     string
 		wf       func(workflow.Context, string) (string, error)
 		input    string
 		expected string
+		verify   func(run client.WorkflowRun)
 	}{
-		{"Sync result", ts.workflows.TemporalOpSyncCaller, "hello", "sync-hello"},
-		{"Async with StartWorkflow", ts.workflows.TemporalOpAsyncTypedCaller, typedInput, typedInput},
-		{"Async with StartUntypedWorkflow", ts.workflows.TemporalOpAsyncUntypedCaller, untypedInput, untypedInput},
-		{"Cancel", ts.workflows.TemporalOpCancelCaller, "cancel-wf-" + uuid.NewString(), ""},
-		{"Custom cancel with GetWorkflowClient", ts.workflows.TemporalOpCustomCancelCaller, "custom-cancel-wf-" + uuid.NewString(), ""},
-		{"GetWorkflowClient in Start", ts.workflows.TemporalOpClientInStartCaller, signalInput, "signaled-" + signalInput},
+		{"Sync result", ts.workflows.TemporalOpSyncCaller, "hello", "sync-hello", nil},
+		{"Async with StartWorkflow", ts.workflows.TemporalOpAsyncTypedCaller, typedInput, typedInput, verifyWorkflowLinks(typedInput)},
+		{"Async with StartUntypedWorkflow", ts.workflows.TemporalOpAsyncUntypedCaller, untypedInput, untypedInput, verifyWorkflowLinks(untypedInput)},
+		{"Cancel", ts.workflows.TemporalOpCancelCaller, "cancel-wf-" + uuid.NewString(), "", nil},
+		{"Custom cancel with GetWorkflowClient", ts.workflows.TemporalOpCustomCancelCaller, "custom-cancel-wf-" + uuid.NewString(), "", nil},
+		{"GetWorkflowClient in Start", ts.workflows.TemporalOpClientInStartCaller, signalInput, "signaled-" + signalInput, nil},
 	} {
 		ts.Run(tc.name, func() {
 			run, err := ts.client.ExecuteWorkflow(ctx, startOpts, tc.wf, tc.input)
@@ -10036,6 +10083,461 @@ func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
 			var result string
 			ts.NoError(run.Get(ctx, &result))
 			ts.Equal(tc.expected, result)
+			if tc.verify != nil {
+				tc.verify(run)
+			}
 		})
 	}
+}
+
+// TestStandaloneActivityHeartbeatDetailsRegression demonstrates that the
+// missing-LastHeartbeatDetails bug on stand-alone activity heartbeat timeouts is NOT Nexus
+// specific. The activity is scheduled directly via client.ExecuteActivity (no Nexus
+// involvement), heartbeats once with deterministic details, then stalls until the server
+// fires a HEARTBEAT-typed timeout. The caller polls via ClientActivityHandle.Get and asserts
+// that TimeoutError exposes LastHeartbeatDetails — the same invariant the legacy
+// workflow-backed activity timeout path upholds at
+// service/history/timer_queue_active_task_executor.go:346.
+//
+// **Currently expected to FAIL on NEXUS-400**: chasm/lib/activity/statemachine.go's
+// TIMEOUT_TYPE_HEARTBEAT branch builds the terminal failure via createHeartbeatTimeoutFailure()
+// without copying a.LastHeartbeat.Details into TimeoutFailureInfo.LastHeartbeatDetails.
+func (ts *IntegrationTestSuite) TestStandaloneActivityHeartbeatDetailsRegression() {
+	ts.T().Skip("NEXUS-400: server does not surface LastHeartbeatDetails on stand-alone activity heartbeat timeouts (chasm/lib/activity/statemachine.go TIMEOUT_TYPE_HEARTBEAT branch)")
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
+		ID:                  "sa-hb-details-" + uuid.NewString(),
+		TaskQueue:           ts.taskQueueName,
+		StartToCloseTimeout: 30 * time.Second,
+		HeartbeatTimeout:    1 * time.Second,
+		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
+	}, heartbeatThenStallNexusActivity, "ignored")
+	ts.NoError(err)
+
+	var result string
+	err = handle.Get(ctx, &result)
+	ts.Error(err, "expected heartbeat timeout")
+
+	var timeoutErr *temporal.TimeoutError
+	if !errors.As(err, &timeoutErr) {
+		ts.Failf("expected *temporal.TimeoutError", "got %T: %v", err, err)
+		return
+	}
+	ts.Equal(enumspb.TIMEOUT_TYPE_HEARTBEAT, timeoutErr.TimeoutType(),
+		"timeout must be reported as Heartbeat-typed")
+
+	ts.True(timeoutErr.HasLastHeartbeatDetails(),
+		"stand-alone activity heartbeat-timeout must surface LastHeartbeatDetails (regression vs. workflow-backed activities; see chasm/lib/activity/statemachine.go TIMEOUT_TYPE_HEARTBEAT branch)")
+	if timeoutErr.HasLastHeartbeatDetails() {
+		var details string
+		ts.NoError(timeoutErr.LastHeartbeatDetails(&details))
+		ts.Equal(heartbeatTimeoutTestDetails, details,
+			"recovered LastHeartbeatDetails must match the value recorded by RecordHeartbeat")
+	}
+}
+
+// TestActivityBackedNexusOperationSuite covers the SDK + server behavior for Nexus
+// operations whose backing execution is a stand-alone activity (see temporalnexus.StartActivity).
+// It is intentionally separated from TestTemporalOperationSuite (which covers workflow-backed
+// and sync operations) so the failure/timeout/retry surface for activity-backed operations
+// can grow without bloating the workflow-backed table.
+func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
+	if os.Getenv("DISABLE_ACTIVITY_BACKED_NEXUS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	endpoint := "activity-backed-nexus-ep-" + uuid.NewString()
+	_, err := ts.client.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: endpoint,
+			Target: &nexuspb.EndpointTarget{
+				Variant: &nexuspb.EndpointTarget_Worker_{
+					Worker: &nexuspb.EndpointTarget_Worker{
+						Namespace: ts.config.Namespace,
+						TaskQueue: ts.taskQueueName,
+					},
+				},
+			},
+		},
+	})
+	ts.NoError(err)
+	temporalOpEndpoint = endpoint
+
+	startOpts := client.StartWorkflowOptions{
+		TaskQueue: ts.taskQueueName, WorkflowTaskTimeout: time.Second,
+	}
+
+	typedActivityInput := "typed-act-" + uuid.NewString()
+	untypedActivityInput := "untyped-act-" + uuid.NewString()
+	renamedActivityInput := "renamed-act-" + uuid.NewString()
+	failureActivityInput := "failure-act-" + uuid.NewString()
+	timeoutActivityInput := "timeout-act-" + uuid.NewString()
+	cancelActivityInput := "cancel-act-" + uuid.NewString()
+	stcTimeoutActivityInput := "stc-act-" + uuid.NewString()
+	heartbeatTimeoutActivityInput := "heartbeat-act-" + uuid.NewString()
+	retrySucceedActivityInput := "retry-succeed-act-" + uuid.NewString()
+	retryExhaustActivityInput := "retry-exhaust-act-" + uuid.NewString()
+
+	callerNexusStartedLinks := func(run client.WorkflowRun) []*commonpb.Link {
+		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for iter.HasNext() {
+			e, err := iter.Next()
+			ts.NoError(err)
+			if e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
+				return e.GetLinks()
+			}
+		}
+		return nil
+	}
+
+	// verifyActivityLinks asserts forward (caller NexusOperationStarted -> activity) and
+	// backward (activity execution info -> caller workflow event) link plumbing.
+	//
+	// NEXUS-400: server does not currently emit Link_Activity on NexusOperationStarted nor
+	// Link_WorkflowEvent on the backing activity's execution info for activity-backed Nexus
+	// operations. Body commented out until the server fix lands; the helper stays in place
+	// so callers compile and the test table is unchanged.
+	verifyActivityLinks := func(activityID string) func(run client.WorkflowRun) {
+		_ = callerNexusStartedLinks
+		_ = activityID
+		return func(run client.WorkflowRun) {
+			// var fwd *commonpb.Link_Activity
+			// for _, link := range callerNexusStartedLinks(run) {
+			// 	if a := link.GetActivity(); a != nil {
+			// 		fwd = a
+			// 	}
+			// }
+			// ts.NotNil(fwd, "caller's NexusOperationStarted should have a Link_Activity")
+			// if fwd != nil {
+			// 	ts.Equal(activityID, fwd.GetActivityId())
+			// }
+			//
+			// handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: activityID})
+			// desc, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+			// ts.NoError(err)
+			// var back *commonpb.Link_WorkflowEvent
+			// for _, link := range desc.RawExecutionInfo.GetLinks() {
+			// 	if w := link.GetWorkflowEvent(); w != nil {
+			// 		back = w
+			// 	}
+			// }
+			// ts.NotNil(back, "activity should have a Link_WorkflowEvent back to caller")
+			// if back != nil {
+			// 	ts.Equal(run.GetID(), back.GetWorkflowId())
+			// }
+			_ = run
+		}
+	}
+
+	// verifyActivityFinalStatus polls the activity's Describe until it reports the expected
+	// terminal status, asserting that server-side propagation of the Nexus operation outcome
+	// (cancellation, failure, timeout) actually reaches the backing activity.
+	verifyActivityFinalStatus := func(activityID string, expected enumspb.ActivityExecutionStatus) func(client.WorkflowRun) {
+		return func(_ client.WorkflowRun) {
+			handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: activityID})
+			require.Eventually(ts.T(), func() bool {
+				desc, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+				if err != nil {
+					return false
+				}
+				return desc.Status == expected
+			}, 10*time.Second, 200*time.Millisecond,
+				"activity %s never reached status %s", activityID, expected)
+		}
+	}
+
+	// verifyActivityAttemptAtLeast polls Describe until the activity's recorded Attempt is
+	// at least minAttempt. Used to assert that server-driven retries actually fired before
+	// the activity-backed Nexus operation completed (success or failure).
+	verifyActivityAttemptAtLeast := func(activityID string, minAttempt int32) func(client.WorkflowRun) {
+		return func(_ client.WorkflowRun) {
+			handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: activityID})
+			require.Eventually(ts.T(), func() bool {
+				desc, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+				if err != nil {
+					return false
+				}
+				return desc.Attempt >= minAttempt
+			}, 10*time.Second, 200*time.Millisecond,
+				"activity %s never reported Attempt >= %d", activityID, minAttempt)
+		}
+	}
+
+	composeVerify := func(fns ...func(client.WorkflowRun)) func(client.WorkflowRun) {
+		return func(run client.WorkflowRun) {
+			for _, fn := range fns {
+				if fn != nil {
+					fn(run)
+				}
+			}
+		}
+	}
+
+	for _, tc := range []struct {
+		name     string
+		wf       func(workflow.Context, string) (string, error)
+		input    string
+		expected string
+		verify   func(run client.WorkflowRun)
+	}{
+		{"Async with StartActivity", ts.workflows.TemporalOpAsyncActivityCaller, typedActivityInput, typedActivityInput, verifyActivityLinks("act-" + typedActivityInput)},
+		{"Async with StartUntypedActivity", ts.workflows.TemporalOpAsyncUntypedActivityCaller, untypedActivityInput, untypedActivityInput, verifyActivityLinks("act-untyped-" + untypedActivityInput)},
+		// Regression: activities registered with a custom name via activity.RegisterOptions.Name
+		// must be resolved through the worker's registry when scheduled via
+		// temporalnexus.StartActivity — otherwise the raw Go function name is sent and the
+		// activity fails as unregistered.
+		{"Async with StartActivity resolves worker-registered activity alias", ts.workflows.TemporalOpRenamedActivityCaller, renamedActivityInput, "renamed:" + renamedActivityInput, verifyActivityLinks("renamed-act-" + renamedActivityInput)},
+		{
+			"Cancel activity execution",
+			ts.workflows.TemporalOpCancelActivityCaller,
+			cancelActivityInput, "",
+			composeVerify(
+				verifyActivityLinks("cancel-act-"+cancelActivityInput),
+				verifyActivityFinalStatus("cancel-act-"+cancelActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_CANCELED),
+			),
+		},
+		{
+			"Failure ApplicationError propagated",
+			ts.workflows.TemporalOpFailingActivityCaller,
+			failureActivityInput,
+			"application:NexusActivityTestFailureType:activity failed: " + failureActivityInput,
+			composeVerify(
+				verifyActivityLinks("failing-act-"+failureActivityInput),
+				verifyActivityFinalStatus("failing-act-"+failureActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_FAILED),
+			),
+		},
+		{
+			"StartToClose timeout propagated",
+			ts.workflows.TemporalOpTimeoutActivityCaller,
+			timeoutActivityInput,
+			"timeout:StartToClose",
+			composeVerify(
+				verifyActivityLinks("timeout-act-"+timeoutActivityInput),
+				verifyActivityFinalStatus("timeout-act-"+timeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
+			),
+		},
+		{
+			"ScheduleToClose timeout propagated",
+			ts.workflows.TemporalOpScheduleToCloseTimeoutCaller,
+			stcTimeoutActivityInput,
+			"timeout:ScheduleToClose",
+			composeVerify(
+				verifyActivityLinks("schedule-to-close-act-"+stcTimeoutActivityInput),
+				verifyActivityFinalStatus("schedule-to-close-act-"+stcTimeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
+			),
+		},
+		{
+			"Heartbeat timeout propagated",
+			ts.workflows.TemporalOpHeartbeatTimeoutCaller,
+			heartbeatTimeoutActivityInput,
+			"timeout:Heartbeat",
+			composeVerify(
+				verifyActivityLinks("heartbeat-act-"+heartbeatTimeoutActivityInput),
+				verifyActivityFinalStatus("heartbeat-act-"+heartbeatTimeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
+			),
+		},
+		{
+			"Retry then succeed",
+			ts.workflows.TemporalOpRetryThenSucceedCaller,
+			retrySucceedActivityInput,
+			retrySucceedActivityInput,
+			composeVerify(
+				verifyActivityLinks("retry-succeed-act-"+retrySucceedActivityInput),
+				verifyActivityFinalStatus("retry-succeed-act-"+retrySucceedActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED),
+				verifyActivityAttemptAtLeast("retry-succeed-act-"+retrySucceedActivityInput, 3),
+			),
+		},
+		{
+			"Retry exhaustion propagates last failure",
+			ts.workflows.TemporalOpRetryExhaustCaller,
+			retryExhaustActivityInput,
+			"application:NexusActivityRetryTestFailureType:attempt 2 failed; will succeed on 999",
+			composeVerify(
+				verifyActivityLinks("retry-exhaust-act-"+retryExhaustActivityInput),
+				verifyActivityFinalStatus("retry-exhaust-act-"+retryExhaustActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_FAILED),
+				verifyActivityAttemptAtLeast("retry-exhaust-act-"+retryExhaustActivityInput, 2),
+			),
+		},
+	} {
+		ts.Run(tc.name, func() {
+			run, err := ts.client.ExecuteWorkflow(ctx, startOpts, tc.wf, tc.input)
+			ts.NoError(err)
+			var result string
+			ts.NoError(run.Get(ctx, &result))
+			ts.Equal(tc.expected, result)
+			if tc.verify != nil {
+				tc.verify(run)
+			}
+		})
+	}
+
+	// Heartbeat timeout should carry LastHeartbeatDetails to the caller workflow. The
+	// backing activity records exactly one heartbeat with a deterministic payload before
+	// stalling; the server fires a HEARTBEAT-typed timeout while the activity is still
+	// running. The caller's TimeoutError must expose the previously-recorded heartbeat
+	// details, mirroring workflow-backed activity heartbeat-timeout semantics.
+	//
+	// **Currently expected to FAIL on NEXUS-400**: chasm/lib/activity/statemachine.go's
+	// TIMEOUT_TYPE_HEARTBEAT branch builds the failure via createHeartbeatTimeoutFailure(),
+	// which only populates TimeoutFailureInfo.TimeoutType — LastHeartbeatDetails is never
+	// copied from a.LastHeartbeat. Server bug. See review memo for details.
+	ts.Run("Heartbeat timeout delivers LastHeartbeatDetails", func() {
+		ts.T().Skip("NEXUS-400: server does not populate LastHeartbeatDetails on stand-alone activity heartbeat timeouts (chasm/lib/activity/statemachine.go TIMEOUT_TYPE_HEARTBEAT branch)")
+
+		input := "hb-details-" + uuid.NewString()
+		run, err := ts.client.ExecuteWorkflow(ctx, startOpts, ts.workflows.TemporalOpHeartbeatDetailsTimeoutCaller, input)
+		ts.NoError(err)
+		var result string
+		ts.NoError(run.Get(ctx, &result))
+		ts.Equal("timeout:Heartbeat:details=intermediate-progress-50pct", result,
+			"stand-alone activity heartbeat-timeout must populate LastHeartbeatDetails on the TimeoutFailureInfo delivered to the Nexus caller")
+	})
+
+	// Two callers attaching callbacks to the same backing activity (via USE_EXISTING +
+	// AttachCompletionCallbacks). Both invocations of the Nexus operation with the same input
+	// resolve to a single activity. The activity intentionally sleeps long enough for the
+	// second caller's StartActivityExecution to land before completion. When the activity
+	// completes, both callbacks must fire, both caller workflows must receive the same
+	// result, and the activity must have only one actual execution.
+	ts.Run("Two callers share one backing activity (both callbacks fire)", func() {
+		sharedInput := "shared-" + uuid.NewString()
+		activityID := "shared-act-" + sharedInput
+
+		var (
+			runA, runB client.WorkflowRun
+			errA, errB error
+			wg         sync.WaitGroup
+		)
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			opts := startOpts
+			opts.ID = "shared-caller-A-" + sharedInput
+			runA, errA = ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.TemporalOpSharedActivityCaller, sharedInput)
+		}()
+		go func() {
+			defer wg.Done()
+			// Small delay so caller A's StartActivityExecution lands first and creates the
+			// activity; caller B then resolves to it via USE_EXISTING.
+			time.Sleep(500 * time.Millisecond)
+			opts := startOpts
+			opts.ID = "shared-caller-B-" + sharedInput
+			runB, errB = ts.client.ExecuteWorkflow(ctx, opts, ts.workflows.TemporalOpSharedActivityCaller, sharedInput)
+		}()
+		wg.Wait()
+		ts.NoError(errA)
+		ts.NoError(errB)
+
+		var resA, resB string
+		ts.NoError(runA.Get(ctx, &resA))
+		ts.NoError(runB.Get(ctx, &resB))
+		ts.Equal(sharedInput, resA, "caller A must receive the shared activity's result")
+		ts.Equal(sharedInput, resB, "caller B must receive the shared activity's result")
+
+		// SDK's typed Describe doesn't expose Callbacks; reach for the raw frontend RPC.
+		descResp, err := ts.client.WorkflowService().DescribeActivityExecution(ctx, &workflowservice.DescribeActivityExecutionRequest{
+			Namespace:  ts.config.Namespace,
+			ActivityId: activityID,
+		})
+		ts.NoError(err)
+		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED, descResp.GetInfo().GetStatus(),
+			"shared activity must reach COMPLETED")
+		ts.Equal(int32(1), descResp.GetInfo().GetAttempt(),
+			"activity must only have run once (both callers shared the same execution)")
+		ts.Len(descResp.GetCallbacks(), 2,
+			"both callers must have attached callbacks to the same activity")
+
+		// Both callers' NexusOperationStarted events must carry a Link_Activity pointing at the
+		// shared activity (forward link from caller -> activity).
+		//
+		// NEXUS-400: server does not currently emit Link_Activity on NexusOperationStarted for
+		// activity-backed Nexus operations. Commented out until the server fix lands.
+		_ = activityID
+		// for _, run := range []client.WorkflowRun{runA, runB} {
+		// 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		// 	var fwd *commonpb.Link_Activity
+		// 	for iter.HasNext() {
+		// 		e, err := iter.Next()
+		// 		ts.NoError(err)
+		// 		if e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
+		// 			for _, link := range e.GetLinks() {
+		// 				if a := link.GetActivity(); a != nil {
+		// 					fwd = a
+		// 				}
+		// 			}
+		// 		}
+		// 	}
+		// 	ts.NotNil(fwd, "caller %s should have a Link_Activity on NexusOperationStarted", run.GetID())
+		// 	if fwd != nil {
+		// 		ts.Equal(activityID, fwd.GetActivityId())
+		// 	}
+		// }
+	})
+
+	// Caller workflow terminated mid-operation: the backing activity terminates its own
+	// caller before returning, so by the time the activity-completion callback is delivered
+	// to the server, the caller's Nexus operation state machine lives inside an already-
+	// closed workflow. Asserts that (a) the workflow ends up Terminated, (b) the activity
+	// still records COMPLETED server-side, and (c) the server handles the orphaned
+	// callback without panicking and without rewriting the closed workflow's history with
+	// a post-termination Nexus completion event.
+	ts.Run("Caller workflow terminated mid-operation", func() {
+		run, err := ts.client.ExecuteWorkflow(ctx, startOpts, ts.workflows.TemporalOpTerminateCallerCaller, "")
+		ts.NoError(err)
+		callerWorkflowID := run.GetID()
+
+		var result string
+		err = run.Get(ctx, &result)
+		ts.Error(err, "expected caller workflow to be terminated")
+		var terminatedErr *temporal.TerminatedError
+		ts.True(errors.As(err, &terminatedErr), "expected *temporal.TerminatedError, got %T: %v", err, err)
+
+		// Activity must still reach COMPLETED — terminating the caller workflow does not
+		// abort the backing activity; the activity is its own CHASM execution.
+		activityID := "terminate-caller-act-" + callerWorkflowID
+		handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: activityID})
+		require.Eventually(ts.T(), func() bool {
+			desc, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+			if err != nil {
+				return false
+			}
+			return desc.Status == enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED
+		}, 10*time.Second, 200*time.Millisecond,
+			"backing activity %s never reached COMPLETED", activityID)
+
+		// Caller workflow is Terminated, and there must be no Nexus completion event after
+		// the termination event — an orphaned callback must not mutate a terminal workflow.
+		desc, err := ts.client.DescribeWorkflowExecution(ctx, callerWorkflowID, run.GetRunID())
+		ts.NoError(err)
+		ts.Equal(enumspb.WORKFLOW_EXECUTION_STATUS_TERMINATED, desc.GetWorkflowExecutionInfo().GetStatus())
+
+		hist := ts.client.GetWorkflowHistory(ctx, callerWorkflowID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		var lastEventType enumspb.EventType
+		nexusCompletionAfterTermination := false
+		sawTerminated := false
+		for hist.HasNext() {
+			e, err := hist.Next()
+			ts.NoError(err)
+			lastEventType = e.GetEventType()
+			if e.GetEventType() == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED {
+				sawTerminated = true
+				continue
+			}
+			if sawTerminated &&
+				(e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED ||
+					e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_FAILED ||
+					e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCELED) {
+				nexusCompletionAfterTermination = true
+			}
+		}
+		ts.True(sawTerminated, "expected WorkflowExecutionTerminated event in caller history")
+		ts.False(nexusCompletionAfterTermination,
+			"orphaned callback must not write a Nexus completion event after WorkflowExecutionTerminated (last event was %v)", lastEventType)
+	})
 }

@@ -59,3 +59,17 @@ func ConvertCommonLinkToNexusLink(commonLink *commonpb.Link) nexus.Link {
 		return nexus.Link{}
 	}
 }
+
+// ConvertLinkActivityToNexusLink converts a Link_Activity type to a Nexus Link.
+//
+// NOTE: Experimental
+func ConvertLinkActivityToNexusLink(a *commonpb.Link_Activity) nexus.Link {
+	return internal.ConvertLinkActivityToNexusLink(a)
+}
+
+// ConvertNexusLinkToLinkActivity converts a Nexus Link back to a Link_Activity.
+//
+// NOTE: Experimental
+func ConvertNexusLinkToLinkActivity(link nexus.Link) (*commonpb.Link_Activity, error) {
+	return internal.ConvertNexusLinkToLinkActivity(link)
+}
