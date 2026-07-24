@@ -3151,6 +3151,11 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 
 	workflowWorker := aggWorker.workflowWorker
+	require.Equal(
+		t,
+		defaultMaxEagerActivityReservationsPerWorkflowTask,
+		workflowWorker.executionParameters.eagerActivityExecutor.maxPerTask,
+	)
 	require.True(t, workflowWorker.executionParameters.Identity != "")
 	require.NotNil(t, workflowWorker.executionParameters.Logger)
 	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
@@ -3225,11 +3230,17 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		StickyScheduleToStartTimeout:                   555 * time.Minute,
 		BackgroundActivityContext:                      context.Background(),
 		MaxConcurrentWorkflowTaskExternalStorageVisits: 7,
+		MaxEagerActivityReservationsPerWorkflowTask:    17,
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
 
 	workflowWorker := aggWorker.workflowWorker
+	require.Equal(
+		t,
+		options.MaxEagerActivityReservationsPerWorkflowTask,
+		workflowWorker.executionParameters.eagerActivityExecutor.maxPerTask,
+	)
 	require.Len(t, workflowWorker.executionParameters.ContextPropagators, 0)
 
 	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{

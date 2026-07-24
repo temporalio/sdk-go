@@ -59,7 +59,10 @@ func TestEagerActivityWrongTaskQueue(t *testing.T) {
 }
 
 func TestEagerActivityMaxPerTask(t *testing.T) {
-	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{taskQueue: "task-queue1"})
+	exec := newEagerActivityExecutor(eagerActivityExecutorOptions{
+		taskQueue:  "task-queue1",
+		maxPerTask: 2,
+	})
 	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
 		NumWorkflowSlots:      defaultMaxConcurrentTaskExecutionSize,
 		NumActivitySlots:      10,
@@ -73,14 +76,14 @@ func TestEagerActivityMaxPerTask(t *testing.T) {
 
 	exec.activityWorker = activityWorker.worker
 
-	// Add 8, but it limits to only the first 3
+	// Add 8, but it limits to only the first 2
 	var req workflowservice.RespondWorkflowTaskCompletedRequest
 	for i := 0; i < 8; i++ {
 		addScheduleTaskCommand(&req, "task-queue1")
 	}
-	require.Equal(t, 3, len(exec.applyToRequest(&req)))
+	require.Equal(t, 2, len(exec.applyToRequest(&req)))
 	for i := 0; i < 8; i++ {
-		require.Equal(t, i < 3, req.Commands[i].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
+		require.Equal(t, i < 2, req.Commands[i].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	}
 }
 
