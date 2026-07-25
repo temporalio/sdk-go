@@ -67,6 +67,8 @@ const (
 
 	defaultMaxConcurrentSessionExecutionSize = 1000 // Large concurrent session execution size (1k)
 
+	defaultMaxEagerActivityReservationsPerWorkflowTask = 3
+
 	defaultDeadlockDetectionTimeout = time.Second // By default kill workflow tasks that are running more than 1 sec.
 	// Unlimited deadlock detection timeout is used when we want to allow workflow tasks to run indefinitely, such
 	// as during debugging.
@@ -2421,6 +2423,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			disabled:      options.DisableEagerActivities,
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
+			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
 		capabilities:                  &capabilities,
 		pollTimeTracker:               &pollTimeTracker{},
@@ -2840,6 +2843,12 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 	}
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
+	}
+	if options.MaxEagerActivityReservationsPerWorkflowTask == nil {
+		defaultValue := defaultMaxEagerActivityReservationsPerWorkflowTask
+		options.MaxEagerActivityReservationsPerWorkflowTask = &defaultValue
+	} else if *options.MaxEagerActivityReservationsPerWorkflowTask <= 0 {
+		panic("MaxEagerActivityReservationsPerWorkflowTask must be positive; set DisableEagerActivities to disable eager activity execution")
 	}
 	if options.DeadlockDetectionTimeout == 0 {
 		if debugMode {
