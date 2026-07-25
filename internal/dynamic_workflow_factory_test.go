@@ -80,3 +80,70 @@ func TestDynamicWorkflowFactoryInTestEnvironment(t *testing.T) {
 	require.NoError(t, env.GetWorkflowResult(&got))
 	require.Equal(t, "pipeline-blog-publish", got)
 }
+
+func dynamicFactoryParentWorkflow(ctx Context) (string, error) {
+	child := ExecuteChildWorkflow(ctx, "dynamic-child")
+	var execution WorkflowExecution
+	if err := child.GetChildWorkflowExecution().Get(ctx, &execution); err != nil {
+		return "", err
+	}
+	return execution.ID, nil
+}
+
+func TestDynamicWorkflowFactoryChildInTestEnvironment(t *testing.T) {
+	s := WorkflowTestSuite{}
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterWorkflow(dynamicFactoryParentWorkflow)
+	env.RegisterDynamicWorkflow(echoDynamicFactory{}, DynamicRegisterWorkflowOptions{})
+
+	env.ExecuteWorkflow(dynamicFactoryParentWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var childWorkflowID string
+	require.NoError(t, env.GetWorkflowResult(&childWorkflowID))
+	require.NotEmpty(t, childWorkflowID)
+}
+
+type updateDrainingDefinition struct {
+	env     WorkflowEnvironment
+	drained bool
+}
+
+func (d *updateDrainingDefinition) Execute(env WorkflowEnvironment, _ *commonpb.Header, _ *commonpb.Payloads) {
+	d.env = env
+	env.QueueUpdate("unhandled", func() {
+		d.drained = true
+	})
+}
+
+func (d *updateDrainingDefinition) OnWorkflowTaskStarted(_ time.Duration) {
+	drained := d.env.DrainUnhandledUpdates()
+	result, err := converter.GetDefaultDataConverter().ToPayloads(drained && d.drained)
+	d.env.Complete(result, err)
+}
+
+func (d *updateDrainingDefinition) StackTrace() string { return "" }
+func (d *updateDrainingDefinition) Close()             {}
+
+type updateDrainingFactory struct{}
+
+func (updateDrainingFactory) NewWorkflowDefinition() WorkflowDefinition {
+	return &updateDrainingDefinition{}
+}
+
+func TestDynamicWorkflowFactoryDrainsUnhandledUpdatesInTestEnvironment(t *testing.T) {
+	s := WorkflowTestSuite{}
+	env := s.NewTestWorkflowEnvironment()
+	env.RegisterDynamicWorkflow(updateDrainingFactory{}, DynamicRegisterWorkflowOptions{})
+
+	env.ExecuteWorkflow("dynamic-update-draining")
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var drained bool
+	require.NoError(t, env.GetWorkflowResult(&drained))
+	require.True(t, drained)
+}
