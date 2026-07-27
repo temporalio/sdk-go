@@ -48,13 +48,15 @@ func extStoreNexusSizeCaller(ctx workflow.Context, endpoint string) (int, error)
 	return res, err
 }
 
-func extStoreNexusBigResultCaller(ctx workflow.Context, endpoint string) (string, error) {
+func extStoreNexusBigResultCaller(ctx workflow.Context, endpoint string) (int, error) {
 	c := workflow.NewNexusClient(endpoint, extStoreNexusServiceName)
 	var res string
 	err := c.ExecuteOperation(ctx, extStoreNexusBigResultOp, "small", workflow.NexusOperationOptions{
 		ScheduleToCloseTimeout: 20 * time.Second,
 	}).Get(ctx, &res)
-	return res, err
+	// Return only the length so the workflow's own result isn't offloaded; that keeps
+	// the store/retrieve counts attributable to the Nexus operation result alone.
+	return len(res), err
 }
 
 // transientFailDriver fails the first store and/or retrieve call, then delegates to
@@ -189,9 +191,9 @@ func TestNexusExternalStorageOperationResult(t *testing.T) {
 	defer w.Stop()
 
 	run := startNexusExtStoreCaller(t, ctx, c, taskQueue, extStoreNexusBigResultCaller, endpoint)
-	var res string
+	var res int
 	require.NoError(t, run.Get(ctx, &res))
-	require.Equal(t, oversized(72), res)
+	require.Equal(t, len(oversized(72)), res)
 
 	store, retrieve := driver.getStoreCounts()
 	require.Greater(t, store, 0, "handler should have offloaded the large result")
@@ -212,9 +214,9 @@ func TestNexusExternalStorageTransientStoreFailureRecovers(t *testing.T) {
 	defer w.Stop()
 
 	run := startNexusExtStoreCaller(t, ctx, c, taskQueue, extStoreNexusBigResultCaller, endpoint)
-	var res string
+	var res int
 	require.NoError(t, run.Get(ctx, &res))
-	require.Equal(t, oversized(72), res)
+	require.Equal(t, len(oversized(72)), res)
 
 	store, _ := driver.attempts()
 	require.GreaterOrEqual(t, store, 2, "store should have been retried after the transient failure")
