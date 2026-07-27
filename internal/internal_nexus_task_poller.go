@@ -15,16 +15,16 @@ import (
 
 type nexusTaskPoller struct {
 	basePoller
-	namespace       string
-	taskQueueName   string
-	identity        string
-	service         workflowservice.WorkflowServiceClient
-	taskHandler     *nexusTaskHandler
-	logger          log.Logger
-	numPollerMetric *numPollerMetric
-
+	namespace              string
+	taskQueueName          string
+	identity               string
+	service                workflowservice.WorkflowServiceClient
+	taskHandler            *nexusTaskHandler
+	logger                 log.Logger
+	numPollerMetric        *numPollerMetric
 	inboundPayloadVisitor  PayloadVisitor
 	outboundPayloadVisitor PayloadVisitor
+	backgroundContext      context.Context
 }
 
 type nexusTask struct {
@@ -38,6 +38,10 @@ func newNexusTaskPoller(
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 ) *nexusTaskPoller {
+	backgroundContext := params.BackgroundContext
+	if backgroundContext == nil {
+		backgroundContext = context.Background()
+	}
 	return &nexusTaskPoller{
 		basePoller: basePoller{
 			metricsHandler:               params.MetricsHandler,
@@ -60,6 +64,7 @@ func newNexusTaskPoller(
 
 		inboundPayloadVisitor:  params.inboundPayloadVisitor,
 		outboundPayloadVisitor: params.outboundPayloadVisitor,
+		backgroundContext:      backgroundContext,
 	}
 }
 
@@ -150,7 +155,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	// before the handler consumes them. A Nexus task carries at most one input and
 	// one result payload, so payload visits are unconcurrent (the configurable
 	// visit concurrency is scoped to workflow tasks).
-	if visitErr := visitProtoPayloads(context.Background(), ntp.inboundPayloadVisitor, response, 0); visitErr != nil {
+	if visitErr := visitProtoPayloads(ntp.backgroundContext, ntp.inboundPayloadVisitor, response, 0); visitErr != nil {
 		return ntp.reportExternalStorageFailure(response, "retrieve Nexus operation input from external storage", visitErr)
 	}
 
@@ -219,11 +224,11 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 
 	// Offload any large result or failure payloads to external storage before reporting.
 	if res != nil {
-		if visitErr := visitProtoPayloads(context.Background(), ntp.outboundPayloadVisitor, res, 0); visitErr != nil {
+		if visitErr := visitProtoPayloads(ntp.backgroundContext, ntp.outboundPayloadVisitor, res, 0); visitErr != nil {
 			return ntp.reportExternalStorageFailure(response, "store Nexus operation result in external storage", visitErr)
 		}
 	} else if failure != nil {
-		if visitErr := visitProtoPayloads(context.Background(), ntp.outboundPayloadVisitor, failure, 0); visitErr != nil {
+		if visitErr := visitProtoPayloads(ntp.backgroundContext, ntp.outboundPayloadVisitor, failure, 0); visitErr != nil {
 			return ntp.reportExternalStorageFailure(response, "store Nexus operation failure in external storage", visitErr)
 		}
 	}
