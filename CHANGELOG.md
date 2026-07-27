@@ -56,6 +56,11 @@ to docs, or any other relevant information.
 - Stand-alone activity-backed Nexus operations. `temporalnexus.MustNewTemporalOperation` can now
   back an async Nexus operation with a stand-alone activity execution via `StartActivity` /
   `StartUntypedActivity`. Activity-backed Nexus operations are also supported in `TestWorkflowEnvironment`.
+- Dynamic workflows registered as a `WorkflowDefinitionFactory` are now executed via
+  `NewWorkflowDefinition()` rather than being wrapped as a function and reflected on (which panicked
+  with `reflect: call of reflect.Value.Call on ptr Value`), in both the worker registry and the test
+  environment. This lets host processes that register a single shared factory (e.g.
+  `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
 - Merged link-converter class in the server and sdk-go and moved it to api-go
 
 ## [1.46.0] - 2026-07-07
