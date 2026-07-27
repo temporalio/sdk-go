@@ -394,6 +394,8 @@ type trackingSlotSupplier struct {
 
 	issuedSlotsAtomic atomic.Int32
 	slotsMutex        sync.Mutex
+	metricsStopped    bool
+	metricsPublished  bool
 	// Values should eventually become slot info types
 	usedSlots               map[*SlotPermit]struct{}
 	taskSlotsAvailableGauge metrics.Gauge
@@ -507,10 +509,34 @@ func (t *trackingSlotSupplier) ReleaseSlot(permit *SlotPermit, reason SlotReleas
 }
 
 func (t *trackingSlotSupplier) publishMetrics(usedSlots int) {
+	t.slotsMutex.Lock()
+	defer t.slotsMutex.Unlock()
+
+	if t.metricsStopped {
+		return
+	}
+	t.metricsPublished = true
 	if t.inner.MaxSlots() != 0 {
 		t.taskSlotsAvailableGauge.Update(float64(t.inner.MaxSlots() - usedSlots))
 	}
 	t.taskSlotsUsedGauge.Update(float64(usedSlots))
+}
+
+func (t *trackingSlotSupplier) stopMetrics() {
+	t.slotsMutex.Lock()
+	defer t.slotsMutex.Unlock()
+
+	if t.metricsStopped {
+		return
+	}
+	t.metricsStopped = true
+	if !t.metricsPublished {
+		return
+	}
+	if t.inner.MaxSlots() != 0 {
+		t.taskSlotsAvailableGauge.Update(0)
+	}
+	t.taskSlotsUsedGauge.Update(0)
 }
 
 func (t *trackingSlotSupplier) GetSlotSupplierKind() string {

@@ -915,6 +915,9 @@ func (bw *baseWorker) Stop() {
 		})
 	}
 	bw.taskLimiterContextCancel()
+	if bw.slotSupplier != nil {
+		bw.slotSupplier.stopMetrics()
+	}
 
 	// Close context
 	if bw.options.backgroundContextCancel != nil {
