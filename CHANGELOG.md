@@ -41,6 +41,8 @@ to docs, or any other relevant information.
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
   `GetVersion` call before activating its new behavior.
 
+- Add support for external storage to Nexus task handling.
+
 ### Fixed
 
 - Allow query results to use external storage before payload size enforcement.

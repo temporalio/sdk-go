@@ -15,13 +15,16 @@ import (
 
 type nexusTaskPoller struct {
 	basePoller
-	namespace       string
-	taskQueueName   string
-	identity        string
-	service         workflowservice.WorkflowServiceClient
-	taskHandler     *nexusTaskHandler
-	logger          log.Logger
-	numPollerMetric *numPollerMetric
+	namespace              string
+	taskQueueName          string
+	identity               string
+	service                workflowservice.WorkflowServiceClient
+	taskHandler            *nexusTaskHandler
+	logger                 log.Logger
+	numPollerMetric        *numPollerMetric
+	inboundPayloadVisitor  PayloadVisitor
+	outboundPayloadVisitor PayloadVisitor
+	backgroundContext      context.Context
 }
 
 type nexusTask struct {
@@ -35,6 +38,10 @@ func newNexusTaskPoller(
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
 ) *nexusTaskPoller {
+	backgroundContext := params.BackgroundContext
+	if backgroundContext == nil {
+		backgroundContext = context.Background()
+	}
 	return &nexusTaskPoller{
 		basePoller: basePoller{
 			metricsHandler:               params.MetricsHandler,
@@ -54,6 +61,10 @@ func newNexusTaskPoller(
 		identity:        params.Identity,
 		logger:          params.Logger,
 		numPollerMetric: newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeNexusTask),
+
+		inboundPayloadVisitor:  params.inboundPayloadVisitor,
+		outboundPayloadVisitor: params.outboundPayloadVisitor,
+		backgroundContext:      backgroundContext,
 	}
 }
 
@@ -140,6 +151,14 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		return err
 	}
 
+	// Retrieve any operation input payloads that were offloaded to external storage
+	// before the handler consumes them. A Nexus task carries at most one input and
+	// one result payload, so payload visits are unconcurrent (the configurable
+	// visit concurrency is scoped to workflow tasks).
+	if visitErr := visitProtoPayloads(ntp.backgroundContext, ntp.inboundPayloadVisitor, response, 0); visitErr != nil {
+		return ntp.reportExternalStorageFailure(response, "retrieve Nexus operation input from external storage", visitErr)
+	}
+
 	// Process the nexus task.
 	res, failure, err := ntp.taskHandler.ExecuteContext(nctx, response)
 
@@ -203,6 +222,17 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 		return err
 	}
 
+	// Offload any large result or failure payloads to external storage before reporting.
+	if res != nil {
+		if visitErr := visitProtoPayloads(ntp.backgroundContext, ntp.outboundPayloadVisitor, res, 0); visitErr != nil {
+			return ntp.reportExternalStorageFailure(response, "store Nexus operation result in external storage", visitErr)
+		}
+	} else if failure != nil {
+		if visitErr := visitProtoPayloads(ntp.backgroundContext, ntp.outboundPayloadVisitor, failure, 0); visitErr != nil {
+			return ntp.reportExternalStorageFailure(response, "store Nexus operation failure in external storage", visitErr)
+		}
+	}
+
 	if err := ntp.reportCompletion(res, failure); err != nil {
 		traceLog(func() {
 			ntp.logger.Debug("reportNexusTaskComplete failed", tagError, err)
@@ -235,4 +265,23 @@ func (ntp *nexusTaskPoller) reportCompletion(
 	}
 	_, err := ntp.taskHandler.client.WorkflowService().RespondNexusTaskCompleted(ctx, completion)
 	return err
+}
+
+// reportExternalStorageFailure fails the task with a retryable internal error when
+// external storage retrieval or offload fails, so the server redelivers the task.
+func (ntp *nexusTaskPoller) reportExternalStorageFailure(
+	response *workflowservice.PollNexusTaskQueueResponse,
+	action string,
+	cause error,
+) error {
+	handlerErr := nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "failed to %s: %v", action, cause)
+	failedRequest, err := ntp.taskHandler.fillInFailure(
+		response.TaskToken,
+		handlerErr,
+		getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()),
+	)
+	if err != nil {
+		return err
+	}
+	return ntp.reportCompletion(nil, failedRequest)
 }
