@@ -20,7 +20,6 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 - Add support for Workflow Updates as Nexus Operations 
-- Add support for external storage to Nexus task handling
 
 ### Changed
 
@@ -41,6 +40,8 @@ to docs, or any other relevant information.
 - Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
   `GetVersion` call before activating its new behavior.
+
+- Add support for external storage to Nexus task handling.
 
 ### Fixed
 
