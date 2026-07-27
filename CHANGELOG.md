@@ -20,6 +20,7 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 - Add support for Workflow Updates as Nexus Operations 
+- Add support for external storage to Nexus task handling
 
 ### Changed
 

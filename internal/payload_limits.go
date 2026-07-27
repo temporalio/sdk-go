@@ -212,6 +212,14 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 	case *workflowservice.RespondWorkflowTaskFailedRequest:
 		ctx = withPayloadLimitChecks(ctx, limitCheckWarning)
 		ctx = withMemoLimitChecks(ctx, limitCheckWarning)
+	// Nexus handler failures are passed through to the server with warnings only,
+	// like other task failures.
+	case *workflowservice.RespondNexusTaskFailedRequest:
+		ctx = withPayloadLimitChecks(ctx, limitCheckWarning)
+	// Nexus sync results and operation-error failures are not size-checked, mirroring
+	// the server and the other SDKs.
+	case *workflowservice.RespondNexusTaskCompletedRequest:
+		ctx = withPayloadLimitChecks(ctx, limitCheckNone)
 	}
 	// These are the additional protos that server checks that the SDK does not currently check:
 	// - UpsertWorkflowSearchAttributesCommandAttributes has another SearchAttributes size check that combines execution info,
