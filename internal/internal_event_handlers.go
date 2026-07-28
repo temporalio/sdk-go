@@ -698,6 +698,20 @@ func (wc *workflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 	)
 }
 
+func (wc *workflowEnvironmentImpl) AbandonNexusOperation(seq int64) {
+	command := wc.commandsHelper.getNexusOperationCommand(seq)
+	data := command.getData().(*scheduledNexusOperation)
+
+	data.startedCallback = nil
+	data.completedCallback = nil
+
+	wc.logger.Debug("AbandonNexusOperation",
+		tagNexusEndpoint, data.endpoint,
+		tagNexusService, data.service,
+		tagNexusOperation, data.operation,
+	)
+}
+
 func (wc *workflowEnvironmentImpl) RegisterSignalHandler(
 	handler func(name string, input *commonpb.Payloads, header *commonpb.Header) error,
 ) {
