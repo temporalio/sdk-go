@@ -20,6 +20,9 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+
+## [1.46.0] - 2026-07-28
+
 ### Added
 
 - Added `worker.Options.MaxEagerActivityReservationsPerWorkflowTask` to configure the maximum
@@ -36,7 +39,6 @@ to docs, or any other relevant information.
 - Add support for external storage to Nexus task handling.
 
 ### Changed
-
 
 - User metadata fields (StaticSummary, StaticDetails, CurrentDetails, Activity Summary, Timer
   Summary, AwaitOptions) are no longer marked as experimental.
