@@ -360,6 +360,7 @@ type (
 
 		// Optional: Disable eager activities. If set to true, activities will not
 		// be requested to execute eagerly from the same workflow regardless of
+		// MaxEagerActivityReservationsPerWorkflowTask or
 		// MaxConcurrentEagerActivityExecutionSize.
 		//
 		// Eager activity execution means the server returns requested eager
@@ -368,6 +369,13 @@ type (
 		//
 		// NOTE: Eager activities will automatically be disabled if TaskQueueActivitiesPerSecond is set.
 		DisableEagerActivities bool
+
+		// Optional: Maximum number of activity slots that may be reserved for
+		// eager execution when completing a workflow task.
+		//
+		// The default is 3. A configured value must be positive. To disable eager
+		// activity execution, set DisableEagerActivities.
+		MaxEagerActivityReservationsPerWorkflowTask *int
 
 		// Optional: Maximum number of eager activities that can be running.
 		//

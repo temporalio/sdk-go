@@ -27,6 +27,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `worker.Options.MaxEagerActivityReservationsPerWorkflowTask` to configure the maximum
+  number of eager activity slots reserved per workflow task. The default remains three. Configured
+  values must be positive; use `DisableEagerActivities` to disable eager activity execution.
+
 - Automatically enroll workers into poller autoscaling when the namespace advertises the
   `PollerAutoscalingAutoEnroll` capability. This only applies to poller types left at their default
   (i.e. the worker set neither `MaxConcurrent<Type>TaskPollers` nor `<Type>TaskPollerBehavior`);
@@ -37,6 +41,8 @@ to docs, or any other relevant information.
   `GetVersion` call before activating its new behavior.
   
 - Add support for Workflow Updates as Nexus Operations 
+
+- Add support for external storage to Nexus task handling.
 
 ### Fixed
 
@@ -54,6 +60,12 @@ to docs, or any other relevant information.
   back an async Nexus operation with a stand-alone activity execution via `StartActivity` /
   `StartUntypedActivity`. Activity-backed Nexus operations are also supported in `TestWorkflowEnvironment`.
 - Fixed worker task slot metrics reporting stale values when slot state changes concurrently.
+- Dynamic workflows registered as a `WorkflowDefinitionFactory` are now executed via
+  `NewWorkflowDefinition()` rather than being wrapped as a function and reflected on (which panicked
+  with `reflect: call of reflect.Value.Call on ptr Value`), in both the worker registry and the test
+  environment. This lets host processes that register a single shared factory (e.g.
+  `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
+- Merged link-converter class in the server and sdk-go and moved it to api-go
 
 ## [1.46.0] - 2026-07-07
 

@@ -138,6 +138,12 @@ type (
 		env *testWorkflowEnvironmentImpl
 	}
 
+	testWorkflowDefinitionWrapper struct {
+		WorkflowDefinition
+		env     *testWorkflowEnvironmentImpl
+		started bool
+	}
+
 	mockWrapper struct {
 		env           *testWorkflowEnvironmentImpl
 		name          string
@@ -683,11 +689,42 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 		wf = env.registry.dynamicWorkflow
 		dynamic = true
 	}
+	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
+	// RoadRunner PHP host process registers one shared factory). Honor it rather
+	// than treating it as a plain function, which would panic when the executor
+	// reflects on the factory value.
+	if wdf, ok := wf.(WorkflowDefinitionFactory); ok {
+		return &testWorkflowDefinitionWrapper{
+			WorkflowDefinition: wdf.NewWorkflowDefinition(),
+			env:                env,
+		}, nil
+	}
 	wd := &workflowExecutorWrapper{
 		workflowExecutor: &workflowExecutor{workflowType: wt.Name, fn: wf, interceptors: env.registry.interceptors, dynamic: dynamic},
 		env:              env,
 	}
 	return newSyncWorkflowDefinition(wd), nil
+}
+
+func (w *testWorkflowDefinitionWrapper) OnWorkflowTaskStarted(timeout time.Duration) {
+	if !w.started {
+		w.started = true
+		w.env.workflowFunctionExecuting = true
+
+		if w.env.isChildWorkflow() {
+			// Balance ExecuteChildWorkflow's increment, including delayed starts.
+			w.env.runningCount--
+
+			if handler := w.env.startedHandler; handler != nil {
+				execution := w.env.workflowInfo.WorkflowExecution
+				w.env.parentEnv.postCallback(func() {
+					handler(execution, nil)
+				}, true)
+			}
+		}
+	}
+
+	w.WorkflowDefinition.OnWorkflowTaskStarted(timeout)
 }
 
 func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {

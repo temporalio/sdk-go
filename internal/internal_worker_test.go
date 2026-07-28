@@ -3143,6 +3143,20 @@ func TestWorkerOptionInvalid(t *testing.T) {
 	require.Panics(t, func() {
 		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskExternalStorageVisits: -1})
 	})
+	for _, value := range []int{0, -1} {
+		value := value
+		require.PanicsWithValue(
+			t,
+			"MaxEagerActivityReservationsPerWorkflowTask must be positive; set DisableEagerActivities to disable eager activity execution",
+			func() {
+				NewAggregatedWorker(
+					&WorkflowClient{},
+					"worker-options-tq",
+					WorkerOptions{MaxEagerActivityReservationsPerWorkflowTask: &value},
+				)
+			},
+		)
+	}
 }
 
 func TestWorkerOptionDefaults(t *testing.T) {
@@ -3151,6 +3165,11 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 
 	workflowWorker := aggWorker.workflowWorker
+	require.Equal(
+		t,
+		defaultMaxEagerActivityReservationsPerWorkflowTask,
+		workflowWorker.executionParameters.eagerActivityExecutor.maxPerTask,
+	)
 	require.True(t, workflowWorker.executionParameters.Identity != "")
 	require.NotNil(t, workflowWorker.executionParameters.Logger)
 	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
@@ -3199,6 +3218,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 
 func TestWorkerOptionNonDefaults(t *testing.T) {
 	taskQueue := "worker-options-tq"
+	maxEagerActivityReservationsPerWorkflowTask := 17
 
 	client := &WorkflowClient{
 		workflowService:    nil,
@@ -3225,11 +3245,17 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		StickyScheduleToStartTimeout:                   555 * time.Minute,
 		BackgroundActivityContext:                      context.Background(),
 		MaxConcurrentWorkflowTaskExternalStorageVisits: 7,
+		MaxEagerActivityReservationsPerWorkflowTask:    &maxEagerActivityReservationsPerWorkflowTask,
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
 
 	workflowWorker := aggWorker.workflowWorker
+	require.Equal(
+		t,
+		*options.MaxEagerActivityReservationsPerWorkflowTask,
+		workflowWorker.executionParameters.eagerActivityExecutor.maxPerTask,
+	)
 	require.Len(t, workflowWorker.executionParameters.ContextPropagators, 0)
 
 	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
