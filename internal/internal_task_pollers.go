@@ -931,7 +931,11 @@ func newLocalActivityPoller(
 }
 
 func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
-	return latp.laTunnel.getTask(), nil
+	task := latp.laTunnel.getTask()
+	if task == nil {
+		return nil, nil
+	}
+	return task, nil
 }
 
 func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {

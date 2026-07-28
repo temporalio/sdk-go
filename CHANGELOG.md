@@ -19,37 +19,34 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
-- Add support for Workflow Updates as Nexus Operations 
-
-### Changed
-
-- User metadata fields (StaticSummary, StaticDetails, CurrentDetails, Activity Summary, Timer
-  Summary, AwaitOptions) are no longer marked as experimental.
 
 ### Added
 
 - Added `worker.Options.MaxEagerActivityReservationsPerWorkflowTask` to configure the maximum
   number of eager activity slots reserved per workflow task. The default remains three. Configured
   values must be positive; use `DisableEagerActivities` to disable eager activity execution.
-
 - Automatically enroll workers into poller autoscaling when the namespace advertises the
   `PollerAutoscalingAutoEnroll` capability. This only applies to poller types left at their default
   (i.e. the worker set neither `MaxConcurrent<Type>TaskPollers` nor `<Type>TaskPollerBehavior`);
   explicitly configured pollers are left unchanged.
-
 - Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
   `GetVersion` call before activating its new behavior.
-  
+- Add support for Workflow Updates as Nexus Operations 
+- Add support for external storage to Nexus task handling.
+
 ### Changed
 
+
+- User metadata fields (StaticSummary, StaticDetails, CurrentDetails, Activity Summary, Timer
+  Summary, AwaitOptions) are no longer marked as experimental.
 - Send the initial Worker heartbeat immediately on startup, include the client identity, and omit
   elapsed-since-last-heartbeat until a previous heartbeat exists.
 
-- Add support for external storage to Nexus task handling.
-
 ### Fixed
 
+- Prevent a background panic during worker shutdown when the local activity tunnel closes while a
+  poller is waiting for a task.
 - Allow query results to use external storage before payload size enforcement.
 - Correct schedule catch-up window documentation to state that an unset value is omitted and the
   server applies its one-year default.
@@ -63,6 +60,7 @@ to docs, or any other relevant information.
 - Stand-alone activity-backed Nexus operations. `temporalnexus.MustNewTemporalOperation` can now
   back an async Nexus operation with a stand-alone activity execution via `StartActivity` /
   `StartUntypedActivity`. Activity-backed Nexus operations are also supported in `TestWorkflowEnvironment`.
+- Fixed worker task slot metrics reporting stale values when slot state changes concurrently.
 - Dynamic workflows registered as a `WorkflowDefinitionFactory` are now executed via
   `NewWorkflowDefinition()` rather than being wrapped as a function and reflected on (which panicked
   with `reflect: call of reflect.Value.Call on ptr Value`), in both the worker registry and the test
