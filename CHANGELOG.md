@@ -41,6 +41,8 @@ to docs, or any other relevant information.
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
   `GetVersion` call before activating its new behavior.
 
+- Add support for external storage to Nexus task handling.
+
 ### Fixed
 
 - Allow query results to use external storage before payload size enforcement.
@@ -64,6 +66,9 @@ to docs, or any other relevant information.
 - Merged link-converter class in the server and sdk-go and moved it to api-go
 - Nexus operations with `NexusOperationCancellationTypeAbandon` no longer panic the workflow task when
   the operation later starts or completes after the caller is canceled.
+- Session worker: stopping a worker while it is at its maximum concurrent session count no longer blocks
+  for the stop timeout. The session creation poller waited for an available session token without
+  observing the stop signal, so shutdown could not interrupt it and the poller goroutine leaked.
 
 ## [1.46.0] - 2026-07-07
 

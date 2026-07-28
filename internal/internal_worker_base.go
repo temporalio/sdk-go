@@ -533,8 +533,9 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				}
 				continue
 			}
-			if bw.sessionTokenBucket != nil {
-				bw.sessionTokenBucket.waitForAvailableToken()
+			if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
+				bw.releaseSlot(permit, SlotReleaseReasonUnused)
+				return
 			}
 			if bw.pollerBalancer != nil {
 				bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
@@ -598,8 +599,10 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			continue
 		}
 
-		if bw.sessionTokenBucket != nil {
-			bw.sessionTokenBucket.waitForAvailableToken()
+		if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
+			bw.releaseSlot(permit, SlotReleaseReasonUnused)
+			releaseActive()
+			return
 		}
 		if bw.pollerBalancer != nil {
 			bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
@@ -906,6 +909,9 @@ func (bw *baseWorker) Stop() {
 	}
 	close(bw.stopCh)
 	bw.limiterContextCancel()
+	if bw.sessionTokenBucket != nil {
+		bw.sessionTokenBucket.close()
+	}
 
 	// Wait for pollers, task dispatch, and task processing to complete, or until stopTimeout elapses.
 	// The task dispatcher drains taskQueueCh after the closer goroutine
