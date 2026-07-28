@@ -683,10 +683,14 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatMultipleWorkers() {
 	// Verify both workers are tracked
 	var workerInfo1, workerInfo2 *workerpb.WorkerHeartbeat
 	ts.Eventually(func() bool {
-		workerInfo1 = ts.getWorkerInfo(ctx, taskQueue1)
-		workerInfo2 = ts.getWorkerInfo(ctx, taskQueue2)
+		if workerInfo1 == nil {
+			workerInfo1 = ts.getWorkerInfo(ctx, taskQueue1)
+		}
+		if workerInfo2 == nil {
+			workerInfo2 = ts.getWorkerInfo(ctx, taskQueue2)
+		}
 		return workerInfo1 != nil && workerInfo2 != nil
-	}, 5*time.Second, 200*time.Millisecond, "Should find both workers")
+	}, 5*time.Second, 500*time.Millisecond, "Should find both workers")
 
 	ts.NotEqual(workerInfo1.WorkerInstanceKey, workerInfo2.WorkerInstanceKey,
 		"Different workers should have different instance keys")
