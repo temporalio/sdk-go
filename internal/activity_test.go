@@ -246,6 +246,76 @@ func (s *activityTestSuite) TestActivityHeartbeat_WorkerStop() {
 	<-waitC2
 }
 
+// A caller may heartbeat with a context it cancels once part of its work is done,
+// as errgroup.WithContext does on Wait. The batched flush must not use that
+// context when a later call supplied one that is still live.
+func (s *activityTestSuite) TestActivityHeartbeat_BatchFlushUsesLastNonCanceledContext() {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	workerStopChannel := make(chan struct{})
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
+		time.Minute, workerStopChannel, s.namespace, &atomic.Bool{}, nil, nil)
+	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{
+		serviceInvoker: invoker,
+		logger:         getLogger()})
+
+	flushCtxErr := make(chan error, 1)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).
+		Do(func(rpcCtx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
+			var details string
+			s.NoError(newEncodedValues(request.Details, nil).Get(&details))
+			if details == "buffered" {
+				flushCtxErr <- rpcCtx.Err()
+			}
+		}).Times(2)
+
+	groupCtx, cancelGroup := context.WithCancel(ctx)
+	RecordActivityHeartbeat(groupCtx, "opens-batch-window")
+	RecordActivityHeartbeat(groupCtx, "buffered")
+	cancelGroup()
+	// The activity is still running and heartbeats with a context that is not canceled.
+	RecordActivityHeartbeat(ctx, "buffered")
+
+	// Close the batch window deterministically instead of waiting on the throttle timer.
+	close(workerStopChannel)
+	s.NoError(<-flushCtxErr)
+	invoker.Close(ctx, false)
+}
+
+// When every context the caller supplied has been canceled by the time the batch
+// window closes, the buffered progress is still reported.
+func (s *activityTestSuite) TestActivityHeartbeat_BatchFlushWithAllContextsCanceled() {
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	workerStopChannel := make(chan struct{})
+	invoker := newServiceInvoker([]byte("task-token"), "identity", s.service, metrics.NopHandler, cancel,
+		time.Minute, workerStopChannel, s.namespace, &atomic.Bool{}, nil, nil)
+	ctx, _ = newActivityContext(ctx, nil, &activityEnvironment{
+		serviceInvoker: invoker,
+		logger:         getLogger()})
+
+	flushCtxErr := make(chan error, 1)
+	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.RecordActivityTaskHeartbeatResponse{}, nil).
+		Do(func(rpcCtx context.Context, request *workflowservice.RecordActivityTaskHeartbeatRequest, opts ...grpc.CallOption) {
+			var details string
+			s.NoError(newEncodedValues(request.Details, nil).Get(&details))
+			if details == "buffered" {
+				flushCtxErr <- rpcCtx.Err()
+			}
+		}).Times(2)
+
+	groupCtx, cancelGroup := context.WithCancel(ctx)
+	RecordActivityHeartbeat(groupCtx, "opens-batch-window")
+	RecordActivityHeartbeat(groupCtx, "buffered")
+	cancelGroup()
+
+	close(workerStopChannel)
+	s.NoError(<-flushCtxErr)
+	invoker.Close(ctx, false)
+}
+
 func (s *activityTestSuite) TestGetWorkerStopChannel() {
 	ch := make(chan struct{}, 1)
 	ctx, _ := newActivityContext(context.Background(), nil, &activityEnvironment{workerStopChannel: ch})
