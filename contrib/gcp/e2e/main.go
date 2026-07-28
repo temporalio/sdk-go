@@ -108,6 +108,7 @@ func runWorker(ctx context.Context, cfg config) error {
 	}
 	log.Printf("collector_ready endpoint=%q", gcp.DefaultOTLPEndpoint)
 
+	// @@@SNIPSTART go-cloud-run-otel-plugin
 	otelPlugin, err := gcp.NewOpenTelemetryPlugin(ctx, gcp.OpenTelemetryPluginOptions{})
 	if err != nil {
 		return fmt.Errorf("creating GCP OpenTelemetry plugin: %w", err)
@@ -124,6 +125,7 @@ func runWorker(ctx context.Context, cfg config) error {
 		Credentials: client.NewAPIKeyStaticCredentials(cfg.apiKey),
 		Plugins:     []client.Plugin{otelPlugin},
 	})
+	// @@@SNIPEND
 	if err != nil {
 		shutdownPlugin(otelPlugin)
 		return fmt.Errorf("dialing Temporal: %w", err)
@@ -155,6 +157,7 @@ func runWorker(ctx context.Context, cfg config) error {
 	}
 	log.Printf("shutdown_started reason=%q", shutdownReason)
 
+	// @@@SNIPSTART go-cloud-run-otel-shutdown
 	temporalWorker.Stop()
 	log.Print("worker_stopped")
 	temporalClient.Close()
@@ -177,6 +180,7 @@ func runWorker(ctx context.Context, cfg config) error {
 	} else {
 		log.Print("plugin_shutdown_complete")
 	}
+	// @@@SNIPEND
 	return errors.Join(flushErr, shutdownErr)
 }
 
