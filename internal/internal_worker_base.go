@@ -533,6 +533,7 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				continue
 			}
 			if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
+				bw.releaseSlot(permit, SlotReleaseReasonUnused)
 				return
 			}
 			if bw.pollerBalancer != nil {
@@ -598,6 +599,8 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		}
 
 		if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
+			bw.releaseSlot(permit, SlotReleaseReasonUnused)
+			releaseActive()
 			return
 		}
 		if bw.pollerBalancer != nil {
