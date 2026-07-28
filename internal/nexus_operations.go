@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/enums/v1"
@@ -80,6 +81,18 @@ func (nc *NexusOperationContext) ResponseLinks() []*commonpb.Link {
 
 func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
 	return getWorkflowFunctionName(nc.registry, wf)
+}
+
+// ResolveActivityName returns the registered name of the given activity function reference (or
+// string name) by consulting the worker's registry, so that activities registered under a custom
+// name via [RegisterActivityOptions.Name] are resolved to that name rather than the raw Go
+// function name.
+func (nc *NexusOperationContext) ResolveActivityName(activity any, args []any) (string, error) {
+	at, err := getValidatedActivityFunction(activity, args, nc.registry)
+	if err != nil {
+		return "", err
+	}
+	return at.Name, nil
 }
 
 type nexusOperationEnvironment struct {
@@ -804,11 +817,126 @@ func (t *testSuiteClientForNexusOperations) UpdateWorkerVersioningRules(ctx cont
 }
 
 func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
-	panic("unimplemented in the test environment")
+	if set, ok := ctx.Value(IsWorkflowRunOpContextKey).(bool); !ok || !set {
+		panic("not implemented in the test environment")
+	}
+	if options.ID == "" {
+		return nil, fmt.Errorf("activity ID is required")
+	}
+	activityType, err := getValidatedActivityFunction(activity, args, t.env.GetRegistry())
+	if err != nil {
+		return nil, fmt.Errorf("cannot validate activity function: %w", err)
+	}
+	input, err := encodeArgs(t.env.dataConverter, args)
+	if err != nil {
+		return nil, fmt.Errorf("cannot encode activity args: %w", err)
+	}
+
+	var callback *commonpb.Callback
+	if len(options.callbacks) > 0 {
+		callback = options.callbacks[0]
+	}
+
+	taskQueue := options.TaskQueue
+	if taskQueue == "" {
+		taskQueue = t.env.workflowInfo.TaskQueueName
+	}
+
+	activityID := options.ID
+	runID := uuid.NewString()
+
+	if options.responseInfo != nil {
+		options.responseInfo.Link = &commonpb.Link{
+			Variant: &commonpb.Link_Activity_{
+				Activity: &commonpb.Link_Activity{
+					Namespace:  t.env.workflowInfo.Namespace,
+					ActivityId: activityID,
+					RunId:      runID,
+				},
+			},
+		}
+	}
+
+	params := ExecuteActivityParams{
+		ExecuteActivityOptions: ExecuteActivityOptions{
+			ActivityID:             activityID,
+			TaskQueueName:          taskQueue,
+			ScheduleToCloseTimeout: options.ScheduleToCloseTimeout,
+			ScheduleToStartTimeout: options.ScheduleToStartTimeout,
+			StartToCloseTimeout:    options.StartToCloseTimeout,
+			HeartbeatTimeout:       options.HeartbeatTimeout,
+			RetryPolicy:            convertToPBRetryPolicy(options.RetryPolicy),
+		},
+		ActivityType:  *activityType,
+		Input:         input,
+		DataConverter: t.env.dataConverter,
+	}
+
+	t.env.postCallback(func() {
+		t.env.ExecuteActivity(params, func(result *commonpb.Payloads, actErr error) {
+			if callback == nil {
+				return
+			}
+			ncb := callback.GetNexus()
+			if ncb == nil {
+				return
+			}
+			seqStr := ncb.GetHeader()["operation-sequence"]
+			if seqStr == "" {
+				return
+			}
+			seq, err := strconv.ParseInt(seqStr, 10, 64)
+			if err != nil {
+				panic(fmt.Errorf("unexpected operation sequence in callback header: %s: %w", seqStr, err))
+			}
+			operationToken := ncb.GetHeader()[nexus.HeaderOperationToken]
+			var payload *commonpb.Payload
+			if len(result.GetPayloads()) > 0 {
+				payload = result.Payloads[0]
+			}
+			t.env.resolveNexusOperation(seq, operationToken, payload, actErr)
+		})
+	}, false)
+
+	return &testEnvActivityHandleForNexusOperations{
+		env:   t.env,
+		id:    activityID,
+		runID: runID,
+	}, nil
 }
 
 func (t *testSuiteClientForNexusOperations) GetActivityHandle(options ClientGetActivityHandleOptions) ClientActivityHandle {
-	panic("unimplemented in the test environment")
+	return &testEnvActivityHandleForNexusOperations{
+		env:   t.env,
+		id:    options.ActivityID,
+		runID: options.RunID,
+	}
+}
+
+type testEnvActivityHandleForNexusOperations struct {
+	env   *testWorkflowEnvironmentImpl
+	id    string
+	runID string
+}
+
+func (h *testEnvActivityHandleForNexusOperations) GetID() string    { return h.id }
+func (h *testEnvActivityHandleForNexusOperations) GetRunID() string { return h.runID }
+
+func (h *testEnvActivityHandleForNexusOperations) Cancel(ctx context.Context, options ClientCancelActivityOptions) error {
+	h.env.RequestCancelActivity(ActivityID{id: h.id})
+	return nil
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Get(ctx context.Context, valuePtr any) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Describe(ctx context.Context, options ClientDescribeActivityOptions) (*ClientActivityExecutionDescription, error) {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
+	panic("not implemented in the test environment")
 }
 
 func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) (ClientListActivitiesResult, error) {

@@ -1,3 +1,5 @@
+<!-- AGENTS.md is symlinked to CLAUDE.md — they are the same file. -->
+
 # Contributor Guidance for `sdk-go`
 
 This repository provides the Go SDK for Temporal. Use this document as the

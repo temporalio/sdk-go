@@ -28,6 +28,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `worker.Options.MaxEagerActivityReservationsPerWorkflowTask` to configure the maximum
+  number of eager activity slots reserved per workflow task. The default remains three. Configured
+  values must be positive; use `DisableEagerActivities` to disable eager activity execution.
+
 - Automatically enroll workers into poller autoscaling when the namespace advertises the
   `PollerAutoscalingAutoEnroll` capability. This only applies to poller types left at their default
   (i.e. the worker set neither `MaxConcurrent<Type>TaskPollers` nor `<Type>TaskPollerBehavior`);
@@ -42,6 +46,8 @@ to docs, or any other relevant information.
 - Send the initial Worker heartbeat immediately on startup, include the client identity, and omit
   elapsed-since-last-heartbeat until a previous heartbeat exists.
 
+- Add support for external storage to Nexus task handling.
+
 ### Fixed
 
 - Allow query results to use external storage before payload size enforcement.
@@ -54,6 +60,15 @@ to docs, or any other relevant information.
 - Resource-based tuner: `TryReserveSlot` (used for eager task dispatch) no longer blocks for up to
   `RampThrottle` while a concurrent `ReserveSlot` waits out the ramp throttle. The throttle behavior
   is unchanged; only the unnecessary lock contention on the eager path is removed.
+- Stand-alone activity-backed Nexus operations. `temporalnexus.MustNewTemporalOperation` can now
+  back an async Nexus operation with a stand-alone activity execution via `StartActivity` /
+  `StartUntypedActivity`. Activity-backed Nexus operations are also supported in `TestWorkflowEnvironment`.
+- Dynamic workflows registered as a `WorkflowDefinitionFactory` are now executed via
+  `NewWorkflowDefinition()` rather than being wrapped as a function and reflected on (which panicked
+  with `reflect: call of reflect.Value.Call on ptr Value`), in both the worker registry and the test
+  environment. This lets host processes that register a single shared factory (e.g.
+  `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
+- Merged link-converter class in the server and sdk-go and moved it to api-go
 
 ## [1.46.0] - 2026-07-07
 

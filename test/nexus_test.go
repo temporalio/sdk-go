@@ -2330,6 +2330,54 @@ func TestWorkflowTestSuite_WorkflowRunOperation(t *testing.T) {
 	})
 }
 
+func TestWorkflowTestSuite_ActivityBackedNexusOperation(t *testing.T) {
+	echoActivity := func(ctx context.Context, in string) (string, error) {
+		return "echo:" + in, nil
+	}
+
+	op := temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[string, string]{
+		Name: "act-op",
+		Start: func(ctx context.Context, nc temporalnexus.NexusClient, input string, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[string], error) {
+			return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+				ID:                  "act-" + input,
+				StartToCloseTimeout: 10 * time.Second,
+			}, echoActivity, input)
+		},
+	})
+
+	callerWF := func(ctx workflow.Context, input string) (string, error) {
+		nc := workflow.NewNexusClient("endpoint", "test")
+		fut := nc.ExecuteOperation(ctx, op, input, workflow.NexusOperationOptions{})
+		var exec workflow.NexusOperationExecution
+		if err := fut.GetNexusOperationExecution().Get(ctx, &exec); err != nil {
+			return "", err
+		}
+		if exec.OperationToken == "" {
+			return "", errors.New("got empty operation token")
+		}
+		var result string
+		if err := fut.Get(ctx, &result); err != nil {
+			return "", err
+		}
+		return result, nil
+	}
+
+	service := nexus.NewService("test")
+	service.Register(op)
+
+	suite := testsuite.WorkflowTestSuite{}
+	env := suite.NewTestWorkflowEnvironment()
+	env.RegisterActivity(echoActivity)
+	env.RegisterNexusService(service)
+
+	env.ExecuteWorkflow(callerWF, "hello")
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	var got string
+	require.NoError(t, env.GetWorkflowResult(&got))
+	require.Equal(t, "echo:hello", got)
+}
+
 func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testing.T) {
 	handlerSleepDuration := 500 * time.Millisecond
 	handlerWF := func(ctx workflow.Context, _ nexus.NoValue) (nexus.NoValue, error) {

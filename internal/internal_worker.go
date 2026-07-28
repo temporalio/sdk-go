@@ -67,6 +67,8 @@ const (
 
 	defaultMaxConcurrentSessionExecutionSize = 1000 // Large concurrent session execution size (1k)
 
+	defaultMaxEagerActivityReservationsPerWorkflowTask = 3
+
 	defaultDeadlockDetectionTimeout = time.Second // By default kill workflow tasks that are running more than 1 sec.
 	// Unlimited deadlock detection timeout is used when we want to allow workflow tasks to run indefinitely, such
 	// as during debugging.
@@ -82,6 +84,7 @@ type (
 	workflowWorker struct {
 		executionParameters workerExecutionParameters
 		workflowService     workflowservice.WorkflowServiceClient
+		taskProcessor       *workflowTaskProcessor
 		worker              *baseWorker
 		localActivityWorker *baseWorker
 		identity            string
@@ -361,13 +364,10 @@ func newWorkflowTaskWorkerInternal(
 	stickyUUID := uuid.NewString()
 	taskProcessor := newWorkflowTaskProcessor(taskHandler, contextManager, service, params, stickyUUID)
 
-	scalableTaskPollers := buildWorkflowScalableTaskPollers(taskProcessor, params.WorkflowTaskPollerBehavior, params)
-
 	bwo := baseWorkerOptions{
 		pollerRate:                   defaultPollerRate,
 		slotSupplier:                 params.Tuner.GetWorkflowTaskSlotSupplier(),
 		maxTaskPerSecond:             defaultWorkerTaskExecutionRate,
-		taskPollers:                  scalableTaskPollers,
 		taskProcessor:                taskProcessor,
 		workerType:                   "WorkflowWorker",
 		identity:                     params.Identity,
@@ -440,6 +440,7 @@ func newWorkflowTaskWorkerInternal(
 	return &workflowWorker{
 		executionParameters: params,
 		workflowService:     service,
+		taskProcessor:       taskProcessor,
 		worker:              worker,
 		localActivityWorker: localActivityWorker,
 		identity:            params.Identity,
@@ -451,6 +452,11 @@ func newWorkflowTaskWorkerInternal(
 
 // Start the worker.
 func (ww *workflowWorker) Start() error {
+	// AggregatedWorker initializes pollers after resolving namespace capabilities.
+	// Fall back to the configured behavior for direct internal starts.
+	if ww.worker.options.taskPollers == nil {
+		ww.initializeTaskPollers(ww.executionParameters.WorkflowTaskPollerBehavior)
+	}
 	ww.localActivityWorker.Start()
 	ww.worker.Start()
 	return nil // TODO: propagate error
@@ -507,16 +513,9 @@ func buildWorkflowScalableTaskPollers(taskProcessor *workflowTaskProcessor, beha
 	}
 }
 
-// applyPollerBehavior rebuilds the workflow worker's task pollers to use the
-// given behavior. It must only be called before the worker is started, while
-// the poller list is still dormant.
-func (ww *workflowWorker) applyPollerBehavior(behavior PollerBehavior) {
-	taskProcessor, ok := ww.worker.options.taskProcessor.(*workflowTaskProcessor)
-	if !ok {
-		return
-	}
+func (ww *workflowWorker) initializeTaskPollers(behavior PollerBehavior) {
 	ww.executionParameters.WorkflowTaskPollerBehavior = behavior
-	ww.worker.setTaskPollers(buildWorkflowScalableTaskPollers(taskProcessor, behavior, ww.executionParameters))
+	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(ww.taskProcessor, behavior, ww.executionParameters))
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
@@ -627,12 +626,9 @@ func newActivityWorker(
 		slotSupplier = params.Tuner.GetActivityTaskSlotSupplier()
 	}
 	bwo := baseWorkerOptions{
-		pollerRate:       defaultPollerRate,
-		slotSupplier:     slotSupplier,
-		maxTaskPerSecond: params.WorkerActivitiesPerSecond,
-		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(poller, params.Logger, params.ActivityTaskPollerBehavior, metrics.PollerTypeActivityTask, params.serverSupportsAutoscaling),
-		},
+		pollerRate:                   defaultPollerRate,
+		slotSupplier:                 slotSupplier,
+		maxTaskPerSecond:             params.WorkerActivitiesPerSecond,
 		taskProcessor:                poller,
 		workerType:                   "ActivityWorker",
 		identity:                     params.Identity,
@@ -663,6 +659,11 @@ func newActivityWorker(
 
 // Start the worker.
 func (aw *activityWorker) Start() error {
+	// AggregatedWorker initializes pollers after resolving namespace capabilities.
+	// Fall back to the configured behavior for direct internal starts.
+	if aw.worker.options.taskPollers == nil {
+		aw.initializeTaskPollers(aw.executionParameters.ActivityTaskPollerBehavior)
+	}
 	aw.worker.Start()
 	return nil // TODO: propagate errors
 }
@@ -673,12 +674,9 @@ func (aw *activityWorker) Stop() {
 	aw.worker.Stop()
 }
 
-// applyPollerBehavior rebuilds the activity worker's task poller to use the
-// given behavior. It must only be called before the worker is started, while
-// the poller list is still dormant.
-func (aw *activityWorker) applyPollerBehavior(behavior PollerBehavior) {
+func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
 	aw.executionParameters.ActivityTaskPollerBehavior = behavior
-	aw.worker.setTaskPollers([]scalableTaskPoller{
+	aw.worker.initializeTaskPollers([]scalableTaskPoller{
 		newScalableTaskPoller(
 			aw.poller,
 			aw.executionParameters.Logger,
@@ -1019,6 +1017,13 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 	if d, ok := wf.(string); ok && d == "dynamic" {
 		wf = r.dynamicWorkflow
 		dynamic = true
+	}
+	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
+	// RoadRunner PHP host process registers one shared factory). Honor it here,
+	// as the named-workflow path above does, rather than wrapping it in a
+	// reflection-based workflowExecutor, which panics on the non-func value.
+	if wdf, ok := wf.(WorkflowDefinitionFactory); ok {
+		return wdf.NewWorkflowDefinition(), nil
 	}
 	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors, dynamic: dynamic}
 	return newSyncWorkflowDefinition(executor), nil
@@ -1427,10 +1432,6 @@ func (aw *AggregatedWorker) start() error {
 	// poller type that was left at its default (the user set neither a fixed
 	// poller count nor a poller behavior). Auto-enroll implies full autoscaling
 	// support, including scaling down, so it also enables serverSupportsAutoscaling.
-	// The workers are constructed but dormant at this point (no baseWorker.Start
-	// has run yet), so swapping their poller lists in place is safe. The nexus
-	// worker is built further below from aw.executionParams, so mutating the
-	// parameter is sufficient for it.
 	if nsData.capabilities.GetPollerAutoscalingAutoEnroll() {
 		aw.executionParams.serverSupportsAutoscaling.Store(true)
 		autoscaling := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{})
@@ -1439,24 +1440,19 @@ func (aw *AggregatedWorker) start() error {
 		}
 		if aw.executionParams.pollerAutoEnrollEligibility.workflowTask && !util.IsInterfaceNil(aw.workflowWorker) {
 			aw.executionParams.WorkflowTaskPollerBehavior = autoscaling
-			aw.workflowWorker.applyPollerBehavior(autoscaling)
 		}
 		if aw.executionParams.pollerAutoEnrollEligibility.activityTask {
 			if !util.IsInterfaceNil(aw.activityWorker) {
 				aw.executionParams.ActivityTaskPollerBehavior = autoscaling
-				aw.activityWorker.applyPollerBehavior(autoscaling)
-			}
-			// The session activity worker polls a normal task queue and is
-			// enrolled like any other activity worker. The session creation
-			// worker is deliberately pinned to a single poller, so it is left
-			// unchanged.
-			if !util.IsInterfaceNil(aw.sessionWorker) {
-				aw.sessionWorker.activityWorker.applyPollerBehavior(autoscaling)
 			}
 		}
 	}
 
+	// Poller behavior can depend on namespace capabilities, so workflow and
+	// activity scalable task pollers are initialized only after those capabilities
+	// have been resolved.
 	if !util.IsInterfaceNil(aw.workflowWorker) {
+		aw.workflowWorker.initializeTaskPollers(aw.executionParams.WorkflowTaskPollerBehavior)
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
 		}
@@ -1465,6 +1461,7 @@ func (aw *AggregatedWorker) start() error {
 		}
 	}
 	if !util.IsInterfaceNil(aw.activityWorker) {
+		aw.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
 		if err := aw.activityWorker.Start(); err != nil {
 			// stop workflow worker.
 			if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -1481,6 +1478,12 @@ func (aw *AggregatedWorker) start() error {
 
 	if !util.IsInterfaceNil(aw.sessionWorker) && len(aw.registry.getRegisteredActivities()) > 0 {
 		aw.logger.Info("Starting session worker")
+		// The session activity worker uses the effective activity poller behavior.
+		// The session creation worker retains its fixed single-poller behavior.
+		aw.sessionWorker.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
+		aw.sessionWorker.creationWorker.initializeTaskPollers(
+			aw.sessionWorker.creationWorker.executionParameters.ActivityTaskPollerBehavior,
+		)
 		if err := aw.sessionWorker.Start(); err != nil {
 			// stop workflow worker and activity worker.
 			if !util.IsInterfaceNil(aw.workflowWorker) {
@@ -2427,6 +2430,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			disabled:      options.DisableEagerActivities,
 			taskQueue:     taskQueue,
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
+			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
 		capabilities:                  &capabilities,
 		pollTimeTracker:               &pollTimeTracker{},
@@ -2847,6 +2851,12 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 	}
 	if options.MaxConcurrentSessionExecutionSize == 0 {
 		options.MaxConcurrentSessionExecutionSize = defaultMaxConcurrentSessionExecutionSize
+	}
+	if options.MaxEagerActivityReservationsPerWorkflowTask == nil {
+		defaultValue := defaultMaxEagerActivityReservationsPerWorkflowTask
+		options.MaxEagerActivityReservationsPerWorkflowTask = &defaultValue
+	} else if *options.MaxEagerActivityReservationsPerWorkflowTask <= 0 {
+		panic("MaxEagerActivityReservationsPerWorkflowTask must be positive; set DisableEagerActivities to disable eager activity execution")
 	}
 	if options.DeadlockDetectionTimeout == 0 {
 		if debugMode {

@@ -383,6 +383,16 @@ func convertNexusLinks(nexusLinks []nexus.Link, log log.Logger) ([]*common.Link,
 					WorkflowEvent: link,
 				},
 			})
+		case string((&common.Link_Activity{}).ProtoReflect().Descriptor().FullName()):
+			link, err := ConvertNexusLinkToLinkActivity(nexusLink)
+			if err != nil {
+				return nil, err
+			}
+			links = append(links, &common.Link{
+				Variant: &common.Link_Activity_{
+					Activity: link,
+				},
+			})
 		case string((&common.Link_NexusOperation{}).ProtoReflect().Descriptor().FullName()):
 			link, err := ConvertNexusLinkToLinkNexusOperation(nexusLink)
 			if err != nil {

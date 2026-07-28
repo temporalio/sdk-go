@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
-	"go.temporal.io/api/common/v1"
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/internal"
 	"go.temporal.io/sdk/workflow"
@@ -20,6 +20,8 @@ var (
 		Cause: errors.New("cannot cancel an UpdateWorkflow operation"),
 	}
 )
+
+const errMultipleAsyncOperationsMsg = "only one async operation can be started per operation invocation"
 
 // StartTemporalOperationOptions are options provided to the Start callback of a Temporal Nexus operation.
 // Mirrors [nexus.StartOperationOptions].
@@ -62,6 +64,18 @@ type CancelTemporalUpdateWorkflowOptions struct {
 	// UpdateID to be cancelled.
 	UpdateID string
 	// RunID of the workflow
+	RunID string
+}
+
+// CancelTemporalActivityExecutionOptions are options provided to the CancelActivityExecution
+// callback of a Temporal Nexus operation.
+//
+// NOTE: Experimental
+type CancelTemporalActivityExecutionOptions struct {
+	// ActivityID extracted from the operation token.
+	ActivityID string
+	// RunID extracted from the operation token. May be empty for tokens generated before the
+	// activity was started (e.g. callback tokens).
 	RunID string
 }
 
@@ -160,7 +174,7 @@ func StartUntypedWorkflow[R any](
 	args ...any,
 ) (TemporalOperationResult[R], error) {
 	if nc.asyncStarted != nil && !nc.asyncStarted.CompareAndSwap(false, true) {
-		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "only one async operation can be started per operation invocation")
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, errMultipleAsyncOperationsMsg)
 	}
 
 	// Prevent the test env client from panicking when we try to use it from an operation.
@@ -219,7 +233,7 @@ func StartUpdateWorkflow[R any](
 	}
 	if !nc.asyncStarted.CompareAndSwap(false, true) {
 		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest,
-			"only one async operation can be started per operation invocation")
+			errMultipleAsyncOperationsMsg)
 	}
 	defer func() {
 		if opFailed {
@@ -249,10 +263,10 @@ func StartUpdateWorkflow[R any](
 		header = make(nexus.Header)
 	}
 	header.Set(nexus.HeaderOperationToken, token)
-	internal.SetCallbacksOnNexusOperation(&updateWorkflowOptions, []*common.Callback{
+	internal.SetCallbacksOnNexusOperation(&updateWorkflowOptions, []*commonpb.Callback{
 		{
-			Variant: &common.Callback_Nexus_{
-				Nexus: &common.Callback_Nexus{
+			Variant: &commonpb.Callback_Nexus_{
+				Nexus: &commonpb.Callback_Nexus{
 					Url:    nc.startOperationOptions.CallbackURL,
 					Header: header,
 				},
@@ -324,6 +338,149 @@ func validateUpdateWorkflowNexusOperation(u client.UpdateWorkflowOptions) error 
 	}
 }
 
+// StartActivity schedules a stand-alone activity execution for a Nexus operation and returns an
+// async result with an activity-execution operation token.
+//
+// The activity parameter must have the signature func(context.Context, I) (O, error). For
+// activities that don't follow this signature, use [StartUntypedActivity].
+//
+// activityOpts must specify an ID and at least one of StartToCloseTimeout
+// or ScheduleToCloseTimeout. TaskQueue defaults to the current worker's task queue when empty.
+//
+// These are free functions because Go does not allow generic methods on non-generic structs.
+func StartActivity[I, O any, AF func(context.Context, I) (O, error)](
+	ctx context.Context,
+	nc NexusClient,
+	activityOpts client.StartActivityOptions,
+	activity AF,
+	arg I,
+) (TemporalOperationResult[O], error) {
+	return StartUntypedActivity[O](ctx, nc, activityOpts, activity, arg)
+}
+
+// StartUntypedActivity schedules a stand-alone activity execution for a Nexus operation by
+// activity function reference or string name. It always returns an async result with an
+// activity-execution operation token.
+//
+// Automatically propagates the callback, links, and request ID from the Nexus operation options
+// to the activity start request.
+//
+// See [StartActivity] for the type-safe variant.
+func StartUntypedActivity[R any](
+	ctx context.Context,
+	nc NexusClient,
+	activityOpts client.StartActivityOptions,
+	activity any,
+	args ...any,
+) (TemporalOperationResult[R], error) {
+	if nc.asyncStarted != nil && !nc.asyncStarted.CompareAndSwap(false, true) {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, errMultipleAsyncOperationsMsg)
+	}
+	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
+
+	result, err := startActivity[R](ctx, nc.client, nc.startOperationOptions, activityOpts, activity, args...)
+	if err != nil {
+		if nc.asyncStarted != nil {
+			nc.asyncStarted.Store(false)
+		}
+		return TemporalOperationResult[R]{}, err
+	}
+	return result, nil
+}
+
+func startActivity[R any](
+	ctx context.Context,
+	c client.Client,
+	nexusOptions nexus.StartOperationOptions,
+	activityOpts client.StartActivityOptions,
+	activity any,
+	args ...any,
+) (TemporalOperationResult[R], error) {
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
+	}
+
+	// Resolve the activity name against the worker's registry so that activities registered under
+	// a custom name are dispatched with that name. The underlying client registry does not have
+	// the worker's activity registrations, so resolving here is required for aliasing to work.
+	activityType, err := nctx.ResolveActivityName(activity, args)
+	if err != nil {
+		return TemporalOperationResult[R]{}, err
+	}
+
+	if activityOpts.TaskQueue == "" {
+		activityOpts.TaskQueue = nctx.TaskQueue
+	}
+	if activityOpts.ScheduleToCloseTimeout == 0 && activityOpts.StartToCloseTimeout == 0 {
+		return TemporalOperationResult[R]{}, &nexus.HandlerError{
+			Type:    nexus.HandlerErrorTypeBadRequest,
+			Message: "at least one of StartToCloseTimeout or ScheduleToCloseTimeout is required",
+		}
+	}
+
+	if nexusOptions.RequestID != "" {
+		internal.SetRequestIDOnStartActivityOptions(&activityOpts, nexusOptions.RequestID)
+	}
+
+	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
+	if err != nil {
+		return TemporalOperationResult[R]{}, &nexus.HandlerError{
+			Type:    nexus.HandlerErrorTypeBadRequest,
+			Message: "could not convert links for activity start",
+			Cause:   err,
+		}
+	}
+
+	if nexusOptions.CallbackURL != "" {
+		// Callback token is generated without a run ID since the activity hasn't started yet.
+		callbackToken, err := generateActivityExecutionOperationToken(nctx.Namespace, activityOpts.ID, "")
+		if err != nil {
+			return TemporalOperationResult[R]{}, err
+		}
+		if nexusOptions.CallbackHeader == nil {
+			nexusOptions.CallbackHeader = make(nexus.Header)
+		}
+		nexusOptions.CallbackHeader.Set(nexus.HeaderOperationToken, callbackToken)
+		internal.SetCallbacksOnStartActivityOptions(&activityOpts, []*commonpb.Callback{
+			{
+				Variant: &commonpb.Callback_Nexus_{
+					Nexus: &commonpb.Callback_Nexus{
+						Url:    nexusOptions.CallbackURL,
+						Header: nexusOptions.CallbackHeader,
+					},
+				},
+				Links: links,
+			},
+		})
+	}
+
+	// Duplicated in links to be compatible with older servers that don't read links from callbacks.
+	internal.SetLinksOnStartActivityOptions(&activityOpts, links)
+	internal.SetOnConflictOptionsOnStartActivityOptions(&activityOpts)
+	responseInfo := internal.SetResponseInfoOnStartActivityOptions(&activityOpts)
+
+	handle, err := c.ExecuteActivity(ctx, activityOpts, activityType, args...)
+	if err != nil {
+		return TemporalOperationResult[R]{}, err
+	}
+	encodedToken, err := generateActivityExecutionOperationToken(nctx.Namespace, handle.GetID(), handle.GetRunID())
+	if err != nil {
+		return TemporalOperationResult[R]{}, err
+	}
+
+	activityLink := internal.GetResponseLinkFromStartActivityResponseInfo(responseInfo).GetActivity()
+	if activityLink == nil {
+		activityLink = &commonpb.Link_Activity{
+			Namespace:  nctx.Namespace,
+			ActivityId: handle.GetID(),
+			RunId:      handle.GetRunID(),
+		}
+	}
+	nexus.AddHandlerLinks(ctx, ConvertLinkActivityToNexusLink(activityLink))
+	return NewAsyncResult[R](encodedToken), nil
+}
+
 // TemporalOperationOptions configures a generic Temporal Nexus operation.
 //
 // Asynchronous workflow-backed operation:
@@ -362,6 +519,10 @@ type TemporalOperationOptions[I, O any] struct {
 	// It receives the Temporal client, the update-workflow options extracted from the token, and the
 	// Nexus cancel options. If nil, will error out with [ErrCannotCancelWorkflowUpdate] as there is no default behavior for cancelling an UpdateWorkflow.
 	CancelWorkflowUpdate func(ctx context.Context, c client.Client, options CancelTemporalUpdateWorkflowOptions, cancelOptions nexus.CancelOperationOptions) error
+	// CancelActivityExecution handles cancel for activity-execution operation tokens.
+	// It receives the Temporal client, the activity-execution options extracted from the token, and
+	// the Nexus cancel options. If nil, defaults to cancelling the activity via the Temporal client.
+	CancelActivityExecution func(ctx context.Context, c client.Client, options CancelTemporalActivityExecutionOptions, cancelOptions nexus.CancelOperationOptions) error
 }
 
 // NewTemporalOperation creates a generic Nexus operation backed by Temporal.
@@ -383,6 +544,9 @@ func NewTemporalOperation[I, O any](opts TemporalOperationOptions[I, O]) (nexus.
 	}
 	if opts.CancelWorkflowUpdate == nil {
 		opts.CancelWorkflowUpdate = defaultCancelWorkflowUpdate
+	}
+	if opts.CancelActivityExecution == nil {
+		opts.CancelActivityExecution = defaultCancelActivityExecution
 	}
 	return &temporalOperation[I, O]{options: opts}, nil
 }
@@ -407,6 +571,15 @@ func defaultCancelWorkflowRun(ctx context.Context, c client.Client, options Canc
 // default cancel function for UpdateWorkflow returns an error
 func defaultCancelWorkflowUpdate(ctx context.Context, c client.Client, options CancelTemporalUpdateWorkflowOptions, _ nexus.CancelOperationOptions) error {
 	return ErrCannotCancelWorkflowUpdate
+}
+
+// defaultCancelActivityExecution is the default cancel handler for activity-execution operation tokens.
+func defaultCancelActivityExecution(ctx context.Context, c client.Client, options CancelTemporalActivityExecutionOptions, _ nexus.CancelOperationOptions) error {
+	handle := c.GetActivityHandle(client.GetActivityHandleOptions{
+		ActivityID: options.ActivityID,
+		RunID:      options.RunID,
+	})
+	return handle.Cancel(ctx, client.CancelActivityOptions{})
 }
 
 // temporalOperation implements nexus.Operation[I, O] for a generic Temporal-backed operation.
@@ -497,6 +670,19 @@ func (o *temporalOperation[I, O]) Cancel(ctx context.Context, token string, opti
 			WorkflowID: uwfToken.WorkflowID,
 			RunID:      uwfToken.RunID,
 			UpdateID:   uwfToken.UpdateID,
+		}, options)
+	case operationTokenTypeActivityExecution:
+		actToken, err := loadActivityExecutionOperationToken(token)
+		if err != nil {
+			return &nexus.HandlerError{
+				Type:    nexus.HandlerErrorTypeBadRequest,
+				Message: "invalid operation token",
+				Cause:   err,
+			}
+		}
+		return o.options.CancelActivityExecution(ctx, GetClient(ctx), CancelTemporalActivityExecutionOptions{
+			ActivityID: actToken.ActivityID,
+			RunID:      actToken.RunID,
 		}, options)
 	default:
 		return nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "unknown operation token type: %d", tokenType)

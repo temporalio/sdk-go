@@ -155,13 +155,28 @@ func (a *Activities) resolveModel(ctx context.Context, name string) (model.LLM, 
 	}
 }
 
-// Register wires InvokeModel, ListMcpTools and CallMcpTool onto the worker under
-// their stable Activity names. Call it once per worker that should be able to
-// service ADK model and MCP calls.
-func (a *Activities) Register(r worker.Registry) {
+// activityRegistry is the registration surface registerAll needs. Both
+// worker.Registry and the plugin run-context registry
+// (temporal.SimplePluginRunContextBeforeOptions.Registry) satisfy it.
+type activityRegistry interface {
+	RegisterActivityWithOptions(a any, options activity.RegisterOptions)
+}
+
+// registerAll wires InvokeModel, ListMcpTools and CallMcpTool onto r under
+// their stable Activity names.
+func (a *Activities) registerAll(r activityRegistry) {
 	r.RegisterActivityWithOptions(a.InvokeModel, activity.RegisterOptions{Name: InvokeModelActivityName})
 	r.RegisterActivityWithOptions(a.ListMcpTools, activity.RegisterOptions{Name: ListMcpToolsActivityName})
 	r.RegisterActivityWithOptions(a.CallMcpTool, activity.RegisterOptions{Name: CallMcpToolActivityName})
+}
+
+// Register wires InvokeModel, ListMcpTools and CallMcpTool onto the worker under
+// their stable Activity names. NewPlugin is the standard wiring — it performs
+// this registration at worker start; Register remains for the workflow/activity
+// test environments (which construct no real worker, so plugins do not run
+// there) and manual setups.
+func (a *Activities) Register(r worker.Registry) {
+	a.registerAll(r)
 }
 
 // Close closes every cached MCP toolset that implements `Close() error`,

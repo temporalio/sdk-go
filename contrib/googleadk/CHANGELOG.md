@@ -11,6 +11,15 @@ or Security.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-22
+
+### Added
+
+- `NewPlugin` wires the integration as a worker plugin: add it to `worker.Options.Plugins`
+  to register the `InvokeModel` / `ListMcpTools` / `CallMcpTool` Activities at worker start
+  and close cached MCP toolsets at worker stop. `NewActivities` + `Register` remain for the
+  test environments (which do not run plugins) and manual wiring.
+
 ## [0.1.0] - 2026-07-20
 
 ### Added

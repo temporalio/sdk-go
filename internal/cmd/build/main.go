@@ -169,6 +169,7 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "frontend.ListWorkersEnabled=true",
 				"--dynamic-config-value", "activity.startDelayEnabled=true",
 				"--dynamic-config-value", "history.enableUpdateCallbacks=true",
+				"--dynamic-config-value", "activity.enableCallbacks=true",
 			},
 		})
 		if err != nil {
