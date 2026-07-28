@@ -46,6 +46,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Prevent a background panic during worker shutdown when the local activity tunnel closes while a
+  poller is waiting for a task.
 - Allow query results to use external storage before payload size enforcement.
 - Correct schedule catch-up window documentation to state that an unset value is omitted and the
   server applies its one-year default.
