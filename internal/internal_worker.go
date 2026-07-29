@@ -1434,7 +1434,11 @@ func (aw *AggregatedWorker) start() error {
 	// support, including scaling down, so it also enables serverSupportsAutoscaling.
 	if nsData.capabilities.GetPollerAutoscalingAutoEnroll() {
 		aw.executionParams.serverSupportsAutoscaling.Store(true)
-		autoscaling := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{})
+		autoscaling := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{
+			MinimumNumberOfPollers: 2,
+			MaximumNumberOfPollers: 100,
+			InitialNumberOfPollers: 5,
+		})
 		if aw.executionParams.pollerAutoEnrollEligibility.nexusTask {
 			aw.executionParams.NexusTaskPollerBehavior = autoscaling
 		}
