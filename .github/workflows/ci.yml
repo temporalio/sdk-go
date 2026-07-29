@@ -67,6 +67,15 @@ jobs:
         run: go run . unit-test
         working-directory: ./internal/cmd/build
 
+      - name: Upload full test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-logs-${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
+
   integ-test:
     strategy:
       fail-fast: false
@@ -100,6 +109,15 @@ jobs:
         env:
           WORKFLOW_CACHE_SIZE: "0"
 
+      - name: Upload full test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-logs-${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
+
   integ-test-cache:
     strategy:
       fail-fast: false
@@ -130,6 +148,15 @@ jobs:
       - name: Integration tests (with cache)
         run: go run . integration-test -dev-server
         working-directory: ./internal/cmd/build
+
+      - name: Upload full test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-logs-${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
 
   docker-compose-test:
     runs-on: ubuntu-latest
@@ -174,6 +201,15 @@ jobs:
           DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS: "1"
         working-directory: ./internal/cmd/build
 
+      - name: Upload full test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-logs-${{ github.job }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
+
   cloud-test:
     strategy:
       matrix:
@@ -203,6 +239,15 @@ jobs:
         # they cover behavior that cannot be validated against the local dev server.
         run: 'go run . integration-test -p 1 -packages . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
         working-directory: ./internal/cmd/build
+
+      - name: Upload full test logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-logs-${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
 
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main

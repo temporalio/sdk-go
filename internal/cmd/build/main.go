@@ -34,7 +34,15 @@ func main() {
 }
 
 const coverageDir = ".build/coverage"
+const defaultTestLogDir = ".build/test-logs"
 const githubStepSummaryMaxDetailBytes = 64 * 1024
+const testFailureSnippetMaxDetailBytes = 16 * 1024
+const testFailureSnippetMaxTotalBytes = 64 * 1024
+
+const (
+	testConsoleOutputFull     = "full"
+	testConsoleOutputFailures = "failures"
+)
 
 type builder struct {
 	thisDir string
@@ -100,8 +108,13 @@ func (b *builder) integrationTest() error {
 	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
+	testOutputFlags := addTestOutputFlags(flagSet)
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
+	}
+	testOutput, err := b.prepareTestOutput(*testOutputFlags, "integration-test.log")
+	if err != nil {
+		return err
 	}
 
 	// Also accept coverage file as env var
@@ -199,7 +212,7 @@ func (b *builder) integrationTest() error {
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
 	cmd.Env = env
-	if err := b.runTestCmd(cmd); err != nil {
+	if err := b.runTestCmd(cmd, testOutput); err != nil {
 		return fmt.Errorf("integration test failed: %w", err)
 	}
 
@@ -247,14 +260,19 @@ func (b *builder) unitTest() error {
 	flagSet := flag.NewFlagSet("unit-test", flag.ContinueOnError)
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	coverageFlag := flagSet.Bool("coverage", false, "If set, enables coverage output")
+	testOutputFlags := addTestOutputFlags(flagSet)
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
+	}
+	testOutput, err := b.prepareTestOutput(*testOutputFlags, "unit-test.log")
+	if err != nil {
+		return err
 	}
 
 	// Find every non ./test-prefixed package that has a test file
 	testDirMap := map[string]struct{}{}
 	var testDirs []string
-	err := fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
 		if (!strings.HasPrefix(p, "test") || strings.HasPrefix(p, "testsuite")) && strings.HasSuffix(p, "_test.go") {
 			dir := path.Dir(p)
 			if _, ok := testDirMap[dir]; !ok {
@@ -295,7 +313,7 @@ func (b *builder) unitTest() error {
 		cmd := b.cmdFromRoot(args...)
 		// Need to run inside directory
 		cmd.Dir = filepath.Join(b.rootDir, testDir)
-		if err := b.runTestCmd(cmd); err != nil {
+		if err := b.runTestCmd(cmd, testOutput); err != nil {
 			return fmt.Errorf("unit test failed in %v: %w", testDir, err)
 		}
 	}
@@ -316,21 +334,115 @@ func (b *builder) runCmd(cmd *exec.Cmd) error {
 	return cmd.Run()
 }
 
-// runTestCmd runs a go test command while capturing output for the GitHub step
-// summary. Output is still streamed to stdout/stderr as the command runs.
-func (b *builder) runTestCmd(cmd *exec.Cmd) error {
+type testOutputFlags struct {
+	logDir        string
+	consoleOutput string
+}
+
+func addTestOutputFlags(flagSet *flag.FlagSet) *testOutputFlags {
+	var flags testOutputFlags
+	flagSet.StringVar(
+		&flags.logDir,
+		"log-dir",
+		defaultTestLogDir,
+		"Directory for full test logs, relative to the repository root",
+	)
+	flagSet.StringVar(
+		&flags.consoleOutput,
+		"console-output",
+		testConsoleOutputFailures,
+		`Test output written to the console: "full" or "failures"`,
+	)
+	return &flags
+}
+
+type testOutput struct {
+	logPath       string
+	consoleOutput string
+	stdout        io.Writer
+	stderr        io.Writer
+}
+
+func (b *builder) prepareTestOutput(flags testOutputFlags, logName string) (testOutput, error) {
+	if strings.TrimSpace(flags.logDir) == "" {
+		return testOutput{}, fmt.Errorf("-log-dir must not be empty")
+	}
+	switch flags.consoleOutput {
+	case testConsoleOutputFull, testConsoleOutputFailures:
+	default:
+		return testOutput{}, fmt.Errorf(
+			"invalid -console-output %q: must be %q or %q",
+			flags.consoleOutput,
+			testConsoleOutputFull,
+			testConsoleOutputFailures,
+		)
+	}
+
+	logDir := filepath.FromSlash(flags.logDir)
+	if !filepath.IsAbs(logDir) {
+		logDir = filepath.Join(b.rootDir, logDir)
+	}
+	logDir = filepath.Clean(logDir)
+	if err := os.MkdirAll(logDir, 0777); err != nil {
+		return testOutput{}, fmt.Errorf("failed creating test log directory %q: %w", logDir, err)
+	}
+	logPath := filepath.Join(logDir, logName)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+	if err != nil {
+		return testOutput{}, fmt.Errorf("failed preparing test log %q: %w", logPath, err)
+	}
+	if err := f.Close(); err != nil {
+		return testOutput{}, fmt.Errorf("failed closing test log %q: %w", logPath, err)
+	}
+	log.Printf("Writing full test output to %v", logPath)
+	return testOutput{
+		logPath:       logPath,
+		consoleOutput: flags.consoleOutput,
+		stdout:        os.Stdout,
+		stderr:        os.Stderr,
+	}, nil
+}
+
+// runTestCmd runs a go test command while saving full output and capturing
+// failures for the console and GitHub step summary.
+func (b *builder) runTestCmd(cmd *exec.Cmd, testOutput testOutput) error {
+	logFile, err := os.OpenFile(testOutput.logPath, os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return fmt.Errorf("failed opening test log %q: %w", testOutput.logPath, err)
+	}
+
 	var output lockedBuffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, &output)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &output)
+	if testOutput.consoleOutput == testConsoleOutputFull {
+		cmd.Stdout = io.MultiWriter(testOutput.stdout, logFile, &output)
+		cmd.Stderr = io.MultiWriter(testOutput.stderr, logFile, &output)
+	} else {
+		cmd.Stdout = io.MultiWriter(logFile, &output)
+		cmd.Stderr = io.MultiWriter(logFile, &output)
+	}
 	log.Printf("Running %v in %v with args %v", cmd.Path, cmd.Dir, cmd.Args[1:])
-	err := cmd.Run()
+	if _, err := fmt.Fprintf(logFile, "Running %v in %v with args %v\n", cmd.Path, cmd.Dir, cmd.Args[1:]); err != nil {
+		_ = logFile.Close()
+		return fmt.Errorf("failed writing test log %q: %w", testOutput.logPath, err)
+	}
+	err = cmd.Run()
+	closeErr := logFile.Close()
 	if err != nil {
 		summaryErr := appendTestFailureSummary(os.Getenv("GITHUB_STEP_SUMMARY"), output.String())
 		if summaryErr != nil {
 			log.Printf("Failed writing test failure summary: %v", summaryErr)
 		}
+		if testOutput.consoleOutput == testConsoleOutputFailures {
+			snippetErr := writeTestFailureSnippets(testOutput.stderr, output.String(), testOutput.logPath)
+			if snippetErr != nil {
+				log.Printf("Failed writing test failure snippets: %v", snippetErr)
+			}
+		}
+		return err
 	}
-	return err
+	if closeErr != nil {
+		return fmt.Errorf("failed closing test log %q: %w", testOutput.logPath, closeErr)
+	}
+	return nil
 }
 
 type lockedBuffer struct {
@@ -354,6 +466,80 @@ type testFailureSummaryRow struct {
 	Test    string
 	Package string
 	Details string
+}
+
+func writeTestFailureSnippets(w io.Writer, output, logPath string) error {
+	rows := parseTestFailures(output)
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "\nTest command failed. Full output: %s\n", logPath)
+	if len(rows) == 0 {
+		fmt.Fprintf(
+			&sb,
+			"No individual failed test was identified; showing up to %d KiB of command output:\n\n",
+			testFailureSnippetMaxTotalBytes/1024,
+		)
+		sb.WriteString(truncateTestFailureSnippet(output, testFailureSnippetMaxTotalBytes))
+		sb.WriteString("\n")
+		_, err := io.WriteString(w, sb.String())
+		return err
+	}
+
+	fmt.Fprintf(&sb, "\nFailed tests (%d):\n", len(rows))
+	for _, row := range rows {
+		fmt.Fprintf(&sb, "- %s\n", testFailureTitle(row))
+	}
+	fmt.Fprintf(
+		&sb,
+		"\nFailure details (up to %d KiB per test and %d KiB total):\n",
+		testFailureSnippetMaxDetailBytes/1024,
+		testFailureSnippetMaxTotalBytes/1024,
+	)
+	remaining := testFailureSnippetMaxTotalBytes
+	for i, row := range rows {
+		if remaining <= 0 {
+			omitted := len(rows) - i
+			testWord := "tests"
+			if omitted == 1 {
+				testWord = "test"
+			}
+			fmt.Fprintf(
+				&sb,
+				"\n... omitted details for %d additional failed %s after reaching the %d KiB total console limit; all failed tests are listed above\n",
+				omitted,
+				testWord,
+				testFailureSnippetMaxTotalBytes/1024,
+			)
+			break
+		}
+		fmt.Fprintf(&sb, "\n--- %s ---\n", testFailureTitle(row))
+		maxDetailBytes := min(testFailureSnippetMaxDetailBytes, remaining)
+		details := truncateTestFailureSnippet(row.Details, maxDetailBytes)
+		sb.WriteString(details)
+		sb.WriteString("\n")
+		remaining -= len(details)
+	}
+	_, err := io.WriteString(w, sb.String())
+	return err
+}
+
+func truncateTestFailureSnippet(value string, maxBytes int) string {
+	if len(value) <= maxBytes {
+		return value
+	}
+	const marker = "\n... (truncated; see full test log) ...\n"
+	if maxBytes <= len(marker) {
+		return value[:maxBytes]
+	}
+	prefixBytes := (maxBytes - len(marker)) / 2
+	suffixBytes := maxBytes - len(marker) - prefixBytes
+	return value[:prefixBytes] + marker + value[len(value)-suffixBytes:]
+}
+
+func testFailureTitle(row testFailureSummaryRow) string {
+	if row.Package == "" {
+		return row.Test
+	}
+	return row.Package + " / " + row.Test
 }
 
 func appendTestFailureSummary(summaryPath, output string) error {
@@ -473,19 +659,12 @@ func renderTestFailureSummary(rows []testFailureSummaryRow) string {
 	sb.WriteString("## Test failures\n\n")
 	sb.WriteString("<table>\n<tr><th>Kind</th><th>Test failure</th></tr>\n")
 	for _, row := range rows {
-		details := row.Details
-		if len(details) > githubStepSummaryMaxDetailBytes {
-			details = details[:githubStepSummaryMaxDetailBytes] + "\n... (truncated; see full job logs)"
-		}
-		title := row.Test
-		if row.Package != "" {
-			title = row.Package + " / " + title
-		}
+		details := truncateTestFailureSnippet(row.Details, githubStepSummaryMaxDetailBytes)
 		fmt.Fprintf(
 			&sb,
 			"<tr><td>%s</td><td><details><summary>%s</summary><pre>%s</pre></details></td></tr>\n",
 			html.EscapeString("Failed"),
-			html.EscapeString(title),
+			html.EscapeString(testFailureTitle(row)),
 			html.EscapeString(details),
 		)
 	}
