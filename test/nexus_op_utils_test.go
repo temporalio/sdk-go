@@ -19,8 +19,16 @@ func counterWorkflow(ctx workflow.Context) (int, error) {
 	if err := workflow.SetQueryHandler(
 		ctx,
 		queryOp,
-		func() (int, error) {
-			// return next available value as a test
+		func(fail, delay bool) (int, error) {
+			if fail { // to verify query errors fail nexus op
+				return 0, errors.New("random error (for testing)")
+			}
+			if delay { // to verify nexus timeouts fail correctly
+				// workflow.Sleep is not allowed inside query handler(QueryFailedError), so simulate this way
+				// Note that this is only test code, not production
+				time.Sleep(6 * time.Second)
+			}
+			// return next available value for better testing
 			return counter + 1, nil
 		},
 	); err != nil {

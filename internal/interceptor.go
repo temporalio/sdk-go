@@ -639,8 +639,6 @@ type ClientQueryWorkflowInput struct {
 	Args                 []interface{}
 	// QueryRejectCondition is the query reject condition.
 	QueryRejectCondition enumspb.QueryRejectCondition
-	// gRPC request response trap for nexus forward links
-	responseInfo *queryWorkflowResponseInfo
 }
 
 // ClientDescribeWorkflowInput is the input to

@@ -1129,14 +1129,6 @@ type QueryWorkflowWithOptionsRequest struct {
 
 	// Header is an optional header to include with the query.
 	Header *commonpb.Header
-
-	// gRPC request response trap for nexus forward links
-	responseInfo *queryWorkflowResponseInfo
-}
-
-type queryWorkflowResponseInfo struct {
-	// Link to the workflow.
-	Link *commonpb.Link
 }
 
 // QueryWorkflowWithOptionsResponse is the response to QueryWorkflowWithOptions
@@ -1279,7 +1271,6 @@ func (wc *WorkflowClient) QueryWorkflowWithOptions(ctx context.Context, request 
 		QueryType:            request.QueryType,
 		Args:                 request.Args,
 		QueryRejectCondition: request.QueryRejectCondition,
-		responseInfo:         request.responseInfo,
 	})
 	if err != nil {
 		var qerr *QueryRejectedError
@@ -2845,14 +2836,13 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		return nil, err
 	}
 
-	if responseInfo := in.responseInfo; responseInfo != nil {
-		responseInfo.Link = resp.GetLink()
-	}
-
 	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
 		return nil, err
 	}
 
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(resp.GetLink())
+	}
 	if resp.QueryRejected != nil {
 		return nil, &QueryRejectedError{
 			queryRejected: resp.QueryRejected,
