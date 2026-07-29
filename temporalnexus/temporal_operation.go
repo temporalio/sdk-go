@@ -3,6 +3,7 @@ package temporalnexus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 
@@ -336,6 +337,61 @@ func validateUpdateWorkflowNexusOperation(u client.UpdateWorkflowOptions) error 
 	default:
 		return nil
 	}
+}
+
+// StartQueryWorkflow starts a type-safe workflow query for a Nexus operation
+// linking the execution chain to the Nexus operation (callbacks, links, request ID).
+// It always returns a sync response akin to Temporal's primitive Query operation
+//
+// These are free functions because Go does not allow generic methods on non-generic structs.
+//
+// NOTE: Experimental
+func StartQueryWorkflow[R any](
+	ctx context.Context,
+	nc NexusClient,
+	queryWorkflowOptions client.QueryWorkflowWithOptionsRequest,
+) (TemporalOperationResult[R], error) {
+	if _, ok := internal.NexusOperationContextFromGoContext(ctx); !ok {
+		return TemporalOperationResult[R]{}, nexus.NewHandlerErrorf(
+			nexus.HandlerErrorTypeInternal, "internal error")
+	}
+	// draft-review: should we still add something to header to indicate that this is a nexus-related request?
+	responseInfo := internal.SetResponseInfoOnQueryWorkflowOptions(&queryWorkflowOptions)
+	handle, err := GetClient(ctx).QueryWorkflowWithOptions(ctx, &queryWorkflowOptions)
+	if err != nil {
+		// draft-review: if query fails, immediately return error, there is no point in retrying sync ops
+		// because by the time new handler is deployed, the 10s timeout would have finished anyway
+		return TemporalOperationResult[R]{}, &nexus.OperationError{
+			State:   nexus.OperationStateFailed,
+			Message: err.Error(),
+			Cause:   err,
+		}
+	}
+	if responseInfo.Link == nil {
+		return TemporalOperationResult[R]{}, &nexus.HandlerError{
+			Type:  nexus.HandlerErrorTypeInternal,
+			Cause: errors.New("unexpected error retrieving links from QueryWorkflow response, server may need to be upgraded"),
+		}
+	}
+	nexus.AddHandlerLinks(ctx, ConvertCommonLinkToNexusLink(responseInfo.Link))
+	if handle.QueryRejected != nil {
+		// if query is rejected, fail it, there is no benefit in retrying as queries are sync operations
+		return TemporalOperationResult[R]{}, &nexus.OperationError{
+			State:   nexus.OperationStateFailed,
+			Message: fmt.Sprintf("query rejected with status: %s", handle.QueryRejected.GetStatus()),
+		}
+	}
+	var result R
+	if err := handle.QueryResult.Get(&result); err != nil {
+		// draft-review: errors at this stage are usually un-retriable due to marshal errors - determine
+		// if they can be retried instead and whats the value of retrying on a sync operation
+		return TemporalOperationResult[R]{}, &nexus.OperationError{
+			State:   nexus.OperationStateFailed,
+			Message: err.Error(),
+			Cause:   err,
+		}
+	}
+	return NewSyncResult(result), nil
 }
 
 // StartActivity schedules a stand-alone activity execution for a Nexus operation and returns an

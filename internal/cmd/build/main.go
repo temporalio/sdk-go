@@ -127,6 +127,7 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
+				// TODO: update before merging this PR, need server support for Query
 				Version: "v1.7.2-one-time-versioning-override",
 			},
 			ClientOptions: &client.Options{

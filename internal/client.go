@@ -1910,6 +1910,16 @@ func SetResponseInfoOnUpdateWorkflowOptions(opts *UpdateWorkflowOptions) *update
 	return opts.responseInfo
 }
 
+// SetResponseInfoOnQueryWorkflowOptions is an internal only method to set and return a
+// responseInfo pointer. This is done to capture links from the response RPC to be used
+// for nexus forward links on QueryWorkflow Nexus Operations
+func SetResponseInfoOnQueryWorkflowOptions(opts *QueryWorkflowWithOptionsRequest) *queryWorkflowResponseInfo {
+	if opts.responseInfo == nil {
+		opts.responseInfo = &queryWorkflowResponseInfo{}
+	}
+	return opts.responseInfo
+}
+
 // collectStorageDriverTypes returns deduplicated driver types from the given drivers.
 func collectStorageDriverTypes(drivers []converter.StorageDriver) []string {
 	if len(drivers) == 0 {

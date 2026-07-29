@@ -38,7 +38,10 @@ func ConvertNexusLinkToLinkNexusOperation(link nexus.Link) (*commonpb.Link_Nexus
 //
 // NOTE: Experimental
 func ConvertWorkflowLinkToNexusLink(workflowLink *commonpb.Link_Workflow) nexus.Link {
-	return apinexus.ConvertWorkflowLinkToNexusLink(workflowLink)
+	// TODO: when bumping up api-go, also fix "ConvertWorkflowLinkToNexusLink" to use urlPathWorkflowTemplate 
+	// instead of urlPathWorkflowEventTemplate and maybe consolidate as well 
+	//return apinexus.ConvertWorkflowLinkToNexusLink(workflowLink)
+	return apinexus.ConvertLinkWorkflowToNexusLink(workflowLink)
 }
 
 // ConvertCommonLinkToNexusLink converts a Common Link to a Nexus Link. Will be used
