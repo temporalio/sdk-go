@@ -231,6 +231,13 @@ jobs:
           DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS: "1"
         working-directory: ./internal/cmd/build
 
+      - name: Docker compose - capture logs
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p .build/test-logs
+          docker compose --project-directory ./samples-server/compose logs --no-color --timestamps > .build/test-logs/docker-compose.log 2>&1
+
       - name: Upload full test logs
         id: upload-test-logs
         if: always()
