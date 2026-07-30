@@ -67,14 +67,14 @@ jobs:
         run: go run . unit-test
         working-directory: ./internal/cmd/build
         env:
-          TEST_LOG_ARTIFACT_NAME: test-logs-${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
 
       - name: Upload full test logs
         id: upload-test-logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-logs-${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          name: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
           path: .build/test-logs
           if-no-files-found: warn
           retention-days: 14
@@ -117,7 +117,7 @@ jobs:
         run: go run . integration-test -dev-server
         working-directory: ./internal/cmd/build
         env:
-          TEST_LOG_ARTIFACT_NAME: test-logs-${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
           WORKFLOW_CACHE_SIZE: "0"
 
       - name: Upload full test logs
@@ -125,7 +125,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-logs-${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          name: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
           path: .build/test-logs
           if-no-files-found: warn
           retention-days: 14
@@ -168,14 +168,14 @@ jobs:
         run: go run . integration-test -dev-server
         working-directory: ./internal/cmd/build
         env:
-          TEST_LOG_ARTIFACT_NAME: test-logs-${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
 
       - name: Upload full test logs
         id: upload-test-logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-logs-${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          name: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
           path: .build/test-logs
           if-no-files-found: warn
           retention-days: 14
@@ -220,7 +220,7 @@ jobs:
       - name: Docker compose - integration tests
         run: go run . integration-test
         env:
-          TEST_LOG_ARTIFACT_NAME: test-logs-${{ github.job }}
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}
           # TODO(antlai-temporal): Remove this flag once server 1.27 released.
           DISABLE_SERVER_1_27_TESTS: "1"
           DISABLE_PRIORITY_TESTS: "1"
@@ -236,7 +236,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-logs-${{ github.job }}
+          name: ${{ github.job }}
           path: .build/test-logs
           if-no-files-found: warn
           retention-days: 14
@@ -278,14 +278,14 @@ jobs:
         run: 'go run . integration-test -p 1 -packages . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
         working-directory: ./internal/cmd/build
         env:
-          TEST_LOG_ARTIFACT_NAME: test-logs-${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
 
       - name: Upload full test logs
         id: upload-test-logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: test-logs-${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
+          name: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
           path: .build/test-logs
           if-no-files-found: warn
           retention-days: 14

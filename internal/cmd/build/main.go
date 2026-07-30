@@ -533,10 +533,6 @@ func (b *builder) runTestCmd(cmd *exec.Cmd, testOutput testOutput) error {
 	jsonCloseErr := jsonLogFile.Close()
 	rows := results.failures()
 	if runErr != nil {
-		summaryErr := appendTestFailureRows(os.Getenv("GITHUB_STEP_SUMMARY"), rows)
-		if summaryErr != nil {
-			log.Printf("Failed writing test failure summary: %v", summaryErr)
-		}
 		if testOutput.consoleOutput == testConsoleOutputFailures {
 			reportErr := writeStructuredTestFailureReport(
 				testOutput.stderr,

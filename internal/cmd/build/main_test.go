@@ -413,7 +413,7 @@ func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *tes
 	); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("TEST_LOG_ARTIFACT_NAME", "test-logs-integ-test-ubuntu-latest-stable")
+	t.Setenv("TEST_LOG_ARTIFACT_NAME", "integ-test-ubuntu-latest-stable")
 	t.Setenv("GITHUB_RUN_ID", "12345")
 	var report bytes.Buffer
 	err := writeStructuredTestFailureReport(
@@ -456,8 +456,8 @@ func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *tes
 		"Lines mentioning the failed test",
 		`msg="server boom"`,
 		"Combined Go and dev server:",
-		"CI artifact: test-logs-integ-test-ubuntu-latest-stable",
-		"gh run download 12345 -n test-logs-integ-test-ubuntu-latest-stable -D .build/ci-debug",
+		"CI artifact: integ-test-ubuntu-latest-stable",
+		"gh run download 12345 -n integ-test-ubuntu-latest-stable -D .build/ci-debug",
 	} {
 		if !strings.Contains(report.String(), want) {
 			t.Fatalf("failure report missing %q:\n%s", want, report.String())
@@ -529,30 +529,6 @@ func writeGoTestEvent(event goTestEvent) {
 	}
 }
 
-func TestRenderTestFailureSummaryEscapesHTML(t *testing.T) {
-	summary := renderTestFailureSummary([]testFailureSummaryRow{
-		{
-			Test:    "Test<Bad>",
-			Package: "go.temporal.io/sdk/test",
-			Details: "got <value> & failed",
-		},
-	})
-
-	for _, want := range []string{
-		"## Test failures",
-		"<table>",
-		"go.temporal.io/sdk/test / Test&lt;Bad&gt;",
-		"got &lt;value&gt; &amp; failed",
-	} {
-		if !strings.Contains(summary, want) {
-			t.Fatalf("summary missing %q:\n%s", want, summary)
-		}
-	}
-	if strings.Contains(summary, "Working directory") {
-		t.Fatalf("summary should not include working directory:\n%s", summary)
-	}
-}
-
 func TestFilterParentFailureRowsUsesPackage(t *testing.T) {
 	rows := filterParentFailureRows([]testFailureSummaryRow{
 		{Package: "example.com/a", Test: "TestSuite"},
@@ -568,26 +544,5 @@ func TestFilterParentFailureRowsUsesPackage(t *testing.T) {
 	}
 	if rows[1].Package != "example.com/b" || rows[1].Test != "TestSuite" {
 		t.Fatalf("expected package b parent row to be preserved, got %#v", rows[1])
-	}
-}
-
-func TestAppendTestFailureSummary(t *testing.T) {
-	summaryPath := filepath.Join(t.TempDir(), "summary.md")
-	err := appendTestFailureRows(summaryPath, []testFailureSummaryRow{
-		{
-			Package: "example.com/pkg",
-			Test:    "TestFailed",
-			Details: "    main_test.go:10: boom\n",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(summaryPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "example.com/pkg / TestFailed") {
-		t.Fatalf("summary not written correctly:\n%s", string(data))
 	}
 }
