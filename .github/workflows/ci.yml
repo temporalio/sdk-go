@@ -80,7 +80,7 @@ jobs:
           retention-days: 14
 
       - name: Link full test logs
-        if: always() && steps.upload-test-logs.outputs.artifact-url != ''
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
         shell: bash
         run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
         env:
@@ -131,7 +131,7 @@ jobs:
           retention-days: 14
 
       - name: Link full test logs
-        if: always() && steps.upload-test-logs.outputs.artifact-url != ''
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
         shell: bash
         run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
         env:
@@ -181,7 +181,7 @@ jobs:
           retention-days: 14
 
       - name: Link full test logs
-        if: always() && steps.upload-test-logs.outputs.artifact-url != ''
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
         shell: bash
         run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
         env:
@@ -249,7 +249,7 @@ jobs:
           retention-days: 14
 
       - name: Link full test logs
-        if: always() && steps.upload-test-logs.outputs.artifact-url != ''
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
         shell: bash
         run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
         env:
@@ -298,7 +298,7 @@ jobs:
           retention-days: 14
 
       - name: Link full test logs
-        if: always() && steps.upload-test-logs.outputs.artifact-url != ''
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
         shell: bash
         run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
         env:

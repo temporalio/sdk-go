@@ -495,7 +495,7 @@ func (b *builder) prepareLogPath(logDirFlag, logName string) (string, error) {
 }
 
 // runTestCmd runs a go test command while saving full output and capturing
-// failures for the console and GitHub step summary.
+// structured results for the concise console report and GitHub job summary.
 func (b *builder) runTestCmd(cmd *exec.Cmd, testOutput testOutput) error {
 	logFile, err := testOutput.openLog()
 	if err != nil {
@@ -533,6 +533,10 @@ func (b *builder) runTestCmd(cmd *exec.Cmd, testOutput testOutput) error {
 	jsonCloseErr := jsonLogFile.Close()
 	rows := results.failures()
 	if runErr != nil {
+		summaryErr := appendTestFailureRows(os.Getenv("GITHUB_STEP_SUMMARY"), rows)
+		if summaryErr != nil {
+			log.Printf("Failed writing test failure summary: %v", summaryErr)
+		}
 		if testOutput.consoleOutput == testConsoleOutputFailures {
 			reportErr := writeStructuredTestFailureReport(
 				testOutput.stderr,

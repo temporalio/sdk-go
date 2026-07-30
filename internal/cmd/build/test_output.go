@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"os"
 	"regexp"
@@ -15,6 +16,7 @@ import (
 	"time"
 )
 
+const githubStepSummaryMaxDetailBytes = 64 * 1024
 const testFailureSnippetMaxDetailBytes = 16 * 1024
 const testFailureSnippetMaxTotalBytes = 64 * 1024
 const testServerSnippetMaxDetailBytes = 16 * 1024
@@ -530,6 +532,19 @@ func testFailureTitle(row testFailureSummaryRow) string {
 	return row.Package + " / " + row.Test
 }
 
+func appendTestFailureRows(summaryPath string, rows []testFailureSummaryRow) error {
+	if summaryPath == "" || len(rows) == 0 {
+		return nil
+	}
+	f, err := os.OpenFile(summaryPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.WriteString(renderTestFailureSummary(rows))
+	return err
+}
+
 func filterParentFailureRows(rows []testFailureSummaryRow) []testFailureSummaryRow {
 	hasFailedSubtest := make(map[testFailureSummaryKey]bool, len(rows))
 	for _, row := range rows {
@@ -549,4 +564,22 @@ func filterParentFailureRows(rows []testFailureSummaryRow) []testFailureSummaryR
 type testFailureSummaryKey struct {
 	Package string
 	Test    string
+}
+
+func renderTestFailureSummary(rows []testFailureSummaryRow) string {
+	var sb strings.Builder
+	sb.WriteString("## Test failures\n\n")
+	sb.WriteString("<table>\n<tr><th>Kind</th><th>Test failure</th></tr>\n")
+	for _, row := range rows {
+		details := truncateTestFailureSnippet(row.Details, githubStepSummaryMaxDetailBytes)
+		fmt.Fprintf(
+			&sb,
+			"<tr><td>%s</td><td><details><summary>%s</summary><pre>%s</pre></details></td></tr>\n",
+			html.EscapeString("Failed"),
+			html.EscapeString(testFailureTitle(row)),
+			html.EscapeString(details),
+		)
+	}
+	sb.WriteString("</table>\n\n")
+	return sb.String()
 }

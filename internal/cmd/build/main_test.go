@@ -185,6 +185,8 @@ func TestGoTestJSONWriterAttributesFailedSubtestOutput(t *testing.T) {
 
 func TestRunTestCmdFailureOutput(t *testing.T) {
 	rootDir := t.TempDir()
+	summaryPath := filepath.Join(rootDir, "summary.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", summaryPath)
 	b := &builder{rootDir: rootDir}
 	output, err := b.prepareTestOutput(testOutputFlags{
 		logDir:        defaultTestLogDir,
@@ -256,6 +258,57 @@ func TestRunTestCmdFailureOutput(t *testing.T) {
 	}
 	if !strings.Contains(string(combinedData), "main_test.go:10: boom") {
 		t.Fatalf("combined log missing decoded test output:\n%s", combinedData)
+	}
+	summaryData, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"## Test failures", "example.com/pkg / TestFailed", "main_test.go:10: boom"} {
+		if !strings.Contains(string(summaryData), want) {
+			t.Fatalf("test summary missing %q:\n%s", want, summaryData)
+		}
+	}
+}
+
+func TestRunTestCmdPassingOutput(t *testing.T) {
+	rootDir := t.TempDir()
+	summaryPath := filepath.Join(rootDir, "summary.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", summaryPath)
+	b := &builder{rootDir: rootDir}
+	output, err := b.prepareTestOutput(testOutputFlags{
+		logDir:        defaultTestLogDir,
+		consoleOutput: testConsoleOutputFailures,
+	}, "unit-test.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	output.stdout = &stdout
+	output.stderr = &stderr
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunTestCmdHelperProcess$")
+	cmd.Env = append(os.Environ(), "TEMPORAL_RUN_TEST_CMD_HELPER=pass")
+	if err := b.runTestCmd(cmd, output); err != nil {
+		t.Fatal(err)
+	}
+
+	if stdout.Len() != 0 {
+		t.Fatalf("expected stdout to be suppressed, got:\n%s", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected stderr to be suppressed, got:\n%s", stderr.String())
+	}
+	logData, err := os.ReadFile(output.logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"stdout output", "stderr output"} {
+		if !strings.Contains(string(logData), want) {
+			t.Fatalf("full log missing %q:\n%s", want, logData)
+		}
+	}
+	if _, err := os.Stat(summaryPath); !os.IsNotExist(err) {
+		t.Fatalf("passing test unexpectedly wrote a job summary: %v", err)
 	}
 }
 
@@ -526,6 +579,30 @@ func TestRunTestCmdHelperProcess(t *testing.T) {
 func writeGoTestEvent(event goTestEvent) {
 	if err := json.NewEncoder(os.Stdout).Encode(event); err != nil {
 		panic(err)
+	}
+}
+
+func TestRenderTestFailureSummaryEscapesHTML(t *testing.T) {
+	summary := renderTestFailureSummary([]testFailureSummaryRow{
+		{
+			Test:    "Test<Bad>",
+			Package: "go.temporal.io/sdk/test",
+			Details: "got <value> & failed",
+		},
+	})
+
+	for _, want := range []string{
+		"## Test failures",
+		"<table>",
+		"go.temporal.io/sdk/test / Test&lt;Bad&gt;",
+		"got &lt;value&gt; &amp; failed",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary missing %q:\n%s", want, summary)
+		}
+	}
+	if strings.Contains(summary, "Working directory") {
+		t.Fatalf("summary should not include working directory:\n%s", summary)
 	}
 }
 
