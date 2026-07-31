@@ -137,70 +137,75 @@ func (p replaySafeMeterProvider) Meter(name string, opts ...metric.MeterOption) 
 // replaySafeMeter overrides only the synchronous instrument constructors. The
 // observable constructors and RegisterCallback come from the embedded Meter,
 // so callback registration sees the inner meter's own instruments.
+//
+// The OTel API contract requires meters to return a usable instrument even
+// alongside a non-nil error (the SDK does so for e.g. invalid instrument
+// names), so each constructor wraps whatever non-nil instrument the inner
+// meter returned and propagates the error as-is.
 type replaySafeMeter struct{ metric.Meter }
 
 func (m replaySafeMeter) Int64Counter(name string, opts ...metric.Int64CounterOption) (metric.Int64Counter, error) {
 	inner, err := m.Meter.Int64Counter(name, opts...)
-	if err != nil {
+	if inner == nil {
 		return nil, err
 	}
-	return replaySafeInt64Counter{Int64Counter: inner}, nil
+	return replaySafeInt64Counter{Int64Counter: inner}, err
 }
 
 func (m replaySafeMeter) Int64UpDownCounter(name string, opts ...metric.Int64UpDownCounterOption) (metric.Int64UpDownCounter, error) {
 	inner, err := m.Meter.Int64UpDownCounter(name, opts...)
-	if err != nil {
+	if inner == nil {
 		return nil, err
 	}
-	return replaySafeInt64UpDownCounter{Int64UpDownCounter: inner}, nil
+	return replaySafeInt64UpDownCounter{Int64UpDownCounter: inner}, err
 }
 
 func (m replaySafeMeter) Int64Histogram(name string, opts ...metric.Int64HistogramOption) (metric.Int64Histogram, error) {
 	inner, err := m.Meter.Int64Histogram(name, opts...)
-	if err != nil {
+	if inner == nil {
 		return nil, err
 	}
-	return replaySafeInt64Histogram{Int64Histogram: inner}, nil
+	return replaySafeInt64Histogram{Int64Histogram: inner}, err
 }
 
 func (m replaySafeMeter) Int64Gauge(name string, opts ...metric.Int64GaugeOption) (metric.Int64Gauge, error) {
 	inner, err := m.Meter.Int64Gauge(name, opts...)
-	if err != nil {
+	if inner == nil {
 		return nil, err
 	}
-	return replaySafeInt64Gauge{Int64Gauge: inner}, nil
+	return replaySafeInt64Gauge{Int64Gauge: inner}, err
 }
 
 func (m replaySafeMeter) Float64Counter(name string, opts ...metric.Float64CounterOption) (metric.Float64Counter, error) {
 	inner, err := m.Meter.Float64Counter(name, opts...)
-	if err != nil {
+	if inner == nil {
 		return nil, err
 	}
-	return replaySafeFloat64Counter{Float64Counter: inner}, nil
+	return replaySafeFloat64Counter{Float64Counter: inner}, err
 }
 
 func (m replaySafeMeter) Float64UpDownCounter(name string, opts ...metric.Float64UpDownCounterOption) (metric.Float64UpDownCounter, error) {
 	inner, err := m.Meter.Float64UpDownCounter(name, opts...)
-	if err != nil {
+	if inner == nil {
 		return nil, err
 	}
-	return replaySafeFloat64UpDownCounter{Float64UpDownCounter: inner}, nil
+	return replaySafeFloat64UpDownCounter{Float64UpDownCounter: inner}, err
 }
 
 func (m replaySafeMeter) Float64Histogram(name string, opts ...metric.Float64HistogramOption) (metric.Float64Histogram, error) {
 	inner, err := m.Meter.Float64Histogram(name, opts...)
-	if err != nil {
+	if inner == nil {
 		return nil, err
 	}
-	return replaySafeFloat64Histogram{Float64Histogram: inner}, nil
+	return replaySafeFloat64Histogram{Float64Histogram: inner}, err
 }
 
 func (m replaySafeMeter) Float64Gauge(name string, opts ...metric.Float64GaugeOption) (metric.Float64Gauge, error) {
 	inner, err := m.Meter.Float64Gauge(name, opts...)
-	if err != nil {
+	if inner == nil {
 		return nil, err
 	}
-	return replaySafeFloat64Gauge{Float64Gauge: inner}, nil
+	return replaySafeFloat64Gauge{Float64Gauge: inner}, err
 }
 
 type replaySafeInt64Counter struct{ metric.Int64Counter }

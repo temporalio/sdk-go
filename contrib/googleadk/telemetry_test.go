@@ -490,9 +490,13 @@ func TestReplayTelemetry(t *testing.T) {
 	})
 
 	// Control documenting the bug the wrappers fix: with the raw providers as
-	// the global targets, every replay re-emits the workflow-side telemetry —
-	// (1 + telemetryReplays)x each signal — while the model still ran only in
-	// the real execution.
+	// the global targets, each of the telemetryReplays replays re-emits one
+	// full copy of the workflow-side telemetry while the model still ran only
+	// in the real execution. Assertions compare against the replay-added delta
+	// rather than a multiple of the baseline: a sticky-cache miss during the
+	// live run (sticky schedule-to-start timeout on a loaded machine) triggers
+	// an ungated catch-up replay that inflates the baseline itself, but each
+	// replayer pass deterministically adds exactly one clean copy.
 	t.Run("UngatedGlobalsInflateOnReplay", func(t *testing.T) {
 		capture := newTelemetryCapture()
 		tp, lp, mp := capture.providers()
@@ -500,25 +504,30 @@ func TestReplayTelemetry(t *testing.T) {
 
 		cm, wfID, runID := runTelemetryScenario(t, c, "adk-telemetry-ungated")
 		baseline := capture.snapshot(t)
-		require.Equal(t, 2, baseline.spansByName["generate_content fake-model"])
-		require.EqualValues(t, 100, baseline.counterValue)
+		require.GreaterOrEqual(t, baseline.spansByName["generate_content fake-model"], 2)
+		require.GreaterOrEqual(t, baseline.counterValue, int64(100))
 
 		replayTelemetryHistory(t, c, wfID, runID)
 
 		final := capture.snapshot(t)
-		factor := 1 + telemetryReplays
-		for name, base := range baseline.spansByName {
-			require.Equalf(t, factor*base, final.spansByName[name],
-				"span %q must inflate %dx without the wrappers", name, factor)
+		perReplay := map[string]int{
+			"generate_content fake-model": 2,
+			"execute_tool get_weather":    1,
+			"invoke_agent assistant":      1,
 		}
-		require.Equal(t, factor*baseline.tokenUsageSpans, final.tokenUsageSpans)
-		require.EqualValues(t, int64(factor)*baseline.inputTokens, final.inputTokens)
-		require.EqualValues(t, int64(factor)*baseline.outputTokens, final.outputTokens)
+		for name, per := range perReplay {
+			require.Equalf(t, telemetryReplays*per, final.spansByName[name]-baseline.spansByName[name],
+				"span %q must re-emit on every replay without the wrappers", name)
+		}
+		require.Equal(t, telemetryReplays*2, final.tokenUsageSpans-baseline.tokenUsageSpans)
+		require.EqualValues(t, int64(telemetryReplays)*250, final.inputTokens-baseline.inputTokens)
+		require.EqualValues(t, int64(telemetryReplays)*37, final.outputTokens-baseline.outputTokens)
+		require.Equal(t, telemetryReplays*2, final.logEvents["gen_ai.choice"]-baseline.logEvents["gen_ai.choice"])
 		for name, base := range baseline.logEvents {
-			require.Equalf(t, factor*base, final.logEvents[name],
-				"log event %q must inflate %dx without the wrappers", name, factor)
+			require.Greaterf(t, final.logEvents[name], base,
+				"log event %q must re-emit on replay without the wrappers", name)
 		}
-		require.EqualValues(t, int64(factor)*baseline.counterValue, final.counterValue)
+		require.EqualValues(t, int64(telemetryReplays)*100, final.counterValue-baseline.counterValue)
 		require.EqualValues(t, 2, cm.calls.Load(), "replays must not invoke the model")
 	})
 }
@@ -586,6 +595,67 @@ func TestReplaySafeProvidersPassThroughNonWorkflowContext(t *testing.T) {
 	}
 	for _, name := range []string{"ic", "iud", "ih", "ig", "fc", "fud", "fh", "fg"} {
 		require.Truef(t, recorded[name], "sync instrument %q must record with a non-workflow context", name)
+	}
+}
+
+// TestReplaySafeMeterWrapsInstrumentReturnedWithError: the OTel SDK meter
+// returns a usable instrument alongside a non-nil error (e.g. an instrument
+// name failing validation), and the OTel API contract lets callers keep using
+// it. The wrapper must return that instrument wrapped, not nil — a nil return
+// panics callers following the contract, and through the pre-delegation global
+// proxy it silently turns the instrument into a permanent no-op.
+func TestReplaySafeMeterWrapsInstrumentReturnedWithError(t *testing.T) {
+	ctx := context.Background()
+	reader := sdkmetric.NewManualReader()
+	meter := googleadk.NewReplaySafeMeterProvider(
+		sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)),
+	).Meter("t")
+
+	// Spaces fail the SDK's instrument-name validation; the SDK still returns
+	// a fully functional instrument alongside the error.
+	ic, err := meter.Int64Counter("bad ic")
+	require.Error(t, err)
+	require.NotNil(t, ic)
+	ic.Add(ctx, 1)
+	iud, err := meter.Int64UpDownCounter("bad iud")
+	require.Error(t, err)
+	require.NotNil(t, iud)
+	iud.Add(ctx, 2)
+	ih, err := meter.Int64Histogram("bad ih")
+	require.Error(t, err)
+	require.NotNil(t, ih)
+	ih.Record(ctx, 3)
+	ig, err := meter.Int64Gauge("bad ig")
+	require.Error(t, err)
+	require.NotNil(t, ig)
+	ig.Record(ctx, 4)
+	fc, err := meter.Float64Counter("bad fc")
+	require.Error(t, err)
+	require.NotNil(t, fc)
+	fc.Add(ctx, 5)
+	fud, err := meter.Float64UpDownCounter("bad fud")
+	require.Error(t, err)
+	require.NotNil(t, fud)
+	fud.Add(ctx, 6)
+	fh, err := meter.Float64Histogram("bad fh")
+	require.Error(t, err)
+	require.NotNil(t, fh)
+	fh.Record(ctx, 7)
+	fg, err := meter.Float64Gauge("bad fg")
+	require.Error(t, err)
+	require.NotNil(t, fg)
+	fg.Record(ctx, 8)
+
+	var rm metricdata.ResourceMetrics
+	require.NoError(t, reader.Collect(ctx, &rm))
+	recorded := map[string]bool{}
+	for _, sm := range rm.ScopeMetrics {
+		for _, m := range sm.Metrics {
+			recorded[m.Name] = true
+		}
+	}
+	for _, name := range []string{"bad ic", "bad iud", "bad ih", "bad ig", "bad fc", "bad fud", "bad fh", "bad fg"} {
+		require.Truef(t, recorded[name], "instrument %q returned with a name-validation error must remain usable", name)
 	}
 }
 

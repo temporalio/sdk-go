@@ -365,7 +365,14 @@ func main() {
 
 With the wrappers installed, workflow-side telemetry is recorded on **first
 execution only** — the same semantics as `workflow.GetMetricsHandler` — and
-replays add nothing. `NewReplaySafeMeterProvider` is forward-looking: it gates
+replays add nothing. One caveat for spans: a span still open when the workflow
+is evicted from the sticky cache is force-ended by ADK and exported once, at
+eviction, with whatever attributes it had at that point, and because its
+re-creation during the catch-up replay is non-recording, child spans started
+after the eviction lose their parent linkage. Span counts stay exactly-once and
+point telemetry (log events, metric recordings) stays exact; without the
+wrappers the same truncated span is exported *plus* one duplicate per replay.
+`NewReplaySafeMeterProvider` is forward-looking: it gates
 synchronous instrument recordings (observable instruments pass through, since
 their callbacks never run under a workflow context), covering both your own
 workflow-side recordings through the global meter today and ADK's metrics once
