@@ -20,6 +20,10 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevent workflow task failures when an activity with a custom ID completes while its cancellation
+  command is pending.
 
 ## [1.46.0] - 2026-07-28
 
