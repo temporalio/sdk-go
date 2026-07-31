@@ -111,6 +111,28 @@ go run . integration-test -dev-server
 
 If you omit `-dev-server`, integration tests connect to a server already running on `localhost:7233`.
 
+### Test output and logs
+
+Unit and integration tests default to `-console-output failures`. Test output is captured while the command runs; if a
+test fails, the command prints the failed test names, bounded failure snippets, rerun commands, and relevant embedded
+dev-server warnings and errors. Complete output is always written under `.build/test-logs` at the repository root.
+Unit tests produce `unit-test.log` and `unit-test.json`. Integration tests produce `go-test.log`, `go-test.json`, and
+`combined.log`; runs using `-dev-server` also produce `dev-server.log`.
+
+To stream full test and dev-server output to the console while still saving the log files, use `-console-output full`:
+
+```bash
+go run . unit-test -console-output full
+go run . integration-test -dev-server -console-output full
+```
+
+Use `-log-dir` to write the files elsewhere. Relative paths are resolved from the repository root, and absolute paths
+are also accepted:
+
+```bash
+go run . integration-test -dev-server -log-dir artifacts/test-logs
+```
+
 ### Running specific tests
 
 Use `-run` with the same semantics as `go test -run`.

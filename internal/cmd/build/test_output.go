@@ -240,7 +240,7 @@ func writeStructuredTestFailureReport(
 	}
 	if output.rerunCommand != "" {
 		sb.WriteString("\nRerun from internal/cmd/build:\n")
-		for _, row := range rows {
+		for _, row := range filterParentFailureRows(rows) {
 			testPattern := "^" + regexp.QuoteMeta(row.Test) + "$"
 			fmt.Fprintf(&sb, "- %s -run %s\n", output.rerunCommand, strconv.Quote(testPattern))
 		}
@@ -304,9 +304,13 @@ func writeCompleteTestLogLocations(sb *strings.Builder, output testOutput) {
 	if artifactName := strings.TrimSpace(os.Getenv("TEST_LOG_ARTIFACT_NAME")); artifactName != "" {
 		fmt.Fprintf(sb, "- CI artifact: %s\n", artifactName)
 		if runID := strings.TrimSpace(os.Getenv("GITHUB_RUN_ID")); runID != "" {
-			command := formatShellCommand([]string{
+			args := []string{
 				"gh", "run", "download", runID, "-n", artifactName, "-D", ".build/ci-debug",
-			})
+			}
+			if repository := strings.TrimSpace(os.Getenv("GITHUB_REPOSITORY")); repository != "" {
+				args = append(args, "--repo", repository)
+			}
+			command := formatShellCommand(args)
 			fmt.Fprintf(sb, "- Download: %s\n", command)
 		}
 	}
@@ -548,11 +552,16 @@ func appendTestFailureRows(summaryPath string, rows []testFailureSummaryRow) err
 func filterParentFailureRows(rows []testFailureSummaryRow) []testFailureSummaryRow {
 	hasFailedSubtest := make(map[testFailureSummaryKey]bool, len(rows))
 	for _, row := range rows {
-		if parent, _, ok := strings.Cut(row.Test, "/"); ok {
+		for parent := row.Test; ; {
+			slash := strings.LastIndexByte(parent, '/')
+			if slash < 0 {
+				break
+			}
+			parent = parent[:slash]
 			hasFailedSubtest[testFailureSummaryKey{Package: row.Package, Test: parent}] = true
 		}
 	}
-	filtered := rows[:0]
+	filtered := make([]testFailureSummaryRow, 0, len(rows))
 	for _, row := range rows {
 		if !hasFailedSubtest[testFailureSummaryKey{Package: row.Package, Test: row.Test}] {
 			filtered = append(filtered, row)

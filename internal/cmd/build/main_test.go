@@ -468,6 +468,7 @@ func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *tes
 	}
 	t.Setenv("TEST_LOG_ARTIFACT_NAME", "integ-test-ubuntu-latest-stable")
 	t.Setenv("GITHUB_RUN_ID", "12345")
+	t.Setenv("GITHUB_REPOSITORY", "temporalio/sdk-go")
 	var report bytes.Buffer
 	err := writeStructuredTestFailureReport(
 		&report,
@@ -510,11 +511,14 @@ func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *tes
 		`msg="server boom"`,
 		"Combined Go and dev server:",
 		"CI artifact: integ-test-ubuntu-latest-stable",
-		"gh run download 12345 -n integ-test-ubuntu-latest-stable -D .build/ci-debug",
+		"gh run download 12345 -n integ-test-ubuntu-latest-stable -D .build/ci-debug --repo temporalio/sdk-go",
 	} {
 		if !strings.Contains(report.String(), want) {
 			t.Fatalf("failure report missing %q:\n%s", want, report.String())
 		}
+	}
+	if unexpected := `go run . integration-test -dev-server -run "^TestSuite$"`; strings.Contains(report.String(), unexpected) {
+		t.Fatalf("failure report included parent rerun command %q:\n%s", unexpected, report.String())
 	}
 }
 
@@ -607,19 +611,24 @@ func TestRenderTestFailureSummaryEscapesHTML(t *testing.T) {
 }
 
 func TestFilterParentFailureRowsUsesPackage(t *testing.T) {
-	rows := filterParentFailureRows([]testFailureSummaryRow{
+	input := []testFailureSummaryRow{
 		{Package: "example.com/a", Test: "TestSuite"},
 		{Package: "example.com/a", Test: "TestSuite/TestSub"},
+		{Package: "example.com/a", Test: "TestSuite/TestSub/TestNested"},
 		{Package: "example.com/b", Test: "TestSuite"},
-	})
+	}
+	rows := filterParentFailureRows(input)
 
 	if len(rows) != 2 {
 		t.Fatalf("expected 2 rows, got %d: %#v", len(rows), rows)
 	}
-	if rows[0].Package != "example.com/a" || rows[0].Test != "TestSuite/TestSub" {
+	if rows[0].Package != "example.com/a" || rows[0].Test != "TestSuite/TestSub/TestNested" {
 		t.Fatalf("expected package a subtest row first, got %#v", rows[0])
 	}
 	if rows[1].Package != "example.com/b" || rows[1].Test != "TestSuite" {
 		t.Fatalf("expected package b parent row to be preserved, got %#v", rows[1])
+	}
+	if input[0].Test != "TestSuite" {
+		t.Fatalf("filter mutated its input: %#v", input)
 	}
 }
