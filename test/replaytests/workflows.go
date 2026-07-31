@@ -461,6 +461,16 @@ func CancelOrderSelectWorkflow(ctx workflow.Context) error {
 	return err
 }
 
+func CancelActivityCompletionBeforeWorkflowTaskStarted(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		ActivityID:             "custom-activity-id",
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+		HeartbeatTimeout:       20 * time.Second,
+	})
+	return workflow.ExecuteActivity(ctx, helloworldActivity, "world").Get(ctx, nil)
+}
+
 func ChildWorkflowCancelWithUpdate(ctx workflow.Context) error {
 	if err := workflow.SetUpdateHandler(ctx, "update",
 		func(ctx workflow.Context) error {

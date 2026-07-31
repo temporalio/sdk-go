@@ -387,6 +387,17 @@ func (s *replayTestSuite) TestCancelOrder() {
 	s.NoError(err)
 }
 
+func (s *replayTestSuite) TestCancelActivityCompletionBeforeWorkflowTaskStarted() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(CancelActivityCompletionBeforeWorkflowTaskStarted)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(
+		ilog.NewDefaultLogger(),
+		"cancel-activity-completion-before-workflow-task-started.json",
+	)
+	s.NoError(err)
+}
+
 func (s *replayTestSuite) TestChildWorkflowCancelWithUpdate() {
 	// Test that update requests are still replayed successfully
 	// when commands are generated before the update requests are handled
