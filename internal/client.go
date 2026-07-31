@@ -970,6 +970,20 @@ type (
 		// NOTE: Experimental
 		WorkerHeartbeatInterval time.Duration
 
+		// SdkName overrides the SDK name reported in worker heartbeats. When empty,
+		// the built-in SDKName ("temporal-go") is used. This is intended for SDKs that
+		// embed the Go SDK to run another language (e.g. roadrunner-temporal for PHP),
+		// so heartbeats report the wrapping SDK instead of temporal-go.
+		//
+		// NOTE: Experimental
+		SdkName string
+
+		// SdkVersion overrides the SDK version reported in worker heartbeats. When empty,
+		// the built-in SDKVersion is used. See SdkName.
+		//
+		// NOTE: Experimental
+		SdkVersion string
+
 		// ExternalStorage configures external payload storage for this client.
 		// When set, payloads that exceed ExternalStorage.PayloadSizeThreshold
 		// are offloaded to an external store (e.g. S3, GCS) by the configured
@@ -1623,6 +1637,16 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		panic(fmt.Sprintf("invalid PayloadLimits options: %v", err))
 	}
 
+	// Fall back to the built-in SDK name/version when not overridden.
+	sdkName := options.SdkName
+	if sdkName == "" {
+		sdkName = SDKName
+	}
+	sdkVersion := options.SdkVersion
+	if sdkVersion == "" {
+		sdkVersion = SDKVersion
+	}
+
 	client := &WorkflowClient{
 		workflowService:          workflowServiceClient,
 		conn:                     conn,
@@ -1644,6 +1668,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
 		workerGroupingKey:       uuid.NewString(),
+		sdkName:                 sdkName,
+		sdkVersion:              sdkVersion,
 		storageParams:           storageParams,
 		storageDriverTypes:      storageDriverTypes,
 		payloadWarningLimits:    payloadWarningLimits,
