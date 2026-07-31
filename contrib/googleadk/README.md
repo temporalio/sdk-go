@@ -320,8 +320,56 @@ closes cached MCP toolsets at worker stop — no interceptors, no data converter
 so it composes with other entries in `worker.Options.Plugins` (e.g. interceptor-
 or converter-based plugins like `sdk-go/contrib/opentelemetry`) without conflict.
 On the ADK side, add other ADK plugins to `runner.PluginConfig.Plugins` as usual.
-ADK emits its own OpenTelemetry spans; register your tracing interceptor on the
-worker as usual.
+ADK also emits its own OpenTelemetry telemetry from inside the workflow — see the
+next section before wiring exporters.
+
+## Telemetry and replay
+
+ADK records its telemetry through the **OpenTelemetry process globals** from code
+that runs **inside the workflow**: at this adk-go pin that means spans (with
+token usage as `gen_ai.usage.*` span attributes and span durations as latency)
+and `gen_ai.*` log events; OTel **metrics** are pending upstream
+([adk-go#479](https://github.com/google/adk-go/issues/479)). Workflow code
+re-executes on every history **replay** — worker restarts, redeploys, sticky-cache
+eviction — and each replay re-reads the recorded Activity results from history and
+re-emits identical telemetry, so observed counts inflate by one full copy per
+replay, without bound over a workflow's lifetime. Temporal's replay-safe telemetry
+(`workflow.GetMetricsHandler`, replay-gated tracing interceptors) never applies,
+because ADK bypasses it via the OTel globals it captured at package init.
+
+Wrap your real providers in this package's replay-safe wrappers and install them
+as the globals. The wrappers drop any emission whose context carries a replaying
+workflow (recovered from the context bridged by `googleadk.NewContext`) and
+delegate everything else — worker, client, and Activity telemetry — unchanged:
+
+```go
+import (
+	"go.opentelemetry.io/otel"
+	otellogglobal "go.opentelemetry.io/otel/log/global"
+
+	"go.temporal.io/sdk/contrib/googleadk"
+)
+
+func main() {
+	// Must be the FIRST global providers set in the process: ADK captures the
+	// global proxy tracer/logger at package init, and the proxy binds its
+	// delegate on the first Set call only — a provider installed earlier
+	// permanently bypasses the wrappers.
+	otel.SetTracerProvider(googleadk.NewReplaySafeTracerProvider(myTracerProvider))
+	otellogglobal.SetLoggerProvider(googleadk.NewReplaySafeLoggerProvider(myLoggerProvider))
+	otel.SetMeterProvider(googleadk.NewReplaySafeMeterProvider(myMeterProvider))
+
+	// ... Temporal client, worker, googleadk.NewPlugin wiring as usual ...
+}
+```
+
+With the wrappers installed, workflow-side telemetry is recorded on **first
+execution only** — the same semantics as `workflow.GetMetricsHandler` — and
+replays add nothing. `NewReplaySafeMeterProvider` is forward-looking: it gates
+synchronous instrument recordings (observable instruments pass through, since
+their callbacks never run under a workflow context), covering both your own
+workflow-side recordings through the global meter today and ADK's metrics once
+adk-go#479 lands.
 
 ## Supported & not-yet-supported
 
