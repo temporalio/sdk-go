@@ -65,7 +65,7 @@ type replaySafeTracer struct{ trace.Tracer }
 
 func (t replaySafeTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
 	if replaySuppressed(ctx) {
-		return suppressedTracer.Start(ctx, spanName)
+		return suppressedTracer.Start(ctx, spanName, opts...)
 	}
 	return t.Tracer.Start(ctx, spanName, opts...)
 }
