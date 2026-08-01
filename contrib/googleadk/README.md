@@ -363,15 +363,46 @@ func main() {
 }
 ```
 
-With the wrappers installed, workflow-side telemetry is recorded on **first
-execution only** — the same semantics as `workflow.GetMetricsHandler` — and
-replays add nothing. One caveat for spans: a span still open when the workflow
-is evicted from the sticky cache is force-ended by ADK and exported once, at
-eviction, with whatever attributes it had at that point, and because its
-re-creation during the catch-up replay is non-recording, child spans started
-after the eviction lose their parent linkage. Span counts stay exactly-once and
-point telemetry (log events, metric recordings) stays exact; without the
-wrappers the same truncated span is exported *plus* one duplicate per replay.
+Workers built with `googleadk.NewPlugin` log a best-effort warning at worker
+start when a global provider is recognizably not replay-safe (the wrappers,
+no-op providers, and the never-set global proxies stay silent). The check is
+heuristic — the OTel global proxy binds its delegate on the first
+`Set*Provider` call permanently, so it cannot see through a process that sets
+a global more than once — but a raw provider installed once and never wrapped,
+the realistic misconfiguration, is classified correctly.
+
+With the wrappers installed, replays add nothing. Point telemetry (log events,
+metric recordings) is recorded on first execution, **at-least-once** rather
+than exactly-once: a workflow task that fails or times out after emitting
+re-executes live and records again — the same semantics and caveat as
+`workflow.GetMetricsHandler`.
+
+Spans carry a weaker contract, because ADK holds each span open across the
+model call's Activity await and the wrappers make a span's replayed
+re-creation non-recording:
+
+- **Sticky-cache eviction (graceful):** a span still open at eviction is
+  force-ended by ADK and exported exactly once, with whatever attributes it
+  had at that point. A `generate_content` span evicted mid-model-call loses
+  its `gen_ai.usage.*` token attributes — ADK attaches them only when the
+  model call returns, and by then the span's replay re-creation is
+  non-recording — and child spans started after the eviction lose their
+  parent linkage. A tiny sticky cache is the worst case: with
+  `worker.SetStickyWorkflowCacheSize(0)` (or `WORKFLOW_CACHE_SIZE=0` in this
+  repo's tests) every model call straddles an eviction, so span counts and
+  point telemetry stay exact but every `generate_content` span loses its
+  token attributes. Without the wrappers the same truncated span is exported
+  *plus* one duplicate per replay.
+- **Worker shutdown, crash, or redeploy:** spans open at that moment are lost
+  entirely — nothing force-ends them at process exit, and their re-creation
+  during the catch-up replay on the next worker is non-recording. Spans are
+  therefore **at-most-once** across worker restarts, the same tradeoff
+  Temporal's replay-gated tracing interceptors make. (Without the wrappers a
+  restart's catch-up replay re-records such a span live, recovering it at the
+  price of one duplicate copy of every other signal per replay.) If token
+  usage must survive restarts, derive it from Activity-side telemetry, which
+  the wrappers never gate.
+
 `NewReplaySafeMeterProvider` is forward-looking: it gates
 synchronous instrument recordings (observable instruments pass through, since
 their callbacks never run under a workflow context), covering both your own

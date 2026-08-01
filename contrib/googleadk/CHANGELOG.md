@@ -14,13 +14,16 @@ or Security.
 ### Added
 
 - `NewReplaySafeTracerProvider`, `NewReplaySafeLoggerProvider`, and
-  `NewReplaySafeMeterProvider` wrap OpenTelemetry providers so telemetry emitted from
-  workflow code is recorded on first execution only. ADK records spans (including
-  `gen_ai.usage.*` token attributes) and `gen_ai.*` log events through the OTel process
-  globals from inside the workflow, so previously every history replay re-emitted one
-  full copy of all of it. Install the wrappers as the first global providers set in the
-  process; non-workflow telemetry passes through unchanged. See "Telemetry and replay"
-  in the README.
+  `NewReplaySafeMeterProvider` wrap OpenTelemetry providers so history replays re-emit
+  no workflow-side telemetry. ADK records spans (including `gen_ai.usage.*` token
+  attributes) and `gen_ai.*` log events through the OTel process globals from inside
+  the workflow, so previously every replay re-emitted one full copy of all of it.
+  Install the wrappers as the first global providers set in the process; non-workflow
+  telemetry passes through unchanged. Spans still open when their workflow leaves the
+  worker are truncated (sticky-cache eviction) or lost (worker shutdown/crash) rather
+  than duplicated — see "Telemetry and replay" in the README for the exact contract.
+- `NewPlugin` workers log a best-effort warning at worker start when a global
+  OpenTelemetry provider is recognizably not replay-safe.
 
 ## [0.2.0] - 2026-07-22
 
