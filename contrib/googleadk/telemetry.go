@@ -2,12 +2,18 @@ package googleadk
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"strings"
 
 	otellog "go.opentelemetry.io/otel/log"
+	lognoop "go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/metric"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -48,9 +54,11 @@ var suppressedTracer = noop.NewTracerProvider().Tracer("googleadk.replay-suppres
 // ADK captures otel.GetTracerProvider().Tracer(...) at package init, and the
 // OTel global proxy binds its delegate on the first SetTracerProvider call
 // only — if some other provider is installed first, ADK's cached tracer
-// bypasses this wrapper permanently. Workflow-side spans are recorded on first
-// execution only (the workflow.GetMetricsHandler semantics); replays add
-// nothing.
+// bypasses this wrapper permanently. Replays add no spans, but a span still
+// open when its workflow leaves the worker is truncated (sticky-cache
+// eviction) or lost (worker shutdown, crash): the replay re-creation on
+// resume is non-recording. See "Telemetry and replay" in the README for the
+// span-lifetime contract.
 func NewReplaySafeTracerProvider(inner trace.TracerProvider) trace.TracerProvider {
 	return replaySafeTracerProvider{TracerProvider: inner}
 }
@@ -278,4 +286,63 @@ func (g replaySafeFloat64Gauge) Record(ctx context.Context, v float64, opts ...m
 		return
 	}
 	g.Float64Gauge.Record(ctx, v, opts...)
+}
+
+// telemetryProviderSafety classifies a global OTel provider for the
+// best-effort worker-start warning NewPlugin emits. The classification is
+// heuristic: the OTel global proxy binds its delegate on the FIRST
+// Set*Provider call permanently, so in a process that sets a global more than
+// once the provider visible here is not necessarily the one ADK's
+// package-init capture went through (raw-then-wrapper reads as safe,
+// wrapper-then-raw as unsafe). Single-Set configurations — installing raw
+// providers and never wrapping, the realistic misconfiguration — classify
+// correctly.
+type telemetryProviderSafety int
+
+const (
+	telemetryProviderReplaySafe telemetryProviderSafety = iota
+	telemetryProviderUnknown
+	telemetryProviderNotReplaySafe
+)
+
+func classifyTelemetryProvider(p any) telemetryProviderSafety {
+	switch p.(type) {
+	case nil:
+		return telemetryProviderUnknown
+	case replaySafeTracerProvider, replaySafeLoggerProvider, replaySafeMeterProvider:
+		return telemetryProviderReplaySafe
+	// Noop providers emit nothing, so replay cannot inflate anything.
+	case noop.TracerProvider, lognoop.LoggerProvider, metricnoop.MeterProvider:
+		return telemetryProviderReplaySafe
+	}
+	// The never-set global proxy is a noop until its one-shot delegate binds,
+	// and whether the eventual delegate will be replay-safe is undecidable
+	// here, so it stays silent rather than risking a false warning.
+	if t := reflect.TypeOf(p); t != nil {
+		for t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+		pkg := t.PkgPath()
+		if strings.HasPrefix(pkg, "go.opentelemetry.io/otel") && strings.HasSuffix(pkg, "/internal/global") {
+			return telemetryProviderUnknown
+		}
+	}
+	return telemetryProviderNotReplaySafe
+}
+
+// warnOnNonReplaySafeTelemetryProviders logs one warning per provider that is
+// positively classified as not replay-safe; the replay-safe wrappers, noop
+// providers, and the never-set global proxies stay silent. NewPlugin runs it
+// at worker start against the OTel process globals.
+func warnOnNonReplaySafeTelemetryProviders(logger log.Logger, tracerProvider, loggerProvider, meterProvider any) {
+	warn := func(global, wrapper string, p any) {
+		if classifyTelemetryProvider(p) != telemetryProviderNotReplaySafe {
+			return
+		}
+		logger.Warn("The global OpenTelemetry "+global+" is not replay-safe: ADK emits telemetry through it from workflow code, and every history replay will re-emit one full copy. Wrap it with googleadk."+wrapper+" and install the wrapper as the first global provider set in the process; see \"Telemetry and replay\" in the contrib/googleadk README.",
+			"provider", fmt.Sprintf("%T", p))
+	}
+	warn("tracer provider", "NewReplaySafeTracerProvider", tracerProvider)
+	warn("logger provider", "NewReplaySafeLoggerProvider", loggerProvider)
+	warn("meter provider", "NewReplaySafeMeterProvider", meterProvider)
 }

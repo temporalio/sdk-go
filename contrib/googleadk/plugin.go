@@ -2,8 +2,13 @@ package googleadk
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
+	"go.opentelemetry.io/otel"
+	otelloglobal "go.opentelemetry.io/otel/log/global"
+
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 )
@@ -31,6 +36,10 @@ import (
 // handle them. For the workflow/activity test environments use NewActivities +
 // Register instead: test environments construct no real worker, so plugins do
 // not run there.
+//
+// At worker start the plugin also logs a best-effort warning when a global
+// OpenTelemetry provider is recognizably not replay-safe — see "Telemetry and
+// replay" in the README.
 func NewPlugin(cfg Config) (worker.Plugin, error) {
 	acts, err := NewActivities(cfg)
 	if err != nil {
@@ -57,6 +66,10 @@ func NewPlugin(cfg Config) (worker.Plugin, error) {
 				mu.Unlock()
 				return nil
 			}
+			// The plugin hooks expose no worker logger, so the warning goes
+			// through the process-default slog.
+			warnOnNonReplaySafeTelemetryProviders(log.NewStructuredLogger(slog.Default()),
+				otel.GetTracerProvider(), otelloglobal.GetLoggerProvider(), otel.GetMeterProvider())
 			acts.registerAll(o.Registry)
 			return nil
 		},
