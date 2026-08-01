@@ -22,6 +22,7 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
 
@@ -43,6 +44,9 @@ func TestClassifyTelemetryProvider(t *testing.T) {
 		{"noop tracer provider", tracenoop.NewTracerProvider(), telemetryProviderReplaySafe},
 		{"noop logger provider", lognoop.NewLoggerProvider(), telemetryProviderReplaySafe},
 		{"noop meter provider", metricnoop.NewMeterProvider(), telemetryProviderReplaySafe},
+		{"pointer to noop tracer provider", &tracenoop.TracerProvider{}, telemetryProviderReplaySafe},
+		//lint:ignore SA1019 users may still install the deprecated noop provider; it must not draw a warning
+		{"deprecated otel noop tracer provider", trace.NewNoopTracerProvider(), telemetryProviderReplaySafe},
 		{"unbound global proxy tracer provider", unboundProxyTracerProvider, telemetryProviderUnknown},
 		{"unbound global proxy logger provider", unboundProxyLoggerProvider, telemetryProviderUnknown},
 		{"unbound global proxy meter provider", unboundProxyMeterProvider, telemetryProviderUnknown},

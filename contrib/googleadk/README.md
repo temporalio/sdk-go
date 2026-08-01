@@ -394,9 +394,9 @@ re-creation non-recording:
   token attributes. Without the wrappers the same truncated span is exported
   *plus* one duplicate per replay.
 - **Worker shutdown, crash, or redeploy:** spans open at that moment are lost
-  entirely — nothing force-ends them at process exit, and their re-creation
-  during the catch-up replay on the next worker is non-recording. Spans are
-  therefore **at-most-once** across worker restarts, the same tradeoff
+  entirely — nothing force-ends them at worker stop or process exit, and their
+  re-creation during the catch-up replay on the next worker is non-recording.
+  Spans are therefore **at-most-once** across worker restarts, the same tradeoff
   Temporal's replay-gated tracing interceptors make. (Without the wrappers a
   restart's catch-up replay re-records such a span live, recovering it at the
   price of one duplicate copy of every other signal per replay.) If token

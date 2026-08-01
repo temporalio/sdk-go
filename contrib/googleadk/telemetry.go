@@ -305,27 +305,38 @@ const (
 	telemetryProviderNotReplaySafe
 )
 
+var (
+	noopTracerProviderType = reflect.TypeOf(noop.TracerProvider{})
+	noopLoggerProviderType = reflect.TypeOf(lognoop.LoggerProvider{})
+	noopMeterProviderType  = reflect.TypeOf(metricnoop.MeterProvider{})
+	//lint:ignore SA1019 the classifier must recognize the deprecated noop provider users may still install
+	deprecatedNoopTracerProviderType = reflect.TypeOf(trace.NewNoopTracerProvider())
+)
+
 func classifyTelemetryProvider(p any) telemetryProviderSafety {
 	switch p.(type) {
 	case nil:
 		return telemetryProviderUnknown
 	case replaySafeTracerProvider, replaySafeLoggerProvider, replaySafeMeterProvider:
 		return telemetryProviderReplaySafe
-	// Noop providers emit nothing, so replay cannot inflate anything.
-	case noop.TracerProvider, lognoop.LoggerProvider, metricnoop.MeterProvider:
+	}
+	t := reflect.TypeOf(p)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t {
+	// Noop providers (pointer-wrapped or not) emit nothing, so replay cannot
+	// inflate anything. The deprecated trace.NewNoopTracerProvider returns an
+	// unexported type, hence classification by reflect.Type.
+	case noopTracerProviderType, noopLoggerProviderType, noopMeterProviderType, deprecatedNoopTracerProviderType:
 		return telemetryProviderReplaySafe
 	}
 	// The never-set global proxy is a noop until its one-shot delegate binds,
 	// and whether the eventual delegate will be replay-safe is undecidable
 	// here, so it stays silent rather than risking a false warning.
-	if t := reflect.TypeOf(p); t != nil {
-		for t.Kind() == reflect.Pointer {
-			t = t.Elem()
-		}
-		pkg := t.PkgPath()
-		if strings.HasPrefix(pkg, "go.opentelemetry.io/otel") && strings.HasSuffix(pkg, "/internal/global") {
-			return telemetryProviderUnknown
-		}
+	pkg := t.PkgPath()
+	if strings.HasPrefix(pkg, "go.opentelemetry.io/otel") && strings.HasSuffix(pkg, "/internal/global") {
+		return telemetryProviderUnknown
 	}
 	return telemetryProviderNotReplaySafe
 }
