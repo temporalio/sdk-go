@@ -801,6 +801,45 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnMutableSideEffect() {
 	env.AssertExpectations(s.T())
 }
 
+func (s *WorkflowTestSuiteUnitTest) Test_MutableSideEffect_HonorsEqualsFunc() {
+	// The test environment must honor the user-supplied equals function the same
+	// way the real worker does: a new value is only recorded when equals reports
+	// a change. See https://github.com/temporalio/sdk-go/issues/2109.
+	workflowFn := func(ctx Context) ([]int, error) {
+		var alwaysEqual = func(a, b interface{}) bool { return true }
+		var neverEqual = func(a, b interface{}) bool { return false }
+
+		get := func(v converter.EncodedValue) int {
+			var out int
+			s.NoError(v.Get(&out))
+			return out
+		}
+
+		// equals always true: value stays pinned to the first (1), not 2.
+		pinnedFirst := get(MutableSideEffect(ctx, "pinned",
+			func(ctx Context) interface{} { return 1 }, alwaysEqual))
+		pinnedSecond := get(MutableSideEffect(ctx, "pinned",
+			func(ctx Context) interface{} { return 2 }, alwaysEqual))
+
+		// equals always false: value updates on every call.
+		changedFirst := get(MutableSideEffect(ctx, "changed",
+			func(ctx Context) interface{} { return 10 }, neverEqual))
+		changedSecond := get(MutableSideEffect(ctx, "changed",
+			func(ctx Context) interface{} { return 20 }, neverEqual))
+
+		return []int{pinnedFirst, pinnedSecond, changedFirst, changedSecond}, nil
+	}
+
+	env := s.NewTestWorkflowEnvironment()
+	env.ExecuteWorkflow(workflowFn)
+
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+	var result []int
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal([]int{1, 1, 10, 20}, result)
+}
+
 func (s *WorkflowTestSuiteUnitTest) Test_LongRunningSideEffect() {
 	workflowFn := func(ctx Context) error {
 		// Sleep for 2 seconds would trigger deadlock detection timeout if we wouldn't override it below.
