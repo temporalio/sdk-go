@@ -191,14 +191,17 @@ func TestStore_Deduplication(t *testing.T) {
 	d := newDriver(t, mc)
 	p := testPayload("duplicate-me")
 
-	_, err := d.Store(storeCtx(), []*commonpb.Payload{p})
+	claims1, err := d.Store(storeCtx(), []*commonpb.Payload{p})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), mc.putCount.Load())
 
-	// Store same payload again — should skip the upload.
-	_, err = d.Store(storeCtx(), []*commonpb.Payload{p})
+	// Store same payload again — writes unconditionally (idempotent overwrite).
+	claims2, err := d.Store(storeCtx(), []*commonpb.Payload{p})
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), mc.putCount.Load())
+	assert.Equal(t, int64(2), mc.putCount.Load())
+
+	// Both stores should produce identical claims.
+	assert.Equal(t, claims1[0].ClaimData, claims2[0].ClaimData)
 }
 
 func TestStore_MultiplePayloads(t *testing.T) {
@@ -307,17 +310,7 @@ func TestStore_PutObjectError(t *testing.T) {
 	assert.ErrorContains(t, err, ", client_region=ap-southeast-2]: access denied")
 }
 
-func TestStore_ObjectExistsError(t *testing.T) {
-	ec := &errClient{
-		memClient: newMemClient(),
-		existsErr: errors.New("network timeout"),
-	}
-	d := newDriver(t, ec)
 
-	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
-	assert.ErrorContains(t, err, "existence check failed [bucket=test-bucket, key=")
-	assert.ErrorContains(t, err, ", client_region=ap-southeast-2]: network timeout")
-}
 
 // --- Retrieve tests ---
 
