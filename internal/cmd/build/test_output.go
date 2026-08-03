@@ -243,13 +243,6 @@ func writeStructuredTestFailureReport(
 	for _, row := range rows {
 		fmt.Fprintf(&sb, "\t%s\n", testFailureTitle(row))
 	}
-	if output.rerunCommand != "" {
-		sb.WriteString("\nRerun from internal/cmd/build:\n")
-		for _, row := range rows {
-			testPattern := "^" + regexp.QuoteMeta(row.Test) + "$"
-			fmt.Fprintf(&sb, "\t%s -run %s\n", output.rerunCommand, strconv.Quote(testPattern))
-		}
-	}
 	endTestReportSection(&sb)
 
 	startTestReportSection(&sb, "Go test output")
@@ -285,8 +278,22 @@ func writeStructuredTestFailureReport(
 	}
 
 	writeCompleteTestLogLocations(&sb, output)
+	writeTestRerunCommands(&sb, rows, output.rerunCommand)
 	finishTestFailureReport(&sb)
 	return writeString(w, sb.String())
+}
+
+func writeTestRerunCommands(sb *strings.Builder, rows []testFailureSummaryRow, rerunCommand string) {
+	if rerunCommand == "" {
+		return
+	}
+	startTestReportSection(sb, "Rerun failed tests")
+	sb.WriteString("From internal/cmd/build:\n")
+	for _, row := range rows {
+		testPattern := "^" + regexp.QuoteMeta(row.Test) + "$"
+		fmt.Fprintf(sb, "\t%s -run %s\n", rerunCommand, strconv.Quote(testPattern))
+	}
+	endTestReportSection(sb)
 }
 
 func writeCompleteTestLogLocations(sb *strings.Builder, output testOutput) {
@@ -621,8 +628,9 @@ func collapseParentFailureRows(rows []testFailureSummaryRow) []testFailureSummar
 			}
 			var details strings.Builder
 			for i := len(parents) - 1; i >= 0; i-- {
-				if parents[i].Details != "" {
-					details.WriteString(parents[i].Details)
+				parentDetails := withoutTestHarnessOutput(parents[i])
+				if parentDetails != "" {
+					details.WriteString(parentDetails)
 					details.WriteByte('\n')
 				}
 			}
@@ -632,6 +640,22 @@ func collapseParentFailureRows(rows []testFailureSummaryRow) []testFailureSummar
 		collapsed = append(collapsed, row)
 	}
 	return collapsed
+}
+
+func withoutTestHarnessOutput(row testFailureSummaryRow) string {
+	var details strings.Builder
+	for line := range strings.SplitSeq(row.Details, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "=== RUN   "+row.Test ||
+			(strings.HasPrefix(trimmed, "--- FAIL: "+row.Test+" (") && strings.HasSuffix(trimmed, ")")) {
+			continue
+		}
+		if details.Len() > 0 {
+			details.WriteByte('\n')
+		}
+		details.WriteString(line)
+	}
+	return strings.TrimSpace(details.String())
 }
 
 type testFailureSummaryKey struct {

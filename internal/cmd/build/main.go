@@ -461,6 +461,7 @@ func (b *builder) prepareTestOutput(flags testOutputFlags, logName string) (test
 	if err != nil {
 		return testOutput{}, err
 	}
+	log.Printf("Writing full test logs to %v", filepath.Dir(logPath))
 	return testOutput{
 		logPath:       logPath,
 		jsonLogPath:   jsonLogPath,
@@ -490,7 +491,6 @@ func (b *builder) prepareLogPath(logDirFlag, logName string) (string, error) {
 	if err := f.Close(); err != nil {
 		return "", fmt.Errorf("failed closing test log %q: %w", logPath, err)
 	}
-	log.Printf("Writing full test output to %v", logPath)
 	return logPath, nil
 }
 

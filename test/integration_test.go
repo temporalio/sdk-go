@@ -133,6 +133,7 @@ func (ts *IntegrationTestSuite) TearDownSuite() {
 }
 
 func (ts *IntegrationTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.metricsHandler = metrics.NewCapturingHandler()
 	var metricsHandler client.MetricsHandler = ts.metricsHandler
 	// Use Tally handler for Tally test

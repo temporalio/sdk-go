@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,10 @@ func TestTestOutputFlagsDefaultToFailures(t *testing.T) {
 func TestPrepareTestOutput(t *testing.T) {
 	rootDir := t.TempDir()
 	b := &builder{rootDir: rootDir}
+	var startupLogs bytes.Buffer
+	originalLogOutput := log.Writer()
+	log.SetOutput(&startupLogs)
+	t.Cleanup(func() { log.SetOutput(originalLogOutput) })
 
 	output, err := b.prepareTestOutput(testOutputFlags{
 		logDir:        defaultTestLogDir,
@@ -45,6 +50,15 @@ func TestPrepareTestOutput(t *testing.T) {
 	if _, err := os.Stat(expectedJSONPath); err != nil {
 		t.Fatalf("expected prepared JSON log file: %v", err)
 	}
+	if got := strings.Count(startupLogs.String(), "Writing full test logs to"); got != 1 {
+		t.Fatalf("expected one test log directory notice, got %d:\n%s", got, startupLogs.String())
+	}
+	if !strings.Contains(startupLogs.String(), filepath.Dir(expectedPath)) {
+		t.Fatalf("test log directory notice missing %q:\n%s", filepath.Dir(expectedPath), startupLogs.String())
+	}
+	if strings.Contains(startupLogs.String(), "unit-test.log") || strings.Contains(startupLogs.String(), "unit-test.json") {
+		t.Fatalf("test log directory notice listed individual files:\n%s", startupLogs.String())
+	}
 
 	output, err = b.prepareTestOutput(testOutputFlags{
 		logDir:        "artifacts/test-logs",
@@ -60,6 +74,9 @@ func TestPrepareTestOutput(t *testing.T) {
 	expectedJSONPath = filepath.Join(rootDir, "artifacts", "test-logs", "go-test.json")
 	if output.jsonLogPath != expectedJSONPath {
 		t.Fatalf("expected overridden JSON log path %q, got %q", expectedJSONPath, output.jsonLogPath)
+	}
+	if got := strings.Count(startupLogs.String(), "Writing full test logs to"); got != 2 {
+		t.Fatalf("expected one test log directory notice per preparation, got %d:\n%s", got, startupLogs.String())
 	}
 
 	_, err = b.prepareTestOutput(testOutputFlags{
@@ -251,12 +268,19 @@ func TestRunTestCmdFailureOutput(t *testing.T) {
 		`go run . unit-test -run "^TestFailed$"`,
 		"--- Go test output ---",
 		"--- Complete logs ---",
+		"--- Rerun failed tests ---",
 		"Go test JSON:",
 		"Combined Go and dev server:",
 	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("failure report missing %q:\n%s", want, stderr.String())
 		}
+	}
+	report := stderr.String()
+	if goOutput, completeLogs, rerun := strings.Index(report, "--- Go test output ---"),
+		strings.Index(report, "--- Complete logs ---"),
+		strings.Index(report, "--- Rerun failed tests ---"); goOutput < 0 || completeLogs <= goOutput || rerun <= completeLogs {
+		t.Fatalf("failure report sections are out of order:\n%s", report)
 	}
 	if strings.Contains(stderr.String(), "--- Failed tests ---") {
 		t.Fatalf("failure report contains redundant failed-tests heading:\n%s", stderr.String())
@@ -532,6 +556,7 @@ func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *tes
 		"::group::Go test output",
 		"::group::Related dev server output",
 		"::group::Complete logs",
+		"::group::Rerun failed tests",
 		"Lines mentioning the failed test",
 		`msg="server boom"`,
 		"Combined Go and dev server:",
@@ -550,6 +575,11 @@ func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *tes
 	}
 	if starts, ends := strings.Count(report.String(), "::group::"), strings.Count(report.String(), "::endgroup::"); starts != ends {
 		t.Fatalf("failure report has %d group starts and %d group ends:\n%s", starts, ends, report.String())
+	}
+	if serverOutput, completeLogs, rerun := strings.Index(report.String(), "::group::Related dev server output"),
+		strings.Index(report.String(), "::group::Complete logs"),
+		strings.Index(report.String(), "::group::Rerun failed tests"); serverOutput < 0 || completeLogs <= serverOutput || rerun <= completeLogs {
+		t.Fatalf("failure report sections are out of order:\n%s", report.String())
 	}
 }
 
@@ -643,7 +673,11 @@ func TestRenderTestFailureSummaryEscapesHTML(t *testing.T) {
 
 func TestCollapseParentFailureRowsUsesPackage(t *testing.T) {
 	input := []testFailureSummaryRow{
-		{Package: "example.com/a", Test: "TestSuite", Details: "suite details"},
+		{
+			Package: "example.com/a",
+			Test:    "TestSuite",
+			Details: "=== RUN   TestSuite\nsuite details\n--- FAIL: TestSuite (1.00s)\n",
+		},
 		{Package: "example.com/a", Test: "TestSuite/TestSub", Details: "subtest details"},
 		{Package: "example.com/a", Test: "TestSuite/TestSub/TestNested", Details: "nested details"},
 		{Package: "example.com/b", Test: "TestSuite", Details: "other package details"},
@@ -662,6 +696,11 @@ func TestCollapseParentFailureRowsUsesPackage(t *testing.T) {
 	for _, want := range []string{"suite details", "subtest details", "nested details"} {
 		if !strings.Contains(rows[0].Details, want) {
 			t.Fatalf("collapsed nested failure missing %q: %q", want, rows[0].Details)
+		}
+	}
+	for _, unwanted := range []string{"=== RUN   TestSuite", "--- FAIL: TestSuite"} {
+		if strings.Contains(rows[0].Details, unwanted) {
+			t.Fatalf("collapsed nested failure retained parent harness output %q: %q", unwanted, rows[0].Details)
 		}
 	}
 	if rows[1].Details != "other package details" {
