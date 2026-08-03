@@ -117,7 +117,8 @@ type preparedPayload struct {
 }
 
 // Store serializes each payload, validates sizes, then uploads concurrently to
-// GCS if not already present, and returns a claim per payload.
+// GCS and returns a claim per payload. Because keys are content-addressable,
+// uploading an existing key is a safe, idempotent overwrite.
 //
 // Two phases are used to avoid partial GCS uploads when validation fails:
 //  1. Marshal and validate all payloads sequentially.
@@ -151,14 +152,8 @@ func (d *gcsStorageDriver) Store(
 	for i, pp := range prepared {
 		g.Go(func() error {
 			key := objectKey(ctx.Target, pp.hexDigest)
-			exists, err := d.client.ObjectExists(gctx, pp.bucket, key)
-			if err != nil {
-				return fmt.Errorf("existence check failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
-			}
-			if !exists {
-				if err := d.client.PutObject(gctx, pp.bucket, key, pp.data); err != nil {
-					return fmt.Errorf("upload failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
-				}
+			if err := d.client.PutObject(gctx, pp.bucket, key, pp.data); err != nil {
+				return fmt.Errorf("upload failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
 			}
 			claims[i] = converter.StorageDriverClaim{
 				ClaimData: map[string]string{
