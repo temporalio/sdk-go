@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
@@ -715,4 +716,197 @@ func TestDescribeClient_MultipleEntries(t *testing.T) {
 	mc.describe = map[string]string{"client_project_id": "my-project", "foo": "bar"}
 	// Keys are sorted for deterministic output.
 	assert.Equal(t, ", client_project_id=my-project, foo=bar", describeClient(mc))
+}
+
+// --- Concurrency tests ---
+
+// blockingClient is a Client whose PutObject and GetObject block until
+// explicitly released. It tracks the peak number of concurrent in-flight
+// operations.
+type blockingClient struct {
+	memClient
+	gate          chan struct{} // close to release all blocked goroutines
+	inflight      atomic.Int64
+	peakInflight  atomic.Int64
+	putErr        error
+	getErr        error
+	existsReturns bool
+}
+
+func newBlockingClient(existsReturns bool) *blockingClient {
+	return &blockingClient{
+		memClient:     *newMemClient(),
+		gate:          make(chan struct{}),
+		existsReturns: existsReturns,
+	}
+}
+
+func (b *blockingClient) ObjectExists(_ context.Context, _, _ string) (bool, error) {
+	return b.existsReturns, nil
+}
+
+func (b *blockingClient) PutObject(ctx context.Context, bucket, key string, data []byte) error {
+	cur := b.inflight.Add(1)
+	// Update peak using CAS loop.
+	for {
+		peak := b.peakInflight.Load()
+		if cur <= peak || b.peakInflight.CompareAndSwap(peak, cur) {
+			break
+		}
+	}
+	defer b.inflight.Add(-1)
+
+	select {
+	case <-b.gate:
+		if b.putErr != nil {
+			return b.putErr
+		}
+		return b.memClient.PutObject(ctx, bucket, key, data)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (b *blockingClient) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
+	cur := b.inflight.Add(1)
+	for {
+		peak := b.peakInflight.Load()
+		if cur <= peak || b.peakInflight.CompareAndSwap(peak, cur) {
+			break
+		}
+	}
+	defer b.inflight.Add(-1)
+
+	select {
+	case <-b.gate:
+		if b.getErr != nil {
+			return nil, b.getErr
+		}
+		return b.memClient.GetObject(ctx, bucket, key)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func TestStore_ConcurrencyLimitedTo10(t *testing.T) {
+	// Create 20 payloads — more than the concurrency limit of 10.
+	bc := newBlockingClient(false)
+	d, err := NewDriver(Options{
+		Client: bc,
+		Bucket: StaticBucket("test-bucket"),
+	})
+	require.NoError(t, err)
+
+	payloads := make([]*commonpb.Payload, 20)
+	for i := range payloads {
+		payloads[i] = testPayload(fmt.Sprintf("payload-%d", i))
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.Store(storeCtx(), payloads)
+		done <- err
+	}()
+
+	// Give goroutines time to start and block.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if bc.peakInflight.Load() >= 10 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// Peak should be exactly 10 (the errgroup limit).
+	peak := bc.peakInflight.Load()
+	assert.LessOrEqual(t, peak, int64(10), "peak inflight should not exceed errgroup limit of 10")
+	assert.GreaterOrEqual(t, peak, int64(1), "at least one goroutine should have started")
+
+	// Release all goroutines and let Store complete.
+	close(bc.gate)
+	require.NoError(t, <-done)
+}
+
+func TestStore_ContextCancellation(t *testing.T) {
+	bc := newBlockingClient(false)
+	d, err := NewDriver(Options{
+		Client: bc,
+		Bucket: StaticBucket("test-bucket"),
+	})
+	require.NoError(t, err)
+
+	payloads := []*commonpb.Payload{testPayload("cancel-me")}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	storeContext := converter.StorageDriverStoreContext{Context: ctx}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.Store(storeContext, payloads)
+		done <- err
+	}()
+
+	// Wait for the goroutine to be in-flight.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if bc.inflight.Load() > 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	cancel()
+	err = <-done
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRetrieve_ContextCancellation(t *testing.T) {
+	// First, store a payload using a normal client so we have a valid claim.
+	mc := newMemClient()
+	d, err := NewDriver(Options{
+		Client: mc,
+		Bucket: StaticBucket("test-bucket"),
+	})
+	require.NoError(t, err)
+
+	payloads := []*commonpb.Payload{testPayload("retrieve-cancel-me")}
+	claims, err := d.Store(storeCtx(), payloads)
+	require.NoError(t, err)
+
+	// Now create a blocking client with the stored data for retrieval.
+	bc := newBlockingClient(false)
+	mc.mu.RLock()
+	for k, v := range mc.data {
+		bc.memClient.data[k] = v
+	}
+	mc.mu.RUnlock()
+	d2, err := NewDriver(Options{
+		Client: bc,
+		Bucket: StaticBucket("test-bucket"),
+	})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	retrieveContext := converter.StorageDriverRetrieveContext{Context: ctx}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := d2.Retrieve(retrieveContext, claims)
+		done <- err
+	}()
+
+	// Wait for the goroutine to be in-flight.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if bc.inflight.Load() > 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	cancel()
+	err = <-done
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
 }

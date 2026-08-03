@@ -90,8 +90,8 @@ The above example stores payloads in the `large-payloads` bucket if their size i
 
 The Google Cloud credentials used by your Storage client must have the following IAM permissions on the target bucket:
 
-- `storage.objects.create` — required by components that store payloads (typically the Temporal Client and Workers sending Workflow/Activity inputs and results). Because keys are content-addressable, the driver writes unconditionally (idempotent overwrite); no read permission is needed for storing.
-- `storage.objects.get` — required by components that retrieve payloads (typically Workers and Clients reading inputs and results).
+- `storage.objects.create` — required by components that store payloads (typically the Temporal Client and Workers sending Workflow/Activity inputs and results).
+- `storage.objects.get` — required by all components. The driver checks for existing objects before uploading (content-addressable deduplication), so storing requires this permission in addition to `create`. Retrieval also uses this permission to download payloads.
 
 The predefined `roles/storage.objectUser` role includes both permissions. Components that only retrieve payloads can use the narrower `roles/storage.objectViewer` role.
 
