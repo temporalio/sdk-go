@@ -181,12 +181,22 @@ func TestGoTestJSONWriterAttributesFailedSubtestOutput(t *testing.T) {
 	if decoded.String() != "    suite_test.go:42: boom\n    Error: intentional parent-attributed failure\n" {
 		t.Fatalf("unexpected decoded output: %q", decoded.String())
 	}
+	collapsed := collapseParentFailureRows(rows)
+	if len(collapsed) != 1 || collapsed[0].Test != "TestSuite/TestFailed" {
+		t.Fatalf("expected one collapsed child failure, got %#v", collapsed)
+	}
+	for _, want := range []string{"intentional parent-attributed failure", "suite_test.go:42: boom"} {
+		if !strings.Contains(collapsed[0].Details, want) {
+			t.Fatalf("collapsed child failure missing %q: %q", want, collapsed[0].Details)
+		}
+	}
 }
 
 func TestRunTestCmdFailureOutput(t *testing.T) {
 	rootDir := t.TempDir()
 	summaryPath := filepath.Join(rootDir, "summary.md")
 	t.Setenv("GITHUB_STEP_SUMMARY", summaryPath)
+	t.Setenv("GITHUB_ACTIONS", "false")
 	b := &builder{rootDir: rootDir}
 	output, err := b.prepareTestOutput(testOutputFlags{
 		logDir:        defaultTestLogDir,
@@ -235,15 +245,21 @@ func TestRunTestCmdFailureOutput(t *testing.T) {
 		t.Fatalf("expected stdout to be suppressed, got:\n%s", stdout.String())
 	}
 	for _, want := range []string{
+		"============================== TEST FAILURE REPORT ==============================",
 		"Failed tests (1)",
 		"example.com/pkg / TestFailed",
 		`go run . unit-test -run "^TestFailed$"`,
+		"--- Go test output ---",
+		"--- Complete logs ---",
 		"Go test JSON:",
 		"Combined Go and dev server:",
 	} {
 		if !strings.Contains(stderr.String(), want) {
 			t.Fatalf("failure report missing %q:\n%s", want, stderr.String())
 		}
+	}
+	if strings.Contains(stderr.String(), "--- Failed tests ---") {
+		t.Fatalf("failure report contains redundant failed-tests heading:\n%s", stderr.String())
 	}
 	jsonData, err := os.ReadFile(output.jsonLogPath)
 	if err != nil {
@@ -350,6 +366,7 @@ func TestRunTestCmdFullOutput(t *testing.T) {
 }
 
 func TestWriteStructuredTestFailureReportFallsBackToCommandOutput(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "false")
 	var output bytes.Buffer
 	err := writeStructuredTestFailureReport(
 		&output,
@@ -364,8 +381,10 @@ func TestWriteStructuredTestFailureReportFallsBackToCommandOutput(t *testing.T) 
 		t.Fatal(err)
 	}
 	for _, want := range []string{
+		"--- Command output ---",
 		"No individual failed test was identified",
 		"./main.go:10: undefined: missing",
+		"--- Complete logs ---",
 		".build/test-logs/unit-test.log",
 	} {
 		if !strings.Contains(output.String(), want) {
@@ -375,6 +394,7 @@ func TestWriteStructuredTestFailureReportFallsBackToCommandOutput(t *testing.T) 
 }
 
 func TestWriteStructuredTestFailureReportListsAllFailuresWhenDetailsAreOmitted(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "false")
 	var rows []testFailureSummaryRow
 	for i := 1; i <= 6; i++ {
 		rows = append(rows, testFailureSummaryRow{
@@ -398,13 +418,13 @@ func TestWriteStructuredTestFailureReportListsAllFailuresWhenDetailsAreOmitted(t
 		t.Fatal(err)
 	}
 	for i := 1; i <= 6; i++ {
-		want := fmt.Sprintf("- example.com/pkg / TestFailed%d", i)
+		want := fmt.Sprintf("\texample.com/pkg / TestFailed%d", i)
 		if !strings.Contains(snippets.String(), want) {
 			t.Fatalf("failure list missing %q", want)
 		}
 	}
 	for _, want := range []string{
-		"Failed Go test output (up to 16 KiB per test and 64 KiB total)",
+		"--- Go test output ---",
 		"... (truncated; see full test log) ...",
 		"omitted Go output for 2 additional failed tests after reaching the 64 KiB total console limit",
 	} {
@@ -469,6 +489,7 @@ func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *tes
 	t.Setenv("TEST_LOG_ARTIFACT_NAME", "integ-test-ubuntu-latest-stable")
 	t.Setenv("GITHUB_RUN_ID", "12345")
 	t.Setenv("GITHUB_REPOSITORY", "temporalio/sdk-go")
+	t.Setenv("GITHUB_ACTIONS", "true")
 	var report bytes.Buffer
 	err := writeStructuredTestFailureReport(
 		&report,
@@ -502,11 +523,15 @@ func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *tes
 	}
 	for _, want := range []string{
 		"TEST FAILURE REPORT",
-		"example.com/pkg / TestSuite",
+		"Failed tests (1)",
 		"example.com/pkg / TestSuite/TestFailed",
 		"parent-attributed failure",
 		`go run . integration-test -dev-server -run "^TestSuite/TestFailed$"`,
 		"suite_test.go:42: boom",
+		"::group::Failed tests",
+		"::group::Go test output",
+		"::group::Related dev server output",
+		"::group::Complete logs",
 		"Lines mentioning the failed test",
 		`msg="server boom"`,
 		"Combined Go and dev server:",
@@ -519,6 +544,12 @@ func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *tes
 	}
 	if unexpected := `go run . integration-test -dev-server -run "^TestSuite$"`; strings.Contains(report.String(), unexpected) {
 		t.Fatalf("failure report included parent rerun command %q:\n%s", unexpected, report.String())
+	}
+	if unexpected := "--- example.com/pkg / TestSuite ---"; strings.Contains(report.String(), unexpected) {
+		t.Fatalf("failure report included parent failure section %q:\n%s", unexpected, report.String())
+	}
+	if starts, ends := strings.Count(report.String(), "::group::"), strings.Count(report.String(), "::endgroup::"); starts != ends {
+		t.Fatalf("failure report has %d group starts and %d group ends:\n%s", starts, ends, report.String())
 	}
 }
 
@@ -610,14 +641,14 @@ func TestRenderTestFailureSummaryEscapesHTML(t *testing.T) {
 	}
 }
 
-func TestFilterParentFailureRowsUsesPackage(t *testing.T) {
+func TestCollapseParentFailureRowsUsesPackage(t *testing.T) {
 	input := []testFailureSummaryRow{
-		{Package: "example.com/a", Test: "TestSuite"},
-		{Package: "example.com/a", Test: "TestSuite/TestSub"},
-		{Package: "example.com/a", Test: "TestSuite/TestSub/TestNested"},
-		{Package: "example.com/b", Test: "TestSuite"},
+		{Package: "example.com/a", Test: "TestSuite", Details: "suite details"},
+		{Package: "example.com/a", Test: "TestSuite/TestSub", Details: "subtest details"},
+		{Package: "example.com/a", Test: "TestSuite/TestSub/TestNested", Details: "nested details"},
+		{Package: "example.com/b", Test: "TestSuite", Details: "other package details"},
 	}
-	rows := filterParentFailureRows(input)
+	rows := collapseParentFailureRows(input)
 
 	if len(rows) != 2 {
 		t.Fatalf("expected 2 rows, got %d: %#v", len(rows), rows)
@@ -628,7 +659,32 @@ func TestFilterParentFailureRowsUsesPackage(t *testing.T) {
 	if rows[1].Package != "example.com/b" || rows[1].Test != "TestSuite" {
 		t.Fatalf("expected package b parent row to be preserved, got %#v", rows[1])
 	}
+	for _, want := range []string{"suite details", "subtest details", "nested details"} {
+		if !strings.Contains(rows[0].Details, want) {
+			t.Fatalf("collapsed nested failure missing %q: %q", want, rows[0].Details)
+		}
+	}
+	if rows[1].Details != "other package details" {
+		t.Fatalf("unexpected package b details: %q", rows[1].Details)
+	}
 	if input[0].Test != "TestSuite" {
 		t.Fatalf("filter mutated its input: %#v", input)
+	}
+}
+
+func TestCollapseParentFailureRowsPreservesAmbiguousParentOutput(t *testing.T) {
+	rows := collapseParentFailureRows([]testFailureSummaryRow{
+		{Package: "example.com/pkg", Test: "TestSuite", Details: "suite details"},
+		{Package: "example.com/pkg", Test: "TestSuite/TestOne", Details: "first details"},
+		{Package: "example.com/pkg", Test: "TestSuite/TestTwo", Details: "second details"},
+	})
+
+	if len(rows) != 3 {
+		t.Fatalf("expected ambiguous parent output to be preserved, got %#v", rows)
+	}
+	for _, row := range rows[1:] {
+		if strings.Contains(row.Details, "suite details") {
+			t.Fatalf("ambiguous parent output was copied to %q: %q", row.Test, row.Details)
+		}
 	}
 }

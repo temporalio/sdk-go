@@ -220,38 +220,39 @@ func writeStructuredTestFailureReport(
 	fallback string,
 	output testOutput,
 ) error {
+	rows = collapseParentFailureRows(rows)
 	var sb strings.Builder
-	sb.WriteString("\nTEST FAILURE REPORT\n")
+	sb.WriteString("\n============================== TEST FAILURE REPORT ==============================\n")
 	if len(rows) == 0 {
+		startTestReportSection(&sb, "Command output")
 		fmt.Fprintf(
 			&sb,
-			"\nNo individual failed test was identified; showing up to %d KiB of command output:\n\n",
+			"No individual failed test was identified; showing up to %d KiB of command output:\n\n",
 			testFailureSnippetMaxTotalBytes/1024,
 		)
 		sb.WriteString(truncateTestFailureSnippet(fallback, testFailureSnippetMaxTotalBytes))
-		sb.WriteString("\n")
+		sb.WriteByte('\n')
+		endTestReportSection(&sb)
 		writeCompleteTestLogLocations(&sb, output)
+		finishTestFailureReport(&sb)
 		return writeString(w, sb.String())
 	}
 
-	fmt.Fprintf(&sb, "\nFailed tests (%d):\n", len(rows))
+	startTestReportGroup(&sb, "Failed tests")
+	fmt.Fprintf(&sb, "Failed tests (%d):\n", len(rows))
 	for _, row := range rows {
-		fmt.Fprintf(&sb, "- %s\n", testFailureTitle(row))
+		fmt.Fprintf(&sb, "\t%s\n", testFailureTitle(row))
 	}
 	if output.rerunCommand != "" {
 		sb.WriteString("\nRerun from internal/cmd/build:\n")
-		for _, row := range filterParentFailureRows(rows) {
+		for _, row := range rows {
 			testPattern := "^" + regexp.QuoteMeta(row.Test) + "$"
-			fmt.Fprintf(&sb, "- %s -run %s\n", output.rerunCommand, strconv.Quote(testPattern))
+			fmt.Fprintf(&sb, "\t%s -run %s\n", output.rerunCommand, strconv.Quote(testPattern))
 		}
 	}
+	endTestReportSection(&sb)
 
-	fmt.Fprintf(
-		&sb,
-		"\nFailed Go test output (up to %d KiB per test and %d KiB total):\n",
-		testFailureSnippetMaxDetailBytes/1024,
-		testFailureSnippetMaxTotalBytes/1024,
-	)
+	startTestReportSection(&sb, "Go test output")
 	remainingGoOutput := testFailureSnippetMaxTotalBytes
 	for i, row := range rows {
 		if remainingGoOutput <= 0 {
@@ -270,29 +271,26 @@ func writeStructuredTestFailureReport(
 		sb.WriteString("\n")
 		remainingGoOutput -= len(details)
 	}
+	endTestReportSection(&sb)
 
 	if output.serverLogPath != "" {
-		serverRows := filterParentFailureRows(rows)
-		contexts, err := collectServerFailureContexts(output.serverLogPath, serverRows)
-		fmt.Fprintf(
-			&sb,
-			"\nRelated dev server WARN/ERROR output (best effort, up to %d KiB per test and %d KiB total):\n",
-			testServerSnippetMaxDetailBytes/1024,
-			testServerSnippetMaxTotalBytes/1024,
-		)
+		startTestReportSection(&sb, "Related dev server output")
+		contexts, err := collectServerFailureContexts(output.serverLogPath, rows)
 		if err != nil {
 			fmt.Fprintf(&sb, "Unable to read dev server context: %v\n", err)
 		} else {
-			writeServerFailureContexts(&sb, serverRows, contexts, output.serverLogPath)
+			writeServerFailureContexts(&sb, rows, contexts, output.serverLogPath)
 		}
+		endTestReportSection(&sb)
 	}
 
 	writeCompleteTestLogLocations(&sb, output)
+	finishTestFailureReport(&sb)
 	return writeString(w, sb.String())
 }
 
 func writeCompleteTestLogLocations(sb *strings.Builder, output testOutput) {
-	sb.WriteString("\nComplete logs:\n")
+	startTestReportSection(sb, "Complete logs")
 	fmt.Fprintf(sb, "- Go test: %s\n", output.logPath)
 	fmt.Fprintf(sb, "- Go test JSON: %s\n", output.jsonLogPath)
 	if output.combinedLogPath != "" {
@@ -314,6 +312,29 @@ func writeCompleteTestLogLocations(sb *strings.Builder, output testOutput) {
 			fmt.Fprintf(sb, "- Download: %s\n", command)
 		}
 	}
+	endTestReportSection(sb)
+}
+
+func startTestReportSection(sb *strings.Builder, title string) {
+	startTestReportGroup(sb, title)
+	fmt.Fprintf(sb, "--- %s ---\n", title)
+}
+
+func startTestReportGroup(sb *strings.Builder, title string) {
+	sb.WriteByte('\n')
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		fmt.Fprintf(sb, "::group::%s\n", title)
+	}
+}
+
+func endTestReportSection(sb *strings.Builder) {
+	if os.Getenv("GITHUB_ACTIONS") == "true" {
+		sb.WriteString("::endgroup::\n")
+	}
+}
+
+func finishTestFailureReport(sb *strings.Builder) {
+	sb.WriteString("\n============================ END TEST FAILURE REPORT ============================\n")
 }
 
 func writeString(w io.Writer, value string) error {
@@ -476,7 +497,7 @@ func writeServerFailureContexts(
 		remaining -= len(rendered)
 	}
 	if remaining == testServerSnippetMaxTotalBytes {
-		sb.WriteString("No dev server WARN/ERROR lines could be correlated with the failed tests.\n")
+		sb.WriteString("None.\n")
 	}
 }
 
@@ -537,6 +558,7 @@ func testFailureTitle(row testFailureSummaryRow) string {
 }
 
 func appendTestFailureRows(summaryPath string, rows []testFailureSummaryRow) error {
+	rows = collapseParentFailureRows(rows)
 	if summaryPath == "" || len(rows) == 0 {
 		return nil
 	}
@@ -549,9 +571,11 @@ func appendTestFailureRows(summaryPath string, rows []testFailureSummaryRow) err
 	return err
 }
 
-func filterParentFailureRows(rows []testFailureSummaryRow) []testFailureSummaryRow {
+func collapseParentFailureRows(rows []testFailureSummaryRow) []testFailureSummaryRow {
+	rowsByKey := make(map[testFailureSummaryKey]testFailureSummaryRow, len(rows))
 	hasFailedSubtest := make(map[testFailureSummaryKey]bool, len(rows))
 	for _, row := range rows {
+		rowsByKey[testFailureSummaryKey{Package: row.Package, Test: row.Test}] = row
 		for parent := row.Test; ; {
 			slash := strings.LastIndexByte(parent, '/')
 			if slash < 0 {
@@ -561,13 +585,53 @@ func filterParentFailureRows(rows []testFailureSummaryRow) []testFailureSummaryR
 			hasFailedSubtest[testFailureSummaryKey{Package: row.Package, Test: parent}] = true
 		}
 	}
-	filtered := make([]testFailureSummaryRow, 0, len(rows))
+	leafDescendantCount := make(map[testFailureSummaryKey]int, len(hasFailedSubtest))
 	for _, row := range rows {
-		if !hasFailedSubtest[testFailureSummaryKey{Package: row.Package, Test: row.Test}] {
-			filtered = append(filtered, row)
+		key := testFailureSummaryKey{Package: row.Package, Test: row.Test}
+		if hasFailedSubtest[key] {
+			continue
+		}
+		for parent := row.Test; ; {
+			slash := strings.LastIndexByte(parent, '/')
+			if slash < 0 {
+				break
+			}
+			parent = parent[:slash]
+			leafDescendantCount[testFailureSummaryKey{Package: row.Package, Test: parent}]++
 		}
 	}
-	return filtered
+	collapsed := make([]testFailureSummaryRow, 0, len(rows))
+	for _, row := range rows {
+		key := testFailureSummaryKey{Package: row.Package, Test: row.Test}
+		if hasFailedSubtest[key] && leafDescendantCount[key] == 1 {
+			continue
+		}
+		if !hasFailedSubtest[key] {
+			var parents []testFailureSummaryRow
+			for parent := row.Test; ; {
+				slash := strings.LastIndexByte(parent, '/')
+				if slash < 0 {
+					break
+				}
+				parent = parent[:slash]
+				parentKey := testFailureSummaryKey{Package: row.Package, Test: parent}
+				if parentRow, ok := rowsByKey[parentKey]; ok && leafDescendantCount[parentKey] == 1 {
+					parents = append(parents, parentRow)
+				}
+			}
+			var details strings.Builder
+			for i := len(parents) - 1; i >= 0; i-- {
+				if parents[i].Details != "" {
+					details.WriteString(parents[i].Details)
+					details.WriteByte('\n')
+				}
+			}
+			details.WriteString(row.Details)
+			row.Details = details.String()
+		}
+		collapsed = append(collapsed, row)
+	}
+	return collapsed
 }
 
 type testFailureSummaryKey struct {

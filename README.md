@@ -113,11 +113,8 @@ If you omit `-dev-server`, integration tests connect to a server already running
 
 ### Test output and logs
 
-Unit and integration tests default to `-console-output failures`. Test output is captured while the command runs; if a
-test fails, the command prints the failed test names, bounded failure snippets, rerun commands, and relevant embedded
-dev-server warnings and errors. Complete output is always written under `.build/test-logs` at the repository root.
-Unit tests produce `unit-test.log` and `unit-test.json`. Integration tests produce `go-test.log`, `go-test.json`, and
-`combined.log`; runs using `-dev-server` also produce `dev-server.log`.
+By default, the internal build tool only reports test failures. Full test output is written to `.build/test-logs` at 
+the repository root.
 
 To stream full test and dev-server output to the console while still saving the log files, use `-console-output full`:
 
