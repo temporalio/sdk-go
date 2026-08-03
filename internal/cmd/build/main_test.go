@@ -458,6 +458,44 @@ func TestWriteStructuredTestFailureReportListsAllFailuresWhenDetailsAreOmitted(t
 	}
 }
 
+func TestWriteTestSetupFailureReportIncludesDevServerOutputAndLogLocations(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "false")
+	logDir := t.TempDir()
+	serverLogPath := filepath.Join(logDir, "dev-server.log")
+	if err := os.WriteFile(serverLogPath, []byte("server stdout\nserver stderr\nclient logger output\n"), 0666); err != nil {
+		t.Fatal(err)
+	}
+	output := testOutput{
+		logPath:         filepath.Join(logDir, "go-test.log"),
+		jsonLogPath:     filepath.Join(logDir, "go-test.json"),
+		combinedLogPath: filepath.Join(logDir, "combined.log"),
+		serverLogPath:   serverLogPath,
+		rerunCommand:    "go run . integration-test -dev-server",
+	}
+	var report bytes.Buffer
+	if err := writeTestSetupFailureReport(&report, fmt.Errorf("failed starting dev server: exit status 1"), output); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"TEST FAILURE REPORT",
+		"Integration test setup failed before Go tests ran: failed starting dev server: exit status 1",
+		"Captured dev server output:",
+		"server stdout",
+		"server stderr",
+		"client logger output",
+		"--- Complete logs ---",
+		"Combined Go and dev server: " + output.combinedLogPath,
+		"Dev server: " + output.serverLogPath,
+	} {
+		if !strings.Contains(report.String(), want) {
+			t.Fatalf("test setup failure report missing %q:\n%s", want, report.String())
+		}
+	}
+	if strings.Contains(report.String(), "Rerun failed tests") {
+		t.Fatalf("test setup failure report offered a test rerun even though no test ran:\n%s", report.String())
+	}
+}
+
 func TestCollectServerFailureContexts(t *testing.T) {
 	start := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	logPath := filepath.Join(t.TempDir(), "dev-server.log")

@@ -232,7 +232,13 @@ func (b *builder) integrationTest() error {
 			},
 		})
 		if err != nil {
-			return fmt.Errorf("failed starting dev server: %w", err)
+			startErr := fmt.Errorf("failed starting dev server: %w", err)
+			if testOutput.consoleOutput == testConsoleOutputFailures {
+				if reportErr := writeTestSetupFailureReport(testOutput.stderr, startErr, testOutput); reportErr != nil {
+					log.Printf("Failed writing test setup failure report: %v", reportErr)
+				}
+			}
+			return startErr
 		}
 		defer func() { _ = devServer.Stop() }()
 	}

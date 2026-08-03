@@ -283,6 +283,24 @@ func writeStructuredTestFailureReport(
 	return writeString(w, sb.String())
 }
 
+func writeTestSetupFailureReport(w io.Writer, setupErr error, output testOutput) error {
+	var captured strings.Builder
+	fmt.Fprintf(&captured, "Integration test setup failed before Go tests ran: %v\n", setupErr)
+	if output.serverLogPath != "" {
+		serverOutput, err := os.ReadFile(output.serverLogPath)
+		switch {
+		case err != nil:
+			fmt.Fprintf(&captured, "\nUnable to read captured dev server output: %v\n", err)
+		case len(bytes.TrimSpace(serverOutput)) == 0:
+			captured.WriteString("\nNo dev server output was captured.\n")
+		default:
+			captured.WriteString("\nCaptured dev server output:\n\n")
+			captured.Write(serverOutput)
+		}
+	}
+	return writeStructuredTestFailureReport(w, nil, captured.String(), output)
+}
+
 func writeTestRerunCommands(sb *strings.Builder, rows []testFailureSummaryRow, rerunCommand string) {
 	if rerunCommand == "" {
 		return
