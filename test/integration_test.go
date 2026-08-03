@@ -309,7 +309,6 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	// We cannot check PollActivityTaskQueue metric because eager activities
 	// affect poll count
 	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
-	ts.Fail("intentional failure to demonstrate CI test output")
 }
 
 func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {
