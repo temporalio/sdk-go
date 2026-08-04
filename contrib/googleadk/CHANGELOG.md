@@ -22,9 +22,9 @@ or Security.
   telemetry passes through unchanged. Spans still open when their workflow leaves the
   worker are truncated (sticky-cache eviction) or lost (worker shutdown/crash) rather
   than duplicated — see "Telemetry and replay" in the README for the exact contract.
-- `NewPlugin` workers log a best-effort warning at worker start when a global
-  OpenTelemetry provider is a raw OTel SDK provider installed without a
-  replay-safe wrapper.
+- `NewPlugin` logs a best-effort warning at worker start and workflow replayer
+  creation when a global OpenTelemetry provider is a raw OTel SDK provider
+  installed without a replay-safe wrapper.
 
 ## [0.2.0] - 2026-07-22
 

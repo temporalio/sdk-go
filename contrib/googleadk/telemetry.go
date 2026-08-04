@@ -309,8 +309,8 @@ func isRawOTelSDKProvider(p any) bool {
 // sets a global more than once the provider visible here is not necessarily
 // the one ADK's package-init capture went through. A raw SDK provider
 // installed once and never wrapped, the realistic misconfiguration, is
-// recognized. NewPlugin runs this at worker start against the OTel process
-// globals.
+// recognized. NewPlugin runs this at worker start and workflow replayer
+// creation against the OTel process globals.
 func warnOnNonReplaySafeTelemetryProviders(logger log.Logger, tracerProvider, loggerProvider, meterProvider any) {
 	warn := func(global, wrapper string, p any) {
 		if !isRawOTelSDKProvider(p) {

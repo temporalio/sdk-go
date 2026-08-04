@@ -363,8 +363,9 @@ func main() {
 }
 ```
 
-Workers built with `googleadk.NewPlugin` log a best-effort warning at worker
-start when a global provider is a raw OTel SDK provider installed unwrapped.
+`googleadk.NewPlugin` logs a best-effort warning at worker start and at
+workflow replayer creation when a global provider is a raw OTel SDK provider
+installed unwrapped.
 Only that positively-recognized case warns; wrapped, no-op, never-set, and
 custom providers stay silent. The check is best-effort — the OTel global proxy
 binds its delegate on the first `Set*Provider` call permanently, so it cannot
