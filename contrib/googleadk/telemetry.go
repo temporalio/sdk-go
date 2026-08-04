@@ -3,13 +3,12 @@ package googleadk
 import (
 	"context"
 	"fmt"
-	"reflect"
-	"strings"
 
 	otellog "go.opentelemetry.io/otel/log"
-	lognoop "go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/metric"
-	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
@@ -288,66 +287,31 @@ func (g replaySafeFloat64Gauge) Record(ctx context.Context, v float64, opts ...m
 	g.Float64Gauge.Record(ctx, v, opts...)
 }
 
-// telemetryProviderSafety classifies a global OTel provider for the
-// best-effort worker-start warning NewPlugin emits. The classification is
-// heuristic: the OTel global proxy binds its delegate on the FIRST
-// Set*Provider call permanently, so in a process that sets a global more than
-// once the provider visible here is not necessarily the one ADK's
-// package-init capture went through (raw-then-wrapper reads as safe,
-// wrapper-then-raw as unsafe). Single-Set configurations — installing raw
-// providers and never wrapping, the realistic misconfiguration — classify
-// correctly.
-type telemetryProviderSafety int
-
-const (
-	telemetryProviderReplaySafe telemetryProviderSafety = iota
-	telemetryProviderUnknown
-	telemetryProviderNotReplaySafe
-)
-
-var (
-	noopTracerProviderType = reflect.TypeOf(noop.TracerProvider{})
-	noopLoggerProviderType = reflect.TypeOf(lognoop.LoggerProvider{})
-	noopMeterProviderType  = reflect.TypeOf(metricnoop.MeterProvider{})
-	//lint:ignore SA1019 the classifier must recognize the deprecated noop provider users may still install
-	deprecatedNoopTracerProviderType = reflect.TypeOf(trace.NewNoopTracerProvider())
-)
-
-func classifyTelemetryProvider(p any) telemetryProviderSafety {
+// isRawOTelSDKProvider reports whether p is one of the concrete OTel SDK
+// provider types installed unwrapped — the only providers positively known to
+// record everything replaying workflow code re-emits.
+func isRawOTelSDKProvider(p any) bool {
 	switch p.(type) {
-	case nil:
-		return telemetryProviderUnknown
-	case replaySafeTracerProvider, replaySafeLoggerProvider, replaySafeMeterProvider:
-		return telemetryProviderReplaySafe
+	case *sdktrace.TracerProvider, *sdklog.LoggerProvider, *sdkmetric.MeterProvider:
+		return true
 	}
-	t := reflect.TypeOf(p)
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	switch t {
-	// Noop providers (pointer-wrapped or not) emit nothing, so replay cannot
-	// inflate anything. The deprecated trace.NewNoopTracerProvider returns an
-	// unexported type, hence classification by reflect.Type.
-	case noopTracerProviderType, noopLoggerProviderType, noopMeterProviderType, deprecatedNoopTracerProviderType:
-		return telemetryProviderReplaySafe
-	}
-	// The never-set global proxy is a noop until its one-shot delegate binds,
-	// and whether the eventual delegate will be replay-safe is undecidable
-	// here, so it stays silent rather than risking a false warning.
-	pkg := t.PkgPath()
-	if strings.HasPrefix(pkg, "go.opentelemetry.io/otel") && strings.HasSuffix(pkg, "/internal/global") {
-		return telemetryProviderUnknown
-	}
-	return telemetryProviderNotReplaySafe
+	return false
 }
 
-// warnOnNonReplaySafeTelemetryProviders logs one warning per provider that is
-// positively classified as not replay-safe; the replay-safe wrappers, noop
-// providers, and the never-set global proxies stay silent. NewPlugin runs it
-// at worker start against the OTel process globals.
+// warnOnNonReplaySafeTelemetryProviders logs one warning per global provider
+// that is a raw OTel SDK provider; everything it cannot positively classify —
+// the replay-safe wrappers, noop providers, the never-set global proxies, and
+// custom or wrapping providers — stays silent rather than risking a false
+// warning. Best-effort by construction: the OTel global proxy binds its
+// delegate on the FIRST Set*Provider call permanently, so in a process that
+// sets a global more than once the provider visible here is not necessarily
+// the one ADK's package-init capture went through. A raw SDK provider
+// installed once and never wrapped, the realistic misconfiguration, is
+// recognized. NewPlugin runs this at worker start against the OTel process
+// globals.
 func warnOnNonReplaySafeTelemetryProviders(logger log.Logger, tracerProvider, loggerProvider, meterProvider any) {
 	warn := func(global, wrapper string, p any) {
-		if classifyTelemetryProvider(p) != telemetryProviderNotReplaySafe {
+		if !isRawOTelSDKProvider(p) {
 			return
 		}
 		logger.Warn("The global OpenTelemetry "+global+" is not replay-safe: ADK emits telemetry through it from workflow code, and every history replay will re-emit one full copy. Wrap it with googleadk."+wrapper+" and install the wrapper as the first global provider set in the process; see \"Telemetry and replay\" in the contrib/googleadk README.",

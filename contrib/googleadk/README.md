@@ -364,12 +364,13 @@ func main() {
 ```
 
 Workers built with `googleadk.NewPlugin` log a best-effort warning at worker
-start when a global provider is recognizably not replay-safe (the wrappers,
-no-op providers, and the never-set global proxies stay silent). The check is
-heuristic — the OTel global proxy binds its delegate on the first
-`Set*Provider` call permanently, so it cannot see through a process that sets
-a global more than once — but a raw provider installed once and never wrapped,
-the realistic misconfiguration, is classified correctly.
+start when a global provider is a raw OTel SDK provider installed unwrapped.
+Only that positively-recognized case warns; wrapped, no-op, never-set, and
+custom providers stay silent. The check is best-effort — the OTel global proxy
+binds its delegate on the first `Set*Provider` call permanently, so it cannot
+see through a process that sets a global more than once — but a raw SDK
+provider installed once and never wrapped, the realistic misconfiguration, is
+recognized.
 
 With the wrappers installed, replays add nothing. Point telemetry (log events,
 metric recordings) is recorded on first execution, **at-least-once** rather

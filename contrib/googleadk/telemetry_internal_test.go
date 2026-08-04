@@ -1,6 +1,6 @@
 package googleadk
 
-// Unit tests for the best-effort provider classifier behind the worker-start
+// Unit tests for the best-effort raw-provider check behind the worker-start
 // warning. The unbound global proxies are captured at binary init: the OTel
 // proxy binds its delegate on the first Set*Provider call permanently, and
 // telemetry_test.go installs real globals during the run, so reading the
@@ -32,32 +32,36 @@ var (
 	unboundProxyMeterProvider  = otel.GetMeterProvider()
 )
 
-func TestClassifyTelemetryProvider(t *testing.T) {
+// customTracerProvider stands in for a user's own provider implementation:
+// not recognizable as a raw SDK provider even when it wraps one.
+type customTracerProvider struct{ trace.TracerProvider }
+
+func TestIsRawOTelSDKProvider(t *testing.T) {
 	cases := []struct {
 		name     string
 		provider any
-		want     telemetryProviderSafety
+		want     bool
 	}{
-		{"replay-safe tracer wrapper", NewReplaySafeTracerProvider(tracenoop.NewTracerProvider()), telemetryProviderReplaySafe},
-		{"replay-safe logger wrapper", NewReplaySafeLoggerProvider(lognoop.NewLoggerProvider()), telemetryProviderReplaySafe},
-		{"replay-safe meter wrapper", NewReplaySafeMeterProvider(metricnoop.NewMeterProvider()), telemetryProviderReplaySafe},
-		{"noop tracer provider", tracenoop.NewTracerProvider(), telemetryProviderReplaySafe},
-		{"noop logger provider", lognoop.NewLoggerProvider(), telemetryProviderReplaySafe},
-		{"noop meter provider", metricnoop.NewMeterProvider(), telemetryProviderReplaySafe},
-		{"pointer to noop tracer provider", &tracenoop.TracerProvider{}, telemetryProviderReplaySafe},
+		{"raw SDK tracer provider", sdktrace.NewTracerProvider(), true},
+		{"raw SDK logger provider", sdklog.NewLoggerProvider(), true},
+		{"raw SDK meter provider", sdkmetric.NewMeterProvider(), true},
+		{"replay-safe tracer wrapper", NewReplaySafeTracerProvider(sdktrace.NewTracerProvider()), false},
+		{"replay-safe logger wrapper", NewReplaySafeLoggerProvider(sdklog.NewLoggerProvider()), false},
+		{"replay-safe meter wrapper", NewReplaySafeMeterProvider(sdkmetric.NewMeterProvider()), false},
+		{"noop tracer provider", tracenoop.NewTracerProvider(), false},
+		{"noop logger provider", lognoop.NewLoggerProvider(), false},
+		{"noop meter provider", metricnoop.NewMeterProvider(), false},
 		//lint:ignore SA1019 users may still install the deprecated noop provider; it must not draw a warning
-		{"deprecated otel noop tracer provider", trace.NewNoopTracerProvider(), telemetryProviderReplaySafe},
-		{"unbound global proxy tracer provider", unboundProxyTracerProvider, telemetryProviderUnknown},
-		{"unbound global proxy logger provider", unboundProxyLoggerProvider, telemetryProviderUnknown},
-		{"unbound global proxy meter provider", unboundProxyMeterProvider, telemetryProviderUnknown},
-		{"nil", nil, telemetryProviderUnknown},
-		{"raw SDK tracer provider", sdktrace.NewTracerProvider(), telemetryProviderNotReplaySafe},
-		{"raw SDK logger provider", sdklog.NewLoggerProvider(), telemetryProviderNotReplaySafe},
-		{"raw SDK meter provider", sdkmetric.NewMeterProvider(), telemetryProviderNotReplaySafe},
+		{"deprecated otel noop tracer provider", trace.NewNoopTracerProvider(), false},
+		{"unbound global proxy tracer provider", unboundProxyTracerProvider, false},
+		{"unbound global proxy logger provider", unboundProxyLoggerProvider, false},
+		{"unbound global proxy meter provider", unboundProxyMeterProvider, false},
+		{"custom provider wrapping a raw SDK provider", customTracerProvider{sdktrace.NewTracerProvider()}, false},
+		{"nil", nil, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.want, classifyTelemetryProvider(tc.provider))
+			assert.Equal(t, tc.want, isRawOTelSDKProvider(tc.provider))
 		})
 	}
 }
