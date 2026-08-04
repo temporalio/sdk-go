@@ -124,13 +124,15 @@ func (l replaySafeLogger) Enabled(ctx context.Context, param otellog.EnabledPara
 // The pinned adk-go emits no OTel metrics yet (meter-provider init is upstream
 // TODO(#479)), so today this wrapper matters for workflow-side metrics your own
 // code records through the global meter; once ADK metrics arrive they are
-// covered too. Install it as the FIRST global meter provider in the process,
-// before any package init captures the global proxy:
+// covered too. Install it as the FIRST global meter provider in the process:
 //
 //	otel.SetMeterProvider(googleadk.NewReplaySafeMeterProvider(realProvider))
 //
-// Workflow-side recordings happen on first execution only (the
-// workflow.GetMetricsHandler semantics); replays add nothing.
+// The OTel global proxy binds its delegate on the first SetMeterProvider call
+// only — if some other provider is installed first, a meter captured through
+// the proxy bypasses this wrapper permanently. Workflow-side recordings happen
+// on first execution only (the workflow.GetMetricsHandler semantics); replays
+// add nothing.
 func NewReplaySafeMeterProvider(inner metric.MeterProvider) metric.MeterProvider {
 	return replaySafeMeterProvider{MeterProvider: inner}
 }
