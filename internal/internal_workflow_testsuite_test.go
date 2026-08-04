@@ -826,8 +826,14 @@ func (s *WorkflowTestSuiteUnitTest) Test_MutableSideEffect_HonorsEqualsFunc() {
 			func(ctx Context) interface{} { return 10 }, neverEqual))
 		changedSecond := get(MutableSideEffect(ctx, "changed",
 			func(ctx Context) interface{} { return 20 }, neverEqual))
+		// The previous call must have stored 20 as the new baseline. With equals
+		// true, this returns that stored baseline (20), not the newly computed 30.
+		// An implementation that returns the changed value but forgets to store it
+		// would keep a stale baseline (10) and return 10 here.
+		changedThird := get(MutableSideEffect(ctx, "changed",
+			func(ctx Context) interface{} { return 30 }, alwaysEqual))
 
-		return []int{pinnedFirst, pinnedSecond, changedFirst, changedSecond}, nil
+		return []int{pinnedFirst, pinnedSecond, changedFirst, changedSecond, changedThird}, nil
 	}
 
 	env := s.NewTestWorkflowEnvironment()
@@ -837,7 +843,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MutableSideEffect_HonorsEqualsFunc() {
 	s.NoError(env.GetWorkflowError())
 	var result []int
 	s.NoError(env.GetWorkflowResult(&result))
-	s.Equal([]int{1, 1, 10, 20}, result)
+	s.Equal([]int{1, 1, 10, 20, 20}, result)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LongRunningSideEffect() {
