@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strings"
 	"unicode/utf8"
@@ -16,7 +17,8 @@ import (
 )
 
 const (
-	defaultMaxPayloadSize = 50 * 1024 * 1024 // 50 MiB
+	defaultMaxPayloadSize  = 50 * 1024 * 1024 // 50 MiB
+	defaultMaxRetrieveSize = 50 * 1024 * 1024 // 50 MiB
 	driverType            = "gcp.gcsdriver"
 	defaultDriverName     = "gcp.gcsdriver"
 	hashAlgorithm         = "sha256"
@@ -29,6 +31,10 @@ const (
 	claimKeyHashAlgorithm = "hash_algorithm"
 	claimKeyHashValue     = "hash_value"
 )
+
+// ErrPayloadTooLarge is returned when a retrieved object exceeds the
+// configured MaxRetrieveSize.
+var ErrPayloadTooLarge = errors.New("downloaded payload exceeds size limit")
 
 // BucketFunc resolves the target GCS bucket for a given payload. Use
 // StaticBucket for a fixed bucket name.
@@ -61,15 +67,22 @@ type Options struct {
 	// MaxPayloadSize is the maximum serialized payload size in bytes that
 	// the driver will accept. Defaults to 50 MiB.
 	MaxPayloadSize int
+
+	// MaxRetrieveSize is the maximum bytes the driver will read from
+	// external storage per payload on the retrieve path. Objects larger
+	// than this are rejected without being fully read into memory.
+	// Defaults to max(MaxPayloadSize, 50 MiB).
+	MaxRetrieveSize int
 }
 
 // gcsStorageDriver implements converter.StorageDriver by storing payloads in
 // Google Cloud Storage using content-addressable keys based on SHA-256 hashes.
 type gcsStorageDriver struct {
-	client         Client
-	bucketFunc     BucketFunc
-	driverName     string
-	maxPayloadSize int
+	client          Client
+	bucketFunc      BucketFunc
+	driverName      string
+	maxPayloadSize  int
+	maxRetrieveSize int
 }
 
 // Compile-time check that gcsStorageDriver implements converter.StorageDriver.
@@ -96,11 +109,19 @@ func NewDriver(opts Options) (converter.StorageDriver, error) {
 	if maxSize < 0 {
 		return nil, fmt.Errorf("MaxPayloadSize must be positive, got %d", maxSize)
 	}
+	maxRetrieve := opts.MaxRetrieveSize
+	if maxRetrieve == 0 {
+		maxRetrieve = max(maxSize, defaultMaxRetrieveSize)
+	}
+	if maxRetrieve < 0 {
+		return nil, fmt.Errorf("MaxRetrieveSize must be positive, got %d", maxRetrieve)
+	}
 	return &gcsStorageDriver{
-		client:         opts.Client,
-		bucketFunc:     opts.Bucket,
-		driverName:     name,
-		maxPayloadSize: maxSize,
+		client:          opts.Client,
+		bucketFunc:      opts.Bucket,
+		driverName:      name,
+		maxPayloadSize:  maxSize,
+		maxRetrieveSize: maxRetrieve,
 	}, nil
 }
 
@@ -194,9 +215,23 @@ func (d *gcsStorageDriver) Retrieve(
 				return fmt.Errorf("claim missing field %q", claimKeyKey)
 			}
 
-			data, err := d.client.GetObject(gctx, bucket, key)
+			reader, err := d.client.GetObject(gctx, bucket, key)
 			if err != nil {
 				return fmt.Errorf("download failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
+			}
+			data, err := io.ReadAll(io.LimitReader(reader, int64(d.maxRetrieveSize)+1))
+			closeErr := reader.Close()
+			if err != nil {
+				return fmt.Errorf("download failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("download failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), closeErr)
+			}
+			if len(data) > d.maxRetrieveSize {
+				return fmt.Errorf(
+					"%w: object [bucket=%s, key=%s] exceeds MaxRetrieveSize of %d bytes",
+					ErrPayloadTooLarge, bucket, key, d.maxRetrieveSize,
+				)
 			}
 
 			algo, ok := c.ClaimData[claimKeyHashAlgorithm]

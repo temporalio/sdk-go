@@ -82,6 +82,7 @@ Characters outside S3's safe set (alphanumerics and `!-_.*'()`) are percent-enco
 - Identical serialized bytes within the same Namespace and Workflow (or Standalone Activity) share the same S3 object — the key is content-addressable within that scope. The same bytes used across different Workflows or Namespaces produce distinct S3 objects because the key includes the Namespace and Workflow/Standalone Activity identifiers.
 - Only payloads at or above `ExternalStorage.PayloadSizeThreshold` (default: 256 KiB) are offloaded; smaller payloads are stored inline. Set `ExternalStorage.PayloadSizeThreshold` to `0` or leave unset to use the default threshold. To store all payloads in external storage, set `ExternalStorage.PayloadSizeThreshold` to `1`.
 - `Options.MaxPayloadSize` (default: 50 MiB) sets a hard upper limit on the serialized size of any single payload. An error is returned at store time if a payload exceeds this limit.
+- `Options.MaxRetrieveSize` (default: max(`MaxPayloadSize`, 50 MiB)) sets a hard upper limit on the bytes read from external storage per payload during retrieval. An error is returned if an object exceeds this limit before being fully read into memory.
 - Override `Options.DriverName` only when registering multiple `s3driver` instances with distinct configurations under the same `ExternalStorage.Drivers` list.
 
 ## Dynamic Bucket Selection
@@ -127,9 +128,11 @@ To use a different AWS SDK version or an S3-compatible storage service, implemen
 type Client interface {
     PutObject(ctx context.Context, bucket, key string, data []byte) error
     ObjectExists(ctx context.Context, bucket, key string) (bool, error)
-    GetObject(ctx context.Context, bucket, key string) ([]byte, error)
+    GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error)
     Describe() map[string]string
 }
 ```
+
+If you previously implemented a custom `Client` returning `([]byte, error)` from `GetObject`, update the signature to return `(io.ReadCloser, error)`. The driver is responsible for closing the reader. If your client returns in-memory bytes, wrap them using `io.NopCloser(bytes.NewReader(data))`.
 
 Pass your implementation as `Options.Client` when calling `NewDriver`.
