@@ -303,6 +303,162 @@ func collectInt64Sum(t *testing.T, reader *sdkmetric.ManualReader, name string) 
 }
 
 // ----------------------------------------------------------------------------
+// Call-counting doubles for the per-kind gate coverage. SDK aggregation cannot
+// observe every suppressed recording (a gauge re-recording its last value
+// leaves sums, counts, and data points unchanged), so these count the gated
+// operations — Add/Record/Emit/Enabled — that reach the inner provider.
+// Instrument construction is deliberately not counted: the wrappers delegate
+// constructors unconditionally, so those calls recur on every replay.
+// ----------------------------------------------------------------------------
+
+type callCounts struct {
+	mu sync.Mutex
+	m  map[string]int
+}
+
+func newCallCounts() *callCounts { return &callCounts{m: map[string]int{}} }
+
+func (c *callCounts) inc(name string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.m[name]++
+}
+
+func (c *callCounts) snapshot() map[string]int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	out := make(map[string]int, len(c.m))
+	for k, v := range c.m {
+		out[k] = v
+	}
+	return out
+}
+
+type countingLoggerProvider struct {
+	otellog.LoggerProvider
+	counts *callCounts
+}
+
+func (p countingLoggerProvider) Logger(name string, opts ...otellog.LoggerOption) otellog.Logger {
+	return countingLogger{Logger: p.LoggerProvider.Logger(name, opts...), counts: p.counts}
+}
+
+type countingLogger struct {
+	otellog.Logger
+	counts *callCounts
+}
+
+func (l countingLogger) Emit(ctx context.Context, r otellog.Record) {
+	l.counts.inc("Logger.Emit")
+	l.Logger.Emit(ctx, r)
+}
+
+func (l countingLogger) Enabled(context.Context, otellog.EnabledParameters) bool {
+	l.counts.inc("Logger.Enabled")
+	return true
+}
+
+type countingMeterProvider struct {
+	metric.MeterProvider
+	counts *callCounts
+}
+
+func (p countingMeterProvider) Meter(name string, opts ...metric.MeterOption) metric.Meter {
+	return countingMeter{Meter: p.MeterProvider.Meter(name, opts...), counts: p.counts}
+}
+
+// countingMeter returns counting sync instruments; everything else (observables,
+// RegisterCallback) comes from the embedded noop meter.
+type countingMeter struct {
+	metric.Meter
+	counts *callCounts
+}
+
+func (m countingMeter) Int64Counter(string, ...metric.Int64CounterOption) (metric.Int64Counter, error) {
+	return countingInt64Adder{counts: m.counts, kind: "Int64Counter"}, nil
+}
+
+func (m countingMeter) Int64UpDownCounter(string, ...metric.Int64UpDownCounterOption) (metric.Int64UpDownCounter, error) {
+	return countingInt64Adder{counts: m.counts, kind: "Int64UpDownCounter"}, nil
+}
+
+func (m countingMeter) Int64Histogram(string, ...metric.Int64HistogramOption) (metric.Int64Histogram, error) {
+	return countingInt64Recorder{counts: m.counts, kind: "Int64Histogram"}, nil
+}
+
+func (m countingMeter) Int64Gauge(string, ...metric.Int64GaugeOption) (metric.Int64Gauge, error) {
+	return countingInt64Recorder{counts: m.counts, kind: "Int64Gauge"}, nil
+}
+
+func (m countingMeter) Float64Counter(string, ...metric.Float64CounterOption) (metric.Float64Counter, error) {
+	return countingFloat64Adder{counts: m.counts, kind: "Float64Counter"}, nil
+}
+
+func (m countingMeter) Float64UpDownCounter(string, ...metric.Float64UpDownCounterOption) (metric.Float64UpDownCounter, error) {
+	return countingFloat64Adder{counts: m.counts, kind: "Float64UpDownCounter"}, nil
+}
+
+func (m countingMeter) Float64Histogram(string, ...metric.Float64HistogramOption) (metric.Float64Histogram, error) {
+	return countingFloat64Recorder{counts: m.counts, kind: "Float64Histogram"}, nil
+}
+
+func (m countingMeter) Float64Gauge(string, ...metric.Float64GaugeOption) (metric.Float64Gauge, error) {
+	return countingFloat64Recorder{counts: m.counts, kind: "Float64Gauge"}, nil
+}
+
+// The counter/up-down-counter and histogram/gauge interface pairs share their
+// Add/Record signatures, so one double per signature covers two kinds, told
+// apart by the kind label. Enabled is implemented (always true) rather than
+// counted: the replay-safe wrappers delegate it untouched, so inner calls
+// legitimately recur on replay.
+
+type countingInt64Adder struct {
+	metricembedded.Int64Counter
+	metricembedded.Int64UpDownCounter
+	counts *callCounts
+	kind   string
+}
+
+func (i countingInt64Adder) Add(context.Context, int64, ...metric.AddOption) { i.counts.inc(i.kind) }
+func (i countingInt64Adder) Enabled(context.Context) bool                    { return true }
+
+type countingFloat64Adder struct {
+	metricembedded.Float64Counter
+	metricembedded.Float64UpDownCounter
+	counts *callCounts
+	kind   string
+}
+
+func (i countingFloat64Adder) Add(context.Context, float64, ...metric.AddOption) {
+	i.counts.inc(i.kind)
+}
+func (i countingFloat64Adder) Enabled(context.Context) bool { return true }
+
+type countingInt64Recorder struct {
+	metricembedded.Int64Histogram
+	metricembedded.Int64Gauge
+	counts *callCounts
+	kind   string
+}
+
+func (i countingInt64Recorder) Record(context.Context, int64, ...metric.RecordOption) {
+	i.counts.inc(i.kind)
+}
+func (i countingInt64Recorder) Enabled(context.Context) bool { return true }
+
+type countingFloat64Recorder struct {
+	metricembedded.Float64Histogram
+	metricembedded.Float64Gauge
+	counts *callCounts
+	kind   string
+}
+
+func (i countingFloat64Recorder) Record(context.Context, float64, ...metric.RecordOption) {
+	i.counts.inc(i.kind)
+}
+func (i countingFloat64Recorder) Enabled(context.Context) bool { return true }
+
+// ----------------------------------------------------------------------------
 // Workflow under test: one ADK agent with one in-workflow function tool driven
 // by runner.Run (the adapter's documented usage), plus a workflow-side global
 // meter recording standing in for the metrics adk-go will emit once upstream
@@ -379,6 +535,72 @@ func telemetryAgentWorkflow(ctx workflow.Context, in telemetryRunInput) (telemet
 	return res, nil
 }
 
+// gateProbeCalls are the gated operations instrumentGateWorkflow drives: one
+// per synchronous instrument kind plus both gated Logger methods.
+var gateProbeCalls = []string{
+	"Int64Counter", "Int64UpDownCounter", "Int64Histogram", "Int64Gauge",
+	"Float64Counter", "Float64UpDownCounter", "Float64Histogram", "Float64Gauge",
+	"Logger.Emit", "Logger.Enabled",
+}
+
+// instrumentGateWorkflow exercises every gated operation once through the
+// process-global providers, then sleeps so the recording workflow task is not
+// the history's final one — replayer passes replay it with IsReplaying true
+// regardless of how the replayer treats the last task.
+func instrumentGateWorkflow(ctx workflow.Context) error {
+	adkCtx := googleadk.NewContext(ctx)
+	meter := otel.Meter("gate-probe")
+
+	ic, err := meter.Int64Counter("gate_int64_counter")
+	if err != nil {
+		return err
+	}
+	ic.Add(adkCtx, 1)
+	iud, err := meter.Int64UpDownCounter("gate_int64_updown")
+	if err != nil {
+		return err
+	}
+	iud.Add(adkCtx, 2)
+	ih, err := meter.Int64Histogram("gate_int64_histogram")
+	if err != nil {
+		return err
+	}
+	ih.Record(adkCtx, 3)
+	ig, err := meter.Int64Gauge("gate_int64_gauge")
+	if err != nil {
+		return err
+	}
+	ig.Record(adkCtx, 4)
+	fc, err := meter.Float64Counter("gate_float64_counter")
+	if err != nil {
+		return err
+	}
+	fc.Add(adkCtx, 5)
+	fud, err := meter.Float64UpDownCounter("gate_float64_updown")
+	if err != nil {
+		return err
+	}
+	fud.Add(adkCtx, 6)
+	fh, err := meter.Float64Histogram("gate_float64_histogram")
+	if err != nil {
+		return err
+	}
+	fh.Record(adkCtx, 7)
+	fg, err := meter.Float64Gauge("gate_float64_gauge")
+	if err != nil {
+		return err
+	}
+	fg.Record(adkCtx, 8)
+
+	logger := otelloglobal.GetLoggerProvider().Logger("gate-probe")
+	_ = logger.Enabled(adkCtx, otellog.EnabledParameters{})
+	var rec otellog.Record
+	rec.SetEventName("gate-event")
+	logger.Emit(adkCtx, rec)
+
+	return workflow.Sleep(ctx, time.Millisecond)
+}
+
 // countingModel wraps FakeModel to count REAL model invocations, which happen
 // only inside the InvokeModel Activity. This is the inverse control: replays
 // resolve the Activity from history without invoking the model.
@@ -433,12 +655,12 @@ func runTelemetryScenario(t *testing.T, c client.Client, taskQueue string) (cm *
 	return cm, run.GetID(), run.GetRunID()
 }
 
-func replayTelemetryHistory(t *testing.T, c client.Client, wfID, runID string) {
+func replayTelemetryHistory(t *testing.T, c client.Client, wf any, wfID, runID string) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	replayer := worker.NewWorkflowReplayer()
-	replayer.RegisterWorkflow(telemetryAgentWorkflow)
+	replayer.RegisterWorkflow(wf)
 	for i := 0; i < telemetryReplays; i++ {
 		require.NoError(t, replayer.ReplayWorkflowExecution(ctx, c.WorkflowService(), nil, "default", workflow.Execution{
 			ID:    wfID,
@@ -484,7 +706,7 @@ func TestReplayTelemetry(t *testing.T) {
 		require.EqualValues(t, 100, baseline.counterValue,
 			"the workflow-side global-meter recording must survive the gate on first execution")
 
-		replayTelemetryHistory(t, c, wfID, runID)
+		replayTelemetryHistory(t, c, telemetryAgentWorkflow, wfID, runID)
 
 		final := capture.snapshot(t)
 		require.Equal(t, baseline.spansByName, final.spansByName, "replays must add zero spans")
@@ -514,7 +736,7 @@ func TestReplayTelemetry(t *testing.T) {
 		require.GreaterOrEqual(t, baseline.spansByName["generate_content fake-model"], 2)
 		require.GreaterOrEqual(t, baseline.counterValue, int64(100))
 
-		replayTelemetryHistory(t, c, wfID, runID)
+		replayTelemetryHistory(t, c, telemetryAgentWorkflow, wfID, runID)
 
 		final := capture.snapshot(t)
 		perReplay := map[string]int{
@@ -536,6 +758,50 @@ func TestReplayTelemetry(t *testing.T) {
 		}
 		require.EqualValues(t, int64(telemetryReplays)*100, final.counterValue-baseline.counterValue)
 		require.EqualValues(t, 2, cm.calls.Load(), "replays must not invoke the model")
+	})
+
+	// The subtests above exercise only the operations the agent scenario emits
+	// (spans, log Emit, Int64Counter.Add), but each of the eight sync instrument
+	// gates and Logger.Enabled's replay branch is an independent code path. This
+	// subtest drives all of them through the gated globals — live once, so every
+	// operation reaches the inner provider, then replayed, when none may reach
+	// it again — observed with call-counting doubles because SDK aggregation
+	// cannot see every suppressed recording.
+	t.Run("GateCoversEveryInstrumentKindAndEnabled", func(t *testing.T) {
+		counts := newCallCounts()
+		pointGlobalsAt(t,
+			noopTracerProvider,
+			googleadk.NewReplaySafeLoggerProvider(countingLoggerProvider{LoggerProvider: noopLoggerProvider, counts: counts}),
+			googleadk.NewReplaySafeMeterProvider(countingMeterProvider{MeterProvider: noopMeterProvider, counts: counts}),
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		t.Cleanup(cancel)
+		const taskQueue = "adk-telemetry-gate-kinds"
+		w := worker.New(c, taskQueue, worker.Options{})
+		w.RegisterWorkflow(instrumentGateWorkflow)
+		require.NoError(t, w.Start())
+		t.Cleanup(w.Stop)
+
+		run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+			ID:        taskQueue + "-" + time.Now().Format("150405.000"),
+			TaskQueue: taskQueue,
+		}, instrumentGateWorkflow)
+		require.NoError(t, err)
+		require.NoError(t, run.Get(ctx, nil))
+
+		// At-least-once: a workflow task retry can legitimately repeat live
+		// recordings, so the baseline asserts presence, not an exact count.
+		baseline := counts.snapshot()
+		for _, name := range gateProbeCalls {
+			require.GreaterOrEqualf(t, baseline[name], 1,
+				"%s must reach the inner provider on live execution", name)
+		}
+
+		replayTelemetryHistory(t, c, instrumentGateWorkflow, run.GetID(), run.GetRunID())
+
+		require.Equal(t, baseline, counts.snapshot(),
+			"replays must not reach the inner provider through any sync instrument, Emit, or Enabled")
 	})
 }
 
