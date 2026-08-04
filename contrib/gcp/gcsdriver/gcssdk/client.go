@@ -45,13 +45,12 @@ func (c *gcsClient) ObjectExists(ctx context.Context, bucket, key string) (bool,
 	return true, nil
 }
 
-func (c *gcsClient) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
+func (c *gcsClient) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
 	r, err := c.client.Bucket(bucket).Object(key).NewReader(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer r.Close()
-	return io.ReadAll(r)
+	return r, nil
 }
 
 func (c *gcsClient) Describe() map[string]string {

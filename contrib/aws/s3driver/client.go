@@ -1,6 +1,9 @@
 package s3driver
 
-import "context"
+import (
+	"context"
+	"io"
+)
 
 // Client is the interface that the driver uses to interact with S3. It covers
 // the three operations the driver needs: put, existence check, and get.
@@ -21,9 +24,10 @@ type Client interface {
 	// network or permission failure).
 	ObjectExists(ctx context.Context, bucket, key string) (bool, error)
 
-	// GetObject downloads and returns the data stored at the given bucket and
-	// key. It must return a non-nil error if the object does not exist.
-	GetObject(ctx context.Context, bucket, key string) ([]byte, error)
+	// GetObject downloads and returns a reader over the object data stored at
+	// the given bucket and key. The caller is responsible for closing the reader
+	// when done. It must return a non-nil error if the object does not exist.
+	GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error)
 
 	// Describe returns diagnostic metadata about the client configuration,
 	// such as {"client_region": "us-west-2"}, that the driver appends to error

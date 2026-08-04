@@ -2,6 +2,7 @@ package gcssdk_test
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	"github.com/fsouza/fake-gcs-server/fakestorage"
@@ -36,7 +37,10 @@ func TestGcsSdkClient_PutGetRoundTrip(t *testing.T) {
 	err := client.PutObject(ctx, "test-bucket", "my/key", data)
 	require.NoError(t, err)
 
-	got, err := client.GetObject(ctx, "test-bucket", "my/key")
+	gotReader, err := client.GetObject(ctx, "test-bucket", "my/key")
+	require.NoError(t, err)
+	defer gotReader.Close()
+	got, err := io.ReadAll(gotReader)
 	require.NoError(t, err)
 	assert.Equal(t, data, got)
 }
@@ -108,7 +112,10 @@ func TestGcsSdkClient_LargeObject(t *testing.T) {
 	err := client.PutObject(ctx, "test-bucket", "large-obj", data)
 	require.NoError(t, err)
 
-	got, err := client.GetObject(ctx, "test-bucket", "large-obj")
+	gotReader, err := client.GetObject(ctx, "test-bucket", "large-obj")
+	require.NoError(t, err)
+	defer gotReader.Close()
+	got, err := io.ReadAll(gotReader)
 	require.NoError(t, err)
 	assert.Equal(t, data, got)
 }

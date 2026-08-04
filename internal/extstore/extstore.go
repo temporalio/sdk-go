@@ -124,8 +124,11 @@ type StorageDriver interface {
 	Store(ctx StorageDriverStoreContext, payloads []*commonpb.Payload) ([]StorageDriverClaim, error)
 
 	// Retrieve fetches the payloads identified by the given claims, returning
-	// one payload per claim in the same order. It must not modify the input
-	// claims.
+	// one payload per claim in the same order. Implementations must bound the
+	// total bytes read from external storage per payload to prevent unbounded
+	// memory allocation from malformed or oversized objects. The SDK cannot
+	// enforce this bound after the driver returns because the data is already
+	// materialized in memory. It must not modify the input claims.
 	Retrieve(ctx StorageDriverRetrieveContext, claims []StorageDriverClaim) ([]*commonpb.Payload, error)
 }
 
