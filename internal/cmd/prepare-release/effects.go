@@ -71,7 +71,8 @@ func (eff RealWorld) updateFile(path string, update func(string) (string, error)
 // DRY RUN
 
 type DryRun struct {
-	Output io.Writer
+	Output  io.Writer
+	TempDir string
 }
 
 // repoRoot uses the real repository layout without mutating the filesystem.
@@ -95,16 +96,21 @@ func (DryRun) readFile(path string) (string, error) {
 	return string(data), err
 }
 
-// updateFile validates the update but reports it without writing to disk.
+// updateFile writes the proposed contents to the dry-run directory.
 func (eff DryRun) updateFile(path string, update func(string) (string, error)) error {
 	data, err := eff.readFile(path)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", path, err)
 	}
-	if _, err := update(data); err != nil {
+	updated, err := update(data)
+	if err != nil {
 		return err
 	}
-	fmt.Fprintf(eff.Output, "update %s\n", path)
+	outputPath := filepath.Join(eff.TempDir, filepath.Base(path))
+	if err := os.WriteFile(outputPath, []byte(updated), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", outputPath, err)
+	}
+	fmt.Fprintf(eff.Output, "write %s\n", outputPath)
 	return nil
 }
 

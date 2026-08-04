@@ -71,7 +71,11 @@ func run(args []string) error {
 
 	var eff Effects = RealWorld{}
 	if *dryRun {
-		eff = DryRun{Output: os.Stdout}
+		tempDir, err := os.MkdirTemp("", "prepare-release-")
+		if err != nil {
+			return fmt.Errorf("create dry-run directory: %w", err)
+		}
+		eff = DryRun{Output: os.Stdout, TempDir: tempDir}
 	}
 	root, err := eff.repoRoot()
 	if err != nil {

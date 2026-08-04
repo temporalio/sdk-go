@@ -1,12 +1,43 @@
 package main
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestDryRunWritesUpdatedFileToTempDir(t *testing.T) {
+	inputDir := t.TempDir()
+	inputPath := filepath.Join(inputDir, "version.go")
+	if err := os.WriteFile(inputPath, []byte("old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	outputDir := t.TempDir()
+	var output bytes.Buffer
+	eff := DryRun{Output: &output, TempDir: outputDir}
+	if err := eff.updateFile(inputPath, func(string) (string, error) {
+		return "new\n", nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	outputPath := filepath.Join(outputDir, "version.go")
+	got, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "new\n" {
+		t.Fatalf("unexpected dry-run file contents: %q", got)
+	}
+	if want := "write " + outputPath + "\n"; output.String() != want {
+		t.Fatalf("unexpected dry-run output: got %q, want %q", output.String(), want)
+	}
+}
 
 // HELPER TESTS
 
