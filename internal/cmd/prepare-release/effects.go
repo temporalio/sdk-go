@@ -80,14 +80,14 @@ func (DryRun) repoRoot() (string, error) {
 	return RealWorld{}.repoRoot()
 }
 
-func (eff DryRun) print(name string, args ...string) {
-	fmt.Fprintln(eff.Output, formatCommand(name, args...))
+func (eff DryRun) print(name string, args ...string) error {
+	_, err := fmt.Fprintln(eff.Output, formatCommand(name, args...))
+	return err
 }
 
 // runCommand prints the runCommand instead of executing it.
 func (eff DryRun) runCommand(_ string, name string, args ...string) (string, error) {
-	eff.print(name, args...)
-	return "", nil
+	return "", eff.print(name, args...)
 }
 
 // readFile reads input needed to validate what a dry run would update.
@@ -110,8 +110,8 @@ func (eff DryRun) updateFile(path string, update func(string) (string, error)) e
 	if err := os.WriteFile(outputPath, []byte(updated), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", outputPath, err)
 	}
-	fmt.Fprintf(eff.Output, "write %s\n", outputPath)
-	return nil
+	_, err = fmt.Fprintf(eff.Output, "write %s\n", outputPath)
+	return err
 }
 
 // MOCK WORLD
