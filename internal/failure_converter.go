@@ -267,7 +267,9 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 	} else if failure.GetServerFailureInfo() != nil {
 		err = NewServerError(message, failure.GetServerFailureInfo().GetNonRetryable(), dfc.FailureToError(failure.GetCause()))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
-		err = NewApplicationError(message, "", true, dfc.FailureToError(failure.GetCause()), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
+		resetWorkflowFailureInfo := failure.GetResetWorkflowFailureInfo()
+		lastHeartbeatDetails := newEncodedValues(resetWorkflowFailureInfo.GetLastHeartbeatDetails(), dfc.dataConverter)
+		err = NewApplicationError(message, "", true, dfc.FailureToError(failure.GetCause()), lastHeartbeatDetails)
 	} else if failure.GetActivityFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityFailureInfo()
 		err = NewActivityError(
