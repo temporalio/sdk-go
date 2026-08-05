@@ -661,6 +661,20 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagPayloadUploadDrivers, uploadPayloadMetrics.GetDriverNames(),
 		)
 	}
+	if downloadPayloadMetrics.failureCount > 0 {
+		loggerDurationKeyVals = append(loggerDurationKeyVals,
+			tagPayloadDownloadFailureCount, downloadPayloadMetrics.failureCount,
+			tagPayloadDownloadFailureDuration, downloadPayloadMetrics.failureDuration,
+			tagPayloadDownloadFailureDrivers, downloadPayloadMetrics.GetDriverNames(),
+		)
+	}
+	if uploadPayloadMetrics.failureCount > 0 {
+		loggerDurationKeyVals = append(loggerDurationKeyVals,
+			tagPayloadUploadFailureCount, uploadPayloadMetrics.failureCount,
+			tagPayloadUploadFailureDuration, uploadPayloadMetrics.failureDuration,
+			tagPayloadUploadFailureDrivers, uploadPayloadMetrics.GetDriverNames(),
+		)
+	}
 
 	taskID := fmt.Sprintf("%s:%d:%d", task.WorkflowExecution.GetRunId(), completionEventId, task.Attempt)
 	if taskDuration > 10*time.Second {
@@ -877,11 +891,13 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 }
 
 type workflowTaskStorageMetrics struct {
-	mu            sync.Mutex
-	payloadCount  int
-	totalSize     int64
-	totalDuration time.Duration
-	driverNames   map[string]struct{}
+	mu              sync.Mutex
+	payloadCount    int
+	totalSize       int64
+	totalDuration   time.Duration
+	driverNames     map[string]struct{}
+	failureCount    int
+	failureDuration time.Duration
 }
 
 func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string) {
@@ -890,6 +906,19 @@ func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, siz
 	callback.payloadCount += count
 	callback.totalSize += size
 	callback.totalDuration += duration
+	for _, name := range driverNames {
+		if callback.driverNames == nil {
+			callback.driverNames = make(map[string]struct{})
+		}
+		callback.driverNames[name] = struct{}{}
+	}
+}
+
+func (callback *workflowTaskStorageMetrics) PayloadBatchFailed(_ error, duration time.Duration, driverNames []string) {
+	callback.mu.Lock()
+	defer callback.mu.Unlock()
+	callback.failureCount++
+	callback.failureDuration += duration
 	for _, name := range driverNames {
 		if callback.driverNames == nil {
 			callback.driverNames = make(map[string]struct{})

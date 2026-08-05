@@ -96,6 +96,7 @@ func driversEqual(a, b StorageDriver) (equal bool) {
 
 type StorageOperationCallback interface {
 	PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string)
+	PayloadBatchFailed(err error, duration time.Duration, driverNames []string)
 }
 
 type contextKey string
@@ -104,6 +105,42 @@ const storageOperationCallbackContextKey contextKey = "storageOperationCallback"
 
 func WithStorageOperationCallback(ctx context.Context, cb StorageOperationCallback) context.Context {
 	return context.WithValue(ctx, storageOperationCallbackContextKey, cb)
+}
+
+// safeInvokeCompletedCallback invokes the StorageOperationCallback's success
+// method if one is present in the context. The call is wrapped in a recover()
+// to prevent a buggy callback from crashing the worker process.
+func safeInvokeCompletedCallback(ctx context.Context, count int, size int64, startTime time.Time, driverNames []string) {
+	callbackValue := ctx.Value(storageOperationCallbackContextKey)
+	if callbackValue == nil {
+		return
+	}
+	callback, ok := callbackValue.(StorageOperationCallback)
+	if !ok {
+		return
+	}
+	defer func() {
+		recover()
+	}()
+	callback.PayloadBatchCompleted(count, size, time.Since(startTime), driverNames)
+}
+
+// safeInvokeFailedCallback invokes the StorageOperationCallback's failure
+// method if one is present in the context. The call is wrapped in a recover()
+// to prevent a buggy callback from crashing the worker process.
+func safeInvokeFailedCallback(ctx context.Context, err error, startTime time.Time, driverNames []string) {
+	callbackValue := ctx.Value(storageOperationCallbackContextKey)
+	if callbackValue == nil {
+		return
+	}
+	callback, ok := callbackValue.(StorageOperationCallback)
+	if !ok {
+		return
+	}
+	defer func() {
+		recover()
+	}()
+	callback.PayloadBatchFailed(err, time.Since(startTime), driverNames)
 }
 
 const storageTargetContextKey contextKey = "storageTarget"
@@ -226,17 +263,22 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 		// No storage drivers configured at all — fail immediately with a clear error
 		// rather than passing through an unresolved reference.
 		if len(v.params.driverMap) == 0 {
-			return nil, fmt.Errorf("[TMPRL1105] Externally stored payload encountered but no storage driver is configured")
+			err := fmt.Errorf("[TMPRL1105] Externally stored payload encountered but no storage driver is configured")
+			safeInvokeFailedCallback(ctx.Context, err, startTime, driverOrder)
+			return nil, err
 		}
 
 		ref, err := payloadToStorageReference(p)
 		if err != nil {
+			safeInvokeFailedCallback(ctx.Context, err, startTime, driverOrder)
 			return nil, err
 		}
 
 		driver, ok := v.params.driverMap[ref.DriverName]
 		if !ok {
-			return nil, fmt.Errorf("no storage driver registered with name %q", ref.DriverName)
+			err := fmt.Errorf("no storage driver registered with name %q", ref.DriverName)
+			safeInvokeFailedCallback(ctx.Context, err, startTime, driverOrder)
+			return nil, err
 		}
 
 		batch, exists := driverBatches[ref.DriverName]
@@ -280,6 +322,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 		})
 	}
 	if err := eg.Wait(); err != nil {
+		safeInvokeFailedCallback(ctx.Context, err, startTime, driverOrder)
 		return nil, err
 	}
 
@@ -288,11 +331,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 		externalTotalSize += s
 	}
 
-	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
-		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
-		}
-	}
+	safeInvokeCompletedCallback(ctx.Context, externalCount, externalTotalSize, startTime, driverOrder)
 	return result, nil
 }
 
@@ -332,13 +371,17 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 
 		selected, err := callDriverSelector(v.params.driverSelector, driverCtx, p)
 		if err != nil {
-			return nil, fmt.Errorf("storage driver selector failed: %w", err)
+			err = fmt.Errorf("storage driver selector failed: %w", err)
+			safeInvokeFailedCallback(ctx.Context, err, startTime, driverOrder)
+			return nil, err
 		}
 		var driver StorageDriver
 		if selected != nil {
 			registered, ok := v.params.driverMap[selected.Name()]
 			if !ok || !driversEqual(registered, selected) {
-				return nil, fmt.Errorf("storage driver selector returned unregistered driver %q", selected.Name())
+				err := fmt.Errorf("storage driver selector returned unregistered driver %q", selected.Name())
+				safeInvokeFailedCallback(ctx.Context, err, startTime, driverOrder)
+				return nil, err
 			}
 			driver = selected
 		}
@@ -396,6 +439,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 		})
 	}
 	if err := eg.Wait(); err != nil {
+		safeInvokeFailedCallback(ctx.Context, err, startTime, driverOrder)
 		return nil, err
 	}
 
@@ -404,11 +448,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 		externalTotalSize += s
 	}
 
-	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
-		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
-		}
-	}
+	safeInvokeCompletedCallback(ctx.Context, externalCount, externalTotalSize, startTime, driverOrder)
 	return result, nil
 }
 
