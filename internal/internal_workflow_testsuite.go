@@ -234,6 +234,11 @@ type (
 		changeVersions map[string]Version
 		openSessions   map[string]*SessionInfo
 
+		// mutableSideEffect holds the last recorded value per MutableSideEffect id
+		// so the test environment can honor the user-supplied equals function the
+		// same way the real worker does (only update when the value changed).
+		mutableSideEffect map[string]*commonpb.Payloads
+
 		workflowCancelHandler func()
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
 		queryHandler          func(string, *commonpb.Payloads, *commonpb.Header) (*commonpb.Payloads, error)
@@ -330,8 +335,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		},
 		registry: r,
 
-		changeVersions: make(map[string]Version),
-		openSessions:   make(map[string]*SessionInfo),
+		changeVersions:    make(map[string]Version),
+		openSessions:      make(map[string]*SessionInfo),
+		mutableSideEffect: make(map[string]*commonpb.Payloads),
 
 		doneChannel:                 make(chan struct{}),
 		workerStopChannel:           make(chan struct{}),
@@ -3244,10 +3250,24 @@ func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{
 	return err
 }
 
-func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, _ func(a, b interface{}) bool, _ string) converter.EncodedValue {
+func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool, _ string) converter.EncodedValue {
 	mockMethod := mockMethodForMutableSideEffect
 	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
-		return newEncodedValue(env.encodeValue(f()), env.GetDataConverter())
+		// Mirror the real worker's semantics: only record a new value when the
+		// user-supplied equals function reports that the value changed; otherwise
+		// return the previously recorded value.
+		if oldValue, ok := env.mutableSideEffect[id]; ok {
+			newValue := f()
+			if isEqualMutableSideEffectValue(env.GetDataConverter(), newValue, oldValue, equals) {
+				return newEncodedValue(oldValue, env.GetDataConverter())
+			}
+			encoded := env.encodeValue(newValue)
+			env.mutableSideEffect[id] = encoded
+			return newEncodedValue(encoded, env.GetDataConverter())
+		}
+		encoded := env.encodeValue(f())
+		env.mutableSideEffect[id] = encoded
+		return newEncodedValue(encoded, env.GetDataConverter())
 	}
 
 	mockRet := env.workflowMock.MethodCalled(mockMethod, id)

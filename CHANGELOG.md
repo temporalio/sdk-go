@@ -20,8 +20,13 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
-### Added
+### Fixed
 
+- Prevent workflow task failures when an activity with a custom ID completes while its cancellation
+  command is pending.
+- `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
+  updates the recorded value when it changes, matching the real worker. Previously it ignored
+  equals and returned a freshly computed value on every call.
 - Nexus operation link propagation for stand-alone activities. When a Nexus operation handler uses
   `client.ExecuteActivity`, inbound Nexus request links are forwarded to the activity and the
   activity link returned by the server is propagated back to the Nexus operation caller.

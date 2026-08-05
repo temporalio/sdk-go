@@ -1164,13 +1164,24 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 }
 
 func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOldValue *commonpb.Payloads, equals func(a, b interface{}) bool) bool {
+	return isEqualMutableSideEffectValue(wc.GetDataConverter(), newValue, encodedOldValue, equals)
+}
+
+// isEqualMutableSideEffectValue reports whether newValue is equal to the
+// previously recorded (encoded) value for a MutableSideEffect, using the
+// user-supplied equals function. It is shared by the real worker and the test
+// environment so both honor equals identically. A nil newValue is compared by
+// its encoded form to avoid invoking equals with a nil.
+func isEqualMutableSideEffectValue(dc converter.DataConverter, newValue interface{}, encodedOldValue *commonpb.Payloads, equals func(a, b interface{}) bool) bool {
 	if newValue == nil {
-		// new value is nil
-		newEncodedValue := wc.encodeValue(nil)
+		newEncodedValue, err := dc.ToPayloads(nil)
+		if err != nil {
+			panic(err)
+		}
 		return proto.Equal(newEncodedValue, encodedOldValue)
 	}
 
-	oldValue := decodeValue(newEncodedValue(encodedOldValue, wc.GetDataConverter()), newValue)
+	oldValue := decodeValue(newEncodedValue(encodedOldValue, dc), newValue)
 	return equals(newValue, oldValue)
 }
 
