@@ -905,6 +905,163 @@ func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Failure Callback Tests
+// ---------------------------------------------------------------------------
+
+func TestRetrievalVisitor_FailureCallback_DriverError(t *testing.T) {
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	storeVisitor := NewExternalStorageVisitor(params)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	// Store a payload first.
+	refs, err := visitPayloads(context.Background(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.NoError(t, err)
+
+	// Now make the driver fail on retrieve.
+	driver.retrieveErr = errors.New("disk on fire")
+
+	cb := &testCallback{}
+	ctx := WithStorageOperationCallback(context.Background(), cb)
+	_, err = visitPayloads(ctx, retrieveVisitor, refs)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "disk on fire")
+	require.Equal(t, 1, cb.failCount)
+	require.NotNil(t, cb.failErr)
+	require.Greater(t, cb.failDuration, time.Duration(0))
+	require.Equal(t, 0, cb.count, "success callback should not have fired")
+}
+
+func TestStoreVisitor_FailureCallback_DriverError(t *testing.T) {
+	driver := newTestDriver("d")
+	driver.storeErr = errors.New("permission denied")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	cb := &testCallback{}
+	ctx := WithStorageOperationCallback(context.Background(), cb)
+	_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "permission denied")
+	require.Equal(t, 1, cb.failCount)
+	require.NotNil(t, cb.failErr)
+	require.Equal(t, 0, cb.count, "success callback should not have fired")
+}
+
+func TestRetrievalVisitor_FailureCallback_UnknownDriver(t *testing.T) {
+	// Create a storage reference pointing to a driver name that doesn't exist
+	// in the retrieval visitor's params.
+	driver := newTestDriver("known")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	// Create a reference payload for a driver named "unknown".
+	ref, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "unknown",
+		ClaimData:  map[string]string{"key": "abc"},
+	}, 100)
+	require.NoError(t, err)
+
+	cb := &testCallback{}
+	ctx := WithStorageOperationCallback(context.Background(), cb)
+	_, err = visitPayloads(ctx, retrieveVisitor, []*commonpb.Payload{ref})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `no storage driver registered with name "unknown"`)
+	require.Equal(t, 1, cb.failCount)
+	require.Equal(t, 0, cb.count)
+}
+
+func TestRetrievalVisitor_FailureCallback_NoDrivers(t *testing.T) {
+	// No drivers configured at all.
+	params := StorageParameters{driverMap: map[string]StorageDriver{}}
+	retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+	ref, err := storageReferenceToPayload(&sdkpb.ExternalStorageReference{
+		DriverName: "d",
+		ClaimData:  map[string]string{"key": "abc"},
+	}, 100)
+	require.NoError(t, err)
+
+	cb := &testCallback{}
+	ctx := WithStorageOperationCallback(context.Background(), cb)
+	_, err = visitPayloads(ctx, retrieveVisitor, []*commonpb.Payload{ref})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "no storage driver is configured")
+	require.Equal(t, 1, cb.failCount)
+}
+
+// panicCallback is a callback that panics to test the recover() protection.
+type panicCallback struct {
+	testCallback
+}
+
+func (c *panicCallback) PayloadBatchFailed(_ error, _ time.Duration, _ []string) {
+	panic("callback exploded")
+}
+
+func (c *panicCallback) PayloadBatchCompleted(_ int, _ int64, _ time.Duration, _ []string) {
+	// no-op — only testing failure path panic
+}
+
+func TestFailureCallback_PanicRecovery(t *testing.T) {
+	driver := newTestDriver("d")
+	driver.storeErr = errors.New("some error")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	cb := &panicCallback{}
+	ctx := WithStorageOperationCallback(context.Background(), cb)
+	// The callback panics, but the visitor should NOT crash — it should
+	// still return the original error.
+	_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "some error")
+}
+
+func TestCompletedCallback_PanicRecovery(t *testing.T) {
+	driver := newTestDriver("d")
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:              []StorageDriver{driver},
+		PayloadSizeThreshold: 1,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	// panicCallback also panics on PayloadBatchCompleted (it's a no-op, but
+	// let's test the success path recover() with a deliberately panicking impl).
+	cb := &panicCompletedCallback{}
+	ctx := WithStorageOperationCallback(context.Background(), cb)
+	result, err := visitPayloads(ctx, visitor, []*commonpb.Payload{makePayload(t, "x")})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+}
+
+// panicCompletedCallback panics on success to test the success-path recover().
+type panicCompletedCallback struct{}
+
+func (c *panicCompletedCallback) PayloadBatchCompleted(_ int, _ int64, _ time.Duration, _ []string) {
+	panic("success callback exploded")
+}
+
+func (c *panicCompletedCallback) PayloadBatchFailed(_ error, _ time.Duration, _ []string) {}
+
+// ---------------------------------------------------------------------------
 // Claim Compatibility: legacy-format reference payload
 // ---------------------------------------------------------------------------
 
@@ -1230,10 +1387,14 @@ func newValDriver(name string) StorageDriver {
 }
 
 type testCallback struct {
-	mu       sync.Mutex
-	count    int
-	size     int64
-	duration time.Duration
+	mu           sync.Mutex
+	count        int
+	size         int64
+	duration     time.Duration
+	failCount    int
+	failErr      error
+	failDuration time.Duration
+	failDrivers  []string
 }
 
 func (c *testCallback) PayloadBatchCompleted(count int, size int64, duration time.Duration, _ []string) {
@@ -1242,4 +1403,13 @@ func (c *testCallback) PayloadBatchCompleted(count int, size int64, duration tim
 	c.count = count
 	c.size = size
 	c.duration = duration
+}
+
+func (c *testCallback) PayloadBatchFailed(err error, duration time.Duration, driverNames []string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.failCount++
+	c.failErr = err
+	c.failDuration = duration
+	c.failDrivers = driverNames
 }
