@@ -20,6 +20,13 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevent workflow task failures when an activity with a custom ID completes while its cancellation
+  command is pending.
+- `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
+  updates the recorded value when it changes, matching the real worker. Previously it ignored
+  equals and returned a freshly computed value on every call.
 
 ## [1.46.0] - 2026-07-28
 

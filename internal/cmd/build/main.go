@@ -5,10 +5,10 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"html"
 	"io"
 	"io/fs"
 	"log"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path"
@@ -16,13 +16,13 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"sync"
 
 	_ "github.com/BurntSushi/toml"
 	_ "github.com/kisielk/errcheck/errcheck"
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
+	sdklog "go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 )
@@ -34,7 +34,12 @@ func main() {
 }
 
 const coverageDir = ".build/coverage"
-const githubStepSummaryMaxDetailBytes = 64 * 1024
+const defaultTestLogDir = ".build/test-logs"
+
+const (
+	testConsoleOutputFull     = "full"
+	testConsoleOutputFailures = "failures"
+)
 
 type builder struct {
 	thisDir string
@@ -100,9 +105,40 @@ func (b *builder) integrationTest() error {
 	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
+	testOutputFlags := addTestOutputFlags(flagSet)
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
+	testOutput, err := b.prepareTestOutput(*testOutputFlags, "go-test.log")
+	if err != nil {
+		return err
+	}
+	combinedLogPath, err := b.prepareLogPath(testOutputFlags.logDir, "combined.log")
+	if err != nil {
+		return err
+	}
+	combinedLog, err := os.OpenFile(combinedLogPath, os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return fmt.Errorf("failed opening combined test log %q: %w", combinedLogPath, err)
+	}
+	defer func() {
+		if err := combinedLog.Close(); err != nil {
+			log.Printf("Failed closing combined test log: %v", err)
+		}
+	}()
+	testOutput.combinedLogPath = combinedLogPath
+	testOutput.combinedWriter = &lockedWriter{writer: combinedLog}
+	rerunArgs := []string{"go", "run", ".", "integration-test"}
+	if *devServerFlag {
+		rerunArgs = append(rerunArgs, "-dev-server")
+	}
+	if *pFlag != "" {
+		rerunArgs = append(rerunArgs, "-p", *pFlag)
+	}
+	if *packagesFlag != "./..." {
+		rerunArgs = append(rerunArgs, "-packages", *packagesFlag)
+	}
+	testOutput.rerunCommand = formatShellCommand(rerunArgs)
 
 	// Also accept coverage file as env var
 	if env := strings.TrimSpace(os.Getenv("TEMPORAL_COVERAGE_FILE")); *coverageFileFlag == "" && env != "" {
@@ -125,6 +161,26 @@ func (b *builder) integrationTest() error {
 
 	// Start dev server if wanted
 	if *devServerFlag {
+		devServerLogPath, err := b.prepareLogPath(testOutputFlags.logDir, "dev-server.log")
+		if err != nil {
+			return err
+		}
+		devServerLog, err := os.OpenFile(devServerLogPath, os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			return fmt.Errorf("failed opening dev server log %q: %w", devServerLogPath, err)
+		}
+		defer func() {
+			if err := devServerLog.Close(); err != nil {
+				log.Printf("Failed closing dev server log: %v", err)
+			}
+		}()
+		testOutput.serverLogPath = devServerLogPath
+		devServerLogWriter := &lockedWriter{writer: devServerLog}
+		devServerStdout, devServerStderr := testOutput.writers(
+			io.MultiWriter(devServerLogWriter, testOutput.combinedWriter),
+			nil,
+		)
+		devServerLogger := sdklog.NewStructuredLogger(slog.New(slog.NewTextHandler(devServerStdout, nil)))
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
 				Version: "v1.7.2-one-time-versioning-override",
@@ -132,10 +188,13 @@ func (b *builder) integrationTest() error {
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
 				Namespace: "integration-test-namespace",
+				Logger:    devServerLogger,
 			},
 			DBFilename:       "temporal.sqlite",
 			LogLevel:         "warn",
 			SearchAttributes: searchAttributes,
+			Stdout:           devServerStdout,
+			Stderr:           devServerStderr,
 			ExtraArgs: []string{
 				"--sqlite-pragma", "journal_mode=WAL",
 				"--sqlite-pragma", "synchronous=OFF",
@@ -173,13 +232,19 @@ func (b *builder) integrationTest() error {
 			},
 		})
 		if err != nil {
-			return fmt.Errorf("failed starting dev server: %w", err)
+			startErr := fmt.Errorf("failed starting dev server: %w", err)
+			if testOutput.consoleOutput == testConsoleOutputFailures {
+				if reportErr := writeTestSetupFailureReport(testOutput.stderr, startErr, testOutput); reportErr != nil {
+					log.Printf("Failed writing test setup failure report: %v", reportErr)
+				}
+			}
+			return startErr
 		}
 		defer func() { _ = devServer.Stop() }()
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "15m"}
+	args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", "15m"}
 	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
@@ -199,7 +264,7 @@ func (b *builder) integrationTest() error {
 	cmd := b.cmdFromRoot(args...)
 	cmd.Dir = filepath.Join(cmd.Dir, "test")
 	cmd.Env = env
-	if err := b.runTestCmd(cmd); err != nil {
+	if err := b.runTestCmd(cmd, testOutput); err != nil {
 		return fmt.Errorf("integration test failed: %w", err)
 	}
 
@@ -247,14 +312,20 @@ func (b *builder) unitTest() error {
 	flagSet := flag.NewFlagSet("unit-test", flag.ContinueOnError)
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
 	coverageFlag := flagSet.Bool("coverage", false, "If set, enables coverage output")
+	testOutputFlags := addTestOutputFlags(flagSet)
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
+	testOutput, err := b.prepareTestOutput(*testOutputFlags, "unit-test.log")
+	if err != nil {
+		return err
+	}
+	testOutput.rerunCommand = "go run . unit-test"
 
 	// Find every non ./test-prefixed package that has a test file
 	testDirMap := map[string]struct{}{}
 	var testDirs []string
-	err := fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
 		if (!strings.HasPrefix(p, "test") || strings.HasPrefix(p, "testsuite")) && strings.HasSuffix(p, "_test.go") {
 			dir := path.Dir(p)
 			if _, ok := testDirMap[dir]; !ok {
@@ -280,7 +351,7 @@ func (b *builder) unitTest() error {
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
 		// Run unit test
-		args := []string{"go", "test", "-count", "1", "-race", "-v", "-timeout", "5m"}
+		args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", "5m"}
 		if *runFlag != "" {
 			args = append(args, "-run", *runFlag)
 		}
@@ -295,7 +366,7 @@ func (b *builder) unitTest() error {
 		cmd := b.cmdFromRoot(args...)
 		// Need to run inside directory
 		cmd.Dir = filepath.Join(b.rootDir, testDir)
-		if err := b.runTestCmd(cmd); err != nil {
+		if err := b.runTestCmd(cmd, testOutput); err != nil {
 			return fmt.Errorf("unit test failed in %v: %w", testDir, err)
 		}
 	}
@@ -316,181 +387,185 @@ func (b *builder) runCmd(cmd *exec.Cmd) error {
 	return cmd.Run()
 }
 
-// runTestCmd runs a go test command while capturing output for the GitHub step
-// summary. Output is still streamed to stdout/stderr as the command runs.
-func (b *builder) runTestCmd(cmd *exec.Cmd) error {
-	var output lockedBuffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, &output)
-	cmd.Stderr = io.MultiWriter(os.Stderr, &output)
-	log.Printf("Running %v in %v with args %v", cmd.Path, cmd.Dir, cmd.Args[1:])
-	err := cmd.Run()
+type testOutputFlags struct {
+	logDir        string
+	consoleOutput string
+}
+
+func addTestOutputFlags(flagSet *flag.FlagSet) *testOutputFlags {
+	var flags testOutputFlags
+	flagSet.StringVar(
+		&flags.logDir,
+		"log-dir",
+		defaultTestLogDir,
+		"Directory for full test logs, relative to the repository root",
+	)
+	flagSet.StringVar(
+		&flags.consoleOutput,
+		"console-output",
+		testConsoleOutputFailures,
+		`Test output written to the console: "full" or "failures"`,
+	)
+	return &flags
+}
+
+type testOutput struct {
+	logPath         string
+	jsonLogPath     string
+	combinedLogPath string
+	serverLogPath   string
+	rerunCommand    string
+	combinedWriter  io.Writer
+	consoleOutput   string
+	stdout          io.Writer
+	stderr          io.Writer
+}
+
+func (t testOutput) openLog() (*os.File, error) {
+	f, err := os.OpenFile(t.logPath, os.O_WRONLY|os.O_APPEND, 0666)
 	if err != nil {
-		summaryErr := appendTestFailureSummary(os.Getenv("GITHUB_STEP_SUMMARY"), output.String())
-		if summaryErr != nil {
-			log.Printf("Failed writing test failure summary: %v", summaryErr)
-		}
+		return nil, fmt.Errorf("failed opening test log %q: %w", t.logPath, err)
 	}
-	return err
+	return f, nil
 }
 
-type lockedBuffer struct {
-	mu sync.Mutex
-	bytes.Buffer
-}
-
-func (b *lockedBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.Buffer.Write(p)
-}
-
-func (b *lockedBuffer) String() string {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.Buffer.String()
-}
-
-type testFailureSummaryRow struct {
-	Test    string
-	Package string
-	Details string
-}
-
-func appendTestFailureSummary(summaryPath, output string) error {
-	if summaryPath == "" {
-		return nil
+func (t testOutput) writers(logWriter io.Writer, capture io.Writer) (io.Writer, io.Writer) {
+	var stdoutWriters, stderrWriters []io.Writer
+	if t.consoleOutput == testConsoleOutputFull {
+		stdoutWriters = append(stdoutWriters, t.stdout)
+		stderrWriters = append(stderrWriters, t.stderr)
 	}
-	rows := parseTestFailures(output)
-	if len(rows) == 0 {
-		return nil
+	stdoutWriters = append(stdoutWriters, logWriter)
+	stderrWriters = append(stderrWriters, logWriter)
+	if capture != nil {
+		stdoutWriters = append(stdoutWriters, capture)
+		stderrWriters = append(stderrWriters, capture)
 	}
-	f, err := os.OpenFile(summaryPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	return io.MultiWriter(stdoutWriters...), io.MultiWriter(stderrWriters...)
+}
+
+func (b *builder) prepareTestOutput(flags testOutputFlags, logName string) (testOutput, error) {
+	if strings.TrimSpace(flags.logDir) == "" {
+		return testOutput{}, fmt.Errorf("-log-dir must not be empty")
+	}
+	switch flags.consoleOutput {
+	case testConsoleOutputFull, testConsoleOutputFailures:
+	default:
+		return testOutput{}, fmt.Errorf(
+			"invalid -console-output %q: must be %q or %q",
+			flags.consoleOutput,
+			testConsoleOutputFull,
+			testConsoleOutputFailures,
+		)
+	}
+	logPath, err := b.prepareLogPath(flags.logDir, logName)
+	if err != nil {
+		return testOutput{}, err
+	}
+	jsonLogName := strings.TrimSuffix(logName, filepath.Ext(logName)) + ".json"
+	jsonLogPath, err := b.prepareLogPath(flags.logDir, jsonLogName)
+	if err != nil {
+		return testOutput{}, err
+	}
+	log.Printf("Writing full test logs to %v", filepath.Dir(logPath))
+	return testOutput{
+		logPath:       logPath,
+		jsonLogPath:   jsonLogPath,
+		consoleOutput: flags.consoleOutput,
+		stdout:        os.Stdout,
+		stderr:        os.Stderr,
+	}, nil
+}
+
+func (b *builder) prepareLogPath(logDirFlag, logName string) (string, error) {
+	if strings.TrimSpace(logDirFlag) == "" {
+		return "", fmt.Errorf("-log-dir must not be empty")
+	}
+	logDir := filepath.FromSlash(logDirFlag)
+	if !filepath.IsAbs(logDir) {
+		logDir = filepath.Join(b.rootDir, logDir)
+	}
+	logDir = filepath.Clean(logDir)
+	if err := os.MkdirAll(logDir, 0777); err != nil {
+		return "", fmt.Errorf("failed creating test log directory %q: %w", logDir, err)
+	}
+	logPath := filepath.Join(logDir, logName)
+	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0666)
+	if err != nil {
+		return "", fmt.Errorf("failed preparing test log %q: %w", logPath, err)
+	}
+	if err := f.Close(); err != nil {
+		return "", fmt.Errorf("failed closing test log %q: %w", logPath, err)
+	}
+	return logPath, nil
+}
+
+// runTestCmd runs a go test command while saving full output and capturing
+// structured results for the concise console report and GitHub job summary.
+func (b *builder) runTestCmd(cmd *exec.Cmd, testOutput testOutput) error {
+	logFile, err := testOutput.openLog()
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = f.WriteString(renderTestFailureSummary(rows))
-	return err
-}
+	jsonLogFile, err := os.OpenFile(testOutput.jsonLogPath, os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		_ = logFile.Close()
+		return fmt.Errorf("failed opening test JSON log %q: %w", testOutput.jsonLogPath, err)
+	}
 
-func parseTestFailures(output string) []testFailureSummaryRow {
-	lines := strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n")
-	rows := make([]testFailureSummaryRow, 0)
-	currentPackage := ""
-	packageStart := 0
-	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		if strings.HasPrefix(line, "FAIL\t") {
-			fields := strings.Fields(line)
-			if len(fields) >= 2 {
-				currentPackage = fields[1]
-				for rowIndex := packageStart; rowIndex < len(rows); rowIndex++ {
-					if rows[rowIndex].Package == "" {
-						rows[rowIndex].Package = currentPackage
-					}
-				}
-				packageStart = len(rows)
+	logWriters := []io.Writer{&lockedWriter{writer: logFile}}
+	if testOutput.combinedWriter != nil {
+		logWriters = append(logWriters, testOutput.combinedWriter)
+	}
+	plainLogWriter := io.MultiWriter(logWriters...)
+	stdoutWriter, stderrWriter := testOutput.writers(plainLogWriter, nil)
+	results := newGoTestResults()
+	jsonWriter := &goTestJSONWriter{
+		rawWriter:    jsonLogFile,
+		outputWriter: stdoutWriter,
+		results:      results,
+	}
+	cmd.Stdout = jsonWriter
+	cmd.Stderr = io.MultiWriter(stderrWriter, writerFunc(results.recordRawOutput))
+	log.Printf("Running %v in %v with args %v", cmd.Path, cmd.Dir, cmd.Args[1:])
+	if _, err := fmt.Fprintf(plainLogWriter, "Running %v in %v with args %v\n", cmd.Path, cmd.Dir, cmd.Args[1:]); err != nil {
+		_ = logFile.Close()
+		_ = jsonLogFile.Close()
+		return fmt.Errorf("failed writing test log %q: %w", testOutput.logPath, err)
+	}
+	runErr := cmd.Run()
+	flushErr := jsonWriter.Flush()
+	logCloseErr := logFile.Close()
+	jsonCloseErr := jsonLogFile.Close()
+	rows := results.failures()
+	if runErr != nil {
+		summaryErr := appendTestFailureRows(os.Getenv("GITHUB_STEP_SUMMARY"), rows)
+		if summaryErr != nil {
+			log.Printf("Failed writing test failure summary: %v", summaryErr)
+		}
+		if testOutput.consoleOutput == testConsoleOutputFailures {
+			reportErr := writeStructuredTestFailureReport(
+				testOutput.stderr,
+				rows,
+				results.fallbackOutput(),
+				testOutput,
+			)
+			if reportErr != nil {
+				log.Printf("Failed writing test failure report: %v", reportErr)
 			}
-			continue
 		}
-		const failPrefix = "--- FAIL: "
-		trimmedLine := strings.TrimLeft(line, " \t")
-		if !strings.HasPrefix(trimmedLine, failPrefix) {
-			continue
-		}
-		name := strings.TrimSpace(strings.TrimPrefix(trimmedLine, failPrefix))
-		if idx := strings.Index(name, " "); idx >= 0 {
-			name = name[:idx]
-		}
-		start := findMatchingRunLine(lines, i, name)
-		end := len(lines)
-		for j := start + 1; j < len(lines); j++ {
-			next := lines[j]
-			if isRunLine(next) || strings.HasPrefix(next, "FAIL\t") || strings.HasPrefix(next, "ok  \t") {
-				end = j
-				break
-			}
-		}
-		rows = append(rows, testFailureSummaryRow{
-			Test:    name,
-			Package: currentPackage,
-			Details: strings.Join(lines[start:end], "\n"),
-		})
+		return runErr
 	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if rows[i].Package != rows[j].Package {
-			return rows[i].Package < rows[j].Package
-		}
-		return rows[i].Test < rows[j].Test
-	})
-	return filterParentFailureRows(rows)
-}
-
-func filterParentFailureRows(rows []testFailureSummaryRow) []testFailureSummaryRow {
-	hasFailedSubtest := make(map[testFailureSummaryKey]bool, len(rows))
-	for _, row := range rows {
-		if parent, _, ok := strings.Cut(row.Test, "/"); ok {
-			hasFailedSubtest[testFailureSummaryKey{Package: row.Package, Test: parent}] = true
-		}
+	if flushErr != nil {
+		return fmt.Errorf("failed decoding test JSON output: %w", flushErr)
 	}
-	filtered := rows[:0]
-	for _, row := range rows {
-		if !hasFailedSubtest[testFailureSummaryKey{Package: row.Package, Test: row.Test}] {
-			filtered = append(filtered, row)
-		}
+	if logCloseErr != nil {
+		return fmt.Errorf("failed closing test log %q: %w", testOutput.logPath, logCloseErr)
 	}
-	return filtered
-}
-
-type testFailureSummaryKey struct {
-	Package string
-	Test    string
-}
-
-func findMatchingRunLine(lines []string, before int, testName string) int {
-	for i := before - 1; i >= 0; i-- {
-		if testNameFromRunLine(lines[i]) == testName {
-			return i
-		}
+	if jsonCloseErr != nil {
+		return fmt.Errorf("failed closing test JSON log %q: %w", testOutput.jsonLogPath, jsonCloseErr)
 	}
-	return before
-}
-
-func testNameFromRunLine(line string) string {
-	fields := strings.Fields(strings.TrimLeft(line, " \t"))
-	if len(fields) != 3 || fields[0] != "===" || fields[1] != "RUN" {
-		return ""
-	}
-	return fields[2]
-}
-
-func isRunLine(line string) bool {
-	return strings.HasPrefix(strings.TrimLeft(line, " \t"), "=== RUN ")
-}
-
-func renderTestFailureSummary(rows []testFailureSummaryRow) string {
-	var sb strings.Builder
-	sb.WriteString("## Test failures\n\n")
-	sb.WriteString("<table>\n<tr><th>Kind</th><th>Test failure</th></tr>\n")
-	for _, row := range rows {
-		details := row.Details
-		if len(details) > githubStepSummaryMaxDetailBytes {
-			details = details[:githubStepSummaryMaxDetailBytes] + "\n... (truncated; see full job logs)"
-		}
-		title := row.Test
-		if row.Package != "" {
-			title = row.Package + " / " + title
-		}
-		fmt.Fprintf(
-			&sb,
-			"<tr><td>%s</td><td><details><summary>%s</summary><pre>%s</pre></details></td></tr>\n",
-			html.EscapeString("Failed"),
-			html.EscapeString(title),
-			html.EscapeString(details),
-		)
-	}
-	sb.WriteString("</table>\n\n")
-	return sb.String()
+	return nil
 }
 
 func (b *builder) getInstalledTool(modPath string) (string, error) {

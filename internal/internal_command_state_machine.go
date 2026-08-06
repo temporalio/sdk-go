@@ -1137,7 +1137,7 @@ func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEv
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
 	// If, for whatever reason, we were going to send an activity cancel request, don't do that anymore
 	// since we already know the activity is resolved.
-	possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, activityID)
+	possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, strconv.FormatInt(scheduledEventID, 10))
 	h.removeCancelOfResolvedCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	delete(h.scheduledEventIDToActivityID, scheduledEventID)
