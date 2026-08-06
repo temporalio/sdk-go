@@ -63,7 +63,7 @@ func TestRegularExpressions(t *testing.T) {
 		{
 			name:       "changelog header",
 			expression: changelogHeaderRE,
-			matches:    []string{"### Added", "### Breaking Changes"},
+			matches:    []string{"### Added", "### :boom: Breaking Changes"},
 			rejects:    []string{"## Added", "###", "- Added"},
 		},
 		{
@@ -145,7 +145,7 @@ func TestUpdateChangelog(t *testing.T) {
 
 ### Deprecated
 
-### Breaking Changes
+### :boom: Breaking Changes
 
 ### Fixed
 
@@ -296,7 +296,7 @@ const (
 
 ### Deprecated
 
-### Breaking Changes
+### :boom: Breaking Changes
 
 ### Fixed
 

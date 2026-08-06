@@ -22,7 +22,7 @@ var (
 	taggedGoVersionRE = regexp.MustCompile(`^v[0-9]\.[0-9]+\.[0-9]+$`)
 	// Matches changelog headings such as "## [1.48.0] - 2026-08-04".
 	changelogHeadingRE = regexp.MustCompile(`^## \[([^]]+)](?:\s+-\s+.*)?\s*$`)
-	// Matches changelog section headers such as "### Breaking Changes".
+	// Matches changelog section headers such as "### :boom: Breaking Changes".
 	changelogHeaderRE = regexp.MustCompile(`^### (.+?)\s*$`)
 	// Matches the SDK version declaration: SDKVersion = "1.48.0".
 	sdkVersionRE = regexp.MustCompile(`(?m)^(\s*SDKVersion\s*=\s*")[^"]+("\s*)$`)
@@ -34,7 +34,7 @@ var changelogHeaders = []string{
 	"Added",
 	"Changed",
 	"Deprecated",
-	"Breaking Changes",
+	":boom: Breaking Changes",
 	"Fixed",
 	"Security",
 }
