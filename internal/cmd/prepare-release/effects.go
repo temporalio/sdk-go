@@ -32,6 +32,7 @@ func (RealWorld) repoRoot() (string, error) {
 
 // runCommand executes a process, forwarding its output while also returning stdout.
 func (RealWorld) runCommand(root, name string, args ...string) (string, error) {
+	fmt.Printf("Running command: %s... ", formatCommand(name, args...))
 	cmd := exec.Command(name, args...)
 	cmd.Dir = root
 	cmd.Stdin = os.Stdin
@@ -41,6 +42,7 @@ func (RealWorld) runCommand(root, name string, args ...string) (string, error) {
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("%s failed: %w", formatCommand(name, args...), err)
 	}
+	fmt.Printf("done\n")
 	return output.String(), nil
 }
 
