@@ -8,8 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"sort"
-	"strings"
 )
 
 type Effects interface {
@@ -114,78 +112,5 @@ func (eff DryRun) updateFile(path string, update func(string) (string, error)) e
 	return err
 }
 
-// MOCK WORLD
-
-type MockWorld struct {
-	Root          string
-	Changelog     string
-	Files         map[string]string
-	Commands      []string
-	CommandOutput map[string]string
-	updatedFiles  map[string]bool
-}
-
 var _ Effects = RealWorld{}
 var _ Effects = DryRun{}
-var _ Effects = (*MockWorld)(nil)
-
-// repoRoot returns the configured test root, defaulting to the fixture root.
-func (eff *MockWorld) repoRoot() (string, error) {
-	if eff.Root == "" {
-		return "/repo", nil
-	}
-	return eff.Root, nil
-}
-
-// runCommand records commands and simulates git status from files updated in memory.
-func (eff *MockWorld) runCommand(root, name string, args ...string) (string, error) {
-	command := formatCommand(name, args...)
-	eff.Commands = append(eff.Commands, command)
-	if name != "git" || len(args) != 2 || args[0] != "status" || args[1] != "--porcelain" {
-		return eff.CommandOutput[command], nil
-	}
-	var lines []string
-	for path := range eff.updatedFiles {
-		relative, err := filepath.Rel(root, path)
-		if err != nil {
-			return "", err
-		}
-		lines = append(lines, " M "+relative)
-	}
-	sort.Strings(lines)
-	return strings.Join(lines, "\n"), nil
-}
-
-// readFile reads mock changelog and repository files from memory.
-func (eff *MockWorld) readFile(path string) (string, error) {
-	if filepath.Base(path) == "CHANGELOG.md" {
-		return eff.Changelog, nil
-	}
-	text, ok := eff.Files[path]
-	if !ok {
-		return "", fmt.Errorf("mock file not found: %s", path)
-	}
-	return text, nil
-}
-
-// updateFile applies updates in memory and tracks their paths for mock git status.
-func (eff *MockWorld) updateFile(path string, update func(string) (string, error)) error {
-	data, err := eff.readFile(path)
-	if err != nil {
-		return err
-	}
-	updated, err := update(data)
-	if err != nil {
-		return err
-	}
-	if filepath.Base(path) == "CHANGELOG.md" {
-		eff.Changelog = updated
-	} else {
-		eff.Files[path] = updated
-	}
-	if eff.updatedFiles == nil {
-		eff.updatedFiles = make(map[string]bool)
-	}
-	eff.updatedFiles[path] = true
-	return nil
-}

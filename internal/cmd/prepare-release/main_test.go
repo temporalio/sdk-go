@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -256,10 +257,35 @@ require go.temporal.io/api v0.0.0-20260730213819-7f6a96199578
 	}
 }
 
-// INTEGRATION TESTS WITH MOCK WORLD
+// MOCK INTEGRATION TEST
 
-func TestPrepareReleaseWithMockWorld(t *testing.T) {
-	root := "/repo"
+type recordedCommand struct {
+	name string
+	args []string
+}
+
+// testWorld embeds DryRun, records the commands being run, and returns canned responses for certain commands.
+type testWorld struct {
+	DryRun
+	commands []recordedCommand
+}
+
+func (eff *testWorld) runCommand(_ string, name string, args ...string) (string, error) {
+	eff.commands = append(eff.commands, recordedCommand{name: name, args: append([]string(nil), args...)})
+	if name == "gh" && len(args) >= 2 {
+		switch args[0] {
+		case "pr":
+			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
+		case "release":
+			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc\n", nil
+		}
+	}
+	return "", nil
+}
+
+func TestPrepareRelease(t *testing.T) {
+	root := t.TempDir()
+	outputDir := t.TempDir()
 	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
 	version := "1.48.0"
 
@@ -319,45 +345,59 @@ const (
 
 - A fix.
 `
-	wantCommands := []string{
-		"git status --porcelain",
-		"git fetch origin main",
-		"git switch --create chore/release-1.48.0 origin/main",
-		`git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go`,
-		"git push --set-upstream origin chore/release-1.48.0",
-		`gh pr create --base main --head chore/release-1.48.0 --title "Prepare release 1.48.0" --body "Prepare Go SDK release 1.48.0."`,
-		formatCommand("gh", "release", "create", "v1.48.0", "--draft", "--title", "v1.48.0", "--notes", releaseBody, "--generate-notes"),
+	wantCommands := []recordedCommand{
+		{name: "git", args: []string{"status", "--porcelain"}},
+		{name: "git", args: []string{"fetch", "origin", "main"}},
+		{name: "git", args: []string{"switch", "--create", "chore/release-1.48.0", "origin/main"}},
+		{name: "git", args: []string{"commit", "-m", "Prepare release 1.48.0", "--", "CHANGELOG.md", "internal/version.go"}},
+		{name: "git", args: []string{"push", "--set-upstream", "origin", "chore/release-1.48.0"}},
+		{name: "gh", args: []string{"pr", "create", "--base", "main", "--head", "chore/release-1.48.0", "--title", "Prepare release 1.48.0", "--body", "Prepare Go SDK release 1.48.0."}},
+		{name: "gh", args: []string{"release", "create", "v1.48.0", "--draft", "--title", "v1.48.0", "--notes", releaseBody, "--generate-notes"}},
 	}
 
 	// TESTS
 
-	eff := &MockWorld{
-		Changelog: changelog,
-		Files: map[string]string{
-			filepath.Join(root, "go.mod"):                 goMod,
-			filepath.Join(root, "internal", "version.go"): versionGo,
-		},
-		CommandOutput: map[string]string{
-			wantCommands[5]: "https://github.com/temporalio/sdk-go/pull/123\n",
-			wantCommands[6]: "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc\n",
-		},
+	if err := os.Mkdir(filepath.Join(root, "internal"), 0o755); err != nil {
+		t.Fatal(err)
 	}
+	for path, contents := range map[string]string{
+		filepath.Join(root, "CHANGELOG.md"):           changelog,
+		filepath.Join(root, "go.mod"):                 goMod,
+		filepath.Join(root, "internal", "version.go"): versionGo,
+	} {
+		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	eff := &testWorld{DryRun: DryRun{Output: &bytes.Buffer{}, TempDir: outputDir}}
 	prURL, releaseURL, err := prepareRelease(eff, root, version, date)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if eff.Changelog != updatedChangelog {
-		t.Fatalf("unexpected changelog:\n--- got ---\n%s--- want ---\n%s", eff.Changelog, updatedChangelog)
+	gotChangelog, err := os.ReadFile(filepath.Join(outputDir, "CHANGELOG.md"))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if got := eff.Files[filepath.Join(root, "go.mod")]; got != goMod {
+	if string(gotChangelog) != updatedChangelog {
+		t.Fatalf("unexpected changelog:\n--- got ---\n%s--- want ---\n%s", gotChangelog, updatedChangelog)
+	}
+	gotGoMod, err := os.ReadFile(filepath.Join(root, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(gotGoMod); got != goMod {
 		t.Fatalf("unexpected go.mod:\n--- got ---\n%s--- want ---\n%s", got, goMod)
 	}
-	if got := eff.Files[filepath.Join(root, "internal", "version.go")]; got != updatedVersionGo {
+	gotVersionGo, err := os.ReadFile(filepath.Join(outputDir, "version.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(gotVersionGo); got != updatedVersionGo {
 		t.Fatalf("unexpected version.go:\n--- got ---\n%s--- want ---\n%s", got, updatedVersionGo)
 	}
-	if strings.Join(eff.Commands, "\n") != strings.Join(wantCommands, "\n") {
-		t.Fatalf("unexpected commands:\n--- got ---\n%s\n--- want ---\n%s", strings.Join(eff.Commands, "\n"), strings.Join(wantCommands, "\n"))
+	if !reflect.DeepEqual(eff.commands, wantCommands) {
+		t.Fatalf("unexpected commands:\n--- got ---\n%#v\n--- want ---\n%#v", eff.commands, wantCommands)
 	}
 	if prURL != "https://github.com/temporalio/sdk-go/pull/123" {
 		t.Fatalf("unexpected PR link: %q", prURL)
