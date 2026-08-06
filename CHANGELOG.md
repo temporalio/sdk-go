@@ -20,6 +20,12 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Added
+
+- Added experimental `workflow.GetRandom` for named deterministic pseudorandom values in workflows.
+- Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
+  path.
+
 ### Fixed
 
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
