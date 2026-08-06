@@ -23,6 +23,9 @@ to docs, or any other relevant information.
 ### Added
 
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+- Added experimental `workflow.GetRandom` for named deterministic pseudorandom values in workflows.
+- Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
+  path.
 
 ### Fixed
 
