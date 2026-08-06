@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -1017,96 +1018,83 @@ func (p *recordingTaskProcessor) ProcessTask(any) error {
 }
 
 func TestStopTimeoutBoundsPollerDrain(t *testing.T) {
-	pollStarted := make(chan struct{}, 1)
-	releasePoll := make(chan struct{})
-	var releasePollOnce sync.Once
-	releaseBlockedPoller := func() {
-		releasePollOnce.Do(func() {
-			close(releasePoll)
+	synctest.Test(t, func(t *testing.T) {
+		pollStarted := make(chan struct{}, 1)
+		releasePoll := make(chan struct{})
+		var releasePollOnce sync.Once
+		releaseBlockedPoller := func() {
+			releasePollOnce.Do(func() {
+				close(releasePoll)
+			})
+		}
+		defer releaseBlockedPoller()
+		tp := &blockingShutdownPoller{
+			pollStarted: pollStarted,
+			releasePoll: releasePoll,
+		}
+		workerPollCompleteOnShutdown := &atomic.Bool{}
+		workerPollCompleteOnShutdown.Store(true)
+
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:     &testSlotSupplier{},
+			maxTaskPerSecond: 1000,
+			taskPollers: []scalableTaskPoller{
+				{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+			},
+			taskProcessor:                noopTaskProcessor{},
+			workerType:                   "StopTimeoutTest",
+			logger:                       ilog.NewNopLogger(),
+			stopTimeout:                  50 * time.Millisecond,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
 		})
-	}
-	defer releaseBlockedPoller()
-	tp := &blockingShutdownPoller{
-		pollStarted: pollStarted,
-		releasePoll: releasePoll,
-	}
-	workerPollCompleteOnShutdown := &atomic.Bool{}
-	workerPollCompleteOnShutdown.Store(true)
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     &testSlotSupplier{},
-		maxTaskPerSecond: 1000,
-		taskPollers: []scalableTaskPoller{
-			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
-		},
-		taskProcessor:                noopTaskProcessor{},
-		workerType:                   "StopTimeoutTest",
-		logger:                       ilog.NewNopLogger(),
-		stopTimeout:                  50 * time.Millisecond,
-		metricsHandler:               metrics.NopHandler,
-		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
-	})
+		bw.Start()
+		<-pollStarted
 
-	bw.Start()
-	<-pollStarted
-
-	stopDone := make(chan struct{})
-	start := time.Now()
-	go func() {
+		start := time.Now()
 		bw.Stop()
-		close(stopDone)
-	}()
-
-	// Stop() should return after stopTimeout (~50ms), not block for the
-	// full pollTaskServiceTimeOut (70s).
-	select {
-	case <-stopDone:
-		elapsed := time.Since(start)
-		require.Less(t, elapsed, time.Second,
+		require.Equal(t, 50*time.Millisecond, time.Since(start),
 			"Stop() should return after stopTimeout, not wait for pollTaskServiceTimeOut")
-	case <-time.After(time.Second):
+
 		releaseBlockedPoller()
 		require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
 			"worker goroutines should finish after blocked poll is released")
-		t.Fatal("Stop() should return after stopTimeout, not wait for pollTaskServiceTimeOut")
-	}
-
-	releaseBlockedPoller()
-	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
-		"worker goroutines should finish after blocked poll is released")
+	})
 }
 
 func TestLegacyStopReturnsPromptlyWithBlockedPoller(t *testing.T) {
-	pollStarted := make(chan struct{}, 1)
-	tp := &stopAwareShutdownPoller{
-		pollStarted: pollStarted,
-	}
+	synctest.Test(t, func(t *testing.T) {
+		pollStarted := make(chan struct{}, 1)
+		tp := &stopAwareShutdownPoller{
+			pollStarted: pollStarted,
+		}
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     &testSlotSupplier{},
-		maxTaskPerSecond: 1000,
-		taskPollers: []scalableTaskPoller{
-			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
-		},
-		taskProcessor:                noopTaskProcessor{},
-		workerType:                   "LegacyStopTimeoutTest",
-		logger:                       ilog.NewNopLogger(),
-		stopTimeout:                  5 * time.Second,
-		metricsHandler:               metrics.NopHandler,
-		workerPollCompleteOnShutdown: &atomic.Bool{},
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:     &testSlotSupplier{},
+			maxTaskPerSecond: 1000,
+			taskPollers: []scalableTaskPoller{
+				{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+			},
+			taskProcessor:                noopTaskProcessor{},
+			workerType:                   "LegacyStopTimeoutTest",
+			logger:                       ilog.NewNopLogger(),
+			stopTimeout:                  5 * time.Second,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: &atomic.Bool{},
+		})
+		tp.stopC = bw.stopCh
+
+		bw.Start()
+		<-pollStarted
+
+		start := time.Now()
+		bw.Stop()
+
+		require.Zero(t, time.Since(start),
+			"legacy Stop() should return promptly when a blocked poll observes shutdown")
+		require.True(t, tp.stopped.Load(), "blocked poller should observe shutdown")
 	})
-	tp.stopC = bw.stopCh
-
-	bw.Start()
-	<-pollStarted
-
-	start := time.Now()
-	bw.Stop()
-	elapsed := time.Since(start)
-
-	require.Less(t, elapsed, time.Second,
-		"legacy Stop() should return promptly when a blocked poll observes shutdown")
-	require.True(t, tp.stopped.Load(), "blocked poller should observe shutdown")
 }
 
 type blockingShutdownPoller struct {
