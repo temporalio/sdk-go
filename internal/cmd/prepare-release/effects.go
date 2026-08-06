@@ -117,11 +117,12 @@ func (eff DryRun) updateFile(path string, update func(string) (string, error)) e
 // MOCK WORLD
 
 type MockWorld struct {
-	Root         string
-	Changelog    string
-	Files        map[string]string
-	Commands     []string
-	updatedFiles map[string]bool
+	Root          string
+	Changelog     string
+	Files         map[string]string
+	Commands      []string
+	CommandOutput map[string]string
+	updatedFiles  map[string]bool
 }
 
 var _ Effects = RealWorld{}
@@ -138,9 +139,10 @@ func (eff *MockWorld) repoRoot() (string, error) {
 
 // runCommand records commands and simulates git status from files updated in memory.
 func (eff *MockWorld) runCommand(root, name string, args ...string) (string, error) {
-	eff.Commands = append(eff.Commands, formatCommand(name, args...))
+	command := formatCommand(name, args...)
+	eff.Commands = append(eff.Commands, command)
 	if name != "git" || len(args) != 2 || args[0] != "status" || args[1] != "--porcelain" {
-		return "", nil
+		return eff.CommandOutput[command], nil
 	}
 	var lines []string
 	for path := range eff.updatedFiles {

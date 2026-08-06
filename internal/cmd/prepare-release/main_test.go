@@ -313,6 +313,12 @@ const (
 	SDKVersion = "1.48.0"
 )
 `
+	releaseBody := `# Highlights
+
+### Fixed
+
+- A fix.
+`
 	wantCommands := []string{
 		"git status --porcelain",
 		"git fetch origin main",
@@ -320,6 +326,7 @@ const (
 		`git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go`,
 		"git push --set-upstream origin chore/release-1.48.0",
 		`gh pr create --base main --head chore/release-1.48.0 --title "Prepare release 1.48.0" --body "Prepare Go SDK release 1.48.0."`,
+		formatCommand("gh", "release", "create", "v1.48.0", "--draft", "--title", "v1.48.0", "--notes", releaseBody, "--generate-notes"),
 	}
 
 	// TESTS
@@ -330,8 +337,13 @@ const (
 			filepath.Join(root, "go.mod"):                 goMod,
 			filepath.Join(root, "internal", "version.go"): versionGo,
 		},
+		CommandOutput: map[string]string{
+			wantCommands[5]: "https://github.com/temporalio/sdk-go/pull/123\n",
+			wantCommands[6]: "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc\n",
+		},
 	}
-	if err := prepareRelease(eff, root, version, date); err != nil {
+	prURL, releaseURL, err := prepareRelease(eff, root, version, date)
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -346,5 +358,11 @@ const (
 	}
 	if strings.Join(eff.Commands, "\n") != strings.Join(wantCommands, "\n") {
 		t.Fatalf("unexpected commands:\n--- got ---\n%s\n--- want ---\n%s", strings.Join(eff.Commands, "\n"), strings.Join(wantCommands, "\n"))
+	}
+	if prURL != "https://github.com/temporalio/sdk-go/pull/123" {
+		t.Fatalf("unexpected PR link: %q", prURL)
+	}
+	if releaseURL != "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc" {
+		t.Fatalf("unexpected draft release link: %q", releaseURL)
 	}
 }

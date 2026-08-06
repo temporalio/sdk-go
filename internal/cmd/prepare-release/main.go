@@ -81,70 +81,88 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := prepareRelease(eff, root, version, releaseDate); err != nil {
+	prURL, releaseURL, err := prepareRelease(eff, root, version, releaseDate)
+	if err != nil {
 		return err
 	}
 	if *dryRun {
 		fmt.Printf("Dry run completed for release %s dated %s; no changes were made\n", version, releaseDate.Format(time.DateOnly))
 	} else {
-		fmt.Printf("Prepared release %s dated %s and opened a PR\n", version, releaseDate.Format(time.DateOnly))
+		fmt.Printf("Prepared release %s dated %s, opened a PR, and created a draft GitHub release\n",
+			version, releaseDate.Format(time.DateOnly))
+		fmt.Printf("PR: %s\nDraft release: %s\n", prURL, releaseURL)
 	}
 	return nil
 }
 
 // CORE LOGIC
 
-func prepareRelease(eff Effects, root, version string, releaseDate time.Time) error {
+func prepareRelease(eff Effects, root, version string, releaseDate time.Time) (string, string, error) {
 
 	// Validate git state and create a release branch
 
 	if err := ensureCleanWorktree(eff, root); err != nil {
-		return err
+		return "", "", err
 	}
 	if _, err := eff.runCommand(root, "git", "fetch", "origin", "main"); err != nil {
-		return err
+		return "", "", err
 	}
 	branch := "chore/release-" + version
 	if _, err := eff.runCommand(root, "git", "switch", "--create", branch, "origin/main"); err != nil {
-		return err
+		return "", "", err
 	}
 
 	// Validate and update files
 
 	goMod, err := eff.readFile(filepath.Join(root, "go.mod"))
 	if err != nil {
-		return fmt.Errorf("read go.mod: %w", err)
+		return "", "", fmt.Errorf("read go.mod: %w", err)
 	}
 	if err := validateGoMod(goMod); err != nil {
-		return err
+		return "", "", err
 	}
 	changelogPath := filepath.Join(root, "CHANGELOG.md")
+	var updatedChangelog string
 	if err := eff.updateFile(changelogPath, func(text string) (string, error) {
-		return updateChangelog(text, version, releaseDate)
+		updated, err := updateChangelog(text, version, releaseDate)
+		updatedChangelog = updated
+		return updated, err
 	}); err != nil {
-		return err
+		return "", "", err
+	}
+	releaseNotes, err := prepareReleaseNotes(updatedChangelog, version)
+	if err != nil {
+		return "", "", err
 	}
 	versionPath := filepath.Join(root, "internal", "version.go")
 	if err := eff.updateFile(versionPath, func(text string) (string, error) {
 		return replaceSDKVersion(text, version)
 	}); err != nil {
-		return err
+		return "", "", err
 	}
 
 	// Commit and push changes, then open a PR
 
 	commitArgs := append([]string{"commit", "-m", "Prepare release " + version, "--"}, releaseFiles...)
 	if _, err := eff.runCommand(root, "git", commitArgs...); err != nil {
-		return err
+		return "", "", err
 	}
 	if _, err := eff.runCommand(root, "git", "push", "--set-upstream", "origin", branch); err != nil {
-		return err
+		return "", "", err
 	}
-	if _, err := eff.runCommand(root, "gh", "pr", "create", "--base", "main", "--head", branch,
-		"--title", "Prepare release "+version, "--body", "Prepare Go SDK release "+version+"."); err != nil {
-		return err
+	prURL, err := eff.runCommand(root, "gh", "pr", "create", "--base", "main", "--head", branch,
+		"--title", "Prepare release "+version, "--body", "Prepare Go SDK release "+version+".")
+	if err != nil {
+		return "", "", err
 	}
-	return nil
+	prURL = strings.TrimSpace(prURL)
+	tag := "v" + version
+	draftReleaseURL, err := eff.runCommand(root, "gh", "release", "create", tag, "--draft", "--title", tag,
+		"--notes", releaseNotes, "--generate-notes")
+	if err != nil {
+		return "", "", err
+	}
+	return prURL, strings.TrimSpace(draftReleaseURL), nil
 }
 
 // PURE HELPERS
@@ -205,6 +223,20 @@ func updateChangelog(text, version string, releaseDate time.Time) (string, error
 	next = append(next, "")
 	next = append(next, lines[end:]...)
 	return strings.Join(collapseBlankLines(next), "\n") + "\n", nil
+}
+
+// prepareReleaseNotes formats one release's changelog sections for GitHub.
+func prepareReleaseNotes(text, version string) (string, error) {
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	_, start, end, ok := findVersionSection(lines, version)
+	if !ok {
+		return "", fmt.Errorf("could not find changelog section for %q", version)
+	}
+	sections := stripOuterBlankLines(lines[start:end])
+	if len(sections) == 0 {
+		return "", fmt.Errorf("changelog section for %q appears to be empty", version)
+	}
+	return "# Highlights\n\n" + strings.Join(sections, "\n") + "\n", nil
 }
 
 // findVersionSection returns the heading and content bounds for a changelog version.
