@@ -118,8 +118,7 @@ func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 			return &workflowservice.PollNexusTaskQueueResponse{}, nil
 		})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	hw := &sharedNamespaceWorker{
 		client: &WorkflowClient{
 			workflowService: mockService,

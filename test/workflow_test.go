@@ -823,7 +823,7 @@ func (w *Workflows) ChildWorkflowWithCustomRetryPolicy(ctx workflow.Context, exp
 	return w.childWorkflowWithRetryPolicy(ctx, w.childWithCustomRetryPolicy, expectedMaximumAttempts, iterations)
 }
 
-func (w *Workflows) childWorkflowWithRetryPolicy(ctx workflow.Context, wfFunc interface{}, expectedMaximumAttempts int, iterations int) error {
+func (w *Workflows) childWorkflowWithRetryPolicy(ctx workflow.Context, wfFunc any, expectedMaximumAttempts int, iterations int) error {
 	const (
 		// Note that this value is different from the one specified by the parent workflow.
 		// See IntegrationTestSuite::testChildWFWithRetryPolicy.
@@ -891,8 +891,8 @@ func (w *Workflows) ChildWorkflowSuccess(ctx workflow.Context) (result string, e
 	opts := workflow.ChildWorkflowOptions{
 		WorkflowTaskTimeout:      5 * time.Second,
 		WorkflowExecutionTimeout: 10 * time.Second,
-		Memo:                     map[string]interface{}{"memoKey": "memoVal"},
-		SearchAttributes:         map[string]interface{}{"CustomKeywordField": "searchAttrVal"},
+		Memo:                     map[string]any{"memoKey": "memoVal"},
+		SearchAttributes:         map[string]any{"CustomKeywordField": "searchAttrVal"},
 	}
 	ctx = workflow.WithChildOptions(ctx, opts)
 	err = workflow.ExecuteChildWorkflow(ctx, w.childForMemoAndSearchAttr).Get(ctx, &result)
@@ -1331,7 +1331,7 @@ func (w *Workflows) RaceOnCacheEviction(ctx workflow.Context, testCase string) e
 		// Since the main workflow function returns before this timer finishes the code will never run past it
 		_ = workflow.Sleep(ctx, time.Hour)
 	}
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		workflow.Go(ctx, re)
 	}
 	// Returning will eventually cause all the other go routines to clean up and call goexit in parallel
@@ -1353,7 +1353,7 @@ func (w *Workflows) CancelMultipleCommandsOverMultipleTasks(ctx workflow.Context
 	// Start a timer that will be canceled when the workflow is
 	_ = workflow.NewTimer(ctx, time.Minute*10)
 	// Throw in a side effect for fun
-	_ = workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	_ = workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		return "hi!"
 	})
 	// Include a timer we cancel across the wf task
@@ -1433,7 +1433,7 @@ func (w *Workflows) MutatingUpdateValidatorWorkflow(ctx workflow.Context) (strin
 }
 
 func (w *Workflows) MutatingSideEffectWorkflow(ctx workflow.Context) (string, error) {
-	encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		_ = workflow.Sleep(ctx, 45*time.Second)
 		return "fail"
 	})
@@ -1443,10 +1443,10 @@ func (w *Workflows) MutatingSideEffectWorkflow(ctx workflow.Context) (string, er
 }
 
 func (w *Workflows) MutatingMutableSideEffectWorkflow(ctx workflow.Context) (string, error) {
-	encodedValue := workflow.MutableSideEffect(ctx, "test-id", func(ctx workflow.Context) interface{} {
+	encodedValue := workflow.MutableSideEffect(ctx, "test-id", func(ctx workflow.Context) any {
 		_ = workflow.Sleep(ctx, 45*time.Second)
 		return "fail"
-	}, func(a, b interface{}) bool {
+	}, func(a, b any) bool {
 		return false
 	})
 	var sideEffectValue string
@@ -1705,7 +1705,7 @@ func (w *Workflows) WorkflowWithParallelLocalActivities(ctx workflow.Context) (s
 	var activities *Activities
 	var futures []workflow.Future
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, 0, i))
 	}
 
@@ -1753,7 +1753,7 @@ func (w *Workflows) WorkflowWithParallelLongLocalActivityAndHeartbeat(ctx workfl
 	activities := Activities{}
 	var futures []workflow.Future
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		futures = append(futures, workflow.ExecuteLocalActivity(ctx, activities.Echo, 5, i))
 	}
 
@@ -1906,13 +1906,13 @@ func (w *Workflows) WorkflowWithLocalActivityRetriesAndPartialRetryPolicy(ctx wo
 func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (string, error) {
 	var futures []workflow.Future
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		valueToSet := i
 		future, setter := workflow.NewFuture(ctx)
 		futures = append(futures, future)
 
 		workflow.Go(ctx, func(ctx workflow.Context) {
-			encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+			encodedValue := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 				return valueToSet
 			})
 			var sideEffectValue int
@@ -1938,7 +1938,7 @@ func (w *Workflows) WorkflowWithParallelSideEffects(ctx workflow.Context) (strin
 func (w *Workflows) WorkflowWithParallelMutableSideEffects(ctx workflow.Context) (string, error) {
 	var futures []workflow.Future
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		valueToSet := i
 		future, setter := workflow.NewFuture(ctx)
 		futures = append(futures, future)
@@ -1947,10 +1947,10 @@ func (w *Workflows) WorkflowWithParallelMutableSideEffects(ctx workflow.Context)
 			encodedValue := workflow.MutableSideEffect(
 				ctx,
 				strconv.Itoa(valueToSet),
-				func(ctx workflow.Context) interface{} {
+				func(ctx workflow.Context) any {
 					return valueToSet
 				},
-				func(a interface{}, b interface{}) bool {
+				func(a any, b any) bool {
 					return a == b
 				},
 			)
@@ -2318,7 +2318,7 @@ func (w *Workflows) CancelTimerConcurrentWithOtherCommandWorkflow(ctx workflow.C
 	return result, nil
 }
 
-func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v interface{}) (interface{}, error) {
+func (w *Workflows) WaitSignalReturnParam(ctx workflow.Context, v any) (any, error) {
 	// Wait for signal before returning
 	s := workflow.NewSelector(ctx)
 	signalCh := workflow.GetSignalChannel(ctx, "done-signal")
@@ -2431,9 +2431,9 @@ func (w *Workflows) InterceptorCalls(ctx workflow.Context, someVal string) (stri
 	_ = workflow.SignalExternalWorkflow(ctx, "badid", "", "badsignal", nil).Get(ctx, nil)
 	_ = workflow.UpsertSearchAttributes(ctx, nil)
 	_ = workflow.UpsertMemo(ctx, nil)
-	workflow.SideEffect(ctx, func(workflow.Context) interface{} { return "sideeffect" })
+	workflow.SideEffect(ctx, func(workflow.Context) any { return "sideeffect" })
 	workflow.MutableSideEffect(ctx, "badid",
-		func(workflow.Context) interface{} { return "mutablesideeffect" }, reflect.DeepEqual)
+		func(workflow.Context) any { return "mutablesideeffect" }, reflect.DeepEqual)
 	workflow.GetVersion(ctx, "badchangeid", 2, 3)
 	workflow.IsReplaying(ctx)
 	workflow.HasLastCompletionResult(ctx)
@@ -2894,9 +2894,9 @@ func (w *Workflows) WorkflowWithRejectableUpdate(ctx workflow.Context) error {
 func (w *Workflows) WorkflowWithUpdate(ctx workflow.Context) error {
 	workflow.SetUpdateHandlerWithOptions(ctx, "update",
 		func(ctx workflow.Context, count int) error {
-			for i := 0; i < count; i++ {
+			for range count {
 				var i int
-				err := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+				err := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 					return mathrand.IntN(4)
 				}).Get(&i)
 				if err != nil {
@@ -3144,7 +3144,7 @@ func (w *Workflows) UpsertSearchAttributesConditional(ctx workflow.Context, maxT
 	if searchAttr == "set" {
 		err = workflow.Sleep(ctx, 100*time.Millisecond)
 	} else if searchAttr == "unset" {
-		err = workflow.UpsertSearchAttributes(ctx, map[string]interface{}{"CustomKeywordField": "set"})
+		err = workflow.UpsertSearchAttributes(ctx, map[string]any{"CustomKeywordField": "set"})
 	} else {
 		return errors.New("unkown search attribute value")
 	}
@@ -3188,7 +3188,7 @@ func (w *Workflows) UpsertMemoConditional(ctx workflow.Context, maxTicks int) er
 	if memoValue == "set" {
 		err = workflow.Sleep(ctx, 100*time.Millisecond)
 	} else if memoValue == "unset" {
-		err = workflow.UpsertMemo(ctx, map[string]interface{}{"TestMemo": "set"})
+		err = workflow.UpsertMemo(ctx, map[string]any{"TestMemo": "set"})
 	} else {
 		return errors.New("memo unknown value")
 	}
@@ -3249,8 +3249,8 @@ func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currV
 		err = workflow.MutableSideEffect(
 			ctx,
 			"side-effect-1",
-			func(ctx workflow.Context) interface{} { return retVal },
-			func(a, b interface{}) bool { return a.(int) == b.(int) },
+			func(ctx workflow.Context) any { return retVal },
+			func(a, b any) bool { return a.(int) == b.(int) },
 		).Get(&newVal)
 		if retVal != newVal {
 			log.Panicf("MutableSideEffect did not return expected value %d == %d", retVal, newVal)
@@ -3289,7 +3289,7 @@ func (w *Workflows) MutableSideEffect(ctx workflow.Context, startVal int) (currV
 
 func (w *Workflows) VersionLoopWorkflow(ctx workflow.Context, changeIDs []string, iterations int) error {
 	for _, changeID := range changeIDs {
-		for i := 0; i < iterations; i++ {
+		for i := range iterations {
 			workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
 		}
 		err := workflow.Sleep(ctx, time.Second)
@@ -3341,7 +3341,7 @@ func (w *Workflows) HeartbeatSpecificCount(ctx workflow.Context, interval time.D
 	return workflow.ExecuteActivity(ctx, activities.HeartbeatSpecificCount, interval, count).Get(ctx, nil)
 }
 
-func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]interface{}) (*commonpb.Memo, error) {
+func (w *Workflows) UpsertMemo(ctx workflow.Context, memo map[string]any) (*commonpb.Memo, error) {
 	err := workflow.UpsertMemo(ctx, memo)
 	if err != nil {
 		return nil, err
@@ -3512,7 +3512,7 @@ func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, nu
 		StartToCloseTimeout: time.Minute,
 		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
 	})
-	for i := 0; i < numOfEachActKind; i++ {
+	for i := range numOfEachActKind {
 		a := workflow.ExecuteLocalActivity(localActivityCtx, activities.failNTimes, actFailTimes, i)
 		futures = append(futures, a)
 	}
@@ -3520,7 +3520,7 @@ func (w *Workflows) RunsLocalAndNonlocalActsWithRetries(ctx workflow.Context, nu
 		StartToCloseTimeout: time.Minute,
 		RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 3, InitialInterval: time.Millisecond, BackoffCoefficient: 1},
 	})
-	for i := 0; i < numOfEachActKind; i++ {
+	for i := range numOfEachActKind {
 		a := workflow.ExecuteActivity(activityCtx, activities.failNTimes, actFailTimes, i)
 		futures = append(futures, a)
 	}
@@ -3575,7 +3575,7 @@ func (w *Workflows) SelectorBlockSignal(ctx workflow.Context) (string, error) {
 
 func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 	var seed uint64
-	if err := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	if err := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		return time.Now().UnixNano()
 	}).Get(&seed); err != nil {
 		return err
@@ -3584,7 +3584,7 @@ func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 
 	iterations := 10
 
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		cmd := rnd.IntN(7)
 
 		switch cmd {
@@ -3621,7 +3621,7 @@ func (w *Workflows) CommandsFuzz(ctx workflow.Context) error {
 			}
 		case 4:
 			// UpsertMemo
-			if err := workflow.UpsertMemo(ctx, map[string]interface{}{"TestMemo": "set"}); err != nil {
+			if err := workflow.UpsertMemo(ctx, map[string]any{"TestMemo": "set"}); err != nil {
 				return err
 			}
 		case 5:

@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/contrib/sysinfo
 
-go 1.25.4
+go 1.26.0
 
 require (
 	github.com/containerd/cgroups/v3 v3.0.3

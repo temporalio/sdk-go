@@ -69,7 +69,7 @@ func intTestChildWorkflow(ctx workflow.Context, input string) (string, error) {
 func intTestCombinedWorkflow(ctx workflow.Context, input string) (string, error) {
 	// Side effect
 	var sideEffectVal string
-	err := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	err := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		return "side"
 	}).Get(&sideEffectVal)
 	if err != nil {

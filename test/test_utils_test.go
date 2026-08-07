@@ -349,17 +349,17 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 
 // executeWorkflow executes a given workflow and waits for the result
 func (ts *ConfigAndClientSuiteBase) executeWorkflow(
-	wfID string, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	wfID string, wfFunc any, retValPtr any, args ...any) error {
 	return ts.executeWorkflowWithOption(ts.startWorkflowOptions(wfID), wfFunc, retValPtr, args...)
 }
 
 func (ts *ConfigAndClientSuiteBase) executeWorkflowWithOption(
-	options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	options client.StartWorkflowOptions, wfFunc any, retValPtr any, args ...any) error {
 	return ts.executeWorkflowWithContextAndOption(context.Background(), options, wfFunc, retValPtr, args...)
 }
 
 func (ts *ConfigAndClientSuiteBase) executeWorkflowWithContextAndOption(
-	ctx context.Context, options client.StartWorkflowOptions, wfFunc interface{}, retValPtr interface{}, args ...interface{}) error {
+	ctx context.Context, options client.StartWorkflowOptions, wfFunc any, retValPtr any, args ...any) error {
 	ctx, cancel := context.WithTimeout(ctx, ctxTimeout)
 	defer cancel()
 	run, err := ts.client.ExecuteWorkflow(ctx, options, wfFunc, args...)

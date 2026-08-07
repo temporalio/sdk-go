@@ -881,7 +881,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_UpdateWorkflow() {
 		WorkflowID:   wfID,
 		RunID:        run.GetRunID(),
 		UpdateName:   extStoreTargetUpdateName,
-		Args:         []interface{}{oversized(72)},
+		Args:         []any{oversized(72)},
 		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	s.NoError(err)
@@ -984,7 +984,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_CreateSchedule() {
 		Action: &client.ScheduleWorkflowAction{
 			ID:                  workflowID,
 			Workflow:            extStoreTargetWorkflow,
-			Args:                []interface{}{oversized(72)},
+			Args:                []any{oversized(72)},
 			TaskQueue:           s.taskQueueName,
 			WorkflowTaskTimeout: 5 * time.Second,
 		},
@@ -1016,7 +1016,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_UpdateSchedule() {
 		Action: &client.ScheduleWorkflowAction{
 			ID:                  workflowID,
 			Workflow:            extStoreTargetWorkflow,
-			Args:                []interface{}{"small"}, // below threshold; satisfies arg validation
+			Args:                []any{"small"}, // below threshold; satisfies arg validation
 			TaskQueue:           s.taskQueueName,
 			WorkflowTaskTimeout: 5 * time.Second,
 		},
@@ -1030,7 +1030,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_UpdateSchedule() {
 	s.NoError(handle.Update(ctx, client.ScheduleUpdateOptions{
 		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 			action := input.Description.Schedule.Action.(*client.ScheduleWorkflowAction)
-			action.Args = []interface{}{oversized(72)}
+			action.Args = []any{oversized(72)}
 			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
 		},
 	}))
@@ -1197,7 +1197,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_UpdateWithStartWorkflow() {
 		StartWorkflowOperation: startOp,
 		UpdateOptions: client.UpdateWorkflowOptions{
 			UpdateName:   extStoreTargetUpdateName,
-			Args:         []interface{}{oversized(72)},
+			Args:         []any{oversized(72)},
 			WaitForStage: client.WorkflowUpdateStageCompleted,
 		},
 	})

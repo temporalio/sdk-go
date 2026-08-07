@@ -614,7 +614,7 @@ type limitedSlotSupplier struct {
 
 func newLimitedSlotSupplier(slots int) *limitedSlotSupplier {
 	s := &limitedSlotSupplier{slots: make(chan struct{}, slots)}
-	for i := 0; i < slots; i++ {
+	for range slots {
 		s.slots <- struct{}{}
 	}
 	return s
@@ -1149,7 +1149,7 @@ func (s *PollerAutoscalerSuite) TestAutoscaleDownOnTimeoutWithCapability() {
 	ps.serverSupportsAutoscaling.Store(true)
 
 	// Send 20 empty polls - should scale all the way down to min (1)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		ps.handleTask(newEmptyTask())
 	}
 	assert.Equal(s.T(), int64(1), ps.target.Load())
@@ -1165,7 +1165,7 @@ func (s *PollerAutoscalerSuite) TestAutoscaleDownOnTimeoutWithoutCapability() {
 
 	// Send 20 empty polls - should NOT scale down because we haven't seen a
 	// scaling decision and server doesn't support autoscaling
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		ps.handleTask(newEmptyTask())
 	}
 	// target never changed from initial
@@ -1182,7 +1182,7 @@ func (s *PollerAutoscalerSuite) TestAutoscaleDownOnTimeoutClampsToMin() {
 	ps.serverSupportsAutoscaling.Store(true)
 
 	// Send 20 empty polls - should scale down but clamp at min (3)
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		ps.handleTask(newEmptyTask())
 	}
 	assert.Equal(s.T(), int64(3), ps.target.Load())

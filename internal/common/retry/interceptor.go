@@ -3,6 +3,7 @@ package retry
 import (
 	"context"
 	"math"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -112,7 +113,7 @@ var (
 // provided in the context. The atomic bool is checked each call to determine whether internals are included in retry.
 // If not present or false, internals are assumed to be included.
 func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig); ok {
 			if _, ok := ctx.Deadline(); !ok {
 				deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(rc.expirationInterval))
@@ -154,10 +155,8 @@ func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 		return false
 	}
 	errCode := grpcStatus.Code()
-	for _, retryable := range retryableCodesWithoutInternal {
-		if errCode == retryable {
-			return true
-		}
+	if slices.Contains(retryableCodesWithoutInternal, errCode) {
+		return true
 	}
 	if errCode == codes.Internal {
 		return !excludeInternalFromRetry.Load()
@@ -166,7 +165,7 @@ func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 }
 
 // GrpcMessageTooLargeErrorInterceptor checks if the error is caused by gRPC message being too large and converts it into GrpcMessageTooLargeError.
-func GrpcMessageTooLargeErrorInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+func GrpcMessageTooLargeErrorInterceptor(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	err := invoker(ctx, method, req, reply, cc, opts...)
 	if grpcStatus := status.Convert(err); isGrpcMessageTooLargeStatus(grpcStatus) {
 		err = &GrpcMessageTooLargeError{err: err, status: grpcStatus}

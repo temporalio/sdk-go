@@ -381,7 +381,6 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 			},
 		},
 	} {
-		tc := tc
 		t.Run(tc.name+" transforms result when payload exceeds error limit", func(t *testing.T) {
 			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000}, nil)
 			setErrorLimits(&payloadLimits{payloadSize: 10})
@@ -440,7 +439,6 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 	}
 
 	for _, tc := range skipErrorOnlyTypes {
-		tc := tc
 		t.Run(tc.name+" skips payload and memo error limits but not warning", func(t *testing.T) {
 			logger := ilog.NewMemoryLogger()
 			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)

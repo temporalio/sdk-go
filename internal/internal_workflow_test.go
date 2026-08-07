@@ -574,23 +574,23 @@ func (s *WorkflowUnitTest) Test_CancelledWorkflowCantStartChild() {
 
 func signalWorkflowTest(ctx Context) ([]byte, error) {
 	// read multiple times.
-	var result string
+	var result strings.Builder
 	ch := GetSignalChannel(ctx, "testSig1")
 	var v string
 	ok := ch.ReceiveAsync(&v)
 	if !ok {
 		return nil, errors.New("testSig1 not received")
 	}
-	result += v
+	result.WriteString(v)
 	ch.Receive(ctx, &v)
-	result += v
+	result.WriteString(v)
 
 	// Read on a selector.
 	ch2 := GetSignalChannel(ctx, "testSig2")
 	s := NewSelector(ctx)
 	s.AddReceive(ch2, func(c ReceiveChannel, more bool) {
 		c.Receive(ctx, &v)
-		result += v
+		result.WriteString(v)
 	})
 	s.Select(ctx)
 	s.Select(ctx)
@@ -600,9 +600,9 @@ func signalWorkflowTest(ctx Context) ([]byte, error) {
 	ch2 = GetSignalChannel(ctx, "testSig2")
 	s = NewSelector(ctx)
 	s.AddReceive(ch2, func(c ReceiveChannel, more bool) {
-		for i := 0; i < 4; i++ {
+		for range 4 {
 			c.Receive(ctx, &v)
-			result += v
+			result.WriteString(v)
 		}
 	})
 	s.Select(ctx)
@@ -614,12 +614,12 @@ func signalWorkflowTest(ctx Context) ([]byte, error) {
 	}
 	ch3 := GetSignalChannel(ctx, "testSig3")
 	ch3.Receive(ctx, &v)
-	result += v
+	result.WriteString(v)
 	list = getWorkflowEnvOptions(ctx).getUnhandledSignalNames()
 	if len(list) != 0 {
 		panic("expecting no unhandled signals")
 	}
-	return []byte(result), nil
+	return []byte(result.String()), nil
 }
 
 func (s *WorkflowUnitTest) Test_SignalWorkflow() {
@@ -638,7 +638,7 @@ func (s *WorkflowUnitTest) Test_SignalWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
 
 	// Setup signals.
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		msg := expected[i]
 		var delay time.Duration
 		if i > 0 {
@@ -941,7 +941,7 @@ func bufferedChanWorkflowTest(ctx Context, bufferSize int) error {
 
 	Go(ctx, func(ctx Context) {
 		var dummy int
-		for i := 0; i < bufferSize; i++ {
+		for range bufferSize {
 			bufferedCh.Receive(ctx, &dummy)
 		}
 	})
@@ -969,7 +969,7 @@ func bufferedChanWithSelectorWorkflowTest(ctx Context, bufferSize int) error {
 	var dummy struct{}
 
 	// 1. First we need to fill the buffer
-	for i := 0; i < bufferSize; i++ {
+	for range bufferSize {
 		bufferedCh.Send(ctx, dummy)
 	}
 
@@ -1063,7 +1063,7 @@ func getMemoTest(ctx Context) (result string, err error) {
 
 func (s *WorkflowUnitTest) Test_MemoWorkflow() {
 	env := s.NewTestWorkflowEnvironment()
-	memo := map[string]interface{}{
+	memo := map[string]any{
 		memoTestKey: memoTestVal,
 	}
 	err := env.SetMemoOnStart(memo)
@@ -1124,7 +1124,7 @@ func waitGroupWaitForMWorkflowTest(ctx Context, n int, m int) (int, error) {
 	results := make([]int, 0, n)
 	waitGroup := NewWaitGroup(ctx)
 	waitGroup.Add(m)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		t := time.Second * time.Duration(i+1)
 		Go(ctx, func(ctx Context) {
 			var result int
@@ -1157,7 +1157,7 @@ func waitGroupMultipleWaitsWorkflowTest(ctx Context) (int, error) {
 	results := make([]int, 0, n)
 	waitGroup := NewWaitGroup(ctx)
 	waitGroup.Add(4)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		t := time.Second * time.Duration(i+1)
 		Go(ctx, func(ctx Context) {
 			var result int
@@ -1326,7 +1326,7 @@ func (s *WorkflowUnitTest) Test_MutatingFunctionsInSideEffect() {
 	env := s.NewTestWorkflowEnvironment()
 
 	wf := func(ctx Context) error {
-		SideEffect(ctx, func(ctx Context) interface{} {
+		SideEffect(ctx, func(ctx Context) any {
 			_ = Sleep(ctx, time.Minute)
 			return nil
 		})
@@ -1342,10 +1342,10 @@ func (s *WorkflowUnitTest) Test_MutatingFunctionsInMutableSideEffect() {
 	env := s.NewTestWorkflowEnvironment()
 
 	wf := func(ctx Context) error {
-		MutableSideEffect(ctx, "test-side-effect", func(ctx Context) interface{} {
+		MutableSideEffect(ctx, "test-side-effect", func(ctx Context) any {
 			_ = Sleep(ctx, time.Minute)
 			return nil
-		}, func(a, b interface{}) bool { return false })
+		}, func(a, b any) bool { return false })
 		return nil
 	}
 	env.RegisterWorkflow(wf)
@@ -1444,8 +1444,8 @@ func (s *WorkflowUnitTest) Test_StaleGoroutinesAreShutDown() {
 
 func TestQueryFnValidation(t *testing.T) {
 	for _, tc := range [...]struct {
-		check func(require.TestingT, error, ...interface{})
-		fn    interface{}
+		check func(require.TestingT, error, ...any)
+		fn    any
 	}{
 		{require.Error, "not a function"},
 		{require.Error, func() {}},
@@ -1464,9 +1464,9 @@ func TestQueryFnValidation(t *testing.T) {
 
 func TestParamValidator(t *testing.T) {
 	for i, tc := range [...]struct {
-		Fn0   interface{}
-		Fn1   interface{}
-		Check func(require.TestingT, error, ...interface{})
+		Fn0   any
+		Fn1   any
+		Check func(require.TestingT, error, ...any)
 	}{
 		{
 			Fn0:   func() {},
@@ -1515,7 +1515,7 @@ func TestParamValidator(t *testing.T) {
 		},
 		{
 			Fn0:   func(int) {},
-			Fn1:   func(interface{}) {},
+			Fn1:   func(any) {},
 			Check: require.Error,
 		},
 		{
@@ -1567,14 +1567,14 @@ func (t *tracingWorkflowInboundInterceptor) Init(outbound WorkflowOutboundInterc
 		WorkflowOutboundInterceptorBase{Next: outbound}, t})
 }
 
-func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (interface{}, error) {
+func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (any, error) {
 	t.trace = append(t.trace, "ExecuteWorkflow "+GetWorkflowInfo(ctx).WorkflowType.Name+" begin")
 	result, err := t.Next.ExecuteWorkflow(ctx, in)
 	t.trace = append(t.trace, "ExecuteWorkflow "+GetWorkflowInfo(ctx).WorkflowType.Name+" end")
 	return result, err
 }
 
-func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(ctx Context, activityType string, args ...interface{}) Future {
+func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(ctx Context, activityType string, args ...any) Future {
 	t.inbound.trace = append(t.inbound.trace, "ExecuteActivity "+activityType)
 	return t.Next.ExecuteActivity(ctx, activityType, args...)
 }

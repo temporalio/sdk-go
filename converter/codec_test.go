@@ -59,7 +59,7 @@ func TestEncodingDataConverter(t *testing.T) {
 	assertEncodingDataConverter(t, &SomeStruct{MyValue: "somestring"})
 }
 
-func assertEncodingDataConverter(t *testing.T, data interface{}) {
+func assertEncodingDataConverter(t *testing.T, data any) {
 	defaultConv := GetDefaultDataConverter()
 	zlibConv := NewCodecDataConverter(
 		defaultConv,
@@ -71,7 +71,7 @@ func assertEncodingDataConverter(t *testing.T, data interface{}) {
 	compPayload, err := zlibConv.ToPayload(data)
 	require.NoError(t, err)
 	require.Equal(t, "binary/zlib", string(compPayload.Metadata[MetadataEncoding]))
-	var newData interface{}
+	var newData any
 	if data == nil {
 		newData = &newData
 	} else if data != nil {
@@ -289,7 +289,7 @@ func TestRawValueCodec(t *testing.T) {
 	require.Equal("binary/zlib", string(compPayload.Metadata[MetadataEncoding]))
 	require.False(proto.Equal(rawValue.Payload(), compPayload))
 
-	newData := reflect.New(reflect.TypeOf(data)).Interface()
+	newData := reflect.New(reflect.TypeFor[string]()).Interface()
 	require.NoError(zlibConv.FromPayload(compPayload, newData))
 	require.Equal(data, reflect.ValueOf(newData).Elem().Interface())
 
@@ -300,7 +300,7 @@ func TestRawValueCodec(t *testing.T) {
 	require.Len(compPayloads.Payloads, 1)
 	require.False(proto.Equal(rawValue.Payload(), compPayloads.Payloads[0]))
 
-	newData = reflect.New(reflect.TypeOf(data)).Interface()
+	newData = reflect.New(reflect.TypeFor[string]()).Interface()
 	require.NoError(zlibConv.FromPayloads(compPayloads, newData))
 	require.Equal(data, reflect.ValueOf(newData).Elem().Interface())
 }

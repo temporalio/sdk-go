@@ -1962,7 +1962,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
 	mockService.EXPECT().
 		RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(_ interface{}, _ interface{}, _ ...interface{}) { invocationChannel <- 1 }).
+		Do(func(_ any, _ any, _ ...any) { invocationChannel <- 1 }).
 		Return(&heartbeatResponse, nil).
 		Times(2)
 
@@ -2059,7 +2059,7 @@ func (t *testActivityDeadline) ActivityType() ActivityType {
 	return ActivityType{Name: "test"}
 }
 
-func (t *testActivityDeadline) GetFunction() interface{} {
+func (t *testActivityDeadline) GetFunction() any {
 	return t.Execute
 }
 

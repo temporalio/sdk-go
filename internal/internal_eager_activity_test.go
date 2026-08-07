@@ -88,11 +88,11 @@ func TestEagerActivityMaxPerTask(t *testing.T) {
 
 	// Add 8, but it limits to only the first 2
 	var req workflowservice.RespondWorkflowTaskCompletedRequest
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		addScheduleTaskCommand(&req, "task-queue1")
 	}
 	require.Equal(t, 2, len(exec.applyToRequest(&req)))
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		require.Equal(t, i < 2, req.Commands[i].GetScheduleActivityTaskCommandAttributes().RequestEagerExecution)
 	}
 }
@@ -228,7 +228,7 @@ func newWaitingTaskProcessor() *waitingTaskProcessor {
 	return &waitingTaskProcessor{completeCh: make(chan struct{})}
 }
 
-func (w *waitingTaskProcessor) ProcessTask(interface{}) error {
+func (w *waitingTaskProcessor) ProcessTask(any) error {
 	atomic.AddInt32(&w.numWaiting, 1)
 	defer atomic.AddInt32(&w.numWaiting, -1)
 	<-w.completeCh

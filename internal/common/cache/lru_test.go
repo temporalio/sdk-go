@@ -69,18 +69,16 @@ func TestLRUCacheConcurrentAccess(t *testing.T) {
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
+	for range 20 {
 
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			<-start
 
-			for j := 0; j < 1000; j++ {
+			for range 1000 {
 				cache.Get("A")
 			}
-		}()
+		})
 	}
 
 	close(start)
@@ -90,7 +88,7 @@ func TestLRUCacheConcurrentAccess(t *testing.T) {
 func TestRemoveFunc(t *testing.T) {
 	ch := make(chan bool)
 	cache := New(5, &Options{
-		RemovedFunc: func(i interface{}) {
+		RemovedFunc: func(i any) {
 			_, ok := i.(*testing.T)
 			assert.True(t, ok)
 			ch <- true
@@ -114,7 +112,7 @@ func TestRemovedFuncWithTTL(t *testing.T) {
 	ch := make(chan bool)
 	cache := New(5, &Options{
 		TTL: time.Millisecond * 50,
-		RemovedFunc: func(i interface{}) {
+		RemovedFunc: func(i any) {
 			_, ok := i.(*testing.T)
 			assert.True(t, ok)
 			ch <- true
@@ -139,7 +137,7 @@ func TestClear(t *testing.T) {
 	ch := make(chan bool)
 	cache := New(5, &Options{
 		TTL: time.Millisecond * 50,
-		RemovedFunc: func(i interface{}) {
+		RemovedFunc: func(i any) {
 			_, ok := i.(*testing.T)
 			assert.True(t, ok)
 			ch <- true
