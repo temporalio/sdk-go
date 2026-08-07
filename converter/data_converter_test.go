@@ -8,11 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testDataConverterFunction(t *testing.T, dc DataConverter, f interface{}, args ...interface{}) string {
+func testDataConverterFunction(t *testing.T, dc DataConverter, f any, args ...any) string {
 	input, err := dc.ToPayloads(args...)
 	require.NoError(t, err, err)
 
-	var result []interface{}
+	var result []any
 	for _, v := range args {
 		arg := reflect.New(reflect.TypeOf(v)).Interface()
 		result = append(result, arg)
@@ -62,7 +62,7 @@ func TestDefaultDataConverter(t *testing.T) {
 func testToStringsFunction(
 	t *testing.T,
 	dc DataConverter,
-	args ...interface{},
+	args ...any,
 ) []string {
 	input, err := dc.ToPayloads(args...)
 	require.NoError(t, err, err)

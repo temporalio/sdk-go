@@ -61,7 +61,7 @@ type (
 	// taskProcessor interface to process tasks
 	taskProcessor interface {
 		// ProcessTask processes a task
-		ProcessTask(interface{}) error
+		ProcessTask(any) error
 	}
 
 	pollerScaleDecision struct {
@@ -434,7 +434,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 }
 
 // ProcessTask processes a task which could be workflow task or local activity result
-func (wtp *workflowTaskProcessor) ProcessTask(task interface{}) error {
+func (wtp *workflowTaskProcessor) ProcessTask(task any) error {
 	if !wtp.shouldDrainOnShutdown() && wtp.stopping() {
 		return errStop
 	}
@@ -637,7 +637,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	response, err = wtp.sendTaskCompletedRequest(taskCompletion, task)
 
 	completionEventId := task.GetStartedEventId() + 1
-	loggerDurationKeyVals := []interface{}{
+	loggerDurationKeyVals := []any{
 		tagWorkflowType, task.WorkflowType.GetName(),
 		tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 		tagRunID, task.WorkflowExecution.GetRunId(),
@@ -938,7 +938,7 @@ func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
 	return task, nil
 }
 
-func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
+func (latp *localActivityTaskPoller) ProcessTask(task any) error {
 	if latp.stopping() {
 		return errStop
 	}
@@ -1454,7 +1454,7 @@ func (atp *activityTaskPoller) PollTask() (taskForWorker, error) {
 }
 
 // ProcessTask processes a new task
-func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
+func (atp *activityTaskPoller) ProcessTask(task any) error {
 	if !atp.shouldDrainOnShutdown() && atp.stopping() {
 		return errStop
 	}
@@ -1515,7 +1515,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 func reportActivityComplete(
 	ctx context.Context,
 	service workflowservice.WorkflowServiceClient,
-	request interface{},
+	request any,
 	rpcMetricsHandler metrics.Handler,
 ) error {
 	if request == nil {
@@ -1549,7 +1549,7 @@ func reportActivityComplete(
 func reportActivityCompleteByID(
 	ctx context.Context,
 	service workflowservice.WorkflowServiceClient,
-	request interface{},
+	request any,
 	rpcMetricsHandler metrics.Handler,
 ) error {
 	if request == nil {
@@ -1593,7 +1593,7 @@ func convertActivityResultToRespondRequest(
 	versionStamp *commonpb.WorkerVersionStamp,
 	deployment *deploymentpb.Deployment,
 	workerDeploymentOptions *deploymentpb.WorkerDeploymentOptions,
-) interface{} {
+) any {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
@@ -1666,7 +1666,7 @@ func convertActivityResultToRespondRequestByID(
 	dataConverter converter.DataConverter,
 	failureConverter converter.FailureConverter,
 	cancelAllowed bool,
-) interface{} {
+) any {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point

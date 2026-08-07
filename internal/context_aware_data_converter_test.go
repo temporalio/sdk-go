@@ -25,7 +25,7 @@ var (
 	ContextAwareDataConverterContextKey = contextKeyType{}
 )
 
-func (dc *ContextAwareDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (dc *ContextAwareDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	payload, err := dc.dataConverter.ToPayload(value)
 	if err != nil {
 		return payload, err
@@ -37,7 +37,7 @@ func (dc *ContextAwareDataConverter) ToPayload(value interface{}) (*commonpb.Pay
 	return payload, nil
 }
 
-func (dc *ContextAwareDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
+func (dc *ContextAwareDataConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
 	result := &commonpb.Payloads{}
 
 	for i, value := range values {
@@ -52,11 +52,11 @@ func (dc *ContextAwareDataConverter) ToPayloads(values ...interface{}) (*commonp
 	return result, nil
 }
 
-func (dc *ContextAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (dc *ContextAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	return dc.dataConverter.FromPayload(payload, valuePtr)
 }
 
-func (dc *ContextAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (dc *ContextAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
 	return dc.dataConverter.FromPayloads(payloads, valuePtrs...)
 }
 

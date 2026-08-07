@@ -46,7 +46,7 @@ func newTestDeps() (workerDeps, *mockWorker, *mockClient) {
 		newWorker: func(_ client.Client, _ string, _ worker.Options) worker.Worker {
 			return w
 		},
-		startLambda: func(handler interface{}, options ...lambda.Option) {
+		startLambda: func(handler any, options ...lambda.Option) {
 			// Invoke the handler once to simulate a single Lambda invocation.
 			if h, ok := handler.(func(context.Context) error); ok {
 				_ = h(testInvocationContext())
@@ -134,7 +134,7 @@ func TestRunWorkerInternal_DialError_HandlerReturnsError(t *testing.T) {
 	}
 
 	var handlerErr error
-	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+	deps.startLambda = func(handler any, options ...lambda.Option) {
 		if h, ok := handler.(func(context.Context) error); ok {
 			handlerErr = h(testInvocationContext())
 		}
@@ -172,7 +172,7 @@ func TestRunWorkerInternal_WorkerStartError(t *testing.T) {
 	c.On("Close").Once()
 
 	var handlerErr error
-	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+	deps.startLambda = func(handler any, options ...lambda.Option) {
 		if h, ok := handler.(func(context.Context) error); ok {
 			handlerErr = h(testInvocationContext())
 		}
@@ -405,7 +405,7 @@ func TestRunWorkerInternal_OnShutdownCalled(t *testing.T) {
 
 func TestRunWorkerInternal_OnShutdownCalledPerInvocation(t *testing.T) {
 	deps, w, c := newTestDeps()
-	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+	deps.startLambda = func(handler any, options ...lambda.Option) {
 		if h, ok := handler.(func(context.Context) error); ok {
 			_ = h(testInvocationContext())
 			_ = h(testInvocationContext())
@@ -535,7 +535,7 @@ func TestRunWorkerInternal_TightDeadlineReturnsError(t *testing.T) {
 	deps, w, c := newTestDeps()
 
 	// 2s deadline with 1500ms buffer → ~500ms workTime (≤ 1s), error.
-	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+	deps.startLambda = func(handler any, options ...lambda.Option) {
 		if h, ok := handler.(func(context.Context) error); ok {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
@@ -559,12 +559,12 @@ type capturingLogger struct {
 	errors []string
 }
 
-func (l *capturingLogger) Debug(string, ...interface{}) {}
-func (l *capturingLogger) Info(string, ...interface{})  {}
-func (l *capturingLogger) Warn(msg string, _ ...interface{}) {
+func (l *capturingLogger) Debug(string, ...any) {}
+func (l *capturingLogger) Info(string, ...any)  {}
+func (l *capturingLogger) Warn(msg string, _ ...any) {
 	l.warns = append(l.warns, msg)
 }
-func (l *capturingLogger) Error(msg string, _ ...interface{}) {
+func (l *capturingLogger) Error(msg string, _ ...any) {
 	l.errors = append(l.errors, msg)
 }
 
@@ -578,7 +578,7 @@ func TestRunWorkerInternal_TightDeadlineLogsWarning(t *testing.T) {
 	// Use a small custom buffer so workTime lands in the warning band
 	// (> 1s but < 5s) without a long wait. 2s deadline, 500ms buffer → ~1.5s
 	// work time.
-	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+	deps.startLambda = func(handler any, options ...lambda.Option) {
 		if h, ok := handler.(func(context.Context) error); ok {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
@@ -609,7 +609,7 @@ func TestRunWorkerInternal_PerInvocationLifecycle(t *testing.T) {
 		dialCount++
 		return c, nil
 	}
-	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+	deps.startLambda = func(handler any, options ...lambda.Option) {
 		if h, ok := handler.(func(context.Context) error); ok {
 			// Invoke handler multiple times to simulate sequential Lambda invocations.
 			_ = h(testInvocationContext())

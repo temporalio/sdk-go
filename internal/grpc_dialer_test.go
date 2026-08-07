@@ -42,7 +42,7 @@ func TestErrorWrapper_SimpleError(t *testing.T) {
 	require := require.New(t)
 
 	svcerr := errorInterceptor(context.Background(), "method", "request", "reply", nil,
-		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+		func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			return status.Error(codes.NotFound, "Something not found")
 		})
 
@@ -54,7 +54,7 @@ func TestErrorWrapper_ErrorWithFailure(t *testing.T) {
 	require := require.New(t)
 
 	svcerr := errorInterceptor(context.Background(), "method", "request", "reply", nil,
-		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+		func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			st, _ := status.New(codes.AlreadyExists, "Something started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{
 				StartRequestId: "srId",
 				RunId:          "rId",
@@ -86,7 +86,7 @@ func (a authHeadersProvider) GetHeaders(context.Context) (map[string]string, err
 
 func TestHeadersProvider_PopulateAuthToken(t *testing.T) {
 	require.NoError(t, headersProviderInterceptor(authHeadersProvider{token: "test-auth-token"})(context.Background(), "method", "request", "reply", nil,
-		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+		func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			md, ok := metadata.FromOutgoingContext(ctx)
 			if !ok {
 				return errors.New("unable to get outgoing context metadata")
@@ -101,7 +101,7 @@ func TestHeadersProvider_PopulateAuthToken(t *testing.T) {
 
 func TestHeadersProvider_Error(t *testing.T) {
 	require.Error(t, headersProviderInterceptor(authHeadersProvider{err: errors.New("failed to populate headers")})(context.Background(), "method", "request", "reply", nil,
-		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
+		func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			return nil
 		}))
 }
@@ -121,7 +121,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	// Make a gRPC server that responds like an older server missing GetSystemInfo.
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	srv := grpc.NewServer(grpc.UnknownServiceHandler(func(_ interface{}, _ grpc.ServerStream) error {
+	srv := grpc.NewServer(grpc.UnknownServiceHandler(func(_ any, _ grpc.ServerStream) error {
 		return status.Error(codes.Unimplemented, "unknown method GetSystemInfo")
 	}))
 	defer srv.Stop()
@@ -133,7 +133,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 
 	// Wait until it is responding with a 404
 	var lastErr error
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		lastErr = nil
 		conn, err := grpc.NewClient(l.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
@@ -307,8 +307,8 @@ func TestDialOptions(t *testing.T) {
 		return func(
 			ctx context.Context,
 			method string,
-			req interface{},
-			reply interface{},
+			req any,
+			reply any,
 			cc *grpc.ClientConn,
 			invoker grpc.UnaryInvoker,
 			opts ...grpc.CallOption,
@@ -780,7 +780,7 @@ func startTestGRPCServer() (*testGRPCServer, error) {
 func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		conn, err := grpc.NewClient(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err

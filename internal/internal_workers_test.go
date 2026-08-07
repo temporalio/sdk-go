@@ -35,7 +35,7 @@ func newNoResponseActivityTaskHandler() *noResponseActivityTaskHandler {
 	return &noResponseActivityTaskHandler{isExecuteCalled: make(chan struct{})}
 }
 
-func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
+func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (any, error) {
 	close(ath.isExecuteCalled)
 	c := make(chan struct{})
 	<-c
@@ -133,7 +133,7 @@ func (c *CountingSlotSupplier) MaxSlots() int {
 func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 	// Run this a bunch of times since releases/reserves are sensitive to shutdown conditions
 	// and we want to make sure they always line up
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		s.SetupTest()
 		taskQueue := "testTaskQueue"
 		testEvents := []*historypb.HistoryEvent{
@@ -158,12 +158,12 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 		unblockPollCh := make(chan struct{})
 		pollRespondedCh := make(chan struct{})
 		s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				<-unblockPollCh
 			}).
 			Return(task, nil).AnyTimes()
 		s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				pollRespondedCh <- struct{}{}
 			}).
 			Return(nil, nil).AnyTimes()
@@ -208,7 +208,7 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 	// Run this a bunch of times since releases/reserves are sensitive to shutdown conditions
 	// and we want to make sure they always line up
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		s.SetupTest()
 
 		task := &workflowservice.PollActivityTaskQueueResponse{
@@ -222,12 +222,12 @@ func (s *WorkersTestSuite) TestActivityWorkerSlotSupplier() {
 		unblockPollCh := make(chan struct{})
 		pollRespondedCh := make(chan struct{})
 		s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				<-unblockPollCh
 			}).
 			Return(task, nil).AnyTimes()
 		s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-			Do(func(ctx, in interface{}, opts ...interface{}) {
+			Do(func(ctx, in any, opts ...any) {
 				pollRespondedCh <- struct{}{}
 			}).
 			Return(nil, nil).AnyTimes()
@@ -301,12 +301,12 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 	unblockPollCh := make(chan struct{})
 	pollRespondedCh := make(chan struct{})
 	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(ctx, in interface{}, opts ...interface{}) {
+		Do(func(ctx, in any, opts ...any) {
 			<-unblockPollCh
 		}).
 		Return(task, nil).AnyTimes()
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(ctx, in interface{}, opts ...interface{}) {
+		Do(func(ctx, in any, opts ...any) {
 			pollRespondedCh <- struct{}{}
 		}).
 		Return(nil, nil).AnyTimes()
@@ -336,7 +336,7 @@ func (s *WorkersTestSuite) TestErrorProneSlotSupplier() {
 	client := WorkflowClient{workflowService: s.service}
 	activityWorker := newActivityWorker(&client, executionParameters, overrides, registry, nil)
 	_ = activityWorker.Start()
-	for i := 0; i < 25; i++ {
+	for range 25 {
 		unblockPollCh <- struct{}{}
 		<-pollRespondedCh
 	}

@@ -652,7 +652,7 @@ type pendingActivityTaskHandler struct {
 	executed chan struct{}
 }
 
-func (h *pendingActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
+func (h *pendingActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (any, error) {
 	close(h.executed)
 	return ErrActivityResultPending, nil
 }

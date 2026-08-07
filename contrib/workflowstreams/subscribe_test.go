@@ -107,7 +107,7 @@ type fakeUpdateHandle struct {
 
 func (h *fakeUpdateHandle) RunID() string { return h.runID }
 
-func (h *fakeUpdateHandle) Get(_ context.Context, valuePtr interface{}) error {
+func (h *fakeUpdateHandle) Get(_ context.Context, valuePtr any) error {
 	if h.err != nil {
 		return h.err
 	}

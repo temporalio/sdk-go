@@ -568,7 +568,7 @@ func (s *workflowRunSuite) alreadyStartedErrTest(dc converter.DataConverter, raw
 
 	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(getResponse, nil).Times(1)
-	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) {
+	getHistory.Do(func(ctx any, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) {
 		workflowID := getRequest.Execution.WorkflowId
 		s.NotNil(workflowID)
 		s.NotEmpty(workflowID)
@@ -619,7 +619,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions() {
 	}
 	var wid string
 	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
-	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) {
+	getHistory.Do(func(ctx any, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) {
 		wid = getRequest.Execution.WorkflowId
 		s.NotEmpty(wid)
 	})
@@ -671,7 +671,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoIdInOptions_RawHistory() {
 
 	var wid string
 	getHistory := s.workflowServiceClient.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(getResponse, nil).Times(1)
-	getHistory.Do(func(ctx interface{}, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) {
+	getHistory.Do(func(ctx any, getRequest *workflowservice.GetWorkflowExecutionHistoryRequest, opts ...grpc.CallOption) {
 		wid = getRequest.Execution.WorkflowId
 		s.NotNil(wid)
 		s.NotEmpty(wid)
@@ -1500,7 +1500,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithContextAwareDat
 		RunId: runID,
 	}
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResponse, nil).
-		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...any) {
 			dc := client.dataConverter
 			inputs := dc.ToStrings(req.Input)
 			s.Equal("\"te?t\"", inputs[0])
@@ -1531,7 +1531,7 @@ func (s *workflowClientTestSuite) TestUpdateWorkflowWithContextAwareDataConverte
 			Value: &updatepb.Outcome_Success{},
 		},
 	}
-	s.service.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(updateResponse, nil).Do(func(_ interface{}, req *workflowservice.UpdateWorkflowExecutionRequest, _ ...interface{}) {
+	s.service.EXPECT().UpdateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(updateResponse, nil).Do(func(_ any, req *workflowservice.UpdateWorkflowExecutionRequest, _ ...any) {
 		dc := client.dataConverter
 		inputs := dc.ToStrings(req.GetRequest().GetInput().Args)
 		s.Equal("\"te?t\"", inputs[0])
@@ -1542,7 +1542,7 @@ func (s *workflowClientTestSuite) TestUpdateWorkflowWithContextAwareDataConverte
 	_, err := s.client.UpdateWorkflow(ctx, UpdateWorkflowOptions{
 		UpdateName:   "my-update",
 		WaitForStage: WorkflowUpdateStageCompleted,
-		Args:         []interface{}{input},
+		Args:         []any{input},
 	})
 	s.Nil(err)
 }
@@ -1753,7 +1753,7 @@ func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
 		RunId: runID,
 	}
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).
-		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.StartWorkflowExecutionRequest, _ ...any) {
 			dc := client.dataConverter
 			encodedArg, _ := dc.ToPayloads(input)
 			s.True(proto.Equal(req.Input, encodedArg))
@@ -1788,7 +1788,7 @@ func (s *workflowClientTestSuite) TestExecuteWorkflowWithContextAwareDataConvert
 		RunId: runID,
 	}
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil).
-		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.StartWorkflowExecutionRequest, _ ...any) {
 			dc := client.dataConverter
 			inputs := dc.ToStrings(req.Input)
 			s.Equal("\"t?st\"", inputs[0])
@@ -1803,12 +1803,12 @@ func (s *workflowClientTestSuite) TestExecuteWorkflowWithContextAwareDataConvert
 }
 
 func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
-	memo := map[string]interface{}{
+	memo := map[string]any{
 		"testMemo": "memo value",
 	}
 	nilPayload, err := converter.GetDefaultDataConverter().ToPayload(nil)
 	s.NoError(err)
-	searchAttributes := map[string]interface{}{
+	searchAttributes := map[string]any{
 		"testAttr":       "attr value",
 		"nilAttr":        nil,
 		"nilPayloadAttr": nilPayload,
@@ -1827,7 +1827,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
 	startResp := &workflowservice.StartWorkflowExecutionResponse{}
 
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
-		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.StartWorkflowExecutionRequest, _ ...any) {
 			var resultMemo, resultAttr string
 			err := converter.GetDefaultDataConverter().FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
@@ -1846,12 +1846,12 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
 }
 
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAttr() {
-	memo := map[string]interface{}{
+	memo := map[string]any{
 		"testMemo": "memo value",
 	}
 	nilPayload, err := converter.GetDefaultDataConverter().ToPayload(nil)
 	s.NoError(err)
-	searchAttributes := map[string]interface{}{
+	searchAttributes := map[string]any{
 		"testAttr":       "attr value",
 		"nilAttr":        nil,
 		"nilPayloadAttr": nilPayload,
@@ -1870,7 +1870,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 	startResp := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
 
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
-		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...any) {
 			var resultMemo, resultAttr string
 			err := converter.GetDefaultDataConverter().FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
 			s.NoError(err)
@@ -1910,7 +1910,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 	startResp := &workflowservice.StartWorkflowExecutionResponse{}
 
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
-		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.StartWorkflowExecutionRequest, _ ...any) {
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1948,7 +1948,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithOneTimeVersioningOverride
 	startResp := &workflowservice.StartWorkflowExecutionResponse{}
 
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
-		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.StartWorkflowExecutionRequest, _ ...any) {
 			s.Nil(req.VersioningOverride.GetPinned())
 			s.False(req.VersioningOverride.GetAutoUpgrade())
 			s.Equal("deployment1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetDeploymentName())
@@ -1978,7 +1978,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 	startResp := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
 
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
-		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...any) {
 			//lint:ignore SA1019 ignore deprecated versioning APIs
 			s.Equal(versioningBehaviorToProto(VersioningBehaviorPinned), req.VersioningOverride.GetBehavior())
 			//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -2015,7 +2015,7 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithOneTimeVersioni
 	startResp := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
 
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
-		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...any) {
 			s.Nil(req.VersioningOverride.GetPinned())
 			s.False(req.VersioningOverride.GetAutoUpgrade())
 			s.Equal("deployment1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetDeploymentName())
@@ -2025,12 +2025,12 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithOneTimeVersioni
 }
 
 func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
-	var input1 map[string]interface{}
+	var input1 map[string]any
 	result1, err := getWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.Nil(result1)
 
-	input1 = make(map[string]interface{})
+	input1 = make(map[string]any)
 	result2, err := getWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.NotNil(result2)
@@ -2056,7 +2056,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoDataConverter() {
 		dc := iconverter.NewTestDataConverter()
 		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
-		memo := map[string]interface{}{
+		memo := map[string]any{
 			"testMemo": "memo value",
 		}
 		options := StartWorkflowOptions{
@@ -2070,7 +2070,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoDataConverter() {
 
 		startResp := &workflowservice.StartWorkflowExecutionResponse{}
 		s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
-			Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+			Do(func(_ any, req *workflowservice.StartWorkflowExecutionRequest, _ ...any) {
 				encoding := string(req.Memo.Fields["testMemo"].Metadata[converter.MetadataEncoding])
 				if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
 					s.Equal("binary/gob", encoding)
@@ -2099,19 +2099,19 @@ type failingMemoDataConverter struct {
 	delegate converter.DataConverter
 }
 
-func (f failingMemoDataConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (f failingMemoDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	return nil, fmt.Errorf("failingMemoDataConverter memo encoding failed")
 }
 
-func (f failingMemoDataConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (f failingMemoDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	return f.delegate.FromPayload(payload, valuePtr)
 }
 
-func (f failingMemoDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
+func (f failingMemoDataConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
 	return f.delegate.ToPayloads(values...)
 }
 
-func (f failingMemoDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (f failingMemoDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
 	return f.delegate.FromPayloads(payloads, valuePtrs...)
 }
 
@@ -2130,7 +2130,7 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoUserAndDefaultConvert
 		}
 		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
-		memo := map[string]interface{}{
+		memo := map[string]any{
 			"testMemo": make(chan int),
 		}
 		options := StartWorkflowOptions{
@@ -2166,18 +2166,18 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoUserAndDefaultConvert
 }
 
 func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
-	var input1 map[string]interface{}
+	var input1 map[string]any
 	result1, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.Nil(result1)
 
-	input1 = make(map[string]interface{})
+	input1 = make(map[string]any)
 	result2, err := serializeUntypedSearchAttributes(input1)
 	s.NoError(err)
 	s.NotNil(result2)
 	s.Equal(0, len(result2.IndexedFields))
 
-	input1 = map[string]interface{}{
+	input1 = map[string]any{
 		"t1": "v1",
 	}
 	result3, err := serializeUntypedSearchAttributes(input1)
@@ -2188,7 +2188,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	_ = converter.GetDefaultDataConverter().FromPayload(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
-	input1 = map[string]interface{}{
+	input1 = map[string]any{
 		"nil-attr": nil,
 	}
 	resultNil, err := serializeUntypedSearchAttributes(input1)
@@ -2201,7 +2201,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	// *Payload type goes through.
 	p, err := converter.GetDefaultDataConverter().ToPayload("5eaf00d")
 	s.NoError(err)
-	input1 = map[string]interface{}{
+	input1 = map[string]any{
 		"payload": p,
 	}
 	result4, err := serializeUntypedSearchAttributes(input1)
@@ -2211,7 +2211,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	_ = converter.GetDefaultDataConverter().FromPayload(result4.IndexedFields["payload"], &resultString)
 	s.Equal("5eaf00d", resultString)
 
-	input1 = map[string]interface{}{
+	input1 = map[string]any{
 		"non-serializable": make(chan int),
 	}
 	_, err = serializeUntypedSearchAttributes(input1)
@@ -2227,7 +2227,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributesOmitsNilValuesOnS
 	nilBytesPayload, err := converter.GetDefaultDataConverter().ToPayload(nilBytes)
 	s.NoError(err)
 
-	result, err := serializeSearchAttributes(map[string]interface{}{
+	result, err := serializeSearchAttributes(map[string]any{
 		"realAttr":          payload,
 		"nilAttr":           nil,
 		"nilPayloadAttr":    nilPayload,
@@ -2251,7 +2251,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributesOmitsNilValuesOnS
 	s.NoError(err)
 	s.Equal("value", resultString)
 
-	result, err = serializeSearchAttributes(map[string]interface{}{"nilAttr": nil}, SearchAttributes{})
+	result, err = serializeSearchAttributes(map[string]any{"nilAttr": nil}, SearchAttributes{})
 	s.NoError(err)
 	s.Nil(result)
 }
@@ -2260,7 +2260,7 @@ func (s *workflowClientTestSuite) TestListWorkflow() {
 	request := &workflowservice.ListWorkflowExecutionsRequest{}
 	response := &workflowservice.ListWorkflowExecutionsResponse{}
 	s.service.EXPECT().ListWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
-		Do(func(_ interface{}, req *workflowservice.ListWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.ListWorkflowExecutionsRequest, _ ...any) {
 			s.Equal(DefaultNamespace, request.GetNamespace())
 		})
 	resp, err := s.client.ListWorkflow(context.Background(), request)
@@ -2269,7 +2269,7 @@ func (s *workflowClientTestSuite) TestListWorkflow() {
 
 	request.Namespace = "another"
 	s.service.EXPECT().ListWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument("")).
-		Do(func(_ interface{}, req *workflowservice.ListWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.ListWorkflowExecutionsRequest, _ ...any) {
 			s.Equal("another", request.GetNamespace())
 		})
 	_, err = s.client.ListWorkflow(context.Background(), request)
@@ -2280,7 +2280,7 @@ func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
 	request := &workflowservice.ListArchivedWorkflowExecutionsRequest{}
 	response := &workflowservice.ListArchivedWorkflowExecutionsResponse{}
 	s.service.EXPECT().ListArchivedWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
-		Do(func(_ interface{}, req *workflowservice.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.ListArchivedWorkflowExecutionsRequest, _ ...any) {
 			s.Equal(DefaultNamespace, request.GetNamespace())
 		})
 	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), time.Minute)
@@ -2291,7 +2291,7 @@ func (s *workflowClientTestSuite) TestListArchivedWorkflow() {
 
 	request.Namespace = "another"
 	s.service.EXPECT().ListArchivedWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument("")).
-		Do(func(_ interface{}, req *workflowservice.ListArchivedWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.ListArchivedWorkflowExecutionsRequest, _ ...any) {
 			s.Equal("another", request.GetNamespace())
 		})
 	_, err = s.client.ListArchivedWorkflow(ctxWithTimeout, request)
@@ -2305,7 +2305,7 @@ func (s *workflowClientTestSuite) TestScanWorkflow() {
 	response := &workflowservice.ScanWorkflowExecutionsResponse{}
 	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
 		//lint:ignore SA1019 the server API was deprecated.
-		Do(func(_ interface{}, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...any) {
 			s.Equal(DefaultNamespace, request.GetNamespace())
 		})
 	resp, err := s.client.ScanWorkflow(context.Background(), request)
@@ -2315,7 +2315,7 @@ func (s *workflowClientTestSuite) TestScanWorkflow() {
 	request.Namespace = "another"
 	s.service.EXPECT().ScanWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument("")).
 		//lint:ignore SA1019 the server API was deprecated.
-		Do(func(_ interface{}, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.ScanWorkflowExecutionsRequest, _ ...any) {
 			s.Equal("another", request.GetNamespace())
 		})
 	_, err = s.client.ScanWorkflow(context.Background(), request)
@@ -2326,7 +2326,7 @@ func (s *workflowClientTestSuite) TestCountWorkflow() {
 	request := &workflowservice.CountWorkflowExecutionsRequest{}
 	response := &workflowservice.CountWorkflowExecutionsResponse{}
 	s.service.EXPECT().CountWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
-		Do(func(_ interface{}, req *workflowservice.CountWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.CountWorkflowExecutionsRequest, _ ...any) {
 			s.Equal(DefaultNamespace, request.GetNamespace())
 		})
 	resp, err := s.client.CountWorkflow(context.Background(), request)
@@ -2335,7 +2335,7 @@ func (s *workflowClientTestSuite) TestCountWorkflow() {
 
 	request.Namespace = "another"
 	s.service.EXPECT().CountWorkflowExecutions(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, serviceerror.NewInvalidArgument("")).
-		Do(func(_ interface{}, req *workflowservice.CountWorkflowExecutionsRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.CountWorkflowExecutionsRequest, _ ...any) {
 			s.Equal("another", request.GetNamespace())
 		})
 	_, err = s.client.CountWorkflow(context.Background(), request)
@@ -2443,7 +2443,7 @@ func TestUpdate(t *testing.T) {
 		return svc, client
 	}
 
-	mustOutcome := func(t *testing.T, successOrError interface{}) *updatepb.Outcome {
+	mustOutcome := func(t *testing.T, successOrError any) *updatepb.Outcome {
 		t.Helper()
 		if errOut, ok := successOrError.(error); ok {
 			return &updatepb.Outcome{

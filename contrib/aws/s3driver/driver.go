@@ -258,11 +258,11 @@ func objectKey(target converter.StorageDriverTargetInfo, hexDigest string) strin
 // describeClient returns ", k=v, k=v" diagnostic info from the client's
 // Describe method, or "" if Describe returns nil/empty.
 func describeClient(c Client) string {
-	var s string
+	var s strings.Builder
 	for k, v := range c.Describe() {
-		s += ", " + k + "=" + v
+		s.WriteString(", " + k + "=" + v)
 	}
-	return s
+	return s.String()
 }
 
 func percentEncode(s string) string {
