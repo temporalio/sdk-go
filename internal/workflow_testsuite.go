@@ -39,6 +39,7 @@ type (
 		contextPropagators          []ContextPropagator
 		header                      *commonpb.Header
 		disableRegistrationAliasing bool
+		registrationAntiAliasing    bool
 	}
 
 	// TestWorkflowEnvironment is the environment that you use to test workflow
@@ -188,6 +189,16 @@ func (s *WorkflowTestSuite) SetHeader(header *commonpb.Header) {
 // This must be set before obtaining new test workflow or activity environments.
 func (s *WorkflowTestSuite) SetDisableRegistrationAliasing(disableRegistrationAliasing bool) {
 	s.disableRegistrationAliasing = disableRegistrationAliasing
+}
+
+// SetRegistrationAntiAliasing enables registration anti-aliasing the same way it
+// is enabled when set for worker.Options.RegistrationAntiAliasing. This is the
+// recommended setting for tests of custom-named workflows and activities. See
+// the documentation on worker.Options.RegistrationAntiAliasing for more details.
+//
+// This must be set before obtaining new test workflow or activity environments.
+func (s *WorkflowTestSuite) SetRegistrationAntiAliasing(registrationAntiAliasing bool) {
+	s.registrationAntiAliasing = registrationAntiAliasing
 }
 
 // RegisterActivity registers activity implementation with TestWorkflowEnvironment

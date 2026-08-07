@@ -273,10 +273,9 @@ func getValidatedActivityFunction(f interface{}, args []interface{}, registry *r
 		if err := validateFunctionArgs(f, args, false); err != nil {
 			return nil, err
 		}
-		fnName, _ = getFunctionName(f)
-		if alias, ok := registry.getActivityAlias(fnName); ok {
-			fnName = alias
-		}
+		// Resolve the function to the name it should be scheduled/dispatched
+		// under, honoring the registry's aliasing mode.
+		fnName = getActivityFunctionName(registry, f)
 
 	default:
 		return nil, fmt.Errorf(
