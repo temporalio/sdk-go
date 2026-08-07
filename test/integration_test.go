@@ -271,7 +271,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.workerStopped = false
 	ts.registerWorkflowsAndActivities(ts.worker)
-	if strings.Contains(ts.T().Name(), "TestExecuteNexusOperationSuite") {
+	if strings.Contains(ts.T().Name(), "TestExecuteNexusOperationSuite") ||
+		strings.Contains(ts.T().Name(), "TestStandaloneActivityStartLinks") {
 		ts.registerStandaloneNexusOperations(ts.worker)
 	}
 	if strings.Contains(ts.T().Name(), "NoWorker") {
@@ -3300,6 +3301,95 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
 	ts.Equal("RunActivity:tracingTestStandaloneActivity", runActivitySpan.Name())
 	ts.Equal(startActivitySpan.SpanContext().SpanID(), runActivitySpan.Parent().SpanID())
 	ts.Equal(startActivitySpan.SpanContext().TraceID(), runActivitySpan.SpanContext().TraceID())
+}
+
+// TestStandaloneActivityStartLinks verifies that a stand-alone activity started from a stand-alone
+// Nexus operation handler carries a link back to the Nexus operation on its start request.
+func (ts *IntegrationTestSuite) TestStandaloneActivityStartLinks() {
+	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	endpoint := "standalone-activity-links-ep-" + uuid.NewString()
+	createResp, err := ts.client.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: endpoint,
+			Target: &nexuspb.EndpointTarget{
+				Variant: &nexuspb.EndpointTarget_Worker_{
+					Worker: &nexuspb.EndpointTarget_Worker{
+						Namespace: ts.config.Namespace,
+						TaskQueue: ts.taskQueueName,
+					},
+				},
+			},
+		},
+	})
+	ts.NoError(err)
+	defer func() {
+		_, _ = ts.client.OperatorService().DeleteNexusEndpoint(ctx, &operatorservice.DeleteNexusEndpointRequest{
+			Id:      createResp.Endpoint.Id,
+			Version: createResp.Endpoint.Version,
+		})
+	}()
+
+	nexusClient, err := ts.client.NewNexusClient(client.NexusClientOptions{
+		Endpoint: endpoint,
+		Service:  "test-standalone-service",
+	})
+	ts.NoError(err)
+
+	activityID := "standalone-link-" + uuid.NewString()
+	operationID := "standalone-link-op-" + uuid.NewString()
+	var operationHandle client.NexusOperationHandle
+	require.Eventually(ts.T(), func() bool {
+		operationHandle, err = nexusClient.ExecuteOperation(ctx, "start-standalone-activity", activityID, client.StartNexusOperationOptions{
+			ID:                     operationID,
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		return err == nil
+	}, 10*time.Second, 100*time.Millisecond, "timed out waiting for endpoint to propagate")
+
+	var startedActivityID string
+	ts.NoError(operationHandle.Get(ctx, &startedActivityID))
+	ts.Equal(activityID, startedActivityID)
+
+	activityHandle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{
+		ActivityID: startedActivityID,
+	})
+	var result string
+	ts.NoError(activityHandle.Get(ctx, &result))
+	ts.Equal(activityID, result)
+
+	descResp, err := ts.client.WorkflowService().DescribeActivityExecution(ctx, &workflowservice.DescribeActivityExecutionRequest{
+		Namespace:  ts.config.Namespace,
+		ActivityId: activityID,
+	})
+	ts.NoError(err)
+	var nexusOperationLink *commonpb.Link_NexusOperation
+	for _, link := range descResp.GetInfo().GetLinks() {
+		if nexusOp := link.GetNexusOperation(); nexusOp != nil {
+			nexusOperationLink = nexusOp
+		}
+	}
+	ts.Require().NotNil(nexusOperationLink, "activity must link back to the Nexus operation that started it")
+	ts.Equal(ts.config.Namespace, nexusOperationLink.GetNamespace())
+	ts.Equal(operationHandle.GetID(), nexusOperationLink.GetOperationId())
+	ts.Equal(operationHandle.GetRunID(), nexusOperationLink.GetRunId())
+
+	operationDescription, err := operationHandle.Describe(ctx, client.DescribeNexusOperationOptions{})
+	ts.NoError(err)
+	var activityLink *commonpb.Link_Activity
+	for _, link := range operationDescription.RawInfo.GetLinks() {
+		if activity := link.GetActivity(); activity != nil {
+			activityLink = activity
+		}
+	}
+	ts.Require().NotNil(activityLink, "Nexus operation must link to the activity started by its handler")
+	ts.Equal(ts.config.Namespace, activityLink.GetNamespace())
+	ts.Equal(activityHandle.GetID(), activityLink.GetActivityId())
+	ts.Equal(descResp.GetInfo().GetRunId(), activityLink.GetRunId())
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
@@ -7522,7 +7612,21 @@ func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worke
 			return input, nil
 		},
 	)
-	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp, linkEchoOp, signalEchoOp))
+	startStandaloneActivityOp := nexus.NewSyncOperation(
+		"start-standalone-activity",
+		func(ctx context.Context, activityID string, _ nexus.StartOperationOptions) (string, error) {
+			handle, err := temporalnexus.GetClient(ctx).ExecuteActivity(ctx, client.StartActivityOptions{
+				ID:                     activityID,
+				TaskQueue:              temporalnexus.GetOperationInfo(ctx).TaskQueue,
+				ScheduleToCloseTimeout: 30 * time.Second,
+			}, "EchoString", activityID)
+			if err != nil {
+				return "", err
+			}
+			return handle.GetID(), nil
+		},
+	)
+	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp, linkEchoOp, signalEchoOp, startStandaloneActivityOp))
 	w.RegisterNexusService(service)
 }
 
@@ -10192,57 +10296,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 	retrySucceedActivityInput := "retry-succeed-act-" + uuid.NewString()
 	retryExhaustActivityInput := "retry-exhaust-act-" + uuid.NewString()
 
-	callerNexusStartedLinks := func(run client.WorkflowRun) []*commonpb.Link {
-		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for iter.HasNext() {
-			e, err := iter.Next()
-			ts.NoError(err)
-			if e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
-				return e.GetLinks()
-			}
-		}
-		return nil
-	}
-
-	// verifyActivityLinks asserts forward (caller NexusOperationStarted -> activity) and
-	// backward (activity execution info -> caller workflow event) link plumbing.
-	//
-	// NEXUS-400: server does not currently emit Link_Activity on NexusOperationStarted nor
-	// Link_WorkflowEvent on the backing activity's execution info for activity-backed Nexus
-	// operations. Body commented out until the server fix lands; the helper stays in place
-	// so callers compile and the test table is unchanged.
-	verifyActivityLinks := func(activityID string) func(run client.WorkflowRun) {
-		_ = callerNexusStartedLinks
-		_ = activityID
-		return func(run client.WorkflowRun) {
-			// var fwd *commonpb.Link_Activity
-			// for _, link := range callerNexusStartedLinks(run) {
-			// 	if a := link.GetActivity(); a != nil {
-			// 		fwd = a
-			// 	}
-			// }
-			// ts.NotNil(fwd, "caller's NexusOperationStarted should have a Link_Activity")
-			// if fwd != nil {
-			// 	ts.Equal(activityID, fwd.GetActivityId())
-			// }
-			//
-			// handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: activityID})
-			// desc, err := handle.Describe(ctx, client.DescribeActivityOptions{})
-			// ts.NoError(err)
-			// var back *commonpb.Link_WorkflowEvent
-			// for _, link := range desc.RawExecutionInfo.GetLinks() {
-			// 	if w := link.GetWorkflowEvent(); w != nil {
-			// 		back = w
-			// 	}
-			// }
-			// ts.NotNil(back, "activity should have a Link_WorkflowEvent back to caller")
-			// if back != nil {
-			// 	ts.Equal(run.GetID(), back.GetWorkflowId())
-			// }
-			_ = run
-		}
-	}
-
 	// verifyActivityFinalStatus polls the activity's Describe until it reports the expected
 	// terminal status, asserting that server-side propagation of the Nexus operation outcome
 	// (cancellation, failure, timeout) actually reaches the backing activity.
@@ -10294,19 +10347,18 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 		expected string
 		verify   func(run client.WorkflowRun)
 	}{
-		{"Async with StartActivity", ts.workflows.TemporalOpAsyncActivityCaller, typedActivityInput, typedActivityInput, verifyActivityLinks("act-" + typedActivityInput)},
-		{"Async with StartUntypedActivity", ts.workflows.TemporalOpAsyncUntypedActivityCaller, untypedActivityInput, untypedActivityInput, verifyActivityLinks("act-untyped-" + untypedActivityInput)},
+		{"Async with StartActivity", ts.workflows.TemporalOpAsyncActivityCaller, typedActivityInput, typedActivityInput, nil},
+		{"Async with StartUntypedActivity", ts.workflows.TemporalOpAsyncUntypedActivityCaller, untypedActivityInput, untypedActivityInput, nil},
 		// Regression: activities registered with a custom name via activity.RegisterOptions.Name
 		// must be resolved through the worker's registry when scheduled via
 		// temporalnexus.StartActivity — otherwise the raw Go function name is sent and the
 		// activity fails as unregistered.
-		{"Async with StartActivity resolves worker-registered activity alias", ts.workflows.TemporalOpRenamedActivityCaller, renamedActivityInput, "renamed:" + renamedActivityInput, verifyActivityLinks("renamed-act-" + renamedActivityInput)},
+		{"Async with StartActivity resolves worker-registered activity alias", ts.workflows.TemporalOpRenamedActivityCaller, renamedActivityInput, "renamed:" + renamedActivityInput, nil},
 		{
 			"Cancel activity execution",
 			ts.workflows.TemporalOpCancelActivityCaller,
 			cancelActivityInput, "",
 			composeVerify(
-				verifyActivityLinks("cancel-act-"+cancelActivityInput),
 				verifyActivityFinalStatus("cancel-act-"+cancelActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_CANCELED),
 			),
 		},
@@ -10316,7 +10368,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			failureActivityInput,
 			"application:NexusActivityTestFailureType:activity failed: " + failureActivityInput,
 			composeVerify(
-				verifyActivityLinks("failing-act-"+failureActivityInput),
 				verifyActivityFinalStatus("failing-act-"+failureActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_FAILED),
 			),
 		},
@@ -10326,7 +10377,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			timeoutActivityInput,
 			"timeout:StartToClose",
 			composeVerify(
-				verifyActivityLinks("timeout-act-"+timeoutActivityInput),
 				verifyActivityFinalStatus("timeout-act-"+timeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
 			),
 		},
@@ -10336,7 +10386,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			stcTimeoutActivityInput,
 			"timeout:ScheduleToClose",
 			composeVerify(
-				verifyActivityLinks("schedule-to-close-act-"+stcTimeoutActivityInput),
 				verifyActivityFinalStatus("schedule-to-close-act-"+stcTimeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
 			),
 		},
@@ -10346,7 +10395,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			heartbeatTimeoutActivityInput,
 			"timeout:Heartbeat",
 			composeVerify(
-				verifyActivityLinks("heartbeat-act-"+heartbeatTimeoutActivityInput),
 				verifyActivityFinalStatus("heartbeat-act-"+heartbeatTimeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
 			),
 		},
@@ -10356,7 +10404,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			retrySucceedActivityInput,
 			retrySucceedActivityInput,
 			composeVerify(
-				verifyActivityLinks("retry-succeed-act-"+retrySucceedActivityInput),
 				verifyActivityFinalStatus("retry-succeed-act-"+retrySucceedActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED),
 				verifyActivityAttemptAtLeast("retry-succeed-act-"+retrySucceedActivityInput, 3),
 			),
@@ -10367,7 +10414,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			retryExhaustActivityInput,
 			"application:NexusActivityRetryTestFailureType:attempt 2 failed; will succeed on 999",
 			composeVerify(
-				verifyActivityLinks("retry-exhaust-act-"+retryExhaustActivityInput),
 				verifyActivityFinalStatus("retry-exhaust-act-"+retryExhaustActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_FAILED),
 				verifyActivityAttemptAtLeast("retry-exhaust-act-"+retryExhaustActivityInput, 2),
 			),
@@ -10461,31 +10507,23 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 		ts.Len(descResp.GetCallbacks(), 2,
 			"both callers must have attached callbacks to the same activity")
 
-		// Both callers' NexusOperationStarted events must carry a Link_Activity pointing at the
-		// shared activity (forward link from caller -> activity).
-		//
-		// NEXUS-400: server does not currently emit Link_Activity on NexusOperationStarted for
-		// activity-backed Nexus operations. Commented out until the server fix lands.
-		_ = activityID
-		// for _, run := range []client.WorkflowRun{runA, runB} {
-		// 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		// 	var fwd *commonpb.Link_Activity
-		// 	for iter.HasNext() {
-		// 		e, err := iter.Next()
-		// 		ts.NoError(err)
-		// 		if e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
-		// 			for _, link := range e.GetLinks() {
-		// 				if a := link.GetActivity(); a != nil {
-		// 					fwd = a
-		// 				}
-		// 			}
-		// 		}
-		// 	}
-		// 	ts.NotNil(fwd, "caller %s should have a Link_Activity on NexusOperationStarted", run.GetID())
-		// 	if fwd != nil {
-		// 		ts.Equal(activityID, fwd.GetActivityId())
-		// 	}
-		// }
+		// StartActivity attaches the caller's link to the completion callback (not the start
+		// request). The server stores each callback on the activity, so both callbacks must carry
+		// a workflow-event link back to their respective caller.
+		gotCallerLinkIDs := map[string]bool{}
+		for _, cb := range descResp.GetCallbacks() {
+			links := cb.GetInfo().GetCallback().GetLinks()
+			ts.Len(links, 1, "each callback must carry exactly one caller link")
+			for _, link := range links {
+				we := link.GetWorkflowEvent()
+				ts.NotNil(we, "callback link must be a Link_WorkflowEvent pointing at the caller")
+				if we != nil {
+					gotCallerLinkIDs[we.GetWorkflowId()] = true
+				}
+			}
+		}
+		ts.Equal(map[string]bool{runA.GetID(): true, runB.GetID(): true}, gotCallerLinkIDs,
+			"both callbacks must link back to their caller workflows")
 	})
 
 	// Caller workflow terminated mid-operation: the backing activity terminates its own
