@@ -1,0 +1,767 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestTestOutputFlagsDefaultToFailures(t *testing.T) {
+	flags := addTestOutputFlags(flag.NewFlagSet("test", flag.ContinueOnError))
+	if flags.consoleOutput != testConsoleOutputFailures {
+		t.Fatalf("expected default console output %q, got %q", testConsoleOutputFailures, flags.consoleOutput)
+	}
+}
+
+func TestPrepareTestOutput(t *testing.T) {
+	rootDir := t.TempDir()
+	b := &builder{rootDir: rootDir}
+	var startupLogs bytes.Buffer
+	originalLogOutput := log.Writer()
+	log.SetOutput(&startupLogs)
+	t.Cleanup(func() { log.SetOutput(originalLogOutput) })
+
+	output, err := b.prepareTestOutput(testOutputFlags{
+		logDir:        defaultTestLogDir,
+		consoleOutput: testConsoleOutputFailures,
+	}, "unit-test.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedPath := filepath.Join(rootDir, ".build", "test-logs", "unit-test.log")
+	if output.logPath != expectedPath {
+		t.Fatalf("expected log path %q, got %q", expectedPath, output.logPath)
+	}
+	if _, err := os.Stat(expectedPath); err != nil {
+		t.Fatalf("expected prepared log file: %v", err)
+	}
+	expectedJSONPath := filepath.Join(rootDir, ".build", "test-logs", "unit-test.json")
+	if output.jsonLogPath != expectedJSONPath {
+		t.Fatalf("expected JSON log path %q, got %q", expectedJSONPath, output.jsonLogPath)
+	}
+	if _, err := os.Stat(expectedJSONPath); err != nil {
+		t.Fatalf("expected prepared JSON log file: %v", err)
+	}
+	if got := strings.Count(startupLogs.String(), "Writing full test logs to"); got != 1 {
+		t.Fatalf("expected one test log directory notice, got %d:\n%s", got, startupLogs.String())
+	}
+	if !strings.Contains(startupLogs.String(), filepath.Dir(expectedPath)) {
+		t.Fatalf("test log directory notice missing %q:\n%s", filepath.Dir(expectedPath), startupLogs.String())
+	}
+	if strings.Contains(startupLogs.String(), "unit-test.log") || strings.Contains(startupLogs.String(), "unit-test.json") {
+		t.Fatalf("test log directory notice listed individual files:\n%s", startupLogs.String())
+	}
+
+	output, err = b.prepareTestOutput(testOutputFlags{
+		logDir:        "artifacts/test-logs",
+		consoleOutput: testConsoleOutputFull,
+	}, "go-test.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	expectedPath = filepath.Join(rootDir, "artifacts", "test-logs", "go-test.log")
+	if output.logPath != expectedPath {
+		t.Fatalf("expected overridden log path %q, got %q", expectedPath, output.logPath)
+	}
+	expectedJSONPath = filepath.Join(rootDir, "artifacts", "test-logs", "go-test.json")
+	if output.jsonLogPath != expectedJSONPath {
+		t.Fatalf("expected overridden JSON log path %q, got %q", expectedJSONPath, output.jsonLogPath)
+	}
+	if got := strings.Count(startupLogs.String(), "Writing full test logs to"); got != 2 {
+		t.Fatalf("expected one test log directory notice per preparation, got %d:\n%s", got, startupLogs.String())
+	}
+
+	_, err = b.prepareTestOutput(testOutputFlags{
+		logDir:        defaultTestLogDir,
+		consoleOutput: "invalid",
+	}, "unit-test.log")
+	if err == nil || !strings.Contains(err.Error(), `must be "full" or "failures"`) {
+		t.Fatalf("expected invalid console output error, got %v", err)
+	}
+}
+
+func TestTestOutputWriters(t *testing.T) {
+	for _, mode := range []string{testConsoleOutputFailures, testConsoleOutputFull} {
+		t.Run(mode, func(t *testing.T) {
+			var logOutput, stdout, stderr bytes.Buffer
+			output := testOutput{
+				consoleOutput: mode,
+				stdout:        &stdout,
+				stderr:        &stderr,
+			}
+			stdoutWriter, stderrWriter := output.writers(&logOutput, nil)
+			fmt.Fprint(stdoutWriter, "server stdout")
+			fmt.Fprint(stderrWriter, "server stderr")
+
+			for _, want := range []string{"server stdout", "server stderr"} {
+				if !strings.Contains(logOutput.String(), want) {
+					t.Fatalf("log output missing %q:\n%s", want, logOutput.String())
+				}
+			}
+			if mode == testConsoleOutputFailures {
+				if stdout.Len() != 0 || stderr.Len() != 0 {
+					t.Fatalf("expected console output to be suppressed, got stdout %q and stderr %q", stdout.String(), stderr.String())
+				}
+			} else {
+				if !strings.Contains(stdout.String(), "server stdout") {
+					t.Fatalf("stdout was not streamed:\n%s", stdout.String())
+				}
+				if !strings.Contains(stderr.String(), "server stderr") {
+					t.Fatalf("stderr was not streamed:\n%s", stderr.String())
+				}
+			}
+		})
+	}
+}
+
+func TestGoTestJSONWriterAttributesFailedSubtestOutput(t *testing.T) {
+	start := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	events := []goTestEvent{
+		{Time: start, Action: "run", Package: "example.com/pkg", Test: "TestSuite"},
+		{Time: start.Add(time.Second), Action: "run", Package: "example.com/pkg", Test: "TestSuite/TestFailed"},
+		{
+			Time:    start.Add(2 * time.Second),
+			Action:  "output",
+			Package: "example.com/pkg",
+			Test:    "TestSuite/TestFailed",
+			Output:  "    suite_test.go:42: boom\n",
+		},
+		{
+			Time:    start.Add(2 * time.Second),
+			Action:  "output",
+			Package: "example.com/pkg",
+			Test:    "TestSuite",
+			Output:  "    Error: intentional parent-attributed failure\n",
+		},
+		{
+			Time:    start.Add(3 * time.Second),
+			Action:  "fail",
+			Package: "example.com/pkg",
+			Test:    "TestSuite/TestFailed",
+		},
+		{Time: start.Add(4 * time.Second), Action: "fail", Package: "example.com/pkg", Test: "TestSuite"},
+	}
+	var encoded bytes.Buffer
+	for _, event := range events {
+		if err := json.NewEncoder(&encoded).Encode(event); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var raw, decoded bytes.Buffer
+	results := newGoTestResults()
+	writer := &goTestJSONWriter{
+		rawWriter:    &raw,
+		outputWriter: &decoded,
+		results:      results,
+	}
+	data := encoded.Bytes()
+	split := len(data) / 2
+	if _, err := writer.Write(data[:split]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write(data[split:]); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Flush(); err != nil {
+		t.Fatal(err)
+	}
+
+	rows := results.failures()
+	if len(rows) != 2 {
+		t.Fatalf("expected parent and child failures, got %#v", rows)
+	}
+	if !strings.Contains(rows[0].Details, "intentional parent-attributed failure") {
+		t.Fatalf("parent-attributed failure output was not retained: %q", rows[0].Details)
+	}
+	row := rows[1]
+	if row.Test != "TestSuite/TestFailed" || row.Package != "example.com/pkg" {
+		t.Fatalf("unexpected failed test: %#v", row)
+	}
+	if !strings.Contains(row.Details, "suite_test.go:42: boom") {
+		t.Fatalf("failed test output was not attributed correctly: %q", row.Details)
+	}
+	if !row.StartTime.Equal(start.Add(time.Second)) || !row.EndTime.Equal(start.Add(3*time.Second)) {
+		t.Fatalf("unexpected test time window: %v to %v", row.StartTime, row.EndTime)
+	}
+	if raw.String() != encoded.String() {
+		t.Fatalf("raw JSON output changed:\n%s", raw.String())
+	}
+	if decoded.String() != "    suite_test.go:42: boom\n    Error: intentional parent-attributed failure\n" {
+		t.Fatalf("unexpected decoded output: %q", decoded.String())
+	}
+	collapsed := collapseParentFailureRows(rows)
+	if len(collapsed) != 1 || collapsed[0].Test != "TestSuite/TestFailed" {
+		t.Fatalf("expected one collapsed child failure, got %#v", collapsed)
+	}
+	for _, want := range []string{"intentional parent-attributed failure", "suite_test.go:42: boom"} {
+		if !strings.Contains(collapsed[0].Details, want) {
+			t.Fatalf("collapsed child failure missing %q: %q", want, collapsed[0].Details)
+		}
+	}
+}
+
+func TestRunTestCmdFailureOutput(t *testing.T) {
+	rootDir := t.TempDir()
+	summaryPath := filepath.Join(rootDir, "summary.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", summaryPath)
+	t.Setenv("GITHUB_ACTIONS", "false")
+	b := &builder{rootDir: rootDir}
+	output, err := b.prepareTestOutput(testOutputFlags{
+		logDir:        defaultTestLogDir,
+		consoleOutput: testConsoleOutputFailures,
+	}, "unit-test.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	output.stdout = &stdout
+	output.stderr = &stderr
+	output.rerunCommand = "go run . unit-test"
+	combinedPath, err := b.prepareLogPath(defaultTestLogDir, "combined.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	combinedFile, err := os.OpenFile(combinedPath, os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output.combinedLogPath = combinedPath
+	output.combinedWriter = &lockedWriter{writer: combinedFile}
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunTestCmdHelperProcess$")
+	cmd.Env = append(os.Environ(), "TEMPORAL_RUN_TEST_CMD_HELPER=fail")
+	if err := b.runTestCmd(cmd, output); err == nil {
+		t.Fatal("expected command to fail")
+	}
+	if err := combinedFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	logData, err := os.ReadFile(output.logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"=== RUN   TestFailed", "main_test.go:10: boom"} {
+		if !strings.Contains(string(logData), want) {
+			t.Fatalf("full log missing %q:\n%s", want, logData)
+		}
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("failure output missing %q:\n%s", want, stderr.String())
+		}
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("expected stdout to be suppressed, got:\n%s", stdout.String())
+	}
+	for _, want := range []string{
+		"============================== TEST FAILURE REPORT ==============================",
+		"Failed tests (1)",
+		"example.com/pkg / TestFailed",
+		`go run . unit-test -run "^TestFailed$"`,
+		"--- Go test output ---",
+		"--- Complete logs ---",
+		"--- Rerun failed tests ---",
+		"Go test JSON:",
+		"Combined Go and dev server:",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Fatalf("failure report missing %q:\n%s", want, stderr.String())
+		}
+	}
+	report := stderr.String()
+	if goOutput, completeLogs, rerun := strings.Index(report, "--- Go test output ---"),
+		strings.Index(report, "--- Complete logs ---"),
+		strings.Index(report, "--- Rerun failed tests ---"); goOutput < 0 || completeLogs <= goOutput || rerun <= completeLogs {
+		t.Fatalf("failure report sections are out of order:\n%s", report)
+	}
+	if strings.Contains(stderr.String(), "--- Failed tests ---") {
+		t.Fatalf("failure report contains redundant failed-tests heading:\n%s", stderr.String())
+	}
+	jsonData, err := os.ReadFile(output.jsonLogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(jsonData), `"Action":"fail"`) {
+		t.Fatalf("JSON log missing failure event:\n%s", jsonData)
+	}
+	combinedData, err := os.ReadFile(combinedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(combinedData), "main_test.go:10: boom") {
+		t.Fatalf("combined log missing decoded test output:\n%s", combinedData)
+	}
+	summaryData, err := os.ReadFile(summaryPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"## Test failures", "example.com/pkg / TestFailed", "main_test.go:10: boom"} {
+		if !strings.Contains(string(summaryData), want) {
+			t.Fatalf("test summary missing %q:\n%s", want, summaryData)
+		}
+	}
+}
+
+func TestRunTestCmdPassingOutput(t *testing.T) {
+	rootDir := t.TempDir()
+	summaryPath := filepath.Join(rootDir, "summary.md")
+	t.Setenv("GITHUB_STEP_SUMMARY", summaryPath)
+	b := &builder{rootDir: rootDir}
+	output, err := b.prepareTestOutput(testOutputFlags{
+		logDir:        defaultTestLogDir,
+		consoleOutput: testConsoleOutputFailures,
+	}, "unit-test.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	output.stdout = &stdout
+	output.stderr = &stderr
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunTestCmdHelperProcess$")
+	cmd.Env = append(os.Environ(), "TEMPORAL_RUN_TEST_CMD_HELPER=pass")
+	if err := b.runTestCmd(cmd, output); err != nil {
+		t.Fatal(err)
+	}
+
+	if stdout.Len() != 0 {
+		t.Fatalf("expected stdout to be suppressed, got:\n%s", stdout.String())
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected stderr to be suppressed, got:\n%s", stderr.String())
+	}
+	logData, err := os.ReadFile(output.logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"stdout output", "stderr output"} {
+		if !strings.Contains(string(logData), want) {
+			t.Fatalf("full log missing %q:\n%s", want, logData)
+		}
+	}
+	if _, err := os.Stat(summaryPath); !os.IsNotExist(err) {
+		t.Fatalf("passing test unexpectedly wrote a job summary: %v", err)
+	}
+}
+
+func TestRunTestCmdFullOutput(t *testing.T) {
+	rootDir := t.TempDir()
+	b := &builder{rootDir: rootDir}
+	output, err := b.prepareTestOutput(testOutputFlags{
+		logDir:        defaultTestLogDir,
+		consoleOutput: testConsoleOutputFull,
+	}, "unit-test.log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	output.stdout = &stdout
+	output.stderr = &stderr
+
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRunTestCmdHelperProcess$")
+	cmd.Env = append(os.Environ(), "TEMPORAL_RUN_TEST_CMD_HELPER=pass")
+	if err := b.runTestCmd(cmd, output); err != nil {
+		t.Fatal(err)
+	}
+
+	logData, err := os.ReadFile(output.logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"stdout output", "stderr output"} {
+		if !strings.Contains(string(logData), want) {
+			t.Fatalf("full log missing %q:\n%s", want, logData)
+		}
+	}
+	if !strings.Contains(stdout.String(), "stdout output") {
+		t.Fatalf("stdout output was not streamed:\n%s", stdout.String())
+	}
+	if !strings.Contains(stderr.String(), "stderr output") {
+		t.Fatalf("stderr output was not streamed:\n%s", stderr.String())
+	}
+}
+
+func TestWriteStructuredTestFailureReportFallsBackToCommandOutput(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "false")
+	var output bytes.Buffer
+	err := writeStructuredTestFailureReport(
+		&output,
+		nil,
+		"# example.com/pkg\n./main.go:10: undefined: missing\nFAIL\n",
+		testOutput{
+			logPath:     ".build/test-logs/unit-test.log",
+			jsonLogPath: ".build/test-logs/unit-test.json",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"--- Command output ---",
+		"No individual failed test was identified",
+		"./main.go:10: undefined: missing",
+		"--- Complete logs ---",
+		".build/test-logs/unit-test.log",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("fallback output missing %q:\n%s", want, output.String())
+		}
+	}
+}
+
+func TestWriteStructuredTestFailureReportListsAllFailuresWhenDetailsAreOmitted(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "false")
+	var rows []testFailureSummaryRow
+	for i := 1; i <= 6; i++ {
+		rows = append(rows, testFailureSummaryRow{
+			Package: "example.com/pkg",
+			Test:    fmt.Sprintf("TestFailed%d", i),
+			Details: strings.Repeat("x", 20*1024),
+		})
+	}
+
+	var snippets bytes.Buffer
+	err := writeStructuredTestFailureReport(
+		&snippets,
+		rows,
+		"",
+		testOutput{
+			logPath:     ".build/test-logs/unit-test.log",
+			jsonLogPath: ".build/test-logs/unit-test.json",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 6; i++ {
+		want := fmt.Sprintf("\texample.com/pkg / TestFailed%d", i)
+		if !strings.Contains(snippets.String(), want) {
+			t.Fatalf("failure list missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		"--- Go test output ---",
+		"... (truncated; see full test log) ...",
+		"omitted Go output for 2 additional failed tests after reaching the 64 KiB total console limit",
+	} {
+		if !strings.Contains(snippets.String(), want) {
+			t.Fatalf("failure output missing %q:\n%s", want, snippets.String())
+		}
+	}
+}
+
+func TestWriteTestSetupFailureReportIncludesDevServerOutputAndLogLocations(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "false")
+	logDir := t.TempDir()
+	serverLogPath := filepath.Join(logDir, "dev-server.log")
+	if err := os.WriteFile(serverLogPath, []byte("server stdout\nserver stderr\nclient logger output\n"), 0666); err != nil {
+		t.Fatal(err)
+	}
+	output := testOutput{
+		logPath:         filepath.Join(logDir, "go-test.log"),
+		jsonLogPath:     filepath.Join(logDir, "go-test.json"),
+		combinedLogPath: filepath.Join(logDir, "combined.log"),
+		serverLogPath:   serverLogPath,
+		rerunCommand:    "go run . integration-test -dev-server",
+	}
+	var report bytes.Buffer
+	if err := writeTestSetupFailureReport(&report, fmt.Errorf("failed starting dev server: exit status 1"), output); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"TEST FAILURE REPORT",
+		"Integration test setup failed before Go tests ran: failed starting dev server: exit status 1",
+		"Captured dev server output:",
+		"server stdout",
+		"server stderr",
+		"client logger output",
+		"--- Complete logs ---",
+		"Combined Go and dev server: " + output.combinedLogPath,
+		"Dev server: " + output.serverLogPath,
+	} {
+		if !strings.Contains(report.String(), want) {
+			t.Fatalf("test setup failure report missing %q:\n%s", want, report.String())
+		}
+	}
+	if strings.Contains(report.String(), "Rerun failed tests") {
+		t.Fatalf("test setup failure report offered a test rerun even though no test ran:\n%s", report.String())
+	}
+}
+
+func TestCollectServerFailureContexts(t *testing.T) {
+	start := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	logPath := filepath.Join(t.TempDir(), "dev-server.log")
+	serverOutput := strings.Join([]string{
+		`time=2026-07-29T11:59:00Z level=ERROR msg="mentions test" queue=TestSuite/TestFailed`,
+		`time=2026-07-29T12:00:05Z level=WARN msg="inside test window"`,
+		`time=2026-07-29T12:00:06Z level=INFO msg="not a warning or error"`,
+		`time=2026-07-29T12:02:00Z level=ERROR msg="outside test window"`,
+		"",
+	}, "\n")
+	if err := os.WriteFile(logPath, []byte(serverOutput), 0666); err != nil {
+		t.Fatal(err)
+	}
+	row := testFailureSummaryRow{
+		Package:   "example.com/pkg",
+		Test:      "TestSuite/TestFailed",
+		StartTime: start,
+		EndTime:   start.Add(10 * time.Second),
+	}
+
+	contexts, err := collectServerFailureContexts(logPath, []testFailureSummaryRow{row})
+	if err != nil {
+		t.Fatal(err)
+	}
+	context := contexts[testFailureSummaryKey{Package: row.Package, Test: row.Test}]
+	if context == nil {
+		t.Fatal("expected server context")
+	}
+	if !strings.Contains(context.related.text.String(), "mentions test") {
+		t.Fatalf("expected directly related server line:\n%s", context.related.text.String())
+	}
+	if !strings.Contains(context.window.text.String(), "inside test window") {
+		t.Fatalf("expected time-window server line:\n%s", context.window.text.String())
+	}
+	for _, unexpected := range []string{"not a warning or error", "outside test window"} {
+		if strings.Contains(context.related.text.String()+context.window.text.String(), unexpected) {
+			t.Fatalf("unexpected server line %q was included", unexpected)
+		}
+	}
+}
+
+func TestWriteStructuredTestFailureReportIncludesArtifactAndServerContext(t *testing.T) {
+	start := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+	logDir := t.TempDir()
+	serverLogPath := filepath.Join(logDir, "dev-server.log")
+	if err := os.WriteFile(
+		serverLogPath,
+		[]byte(`time=2026-07-29T12:00:01Z level=ERROR msg="server boom" queue=TestSuite/TestFailed`+"\n"),
+		0666,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TEST_LOG_ARTIFACT_NAME", "integ-test-ubuntu-latest-stable")
+	t.Setenv("GITHUB_RUN_ID", "12345")
+	t.Setenv("GITHUB_REPOSITORY", "temporalio/sdk-go")
+	t.Setenv("GITHUB_ACTIONS", "true")
+	var report bytes.Buffer
+	err := writeStructuredTestFailureReport(
+		&report,
+		[]testFailureSummaryRow{
+			{
+				Package:   "example.com/pkg",
+				Test:      "TestSuite",
+				Details:   "    Error: parent-attributed failure\n",
+				StartTime: start,
+				EndTime:   start.Add(3 * time.Second),
+			},
+			{
+				Package:   "example.com/pkg",
+				Test:      "TestSuite/TestFailed",
+				Details:   "    suite_test.go:42: boom\n",
+				StartTime: start,
+				EndTime:   start.Add(2 * time.Second),
+			},
+		},
+		"",
+		testOutput{
+			logPath:         filepath.Join(logDir, "go-test.log"),
+			jsonLogPath:     filepath.Join(logDir, "go-test.json"),
+			combinedLogPath: filepath.Join(logDir, "combined.log"),
+			serverLogPath:   serverLogPath,
+			rerunCommand:    "go run . integration-test -dev-server",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"TEST FAILURE REPORT",
+		"Failed tests (1)",
+		"example.com/pkg / TestSuite/TestFailed",
+		"parent-attributed failure",
+		`go run . integration-test -dev-server -run "^TestSuite/TestFailed$"`,
+		"suite_test.go:42: boom",
+		"::group::Failed tests",
+		"::group::Go test output",
+		"::group::Related dev server output",
+		"::group::Complete logs",
+		"::group::Rerun failed tests",
+		"Lines mentioning the failed test",
+		`msg="server boom"`,
+		"Combined Go and dev server:",
+		"CI artifact: integ-test-ubuntu-latest-stable",
+		"gh run download 12345 -n integ-test-ubuntu-latest-stable -D .build/ci-debug --repo temporalio/sdk-go",
+	} {
+		if !strings.Contains(report.String(), want) {
+			t.Fatalf("failure report missing %q:\n%s", want, report.String())
+		}
+	}
+	if unexpected := `go run . integration-test -dev-server -run "^TestSuite$"`; strings.Contains(report.String(), unexpected) {
+		t.Fatalf("failure report included parent rerun command %q:\n%s", unexpected, report.String())
+	}
+	if unexpected := "--- example.com/pkg / TestSuite ---"; strings.Contains(report.String(), unexpected) {
+		t.Fatalf("failure report included parent failure section %q:\n%s", unexpected, report.String())
+	}
+	if starts, ends := strings.Count(report.String(), "::group::"), strings.Count(report.String(), "::endgroup::"); starts != ends {
+		t.Fatalf("failure report has %d group starts and %d group ends:\n%s", starts, ends, report.String())
+	}
+	if serverOutput, completeLogs, rerun := strings.Index(report.String(), "::group::Related dev server output"),
+		strings.Index(report.String(), "::group::Complete logs"),
+		strings.Index(report.String(), "::group::Rerun failed tests"); serverOutput < 0 || completeLogs <= serverOutput || rerun <= completeLogs {
+		t.Fatalf("failure report sections are out of order:\n%s", report.String())
+	}
+}
+
+func TestRunTestCmdHelperProcess(t *testing.T) {
+	switch os.Getenv("TEMPORAL_RUN_TEST_CMD_HELPER") {
+	case "":
+		return
+	case "pass":
+		writeGoTestEvent(goTestEvent{
+			Time:    time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC),
+			Action:  "output",
+			Package: "example.com/pkg",
+			Test:    "TestPassed",
+			Output:  "stdout output\n",
+		})
+		writeGoTestEvent(goTestEvent{
+			Time:    time.Date(2026, 7, 29, 12, 0, 1, 0, time.UTC),
+			Action:  "pass",
+			Package: "example.com/pkg",
+			Test:    "TestPassed",
+		})
+		fmt.Fprintln(os.Stderr, "stderr output")
+	case "fail":
+		start := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
+		writeGoTestEvent(goTestEvent{
+			Time:    start,
+			Action:  "run",
+			Package: "example.com/pkg",
+			Test:    "TestFailed",
+		})
+		for _, output := range []string{
+			"=== RUN   TestFailed\n",
+			"    main_test.go:10: boom\n",
+			"--- FAIL: TestFailed (0.00s)\n",
+		} {
+			writeGoTestEvent(goTestEvent{
+				Time:    start.Add(time.Second),
+				Action:  "output",
+				Package: "example.com/pkg",
+				Test:    "TestFailed",
+				Output:  output,
+			})
+		}
+		writeGoTestEvent(goTestEvent{
+			Time:    start.Add(2 * time.Second),
+			Action:  "fail",
+			Package: "example.com/pkg",
+			Test:    "TestFailed",
+		})
+		writeGoTestEvent(goTestEvent{
+			Time:    start.Add(2 * time.Second),
+			Action:  "output",
+			Package: "example.com/pkg",
+			Output:  "FAIL\nFAIL\texample.com/pkg\t0.001s\n",
+		})
+		os.Exit(1)
+	default:
+		t.Fatalf("unexpected helper mode")
+	}
+}
+
+func writeGoTestEvent(event goTestEvent) {
+	if err := json.NewEncoder(os.Stdout).Encode(event); err != nil {
+		panic(err)
+	}
+}
+
+func TestRenderTestFailureSummaryEscapesHTML(t *testing.T) {
+	summary := renderTestFailureSummary([]testFailureSummaryRow{
+		{
+			Test:    "Test<Bad>",
+			Package: "go.temporal.io/sdk/test",
+			Details: "got <value> & failed",
+		},
+	})
+
+	for _, want := range []string{
+		"## Test failures",
+		"<table>",
+		"go.temporal.io/sdk/test / Test&lt;Bad&gt;",
+		"got &lt;value&gt; &amp; failed",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary missing %q:\n%s", want, summary)
+		}
+	}
+	if strings.Contains(summary, "Working directory") {
+		t.Fatalf("summary should not include working directory:\n%s", summary)
+	}
+}
+
+func TestCollapseParentFailureRowsUsesPackage(t *testing.T) {
+	input := []testFailureSummaryRow{
+		{
+			Package: "example.com/a",
+			Test:    "TestSuite",
+			Details: "=== RUN   TestSuite\nsuite details\n--- FAIL: TestSuite (1.00s)\n",
+		},
+		{Package: "example.com/a", Test: "TestSuite/TestSub", Details: "subtest details"},
+		{Package: "example.com/a", Test: "TestSuite/TestSub/TestNested", Details: "nested details"},
+		{Package: "example.com/b", Test: "TestSuite", Details: "other package details"},
+	}
+	rows := collapseParentFailureRows(input)
+
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d: %#v", len(rows), rows)
+	}
+	if rows[0].Package != "example.com/a" || rows[0].Test != "TestSuite/TestSub/TestNested" {
+		t.Fatalf("expected package a subtest row first, got %#v", rows[0])
+	}
+	if rows[1].Package != "example.com/b" || rows[1].Test != "TestSuite" {
+		t.Fatalf("expected package b parent row to be preserved, got %#v", rows[1])
+	}
+	for _, want := range []string{"suite details", "subtest details", "nested details"} {
+		if !strings.Contains(rows[0].Details, want) {
+			t.Fatalf("collapsed nested failure missing %q: %q", want, rows[0].Details)
+		}
+	}
+	for _, unwanted := range []string{"=== RUN   TestSuite", "--- FAIL: TestSuite"} {
+		if strings.Contains(rows[0].Details, unwanted) {
+			t.Fatalf("collapsed nested failure retained parent harness output %q: %q", unwanted, rows[0].Details)
+		}
+	}
+	if rows[1].Details != "other package details" {
+		t.Fatalf("unexpected package b details: %q", rows[1].Details)
+	}
+	if input[0].Test != "TestSuite" {
+		t.Fatalf("filter mutated its input: %#v", input)
+	}
+}
+
+func TestCollapseParentFailureRowsPreservesAmbiguousParentOutput(t *testing.T) {
+	rows := collapseParentFailureRows([]testFailureSummaryRow{
+		{Package: "example.com/pkg", Test: "TestSuite", Details: "suite details"},
+		{Package: "example.com/pkg", Test: "TestSuite/TestOne", Details: "first details"},
+		{Package: "example.com/pkg", Test: "TestSuite/TestTwo", Details: "second details"},
+	})
+
+	if len(rows) != 3 {
+		t.Fatalf("expected ambiguous parent output to be preserved, got %#v", rows)
+	}
+	for _, row := range rows[1:] {
+		if strings.Contains(row.Details, "suite details") {
+			t.Fatalf("ambiguous parent output was copied to %q: %q", row.Test, row.Details)
+		}
+	}
+}

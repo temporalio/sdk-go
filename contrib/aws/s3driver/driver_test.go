@@ -532,8 +532,67 @@ func TestObjectKey_WorkflowInfo_SpecialChars(t *testing.T) {
 	}
 	key := objectKey(target, "abc123")
 	assert.Equal(t,
-		"v0/ns/my%20namespace/wt/my%2Fworkflow/wi/wf%20id+1/ri/run=abc/d/sha256/abc123",
+		"v0/ns/my%20namespace/wt/my%2Fworkflow/wi/wf%20id%2B1/ri/run%3Dabc/d/sha256/abc123",
 		key,
+	)
+}
+
+func TestObjectKey_PreservesS3SafeSpecialChars(t *testing.T) {
+	target := converter.StorageDriverWorkflowInfo{
+		Namespace:  "ns1",
+		WorkflowID: "!-_.*'()",
+	}
+	assert.Equal(t,
+		"v0/ns/ns1/wt/null/wi/!-_.*'()/ri/null/d/sha256/abc123",
+		objectKey(target, "abc123"),
+	)
+}
+
+func TestObjectKey_EscapesTilde(t *testing.T) {
+	target := converter.StorageDriverWorkflowInfo{
+		Namespace:  "ns1",
+		WorkflowID: "wf~1",
+	}
+	assert.Equal(t,
+		"v0/ns/ns1/wt/null/wi/wf%7E1/ri/null/d/sha256/abc123",
+		objectKey(target, "abc123"),
+	)
+}
+
+func TestObjectKey_EscapesNonASCIIAsUTF8Bytes(t *testing.T) {
+	target := converter.StorageDriverWorkflowInfo{
+		Namespace:  "ns1",
+		WorkflowID: "café",
+	}
+	assert.Equal(t,
+		"v0/ns/ns1/wt/null/wi/caf%C3%A9/ri/null/d/sha256/abc123",
+		objectKey(target, "abc123"),
+	)
+}
+
+func TestObjectKey_WorkflowSpecExample(t *testing.T) {
+	target := converter.StorageDriverWorkflowInfo{
+		Namespace:    "payments prod",
+		WorkflowType: "ChargeWorkflow",
+		WorkflowID:   "order+123=abc",
+		RunID:        "3f1d6c7a-8b2e-4f7a-9d0a-87a6f95e4d31",
+	}
+	assert.Equal(t,
+		"v0/ns/payments%20prod/wt/ChargeWorkflow/wi/order%2B123%3Dabc/ri/3f1d6c7a-8b2e-4f7a-9d0a-87a6f95e4d31/d/sha256/abc123",
+		objectKey(target, "abc123"),
+	)
+}
+
+func TestObjectKey_ActivitySpecExample(t *testing.T) {
+	target := converter.StorageDriverActivityInfo{
+		Namespace:    "payments prod",
+		ActivityType: "Capture/Charge",
+		ActivityID:   "activity id+42",
+		RunID:        "9e1d1fd9-2f8a-4c40-93e2-731f31b9268b",
+	}
+	assert.Equal(t,
+		"v0/ns/payments%20prod/at/Capture%2FCharge/ai/activity%20id%2B42/ri/9e1d1fd9-2f8a-4c40-93e2-731f31b9268b/d/sha256/abc123",
+		objectKey(target, "abc123"),
 	)
 }
 

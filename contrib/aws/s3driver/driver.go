@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/url"
+	"strings"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
@@ -19,6 +19,7 @@ const (
 	defaultDriverName     = "aws.s3driver"
 	hashAlgorithm         = "sha256"
 	keyVersion            = "v0"
+	s3SafeChars           = "!-_.*'()"
 
 	claimKeyBucket        = "bucket"
 	claimKeyKey           = "key"
@@ -237,17 +238,17 @@ func objectKey(target converter.StorageDriverTargetInfo, hexDigest string) strin
 	switch t := target.(type) {
 	case converter.StorageDriverWorkflowInfo:
 		return keyVersion +
-			"/ns/" + pathEscape(t.Namespace) +
-			"/wt/" + pathEscape(t.WorkflowType) +
-			"/wi/" + pathEscape(t.WorkflowID) +
-			"/ri/" + pathEscape(t.RunID) +
+			"/ns/" + percentEncode(t.Namespace) +
+			"/wt/" + percentEncode(t.WorkflowType) +
+			"/wi/" + percentEncode(t.WorkflowID) +
+			"/ri/" + percentEncode(t.RunID) +
 			digestSegment
 	case converter.StorageDriverActivityInfo:
 		return keyVersion +
-			"/ns/" + pathEscape(t.Namespace) +
-			"/at/" + pathEscape(t.ActivityType) +
-			"/ai/" + pathEscape(t.ActivityID) +
-			"/ri/" + pathEscape(t.RunID) +
+			"/ns/" + percentEncode(t.Namespace) +
+			"/at/" + percentEncode(t.ActivityType) +
+			"/ai/" + percentEncode(t.ActivityID) +
+			"/ri/" + percentEncode(t.RunID) +
 			digestSegment
 	default:
 		return keyVersion + digestSegment
@@ -264,11 +265,36 @@ func describeClient(c Client) string {
 	return s
 }
 
-func pathEscape(s string) string {
+func percentEncode(s string) string {
 	if s == "" {
 		return "null"
 	}
-	return url.PathEscape(s)
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if isS3SafeByte(c) {
+			b.WriteByte(c)
+		} else {
+			b.WriteByte('%')
+			b.WriteByte(upperHexDigit(c >> 4))
+			b.WriteByte(upperHexDigit(c & 0xf))
+		}
+	}
+	return b.String()
+}
+
+func isS3SafeByte(c byte) bool {
+	switch {
+	case c >= 'A' && c <= 'Z', c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		return true
+	default:
+		return strings.IndexByte(s3SafeChars, c) >= 0
+	}
+}
+
+func upperHexDigit(n byte) byte {
+	return "0123456789ABCDEF"[n]
 }
 
 func sha256Hex(data []byte) string {

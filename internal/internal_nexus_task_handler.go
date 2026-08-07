@@ -17,6 +17,7 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
+	apinexus "go.temporal.io/api/temporalnexus"
 	"go.temporal.io/api/workflowservice/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -188,6 +189,10 @@ func (h *nexusTaskHandler) handleStartOperation(
 		callbackHeader = make(map[string]string)
 	}
 	nexusLinks := make([]nexus.Link, 0, len(req.GetLinks()))
+	// requestLinks holds the inbound links in common.v1.Link form so the RPCs the handler
+	// issues (e.g. signal, signalWithStart) can attach them to their request's links field, linking
+	// the callee's history events back to the caller.
+	var requestLinks []*common.Link
 	for _, link := range req.GetLinks() {
 		if link == nil {
 			continue
@@ -201,6 +206,12 @@ func (h *nexusTaskHandler) handleStartOperation(
 			URL:  linkURL,
 			Type: link.GetType(),
 		})
+		if commonLink, ok := apinexus.NexusLinkToCommonLink(link); ok {
+			requestLinks = append(requestLinks, commonLink)
+		}
+	}
+	if len(requestLinks) > 0 {
+		ctx = context.WithValue(ctx, NexusOperationRequestLinksKey, requestLinks)
 	}
 	startOptions := nexus.StartOperationOptions{
 		RequestID:      req.RequestId,
@@ -301,6 +312,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 				Type: nexusLink.Type,
 			}
 		}
+		links = append(links, h.responseLinks(nctx)...)
 		token := t.OperationToken
 		return &nexuspb.Response{
 			Variant: &nexuspb.Response_StartOperation{
@@ -323,6 +335,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 				Type: nexusLink.Type,
 			}
 		}
+		links = append(links, h.responseLinks(nctx)...)
 		// *nexus.HandlerStartOperationResultSync is generic, we can't type switch unfortunately.
 		value := reflect.ValueOf(t).Elem().FieldByName("Value").Interface()
 		payload, err := h.dataConverter.ToPayload(value)
@@ -346,6 +359,23 @@ func (h *nexusTaskHandler) handleStartOperation(
 			},
 		}, nil, nil
 	}
+}
+
+// responseLinks converts the response links accumulated on the operation context (from outbound RPCs
+// the handler issued, such as signal or signalWithStart) into nexus.v1.Links to attach to the
+// StartOperationResponse. Unsupported variants are skipped.
+func (h *nexusTaskHandler) responseLinks(nctx *NexusOperationContext) []*nexuspb.Link {
+	responseLinks := nctx.ResponseLinks()
+	if len(responseLinks) == 0 {
+		return nil
+	}
+	out := make([]*nexuspb.Link, 0, len(responseLinks))
+	for _, responseLink := range responseLinks {
+		if nexusLink, ok := apinexus.CommonLinkToNexusLink(responseLink); ok {
+			out = append(out, nexusLink)
+		}
+	}
+	return out
 }
 
 func (h *nexusTaskHandler) handleCancelOperation(ctx context.Context, nctx *NexusOperationContext, req *nexuspb.CancelOperationRequest, header nexus.Header) (*nexuspb.Response, *nexus.HandlerError, error) {

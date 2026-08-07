@@ -94,6 +94,53 @@ type (
 		DefaultVersioningBehavior VersioningBehavior
 	}
 
+	// PreferredVersionProvider provides the version to record for a GetVersion call when the
+	// version marker is created for the first time.
+	//
+	// It is called only during non-replay workflow task execution, before the SDK records a
+	// version marker for the change ID. It is not called during replay or after a version was
+	// already recorded for the same change ID. Returning nil is equivalent to choosing
+	// [PreferredVersionProviderInput.MaxSupported].
+	//
+	// The provider runs on a workflow goroutine. It can read a configuration file or another
+	// nondeterministic source because the selected version is recorded in workflow history.
+	// A panic from the provider fails the current workflow task, which Temporal retries.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PreferredVersionProvider]
+	PreferredVersionProvider func(PreferredVersionProviderInput) *VersionPreference
+
+	// PreferredVersionProviderInput is the input passed to a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.PreferredVersionProviderInput]
+	PreferredVersionProviderInput struct {
+		// WorkflowInfo is information about the workflow execution handling the GetVersion call.
+		WorkflowInfo *WorkflowInfo
+		// ChangeID is the change ID passed to GetVersion.
+		ChangeID string
+		// MinSupported is the minimum version supported by the GetVersion call.
+		MinSupported Version
+		// MaxSupported is the maximum version supported by the GetVersion call.
+		MaxSupported Version
+	}
+
+	// VersionPreference is the version preference returned by a PreferredVersionProvider.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/worker.VersionPreference]
+	VersionPreference struct {
+		// Version is the version to record. It must be in the range passed to GetVersion unless
+		// ClampToSupportedRange is true.
+		Version Version
+		// ClampToSupportedRange controls whether Version is clamped to the range passed to
+		// GetVersion instead of failing the workflow task when it is out of range.
+		ClampToSupportedRange bool
+	}
+
 	// WorkerOptions is used to configure a worker instance.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
@@ -109,9 +156,12 @@ type (
 		// Optional: Sets the rate limiting on number of activities that can be executed per second per
 		// worker. This can be used to limit resources used by the worker.
 		// Notice that the number is represented in float, so that you can set it to less than
-		// 1 if needed. For example, set the number to 0.1 means you want your activity to be executed
-		// once for every 10 seconds. This can be used to protect down stream services from flooding.
-		// The zero value of this uses the default value
+		// 1 if needed. For example, setting the number to 0.1 means activities execute
+		// once every 10 seconds. This can be used to protect downstream services from flooding.
+		// This rate limit is applied after activity tasks are received by the worker. If this
+		// value is set very low, server-side timeouts may continue to elapse while tasks wait
+		// behind this worker-side rate limiter.
+		// The zero value of this uses the default value.
 		//
 		// default: 100k
 		WorkerActivitiesPerSecond float64
@@ -149,7 +199,12 @@ type (
 		// temporal-server to retrieve activity tasks. Changing this value will affect the
 		// rate at which the worker is able to consume tasks from a task queue.
 		//
-		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
+		// NOTE: This option is mutually exclusive with ActivityTaskPollerBehavior.
+		//
+		// NOTE: If neither this nor ActivityTaskPollerBehavior is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the
+		// worker will automatically use poller autoscaling for activity tasks instead of
+		// a fixed number of pollers.
 		//
 		// default: 2
 		MaxConcurrentActivityTaskPollers int
@@ -170,6 +225,11 @@ type (
 		//
 		// NOTE: This option is mutually exclusive with WorkflowTaskPollerBehavior.
 		//
+		// NOTE: If neither this nor WorkflowTaskPollerBehavior is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the
+		// worker will automatically use poller autoscaling for workflow tasks instead of
+		// a fixed number of pollers.
+		//
 		// default: 2
 		MaxConcurrentWorkflowTaskPollers int
 
@@ -184,6 +244,11 @@ type (
 		// rate at which the worker is able to consume tasks from a task queue.
 		//
 		// NOTE: This option is mutually exclusive with NexusTaskPollerBehavior.
+		//
+		// NOTE: If neither this nor NexusTaskPollerBehavior is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the
+		// worker will automatically use poller autoscaling for nexus tasks instead of
+		// a fixed number of pollers.
 		//
 		// default: 2
 		MaxConcurrentNexusTaskPollers int
@@ -295,6 +360,7 @@ type (
 
 		// Optional: Disable eager activities. If set to true, activities will not
 		// be requested to execute eagerly from the same workflow regardless of
+		// MaxEagerActivityReservationsPerWorkflowTask or
 		// MaxConcurrentEagerActivityExecutionSize.
 		//
 		// Eager activity execution means the server returns requested eager
@@ -303,6 +369,13 @@ type (
 		//
 		// NOTE: Eager activities will automatically be disabled if TaskQueueActivitiesPerSecond is set.
 		DisableEagerActivities bool
+
+		// Optional: Maximum number of activity slots that may be reserved for
+		// eager execution when completing a workflow task.
+		//
+		// The default is 3. A configured value must be positive. To disable eager
+		// activity execution, set DisableEagerActivities.
+		MaxEagerActivityReservationsPerWorkflowTask *int
 
 		// Optional: Maximum number of eager activities that can be running.
 		//
@@ -350,6 +423,15 @@ type (
 		// for more.
 		DeploymentOptions WorkerDeploymentOptions
 
+		// Optional: Provides the version to record the first time a non-replay
+		// workflow.GetVersion call is encountered for a change ID. If unset, or if the provider
+		// returns nil, the SDK records GetVersion's maxSupported argument. This can support a rolling deployment that
+		// introduces a GetVersion call: initially return workflow.DefaultVersion so workers with
+		// the old code can replay, then return the desired version after the new code is deployed.
+		//
+		// NOTE: Experimental
+		PreferredVersionProvider PreferredVersionProvider
+
 		// Optional: If set, use a custom tuner for this worker. See WorkerTuner for more.
 		// Mutually exclusive with MaxConcurrentWorkflowTaskExecutionSize,
 		// MaxConcurrentActivityExecutionSize, and MaxConcurrentLocalActivityExecutionSize.
@@ -373,6 +455,11 @@ type (
 		//
 		// NOTE: This option is mutually exclusive with MaxConcurrentWorkflowTaskPollers.
 		//
+		// NOTE: If neither this nor MaxConcurrentWorkflowTaskPollers is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
+		// will automatically use poller autoscaling for workflow tasks instead of a fixed
+		// number of pollers.
+		//
 		// NOTE: Experimental
 		WorkflowTaskPollerBehavior PollerBehavior
 
@@ -381,6 +468,11 @@ type (
 		//
 		// NOTE: This option is mutually exclusive with MaxConcurrentActivityTaskPollers.
 		//
+		// NOTE: If neither this nor MaxConcurrentActivityTaskPollers is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
+		// will automatically use poller autoscaling for activity tasks instead of a fixed
+		// number of pollers.
+		//
 		// NOTE: Experimental
 		ActivityTaskPollerBehavior PollerBehavior
 
@@ -388,6 +480,11 @@ type (
 		// This is mutually exclusive with MaxConcurrentNexusTaskPollers.
 		//
 		// NOTE: This option is mutually exclusive with MaxConcurrentNexusTaskPollers.
+		//
+		// NOTE: If neither this nor MaxConcurrentNexusTaskPollers is set and the worker's
+		// namespace is configured to auto-enroll workers into poller autoscaling, the worker
+		// will automatically use poller autoscaling for nexus tasks instead of a fixed
+		// number of pollers.
 		//
 		// NOTE: Experimental
 		NexusTaskPollerBehavior PollerBehavior

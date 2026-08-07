@@ -186,6 +186,7 @@ type (
 	// NOTE to maintainers, this interface definition is duplicated in the internal package to provide a better UX.
 
 	// NexusClient is a client for executing Nexus Operations from a workflow.
+	// For Nexus operations outside workflows, use client.NexusClient instead.
 	NexusClient interface {
 		// The endpoint name this client uses.
 		Endpoint() string
@@ -251,9 +252,10 @@ type (
 // *ApplicationError, *TimeoutError, *CanceledError, or *PanicError.
 //
 // You can cancel the pending activity using context(workflow.WithCancel(ctx)) and that will fail the activity with
-// *CanceledError set as cause for *ActivityError. The context in the activity only becomes aware of the cancellation
-// when a heartbeat is sent to the server. Since heartbeats may be batched internally, this could take up to the
-// HeartbeatTimeout to appear or several minutes by default if that value is not set.
+// *CanceledError set as cause for *ActivityError. On supported servers, the activity context can be canceled directly
+// by the worker. On older servers, cancellation is observed when the activity sends a heartbeat to the server. Since
+// heartbeats may be batched internally, this fallback path could take up to the HeartbeatTimeout to appear or several
+// minutes by default if that value is not set.
 //
 // ExecuteActivity immediately returns a Future that can be used to block waiting for activity result or failure.
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
@@ -495,8 +497,9 @@ const DefaultVersion Version = internal.DefaultVersion
 // It is not allowed to update workflow code while there are workflows running as it is going to break
 // determinism. The solution is to have both old code that is used to replay existing workflows
 // as well as the new one that is used when it is executed for the first time.
-// GetVersion returns maxSupported version when is executed for the first time. This version is recorded into the
-// workflow history as a marker event. Even if maxSupported version is changed the version that was recorded is
+// GetVersion returns its maxSupported argument when executed for the first time, unless the worker configures a
+// [go.temporal.io/sdk/worker.Options.PreferredVersionProvider]. The returned version is recorded into
+// the workflow history as a marker event. Even if maxSupported version is changed, the version that was recorded is
 // returned on replay. DefaultVersion constant contains version of code that wasn't versioned before.
 // For example initially workflow has the following code:
 //
@@ -673,8 +676,6 @@ func SetUpdateHandlerWithOptions(ctx Context, updateName string, handler interfa
 // GetCurrentDetails gets the current details for this workflow. This is simply
 // the value set by [SetCurrentDetails] or empty if never set. See that function
 // for more details.
-//
-// NOTE: Experimental
 func GetCurrentDetails(ctx Context) string {
 	return internal.GetCurrentDetails(ctx)
 }
@@ -682,8 +683,6 @@ func GetCurrentDetails(ctx Context) string {
 // SetCurrentDetails sets the current details for this workflow. This is
 // typically an arbitrary string in Temporal markdown format may be displayed in
 // the UI or CLI.
-//
-// NOTE: Experimental
 func SetCurrentDetails(ctx Context, details string) {
 	internal.SetCurrentDetails(ctx, details)
 }

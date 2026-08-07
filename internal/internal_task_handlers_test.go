@@ -135,6 +135,19 @@ func TestTaskHandlersTestSuite(t *testing.T) {
 	})
 }
 
+func TestActivityCancellationCallbacksCancel(t *testing.T) {
+	registry := newActivityCancellationCallbacks()
+	taskToken := []byte{1, 2, 3}
+	ctx, cancel := context.WithCancelCause(context.Background())
+
+	unregister := registry.register(taskToken, cancel)
+	require.True(t, registry.cancel([]byte{1, 2, 3}))
+	require.True(t, IsCanceledError(context.Cause(ctx)))
+
+	unregister()
+	require.False(t, registry.cancel(taskToken))
+}
+
 func createTestEventWorkflowExecutionCompleted(eventID int64, attr *historypb.WorkflowExecutionCompletedEventAttributes) *historypb.HistoryEvent {
 	return &historypb.HistoryEvent{
 		EventId:    eventID,
@@ -1833,11 +1846,10 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 	go func() {
 		for {
 			task, _ := laTaskPoller.PollTask()
-			_ = laTaskPoller.ProcessTask(task)
-			// Quit after we've polled enough times
-			if laFailures.Load() == 4 {
+			if task == nil {
 				return
 			}
+			_ = laTaskPoller.ProcessTask(task)
 		}
 	}()
 

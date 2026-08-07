@@ -138,6 +138,12 @@ type (
 		env *testWorkflowEnvironmentImpl
 	}
 
+	testWorkflowDefinitionWrapper struct {
+		WorkflowDefinition
+		env     *testWorkflowEnvironmentImpl
+		started bool
+	}
+
 	mockWrapper struct {
 		env           *testWorkflowEnvironmentImpl
 		name          string
@@ -227,6 +233,11 @@ type (
 		workflowDef    WorkflowDefinition
 		changeVersions map[string]Version
 		openSessions   map[string]*SessionInfo
+
+		// mutableSideEffect holds the last recorded value per MutableSideEffect id
+		// so the test environment can honor the user-supplied equals function the
+		// same way the real worker does (only update when the value changed).
+		mutableSideEffect map[string]*commonpb.Payloads
 
 		workflowCancelHandler func()
 		signalHandler         func(name string, input *commonpb.Payloads, header *commonpb.Header) error
@@ -324,8 +335,9 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 		},
 		registry: r,
 
-		changeVersions: make(map[string]Version),
-		openSessions:   make(map[string]*SessionInfo),
+		changeVersions:    make(map[string]Version),
+		openSessions:      make(map[string]*SessionInfo),
+		mutableSideEffect: make(map[string]*commonpb.Payloads),
 
 		doneChannel:                 make(chan struct{}),
 		workerStopChannel:           make(chan struct{}),
@@ -683,11 +695,42 @@ func (env *testWorkflowEnvironmentImpl) getWorkflowDefinition(wt WorkflowType) (
 		wf = env.registry.dynamicWorkflow
 		dynamic = true
 	}
+	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
+	// RoadRunner PHP host process registers one shared factory). Honor it rather
+	// than treating it as a plain function, which would panic when the executor
+	// reflects on the factory value.
+	if wdf, ok := wf.(WorkflowDefinitionFactory); ok {
+		return &testWorkflowDefinitionWrapper{
+			WorkflowDefinition: wdf.NewWorkflowDefinition(),
+			env:                env,
+		}, nil
+	}
 	wd := &workflowExecutorWrapper{
 		workflowExecutor: &workflowExecutor{workflowType: wt.Name, fn: wf, interceptors: env.registry.interceptors, dynamic: dynamic},
 		env:              env,
 	}
 	return newSyncWorkflowDefinition(wd), nil
+}
+
+func (w *testWorkflowDefinitionWrapper) OnWorkflowTaskStarted(timeout time.Duration) {
+	if !w.started {
+		w.started = true
+		w.env.workflowFunctionExecuting = true
+
+		if w.env.isChildWorkflow() {
+			// Balance ExecuteChildWorkflow's increment, including delayed starts.
+			w.env.runningCount--
+
+			if handler := w.env.startedHandler; handler != nil {
+				execution := w.env.workflowInfo.WorkflowExecution
+				w.env.parentEnv.postCallback(func() {
+					handler(execution, nil)
+				}, true)
+			}
+		}
+	}
+
+	w.WorkflowDefinition.OnWorkflowTaskStarted(timeout)
 }
 
 func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
@@ -2873,6 +2916,15 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelNexusOperation(seq int64) {
 	}
 }
 
+func (env *testWorkflowEnvironmentImpl) AbandonNexusOperation(seq int64) {
+	handle, ok := env.getNexusOperationHandle(seq)
+	if !ok {
+		return
+	}
+	handle.onStarted = func(string, error) {}
+	handle.onCompleted = func(*commonpb.Payload, error) {}
+}
+
 func (env *testWorkflowEnvironmentImpl) RegisterNexusAsyncOperationCompletion(
 	service string,
 	operation string,
@@ -3080,9 +3132,18 @@ func (env *testWorkflowEnvironmentImpl) GetVersion(changeID string, minSupported
 		validateVersion(changeID, version, minSupported, maxSupported)
 		return version
 	}
-	_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, maxSupported, env.changeVersions))
-	env.changeVersions[changeID] = maxSupported
-	return maxSupported
+	version := resolvePreferredVersion(
+		env.workerOptions.PreferredVersionProvider,
+		PreferredVersionProviderInput{
+			WorkflowInfo: env.workflowInfo,
+			ChangeID:     changeID,
+			MinSupported: minSupported,
+			MaxSupported: maxSupported,
+		},
+	)
+	_ = env.UpsertSearchAttributes(createSearchAttributesForChangeVersion(changeID, version, env.changeVersions))
+	env.changeVersions[changeID] = version
+	return version
 }
 
 func (env *testWorkflowEnvironmentImpl) getMockedVersion(mockedChangeID, changeID string, minSupported, maxSupported Version) (Version, bool) {
@@ -3189,10 +3250,24 @@ func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{
 	return err
 }
 
-func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, _ func(a, b interface{}) bool, _ string) converter.EncodedValue {
+func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool, _ string) converter.EncodedValue {
 	mockMethod := mockMethodForMutableSideEffect
 	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
-		return newEncodedValue(env.encodeValue(f()), env.GetDataConverter())
+		// Mirror the real worker's semantics: only record a new value when the
+		// user-supplied equals function reports that the value changed; otherwise
+		// return the previously recorded value.
+		if oldValue, ok := env.mutableSideEffect[id]; ok {
+			newValue := f()
+			if isEqualMutableSideEffectValue(env.GetDataConverter(), newValue, oldValue, equals) {
+				return newEncodedValue(oldValue, env.GetDataConverter())
+			}
+			encoded := env.encodeValue(newValue)
+			env.mutableSideEffect[id] = encoded
+			return newEncodedValue(encoded, env.GetDataConverter())
+		}
+		encoded := env.encodeValue(f())
+		env.mutableSideEffect[id] = encoded
+		return newEncodedValue(encoded, env.GetDataConverter())
 	}
 
 	mockRet := env.workflowMock.MethodCalled(mockMethod, id)

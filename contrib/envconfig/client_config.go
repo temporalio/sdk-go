@@ -37,6 +37,9 @@ type ClientConfigProfile struct {
 	// lowercased and hyphens are replaced with underscores. This is used for deduplicating/overriding too, so manually
 	// set values that are not normalized may not get overridden with [ClientConfigProfile.ApplyEnvVars].
 	GRPCMeta map[string]string
+	// Authority specifies the value to be used as the :authority pseudo-header and virtual host name.
+	// See [client.ConnectionOptions.Authority] for more.
+	Authority string
 }
 
 // ClientConfigTLS is TLS configuration for a client.
@@ -116,6 +119,7 @@ func (c *ClientConfigProfile) ToClientOptions(options ToClientOptionsRequest) (c
 	if len(c.GRPCMeta) > 0 {
 		opts.HeadersProvider = fixedHeaders(c.GRPCMeta)
 	}
+	opts.ConnectionOptions.Authority = c.Authority
 	return opts, nil
 }
 

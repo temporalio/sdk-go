@@ -48,6 +48,10 @@ history.enableChasm:
   - value: true
 history.enableTransitionHistory:
   - value: true
+history.enableUpdateCallbacks:
+  - value: true
+history.enableCHASMCallbacks:
+  - value: true
 component.nexusoperations.useSystemCallbackURL:
   - value: false
 frontend.WorkerHeartbeatsEnabled:

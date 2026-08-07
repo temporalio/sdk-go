@@ -89,6 +89,8 @@ type (
 		pollTimeTracker *pollTimeTracker
 		// Unique identifier for worker
 		workerInstanceKey string
+		// Per-client queue used by the server to send worker commands.
+		workerControlTaskQueue string
 		// Server cancels polls on shutdown
 		workerPollCompleteOnShutdown *atomic.Bool
 	}
@@ -225,7 +227,10 @@ type (
 	localActivityTunnel struct {
 		taskCh   chan *localActivityTask
 		resultCh chan eagerOrPolledTask
-		stopCh   <-chan struct{}
+		// stopCh is a read-only view of workflowWorker.localActivityStopC.
+		// It is closed by workflowWorker.Stop() after the workflow worker stops,
+		// causing tunnel sends/receives to stop accepting local activity work.
+		stopCh <-chan struct{}
 	}
 )
 
@@ -293,6 +298,10 @@ func (bp *basePoller) stopping() bool {
 	}
 }
 
+func (bp *basePoller) shouldDrainOnShutdown() bool {
+	return bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load()
+}
+
 // doPoll runs the given pollFunc in a separate go routine. Returns when any of the conditions are met:
 //   - poll succeeds
 //   - poll fails
@@ -314,25 +323,13 @@ func (bp *basePoller) doPoll(pollFunc func(ctx context.Context) (taskForWorker, 
 		close(doneC)
 	}()
 
-	if bp.workerPollCompleteOnShutdown != nil && bp.workerPollCompleteOnShutdown.Load() {
-		// Don't kill the gRPC stream. After ShutdownWorker, the server returns empty responses.
-		select {
-		case <-doneC:
-			return result, err
-		case <-bp.stopC:
-			// TEMP FIX: Give the server a reasonable window to complete the poll after
-			// ShutdownWorker. Fall back to cancelling the poll if it takes too
-			// long, e.g. when the gRPC connection was closed before Stop().
-			timer := time.NewTimer(5 * time.Second)
-			defer timer.Stop()
-			select {
-			case <-doneC:
-			case <-timer.C:
-				cancel()
-				<-doneC
-			}
-			return result, err
-		}
+	if bp.shouldDrainOnShutdown() {
+		// Don't cancel the gRPC stream. After ShutdownWorker, the server
+		// completes the poll with an empty response. The poll is bounded
+		// by the gRPC timeout (pollTaskServiceTimeOut). Stop() waits for
+		// all pollers to finish before proceeding to task drain.
+		<-doneC
+		return result, err
 	}
 
 	// Legacy: cancel in-flight polls immediately on shutdown
@@ -374,6 +371,7 @@ func newWorkflowTaskProcessor(
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
+			workerControlTaskQueue:       params.workerControlTaskQueue,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		service:                      service,
@@ -437,7 +435,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 
 // ProcessTask processes a task which could be workflow task or local activity result
 func (wtp *workflowTaskProcessor) ProcessTask(task interface{}) error {
-	if wtp.stopping() {
+	if !wtp.shouldDrainOnShutdown() && wtp.stopping() {
 		return errStop
 	}
 
@@ -670,7 +668,9 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	} else if taskDuration > 5*time.Second {
 		wtp.logger.Info("[TMPRL1104] "+taskID+" Workflow task exceeded 5 seconds.", loggerDurationKeyVals...)
 	} else {
-		wtp.logger.Debug("[TMPRL1104] "+taskID+" Workflow task duration information.", loggerDurationKeyVals...)
+		traceLog(func() {
+			wtp.logger.Debug("Workflow task duration information.", loggerDurationKeyVals...)
+		})
 	}
 
 	var grpcMessageTooLargeErr *retry.GrpcMessageTooLargeError
@@ -904,7 +904,6 @@ func (callback *workflowTaskStorageMetrics) GetDriverNames() []string {
 	return names
 }
 
-
 func newLocalActivityPoller(
 	params workerExecutionParameters,
 	laTunnel *localActivityTunnel,
@@ -932,7 +931,11 @@ func newLocalActivityPoller(
 }
 
 func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
-	return latp.laTunnel.getTask(), nil
+	task := latp.laTunnel.getTask()
+	if task == nil {
+		return nil, nil
+	}
+	return task, nil
 }
 
 func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
@@ -1155,7 +1158,8 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 			wtp.useBuildIDVersioning,
 			wtp.workerDeploymentVersion,
 		),
-		WorkerInstanceKey: wtp.workerInstanceKey,
+		WorkerInstanceKey:      wtp.workerInstanceKey,
+		WorkerControlTaskQueue: wtp.workerControlTaskQueue,
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1372,6 +1376,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
+			workerControlTaskQueue:       params.workerControlTaskQueue,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:         taskHandler,
@@ -1412,7 +1417,8 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 			atp.useBuildIDVersioning,
 			atp.workerDeploymentVersion,
 		),
-		WorkerInstanceKey: atp.workerInstanceKey,
+		WorkerInstanceKey:      atp.workerInstanceKey,
+		WorkerControlTaskQueue: atp.workerControlTaskQueue,
 	}
 
 	response, err := atp.pollActivityTaskQueue(ctx, request)
@@ -1449,7 +1455,7 @@ func (atp *activityTaskPoller) PollTask() (taskForWorker, error) {
 
 // ProcessTask processes a new task
 func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
-	if atp.stopping() {
+	if !atp.shouldDrainOnShutdown() && atp.stopping() {
 		return errStop
 	}
 

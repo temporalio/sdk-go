@@ -103,8 +103,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 
 	var catchupWindow *durationpb.Duration
 	if in.Options.CatchupWindow != 0 {
-		// Convert to nil so the server uses the default
-		// catchup window,otherwise it will use the minimum (10s).
+		// Leave zero unset so the server applies its default catchup window.
 		catchupWindow = durationpb.New(in.Options.CatchupWindow)
 	}
 
@@ -761,6 +760,7 @@ func convertFromPBScheduleAction(
 			VersioningOverride:       versioningOverrideFromProto(workflow.VersioningOverride),
 			StaticSummary:            *convertedSummary,
 			StaticDetails:            *convertedDetails,
+			Priority:                 convertFromPBPriority(workflow.GetPriority()),
 		}, nil
 	default:
 		// TODO maybe just panic instead?

@@ -1137,7 +1137,7 @@ func (h *commandsHelper) handleActivityTaskClosed(activityID string, scheduledEv
 	command := h.getCommand(makeCommandID(commandTypeActivity, activityID))
 	// If, for whatever reason, we were going to send an activity cancel request, don't do that anymore
 	// since we already know the activity is resolved.
-	possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, activityID)
+	possibleCancelID := makeCommandID(commandTypeRequestCancelActivityTask, strconv.FormatInt(scheduledEventID, 10))
 	h.removeCancelOfResolvedCommand(possibleCancelID)
 	command.handleCompletionEvent()
 	delete(h.scheduledEventIDToActivityID, scheduledEventID)
@@ -1215,12 +1215,16 @@ func (h *commandsHelper) handleNexusOperationScheduled(event *historypb.HistoryE
 	command.handleInitiatedEvent()
 }
 
+func (h *commandsHelper) getNexusOperationCommand(seq int64) commandStateMachine {
+	return h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+}
+
 func (h *commandsHelper) handleNexusOperationStarted(scheduledEventID int64) commandStateMachine {
 	seq, ok := h.scheduledEventIDToNexusSeq[scheduledEventID]
 	if !ok {
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
 	}
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	command.handleStartedEvent()
 	return command
 }
@@ -1232,7 +1236,7 @@ func (h *commandsHelper) handleNexusOperationCompleted(scheduledEventID int64) c
 	}
 	// We don't need this anymore, the state will not transition after completion.
 	delete(h.scheduledEventIDToNexusSeq, scheduledEventID)
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	command.handleCompletionEvent()
 	return command
 }
@@ -1242,7 +1246,7 @@ func (h *commandsHelper) handleNexusOperationCancelRequested(scheduledEventID in
 	if !ok {
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
 	}
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	sm := command.(*nexusOperationStateMachine)
 	sm.cancelation.handleInitiatedEvent()
 	return command
@@ -1253,14 +1257,14 @@ func (h *commandsHelper) handleNexusOperationCancelRequestDelivered(scheduledEve
 	if !ok {
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] unable to find nexus operation state machine for event ID: %v", scheduledEventID))
 	}
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	sm := command.(*nexusOperationStateMachine)
 	sm.cancelation.handleCompletionEvent()
 	return command
 }
 
 func (h *commandsHelper) requestCancelNexusOperation(seq int64) commandStateMachine {
-	command := h.getCommand(makeCommandID(commandTypeNexusOperation, strconv.FormatInt(seq, 10)))
+	command := h.getNexusOperationCommand(seq)
 	command.cancel()
 	// If we haven't sent the command yet, ensure that it doesn't get mapped to the wrong scheduledEventID.
 	if command.getState() != commandStateCanceledBeforeSent {

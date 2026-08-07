@@ -15,6 +15,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 
 	"github.com/golang/mock/gomock"
+	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
@@ -1792,6 +1793,197 @@ func (s *internalWorkerTestSuite) TestCreateWorkerWithDataConverter() {
 	worker.Stop()
 }
 
+// newWorkerWithNamespaceCapabilities builds an AggregatedWorker whose namespace
+// DescribeNamespace response reports the given capabilities, with permissive
+// polling/shutdown mocks so the worker can be started and stopped.
+func (s *internalWorkerTestSuite) newWorkerWithNamespaceCapabilities(
+	caps *namespacepb.NamespaceInfo_Capabilities,
+	options WorkerOptions,
+) *AggregatedWorker {
+	namespace := "testNamespace"
+	namespaceDesc := &workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:         namespace,
+			State:        enumspb.NAMESPACE_STATE_REGISTERED,
+			Capabilities: caps,
+		},
+	}
+	s.service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(namespaceDesc, nil).AnyTimes()
+	s.service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollNexusTaskQueueResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).AnyTimes()
+	s.service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: namespace})
+	return NewAggregatedWorker(client, "testGroupName", options)
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+		WorkerOptions{},
+	)
+	// Register a nexus service so start() builds a nexus worker whose pollers we
+	// can inspect.
+	nexusService := nexus.NewService("TestService")
+	require.NoError(s.T(), nexusService.Register(nexus.NewSyncOperation(
+		"operation",
+		func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
+			return "result", nil
+		},
+	)))
+	worker.RegisterNexusService(nexusService)
+
+	// Workflow and activity scalable task pollers are not created until Start
+	// resolves the namespace capabilities.
+	s.Nil(worker.workflowWorker.worker.options.taskPollers)
+	s.Nil(worker.activityWorker.worker.options.taskPollers)
+
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	// All defaulted poller behaviors are switched to autoscaling.
+	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.WorkflowTaskPollerBehavior)
+	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.ActivityTaskPollerBehavior)
+	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.NexusTaskPollerBehavior)
+
+	// The actual running pollers reflect the autoscaling structure.
+	require.NotEmpty(s.T(), worker.workflowWorker.worker.options.taskPollers)
+	for _, p := range worker.workflowWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+	require.NotEmpty(s.T(), worker.activityWorker.worker.options.taskPollers)
+	for _, p := range worker.activityWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+	require.NotNil(s.T(), worker.nexusWorker)
+	require.NotEmpty(s.T(), worker.nexusWorker.worker.options.taskPollers)
+	for _, p := range worker.nexusWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+
+	// Auto-enroll implies full autoscaling support, including scale-down.
+	s.True(worker.executionParams.serverSupportsAutoscaling.Load())
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollDisabled() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: false},
+		WorkerOptions{},
+	)
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	// Without the capability, defaulted pollers stay at the fixed default of 2.
+	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.WorkflowTaskPollerBehavior)
+	s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.ActivityTaskPollerBehavior)
+
+	require.Len(s.T(), worker.workflowWorker.worker.options.taskPollers, 1)
+	wfPoller := worker.workflowWorker.worker.options.taskPollers[0]
+	s.Nil(wfPoller.autoscalingRunner)
+	s.Equal(defaultConcurrentPollRoutineSize, wfPoller.pollerCount)
+
+	require.Len(s.T(), worker.activityWorker.worker.options.taskPollers, 1)
+	actPoller := worker.activityWorker.worker.options.taskPollers[0]
+	s.Nil(actPoller.autoscalingRunner)
+	s.Equal(defaultConcurrentPollRoutineSize, actPoller.pollerCount)
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollRespectsExplicitConfig() {
+	// registerNexus registers a nexus service so start() builds a nexus worker
+	// whose pollers can be inspected.
+	registerNexus := func(worker *AggregatedWorker) {
+		service := nexus.NewService("TestService")
+		require.NoError(s.T(), service.Register(nexus.NewSyncOperation(
+			"operation",
+			func(ctx context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
+				return "result", nil
+			},
+		)))
+		worker.RegisterNexusService(service)
+	}
+
+	// assertFixedPollers verifies that none of the poller types was switched to
+	// autoscaling and that each keeps its explicitly-configured poller count.
+	assertFixedPollers := func(worker *AggregatedWorker, wfCount, actCount, nexusCount int) {
+		require.NoError(s.T(), worker.Start())
+		defer worker.Stop()
+
+		s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.WorkflowTaskPollerBehavior)
+		s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.ActivityTaskPollerBehavior)
+		s.IsType(&pollerBehaviorSimpleMaximum{}, worker.executionParams.NexusTaskPollerBehavior)
+
+		require.Len(s.T(), worker.workflowWorker.worker.options.taskPollers, 1)
+		s.Nil(worker.workflowWorker.worker.options.taskPollers[0].autoscalingRunner)
+		s.Equal(wfCount, worker.workflowWorker.worker.options.taskPollers[0].pollerCount)
+
+		require.Len(s.T(), worker.activityWorker.worker.options.taskPollers, 1)
+		s.Nil(worker.activityWorker.worker.options.taskPollers[0].autoscalingRunner)
+		s.Equal(actCount, worker.activityWorker.worker.options.taskPollers[0].pollerCount)
+
+		require.NotNil(s.T(), worker.nexusWorker)
+		require.Len(s.T(), worker.nexusWorker.worker.options.taskPollers, 1)
+		s.Nil(worker.nexusWorker.worker.options.taskPollers[0].autoscalingRunner)
+		s.Equal(nexusCount, worker.nexusWorker.worker.options.taskPollers[0].pollerCount)
+	}
+
+	// Explicit fixed poller counts must not be switched to autoscaling.
+	s.Run("MaxConcurrentTaskPollers", func() {
+		worker := s.newWorkerWithNamespaceCapabilities(
+			&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+			WorkerOptions{
+				MaxConcurrentWorkflowTaskPollers: 5,
+				MaxConcurrentActivityTaskPollers: 3,
+				MaxConcurrentNexusTaskPollers:    4,
+			},
+		)
+		registerNexus(worker)
+		assertFixedPollers(worker, 5, 3, 4)
+	})
+
+	// Explicit poller behaviors must not be switched to autoscaling either.
+	s.Run("TaskPollerBehavior", func() {
+		worker := s.newWorkerWithNamespaceCapabilities(
+			&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+			WorkerOptions{
+				WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 5}),
+				ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 3}),
+				NexusTaskPollerBehavior:    NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 4}),
+			},
+		)
+		registerNexus(worker)
+		assertFixedPollers(worker, 5, 3, 4)
+	})
+}
+
+func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker() {
+	worker := s.newWorkerWithNamespaceCapabilities(
+		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: true},
+		WorkerOptions{EnableSessionWorker: true},
+	)
+	worker.RegisterActivity(testActivityNoResult)
+
+	s.Nil(worker.sessionWorker.activityWorker.worker.options.taskPollers)
+	s.Nil(worker.sessionWorker.creationWorker.worker.options.taskPollers)
+
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	require.NotNil(s.T(), worker.sessionWorker)
+
+	require.NotEmpty(s.T(), worker.sessionWorker.activityWorker.worker.options.taskPollers)
+	for _, p := range worker.sessionWorker.activityWorker.worker.options.taskPollers {
+		s.NotNil(p.autoscalingRunner)
+	}
+
+	require.Len(s.T(), worker.sessionWorker.creationWorker.worker.options.taskPollers, 1)
+	creationPoller := worker.sessionWorker.creationWorker.worker.options.taskPollers[0]
+	s.Nil(creationPoller.autoscalingRunner)
+	s.Equal(1, creationPoller.pollerCount)
+}
+
 type throwsOneErrSlotSupplier struct {
 	didThrow atomic.Bool
 }
@@ -1940,6 +2132,16 @@ func (m *mockPollActivityTaskQueueRequest) String() string {
 	return "PollActivityTaskQueueRequest"
 }
 
+const (
+	expectedShutdownWorkerRPCsForMainTaskQueue     = 1
+	expectedShutdownWorkerRPCsForSessionTaskQueues = 2
+	// Session workers use both the shared session creation task queue and a
+	// resource-specific session activity task queue. Until ShutdownWorker RPC
+	// is changed to specify session activity worker task queues, we must send
+	// separate RPCs to shutdown these task queues.
+	expectedShutdownWorkerRPCsWithSessionWorker = expectedShutdownWorkerRPCsForMainTaskQueue + expectedShutdownWorkerRPCsForSessionTaskQueues
+)
+
 func createWorker(service *workflowservicemock.MockWorkflowServiceClient) *AggregatedWorker {
 	return createWorkerWithThrottle(service, 0.0, nil)
 }
@@ -1952,7 +2154,7 @@ func createWorkerWithThrottle(
 	setupPollingMocks(namespace, service, activitiesPerSecond)
 
 	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(expectedShutdownWorkerRPCsWithSessionWorker)
 
 	// Configure worker options.
 	workerOptions := WorkerOptions{
@@ -2941,6 +3143,20 @@ func TestWorkerOptionInvalid(t *testing.T) {
 	require.Panics(t, func() {
 		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskExternalStorageVisits: -1})
 	})
+	for _, value := range []int{0, -1} {
+		value := value
+		require.PanicsWithValue(
+			t,
+			"MaxEagerActivityReservationsPerWorkflowTask must be positive; set DisableEagerActivities to disable eager activity execution",
+			func() {
+				NewAggregatedWorker(
+					&WorkflowClient{},
+					"worker-options-tq",
+					WorkerOptions{MaxEagerActivityReservationsPerWorkflowTask: &value},
+				)
+			},
+		)
+	}
 }
 
 func TestWorkerOptionDefaults(t *testing.T) {
@@ -2949,6 +3165,11 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 
 	workflowWorker := aggWorker.workflowWorker
+	require.Equal(
+		t,
+		defaultMaxEagerActivityReservationsPerWorkflowTask,
+		workflowWorker.executionParameters.eagerActivityExecutor.maxPerTask,
+	)
 	require.True(t, workflowWorker.executionParameters.Identity != "")
 	require.NotNil(t, workflowWorker.executionParameters.Logger)
 	require.NotNil(t, workflowWorker.executionParameters.MetricsHandler)
@@ -2997,6 +3218,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 
 func TestWorkerOptionNonDefaults(t *testing.T) {
 	taskQueue := "worker-options-tq"
+	maxEagerActivityReservationsPerWorkflowTask := 17
 
 	client := &WorkflowClient{
 		workflowService:    nil,
@@ -3023,11 +3245,17 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		StickyScheduleToStartTimeout:                   555 * time.Minute,
 		BackgroundActivityContext:                      context.Background(),
 		MaxConcurrentWorkflowTaskExternalStorageVisits: 7,
+		MaxEagerActivityReservationsPerWorkflowTask:    &maxEagerActivityReservationsPerWorkflowTask,
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
 
 	workflowWorker := aggWorker.workflowWorker
+	require.Equal(
+		t,
+		*options.MaxEagerActivityReservationsPerWorkflowTask,
+		workflowWorker.executionParameters.eagerActivityExecutor.maxPerTask,
+	)
 	require.Len(t, workflowWorker.executionParameters.ContextPropagators, 0)
 
 	tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
@@ -3198,6 +3426,104 @@ func TestWorkerBuildIDAndSessionPanic(t *testing.T) {
 		worker.RegisterWorkflow(testReplayWorkflow)
 	}()
 	require.Equal(t, "cannot set both EnableSessionWorker and UseBuildIDForVersioning", recovered)
+}
+
+func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSendsShutdownWorkerForSessionTaskQueues() {
+	var requestsMu sync.Mutex
+	var requests []*workflowservice.ShutdownWorkerRequest
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.ShutdownWorkerRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.ShutdownWorkerResponse, error) {
+			requestsMu.Lock()
+			defer requestsMu.Unlock()
+			requests = append(requests, proto.Clone(request).(*workflowservice.ShutdownWorkerRequest))
+			return &workflowservice.ShutdownWorkerResponse{}, nil
+		}).Times(expectedShutdownWorkerRPCsWithSessionWorker)
+
+	const namespace = "testNamespace"
+	const taskQueue = "session-shutdown-task-queue"
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: namespace})
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
+		EnableSessionWorker: true,
+	})
+	s.NotNil(worker.sessionWorker)
+
+	sessionActivityTaskQueue := worker.sessionWorker.activityWorker.executionParameters.TaskQueue
+	s.NotEmpty(sessionActivityTaskQueue)
+
+	worker.Stop()
+
+	requestsMu.Lock()
+	defer requestsMu.Unlock()
+
+	s.Len(requests, expectedShutdownWorkerRPCsWithSessionWorker)
+	requestsByTaskQueue := make(map[string]*workflowservice.ShutdownWorkerRequest)
+	for _, request := range requests {
+		requestsByTaskQueue[request.GetTaskQueue()] = request
+	}
+
+	s.Contains(requestsByTaskQueue, taskQueue)
+	s.ElementsMatch(
+		[]enumspb.TaskQueueType{
+			enumspb.TASK_QUEUE_TYPE_WORKFLOW,
+			enumspb.TASK_QUEUE_TYPE_ACTIVITY,
+		},
+		requestsByTaskQueue[taskQueue].GetTaskQueueTypes(),
+	)
+
+	sessionCreationTaskQueue := getCreationTaskqueue(taskQueue)
+	s.Contains(requestsByTaskQueue, sessionCreationTaskQueue)
+	s.Equal(
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		requestsByTaskQueue[sessionCreationTaskQueue].GetTaskQueueTypes(),
+	)
+
+	s.Contains(requestsByTaskQueue, sessionActivityTaskQueue)
+	s.Equal(
+		[]enumspb.TaskQueueType{enumspb.TASK_QUEUE_TYPE_ACTIVITY},
+		requestsByTaskQueue[sessionActivityTaskQueue].GetTaskQueueTypes(),
+	)
+}
+
+func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSetsNoRepollOnSessionWorkers() {
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "session-shutdown-task-queue", WorkerOptions{
+		EnableSessionWorker: true,
+	})
+	s.NotNil(worker.sessionWorker)
+
+	worker.Stop()
+
+	s.True(worker.sessionWorker.creationWorker.worker.noRepoll.Load(),
+		"session creation worker should stop starting new polls during shutdown")
+	s.True(worker.sessionWorker.activityWorker.worker.noRepoll.Load(),
+		"session activity worker should stop starting new polls during shutdown")
+}
+
+func (s *internalWorkerTestSuite) TestSessionWorkerShutdownDrainModeMatchesAggregateWorker() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "session-shutdown-task-queue", WorkerOptions{
+		EnableSessionWorker: true,
+	})
+	s.NotNil(worker.sessionWorker)
+
+	s.False(worker.sessionWorker.creationWorker.worker.shouldDrainOnShutdown(),
+		"session creation worker should default to legacy shutdown before the capability is enabled")
+	s.False(worker.sessionWorker.activityWorker.worker.shouldDrainOnShutdown(),
+		"session activity worker should default to legacy shutdown before the capability is enabled")
+
+	worker.workerPollCompleteOnShutdown.Store(true)
+
+	s.True(worker.sessionWorker.creationWorker.worker.shouldDrainOnShutdown(),
+		"session creation worker should share the aggregate shutdown drain capability")
+	s.True(worker.sessionWorker.activityWorker.worker.shouldDrainOnShutdown(),
+		"session activity worker should share the aggregate shutdown drain capability")
 }
 
 func TestHistoryFromJSON(t *testing.T) {

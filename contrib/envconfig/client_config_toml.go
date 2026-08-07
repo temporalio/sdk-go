@@ -18,6 +18,7 @@ var knownProfileKeys = map[string]bool{
 	"tls":       true,
 	"codec":     true,
 	"grpc_meta": true,
+	"authority": true,
 }
 
 // ClientConfigToTOMLOptions are options for [ClientConfig.ToTOML].
@@ -163,6 +164,7 @@ type tomlClientConfigProfile struct {
 	TLS       *tomlClientConfigTLS   `toml:"tls,omitempty"`
 	Codec     *tomlClientConfigCodec `toml:"codec,omitempty"`
 	GRPCMeta  map[string]string      `toml:"grpc_meta,omitempty"`
+	Authority string                 `toml:"authority,omitempty"`
 }
 
 func (c *tomlClientConfigProfile) toClientConfig() *ClientConfigProfile {
@@ -172,6 +174,7 @@ func (c *tomlClientConfigProfile) toClientConfig() *ClientConfigProfile {
 		APIKey:    c.APIKey,
 		TLS:       c.TLS.toClientConfig(),
 		Codec:     c.Codec.toClientConfig(),
+		Authority: c.Authority,
 	}
 	// gRPC meta keys have to be normalized
 	if len(c.GRPCMeta) > 0 {
@@ -187,6 +190,7 @@ func (c *tomlClientConfigProfile) fromClientConfig(conf *ClientConfigProfile) {
 	c.Address = conf.Address
 	c.Namespace = conf.Namespace
 	c.APIKey = conf.APIKey
+	c.Authority = conf.Authority
 	if conf.TLS != nil {
 		c.TLS = &tomlClientConfigTLS{}
 		c.TLS.fromClientConfig(conf.TLS)

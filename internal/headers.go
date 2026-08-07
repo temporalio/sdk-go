@@ -10,11 +10,15 @@ import (
 
 // HeaderWriter is an interface to write information to temporal headers
 type (
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.HeaderWriter]
 	HeaderWriter interface {
 		Set(string, *commonpb.Payload)
 	}
 
 	// HeaderReader is an interface to read information from temporal headers
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.HeaderReader]
 	HeaderReader interface {
 		Get(string) (*commonpb.Payload, bool)
 		ForEachKey(handler func(string, *commonpb.Payload) error) error
@@ -22,6 +26,8 @@ type (
 
 	// ContextPropagator is an interface that determines what information from
 	// context to pass along
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ContextPropagator]
 	ContextPropagator interface {
 		// Inject injects information from a Go Context into headers
 		Inject(context.Context, HeaderWriter) error
@@ -45,6 +51,8 @@ type (
 	// Note that data converters may be called in non-context-aware situations to
 	// convert payloads that may not be customized per context. Data converter
 	// implementers should not expect or require contextual data be present.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ContextAware]
 	ContextAware interface {
 		WithWorkflowContext(ctx Context) converter.DataConverter
 		WithContext(ctx context.Context) converter.DataConverter

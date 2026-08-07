@@ -78,8 +78,12 @@ type (
 	workflowTask struct {
 		task            *workflowservice.PollWorkflowTaskQueueResponse
 		historyIterator HistoryIterator
-		doneCh          chan struct{}
-		laResultCh      chan *localActivityResult
+		// doneCh is created by workflowTaskProcessor.processWorkflowTask and closed
+		// when that workflow task processing returns. Local activity result and retry
+		// delivery wait on it to avoid blocking forever if nobody is receiving on
+		// laResultCh or laRetryCh.
+		doneCh     chan struct{}
+		laResultCh chan *localActivityResult
 
 		// This channel must be initialized with a one-size buffer and is used to indicate when
 		// it is time for a local activity to be retried
@@ -131,6 +135,7 @@ type (
 		useBuildIDForVersioning   bool
 		workerDeploymentVersion   WorkerDeploymentVersion
 		defaultVersioningBehavior VersioningBehavior
+		preferredVersionProvider  PreferredVersionProvider
 		enableLoggingInReplay     bool
 		registry                  *registry
 		laTunnel                  *localActivityTunnel
@@ -141,6 +146,12 @@ type (
 		cache                     *WorkerCache
 		deadlockDetectionTimeout  time.Duration
 		capabilities              *workflowservice.GetSystemInfoResponse_Capabilities
+		workerControlTaskQueue    string
+	}
+
+	activityCancellationCallbacks struct {
+		sync.Mutex
+		cancels map[string]context.CancelCauseFunc
 	}
 
 	activityProvider func(name string) activity
@@ -168,6 +179,7 @@ type (
 		inboundPayloadVisitor            PayloadVisitor
 		outboundPayloadVisitor           PayloadVisitor
 		payloadVisitorConcurrency        int
+		activityCancellationCallbacks    *activityCancellationCallbacks
 	}
 
 	// history wrapper method to help information about events.
@@ -574,6 +586,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		useBuildIDForVersioning:   params.UseBuildIDForVersioning,
 		workerDeploymentVersion:   params.DeploymentOptions.Version,
 		defaultVersioningBehavior: params.DeploymentOptions.DefaultVersioningBehavior,
+		preferredVersionProvider:  params.PreferredVersionProvider,
 		enableLoggingInReplay:     params.EnableLoggingInReplay,
 		registry:                  registry,
 		workflowPanicPolicy:       params.WorkflowPanicPolicy,
@@ -583,6 +596,7 @@ func newWorkflowTaskHandler(params workerExecutionParameters, ppMgr pressurePoin
 		cache:                     params.cache,
 		deadlockDetectionTimeout:  params.DeadlockDetectionTimeout,
 		capabilities:              params.capabilities,
+		workerControlTaskQueue:    params.workerControlTaskQueue,
 	}
 }
 
@@ -694,6 +708,7 @@ func (w *workflowExecutionContextImpl) createEventHandler() {
 		w.wth.contextPropagators,
 		w.wth.deadlockDetectionTimeout,
 		w.wth.capabilities,
+		w.wth.preferredVersionProvider,
 	)
 
 	w.eventHandler = &eventHandler
@@ -1893,15 +1908,20 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 
 		useCompat := determineInheritBuildIdFlagForCommand(
 			contErr.VersioningIntent, workflowContext.workflowInfo.TaskQueueName, contErr.TaskQueueName)
+		var backoffStartInterval *durationpb.Duration
+		if contErr.BackoffStartInterval != 0 {
+			backoffStartInterval = durationpb.New(contErr.BackoffStartInterval)
+		}
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
 			WorkflowType:              &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
 			Input:                     contErr.Input,
 			TaskQueue:                 &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 			WorkflowRunTimeout:        durationpb.New(contErr.WorkflowRunTimeout),
 			WorkflowTaskTimeout:       durationpb.New(contErr.WorkflowTaskTimeout),
+			BackoffStartInterval:      backoffStartInterval,
 			Header:                    contErr.Header,
 			Memo:                      workflowContext.workflowInfo.Memo,
-			SearchAttributes:          workflowContext.workflowInfo.SearchAttributes,
+			SearchAttributes:          sanitizeSearchAttributesForStart(workflowContext.workflowInfo.SearchAttributes),
 			RetryPolicy:               convertToPBRetryPolicy(retryPolicy),
 			InheritBuildId:            useCompat,
 			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),
@@ -1998,6 +2018,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			wth.useBuildIDForVersioning,
 			wth.workerDeploymentVersion,
 		),
+		WorkerControlTaskQueue: wth.workerControlTaskQueue,
 	}
 	if wth.capabilities != nil && wth.capabilities.BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -2091,10 +2112,38 @@ func newActivityTaskHandlerWithCustomProvider(
 			params.UseBuildIDForVersioning,
 			params.DeploymentOptions.Version,
 		),
-		inboundPayloadVisitor:     params.inboundPayloadVisitor,
-		outboundPayloadVisitor:    params.outboundPayloadVisitor,
-		payloadVisitorConcurrency: params.payloadVisitorConcurrency,
+		inboundPayloadVisitor:         params.inboundPayloadVisitor,
+		outboundPayloadVisitor:        params.outboundPayloadVisitor,
+		payloadVisitorConcurrency:     params.payloadVisitorConcurrency,
+		activityCancellationCallbacks: params.activityCancellationCallbacks,
 	}
+}
+
+func newActivityCancellationCallbacks() *activityCancellationCallbacks {
+	return &activityCancellationCallbacks{cancels: make(map[string]context.CancelCauseFunc)}
+}
+
+func (r *activityCancellationCallbacks) register(taskToken []byte, cancel context.CancelCauseFunc) func() {
+	key := string(taskToken)
+	r.Lock()
+	r.cancels[key] = cancel
+	r.Unlock()
+	return func() {
+		r.Lock()
+		delete(r.cancels, key)
+		r.Unlock()
+	}
+}
+
+func (r *activityCancellationCallbacks) cancel(taskToken []byte) bool {
+	r.Lock()
+	cancel, ok := r.cancels[string(taskToken)]
+	r.Unlock()
+	if !ok {
+		return false
+	}
+	cancel(NewCanceledError())
+	return true
 }
 
 // heartbeatVisitorError wraps an outbound payload visitor error from a heartbeat.
@@ -2111,18 +2160,23 @@ type temporalInvoker struct {
 	service        workflowservice.WorkflowServiceClient
 	metricsHandler metrics.Handler
 	taskToken      []byte
-	// cancelHandler is called when the activity is canceled by a heartbeat request.
+	// cancelHandler is called when the activity is canceled by a heartbeat response
+	// or worker command.
 	cancelHandler context.CancelCauseFunc
 	// Amount of time to wait between each pending heartbeat send
 	heartbeatThrottleInterval time.Duration
 	hbBatchEndTimer           *time.Timer // Whether we started a batch of operations that need to be reported in the cycle. This gets started on a user call.
 	lastDetailsToReport       **commonpb.Payloads
-	closeCh                   chan struct{}
-	workerStopChannel         <-chan struct{}
-	namespace                 string
-	excludeInternalFromRetry  *atomic.Bool // borrowed from client in order to tell if internal errors are retriable
-	outboundPayloadVisitor    PayloadVisitor
-	failureConverter          converter.FailureConverter
+	// closeCh is closed by temporalInvoker.Close() when the activity execution finishes.
+	closeCh chan struct{}
+	// workerStopChannel is a read-only view of activityWorker.stopC.
+	// Heartbeat batching waits on it so pending heartbeat details can be flushed
+	// when activity worker shutdown starts.
+	workerStopChannel        <-chan struct{}
+	namespace                string
+	excludeInternalFromRetry *atomic.Bool // borrowed from client in order to tell if internal errors are retriable
+	outboundPayloadVisitor   PayloadVisitor
+	failureConverter         converter.FailureConverter
 }
 
 func (i *temporalInvoker) Heartbeat(ctx context.Context, details *commonpb.Payloads, skipBatching bool) error {
@@ -2338,6 +2392,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}
 	canCtx, cancel := context.WithCancelCause(rootCtx)
 	defer cancel(nil)
+	if ath.activityCancellationCallbacks != nil {
+		unregister := ath.activityCancellationCallbacks.register(t.TaskToken, cancel)
+		defer unregister()
+	}
 
 	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.payloadVisitorConcurrency); err != nil {
 		return ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err), nil

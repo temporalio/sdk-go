@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
-	"github.com/google/uuid"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang/mock/gomock"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -19,13 +19,30 @@ import (
 	"go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"go.temporal.io/sdk/internal/common/metrics"
+	ilog "go.temporal.io/sdk/internal/log"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type countingTaskHandler struct {
 	WorkflowTaskHandler
 	ProcessWorkflowTaskInvocationCount atomic.Uint32
+}
+
+func TestLocalActivityTaskPollerReturnsNilWhenTunnelStops(t *testing.T) {
+	stopCh := make(chan struct{})
+	close(stopCh)
+	poller := &localActivityTaskPoller{
+		laTunnel: newLocalActivityTunnel(stopCh),
+	}
+
+	task, err := poller.PollTask()
+	require.NoError(t, err)
+	if task != nil {
+		t.Fatalf("PollTask() returned a non-nil task of type %T", task)
+	}
 }
 
 func (wth *countingTaskHandler) ProcessWorkflowTask(
@@ -35,6 +52,63 @@ func (wth *countingTaskHandler) ProcessWorkflowTask(
 ) (*workflowTaskCompletion, error) {
 	wth.ProcessWorkflowTaskInvocationCount.Add(1)
 	return wth.WorkflowTaskHandler.ProcessWorkflowTask(task, wfctx, hb)
+}
+
+func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	const (
+		namespace    = "test-ns"
+		taskQueue    = "test-task-queue"
+		identity     = "test-worker"
+		controlQueue = "temporal-sys/worker-commands/test-ns/grouping-key"
+	)
+
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			require.Equal(t, controlQueue, req.WorkerControlTaskQueue)
+			require.Equal(t, taskQueue, req.TaskQueue.GetName())
+			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+		})
+
+	base := basePoller{
+		metricsHandler:         metrics.NopHandler,
+		workerBuildID:          "test-build-id",
+		workerControlTaskQueue: controlQueue,
+	}
+	wtp := &workflowTaskPoller{
+		basePoller:            base,
+		mode:                  NonSticky,
+		namespace:             namespace,
+		taskQueueName:         taskQueue,
+		identity:              identity,
+		service:               service,
+		logger:                ilog.NewDefaultLogger(),
+		numNormalPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowTask),
+	}
+	_, err := wtp.poll(context.Background())
+	require.NoError(t, err)
+
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollActivityTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollActivityTaskQueueResponse, error) {
+			require.Equal(t, controlQueue, req.WorkerControlTaskQueue)
+			require.Equal(t, taskQueue, req.TaskQueue.GetName())
+			return &workflowservice.PollActivityTaskQueueResponse{}, nil
+		})
+
+	atp := &activityTaskPoller{
+		basePoller:      base,
+		namespace:       namespace,
+		taskQueueName:   taskQueue,
+		identity:        identity,
+		service:         service,
+		logger:          ilog.NewDefaultLogger(),
+		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeActivityTask),
+	}
+	_, err = atp.poll(context.Background())
+	require.NoError(t, err)
 }
 
 func TestWFTRacePrevention(t *testing.T) {
@@ -457,6 +531,131 @@ type mockTask struct{}
 
 func (mockTask) scaleDecision() (pollerScaleDecision, bool) { return pollerScaleDecision{}, false }
 func (mockTask) isEmpty() bool                              { return false }
+
+func TestActivityTaskProcessedAfterStopForShutdownDrain(t *testing.T) {
+	stopC := make(chan struct{})
+	close(stopC)
+	graceful := &atomic.Bool{}
+	graceful.Store(true)
+
+	handler := &pendingActivityTaskHandler{executed: make(chan struct{})}
+	poller := &activityTaskPoller{
+		basePoller: basePoller{
+			stopC:                        stopC,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: graceful,
+		},
+		taskHandler:   handler,
+		taskQueueName: "test-task-queue",
+	}
+
+	now := timestamppb.Now()
+	err := poller.ProcessTask(&activityTask{task: &workflowservice.PollActivityTaskQueueResponse{
+		TaskToken:                   []byte("task-token"),
+		WorkflowType:                &commonpb.WorkflowType{Name: "workflow"},
+		ActivityType:                &commonpb.ActivityType{Name: "activity"},
+		StartedTime:                 now,
+		CurrentAttemptScheduledTime: now,
+		ScheduledTime:               now,
+	}})
+	require.NoError(t, err)
+
+	select {
+	case <-handler.executed:
+	case <-time.After(time.Second):
+		t.Fatal("activity task was not processed after shutdown started")
+	}
+}
+
+func TestActivityTaskNotProcessedAfterStopForLegacyShutdown(t *testing.T) {
+	stopC := make(chan struct{})
+	close(stopC)
+	graceful := &atomic.Bool{}
+
+	handler := &pendingActivityTaskHandler{executed: make(chan struct{})}
+	poller := &activityTaskPoller{
+		basePoller: basePoller{
+			stopC:                        stopC,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: graceful,
+		},
+		taskHandler:   handler,
+		taskQueueName: "test-task-queue",
+	}
+
+	now := timestamppb.Now()
+	err := poller.ProcessTask(&activityTask{task: &workflowservice.PollActivityTaskQueueResponse{
+		TaskToken:                   []byte("task-token"),
+		WorkflowType:                &commonpb.WorkflowType{Name: "workflow"},
+		ActivityType:                &commonpb.ActivityType{Name: "activity"},
+		StartedTime:                 now,
+		CurrentAttemptScheduledTime: now,
+		ScheduledTime:               now,
+	}})
+	require.ErrorIs(t, err, errStop)
+
+	select {
+	case <-handler.executed:
+		t.Fatal("activity task was processed after shutdown without drain capability")
+	default:
+	}
+}
+
+func TestWorkflowTaskProcessAfterStopMatchesShutdownMode(t *testing.T) {
+	tests := []struct {
+		name                         string
+		workerPollCompleteOnShutdown *atomic.Bool
+		wantErr                      error
+	}{
+		{
+			name:    "nil capability",
+			wantErr: errStop,
+		},
+		{
+			name:                         "false capability",
+			workerPollCompleteOnShutdown: &atomic.Bool{},
+			wantErr:                      errStop,
+		},
+		{
+			name: "true capability",
+			workerPollCompleteOnShutdown: func() *atomic.Bool {
+				enabled := &atomic.Bool{}
+				enabled.Store(true)
+				return enabled
+			}(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stopC := make(chan struct{})
+			close(stopC)
+			wtp := &workflowTaskProcessor{
+				basePoller: basePoller{
+					stopC:                        stopC,
+					workerPollCompleteOnShutdown: tt.workerPollCompleteOnShutdown,
+				},
+				logger: ilog.NewNopLogger(),
+			}
+
+			err := wtp.ProcessTask(&workflowTask{})
+			if tt.wantErr != nil {
+				require.ErrorIs(t, err, tt.wantErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+type pendingActivityTaskHandler struct {
+	executed chan struct{}
+}
+
+func (h *pendingActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
+	close(h.executed)
+	return ErrActivityResultPending, nil
+}
 
 func TestDoPollGracefulShutdown(t *testing.T) {
 	tests := []struct {

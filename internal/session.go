@@ -22,8 +22,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.SessionInfo]
 	SessionInfo struct {
+		// SessionID is the unique identifier for the session.
 		SessionID         string
+		// HostName is the host executing the session.
 		HostName          string
+		// SessionState is the current state of the session.
 		SessionState      SessionState
 		resourceID        string     // hide from user for now
 		taskqueue         string     // resource specific taskqueue
@@ -42,8 +45,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.SessionOptions]
 	SessionOptions struct {
+		// ExecutionTimeout specifies the maximum amount of time the session can run.
 		ExecutionTimeout time.Duration
+		// CreationTimeout specifies how long session creation can take before returning an error.
 		CreationTimeout  time.Duration
+		// HeartbeatTimeout specifies the heartbeat timeout. If heartbeat is not received by server within the timeout, the session will be declared as failed.
 		HeartbeatTimeout time.Duration
 	}
 
@@ -51,11 +57,14 @@ type (
 		Taskqueue string
 	}
 
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SessionState]
 	SessionState int
 
 	sessionTokenBucket struct {
 		*sync.Cond
 		availableToken int
+		closed         bool
 	}
 
 	sessionEnvironment interface {
@@ -69,6 +78,8 @@ type (
 
 	sessionEnvironmentImpl struct {
 		*sync.Mutex
+		// doneChanMap is keyed by sessionID. CreateSession creates and stores each
+		// channel, and CompleteSession deletes and closes it to signal session end.
 		doneChanMap               map[string]chan struct{}
 		resourceID                string
 		resourceSpecificTaskqueue string
@@ -495,12 +506,23 @@ func newSessionTokenBucket(concurrentSessionExecutionSize int) *sessionTokenBuck
 	}
 }
 
-func (t *sessionTokenBucket) waitForAvailableToken() {
+// waitForAvailableToken blocks until a session token is free, returning true, or the bucket is closed,
+// returning false so a stopping worker does not wait for a session to finish.
+func (t *sessionTokenBucket) waitForAvailableToken() bool {
 	t.L.Lock()
 	defer t.L.Unlock()
-	for t.availableToken == 0 {
+	for t.availableToken == 0 && !t.closed {
 		t.Wait()
 	}
+	return !t.closed
+}
+
+// close wakes every poller parked in waitForAvailableToken and makes it report closed.
+func (t *sessionTokenBucket) close() {
+	t.L.Lock()
+	t.closed = true
+	t.L.Unlock()
+	t.Broadcast()
 }
 
 func (t *sessionTokenBucket) addToken() {

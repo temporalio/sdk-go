@@ -640,13 +640,14 @@ func Test_ContinueAsNewError(t *testing.T) {
 
 func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 	const (
-		a1                        = 1234
-		a2                        = "some random input"
-		continueAsNewWfName       = "continueAsNewWorkflowFn"
-		initialInterval           = 2 * time.Second
-		backoffCoefficient        = 1.1
-		maximumAttempts     int32 = 23
-		maximumInterval           = time.Minute
+		a1                         = 1234
+		a2                         = "some random input"
+		continueAsNewWfName        = "continueAsNewWorkflowFn"
+		initialInterval            = 2 * time.Second
+		backoffStartInterval       = 3 * time.Second
+		backoffCoefficient         = 1.1
+		maximumAttempts      int32 = 23
+		maximumInterval            = time.Minute
 	)
 
 	require := require.New(t)
@@ -658,7 +659,7 @@ func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 				InitialInterval:    initialInterval,
 				MaximumAttempts:    maximumAttempts,
 				MaximumInterval:    maximumInterval,
-			}},
+			}, BackoffStartInterval: backoffStartInterval},
 			continueAsNewWfName,
 			a1,
 			a2,
@@ -671,6 +672,9 @@ func Test_ContinueAsNewErrorWithOptions(t *testing.T) {
 
 		if continueAsNewErr.RetryPolicy.MaximumAttempts != maximumAttempts {
 			return errors.New("retry policy maximum attempts is not set")
+		}
+		if continueAsNewErr.BackoffStartInterval != backoffStartInterval {
+			return errors.New("backoff start interval is not set")
 		}
 
 		return err
@@ -1457,11 +1461,14 @@ func TestHandlerError_EncodeCommonAttributes_MultipleRoundTrips(t *testing.T) {
 	// This test verifies that common attributes (message, stack trace) are preserved
 	// even when passing through a converter that doesn't doesn't have the right codec
 
-	// Create a converter that encodes common attributes
+	// Create a converter that encodes common attributes. AlwaysEncode ensures the zlib codec
+	// actually replaces the payload — for very small inputs zlib falls back to the original
+	// payload, which would let the codec-less middle converter decode the attributes and
+	// defeat the round-trip preservation being tested here.
 	encodingConverter := NewDefaultFailureConverter(DefaultFailureConverterOptions{
 		DataConverter: converter.NewCodecDataConverter(
 			converter.GetDefaultDataConverter(),
-			converter.NewZlibCodec(converter.ZlibCodecOptions{}),
+			converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}),
 		),
 		EncodeCommonAttributes: true,
 	})

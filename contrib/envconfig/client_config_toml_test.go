@@ -14,6 +14,7 @@ func TestClientConfigTOMLFull(t *testing.T) {
 address = "my-address"
 namespace = "my-namespace"
 api_key = "my-api-key"
+authority = "my-authority"
 codec = { endpoint = "my-endpoint", auth = "my-auth" }
 grpc_meta = { sOme-hEader_key = "some-value" }
 some_future_key = "some future value not handled"
@@ -46,6 +47,7 @@ disable_host_verification = true`
 	require.Equal(t, []byte("my-server-ca-cert-data"), prof.TLS.ServerCACertData)
 	require.Equal(t, "my-server-name", prof.TLS.ServerName)
 	require.True(t, prof.TLS.DisableHostVerification)
+	require.Equal(t, "my-authority", prof.Authority)
 	require.Equal(t, map[string]string{"some-header-key": "some-value"}, prof.GRPCMeta)
 
 	// Back to toml and back to structure again, then deep equality check

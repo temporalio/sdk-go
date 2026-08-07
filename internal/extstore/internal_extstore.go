@@ -8,7 +8,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
-	sdkpb "go.temporal.io/sdk/internal/temporalapi/sdk/v1"
+	sdkpb "go.temporal.io/api/sdk/v1"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -226,7 +226,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 		// No storage drivers configured at all — fail immediately with a clear error
 		// rather than passing through an unresolved reference.
 		if len(v.params.driverMap) == 0 {
-			return nil, fmt.Errorf("externally stored payload encountered but no storage driver is configured")
+			return nil, fmt.Errorf("[TMPRL1105] Externally stored payload encountered but no storage driver is configured")
 		}
 
 		ref, err := payloadToStorageReference(p)

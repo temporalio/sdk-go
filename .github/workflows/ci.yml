@@ -1,4 +1,4 @@
-name: Continuous Integration
+name: CI
 on:
   pull_request:
   push:
@@ -11,6 +11,31 @@ permissions:
   actions: read
 
 jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    permissions:
+      contents: read
+      checks: write
+      statuses: write
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: stable
+
+      - name: Check
+        run: go run . check
+        working-directory: ./internal/cmd/build
+
   unit-test:
     strategy:
       fail-fast: false
@@ -29,24 +54,39 @@ jobs:
     runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ matrix.go-version }}
-
-      - name: Check
-        run: go run . check
-        working-directory: ./internal/cmd/build
 
       - name: Unit test
         run: go run . unit-test
         working-directory: ./internal/cmd/build
+        env:
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
 
-  integration-test-no-cache:
+      - name: Upload full test logs
+        id: upload-test-logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Link full test logs
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
+        shell: bash
+        run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
+
+  integ-test:
     strategy:
       fail-fast: false
       matrix:
@@ -64,12 +104,12 @@ jobs:
     runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ matrix.go-version }}
 
@@ -77,9 +117,27 @@ jobs:
         run: go run . integration-test -dev-server
         working-directory: ./internal/cmd/build
         env:
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
           WORKFLOW_CACHE_SIZE: "0"
 
-  integration-test-with-cache:
+      - name: Upload full test logs
+        id: upload-test-logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Link full test logs
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
+        shell: bash
+        run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
+
+  integ-test-cache:
     strategy:
       fail-fast: false
       matrix:
@@ -97,18 +155,37 @@ jobs:
     runs-on: ${{ matrix.runsOn || matrix.os }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ matrix.go-version }}
 
       - name: Integration tests (with cache)
         run: go run . integration-test -dev-server
         working-directory: ./internal/cmd/build
+        env:
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+
+      - name: Upload full test logs
+        id: upload-test-logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.job }}-${{ matrix.os }}-${{ matrix.go-version }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Link full test logs
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
+        shell: bash
+        run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
 
   docker-compose-test:
     runs-on: ubuntu-latest
@@ -118,17 +195,17 @@ jobs:
       statuses: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
 
       - name: Setup Go
-        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: stable
 
       - name: Docker compose - checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           repository: temporalio/samples-server
           path: ./samples-server
@@ -143,13 +220,40 @@ jobs:
       - name: Docker compose - integration tests
         run: go run . integration-test
         env:
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}
           # TODO(antlai-temporal): Remove this flag once server 1.27 released.
           DISABLE_SERVER_1_27_TESTS: "1"
           DISABLE_PRIORITY_TESTS: "1"
           DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
+          DISABLE_STANDALONE_NEXUS_TESTS: "1"
+          DISABLE_ACTIVITY_BACKED_NEXUS_TESTS: "1"
           DISABLE_NEXUS_CALLER_TIMEOUT_TESTS: "1"
           DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS: "1"
         working-directory: ./internal/cmd/build
+
+      - name: Docker compose - capture logs
+        if: always()
+        continue-on-error: true
+        run: |
+          mkdir -p .build/test-logs
+          docker compose --project-directory ./samples-server/compose logs --no-color --timestamps > .build/test-logs/docker-compose.log 2>&1
+
+      - name: Upload full test logs
+        id: upload-test-logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.job }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Link full test logs
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
+        shell: bash
+        run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
 
   cloud-test:
     strategy:
@@ -169,15 +273,36 @@ jobs:
       GODEBUG: ${{ matrix.fips && 'fips140=on' || '' }}
 
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           submodules: recursive
-      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ matrix.go-version }}
-      - name: Single integration test against cloud
-        run: 'go test -v --count 1 -p 1 . -run "TestIntegrationSuite/TestBasic$"'
-        working-directory: test
+      - name: Selected integration tests against cloud
+        # Keep this list intentionally small. Add cloud-safe tests here when
+        # they cover behavior that cannot be validated against the local dev server.
+        run: 'go run . integration-test -p 1 -packages . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
+        working-directory: ./internal/cmd/build
+        env:
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
+
+      - name: Upload full test logs
+        id: upload-test-logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
+          path: .build/test-logs
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Link full test logs
+        if: failure() && steps.upload-test-logs.outputs.artifact-url != ''
+        shell: bash
+        run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
 
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main

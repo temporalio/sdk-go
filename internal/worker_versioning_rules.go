@@ -51,12 +51,13 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningAssignmentRuleWithTimestamp]
 	VersioningAssignmentRuleWithTimestamp struct {
+		// Rule is the assignment rule.
 		Rule VersioningAssignmentRule
-		// The time when the server created this rule.
+		// CreateTime is the time when the server created this rule.
 		CreateTime time.Time
 	}
 
-	// VersioningAssignmentRule is a BuildID redirect rule for a task queue.
+	// VersioningRedirectRule is a BuildID redirect rule for a task queue.
 	// It changes the behavior of currently running workflows and new ones.
 	//
 	// Deprecated: Build-id based versioning is deprecated in favor of worker deployment based versioning and will be removed soon.
@@ -65,7 +66,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningRedirectRule]
 	VersioningRedirectRule struct {
+		// SourceBuildID is the source BuildID.
 		SourceBuildID string
+		// TargetBuildID is the target BuildID.
 		TargetBuildID string
 	}
 
@@ -77,8 +80,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningRedirectRuleWithTimestamp]
 	VersioningRedirectRuleWithTimestamp struct {
+		// Rule is the redirect rule.
 		Rule VersioningRedirectRule
-		// The time when the server created this rule.
+		// CreateTime is the time when the server created this rule.
 		CreateTime time.Time
 	}
 
@@ -103,10 +107,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.UpdateWorkerVersioningRulesOptions]
 	UpdateWorkerVersioningRulesOptions struct {
-		// The task queue to update the versioning rules of.
+		// TaskQueue is the task queue to update the versioning rules of.
 		TaskQueue string
-		// A conflict token to serialize updates.
+		// ConflictToken is a conflict token to serialize updates.
 		ConflictToken VersioningConflictToken
+		// Operation is the operation to perform.
 		Operation     VersioningOperation
 	}
 
@@ -141,7 +146,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationInsertAssignmentRule]
 	VersioningOperationInsertAssignmentRule struct {
+		// RuleIndex is the index to insert the rule at.
 		RuleIndex int32
+		// Rule is the rule to insert.
 		Rule      VersioningAssignmentRule
 	}
 
@@ -157,8 +164,11 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationReplaceAssignmentRule]
 	VersioningOperationReplaceAssignmentRule struct {
+		// RuleIndex is the index to replace the rule at.
 		RuleIndex int32
+		// Rule is the rule to replace.
 		Rule      VersioningAssignmentRule
+		// Force bypasses the unconditional rule validation if true.
 		Force     bool
 	}
 
@@ -174,7 +184,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationDeleteAssignmentRule]
 	VersioningOperationDeleteAssignmentRule struct {
+		// RuleIndex is the index to delete the rule at.
 		RuleIndex int32
+		// Force bypasses the unconditional rule validation if true.
 		Force     bool
 	}
 
@@ -188,6 +200,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationAddRedirectRule]
 	VersioningOperationAddRedirectRule struct {
+		// Rule is the rule to add.
 		Rule VersioningRedirectRule
 	}
 
@@ -200,6 +213,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationReplaceRedirectRule]
 	VersioningOperationReplaceRedirectRule struct {
+		// Rule is the rule to replace.
 		Rule VersioningRedirectRule
 	}
 
@@ -212,6 +226,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationDeleteRedirectRule]
 	VersioningOperationDeleteRedirectRule struct {
+		// SourceBuildID is the source build ID to delete.
 		SourceBuildID string
 	}
 
@@ -235,7 +250,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.VersioningOperationCommitBuildID]
 	VersioningOperationCommitBuildID struct {
+		// TargetBuildID is the target build ID to commit.
 		TargetBuildID string
+		// Force bypasses the zero pollers validation if true.
 		Force         bool
 	}
 )
@@ -357,8 +374,11 @@ func (gw *GetWorkerVersioningOptions) validateAndConvertToProto(namespace string
 //
 // Exposed as: [go.temporal.io/sdk/client.WorkerVersioningRules]
 type WorkerVersioningRules struct {
+	// AssignmentRules is the list of assignment rules.
 	AssignmentRules []*VersioningAssignmentRuleWithTimestamp
+	// RedirectRules is the list of redirect rules.
 	RedirectRules   []*VersioningRedirectRuleWithTimestamp
+	// ConflictToken is the current conflict token.
 	ConflictToken   VersioningConflictToken
 }
 

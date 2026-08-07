@@ -178,6 +178,8 @@ var (
 
 type (
 	// SendChannel is a write only view of the Channel
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.SendChannel]
 	SendChannel interface {
 		// Name returns the name of the Channel.
 		// If the Channel was retrieved from a GetSignalChannel call, Name returns the signal name.
@@ -197,6 +199,8 @@ type (
 	}
 
 	// ReceiveChannel is a read only view of the Channel
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ReceiveChannel]
 	ReceiveChannel interface {
 		// Name returns the name of the Channel.
 		// If the Channel was retrieved from a GetSignalChannel call, Name returns the signal name.
@@ -252,6 +256,8 @@ type (
 
 	// Channel must be used by workflow code instead of native go channels.
 	// Use workflow.NewChannel(ctx) method to create Channel instance.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Channel]
 	Channel interface {
 		SendChannel
 		ReceiveChannel
@@ -259,6 +265,8 @@ type (
 
 	// Selector must be used by workflow code instead of native go select.
 	// Use workflow.NewSelector(ctx) to create a selector.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Selector]
 	Selector interface {
 		// AddReceive registers a callback function to be called when a channel has a message to receive.
 		// The callback is called when Select(ctx) is called.
@@ -290,6 +298,8 @@ type (
 	// WaitGroup must be used instead of native go sync.WaitGroup by
 	// workflow code. Use workflow.NewWaitGroup(ctx) method to create
 	// a new WaitGroup instance
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.WaitGroup]
 	WaitGroup interface {
 		// Add adds delta, which may be negative, to the WaitGroup task counter.
 		// If the counter becomes zero, all goroutines blocked on WaitGroup.Wait are released.
@@ -313,6 +323,8 @@ type (
 	// Mutex must be used instead of native go sync.Mutex by
 	// workflow code. Use workflow.NewMutex(ctx) method to create
 	// a new Mutex instance
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Mutex]
 	Mutex interface {
 		// Lock blocks until the mutex is acquired.
 		// Returns CanceledError if the ctx is canceled.
@@ -330,6 +342,8 @@ type (
 	// Semaphore must be used instead of semaphore.Weighted by
 	// workflow code. Use workflow.NewSemaphore(ctx) method to create
 	// a new Semaphore instance
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Semaphore]
 	Semaphore interface {
 		// Acquire acquires the semaphore with a weight of n.
 		// On success, returns nil. On failure, returns CanceledError and leaves the semaphore unchanged.
@@ -342,6 +356,8 @@ type (
 	}
 
 	// Future represents the result of an asynchronous computation.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Future]
 	Future interface {
 		// Get blocks until the future is ready. When ready it either returns non nil error or assigns result value to
 		// the provided pointer.
@@ -366,6 +382,8 @@ type (
 
 	// Settable is used to set value or error on a future.
 	// See more: workflow.NewFuture(ctx).
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Settable]
 	Settable interface {
 		Set(value interface{}, err error)
 		SetValue(value interface{})
@@ -374,6 +392,8 @@ type (
 	}
 
 	// ChildWorkflowFuture represents the result of a child workflow execution
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.ChildWorkflowFuture]
 	ChildWorkflowFuture interface {
 		Future
 		// GetChildWorkflowExecution returns a future that will be ready when child workflow execution started. You can
@@ -394,6 +414,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.Type]
 	WorkflowType struct {
+		// Name is the name of the workflow type.
 		Name string
 	}
 
@@ -401,7 +422,9 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.Execution]
 	WorkflowExecution struct {
+		// ID is the identifier of the workflow execution.
 		ID    string
+		// RunID is the run identifier of the workflow execution.
 		RunID string
 	}
 
@@ -411,6 +434,8 @@ type (
 		dataConverter converter.DataConverter
 	}
 	// Version represents a change version. See GetVersion call.
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.Version]
 	Version int
 
 	// ChildWorkflowOptions stores all child workflow specific parameters that will be stored inside of a Context.
@@ -527,8 +552,6 @@ type (
 		// in single-line Temporal Markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticSummary string
 
 		// Details - General fixed details for this child workflow execution that will appear in UI/CLI. This can be in
@@ -536,8 +559,6 @@ type (
 		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticDetails string
 
 		// Priority - Optional priority settings that control relative ordering of
@@ -559,6 +580,7 @@ type (
 		// always use this string name when executing this workflow from a client or
 		// inside a workflow as a child workflow.
 		Name                          string
+		// DisableAlreadyRegisteredCheck disables the check for already registered workflows.
 		DisableAlreadyRegisteredCheck bool
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
 		// when WorkerOptions does not specify [DeploymentOptions.DefaultVersioningBehavior],
@@ -570,6 +592,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.LoadDynamicRuntimeOptionsDetails]
 	LoadDynamicRuntimeOptionsDetails struct {
+		// WorkflowType is the type of the workflow.
 		WorkflowType WorkflowType
 	}
 
@@ -582,6 +605,8 @@ type (
 	}
 
 	// DynamicRegisterActivityOptions consists of options for registering a dynamic activity
+	//
+	// Exposed as: [go.temporal.io/sdk/activity.DynamicRegisterOptions]
 	DynamicRegisterActivityOptions struct{}
 
 	// DynamicRuntimeWorkflowOptions are options for a dynamic workflow.
@@ -649,31 +674,21 @@ type (
 
 	// TimerOptions are options set when creating a timer.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/workflow.TimerOptions]
 	TimerOptions struct {
 		// Summary is a simple string identifying this timer. While it can be
 		// normal text, it is best to treat as a timer ID. This value will be
 		// visible in UI and CLI.
-		//
-		// NOTE: Experimental
 		Summary string
 	}
 
 	// AwaitOptions are options set when creating an await.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/workflow.AwaitOptions]
 	AwaitOptions struct {
 		// Timeout is the await timeout if the await condition is not met.
-		//
-		// NOTE: Experimental
 		Timeout time.Duration
 		// TimerOptions are options set for the underlying timer created.
-		//
-		// NOTE: Experimental
 		TimerOptions TimerOptions
 	}
 
@@ -1495,32 +1510,48 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 //
 // Exposed as: [go.temporal.io/sdk/workflow.Info]
 type WorkflowInfo struct {
+	// WorkflowExecution is the execution of the workflow.
 	WorkflowExecution WorkflowExecution
 	// The original runID before resetting. Using it instead of current runID can make workflow decision deterministic after reset. See also FirstRunId
 	OriginalRunID string
 	// The very first original RunId of the current Workflow Execution preserved along the chain of ContinueAsNew, Retry, Cron and Reset. Identifies the whole Runs chain of Workflow Execution.
 	FirstRunID               string
+	// WorkflowType is the type of the workflow.
 	WorkflowType             WorkflowType
+	// TaskQueueName is the name of the task queue.
 	TaskQueueName            string
+	// WorkflowExecutionTimeout is the timeout for the workflow execution.
 	WorkflowExecutionTimeout time.Duration
+	// WorkflowRunTimeout is the timeout for the workflow run.
 	WorkflowRunTimeout       time.Duration
+	// WorkflowTaskTimeout is the timeout for the workflow task.
 	WorkflowTaskTimeout      time.Duration
+	// Namespace is the namespace of the workflow.
 	Namespace                string
-	Attempt                  int32 // Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
+	// Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
+	Attempt                  int32
 	// Time of the workflow start.
 	// workflow.Now at the beginning of a workflow can return a later time if the Workflow Worker was down.
 	WorkflowStartTime       time.Time
 	lastCompletionResult    *commonpb.Payloads
 	lastFailure             *failurepb.Failure
+	// CronSchedule is the cron schedule for the workflow.
 	CronSchedule            string
+	// ContinuedExecutionRunID is the run ID of the continued execution.
 	ContinuedExecutionRunID string
+	// ParentWorkflowNamespace is the namespace of the parent workflow.
 	ParentWorkflowNamespace string
+	// ParentWorkflowExecution is the execution of the parent workflow.
 	ParentWorkflowExecution *WorkflowExecution
 	// RootWorkflowExecution is the first workflow execution in the chain of workflows. If a workflow is itself a root workflow, then this field is nil.
 	RootWorkflowExecution *WorkflowExecution
-	Memo                  *commonpb.Memo // Value can be decoded using data converter (defaultDataConverter, or custom one if set).
+	// Memo can be decoded using data converter (defaultDataConverter, or custom one if set).
+	Memo                  *commonpb.Memo
+	// SearchAttributes can be decoded using defaultDataConverter.
+	//
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
-	SearchAttributes *commonpb.SearchAttributes // Value can be decoded using defaultDataConverter.
+	SearchAttributes *commonpb.SearchAttributes
+	// RetryPolicy is the retry policy of the workflow.
 	RetryPolicy      *RetryPolicy
 	// Priority settings that control relative ordering of task processing when workflow tasks are backed up in a queue.
 	// If no priority is set, the default value is the zero value.
@@ -2200,7 +2231,7 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannelWithOptions(
 	signalName string,
 	options SignalChannelOptions,
 ) ReceiveChannel {
-	if strings.HasPrefix(signalName, temporalPrefix) {
+	if strings.HasPrefix(signalName, temporalPrefix) && !isWorkflowStreamReservedName(signalName) {
 		panic(temporalPrefixError)
 	}
 	eo := getWorkflowEnvOptions(ctx)
@@ -2230,6 +2261,11 @@ func (b EncodedValue) Get(valuePtr interface{}) error {
 // HasValue return whether there is value
 func (b EncodedValue) HasValue() bool {
 	return b.value != nil
+}
+
+// Payloads gets the underlying commonpb.Payloads
+func (b EncodedValue) Payloads() *commonpb.Payloads {
+	return b.value
 }
 
 // SideEffect executes the provided function once, records its result into the workflow history. The recorded result on
@@ -2529,7 +2565,7 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandlerWithOptions(
 	handler interface{},
 	options QueryHandlerOptions,
 ) error {
-	if strings.HasPrefix(queryType, "__") {
+	if strings.HasPrefix(queryType, "__") && !isWorkflowStreamReservedName(queryType) {
 		return errors.New("queryType starts with '__' is reserved for internal use")
 	}
 	return setQueryHandler(ctx, queryType, handler, options)
@@ -2566,7 +2602,7 @@ func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts 
 }
 
 func (wc *workflowEnvironmentInterceptor) SetUpdateHandler(ctx Context, name string, handler interface{}, opts UpdateHandlerOptions) error {
-	if strings.HasPrefix(name, "__") {
+	if strings.HasPrefix(name, "__") && !isWorkflowStreamReservedName(name) {
 		return errors.New("update names starting with '__' are reserved for internal use")
 	}
 	return setUpdateHandler(ctx, name, handler, opts)
@@ -3152,6 +3188,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 					if !executionFuture.IsReady() {
 						executionSettable.Set(nil, ErrCanceled)
 					}
+					wc.env.AbandonNexusOperation(seq)
 				} else {
 					// Go back to the top of the interception chain.
 					getWorkflowOutboundInterceptor(ctx).RequestCancelNexusOperation(ctx, RequestCancelNexusOperationInput{

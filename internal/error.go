@@ -193,12 +193,20 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.ContinueAsNewError]
 	ContinueAsNewError struct {
 		// params *ExecuteWorkflowParams
+		// WorkflowType is the type of the workflow.
 		WorkflowType        *WorkflowType
+		// Input is the arguments for the continued workflow execution.
 		Input               *commonpb.Payloads
+		// Header is the header of the workflow.
 		Header              *commonpb.Header
+		// TaskQueueName is the task queue that the workflow is running on.
 		TaskQueueName       string
+		// WorkflowRunTimeout is the timeout for a single run of the workflow execution.
 		WorkflowRunTimeout  time.Duration
+		// WorkflowTaskTimeout is the maximum execution time of a single Workflow Task.
 		WorkflowTaskTimeout time.Duration
+		// BackoffStartInterval is the initial backoff before the continued workflow execution starts.
+		BackoffStartInterval time.Duration
 
 		// Deprecated: WorkflowExecutionTimeout is deprecated and is never set or
 		// used internally.
@@ -235,6 +243,10 @@ type (
 		// If nil, the current workflow's retry policy will be used.
 		RetryPolicy *RetryPolicy
 
+		// BackoffStartInterval specifies the delay before the first workflow task
+		// of the next run is scheduled.
+		BackoffStartInterval time.Duration
+
 		// InitialVersioningBehavior specifies the versioning behavior that the first task of the new run should use.
 		// For example, choose to AutoUpgrade on continue-as-new instead of inheriting the pinned version of the previous run.
 		// NOTE: Upgrade-on-Continue-as-New is currently experimental.
@@ -242,6 +254,8 @@ type (
 	}
 
 	// UnknownExternalWorkflowExecutionError can be returned when external workflow doesn't exist
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.UnknownExternalWorkflowExecutionError]
 	UnknownExternalWorkflowExecutionError struct{}
 
 	// ServerError can be returned from server.
@@ -310,9 +324,13 @@ type (
 	// ChildWorkflowExecutionAlreadyStartedError is set as the cause of
 	// ChildWorkflowExecutionError when failure is due the child workflow having
 	// already started.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.ChildWorkflowExecutionAlreadyStartedError]
 	ChildWorkflowExecutionAlreadyStartedError struct{}
 
 	// NamespaceNotFoundError is set as the cause when failure is due namespace not found.
+	//
+	// Exposed as: [go.temporal.io/sdk/temporal.NamespaceNotFoundError]
 	NamespaceNotFoundError struct{}
 
 	// WorkflowExecutionError is returned from workflow.
@@ -566,6 +584,26 @@ func (e *temporalError) failure() *failurepb.Failure {
 	return e.originalFailure
 }
 
+// Failure returns the original proto Failure this error was created from, if one is available.
+//
+// This is intended for advanced callers that need structured failure data such as stack traces,
+// encoded details, or the full cause chain. Application code should generally
+// continue using errors.As with concrete SDK error types such as *ApplicationError.
+//
+// When working with an arbitrary error value, use errors.As with an interface:
+//
+//	type failureProvider interface {
+//		Failure() *failurepb.Failure
+//	}
+//
+//	var fp failureProvider
+//	if errors.As(err, &fp) {
+//		failure := fp.Failure()
+//	}
+func (e *temporalError) Failure() *failurepb.Failure {
+	return e.originalFailure
+}
+
 // IsCanceledError returns whether error in CanceledError.
 func IsCanceledError(err error) bool {
 	var canceledErr *CanceledError
@@ -604,6 +642,7 @@ func NewContinueAsNewErrorWithOptions(ctx Context, options ContinueAsNewErrorOpt
 		if options.RetryPolicy != nil {
 			continueAsNewErr.RetryPolicy = options.RetryPolicy
 		}
+		continueAsNewErr.BackoffStartInterval = options.BackoffStartInterval
 		continueAsNewErr.InitialVersioningBehavior = options.InitialVersioningBehavior
 	}
 

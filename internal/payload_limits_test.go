@@ -11,6 +11,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/proxy"
 	querypb "go.temporal.io/api/query/v1"
 	schedulepb "go.temporal.io/api/schedule/v1"
@@ -427,6 +428,15 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				},
 			},
 		}},
+		{"RespondNexusTaskFailedRequest", &workflowservice.RespondNexusTaskFailedRequest{
+			Failure: &failurepb.Failure{
+				FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
+					ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+						Details: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(200)}},
+					},
+				},
+			},
+		}},
 	}
 
 	for _, tc := range skipErrorOnlyTypes {
@@ -440,6 +450,35 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 			require.True(t, hasWarningLine(logger))
 		})
 	}
+
+	// A Nexus task completion is not size-checked at all: an operation-error failure
+	// produces neither an error nor a warning (the sync result payload is likewise
+	// skipped as a single-payload field).
+	t.Run("RespondNexusTaskCompletedRequest skips payload error and warning limits", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
+		setErrorLimits(&payloadLimits{payloadSize: 10})
+		msg := &workflowservice.RespondNexusTaskCompletedRequest{
+			Response: &nexuspb.Response{
+				Variant: &nexuspb.Response_StartOperation{
+					StartOperation: &nexuspb.StartOperationResponse{
+						Variant: &nexuspb.StartOperationResponse_Failure{
+							Failure: &failurepb.Failure{
+								FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
+									ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+										Details: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(200)}},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		require.NoError(t, err)
+		require.Empty(t, logger.Lines())
+	})
 }
 
 func TestCreateScheduleRequestSpecialization(t *testing.T) {

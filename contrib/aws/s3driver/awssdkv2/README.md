@@ -4,6 +4,21 @@
 
 Package `go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2` wraps an [`*s3.Client`](https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/s3#Client) from the AWS SDK for Go v2 to implement the [`s3driver.Client`](../README.md) interface. Import this package alongside [`s3driver`](../README.md) when using the official AWS SDK v2.
 
+## Add to your project
+
+Add both the adapter and the driver it implements from your application's Go
+module:
+
+```bash
+go get go.temporal.io/sdk/contrib/aws/s3driver@latest
+go get go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2@latest
+```
+
+## Module versioning
+
+The AWS SDK v2 adapter is released separately from the core Temporal Go SDK and
+the S3 driver. See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
 ## Usage
 
 ```go

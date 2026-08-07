@@ -45,6 +45,38 @@ const (
 	QueryTypeWorkflowMetadata string = "__temporal_workflow_metadata"
 )
 
+// GrpcCompression controls gRPC compression for connections to the Temporal
+// server.
+//
+// Exposed as: [go.temporal.io/sdk/client.GrpcCompression]
+type GrpcCompression interface {
+	grpcCompression()
+}
+
+type (
+	// GrpcCompressionGzip compresses outbound gRPC request bodies with gzip and
+	// accepts gzip-compressed responses. This is the default. If a specific
+	// server RPC does not support gzip, the client may retry that RPC without
+	// compression and continue using gzip for other RPCs.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.GrpcCompressionGzip]
+	GrpcCompressionGzip struct{}
+
+	// GrpcCompressionNone disables gRPC request compression. The client will
+	// still accept compressed responses for encodings registered with grpc-go.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.GrpcCompressionNone]
+	GrpcCompressionNone struct{}
+)
+
+func (*GrpcCompressionGzip) grpcCompression() {}
+func (*GrpcCompressionNone) grpcCompression() {}
+
+var (
+	_ GrpcCompression = (*GrpcCompressionGzip)(nil)
+	_ GrpcCompression = (*GrpcCompressionNone)(nil)
+)
+
 type (
 	// Client is the client for starting and getting information about a workflow executions as well as
 	// completing activities asynchronously.
@@ -534,6 +566,30 @@ type (
 		// NOTE: Experimental
 		CountActivities(ctx context.Context, options ClientCountActivitiesOptions) (*ClientCountActivitiesResult, error)
 
+		// NewNexusClient creates a new Nexus client bound to the given endpoint and service.
+		// This is for standalone Nexus operations outside of workflow context.
+		// For Nexus operations within workflows, use workflow.NewNexusClient instead.
+		//
+		// NOTE: Experimental
+		NewNexusClient(options ClientNexusClientOptions) (ClientNexusClient, error)
+
+		// GetNexusOperationHandle creates a handle to the referenced Nexus operation.
+		// No network call is made. The handle can be used to poll, describe, cancel, or terminate.
+		//
+		// NOTE: Experimental
+		GetNexusOperationHandle(options ClientGetNexusOperationHandleOptions) ClientNexusOperationHandle
+
+		// ListNexusOperations lists Nexus operation executions based on query.
+		// Currently, all errors are returned in the iterator and not the base level error.
+		//
+		// NOTE: Experimental
+		ListNexusOperations(ctx context.Context, options ClientListNexusOperationsOptions) (ClientListNexusOperationsResult, error)
+
+		// CountNexusOperations counts Nexus operation executions based on query.
+		//
+		// NOTE: Experimental
+		CountNexusOperations(ctx context.Context, options ClientCountNexusOperationsOptions) (*ClientCountNexusOperationsResult, error)
+
 		// WorkflowService provides access to the underlying gRPC service. This should only be used for advanced use cases
 		// that cannot be accomplished via other Client methods. Unlike calls to other Client methods, calls directly to the
 		// service are not configured with internal semantics such as automatic retries.
@@ -559,106 +615,251 @@ type (
 
 	// CompleteActivityByIDOptions provides options for CompleteActivityByIDWithOptions.
 	//
+	// ActivityType, WorkflowType, and TaskQueue values are not validated by the SDK.
+	// Providing incorrect values may cause serialization/deserialization mismatches
+	// if your codec uses them, for example, as encryption keys or signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityByIDOptions]
 	CompleteActivityByIDOptions struct {
-		Namespace  string // required
-		WorkflowID string // required
-		RunID      string
-		ActivityID string // required
-		Result     interface{}
-		Err        error
+		// Namespace is the Temporal Namespace containing the Workflow Execution.
+		// This is the request Namespace used to locate the Activity, matching the
+		// namespace parameter on CompleteActivityByID.
+		//
+		// This field is required.
+		Namespace string
+
+		// WorkflowID is the ID of the Workflow Execution that scheduled the Activity.
+		//
+		// This field is required.
+		WorkflowID string
+
+		// RunID is the Run ID of the Workflow Execution that scheduled the Activity.
+		// Leave empty to target the latest run for WorkflowID.
+		RunID string
+
+		// ActivityID is the ID of the Activity to complete.
+		//
+		// This field is required.
+		ActivityID string
+
+		// Result completes the Activity as successful with this value.
+		// If both Result and Err are set, Err takes precedence.
+		Result interface{}
+
+		// Err completes the Activity as failed with this error.
+		// If both Result and Err are set, Err takes precedence.
+		Err error
 
 		// Optional fields for ActivitySerializationContext.
 		// When set, these are passed to DataConverterWithSerializationContext and
 		// FailureConverterWithSerializationContext to provide activity metadata
 		// for encoding. Useful when the caller has access to this metadata.
-		//
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Result or Err.
+		TaskQueue string
 	}
 
 	// RecordActivityHeartbeatByIDOptions provides options for RecordActivityHeartbeatByIDWithOptions.
 	//
+	// ActivityType, WorkflowType, and TaskQueue values are not validated by the SDK.
+	// Providing incorrect values may cause serialization/deserialization mismatches
+	// if your codec uses them, for example, as encryption keys or signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.RecordActivityHeartbeatByIDOptions]
 	RecordActivityHeartbeatByIDOptions struct {
-		Namespace  string // required
-		WorkflowID string // required
-		RunID      string
-		ActivityID string // required
-		Details    []interface{}
+		// Namespace is the Temporal Namespace containing the Workflow Execution.
+		// If empty, the Client's Namespace is used.
+		// This is the request Namespace used to locate the Activity, matching the
+		// namespace parameter on RecordActivityHeartbeatByID.
+		Namespace string
+
+		// WorkflowID is the ID of the Workflow Execution that scheduled the Activity.
+		//
+		// This field is required.
+		WorkflowID string
+
+		// RunID is the Run ID of the Workflow Execution that scheduled the Activity.
+		// Leave empty to target the latest run for WorkflowID.
+		RunID string
+
+		// ActivityID is the ID of the Activity to heartbeat.
+		//
+		// This field is required.
+		ActivityID string
+
+		// Details are the Activity heartbeat details to report.
+		// These values are encoded with the Client's DataConverter and may be
+		// stored externally if ExternalStorage is configured.
+		Details []interface{}
 
 		// Optional fields for ActivitySerializationContext.
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Details.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Details.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Details.
+		TaskQueue string
 	}
 
 	// CompleteActivityOptions provides options for CompleteActivityWithOptions.
 	//
+	// Serialization context values are not validated by the SDK. Providing
+	// incorrect values may cause serialization/deserialization mismatches if your
+	// codec uses them, for example, as encryption keys or signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityOptions]
 	CompleteActivityOptions struct {
-		TaskToken []byte // required
-		Result    interface{}
-		Err       error
+		// TaskToken identifies the Activity Task to complete.
+		//
+		// This field is required.
+		TaskToken []byte
+
+		// Result completes the Activity as successful with this value.
+		// If both Result and Err are set, Err takes precedence.
+		Result interface{}
+
+		// Err completes the Activity as failed or canceled with this error.
+		// If both Result and Err are set, Err takes precedence.
+		Err error
 
 		// Optional fields for ActivitySerializationContext.
 		// When set, these are passed to DataConverterWithSerializationContext and
 		// FailureConverterWithSerializationContext to provide activity metadata
 		// for encoding.
-		//
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
-		Namespace    string
-		WorkflowID   string
+
+		// Namespace is the optional Temporal Namespace to include in serialization
+		// and external storage context. If empty, the Client's Namespace is used
+		// for this context.
+		// This field does not change the Namespace used to complete the Activity,
+		// and should not differ from the Client's Namespace.
+		Namespace string
+
+		// WorkflowID is the optional Workflow ID to include in the Activity
+		// serialization context.
+		WorkflowID string
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Result or Err.
+		TaskQueue string
 	}
 
 	// CompleteActivityByActivityIDOptions provides options for CompleteActivityByActivityIDWithOptions.
 	//
+	// WorkflowID, ActivityType, WorkflowType, and TaskQueue values are not validated
+	// by the SDK. Providing incorrect values may cause serialization/deserialization
+	// mismatches if your codec uses them, for example, as encryption keys or
+	// signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.CompleteActivityByActivityIDOptions]
 	CompleteActivityByActivityIDOptions struct {
-		Namespace     string // required
-		ActivityID    string // required
+		// Namespace is the Temporal Namespace containing the Activity.
+		// This is the request Namespace used to locate the standalone Activity,
+		// matching the namespace parameter on CompleteActivityByActivityID.
+		//
+		// This field is required.
+		Namespace string
+
+		// ActivityID is the ID of the Activity to complete.
+		//
+		// This field is required.
+		ActivityID string
+
+		// ActivityRunID is the Run ID of the Activity to complete.
+		// Leave empty to target the latest run for ActivityID.
 		ActivityRunID string
-		Result        interface{}
-		Err           error
+
+		// Result completes the Activity as successful with this value.
+		// If both Result and Err are set, Err takes precedence.
+		Result interface{}
+
+		// Err completes the Activity as failed or canceled with this error.
+		// If both Result and Err are set, Err takes precedence.
+		Err error
 
 		// Optional fields for ActivitySerializationContext.
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
-		WorkflowID   string
+
+		// WorkflowID is the optional Workflow ID to include in the Activity
+		// serialization context when encoding Result or Err.
+		WorkflowID string
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Result or Err.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Result or Err.
+		TaskQueue string
 	}
 
 	// RecordActivityHeartbeatOptions provides options for RecordActivityHeartbeatWithOptions.
 	//
+	// Serialization context values are not validated by the SDK. Providing
+	// incorrect values may cause serialization/deserialization mismatches if your
+	// codec uses them, for example, as encryption keys or signature input.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.RecordActivityHeartbeatOptions]
 	RecordActivityHeartbeatOptions struct {
-		TaskToken []byte // required
-		Details   []interface{}
+		// TaskToken identifies the Activity Task to heartbeat.
+		//
+		// This field is required.
+		TaskToken []byte
+
+		// Details are the Activity heartbeat details to report.
+		// These values are encoded with the Client's DataConverter and may be
+		// stored externally if ExternalStorage is configured.
+		Details []interface{}
 
 		// Optional fields for ActivitySerializationContext.
-		// These values are not validated by the SDK. Providing incorrect values
-		// may cause serialization/deserialization mismatches if your codec uses
-		// them (e.g., as encryption keys or signature input).
-		Namespace    string
-		WorkflowID   string
+
+		// Namespace is the optional Temporal Namespace to include in serialization
+		// and external storage context. If empty, the Client's Namespace is used
+		// for this context.
+		// This field does not change the Namespace used to heartbeat the Activity,
+		// and should not differ from the Client's Namespace.
+		Namespace string
+
+		// WorkflowID is the optional Workflow ID to include in the Activity
+		// serialization context when encoding Details.
+		WorkflowID string
+
+		// ActivityType is the optional Activity Type to include in the Activity
+		// serialization context when encoding Details.
 		ActivityType string
+
+		// WorkflowType is the optional Workflow Type to include in the Activity
+		// serialization context when encoding Details.
 		WorkflowType string
-		TaskQueue    string
+
+		// TaskQueue is the optional Task Queue to include in the Activity
+		// serialization context when encoding Details.
+		TaskQueue string
 	}
 
 	// ClientOptions are optional parameters for Client creation.
@@ -844,6 +1045,14 @@ type (
 		// MaxPayloadSize is a number of bytes that gRPC would allow to travel to and from server. Defaults to 128 MB.
 		MaxPayloadSize int
 
+		// GrpcCompression controls transport-level gRPC compression for requests
+		// sent to the Temporal server. If gzip is enabled and a specific server
+		// RPC does not support gzip, the client may retry that RPC without
+		// compression and continue using gzip for other RPCs.
+		//
+		// default: &GrpcCompressionGzip{}
+		GrpcCompression GrpcCompression
+
 		// Advanced dial options for gRPC connections. These are applied after the internal default dial options are
 		// applied. Therefore any dial options here may override internal ones. Dial options WithBlock, WithTimeout,
 		// WithReturnConnectionError, and FailOnNonTempDialError are ignored since [grpc.NewClient] is used.
@@ -997,8 +1206,6 @@ type (
 		// in single-line Temporal markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticSummary string
 
 		// Details - General fixed details for this workflow execution that will appear in UI/CLI. This can be in
@@ -1006,8 +1213,6 @@ type (
 		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticDetails string
 
 		// VersioningOverride - Sets the versioning configuration of a specific workflow execution, ignoring current
@@ -1062,7 +1267,8 @@ type (
 		input *ClientExecuteWorkflowInput
 		// flag to ensure the operation is only executed once
 		executed atomic.Bool
-		// channel to indicate that handle or err is available
+		// doneCh is closed by withStartWorkflowOperationImpl.set() once workflowRun/err is available.
+		// Get() waits on doneCh; workflowRun and err must not be read before it closes.
 		doneCh chan struct{}
 		// workflowRun and err cannot be accessed before doneCh is closed
 		workflowRun WorkflowRun
@@ -1631,22 +1837,46 @@ func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Error() string {
 
 func (e *WorkflowUpdateServiceTimeoutOrCanceledError) Unwrap() error { return e.cause }
 
-// SetRequestIDOnStartWorkflowOptions is an internal only method for setting a requestID on StartWorkflowOptions.
-// RequestID is purposefully not exposed to users for the time being.
-func SetRequestIDOnStartWorkflowOptions(opts *StartWorkflowOptions, requestID string) {
-	opts.requestID = requestID
+// interface utility wrapper to allow setting links and callbacks
+// on temporal primitive operation options (UpdateWorkflowOptions, StartWorkflowOptions)
+type nexusTemporalOperationOptions interface {
+	setRequestID(requestID string)
+	setLinks(links []*commonpb.Link)
+	setCallbacks(callbacks []*commonpb.Callback)
 }
 
-// SetCallbacksOnStartWorkflowOptions is an internal only method for setting callbacks on StartWorkflowOptions.
-// Callbacks are purposefully not exposed to users for the time being.
-func SetCallbacksOnStartWorkflowOptions(opts *StartWorkflowOptions, callbacks []*commonpb.Callback) {
-	opts.callbacks = callbacks
+// nexusTemporalOperationOptions conforming interfaces
+var (
+	_ nexusTemporalOperationOptions = (*UpdateWorkflowOptions)(nil)
+	_ nexusTemporalOperationOptions = (*StartWorkflowOptions)(nil)
+)
+
+// Set links on any [nexusTemporalOperationOptions] interface via the setLinks API.
+//
+// Intended to be used only internally as a consistent way of setting
+// links on all Nexus Operations
+func SetLinksOnNexusOperation(opts nexusTemporalOperationOptions, links []*commonpb.Link) {
+	opts.setLinks(links)
 }
 
-// SetLinksOnStartWorkflowOptions is an internal only method for setting links on StartWorkflowOptions.
-// Links are purposefully not exposed to users for the time being.
-func SetLinksOnStartWorkflowOptions(opts *StartWorkflowOptions, links []*commonpb.Link) {
-	opts.links = links
+// Set callbacks on any [nexusTemporalOperationOptions] interface via the setCallbacks API.
+//
+// Intended to be used only internally as a consistent way of setting
+// callbacks on all Nexus Operations
+func SetCallbacksOnNexusOperation(opts nexusTemporalOperationOptions, callbacks []*commonpb.Callback) {
+	opts.setCallbacks(callbacks)
+}
+
+// Set non-empty requestID on any [nexusTemporalOperationOptions] interface via the setRequestID API.
+// Used for deduping requests server-side
+//
+// Intended to be used only internally as a consistent way of setting
+// requestIDs on all Nexus Operations
+func SetRequestIDOnNexusOperation(opts nexusTemporalOperationOptions, requestID string) {
+	if requestID == "" {
+		return
+	}
+	opts.setRequestID(requestID)
 }
 
 // SetOnConflictOptionsOnStartWorkflowOptions is an internal only method for setting conflict
@@ -1666,6 +1896,16 @@ func SetOnConflictOptionsOnStartWorkflowOptions(opts *StartWorkflowOptions) {
 func SetResponseInfoOnStartWorkflowOptions(opts *StartWorkflowOptions) *startWorkflowResponseInfo {
 	if opts.responseInfo == nil {
 		opts.responseInfo = &startWorkflowResponseInfo{}
+	}
+	return opts.responseInfo
+}
+
+// SetResponseInfoOnUpdateWorkflowOptions is an internal only method to set and return a
+// responseInfo pointer. This is done to capture links from the response RPC to be used
+// for nexus forward links on UpdateWorkflow Nexus Operations
+func SetResponseInfoOnUpdateWorkflowOptions(opts *UpdateWorkflowOptions) *updateWorkflowResponseInfo {
+	if opts.responseInfo == nil {
+		opts.responseInfo = &updateWorkflowResponseInfo{}
 	}
 	return opts.responseInfo
 }

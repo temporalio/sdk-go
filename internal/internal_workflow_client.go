@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -994,6 +995,44 @@ type UpdateWorkflowOptions struct {
 	// then the server will reject the update request with an error.
 	// Note that it is incompatible with UpdateWithStartWorkflowOperation.
 	FirstExecutionRunID string
+
+	// request ID for de-duplication during server processing. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
+	requestID string
+	// callbacks. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
+	callbacks []*commonpb.Callback
+	// for backward links from the target namespace sent via operation options. Only settable by the SDK - e.g. [temporalnexus.updateWorkflowOperation].
+	links []*commonpb.Link
+	// gRPC request response trap for nexus forward links
+	responseInfo *updateWorkflowResponseInfo
+}
+
+type updateWorkflowResponseInfo struct {
+	// Link to the workflow event.
+	Link *commonpb.Link
+}
+
+func (u *UpdateWorkflowOptions) setLinks(links []*commonpb.Link) {
+	u.links = links
+}
+
+func (u *UpdateWorkflowOptions) setCallbacks(callbacks []*commonpb.Callback) {
+	u.callbacks = callbacks
+}
+
+func (u *UpdateWorkflowOptions) setRequestID(requestID string) {
+	u.requestID = requestID
+}
+
+func (s *StartWorkflowOptions) setLinks(links []*commonpb.Link) {
+	s.links = links
+}
+
+func (s *StartWorkflowOptions) setCallbacks(callbacks []*commonpb.Callback) {
+	s.callbacks = callbacks
+}
+
+func (s *StartWorkflowOptions) setRequestID(requestID string) {
+	s.requestID = requestID
 }
 
 // UpdateWithStartWorkflowOptions encapsulates the parameters used by UpdateWithStartWorkflow.
@@ -1053,6 +1092,15 @@ type completedUpdateHandle struct {
 type lazyUpdateHandle struct {
 	baseUpdateHandle
 	client *WorkflowClient
+}
+
+// IsUpdateWorkflowCompleted is a utility to detect if an operation has immediately
+// completed. Used for Nexus operations that back into operations at a later stage
+// in a non-retriable manner. Eg. UpdateWorkflow could fail at Accepted(failed validation)
+// but its still Admitted and isnt captured in the rpc errors and keeps getting retried
+func IsUpdateWorkflowCompleted(handle WorkflowUpdateHandle) bool {
+	_, ok := handle.(*completedUpdateHandle)
+	return ok
 }
 
 // QueryWorkflowWithOptionsRequest is the request to QueryWorkflowWithOptions
@@ -1589,8 +1637,7 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	grpcCtx, cancel := newGRPCContext(ctx, grpcTimeout(wc.getSystemInfoTimeout))
 	defer cancel()
 	resp, err := wc.workflowService.GetSystemInfo(grpcCtx, &workflowservice.GetSystemInfoRequest{})
-	// We ignore unimplemented
-	if _, isUnimplemented := err.(*serviceerror.Unimplemented); err != nil && !isUnimplemented {
+	if err != nil && !isUnknownMethodUnimplemented(err) {
 		return nil, fmt.Errorf("failed reaching server: %w", err)
 	}
 	if resp != nil && resp.Capabilities != nil {
@@ -1607,6 +1654,15 @@ func (wc *WorkflowClient) loadCapabilities(ctx context.Context) (*workflowservic
 	wc.excludeInternalFromRetry.Store(capabilities.InternalErrorDifferentiation)
 	wc.capabilitiesLock.Unlock()
 	return capabilities, nil
+}
+
+func isUnknownMethodUnimplemented(err error) bool {
+	var unimplemented *serviceerror.Unimplemented
+	if !errors.As(err, &unimplemented) && status.Code(err) != codes.Unimplemented {
+		return false
+	}
+	errMsg := strings.ToLower(err.Error())
+	return strings.Contains(errMsg, "unknown method") || strings.Contains(errMsg, "not implemented")
 }
 
 // Get namespace capabilities, lazily fetching from server if not already obtained.
@@ -2411,7 +2467,7 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 		return err
 	}
 
-	links, _ := ctx.Value(NexusOperationLinksKey).([]*commonpb.Link)
+	links, _ := ctx.Value(NexusOperationRequestLinksKey).([]*commonpb.Link)
 
 	request := &workflowservice.SignalWorkflowExecutionRequest{
 		Namespace: w.client.namespace,
@@ -2443,8 +2499,19 @@ func (w *workflowClientInterceptor) SignalWorkflow(ctx context.Context, in *Clie
 
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
-	_, err = w.client.workflowService.SignalWorkflowExecution(grpcCtx, request)
-	return err
+	response, err := w.client.workflowService.SignalWorkflowExecution(grpcCtx, request)
+	if err != nil {
+		return err
+	}
+	// If this signal was issued from inside a Nexus operation handler, capture the server's response
+	// link (pointing at the WorkflowExecutionSignaled event) so the task handler can attach it to the
+	// StartOperationResponse, linking the caller workflow's history event to the callee. Servers
+	// without history.enableCHASMSignalBacklinks leave the link unset; AddResponseLink ignores
+	// nil.
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(response.GetLink())
+	}
+	return nil
 }
 
 func (w *workflowClientInterceptor) SignalWithStartWorkflow(
@@ -2511,6 +2578,13 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		Priority:                 convertToPBPriority(in.Options.Priority),
 	}
 
+	// If this signalWithStart was issued from inside a Nexus operation handler, forward the inbound
+	// Nexus task links so both the WorkflowExecutionStarted and WorkflowExecutionSignaled events on
+	// the callee link back to the caller.
+	if links, ok := ctx.Value(NexusOperationRequestLinksKey).([]*commonpb.Link); ok {
+		signalWithStartRequest.Links = links
+	}
+
 	if in.Options.StartDelay != 0 {
 		signalWithStartRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
 	}
@@ -2538,6 +2612,14 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	response, err = w.client.workflowService.SignalWithStartWorkflowExecution(grpcCtx, signalWithStartRequest)
 	if err != nil {
 		return nil, err
+	}
+
+	// If this signalWithStart was issued from inside a Nexus operation handler, capture the server's
+	// response link (pointing at the WorkflowExecutionSignaled event) so the task handler can attach it to
+	// the StartOperationResponse. Servers without history.enableCHASMSignalBacklinks leave the link
+	// unset; AddResponseLink ignores nil.
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(response.GetSignalLink())
 	}
 
 	iterFn := func(fnCtx context.Context, fnRunID string) HistoryEventIterator {
@@ -2811,6 +2893,10 @@ func (w *workflowClientInterceptor) UpdateWorkflow(
 		return nil, err
 	}
 
+	if responseInfo := in.responseInfo; responseInfo != nil {
+		responseInfo.Link = resp.GetLink()
+	}
+
 	// Here we know the update is at least accepted
 	desiredLifecycleStage := updateLifeCycleStageToProto(in.WaitForStage)
 	return w.updateHandleFromResponse(ctx, desiredLifecycleStage, resp)
@@ -2846,6 +2932,10 @@ func createUpdateWorkflowInput(options *UpdateWorkflowOptions) (*ClientUpdateWor
 		RunID:               options.RunID,
 		FirstExecutionRunID: options.FirstExecutionRunID,
 		WaitForStage:        options.WaitForStage,
+		links:               options.links,
+		callbacks:           options.callbacks,
+		responseInfo:        options.responseInfo,
+		requestID:           options.requestID,
 	}, nil
 }
 
@@ -2880,6 +2970,9 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 		},
 		FirstExecutionRunId: in.FirstExecutionRunID,
 		Request: &updatepb.Request{
+			RequestId:           in.requestID,
+			CompletionCallbacks: in.callbacks,
+			Links:               in.links,
 			Meta: &updatepb.Meta{
 				UpdateId: in.UpdateID,
 				Identity: w.client.identity,

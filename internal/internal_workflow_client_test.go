@@ -9,6 +9,7 @@ import (
 	"time"
 
 	activitypb "go.temporal.io/api/activity/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	updatepb "go.temporal.io/api/update/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"google.golang.org/grpc"
@@ -1408,6 +1409,49 @@ func (s *workflowClientTestSuite) TearDownTest() {
 	s.mockCtrl.Finish() // assert mock’s expectations
 }
 
+func TestLoadCapabilitiesUnknownMethodUnimplementedUsesEmptyCapabilities(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().
+		GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewUnimplemented("unknown method GetSystemInfo")).
+		Times(1)
+
+	client := &WorkflowClient{
+		workflowService:          service,
+		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
+	}
+
+	capabilities, err := client.loadCapabilities(context.Background())
+	require.NoError(t, err)
+	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, capabilities))
+}
+
+func TestLoadCapabilitiesNonUnknownMethodUnimplementedFails(t *testing.T) {
+	mockCtrl := gomock.NewController(t)
+	defer mockCtrl.Finish()
+
+	service := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+	service.EXPECT().
+		GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, serviceerror.NewUnimplemented("frontend has not loaded GetSystemInfo")).
+		Times(1)
+
+	client := &WorkflowClient{
+		workflowService:          service,
+		excludeInternalFromRetry: &atomic.Bool{},
+		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
+	}
+
+	_, err := client.loadCapabilities(context.Background())
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed reaching server")
+	require.ErrorContains(t, err, "frontend has not loaded GetSystemInfo")
+}
+
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	signalName := "my signal"
 	signalInput := []byte("my signal input")
@@ -1762,8 +1806,12 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
 	memo := map[string]interface{}{
 		"testMemo": "memo value",
 	}
+	nilPayload, err := converter.GetDefaultDataConverter().ToPayload(nil)
+	s.NoError(err)
 	searchAttributes := map[string]interface{}{
-		"testAttr": "attr value",
+		"testAttr":       "attr value",
+		"nilAttr":        nil,
+		"nilPayloadAttr": nilPayload,
 	}
 	options := StartWorkflowOptions{
 		ID:                       workflowID,
@@ -1788,6 +1836,11 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithMemoAndSearchAttr() {
 			err = converter.GetDefaultDataConverter().FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
+			s.Len(req.SearchAttributes.IndexedFields, 1)
+			_, ok := req.SearchAttributes.IndexedFields["nilAttr"]
+			s.False(ok)
+			_, ok = req.SearchAttributes.IndexedFields["nilPayloadAttr"]
+			s.False(ok)
 		})
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
@@ -1796,8 +1849,12 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 	memo := map[string]interface{}{
 		"testMemo": "memo value",
 	}
+	nilPayload, err := converter.GetDefaultDataConverter().ToPayload(nil)
+	s.NoError(err)
 	searchAttributes := map[string]interface{}{
-		"testAttr": "attr value",
+		"testAttr":       "attr value",
+		"nilAttr":        nil,
+		"nilPayloadAttr": nilPayload,
 	}
 	options := StartWorkflowOptions{
 		ID:                       "wid",
@@ -1822,6 +1879,11 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithMemoAndSearchAt
 			err = converter.GetDefaultDataConverter().FromPayload(req.SearchAttributes.IndexedFields["testAttr"], &resultAttr)
 			s.NoError(err)
 			s.Equal("attr value", resultAttr)
+			s.Len(req.SearchAttributes.IndexedFields, 1)
+			_, ok := req.SearchAttributes.IndexedFields["nilAttr"]
+			s.False(ok)
+			_, ok = req.SearchAttributes.IndexedFields["nilPayloadAttr"]
+			s.False(ok)
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
 }
@@ -1864,6 +1926,37 @@ func (s *workflowClientTestSuite) TestStartWorkflowWithVersioningOverride() {
 	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
 }
 
+func (s *workflowClientTestSuite) TestStartWorkflowWithOneTimeVersioningOverride() {
+	versioningOverride := &OneTimeVersioningOverride{
+		TargetVersion: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildID:        "build1",
+		},
+	}
+
+	options := StartWorkflowOptions{
+		ID:                       workflowID,
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		VersioningOverride:       versioningOverride,
+	}
+
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	startResp := &workflowservice.StartWorkflowExecutionResponse{}
+
+	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+		Do(func(_ interface{}, req *workflowservice.StartWorkflowExecutionRequest, _ ...interface{}) {
+			s.Nil(req.VersioningOverride.GetPinned())
+			s.False(req.VersioningOverride.GetAutoUpgrade())
+			s.Equal("deployment1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetDeploymentName())
+			s.Equal("build1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetBuildId())
+		})
+	_, _ = s.client.ExecuteWorkflow(context.Background(), options, wf)
+}
+
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverride() {
 	versioningOverride := &PinnedVersioningOverride{
 		Version: WorkerDeploymentVersion{
@@ -1897,6 +1990,36 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithVersioningOverr
 
 			s.Equal("deployment1", req.VersioningOverride.GetPinned().GetVersion().DeploymentName)
 			s.Equal("build1", req.VersioningOverride.GetPinned().GetVersion().BuildId)
+		})
+	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
+}
+
+func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithOneTimeVersioningOverride() {
+	versioningOverride := &OneTimeVersioningOverride{
+		TargetVersion: WorkerDeploymentVersion{
+			DeploymentName: "deployment1",
+			BuildID:        "build1",
+		},
+	}
+
+	options := StartWorkflowOptions{
+		ID:                       "wid",
+		TaskQueue:                taskqueue,
+		WorkflowExecutionTimeout: timeoutInSeconds,
+		WorkflowTaskTimeout:      timeoutInSeconds,
+		VersioningOverride:       versioningOverride,
+	}
+	wf := func(ctx Context) string {
+		panic("this is just a stub")
+	}
+	startResp := &workflowservice.SignalWithStartWorkflowExecutionResponse{}
+
+	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResp, nil).
+		Do(func(_ interface{}, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) {
+			s.Nil(req.VersioningOverride.GetPinned())
+			s.False(req.VersioningOverride.GetAutoUpgrade())
+			s.Equal("deployment1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetDeploymentName())
+			s.Equal("build1", req.VersioningOverride.GetOneTime().GetTargetDeploymentVersion().GetBuildId())
 		})
 	_, _ = s.client.SignalWithStartWorkflow(context.Background(), "wid", "signal", "value", options, wf)
 }
@@ -2065,6 +2188,16 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	_ = converter.GetDefaultDataConverter().FromPayload(result3.IndexedFields["t1"], &resultString)
 	s.Equal("v1", resultString)
 
+	input1 = map[string]interface{}{
+		"nil-attr": nil,
+	}
+	resultNil, err := serializeUntypedSearchAttributes(input1)
+	s.NoError(err)
+	s.NotNil(resultNil)
+	s.Contains(resultNil.IndexedFields, "nil-attr")
+	s.NotNil(resultNil.IndexedFields["nil-attr"])
+	s.Nil(resultNil.IndexedFields["nil-attr"].GetData())
+
 	// *Payload type goes through.
 	p, err := converter.GetDefaultDataConverter().ToPayload("5eaf00d")
 	s.NoError(err)
@@ -2083,6 +2216,44 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributes() {
 	}
 	_, err = serializeUntypedSearchAttributes(input1)
 	s.Error(err)
+}
+
+func (s *workflowClientTestSuite) TestSerializeSearchAttributesOmitsNilValuesOnStart() {
+	nilPayload, err := converter.GetDefaultDataConverter().ToPayload(nil)
+	s.NoError(err)
+	payload, err := converter.GetDefaultDataConverter().ToPayload("value")
+	s.NoError(err)
+	var nilBytes []byte
+	nilBytesPayload, err := converter.GetDefaultDataConverter().ToPayload(nilBytes)
+	s.NoError(err)
+
+	result, err := serializeSearchAttributes(map[string]interface{}{
+		"realAttr":          payload,
+		"nilAttr":           nil,
+		"nilPayloadAttr":    nilPayload,
+		"nilBytesPayload":   nilBytesPayload,
+		"typedNilBytesAttr": nilBytes,
+	}, SearchAttributes{})
+	s.NoError(err)
+	s.NotNil(result)
+	s.Len(result.IndexedFields, 3)
+	_, ok := result.IndexedFields["nilAttr"]
+	s.False(ok)
+	_, ok = result.IndexedFields["nilPayloadAttr"]
+	s.False(ok)
+	s.Equal(converter.MetadataEncodingBinary, string(result.IndexedFields["nilBytesPayload"].GetMetadata()[converter.MetadataEncoding]))
+	s.Nil(result.IndexedFields["nilBytesPayload"].GetData())
+	s.Equal(converter.MetadataEncodingBinary, string(result.IndexedFields["typedNilBytesAttr"].GetMetadata()[converter.MetadataEncoding]))
+	s.Nil(result.IndexedFields["typedNilBytesAttr"].GetData())
+
+	var resultString string
+	err = converter.GetDefaultDataConverter().FromPayload(result.IndexedFields["realAttr"], &resultString)
+	s.NoError(err)
+	s.Equal("value", resultString)
+
+	result, err = serializeSearchAttributes(map[string]interface{}{"nilAttr": nil}, SearchAttributes{})
+	s.NoError(err)
+	s.Nil(result)
 }
 
 func (s *workflowClientTestSuite) TestListWorkflow() {
@@ -2646,6 +2817,147 @@ func TestUpdate(t *testing.T) {
 		// Verify that calling Get with nil does not panic
 		err = handle.Get(context.TODO(), nil)
 		require.NoError(t, err)
+	})
+	t.Run("sync success exposes payloads", func(t *testing.T) {
+		svc, client := init(t)
+		want := "payloads-test-value"
+		req := newRequest(t, sync)
+		outPayloads, err := dc.ToPayloads(want)
+		require.NoError(t, err)
+		svc.EXPECT().
+			PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).Return(
+			&workflowservice.PollWorkflowExecutionUpdateResponse{
+				Outcome: &updatepb.Outcome{
+					Value: &updatepb.Outcome_Success{
+						Success: outPayloads,
+					},
+				},
+			},
+			nil,
+		)
+		// Use PollWorkflowUpdate directly to access the raw output.
+		output, err := client.PollWorkflowUpdate(
+			context.TODO(),
+			refFromRequest(req),
+		)
+		require.NoError(t, err)
+		require.NotNil(t, output.Result)
+		payloads := converter.GetPayloads(output.Result)
+		require.NotNil(t, payloads)
+		require.Equal(t, outPayloads, payloads)
+		require.Len(t, payloads.GetPayloads(), 1)
+	})
+	t.Run("sync error exposes failure proto", func(t *testing.T) {
+		svc, client := init(t)
+		want := NewApplicationError("update-failed", "TestType", true, nil, "detail-val")
+		req := newRequest(t, sync)
+		svc.EXPECT().
+			PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).Return(
+			&workflowservice.PollWorkflowExecutionUpdateResponse{
+				Outcome: &updatepb.Outcome{
+					Value: &updatepb.Outcome_Failure{
+						Failure: fc.ErrorToFailure(want),
+					},
+				},
+			},
+			nil,
+		)
+		// Use PollWorkflowUpdate directly to access the raw output.
+		output, err := client.PollWorkflowUpdate(
+			context.TODO(),
+			refFromRequest(req),
+		)
+		require.NoError(t, err)
+		require.Error(t, output.Error)
+		// Verify Failure() is accessible through the error.
+		type failureProvider interface {
+			Failure() *failurepb.Failure
+		}
+		var fp failureProvider
+		require.True(t, errors.As(output.Error, &fp))
+		failure := fp.Failure()
+		require.NotNil(t, failure)
+		require.Equal(t, "update-failed", failure.GetMessage())
+		require.Equal(t, "TestType", failure.GetApplicationFailureInfo().GetType())
+		require.True(t, failure.GetApplicationFailureInfo().GetNonRetryable())
+	})
+}
+
+func TestPollActivityResult(t *testing.T) {
+	dc := converter.GetDefaultDataConverter()
+	fc := GetDefaultFailureConverter()
+
+	init := func(t *testing.T) (*workflowservicemock.MockWorkflowServiceClient, *WorkflowClient) {
+		svc := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+		client := NewServiceClient(svc, nil, ClientOptions{})
+		svc.EXPECT().
+			GetSystemInfo(gomock.Any(), gomock.Any()).
+			AnyTimes().
+			Return(&workflowservice.GetSystemInfoResponse{}, nil)
+		return svc, client
+	}
+
+	t.Run("success exposes payloads", func(t *testing.T) {
+		svc, client := init(t)
+		resultPayloads, err := dc.ToPayloads("activity-result")
+		require.NoError(t, err)
+		svc.EXPECT().
+			PollActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollActivityExecutionResponse{
+					Outcome: &activitypb.ActivityExecutionOutcome{
+						Value: &activitypb.ActivityExecutionOutcome_Result{
+							Result: resultPayloads,
+						},
+					},
+				},
+				nil,
+			)
+		out, err := client.interceptor.PollActivityResult(
+			context.Background(),
+			&ClientPollActivityResultInput{ActivityID: "test-id", RunID: "run-id"},
+		)
+		require.NoError(t, err)
+		require.NotNil(t, out.Result)
+		payloads := converter.GetPayloads(out.Result)
+		require.NotNil(t, payloads)
+		require.Equal(t, resultPayloads, payloads)
+	})
+
+	t.Run("failure exposes failure proto", func(t *testing.T) {
+		svc, client := init(t)
+		failureProto := fc.ErrorToFailure(
+			NewApplicationError("activity-failed", "ActivityValidationError", true, nil, "some-detail"),
+		)
+		svc.EXPECT().
+			PollActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(
+				&workflowservice.PollActivityExecutionResponse{
+					Outcome: &activitypb.ActivityExecutionOutcome{
+						Value: &activitypb.ActivityExecutionOutcome_Failure{
+							Failure: failureProto,
+						},
+					},
+				},
+				nil,
+			)
+		out, err := client.interceptor.PollActivityResult(
+			context.Background(),
+			&ClientPollActivityResultInput{ActivityID: "test-id", RunID: "run-id"},
+		)
+		require.NoError(t, err)
+		require.Error(t, out.Error)
+		// Verify Failure() is accessible through the error.
+		type failureProvider interface {
+			Failure() *failurepb.Failure
+		}
+		var fp failureProvider
+		require.True(t, errors.As(out.Error, &fp))
+		failure := fp.Failure()
+		require.NotNil(t, failure)
+		require.Equal(t, "activity-failed", failure.GetMessage())
+		require.Equal(t, "ActivityValidationError", failure.GetApplicationFailureInfo().GetType())
+		require.True(t, failure.GetApplicationFailureInfo().GetNonRetryable())
 	})
 }
 

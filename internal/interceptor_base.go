@@ -15,7 +15,9 @@ import (
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.InterceptorBase]
 type InterceptorBase struct {
+	// ClientInterceptorBase is the base implementation of ClientInterceptor.
 	ClientInterceptorBase
+	// WorkerInterceptorBase is the base implementation of WorkerInterceptor.
 	WorkerInterceptorBase
 }
 
@@ -57,6 +59,7 @@ func (*WorkerInterceptorBase) mustEmbedWorkerInterceptorBase() {}
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ActivityInboundInterceptorBase]
 type ActivityInboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next ActivityInboundInterceptor
 }
 
@@ -84,6 +87,7 @@ func (*ActivityInboundInterceptorBase) mustEmbedActivityInboundInterceptorBase()
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ActivityOutboundInterceptorBase]
 type ActivityOutboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next ActivityOutboundInterceptor
 }
 
@@ -142,6 +146,7 @@ func (*ActivityOutboundInterceptorBase) mustEmbedActivityOutboundInterceptorBase
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.WorkflowInboundInterceptorBase]
 type WorkflowInboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next WorkflowInboundInterceptor
 }
 
@@ -186,6 +191,7 @@ func (*WorkflowInboundInterceptorBase) mustEmbedWorkflowInboundInterceptorBase()
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.WorkflowOutboundInterceptorBase]
 type WorkflowOutboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next WorkflowOutboundInterceptor
 }
 
@@ -498,6 +504,7 @@ func (*ClientInterceptorBase) mustEmbedClientInterceptorBase() {}
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientOutboundInterceptorBase]
 type ClientOutboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next ClientOutboundInterceptor
 }
 
@@ -635,6 +642,65 @@ func (c *ClientOutboundInterceptorBase) PollActivityResult(
 	return c.Next.PollActivityResult(ctx, in)
 }
 
+// ExecuteNexusOperation implements ClientOutboundInterceptor.ExecuteNexusOperation.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) ExecuteNexusOperation(
+	ctx context.Context,
+	in *ClientExecuteNexusOperationInput,
+) (ClientNexusOperationHandle, error) {
+	return c.Next.ExecuteNexusOperation(ctx, in)
+}
+
+// GetNexusOperationHandle implements ClientOutboundInterceptor.GetNexusOperationHandle.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) GetNexusOperationHandle(
+	in *ClientGetNexusOperationHandleInput,
+) ClientNexusOperationHandle {
+	return c.Next.GetNexusOperationHandle(in)
+}
+
+// CancelNexusOperation implements ClientOutboundInterceptor.CancelNexusOperation.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) CancelNexusOperation(
+	ctx context.Context,
+	in *ClientCancelNexusOperationInput,
+) error {
+	return c.Next.CancelNexusOperation(ctx, in)
+}
+
+// TerminateNexusOperation implements ClientOutboundInterceptor.TerminateNexusOperation.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) TerminateNexusOperation(
+	ctx context.Context,
+	in *ClientTerminateNexusOperationInput,
+) error {
+	return c.Next.TerminateNexusOperation(ctx, in)
+}
+
+// DescribeNexusOperation implements ClientOutboundInterceptor.DescribeNexusOperation.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) DescribeNexusOperation(
+	ctx context.Context,
+	in *ClientDescribeNexusOperationInput,
+) (*ClientDescribeNexusOperationOutput, error) {
+	return c.Next.DescribeNexusOperation(ctx, in)
+}
+
+// PollNexusOperationResult implements ClientOutboundInterceptor.PollNexusOperationResult.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) PollNexusOperationResult(
+	ctx context.Context,
+	in *ClientPollNexusOperationResultInput,
+) (*ClientPollNexusOperationResultOutput, error) {
+	return c.Next.PollNexusOperationResult(ctx, in)
+}
+
 func (*ClientOutboundInterceptorBase) mustEmbedClientOutboundInterceptorBase() {}
 
 // NexusOperationInboundInterceptorBase is a default implementation of [NexusOperationInboundInterceptor] that
@@ -642,6 +708,7 @@ func (*ClientOutboundInterceptorBase) mustEmbedClientOutboundInterceptorBase() {
 //
 // Note: Experimental
 type NexusOperationInboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next NexusOperationInboundInterceptor
 }
 
@@ -670,6 +737,7 @@ var _ NexusOperationInboundInterceptor = &NexusOperationInboundInterceptorBase{}
 //
 // Note: Experimental
 type NexusOperationOutboundInterceptorBase struct {
+	// Next is the next interceptor in the chain.
 	Next NexusOperationOutboundInterceptor
 }
 
