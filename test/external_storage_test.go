@@ -542,7 +542,7 @@ func (s *ExternalStorageTestSuite) TestWorkerWithoutExternalStorageFails() {
 		return false
 	}, 10*time.Second, 200*time.Millisecond, "expected a WorkflowTaskFailed event")
 
-	s.Contains(failureMsg, "externally stored payload encountered but no storage driver is configured")
+	s.Contains(failureMsg, "[TMPRL1105] Externally stored payload encountered but no storage driver is configured")
 	s.NoError(s.client.TerminateWorkflow(ctx, wfID, "", "test complete"))
 }
 
