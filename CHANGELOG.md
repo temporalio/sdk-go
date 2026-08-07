@@ -19,6 +19,7 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
+- Add support for Workflow Queries as Nexus Operations.
 
 ### Fixed
 

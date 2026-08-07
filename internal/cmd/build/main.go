@@ -183,6 +183,7 @@ func (b *builder) integrationTest() error {
 		devServerLogger := sdklog.NewStructuredLogger(slog.New(slog.NewTextHandler(devServerStdout, nil)))
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
+				// TODO: update before merging this PR, need server support for Query
 				Version: "v1.7.2-one-time-versioning-override",
 			},
 			ClientOptions: &client.Options{

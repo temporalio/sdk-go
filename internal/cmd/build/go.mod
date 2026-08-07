@@ -41,3 +41,5 @@ require (
 )
 
 replace go.temporal.io/sdk => ../../../
+
+replace go.temporal.io/api => github.com/temporalio/api-go v1.63.4-0.20260724233611-d22c21c3cfe6
