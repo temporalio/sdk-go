@@ -226,7 +226,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 		// No storage drivers configured at all — fail immediately with a clear error
 		// rather than passing through an unresolved reference.
 		if len(v.params.driverMap) == 0 {
-			return nil, fmt.Errorf("externally stored payload encountered but no storage driver is configured")
+			return nil, fmt.Errorf("[TMPRL1105] Externally stored payload encountered but no storage driver is configured")
 		}
 
 		ref, err := payloadToStorageReference(p)
