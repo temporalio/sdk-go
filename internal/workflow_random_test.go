@@ -38,16 +38,16 @@ func (s *workflowRandomTestSuite) TestDeriveSeed() {
 	}
 }
 
-// TestGetRandomGolden pins the seed derivation and resulting byte stream.
+// TestGetRandomStreamGolden pins the seed derivation and resulting byte stream.
 // Changing either would break replay for existing workflows.
-func (s *workflowRandomTestSuite) TestGetRandomGolden() {
+func (s *workflowRandomTestSuite) TestGetRandomStreamGolden() {
 	seed := deriveSeed(workflowRandomTestRunID, workflowRandomTestName)
 	s.Require().Equal("0d143739fa5a902590bac3b5bff5f52b539f57ae2ba4cf0ab3b034623b1da7ec", hex.EncodeToString(seed[:]))
 
 	randoms := make(map[string]*rand.ChaCha8)
 	randomBytes := make([]byte, 32)
 
-	n, err := getRandom(randoms, workflowRandomTestRunID, workflowRandomTestName).Read(randomBytes)
+	n, err := getRandomStream(randoms, workflowRandomTestRunID, workflowRandomTestName).Read(randomBytes)
 	s.Require().NoError(err)
 	s.Require().Equal(len(randomBytes), n)
 	s.Require().Equal("10861bf410d33891bef9b1f2ebddc1af2f5bceffe86c13fdcb8534a08805b1a7", hex.EncodeToString(randomBytes))
@@ -60,31 +60,31 @@ func (s *workflowRandomTestSuite) TestDeriveSeedSeparators() {
 	)
 }
 
-// TestGetRandomMemoizes verifies a second lookup under the same name continues
+// TestGetRandomStreamMemoizes verifies a second lookup under the same name continues
 // the sequence rather than restarting it.
-func (s *workflowRandomTestSuite) TestGetRandomMemoizes() {
+func (s *workflowRandomTestSuite) TestGetRandomStreamMemoizes() {
 	randoms := make(map[string]*rand.ChaCha8)
 
-	c1 := getRandom(randoms, workflowRandomTestRunID, workflowRandomTestName)
+	c1 := getRandomStream(randoms, workflowRandomTestRunID, workflowRandomTestName)
 	firstDraw := c1.Uint64()
 
-	c2 := getRandom(randoms, workflowRandomTestRunID, workflowRandomTestName)
+	c2 := getRandomStream(randoms, workflowRandomTestRunID, workflowRandomTestName)
 	secondDraw := c2.Uint64()
 
 	s.Require().Same(c1, c2)
 	s.Require().NotEqual(firstDraw, secondDraw)
 }
 
-// TestGetRandomNamesAreIndependent verifies that interleaving draws across two
+// TestGetRandomStreamNamesAreIndependent verifies that interleaving draws across two
 // names yields the same sequence per name as drawing from each on its own, so
 // how often a workflow draws from one name cannot shift another.
-func (s *workflowRandomTestSuite) TestGetRandomNamesAreIndependent() {
+func (s *workflowRandomTestSuite) TestGetRandomStreamNamesAreIndependent() {
 
 	solo := func(name string, draws int) []uint64 {
 		var res []uint64
 
 		randoms := make(map[string]*rand.ChaCha8)
-		c := getRandom(randoms, workflowRandomTestRunID, name)
+		c := getRandomStream(randoms, workflowRandomTestRunID, name)
 		r := rand.New(c)
 
 		for range draws {
@@ -96,8 +96,8 @@ func (s *workflowRandomTestSuite) TestGetRandomNamesAreIndependent() {
 	var interleavedA, interleavedB []uint64
 
 	randoms := make(map[string]*rand.ChaCha8)
-	c1 := getRandom(randoms, workflowRandomTestRunID, workflowRandomTestName)
-	c2 := getRandom(randoms, workflowRandomTestRunID, "other")
+	c1 := getRandomStream(randoms, workflowRandomTestRunID, workflowRandomTestName)
+	c2 := getRandomStream(randoms, workflowRandomTestRunID, "other")
 
 	for range 3 {
 		interleavedA = append(interleavedA, c1.Uint64())
@@ -112,9 +112,9 @@ func (s *workflowRandomTestSuite) TestGetRandomNamesAreIndependent() {
 func (s *workflowRandomTestSuite) TestReseedRandomsInPlace() {
 	randoms := make(map[string]*rand.ChaCha8)
 
-	c1 := getRandom(randoms, workflowRandomTestRunID, workflowRandomTestName)
+	c1 := getRandomStream(randoms, workflowRandomTestRunID, workflowRandomTestName)
 	reseedRandoms(randoms, "other")
-	c2 := getRandom(randoms, "other", workflowRandomTestName)
+	c2 := getRandomStream(randoms, "other", workflowRandomTestName)
 
 	s.Require().Same(c1, c2)
 }

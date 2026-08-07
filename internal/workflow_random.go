@@ -12,7 +12,7 @@ func deriveSeed(runID, name string) [32]byte {
 	return sha256.Sum256([]byte(seedVersion + "\x00" + runID + "\x00" + name))
 }
 
-func getRandom(randoms map[string]*rand.ChaCha8, runID, name string) *rand.ChaCha8 {
+func getRandomStream(randoms map[string]*rand.ChaCha8, runID, name string) *rand.ChaCha8 {
 	if r, ok := randoms[name]; ok {
 		return r
 	}
@@ -29,6 +29,6 @@ func reseedRandoms(randoms map[string]*rand.ChaCha8, newRunID string) {
 	}
 }
 
-func GetRandom(ctx Context, name string) *rand.ChaCha8 {
-	return getWorkflowEnvironment(ctx).GetRandom(name)
+func GetRandomStream(ctx Context, name string) *rand.ChaCha8 {
+	return getWorkflowEnvironment(ctx).GetRandomStream(name)
 }

@@ -744,8 +744,8 @@ func (env *testWorkflowEnvironmentImpl) GenerateSequence() int64 {
 	return env.nextID()
 }
 
-func (env *testWorkflowEnvironmentImpl) GetRandom(name string) *rand.ChaCha8 {
-	return getRandom(env.randoms, env.workflowInfo.currentRunID, name)
+func (env *testWorkflowEnvironmentImpl) GetRandomStream(name string) *rand.ChaCha8 {
+	return getRandomStream(env.randoms, env.workflowInfo.currentRunID, name)
 }
 
 func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {

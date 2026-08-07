@@ -61,7 +61,7 @@ func (ts *WorkflowRandomTestSuite) TearDownTest() {
 }
 
 func workflowRandomSimpleWorkflow(ctx workflow.Context) (int, error) {
-	return rand.New(workflow.GetRandom(ctx, workflowRandomName)).Int(), nil
+	return rand.New(workflow.GetRandomStream(ctx, workflowRandomName)).Int(), nil
 }
 
 func workflowRandomReplayWorkflow(ctx workflow.Context) (uint64, error) {
@@ -71,7 +71,7 @@ func workflowRandomReplayWorkflow(ctx workflow.Context) (uint64, error) {
 		return state, nil
 	})
 
-	c := workflow.GetRandom(ctx, workflowRandomName)
+	c := workflow.GetRandomStream(ctx, workflowRandomName)
 
 	state = c.Uint64()
 
@@ -93,7 +93,7 @@ func workflowRandomSimpleActivity(context.Context) error {
 }
 
 func workflowRandomResetWorkflow(ctx workflow.Context) ([]int, error) {
-	r := rand.New(workflow.GetRandom(ctx, workflowRandomName))
+	r := rand.New(workflow.GetRandomStream(ctx, workflowRandomName))
 
 	first := r.Int()
 
@@ -112,7 +112,7 @@ func workflowRandomResetWorkflow(ctx workflow.Context) ([]int, error) {
 }
 
 func workflowRandomResetLateSourceWorkflow(ctx workflow.Context) ([]int, error) {
-	first := rand.New(workflow.GetRandom(ctx, "other")).Int()
+	first := rand.New(workflow.GetRandomStream(ctx, "other")).Int()
 
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: time.Minute,
@@ -123,13 +123,13 @@ func workflowRandomResetLateSourceWorkflow(ctx workflow.Context) ([]int, error) 
 	}
 
 	// The reset targets the second WFT (id=10), so the first draw is replayed and the second draw is redrawn.
-	second := rand.New(workflow.GetRandom(ctx, workflowRandomName)).Int()
+	second := rand.New(workflow.GetRandomStream(ctx, workflowRandomName)).Int()
 
 	return []int{first, second}, nil
 }
 
 func workflowRandomContinueAsNewWorkflow(ctx workflow.Context, prev int) ([]int, error) {
-	current := rand.New(workflow.GetRandom(ctx, workflowRandomName)).Int()
+	current := rand.New(workflow.GetRandomStream(ctx, workflowRandomName)).Int()
 
 	if prev == 0 {
 		return nil, workflow.NewContinueAsNewError(ctx, workflowRandomContinueAsNewWorkflow, current)

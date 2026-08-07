@@ -466,14 +466,14 @@ func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Co
 	return internal.SideEffectWithOptions(ctx, options, f)
 }
 
-// GetRandom returns a deterministic pseudorandom source private to the given
+// GetRandomStream returns a deterministic pseudorandom source private to the given
 // name. Calling it again with the same name returns the same source, positioned
 // where earlier draws left it.
 //
 // Example:
 //
 //	buf := make([]byte, 32)
-//	c := workflow.GetRandom(ctx, "example.com/myplugin/bytes")
+//	c := workflow.GetRandomStream(ctx, "example.com/myplugin/bytes")
 //	c.Read(buf)
 //
 // A reset replays the same values up to the reset point, so decisions the
@@ -493,8 +493,8 @@ func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Co
 // NOTE: Experimental
 //
 // [Go's ChaCha8.Read]: https://go.dev/src/math/rand/v2/chacha8.go#L48
-func GetRandom(ctx Context, name string) *rand.ChaCha8 {
-	return internal.GetRandom(ctx, name)
+func GetRandomStream(ctx Context, name string) *rand.ChaCha8 {
+	return internal.GetRandomStream(ctx, name)
 }
 
 // MutableSideEffect executes the provided function once, then it looks up the history for the value with the given id.

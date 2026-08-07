@@ -767,8 +767,8 @@ func (wc *workflowEnvironmentImpl) GenerateSequence() int64 {
 	return wc.commandsHelper.getNextID()
 }
 
-func (wc *workflowEnvironmentImpl) GetRandom(name string) *rand.ChaCha8 {
-	return getRandom(wc.randoms, wc.workflowInfo.currentRunID, name)
+func (wc *workflowEnvironmentImpl) GetRandomStream(name string) *rand.ChaCha8 {
+	return getRandomStream(wc.randoms, wc.workflowInfo.currentRunID, name)
 }
 
 func (wc *workflowEnvironmentImpl) CreateNewCommand(commandType enumspb.CommandType) *commandpb.Command {

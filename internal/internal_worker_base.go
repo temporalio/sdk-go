@@ -162,8 +162,8 @@ type (
 		// TryUse returns true if this flag may currently be used.
 		TryUse(flag sdkFlag) bool
 		GenerateSequence() int64
-		// GetRandom returns a deterministic PRNG, memoized per name for the life of the workflow run.
-		GetRandom(name string) *rand.ChaCha8
+		// GetRandomStream returns a deterministic PRNG, memoized per name for the life of the workflow run.
+		GetRandomStream(name string) *rand.ChaCha8
 	}
 
 	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.
