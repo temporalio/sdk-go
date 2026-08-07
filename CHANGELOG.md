@@ -27,6 +27,9 @@ to docs, or any other relevant information.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
   updates the recorded value when it changes, matching the real worker. Previously it ignored
   equals and returned a freshly computed value on every call.
+- `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
+  reset-workflow failure. Previously the raw payload proto was passed through undecoded, so
+  calling `Details()` on the resulting `ApplicationError` failed instead of returning the value.
 
 ## [1.46.0] - 2026-07-28
 

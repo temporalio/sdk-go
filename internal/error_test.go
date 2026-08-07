@@ -1253,6 +1253,34 @@ func Test_convertFailureToError_ApplicationFailure(t *testing.T) {
 	require.Equal(ApplicationErrorCategoryUnspecified, coolErr.Category())
 }
 
+func Test_convertFailureToError_ResetWorkflowFailure(t *testing.T) {
+	require := require.New(t)
+	fc := GetDefaultFailureConverter()
+	details, err := converter.GetDefaultDataConverter().ToPayloads("details", 22)
+	assert.NoError(t, err)
+
+	f := &failurepb.Failure{
+		Message: "message",
+		FailureInfo: &failurepb.Failure_ResetWorkflowFailureInfo{ResetWorkflowFailureInfo: &failurepb.ResetWorkflowFailureInfo{
+			LastHeartbeatDetails: details,
+		}},
+	}
+
+	err = fc.FailureToError(f)
+	var applicationErr *ApplicationError
+	require.True(errors.As(err, &applicationErr))
+	require.Equal(true, applicationErr.NonRetryable())
+
+	// Before the fix, the raw *commonpb.Payloads proto was passed straight through as the
+	// error's details instead of being wrapped by newEncodedValues, so Details() panicked
+	// with a reflect type mismatch instead of decoding the payload.
+	var str string
+	var n int
+	require.NoError(applicationErr.Details(&str, &n))
+	require.Equal("details", str)
+	require.Equal(22, n)
+}
+
 func Test_convertFailureToError_CanceledFailure(t *testing.T) {
 	require := require.New(t)
 	fc := GetDefaultFailureConverter()
