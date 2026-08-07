@@ -88,6 +88,8 @@ type (
 		getSystemInfoTimeout     time.Duration
 		workerHeartbeatInterval  time.Duration
 		workerGroupingKey        string
+		sdkName                  string
+		sdkVersion               string
 		heartbeatManager         *heartbeatManager
 
 		// The pointer value is shared across multiple clients. If non-nil, only

@@ -20,6 +20,10 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Added
+
+- Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+
 ### Fixed
 
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
