@@ -2,6 +2,7 @@ package awssdkv2_test
 
 import (
 	"context"
+	"io"
 	"net/http/httptest"
 	"testing"
 
@@ -57,8 +58,11 @@ func TestAwsSdkClient_PutGetRoundTrip(t *testing.T) {
 	err := client.PutObject(ctx, "test-bucket", "my/key", data)
 	require.NoError(t, err)
 
-	got, err := client.GetObject(ctx, "test-bucket", "my/key")
+	r, err := client.GetObject(ctx, "test-bucket", "my/key")
 	require.NoError(t, err)
+	got, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
 	assert.Equal(t, data, got)
 }
 
@@ -130,8 +134,11 @@ func TestAwsSdkClient_LargeObject(t *testing.T) {
 	err := client.PutObject(ctx, "test-bucket", "large-obj", data)
 	require.NoError(t, err)
 
-	got, err := client.GetObject(ctx, "test-bucket", "large-obj")
+	r, err := client.GetObject(ctx, "test-bucket", "large-obj")
 	require.NoError(t, err)
+	got, err := io.ReadAll(r)
+	require.NoError(t, err)
+	require.NoError(t, r.Close())
 	assert.Equal(t, data, got)
 }
 

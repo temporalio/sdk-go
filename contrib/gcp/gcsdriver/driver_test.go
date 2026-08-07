@@ -1,4 +1,4 @@
-package s3driver
+package gcsdriver
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
@@ -21,7 +22,7 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-// memClient is an in-memory S3StorageClient for unit testing.
+// memClient is an in-memory GCS Storage Client for unit testing.
 type memClient struct {
 	mu       sync.RWMutex
 	data     map[string][]byte // key: "bucket/key"
@@ -32,7 +33,7 @@ type memClient struct {
 func newMemClient() *memClient {
 	return &memClient{
 		data:     make(map[string][]byte),
-		describe: map[string]string{"client_region": "ap-southeast-2"},
+		describe: map[string]string{"client_project_id": "my-project"},
 	}
 }
 
@@ -100,21 +101,21 @@ func retrieveCtx() converter.StorageDriverRetrieveContext {
 
 // --- Constructor tests ---
 
-func TestNewS3StorageDriver_Defaults(t *testing.T) {
+func TestNewGCSStorageDriver_Defaults(t *testing.T) {
 	mc := newMemClient()
 	d, err := NewDriver(Options{
 		Client: mc,
 		Bucket: StaticBucket("b"),
 	})
 	require.NoError(t, err)
-	typedDriver, ok := d.(*s3StorageDriver)
-	require.True(t, ok, "expected *s3Driver, got %T", d)
-	assert.Equal(t, "aws.s3driver", typedDriver.Name())
-	assert.Equal(t, "aws.s3driver", typedDriver.Type())
+	typedDriver, ok := d.(*gcsStorageDriver)
+	require.True(t, ok, "expected *gcsStorageDriver, got %T", d)
+	assert.Equal(t, "gcp.gcsdriver", typedDriver.Name())
+	assert.Equal(t, "gcp.gcsdriver", typedDriver.Type())
 	assert.Equal(t, 50*1024*1024, typedDriver.maxPayloadSize)
 }
 
-func TestNewS3StorageDriver_CustomName(t *testing.T) {
+func TestNewGCSStorageDriver_CustomName(t *testing.T) {
 	mc := newMemClient()
 	d, err := NewDriver(Options{
 		Client:     mc,
@@ -125,21 +126,21 @@ func TestNewS3StorageDriver_CustomName(t *testing.T) {
 	assert.Equal(t, "custom-name", d.Name())
 }
 
-func TestNewS3StorageDriver_NilClient(t *testing.T) {
+func TestNewGCSStorageDriver_NilClient(t *testing.T) {
 	_, err := NewDriver(Options{
 		Bucket: StaticBucket("b"),
 	})
 	assert.EqualError(t, err, "Client is required")
 }
 
-func TestNewS3StorageDriver_NilBucketFunc(t *testing.T) {
+func TestNewGCSStorageDriver_NilBucketFunc(t *testing.T) {
 	_, err := NewDriver(Options{
 		Client: newMemClient(),
 	})
 	assert.EqualError(t, err, "Bucket is required")
 }
 
-func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
+func TestNewGCSStorageDriver_NegativeMaxPayloadSize(t *testing.T) {
 	_, err := NewDriver(Options{
 		Client:         newMemClient(),
 		Bucket:         StaticBucket("b"),
@@ -148,7 +149,7 @@ func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
 	assert.EqualError(t, err, "MaxPayloadSize must be positive, got -1")
 }
 
-func TestNewS3StorageDriver_NegativeMaxRetrieveSize(t *testing.T) {
+func TestNewGCSStorageDriver_NegativeMaxRetrieveSize(t *testing.T) {
 	_, err := NewDriver(Options{
 		Client:          newMemClient(),
 		Bucket:          StaticBucket("b"),
@@ -157,19 +158,19 @@ func TestNewS3StorageDriver_NegativeMaxRetrieveSize(t *testing.T) {
 	assert.EqualError(t, err, "MaxRetrieveSize must be positive, got -1")
 }
 
-func TestNewS3StorageDriver_DefaultMaxRetrieveSize(t *testing.T) {
+func TestNewGCSStorageDriver_DefaultMaxRetrieveSize(t *testing.T) {
 	mc := newMemClient()
 	d, err := NewDriver(Options{
 		Client: mc,
 		Bucket: StaticBucket("b"),
 	})
 	require.NoError(t, err)
-	typedDriver, ok := d.(*s3StorageDriver)
+	typedDriver, ok := d.(*gcsStorageDriver)
 	require.True(t, ok)
 	assert.Equal(t, 50*1024*1024, typedDriver.maxRetrieveSize)
 }
 
-func TestNewS3StorageDriver_MaxRetrieveSizeDefaultsToMaxPayloadSize(t *testing.T) {
+func TestNewGCSStorageDriver_MaxRetrieveSizeDefaultsToMaxPayloadSize(t *testing.T) {
 	mc := newMemClient()
 	d, err := NewDriver(Options{
 		Client:         mc,
@@ -177,12 +178,12 @@ func TestNewS3StorageDriver_MaxRetrieveSizeDefaultsToMaxPayloadSize(t *testing.T
 		MaxPayloadSize: 100 * 1024 * 1024,
 	})
 	require.NoError(t, err)
-	typedDriver, ok := d.(*s3StorageDriver)
+	typedDriver, ok := d.(*gcsStorageDriver)
 	require.True(t, ok)
 	assert.Equal(t, 100*1024*1024, typedDriver.maxRetrieveSize)
 }
 
-func TestNewS3StorageDriver_ExplicitMaxRetrieveSize(t *testing.T) {
+func TestNewGCSStorageDriver_ExplicitMaxRetrieveSize(t *testing.T) {
 	mc := newMemClient()
 	d, err := NewDriver(Options{
 		Client:          mc,
@@ -191,9 +192,8 @@ func TestNewS3StorageDriver_ExplicitMaxRetrieveSize(t *testing.T) {
 		MaxRetrieveSize: 10 * 1024 * 1024,
 	})
 	require.NoError(t, err)
-	typedDriver, ok := d.(*s3StorageDriver)
+	typedDriver, ok := d.(*gcsStorageDriver)
 	require.True(t, ok)
-	// Explicit value wins over max(MaxPayloadSize, default).
 	assert.Equal(t, 10*1024*1024, typedDriver.maxRetrieveSize)
 }
 
@@ -359,12 +359,86 @@ func TestStore_PutObjectError(t *testing.T) {
 
 	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
 	assert.ErrorContains(t, err, "upload failed [bucket=test-bucket, key=")
-	assert.ErrorContains(t, err, ", client_region=ap-southeast-2]: access denied")
+	assert.ErrorContains(t, err, ", client_project_id=my-project]: access denied")
 }
 
 
 
 // --- Retrieve tests ---
+
+func TestRetrieve_MaxRetrieveSizeExceeded(t *testing.T) {
+	mc := newMemClient()
+	d, err := NewDriver(Options{
+		Client:          mc,
+		Bucket:          StaticBucket("test-bucket"),
+		MaxRetrieveSize: 10,
+	})
+	require.NoError(t, err)
+
+	// Inject an oversized blob directly into the memClient, bypassing Store.
+	mc.mu.Lock()
+	mc.data[memKey("test-bucket", "v0/d/sha256/fakehash")] = make([]byte, 100)
+	mc.mu.Unlock()
+
+	claims := []converter.StorageDriverClaim{{
+		ClaimData: map[string]string{
+			"bucket":         "test-bucket",
+			"key":            "v0/d/sha256/fakehash",
+			"hash_algorithm": "sha256",
+			"hash_value":     "fakehash",
+		},
+	}}
+
+	_, err = d.Retrieve(retrieveCtx(), claims)
+	assert.ErrorIs(t, err, ErrPayloadTooLarge)
+	assert.ErrorContains(t, err, "exceeds MaxRetrieveSize of 10 bytes")
+}
+
+func TestRetrieve_MaxRetrieveSizeExactlyAtLimit(t *testing.T) {
+	mc := newMemClient()
+	d, err := NewDriver(Options{
+		Client:          mc,
+		Bucket:          StaticBucket("test-bucket"),
+		MaxPayloadSize:  1024,
+		MaxRetrieveSize: 1024,
+	})
+	require.NoError(t, err)
+
+	payload := testPayload(strings.Repeat("x", 900))
+	claims, err := d.Store(storeCtx(), []*commonpb.Payload{payload})
+	require.NoError(t, err)
+
+	result, err := d.Retrieve(retrieveCtx(), claims)
+	require.NoError(t, err)
+	assert.Equal(t, payload.Data, result[0].Data)
+}
+
+func TestRetrieve_MaxRetrieveSizeOneByteOver(t *testing.T) {
+	mc := newMemClient()
+	limit := 50
+	d, err := NewDriver(Options{
+		Client:          mc,
+		Bucket:          StaticBucket("test-bucket"),
+		MaxRetrieveSize: limit,
+	})
+	require.NoError(t, err)
+
+	mc.mu.Lock()
+	mc.data[memKey("test-bucket", "v0/d/sha256/fakehash")] = make([]byte, limit+1)
+	mc.mu.Unlock()
+
+	claims := []converter.StorageDriverClaim{{
+		ClaimData: map[string]string{
+			"bucket":         "test-bucket",
+			"key":            "v0/d/sha256/fakehash",
+			"hash_algorithm": "sha256",
+			"hash_value":     "fakehash",
+		},
+	}}
+
+	_, err = d.Retrieve(retrieveCtx(), claims)
+	assert.ErrorIs(t, err, ErrPayloadTooLarge)
+}
 
 func TestRetrieve_RoundTrip(t *testing.T) {
 	mc := newMemClient()
@@ -446,7 +520,7 @@ func TestRetrieve_MissingKey(t *testing.T) {
 	}}
 
 	_, err := d.Retrieve(retrieveCtx(), claims)
-	assert.EqualError(t, err, "download failed [bucket=test-bucket, key=v0/d/sha256/nonexistent, client_region=ap-southeast-2]: not found: test-bucket/v0/d/sha256/nonexistent")
+	assert.EqualError(t, err, "download failed [bucket=test-bucket, key=v0/d/sha256/nonexistent, client_project_id=my-project]: not found: test-bucket/v0/d/sha256/nonexistent")
 }
 
 func TestRetrieve_ClaimMissingBucket(t *testing.T) {
@@ -485,7 +559,7 @@ func TestRetrieve_GetObjectError(t *testing.T) {
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
 	assert.ErrorContains(t, err, "download failed [bucket=test-bucket, key=")
-	assert.ErrorContains(t, err, ", client_region=ap-southeast-2]: throttled")
+	assert.ErrorContains(t, err, ", client_project_id=my-project]: throttled")
 }
 
 func TestRetrieve_ClaimMissingHashAlgorithm(t *testing.T) {
@@ -510,84 +584,6 @@ func TestRetrieve_ClaimMissingHashValue(t *testing.T) {
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
 	assert.EqualError(t, err, `claim missing field "hash_value"`)
-}
-
-func TestRetrieve_MaxRetrieveSizeExceeded(t *testing.T) {
-	mc := newMemClient()
-	d, err := NewDriver(Options{
-		Client:          mc,
-		Bucket:          StaticBucket("test-bucket"),
-		MaxRetrieveSize: 10,
-	})
-	require.NoError(t, err)
-
-	// Inject an oversized blob directly into the memClient, bypassing Store.
-	mc.mu.Lock()
-	mc.data[memKey("test-bucket", "v0/d/sha256/fakehash")] = make([]byte, 100)
-	mc.mu.Unlock()
-
-	claims := []converter.StorageDriverClaim{{
-		ClaimData: map[string]string{
-			"bucket":         "test-bucket",
-			"key":            "v0/d/sha256/fakehash",
-			"hash_algorithm": "sha256",
-			"hash_value":     "fakehash",
-		},
-	}}
-
-	_, err = d.Retrieve(retrieveCtx(), claims)
-	assert.ErrorIs(t, err, ErrPayloadTooLarge)
-	assert.ErrorContains(t, err, "exceeds MaxRetrieveSize of 10 bytes")
-}
-
-func TestRetrieve_MaxRetrieveSizeExactlyAtLimit(t *testing.T) {
-	mc := newMemClient()
-	d, err := NewDriver(Options{
-		Client:          mc,
-		Bucket:          StaticBucket("test-bucket"),
-		MaxPayloadSize:  1024,
-		MaxRetrieveSize: 1024,
-	})
-	require.NoError(t, err)
-
-	// Store a payload that is exactly the retrieve size limit.
-	payload := testPayload(strings.Repeat("x", 900))
-	claims, err := d.Store(storeCtx(), []*commonpb.Payload{payload})
-	require.NoError(t, err)
-
-	// Verify we can retrieve it — the serialized proto may be slightly larger
-	// than the raw data but should be within the 1024 limit.
-	result, err := d.Retrieve(retrieveCtx(), claims)
-	require.NoError(t, err)
-	assert.Equal(t, payload.Data, result[0].Data)
-}
-
-func TestRetrieve_MaxRetrieveSizeOneByteOver(t *testing.T) {
-	mc := newMemClient()
-	limit := 50
-	d, err := NewDriver(Options{
-		Client:          mc,
-		Bucket:          StaticBucket("test-bucket"),
-		MaxRetrieveSize: limit,
-	})
-	require.NoError(t, err)
-
-	// Inject a blob that is exactly limit+1 bytes.
-	mc.mu.Lock()
-	mc.data[memKey("test-bucket", "v0/d/sha256/fakehash")] = make([]byte, limit+1)
-	mc.mu.Unlock()
-
-	claims := []converter.StorageDriverClaim{{
-		ClaimData: map[string]string{
-			"bucket":         "test-bucket",
-			"key":            "v0/d/sha256/fakehash",
-			"hash_algorithm": "sha256",
-			"hash_value":     "fakehash",
-		},
-	}}
-
-	_, err = d.Retrieve(retrieveCtx(), claims)
-	assert.ErrorIs(t, err, ErrPayloadTooLarge)
 }
 
 // --- Key generation tests ---
@@ -646,7 +642,7 @@ func TestObjectKey_ActivityInfo_EmptyFields(t *testing.T) {
 }
 
 func TestObjectKey_WorkflowInfo_SpecialChars(t *testing.T) {
-	// Slashes, spaces, and other special characters must be percent-encoded.
+	// GCS encoding: / and % are encoded, but spaces, +, = are left intact.
 	target := converter.StorageDriverWorkflowInfo{
 		Namespace:    "my namespace",
 		WorkflowType: "my/workflow",
@@ -655,68 +651,77 @@ func TestObjectKey_WorkflowInfo_SpecialChars(t *testing.T) {
 	}
 	key := objectKey(target, "abc123")
 	assert.Equal(t,
-		"v0/ns/my%20namespace/wt/my%2Fworkflow/wi/wf%20id%2B1/ri/run%3Dabc/d/sha256/abc123",
+		"v0/ns/my namespace/wt/my%2Fworkflow/wi/wf id+1/ri/run=abc/d/sha256/abc123",
 		key,
 	)
 }
 
-func TestObjectKey_PreservesS3SafeSpecialChars(t *testing.T) {
+func TestObjectKey_LongKeyFallback(t *testing.T) {
+	// When the generated key exceeds 1024 bytes, objectKey falls back to the
+	// generic digest-only path.
+	longID := strings.Repeat("x", 300)
 	target := converter.StorageDriverWorkflowInfo{
-		Namespace:  "ns1",
-		WorkflowID: "!-_.*'()",
+		Namespace:    longID,
+		WorkflowType: longID,
+		WorkflowID:   longID,
+		RunID:        longID,
 	}
-	assert.Equal(t,
-		"v0/ns/ns1/wt/null/wi/!-_.*'()/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
-	)
+	key := objectKey(target, "abc123")
+	assert.Equal(t, "v0/ns/"+longID+"/d/sha256/abc123", key)
 }
 
-func TestObjectKey_EscapesTilde(t *testing.T) {
-	target := converter.StorageDriverWorkflowInfo{
-		Namespace:  "ns1",
-		WorkflowID: "wf~1",
-	}
-	assert.Equal(t,
-		"v0/ns/ns1/wt/null/wi/wf%7E1/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
-	)
+func TestEncodeObjectNameSegment_Empty(t *testing.T) {
+	assert.Equal(t, "null", encodeObjectNameSegment(""))
 }
 
-func TestObjectKey_EscapesNonASCIIAsUTF8Bytes(t *testing.T) {
-	target := converter.StorageDriverWorkflowInfo{
-		Namespace:  "ns1",
-		WorkflowID: "café",
-	}
-	assert.Equal(t,
-		"v0/ns/ns1/wt/null/wi/caf%C3%A9/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
-	)
+func TestEncodeObjectNameSegment_Plain(t *testing.T) {
+	assert.Equal(t, "hello-world_v2.0", encodeObjectNameSegment("hello-world_v2.0"))
 }
 
-func TestObjectKey_WorkflowSpecExample(t *testing.T) {
-	target := converter.StorageDriverWorkflowInfo{
-		Namespace:    "payments prod",
-		WorkflowType: "ChargeWorkflow",
-		WorkflowID:   "order+123=abc",
-		RunID:        "3f1d6c7a-8b2e-4f7a-9d0a-87a6f95e4d31",
-	}
-	assert.Equal(t,
-		"v0/ns/payments%20prod/wt/ChargeWorkflow/wi/order%2B123%3Dabc/ri/3f1d6c7a-8b2e-4f7a-9d0a-87a6f95e4d31/d/sha256/abc123",
-		objectKey(target, "abc123"),
-	)
+func TestEncodeObjectNameSegment_Slash(t *testing.T) {
+	assert.Equal(t, "a%2Fb", encodeObjectNameSegment("a/b"))
 }
 
-func TestObjectKey_ActivitySpecExample(t *testing.T) {
-	target := converter.StorageDriverActivityInfo{
-		Namespace:    "payments prod",
-		ActivityType: "Capture/Charge",
-		ActivityID:   "activity id+42",
-		RunID:        "9e1d1fd9-2f8a-4c40-93e2-731f31b9268b",
-	}
-	assert.Equal(t,
-		"v0/ns/payments%20prod/at/Capture%2FCharge/ai/activity%20id%2B42/ri/9e1d1fd9-2f8a-4c40-93e2-731f31b9268b/d/sha256/abc123",
-		objectKey(target, "abc123"),
-	)
+func TestEncodeObjectNameSegment_Percent(t *testing.T) {
+	assert.Equal(t, "100%25done", encodeObjectNameSegment("100%done"))
+}
+
+func TestEncodeObjectNameSegment_UnsafeChars(t *testing.T) {
+	// All GCS-unsafe ASCII chars: # [ ] * ? : " < > |
+	assert.Equal(t, "a%23b", encodeObjectNameSegment("a#b"))
+	assert.Equal(t, "a%5Bb%5D", encodeObjectNameSegment("a[b]"))
+	assert.Equal(t, "a%2Ab", encodeObjectNameSegment("a*b"))
+	assert.Equal(t, "a%3Fb", encodeObjectNameSegment("a?b"))
+	assert.Equal(t, "a%3Ab", encodeObjectNameSegment("a:b"))
+	assert.Equal(t, "a%22b", encodeObjectNameSegment("a\"b"))
+	assert.Equal(t, "a%3Cb%3E", encodeObjectNameSegment("a<b>"))
+	assert.Equal(t, "a%7Cb", encodeObjectNameSegment("a|b"))
+}
+
+func TestEncodeObjectNameSegment_ControlChars(t *testing.T) {
+	assert.Equal(t, "a%00b", encodeObjectNameSegment("a\x00b"))
+	assert.Equal(t, "a%0Ab", encodeObjectNameSegment("a\nb"))
+	assert.Equal(t, "a%0Db", encodeObjectNameSegment("a\rb"))
+	assert.Equal(t, "a%7Fb", encodeObjectNameSegment("a\x7fb"))
+}
+
+func TestEncodeObjectNameSegment_Dot(t *testing.T) {
+	assert.Equal(t, "%2E", encodeObjectNameSegment("."))
+	assert.Equal(t, "%2E%2E", encodeObjectNameSegment(".."))
+	// "..." is fine, not a forbidden segment.
+	assert.Equal(t, "...", encodeObjectNameSegment("..."))
+}
+
+func TestEncodeObjectNameSegment_Unicode(t *testing.T) {
+	// Unicode should be left intact (not percent-encoded).
+	assert.Equal(t, "日本語", encodeObjectNameSegment("日本語"))
+	assert.Equal(t, "café", encodeObjectNameSegment("café"))
+}
+
+func TestEncodeObjectNameSegment_SpacesAndSymbols(t *testing.T) {
+	// Spaces, +, =, @, etc. are safe for GCS and should not be encoded.
+	assert.Equal(t, "hello world", encodeObjectNameSegment("hello world"))
+	assert.Equal(t, "a+b=c@d", encodeObjectNameSegment("a+b=c@d"))
 }
 
 func TestSha256Hex(t *testing.T) {
@@ -819,14 +824,206 @@ func TestDescribeClient_NilDescribe(t *testing.T) {
 
 func TestDescribeClient_SingleEntry(t *testing.T) {
 	mc := newMemClient()
-	mc.describe = map[string]string{"client_region": "us-west-2"}
-	assert.Equal(t, ", client_region=us-west-2", describeClient(mc))
+	mc.describe = map[string]string{"client_project_id": "my-project"}
+	assert.Equal(t, ", client_project_id=my-project", describeClient(mc))
 }
 
 func TestDescribeClient_MultipleEntries(t *testing.T) {
 	mc := newMemClient()
-	mc.describe = map[string]string{"client_region": "us-west-2", "foo": "bar"}
-	out := describeClient(mc)
-	assert.Contains(t, out, ", client_region=us-west-2")
-	assert.Contains(t, out, ", foo=bar")
+	mc.describe = map[string]string{"client_project_id": "my-project", "foo": "bar"}
+	// Keys are sorted for deterministic output.
+	assert.Equal(t, ", client_project_id=my-project, foo=bar", describeClient(mc))
+}
+
+// --- Concurrency tests ---
+
+// blockingClient is a Client whose PutObject and GetObject block until
+// explicitly released. It tracks the peak number of concurrent in-flight
+// operations.
+type blockingClient struct {
+	memClient
+	gate          chan struct{} // close to release all blocked goroutines
+	inflight      atomic.Int64
+	peakInflight  atomic.Int64
+	putErr        error
+	getErr        error
+	existsReturns bool
+}
+
+func newBlockingClient(existsReturns bool) *blockingClient {
+	return &blockingClient{
+		memClient:     *newMemClient(),
+		gate:          make(chan struct{}),
+		existsReturns: existsReturns,
+	}
+}
+
+func (b *blockingClient) ObjectExists(_ context.Context, _, _ string) (bool, error) {
+	return b.existsReturns, nil
+}
+
+func (b *blockingClient) PutObject(ctx context.Context, bucket, key string, data []byte) error {
+	cur := b.inflight.Add(1)
+	// Update peak using CAS loop.
+	for {
+		peak := b.peakInflight.Load()
+		if cur <= peak || b.peakInflight.CompareAndSwap(peak, cur) {
+			break
+		}
+	}
+	defer b.inflight.Add(-1)
+
+	select {
+	case <-b.gate:
+		if b.putErr != nil {
+			return b.putErr
+		}
+		return b.memClient.PutObject(ctx, bucket, key, data)
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (b *blockingClient) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
+	cur := b.inflight.Add(1)
+	for {
+		peak := b.peakInflight.Load()
+		if cur <= peak || b.peakInflight.CompareAndSwap(peak, cur) {
+			break
+		}
+	}
+	defer b.inflight.Add(-1)
+
+	select {
+	case <-b.gate:
+		if b.getErr != nil {
+			return nil, b.getErr
+		}
+		return b.memClient.GetObject(ctx, bucket, key)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func TestStore_ConcurrencyLimitedTo10(t *testing.T) {
+	// Create 20 payloads — more than the concurrency limit of 10.
+	bc := newBlockingClient(false)
+	d, err := NewDriver(Options{
+		Client: bc,
+		Bucket: StaticBucket("test-bucket"),
+	})
+	require.NoError(t, err)
+
+	payloads := make([]*commonpb.Payload, 20)
+	for i := range payloads {
+		payloads[i] = testPayload(fmt.Sprintf("payload-%d", i))
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.Store(storeCtx(), payloads)
+		done <- err
+	}()
+
+	// Give goroutines time to start and block.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if bc.peakInflight.Load() >= 10 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	// Peak should be exactly 10 (the errgroup limit).
+	peak := bc.peakInflight.Load()
+	assert.LessOrEqual(t, peak, int64(10), "peak inflight should not exceed errgroup limit of 10")
+	assert.GreaterOrEqual(t, peak, int64(1), "at least one goroutine should have started")
+
+	// Release all goroutines and let Store complete.
+	close(bc.gate)
+	require.NoError(t, <-done)
+}
+
+func TestStore_ContextCancellation(t *testing.T) {
+	bc := newBlockingClient(false)
+	d, err := NewDriver(Options{
+		Client: bc,
+		Bucket: StaticBucket("test-bucket"),
+	})
+	require.NoError(t, err)
+
+	payloads := []*commonpb.Payload{testPayload("cancel-me")}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	storeContext := converter.StorageDriverStoreContext{Context: ctx}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := d.Store(storeContext, payloads)
+		done <- err
+	}()
+
+	// Wait for the goroutine to be in-flight.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if bc.inflight.Load() > 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	cancel()
+	err = <-done
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestRetrieve_ContextCancellation(t *testing.T) {
+	// First, store a payload using a normal client so we have a valid claim.
+	mc := newMemClient()
+	d, err := NewDriver(Options{
+		Client: mc,
+		Bucket: StaticBucket("test-bucket"),
+	})
+	require.NoError(t, err)
+
+	payloads := []*commonpb.Payload{testPayload("retrieve-cancel-me")}
+	claims, err := d.Store(storeCtx(), payloads)
+	require.NoError(t, err)
+
+	// Now create a blocking client with the stored data for retrieval.
+	bc := newBlockingClient(false)
+	mc.mu.RLock()
+	for k, v := range mc.data {
+		bc.memClient.data[k] = v
+	}
+	mc.mu.RUnlock()
+	d2, err := NewDriver(Options{
+		Client: bc,
+		Bucket: StaticBucket("test-bucket"),
+	})
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	retrieveContext := converter.StorageDriverRetrieveContext{Context: ctx}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := d2.Retrieve(retrieveContext, claims)
+		done <- err
+	}()
+
+	// Wait for the goroutine to be in-flight.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if bc.inflight.Load() > 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	cancel()
+	err = <-done
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled)
 }
