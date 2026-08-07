@@ -25,6 +25,10 @@ to docs, or any other relevant information.
 - Added experimental `workflow.GetRandom` for named deterministic pseudorandom values in workflows.
 - Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
   path.
+- Added `go.temporal.io/sdk/interceptor/tracing`, a reworked tracing interceptor with
+  corrected span parenting and span directions for span-kind mapping. It backs the new
+  `contrib/opentelemetry-v2` module and is not span-compatible with the tracing interceptor
+  used by `contrib/opentelemetry` (v1).
 
 ### Fixed
 
