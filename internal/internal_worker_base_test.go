@@ -132,6 +132,210 @@ func (s *PollScalerReportHandleSuite) TestScaleUpOnDelay() {
 
 }
 
+// TestSaturationScaleUp_FlatThroughput verifies that a saturated poller can
+// scale up via the budget probe even when throughput is flat. Throughput growth
+// from the new poller refills the budget for further scaling.
+func (s *PollScalerReportHandleSuite) TestSaturationScaleUp_FlatThroughput() {
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount: 1,
+		maxPollerCount:     10,
+		minPollerCount:     1,
+		scaleCallback:      func(int) {},
+	})
+
+	// Period 1: ingest 20 tasks → establishes baseline.
+	for range 20 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod() // ingested=20, last=0 → throughputGrew=true → budget refilled
+
+	// Period 2: flat throughput, saturated (no empty polls).
+	for range 20 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod() // ingested=20, last=20 → throughputGrew=false, newly saturated → budget=1
+
+	// Server sends +1. Throughput gate closed, but saturation budget allows it.
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 2, int(ps.target.Load()),
+		"saturation budget should allow +1 when poller is saturated")
+
+	// Simulate the new poller helping: throughput grows next period.
+	for range 25 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod() // ingested=25, last=20 → throughputGrew=true → budget refilled
+
+	// Flat again with 2 pollers.
+	for range 25 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod() // ingested=25, last=25 → flat, sustained saturation → budget kept
+
+	// Another +1 allowed from the refilled budget.
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 3, int(ps.target.Load()),
+		"budget should be refilled after throughput growth confirms probe helped")
+}
+
+// TestSaturationScaleUp_ServerBottleneck verifies that when adding pollers
+// doesn't help (server bottleneck), the budget is exhausted and further
+// scale-ups are blocked.
+func (s *PollScalerReportHandleSuite) TestSaturationScaleUp_ServerBottleneck() {
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount: 5,
+		maxPollerCount:     20,
+		minPollerCount:     1,
+		scaleCallback:      func(int) {},
+	})
+
+	// Period 1: establish baseline.
+	for range 50 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod() // throughputGrew (from 0) → budget = max(1, 5*0.2) = 1
+
+	// Period 2: flat throughput, saturated → newly saturated, budget already set.
+	for range 50 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod()
+
+	// Use the budget: +1 → target=6.
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 6, int(ps.target.Load()))
+
+	// Period 3: throughput still flat (server bottleneck, new poller didn't help).
+	for range 50 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod() // flat, sustained saturation, budget not refilled
+
+	// Budget exhausted. +1 blocked.
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 6, int(ps.target.Load()),
+		"scale-up should be blocked after budget exhausted without throughput growth")
+}
+
+// TestSaturationScaleUp_LargeScaleUp verifies that the budget scales with
+// poller count (20%) and resets on throughput growth, enabling gradual
+// convergence for large scale-ups.
+func (s *PollScalerReportHandleSuite) TestSaturationScaleUp_LargeScaleUp() {
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount: 10,
+		maxPollerCount:     100,
+		minPollerCount:     1,
+		scaleCallback:      func(int) {},
+	})
+
+	// Period 1: establish baseline.
+	for range 100 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod() // throughputGrew → budget = max(1, 10*0.2) = 2
+
+	// Period 2: flat, newly saturated.
+	for range 100 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod()
+
+	// Budget = 2: can add 2 pollers.
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 11, int(ps.target.Load()))
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 12, int(ps.target.Load()))
+
+	// Budget exhausted.
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 12, int(ps.target.Load()), "budget of 2 should be exhausted")
+
+	// Throughput grows (the 2 new pollers helped).
+	for range 120 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod() // ingested=120, last=100 → throughputGrew → budget = max(1, 12*0.2) = 2
+
+	// Flat again.
+	for range 120 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod()
+
+	// Budget refilled: can add 2 more.
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 13, int(ps.target.Load()))
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 14, int(ps.target.Load()))
+}
+
+// TestSaturationScaleUp_IdlePollers verifies that the saturation budget is
+// cleared when pollers have spare capacity (empty polls), even if the budget
+// was previously set.
+func (s *PollScalerReportHandleSuite) TestSaturationScaleUp_IdlePollers() {
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount: 1,
+		maxPollerCount:     10,
+		minPollerCount:     1,
+		scaleCallback:      func(int) {},
+	})
+
+	// Period 1: establish baseline (sets budget via throughputGrew).
+	for range 20 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod()
+
+	// Period 2: lower throughput, budget reduced from unlimited to bounded.
+	for range 15 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod()
+
+	// +1 arrives: budget is 1 (max(1, 1*0.2)), allows one probe.
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 2, int(ps.target.Load()),
+		"bounded budget should allow one probe scale-up")
+
+	// Budget exhausted: next +1 blocked.
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 2, int(ps.target.Load()),
+		"scale-up should be blocked when budget is exhausted")
+}
+
+// TestSaturationScaleUp_ThroughputPathUnchanged verifies that the existing
+// throughput growth path is completely unmodified: when throughput grows,
+// all +1 hints are applied without consuming any budget.
+func (s *PollScalerReportHandleSuite) TestSaturationScaleUp_ThroughputPathUnchanged() {
+	ps := newPollScalerReportHandle(pollScalerReportHandleOptions{
+		initialPollerCount: 5,
+		maxPollerCount:     20,
+		minPollerCount:     1,
+		scaleCallback:      func(int) {},
+	})
+
+	// Period 1: baseline.
+	for range 50 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod()
+
+	// Period 2: throughput grew 20%.
+	for range 60 {
+		ps.handleTask(newTestTask(0))
+	}
+	ps.newPeriod() // 60 >= 50*1.1=55 → throughputGrew=true
+
+	// Multiple +1 hints should all be applied (existing behavior, no consume).
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 6, int(ps.target.Load()))
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 7, int(ps.target.Load()))
+	ps.handleTask(newTestTask(1))
+	require.Equal(s.T(), 8, int(ps.target.Load()),
+		"throughput growth path should apply all +1 hints without limit")
+}
+
 func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() {
 	behavior := &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: 2,

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -34,6 +35,7 @@ const (
 	// How long the same poll task error can remain suppressed
 	lastPollTaskErrSuppressTime     = 1 * time.Minute
 	pollerAutoscalingReportInterval = 100 * time.Millisecond
+	saturationScaleUpBudgetRatio   = 0.2
 )
 
 var (
@@ -246,9 +248,14 @@ type (
 		target                 atomic.Int64
 		scaleCallback          func(int)
 		everSawScalingDecision atomic.Bool
-		ingestedThisPeriod     atomic.Int64
-		ingestedLastPeriod     atomic.Int64
-		scaleUpAllowed         atomic.Bool
+		ingestedThisPeriod atomic.Int64
+		ingestedLastPeriod atomic.Int64
+
+		// scaleUpsRemaining limits how many +1 hints from the server will be
+		// honored. Set to math.MaxInt64 when throughput is growing (unlimited),
+		// or to a small budget when throughput is not growing (bounded probe).
+		// See newPeriod for details.
+		scaleUpsRemaining atomic.Int64
 	}
 
 	barrier chan struct{}
@@ -737,10 +744,13 @@ func (prh *pollScalerReportHandle) handleTask(task taskForWorker) {
 		prh.everSawScalingDecision.Store(true)
 		ds := sd.pollRequestDeltaSuggestion
 		if ds > 0 {
-			if prh.scaleUpAllowed.Load() {
-				prh.updateTarget(func(target int64) int64 {
-					return target + int64(ds)
-				})
+			if r := prh.scaleUpsRemaining.Load(); r > 0 {
+				delta := min(r, int64(ds))
+				if prh.scaleUpsRemaining.CompareAndSwap(r, r-delta) {
+					prh.updateTarget(func(target int64) int64 {
+						return target + delta
+					})
+				}
 			}
 		} else if ds < 0 {
 			prh.updateTarget(func(target int64) int64 {
@@ -804,9 +814,9 @@ func (prh *pollScalerReportHandle) run(stopCh <-chan struct{}) {
 	// Here we periodically check if we should permit increasing the
 	// poller count further. We do this by comparing the number of ingested items in the
 	// current period with the number of ingested items in the previous period. If we
-	// are successfully ingesting more items, then it makes sense to allow scaling up.
-	// If we aren't, then we're probably limited by how fast we can process the tasks
-	// and it's not worth increasing the poller count further.
+	// are successfully ingesting more items, then it makes sense to allow scaling up
+	// without limit. If we aren't, we reduce the scale-up limit to a small budget so
+	// we can probe whether more pollers would help, without scaling up unboundedly.
 	for {
 		select {
 		case <-ticker.C:
@@ -820,7 +830,14 @@ func (prh *pollScalerReportHandle) run(stopCh <-chan struct{}) {
 func (prh *pollScalerReportHandle) newPeriod() {
 	ingestedThisPeriod := prh.ingestedThisPeriod.Swap(0)
 	ingestedLastPeriod := prh.ingestedLastPeriod.Swap(ingestedThisPeriod)
-	prh.scaleUpAllowed.Store(float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1)
+
+	throughputGrew := float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1
+	budget := max(int64(1), int64(float64(prh.target.Load())*saturationScaleUpBudgetRatio))
+	if throughputGrew {
+		prh.scaleUpsRemaining.Store(math.MaxInt64)
+	} else if prh.scaleUpsRemaining.Load() > budget {
+		prh.scaleUpsRemaining.Store(budget)
+	}
 }
 
 func newPollerSemaphore(maxPermits int) *pollerSemaphore {
