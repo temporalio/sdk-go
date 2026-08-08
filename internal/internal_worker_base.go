@@ -34,6 +34,7 @@ const (
 	// How long the same poll task error can remain suppressed
 	lastPollTaskErrSuppressTime     = 1 * time.Minute
 	pollerAutoscalingReportInterval = 100 * time.Millisecond
+	saturationScaleUpBudgetRatio   = 0.2
 )
 
 var (
@@ -248,7 +249,13 @@ type (
 		everSawScalingDecision atomic.Bool
 		ingestedThisPeriod     atomic.Int64
 		ingestedLastPeriod     atomic.Int64
+		emptyPollsThisPeriod   atomic.Int64
 		scaleUpAllowed         atomic.Bool
+
+		// saturationScaleUpsRemaining is a budget for probing whether more
+		// pollers would increase throughput. See newPeriod for details.
+		saturationScaleUpsRemaining atomic.Int64
+		wasSaturated                bool // only accessed in newPeriod (single goroutine)
 	}
 
 	barrier chan struct{}
@@ -731,6 +738,8 @@ func newPollScalerReportHandle(options pollScalerReportHandleOptions) *pollScale
 func (prh *pollScalerReportHandle) handleTask(task taskForWorker) {
 	if !task.isEmpty() {
 		prh.ingestedThisPeriod.Add(1)
+	} else {
+		prh.emptyPollsThisPeriod.Add(1)
 	}
 
 	if sd, ok := task.scaleDecision(); ok {
@@ -741,6 +750,13 @@ func (prh *pollScalerReportHandle) handleTask(task taskForWorker) {
 				prh.updateTarget(func(target int64) int64 {
 					return target + int64(ds)
 				})
+			} else if r := prh.saturationScaleUpsRemaining.Load(); r > 0 {
+				cost := min(r, int64(ds))
+				if prh.saturationScaleUpsRemaining.CompareAndSwap(r, r-cost) {
+					prh.updateTarget(func(target int64) int64 {
+						return target + cost
+					})
+				}
 			}
 		} else if ds < 0 {
 			prh.updateTarget(func(target int64) int64 {
@@ -807,6 +823,9 @@ func (prh *pollScalerReportHandle) run(stopCh <-chan struct{}) {
 	// are successfully ingesting more items, then it makes sense to allow scaling up.
 	// If we aren't, then we're probably limited by how fast we can process the tasks
 	// and it's not worth increasing the poller count further.
+	//
+	// Additionally, if all pollers are saturated (no empty polls), we allow a bounded
+	// number of probe scale-ups to detect whether more pollers would increase throughput.
 	for {
 		select {
 		case <-ticker.C:
@@ -818,9 +837,24 @@ func (prh *pollScalerReportHandle) run(stopCh <-chan struct{}) {
 }
 
 func (prh *pollScalerReportHandle) newPeriod() {
-	ingestedThisPeriod := prh.ingestedThisPeriod.Swap(0)
-	ingestedLastPeriod := prh.ingestedLastPeriod.Swap(ingestedThisPeriod)
-	prh.scaleUpAllowed.Store(float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1)
+	ingested := prh.ingestedThisPeriod.Swap(0)
+	lastIngested := prh.ingestedLastPeriod.Swap(ingested)
+	emptyPolls := prh.emptyPollsThisPeriod.Swap(0)
+
+	throughputGrew := float64(ingested) >= float64(lastIngested)*1.1
+	prh.scaleUpAllowed.Store(throughputGrew)
+
+	// Saturation detection: when all pollers are returning tasks (no empty
+	// polls), we may need more pollers to increase throughput. Allow a bounded
+	// number of probe scale-ups to test whether adding pollers helps.
+	isSaturated := ingested > 0 && emptyPolls == 0
+	if throughputGrew || (isSaturated && !prh.wasSaturated) {
+		budget := max(int64(1), int64(float64(prh.target.Load())*saturationScaleUpBudgetRatio))
+		prh.saturationScaleUpsRemaining.Store(budget)
+	} else if !isSaturated {
+		prh.saturationScaleUpsRemaining.Store(0)
+	}
+	prh.wasSaturated = isSaturated
 }
 
 func newPollerSemaphore(maxPermits int) *pollerSemaphore {
