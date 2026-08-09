@@ -91,6 +91,8 @@ to docs, or any other relevant information.
 
 - Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
 - Replaced the internal `OnceCell` implementation with `sync.OnceValue` for lazy workflow run ID lookup.
+- Added optional `RetryPolicy` field to `RemotePayloadCodecOptions` for configuring
+  exponential-backoff retries on transient HTTP failures. Retries are disabled by default.
 
 ### Fixed
 
