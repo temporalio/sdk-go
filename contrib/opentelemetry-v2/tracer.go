@@ -21,6 +21,7 @@ type WorkflowTracer interface {
 
 type workflowTracer struct {
 	tracer trace.Tracer
+	name   string
 }
 
 // Tracer returns a WorkflowTracer for the given instrumentation name, like
@@ -29,7 +30,7 @@ type workflowTracer struct {
 //
 // NOTE: Experimental
 func Tracer(name string) WorkflowTracer {
-	return &workflowTracer{tracer: otel.Tracer(name)}
+	return &workflowTracer{tracer: otel.Tracer(name), name: name}
 }
 
 func (t *workflowTracer) Start(ctx workflow.Context, name string, opts ...trace.SpanStartOption) (workflow.Context, trace.Span) {
@@ -40,7 +41,7 @@ func (t *workflowTracer) Start(ctx workflow.Context, name string, opts ...trace.
 		opts = append([]trace.SpanStartOption{trace.WithTimestamp(workflow.Now(ctx))}, opts...)
 	}
 
-	otelCtx := context.WithValue(context.Background(), otelRandomKey{}, workflowRandomReader(ctx))
+	otelCtx := context.WithValue(context.Background(), otelRandomKey{}, applicationReader(ctx, t.name))
 	parent := parentFromRef(ctx.Value(spanContextKey{}))
 	if parent.spanContext.IsValid() {
 		otelCtx = trace.ContextWithSpanContext(otelCtx, parent.spanContext)

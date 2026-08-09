@@ -11,7 +11,8 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-const randomName = "go.temporal.io/sdk/contrib/opentelemetry-v2"
+const interceptorRandomStream = "go.temporal.io/sdk/contrib/opentelemetry-v2/interceptor"
+const applicationRandomStream = "go.temporal.io/sdk/contrib/opentelemetry-v2/application"
 
 // NewTracerProvider creates a provider whose ID generator reads from an
 // io.Reader attached to the span-start context (workflow.GetRandom for
@@ -33,11 +34,19 @@ type otelRandomKey struct{}
 
 type generator struct{}
 
-func workflowRandomReader(ctx workflow.Context) io.Reader {
+func interceptorReader(ctx workflow.Context) io.Reader {
 	if workflow.IsReadOnly(ctx) {
 		return cryptorand.Reader
 	}
-	return workflow.GetRandom(ctx, randomName)
+	return workflow.GetRandom(ctx, interceptorRandomStream)
+}
+
+func applicationReader(ctx workflow.Context, tracerName string) io.Reader {
+	if workflow.IsReadOnly(ctx) {
+		return cryptorand.Reader
+	}
+	// Isolate each tracer's ID stream so other tracers can be added or removed without changing its IDs.
+	return workflow.GetRandom(ctx, applicationRandomStream+"/"+tracerName)
 }
 
 func (g *generator) NewSpanID(ctx context.Context, _ trace.TraceID) trace.SpanID {

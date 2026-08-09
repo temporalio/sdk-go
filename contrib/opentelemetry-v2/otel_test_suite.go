@@ -3,6 +3,8 @@ package opentelemetry
 import (
 	"context"
 	"slices"
+	"strings"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 	"go.opentelemetry.io/otel"
@@ -11,6 +13,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/testsuite"
@@ -21,23 +24,20 @@ type otelTestSuite struct {
 	suite.Suite
 }
 
-func (s *otelTestSuite) setTestTracerProvider(
-	opts ...sdktrace.TracerProviderOption,
-) *sdktrace.TracerProvider {
-	provider := NewTracerProvider(opts...)
-	prev := otel.GetTracerProvider()
-	otel.SetTracerProvider(provider)
-	s.T().Cleanup(func() {
-		otel.SetTracerProvider(prev)
-		s.Require().NoError(provider.Shutdown(context.Background()))
-	})
-	return provider
+func (s *otelTestSuite) SetupSuite() {
+	worker.SetStickyWorkflowCacheSize(0)
 }
 
 func (s *otelTestSuite) newSpanRecorder() *tracetest.SpanRecorder {
 	s.T().Helper()
 	recorder := tracetest.NewSpanRecorder()
-	s.setTestTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	provider := NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	previousProvider := otel.GetTracerProvider()
+	otel.SetTracerProvider(provider)
+	s.T().Cleanup(func() {
+		otel.SetTracerProvider(previousProvider)
+		s.Require().NoError(provider.Shutdown(context.Background()))
+	})
 	return recorder
 }
 
@@ -92,10 +92,59 @@ func (s *otelTestSuite) requireUniqueSpanIDs(spans []sdktrace.ReadOnlySpan) {
 	}
 }
 
-func (s *otelTestSuite) devServer() *testsuite.DevServer {
+func (s *otelTestSuite) formatSpanTree(spans []sdktrace.ReadOnlySpan) []string {
+	s.T().Helper()
+	childrenByParent := make(map[int][]int)
+	for childIndex, child := range spans {
+		parentIndex := closestParentSpanIndex(spans, child)
+		childrenByParent[parentIndex] = append(childrenByParent[parentIndex], childIndex)
+	}
+	return formatSpanChildren(spans, childrenByParent, -1, 0)
+}
+
+func closestParentSpanIndex(spans []sdktrace.ReadOnlySpan, child sdktrace.ReadOnlySpan) int {
+	parentID := child.Parent().SpanID()
+	closestIndex := -1
+	var closestDistance time.Duration
+
+	// Resets can emit the same span ID more than once. The nearest start time identifies the matching parent.
+	for index, candidate := range spans {
+		if candidate.SpanContext().SpanID() != parentID {
+			continue
+		}
+		distance := child.StartTime().Sub(candidate.StartTime()).Abs()
+		if closestIndex == -1 || distance < closestDistance {
+			closestIndex = index
+			closestDistance = distance
+		}
+	}
+	return closestIndex
+}
+
+func formatSpanChildren(
+	spans []sdktrace.ReadOnlySpan,
+	childrenByParent map[int][]int,
+	parentIndex int,
+	depth int,
+) []string {
+	var tree []string
+	for _, childIndex := range childrenByParent[parentIndex] {
+		child := spans[childIndex]
+		tree = append(tree, strings.Repeat("  ", depth)+child.Name())
+		tree = append(tree, formatSpanChildren(spans, childrenByParent, childIndex, depth+1)...)
+	}
+	return tree
+}
+
+func (s *otelTestSuite) newDevServerClient(options client.Options) client.Client {
 	s.T().Helper()
 	srv, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{})
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = srv.Stop() })
-	return srv
+
+	options.HostPort = srv.FrontendHostPort()
+	c, err := client.DialContext(context.Background(), options)
+	s.Require().NoError(err)
+	s.T().Cleanup(c.Close)
+	return c
 }

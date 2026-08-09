@@ -55,7 +55,7 @@ func (t *workflowInterceptorTracer) CreateSpan(
 		otel.Tracer("temporal-sdk-go"),
 		parentFromRef(opts.Parent),
 		t.SpanName(opts),
-		workflowRandomReader(ctx),
+		interceptorReader(ctx),
 		opts,
 	)
 
