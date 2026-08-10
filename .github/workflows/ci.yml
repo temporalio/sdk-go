@@ -255,6 +255,31 @@ jobs:
         env:
           ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
 
+  # contrib modules are independent Go modules that the root-module jobs above
+  # do not compile or test. Runs the googleadk module's full test suite; its
+  # integration tests boot a local dev server via testsuite.StartDevServer.
+  googleadk-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+      statuses: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: stable
+          cache-dependency-path: contrib/googleadk/go.sum
+
+      - name: Test googleadk
+        run: go test -count 1 -race -timeout 10m ./...
+        working-directory: ./contrib/googleadk
+
   cloud-test:
     strategy:
       matrix:
