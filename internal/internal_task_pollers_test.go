@@ -31,6 +31,20 @@ type countingTaskHandler struct {
 	ProcessWorkflowTaskInvocationCount atomic.Uint32
 }
 
+func TestLocalActivityTaskPollerReturnsNilWhenTunnelStops(t *testing.T) {
+	stopCh := make(chan struct{})
+	close(stopCh)
+	poller := &localActivityTaskPoller{
+		laTunnel: newLocalActivityTunnel(stopCh),
+	}
+
+	task, err := poller.PollTask()
+	require.NoError(t, err)
+	if task != nil {
+		t.Fatalf("PollTask() returned a non-nil task of type %T", task)
+	}
+}
+
 func (wth *countingTaskHandler) ProcessWorkflowTask(
 	task *workflowTask,
 	wfctx *workflowExecutionContextImpl,

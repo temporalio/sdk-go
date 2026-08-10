@@ -1018,6 +1018,13 @@ func (r *registry) getWorkflowDefinition(wt WorkflowType) (WorkflowDefinition, e
 		wf = r.dynamicWorkflow
 		dynamic = true
 	}
+	// A dynamic workflow may itself be a WorkflowDefinitionFactory (e.g. the
+	// RoadRunner PHP host process registers one shared factory). Honor it here,
+	// as the named-workflow path above does, rather than wrapping it in a
+	// reflection-based workflowExecutor, which panics on the non-func value.
+	if wdf, ok := wf.(WorkflowDefinitionFactory); ok {
+		return wdf.NewWorkflowDefinition(), nil
+	}
 	executor := &workflowExecutor{workflowType: lookup, fn: wf, interceptors: r.interceptors, dynamic: dynamic}
 	return newSyncWorkflowDefinition(executor), nil
 }
@@ -2544,7 +2551,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		startTime := timestamppb.New(time.Now())
 		hostname, _ := os.Hostname()
 		pid := strconv.Itoa(os.Getpid())
-		previousHeartbeatTime := time.Now()
+		var previousHeartbeatTime time.Time
 		pluginInfos := collectPluginInfos(client.clientPluginNames, plugins)
 		driverInfos := collectStorageDriverInfos(client.storageDriverTypes)
 
@@ -2600,8 +2607,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				populateOpts.nexusSlotSupplierKind = aw.nexusWorker.worker.slotSupplier.GetSlotSupplierKind()
 			}
 			heartbeatTime := time.Now()
-			elapsedSinceLastHeartbeat := heartbeatTime.Sub(previousHeartbeatTime)
-			previousHeartbeatTime = heartbeatTime
 
 			status := enumspb.WORKER_STATUS_RUNNING
 			if aw.shuttingDown.Load() {
@@ -2618,17 +2623,20 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 					CurrentHostCpuUsage: cpuUsage,
 					CurrentHostMemUsage: memUsage,
 				},
-				TaskQueue:                 aw.executionParams.TaskQueue,
-				DeploymentVersion:         deploymentVersion,
-				SdkName:                   SDKName,
-				SdkVersion:                SDKVersion,
-				Status:                    status,
-				StartTime:                 startTime,
-				HeartbeatTime:             timestamppb.New(heartbeatTime),
-				ElapsedSinceLastHeartbeat: durationpb.New(elapsedSinceLastHeartbeat),
-				Plugins:                   pluginInfos,
-				Drivers:                   driverInfos,
+				TaskQueue:         aw.executionParams.TaskQueue,
+				DeploymentVersion: deploymentVersion,
+				SdkName:           aw.client.sdkName,
+				SdkVersion:        aw.client.sdkVersion,
+				Status:            status,
+				StartTime:         startTime,
+				HeartbeatTime:     timestamppb.New(heartbeatTime),
+				Plugins:           pluginInfos,
+				Drivers:           driverInfos,
 			}
+			if !previousHeartbeatTime.IsZero() {
+				hb.ElapsedSinceLastHeartbeat = durationpb.New(heartbeatTime.Sub(previousHeartbeatTime))
+			}
+			previousHeartbeatTime = heartbeatTime
 			aw.heartbeatMetrics.PopulateHeartbeat(hb, populateOpts)
 
 			return hb

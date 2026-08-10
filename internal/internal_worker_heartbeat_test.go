@@ -9,6 +9,7 @@ import (
 	"github.com/golang/mock/gomock"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
+	namespacepb "go.temporal.io/api/namespace/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	workerservicepb "go.temporal.io/api/nexusservices/workerservice/v1"
 	workerpb "go.temporal.io/api/worker/v1"
@@ -245,4 +246,79 @@ func TestWorkerCommandsDisabledDoesNotPoll(t *testing.T) {
 	go hw.run()
 	time.Sleep(25 * time.Millisecond)
 	hw.stop()
+}
+
+func TestWorkerHeartbeatSendsImmediatelyWithIdentity(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+	mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+	requestCh := make(chan *workflowservice.RecordWorkerHeartbeatRequest, 1)
+	mockService.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, request *workflowservice.RecordWorkerHeartbeatRequest, _ ...grpc.CallOption) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
+			select {
+			case requestCh <- request:
+			default:
+			}
+			return &workflowservice.RecordWorkerHeartbeatResponse{}, nil
+		}).AnyTimes()
+
+	wfClient := NewServiceClient(mockService, nil, ClientOptions{
+		Namespace:               "test-ns",
+		Identity:                "test-client-identity",
+		WorkerHeartbeatInterval: time.Minute,
+	})
+	wfClient.namespaceData = &namespaceData{
+		capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
+	}
+	worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+	if err := worker.registerHeartbeatWorker(); err != nil {
+		t.Fatal(err)
+	}
+	defer worker.unregisterHeartbeatWorker()
+
+	select {
+	case request := <-requestCh:
+		if request.GetNamespace() != "test-ns" {
+			t.Fatalf("namespace = %q, want test-ns", request.GetNamespace())
+		}
+		if request.GetIdentity() != "test-client-identity" {
+			t.Fatalf("identity = %q, want test-client-identity", request.GetIdentity())
+		}
+		if len(request.GetWorkerHeartbeat()) != 1 {
+			t.Fatalf("worker heartbeat count = %d, want 1", len(request.GetWorkerHeartbeat()))
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("timed out waiting for initial worker heartbeat")
+	}
+}
+
+func TestWorkerHeartbeatElapsedSinceLastHeartbeatUnsetOnInitialHeartbeat(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	wfClient := NewServiceClient(mockService, nil, ClientOptions{
+		Identity:                "test-client-identity",
+		WorkerHeartbeatInterval: time.Second,
+	})
+
+	worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+	if worker.heartbeatCallback == nil {
+		t.Fatal("heartbeat callback is nil")
+	}
+
+	firstHeartbeat := worker.heartbeatCallback()
+	if firstHeartbeat.GetElapsedSinceLastHeartbeat() != nil {
+		t.Fatalf("initial elapsed since last heartbeat = %v, want nil", firstHeartbeat.GetElapsedSinceLastHeartbeat())
+	}
+
+	secondHeartbeat := worker.heartbeatCallback()
+	if secondHeartbeat.GetElapsedSinceLastHeartbeat() == nil {
+		t.Fatal("second elapsed since last heartbeat is nil, want set")
+	}
 }

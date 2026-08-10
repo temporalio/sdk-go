@@ -1060,7 +1060,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
 	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle1)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle1, v1.BuildID)
 
 	// SetCurrent to 2.0)
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{

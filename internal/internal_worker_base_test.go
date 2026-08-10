@@ -167,6 +167,85 @@ func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersCreatesBalancerForMul
 	})
 }
 
+type blockingGaugeMetricsHandler struct {
+	metrics.Handler
+	blockMarkUpdates  atomic.Bool
+	firstMarkStarted  chan struct{}
+	secondMarkStarted chan struct{}
+	unblockFirstMark  chan struct{}
+	markCount         atomic.Int32
+}
+
+func (h *blockingGaugeMetricsHandler) Gauge(name string) metrics.Gauge {
+	gauge := h.Handler.Gauge(name)
+	if name != metrics.WorkerTaskSlotsUsed {
+		return gauge
+	}
+	return metrics.GaugeFunc(func(value float64) {
+		if h.blockMarkUpdates.Load() {
+			switch h.markCount.Add(1) {
+			case 1:
+				close(h.firstMarkStarted)
+				<-h.unblockFirstMark
+			case 2:
+				close(h.secondMarkStarted)
+			}
+		}
+		gauge.Update(value)
+	})
+}
+
+func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPublishesLatestConcurrentState() {
+	inner, err := NewFixedSizeSlotSupplier(2)
+	s.Require().NoError(err)
+	capturingHandler := metrics.NewCapturingHandler()
+	metricsHandler := &blockingGaugeMetricsHandler{
+		Handler:           capturingHandler,
+		firstMarkStarted:  make(chan struct{}),
+		secondMarkStarted: make(chan struct{}),
+		unblockFirstMark:  make(chan struct{}),
+	}
+	trackingSupplier := newTrackingSlotSupplier(inner, trackingSlotSupplierOptions{
+		logger:         ilog.NewNopLogger(),
+		metricsHandler: metricsHandler,
+	})
+
+	permit1, err := trackingSupplier.ReserveSlot(context.Background(), &slotReservationData{})
+	s.Require().NoError(err)
+	permit2, err := trackingSupplier.ReserveSlot(context.Background(), &slotReservationData{})
+	s.Require().NoError(err)
+	metricsHandler.blockMarkUpdates.Store(true)
+
+	firstMarkDone := make(chan struct{})
+	go func() {
+		trackingSupplier.MarkSlotUsed(permit1)
+		close(firstMarkDone)
+	}()
+	<-metricsHandler.firstMarkStarted
+	secondMarkDone := make(chan struct{})
+	go func() {
+		trackingSupplier.MarkSlotUsed(permit2)
+		close(secondMarkDone)
+	}()
+	select {
+	case <-metricsHandler.secondMarkStarted:
+	case <-time.After(time.Second):
+		close(metricsHandler.unblockFirstMark)
+		s.FailNow("second slot state change blocked behind the first metric update")
+	}
+	close(metricsHandler.unblockFirstMark)
+	<-firstMarkDone
+	<-secondMarkDone
+
+	var usedSlots float64
+	for _, gauge := range capturingHandler.Gauges() {
+		if gauge.Name == metrics.WorkerTaskSlotsUsed {
+			usedSlots = gauge.Value()
+		}
+	}
+	s.Equal(float64(2), usedSlots)
+}
+
 func TestScalableTaskPollerSuite(t *testing.T) {
 	suite.Run(t, new(ScalableTaskPollerSuite))
 }
@@ -1226,5 +1305,87 @@ func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {
 			)
 			s.Equal(tc.ptype, poller.taskPollerType)
 		})
+	}
+}
+
+// sessionTokenWaitProbe is a token bucket lock that reports the first entry into
+// waitForAvailableToken. Entry is the signal a test needs: the poller holds this lock from there
+// until Cond.Wait parks it, and close() takes the same lock, so a Stop() beginning after the signal
+// cannot overtake the waiter.
+type sessionTokenWaitProbe struct {
+	sync.Mutex
+	entered chan struct{}
+	once    sync.Once
+}
+
+func (p *sessionTokenWaitProbe) Lock() {
+	p.Mutex.Lock()
+	p.once.Do(func() { close(p.entered) })
+}
+
+// releaseRecordingSlotSupplier records the reason each permit is released with.
+type releaseRecordingSlotSupplier struct{ released chan SlotReleaseReason }
+
+func (s *releaseRecordingSlotSupplier) ReserveSlot(ctx context.Context, _ SlotReservationInfo) (*SlotPermit, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+	return &SlotPermit{}, nil
+}
+func (s *releaseRecordingSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit {
+	return &SlotPermit{}
+}
+func (s *releaseRecordingSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+func (s *releaseRecordingSlotSupplier) ReleaseSlot(info SlotReleaseInfo) {
+	select {
+	case s.released <- info.Reason():
+	default:
+	}
+}
+func (s *releaseRecordingSlotSupplier) MaxSlots() int { return 0 }
+
+// TestStopReturnsPromptlyWithPollerAwaitingSessionToken covers a session worker at its maximum session
+// count: the creation poller parks in sessionTokenBucket.waitForAvailableToken. Stop() must wake it and
+// the poller must give its slot back, rather than blocking for the whole stopTimeout while the poller
+// goroutine and its permit leak.
+func TestStopReturnsPromptlyWithPollerAwaitingSessionToken(t *testing.T) {
+	probe := &sessionTokenWaitProbe{entered: make(chan struct{})}
+	// No available token is the at-capacity state: every session slot is in use.
+	bucket := &sessionTokenBucket{Cond: sync.NewCond(probe)}
+
+	supplier := &releaseRecordingSlotSupplier{released: make(chan SlotReleaseReason, 1)}
+	tp := newBlockingProbeTaskPoller()
+	defer tp.Close()
+
+	bw := newBaseWorker(baseWorkerOptions{
+		slotSupplier:     supplier,
+		maxTaskPerSecond: 1000,
+		taskPollers: []scalableTaskPoller{
+			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+		},
+		taskProcessor:      noopTaskProcessor{},
+		workerType:         "SessionTokenStopTest",
+		logger:             ilog.NewNopLogger(),
+		stopTimeout:        5 * time.Second,
+		metricsHandler:     metrics.NopHandler,
+		sessionTokenBucket: bucket,
+	})
+
+	bw.Start()
+	<-probe.entered // the poller holds a permit and is inside the token wait
+
+	start := time.Now()
+	bw.Stop()
+	require.Less(t, time.Since(start), time.Second,
+		"Stop() should wake a poller waiting for a session token, not block for the full stopTimeout")
+
+	// The permit is released before the poller's stopWG.Done, so Stop() returning orders this.
+	select {
+	case reason := <-supplier.released:
+		require.Equal(t, SlotReleaseReasonUnused, reason)
+	default:
+		t.Fatal("poller left the session token wait without releasing its slot permit")
 	}
 }

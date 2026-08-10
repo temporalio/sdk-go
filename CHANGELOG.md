@@ -19,30 +19,51 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
-- Add support for Workflow Updates as Nexus Operations 
+
+### Added
+
+- Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
 
 ### Changed
 
-- User metadata fields (StaticSummary, StaticDetails, CurrentDetails, Activity Summary, Timer
-  Summary, AwaitOptions) are no longer marked as experimental.
+- Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
+
+### Fixed
+
+- Prevent workflow task failures when an activity with a custom ID completes while its cancellation
+  command is pending.
+- `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
+  updates the recorded value when it changes, matching the real worker. Previously it ignored
+  equals and returned a freshly computed value on every call.
+
+## [1.46.0] - 2026-07-28
 
 ### Added
 
 - Added `worker.Options.MaxEagerActivityReservationsPerWorkflowTask` to configure the maximum
   number of eager activity slots reserved per workflow task. The default remains three. Configured
   values must be positive; use `DisableEagerActivities` to disable eager activity execution.
-
 - Automatically enroll workers into poller autoscaling when the namespace advertises the
   `PollerAutoscalingAutoEnroll` capability. This only applies to poller types left at their default
   (i.e. the worker set neither `MaxConcurrent<Type>TaskPollers` nor `<Type>TaskPollerBehavior`);
   explicitly configured pollers are left unchanged.
-
 - Added `worker.Options.PreferredVersionProvider`, which can select the version recorded by a
   newly encountered `workflow.GetVersion` call. This supports gradual rollout of a new
   `GetVersion` call before activating its new behavior.
+- Add support for Workflow Updates as Nexus Operations 
+- Add support for external storage to Nexus task handling.
+
+### Changed
+
+- User metadata fields (StaticSummary, StaticDetails, CurrentDetails, Activity Summary, Timer
+  Summary, AwaitOptions) are no longer marked as experimental.
+- Send the initial Worker heartbeat immediately on startup, include the client identity, and omit
+  elapsed-since-last-heartbeat until a previous heartbeat exists.
 
 ### Fixed
 
+- Prevent a background panic during worker shutdown when the local activity tunnel closes while a
+  poller is waiting for a task.
 - Allow query results to use external storage before payload size enforcement.
 - Correct schedule catch-up window documentation to state that an unset value is omitted and the
   server applies its one-year default.
@@ -56,6 +77,18 @@ to docs, or any other relevant information.
 - Stand-alone activity-backed Nexus operations. `temporalnexus.MustNewTemporalOperation` can now
   back an async Nexus operation with a stand-alone activity execution via `StartActivity` /
   `StartUntypedActivity`. Activity-backed Nexus operations are also supported in `TestWorkflowEnvironment`.
+- Fixed worker task slot metrics reporting stale values when slot state changes concurrently.
+- Dynamic workflows registered as a `WorkflowDefinitionFactory` are now executed via
+  `NewWorkflowDefinition()` rather than being wrapped as a function and reflected on (which panicked
+  with `reflect: call of reflect.Value.Call on ptr Value`), in both the worker registry and the test
+  environment. This lets host processes that register a single shared factory (e.g.
+  `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
+- Merged link-converter class in the server and sdk-go and moved it to api-go
+- Nexus operations with `NexusOperationCancellationTypeAbandon` no longer panic the workflow task when
+  the operation later starts or completes after the caller is canceled.
+- Session worker: stopping a worker while it is at its maximum concurrent session count no longer blocks
+  for the stop timeout. The session creation poller waited for an available session token without
+  observing the stop signal, so shutdown could not interrupt it and the poller goroutine leaked.
 
 ## [1.46.0] - 2026-07-07
 

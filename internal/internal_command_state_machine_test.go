@@ -252,6 +252,29 @@ func Test_ActivityStateMachine_CompletedAfterCancel(t *testing.T) {
 	require.Equal(t, 0, len(h.getCommands(false)))
 }
 
+func Test_ActivityStateMachine_CompletionRemovesPendingCancelWithCustomActivityID(t *testing.T) {
+	t.Parallel()
+	activityID := "custom-activity-id"
+	attributes := &commandpb.ScheduleActivityTaskCommandAttributes{
+		ActivityId: activityID,
+	}
+	h := newCommandsHelper()
+	h.setCurrentWorkflowTaskStartedEventID(3)
+
+	// Schedule the activity in one workflow task.
+	scheduleID := h.getNextID()
+	d := h.scheduleActivityTask(scheduleID, attributes, nil)
+	require.Len(t, h.getCommands(true), 1)
+	h.handleActivityTaskScheduled(activityID, scheduleID)
+	require.Equal(t, commandStateInitiated, d.getState())
+
+	// Queue cancellation, then resolve the activity before the next workflow task starts.
+	h.requestCancelActivityTask(activityID)
+	h.handleActivityTaskClosed(activityID, scheduleID)
+
+	require.Empty(t, h.getCommands(false))
+}
+
 func Test_ActivityStateMachine_CancelInitiated_After_CanceledBeforeSent(t *testing.T) {
 	t.Parallel()
 	activityID := "test-activity-1"
