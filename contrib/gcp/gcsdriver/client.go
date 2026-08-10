@@ -1,15 +1,15 @@
-package s3driver
+package gcsdriver
 
 import (
 	"context"
 	"io"
 )
 
-// Client is the interface that the driver uses to interact with S3. It covers
+// Client is the interface that the driver uses to interact with GCS. It covers
 // the three operations the driver needs: put, existence check, and get.
-// Use [go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2.NewClient] to obtain
-// an implementation backed by the AWS SDK v2, or supply a custom
-// implementation for testing or alternative S3-compatible storage.
+// Use [go.temporal.io/sdk/contrib/gcp/gcsdriver/gcssdk.NewClient] to obtain
+// an implementation backed by the Cloud Storage client, or supply a custom
+// implementation for testing or alternative GCS-compatible storage.
 //
 // NOTE: Experimental
 type Client interface {
@@ -30,7 +30,7 @@ type Client interface {
 	GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error)
 
 	// Describe returns diagnostic metadata about the client configuration,
-	// such as {"client_region": "us-west-2"}, that the driver appends to error
+	// such as {"client_project_id": "my-project"}, that the driver appends to error
 	// messages. Return nil or an empty map if no metadata is available.
 	Describe() map[string]string
 }
