@@ -38,7 +38,7 @@ func interceptorReader(ctx workflow.Context) io.Reader {
 	if workflow.IsReadOnly(ctx) {
 		return cryptorand.Reader
 	}
-	return workflow.GetRandom(ctx, interceptorRandomStream)
+	return workflow.GetRandomStream(ctx, interceptorRandomStream)
 }
 
 func applicationReader(ctx workflow.Context, tracerName string) io.Reader {
@@ -46,7 +46,7 @@ func applicationReader(ctx workflow.Context, tracerName string) io.Reader {
 		return cryptorand.Reader
 	}
 	// Isolate each tracer's ID stream so other tracers can be added or removed without changing its IDs.
-	return workflow.GetRandom(ctx, applicationRandomStream+"/"+tracerName)
+	return workflow.GetRandomStream(ctx, applicationRandomStream+"/"+tracerName)
 }
 
 func (g *generator) NewSpanID(ctx context.Context, _ trace.TraceID) trace.SpanID {

@@ -107,12 +107,12 @@ func closestParentSpanIndex(spans []sdktrace.ReadOnlySpan, child sdktrace.ReadOn
 	closestIndex := -1
 	var closestDistance time.Duration
 
-	// Resets can emit the same span ID more than once. The nearest start time identifies the matching parent.
+	// Resets can emit the same span ID and start time more than once. The nearest end time identifies the matching parent.
 	for index, candidate := range spans {
 		if candidate.SpanContext().SpanID() != parentID {
 			continue
 		}
-		distance := child.StartTime().Sub(candidate.StartTime()).Abs()
+		distance := child.EndTime().Sub(candidate.EndTime()).Abs()
 		if closestIndex == -1 || distance < closestDistance {
 			closestIndex = index
 			closestDistance = distance

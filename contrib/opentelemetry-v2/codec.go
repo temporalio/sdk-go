@@ -2,6 +2,8 @@ package opentelemetry
 
 import (
 	"context"
+	"maps"
+	"slices"
 
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
@@ -14,13 +16,7 @@ type textMapCarrier map[string]string
 
 func (t textMapCarrier) Get(key string) string        { return t[key] }
 func (t textMapCarrier) Set(key string, value string) { t[key] = value }
-func (t textMapCarrier) Keys() []string {
-	ret := make([]string, 0, len(t))
-	for k := range t {
-		ret = append(ret, k)
-	}
-	return ret
-}
+func (t textMapCarrier) Keys() []string               { return slices.Collect(maps.Keys(t)) }
 
 type spanCodec struct {
 	tracing.BaseTracer
