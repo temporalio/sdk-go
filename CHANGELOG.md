@@ -24,6 +24,10 @@ to docs, or any other relevant information.
 
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
 
+### Changed
+
+- Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
+
 ### Fixed
 
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
