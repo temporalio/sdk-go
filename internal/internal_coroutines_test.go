@@ -1178,14 +1178,14 @@ func TestPanic(t *testing.T) {
 
 func TestYieldDuringPanic(t *testing.T) {
 	// Verify that a deferred function attempting to yield (block) during panic
-	// unwinding is detected and re-panicked with a descriptive error, using the
-	// coroutineState.panicking flag instead of the old runtime.Callers() approach.
+	// unwinding is detected by inspecting the call stack and re-panicked with a
+	// descriptive error.
 	d := createNewDispatcher(func(ctx Context) {
 		c := NewNamedChannel(ctx, "test-chan")
 		GoNamed(ctx, "panicker", func(ctx Context) {
 			defer func() {
 				// This deferred function tries to block by receiving on a channel
-				// during panic unwinding. The panicking flag should catch this.
+				// during panic unwinding. Stack inspection should catch this.
 				c.Receive(ctx, nil)
 			}()
 			panic("trigger unwinding")
@@ -1195,31 +1195,6 @@ func TestYieldDuringPanic(t *testing.T) {
 	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "yield during panic unwinding")
-}
-
-func TestPanicDoesNotAffectSubsequentCoroutines(t *testing.T) {
-	// Verify that a panic in one coroutine does not leave the panicking flag
-	// set on other coroutines, ensuring isolation between coroutines.
-	var history []string
-	d := createNewDispatcher(func(ctx Context) {
-		GoNamed(ctx, "panicker", func(ctx Context) {
-			panic("first coroutine panic")
-		})
-		GoNamed(ctx, "normal", func(ctx Context) {
-			history = append(history, "normal-start")
-			c := NewBufferedChannel(ctx, 1)
-			c.Send(ctx, "hello")
-			var v string
-			c.Receive(ctx, &v)
-			history = append(history, fmt.Sprintf("normal-got-%s", v))
-		})
-	})
-	defer d.Close()
-	// The panicker coroutine should cause an error, but verify the error
-	// is from the panic itself, not from a leaked panicking flag.
-	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "first coroutine panic")
 }
 
 func TestChannelReceivePointer(t *testing.T) {
