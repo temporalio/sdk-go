@@ -57,11 +57,13 @@ func newBuilder() *builder {
 
 func (b *builder) run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("missing command name, 'check', 'integration-test', or 'unit-test' required")
+		return fmt.Errorf("missing command name, 'check', 'cloud-namespace', 'integration-test', or 'unit-test' required")
 	}
 	switch os.Args[1] {
 	case "check":
 		return b.check()
+	case "cloud-namespace":
+		return runCloudNamespaceCommand(context.Background(), os.Args[2:], os.Getenv, newCloudNamespaceClient)
 	case "integration-test":
 		return b.integrationTest()
 	case "merge-coverage-files":
@@ -69,7 +71,7 @@ func (b *builder) run() error {
 	case "unit-test":
 		return b.unitTest()
 	default:
-		return fmt.Errorf("unrecognized command %q, 'check', 'integration-test', or 'unit-test' required", os.Args[1])
+		return fmt.Errorf("unrecognized command %q, 'check', 'cloud-namespace', 'integration-test', or 'unit-test' required", os.Args[1])
 	}
 }
 

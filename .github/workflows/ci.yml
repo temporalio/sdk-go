@@ -257,19 +257,14 @@ jobs:
 
   cloud-test:
     strategy:
+      fail-fast: false
       matrix:
         go-version: ["oldstable", "stable"]
         fips: [true, false]
-      # Try to avoid running tests in parallel to avoid workflow ID conflict
-      max-parallel: 1
     # Only supported in non-fork runs, since secrets are not available in forks.
     if: ${{ github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go' }}
     runs-on: ubuntu-latest
     env:
-      TEMPORAL_ADDRESS: sdk-ci.a2dd6.tmprl.cloud:7233
-      TEMPORAL_NAMESPACE: sdk-ci.a2dd6
-      TEMPORAL_TLS_CLIENT_CERT_DATA: ${{ secrets.TEMPORAL_CLIENT_CERT }}
-      TEMPORAL_TLS_CLIENT_KEY_DATA: ${{ secrets.TEMPORAL_CLIENT_KEY }}
       GODEBUG: ${{ matrix.fips && 'fips140=on' || '' }}
 
     steps:
@@ -279,13 +274,48 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ matrix.go-version }}
+      - name: Generate Cloud test certificates
+        shell: bash
+        run: |
+          cert_dir="$RUNNER_TEMP/cloud-test-certs"
+          mkdir "$cert_dir"
+          openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+            -keyout "$cert_dir/ca.key" -out "$cert_dir/ca.pem" \
+            -subj '/CN=Temporal Go SDK Cloud CI CA'
+          openssl req -newkey rsa:2048 -nodes \
+            -keyout "$cert_dir/client.key" -out "$cert_dir/client.csr" \
+            -subj '/CN=Temporal Go SDK Cloud CI'
+          openssl x509 -req -days 1 -in "$cert_dir/client.csr" \
+            -CA "$cert_dir/ca.pem" -CAkey "$cert_dir/ca.key" -CAcreateserial \
+            -out "$cert_dir/client.pem" -extfile <(printf 'extendedKeyUsage=clientAuth')
+          {
+            echo "TEMPORAL_CLOUD_CLIENT_CA_PATH=$cert_dir/ca.pem"
+            echo "TEMPORAL_TLS_CLIENT_CERT_PATH=$cert_dir/client.pem"
+            echo "TEMPORAL_TLS_CLIENT_KEY_PATH=$cert_dir/client.key"
+          } >> "$GITHUB_ENV"
+      - name: Create Cloud namespace
+        id: create-cloud-namespace
+        run: go run . cloud-namespace create "$TEMPORAL_CLOUD_NAMESPACE_NAME"
+        working-directory: ./internal/cmd/build
+        env:
+          TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
+          TEMPORAL_CLOUD_NAMESPACE_NAME: sdk-go-ci-${{ github.run_id }}-${{ github.run_attempt }}-${{ strategy.job-index }}
       - name: Selected integration tests against cloud
         # Keep this list intentionally small. Add cloud-safe tests here when
         # they cover behavior that cannot be validated against the local dev server.
         run: 'go run . integration-test -envconfig -p 1 -packages . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
         working-directory: ./internal/cmd/build
         env:
+          TEMPORAL_ADDRESS: ${{ steps.create-cloud-namespace.outputs.namespace }}.tmprl.cloud:7233
+          TEMPORAL_NAMESPACE: ${{ steps.create-cloud-namespace.outputs.namespace }}
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
+
+      - name: Delete Cloud namespace
+        if: ${{ always() && steps.create-cloud-namespace.outputs.namespace != '' }}
+        run: go run . cloud-namespace delete "${{ steps.create-cloud-namespace.outputs.namespace }}"
+        working-directory: ./internal/cmd/build
+        env:
+          TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
 
       - name: Upload full test logs
         id: upload-test-logs
