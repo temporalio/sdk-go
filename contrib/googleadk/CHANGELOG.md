@@ -19,6 +19,23 @@ or Security.
   "Telemetry and replay" in the README.
 - `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.
 
+### Changed
+
+- Bumped the `google.golang.org/adk/v2` requirement to v2.2.0, the first tagged release with
+  the request-order confirmation resume (google/adk-go#1169). Multi-decision tool-confirmation
+  resumes are now replay-stable: `ConfirmationResponse` may batch any number of decisions in
+  one Run pass — the previous one-decision-per-pass guidance for Activity-dispatching tools is
+  lifted — and the resulting Activities are scheduled in the request order of the confirmations
+  (newest pause event first when one batch spans several).
+- Minimum `google.golang.org/genai` is now v1.66.0 (raised by adk/v2 v2.2.0; previously
+  v1.57.0). `genai` types appear in this module's API — e.g. `ConfirmationResponse` returns
+  `*genai.Content`.
+
+### Breaking Changes
+
+- The module now requires Go 1.26.5+ (inherited from `google.golang.org/adk/v2` v2.2.0's `go`
+  directive; previously 1.25.0).
+
 ## [0.2.0] - 2026-07-22
 
 ### Added
