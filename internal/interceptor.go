@@ -607,6 +607,11 @@ type ClientCancelWorkflowInput struct {
 	WorkflowID string
 	// RunID is the run ID of the workflow to cancel.
 	RunID      string
+	// FirstExecutionRunID is the run ID of the first execution in the workflow
+	// execution chain.
+	FirstExecutionRunID string
+	// Reason is the reason for requesting cancellation.
+	Reason string
 }
 
 // ClientTerminateWorkflowInput is the input to
@@ -618,6 +623,9 @@ type ClientTerminateWorkflowInput struct {
 	WorkflowID string
 	// RunID is the run ID of the workflow to terminate.
 	RunID      string
+	// FirstExecutionRunID is the run ID of the first execution in the workflow
+	// execution chain.
+	FirstExecutionRunID string
 	// Reason is the reason for termination.
 	Reason     string
 	// Details are the details of termination.

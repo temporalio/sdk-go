@@ -964,6 +964,72 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 	ts.True(errors.As(err, &canceledErr))
 }
 
+func (ts *IntegrationTestSuite) TestCancellationWithOptions() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	workflowID := "test-cancellation-with-options"
+	reason := "test cancellation"
+	run, err := ts.client.ExecuteWorkflow(
+		ctx, ts.startWorkflowOptions(workflowID), ts.workflows.Basic,
+	)
+	ts.NoError(err)
+
+	err = ts.client.CancelWorkflowWithOptions(ctx, client.CancelWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: uuid.NewString(),
+		Reason:              reason,
+	})
+	ts.Error(err)
+
+	ts.NoError(ts.client.CancelWorkflowWithOptions(ctx, client.CancelWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: run.GetRunID(),
+		Reason:              reason,
+	}))
+	var canceledErr *temporal.CanceledError
+	ts.ErrorAs(run.Get(ctx, nil), &canceledErr)
+
+	history := ts.client.GetWorkflowHistory(
+		ctx, workflowID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
+	)
+	found := false
+	for history.HasNext() {
+		event, err := history.Next()
+		ts.NoError(err)
+		if attributes := event.GetWorkflowExecutionCancelRequestedEventAttributes(); attributes != nil {
+			ts.Equal(reason, attributes.GetCause())
+			found = true
+		}
+	}
+	ts.True(found, "workflow history did not contain a cancellation-requested event")
+}
+
+func (ts *IntegrationTestSuite) TestTerminationWithOptions() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	workflowID := "test-termination-with-options"
+	run, err := ts.client.ExecuteWorkflow(
+		ctx, ts.startWorkflowOptions(workflowID), ts.workflows.Basic,
+	)
+	ts.NoError(err)
+
+	err = ts.client.TerminateWorkflowWithOptions(ctx, client.TerminateWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: uuid.NewString(),
+		Reason:              "test termination",
+	})
+	ts.Error(err)
+
+	ts.NoError(ts.client.TerminateWorkflowWithOptions(ctx, client.TerminateWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: run.GetRunID(),
+		Reason:              "test termination",
+		Details:             []interface{}{"test detail"},
+	}))
+	var terminatedErr *temporal.TerminatedError
+	ts.ErrorAs(run.Get(ctx, nil), &terminatedErr)
+}
+
 func (ts *IntegrationTestSuite) TestCascadingCancellation() {
 	workflowID := "test-cascading-cancellation-" + uuid.NewString()
 	childWorkflowID := workflowID + "-child"
