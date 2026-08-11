@@ -1006,6 +1006,11 @@ func (t *testEnvWorkflowRunForNexusOperations) GetRunID() string {
 	return t.RunID
 }
 
+// GetFirstExecutionRunID implements WorkflowRun.
+func (t *testEnvWorkflowRunForNexusOperations) GetFirstExecutionRunID() string {
+	return t.RunID
+}
+
 // GetWithOptions implements WorkflowRun.
 func (t *testEnvWorkflowRunForNexusOperations) GetWithOptions(ctx context.Context, valuePtr interface{}, options WorkflowRunGetOptions) error {
 	panic("not implemented in the test environment")

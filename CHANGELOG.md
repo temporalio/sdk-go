@@ -23,6 +23,7 @@ to docs, or any other relevant information.
 ### Added
 
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+- Added `client.WorkflowRun.GetFirstExecutionRunID` to expose the first execution run ID returned by the server when starting a workflow.
 
 ### Changed
 

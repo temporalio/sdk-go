@@ -363,8 +363,10 @@ func (s *workflowRunSuite) TearDownTest() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
+	firstExecutionRunID := "first-execution-run-id"
 	createResponse := &workflowservice.StartWorkflowExecutionResponse{
-		RunId: runID,
+		RunId:               runID,
+		FirstExecutionRunId: firstExecutionRunID,
 	}
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any()).Return(createResponse, nil).Times(1)
 
@@ -401,6 +403,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 	s.Nil(err)
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
+	s.Equal(firstExecutionRunID, workflowRun.GetFirstExecutionRunID())
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)
 	s.Nil(err)
@@ -525,8 +528,11 @@ func (s *workflowRunSuite) TestExecuteWorkflowWorkflowExecutionAlreadyStartedErr
 }
 
 func (s *workflowRunSuite) alreadyStartedErrTest(dc converter.DataConverter, rawHistory bool) {
+	firstExecutionRunID := "first-execution-run-id"
 	s.workflowServiceClient.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(nil, serviceerror.NewWorkflowExecutionAlreadyStarted("Already Started", "", runID)).Times(1)
+		Return(nil, serviceerror.NewWorkflowExecutionAlreadyStartedWithFirstExecutionRunId(
+			"Already Started", "", runID, firstExecutionRunID,
+		)).Times(1)
 
 	eventType := enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED
 	workflowResult := time.Hour * 59
@@ -587,6 +593,7 @@ func (s *workflowRunSuite) alreadyStartedErrTest(dc converter.DataConverter, raw
 	s.Nil(err)
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
+	s.Equal(firstExecutionRunID, workflowRun.GetFirstExecutionRunID())
 	decodedResult := time.Minute
 	err = workflowRun.Get(context.Background(), &decodedResult)
 	s.Nil(err)
@@ -734,6 +741,7 @@ func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Canceled() {
 	s.Nil(err)
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
+	s.Empty(workflowRun.GetFirstExecutionRunID())
 	decodedResult := time.Minute
 
 	err = workflowRun.Get(context.Background(), &decodedResult)
@@ -989,6 +997,7 @@ func (s *workflowRunSuite) TestGetWorkflow() {
 	)
 	s.Equal(workflowRun.GetID(), workflowID)
 	s.Equal(workflowRun.GetRunID(), runID)
+	s.Empty(workflowRun.GetFirstExecutionRunID())
 	decodedResult := time.Minute
 	err := workflowRun.Get(context.Background(), &decodedResult)
 	s.Nil(err)
@@ -1023,6 +1032,7 @@ func (s *workflowRunSuite) TestGetWorkflowNoExtantWorkflowAndNoRunId() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
+	firstExecutionRunID := "FIRST_EXECUTION_RUN_ID"
 	s.workflowServiceClient.EXPECT().
 		ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.ExecuteMultiOperationResponse{
@@ -1041,7 +1051,8 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
 				{
 					Response: &workflowservice.ExecuteMultiOperationResponse_Response_StartWorkflow{
 						StartWorkflow: &workflowservice.StartWorkflowExecutionResponse{
-							RunId: "RUN_ID",
+							RunId:               "RUN_ID",
+							FirstExecutionRunId: firstExecutionRunID,
 						},
 					},
 				},
@@ -1075,6 +1086,9 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Retry() {
 		},
 	)
 	s.NoError(err)
+	workflowRun, err := startOp.Get(context.Background())
+	s.NoError(err)
+	s.Equal(firstExecutionRunID, workflowRun.GetFirstExecutionRunID())
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_DefaultTimeout() {
@@ -1454,6 +1468,7 @@ func TestLoadCapabilitiesNonUnknownMethodUnimplementedFails(t *testing.T) {
 }
 
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
+	firstExecutionRunID := "first-execution-run-id"
 	signalName := "my signal"
 	signalInput := []byte("my signal input")
 	options := StartWorkflowOptions{
@@ -1464,7 +1479,8 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 	}
 
 	startResponse := &workflowservice.SignalWithStartWorkflowExecutionResponse{
-		RunId: runID,
+		RunId:               runID,
+		FirstExecutionRunId: firstExecutionRunID,
 	}
 	s.service.EXPECT().SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(startResponse, nil).Times(2)
 
@@ -1472,12 +1488,14 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflow() {
 		options, workflowType)
 	s.Nil(err)
 	s.Equal(startResponse.GetRunId(), resp.GetRunID())
+	s.Equal(firstExecutionRunID, resp.GetFirstExecutionRunID())
 
 	options.ID = ""
 	resp, err = s.client.SignalWithStartWorkflow(context.Background(), "", signalName, signalInput,
 		options, workflowType)
 	s.Nil(err)
 	s.Equal(startResponse.GetRunId(), resp.GetRunID())
+	s.Equal(firstExecutionRunID, resp.GetFirstExecutionRunID())
 }
 
 func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithContextAwareDataConverter() {

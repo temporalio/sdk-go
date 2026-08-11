@@ -124,6 +124,11 @@ type (
 		// called if there was a later run for this run.
 		GetRunID() string
 
+		// GetFirstExecutionRunID returns the run ID of the first execution in the
+		// workflow execution chain. The value may be empty if the server did not
+		// return it, such as when using GetWorkflow or an older server version.
+		GetFirstExecutionRunID() string
+
 		// Get will fill the workflow execution result to valuePtr, if workflow
 		// execution is a success, or return corresponding error. If valuePtr is
 		// nil, valuePtr will be ignored and only the corresponding error of the
@@ -169,7 +174,7 @@ type (
 	workflowRunImpl struct {
 		workflowType          string
 		workflowID            string
-		firstRunID            string
+		firstExecutionRunID   string
 		currentRunID          func() string
 		iterFn                func(ctx context.Context, runID string) HistoryEventIterator
 		dataConverter         converter.DataConverter
@@ -283,7 +288,6 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 	}
 	return &workflowRunImpl{
 		workflowID:            workflowID,
-		firstRunID:            runID,
 		currentRunID:          currentRunID,
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
@@ -1889,6 +1893,10 @@ func (workflowRun *workflowRunImpl) GetRunID() string {
 	return workflowRun.currentRunID()
 }
 
+func (workflowRun *workflowRunImpl) GetFirstExecutionRunID() string {
+	return workflowRun.firstExecutionRunID
+}
+
 func (workflowRun *workflowRunImpl) GetID() string {
 	return workflowRun.workflowID
 }
@@ -2187,7 +2195,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
-	var runID string
+	var runID, firstExecutionRunID string
 	response, err := w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
 
 	eagerWorkflowTask := response.GetEagerWorkflowTask()
@@ -2200,10 +2208,12 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	// Allow already-started error
 	if e, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok && !in.Options.WorkflowExecutionErrorWhenAlreadyStarted {
 		runID = e.RunId
+		firstExecutionRunID = e.FirstExecutionRunId
 	} else if err != nil {
 		return nil, err
 	} else {
-		runID = response.RunId
+		runID = response.GetRunId()
+		firstExecutionRunID = response.GetFirstExecutionRunId()
 	}
 
 	if responseInfo := in.Options.responseInfo; responseInfo != nil {
@@ -2224,7 +2234,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	return &workflowRunImpl{
 		workflowType:          in.WorkflowType,
 		workflowID:            workflowID,
-		firstRunID:            runID,
+		firstExecutionRunID:   firstExecutionRunID,
 		currentRunID:          func() string { return runID },
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx),
@@ -2282,14 +2292,14 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	onStart := func(startResp *workflowservice.StartWorkflowExecutionResponse) {
 		runID := startResp.RunId
 		startOp.set(&workflowRunImpl{
-			workflowType:     startOp.input.WorkflowType,
-			workflowID:       startOp.input.Options.ID,
-			firstRunID:       runID,
-			currentRunID:     func() string { return runID },
-			iterFn:           iterFn,
-			dataConverter:    converter.WithDataConverterSerializationContext(w.client.dataConverter, startWfCtx),
-			failureConverter: converter.WithFailureConverterSerializationContext(w.client.failureConverter, startWfCtx),
-			registry:         w.client.registry,
+			workflowType:        startOp.input.WorkflowType,
+			workflowID:          startOp.input.Options.ID,
+			firstExecutionRunID: startResp.GetFirstExecutionRunId(),
+			currentRunID:        func() string { return runID },
+			iterFn:              iterFn,
+			dataConverter:       converter.WithDataConverterSerializationContext(w.client.dataConverter, startWfCtx),
+			failureConverter:    converter.WithFailureConverterSerializationContext(w.client.failureConverter, startWfCtx),
+			registry:            w.client.registry,
 		}, nil)
 	}
 
@@ -2636,7 +2646,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	return &workflowRunImpl{
 		workflowType:          in.WorkflowType,
 		workflowID:            in.Options.ID,
-		firstRunID:            runID,
+		firstExecutionRunID:   response.GetFirstExecutionRunId(),
 		currentRunID:          func() string { return runID },
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, swsCtx),
