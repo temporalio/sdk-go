@@ -5,7 +5,6 @@ package internal
 import (
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"reflect"
 	"sync"
 	"time"
@@ -142,7 +141,7 @@ type (
 		sideEffectCounterID int64
 
 		// randoms holds deterministic PRNGs keyed by name and scoped to a run.
-		randoms map[string]*rand.ChaCha8
+		randoms map[string]*workflowRandomStream
 
 		currentReplayTime time.Time // Indicates current replay time of the command.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
@@ -255,7 +254,7 @@ func newWorkflowExecutionEventHandler(
 		preferredVersionProvider:     preferredVersionProvider,
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
-		randoms:                      make(map[string]*rand.ChaCha8),
+		randoms:                      make(map[string]*workflowRandomStream),
 		sdkFlags:                     newSDKFlagSet(capabilities),
 		bufferedUpdateRequests:       make(map[string][]func()),
 	}
@@ -767,7 +766,7 @@ func (wc *workflowEnvironmentImpl) GenerateSequence() int64 {
 	return wc.commandsHelper.getNextID()
 }
 
-func (wc *workflowEnvironmentImpl) GetRandomStream(name string) *rand.ChaCha8 {
+func (wc *workflowEnvironmentImpl) GetRandomStream(name string) WorkflowRandomStream {
 	return getRandomStream(wc.randoms, wc.workflowInfo.currentRunID, name)
 }
 

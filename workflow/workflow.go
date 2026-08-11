@@ -3,7 +3,6 @@ package workflow
 import (
 	"cmp"
 	"errors"
-	"math/rand/v2"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
@@ -466,6 +465,14 @@ func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Co
 	return internal.SideEffectWithOptions(ctx, options, f)
 }
 
+// WorkflowRandomStream is a deterministic pseudorandom source.
+//
+// Caution: interleaving Read and Uint64 on the same source does not have a stable
+// bit ordering. Use distinct names for each.
+//
+// NOTE: Experimental
+type WorkflowRandomStream = internal.WorkflowRandomStream
+
 // GetRandomStream returns a deterministic pseudorandom source private to the given
 // name. Calling it again with the same name returns the same source, positioned
 // where earlier draws left it.
@@ -480,20 +487,14 @@ func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Co
 // workflow already made still hold. Past that point the source starts a fresh
 // sequence rather than handing back the values the abandoned run drew.
 //
-// Each continue-as-new run gets its own sequence and never repeats the values
-// drawn by the run before it.
+// Each continue-as-new run gets an independently seeded sequence.
 //
 // Caution: each draw advances workflow state but is not recorded in history.
 // Replay must make the same draws in the same order. Do not draw in read-only
 // code; shared code can check [IsReadOnly].
 //
-// Caution: as documented by [Go's ChaCha8.Read], interleaving Read and Uint64
-// on the same source has undefined bit ordering. Use distinct names for each.
-//
 // NOTE: Experimental
-//
-// [Go's ChaCha8.Read]: https://go.dev/src/math/rand/v2/chacha8.go#L48
-func GetRandomStream(ctx Context, name string) *rand.ChaCha8 {
+func GetRandomStream(ctx Context, name string) WorkflowRandomStream {
 	return internal.GetRandomStream(ctx, name)
 }
 

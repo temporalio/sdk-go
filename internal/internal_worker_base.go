@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -163,7 +162,7 @@ type (
 		TryUse(flag sdkFlag) bool
 		GenerateSequence() int64
 		// GetRandomStream returns a deterministic PRNG, memoized per name for the life of the workflow run.
-		GetRandomStream(name string) *rand.ChaCha8
+		GetRandomStream(name string) WorkflowRandomStream
 	}
 
 	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.
