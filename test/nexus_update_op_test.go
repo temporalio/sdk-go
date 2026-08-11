@@ -260,6 +260,7 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
 
 // separate from [IntegrationTestSuite.TestNexusUpdateWorkflowOperation] as this is a more complicated scenario
 func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
+	requireLocalServer(ts.T(), ts.config, "Nexus update tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}

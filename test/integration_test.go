@@ -861,6 +861,7 @@ func (ts *IntegrationTestSuite) TestContinueAsNew() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	var result string
 	startOptions := ts.startWorkflowOptions("test-continueasnew-carryover")
 	startOptions.Memo = map[string]interface{}{
@@ -878,6 +879,7 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewOmitsUnsetSearchAttributes() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	var result string
 	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
 	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
@@ -1400,6 +1402,7 @@ func (ts *IntegrationTestSuite) TestChildWFRetryOnTimeout() {
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	var result string
 	err := ts.executeWorkflow("test-childwf-success-memo-searchAttr", ts.workflows.ChildWorkflowSuccess, &result)
 	ts.NoError(err)
@@ -1851,6 +1854,7 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelMutableSideEffects() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	options := ts.startWorkflowOptions("test-wf-typed-search-attributes")
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
 	options.EnableEagerStart = false
@@ -1862,6 +1866,7 @@ func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestSignalWithStartWorkflowTypedSearchAttributes() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	wfID := "test-signal-with-start-wf-typed-search-attributes"
 	options := ts.startWorkflowOptions(wfID)
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
@@ -1881,6 +1886,7 @@ func (ts *IntegrationTestSuite) TestSignalWithStartWorkflowTypedSearchAttributes
 }
 
 func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	options := ts.startWorkflowOptions("test-child-wf-typed-search-attributes")
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
 	options.EnableEagerStart = false
@@ -5507,6 +5513,7 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6077,6 +6084,7 @@ func (ts *IntegrationTestSuite) TestScheduleTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleWorkflowActionTypedSearchAttributes() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scheduleID := "test-schedule-typed-search-attributes"
@@ -6696,6 +6704,7 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleList() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -6767,6 +6776,7 @@ func (ts *IntegrationTestSuite) TestScheduleList() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdate() {
+	requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -9256,6 +9266,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 	}
 	ts.worker.RegisterActivityWithOptions(readFromChannelActivity, activity.RegisterOptions{Name: "readFromChannelActivity"})
 	ts.Run("Describe activity", func() {
+		requireLocalServer(ts.T(), ts.config, "requires custom namespace search attributes")
 		timeBeforeStart := time.Now().Add(-time.Millisecond)
 
 		options := makeOptions()
@@ -9702,6 +9713,7 @@ func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
 }
 
 func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
+	requireLocalServer(ts.T(), ts.config, "standalone Nexus tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -10048,6 +10060,7 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 }
 
 func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
+	requireLocalServer(ts.T(), ts.config, "Temporal-backed Nexus tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -10203,6 +10216,7 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityHeartbeatDetailsRegression
 // and sync operations) so the failure/timeout/retry surface for activity-backed operations
 // can grow without bloating the workflow-backed table.
 func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
+	requireLocalServer(ts.T(), ts.config, "activity-backed Nexus tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_ACTIVITY_BACKED_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}

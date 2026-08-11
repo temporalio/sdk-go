@@ -103,6 +103,7 @@ func (d *transientFailDriver) attempts() (store, retrieve int) {
 // endpoint name.
 func newNexusExtStoreClient(t *testing.T, ctx context.Context, driver converter.StorageDriver) (client.Client, string, string) {
 	config := NewConfig()
+	requireLocalServer(t, config, "Nexus external-storage tests create namespace endpoints through Operator Service")
 	require.NoError(t, WaitForTCP(time.Minute, config.ServiceAddr))
 	c, err := client.DialContext(ctx, client.Options{
 		HostPort:          config.ServiceAddr,
