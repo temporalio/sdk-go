@@ -37,7 +37,8 @@ type WorkflowRandomStream interface {
 // workflowRandomStream wraps ChaCha8 instead of embedding it so callers cannot
 // mutate a shared named stream through Seed or UnmarshalBinary.
 //
-// TODO: Define stable interleaving semantics. See [ChaCha8.Read].
+// TODO(https://github.com/temporalio/sdk-go/issues/2547): Define stable
+// interleaving semantics. See [ChaCha8.Read].
 //
 // [ChaCha8.Read]: https://go.dev/src/math/rand/v2/chacha8.go#L48
 type workflowRandomStream struct {
