@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +34,7 @@ type (
 		ServiceHTTPAddr         string
 		maxWorkflowCacheSize    int
 		Debug                   bool
+		IsCloud                 bool
 		Namespace               string
 		ShouldRegisterNamespace bool
 		TLS                     *tls.Config
@@ -148,6 +150,13 @@ func applySharedConfig(cfg *Config) {
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
+	if isCloud := strings.TrimSpace(os.Getenv("TEMPORAL_IS_CLOUD_TESTS")); isCloud != "" {
+		parsed, err := strconv.ParseBool(isCloud)
+		if err != nil {
+			panic(fmt.Sprintf("TEMPORAL_IS_CLOUD_TESTS must be a boolean, was %q", isCloud))
+		}
+		cfg.IsCloud = parsed
+	}
 }
 
 func (cfg Config) toClientOptions() client.Options {
@@ -186,6 +195,39 @@ func getDebug() string {
 
 func envConfigEnabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
+}
+
+func TestNewConfigCloudFlag(t *testing.T) {
+	t.Setenv("TEMPORAL_CLIENT_CERT", "")
+	t.Setenv("TEMPORAL_CLIENT_KEY", "")
+	if cfg := NewConfig(); cfg.IsCloud {
+		t.Fatal("expected TEMPORAL_IS_CLOUD_TESTS=false by default")
+	}
+
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "true")
+	if cfg := NewConfig(); !cfg.IsCloud {
+		t.Fatal("expected TEMPORAL_IS_CLOUD_TESTS=true to enable Cloud test mode")
+	}
+
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "false")
+	if cfg := NewConfig(); cfg.IsCloud {
+		t.Fatal("expected TEMPORAL_IS_CLOUD_TESTS=false to disable Cloud test mode")
+	}
+
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "sometimes")
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("expected invalid TEMPORAL_IS_CLOUD_TESTS to panic")
+		}
+	}()
+	NewConfig()
+}
+
+func requireLocalServer(t testing.TB, cfg Config, reason string) {
+	t.Helper()
+	if cfg.IsCloud {
+		t.Skipf("requires a local Temporal server: %s", reason)
+	}
 }
 
 // WaitForTCP waits until target tcp address is available.

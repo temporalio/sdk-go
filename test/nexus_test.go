@@ -77,6 +77,7 @@ func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContex
 	clientBase := ConfigAndClientSuiteBase{}
 	clientBase.initConfig()
 	config := clientBase.config
+	requireLocalServer(t, config, "direct Nexus HTTP tests create endpoints through Operator Service and route requests through the configured local HTTP frontend")
 	require.NoError(t, WaitForTCP(time.Minute, config.ServiceAddr))
 
 	metricsHandler := metrics.NewCapturingHandler()

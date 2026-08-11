@@ -104,6 +104,7 @@ func newNexusExtStoreClient(t *testing.T, ctx context.Context, driver converter.
 	clientBase := ConfigAndClientSuiteBase{}
 	clientBase.initConfig()
 	config := clientBase.config
+	requireLocalServer(t, config, "Nexus external-storage tests create namespace endpoints through Operator Service")
 	require.NoError(t, WaitForTCP(time.Minute, config.ServiceAddr))
 	c, err := clientBase.newDefaultClientContext(ctx, func(options *client.Options) {
 		options.ExternalStorage = converter.ExternalStorage{
