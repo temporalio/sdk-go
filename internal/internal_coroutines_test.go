@@ -1176,6 +1176,27 @@ func TestPanic(t *testing.T) {
 	require.Contains(t, panicError.StackTrace(), "go.temporal.io/sdk/internal.TestPanic")
 }
 
+func TestYieldDuringPanic(t *testing.T) {
+	// Verify that a deferred function attempting to yield (block) during panic
+	// unwinding is detected by inspecting the call stack and re-panicked with a
+	// descriptive error.
+	d := createNewDispatcher(func(ctx Context) {
+		c := NewNamedChannel(ctx, "test-chan")
+		GoNamed(ctx, "panicker", func(ctx Context) {
+			defer func() {
+				// This deferred function tries to block by receiving on a channel
+				// during panic unwinding. Stack inspection should catch this.
+				c.Receive(ctx, nil)
+			}()
+			panic("trigger unwinding")
+		})
+	})
+	defer d.Close()
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "yield during panic unwinding")
+}
+
 func TestChannelReceivePointer(t *testing.T) {
 	// This confirms that a sent pointer can be received as a pointer
 	d := createNewDispatcher(func(ctx Context) {
@@ -1983,4 +2004,13 @@ func TestChainAlreadyReadyFuturePropagates(t *testing.T) {
 	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
 	require.Equal(t, 42, result)
+}
+
+func BenchmarkIsPanicking(b *testing.B) {
+	// Benchmark the happy path (not panicking) which is the hot path
+	// that executes on every coroutine yield.
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		isPanicking()
+	}
 }

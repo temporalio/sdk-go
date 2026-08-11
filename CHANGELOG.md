@@ -27,6 +27,10 @@ to docs, or any other relevant information.
 - Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
   path.
 
+### Changed
+
+- Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
+
 ### Fixed
 
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
