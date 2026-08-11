@@ -22,6 +22,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `-envconfig` support to the integration test harness, allowing integration tests to use
+  standard client settings from `contrib/envconfig`.
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
 
 ### Changed
