@@ -1106,12 +1106,14 @@ type (
 		WorkflowID string
 
 		// RunID is the run ID of the workflow execution to cancel. If empty, the
-		// currently running execution for WorkflowID is targeted.
+		// currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
 		RunID string
 
 		// FirstExecutionRunID is the run ID of the first execution in the workflow
-		// execution chain. If set, the request fails if the targeted workflow
-		// execution is not part of this chain.
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
 		FirstExecutionRunID string
 
 		// Reason is the reason for requesting cancellation of the workflow execution.
@@ -1126,12 +1128,14 @@ type (
 		WorkflowID string
 
 		// RunID is the run ID of the workflow execution to terminate. If empty,
-		// the currently running execution for WorkflowID is targeted.
+		// the currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
 		RunID string
 
 		// FirstExecutionRunID is the run ID of the first execution in the workflow
-		// execution chain. If set, the request fails if the targeted workflow
-		// execution is not part of this chain.
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
 		FirstExecutionRunID string
 
 		// Reason is the reason for terminating the workflow execution.
