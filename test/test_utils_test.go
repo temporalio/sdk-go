@@ -38,8 +38,7 @@ type (
 		TLS                     *tls.Config
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
-	contextKey       string
-	clientConfigMode int
+	contextKey string
 	// ConfigAndClientSuiteBase stores the resolved test configuration and the
 	// base options used to create clients for a suite.
 	ConfigAndClientSuiteBase struct {
@@ -57,11 +56,6 @@ type (
 	ConfigureWorkerOptions  func(*worker.Options)
 )
 
-const (
-	clientConfigModeLegacy clientConfigMode = iota
-	clientConfigModeEnvConfig
-)
-
 var taskQueuePrefix = "tq-" + uuid.NewString()
 
 // NewConfig creates new Config instance
@@ -73,13 +67,12 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 func newConfigAndClientOptions(configCallbacks ...ConfigureConfigCallback) (Config, client.Options) {
 	cfg := newDefaultConfig()
 	var options client.Options
-	switch getClientConfigMode() {
-	case clientConfigModeLegacy:
-		resolveLegacyConfig(&cfg, configCallbacks...)
-	case clientConfigModeEnvConfig:
-		options = resolveEnvConfigClientConfig(&cfg, configCallbacks...)
-	default:
-		panic("unknown client config mode")
+	if envConfigEnabled() {
+		options = loadEnvConfigClientOptions(&cfg)
+		applyConfigCallbacks(&cfg, configCallbacks)
+	} else {
+		applyConfigCallbacks(&cfg, configCallbacks)
+		applyHarnessEnvironmentOverrides(&cfg)
 	}
 	applySharedConfig(&cfg)
 	applyConfigToClientOptions(cfg, &options)
@@ -96,8 +89,7 @@ func newDefaultConfig() Config {
 	}
 }
 
-func resolveLegacyConfig(cfg *Config, configCallbacks ...ConfigureConfigCallback) {
-	applyConfigCallbacks(cfg, configCallbacks)
+func applyHarnessEnvironmentOverrides(cfg *Config) {
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
 	}
@@ -115,7 +107,7 @@ func resolveLegacyConfig(cfg *Config, configCallbacks ...ConfigureConfigCallback
 	}
 }
 
-func resolveEnvConfigClientConfig(cfg *Config, configCallbacks ...ConfigureConfigCallback) client.Options {
+func loadEnvConfigClientOptions(cfg *Config) client.Options {
 	options, err := envconfig.LoadDefaultClientOptions()
 	if err != nil {
 		panic(fmt.Sprintf("Failed loading envconfig: %v", err))
@@ -130,7 +122,6 @@ func resolveEnvConfigClientConfig(cfg *Config, configCallbacks ...ConfigureConfi
 	cfg.Namespace = options.Namespace
 	cfg.ShouldRegisterNamespace = false
 	cfg.TLS = options.ConnectionOptions.TLS
-	applyConfigCallbacks(cfg, configCallbacks)
 	return options
 }
 
@@ -187,11 +178,8 @@ func getDebug() string {
 	return strings.ToLower(strings.TrimSpace(os.Getenv("DEBUG")))
 }
 
-func getClientConfigMode() clientConfigMode {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true") {
-		return clientConfigModeEnvConfig
-	}
-	return clientConfigModeLegacy
+func envConfigEnabled() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
 }
 
 // WaitForTCP waits until target tcp address is available.
