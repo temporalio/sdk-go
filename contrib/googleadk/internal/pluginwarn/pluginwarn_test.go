@@ -1,10 +1,13 @@
 // Package pluginwarn_test proves NewPlugin wires the raw-global-provider
 // warning into both of its hooks: worker start and workflow replayer creation.
-// It is a separate test-only package because it must install a raw OTel SDK
-// provider as a process global, and the OTel global proxy binds its delegate
-// on the first Set*Provider call permanently — doing that in the main
-// googleadk test binary would poison the switchable globals its
-// replay-telemetry tests install.
+//
+// It is deliberately a separate (test-only) package: `go test` runs each
+// package's tests in its own process, and these tests must install a raw OTel
+// SDK provider as a process global. The OTel global proxy binds its delegate
+// on the first Set*Provider call permanently, so doing that inside the main
+// googleadk test binary would poison the switchable globals that package's
+// replay-telemetry tests install. A fresh test process is the only clean way
+// to exercise the real global-install path end to end.
 package pluginwarn_test
 
 import (
