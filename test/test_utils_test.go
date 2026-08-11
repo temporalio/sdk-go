@@ -38,25 +38,15 @@ type (
 		TLS                     *tls.Config
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
-	contextKey string
-	// testEnvironment configures one test server target. Its invariants are:
-	//   - When envConfigClientOptions is nil, config is the source for clients.
-	//   - When envConfigClientOptions is non-nil, it is the only source for clients.
-	//     config is a read-only projection used by test setup and lifecycle logic;
-	//     the two representations are not synchronized after construction.
-	//   - Per-client configuration is applied to a value copy of the selected
-	//     source; callbacks must not mutate reference-valued members inherited
-	//     from it.
-	testEnvironment struct {
-		config                 Config
-		envConfigClientOptions *client.Options
-	}
-	// ConfigAndClientSuiteBase owns a resolved test environment and any shared
-	// client created from that environment.
+	contextKey               string
 	ConfigAndClientSuiteBase struct {
-		testEnvironment
-		client        client.Client
-		taskQueueName string
+		config Config
+		// When set, envConfigClientOptions is the authoritative source for clients.
+		// config is only its initial projection for test setup and lifecycle logic.
+		// Later changes to config do not affect clients in this mode.
+		envConfigClientOptions *client.Options
+		client                 client.Client
+		taskQueueName          string
 	}
 	ConfigureConfigCallback func(*Config)
 	ConfigureClientOptions  func(*client.Options)
@@ -73,23 +63,15 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 	return cfg
 }
 
-func newTestEnvironment() testEnvironment {
+func (ts *ConfigAndClientSuiteBase) initConfig() {
 	if envConfigEnabled() {
-		return newEnvConfigTestEnvironment()
+		options := loadEnvConfigClientOptions()
+		ts.config = newConfigFromClientOptions(options)
+		ts.envConfigClientOptions = &options
+		return
 	}
-	return newTestEnvironmentFromConfig(NewConfig())
-}
-
-func newTestEnvironmentFromConfig(cfg Config) testEnvironment {
-	return testEnvironment{config: cfg}
-}
-
-func newEnvConfigTestEnvironment() testEnvironment {
-	options := loadEnvConfigClientOptions()
-	return testEnvironment{
-		config:                 newConfigFromClientOptions(options),
-		envConfigClientOptions: &options,
-	}
+	ts.config = NewConfig()
+	ts.envConfigClientOptions = nil
 }
 
 func newDefaultConfig() Config {
@@ -310,7 +292,7 @@ func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow
 }
 
 func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
-	ts.testEnvironment = newTestEnvironment()
+	ts.initConfig()
 	var err error
 	err = WaitForTCP(time.Minute, ts.config.ServiceAddr)
 	if err != nil {

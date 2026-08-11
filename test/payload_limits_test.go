@@ -45,11 +45,11 @@ const payloadWarningMessage = "[TMPRL1103] Attempted to upload payloads with siz
 
 func (ts *PayloadLimitsTestSuite) SetupSuite() {
 	ts.Assertions = require.New(ts.T())
-	ts.testEnvironment = newTestEnvironmentFromConfig(NewConfig(
+	ts.config = NewConfig(
 		WithNamespace("payload-limits-namespace"),
 		WithServiceAddr("127.0.0.1:7234"),
 		WithServiceHTTPAddr("127.0.0.1:7244"),
-	))
+	)
 
 	_, httpPort, err := net.SplitHostPort(ts.config.ServiceHTTPAddr)
 	ts.NoError(err)
