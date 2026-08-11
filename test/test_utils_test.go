@@ -39,17 +39,25 @@ type (
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
 	contextKey string
-	// ConfigAndClientSuiteBase stores the resolved test configuration and the
-	// base options used to create clients for a suite.
+	// testEnvironment is the immutable, resolved configuration for one test
+	// server target. Its invariants are:
+	//   - config and clientOptions describe the same address, namespace, and TLS
+	//     configuration at construction time.
+	//   - clientOptions is the source for every client created by the environment.
+	//   - per-client configuration is applied to a value copy of clientOptions;
+	//     callbacks must not mutate reference-valued members inherited from it.
+	//
+	// Neither config nor clientOptions should be mutated after construction.
+	testEnvironment struct {
+		config        Config
+		clientOptions client.Options
+	}
+	// ConfigAndClientSuiteBase owns a resolved test environment and any shared
+	// client created from that environment.
 	ConfigAndClientSuiteBase struct {
-		config Config
-		client client.Client
-		// baseClientOptions contains the resolved options inherited by clients
-		// created through newDefaultClient. Config is reapplied for the overlapping
-		// address, namespace, and TLS fields. Per-client modifiers may
-		// intentionally override those values.
-		baseClientOptions client.Options
-		taskQueueName     string
+		testEnvironment
+		client        client.Client
+		taskQueueName string
 	}
 	ConfigureConfigCallback func(*Config)
 	ConfigureClientOptions  func(*client.Options)
@@ -60,23 +68,30 @@ var taskQueuePrefix = "tq-" + uuid.NewString()
 
 // NewConfig creates new Config instance
 func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
-	cfg, _ := newConfigAndClientOptions(configCallbacks...)
+	cfg := newDefaultConfig()
+	applyConfigCallbacks(&cfg, configCallbacks)
+	applyHarnessEnvironmentOverrides(&cfg)
 	return cfg
 }
 
-func newConfigAndClientOptions(configCallbacks ...ConfigureConfigCallback) (Config, client.Options) {
-	cfg := newDefaultConfig()
-	var options client.Options
+func newTestEnvironment(configCallbacks ...ConfigureConfigCallback) testEnvironment {
 	if envConfigEnabled() {
-		options = loadEnvConfigClientOptions(&cfg)
-		applyConfigCallbacks(&cfg, configCallbacks)
-	} else {
-		applyConfigCallbacks(&cfg, configCallbacks)
-		applyHarnessEnvironmentOverrides(&cfg)
+		return newEnvConfigTestEnvironment(configCallbacks...)
 	}
+	return newTestEnvironmentFromConfig(NewConfig(configCallbacks...))
+}
+
+func newTestEnvironmentFromConfig(cfg Config) testEnvironment {
+	return testEnvironment{config: cfg, clientOptions: cfg.toClientOptions()}
+}
+
+func newEnvConfigTestEnvironment(configCallbacks ...ConfigureConfigCallback) testEnvironment {
+	cfg := newDefaultConfig()
+	options := loadEnvConfigClientOptions(&cfg)
+	applyConfigCallbacks(&cfg, configCallbacks)
 	applySharedConfig(&cfg)
 	applyConfigToClientOptions(cfg, &options)
-	return cfg, options
+	return testEnvironment{config: cfg, clientOptions: options}
 }
 
 func newDefaultConfig() Config {
@@ -93,6 +108,7 @@ func applyHarnessEnvironmentOverrides(cfg *Config) {
 	if addr := getEnvServiceAddr(); addr != "" {
 		cfg.ServiceAddr = addr
 	}
+	applySharedConfig(cfg)
 	if os.Getenv("TEMPORAL_NAMESPACE") != "" {
 		cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
 		cfg.ShouldRegisterNamespace = false
@@ -152,6 +168,16 @@ func applyConfigToClientOptions(cfg Config, options *client.Options) {
 	options.HostPort = cfg.ServiceAddr
 	options.Namespace = cfg.Namespace
 	options.ConnectionOptions.TLS = cfg.TLS
+}
+
+func (cfg Config) toClientOptions() client.Options {
+	return client.Options{
+		HostPort:  cfg.ServiceAddr,
+		Namespace: cfg.Namespace,
+		ConnectionOptions: client.ConnectionOptions{
+			TLS: cfg.TLS,
+		},
+	}
 }
 
 func WithNamespace(ns string) ConfigureConfigCallback {
@@ -286,7 +312,7 @@ func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow
 }
 
 func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
-	ts.config, ts.baseClientOptions = newConfigAndClientOptions()
+	ts.testEnvironment = newTestEnvironment()
 	var err error
 	err = WaitForTCP(time.Minute, ts.config.ServiceAddr)
 	if err != nil {
@@ -331,10 +357,7 @@ func (ts *ConfigAndClientSuiteBase) newDefaultClient(clientOpts ...ConfigureClie
 }
 
 func (ts *ConfigAndClientSuiteBase) newDefaultClientOptions(clientOpts ...ConfigureClientOptions) client.Options {
-	options := ts.baseClientOptions
-	options.HostPort = ts.config.ServiceAddr
-	options.Namespace = ts.config.Namespace
-	options.ConnectionOptions.TLS = ts.config.TLS
+	options := ts.testEnvironment.clientOptions
 	if options.Logger == nil {
 		options.Logger = ilog.NewDefaultLogger()
 	}
