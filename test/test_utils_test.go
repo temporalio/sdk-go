@@ -36,13 +36,13 @@ type (
 		Namespace               string
 		ShouldRegisterNamespace bool
 		TLS                     *tls.Config
-		clientOptions           client.Options
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
 	contextKey               string
 	ConfigAndClientSuiteBase struct {
 		config        Config
 		client        client.Client
+		clientOptions client.Options
 		taskQueueName string
 	}
 	ConfigureConfigCallback func(*Config)
@@ -54,6 +54,11 @@ var taskQueuePrefix = "tq-" + uuid.NewString()
 
 // NewConfig creates new Config instance
 func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
+	cfg, _ := newConfigAndClientOptions(configCallbacks...)
+	return cfg
+}
+
+func newConfigAndClientOptions(configCallbacks ...ConfigureConfigCallback) (Config, client.Options) {
 	cfg := Config{
 		ServiceAddr:             client.DefaultHostPort,
 		ServiceHTTPAddr:         "localhost:7243",
@@ -61,13 +66,11 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
-	for _, configure := range configCallbacks {
-		configure(&cfg)
-	}
-	useEnvConfig := getEnvConfigServer() && len(configCallbacks) == 0
-	callbackServer := getEnvConfigServer() && len(configCallbacks) > 0
+	var options client.Options
+	useEnvConfig := getEnvConfigServer()
 	if useEnvConfig {
-		options, err := envconfig.LoadDefaultClientOptions()
+		var err error
+		options, err = envconfig.LoadDefaultClientOptions()
 		if err != nil {
 			panic(fmt.Sprintf("Failed loading envconfig: %v", err))
 		}
@@ -81,22 +84,15 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 		cfg.Namespace = options.Namespace
 		cfg.ShouldRegisterNamespace = false
 		cfg.TLS = options.ConnectionOptions.TLS
-		cfg.clientOptions = options
-	} else if !callbackServer {
+		for _, configure := range configCallbacks {
+			configure(&cfg)
+		}
+	} else {
+		for _, configure := range configCallbacks {
+			configure(&cfg)
+		}
 		if addr := getEnvServiceAddr(); addr != "" {
 			cfg.ServiceAddr = addr
-		}
-		if os.Getenv("TEMPORAL_NAMESPACE") != "" {
-			cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
-			cfg.ShouldRegisterNamespace = false
-		}
-		if os.Getenv("TEMPORAL_CLIENT_CERT") != "" || os.Getenv("TEMPORAL_CLIENT_KEY") != "" {
-			log.Print("Using custom client certificate")
-			cert, err := tls.X509KeyPair([]byte(os.Getenv("TEMPORAL_CLIENT_CERT")), []byte(os.Getenv("TEMPORAL_CLIENT_KEY")))
-			if err != nil {
-				panic(fmt.Sprintf("Failed loading client cert: %v", err))
-			}
-			cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
 		}
 	}
 	if addr := strings.TrimSpace(os.Getenv("SERVICE_HTTP_ADDR")); addr != "" {
@@ -114,15 +110,23 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 		cfg.Debug = debug == "true"
 	}
 	if !useEnvConfig {
-		cfg.clientOptions = client.Options{
-			HostPort:  cfg.ServiceAddr,
-			Namespace: cfg.Namespace,
-			ConnectionOptions: client.ConnectionOptions{
-				TLS: cfg.TLS,
-			},
+		if os.Getenv("TEMPORAL_NAMESPACE") != "" {
+			cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
+			cfg.ShouldRegisterNamespace = false
+		}
+		if os.Getenv("TEMPORAL_CLIENT_CERT") != "" || os.Getenv("TEMPORAL_CLIENT_KEY") != "" {
+			log.Print("Using custom client certificate")
+			cert, err := tls.X509KeyPair([]byte(os.Getenv("TEMPORAL_CLIENT_CERT")), []byte(os.Getenv("TEMPORAL_CLIENT_KEY")))
+			if err != nil {
+				panic(fmt.Sprintf("Failed loading client cert: %v", err))
+			}
+			cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
 		}
 	}
-	return cfg
+	options.HostPort = cfg.ServiceAddr
+	options.Namespace = cfg.Namespace
+	options.ConnectionOptions.TLS = cfg.TLS
+	return cfg, options
 }
 
 func WithNamespace(ns string) ConfigureConfigCallback {
@@ -257,7 +261,7 @@ func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow
 }
 
 func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
-	ts.config = NewConfig()
+	ts.config, ts.clientOptions = newConfigAndClientOptions()
 	var err error
 	err = WaitForTCP(time.Minute, ts.config.ServiceAddr)
 	if err != nil {
@@ -298,9 +302,10 @@ func (ts *ConfigAndClientSuiteBase) newIntegrationTestClient(clientOpts ...Confi
 
 // newDefaultClient creates a client according to ts.config with SDK defaults.
 func (ts *ConfigAndClientSuiteBase) newDefaultClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
-	options := ts.config.clientOptions
+	options := ts.clientOptions
 	options.HostPort = ts.config.ServiceAddr
 	options.Namespace = ts.config.Namespace
+	options.ConnectionOptions.TLS = ts.config.TLS
 	if options.Logger == nil {
 		options.Logger = ilog.NewDefaultLogger()
 	}
