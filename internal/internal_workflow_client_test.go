@@ -1007,6 +1007,7 @@ func (s *workflowRunSuite) TestGetWorkflowNoRunId() {
 		"",
 	)
 	s.Equal(runID, workflowRunNoRunID.GetRunID())
+	s.Equal(runID, workflowRunNoRunID.GetRunID())
 }
 
 func (s *workflowRunSuite) TestGetWorkflowNoExtantWorkflowAndNoRunId() {
