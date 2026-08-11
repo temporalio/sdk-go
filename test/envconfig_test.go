@@ -2,9 +2,11 @@ package test_test
 
 import (
 	"context"
+	"crypto/tls"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/sdk/client"
 )
 
 func TestNewConfigEnvConfigServer(t *testing.T) {
@@ -82,4 +84,35 @@ func TestNewConfigLegacyServerPreservesPrecedence(t *testing.T) {
 	require.Equal(t, config.Namespace, options.Namespace)
 	require.Nil(t, options.Credentials)
 	require.Nil(t, options.HeadersProvider)
+}
+
+func TestConfigAndClientSuiteBaseClientOptionsLayering(t *testing.T) {
+	baseTLS := &tls.Config{ServerName: "base.example"}
+	configTLS := &tls.Config{ServerName: "config.example"}
+	ts := ConfigAndClientSuiteBase{
+		config: Config{
+			ServiceAddr: "config.example:7233",
+			Namespace:   "config-namespace",
+			TLS:         configTLS,
+		},
+		baseClientOptions: client.Options{
+			HostPort:  "base.example:7233",
+			Namespace: "base-namespace",
+			ConnectionOptions: client.ConnectionOptions{
+				TLS:       baseTLS,
+				Authority: "base-authority",
+			},
+		},
+	}
+
+	options := ts.newClientOptions(func(options *client.Options) {
+		options.Namespace = "client-override-namespace"
+	})
+
+	require.Equal(t, ts.config.ServiceAddr, options.HostPort)
+	require.Equal(t, "client-override-namespace", options.Namespace)
+	require.Same(t, configTLS, options.ConnectionOptions.TLS)
+	require.Equal(t, "base-authority", options.ConnectionOptions.Authority)
+	require.NotNil(t, options.Logger)
+	require.Equal(t, "base-namespace", ts.baseClientOptions.Namespace)
 }
