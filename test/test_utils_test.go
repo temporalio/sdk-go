@@ -39,18 +39,17 @@ type (
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
 	contextKey string
-	// testEnvironment is the immutable, resolved configuration for one test
-	// server target. Its invariants are:
-	//   - config and clientOptions describe the same address, namespace, and TLS
-	//     configuration at construction time.
-	//   - clientOptions is the source for every client created by the environment.
-	//   - per-client configuration is applied to a value copy of clientOptions;
-	//     callbacks must not mutate reference-valued members inherited from it.
-	//
-	// Neither config nor clientOptions should be mutated after construction.
+	// testEnvironment configures one test server target. Its invariants are:
+	//   - When envConfigClientOptions is nil, config is the source for clients.
+	//   - When envConfigClientOptions is non-nil, it is the only source for clients.
+	//     config is a read-only projection used by test setup and lifecycle logic;
+	//     the two representations are not synchronized after construction.
+	//   - Per-client configuration is applied to a value copy of the selected
+	//     source; callbacks must not mutate reference-valued members inherited
+	//     from it.
 	testEnvironment struct {
-		config        Config
-		clientOptions client.Options
+		config                 Config
+		envConfigClientOptions *client.Options
 	}
 	// ConfigAndClientSuiteBase owns a resolved test environment and any shared
 	// client created from that environment.
@@ -74,24 +73,23 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 	return cfg
 }
 
-func newTestEnvironment(configCallbacks ...ConfigureConfigCallback) testEnvironment {
+func newTestEnvironment() testEnvironment {
 	if envConfigEnabled() {
-		return newEnvConfigTestEnvironment(configCallbacks...)
+		return newEnvConfigTestEnvironment()
 	}
-	return newTestEnvironmentFromConfig(NewConfig(configCallbacks...))
+	return newTestEnvironmentFromConfig(NewConfig())
 }
 
 func newTestEnvironmentFromConfig(cfg Config) testEnvironment {
-	return testEnvironment{config: cfg, clientOptions: cfg.toClientOptions()}
+	return testEnvironment{config: cfg}
 }
 
-func newEnvConfigTestEnvironment(configCallbacks ...ConfigureConfigCallback) testEnvironment {
-	cfg := newDefaultConfig()
-	options := loadEnvConfigClientOptions(&cfg)
-	applyConfigCallbacks(&cfg, configCallbacks)
-	applySharedConfig(&cfg)
-	applyConfigToClientOptions(cfg, &options)
-	return testEnvironment{config: cfg, clientOptions: options}
+func newEnvConfigTestEnvironment() testEnvironment {
+	options := loadEnvConfigClientOptions()
+	return testEnvironment{
+		config:                 newConfigFromClientOptions(options),
+		envConfigClientOptions: &options,
+	}
 }
 
 func newDefaultConfig() Config {
@@ -123,7 +121,7 @@ func applyHarnessEnvironmentOverrides(cfg *Config) {
 	}
 }
 
-func loadEnvConfigClientOptions(cfg *Config) client.Options {
+func loadEnvConfigClientOptions() client.Options {
 	options, err := envconfig.LoadDefaultClientOptions()
 	if err != nil {
 		panic(fmt.Sprintf("Failed loading envconfig: %v", err))
@@ -134,11 +132,17 @@ func loadEnvConfigClientOptions(cfg *Config) client.Options {
 	if options.Namespace == "" {
 		options.Namespace = client.DefaultNamespace
 	}
+	return options
+}
+
+func newConfigFromClientOptions(options client.Options) Config {
+	cfg := newDefaultConfig()
 	cfg.ServiceAddr = options.HostPort
 	cfg.Namespace = options.Namespace
 	cfg.ShouldRegisterNamespace = false
 	cfg.TLS = options.ConnectionOptions.TLS
-	return options
+	applySharedConfig(&cfg)
+	return cfg
 }
 
 func applyConfigCallbacks(cfg *Config, configCallbacks []ConfigureConfigCallback) {
@@ -162,12 +166,6 @@ func applySharedConfig(cfg *Config) {
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
-}
-
-func applyConfigToClientOptions(cfg Config, options *client.Options) {
-	options.HostPort = cfg.ServiceAddr
-	options.Namespace = cfg.Namespace
-	options.ConnectionOptions.TLS = cfg.TLS
 }
 
 func (cfg Config) toClientOptions() client.Options {
@@ -342,7 +340,12 @@ func (env *testEnvironment) newClient(clientOpts ...ConfigureClientOptions) (cli
 }
 
 func (env *testEnvironment) newClientOptions(clientOpts ...ConfigureClientOptions) client.Options {
-	options := env.clientOptions
+	var options client.Options
+	if env.envConfigClientOptions == nil {
+		options = env.config.toClientOptions()
+	} else {
+		options = *env.envConfigClientOptions
+	}
 	options.ConnectionOptions.GetSystemInfoTimeout = ctxTimeout
 	options.WorkerHeartbeatInterval = -1
 	for _, opt := range clientOpts {

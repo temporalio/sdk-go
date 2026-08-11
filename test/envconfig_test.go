@@ -20,7 +20,8 @@ func TestEnvironmentFromEnvConfig(t *testing.T) {
 
 	environment := newTestEnvironment()
 	config := environment.config
-	options := environment.clientOptions
+	require.NotNil(t, environment.envConfigClientOptions)
+	options := *environment.envConfigClientOptions
 
 	require.Equal(t, "envconfig.example:7233", config.ServiceAddr)
 	require.Equal(t, "envconfig-namespace", config.Namespace)
@@ -38,7 +39,7 @@ func TestEnvironmentFromEnvConfig(t *testing.T) {
 	require.Equal(t, "envconfig-test", headers["test-header"])
 }
 
-func TestEnvironmentFromEnvConfigCallbacksOverlay(t *testing.T) {
+func TestEnvironmentFromEnvConfigClientOptionsOverlay(t *testing.T) {
 	t.Setenv("TEMPORAL_TEST_ENV_CONFIG_SERVER", "true")
 	t.Setenv("TEMPORAL_ADDRESS", "envconfig.example:7233")
 	t.Setenv("TEMPORAL_NAMESPACE", "envconfig-namespace")
@@ -47,24 +48,25 @@ func TestEnvironmentFromEnvConfigCallbacksOverlay(t *testing.T) {
 	t.Setenv("TEMPORAL_GRPC_META_TEST_HEADER", "envconfig-test")
 	t.Setenv("TEMPORAL_CLIENT_AUTHORITY", "envconfig-authority")
 
-	environment := newTestEnvironment(
-		WithServiceAddr("127.0.0.1:7234"),
-		WithNamespace("dedicated-test-namespace"),
-	)
+	environment := newTestEnvironment()
 	config := environment.config
-	options := environment.clientOptions
+	require.NotNil(t, environment.envConfigClientOptions)
+	options := environment.newClientOptions(func(options *client.Options) {
+		options.Namespace = "client-override-namespace"
+	})
 
-	require.Equal(t, "127.0.0.1:7234", config.ServiceAddr)
-	require.Equal(t, "dedicated-test-namespace", config.Namespace)
+	require.Equal(t, "envconfig.example:7233", config.ServiceAddr)
+	require.Equal(t, "envconfig-namespace", config.Namespace)
 	require.False(t, config.ShouldRegisterNamespace)
 	require.NotNil(t, config.TLS)
 	require.Equal(t, config.ServiceAddr, options.HostPort)
-	require.Equal(t, config.Namespace, options.Namespace)
+	require.Equal(t, "client-override-namespace", options.Namespace)
 	require.NotNil(t, options.Credentials)
 	require.NotNil(t, options.HeadersProvider)
 	require.NotNil(t, options.ConnectionOptions.TLS)
 	require.False(t, options.ConnectionOptions.TLSDisabled)
 	require.Equal(t, "envconfig-authority", options.ConnectionOptions.Authority)
+	require.Equal(t, "envconfig-namespace", environment.envConfigClientOptions.Namespace)
 }
 
 func TestEnvironmentFromConfigHarnessEnvironmentOverridesCallbacks(t *testing.T) {
@@ -76,13 +78,14 @@ func TestEnvironmentFromConfigHarnessEnvironmentOverridesCallbacks(t *testing.T)
 	t.Setenv("TEMPORAL_ADDRESS", "ignored-envconfig.example:7233")
 	t.Setenv("TEMPORAL_API_KEY", "ignored-envconfig-api-key")
 
-	environment := newTestEnvironment(
+	environment := newTestEnvironmentFromConfig(NewConfig(
 		WithServiceAddr("callback.example:7233"),
 		WithNamespace("callback-namespace"),
-	)
+	))
 	config := environment.config
-	options := environment.clientOptions
+	options := environment.newClientOptions()
 
+	require.Nil(t, environment.envConfigClientOptions)
 	require.Equal(t, "environment.example:7233", config.ServiceAddr)
 	require.Equal(t, "environment-namespace", config.Namespace)
 	require.False(t, config.ShouldRegisterNamespace)
@@ -99,6 +102,11 @@ func TestEnvironmentClientOptions(t *testing.T) {
 		Namespace:   "config-namespace",
 		TLS:         configTLS,
 	})
+	require.Nil(t, environment.envConfigClientOptions)
+
+	environment.config.Namespace = "updated-config-namespace"
+	baseOptions := environment.newClientOptions()
+	require.Equal(t, "updated-config-namespace", baseOptions.Namespace)
 
 	options := environment.newClientOptions(func(options *client.Options) {
 		options.Namespace = "client-override-namespace"
@@ -108,5 +116,5 @@ func TestEnvironmentClientOptions(t *testing.T) {
 	require.Equal(t, "client-override-namespace", options.Namespace)
 	require.Same(t, configTLS, options.ConnectionOptions.TLS)
 	require.NotNil(t, options.Logger)
-	require.Equal(t, "config-namespace", environment.clientOptions.Namespace)
+	require.Equal(t, "updated-config-namespace", environment.config.Namespace)
 }
