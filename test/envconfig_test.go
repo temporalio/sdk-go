@@ -63,10 +63,10 @@ func TestNewConfigEnvConfigServerCallbacksOverlay(t *testing.T) {
 	require.Equal(t, "envconfig-authority", options.ConnectionOptions.Authority)
 }
 
-func TestNewConfigLegacyServerPreservesPrecedence(t *testing.T) {
+func TestNewConfigHarnessEnvironmentOverridesCallbacks(t *testing.T) {
 	t.Setenv("TEMPORAL_TEST_ENV_CONFIG_SERVER", "false")
-	t.Setenv("SERVICE_ADDR", "legacy.example:7233")
-	t.Setenv("TEMPORAL_NAMESPACE", "legacy-namespace")
+	t.Setenv("SERVICE_ADDR", "environment.example:7233")
+	t.Setenv("TEMPORAL_NAMESPACE", "environment-namespace")
 	t.Setenv("TEMPORAL_CLIENT_CERT", "")
 	t.Setenv("TEMPORAL_CLIENT_KEY", "")
 	t.Setenv("TEMPORAL_ADDRESS", "ignored-envconfig.example:7233")
@@ -77,8 +77,8 @@ func TestNewConfigLegacyServerPreservesPrecedence(t *testing.T) {
 		WithNamespace("callback-namespace"),
 	)
 
-	require.Equal(t, "legacy.example:7233", config.ServiceAddr)
-	require.Equal(t, "legacy-namespace", config.Namespace)
+	require.Equal(t, "environment.example:7233", config.ServiceAddr)
+	require.Equal(t, "environment-namespace", config.Namespace)
 	require.False(t, config.ShouldRegisterNamespace)
 	require.Equal(t, config.ServiceAddr, options.HostPort)
 	require.Equal(t, config.Namespace, options.Namespace)
