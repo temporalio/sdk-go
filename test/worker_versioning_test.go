@@ -86,6 +86,7 @@ func (ts *WorkerVersioningTestSuite) TestManipulateVersionSets() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
+	requireLocalServer(ts.T(), ts.config, "rules-based worker versioning v0.2 is disabled on fresh Cloud namespaces")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -152,6 +153,7 @@ func (ts *WorkerVersioningTestSuite) TestManipulateRules() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
+	requireLocalServer(ts.T(), ts.config, "rules-based worker versioning v0.2 is disabled on fresh Cloud namespaces")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -244,6 +246,7 @@ func (ts *WorkerVersioningTestSuite) TestReplaceDeleteRules() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestCommitRules() {
+	requireLocalServer(ts.T(), ts.config, "rules-based worker versioning v0.2 is disabled on fresh Cloud namespaces")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -317,6 +320,7 @@ func (ts *WorkerVersioningTestSuite) TestCommitRules() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestConflictTokens() {
+	requireLocalServer(ts.T(), ts.config, "rules-based worker versioning v0.2 is disabled on fresh Cloud namespaces")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -439,6 +443,7 @@ func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasks() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestTwoWorkersGetDifferentTasksWithRules() {
+	requireLocalServer(ts.T(), ts.config, "rules-based worker versioning v0.2 is disabled on fresh Cloud namespaces")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -532,6 +537,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachable() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityUnreachableWithRules() {
+	requireLocalServer(ts.T(), ts.config, "rules-based worker versioning v0.2 is disabled on fresh Cloud namespaces")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -594,6 +600,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorker() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityUnversionedWorkerWithRules() {
+	requireLocalServer(ts.T(), ts.config, "rules-based worker versioning v0.2 is disabled on fresh Cloud namespaces")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -719,6 +726,7 @@ func (ts *WorkerVersioningTestSuite) TestReachabilityVersions() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestReachabilityVersionsWithRules() {
+	requireLocalServer(ts.T(), ts.config, "rules-based worker versioning v0.2 is disabled on fresh Cloud namespaces")
 	// Skip this test because it is flaky with server 1.25.0, versioning api is also actively undergoing changes
 	ts.T().SkipNow()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -1006,6 +1014,7 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 }
 
 func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithRules() {
+	requireLocalServer(ts.T(), ts.config, "rules-based worker versioning v0.2 is disabled on fresh Cloud namespaces")
 	// TODO: Unskip this test, it is flaky with server 1.25.0-rc.0
 	if os.Getenv("DISABLE_SERVER_1_25_TESTS") != "" {
 		ts.T().SkipNow()

@@ -7387,6 +7387,7 @@ func (ts *IntegrationTestSuite) TestNondeterministicUpdateRegistertion() {
 }
 
 func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
+	requireLocalServer(ts.T(), ts.config, "Cloud routing supplies namespace information for DescribeNamespace requests")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -9604,6 +9605,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 	})
 
 	ts.Run("Execute activity with start delay", func() {
+		requireLocalServer(ts.T(), ts.config, "activity start delay is not enabled on fresh Cloud namespaces")
 		startDelay := 2 * time.Second
 		options := makeOptions()
 		options.StartDelay = startDelay

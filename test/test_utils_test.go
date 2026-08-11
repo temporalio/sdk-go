@@ -200,6 +200,7 @@ func envConfigEnabled() bool {
 func TestNewConfigCloudFlag(t *testing.T) {
 	t.Setenv("TEMPORAL_CLIENT_CERT", "")
 	t.Setenv("TEMPORAL_CLIENT_KEY", "")
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "")
 	if cfg := NewConfig(); cfg.IsCloud {
 		t.Fatal("expected TEMPORAL_IS_CLOUD_TESTS=false by default")
 	}
