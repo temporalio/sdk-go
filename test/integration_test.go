@@ -175,22 +175,15 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	var err error
 	trafficController := test.NewSimpleTrafficController()
-	ts.client, err = client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ContextPropagators: []workflow.ContextPropagator{
+	ts.client, err = ts.newClient(func(options *client.Options) {
+		options.ContextPropagators = []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
-		},
-		MetricsHandler:          metricsHandler,
-		TrafficController:       trafficController,
-		Interceptors:            clientInterceptors,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
-		WorkerHeartbeatInterval: -1,
-		PayloadLimits: client.PayloadLimitOptions{
-			PayloadSizeWarning: 128,
-		},
+		}
+		options.MetricsHandler = metricsHandler
+		options.TrafficController = trafficController
+		options.Interceptors = clientInterceptors
+		options.PayloadLimits = client.PayloadLimitOptions{PayloadSizeWarning: 128}
 	})
 	ts.NoError(err)
 
