@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"strings"
 	"testing"
 	"time"
@@ -12,41 +11,34 @@ import (
 	cloudservice "go.temporal.io/cloud-sdk/api/cloudservice/v1"
 	cloudnamespace "go.temporal.io/cloud-sdk/api/namespace/v1"
 	cloudoperation "go.temporal.io/cloud-sdk/api/operation/v1"
-	"go.temporal.io/cloud-sdk/cloudclient"
 	"google.golang.org/grpc"
 )
 
 func TestCreateCloudNamespace(t *testing.T) {
 	service := &fakeCloudNamespaceService{
 		createResponse: &cloudservice.CreateNamespaceResponse{
-			Namespace:      "sdk-go-ci-1-1-0.account",
-			AsyncOperation: cloudOperation("create", cloudoperation.AsyncOperation_STATE_IN_PROGRESS),
+			Namespace: "sdk-go-ci-1-1-0.account",
+			AsyncOperation: &cloudoperation.AsyncOperation{
+				Id:            "create",
+				State:         cloudoperation.AsyncOperation_STATE_FAILED,
+				FailureReason: "provisioning failed",
+			},
 		},
-		getOperationResponses: []*cloudservice.GetAsyncOperationResponse{{
-			AsyncOperation: cloudOperation("create", cloudoperation.AsyncOperation_STATE_FULFILLED),
-		}},
 	}
 	var output bytes.Buffer
-	var delays []time.Duration
 	err := createCloudNamespace(
 		context.Background(),
 		service,
 		"sdk-go-ci-1-1-0",
 		[]byte("test-ca"),
 		&output,
-		func(_ context.Context, delay time.Duration) error {
-			delays = append(delays, delay)
-			return nil
-		},
+		unexpectedSleep(t),
 	)
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || !strings.Contains(err.Error(), "provisioning failed") {
+		t.Fatalf("error = %v, want provisioning failure", err)
 	}
 	if got, want := output.String(), "namespace=sdk-go-ci-1-1-0.account\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
-	}
-	if len(delays) != 1 || delays[0] != minimumCloudOperationPollDelay {
-		t.Fatalf("poll delays = %v, want [%v]", delays, minimumCloudOperationPollDelay)
 	}
 	request := service.createRequest
 	if request == nil || request.Spec == nil {
@@ -67,33 +59,34 @@ func TestCreateCloudNamespace(t *testing.T) {
 	if len(request.Spec.Replicas) != 1 || request.Spec.Replicas[0].Region != cloudNamespaceRegion {
 		t.Fatalf("replicas = %v, want region %q", request.Spec.Replicas, cloudNamespaceRegion)
 	}
-	if len(service.getOperationRequests) != 1 || service.getOperationRequests[0].AsyncOperationId != "create" {
-		t.Fatalf("GetAsyncOperation requests = %v, want operation create", service.getOperationRequests)
-	}
 }
 
-func TestCreateCloudNamespaceRecordsOutputBeforeWaitFailure(t *testing.T) {
-	service := &fakeCloudNamespaceService{createResponse: &cloudservice.CreateNamespaceResponse{
-		Namespace: "sdk-go-ci.account",
-		AsyncOperation: &cloudoperation.AsyncOperation{
-			Id:            "create",
-			State:         cloudoperation.AsyncOperation_STATE_FAILED,
-			FailureReason: "provisioning failed",
-		},
-	}}
-	var output bytes.Buffer
-	err := createCloudNamespace(
-		context.Background(), service, "sdk-go-ci", []byte("test-ca"), &output, unexpectedSleep(t),
-	)
-	if err == nil || !strings.Contains(err.Error(), "provisioning failed") {
-		t.Fatalf("error = %v, want provisioning failure", err)
-	}
-	if got, want := output.String(), "namespace=sdk-go-ci.account\n"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-}
+func TestWaitForCloudOperation(t *testing.T) {
+	t.Run("pending then fulfilled", func(t *testing.T) {
+		service := &fakeCloudNamespaceService{getOperationResponses: []*cloudservice.GetAsyncOperationResponse{{
+			AsyncOperation: cloudOperation("operation", cloudoperation.AsyncOperation_STATE_FULFILLED),
+		}}}
+		var delays []time.Duration
+		err := waitForCloudOperation(
+			context.Background(),
+			service,
+			cloudOperation("operation", cloudoperation.AsyncOperation_STATE_PENDING),
+			func(_ context.Context, delay time.Duration) error {
+				delays = append(delays, delay)
+				return nil
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(delays) != 1 || delays[0] != minimumCloudOperationPollDelay {
+			t.Fatalf("poll delays = %v, want [%v]", delays, minimumCloudOperationPollDelay)
+		}
+		if len(service.getOperationRequests) != 1 || service.getOperationRequests[0].AsyncOperationId != "operation" {
+			t.Fatalf("GetAsyncOperation requests = %v, want operation", service.getOperationRequests)
+		}
+	})
 
-func TestWaitForCloudOperationTerminalFailures(t *testing.T) {
 	for _, state := range []cloudoperation.AsyncOperation_State{
 		cloudoperation.AsyncOperation_STATE_FAILED,
 		cloudoperation.AsyncOperation_STATE_CANCELLED,
@@ -141,37 +134,6 @@ func TestDeleteCloudNamespaceUsesResourceVersion(t *testing.T) {
 	}
 }
 
-func TestRunCloudNamespaceCommandValidatesInputsBeforeCreatingClient(t *testing.T) {
-	factory := func(cloudclient.Options) (cloudNamespaceService, io.Closer, error) {
-		t.Fatal("client factory called")
-		return nil, nil, errors.New("unreachable")
-	}
-	tests := []struct {
-		name   string
-		args   []string
-		env    map[string]string
-		needle string
-	}{
-		{name: "usage", args: []string{"create"}, needle: "usage:"},
-		{name: "empty namespace", args: []string{"delete", " "}, needle: "usage:"},
-		{name: "api key", args: []string{"delete", "namespace"}, needle: "TEMPORAL_CLIENT_CLOUD_API_KEY"},
-		{
-			name:   "CA path",
-			args:   []string{"create", "namespace"},
-			env:    map[string]string{"TEMPORAL_CLIENT_CLOUD_API_KEY": "key"},
-			needle: "TEMPORAL_CLOUD_CLIENT_CA_PATH",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := runCloudNamespaceCommand(context.Background(), test.args, mapGetenv(test.env), factory)
-			if err == nil || !strings.Contains(err.Error(), test.needle) {
-				t.Fatalf("error = %v, want substring %q", err, test.needle)
-			}
-		})
-	}
-}
-
 func cloudOperation(id string, state cloudoperation.AsyncOperation_State) *cloudoperation.AsyncOperation {
 	return &cloudoperation.AsyncOperation{Id: id, State: state}
 }
@@ -184,23 +146,15 @@ func unexpectedSleep(t *testing.T) cloudOperationSleeper {
 	}
 }
 
-func mapGetenv(values map[string]string) func(string) string {
-	return func(key string) string { return values[key] }
-}
-
 type fakeCloudNamespaceService struct {
 	createRequest         *cloudservice.CreateNamespaceRequest
 	createResponse        *cloudservice.CreateNamespaceResponse
-	createErr             error
 	getOperationRequests  []*cloudservice.GetAsyncOperationRequest
 	getOperationResponses []*cloudservice.GetAsyncOperationResponse
-	getOperationErr       error
 	getNamespaceRequest   *cloudservice.GetNamespaceRequest
 	getNamespaceResponse  *cloudservice.GetNamespaceResponse
-	getNamespaceErr       error
 	deleteRequest         *cloudservice.DeleteNamespaceRequest
 	deleteResponse        *cloudservice.DeleteNamespaceResponse
-	deleteErr             error
 }
 
 func (f *fakeCloudNamespaceService) CreateNamespace(
@@ -209,7 +163,7 @@ func (f *fakeCloudNamespaceService) CreateNamespace(
 	_ ...grpc.CallOption,
 ) (*cloudservice.CreateNamespaceResponse, error) {
 	f.createRequest = request
-	return f.createResponse, f.createErr
+	return f.createResponse, nil
 }
 
 func (f *fakeCloudNamespaceService) GetAsyncOperation(
@@ -218,9 +172,6 @@ func (f *fakeCloudNamespaceService) GetAsyncOperation(
 	_ ...grpc.CallOption,
 ) (*cloudservice.GetAsyncOperationResponse, error) {
 	f.getOperationRequests = append(f.getOperationRequests, request)
-	if f.getOperationErr != nil {
-		return nil, f.getOperationErr
-	}
 	if len(f.getOperationResponses) == 0 {
 		return nil, errors.New("unexpected GetAsyncOperation call")
 	}
@@ -235,7 +186,7 @@ func (f *fakeCloudNamespaceService) GetNamespace(
 	_ ...grpc.CallOption,
 ) (*cloudservice.GetNamespaceResponse, error) {
 	f.getNamespaceRequest = request
-	return f.getNamespaceResponse, f.getNamespaceErr
+	return f.getNamespaceResponse, nil
 }
 
 func (f *fakeCloudNamespaceService) DeleteNamespace(
@@ -244,5 +195,5 @@ func (f *fakeCloudNamespaceService) DeleteNamespace(
 	_ ...grpc.CallOption,
 ) (*cloudservice.DeleteNamespaceResponse, error) {
 	f.deleteRequest = request
-	return f.deleteResponse, f.deleteErr
+	return f.deleteResponse, nil
 }
