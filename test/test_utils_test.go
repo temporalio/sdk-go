@@ -38,16 +38,28 @@ type (
 		TLS                     *tls.Config
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
-	contextKey               string
+	contextKey       string
+	clientConfigMode int
+	// ConfigAndClientSuiteBase stores the resolved test configuration and the
+	// base options used to create clients for a suite.
 	ConfigAndClientSuiteBase struct {
-		config        Config
-		client        client.Client
-		clientOptions client.Options
-		taskQueueName string
+		config Config
+		client client.Client
+		// baseClientOptions contains the resolved options inherited by clients
+		// created through newDefaultClient. Config is reapplied for the overlapping
+		// address, namespace, and TLS fields. Per-client modifiers may
+		// intentionally override those values.
+		baseClientOptions client.Options
+		taskQueueName     string
 	}
 	ConfigureConfigCallback func(*Config)
 	ConfigureClientOptions  func(*client.Options)
 	ConfigureWorkerOptions  func(*worker.Options)
+)
+
+const (
+	clientConfigModeLegacy clientConfigMode = iota
+	clientConfigModeEnvConfig
 )
 
 var taskQueuePrefix = "tq-" + uuid.NewString()
@@ -59,42 +71,76 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 }
 
 func newConfigAndClientOptions(configCallbacks ...ConfigureConfigCallback) (Config, client.Options) {
-	cfg := Config{
+	cfg := newDefaultConfig()
+	var options client.Options
+	switch getClientConfigMode() {
+	case clientConfigModeLegacy:
+		resolveLegacyConfig(&cfg, configCallbacks...)
+	case clientConfigModeEnvConfig:
+		options = resolveEnvConfigClientConfig(&cfg, configCallbacks...)
+	default:
+		panic("unknown client config mode")
+	}
+	applySharedConfig(&cfg)
+	applyConfigToClientOptions(cfg, &options)
+	return cfg, options
+}
+
+func newDefaultConfig() Config {
+	return Config{
 		ServiceAddr:             client.DefaultHostPort,
 		ServiceHTTPAddr:         "localhost:7243",
 		maxWorkflowCacheSize:    10000,
 		Namespace:               "integration-test-namespace",
 		ShouldRegisterNamespace: true,
 	}
-	var options client.Options
-	useEnvConfig := getEnvConfigServer()
-	if useEnvConfig {
-		var err error
-		options, err = envconfig.LoadDefaultClientOptions()
-		if err != nil {
-			panic(fmt.Sprintf("Failed loading envconfig: %v", err))
-		}
-		if options.HostPort == "" {
-			options.HostPort = client.DefaultHostPort
-		}
-		if options.Namespace == "" {
-			options.Namespace = client.DefaultNamespace
-		}
-		cfg.ServiceAddr = options.HostPort
-		cfg.Namespace = options.Namespace
-		cfg.ShouldRegisterNamespace = false
-		cfg.TLS = options.ConnectionOptions.TLS
-		for _, configure := range configCallbacks {
-			configure(&cfg)
-		}
-	} else {
-		for _, configure := range configCallbacks {
-			configure(&cfg)
-		}
-		if addr := getEnvServiceAddr(); addr != "" {
-			cfg.ServiceAddr = addr
-		}
+}
+
+func resolveLegacyConfig(cfg *Config, configCallbacks ...ConfigureConfigCallback) {
+	applyConfigCallbacks(cfg, configCallbacks)
+	if addr := getEnvServiceAddr(); addr != "" {
+		cfg.ServiceAddr = addr
 	}
+	if os.Getenv("TEMPORAL_NAMESPACE") != "" {
+		cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
+		cfg.ShouldRegisterNamespace = false
+	}
+	if os.Getenv("TEMPORAL_CLIENT_CERT") != "" || os.Getenv("TEMPORAL_CLIENT_KEY") != "" {
+		log.Print("Using custom client certificate")
+		cert, err := tls.X509KeyPair([]byte(os.Getenv("TEMPORAL_CLIENT_CERT")), []byte(os.Getenv("TEMPORAL_CLIENT_KEY")))
+		if err != nil {
+			panic(fmt.Sprintf("Failed loading client cert: %v", err))
+		}
+		cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+	}
+}
+
+func resolveEnvConfigClientConfig(cfg *Config, configCallbacks ...ConfigureConfigCallback) client.Options {
+	options, err := envconfig.LoadDefaultClientOptions()
+	if err != nil {
+		panic(fmt.Sprintf("Failed loading envconfig: %v", err))
+	}
+	if options.HostPort == "" {
+		options.HostPort = client.DefaultHostPort
+	}
+	if options.Namespace == "" {
+		options.Namespace = client.DefaultNamespace
+	}
+	cfg.ServiceAddr = options.HostPort
+	cfg.Namespace = options.Namespace
+	cfg.ShouldRegisterNamespace = false
+	cfg.TLS = options.ConnectionOptions.TLS
+	applyConfigCallbacks(cfg, configCallbacks)
+	return options
+}
+
+func applyConfigCallbacks(cfg *Config, configCallbacks []ConfigureConfigCallback) {
+	for _, configure := range configCallbacks {
+		configure(cfg)
+	}
+}
+
+func applySharedConfig(cfg *Config) {
 	if addr := strings.TrimSpace(os.Getenv("SERVICE_HTTP_ADDR")); addr != "" {
 		cfg.ServiceHTTPAddr = addr
 	}
@@ -109,24 +155,12 @@ func newConfigAndClientOptions(configCallbacks ...ConfigureConfigCallback) (Conf
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
-	if !useEnvConfig {
-		if os.Getenv("TEMPORAL_NAMESPACE") != "" {
-			cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
-			cfg.ShouldRegisterNamespace = false
-		}
-		if os.Getenv("TEMPORAL_CLIENT_CERT") != "" || os.Getenv("TEMPORAL_CLIENT_KEY") != "" {
-			log.Print("Using custom client certificate")
-			cert, err := tls.X509KeyPair([]byte(os.Getenv("TEMPORAL_CLIENT_CERT")), []byte(os.Getenv("TEMPORAL_CLIENT_KEY")))
-			if err != nil {
-				panic(fmt.Sprintf("Failed loading client cert: %v", err))
-			}
-			cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
-		}
-	}
+}
+
+func applyConfigToClientOptions(cfg Config, options *client.Options) {
 	options.HostPort = cfg.ServiceAddr
 	options.Namespace = cfg.Namespace
 	options.ConnectionOptions.TLS = cfg.TLS
-	return cfg, options
 }
 
 func WithNamespace(ns string) ConfigureConfigCallback {
@@ -153,8 +187,11 @@ func getDebug() string {
 	return strings.ToLower(strings.TrimSpace(os.Getenv("DEBUG")))
 }
 
-func getEnvConfigServer() bool {
-	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
+func getClientConfigMode() clientConfigMode {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true") {
+		return clientConfigModeEnvConfig
+	}
+	return clientConfigModeLegacy
 }
 
 // WaitForTCP waits until target tcp address is available.
@@ -261,7 +298,7 @@ func (s *keysPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow
 }
 
 func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
-	ts.config, ts.clientOptions = newConfigAndClientOptions()
+	ts.config, ts.baseClientOptions = newConfigAndClientOptions()
 	var err error
 	err = WaitForTCP(time.Minute, ts.config.ServiceAddr)
 	if err != nil {
@@ -302,7 +339,11 @@ func (ts *ConfigAndClientSuiteBase) newIntegrationTestClient(clientOpts ...Confi
 
 // newDefaultClient creates a client according to ts.config with SDK defaults.
 func (ts *ConfigAndClientSuiteBase) newDefaultClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
-	options := ts.clientOptions
+	return client.Dial(ts.newDefaultClientOptions(clientOpts...))
+}
+
+func (ts *ConfigAndClientSuiteBase) newDefaultClientOptions(clientOpts ...ConfigureClientOptions) client.Options {
+	options := ts.baseClientOptions
 	options.HostPort = ts.config.ServiceAddr
 	options.Namespace = ts.config.Namespace
 	options.ConnectionOptions.TLS = ts.config.TLS
@@ -312,7 +353,7 @@ func (ts *ConfigAndClientSuiteBase) newDefaultClient(clientOpts ...ConfigureClie
 	for _, opt := range clientOpts {
 		opt(&options)
 	}
-	return client.Dial(options)
+	return options
 }
 
 func SimplestWorkflow(_ workflow.Context) error {
