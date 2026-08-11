@@ -38,7 +38,6 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/common/serializer"
-	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/internal/extstore"
 	"go.temporal.io/sdk/log"
 )
@@ -171,7 +170,7 @@ type (
 		workflowType          string
 		workflowID            string
 		firstRunID            string
-		currentRunID          *util.OnceCell
+		currentRunID          func() string
 		iterFn                func(ctx context.Context, runID string) HistoryEventIterator
 		dataConverter         converter.DataConverter
 		failureConverter      converter.FailureConverter
@@ -260,7 +259,7 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 	// execution and extract run id from there. This is definitely less efficient than it could be if there was a more
 	// specific rpc method for this, or if there were more granular history filters - in which case it could be
 	// extracted from the `iterFn` inside of `workflowRunImpl`
-	var runIDCell util.OnceCell
+	var currentRunID func() string
 	if runID == "" {
 		fetcher := func() string {
 			execData, _ := wc.DescribeWorkflowExecution(ctx, workflowID, runID)
@@ -273,9 +272,9 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 			}
 			return ""
 		}
-		runIDCell = util.LazyOnceCell(fetcher)
+		currentRunID = sync.OnceValue(fetcher)
 	} else {
-		runIDCell = util.PopulatedOnceCell(runID)
+		currentRunID = func() string { return runID }
 	}
 
 	gwCtx := converter.WorkflowSerializationContext{
@@ -285,7 +284,7 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 	return &workflowRunImpl{
 		workflowID:            workflowID,
 		firstRunID:            runID,
-		currentRunID:          &runIDCell,
+		currentRunID:          currentRunID,
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
@@ -1911,7 +1910,7 @@ func (iter *historyEventIteratorImpl) Next() (*historypb.HistoryEvent, error) {
 }
 
 func (workflowRun *workflowRunImpl) GetRunID() string {
-	return workflowRun.currentRunID.Get()
+	return workflowRun.currentRunID()
 }
 
 func (workflowRun *workflowRunImpl) GetID() string {
@@ -1927,7 +1926,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 	valuePtr interface{},
 	options WorkflowRunGetOptions,
 ) error {
-	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID.Get())
+	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID())
 	if !iter.HasNext() {
 		panic("could not get last history event for workflow")
 	}
@@ -1996,7 +1995,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 
 	err = NewWorkflowExecutionError(
 		workflowRun.workflowID,
-		workflowRun.currentRunID.Get(),
+		workflowRun.currentRunID(),
 		workflowRun.workflowType,
 		err)
 
@@ -2013,8 +2012,7 @@ func (workflowRun *workflowRunImpl) follow(
 	newRunID string,
 	options WorkflowRunGetOptions,
 ) error {
-	curRunID := util.PopulatedOnceCell(newRunID)
-	workflowRun.currentRunID = &curRunID
+	workflowRun.currentRunID = func() string { return newRunID }
 	return workflowRun.GetWithOptions(ctx, valuePtr, options)
 }
 
@@ -2247,12 +2245,11 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
 	}
-	curRunIDCell := util.PopulatedOnceCell(runID)
 	return &workflowRunImpl{
 		workflowType:          in.WorkflowType,
 		workflowID:            workflowID,
 		firstRunID:            runID,
-		currentRunID:          &curRunIDCell,
+		currentRunID:          func() string { return runID },
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, wfCtx),
@@ -2307,12 +2304,12 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		WorkflowID: startOp.input.Options.ID,
 	}
 	onStart := func(startResp *workflowservice.StartWorkflowExecutionResponse) {
-		runIDCell := util.PopulatedOnceCell(startResp.RunId)
+		runID := startResp.RunId
 		startOp.set(&workflowRunImpl{
 			workflowType:     startOp.input.WorkflowType,
 			workflowID:       startOp.input.Options.ID,
-			firstRunID:       startResp.RunId,
-			currentRunID:     &runIDCell,
+			firstRunID:       runID,
+			currentRunID:     func() string { return runID },
 			iterFn:           iterFn,
 			dataConverter:    converter.WithDataConverterSerializationContext(w.client.dataConverter, startWfCtx),
 			failureConverter: converter.WithFailureConverterSerializationContext(w.client.failureConverter, startWfCtx),
@@ -2659,12 +2656,12 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		Namespace:  w.client.namespace,
 		WorkflowID: in.Options.ID,
 	}
-	curRunIDCell := util.PopulatedOnceCell(response.GetRunId())
+	runID := response.GetRunId()
 	return &workflowRunImpl{
 		workflowType:          in.WorkflowType,
 		workflowID:            in.Options.ID,
-		firstRunID:            response.GetRunId(),
-		currentRunID:          &curRunIDCell,
+		firstRunID:            runID,
+		currentRunID:          func() string { return runID },
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, swsCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, swsCtx),
