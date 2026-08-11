@@ -19,6 +19,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/contrib/envconfig"
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
@@ -35,6 +36,7 @@ type (
 		Namespace               string
 		ShouldRegisterNamespace bool
 		TLS                     *tls.Config
+		clientOptions           client.Options
 	}
 	// context.WithValue need this type instead of basic type string to avoid lint error
 	contextKey               string
@@ -62,8 +64,40 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 	for _, configure := range configCallbacks {
 		configure(&cfg)
 	}
-	if addr := getEnvServiceAddr(); addr != "" {
-		cfg.ServiceAddr = addr
+	useEnvConfig := getEnvConfigServer() && len(configCallbacks) == 0
+	callbackServer := getEnvConfigServer() && len(configCallbacks) > 0
+	if useEnvConfig {
+		options, err := envconfig.LoadDefaultClientOptions()
+		if err != nil {
+			panic(fmt.Sprintf("Failed loading envconfig: %v", err))
+		}
+		if options.HostPort == "" {
+			options.HostPort = client.DefaultHostPort
+		}
+		if options.Namespace == "" {
+			options.Namespace = client.DefaultNamespace
+		}
+		cfg.ServiceAddr = options.HostPort
+		cfg.Namespace = options.Namespace
+		cfg.ShouldRegisterNamespace = false
+		cfg.TLS = options.ConnectionOptions.TLS
+		cfg.clientOptions = options
+	} else if !callbackServer {
+		if addr := getEnvServiceAddr(); addr != "" {
+			cfg.ServiceAddr = addr
+		}
+		if os.Getenv("TEMPORAL_NAMESPACE") != "" {
+			cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
+			cfg.ShouldRegisterNamespace = false
+		}
+		if os.Getenv("TEMPORAL_CLIENT_CERT") != "" || os.Getenv("TEMPORAL_CLIENT_KEY") != "" {
+			log.Print("Using custom client certificate")
+			cert, err := tls.X509KeyPair([]byte(os.Getenv("TEMPORAL_CLIENT_CERT")), []byte(os.Getenv("TEMPORAL_CLIENT_KEY")))
+			if err != nil {
+				panic(fmt.Sprintf("Failed loading client cert: %v", err))
+			}
+			cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
+		}
 	}
 	if addr := strings.TrimSpace(os.Getenv("SERVICE_HTTP_ADDR")); addr != "" {
 		cfg.ServiceHTTPAddr = addr
@@ -79,17 +113,14 @@ func NewConfig(configCallbacks ...ConfigureConfigCallback) Config {
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
-	if os.Getenv("TEMPORAL_NAMESPACE") != "" {
-		cfg.Namespace = os.Getenv("TEMPORAL_NAMESPACE")
-		cfg.ShouldRegisterNamespace = false
-	}
-	if os.Getenv("TEMPORAL_CLIENT_CERT") != "" || os.Getenv("TEMPORAL_CLIENT_KEY") != "" {
-		log.Print("Using custom client certificate")
-		cert, err := tls.X509KeyPair([]byte(os.Getenv("TEMPORAL_CLIENT_CERT")), []byte(os.Getenv("TEMPORAL_CLIENT_KEY")))
-		if err != nil {
-			panic(fmt.Sprintf("Failed loading client cert: %v", err))
+	if !useEnvConfig {
+		cfg.clientOptions = client.Options{
+			HostPort:  cfg.ServiceAddr,
+			Namespace: cfg.Namespace,
+			ConnectionOptions: client.ConnectionOptions{
+				TLS: cfg.TLS,
+			},
 		}
-		cfg.TLS = &tls.Config{Certificates: []tls.Certificate{cert}}
 	}
 	return cfg
 }
@@ -116,6 +147,10 @@ func getEnvCacheSize() string {
 
 func getDebug() string {
 	return strings.ToLower(strings.TrimSpace(os.Getenv("DEBUG")))
+}
+
+func getEnvConfigServer() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
 }
 
 // WaitForTCP waits until target tcp address is available.
@@ -263,11 +298,11 @@ func (ts *ConfigAndClientSuiteBase) newIntegrationTestClient(clientOpts ...Confi
 
 // newDefaultClient creates a client according to ts.config with SDK defaults.
 func (ts *ConfigAndClientSuiteBase) newDefaultClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
-	options := client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-		Logger:            ilog.NewDefaultLogger(),
+	options := ts.config.clientOptions
+	options.HostPort = ts.config.ServiceAddr
+	options.Namespace = ts.config.Namespace
+	if options.Logger == nil {
+		options.Logger = ilog.NewDefaultLogger()
 	}
 	for _, opt := range clientOpts {
 		opt(&options)
