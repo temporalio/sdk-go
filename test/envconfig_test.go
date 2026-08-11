@@ -9,7 +9,7 @@ import (
 	"go.temporal.io/sdk/client"
 )
 
-func TestNewConfigEnvConfigServer(t *testing.T) {
+func TestEnvironmentFromEnvConfig(t *testing.T) {
 	t.Setenv("TEMPORAL_TEST_ENV_CONFIG_SERVER", "true")
 	t.Setenv("TEMPORAL_ADDRESS", "envconfig.example:7233")
 	t.Setenv("TEMPORAL_NAMESPACE", "envconfig-namespace")
@@ -18,7 +18,9 @@ func TestNewConfigEnvConfigServer(t *testing.T) {
 	t.Setenv("TEMPORAL_GRPC_META_TEST_HEADER", "envconfig-test")
 	t.Setenv("TEMPORAL_CLIENT_AUTHORITY", "envconfig-authority")
 
-	config, options := newConfigAndClientOptions()
+	environment := newTestEnvironment()
+	config := environment.config
+	options := environment.clientOptions
 
 	require.Equal(t, "envconfig.example:7233", config.ServiceAddr)
 	require.Equal(t, "envconfig-namespace", config.Namespace)
@@ -36,7 +38,7 @@ func TestNewConfigEnvConfigServer(t *testing.T) {
 	require.Equal(t, "envconfig-test", headers["test-header"])
 }
 
-func TestNewConfigEnvConfigServerCallbacksOverlay(t *testing.T) {
+func TestEnvironmentFromEnvConfigCallbacksOverlay(t *testing.T) {
 	t.Setenv("TEMPORAL_TEST_ENV_CONFIG_SERVER", "true")
 	t.Setenv("TEMPORAL_ADDRESS", "envconfig.example:7233")
 	t.Setenv("TEMPORAL_NAMESPACE", "envconfig-namespace")
@@ -45,10 +47,12 @@ func TestNewConfigEnvConfigServerCallbacksOverlay(t *testing.T) {
 	t.Setenv("TEMPORAL_GRPC_META_TEST_HEADER", "envconfig-test")
 	t.Setenv("TEMPORAL_CLIENT_AUTHORITY", "envconfig-authority")
 
-	config, options := newConfigAndClientOptions(
+	environment := newTestEnvironment(
 		WithServiceAddr("127.0.0.1:7234"),
 		WithNamespace("dedicated-test-namespace"),
 	)
+	config := environment.config
+	options := environment.clientOptions
 
 	require.Equal(t, "127.0.0.1:7234", config.ServiceAddr)
 	require.Equal(t, "dedicated-test-namespace", config.Namespace)
@@ -63,7 +67,7 @@ func TestNewConfigEnvConfigServerCallbacksOverlay(t *testing.T) {
 	require.Equal(t, "envconfig-authority", options.ConnectionOptions.Authority)
 }
 
-func TestNewConfigHarnessEnvironmentOverridesCallbacks(t *testing.T) {
+func TestEnvironmentFromConfigHarnessEnvironmentOverridesCallbacks(t *testing.T) {
 	t.Setenv("TEMPORAL_TEST_ENV_CONFIG_SERVER", "false")
 	t.Setenv("SERVICE_ADDR", "environment.example:7233")
 	t.Setenv("TEMPORAL_NAMESPACE", "environment-namespace")
@@ -72,10 +76,12 @@ func TestNewConfigHarnessEnvironmentOverridesCallbacks(t *testing.T) {
 	t.Setenv("TEMPORAL_ADDRESS", "ignored-envconfig.example:7233")
 	t.Setenv("TEMPORAL_API_KEY", "ignored-envconfig-api-key")
 
-	config, options := newConfigAndClientOptions(
+	environment := newTestEnvironment(
 		WithServiceAddr("callback.example:7233"),
 		WithNamespace("callback-namespace"),
 	)
+	config := environment.config
+	options := environment.clientOptions
 
 	require.Equal(t, "environment.example:7233", config.ServiceAddr)
 	require.Equal(t, "environment-namespace", config.Namespace)
@@ -86,33 +92,21 @@ func TestNewConfigHarnessEnvironmentOverridesCallbacks(t *testing.T) {
 	require.Nil(t, options.HeadersProvider)
 }
 
-func TestConfigAndClientSuiteBaseClientOptionsLayering(t *testing.T) {
-	baseTLS := &tls.Config{ServerName: "base.example"}
+func TestEnvironmentClientOptions(t *testing.T) {
 	configTLS := &tls.Config{ServerName: "config.example"}
-	ts := ConfigAndClientSuiteBase{
-		config: Config{
-			ServiceAddr: "config.example:7233",
-			Namespace:   "config-namespace",
-			TLS:         configTLS,
-		},
-		baseClientOptions: client.Options{
-			HostPort:  "base.example:7233",
-			Namespace: "base-namespace",
-			ConnectionOptions: client.ConnectionOptions{
-				TLS:       baseTLS,
-				Authority: "base-authority",
-			},
-		},
-	}
+	environment := newTestEnvironmentFromConfig(Config{
+		ServiceAddr: "config.example:7233",
+		Namespace:   "config-namespace",
+		TLS:         configTLS,
+	})
 
-	options := ts.newClientOptions(func(options *client.Options) {
+	options := environment.newClientOptions(func(options *client.Options) {
 		options.Namespace = "client-override-namespace"
 	})
 
-	require.Equal(t, ts.config.ServiceAddr, options.HostPort)
+	require.Equal(t, environment.config.ServiceAddr, options.HostPort)
 	require.Equal(t, "client-override-namespace", options.Namespace)
 	require.Same(t, configTLS, options.ConnectionOptions.TLS)
-	require.Equal(t, "base-authority", options.ConnectionOptions.Authority)
 	require.NotNil(t, options.Logger)
-	require.Equal(t, "base-namespace", ts.baseClientOptions.Namespace)
+	require.Equal(t, "config-namespace", environment.clientOptions.Namespace)
 }
