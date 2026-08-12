@@ -10,3 +10,8 @@ or Security.
 # Changelog
 
 ## [Unreleased]
+
+### Fixed
+
+- Corrected the module's minimum Temporal Go SDK requirement from v1.25.1 to
+  v1.43.1.

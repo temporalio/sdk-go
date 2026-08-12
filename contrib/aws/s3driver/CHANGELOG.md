@@ -11,6 +11,11 @@ or Security.
 
 ## [Unreleased]
 
+### Fixed
+
+- Corrected the module's minimum Temporal Go SDK requirement from v1.25.1 to
+  v1.43.1.
+
 ### Changed
 
 - S3 object key path segments are now percent-encoded against S3's safe
