@@ -2,6 +2,7 @@ package test_test
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -8792,9 +8793,12 @@ func (c *clientPluginForTest) NewClient(
 	if c.failNew {
 		return fmt.Errorf("intentional client error")
 	}
-	// Confirm the configuration was respected
-	c.ts.Equal(c.ts.config.ServiceAddr, options.ClientOptions.HostPort)
-	c.ts.True(c.ts.config.TLS == options.ClientOptions.ConnectionOptions.TLS)
+	if options.ClientOptions.HostPort != c.ts.config.ServiceAddr {
+		return fmt.Errorf("plugin did not configure host port: got %q, want %q", options.ClientOptions.HostPort, c.ts.config.ServiceAddr)
+	}
+	if options.ClientOptions.ConnectionOptions.TLS != c.ts.config.TLS {
+		return fmt.Errorf("plugin did not configure TLS")
+	}
 	c.ts.Len(options.ClientOptions.Interceptors, 1)
 	return next(ctx, options)
 }
@@ -8810,10 +8814,14 @@ func (ts *IntegrationTestSuite) TestClientPlugin() {
 	})
 	ts.ErrorContains(err, "intentional client error")
 
-	// Now succeed dial and run simple workflow. Use client.Dial because
-	// newDefaultClient populates HostPort/TLS values.
+	// Now succeed dial and run simple workflow
 	plugin = &clientPluginForTest{ts: ts}
-	cl, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
+	cl, err := ts.newDefaultClient(func(options *client.Options) {
+		// Set garbage values to ensure plugin overwrites them
+		options.HostPort = "127.0.0.1:1"
+		options.ConnectionOptions.TLS = &tls.Config{ServerName: "plugin-must-overwrite.invalid"}
+		options.Plugins = []client.Plugin{plugin}
+	})
 	ts.NoError(err)
 	defer cl.Close()
 	wrk := worker.New(cl, ts.taskQueueName, worker.Options{})
