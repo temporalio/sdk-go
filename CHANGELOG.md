@@ -89,6 +89,10 @@ to docs, or any other relevant information.
   environment. This lets host processes that register a single shared factory (e.g.
   `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
 - Merged link-converter class in the server and sdk-go and moved it to api-go
+- Added poller-group-aware autoscaling for multi-cell namespaces. Autoscaling workers maintain poll
+  coverage for every server-provided group and distribute additional polls according to the provided weights. 
+  Required group coverage may exceed the configured maximum poller count; workflow normal and sticky pollers
+  maintain coverage independently.
 - Nexus operations with `NexusOperationCancellationTypeAbandon` no longer panic the workflow task when
   the operation later starts or completes after the caller is canceled.
 - Session worker: stopping a worker while it is at its maximum concurrent session count no longer blocks
