@@ -25,6 +25,7 @@ type nexusTaskPoller struct {
 	inboundPayloadVisitor  PayloadVisitor
 	outboundPayloadVisitor PayloadVisitor
 	backgroundContext      context.Context
+	pollerGroups           *pollerGroupManager
 }
 
 type nexusTask struct {
@@ -37,6 +38,7 @@ func newNexusTaskPoller(
 	taskHandler *nexusTaskHandler,
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
+	pollerGroups *pollerGroupManager,
 ) *nexusTaskPoller {
 	backgroundContext := params.BackgroundContext
 	if backgroundContext == nil {
@@ -52,6 +54,7 @@ func newNexusTaskPoller(
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
+			pollerGroupInfoStore:         params.pollerGroupInfoStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:     taskHandler,
@@ -65,6 +68,7 @@ func newNexusTaskPoller(
 		inboundPayloadVisitor:  params.inboundPayloadVisitor,
 		outboundPayloadVisitor: params.outboundPayloadVisitor,
 		backgroundContext:      backgroundContext,
+		pollerGroups:           pollerGroups,
 	}
 }
 
@@ -96,9 +100,16 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		WorkerInstanceKey: ntp.workerInstanceKey,
 	}
 
+	lease := ntp.pollerGroups.reserve()
+	defer lease.release()
+	request.PollerGroupId = lease.groupIDOrEmpty()
+
 	response, err := ntp.pollNexusTaskQueue(ctx, request)
 	if err != nil {
 		return nil, err
+	}
+	if response != nil {
+		ntp.updatePollerGroups(ntp.pollerGroups, response.GetPollerGroupsInfo())
 	}
 	if response == nil || len(response.TaskToken) == 0 {
 		// No operation info is available on empty poll. Emit using base scope.
@@ -112,7 +123,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 }
 
 // PollTask polls a new task
-func (ntp *nexusTaskPoller) PollTask() (taskForWorker, error) {
+func (ntp *nexusTaskPoller) PollTask(pollerGroupLease) (taskForWorker, error) {
 	return ntp.doPoll(ntp.poll)
 }
 
@@ -142,7 +153,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
 		// context wasn't propagated to us, use a background context.
-		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()))
+		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()), response.GetPollerGroupId())
 		if err != nil {
 			return err
 		}
@@ -279,6 +290,7 @@ func (ntp *nexusTaskPoller) reportExternalStorageFailure(
 		response.TaskToken,
 		handlerErr,
 		getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()),
+		response.GetPollerGroupId(),
 	)
 	if err != nil {
 		return err

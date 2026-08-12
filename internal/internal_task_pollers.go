@@ -55,7 +55,7 @@ type (
 	// taskPoller interface to poll for tasks
 	taskPoller interface {
 		// PollTask polls for one new task
-		PollTask() (taskForWorker, error)
+		PollTask(pollerGroupLease) (taskForWorker, error)
 	}
 
 	// taskProcessor interface to process tasks
@@ -91,6 +91,8 @@ type (
 		workerInstanceKey string
 		// Per-client queue used by the server to send worker commands.
 		workerControlTaskQueue string
+		// Per-client poller-group snapshots received from poll responses.
+		pollerGroupInfoStore *pollerGroupInfoStore
 		// Server cancels polls on shutdown
 		workerPollCompleteOnShutdown *atomic.Bool
 	}
@@ -130,6 +132,8 @@ type (
 
 		inboundPayloadVisitor     PayloadVisitor
 		payloadVisitorConcurrency int
+
+		pollerGroups *pollerGroupManager
 	}
 
 	// workflowTaskProcessor implements processing of a workflow task and can create
@@ -174,6 +178,7 @@ type (
 		logger              log.Logger
 		activitiesPerSecond float64
 		numPollerMetric     *numPollerMetric
+		pollerGroups        *pollerGroupManager
 	}
 
 	historyIteratorImpl struct {
@@ -349,6 +354,16 @@ func (bp *basePoller) getCapabilities() *workflowservice.GetSystemInfoResponse_C
 	return bp.capabilities
 }
 
+func (bp *basePoller) updatePollerGroups(manager *pollerGroupManager, info *taskqueuepb.PollerGroupsInfo) {
+	if manager != nil {
+		manager.updateGroups(info)
+		return
+	}
+	if bp != nil {
+		bp.pollerGroupInfoStore.updateGroups(info)
+	}
+}
+
 func (bp *basePoller) getDeploymentName() string {
 	return bp.workerDeploymentVersion.DeploymentName
 }
@@ -372,6 +387,7 @@ func newWorkflowTaskProcessor(
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
 			workerControlTaskQueue:       params.workerControlTaskQueue,
+			pollerGroupInfoStore:         params.pollerGroupInfoStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		service:                      service,
@@ -396,9 +412,15 @@ func newWorkflowTaskProcessor(
 }
 
 // PollTask polls a new task
-func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
+func (wtp *workflowTaskPoller) PollTask(lease pollerGroupLease) (taskForWorker, error) {
 	// Get the task.
-	workflowTask, err := wtp.doPoll(wtp.poll)
+	poll := wtp.poll
+	if lease.manager != nil {
+		poll = func(ctx context.Context) (taskForWorker, error) {
+			return wtp.pollWithLease(ctx, lease)
+		}
+	}
+	workflowTask, err := wtp.doPoll(poll)
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +428,10 @@ func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
 	return workflowTask, nil
 }
 
-func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) taskPoller {
+func (wtp *workflowTaskProcessor) createPoller(
+	mode workflowTaskPollerMode,
+	pollerGroups *pollerGroupManager,
+) taskPoller {
 	return &workflowTaskPoller{
 		basePoller:                   wtp.basePoller,
 		mode:                         mode,
@@ -430,6 +455,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 		numStickyPollerMetric:        wtp.numStickyPollerMetric,
 		inboundPayloadVisitor:        wtp.inboundPayloadVisitor,
 		payloadVisitorConcurrency:    wtp.payloadVisitorConcurrency,
+		pollerGroups:                 pollerGroups,
 	}
 }
 
@@ -789,6 +815,7 @@ func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
 			Namespace:     wtp.namespace,
 			Failure:       wtp.failureConverter.ErrorToFailure(sendErr),
 			Cause:         enumspb.WORKFLOW_TASK_FAILED_CAUSE_GRPC_MESSAGE_TOO_LARGE,
+			PollerGroupId: task.GetPollerGroupId(),
 		}
 		if err = visitProtoPayloads(ctx, wtp.outboundPayloadVisitor, request, wtp.payloadVisitorConcurrency); err != nil {
 			wtp.logger.Error("Failed to visit payloads for GRPC message too large query failure response.", tagError, err)
@@ -931,7 +958,7 @@ func newLocalActivityPoller(
 	}
 }
 
-func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
+func (latp *localActivityTaskPoller) PollTask(pollerGroupLease) (taskForWorker, error) {
 	task := latp.laTunnel.getTask()
 	if task == nil {
 		return nil, nil
@@ -1119,30 +1146,37 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 //     3.2.1) if sticky task queue has backlog, always prefer to process sticky task first
 //     3.2.2) poll from the task queue that has less pending requests (prefer sticky when they are the same).
 func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.PollWorkflowTaskQueueRequest) {
-	taskQueue := &taskqueuepb.TaskQueue{
-		Name: wtp.taskQueueName,
-		Kind: enumspb.TASK_QUEUE_KIND_NORMAL,
-	}
+	queueKind := enumspb.TASK_QUEUE_KIND_NORMAL
 
 	if wtp.mode == NonSticky || wtp.stickyCacheSize <= 0 {
 		// Do nothing, taskQueue is already set to non-sticky
 	} else if wtp.mode == Sticky {
-		taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
-		taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
-		taskQueue.NormalName = wtp.taskQueueName
+		queueKind = enumspb.TASK_QUEUE_KIND_STICKY
 	} else if wtp.mode == Mixed {
 		wtp.requestLock.Lock()
 		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
-			taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
-			taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
-			taskQueue.NormalName = wtp.taskQueueName
+			queueKind = enumspb.TASK_QUEUE_KIND_STICKY
 		} else {
 			wtp.pendingRegularPollCount++
 		}
 		wtp.requestLock.Unlock()
 	} else {
 		panic("unknown workflow task poller mode")
+	}
+
+	return wtp.getPollRequestForKind(queueKind)
+}
+
+func (wtp *workflowTaskPoller) getPollRequestForKind(queueKind enumspb.TaskQueueKind) (request *workflowservice.PollWorkflowTaskQueueRequest) {
+	taskQueue := &taskqueuepb.TaskQueue{
+		Name: wtp.taskQueueName,
+		Kind: enumspb.TASK_QUEUE_KIND_NORMAL,
+	}
+	if queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
+		taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
+		taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
+		taskQueue.NormalName = wtp.taskQueueName
 	}
 
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
@@ -1184,33 +1218,68 @@ func (wtp *workflowTaskPoller) pollWorkflowTaskQueue(ctx context.Context, reques
 
 // Poll for a single workflow task from the service
 func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
+	if wtp.pollerGroups == nil {
+		return wtp.pollWithLease(ctx, pollerGroupLease{})
+	}
+	queueKind := wtp.preferredQueueKind()
+	lease, ok := wtp.pollerGroups.tryReserveWorkflowPoll(queueKind, wtp.stickyCacheSize > 0)
+	if !ok {
+		return nil, fmt.Errorf("workflow poll for %s queue attempted before required poller-group coverage", queueKind)
+	}
+	defer lease.release()
+	return wtp.pollWithLease(ctx, lease)
+}
+
+func (wtp *workflowTaskPoller) pollWithLease(
+	ctx context.Context,
+	lease pollerGroupLease,
+) (taskForWorker, error) {
 	traceLog(func() {
 		wtp.logger.Debug("workflowTaskPoller::Poll")
 	})
 
-	request := wtp.getNextPollRequest()
-	defer wtp.release(request.TaskQueue.GetKind())
+	var request *workflowservice.PollWorkflowTaskQueueRequest
+	var queueKind enumspb.TaskQueueKind
+	if wtp.pollerGroups != nil {
+		queueKind = wtp.preferredQueueKind()
+		if lease.manager != wtp.pollerGroups {
+			return nil, errors.New("workflow poller-group lease belongs to a different manager")
+		}
+		if lease.queueKind != queueKind {
+			return nil, fmt.Errorf("workflow poller-group lease has queue kind %s, expected %s", lease.queueKind, queueKind)
+		}
+		request = wtp.getPollRequestForKind(queueKind)
+		request.PollerGroupId = lease.groupIDOrEmpty()
+	} else {
+		request = wtp.getNextPollRequest()
+		queueKind = request.TaskQueue.GetKind()
+		defer wtp.release(queueKind)
+	}
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
 	if err != nil {
-		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
+		wtp.updateBacklog(queueKind, 0)
 		return nil, err
+	}
+
+	if response != nil {
+		wtp.updatePollerGroups(wtp.pollerGroups, response.GetPollerGroupsInfo())
 	}
 
 	if response == nil || len(response.TaskToken) == 0 {
 		// Emit using base scope as no workflow type information is available in the case of empty poll
 		wtp.metricsHandler.Counter(metrics.WorkflowTaskQueuePollEmptyCounter).Inc(1)
-		wtp.updateBacklog(request.TaskQueue.GetKind(), 0)
+		wtp.updateBacklog(queueKind, 0)
 		return &workflowTask{}, nil
 	}
 
-	if request.TaskQueue.GetKind() == enumspb.TASK_QUEUE_KIND_STICKY {
+	if queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
 		wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowStickyTask)
 	} else {
 		wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowTask)
 	}
 
-	wtp.updateBacklog(request.TaskQueue.GetKind(), response.GetBacklogCountHint())
+	wtp.updateBacklog(queueKind, response.GetBacklogCountHint())
 
 	task := wtp.toWorkflowTask(response)
 	traceLog(func() {
@@ -1231,6 +1300,13 @@ func (wtp *workflowTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	scheduleToStartLatency := response.GetStartedTime().AsTime().Sub(response.GetScheduledTime().AsTime())
 	metricsHandler.Timer(metrics.WorkflowTaskScheduleToStartLatency).Record(scheduleToStartLatency)
 	return task, nil
+}
+
+func (wtp *workflowTaskPoller) preferredQueueKind() enumspb.TaskQueueKind {
+	if wtp.mode == Sticky && wtp.stickyCacheSize > 0 {
+		return enumspb.TASK_QUEUE_KIND_STICKY
+	}
+	return enumspb.TASK_QUEUE_KIND_NORMAL
 }
 
 func (wtp *workflowTaskPoller) toWorkflowTask(response *workflowservice.PollWorkflowTaskQueueResponse) *workflowTask {
@@ -1366,7 +1442,12 @@ func newGetHistoryPageFunc(
 	}
 }
 
-func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowservice.WorkflowServiceClient, params workerExecutionParameters) *activityTaskPoller {
+func newActivityTaskPoller(
+	taskHandler ActivityTaskHandler,
+	service workflowservice.WorkflowServiceClient,
+	params workerExecutionParameters,
+	pollerGroups *pollerGroupManager,
+) *activityTaskPoller {
 	return &activityTaskPoller{
 		basePoller: basePoller{
 			metricsHandler:               params.MetricsHandler,
@@ -1378,6 +1459,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
 			workerControlTaskQueue:       params.workerControlTaskQueue,
+			pollerGroupInfoStore:         params.pollerGroupInfoStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:         taskHandler,
@@ -1388,6 +1470,7 @@ func newActivityTaskPoller(taskHandler ActivityTaskHandler, service workflowserv
 		logger:              params.Logger,
 		activitiesPerSecond: params.TaskQueueActivitiesPerSecond,
 		numPollerMetric:     newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeActivityTask),
+		pollerGroups:        pollerGroups,
 	}
 }
 
@@ -1404,6 +1487,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 	traceLog(func() {
 		atp.logger.Debug("activityTaskPoller::Poll")
 	})
+
 	request := &workflowservice.PollActivityTaskQueueRequest{
 		Namespace:         atp.namespace,
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
@@ -1422,9 +1506,16 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		WorkerControlTaskQueue: atp.workerControlTaskQueue,
 	}
 
+	lease := atp.pollerGroups.reserve()
+	defer lease.release()
+	request.PollerGroupId = lease.groupIDOrEmpty()
+
 	response, err := atp.pollActivityTaskQueue(ctx, request)
 	if err != nil {
 		return nil, err
+	}
+	if response != nil {
+		atp.updatePollerGroups(atp.pollerGroups, response.GetPollerGroupsInfo())
 	}
 	if response == nil || len(response.TaskToken) == 0 {
 		// No activity info is available on empty poll.  Emit using base scope.
@@ -1445,7 +1536,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 }
 
 // PollTask polls a new task
-func (atp *activityTaskPoller) PollTask() (taskForWorker, error) {
+func (atp *activityTaskPoller) PollTask(pollerGroupLease) (taskForWorker, error) {
 	// Get the task.
 	activityTask, err := atp.doPoll(atp.poll)
 	if err != nil {

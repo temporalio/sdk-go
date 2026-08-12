@@ -87,6 +87,7 @@ type (
 		getSystemInfoTimeout     time.Duration
 		workerHeartbeatInterval  time.Duration
 		workerGroupingKey        string
+		pollerGroupInfoStore     *pollerGroupInfoStore
 		sdkName                  string
 		sdkVersion               string
 		heartbeatManager         *heartbeatManager
@@ -1714,6 +1715,7 @@ func (wc *WorkflowClient) loadNamespaceData(metricsHandler metrics.Handler) (nam
 	if resp != nil {
 		data.capabilities = resp.GetNamespaceInfo().GetCapabilities()
 		data.limits = resp.GetNamespaceInfo().GetLimits()
+		wc.pollerGroupInfoStore.updateGroups(resp.GetPollerGroupsInfo())
 	}
 	if data.capabilities == nil {
 		data.capabilities = &namespacepb.NamespaceInfo_Capabilities{}
