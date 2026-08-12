@@ -38,47 +38,75 @@ func TestDeadlockDetector(t *testing.T) {
 }
 
 func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		runWorkflow := func(conv converter.DataConverter) error {
-			var suite WorkflowTestSuite
-			activityFn := func(ctx context.Context, arg string) error {
-				return nil
-			}
-			workflowFn := func(ctx Context) error {
-				ctx = WithDataConverter(ctx, conv)
-				ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 10 * time.Second})
-				return ExecuteActivity(ctx, activityFn, "some arg").Get(ctx, nil)
-			}
-			env := suite.NewTestWorkflowEnvironment()
-			env.SetWorkerOptions(WorkerOptions{DeadlockDetectionTimeout: 400 * time.Millisecond})
-			env.RegisterWorkflow(workflowFn)
-			env.RegisterActivity(activityFn)
-			env.ExecuteWorkflow(workflowFn)
-			require.True(t, env.IsWorkflowCompleted())
-			return env.GetWorkflowError()
+	runWorkflow := func(t *testing.T, conv converter.DataConverter) error {
+		var suite WorkflowTestSuite
+		activityFn := func(ctx context.Context, arg string) error {
+			return nil
 		}
+		workflowFn := func(ctx Context) error {
+			ctx = WithDataConverter(ctx, conv)
+			ctx = WithActivityOptions(ctx, ActivityOptions{ScheduleToCloseTimeout: 10 * time.Second})
+			return ExecuteActivity(ctx, activityFn, "some arg").Get(ctx, nil)
+		}
+		env := suite.NewTestWorkflowEnvironment()
+		env.SetWorkerOptions(WorkerOptions{DeadlockDetectionTimeout: 400 * time.Millisecond})
+		env.RegisterWorkflow(workflowFn)
+		env.RegisterActivity(activityFn)
+		env.ExecuteWorkflow(workflowFn)
+		require.True(t, env.IsWorkflowCompleted())
+		return env.GetWorkflowError()
+	}
 
-		// Run with a slow converter and confirm a deadlock is detected
-		conv := converter.GetDefaultDataConverter()
-		conv = &slowToPayloadsConverter{conv}
-		require.ErrorContains(t, runWorkflow(conv), "Potential deadlock detected")
+	t.Run("detects deadlock", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			converterReturned := make(chan struct{})
+			conv := &slowToPayloadsConverter{
+				DataConverter: converter.GetDefaultDataConverter(),
+				onReturn:      func() { close(converterReturned) },
+			}
+			require.ErrorContains(t, runWorkflow(t, conv), "Potential deadlock detected")
 
-		// Run with that same payload converter without deadlock detection
-		conv = DataConverterWithoutDeadlockDetection(conv)
-		require.NoError(t, runWorkflow(conv))
+			// Deadlock detection returns while the converter is still sleeping. Let
+			// that abandoned workflow coroutine finish before leaving this bubble.
+			<-converterReturned
+			synctest.Wait()
+		})
+	})
 
-		// Also confirm outside of workflow, pause/resume is noop
-		_, err := conv.ToPayload("foo")
-		require.NoError(t, err)
-		_, err = conv.(ContextAware).WithWorkflowContext(Background()).ToPayload("foo")
-		require.NoError(t, err)
+	t.Run("disables deadlock detection", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			conv := converter.DataConverter(&slowToPayloadsConverter{
+				DataConverter: converter.GetDefaultDataConverter(),
+			})
+			conv = DataConverterWithoutDeadlockDetection(conv)
+			require.NoError(t, runWorkflow(t, conv))
+		})
+	})
+
+	t.Run("outside workflow", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			conv := converter.DataConverter(&slowToPayloadsConverter{
+				DataConverter: converter.GetDefaultDataConverter(),
+			})
+			conv = DataConverterWithoutDeadlockDetection(conv)
+			_, err := conv.ToPayload("foo")
+			require.NoError(t, err)
+			_, err = conv.(ContextAware).WithWorkflowContext(Background()).ToPayload("foo")
+			require.NoError(t, err)
+		})
 	})
 }
 
-type slowToPayloadsConverter struct{ converter.DataConverter }
+type slowToPayloadsConverter struct {
+	converter.DataConverter
+	onReturn func()
+}
 
 func (s *slowToPayloadsConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
 	time.Sleep(600 * time.Millisecond)
+	if s.onReturn != nil {
+		defer s.onReturn()
+	}
 	return s.DataConverter.ToPayloads(value...)
 }
 
