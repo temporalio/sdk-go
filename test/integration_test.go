@@ -8792,7 +8792,9 @@ func (c *clientPluginForTest) NewClient(
 	if c.failNew {
 		return fmt.Errorf("intentional client error")
 	}
-	// Confirm our interceptor was set
+	// Confirm the configuration was respected
+	c.ts.Equal(c.ts.config.ServiceAddr, options.ClientOptions.HostPort)
+	c.ts.True(c.ts.config.TLS == options.ClientOptions.ConnectionOptions.TLS)
 	c.ts.Len(options.ClientOptions.Interceptors, 1)
 	return next(ctx, options)
 }
@@ -8808,11 +8810,10 @@ func (ts *IntegrationTestSuite) TestClientPlugin() {
 	})
 	ts.ErrorContains(err, "intentional client error")
 
-	// Now succeed dial and run simple workflow
+	// Now succeed dial and run simple workflow. Use client.Dial because
+	// newDefaultClient populates HostPort/TLS values.
 	plugin = &clientPluginForTest{ts: ts}
-	cl, err := ts.newDefaultClient(func(options *client.Options) {
-		options.Plugins = []client.Plugin{plugin}
-	})
+	cl, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
 	ts.NoError(err)
 	defer cl.Close()
 	wrk := worker.New(cl, ts.taskQueueName, worker.Options{})
