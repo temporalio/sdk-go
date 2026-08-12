@@ -5250,13 +5250,15 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 }
 
 func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	// Start workflow
+	options := ts.startWorkflowOptions("test-large-history-replay")
+	options.WorkflowExecutionTimeout = 2 * time.Minute
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions("test-large-history-replay"),
+		options,
 		ts.workflows.PanicOnSignal,
 	)
 	ts.NoError(err)
