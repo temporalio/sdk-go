@@ -42,6 +42,10 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Data converter errors raised while deserializing Nexus operation input are no longer replaced with
+  a generic `BAD_REQUEST` handler error. A `temporal.ApplicationError` or a `nexus.HandlerError` is
+  now propagated to the caller as-is, and any other error is wrapped in a `BAD_REQUEST`
+  `nexus.HandlerError` that retains the original error as its cause.
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
   command is pending.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only

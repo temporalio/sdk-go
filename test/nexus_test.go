@@ -58,6 +58,7 @@ type testContext struct {
 
 type testContextOptions struct {
 	clientInterceptors []interceptor.ClientInterceptor
+	dataConverter      converter.DataConverter
 }
 
 type testContextOption func(opts *testContextOptions)
@@ -65,6 +66,12 @@ type testContextOption func(opts *testContextOptions)
 func withClientInterceptors(interceptors ...interceptor.ClientInterceptor) testContextOption {
 	return func(opts *testContextOptions) {
 		opts.clientInterceptors = append(opts.clientInterceptors, interceptors...)
+	}
+}
+
+func withDataConverter(dc converter.DataConverter) testContextOption {
+	return func(opts *testContextOptions) {
+		opts.dataConverter = dc
 	}
 }
 
@@ -85,6 +92,7 @@ func newTestContext(t *testing.T, ctx context.Context, optionFuncs ...testContex
 		clientOptions.Logger = logger
 		clientOptions.MetricsHandler = metricsHandler
 		clientOptions.Interceptors = options.clientInterceptors
+		clientOptions.DataConverter = options.dataConverter
 	})
 	require.NoError(t, err)
 
@@ -1162,6 +1170,93 @@ func TestInvalidOperationInput(t *testing.T) {
 	run, err := tc.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: tc.taskQueue}, wf)
 	require.NoError(t, err)
 	require.ErrorContains(t, run.Get(ctx, nil), `cannot assign argument of type "int" to type "string" for operation "workflow-op"`)
+}
+
+// inputDeserializationErrorDataConverter fails FromPayload with an error selected by the operation input, to exercise
+// the handling of data converter errors when deserializing Nexus operation input. Any other input is converted
+// normally.
+type inputDeserializationErrorDataConverter struct {
+	converter.DataConverter
+}
+
+func (dc inputDeserializationErrorDataConverter) FromPayload(payload *common.Payload, valuePtr any) error {
+	var input string
+	if err := dc.DataConverter.FromPayload(payload, &input); err == nil {
+		switch input {
+		case "application-error":
+			return temporal.NewApplicationErrorWithOptions(
+				"deserialization application error",
+				"FakeDeserializationError",
+				temporal.ApplicationErrorOptions{NonRetryable: true},
+			)
+		case "handler-error":
+			// Not using NOT_FOUND, the test Nexus client retries 404s while the endpoint propagates.
+			return &nexus.HandlerError{
+				Type:  nexus.HandlerErrorTypeNotImplemented,
+				Cause: errors.New("deserialization handler error"),
+			}
+		case "plain-error":
+			return errors.New("deserialization plain error")
+		}
+	}
+	return dc.DataConverter.FromPayload(payload, valuePtr)
+}
+
+func TestNexusOperationInputDeserializationError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
+	defer cancel()
+	tc := newTestContext(t, ctx, withDataConverter(inputDeserializationErrorDataConverter{
+		DataConverter: converter.GetDefaultDataConverter(),
+	}))
+
+	w := worker.New(tc.client, tc.taskQueue, worker.Options{})
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(syncOp))
+	w.RegisterNexusService(service)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	nc := tc.newNexusClient(t, service.Name)
+
+	t.Run("application-error", func(t *testing.T) {
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "application-error", nexus.StartOperationOptions{})
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		// Application errors are passed through and get the same treatment as when returned from a handler.
+		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+		if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "" {
+			require.Equal(t, nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
+		}
+		require.ErrorContains(t, handlerErr.Cause, "deserialization application error")
+	})
+
+	t.Run("handler-error", func(t *testing.T) {
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "handler-error", nexus.StartOperationOptions{})
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		// Handler errors are passed through with the type chosen by the data converter.
+		require.Equal(t, nexus.HandlerErrorTypeNotImplemented, handlerErr.Type)
+		require.ErrorContains(t, handlerErr.Cause, "deserialization handler error")
+	})
+
+	t.Run("plain-error", func(t *testing.T) {
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "plain-error", nexus.StartOperationOptions{})
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+		require.ErrorContains(t, handlerErr.Cause, "deserialization plain error")
+	})
+
+	t.Run("ok", func(t *testing.T) {
+		result, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "ok", nexus.StartOperationOptions{
+			RequestID:      "test-request-id",
+			Header:         nexus.Header{"test": "ok"},
+			CallbackURL:    "http://localhost/test",
+			CallbackHeader: nexus.Header{"test": "ok"},
+		})
+		require.NoError(t, err)
+		require.Equal(t, "ok", result)
+	})
 }
 
 func TestAsyncOperationFromWorkflow(t *testing.T) {

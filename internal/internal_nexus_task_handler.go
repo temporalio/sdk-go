@@ -610,7 +610,26 @@ type payloadSerializer struct {
 }
 
 func (p *payloadSerializer) Deserialize(_ *nexus.Content, v any) error {
-	return p.converter.FromPayload(p.payload, v)
+	err := p.converter.FromPayload(p.payload, v)
+	if err == nil {
+		return nil
+	}
+	// The Nexus SDK propagates serializer errors as-is, so errors that already carry an intent for the caller are
+	// passed through and converted by the regular error handling path. Anything else means the input could not be
+	// read and is reported as a bad request.
+	// Not using errors.As to be consistent ApplicationError checking with the rest of the SDK.
+	if _, ok := err.(*ApplicationError); ok {
+		return err
+	}
+	var handlerErr *nexus.HandlerError
+	if errors.As(err, &handlerErr) {
+		return err
+	}
+	return &nexus.HandlerError{
+		Type:    nexus.HandlerErrorTypeBadRequest,
+		Message: fmt.Sprintf("cannot deserialize operation input: %v", err),
+		Cause:   err,
+	}
 }
 
 func (p *payloadSerializer) Serialize(v any) (*nexus.Content, error) {
