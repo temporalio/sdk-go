@@ -627,7 +627,7 @@ func (p *payloadSerializer) Deserialize(_ *nexus.Content, v any) error {
 	}
 	return &nexus.HandlerError{
 		Type:    nexus.HandlerErrorTypeBadRequest,
-		Message: fmt.Sprintf("cannot deserialize operation input: %v", err),
+		Message: "cannot deserialize operation input",
 		Cause:   err,
 	}
 }
