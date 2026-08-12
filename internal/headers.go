@@ -114,6 +114,13 @@ func WithWorkflowContext(ctx Context, dc converter.DataConverter) converter.Data
 	if d, ok := dc.(ContextAware); ok {
 		return d.WithWorkflowContext(ctx)
 	}
+	if d, ok := dc.(interface {
+		UnderlyingDataConverter() converter.DataConverter
+	}); ok {
+		if contextAware, ok := d.UnderlyingDataConverter().(ContextAware); ok {
+			return converter.WrapDataConverter(contextAware.WithWorkflowContext(ctx))
+		}
+	}
 	return dc
 }
 
@@ -124,6 +131,13 @@ func WithWorkflowContext(ctx Context, dc converter.DataConverter) converter.Data
 func WithContext(ctx context.Context, dc converter.DataConverter) converter.DataConverter {
 	if d, ok := dc.(ContextAware); ok {
 		return d.WithContext(ctx)
+	}
+	if d, ok := dc.(interface {
+		UnderlyingDataConverter() converter.DataConverter
+	}); ok {
+		if contextAware, ok := d.UnderlyingDataConverter().(ContextAware); ok {
+			return converter.WrapDataConverter(contextAware.WithContext(ctx))
+		}
 	}
 	return dc
 }

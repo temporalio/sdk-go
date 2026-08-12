@@ -9218,6 +9218,59 @@ func (ts *IntegrationTestSuite) TestSimplePlugin() {
 	ts.Equal(2, after)
 }
 
+func (ts *IntegrationTestSuite) TestTransferTypeDataConverterClientWorkerRoundTrip() {
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	c, err := client.Dial(client.Options{
+		HostPort:      ts.config.ServiceAddr,
+		Namespace:     ts.config.Namespace,
+		DataConverter: converter.GetDefaultDataConverter(),
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	taskQueue := "transfer-type-" + uuid.NewString()
+	w := worker.New(c, taskQueue, worker.Options{})
+	w.RegisterWorkflow(transferTypeIntegrationWorkflow)
+	ts.NoError(w.Start())
+	defer w.Stop()
+
+	run, err := c.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{
+		ID:        "transfer-type-" + uuid.NewString(),
+		TaskQueue: taskQueue,
+	}, transferTypeIntegrationWorkflow, &transferTypeIntegrationValue{value: "value"})
+	ts.NoError(err)
+	var result transferTypeIntegrationValue
+	ts.NoError(run.Get(context.Background(), &result))
+	ts.Equal("value", result.value)
+}
+
+type transferTypeIntegrationValue struct{ value string }
+
+func transferTypeIntegrationWorkflow(
+	_ workflow.Context,
+	value *transferTypeIntegrationValue,
+) (*transferTypeIntegrationValue, error) {
+	return value, nil
+}
+
+func (*transferTypeIntegrationValue) TransferTypeConverter() converter.TransferTypeConverter {
+	return transferTypeIntegrationValueConverter{}
+}
+
+type transferTypeIntegrationValueConverter struct{}
+
+func (transferTypeIntegrationValueConverter) NewTransferType() any { return new(string) }
+
+func (transferTypeIntegrationValueConverter) ToTransferType(value any) (any, error) {
+	return value.(*transferTypeIntegrationValue).value, nil
+}
+
+func (transferTypeIntegrationValueConverter) FromTransferType(value any) (any, error) {
+	return &transferTypeIntegrationValue{value: *value.(*string)}, nil
+}
+
 func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
 	// Stop any existing worker
 	ts.worker.Stop()

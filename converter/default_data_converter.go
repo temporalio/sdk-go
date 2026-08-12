@@ -1,7 +1,7 @@
 package converter
 
 var (
-	defaultDataConverter = NewCompositeDataConverter(
+	defaultDataConverter = WrapDataConverter(NewCompositeDataConverter(
 		NewNilPayloadConverter(),
 		NewByteSlicePayloadConverter(),
 
@@ -13,7 +13,7 @@ var (
 		NewProtoPayloadConverter(),
 
 		NewJSONPayloadConverter(),
-	)
+	))
 )
 
 // GetDefaultDataConverter returns default data converter used by Temporal worker.

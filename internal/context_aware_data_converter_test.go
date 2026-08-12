@@ -140,4 +140,13 @@ func TestContextAwareDataConverter(t *testing.T) {
 
 		require.Equal(t, `"t?st"`, result)
 	})
+	t.Run("with wrapped activity context", func(t *testing.T) {
+		t.Parallel()
+		ctx := context.WithValue(context.Background(), ContextAwareDataConverterContextKey, "e")
+
+		dc := WithContext(ctx, converter.WrapDataConverter(contextAwareDataConverter))
+
+		payload, _ := dc.ToPayload("test")
+		require.Equal(t, `"t?st"`, dc.ToString(payload))
+	})
 }

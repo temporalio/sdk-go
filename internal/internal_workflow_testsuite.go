@@ -569,7 +569,7 @@ func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
 }
 
 func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter.DataConverter) {
-	env.dataConverter = dataConverter
+	env.dataConverter = converter.WrapDataConverter(dataConverter)
 }
 
 func (env *testWorkflowEnvironmentImpl) setFailureConverter(failureConverter converter.FailureConverter) {
