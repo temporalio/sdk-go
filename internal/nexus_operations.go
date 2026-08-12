@@ -509,6 +509,11 @@ func (t *testSuiteClientForNexusOperations) CancelWorkflow(ctx context.Context, 
 	return <-doneCh
 }
 
+// CancelWorkflowWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error {
+	return t.CancelWorkflow(ctx, options.WorkflowID, options.RunID)
+}
+
 // CheckHealth implements Client.
 func (t *testSuiteClientForNexusOperations) CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error) {
 	return &CheckHealthResponse{}, nil
@@ -793,6 +798,11 @@ func (t *testSuiteClientForNexusOperations) SignalWorkflow(ctx context.Context, 
 
 // TerminateWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
+	panic("not implemented in the test environment")
+}
+
+// TerminateWorkflowWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error {
 	panic("not implemented in the test environment")
 }
 
