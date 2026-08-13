@@ -22,6 +22,7 @@ func TestFindModuleDirs(t *testing.T) {
 		"test/go.mod":                    {},
 		"contrib/example/go.mod":         {},
 		"contrib/example/nested/file.go": {},
+		"testdata/fixture/go.mod":        {},
 		"vendor/dependency/go.mod":       {},
 		".build/scratch/go.mod":          {},
 	})

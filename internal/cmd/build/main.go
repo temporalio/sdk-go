@@ -121,7 +121,7 @@ func findModuleDirs(root fs.FS) ([]string, error) {
 		}
 		if entry.IsDir() {
 			switch entry.Name() {
-			case ".build", ".git", "node_modules", "vendor":
+			case ".build", ".git", "node_modules", "testdata", "vendor":
 				return fs.SkipDir
 			}
 			return nil

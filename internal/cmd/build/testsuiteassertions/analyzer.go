@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	requirePackage = "github.com/stretchr/testify/require"
-	suitePackage   = "github.com/stretchr/testify/suite"
-	ignorePrefix   = "//testsuiteassertions:ignore "
+	requirePackage  = "github.com/stretchr/testify/require"
+	suitePackage    = "github.com/stretchr/testify/suite"
+	ignoreDirective = "//testsuiteassertions:ignore"
 )
 
 // Analyzer checks that suites embedding require.Assertions refresh it in SetupTest.
@@ -70,14 +70,18 @@ func run(pass *analysis.Pass) (any, error) {
 					}
 				}
 				if assertionsField != nil && hasSuite {
-					ignored := hasIgnoreDirective(spec.Doc) || hasIgnoreDirective(spec.Comment)
+					commentGroups := []*ast.CommentGroup{spec.Doc, spec.Comment}
 					if len(genDecl.Specs) == 1 {
-						ignored = ignored || hasIgnoreDirective(genDecl.Doc)
+						commentGroups = append(commentGroups, genDecl.Doc)
 					}
+					ignored, invalidIgnore := findIgnoreDirective(commentGroups...)
 					suites[named.Obj()] = &suiteType{
 						spec:            spec,
 						assertionsField: assertionsField,
-						ignored:         ignored,
+						ignored:         ignored || invalidIgnore.IsValid(),
+					}
+					if invalidIgnore.IsValid() {
+						pass.Reportf(spec.Name.Pos(), "%s requires a reason", ignoreDirective)
 					}
 				}
 			}
@@ -173,7 +177,7 @@ func rebindsAssertions(pass *analysis.Pass, fn *ast.FuncDecl, receiver, assertio
 }
 
 func isAssertionsSelector(pass *analysis.Pass, expr ast.Expr, receiver, assertionsField *types.Var) bool {
-	selector, ok := expr.(*ast.SelectorExpr)
+	selector, ok := ast.Unparen(expr).(*ast.SelectorExpr)
 	if !ok || pass.TypesInfo.Selections[selector] == nil || pass.TypesInfo.Selections[selector].Obj() != assertionsField {
 		return false
 	}
@@ -182,6 +186,10 @@ func isAssertionsSelector(pass *analysis.Pass, expr ast.Expr, receiver, assertio
 }
 
 func isRequireNewForCurrentTest(pass *analysis.Pass, expr ast.Expr, receiver *types.Var) bool {
+	expr = ast.Unparen(expr)
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr = ast.Unparen(star.X)
+	}
 	call, ok := expr.(*ast.CallExpr)
 	if !ok || len(call.Args) != 1 {
 		return false
@@ -214,14 +222,28 @@ func isRequireNewForCurrentTest(pass *analysis.Pass, expr ast.Expr, receiver *ty
 	return ok && pass.TypesInfo.ObjectOf(ident) == receiver
 }
 
-func hasIgnoreDirective(group *ast.CommentGroup) bool {
-	if group == nil {
-		return false
-	}
-	for _, comment := range group.List {
-		if strings.HasPrefix(comment.Text, ignorePrefix) && strings.TrimSpace(strings.TrimPrefix(comment.Text, ignorePrefix)) != "" {
-			return true
+func findIgnoreDirective(groups ...*ast.CommentGroup) (valid bool, invalid token.Pos) {
+	for _, group := range groups {
+		if group == nil {
+			continue
+		}
+		for _, comment := range group.List {
+			if !strings.HasPrefix(comment.Text, ignoreDirective) {
+				continue
+			}
+			reason := strings.TrimPrefix(comment.Text, ignoreDirective)
+			if reason != "" && !strings.HasPrefix(reason, " ") && !strings.HasPrefix(reason, "\t") {
+				continue
+			}
+			if strings.TrimSpace(reason) != "" {
+				valid = true
+			} else if !invalid.IsValid() {
+				invalid = comment.Pos()
+			}
 		}
 	}
-	return false
+	if valid {
+		invalid = token.NoPos
+	}
+	return valid, invalid
 }

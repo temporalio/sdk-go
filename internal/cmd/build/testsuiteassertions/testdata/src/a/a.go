@@ -14,6 +14,24 @@ func (s *validSuite) SetupTest() {
 	s.Assertions = req.New(s.T())
 }
 
+type parenthesizedSuite struct {
+	*req.Assertions
+	testifysuite.Suite
+}
+
+func (s *parenthesizedSuite) SetupTest() {
+	(s.Assertions) = (req.New(s.T()))
+}
+
+type valueEmbeddedAssertionsSuite struct {
+	req.Assertions
+	testifysuite.Suite
+}
+
+func (s *valueEmbeddedAssertionsSuite) SetupTest() {
+	s.Assertions = *req.New(s.T())
+}
+
 type missingSetupTestSuite struct { // want "missingSetupTestSuite embeds require.Assertions and suite.Suite; add SetupTest"
 	*req.Assertions
 	testifysuite.Suite
@@ -119,7 +137,7 @@ type ignoredSuite struct {
 }
 
 //testsuiteassertions:ignore
-type ignoreWithoutReasonSuite struct { // want "ignoreWithoutReasonSuite embeds require.Assertions and suite.Suite; add SetupTest"
+type ignoreWithoutReasonSuite struct { // want "//testsuiteassertions:ignore requires a reason"
 	*req.Assertions
 	testifysuite.Suite
 }
