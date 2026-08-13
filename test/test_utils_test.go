@@ -238,30 +238,39 @@ func (ts *ConfigAndClientSuiteBase) InitConfigAndNamespace() error {
 	return nil
 }
 
+// InitClient initializes ts.client according to ts.config with the same
+// defaults as newIntegrationTestClient.
 func (ts *ConfigAndClientSuiteBase) InitClient(clientOpts ...ConfigureClientOptions) error {
 	var err error
 	if ts.client != nil {
 		return nil
 	}
-	ts.client, err = ts.newClient(clientOpts...)
+	ts.client, err = ts.newIntegrationTestClient(clientOpts...)
 	return err
 }
 
-func (ts *ConfigAndClientSuiteBase) newClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
+// newIntegrationTestClient creates a client according to ts.config with heartbeats disabled
+// and an extended GetSystemInfoTimeout.
+func (ts *ConfigAndClientSuiteBase) newIntegrationTestClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
+	return ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.GetSystemInfoTimeout = ctxTimeout
+		options.WorkerHeartbeatInterval = -1
+		for _, opt := range clientOpts {
+			opt(options)
+		}
+	})
+}
+
+// newDefaultClient creates a client according to ts.config with SDK defaults.
+func (ts *ConfigAndClientSuiteBase) newDefaultClient(clientOpts ...ConfigureClientOptions) (client.Client, error) {
 	options := client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		ConnectionOptions: client.ConnectionOptions{
-			TLS:                  ts.config.TLS,
-			GetSystemInfoTimeout: ctxTimeout,
-		},
-		WorkerHeartbeatInterval: -1,
+		HostPort:          ts.config.ServiceAddr,
+		Namespace:         ts.config.Namespace,
+		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+		Logger:            ilog.NewDefaultLogger(),
 	}
 	for _, opt := range clientOpts {
 		opt(&options)
-	}
-	if options.Logger == nil {
-		options.Logger = ilog.NewDefaultLogger()
 	}
 	return client.Dial(options)
 }
@@ -319,7 +328,7 @@ func (ts *ConfigAndClientSuiteBase) ensureSearchAttributes() error {
 	// We have to create a client specifically for this call and close it after
 	// this call because it may not get closed externally and can trip the
 	// goroutine leak detector.
-	client, err := ts.newClient()
+	client, err := ts.newIntegrationTestClient()
 	if err != nil {
 		return fmt.Errorf("unable to create client: %w", err)
 	}
