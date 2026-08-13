@@ -1527,7 +1527,7 @@ func TestLoadCapabilitiesUnknownMethodUnimplementedUsesEmptyCapabilities(t *test
 		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
 	}
 
-	capabilities, err := client.loadCapabilities(context.Background())
+	capabilities, err := client.loadCapabilities(t.Context())
 	require.NoError(t, err)
 	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, capabilities))
 }
@@ -1548,7 +1548,7 @@ func TestLoadCapabilitiesNonUnknownMethodUnimplementedFails(t *testing.T) {
 		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
 	}
 
-	_, err := client.loadCapabilities(context.Background())
+	_, err := client.loadCapabilities(t.Context())
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed reaching server")
 	require.ErrorContains(t, err, "frontend has not loaded GetSystemInfo")
@@ -2470,7 +2470,7 @@ func TestClientCloseCount(t *testing.T) {
 	server, err := startTestGRPCServer()
 	require.NoError(t, err)
 	defer server.Stop()
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: server.addr})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: server.addr})
 	require.NoError(t, err)
 	workflowClient := client.(*WorkflowClient)
 
@@ -2478,11 +2478,11 @@ func TestClientCloseCount(t *testing.T) {
 	require.EqualValues(t, 1, atomic.LoadInt32(workflowClient.unclosedClients))
 
 	// Create two more and confirm counts
-	client2, err := NewClientFromExisting(context.Background(), client, ClientOptions{})
+	client2, err := NewClientFromExisting(t.Context(), client, ClientOptions{})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, atomic.LoadInt32(workflowClient.unclosedClients))
 	require.Same(t, workflowClient.unclosedClients, client2.(*WorkflowClient).unclosedClients)
-	client3, err := NewClientFromExisting(context.Background(), client, ClientOptions{})
+	client3, err := NewClientFromExisting(t.Context(), client, ClientOptions{})
 	require.NoError(t, err)
 	require.EqualValues(t, 3, atomic.LoadInt32(workflowClient.unclosedClients))
 	require.Same(t, workflowClient.unclosedClients, client3.(*WorkflowClient).unclosedClients)
@@ -2511,7 +2511,7 @@ func TestCompletedUpdateHandle(t *testing.T) {
 	t.Run("error case", func(t *testing.T) {
 		err := errors.New(t.Name())
 		uh := completedUpdateHandle{err: err}
-		require.Error(t, uh.Get(context.TODO(), nil))
+		require.Error(t, uh.Get(t.Context(), nil))
 	})
 
 	t.Run("value case", func(t *testing.T) {
@@ -2520,13 +2520,13 @@ func TestCompletedUpdateHandle(t *testing.T) {
 		require.NoError(t, err)
 		uh := completedUpdateHandle{value: newEncodedValue(payloads, dc)}
 		var out string
-		require.NoError(t, uh.Get(context.TODO(), &out))
+		require.NoError(t, uh.Get(t.Context(), &out))
 		require.Equal(t, t.Name(), out)
 	})
 
 	t.Run("nil does not panic", func(t *testing.T) {
 		uh := completedUpdateHandle{}
-		require.NotPanics(t, func() { _ = uh.Get(context.TODO(), nil) })
+		require.NotPanics(t, func() { _ = uh.Get(t.Context(), nil) })
 	})
 }
 
@@ -2613,14 +2613,14 @@ func TestUpdate(t *testing.T) {
 			},
 			nil,
 		)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("sync error", func(t *testing.T) {
@@ -2636,10 +2636,10 @@ func TestUpdate(t *testing.T) {
 			},
 			nil,
 		)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.Error(t, err)
 		require.ErrorContains(t, err, want.Error())
 	})
@@ -2663,14 +2663,14 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			).Times(2)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("async delayed accepted", func(t *testing.T) {
@@ -2693,10 +2693,10 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.Error(t, err)
 		require.ErrorContains(t, err, want.Error())
 	})
@@ -2728,14 +2728,14 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			).Times(2)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("internal retry on nil outcome", func(t *testing.T) {
@@ -2766,10 +2766,10 @@ func TestUpdate(t *testing.T) {
 				nil,
 			)
 
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
@@ -2789,7 +2789,7 @@ func TestUpdate(t *testing.T) {
 					return nil, errors.New("intentional error")
 				},
 			)
-		_ = handle.Get(context.TODO(), nil)
+		_ = handle.Get(t.Context(), nil)
 
 		// can't tell what the exact deadline will be so assert that the
 		// observed deadline passed to server rpc is within 2 seconds of the
@@ -2818,7 +2818,7 @@ func TestUpdate(t *testing.T) {
 					return nil, status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
 				},
 			)
-		callerCtx, cancel := context.WithDeadline(context.TODO(), callerDeadline)
+		callerCtx, cancel := context.WithDeadline(t.Context(), callerDeadline)
 		defer cancel()
 		var got string
 		err := handle.Get(callerCtx, &got)
@@ -2839,7 +2839,7 @@ func TestUpdate(t *testing.T) {
 					return nil, status.Error(codes.Canceled, context.Canceled.Error())
 				},
 			)
-		callerCtx, cancel := context.WithCancel(context.TODO())
+		callerCtx, cancel := context.WithCancel(t.Context())
 		cancel()
 		var got string
 		err := handle.Get(callerCtx, &got)
@@ -2870,14 +2870,14 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("sync multiple step success", func(t *testing.T) {
@@ -2910,14 +2910,14 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			).Times(1)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("sync success exposes payloads", func(t *testing.T) {
@@ -2939,7 +2939,7 @@ func TestUpdate(t *testing.T) {
 		)
 		// Use PollWorkflowUpdate directly to access the raw output.
 		output, err := client.PollWorkflowUpdate(
-			context.TODO(),
+			t.Context(),
 			refFromRequest(req),
 		)
 		require.NoError(t, err)
@@ -2966,7 +2966,7 @@ func TestUpdate(t *testing.T) {
 		)
 		// Use PollWorkflowUpdate directly to access the raw output.
 		output, err := client.PollWorkflowUpdate(
-			context.TODO(),
+			t.Context(),
 			refFromRequest(req),
 		)
 		require.NoError(t, err)
@@ -3016,7 +3016,7 @@ func TestPollActivityResult(t *testing.T) {
 				nil,
 			)
 		out, err := client.interceptor.PollActivityResult(
-			context.Background(),
+			t.Context(),
 			&ClientPollActivityResultInput{ActivityID: "test-id", RunID: "run-id"},
 		)
 		require.NoError(t, err)
@@ -3044,7 +3044,7 @@ func TestPollActivityResult(t *testing.T) {
 				nil,
 			)
 		out, err := client.interceptor.PollActivityResult(
-			context.Background(),
+			t.Context(),
 			&ClientPollActivityResultInput{ActivityID: "test-id", RunID: "run-id"},
 		)
 		require.NoError(t, err)

@@ -33,7 +33,7 @@ func TestRetrySuccess(t *testing.T) {
 	policy.SetMaximumInterval(5 * time.Millisecond)
 	policy.SetMaximumAttempts(10)
 
-	err := Retry(context.Background(), op, policy, nil)
+	err := Retry(t.Context(), op, policy, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, 5, i)
 }
@@ -55,7 +55,7 @@ func TestNoRetryAfterContextDone(t *testing.T) {
 	policy.SetMaximumInterval(50 * time.Millisecond)
 	policy.SetMaximumAttempts(10)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 
 	err := Retry(ctx, op, policy, nil)
@@ -80,7 +80,7 @@ func TestRetryFailed(t *testing.T) {
 	policy.SetMaximumInterval(5 * time.Millisecond)
 	policy.SetMaximumAttempts(5)
 
-	err := Retry(context.Background(), op, policy, nil)
+	err := Retry(t.Context(), op, policy, nil)
 	assert.Error(t, err)
 	assert.Equal(t, 5, i)
 }
@@ -110,7 +110,7 @@ func TestIsRetryableSuccess(t *testing.T) {
 	policy.SetMaximumInterval(5 * time.Millisecond)
 	policy.SetMaximumAttempts(10)
 
-	err := Retry(context.Background(), op, policy, isRetryable)
+	err := Retry(t.Context(), op, policy, isRetryable)
 	assert.NoError(t, err, "Retry count: %v", i)
 	assert.Equal(t, 5, i)
 }
@@ -132,7 +132,7 @@ func TestIsRetryableFailure(t *testing.T) {
 	policy.SetMaximumInterval(5 * time.Millisecond)
 	policy.SetMaximumAttempts(10)
 
-	err := Retry(context.Background(), op, policy, IgnoreErrors([]error{&someError{}}))
+	err := Retry(t.Context(), op, policy, IgnoreErrors([]error{&someError{}}))
 	assert.Error(t, err)
 	assert.Equal(t, 1, i)
 }
@@ -210,7 +210,7 @@ func TestRetryDeadlineExceeded(t *testing.T) {
 	policy.SetBackoffCoefficient(1)
 	policy.SetMaximumAttempts(3)
 
-	err := Retry(context.Background(), op, policy, nil)
+	err := Retry(t.Context(), op, policy, nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, actualError)
 
@@ -223,7 +223,7 @@ func TestRetryDeadlineExceeded(t *testing.T) {
 		}
 		return actualError
 	}
-	err = Retry(context.Background(), op, policy, nil)
+	err = Retry(t.Context(), op, policy, nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, actualError)
 }

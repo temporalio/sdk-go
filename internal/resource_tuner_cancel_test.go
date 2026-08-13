@@ -41,7 +41,7 @@ func TestReserveSlotRejectsAlreadyCancelledContext(t *testing.T) {
 		ResourceBasedSlotSupplierOptions{MinSlots: 100, MaxSlots: 1000, RampThrottle: 0})
 	require.NoError(t, err)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
 	permit, err := supplier.ReserveSlot(ctx, &reserveCallCounter{}) // NumIssuedSlots is 10, under MinSlots
@@ -75,7 +75,7 @@ func TestReserveSlotHonorsContextCancellation(t *testing.T) {
 			require.NoError(t, err)
 
 			info := &reserveCallCounter{} // NumIssuedSlots is 10, past MinSlots
-			ctx, cancel := context.WithCancel(context.Background())
+			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
 
 			reserveErr := make(chan error, 1)
