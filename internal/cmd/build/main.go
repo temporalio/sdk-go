@@ -94,6 +94,18 @@ func (b *builder) check() error {
 	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/doclink/doclink.go")); err != nil {
 		return fmt.Errorf("doclink check failed: %w", err)
 	}
+	// Check embedded require assertions in testify suites.
+	testSuiteAssertions, err := b.getInstalledTool("go.temporal.io/sdk/internal/cmd/build/cmd/testsuiteassertions")
+	if err != nil {
+		return fmt.Errorf("failed getting testsuiteassertions: %w", err)
+	}
+	for _, moduleDir := range []string{".", "test"} {
+		cmd := b.cmdFromRoot(testSuiteAssertions, "./...")
+		cmd.Dir = filepath.Join(b.rootDir, moduleDir)
+		if err := b.runCmd(cmd); err != nil {
+			return fmt.Errorf("testsuiteassertions check failed in %s: %w", moduleDir, err)
+		}
+	}
 	return nil
 }
 

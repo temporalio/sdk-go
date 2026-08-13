@@ -129,6 +129,7 @@ func (ts *WorkflowReadOnlyTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkflowReadOnlyTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 
 	isReadOnlyRec = &isReadOnlyRecorder{calls: map[string]bool{}}
