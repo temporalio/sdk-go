@@ -14,20 +14,24 @@ var DefaultTextMapPropagator = propagation.NewCompositeTextMapPropagator(
 
 const defaultHeaderKey = "_tracer-data"
 
-type tracerConfig struct {
-	options *PluginOptions
+func newOptions(pluginOptions PluginOptions) *options {
+	opts := &options{PluginOptions: pluginOptions}
+
+	if opts.TextMapPropagator == nil {
+		opts.TextMapPropagator = DefaultTextMapPropagator
+	}
+
+	if opts.TracerOptions.HeaderKey == "" {
+		opts.TracerOptions.HeaderKey = defaultHeaderKey
+	}
+
+	return opts
 }
 
-func newTracerConfig(options PluginOptions) tracerConfig {
-	if options.TextMapPropagator == nil {
-		options.TextMapPropagator = DefaultTextMapPropagator
-	}
-	if options.TracerOptions.HeaderKey == "" {
-		options.TracerOptions.HeaderKey = defaultHeaderKey
-	}
-	return tracerConfig{options: &options}
+type options struct {
+	PluginOptions
 }
 
-func (c *tracerConfig) Options() tracing.TracerOptions {
-	return c.options.TracerOptions
+func (o *options) Options() tracing.TracerOptions {
+	return o.TracerOptions
 }

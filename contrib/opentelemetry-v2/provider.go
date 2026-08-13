@@ -5,6 +5,7 @@ import (
 	cryptorand "crypto/rand"
 	"io"
 
+	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 
@@ -14,7 +15,11 @@ import (
 const interceptorRandomStream = "go.temporal.io/sdk/contrib/opentelemetry-v2/interceptor"
 const applicationRandomStream = "go.temporal.io/sdk/contrib/opentelemetry-v2/application"
 
-// NewTracerProvider creates a provider whose ID generator reads from an
+type replaySafeTracerProvider struct {
+	*sdktrace.TracerProvider
+}
+
+// NewReplaySafeTracerProvider creates a provider whose ID generator reads from an
 // io.Reader attached to the span-start context (workflow.GetRandom for
 // sequenced workflow spans, or crypto/rand.Reader otherwise). Any ID generator
 // supplied in opts is intentionally overridden. Install the result with
@@ -24,9 +29,17 @@ const applicationRandomStream = "go.temporal.io/sdk/contrib/opentelemetry-v2/app
 // clients and workers stop.
 //
 // NOTE: Experimental
-func NewTracerProvider(opts ...sdktrace.TracerProviderOption) *sdktrace.TracerProvider {
+func NewReplaySafeTracerProvider(opts ...sdktrace.TracerProviderOption) *replaySafeTracerProvider {
 	opts = append(opts, sdktrace.WithIDGenerator(&generator{}))
-	return sdktrace.NewTracerProvider(opts...)
+	return &replaySafeTracerProvider{sdktrace.NewTracerProvider(opts...)}
+}
+
+func newReplaySafeTracer(name string) trace.Tracer {
+	provider, ok := otel.GetTracerProvider().(*replaySafeTracerProvider)
+	if !ok {
+		panic("global tracer provider must be created by NewReplaySafeTracerProvider")
+	}
+	return provider.Tracer(name)
 }
 
 // otelRandomKey carries the io.Reader used to fill span and trace IDs.

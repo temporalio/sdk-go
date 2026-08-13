@@ -33,7 +33,7 @@ type PluginOptions struct {
 
 // NewPlugin configures OpenTelemetry tracing for a client and workers.
 //
-// Spans are created from the global tracer provider, create one using [NewTracerProvider].
+// NewPlugin requires the global tracer provider to be created by [NewReplaySafeTracerProvider].
 //
 // NOTE: Experimental
 func NewPlugin(options PluginOptions) (*temporal.SimplePlugin, error) {

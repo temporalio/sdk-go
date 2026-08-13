@@ -26,7 +26,7 @@ import (
 	temporalotel "go.temporal.io/sdk/contrib/opentelemetry-v2"
 )
 
-provider := temporalotel.NewTracerProvider(sdktrace.WithBatcher(exporter))
+provider := temporalotel.NewReplaySafeTracerProvider(sdktrace.WithBatcher(exporter))
 otel.SetTracerProvider(provider)
 defer provider.Shutdown(ctx) // after clients and workers stop
 
@@ -57,8 +57,8 @@ In client and activity code, use `otel.Tracer(...)` directly.
 
 ## Stable span IDs and accurate timing
 
-`NewTracerProvider` keeps sequenced workflow span IDs stable and their start
-times accurate across retries and replays.
+`NewReplaySafeTracerProvider` keeps sequenced workflow span IDs stable and their
+start times accurate across retries and replays.
 
 ## Metrics
 

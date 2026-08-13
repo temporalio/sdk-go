@@ -14,7 +14,7 @@ or Security.
 ### Added
 
 - Initial release of `go.temporal.io/sdk/contrib/opentelemetry-v2`.
-- `Tracer` / `NewTracerProvider` for replay-safe application spans inside
+- `Tracer` / `NewReplaySafeTracerProvider` for replay-safe application spans inside
   workflows.
 - `NewPlugin` / `PluginOptions` to enable OpenTelemetry tracing (and optional
   metrics) on clients and workers.

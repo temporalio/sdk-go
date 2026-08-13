@@ -51,7 +51,7 @@ func (s *codecTestSuite) SetupSuite() {
 }
 
 func (s *codecTestSuite) codec(options PluginOptions) *spanCodec {
-	return &spanCodec{tracerConfig: newTracerConfig(options)}
+	return &spanCodec{options: newOptions(options)}
 }
 
 func (s *codecTestSuite) TestMarshalSpan() {

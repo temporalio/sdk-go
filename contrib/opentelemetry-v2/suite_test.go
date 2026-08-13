@@ -31,7 +31,7 @@ func (s *otelTestSuite) SetupSuite() {
 func (s *otelTestSuite) newSpanRecorder() *tracetest.SpanRecorder {
 	s.T().Helper()
 	recorder := tracetest.NewSpanRecorder()
-	provider := NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
+	provider := NewReplaySafeTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	previousProvider := otel.GetTracerProvider()
 	otel.SetTracerProvider(provider)
 	s.T().Cleanup(func() {

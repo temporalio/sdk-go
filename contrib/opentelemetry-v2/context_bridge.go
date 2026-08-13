@@ -14,7 +14,7 @@ type spanContextKey struct{}
 
 // contextBridge stores spans and optional baggage on context.Context.
 type contextBridge struct {
-	options *PluginOptions
+	options *options
 }
 
 func (b *contextBridge) SpanFromContext(ctx context.Context) tracing.TracerSpan {
@@ -61,4 +61,35 @@ func (workflowContextBridge) ContextWithSpan(ctx workflow.Context, span tracing.
 	}
 
 	return workflow.WithValue(ctx, spanContextKey{}, span)
+}
+
+type parentContext struct {
+	spanContext trace.SpanContext
+	baggage     baggage.Baggage
+}
+
+func parentContextFromRef(ref tracing.TracerSpanRef) parentContext {
+	if span := asTracerSpan(ref); span != nil {
+		return parentContext{spanContext: span.SpanContext(), baggage: span.Baggage}
+	}
+
+	if p, ok := ref.(*tracerSpanRef); ok {
+		return parentContext{spanContext: p.SpanContext, baggage: p.Baggage}
+	}
+
+	return parentContext{}
+}
+
+func contextWithParent(ctx context.Context, parent tracing.TracerSpanRef, options *options) context.Context {
+	parentContext := parentContextFromRef(parent)
+
+	if parentContext.spanContext.IsValid() {
+		ctx = trace.ContextWithSpanContext(ctx, parentContext.spanContext)
+	}
+
+	if options != nil && !options.DisableBaggage && parentContext.baggage.Len() > 0 {
+		ctx = baggage.ContextWithBaggage(ctx, parentContext.baggage)
+	}
+
+	return ctx
 }

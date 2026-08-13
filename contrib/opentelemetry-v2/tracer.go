@@ -3,7 +3,6 @@ package opentelemetry
 import (
 	"context"
 
-	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
 
@@ -26,11 +25,11 @@ type workflowTracer struct {
 
 // Tracer returns a WorkflowTracer for the given instrumentation name, like
 // otel.Tracer. The tracer resolves from the global provider when this is called.
-// Use [NewTracerProvider] for replay-stable sequenced IDs.
+// Tracer requires the global tracer provider to be created by [NewReplaySafeTracerProvider].
 //
 // NOTE: Experimental
 func Tracer(name string) WorkflowTracer {
-	return &workflowTracer{tracer: otel.Tracer(name), name: name}
+	return &workflowTracer{tracer: newReplaySafeTracer(name), name: name}
 }
 
 func (t *workflowTracer) Start(ctx workflow.Context, name string, opts ...trace.SpanStartOption) (workflow.Context, trace.Span) {
@@ -42,17 +41,11 @@ func (t *workflowTracer) Start(ctx workflow.Context, name string, opts ...trace.
 	}
 
 	otelCtx := context.WithValue(context.Background(), otelRandomKey{}, applicationReader(ctx, t.name))
-	parent := parentFromRef(ctx.Value(spanContextKey{}))
-	if parent.spanContext.IsValid() {
-		otelCtx = trace.ContextWithSpanContext(otelCtx, parent.spanContext)
-	}
-	if parent.baggage.Len() > 0 {
-		otelCtx = baggage.ContextWithBaggage(otelCtx, parent.baggage)
-	}
+	otelCtx = contextWithParent(otelCtx, ctx.Value(spanContextKey{}), nil)
 
 	_, span := t.tracer.Start(otelCtx, name, opts...)
 
-	tSpan := &tracerSpan{Span: span, Baggage: parent.baggage}
+	tSpan := &tracerSpan{Span: span, Baggage: baggage.FromContext(otelCtx)}
 
 	if workflow.IsReadOnly(ctx) {
 		return workflow.WithValue(ctx, spanContextKey{}, tSpan), tSpan
@@ -61,17 +54,4 @@ func (t *workflowTracer) Start(ctx workflow.Context, name string, opts ...trace.
 	wrapped := &workflowSpan{tracerSpan: tSpan, ctx: ctx}
 	return workflow.WithValue(ctx, spanContextKey{}, wrapped), wrapped
 
-}
-
-// workflowSpan suppresses End calls during replay.
-type workflowSpan struct {
-	*tracerSpan
-	ctx workflow.Context
-}
-
-func (s *workflowSpan) End(options ...trace.SpanEndOption) {
-	if workflow.IsReplaying(s.ctx) {
-		return
-	}
-	s.tracerSpan.Span.End(options...)
 }

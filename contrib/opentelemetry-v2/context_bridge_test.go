@@ -22,7 +22,7 @@ func TestContextBridgeTestSuite(t *testing.T) {
 }
 
 func (s *contextBridgeTestSuite) bridge(options PluginOptions) *contextBridge {
-	return &contextBridge{options: newTracerConfig(options).options}
+	return &contextBridge{options: newOptions(options)}
 }
 
 func (s *contextBridgeTestSuite) contextWithBaggage(key, value string) context.Context {

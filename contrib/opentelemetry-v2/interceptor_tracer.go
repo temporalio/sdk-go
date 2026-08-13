@@ -3,30 +3,92 @@ package opentelemetry
 import (
 	"context"
 	cryptorand "crypto/rand"
+	"io"
 
-	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/trace"
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/interceptor/tracing"
 	"go.temporal.io/sdk/workflow"
 )
 
+type interceptorTracerBase struct {
+	options *options
+	tracer  trace.Tracer
+}
+
+// buildSpan starts an OTel span. random supplies bytes for the ID generator.
+func (b *interceptorTracerBase) buildSpan(
+	ctx context.Context,
+	name string,
+	random io.Reader,
+	opts *tracing.TracerStartSpanOptions,
+) *tracerSpan {
+	var spanOpts []trace.SpanStartOption
+
+	otelCtx := context.WithValue(ctx, otelRandomKey{}, random)
+
+	otelCtx = contextWithParent(otelCtx, opts.Parent, b.options)
+
+	switch opts.Direction {
+	case tracing.SpanDirectionInbound:
+		spanOpts = append(spanOpts, trace.WithSpanKind(trace.SpanKindServer))
+	case tracing.SpanDirectionOutbound:
+		spanOpts = append(spanOpts, trace.WithSpanKind(trace.SpanKindClient))
+	default:
+		spanOpts = append(spanOpts, trace.WithSpanKind(trace.SpanKindUnspecified))
+	}
+
+	if len(opts.Tags) > 0 {
+		attrs := make([]attribute.KeyValue, 0, len(opts.Tags))
+		for k, v := range opts.Tags {
+			attrs = append(attrs, attribute.String(k, v))
+		}
+		spanOpts = append(spanOpts, trace.WithAttributes(attrs...))
+	}
+
+	if !opts.Time.IsZero() {
+		spanOpts = append(spanOpts, trace.WithTimestamp(opts.Time))
+	}
+
+	_, span := b.tracer.Start(otelCtx, name, spanOpts...)
+
+	tSpan := &tracerSpan{Span: span}
+	if !b.options.DisableBaggage {
+		tSpan.Baggage = baggage.FromContext(otelCtx)
+	}
+	return tSpan
+}
+
 func newTracingInterceptors(
-	options PluginOptions,
+	pluginOptions PluginOptions,
 ) (interceptor.ClientInterceptor, interceptor.WorkerInterceptor) {
-	cfg := newTracerConfig(options)
-	codec := spanCodec{tracerConfig: cfg}
+	options := newOptions(pluginOptions)
+
+	base := interceptorTracerBase{
+		options: options,
+		tracer:  newReplaySafeTracer("temporal-sdk-go"),
+	}
+
+	codec := spanCodec{options: options}
 
 	workflowTracerFactory := func() tracing.WorkflowTracer {
 		return &workflowInterceptorTracer{
-			spanCodec: codec,
+			options:               options,
+			spanCodec:             codec,
+			interceptorTracerBase: base,
+			workflowContextBridge: workflowContextBridge{},
 		}
 	}
 
 	tracerFactory := func() tracing.Tracer {
 		return &interceptorTracer{
-			spanCodec:     codec,
-			contextBridge: contextBridge{options: cfg.options},
+			options:               options,
+			spanCodec:             codec,
+			interceptorTracerBase: base,
+			contextBridge:         contextBridge{options: options},
 		}
 	}
 
@@ -35,8 +97,10 @@ func newTracingInterceptors(
 
 // workflowInterceptorTracer creates spans for workflow interceptors.
 type workflowInterceptorTracer struct {
-	workflowContextBridge
+	*options
 	spanCodec
+	interceptorTracerBase
+	workflowContextBridge
 }
 
 func (t *workflowInterceptorTracer) CreateSpan(
@@ -52,8 +116,6 @@ func (t *workflowInterceptorTracer) CreateSpan(
 
 	span := t.buildSpan(
 		context.Background(),
-		otel.Tracer("temporal-sdk-go"),
-		parentFromRef(opts.Parent),
 		t.SpanName(opts),
 		interceptorReader(ctx),
 		opts,
@@ -69,30 +131,17 @@ func (t *workflowInterceptorTracer) CreateSpan(
 	}
 }
 
-// interceptorWorkflowSpan suppresses Finish calls during replay.
-type interceptorWorkflowSpan struct {
-	*tracerSpan
-	ctx workflow.Context
-}
-
-func (s *interceptorWorkflowSpan) Finish(opts *tracing.TracerFinishSpanOptions) {
-	if workflow.IsReplaying(s.ctx) {
-		return
-	}
-	s.tracerSpan.Finish(opts)
-}
-
 // interceptorTracer creates spans for client, activity, and nexus interceptors.
 type interceptorTracer struct {
-	contextBridge
+	*options
 	spanCodec
+	interceptorTracerBase
+	contextBridge
 }
 
 func (t *interceptorTracer) CreateSpan(ctx context.Context, opts *tracing.TracerStartSpanOptions) tracing.TracerSpan {
 	return t.buildSpan(
 		ctx,
-		otel.Tracer("temporal-sdk-go"),
-		parentFromRef(opts.Parent),
 		t.SpanName(opts),
 		cryptorand.Reader,
 		opts,

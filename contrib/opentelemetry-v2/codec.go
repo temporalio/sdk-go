@@ -20,7 +20,7 @@ func (t textMapCarrier) Keys() []string               { return slices.Collect(ma
 
 type spanCodec struct {
 	tracing.BaseTracer
-	tracerConfig
+	options *options
 }
 
 func (c *spanCodec) MarshalSpan(span tracing.TracerSpan) (map[string]string, error) {
