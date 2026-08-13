@@ -1,4 +1,6 @@
-// Package testsuiteassertions checks testify suites for stale embedded require assertions.
+// Package testsuiteassertions checks that testify suites refresh embedded require
+// assertions when SetupTest begins. Nested Suite.Run transitions are outside the
+// scope of this analyzer.
 // Place //testsuiteassertions:ignore followed by a reason on a suite type declaration
 // when its assertions are intentionally suite-scoped.
 package testsuiteassertions
@@ -21,7 +23,7 @@ const (
 // Analyzer checks that suites embedding require.Assertions refresh it in SetupTest.
 var Analyzer = &analysis.Analyzer{
 	Name: "testsuiteassertions",
-	Doc:  "check that testify suites refresh embedded require assertions for each test",
+	Doc:  "check that testify suites refresh embedded require assertions in SetupTest",
 	Run:  run,
 }
 
@@ -32,7 +34,7 @@ type suiteType struct {
 	setupTest       *ast.FuncDecl
 }
 
-// run reports testify suites that do not refresh embedded require assertions for each test.
+// run reports testify suites that do not refresh embedded require assertions in SetupTest.
 func run(pass *analysis.Pass) (any, error) {
 	suites := make(map[*types.TypeName]*suiteType)
 	for _, file := range pass.Files {
@@ -91,12 +93,16 @@ func run(pass *analysis.Pass) (any, error) {
 			typeName, receiver := receiverType(pass, fn)
 			if suite := suites[typeName]; suite != nil {
 				suite.setupTest = fn
+				if !suite.ignored && !isSetupTestHook(pass, fn) {
+					pass.Reportf(fn.Name.Pos(), "%s.SetupTest must have signature func (*%s) SetupTest()", typeName.Name(), typeName.Name())
+					continue
+				}
 				if !suite.ignored && !rebindsAssertions(pass, fn, receiver, suite.assertionsField) {
 					receiverName := "receiver"
 					if receiver != nil {
 						receiverName = receiver.Name()
 					}
-					pass.Reportf(fn.Name.Pos(), "%s.SetupTest must rebind embedded require.Assertions with require.New(%s.T())", typeName.Name(), receiverName)
+					pass.Reportf(fn.Name.Pos(), "%s.SetupTest must rebind embedded require.Assertions with require.New(%s.T()) as its first statement", typeName.Name(), receiverName)
 				}
 			}
 		}
@@ -135,28 +141,35 @@ func receiverType(pass *analysis.Pass, fn *ast.FuncDecl) (*types.TypeName, *type
 	return named.Obj(), receiver
 }
 
+func isSetupTestHook(pass *analysis.Pass, fn *ast.FuncDecl) bool {
+	method, _ := pass.TypesInfo.ObjectOf(fn.Name).(*types.Func)
+	if method == nil {
+		return false
+	}
+	signature, _ := method.Type().(*types.Signature)
+	if signature == nil || signature.Recv() == nil || signature.Params().Len() != 0 || signature.Results().Len() != 0 {
+		return false
+	}
+	_, ok := types.Unalias(signature.Recv().Type()).(*types.Pointer)
+	return ok
+}
+
 func rebindsAssertions(pass *analysis.Pass, fn *ast.FuncDecl, receiver, assertionsField *types.Var) bool {
-	found := false
-	ast.Inspect(fn.Body, func(node ast.Node) bool {
-		if _, ok := node.(*ast.FuncLit); ok {
-			return false
-		}
-		assign, ok := node.(*ast.AssignStmt)
-		if !ok {
+	if fn.Body == nil || len(fn.Body.List) == 0 {
+		return false
+	}
+	assign, ok := fn.Body.List[0].(*ast.AssignStmt)
+	if !ok {
+		return false
+	}
+	for i, lhs := range assign.Lhs {
+		if i < len(assign.Rhs) &&
+			isAssertionsSelector(pass, lhs, receiver, assertionsField) &&
+			isRequireNewForCurrentTest(pass, assign.Rhs[i], receiver) {
 			return true
 		}
-		for i, lhs := range assign.Lhs {
-			if i >= len(assign.Rhs) || !isAssertionsSelector(pass, lhs, receiver, assertionsField) {
-				continue
-			}
-			if isRequireNewForCurrentTest(pass, assign.Rhs[i], receiver) {
-				found = true
-				return false
-			}
-		}
-		return !found
-	})
-	return found
+	}
+	return false
 }
 
 func isAssertionsSelector(pass *analysis.Pass, expr ast.Expr, receiver, assertionsField *types.Var) bool {

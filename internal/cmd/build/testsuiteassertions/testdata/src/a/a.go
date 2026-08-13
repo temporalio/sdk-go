@@ -51,6 +51,55 @@ type unnamedReceiverSuite struct {
 func (*unnamedReceiverSuite) SetupTest() { // want "unnamedReceiverSuite.SetupTest must rebind embedded require.Assertions"
 }
 
+type valueReceiverSuite struct {
+	*req.Assertions
+	testifysuite.Suite
+}
+
+func (s valueReceiverSuite) SetupTest() { // want "valueReceiverSuite.SetupTest must have signature func \\(\\*valueReceiverSuite\\) SetupTest\\(\\)"
+	s.Assertions = req.New(s.T())
+}
+
+type invalidSignatureSuite struct {
+	*req.Assertions
+	testifysuite.Suite
+}
+
+func (s *invalidSignatureSuite) SetupTest(_ int) { // want "invalidSignatureSuite.SetupTest must have signature func \\(\\*invalidSignatureSuite\\) SetupTest\\(\\)"
+	s.Assertions = req.New(s.T())
+}
+
+type conditionalRebindSuite struct {
+	*req.Assertions
+	testifysuite.Suite
+}
+
+func (s *conditionalRebindSuite) SetupTest() { // want "conditionalRebindSuite.SetupTest must rebind embedded require.Assertions"
+	if true {
+		s.Assertions = req.New(s.T())
+	}
+}
+
+type delayedRebindSuite struct {
+	*req.Assertions
+	testifysuite.Suite
+}
+
+func (s *delayedRebindSuite) SetupTest() { // want "delayedRebindSuite.SetupTest must rebind embedded require.Assertions"
+	_ = s.T()
+	s.Assertions = req.New(s.T())
+}
+
+type unreachableRebindSuite struct {
+	*req.Assertions
+	testifysuite.Suite
+}
+
+func (s *unreachableRebindSuite) SetupTest() { // want "unreachableRebindSuite.SetupTest must rebind embedded require.Assertions"
+	return
+	s.Assertions = req.New(s.T())
+}
+
 type AssertionsAlias = req.Assertions
 type SuiteAlias = testifysuite.Suite
 
