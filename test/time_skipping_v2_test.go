@@ -48,6 +48,14 @@ func TestTimeSkippingV2TestSuite(t *testing.T) {
 	suite.Run(t, new(TimeSkippingV2TestSuite))
 }
 
+// SetupTest rebinds the embedded *require.Assertions to the current sub-test
+// T. Without this, assertions written via s.NoError()/s.True()/... target the
+// parent suite T from SetupSuite, and FailNow does not halt the sub-test —
+// making later assertions silent no-ops and producing false PASS reports.
+func (s *TimeSkippingV2TestSuite) SetupTest() {
+	s.Assertions = require.New(s.T())
+}
+
 func (s *TimeSkippingV2TestSuite) SetupSuite() {
 	s.Assertions = require.New(s.T())
 

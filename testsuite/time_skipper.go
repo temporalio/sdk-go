@@ -375,3 +375,12 @@ func (o *timeSkippingClientOutboundInterceptor) ExecuteWorkflow(
 	}
 	return o.Next.ExecuteWorkflow(ctx, in)
 }
+
+func (o *timeSkippingClientOutboundInterceptor) SignalWithStartWorkflow(
+	ctx context.Context, in *interceptor.ClientSignalWithStartWorkflowInput,
+) (client.WorkflowRun, error) {
+	if o.skipper.stampEnabled && in.Options != nil && in.Options.TimeSkippingConfig == nil {
+		in.Options.TimeSkippingConfig = o.skipper.config.ToProto()
+	}
+	return o.Next.SignalWithStartWorkflow(ctx, in)
+}
