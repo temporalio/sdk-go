@@ -126,14 +126,14 @@ func TestNewS3StorageDriver_NilClient(t *testing.T) {
 	_, err := NewDriver(Options{
 		Bucket: StaticBucket("b"),
 	})
-	assert.EqualError(t, err, "Client is required")
+	assert.EqualError(t, err, "client is required")
 }
 
 func TestNewS3StorageDriver_NilBucketFunc(t *testing.T) {
 	_, err := NewDriver(Options{
 		Client: newMemClient(),
 	})
-	assert.EqualError(t, err, "Bucket is required")
+	assert.EqualError(t, err, "bucket is required")
 }
 
 func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
@@ -142,7 +142,7 @@ func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
 		Bucket:         StaticBucket("b"),
 		MaxPayloadSize: -1,
 	})
-	assert.EqualError(t, err, "MaxPayloadSize must be positive, got -1")
+	assert.EqualError(t, err, "max payload size must be positive, got -1")
 }
 
 // --- StaticBucket tests ---

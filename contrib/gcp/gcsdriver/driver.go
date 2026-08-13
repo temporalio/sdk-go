@@ -80,10 +80,10 @@ var _ converter.StorageDriver = (*gcsStorageDriver)(nil)
 // NOTE: Experimental
 func NewDriver(opts Options) (converter.StorageDriver, error) {
 	if opts.Client == nil {
-		return nil, errors.New("Client is required")
+		return nil, errors.New("client is required")
 	}
 	if opts.Bucket == nil {
-		return nil, errors.New("Bucket is required")
+		return nil, errors.New("bucket is required")
 	}
 	name := opts.DriverName
 	if name == "" {
@@ -94,7 +94,7 @@ func NewDriver(opts Options) (converter.StorageDriver, error) {
 		maxSize = defaultMaxPayloadSize
 	}
 	if maxSize < 0 {
-		return nil, fmt.Errorf("MaxPayloadSize must be positive, got %d", maxSize)
+		return nil, fmt.Errorf("max payload size must be positive, got %d", maxSize)
 	}
 	return &gcsStorageDriver{
 		client:         opts.Client,
