@@ -2162,6 +2162,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 		OnConflictOptions:        in.Options.onConflictOptions.ToProto(),
 		Priority:                 convertToPBPriority(in.Options.Priority),
+		TimeSkippingConfig:       in.Options.TimeSkippingConfig,
 	}
 
 	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
@@ -2599,6 +2600,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		Header:                   header,
 		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
 		Priority:                 convertToPBPriority(in.Options.Priority),
+		TimeSkippingConfig:       in.Options.TimeSkippingConfig,
 	}
 
 	// If this signalWithStart was issued from inside a Nexus operation handler, forward the inbound
