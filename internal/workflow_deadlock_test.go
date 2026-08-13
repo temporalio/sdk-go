@@ -11,6 +11,11 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
+const (
+	deadlockDetectionTime = 400 * time.Millisecond
+	payloadConverterTime  = 600 * time.Millisecond
+)
+
 func TestDeadlockDetector(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const timeout = 500 * time.Millisecond
@@ -49,7 +54,7 @@ func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
 			return ExecuteActivity(ctx, activityFn, "some arg").Get(ctx, nil)
 		}
 		env := suite.NewTestWorkflowEnvironment()
-		env.SetWorkerOptions(WorkerOptions{DeadlockDetectionTimeout: 400 * time.Millisecond})
+		env.SetWorkerOptions(WorkerOptions{DeadlockDetectionTimeout: deadlockDetectionTime})
 		env.RegisterWorkflow(workflowFn)
 		env.RegisterActivity(activityFn)
 		env.ExecuteWorkflow(workflowFn)
@@ -59,16 +64,12 @@ func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
 
 	t.Run("detects deadlock", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			converterReturned := make(chan struct{})
 			conv := &slowToPayloadsConverter{
 				DataConverter: converter.GetDefaultDataConverter(),
-				onReturn:      func() { close(converterReturned) },
 			}
 			require.ErrorContains(t, runWorkflow(t, conv), "Potential deadlock detected")
 
-			// Deadlock detection returns while the converter is still sleeping. Let
-			// that abandoned workflow coroutine finish before leaving this bubble.
-			<-converterReturned
+			time.Sleep(payloadConverterTime - deadlockDetectionTime)
 			synctest.Wait()
 		})
 	})
@@ -99,14 +100,10 @@ func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
 
 type slowToPayloadsConverter struct {
 	converter.DataConverter
-	onReturn func()
 }
 
 func (s *slowToPayloadsConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
-	time.Sleep(600 * time.Millisecond)
-	if s.onReturn != nil {
-		defer s.onReturn()
-	}
+	time.Sleep(payloadConverterTime)
 	return s.DataConverter.ToPayloads(value...)
 }
 
