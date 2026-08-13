@@ -3665,3 +3665,44 @@ func (s *internalWorkerTestSuite) TestRegisterMultipleDynamicWorkflow() {
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "dynamic activity already registered")
 }
+
+// firstClosureA and firstClosureB each return their enclosing function's first
+// closure. The Go runtime names both "<pkg>.firstClosureX.func1", so their short
+// names collide as "func1" — the collision behind temporalio/sdk-go#2141.
+func firstClosureA() func(context.Context) error {
+	return func(context.Context) error { return nil }
+}
+
+func firstClosureB() func(context.Context) error {
+	return func(context.Context) error { return nil }
+}
+
+type getFunctionNameActivities struct{}
+
+func (*getFunctionNameActivities) NamedActivity(context.Context) error { return nil }
+
+func TestGetFunctionName_ClosuresKeepQualifiedName(t *testing.T) {
+	// The Go compiler numbers closures per package ("func1", "func2", ...), so
+	// each package restarts at "func1" and the bare short name collides across
+	// packages. That misroutes activities in the registry's alias maps
+	// (temporalio/sdk-go#2141). A closure must therefore keep its fully-qualified
+	// name, which retains the enclosing identity and is unique across packages.
+	nameA, isMethod := getFunctionName(firstClosureA())
+	require.False(t, isMethod)
+	require.Contains(t, nameA, "firstClosureA",
+		"closure name must retain its enclosing identity, got %q", nameA)
+
+	nameB, _ := getFunctionName(firstClosureB())
+	require.Contains(t, nameB, "firstClosureB", "got %q", nameB)
+	require.NotEqual(t, nameA, nameB)
+
+	// Named functions keep their short name.
+	namedFn, _ := getFunctionName(testWorkflowHello)
+	require.Equal(t, "testWorkflowHello", namedFn)
+
+	// Methods keep their short name and are reported as methods.
+	a := &getFunctionNameActivities{}
+	method, isMethod := getFunctionName(a.NamedActivity)
+	require.True(t, isMethod)
+	require.Equal(t, "NamedActivity", method)
+}

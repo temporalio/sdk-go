@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -2724,6 +2725,10 @@ func isError(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(errorElem)
 }
 
+// closureNamePattern matches the compiler-generated name of a Go closure, e.g.
+// "pkg.Outer.func1" or a nested "pkg.Outer.func1.2".
+var closureNamePattern = regexp.MustCompile(`\.func\d`)
+
 func getFunctionName(i interface{}) (name string, isMethod bool) {
 	if fullName, ok := i.(string); ok {
 		return fullName, false
@@ -2732,6 +2737,14 @@ func getFunctionName(i interface{}) (name string, isMethod bool) {
 	// Full function name that has a struct pointer receiver has the following format
 	// <prefix>.(*<type>).<function>
 	isMethod = strings.ContainsAny(fullName, "*")
+	// Closures are named "<enclosing>.funcN" by the Go runtime, so their short
+	// name collapses every closure in a scope to "func1", "func2", ... These
+	// collide in the registry's alias maps and can misroute one activity to
+	// another's registration (see temporalio/sdk-go#2141). Keep the
+	// fully-qualified name so each closure has a stable, unique identity.
+	if closureNamePattern.MatchString(fullName) {
+		return fullName, isMethod
+	}
 	elements := strings.Split(fullName, ".")
 	shortName := elements[len(elements)-1]
 	// This allows to call activities by method pointer
