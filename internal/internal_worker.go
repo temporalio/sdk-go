@@ -297,6 +297,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.DataConverter = converter.GetDefaultDataConverter()
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
+	params.DataConverter = converter.WrapDataConverter(params.DataConverter)
 	if params.FailureConverter == nil {
 		params.FailureConverter = GetDefaultFailureConverter()
 	}
@@ -1868,6 +1869,10 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	if err != nil {
 		return nil, fmt.Errorf("invalid ExternalStorage options: %w", err)
 	}
+	if options.DataConverter == nil {
+		options.DataConverter = converter.GetDefaultDataConverter()
+	}
+	options.DataConverter = converter.WrapDataConverter(options.DataConverter)
 
 	registry := newRegistryWithOptions(registryOptions{disableAliasing: options.DisableRegistrationAliasing})
 	registry.interceptors = options.Interceptors

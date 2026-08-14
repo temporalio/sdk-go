@@ -3276,7 +3276,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		TaskQueueActivitiesPerSecond:   options.TaskQueueActivitiesPerSecond,
 		WorkerLocalActivitiesPerSecond: options.WorkerLocalActivitiesPerSecond,
 		StickyScheduleToStartTimeout:   options.StickyScheduleToStartTimeout,
-		DataConverter:                  client.dataConverter,
+		DataConverter:                  converter.WrapDataConverter(client.dataConverter),
 		FailureConverter:               client.failureConverter,
 		Logger:                         client.logger,
 		MetricsHandler:                 client.metricsHandler,

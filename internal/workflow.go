@@ -2171,7 +2171,7 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 		panic("data converter is nil for WithDataConverter")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).DataConverter = dc
+	getWorkflowEnvOptions(ctx1).DataConverter = converter.WrapDataConverter(dc)
 	return ctx1
 }
 
