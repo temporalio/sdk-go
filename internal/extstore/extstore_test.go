@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/google/uuid"
@@ -601,22 +602,24 @@ func TestStoreVisitor_CancelOnError(t *testing.T) {
 }
 
 func TestStoreVisitor_Callback(t *testing.T) {
-	driver := newTestDriver("d")
-	driver.storeDelay = time.Millisecond
-	params, err := ExternalStorageToParams(ExternalStorage{
-		Drivers:              []StorageDriver{driver},
-		PayloadSizeThreshold: 1,
-	})
-	require.NoError(t, err)
-	visitor := NewExternalStorageVisitor(params)
+	synctest.Test(t, func(t *testing.T) {
+		driver := newTestDriver("d")
+		driver.storeDelay = time.Millisecond
+		params, err := ExternalStorageToParams(ExternalStorage{
+			Drivers:              []StorageDriver{driver},
+			PayloadSizeThreshold: 1,
+		})
+		require.NoError(t, err)
+		visitor := NewExternalStorageVisitor(params)
 
-	cb := &testCallback{}
-	ctx := WithStorageOperationCallback(t.Context(), cb)
-	_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{makePayload(t, "x"), makePayload(t, "y")})
-	require.NoError(t, err)
-	require.Equal(t, 2, cb.count)
-	require.Greater(t, cb.size, int64(0))
-	require.Greater(t, cb.duration, time.Duration(0))
+		cb := &testCallback{}
+		ctx := WithStorageOperationCallback(t.Context(), cb)
+		_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{makePayload(t, "x"), makePayload(t, "y")})
+		require.NoError(t, err)
+		require.Equal(t, 2, cb.count)
+		require.Greater(t, cb.size, int64(0))
+		require.Equal(t, time.Millisecond, cb.duration)
+	})
 }
 
 func TestStoreVisitor_Callback_ExternalCountOnly(t *testing.T) {
@@ -858,24 +861,26 @@ func TestRetrievalVisitor_WrongPayloadCount(t *testing.T) {
 }
 
 func TestRetrievalVisitor_Callback(t *testing.T) {
-	driver := newTestDriver("d")
-	driver.retrieveDelay = time.Millisecond
-	params, err := ExternalStorageToParams(ExternalStorage{
-		Drivers:              []StorageDriver{driver},
-		PayloadSizeThreshold: 1,
+	synctest.Test(t, func(t *testing.T) {
+		driver := newTestDriver("d")
+		driver.retrieveDelay = time.Millisecond
+		params, err := ExternalStorageToParams(ExternalStorage{
+			Drivers:              []StorageDriver{driver},
+			PayloadSizeThreshold: 1,
+		})
+		require.NoError(t, err)
+		storeVisitor := NewExternalStorageVisitor(params)
+		retrieveVisitor := NewExternalRetrievalVisitor(params)
+
+		refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
+		require.NoError(t, err)
+
+		cb := &testCallback{}
+		ctx := WithStorageOperationCallback(t.Context(), cb)
+		_, err = visitPayloads(ctx, retrieveVisitor, refs)
+		require.NoError(t, err)
+		require.Equal(t, time.Millisecond, cb.duration)
 	})
-	require.NoError(t, err)
-	storeVisitor := NewExternalStorageVisitor(params)
-	retrieveVisitor := NewExternalRetrievalVisitor(params)
-
-	refs, err := visitPayloads(t.Context(), storeVisitor, []*commonpb.Payload{makePayload(t, "x")})
-	require.NoError(t, err)
-
-	cb := &testCallback{}
-	ctx := WithStorageOperationCallback(t.Context(), cb)
-	_, err = visitPayloads(ctx, retrieveVisitor, refs)
-	require.NoError(t, err)
-	require.Greater(t, cb.duration, time.Duration(0))
 }
 
 func TestRetrievalVisitor_Callback_ExternalCountOnly(t *testing.T) {

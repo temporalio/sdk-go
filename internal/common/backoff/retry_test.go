@@ -3,6 +3,7 @@ package backoff
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -40,27 +41,32 @@ func TestRetrySuccess(t *testing.T) {
 
 func TestNoRetryAfterContextDone(t *testing.T) {
 	t.Parallel()
-	retryCounter := 0
-	op := func() error {
-		retryCounter++
+	synctest.Test(t, func(t *testing.T) {
+		retryCounter := 0
+		op := func() error {
+			retryCounter++
 
-		if retryCounter == 5 {
-			return nil
+			if retryCounter == 5 {
+				return nil
+			}
+
+			return &someError{}
 		}
 
-		return &someError{}
-	}
+		policy := NewExponentialRetryPolicy(10 * time.Millisecond)
+		policy.SetMaximumInterval(50 * time.Millisecond)
+		policy.SetMaximumAttempts(10)
 
-	policy := NewExponentialRetryPolicy(10 * time.Millisecond)
-	policy.SetMaximumInterval(50 * time.Millisecond)
-	policy.SetMaximumAttempts(10)
+		const timeout = 50 * time.Millisecond
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
+		defer cancel()
 
-	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancel()
-
-	err := Retry(ctx, op, policy, nil)
-	assert.Error(t, err)
-	assert.True(t, retryCounter >= 2, "retryCounter should be at least 2 but was %d", retryCounter) // verify that we did retry
+		start := time.Now()
+		err := Retry(ctx, op, policy, nil)
+		assert.Error(t, err)
+		assert.Equal(t, 3, retryCounter)
+		assert.Equal(t, timeout, time.Since(start))
+	})
 }
 
 func TestRetryFailed(t *testing.T) {

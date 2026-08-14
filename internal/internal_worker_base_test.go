@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -380,126 +381,126 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 }
 
 func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
-	behavior := &pollerBehaviorAutoscaling{
-		initialNumberOfPollers: 2,
-		maximumNumberOfPollers: 3,
-		minimumNumberOfPollers: 1,
-	}
+	synctest.Test(s.T(), func(t *testing.T) {
+		behavior := &pollerBehaviorAutoscaling{
+			initialNumberOfPollers: 2,
+			maximumNumberOfPollers: 3,
+			minimumNumberOfPollers: 1,
+		}
 
-	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+		blockingPoller := newBlockingProbeTaskPoller()
+		poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     &testSlotSupplier{},
-		maxTaskPerSecond: 1000,
-		taskPollers:      []scalableTaskPoller{poller},
-		taskProcessor:    noopTaskProcessor{},
-		workerType:       "AutoscalingTest",
-		logger:           ilog.NewNopLogger(),
-		stopTimeout:      time.Second,
-		metricsHandler:   metrics.NopHandler,
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:     &testSlotSupplier{},
+			maxTaskPerSecond: 1000,
+			taskPollers:      []scalableTaskPoller{poller},
+			taskProcessor:    noopTaskProcessor{},
+			workerType:       "AutoscalingTest",
+			logger:           ilog.NewNopLogger(),
+			stopTimeout:      time.Second,
+			metricsHandler:   metrics.NopHandler,
+		})
+
+		bw.Start()
+		defer func() {
+			blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+			blockingPoller.Close()
+			bw.Stop()
+		}()
+
+		assertAutoscalingPollerState(t, poller.autoscalingRunner, 2, "expected initial concurrency")
+
+		poller.pollerAutoscaler.updateTarget(func(target int64) int64 { return 1 })
+		blockingPoller.Allow(2)
+
+		assertAutoscalingPollerState(t, poller.autoscalingRunner, 1, "expected concurrency to reduce to minimum")
+
+		for range 5 {
+			assert.Equal(t, int64(1), poller.pollerAutoscaler.target.Load(), "should not scale target below minimum")
+			blockingPoller.Allow(1)
+			assertAutoscalingPollerState(t, poller.autoscalingRunner, 1, "expected concurrency to recover to minimum")
+		}
 	})
-
-	bw.Start()
-	defer func() {
-		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
-		blockingPoller.Close()
-		bw.Stop()
-	}()
-
-	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 2, "expected initial concurrency")
-
-	poller.pollerAutoscaler.updateTarget(func(target int64) int64 { return 1 })
-	blockingPoller.Allow(2)
-
-	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected concurrency to reduce to minimum")
-
-	for range 5 {
-		assert.Equal(s.T(), int64(1), poller.pollerAutoscaler.target.Load(), "should not scale target below minimum")
-		blockingPoller.Allow(1)
-		eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected concurrency to recover to minimum")
-	}
 }
 
 func (s *ScalableTaskPollerSuite) TestAutoscalingDoesNotHoldSlotWhileWaitingForPollCapacity() {
-	behavior := &pollerBehaviorAutoscaling{
-		initialNumberOfPollers: 1,
-		maximumNumberOfPollers: 2,
-		minimumNumberOfPollers: 1,
-	}
+	synctest.Test(s.T(), func(t *testing.T) {
+		behavior := &pollerBehaviorAutoscaling{
+			initialNumberOfPollers: 1,
+			maximumNumberOfPollers: 2,
+			minimumNumberOfPollers: 1,
+		}
 
-	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
-	slotSupplier := newLimitedSlotSupplier(2)
+		blockingPoller := newBlockingProbeTaskPoller()
+		poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+		slotSupplier := newLimitedSlotSupplier(2)
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     slotSupplier,
-		maxTaskPerSecond: 1000,
-		taskPollers:      []scalableTaskPoller{poller},
-		taskProcessor:    noopTaskProcessor{},
-		workerType:       "AutoscalingSlotCapacityTest",
-		logger:           ilog.NewNopLogger(),
-		stopTimeout:      time.Second,
-		metricsHandler:   metrics.NopHandler,
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:     slotSupplier,
+			maxTaskPerSecond: 1000,
+			taskPollers:      []scalableTaskPoller{poller},
+			taskProcessor:    noopTaskProcessor{},
+			workerType:       "AutoscalingSlotCapacityTest",
+			logger:           ilog.NewNopLogger(),
+			stopTimeout:      time.Second,
+			metricsHandler:   metrics.NopHandler,
+		})
+
+		bw.Start()
+		defer func() {
+			blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+			blockingPoller.Close()
+			bw.Stop()
+		}()
+
+		assertAutoscalingPollerState(t, poller.autoscalingRunner, 1, "expected initial poller to start")
+		require.Equal(t, int32(1), slotSupplier.reserves.Load(),
+			"autoscaling poller should not reserve another slot while blocked by its target")
+
+		permit := slotSupplier.TryReserveSlot(nil)
+		require.NotNil(t, permit, "unused slot should remain available while autoscaling target is full")
+		slotSupplier.ReleaseSlot(nil)
 	})
-
-	bw.Start()
-	defer func() {
-		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
-		blockingPoller.Close()
-		bw.Stop()
-	}()
-
-	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected initial poller to start")
-
-	require.Never(s.T(), func() bool {
-		return slotSupplier.reserves.Load() > 1
-	}, 200*time.Millisecond, 10*time.Millisecond,
-		"autoscaling poller should not reserve another slot while blocked by its target")
-
-	permit := slotSupplier.TryReserveSlot(nil)
-	require.NotNil(s.T(), permit, "unused slot should remain available while autoscaling target is full")
-	slotSupplier.ReleaseSlot(nil)
 }
 
 func (s *ScalableTaskPollerSuite) TestAutoscalingBalancerDoesNotHoldSlotsWhileBlocked() {
-	behavior := &pollerBehaviorAutoscaling{
-		initialNumberOfPollers: 2,
-		maximumNumberOfPollers: 2,
-		minimumNumberOfPollers: 1,
-	}
+	synctest.Test(s.T(), func(t *testing.T) {
+		behavior := &pollerBehaviorAutoscaling{
+			initialNumberOfPollers: 2,
+			maximumNumberOfPollers: 2,
+			minimumNumberOfPollers: 1,
+		}
 
-	blockingPoller := newBlockingProbeTaskPoller()
-	poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "a", nil)
-	slotSupplier := newLimitedSlotSupplier(2)
+		blockingPoller := newBlockingProbeTaskPoller()
+		poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "a", nil)
+		slotSupplier := newLimitedSlotSupplier(2)
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     slotSupplier,
-		maxTaskPerSecond: 1000,
-		taskPollers: []scalableTaskPoller{
-			poller,
-			{taskPollerType: "b"},
-		},
-		taskProcessor:  noopTaskProcessor{},
-		workerType:     "AutoscalingBalancerTest",
-		logger:         ilog.NewNopLogger(),
-		stopTimeout:    time.Second,
-		metricsHandler: metrics.NopHandler,
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:     slotSupplier,
+			maxTaskPerSecond: 1000,
+			taskPollers: []scalableTaskPoller{
+				poller,
+				{taskPollerType: "b"},
+			},
+			taskProcessor:  noopTaskProcessor{},
+			workerType:     "AutoscalingBalancerTest",
+			logger:         ilog.NewNopLogger(),
+			stopTimeout:    time.Second,
+			metricsHandler: metrics.NopHandler,
+		})
+
+		bw.Start()
+		defer func() {
+			blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+			blockingPoller.Close()
+			bw.Stop()
+		}()
+
+		assertAutoscalingPollerState(t, poller.autoscalingRunner, 1, "expected first poller to start")
+		require.Equal(t, int32(1), slotSupplier.reserves.Load(),
+			"autoscaling poller should not reserve another slot while blocked by poller balancer")
 	})
-
-	bw.Start()
-	defer func() {
-		blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
-		blockingPoller.Close()
-		bw.Stop()
-	}()
-
-	eventuallyAutoscalingPollerState(s.T(), poller.autoscalingRunner, 1, "expected first poller to start")
-
-	require.Never(s.T(), func() bool {
-		return slotSupplier.reserves.Load() > 1
-	}, 200*time.Millisecond, 10*time.Millisecond,
-		"autoscaling poller should not reserve another slot while blocked by poller balancer")
 }
 
 type blockingProbeTaskPoller struct {
@@ -545,6 +546,11 @@ func eventuallyAutoscalingPollerState(t *testing.T, runner *autoscalingTaskPolle
 	require.Eventually(t, func() bool {
 		return readAutoscalingPollerState(runner) == expectedActive
 	}, time.Second, 10*time.Millisecond, msg)
+}
+
+func assertAutoscalingPollerState(t *testing.T, runner *autoscalingTaskPollerRunner, expectedActive int, msg string) {
+	synctest.Wait()
+	require.Equal(t, expectedActive, readAutoscalingPollerState(runner), msg)
 }
 
 func readAutoscalingPollerState(runner *autoscalingTaskPollerRunner) int {
@@ -657,136 +663,142 @@ func (noopTaskProcessor) ProcessTask(any) error { return nil }
 // poller receives a task during shutdown, the task is still dispatched and
 // processed rather than silently dropped.
 func TestTaskNotDroppedDuringShutdown(t *testing.T) {
-	taskProcessed := make(chan struct{}, 1)
-	pollStarted := make(chan struct{}, 1)
+	synctest.Test(t, func(t *testing.T) {
+		taskProcessed := make(chan struct{}, 1)
+		pollStarted := make(chan struct{}, 1)
 
-	// A poller that blocks until returnTask is closed, then returns a task
-	// exactly once. Subsequent polls return nil so the poller can exit.
-	tp := &shutdownTaskPoller{
-		pollStarted: pollStarted,
-		returnTask:  make(chan struct{}),
-		task:        &testTask{},
-	}
+		// A poller that blocks until returnTask is closed, then returns a task
+		// exactly once. Subsequent polls return nil so the poller can exit.
+		tp := &shutdownTaskPoller{
+			pollStarted: pollStarted,
+			returnTask:  make(chan struct{}),
+			task:        &testTask{},
+		}
 
-	processor := &recordingTaskProcessor{
-		processed: taskProcessed,
-	}
-	workerPollCompleteOnShutdown := &atomic.Bool{}
-	workerPollCompleteOnShutdown.Store(true)
+		processor := &recordingTaskProcessor{
+			processed: taskProcessed,
+		}
+		workerPollCompleteOnShutdown := &atomic.Bool{}
+		workerPollCompleteOnShutdown.Store(true)
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     &testSlotSupplier{},
-		maxTaskPerSecond: 1000,
-		taskPollers: []scalableTaskPoller{
-			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
-		},
-		taskProcessor:                processor,
-		workerType:                   "ShutdownTest",
-		logger:                       ilog.NewNopLogger(),
-		stopTimeout:                  5 * time.Second,
-		metricsHandler:               metrics.NopHandler,
-		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:     &testSlotSupplier{},
+			maxTaskPerSecond: 1000,
+			taskPollers: []scalableTaskPoller{
+				{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+			},
+			taskProcessor:                processor,
+			workerType:                   "ShutdownTest",
+			logger:                       ilog.NewNopLogger(),
+			stopTimeout:                  5 * time.Second,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		})
+
+		bw.Start()
+
+		// Wait for the poller to be actively polling.
+		<-pollStarted
+
+		// AggregatedWorker.Stop sets noRepoll before stopping base workers.
+		bw.noRepoll.Store(true)
+
+		// Stop exercises the base worker shutdown path: close(stopCh),
+		// poll-side limiter cancellation, and awaitWaitGroup.
+		stopDone := make(chan struct{})
+		go func() {
+			bw.Stop()
+			close(stopDone)
+		}()
+
+		<-bw.stopCh
+
+		// Release the poller after shutdown has started so the task is polled
+		// during shutdown. The poller returns a task and then nil on subsequent
+		// polls, allowing it to exit via noRepoll/stopCh during Stop().
+		close(tp.returnTask)
+		synctest.Wait()
+
+		select {
+		case <-taskProcessed:
+			// Success: the task was dispatched and processed during shutdown
+		default:
+			t.Fatal("task polled during shutdown was not processed (dropped)")
+		}
+
+		select {
+		case <-stopDone:
+			// Stop completed cleanly
+		default:
+			t.Fatal("Stop() did not return after the poller completed")
+		}
 	})
-
-	bw.Start()
-
-	// Wait for the poller to be actively polling.
-	<-pollStarted
-
-	// AggregatedWorker.Stop sets noRepoll before stopping base workers.
-	bw.noRepoll.Store(true)
-
-	// Stop exercises the base worker shutdown path: close(stopCh),
-	// poll-side limiter cancellation, and awaitWaitGroup.
-	stopDone := make(chan struct{})
-	go func() {
-		bw.Stop()
-		close(stopDone)
-	}()
-
-	<-bw.stopCh
-
-	// Release the poller after shutdown has started so the task is polled
-	// during shutdown. The poller returns a task and then nil on subsequent
-	// polls, allowing it to exit via noRepoll/stopCh during Stop().
-	close(tp.returnTask)
-
-	select {
-	case <-taskProcessed:
-		// Success: the task was dispatched and processed during shutdown
-	case <-time.After(5 * time.Second):
-		t.Fatal("task polled during shutdown was not processed (dropped)")
-	}
-
-	select {
-	case <-stopDone:
-		// Stop completed cleanly
-	case <-time.After(5 * time.Second):
-		t.Fatal("Stop() did not return in time")
-	}
 }
 
 func TestAutoscalingTaskNotDroppedDuringShutdown(t *testing.T) {
-	taskProcessed := make(chan struct{}, 1)
-	pollStarted := make(chan struct{}, 1)
-	tp := &shutdownTaskPoller{
-		pollStarted: pollStarted,
-		returnTask:  make(chan struct{}),
-		task:        &testTask{},
-	}
-	processor := &recordingTaskProcessor{
-		processed: taskProcessed,
-	}
-	workerPollCompleteOnShutdown := &atomic.Bool{}
-	workerPollCompleteOnShutdown.Store(true)
-	poller := newScalableTaskPoller(
-		tp,
-		ilog.NewNopLogger(),
-		&pollerBehaviorAutoscaling{
-			initialNumberOfPollers: 1,
-			maximumNumberOfPollers: 2,
-			minimumNumberOfPollers: 1,
-		},
-		"test",
-		&atomic.Bool{},
-	)
+	synctest.Test(t, func(t *testing.T) {
+		taskProcessed := make(chan struct{}, 1)
+		pollStarted := make(chan struct{}, 1)
+		tp := &shutdownTaskPoller{
+			pollStarted: pollStarted,
+			returnTask:  make(chan struct{}),
+			task:        &testTask{},
+		}
+		processor := &recordingTaskProcessor{
+			processed: taskProcessed,
+		}
+		workerPollCompleteOnShutdown := &atomic.Bool{}
+		workerPollCompleteOnShutdown.Store(true)
+		poller := newScalableTaskPoller(
+			tp,
+			ilog.NewNopLogger(),
+			&pollerBehaviorAutoscaling{
+				initialNumberOfPollers: 1,
+				maximumNumberOfPollers: 2,
+				minimumNumberOfPollers: 1,
+			},
+			"test",
+			&atomic.Bool{},
+		)
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:                 &testSlotSupplier{},
-		maxTaskPerSecond:             1000,
-		taskPollers:                  []scalableTaskPoller{poller},
-		taskProcessor:                processor,
-		workerType:                   "AutoscalingShutdownTest",
-		logger:                       ilog.NewNopLogger(),
-		stopTimeout:                  5 * time.Second,
-		metricsHandler:               metrics.NopHandler,
-		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:                 &testSlotSupplier{},
+			maxTaskPerSecond:             1000,
+			taskPollers:                  []scalableTaskPoller{poller},
+			taskProcessor:                processor,
+			workerType:                   "AutoscalingShutdownTest",
+			logger:                       ilog.NewNopLogger(),
+			stopTimeout:                  5 * time.Second,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		})
+
+		bw.Start()
+		<-pollStarted
+		bw.noRepoll.Store(true)
+
+		stopDone := make(chan struct{})
+		go func() {
+			bw.Stop()
+			close(stopDone)
+		}()
+
+		<-bw.stopCh
+		close(tp.returnTask)
+		synctest.Wait()
+
+		select {
+		case <-taskProcessed:
+		default:
+			t.Fatal("task polled during autoscaling shutdown was not processed")
+		}
+
+		select {
+		case <-stopDone:
+		default:
+			t.Fatal("Stop() did not return after the poller completed")
+		}
 	})
-
-	bw.Start()
-	<-pollStarted
-	bw.noRepoll.Store(true)
-
-	stopDone := make(chan struct{})
-	go func() {
-		bw.Stop()
-		close(stopDone)
-	}()
-
-	<-bw.stopCh
-	close(tp.returnTask)
-
-	select {
-	case <-taskProcessed:
-	case <-time.After(5 * time.Second):
-		t.Fatal("task polled during autoscaling shutdown was not processed")
-	}
-
-	select {
-	case <-stopDone:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Stop() did not return in time")
-	}
 }
 
 // effectivelyBlockedDispatchRate lets the first task consume the limiter's
@@ -795,117 +807,126 @@ func TestAutoscalingTaskNotDroppedDuringShutdown(t *testing.T) {
 const effectivelyBlockedDispatchRate = 0.001
 
 func TestTaskDrainDuringShutdownRespectsDispatchRate(t *testing.T) {
-	taskProcessed := make(chan struct{}, 2)
-	workerPollCompleteOnShutdown := &atomic.Bool{}
-	workerPollCompleteOnShutdown.Store(true)
+	synctest.Test(t, func(t *testing.T) {
+		taskProcessed := make(chan struct{}, 2)
+		workerPollCompleteOnShutdown := &atomic.Bool{}
+		workerPollCompleteOnShutdown.Store(true)
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:                 &testSlotSupplier{},
-		maxTaskPerSecond:             effectivelyBlockedDispatchRate,
-		taskPollers:                  []scalableTaskPoller{},
-		taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
-		workerType:                   "ShutdownRateLimitTest",
-		logger:                       ilog.NewNopLogger(),
-		stopTimeout:                  5 * time.Second,
-		metricsHandler:               metrics.NopHandler,
-		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
-	})
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:                 &testSlotSupplier{},
+			maxTaskPerSecond:             effectivelyBlockedDispatchRate,
+			taskPollers:                  []scalableTaskPoller{},
+			taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
+			workerType:                   "ShutdownRateLimitTest",
+			logger:                       ilog.NewNopLogger(),
+			stopTimeout:                  5 * time.Second,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		})
 
-	bw.stopWG.Add(1)
-	go bw.runTaskDispatcher()
-	bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
-
-	select {
-	case <-taskProcessed:
-	case <-time.After(time.Second):
-		t.Fatal("first task polled during shutdown was not processed")
-	}
-
-	secondSent := make(chan struct{})
-	go func() {
+		bw.stopWG.Add(1)
+		go bw.runTaskDispatcher()
 		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
-		close(secondSent)
-	}()
-	select {
-	case <-secondSent:
-	case <-time.After(time.Second):
-		t.Fatal("dispatcher did not receive the second task")
-	}
+		synctest.Wait()
 
-	select {
-	case <-taskProcessed:
-		t.Fatal("second task should not bypass the dispatch rate during shutdown drain")
-	case <-time.After(200 * time.Millisecond):
-	}
+		select {
+		case <-taskProcessed:
+		default:
+			t.Fatal("first task polled during shutdown was not processed")
+		}
 
-	bw.taskLimiterContextCancel()
-	close(bw.taskQueueCh)
+		secondSent := make(chan struct{})
+		go func() {
+			bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+			close(secondSent)
+		}()
+		synctest.Wait()
+		select {
+		case <-secondSent:
+		default:
+			t.Fatal("dispatcher did not receive the second task")
+		}
 
-	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
-		"dispatcher and processed tasks should finish after taskQueueCh closes")
+		time.Sleep(200 * time.Millisecond)
+		synctest.Wait()
+		select {
+		case <-taskProcessed:
+			t.Fatal("second task should not bypass the dispatch rate during shutdown drain")
+		default:
+		}
+
+		bw.taskLimiterContextCancel()
+		close(bw.taskQueueCh)
+		synctest.Wait()
+		bw.stopWG.Wait()
+	})
 }
 
 func TestTaskDrainAfterDispatchLimiterCancelReleasesUnprocessedTasks(t *testing.T) {
-	taskProcessed := make(chan struct{}, 3)
-	workerPollCompleteOnShutdown := &atomic.Bool{}
-	workerPollCompleteOnShutdown.Store(true)
-	slotSupplier := &CountingSlotSupplier{}
+	synctest.Test(t, func(t *testing.T) {
+		taskProcessed := make(chan struct{}, 3)
+		workerPollCompleteOnShutdown := &atomic.Bool{}
+		workerPollCompleteOnShutdown.Store(true)
+		slotSupplier := &CountingSlotSupplier{}
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:                 slotSupplier,
-		maxTaskPerSecond:             effectivelyBlockedDispatchRate,
-		taskPollers:                  []scalableTaskPoller{},
-		taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
-		workerType:                   "ShutdownTimeoutDrainTest",
-		logger:                       ilog.NewNopLogger(),
-		stopTimeout:                  5 * time.Second,
-		metricsHandler:               metrics.NopHandler,
-		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:                 slotSupplier,
+			maxTaskPerSecond:             effectivelyBlockedDispatchRate,
+			taskPollers:                  []scalableTaskPoller{},
+			taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
+			workerType:                   "ShutdownTimeoutDrainTest",
+			logger:                       ilog.NewNopLogger(),
+			stopTimeout:                  5 * time.Second,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		})
+
+		bw.stopWG.Add(1)
+		go bw.runTaskDispatcher()
+		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+		synctest.Wait()
+
+		select {
+		case <-taskProcessed:
+		default:
+			t.Fatal("first task polled during shutdown was not processed")
+		}
+
+		secondSent := make(chan struct{})
+		go func() {
+			bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+			close(secondSent)
+		}()
+		synctest.Wait()
+		select {
+		case <-secondSent:
+		default:
+			t.Fatal("dispatcher did not receive the second task")
+		}
+
+		thirdSent := make(chan struct{})
+		go func() {
+			bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
+			close(thirdSent)
+		}()
+
+		bw.taskLimiterContextCancel()
+		synctest.Wait()
+		select {
+		case <-thirdSent:
+		default:
+			t.Fatal("dispatcher did not keep receiving after dispatch limiter cancellation")
+		}
+		close(bw.taskQueueCh)
+		synctest.Wait()
+		bw.stopWG.Wait()
+		require.Empty(t, taskProcessed,
+			"only the task dispatched before dispatch limiter cancellation should be processed")
+		require.Equal(t, int32(1), slotSupplier.uses.Load(),
+			"only the processed task should mark its slot used")
+		require.Equal(t, int32(3), slotSupplier.releases.Load(),
+			"processed and discarded tasks should all release their slots")
 	})
-
-	bw.stopWG.Add(1)
-	go bw.runTaskDispatcher()
-	bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
-
-	select {
-	case <-taskProcessed:
-	case <-time.After(time.Second):
-		t.Fatal("first task polled during shutdown was not processed")
-	}
-
-	secondSent := make(chan struct{})
-	go func() {
-		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
-		close(secondSent)
-	}()
-	select {
-	case <-secondSent:
-	case <-time.After(time.Second):
-		t.Fatal("dispatcher did not receive the second task")
-	}
-
-	thirdSent := make(chan struct{})
-	go func() {
-		bw.taskQueueCh <- &polledTask{task: &testTask{}, permit: &SlotPermit{}}
-		close(thirdSent)
-	}()
-
-	bw.taskLimiterContextCancel()
-	select {
-	case <-thirdSent:
-	case <-time.After(time.Second):
-		t.Fatal("dispatcher did not keep receiving after dispatch limiter cancellation")
-	}
-	close(bw.taskQueueCh)
-
-	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
-		"dispatcher should keep receiving and releasing tasks after dispatch limiter cancellation so pollers can exit")
-	require.Empty(t, taskProcessed,
-		"only the task dispatched before dispatch limiter cancellation should be processed")
-	require.Equal(t, int32(1), slotSupplier.uses.Load(),
-		"only the processed task should mark its slot used")
-	require.Equal(t, int32(3), slotSupplier.releases.Load(),
-		"processed and discarded tasks should all release their slots")
 }
 
 func TestTaskNotProcessedDuringLegacyShutdown(t *testing.T) {
@@ -924,61 +945,70 @@ func TestTaskNotProcessedDuringLegacyShutdown(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			taskProcessed := make(chan struct{}, 1)
-			pollStarted := make(chan struct{}, 1)
+			synctest.Test(t, func(t *testing.T) {
+				taskProcessed := make(chan struct{}, 1)
+				pollStarted := make(chan struct{}, 1)
 
-			// This poller simulates a poll returning a task after shutdown has
-			// already started. Legacy shutdown should not dispatch that task.
-			tp := &shutdownTaskPoller{
-				pollStarted: pollStarted,
-				returnTask:  make(chan struct{}),
-				task:        &testTask{},
-			}
+				// This poller simulates a poll returning a task after shutdown has
+				// already started. Legacy shutdown should not dispatch that task.
+				tp := &shutdownTaskPoller{
+					pollStarted: pollStarted,
+					returnTask:  make(chan struct{}),
+					task:        &testTask{},
+				}
 
-			bw := newBaseWorker(baseWorkerOptions{
-				slotSupplier:     &testSlotSupplier{},
-				maxTaskPerSecond: 1000,
-				taskPollers: []scalableTaskPoller{
-					{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
-				},
-				taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
-				workerType:                   "LegacyShutdownTest",
-				logger:                       ilog.NewNopLogger(),
-				stopTimeout:                  5 * time.Second,
-				metricsHandler:               metrics.NopHandler,
-				workerPollCompleteOnShutdown: tt.workerPollCompleteOnShutdown,
+				bw := newBaseWorker(baseWorkerOptions{
+					slotSupplier:     &testSlotSupplier{},
+					maxTaskPerSecond: 1000,
+					taskPollers: []scalableTaskPoller{
+						{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+					},
+					taskProcessor:                &recordingTaskProcessor{processed: taskProcessed},
+					workerType:                   "LegacyShutdownTest",
+					logger:                       ilog.NewNopLogger(),
+					stopTimeout:                  5 * time.Second,
+					metricsHandler:               metrics.NopHandler,
+					workerPollCompleteOnShutdown: tt.workerPollCompleteOnShutdown,
+				})
+
+				bw.Start()
+				synctest.Wait()
+				select {
+				case <-pollStarted:
+				default:
+					t.Fatal("poller did not start before the system became quiescent")
+				}
+
+				// AggregatedWorker.Stop sets noRepoll before stopping base workers.
+				bw.noRepoll.Store(true)
+
+				stopDone := make(chan struct{})
+				go func() {
+					bw.Stop()
+					close(stopDone)
+				}()
+
+				synctest.Wait()
+				select {
+				case <-bw.stopCh:
+				default:
+					t.Fatal("shutdown did not start")
+				}
+				close(tp.returnTask)
+				synctest.Wait()
+
+				select {
+				case <-stopDone:
+				default:
+					t.Fatal("Stop() did not return after the poller completed")
+				}
+
+				select {
+				case <-taskProcessed:
+					t.Fatal("task polled during legacy shutdown was processed")
+				default:
+				}
 			})
-
-			bw.Start()
-			select {
-			case <-pollStarted:
-			case <-time.After(5 * time.Second):
-				t.Fatal("poller did not start in time")
-			}
-
-			// AggregatedWorker.Stop sets noRepoll before stopping base workers.
-			bw.noRepoll.Store(true)
-
-			stopDone := make(chan struct{})
-			go func() {
-				bw.Stop()
-				close(stopDone)
-			}()
-
-			<-bw.stopCh
-			close(tp.returnTask)
-
-			select {
-			case <-stopDone:
-			case <-time.After(5 * time.Second):
-				t.Fatal("Stop() did not return in time")
-			}
-
-			select {
-			case <-taskProcessed:
-				t.Fatal("task polled during legacy shutdown was processed")
-			default:
-			}
 		})
 	}
 }
@@ -1017,96 +1047,83 @@ func (p *recordingTaskProcessor) ProcessTask(any) error {
 }
 
 func TestStopTimeoutBoundsPollerDrain(t *testing.T) {
-	pollStarted := make(chan struct{}, 1)
-	releasePoll := make(chan struct{})
-	var releasePollOnce sync.Once
-	releaseBlockedPoller := func() {
-		releasePollOnce.Do(func() {
-			close(releasePoll)
+	synctest.Test(t, func(t *testing.T) {
+		pollStarted := make(chan struct{}, 1)
+		releasePoll := make(chan struct{})
+		var releasePollOnce sync.Once
+		releaseBlockedPoller := func() {
+			releasePollOnce.Do(func() {
+				close(releasePoll)
+			})
+		}
+		defer releaseBlockedPoller()
+		tp := &blockingShutdownPoller{
+			pollStarted: pollStarted,
+			releasePoll: releasePoll,
+		}
+		workerPollCompleteOnShutdown := &atomic.Bool{}
+		workerPollCompleteOnShutdown.Store(true)
+
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:     &testSlotSupplier{},
+			maxTaskPerSecond: 1000,
+			taskPollers: []scalableTaskPoller{
+				{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+			},
+			taskProcessor:                noopTaskProcessor{},
+			workerType:                   "StopTimeoutTest",
+			logger:                       ilog.NewNopLogger(),
+			stopTimeout:                  50 * time.Millisecond,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
 		})
-	}
-	defer releaseBlockedPoller()
-	tp := &blockingShutdownPoller{
-		pollStarted: pollStarted,
-		releasePoll: releasePoll,
-	}
-	workerPollCompleteOnShutdown := &atomic.Bool{}
-	workerPollCompleteOnShutdown.Store(true)
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     &testSlotSupplier{},
-		maxTaskPerSecond: 1000,
-		taskPollers: []scalableTaskPoller{
-			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
-		},
-		taskProcessor:                noopTaskProcessor{},
-		workerType:                   "StopTimeoutTest",
-		logger:                       ilog.NewNopLogger(),
-		stopTimeout:                  50 * time.Millisecond,
-		metricsHandler:               metrics.NopHandler,
-		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
-	})
+		bw.Start()
+		<-pollStarted
 
-	bw.Start()
-	<-pollStarted
-
-	stopDone := make(chan struct{})
-	start := time.Now()
-	go func() {
+		start := time.Now()
 		bw.Stop()
-		close(stopDone)
-	}()
-
-	// Stop() should return after stopTimeout (~50ms), not block for the
-	// full pollTaskServiceTimeOut (70s).
-	select {
-	case <-stopDone:
-		elapsed := time.Since(start)
-		require.Less(t, elapsed, time.Second,
+		require.Equal(t, 50*time.Millisecond, time.Since(start),
 			"Stop() should return after stopTimeout, not wait for pollTaskServiceTimeOut")
-	case <-time.After(time.Second):
+
 		releaseBlockedPoller()
 		require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
 			"worker goroutines should finish after blocked poll is released")
-		t.Fatal("Stop() should return after stopTimeout, not wait for pollTaskServiceTimeOut")
-	}
-
-	releaseBlockedPoller()
-	require.True(t, awaitWaitGroup(&bw.stopWG, time.Second),
-		"worker goroutines should finish after blocked poll is released")
+	})
 }
 
 func TestLegacyStopReturnsPromptlyWithBlockedPoller(t *testing.T) {
-	pollStarted := make(chan struct{}, 1)
-	tp := &stopAwareShutdownPoller{
-		pollStarted: pollStarted,
-	}
+	synctest.Test(t, func(t *testing.T) {
+		pollStarted := make(chan struct{}, 1)
+		tp := &stopAwareShutdownPoller{
+			pollStarted: pollStarted,
+		}
 
-	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     &testSlotSupplier{},
-		maxTaskPerSecond: 1000,
-		taskPollers: []scalableTaskPoller{
-			{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
-		},
-		taskProcessor:                noopTaskProcessor{},
-		workerType:                   "LegacyStopTimeoutTest",
-		logger:                       ilog.NewNopLogger(),
-		stopTimeout:                  5 * time.Second,
-		metricsHandler:               metrics.NopHandler,
-		workerPollCompleteOnShutdown: &atomic.Bool{},
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:     &testSlotSupplier{},
+			maxTaskPerSecond: 1000,
+			taskPollers: []scalableTaskPoller{
+				{taskPollerType: "test", pollerCount: 1, taskPoller: tp},
+			},
+			taskProcessor:                noopTaskProcessor{},
+			workerType:                   "LegacyStopTimeoutTest",
+			logger:                       ilog.NewNopLogger(),
+			stopTimeout:                  5 * time.Second,
+			metricsHandler:               metrics.NopHandler,
+			workerPollCompleteOnShutdown: &atomic.Bool{},
+		})
+		tp.stopC = bw.stopCh
+
+		bw.Start()
+		<-pollStarted
+
+		start := time.Now()
+		bw.Stop()
+
+		require.Zero(t, time.Since(start),
+			"legacy Stop() should return promptly when a blocked poll observes shutdown")
+		require.True(t, tp.stopped.Load(), "blocked poller should observe shutdown")
 	})
-	tp.stopC = bw.stopCh
-
-	bw.Start()
-	<-pollStarted
-
-	start := time.Now()
-	bw.Stop()
-	elapsed := time.Since(start)
-
-	require.Less(t, elapsed, time.Second,
-		"legacy Stop() should return promptly when a blocked poll observes shutdown")
-	require.True(t, tp.stopped.Load(), "blocked poller should observe shutdown")
 }
 
 type blockingShutdownPoller struct {
@@ -1244,37 +1261,34 @@ func TestPollerBalancerReturnsNilWhenOwnCountZero(t *testing.T) {
 // behavior: balance() blocks when another poller type has no active pollers, and
 // unblocks once that type starts a poller.
 func TestPollerBalancerBlocksWhenOtherTypeHasNoPollers(t *testing.T) {
-	pb := &pollerBalancer{
-		pollerCount:   make(map[string]int),
-		pollerBarrier: make(map[string]barrier),
-	}
-	pb.registerPollerType("sticky")
-	pb.registerPollerType("non-sticky")
+	synctest.Test(t, func(t *testing.T) {
+		pb := &pollerBalancer{
+			pollerCount:   make(map[string]int),
+			pollerBarrier: make(map[string]barrier),
+		}
+		pb.registerPollerType("sticky")
+		pb.registerPollerType("non-sticky")
 
-	// sticky has 1 poller, non-sticky has 0 — balance("sticky") should block.
-	pb.incrementPoller("sticky")
+		// sticky has 1 poller, non-sticky has 0 — balance("sticky") should block.
+		pb.incrementPoller("sticky")
 
-	done := make(chan error, 1)
-	go func() {
-		done <- pb.balance(t.Context(), "sticky")
-	}()
+		done := make(chan error, 1)
+		go func() {
+			done <- pb.balance(t.Context(), "sticky")
+		}()
 
-	// Verify it's still blocked.
-	select {
-	case <-done:
-		t.Fatal("balance should be blocking")
-	case <-time.After(50 * time.Millisecond):
-	}
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("balance should be blocking")
+		default:
+		}
 
-	// Start a non-sticky poller — this should unblock balance.
-	pb.incrementPoller("non-sticky")
-
-	select {
-	case err := <-done:
-		require.NoError(t, err)
-	case <-time.After(time.Second):
-		t.Fatal("balance should have returned after non-sticky poller started")
-	}
+		// Start a non-sticky poller — this should unblock balance.
+		pb.incrementPoller("non-sticky")
+		synctest.Wait()
+		require.NoError(t, <-done)
+	})
 }
 
 func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {

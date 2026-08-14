@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	activitypb "go.temporal.io/api/activity/v1"
@@ -1213,19 +1214,21 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_DefaultTimeout() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_OperationNotExecuted() {
-	startOp := s.workflowClient.NewWithStartWorkflowOperation(
-		StartWorkflowOptions{
-			ID:                       workflowID,
-			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
-			TaskQueue:                taskqueue,
-		}, workflowType,
-	)
+	synctest.Test(s.T(), func(t *testing.T) {
+		startOp := s.workflowClient.NewWithStartWorkflowOperation(
+			StartWorkflowOptions{
+				ID:                       workflowID,
+				WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+				TaskQueue:                taskqueue,
+			}, workflowType,
+		)
 
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
+		ctxWithTimeout, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
 
-	_, err := startOp.Get(ctxWithTimeout)
-	require.EqualError(s.T(), err, "context deadline exceeded: operation was not executed")
+		_, err := startOp.Get(ctxWithTimeout)
+		require.EqualError(t, err, "context deadline exceeded: operation was not executed")
+	})
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Abort() {
@@ -1260,35 +1263,37 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Abort() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			s.workflowServiceClient.EXPECT().
-				ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
-				DoAndReturn(tt.respFunc)
+			synctest.Test(s.T(), func(t *testing.T) {
+				s.workflowServiceClient.EXPECT().
+					ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(tt.respFunc)
 
-			startOp := s.workflowClient.NewWithStartWorkflowOperation(
-				StartWorkflowOptions{
-					ID:                       workflowID,
-					WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
-					TaskQueue:                taskqueue,
-				}, workflowType,
-			)
+				startOp := s.workflowClient.NewWithStartWorkflowOperation(
+					StartWorkflowOptions{
+						ID:                       workflowID,
+						WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+						TaskQueue:                taskqueue,
+					}, workflowType,
+				)
 
-			ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-			defer cancel()
+				ctxWithTimeout, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+				defer cancel()
 
-			_, err := s.workflowClient.UpdateWithStartWorkflow(
-				ctxWithTimeout,
-				UpdateWithStartWorkflowOptions{
-					UpdateOptions: UpdateWorkflowOptions{
-						UpdateName:   "update",
-						WaitForStage: WorkflowUpdateStageCompleted,
+				_, err := s.workflowClient.UpdateWithStartWorkflow(
+					ctxWithTimeout,
+					UpdateWithStartWorkflowOptions{
+						UpdateOptions: UpdateWorkflowOptions{
+							UpdateName:   "update",
+							WaitForStage: WorkflowUpdateStageCompleted,
+						},
+						StartWorkflowOperation: startOp,
 					},
-					StartWorkflowOperation: startOp,
-				},
-			)
+				)
 
-			var expectedErr *WorkflowUpdateServiceTimeoutOrCanceledError
-			require.ErrorAs(s.T(), err, &expectedErr)
-			require.ErrorContains(s.T(), err, tt.expectedErr)
+				var expectedErr *WorkflowUpdateServiceTimeoutOrCanceledError
+				require.ErrorAs(t, err, &expectedErr)
+				require.ErrorContains(t, err, tt.expectedErr)
+			})
 		})
 	}
 }
@@ -2774,57 +2779,56 @@ func TestUpdate(t *testing.T) {
 		require.Equal(t, want, got)
 	})
 	t.Run("default ctx timeout", func(t *testing.T) {
-		svc, client := init(t)
-		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
-		expectedDeadline := time.Now().Add(pollUpdateTimeout)
-		var actualDeadline time.Time // assigned below in mock
-		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
-			DoAndReturn(
-				func(
-					ctx context.Context,
-					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
-					_ ...grpc.CallOption,
-				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
-					actualDeadline, _ = ctx.Deadline()
-					return nil, errors.New("intentional error")
-				},
-			)
-		_ = handle.Get(t.Context(), nil)
+		synctest.Test(t, func(t *testing.T) {
+			svc, client := init(t)
+			handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+			expectedDeadline := time.Now().Add(pollUpdateTimeout)
+			var actualDeadline time.Time // assigned below in mock
+			svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+				DoAndReturn(
+					func(
+						ctx context.Context,
+						_ *workflowservice.PollWorkflowExecutionUpdateRequest,
+						_ ...grpc.CallOption,
+					) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
+						actualDeadline, _ = ctx.Deadline()
+						return nil, errors.New("intentional error")
+					},
+				)
+			_ = handle.Get(t.Context(), nil)
 
-		// can't tell what the exact deadline will be so assert that the
-		// observed deadline passed to server rpc is within 2 seconds of the
-		// default pollUpdateTimout that is used when no other deadline/timeout
-		// is supplied by the caller.
-		require.WithinDuration(t, expectedDeadline, actualDeadline, 2*time.Second)
+			require.Equal(t, expectedDeadline, actualDeadline)
+		})
 	})
 	t.Run("parent ctx timeout", func(t *testing.T) {
-		svc, client := init(t)
-		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
-		callerDeadline := time.Now().Add(50 * time.Millisecond)
-		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
-			DoAndReturn(
-				func(
-					ctx context.Context,
-					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
-					_ ...grpc.CallOption,
-				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
-					thisDeadline, ok := ctx.Deadline()
-					require.True(t, ok)
-					require.LessOrEqual(t, thisDeadline, callerDeadline,
-						"caller timeout can be shortened but not extended")
-					ctxWillTimeoutIn := time.Until(thisDeadline)
-					sleepCtx(ctx, ctxWillTimeoutIn+3*time.Second)
-					require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
-					return nil, status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
-				},
-			)
-		callerCtx, cancel := context.WithDeadline(t.Context(), callerDeadline)
-		defer cancel()
-		var got string
-		err := handle.Get(callerCtx, &got)
-		require.Error(t, err)
-		var rpcErr *WorkflowUpdateServiceTimeoutOrCanceledError
-		require.ErrorAs(t, err, &rpcErr)
+		synctest.Test(t, func(t *testing.T) {
+			svc, client := init(t)
+			handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+			callerDeadline := time.Now().Add(50 * time.Millisecond)
+			svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+				DoAndReturn(
+					func(
+						ctx context.Context,
+						_ *workflowservice.PollWorkflowExecutionUpdateRequest,
+						_ ...grpc.CallOption,
+					) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
+						thisDeadline, ok := ctx.Deadline()
+						require.True(t, ok)
+						require.Equal(t, callerDeadline, thisDeadline)
+						ctxWillTimeoutIn := time.Until(thisDeadline)
+						sleepCtx(ctx, ctxWillTimeoutIn+3*time.Second)
+						require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+						return nil, status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
+					},
+				)
+			callerCtx, cancel := context.WithDeadline(t.Context(), callerDeadline)
+			defer cancel()
+			var got string
+			err := handle.Get(callerCtx, &got)
+			require.Error(t, err)
+			var rpcErr *WorkflowUpdateServiceTimeoutOrCanceledError
+			require.ErrorAs(t, err, &rpcErr)
+		})
 	})
 	t.Run("parent ctx cancelled", func(t *testing.T) {
 		svc, client := init(t)

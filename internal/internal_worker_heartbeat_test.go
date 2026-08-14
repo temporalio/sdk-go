@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -28,61 +29,49 @@ import (
 // (heartbeatCtx), stop() cancels the context first, unblocking the RPC.
 func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
 
-	ctrl := gomock.NewController(t)
-	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+		mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
 
-	mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+		// Simulate an RPC that blocks until its context is cancelled.
+		heartbeatStarted := false
+		mockService.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, _ *workflowservice.RecordWorkerHeartbeatRequest, _ ...grpc.CallOption) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
+				heartbeatStarted = true
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}).AnyTimes()
 
-	// Simulate an RPC that blocks until its context is cancelled.
-	heartbeatStarted := make(chan struct{})
-	mockService.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(ctx context.Context, _ *workflowservice.RecordWorkerHeartbeatRequest, _ ...grpc.CallOption) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
-			close(heartbeatStarted)
-			<-ctx.Done()
-			return nil, ctx.Err()
-		}).AnyTimes()
+		wfClient := NewServiceClient(mockService, nil, ClientOptions{})
 
-	wfClient := NewServiceClient(mockService, nil, ClientOptions{})
+		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
+		hw := &sharedNamespaceWorker{
+			client:          wfClient,
+			namespace:       "test-ns",
+			interval:        50 * time.Millisecond,
+			workerCtx:       heartbeatCtx,
+			heartbeatCancel: heartbeatCancel,
+			callbacks: map[string]func() *workerpb.WorkerHeartbeat{
+				"worker1": func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} },
+			},
+			stopC:    make(chan struct{}),
+			stoppedC: make(chan struct{}),
+			logger:   ilog.NewDefaultLogger(),
+		}
+		hw.started.Store(true)
+		go hw.run()
 
-	heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
-	hw := &sharedNamespaceWorker{
-		client:          wfClient,
-		namespace:       "test-ns",
-		interval:        50 * time.Millisecond,
-		workerCtx:       heartbeatCtx,
-		heartbeatCancel: heartbeatCancel,
-		callbacks: map[string]func() *workerpb.WorkerHeartbeat{
-			"worker1": func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} },
-		},
-		stopC:    make(chan struct{}),
-		stoppedC: make(chan struct{}),
-		logger:   ilog.NewDefaultLogger(),
-	}
-	hw.started.Store(true)
-	go hw.run()
+		synctest.Wait()
+		if !heartbeatStarted {
+			t.Fatal("heartbeat RPC did not start")
+		}
 
-	// Wait for the heartbeat RPC to be in-flight.
-	select {
-	case <-heartbeatStarted:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for heartbeat RPC to start")
-	}
-
-	// stop() should return promptly because heartbeatCancel() unblocks the
-	// in-flight RPC. Without the fix, this hangs forever.
-	done := make(chan struct{})
-	go func() {
+		// stop() should return because heartbeatCancel() unblocks the in-flight RPC.
 		hw.stop()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for stop() — in-flight heartbeat RPC was not cancelled")
-	}
+	})
 }
 
 func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
@@ -214,75 +203,75 @@ func TestWorkerCommandCancelActivity(t *testing.T) {
 
 func TestWorkerCommandsDisabledDoesNotPoll(t *testing.T) {
 	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+		mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+		mockService.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&workflowservice.RecordWorkerHeartbeatResponse{}, nil).AnyTimes()
+		wfClient := NewServiceClient(mockService, nil, ClientOptions{
+			Namespace: "test-ns",
+			Identity:  "worker-identity",
+		})
 
-	ctrl := gomock.NewController(t)
-	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
-	mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
-	mockService.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.RecordWorkerHeartbeatResponse{}, nil).AnyTimes()
-	wfClient := NewServiceClient(mockService, nil, ClientOptions{
-		Namespace: "test-ns",
-		Identity:  "worker-identity",
+		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
+		hw := &sharedNamespaceWorker{
+			client:                  wfClient,
+			namespace:               "test-ns",
+			interval:                10 * time.Millisecond,
+			workerCtx:               heartbeatCtx,
+			heartbeatCancel:         heartbeatCancel,
+			callbacks:               map[string]func() *workerpb.WorkerHeartbeat{"worker1": func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} }},
+			workerCommandsSupported: false,
+			workerControlTaskQueue:  "temporal-sys/worker-commands/test-ns/grouping-key",
+			workerInstanceKey:       "worker-command-worker",
+			metricsHandler:          metrics.NopHandler,
+			stopC:                   make(chan struct{}),
+			stoppedC:                make(chan struct{}),
+			logger:                  ilog.NewDefaultLogger(),
+		}
+		hw.started.Store(true)
+		go hw.run()
+		time.Sleep(25 * time.Millisecond)
+		hw.stop()
 	})
-
-	heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
-	hw := &sharedNamespaceWorker{
-		client:                  wfClient,
-		namespace:               "test-ns",
-		interval:                10 * time.Millisecond,
-		workerCtx:               heartbeatCtx,
-		heartbeatCancel:         heartbeatCancel,
-		callbacks:               map[string]func() *workerpb.WorkerHeartbeat{"worker1": func() *workerpb.WorkerHeartbeat { return &workerpb.WorkerHeartbeat{} }},
-		workerCommandsSupported: false,
-		workerControlTaskQueue:  "temporal-sys/worker-commands/test-ns/grouping-key",
-		workerInstanceKey:       "worker-command-worker",
-		metricsHandler:          metrics.NopHandler,
-		stopC:                   make(chan struct{}),
-		stoppedC:                make(chan struct{}),
-		logger:                  ilog.NewDefaultLogger(),
-	}
-	hw.started.Store(true)
-	go hw.run()
-	time.Sleep(25 * time.Millisecond)
-	hw.stop()
 }
 
 func TestWorkerHeartbeatSendsImmediatelyWithIdentity(t *testing.T) {
 	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
 
-	ctrl := gomock.NewController(t)
-	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+		mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
 
-	mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+		var request *workflowservice.RecordWorkerHeartbeatRequest
+		mockService.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, req *workflowservice.RecordWorkerHeartbeatRequest, _ ...grpc.CallOption) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
+				request = req
+				return &workflowservice.RecordWorkerHeartbeatResponse{}, nil
+			}).AnyTimes()
 
-	requestCh := make(chan *workflowservice.RecordWorkerHeartbeatRequest, 1)
-	mockService.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, request *workflowservice.RecordWorkerHeartbeatRequest, _ ...grpc.CallOption) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
-			select {
-			case requestCh <- request:
-			default:
-			}
-			return &workflowservice.RecordWorkerHeartbeatResponse{}, nil
-		}).AnyTimes()
+		wfClient := NewServiceClient(mockService, nil, ClientOptions{
+			Namespace:               "test-ns",
+			Identity:                "test-client-identity",
+			WorkerHeartbeatInterval: time.Minute,
+		})
+		wfClient.namespaceData = &namespaceData{
+			capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
+		}
+		worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+		if err := worker.registerHeartbeatWorker(); err != nil {
+			t.Fatal(err)
+		}
+		defer worker.unregisterHeartbeatWorker()
 
-	wfClient := NewServiceClient(mockService, nil, ClientOptions{
-		Namespace:               "test-ns",
-		Identity:                "test-client-identity",
-		WorkerHeartbeatInterval: time.Minute,
-	})
-	wfClient.namespaceData = &namespaceData{
-		capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
-	}
-	worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
-	if err := worker.registerHeartbeatWorker(); err != nil {
-		t.Fatal(err)
-	}
-	defer worker.unregisterHeartbeatWorker()
-
-	select {
-	case request := <-requestCh:
+		synctest.Wait()
+		if request == nil {
+			t.Fatal("initial worker heartbeat was not sent")
+		}
 		if request.GetNamespace() != "test-ns" {
 			t.Fatalf("namespace = %q, want test-ns", request.GetNamespace())
 		}
@@ -292,9 +281,7 @@ func TestWorkerHeartbeatSendsImmediatelyWithIdentity(t *testing.T) {
 		if len(request.GetWorkerHeartbeat()) != 1 {
 			t.Fatalf("worker heartbeat count = %d, want 1", len(request.GetWorkerHeartbeat()))
 		}
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("timed out waiting for initial worker heartbeat")
-	}
+	})
 }
 
 func TestWorkerHeartbeatElapsedSinceLastHeartbeatUnsetOnInitialHeartbeat(t *testing.T) {
