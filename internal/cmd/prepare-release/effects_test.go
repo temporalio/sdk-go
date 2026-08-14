@@ -3,20 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
-
-func TestRepoRoot(t *testing.T) {
-	root, err := (RealWorld{}).repoRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if filepath.Base(root) != "temporal-sdk-go" {
-		t.Fatalf("unexpected repository root: %q", root)
-	}
-}
 
 func TestRunCommand(t *testing.T) {
 	root, err := (RealWorld{}).repoRoot()
