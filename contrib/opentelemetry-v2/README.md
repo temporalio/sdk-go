@@ -3,12 +3,6 @@
 Package `go.temporal.io/sdk/contrib/opentelemetry-v2` provides OpenTelemetry
 tracing and metrics for Temporal. Experimental: APIs may change between releases.
 
-For the stable integration, use
-[`contrib/opentelemetry`](../opentelemetry/README.md) (v1).
-
-> ⚠️ v1 and v2 use different span parenting and kinds; mixing them in the same
-> workflows breaks traces.
-
 ## Usage
 
 ```bash

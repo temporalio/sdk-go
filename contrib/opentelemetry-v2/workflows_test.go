@@ -6,6 +6,7 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 
 	"go.temporal.io/sdk/workflow"
 )
@@ -90,7 +91,7 @@ func tracerResetWorkflow(ctx workflow.Context) error {
 
 	workflow.GetSignalChannel(ctx, tracerTestSignalName).Receive(ctx, nil)
 
-	ctx, recordingResultsSpan := recorderTracer.Start(ctx, "record results")
+	_, recordingResultsSpan := recorderTracer.Start(ctx, "record results")
 	recordingResultsSpan.End()
 
 	return nil
@@ -104,7 +105,7 @@ func tracerResetLateSourceWorkflow(ctx workflow.Context) error {
 	workflow.GetSignalChannel(ctx, tracerTestSignalName).Receive(ctx, nil)
 
 	recorderTracer := Tracer("recorderTracer")
-	ctx, recordingResultsSpan := recorderTracer.Start(ctx, "record results")
+	_, recordingResultsSpan := recorderTracer.Start(ctx, "record results")
 	recordingResultsSpan.End()
 
 	return nil
@@ -123,6 +124,13 @@ func tracerResetDuringSpan(ctx workflow.Context) error {
 	recordingResultsSpan.End()
 
 	return nil
+}
+
+func tracerStartCallerOptionsWorkflow(ctx workflow.Context) (int, error) {
+	opts := make([]trace.SpanStartOption, 0, 1)
+	_, span := Tracer("test").Start(ctx, "span", opts...)
+	span.End()
+	return len(opts), nil
 }
 
 func tracerWorkflowTaskRetry(ctx workflow.Context) error {

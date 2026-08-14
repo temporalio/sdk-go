@@ -30,6 +30,7 @@ type replaySafeTracerProvider struct {
 //
 // NOTE: Experimental
 func NewReplaySafeTracerProvider(opts ...sdktrace.TracerProviderOption) *replaySafeTracerProvider {
+	opts = append([]sdktrace.TracerProviderOption(nil), opts...)
 	opts = append(opts, sdktrace.WithIDGenerator(&generator{}))
 	return &replaySafeTracerProvider{sdktrace.NewTracerProvider(opts...)}
 }

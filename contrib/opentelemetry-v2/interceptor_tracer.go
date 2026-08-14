@@ -11,18 +11,34 @@ import (
 
 	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/interceptor/tracing"
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
 )
 
 type interceptorTracerBase struct {
-	options *options
-	tracer  trace.Tracer
+	tracing.BaseTracer
+	options       *options
+	otelTracer    trace.Tracer
+	contextBridge *contextBridge
+}
+
+func (b *interceptorTracerBase) GetLogger(logger log.Logger, ref tracing.TracerSpanRef) log.Logger {
+	span := asTracerSpan(ref)
+	if span == nil || span.Span == nil || !span.SpanContext().IsValid() {
+		return logger
+	}
+
+	logger = log.With(logger,
+		"TraceID", span.SpanContext().TraceID(),
+		"SpanID", span.SpanContext().SpanID(),
+	)
+
+	return logger
 }
 
 // buildSpan starts an OTel span. random supplies bytes for the ID generator.
 func (b *interceptorTracerBase) buildSpan(
 	ctx context.Context,
-	name string,
 	random io.Reader,
 	opts *tracing.TracerStartSpanOptions,
 ) *tracerSpan {
@@ -30,7 +46,7 @@ func (b *interceptorTracerBase) buildSpan(
 
 	otelCtx := context.WithValue(ctx, otelRandomKey{}, random)
 
-	otelCtx = contextWithParent(otelCtx, opts.Parent, b.options)
+	otelCtx = b.contextBridge.ContextWithSpan(otelCtx, opts.Parent)
 
 	switch opts.Direction {
 	case tracing.SpanDirectionInbound:
@@ -53,7 +69,7 @@ func (b *interceptorTracerBase) buildSpan(
 		spanOpts = append(spanOpts, trace.WithTimestamp(opts.Time))
 	}
 
-	_, span := b.tracer.Start(otelCtx, name, spanOpts...)
+	_, span := b.otelTracer.Start(otelCtx, b.SpanName(opts), spanOpts...)
 
 	tSpan := &tracerSpan{Span: span}
 	if !b.options.DisableBaggage {
@@ -66,42 +82,42 @@ func newTracingInterceptors(
 	pluginOptions PluginOptions,
 ) (interceptor.ClientInterceptor, interceptor.WorkerInterceptor) {
 	options := newOptions(pluginOptions)
-
-	base := interceptorTracerBase{
-		options: options,
-		tracer:  newReplaySafeTracer("temporal-sdk-go"),
+	otelTracer := newReplaySafeTracer("temporal-sdk-go")
+	contextBridge := &contextBridge{options: options}
+	workflowContextBridge := &workflowContextBridge{options: options}
+	codec := &spanCodec{contextBridge: contextBridge}
+	base := &interceptorTracerBase{
+		options:       options,
+		contextBridge: contextBridge,
+		otelTracer:    otelTracer,
 	}
 
-	codec := spanCodec{options: options}
-
-	workflowTracerFactory := func() tracing.WorkflowTracer {
-		return &workflowInterceptorTracer{
-			options:               options,
-			spanCodec:             codec,
-			interceptorTracerBase: base,
-			workflowContextBridge: workflowContextBridge{},
-		}
+	tracer := &interceptorTracer{
+		options:               options,
+		contextBridge:         contextBridge,
+		spanCodec:             codec,
+		interceptorTracerBase: base,
 	}
 
-	tracerFactory := func() tracing.Tracer {
-		return &interceptorTracer{
-			options:               options,
-			spanCodec:             codec,
-			interceptorTracerBase: base,
-			contextBridge:         contextBridge{options: options},
-		}
+	workflowTracer := &workflowInterceptorTracer{
+		options:               options,
+		workflowContextBridge: workflowContextBridge,
+		spanCodec:             codec,
+		interceptorTracerBase: base,
 	}
 
-	return tracing.NewTracingInterceptor(tracerFactory, workflowTracerFactory)
+	return tracing.NewTracingInterceptor(tracer, workflowTracer)
 }
 
 // workflowInterceptorTracer creates spans for workflow interceptors.
 type workflowInterceptorTracer struct {
+	*interceptorTracerBase
 	*options
-	spanCodec
-	interceptorTracerBase
-	workflowContextBridge
+	*workflowContextBridge
+	*spanCodec
 }
+
+var _ tracing.WorkflowTracer = (*workflowInterceptorTracer)(nil)
 
 func (t *workflowInterceptorTracer) CreateSpan(
 	ctx workflow.Context,
@@ -116,7 +132,6 @@ func (t *workflowInterceptorTracer) CreateSpan(
 
 	span := t.buildSpan(
 		context.Background(),
-		t.SpanName(opts),
 		interceptorReader(ctx),
 		opts,
 	)
@@ -133,16 +148,17 @@ func (t *workflowInterceptorTracer) CreateSpan(
 
 // interceptorTracer creates spans for client, activity, and nexus interceptors.
 type interceptorTracer struct {
+	*interceptorTracerBase
 	*options
-	spanCodec
-	interceptorTracerBase
-	contextBridge
+	*contextBridge
+	*spanCodec
 }
+
+var _ tracing.Tracer = (*interceptorTracer)(nil)
 
 func (t *interceptorTracer) CreateSpan(ctx context.Context, opts *tracing.TracerStartSpanOptions) tracing.TracerSpan {
 	return t.buildSpan(
 		ctx,
-		t.SpanName(opts),
 		cryptorand.Reader,
 		opts,
 	)

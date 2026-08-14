@@ -10,17 +10,19 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-type tracerSpanRef struct {
-	trace.SpanContext
-	baggage.Baggage
-}
-
 type tracerSpan struct {
 	trace.Span
 	baggage.Baggage
 }
 
+var _ tracing.TracerSpan = (*tracerSpan)(nil)
+var _ tracing.TracerSpanRef = (*tracerSpan)(nil)
+
 func (t *tracerSpan) Finish(opts *tracing.TracerFinishSpanOptions) {
+	if !t.Span.IsRecording() {
+		return
+	}
+
 	if opts.Error != nil {
 		t.RecordError(opts.Error)
 
@@ -60,15 +62,18 @@ func (s *workflowSpan) End(options ...trace.SpanEndOption) {
 	s.tracerSpan.Span.End(options...)
 }
 
-// asTracerSpan unwraps a live tracerSpan. It returns nil for unknown span types.
 func asTracerSpan(ref tracing.TracerSpanRef) *tracerSpan {
-	switch p := ref.(type) {
+	switch span := ref.(type) {
 	case *tracerSpan:
-		return p
+		return span
 	case *interceptorWorkflowSpan:
-		return p.tracerSpan
+		if span != nil {
+			return span.tracerSpan
+		}
 	case *workflowSpan:
-		return p.tracerSpan
+		if span != nil {
+			return span.tracerSpan
+		}
 	}
 	return nil
 }

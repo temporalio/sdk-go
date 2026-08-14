@@ -24,7 +24,8 @@ type PluginOptions struct {
 	DisableBaggage bool
 
 	// TextMapPropagator serializes spans. It defaults to
-	// DefaultTextMapPropagator, not the OpenTelemetry global.
+	// DefaultTextMapPropagator, not the OpenTelemetry global. Implementations
+	// must be thread-safe.
 	TextMapPropagator propagation.TextMapPropagator
 
 	// MetricsHandlerOptions replaces the client's metrics handler when set.

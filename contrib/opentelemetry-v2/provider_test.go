@@ -46,7 +46,7 @@ func TestReplaySafeTracerProviderValidation(t *testing.T) {
 			setTracerProvider(t, test.provider)
 
 			if test.panic {
-				require.Panics(t, func() { NewPlugin(PluginOptions{}) })
+				require.Panics(t, func() { _, _ = NewPlugin(PluginOptions{}) })
 				require.Panics(t, func() { Tracer("test") })
 				return
 			}

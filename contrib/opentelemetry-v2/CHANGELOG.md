@@ -11,6 +11,8 @@ or Security.
 
 ## [Unreleased]
 
+## [0.1.0]
+
 ### Added
 
 - Initial release of `go.temporal.io/sdk/contrib/opentelemetry-v2`.

@@ -19,8 +19,10 @@ type WorkflowTracer interface {
 }
 
 type workflowTracer struct {
-	tracer trace.Tracer
-	name   string
+	tracer                trace.Tracer
+	name                  string
+	workflowContextBridge workflowContextBridge
+	contextBridge         contextBridge
 }
 
 // Tracer returns a WorkflowTracer for the given instrumentation name, like
@@ -29,19 +31,28 @@ type workflowTracer struct {
 //
 // NOTE: Experimental
 func Tracer(name string) WorkflowTracer {
-	return &workflowTracer{tracer: newReplaySafeTracer(name), name: name}
+	options := newOptions(PluginOptions{})
+	tracer := newReplaySafeTracer(name)
+
+	return &workflowTracer{
+		tracer:                tracer,
+		name:                  name,
+		workflowContextBridge: workflowContextBridge{options: options},
+		contextBridge:         contextBridge{options: options},
+	}
 }
 
 func (t *workflowTracer) Start(ctx workflow.Context, name string, opts ...trace.SpanStartOption) (workflow.Context, trace.Span) {
 	// Outside a read-only context, exported workflow spans have two lifecycles:
 	// 1. Start live using wall-clock time, then end live using wall-clock time.
 	// 2. Start during replay using server time, then end live using wall-clock time.
+	opts = append([]trace.SpanStartOption(nil), opts...)
 	if !workflow.IsReadOnly(ctx) && workflow.IsReplaying(ctx) {
 		opts = append([]trace.SpanStartOption{trace.WithTimestamp(workflow.Now(ctx))}, opts...)
 	}
 
 	otelCtx := context.WithValue(context.Background(), otelRandomKey{}, applicationReader(ctx, t.name))
-	otelCtx = contextWithParent(otelCtx, ctx.Value(spanContextKey{}), nil)
+	otelCtx = t.contextBridge.ContextWithSpan(otelCtx, ctx.Value(spanContextKey{}))
 
 	_, span := t.tracer.Start(otelCtx, name, opts...)
 
@@ -52,6 +63,6 @@ func (t *workflowTracer) Start(ctx workflow.Context, name string, opts ...trace.
 	}
 
 	wrapped := &workflowSpan{tracerSpan: tSpan, ctx: ctx}
-	return workflow.WithValue(ctx, spanContextKey{}, wrapped), wrapped
+	return t.workflowContextBridge.ContextWithSpan(ctx, wrapped), wrapped
 
 }

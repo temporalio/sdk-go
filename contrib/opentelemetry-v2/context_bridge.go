@@ -5,6 +5,7 @@ import (
 
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"go.temporal.io/sdk/interceptor/tracing"
 	"go.temporal.io/sdk/workflow"
@@ -17,79 +18,78 @@ type contextBridge struct {
 	options *options
 }
 
-func (b *contextBridge) SpanFromContext(ctx context.Context) tracing.TracerSpan {
-	// trace.SpanFromContext yields a no-op span when none is present.
-	tSpan := &tracerSpan{Span: trace.SpanFromContext(ctx)}
+func (b *contextBridge) SpanFromContext(ctx context.Context) tracing.TracerSpanRef {
+	res := &tracerSpan{}
 
-	if bag := baggage.FromContext(ctx); !b.options.DisableBaggage && bag.Len() > 0 {
-		tSpan.Baggage = bag
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if spanCtx.IsValid() {
+		res.Span = trace.SpanFromContext(ctx)
+	} else {
+		res.Span = noop.Span{}
 	}
 
-	return tSpan
+	bag := baggage.FromContext(ctx)
+	if !b.options.DisableBaggage && bag.Len() > 0 {
+		res.Baggage = bag
+	}
+
+	return res
 }
 
-func (b *contextBridge) ContextWithSpan(ctx context.Context, span tracing.TracerSpan) context.Context {
-	tSpan := asTracerSpan(span)
-	if tSpan == nil {
-		return ctx
+func (b *contextBridge) ContextWithSpan(ctx context.Context, ref tracing.TracerSpanRef) context.Context {
+	span := asTracerSpan(ref)
+	if span != nil && span.Span != nil && span.SpanContext().IsValid() {
+		ctx = trace.ContextWithSpan(ctx, span.Span)
 	}
 
-	if !b.options.DisableBaggage && tSpan.Baggage.Len() > 0 {
-		ctx = baggage.ContextWithBaggage(ctx, tSpan.Baggage)
+	if !b.options.DisableBaggage && span != nil && span.Baggage.Len() > 0 {
+		ctx = baggage.ContextWithBaggage(ctx, span.Baggage)
 	}
 
-	return trace.ContextWithSpan(ctx, tSpan.Span)
+	return ctx
 }
 
-// workflowContextBridge stores spans on workflow.Context under spanContextKey.
-type workflowContextBridge struct{}
-
-func (workflowContextBridge) SpanFromContext(ctx workflow.Context) tracing.TracerSpan {
-	span, _ := ctx.Value(spanContextKey{}).(tracing.TracerSpan)
-	if asTracerSpan(span) == nil {
-		// trace.SpanFromContext yields a no-op span when none is present.
-		return &tracerSpan{Span: trace.SpanFromContext(context.Background())}
-	}
-
-	return span
+// workflowContextBridge stores spans and optional baggage on workflow.Context under spanContextKey.
+type workflowContextBridge struct {
+	options *options
 }
 
-func (workflowContextBridge) ContextWithSpan(ctx workflow.Context, span tracing.TracerSpan) workflow.Context {
-	tSpan := asTracerSpan(span)
-	if tSpan == nil {
-		return ctx
+func (b *workflowContextBridge) SpanFromContext(ctx workflow.Context) tracing.TracerSpanRef {
+	res := &tracerSpan{}
+
+	span := asTracerSpan(ctx.Value(spanContextKey{}))
+	if span != nil && span.Span != nil && span.SpanContext().IsValid() {
+		res.Span = span.Span
+	} else {
+		res.Span = noop.Span{}
 	}
 
-	return workflow.WithValue(ctx, spanContextKey{}, span)
+	if !b.options.DisableBaggage && span != nil && span.Baggage.Len() > 0 {
+		res.Baggage = span.Baggage
+	}
+
+	return res
 }
 
-type parentContext struct {
-	spanContext trace.SpanContext
-	baggage     baggage.Baggage
-}
+func (b *workflowContextBridge) ContextWithSpan(ctx workflow.Context, ref tracing.TracerSpanRef) workflow.Context {
+	newSpan := &tracerSpan{}
 
-func parentContextFromRef(ref tracing.TracerSpanRef) parentContext {
-	if span := asTracerSpan(ref); span != nil {
-		return parentContext{spanContext: span.SpanContext(), baggage: span.Baggage}
+	currentSpan := b.SpanFromContext(ctx).(*tracerSpan)
+
+	span := asTracerSpan(ref)
+	if span != nil && span.Span != nil && span.SpanContext().IsValid() {
+		newSpan.Span = span.Span
+	} else {
+		newSpan.Span = currentSpan.Span
 	}
 
-	if p, ok := ref.(*tracerSpanRef); ok {
-		return parentContext{spanContext: p.SpanContext, baggage: p.Baggage}
+	if !b.options.DisableBaggage && span != nil && span.Baggage.Len() > 0 {
+		newSpan.Baggage = span.Baggage
+	} else {
+		newSpan.Baggage = currentSpan.Baggage
 	}
 
-	return parentContext{}
-}
-
-func contextWithParent(ctx context.Context, parent tracing.TracerSpanRef, options *options) context.Context {
-	parentContext := parentContextFromRef(parent)
-
-	if parentContext.spanContext.IsValid() {
-		ctx = trace.ContextWithSpanContext(ctx, parentContext.spanContext)
-	}
-
-	if options != nil && !options.DisableBaggage && parentContext.baggage.Len() > 0 {
-		ctx = baggage.ContextWithBaggage(ctx, parentContext.baggage)
-	}
+	ctx = workflow.WithValue(ctx, spanContextKey{}, newSpan)
 
 	return ctx
 }

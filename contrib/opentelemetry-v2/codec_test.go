@@ -8,8 +8,6 @@ import (
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
-
-	ilog "go.temporal.io/sdk/internal/log"
 )
 
 type codecTestSuite struct {
@@ -51,7 +49,8 @@ func (s *codecTestSuite) SetupSuite() {
 }
 
 func (s *codecTestSuite) codec(options PluginOptions) *spanCodec {
-	return &spanCodec{options: newOptions(options)}
+	opts := newOptions(options)
+	return &spanCodec{contextBridge: &contextBridge{options: opts}}
 }
 
 func (s *codecTestSuite) TestMarshalSpan() {
@@ -162,43 +161,26 @@ func (s *codecTestSuite) TestUnmarshalSpan() {
 		s.Run(test.name, func() {
 			ref, err := s.codec(test.options).UnmarshalSpan(test.headers)
 			s.Require().NoError(err)
-			spanRef := ref.(*tracerSpanRef)
+			spanRef := asTracerSpan(ref)
 
-			s.Require().Equal(test.spanContext.IsValid(), spanRef.SpanContext.IsValid())
-			s.Require().Equal(test.spanContext.TraceID(), spanRef.SpanContext.TraceID())
-			s.Require().Equal(test.spanContext.SpanID(), spanRef.SpanContext.SpanID())
+			s.Require().Equal(test.spanContext.IsValid(), spanRef.SpanContext().IsValid())
+			s.Require().Equal(test.spanContext.TraceID(), spanRef.SpanContext().TraceID())
+			s.Require().Equal(test.spanContext.SpanID(), spanRef.SpanContext().SpanID())
 			s.Require().Equal(test.baggageLen, spanRef.Baggage.Len())
 			s.Require().Equal(test.baggageKeyValue, spanRef.Baggage.Member("key").Value())
 		})
 	}
 }
 
-func (s *codecTestSuite) TestGetLoggerAddsValidSpan() {
-	codec := s.codec(PluginOptions{})
-	logger := ilog.NewMemoryLogger()
-
-	span := &tracerSpan{Span: s.validSpan}
-	spanContext := span.SpanContext()
-	traceId := spanContext.TraceID().String()
-	spanId := spanContext.SpanID().String()
-
-	codec.GetLogger(logger, span).Info("message")
-	line := logger.Lines()[0]
-
-	s.Require().Contains(line, "TraceID "+traceId)
-	s.Require().Contains(line, "SpanID "+spanId)
+func (s *codecTestSuite) TestTextMapCarrierGetIsCaseInsensitive() {
+	carrier := textMapCarrier{"traceparent": "value"}
+	s.Require().Equal("value", carrier.Get("TraceParent"))
 }
 
-func (s *codecTestSuite) TestGetLoggerSkipsInvalidSpan() {
-	codec := s.codec(PluginOptions{})
-	logger := ilog.NewMemoryLogger()
-	span := &tracerSpan{Span: trace.SpanFromContext(context.Background())}
-
-	codec.GetLogger(logger, span).Info("message")
-	line := logger.Lines()[0]
-
-	s.Require().NotContains(line, "TraceID")
-	s.Require().NotContains(line, "SpanID")
+func (s *codecTestSuite) TestTextMapCarrierSetPreservesCase() {
+	carrier := textMapCarrier{}
+	carrier.Set("Baggage", "value")
+	s.Require().Equal(textMapCarrier{"Baggage": "value"}, carrier)
 }
 
 type testPropagator struct {

@@ -32,7 +32,7 @@ type tracerCommon interface {
 	UnmarshalSpan(map[string]string) (TracerSpanRef, error)
 	// MarshalSpan marshals the given span into a map. If the map is empty with no
 	// error, the span is simply not set.
-	MarshalSpan(TracerSpan) (map[string]string, error)
+	MarshalSpan(TracerSpanRef) (map[string]string, error)
 	// GetLogger returns a log.Logger which may include additional fields in its
 	// output in order to support correlation of tracing and log data.
 	GetLogger(log.Logger, TracerSpanRef) log.Logger
@@ -44,15 +44,16 @@ type tracerCommon interface {
 // Most callers should use a contrib tracing integration.
 //
 // All implementations must embed BaseTracer to safely handle future changes.
+// Each Tracer is shared by every interceptor that uses it, so implementations
+// must be safe for concurrent use.
 type Tracer interface {
 	tracerCommon
 	// SpanFromContext returns the span from the general Go context or nil if not
 	// present.
-	SpanFromContext(context.Context) TracerSpan
+	SpanFromContext(context.Context) TracerSpanRef
 	// ContextWithSpan creates a general Go context with the given span set.
-	ContextWithSpan(context.Context, TracerSpan) context.Context
+	ContextWithSpan(context.Context, TracerSpanRef) context.Context
 	// CreateSpan starts and returns a span with the given options.
-
 	CreateSpan(context.Context, *TracerStartSpanOptions) TracerSpan
 }
 
@@ -60,13 +61,15 @@ type Tracer interface {
 // Most callers should use a contrib tracing integration.
 //
 // All implementations must embed BaseTracer to safely handle future changes.
+// Each WorkflowTracer is shared by every interceptor that uses it, so
+// implementations must be safe for concurrent use.
 type WorkflowTracer interface {
 	tracerCommon
 	// SpanFromContext returns the span from the general Go context or nil if not
 	// present.
-	SpanFromContext(workflow.Context) TracerSpan
+	SpanFromContext(workflow.Context) TracerSpanRef
 	// ContextWithSpan creates a workflow context with the given span set.
-	ContextWithSpan(workflow.Context, TracerSpan) workflow.Context
+	ContextWithSpan(workflow.Context, TracerSpanRef) workflow.Context
 
 	// CreateSpan starts and returns a span with the given options.
 	CreateSpan(workflow.Context, *TracerStartSpanOptions) TracerSpan
@@ -164,24 +167,23 @@ type TracerFinishSpanOptions struct {
 	Error error
 }
 
-type TracerFactory func() Tracer
-
-type WorkflowTracerFactory func() WorkflowTracer
-
 type tracingInterceptor struct {
-	newTracer         TracerFactory
-	newWorkflowTracer WorkflowTracerFactory
+	tracer         Tracer
+	workflowTracer WorkflowTracer
 }
 
-// NewTracingInterceptor creates client and worker tracing interceptors from
-// tracer factories. They are returned separately so the client interceptor is
-// not inherited onto workers when set on client options.
+// NewTracingInterceptor creates client and worker tracing interceptors.
+// They are returned separately so the client interceptor is not inherited onto
+// workers when set on client options.
 func NewTracingInterceptor(
-	newTracer TracerFactory,
-	newWorkflowTracer WorkflowTracerFactory,
+	tracer Tracer,
+	workflowTracer WorkflowTracer,
 ) (interceptor.ClientInterceptor, interceptor.WorkerInterceptor) {
-	root := &tracingInterceptor{newTracer: newTracer, newWorkflowTracer: newWorkflowTracer}
-	return &tracingClientInterceptor{root: root}, &tracingWorkerInterceptor{root: root}
+	root := &tracingInterceptor{tracer: tracer, workflowTracer: workflowTracer}
+	clientInterceptor := &tracingClientInterceptor{root: root}
+	workerInterceptor := &tracingWorkerInterceptor{root: root}
+
+	return clientInterceptor, workerInterceptor
 }
 
 type tracingClientInterceptor struct {
@@ -192,7 +194,7 @@ type tracingClientInterceptor struct {
 func (t *tracingClientInterceptor) InterceptClient(
 	next interceptor.ClientOutboundInterceptor,
 ) interceptor.ClientOutboundInterceptor {
-	i := &tracingClientOutboundInterceptor{root: t.root, tracer: t.root.newTracer()}
+	i := &tracingClientOutboundInterceptor{root: t.root}
 	i.Next = next
 	return i
 }
@@ -206,7 +208,7 @@ func (t *tracingWorkerInterceptor) InterceptActivity(
 	ctx context.Context,
 	next interceptor.ActivityInboundInterceptor,
 ) interceptor.ActivityInboundInterceptor {
-	i := &tracingActivityInboundInterceptor{root: t.root, tracer: t.root.newTracer()}
+	i := &tracingActivityInboundInterceptor{root: t.root}
 	i.Next = next
 	return i
 }
@@ -215,10 +217,7 @@ func (t *tracingWorkerInterceptor) InterceptWorkflow(
 	ctx workflow.Context,
 	next interceptor.WorkflowInboundInterceptor,
 ) interceptor.WorkflowInboundInterceptor {
-	i := &tracingWorkflowInboundInterceptor{
-		root:           t.root,
-		workflowTracer: t.root.newWorkflowTracer(),
-	}
+	i := &tracingWorkflowInboundInterceptor{root: t.root}
 	i.Next = next
 	return i
 }
@@ -227,22 +226,21 @@ func (t *tracingWorkerInterceptor) InterceptNexusOperation(
 	ctx context.Context,
 	next interceptor.NexusOperationInboundInterceptor,
 ) interceptor.NexusOperationInboundInterceptor {
-	i := &tracingNexusOperationInboundInterceptor{root: t.root, tracer: t.root.newTracer()}
+	i := &tracingNexusOperationInboundInterceptor{root: t.root}
 	i.Next = next
 	return i
 }
 
 type tracingClientOutboundInterceptor struct {
 	interceptor.ClientOutboundInterceptorBase
-	root   *tracingInterceptor
-	tracer Tracer
+	root *tracingInterceptor
 }
 
 func (t *tracingClientOutboundInterceptor) CreateSchedule(ctx context.Context, in *interceptor.ScheduleClientCreateInput) (run client.ScheduleHandle, err error) {
-	ctx, endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "CreateSchedule",
 		Name:      in.Options.ID,
-	}, t.root.headerWriter(t.tracer, ctx))
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -255,11 +253,11 @@ func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 	ctx context.Context,
 	in *interceptor.ClientExecuteWorkflowInput,
 ) (run client.WorkflowRun, err error) {
-	ctx, endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "StartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
-	}, t.root.headerWriter(t.tracer, ctx))
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -269,14 +267,14 @@ func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 }
 
 func (t *tracingClientOutboundInterceptor) SignalWorkflow(ctx context.Context, in *interceptor.ClientSignalWorkflowInput) (err error) {
-	if t.tracer.Options().DisableSignalTracing {
+	if t.root.tracer.Options().DisableSignalTracing {
 		return t.Next.SignalWorkflow(ctx, in)
 	}
-	ctx, endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "SignalWorkflow",
 		Name:      in.SignalName,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
-	}, t.root.headerWriter(t.tracer, ctx))
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -289,11 +287,11 @@ func (t *tracingClientOutboundInterceptor) SignalWithStartWorkflow(
 	ctx context.Context,
 	in *interceptor.ClientSignalWithStartWorkflowInput,
 ) (run client.WorkflowRun, err error) {
-	ctx, endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "SignalWithStartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
-	}, t.root.headerWriter(t.tracer, ctx))
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -306,14 +304,14 @@ func (t *tracingClientOutboundInterceptor) QueryWorkflow(
 	ctx context.Context,
 	in *interceptor.ClientQueryWorkflowInput,
 ) (val converter.EncodedValue, err error) {
-	if t.tracer.Options().DisableQueryTracing {
+	if t.root.tracer.Options().DisableQueryTracing {
 		return t.Next.QueryWorkflow(ctx, in)
 	}
-	ctx, endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "QueryWorkflow",
 		Name:      in.QueryType,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
-	}, t.root.headerWriter(t.tracer, ctx))
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -326,17 +324,17 @@ func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
 	ctx context.Context,
 	in *interceptor.ClientUpdateWorkflowInput,
 ) (val client.WorkflowUpdateHandle, err error) {
-	if t.tracer.Options().DisableUpdateTracing {
+	if t.root.tracer.Options().DisableUpdateTracing {
 		return t.Next.UpdateWorkflow(ctx, in)
 	}
-	ctx, endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "UpdateWorkflow",
 		Name:      in.UpdateName,
 		Tags: map[string]string{
 			workflowIDTagKey: in.WorkflowID,
 			updateIDTagKey:   in.UpdateID,
 		},
-	}, t.root.headerWriter(t.tracer, ctx))
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -349,14 +347,14 @@ func (t *tracingClientOutboundInterceptor) UpdateWithStartWorkflow(
 	ctx context.Context,
 	in *interceptor.ClientUpdateWithStartWorkflowInput,
 ) (val client.WorkflowUpdateHandle, err error) {
-	if t.tracer.Options().DisableUpdateTracing {
+	if t.root.tracer.Options().DisableUpdateTracing {
 		return t.Next.UpdateWithStartWorkflow(ctx, in)
 	}
-	ctx, endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "UpdateWithStartWorkflow",
 		Name:      in.UpdateOptions.UpdateName,
 		Tags:      map[string]string{workflowIDTagKey: in.UpdateOptions.WorkflowID, updateIDTagKey: in.UpdateOptions.UpdateID},
-	}, t.root.headerWriter(t.tracer, ctx))
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -369,11 +367,11 @@ func (t *tracingClientOutboundInterceptor) ExecuteActivity(
 	ctx context.Context,
 	in *interceptor.ClientExecuteActivityInput,
 ) (handle client.ActivityHandle, err error) {
-	ctx, endSpan, err := startOutboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "StartActivity",
 		Name:      in.ActivityType,
 		Tags:      map[string]string{activityIDTagKey: in.Options.ID},
-	}, t.root.headerWriter(t.tracer, ctx))
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -384,25 +382,23 @@ func (t *tracingClientOutboundInterceptor) ExecuteActivity(
 
 type tracingActivityOutboundInterceptor struct {
 	interceptor.ActivityOutboundInterceptorBase
-	root   *tracingInterceptor
-	tracer Tracer
+	root *tracingInterceptor
 }
 
 func (t *tracingActivityOutboundInterceptor) GetLogger(ctx context.Context) log.Logger {
-	if span := t.tracer.SpanFromContext(ctx); span != nil {
-		return t.tracer.GetLogger(t.Next.GetLogger(ctx), span)
+	if span := t.root.tracer.SpanFromContext(ctx); span != nil {
+		return t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
 	}
 	return t.Next.GetLogger(ctx)
 }
 
 type tracingActivityInboundInterceptor struct {
 	interceptor.ActivityInboundInterceptorBase
-	root   *tracingInterceptor
-	tracer Tracer
+	root *tracingInterceptor
 }
 
 func (t *tracingActivityInboundInterceptor) Init(outbound interceptor.ActivityOutboundInterceptor) error {
-	i := &tracingActivityOutboundInterceptor{root: t.root, tracer: t.tracer}
+	i := &tracingActivityOutboundInterceptor{root: t.root}
 	i.Next = outbound
 	return t.Next.Init(i)
 }
@@ -412,7 +408,7 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 	in *interceptor.ExecuteActivityInput,
 ) (ret interface{}, err error) {
 	info := activity.GetInfo(ctx)
-	ctx, endSpan, err := startInboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation:  "RunActivity",
 		Name:       info.ActivityType.Name,
 		DependedOn: true,
@@ -422,7 +418,7 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 			activityIDTagKey: info.ActivityID,
 		},
 		Time: info.StartedTime,
-	}, t.root.headerReader(t.tracer, ctx))
+	}, t.root.headerReader(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -446,12 +442,11 @@ func workflowTagsWithUpdate(info *workflow.Info, updateID string) map[string]str
 
 type tracingWorkflowInboundInterceptor struct {
 	interceptor.WorkflowInboundInterceptorBase
-	root           *tracingInterceptor
-	workflowTracer WorkflowTracer
+	root *tracingInterceptor
 }
 
 func (t *tracingWorkflowInboundInterceptor) Init(outbound interceptor.WorkflowOutboundInterceptor) error {
-	i := &tracingWorkflowOutboundInterceptor{root: t.root, tracer: t.workflowTracer}
+	i := &tracingWorkflowOutboundInterceptor{root: t.root}
 	i.Next = outbound
 	return t.Next.Init(i)
 }
@@ -461,12 +456,12 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 	in *interceptor.ExecuteWorkflowInput,
 ) (ret interface{}, err error) {
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "RunWorkflow",
 		Name:      info.WorkflowType.Name,
 		Tags:      workflowTags(info),
 		Time:      info.WorkflowStartTime,
-	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -481,15 +476,15 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 }
 
 func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, in *interceptor.HandleSignalInput) (err error) {
-	if t.workflowTracer.Options().DisableSignalTracing {
+	if t.root.workflowTracer.Options().DisableSignalTracing {
 		return t.Next.HandleSignal(ctx, in)
 	}
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "HandleSignal",
 		Name:      in.SignalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -502,15 +497,15 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	ctx workflow.Context,
 	in *interceptor.HandleQueryInput,
 ) (val interface{}, err error) {
-	if t.workflowTracer.Options().DisableQueryTracing {
+	if t.root.workflowTracer.Options().DisableQueryTracing {
 		return t.Next.HandleQuery(ctx, in)
 	}
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "HandleQuery",
 		Name:      in.QueryType,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -523,16 +518,16 @@ func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 	ctx workflow.Context,
 	in *interceptor.UpdateInput,
 ) (err error) {
-	if t.workflowTracer.Options().DisableUpdateTracing {
+	if t.root.workflowTracer.Options().DisableUpdateTracing {
 		return t.Next.ValidateUpdate(ctx, in)
 	}
 	info := workflow.GetInfo(ctx)
 	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
-	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "ValidateUpdate",
 		Name:      in.Name,
 		Tags:      workflowTagsWithUpdate(info, currentUpdateInfo.ID),
-	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -545,16 +540,16 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 	ctx workflow.Context,
 	in *interceptor.UpdateInput,
 ) (val interface{}, err error) {
-	if t.workflowTracer.Options().DisableUpdateTracing {
+	if t.root.workflowTracer.Options().DisableUpdateTracing {
 		return t.Next.ExecuteUpdate(ctx, in)
 	}
 	info := workflow.GetInfo(ctx)
 	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
-	ctx, endSpan, err := startInboundWorkflowSpan(t.workflowTracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "HandleUpdate",
 		Name:      in.Name,
 		Tags:      workflowTagsWithUpdate(info, currentUpdateInfo.ID),
-	}, t.root.workflowHeaderReader(t.workflowTracer, ctx))
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -565,8 +560,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 
 type tracingWorkflowOutboundInterceptor struct {
 	interceptor.WorkflowOutboundInterceptorBase
-	root   *tracingInterceptor
-	tracer WorkflowTracer
+	root *tracingInterceptor
 }
 
 func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
@@ -575,12 +569,12 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
 	args ...interface{},
 ) workflow.Future {
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation:  "StartActivity",
 		Name:       activityType,
 		Tags:       workflowTags(info),
 		DependedOn: true,
-	}, t.root.workflowHeaderWriter(t.tracer, ctx))
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -595,12 +589,12 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 	args ...interface{},
 ) workflow.Future {
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation:  "StartActivity",
 		Name:       activityType,
 		Tags:       workflowTags(info),
 		DependedOn: true,
-	}, t.root.workflowHeaderWriter(t.tracer, ctx))
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -610,8 +604,8 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 }
 
 func (t *tracingWorkflowOutboundInterceptor) GetLogger(ctx workflow.Context) log.Logger {
-	if span := t.tracer.SpanFromContext(ctx); span != nil {
-		return t.tracer.GetLogger(t.Next.GetLogger(ctx), span)
+	if span := t.root.workflowTracer.SpanFromContext(ctx); span != nil {
+		return t.root.workflowTracer.GetLogger(t.Next.GetLogger(ctx), span)
 	}
 	return t.Next.GetLogger(ctx)
 }
@@ -622,11 +616,11 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
 	args ...interface{},
 ) workflow.ChildWorkflowFuture {
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "StartChildWorkflow",
 		Name:      childWorkflowType,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.tracer, ctx))
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return childWorkflowFuture{workflowFutureFromErr(ctx, err)}
 	}
@@ -642,15 +636,15 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	signalName string,
 	arg interface{},
 ) workflow.Future {
-	if t.tracer.Options().DisableSignalTracing {
+	if t.root.workflowTracer.Options().DisableSignalTracing {
 		return t.Next.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 	}
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "SignalExternalWorkflow",
 		Name:      signalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.tracer, ctx))
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -665,16 +659,16 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	signalName string,
 	arg interface{},
 ) workflow.Future {
-	if t.tracer.Options().DisableSignalTracing {
+	if t.root.workflowTracer.Options().DisableSignalTracing {
 		return t.Next.SignalChildWorkflow(ctx, workflowID, signalName, arg)
 	}
 
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "SignalChildWorkflow",
 		Name:      signalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.tracer, ctx))
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -693,11 +687,11 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.
 		return nexusOperationFuture{workflowFutureFromErr(ctx, fmt.Errorf("unexpected operation type: %v", input.Operation))}
 	}
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "StartNexusOperation",
 		Name:      input.Client.Service() + "/" + operationName,
 		Tags:      workflowTags(info),
-	}, t.root.nexusHeaderWriter(t.tracer, input.NexusHeader))
+	}, t.root.nexusHeaderWriter(t.root.workflowTracer, input.NexusHeader))
 	if err != nil {
 		return nexusOperationFuture{workflowFutureFromErr(ctx, err)}
 	}
@@ -712,11 +706,11 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 	args ...interface{},
 ) error {
 	info := workflow.GetInfo(ctx)
-	ctx, endSpan, err := startOutboundWorkflowSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "ContinueAsNew",
 		Name:      info.WorkflowType.Name,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.tracer, ctx))
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -732,17 +726,16 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 
 type tracingNexusOperationInboundInterceptor struct {
 	interceptor.NexusOperationInboundInterceptorBase
-	root   *tracingInterceptor
-	tracer Tracer
+	root *tracingInterceptor
 }
 
 func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Context, input interceptor.NexusCancelOperationInput) (err error) {
 	info := nexus.ExtractHandlerInfo(ctx)
-	ctx, endSpan, err := startInboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation:  "RunCancelNexusOperationHandler",
 		Name:       info.Service + "/" + info.Operation,
 		DependedOn: true,
-	}, t.root.nexusHeaderReader(t.tracer, input.Options.Header))
+	}, t.root.nexusHeaderReader(t.root.tracer, input.Options.Header))
 	if err != nil {
 		return err
 	}
@@ -753,11 +746,11 @@ func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Co
 
 func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Context, input interceptor.NexusStartOperationInput) (ret nexus.HandlerStartOperationResult[any], err error) {
 	info := nexus.ExtractHandlerInfo(ctx)
-	ctx, endSpan, err := startInboundSpan(t.tracer, ctx, &TracerStartSpanOptions{
+	ctx, endSpan, err := startInboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation:  "RunStartNexusOperationHandler",
 		Name:       info.Service + "/" + info.Operation,
 		DependedOn: true,
-	}, t.root.nexusHeaderReader(t.tracer, input.Options.Header))
+	}, t.root.nexusHeaderReader(t.root.tracer, input.Options.Header))
 	if err != nil {
 		return nil, err
 	}

@@ -31,12 +31,31 @@ func (s *contextBridgeTestSuite) contextWithBaggage(key, value string) context.C
 	return baggage.ContextWithBaggage(context.Background(), bag)
 }
 
+// validSpan builds a span the bridges accept, which requires a valid span context.
+func (s *contextBridgeTestSuite) validSpan() *tracerSpan {
+	s.T().Helper()
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID: trace.TraceID{1},
+		SpanID:  trace.SpanID{2},
+	})
+	return &tracerSpan{Span: trace.SpanFromContext(trace.ContextWithSpanContext(context.Background(), spanContext))}
+}
+
 func (s *contextBridgeTestSuite) TestKeepsAmbientBaggage() {
 	bridge := s.bridge(PluginOptions{})
 	noopSpan := &tracerSpan{Span: trace.SpanFromContext(context.Background())}
 
 	ctx := s.contextWithBaggage("key", "value")
 	ctx = bridge.ContextWithSpan(ctx, noopSpan)
+
+	s.Require().Equal("value", baggage.FromContext(ctx).Member("key").Value())
+}
+
+func (s *contextBridgeTestSuite) TestContextWithParentDefaultsToBaggageEnabled() {
+	bag, err := baggage.Parse("key=value")
+	s.Require().NoError(err)
+
+	ctx := s.bridge(PluginOptions{}).ContextWithSpan(context.Background(), &tracerSpan{Baggage: bag})
 
 	s.Require().Equal("value", baggage.FromContext(ctx).Member("key").Value())
 }
@@ -54,7 +73,8 @@ func (s *contextBridgeTestSuite) TestReplacesAmbientBaggageWithSpanBaggage() {
 }
 
 func (s *contextBridgeTestSuite) TestNoSpanOnContextReturnsNoopSpan() {
-	span := (workflowContextBridge{}).SpanFromContext(internal.Background())
+	bridge := &workflowContextBridge{options: newOptions(PluginOptions{})}
+	span := bridge.SpanFromContext(internal.Background())
 
 	s.Require().NotNil(span)
 	s.Require().False(span.(*tracerSpan).SpanContext().IsValid())
@@ -62,35 +82,52 @@ func (s *contextBridgeTestSuite) TestNoSpanOnContextReturnsNoopSpan() {
 
 func (s *contextBridgeTestSuite) TestUnsupportedSpanTypeReturnsNoopSpan() {
 	ctx := workflow.WithValue(internal.Background(), spanContextKey{}, unsupportedTracerSpan{})
-	span := (workflowContextBridge{}).SpanFromContext(ctx)
+	bridge := &workflowContextBridge{options: newOptions(PluginOptions{})}
+	span := bridge.SpanFromContext(ctx)
 
 	s.Require().NotNil(span)
 	s.Require().False(span.(*tracerSpan).SpanContext().IsValid())
 }
 
-func (s *contextBridgeTestSuite) TestSkipSettingSkipsForNilSpan() {
-	bridge := workflowContextBridge{}
-	ctx := internal.Background()
+func (s *contextBridgeTestSuite) TestNilSpanKeepsStoredSpan() {
+	bridge := workflowContextBridge{options: newOptions(PluginOptions{})}
 
-	s.Require().Same(ctx, bridge.ContextWithSpan(ctx, nil))
+	bag, err := baggage.Parse("key=value")
+	s.Require().NoError(err)
+	span := s.validSpan()
+	span.Baggage = bag
+
+	ctx := bridge.ContextWithSpan(internal.Background(), span)
+	stored := bridge.SpanFromContext(bridge.ContextWithSpan(ctx, nil)).(*tracerSpan)
+
+	s.Require().Equal(span.SpanContext(), stored.SpanContext())
+	s.Require().Equal("value", stored.Baggage.Member("key").Value())
 }
 
-func (s *contextBridgeTestSuite) TestSkipSettingSkipsUnknownType() {
-	bridge := workflowContextBridge{}
-	ctx := internal.Background()
+func (s *contextBridgeTestSuite) TestUnknownSpanTypeKeepsStoredSpan() {
+	bridge := workflowContextBridge{options: newOptions(PluginOptions{})}
 
-	s.Require().Same(ctx, bridge.ContextWithSpan(ctx, unsupportedTracerSpan{}))
+	bag, err := baggage.Parse("key=value")
+	s.Require().NoError(err)
+	span := s.validSpan()
+	span.Baggage = bag
+
+	ctx := bridge.ContextWithSpan(internal.Background(), span)
+	stored := bridge.SpanFromContext(bridge.ContextWithSpan(ctx, unsupportedTracerSpan{})).(*tracerSpan)
+
+	s.Require().Equal(span.SpanContext(), stored.SpanContext())
+	s.Require().Equal("value", stored.Baggage.Member("key").Value())
 }
 
 func (s *contextBridgeTestSuite) TestWorkflowContextWithSpanStoresKnownType() {
-	bridge := workflowContextBridge{}
-	span := &tracerSpan{Span: trace.SpanFromContext(context.Background())}
+	bridge := workflowContextBridge{options: newOptions(PluginOptions{})}
+	span := s.validSpan()
 
 	ctx := internal.Background()
 	newCtx := bridge.ContextWithSpan(ctx, span)
 
 	s.Require().NotSame(ctx, newCtx)
-	s.Require().Same(span, bridge.SpanFromContext(newCtx))
+	s.Require().Equal(span.SpanContext(), bridge.SpanFromContext(newCtx).(*tracerSpan).SpanContext())
 }
 
 type unsupportedTracerSpan struct{}
