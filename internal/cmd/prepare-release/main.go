@@ -9,17 +9,16 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
 
 var (
 	// Matches release versions such as "1.48.0".
-	versionRE = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
+	versionRE = regexp.MustCompile(`^1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 	// Matches tagged Go module release versions such as "v1.48.0".
 	// Shouldn't match pseudo-versions such as "v1.48.0-0.20260804123456-abcdef123456".
-	taggedGoVersionRE = regexp.MustCompile(`^v[0-9]\.[0-9]+\.[0-9]+$`)
+	taggedGoVersionRE = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 	// Matches changelog headings such as "## [1.48.0] - 2026-08-04".
 	changelogHeadingRE = regexp.MustCompile(`^## \[([^]]+)](?:\s+-\s+.*)?\s*$`)
 	// Matches changelog section headers such as "### :boom: Breaking Changes".
@@ -44,21 +43,24 @@ var releaseFiles = []string{"CHANGELOG.md", "internal/version.go"}
 // COMMAND-LINE WRAPPER
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
-		log.Fatal(err)
+	err := run(os.Args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr)
+		log.Print(err)
+		os.Exit(1)
 	}
 }
 
-// run parses command-line options and executes the release workflow.
 func run(args []string) error {
 	flags := flag.NewFlagSet("prepare-release", flag.ContinueOnError)
 	date := flags.String("date", time.Now().Format(time.DateOnly), "release date in YYYY-MM-DD format")
-	dryRun := flags.Bool("dry-run", false, "print file updates and commands without executing them")
-	if err := flags.Parse(args); err != nil {
+	stopBeforePush := flags.Bool("stop-before-push", false, "stop after committing the release files but before pushing")
+	err := flags.Parse(args)
+	if err != nil {
 		return err
 	}
 	if flags.NArg() != 1 {
-		return errors.New("usage: prepare-release [--date YYYY-MM-DD] [--dry-run] VERSION")
+		return errors.New("usage: prepare-release [--date YYYY-MM-DD] [--stop-before-push] VERSION")
 	}
 	version, err := validateVersion(flags.Arg(0))
 	if err != nil {
@@ -69,306 +71,265 @@ func run(args []string) error {
 		return fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *date, err)
 	}
 
-	var eff Effects = RealWorld{}
-	if *dryRun {
-		tempDir, err := os.MkdirTemp("", "prepare-release-")
-		if err != nil {
-			return fmt.Errorf("create dry-run directory: %w", err)
-		}
-		eff = DryRun{Output: os.Stdout, TempDir: tempDir}
-	}
-	root, err := eff.repoRoot()
-	if err != nil {
-		return err
-	}
-	prURL, releaseURL, err := prepareRelease(eff, root, version, releaseDate)
-	if err != nil {
-		return err
-	}
-	if *dryRun {
-		fmt.Printf("Dry run completed for release %s dated %s; no changes were made\n", version, releaseDate.Format(time.DateOnly))
-	} else {
-		fmt.Printf("Prepared release %s dated %s, opened a PR, and created a draft GitHub release\n",
-			version, releaseDate.Format(time.DateOnly))
-		fmt.Printf("PR: %s\nDraft release: %s\n", prURL, releaseURL)
-	}
-	return nil
+	err = prepareEverything(RealWorld{}, version, releaseDate, *stopBeforePush)
+	return err
 }
 
 // CORE LOGIC
 
-func prepareRelease(eff Effects, root, version string, releaseDate time.Time) (string, string, error) {
-
-	// Validate git state and create a release branch
-
-	if err := ensureCleanWorktree(eff, root); err != nil {
-		return "", "", err
-	}
-	if _, err := eff.runCommand(root, "git", "fetch", "origin", "main"); err != nil {
-		return "", "", err
-	}
+func prepareEverything(eff Effects, version string, releaseDate time.Time, stopBeforePush bool) (retErr error) {
 	branch := "chore/release-" + version
-	if _, err := eff.runCommand(root, "git", "switch", "--create", branch, "origin/main"); err != nil {
-		return "", "", err
-	}
 
-	// Validate and update files
-
-	goMod, err := eff.readFile(filepath.Join(root, "go.mod"))
+	worktreeRoot, cleanupWorktree, err := prepareWorktree(eff, branch)
 	if err != nil {
-		return "", "", fmt.Errorf("read go.mod: %w", err)
+		return err
 	}
-	if err := validateGoMod(goMod); err != nil {
-		return "", "", err
-	}
-	changelogPath := filepath.Join(root, "CHANGELOG.md")
-	var updatedChangelog string
-	if err := eff.updateFile(changelogPath, func(text string) (string, error) {
-		updated, err := updateChangelog(text, version, releaseDate)
-		updatedChangelog = updated
-		return updated, err
-	}); err != nil {
-		return "", "", err
-	}
-	releaseNotes, err := prepareReleaseNotes(updatedChangelog, version)
+	defer func() {
+		if retErr != nil {
+			retErr = fmt.Errorf(
+				"%w\n\nWorktree preserved at %s.\n"+
+					"After inspecting any changes, remove it and its local branch from the repository root with:\n"+
+					"  %s\n  %s",
+				retErr,
+				worktreeRoot,
+				formatCommand("git", "worktree", "remove", "--force", worktreeRoot),
+				formatCommand("git", "branch", "--delete", "--force", branch),
+			)
+		}
+	}()
+
+	releaseNotes, prURL, err := prepareDraftPR(eff, worktreeRoot, branch, version, releaseDate, stopBeforePush)
 	if err != nil {
-		return "", "", err
+		return err
 	}
-	versionPath := filepath.Join(root, "internal", "version.go")
-	if err := eff.updateFile(versionPath, func(text string) (string, error) {
-		return replaceSDKVersion(text, version)
-	}); err != nil {
-		return "", "", err
-	}
+	eff.printf("PR: %s\n", prURL)
 
-	// Commit and push changes, then open a PR
-
-	commitArgs := append([]string{"commit", "-m", "Prepare release " + version, "--"}, releaseFiles...)
-	if _, err := eff.runCommand(root, "git", commitArgs...); err != nil {
-		return "", "", err
-	}
-	if _, err := eff.runCommand(root, "git", "push", "--set-upstream", "origin", branch); err != nil {
-		return "", "", err
-	}
-	prURL, err := eff.runCommand(root, "gh", "pr", "create", "--base", "main", "--head", branch,
-		"--title", "Prepare release "+version, "--body", "Prepare Go SDK release "+version+".")
+	draftReleaseURL, err := createDraftRelease(eff, worktreeRoot, version, releaseNotes)
 	if err != nil {
-		return "", "", err
+		return err
 	}
-	prURL = strings.TrimSpace(prURL)
-	tag := "v" + version
-	draftReleaseURL, err := eff.runCommand(root, "gh", "release", "create", tag, "--draft", "--title", tag,
-		"--notes", releaseNotes, "--generate-notes")
+	eff.printf("Draft release: %s\n", draftReleaseURL)
+
+	err = cleanupWorktree()
 	if err != nil {
-		return "", "", err
+		return err
 	}
-	return prURL, strings.TrimSpace(draftReleaseURL), nil
-}
 
-// PURE HELPERS
-
-// validateVersion accepts release versions with a semantic version core.
-func validateVersion(version string) (string, error) {
-	if !versionRE.MatchString(version) {
-		return "", fmt.Errorf("invalid version %q; expected a version like '1.48.0'", version)
-	}
-	return version, nil
-}
-
-// validateGoMod requires go.temporal.io/api to use a tagged version (1.XX.YY format)
-// instead of a git snapshot (1.XX.YY-0.YYYYMMDDHHMMSS-abcdef123456 format).
-func validateGoMod(data string) error {
-	match := apiVersionRE.FindStringSubmatch(data)
-	if match == nil {
-		return errors.New("could not find go.temporal.io/api in go.mod")
-	}
-	if !taggedGoVersionRE.MatchString(match[1]) {
-		return fmt.Errorf("go.temporal.io/api must use an official release, found %q", match[1])
-	}
 	return nil
 }
 
-// replaceSDKVersion updates the sole SDKVersion declaration in version.go.
-func replaceSDKVersion(text, version string) (string, error) {
-	if _, err := validateVersion(version); err != nil {
+func prepareWorktree(eff Effects, branch string) (worktreeRoot string, cleanup func() error, retErr error) {
+	root, err := eff.repoRoot()
+	if err != nil {
+		return "", nil, err
+	}
+
+	err = fetchMain(eff, root)
+	if err != nil {
+		return "", nil, err
+	}
+
+	worktreeRoot, cleanupWorktree, err := createWorktree(eff, root, branch)
+	if err != nil {
+		return "", nil, err
+	}
+	return worktreeRoot, cleanupWorktree, nil
+}
+
+func prepareDraftPR(eff Effects, worktreeRoot, branch, version string, releaseDate time.Time, stopBeforePush bool) (string, string, error) {
+	err := validateReleaseFiles(eff, worktreeRoot, version)
+	if err != nil {
+		return "", "", err
+	}
+
+	releaseNotes, err := updateReleaseFiles(eff, worktreeRoot, version, releaseDate)
+	if err != nil {
+		return "", "", err
+	}
+
+	prURL, err := createDraftPR(eff, worktreeRoot, branch, version, stopBeforePush)
+	if err != nil {
+		return "", "", err
+	}
+
+	return releaseNotes, prURL, nil
+}
+
+func validateReleaseFiles(eff Effects, worktreeRoot, newVersion string) error {
+	goMod, err := eff.readFile(filepath.Join(worktreeRoot, "go.mod"))
+	if err != nil {
+		return err
+	}
+	err = validateGoMod(goMod)
+	if err != nil {
+		return err
+	}
+
+	versionGo, err := eff.readFile(filepath.Join(worktreeRoot, "internal", "version.go"))
+	if err != nil {
+		return err
+	}
+	currentVersion, err := extractSDKVersion(versionGo)
+	if err != nil {
+		return err
+	}
+	err = validateVersionIncrease(currentVersion, newVersion)
+	if err != nil {
+		return err
+	}
+
+	changelog, err := eff.readFile(filepath.Join(worktreeRoot, "CHANGELOG.md"))
+	if err != nil {
+		return err
+	}
+	err = validateChangelog(changelog, currentVersion)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func updateReleaseFiles(eff Effects, worktreeRoot, version string, releaseDate time.Time) (string, error) {
+	changelogPath := filepath.Join(worktreeRoot, "CHANGELOG.md")
+	versionPath := filepath.Join(worktreeRoot, "internal", "version.go")
+
+	updatedChangelog, err := updateFile(eff, changelogPath, func(text string) (string, error) {
+		return updateChangelog(text, version, releaseDate)
+	})
+	if err != nil {
 		return "", err
 	}
-	if len(sdkVersionRE.FindAllStringIndex(text, -1)) != 1 {
-		return "", errors.New("could not find exactly one SDKVersion declaration in internal/version.go")
-	}
-	return sdkVersionRE.ReplaceAllString(text, "${1}"+version+"${2}"), nil
-}
 
-// updateChangelog moves Unreleased entries into a dated version section.
-func updateChangelog(text, version string, releaseDate time.Time) (string, error) {
-	if _, err := validateVersion(version); err != nil {
+	releaseNotes, err := prepareReleaseNotes(updatedChangelog, version)
+	if err != nil {
 		return "", err
 	}
-	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	if _, _, _, ok := findVersionSection(lines, version); ok {
-		return "", fmt.Errorf("changelog already has a section for %q", version)
+
+	_, err = updateFile(eff, versionPath, func(text string) (string, error) {
+		return replaceSDKVersion(text, version)
+	})
+	if err != nil {
+		return "", err
 	}
-	heading, start, end, ok := findVersionSection(lines, "Unreleased")
-	if !ok {
-		return "", errors.New("could not find changelog section for 'Unreleased'")
-	}
-	unreleased := stripEmptyChangelogHeaders(stripOuterBlankLines(lines[start:end]))
-	if len(unreleased) == 0 {
-		return "", errors.New("changelog section for 'Unreleased' appears to be empty")
-	}
-	next := append([]string{}, lines[:heading]...)
-	next = append(next, seededUnreleasedLines()...)
-	next = append(next, "## ["+version+"] - "+releaseDate.Format(time.DateOnly), "")
-	next = append(next, unreleased...)
-	next = append(next, "")
-	next = append(next, lines[end:]...)
-	return strings.Join(collapseBlankLines(next), "\n") + "\n", nil
+
+	return releaseNotes, nil
 }
 
-// prepareReleaseNotes formats one release's changelog sections for GitHub.
-func prepareReleaseNotes(text, version string) (string, error) {
-	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
-	_, start, end, ok := findVersionSection(lines, version)
-	if !ok {
-		return "", fmt.Errorf("could not find changelog section for %q", version)
-	}
-	sections := stripOuterBlankLines(lines[start:end])
-	if len(sections) == 0 {
-		return "", fmt.Errorf("changelog section for %q appears to be empty", version)
-	}
-	return "# Highlights\n\n" + strings.Join(sections, "\n") + "\n", nil
-}
+func createDraftPR(eff Effects, worktreeRoot, branch, version string, stopBeforePush bool) (string, error) {
 
-// findVersionSection returns the heading and content bounds for a changelog version.
-func findVersionSection(lines []string, version string) (heading, start, end int, ok bool) {
-	for i, line := range lines {
-		match := changelogHeadingRE.FindStringSubmatch(line)
-		if match == nil || match[1] != version {
-			continue
-		}
-		end = len(lines)
-		for j := i + 1; j < len(lines); j++ {
-			if strings.HasPrefix(lines[j], "## ") {
-				end = j
-				break
-			}
-		}
-		return i, i + 1, end, true
+	err := commitRelease(eff, worktreeRoot, version)
+	if err != nil {
+		return "", err
 	}
-	return 0, 0, 0, false
-}
+	if stopBeforePush {
+		return "", errors.New("stopped before pushing release branch (--stop-before-push)")
+	}
 
-func seededUnreleasedLines() []string {
-	lines := []string{"## [Unreleased]", ""}
-	for _, header := range changelogHeaders {
-		lines = append(lines, "### "+header, "")
+	err = pushBranch(eff, worktreeRoot, branch)
+	if err != nil {
+		return "", err
 	}
-	return lines
-}
 
-// stripEmptyChangelogHeaders removes recognized sections that contain no content.
-func stripEmptyChangelogHeaders(lines []string) []string {
-	var filtered []string
-	for i := 0; i < len(lines); {
-		match := changelogHeaderRE.FindStringSubmatch(lines[i])
-		if match == nil || !contains(changelogHeaders, match[1]) {
-			filtered = append(filtered, lines[i])
-			i++
-			continue
-		}
-		j := i + 1
-		for j < len(lines) && !strings.HasPrefix(lines[j], "### ") {
-			j++
-		}
-		content := lines[i+1 : j]
-		if hasNonblank(content) {
-			filtered = append(filtered, lines[i])
-			filtered = append(filtered, content...)
-		}
-		i = j
+	prURL, err := openDraftPR(eff, worktreeRoot, branch, version)
+	if err != nil {
+		return "", err
 	}
-	return stripOuterBlankLines(filtered)
-}
 
-func stripOuterBlankLines(lines []string) []string {
-	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
-		lines = lines[1:]
-	}
-	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
-		lines = lines[:len(lines)-1]
-	}
-	return lines
-}
-
-// collapseBlankLines reduces consecutive blank lines and trims the outer ones.
-func collapseBlankLines(lines []string) []string {
-	var collapsed []string
-	previousBlank := false
-	for _, line := range lines {
-		blank := strings.TrimSpace(line) == ""
-		if blank && previousBlank {
-			continue
-		}
-		collapsed = append(collapsed, line)
-		previousBlank = blank
-	}
-	return stripOuterBlankLines(collapsed)
-}
-
-func contains(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
-}
-
-func hasNonblank(lines []string) bool {
-	for _, line := range lines {
-		if strings.TrimSpace(line) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// formatCommand renders a command with quoting suitable for logs and dry runs.
-func formatCommand(name string, args ...string) string {
-	parts := []string{name}
-	for _, arg := range args {
-		if strings.ContainsAny(arg, " \t\n\"'") {
-			arg = strconv.Quote(arg)
-		}
-		parts = append(parts, arg)
-	}
-	return strings.Join(parts, " ")
+	return prURL, nil
 }
 
 // EFFECTFUL HELPERS
 
-// changedFiles returns paths reported as changed by git status --porcelain.
-func changedFiles(eff Effects, root string) ([]string, error) {
-	output, err := eff.runCommand(root, "git", "status", "--porcelain")
+// fetchMain fetches origin/main.
+func fetchMain(eff Effects, root string) error {
+	_, err := eff.runCommand(root, "git", "fetch", "origin", "main")
 	if err != nil {
-		return nil, err
-	}
-	var files []string
-	for _, line := range strings.Split(strings.TrimSuffix(output, "\n"), "\n") {
-		if len(line) >= 4 {
-			files = append(files, line[3:])
-		}
-	}
-	return files, nil
-}
-
-func ensureCleanWorktree(eff Effects, root string) error {
-	files, err := changedFiles(eff, root)
-	if err != nil {
-		return err
-	}
-	if len(files) != 0 {
-		return fmt.Errorf("release preparation requires a clean worktree; found changes in %s", strings.Join(files, ", "))
+		return fmt.Errorf("fetch main: %w", err)
 	}
 	return nil
+}
+
+// createWorktree creates a worktree for the given branch and returns its path and a cleanup function.
+func createWorktree(eff Effects, root, branch string) (string, func() error, error) {
+	worktreeRoot, err := eff.mkdirTemp("", "prepare-go-release-")
+	if err != nil {
+		return "", nil, fmt.Errorf("create temporary worktree: %w", err)
+	}
+	_, err = eff.runCommand(root, "git", "worktree", "add", "-b", branch, worktreeRoot, "origin/main")
+	if err != nil {
+		return "", nil, fmt.Errorf("create worktree: %w", err)
+	}
+	head, err := eff.runCommand(worktreeRoot, "git", "log", "-1", "--format=%s (%h)")
+	if err != nil {
+		return "", nil, fmt.Errorf("describe worktree: %w", err)
+	}
+	eff.printf("Created worktree: %s at HEAD: %s\n", worktreeRoot, strings.TrimSpace(head))
+	cleanup := func() error {
+		_, err := eff.runCommand(root, "git", "worktree", "remove", "--force", worktreeRoot)
+		if err != nil {
+			return fmt.Errorf("remove worktree: %w", err)
+		}
+		eff.printf("Cleaned up worktree.\n")
+		return nil
+	}
+	return worktreeRoot, cleanup, nil
+}
+
+// updateFile reads the file at the given path, runs the update function on its contents,
+// writes the result to the file, and returns the updated contents.
+func updateFile(eff Effects, path string, update func(string) (string, error)) (string, error) {
+	data, err := eff.readFile(path)
+	if err != nil {
+		return "", err
+	}
+	updated, err := update(data)
+	if err != nil {
+		return "", err
+	}
+	err = eff.writeFile(path, updated)
+	if err != nil {
+		return "", fmt.Errorf("write %s: %w", path, err)
+	}
+	return updated, nil
+}
+
+// commitRelease commits the release files with a message indicating the version.
+func commitRelease(eff Effects, root, version string) error {
+	args := append([]string{"commit", "-m", "Prepare release " + version, "--"}, releaseFiles...)
+	_, err := eff.runCommand(root, "git", args...)
+	if err != nil {
+		return fmt.Errorf("commit release files: %w", err)
+	}
+	return nil
+}
+
+// pushBranch pushes the branch to origin and sets the upstream.
+func pushBranch(eff Effects, root, branch string) error {
+	_, err := eff.runCommand(root, "git", "push", "--set-upstream", "origin", branch)
+	if err != nil {
+		return fmt.Errorf("push branch: %w", err)
+	}
+	return nil
+}
+
+// openDraftPR creates a draft pull request whose HEAD is the given branch.
+func openDraftPR(eff Effects, root, branch, version string) (string, error) {
+	url, err := eff.runCommand(root, "gh", "pr", "create", "--draft", "--base", "main", "--head", branch,
+		"--title", "Prepare release "+version, "--body", "Prepare Go SDK release "+version+".")
+	if err != nil {
+		return "", fmt.Errorf("create draft PR: %w", err)
+	}
+	return strings.TrimSpace(url), nil
+}
+
+// createDraftRelease creates a draft release with the given version and release notes.
+func createDraftRelease(eff Effects, root, version, releaseNotes string) (string, error) {
+	tag := "v" + version
+	url, err := eff.runCommand(root, "gh", "release", "create", tag, "--draft", "--title", tag,
+		"--notes", releaseNotes, "--generate-notes")
+	if err != nil {
+		return "", fmt.Errorf("create draft release: %w", err)
+	}
+	return strings.TrimSpace(url), nil
 }

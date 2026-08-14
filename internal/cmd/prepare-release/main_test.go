@@ -1,408 +1,395 @@
 package main
 
 import (
-	"bytes"
-	"os"
+	"errors"
 	"path/filepath"
-	"reflect"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
 
-func TestDryRunWritesUpdatedFileToTempDir(t *testing.T) {
-	inputDir := t.TempDir()
-	inputPath := filepath.Join(inputDir, "version.go")
-	if err := os.WriteFile(inputPath, []byte("old\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestCreateDraftRelease(t *testing.T) {
+	eff := newMockEffects(func(command) (string, error) {
+		return "https://example.com/release\n", nil
+	})
 
-	outputDir := t.TempDir()
-	var output bytes.Buffer
-	eff := DryRun{Output: &output, TempDir: outputDir}
-	if err := eff.updateFile(inputPath, func(string) (string, error) {
-		return "new\n", nil
-	}); err != nil {
-		t.Fatal(err)
-	}
-
-	outputPath := filepath.Join(outputDir, "version.go")
-	got, err := os.ReadFile(outputPath)
+	releaseURL, err := createDraftRelease(eff, "/worktree", "1.2.3", "Notes")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "new\n" {
-		t.Fatalf("unexpected dry-run file contents: %q", got)
+	if releaseURL != "https://example.com/release" {
+		t.Fatalf("unexpected release URL: %q", releaseURL)
 	}
-	if want := "write " + outputPath + "\n"; output.String() != want {
-		t.Fatalf("unexpected dry-run output: got %q, want %q", output.String(), want)
-	}
+	testEqual(t, eff.commands.String(), `
+		/worktree: gh release create v1.2.3 --draft --title v1.2.3 --notes Notes --generate-notes
+	`)
 }
 
-// HELPER TESTS
+func TestOpenDraftPR(t *testing.T) {
+	eff := newMockEffects(func(command) (string, error) {
+		return "https://example.com/pr\n", nil
+	})
 
-func TestRegularExpressions(t *testing.T) {
-	tests := []struct {
-		name       string
-		expression *regexp.Regexp
-		matches    []string
-		rejects    []string
-	}{
-		{
-			name:       "version",
-			expression: versionRE,
-			matches:    []string{"1.48.0"},
-			rejects:    []string{"v1.48.0", "1.48", "1.48.0-rc.1", "1.48.0+build.1", "1.48.0 release"},
-		},
-		{
-			name:       "changelog heading",
-			expression: changelogHeadingRE,
-			matches:    []string{"## [Unreleased]", "## [1.48.0] - 2026-08-04"},
-			rejects:    []string{"# [Unreleased]", "## Unreleased", "### [1.48.0]"},
-		},
-		{
-			name:       "changelog header",
-			expression: changelogHeaderRE,
-			matches:    []string{"### Added", "### :boom: Breaking Changes"},
-			rejects:    []string{"## Added", "###", "- Added"},
-		},
-		{
-			name:       "SDK version declaration",
-			expression: sdkVersionRE,
-			matches:    []string{`SDKVersion = "1.47.0"`, "\tSDKVersion = \"1.48.0\""},
-			rejects:    []string{`SDKName = "temporal-go"`, `SDKVersion := "1.48.0"`},
-		},
-		{
-			name:       "API dependency",
-			expression: apiVersionRE,
-			matches:    []string{"go.temporal.io/api v1.63.4", "require go.temporal.io/api v1.63.4"},
-			rejects:    []string{"go.temporal.io/sdk v1.63.4", "go.temporal.io/api"},
-		},
-		{
-			name:       "tagged Go version",
-			expression: taggedGoVersionRE,
-			matches:    []string{"v1.63.4", "v1.64.0"},
-			rejects: []string{
-				"1.63.4",
-				"v1.63",
-				"v1.64.0-rc.1",
-				"v1.64.0+build.1",
-				"v0.0.0-20260730213819-7f6a96199578",
-				"v1.63.1-0.20260730213819-7f6a96199578",
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			for _, input := range test.matches {
-				if !test.expression.MatchString(input) {
-					t.Errorf("expected %q to match %s", input, test.expression)
-				}
-			}
-			for _, input := range test.rejects {
-				if test.expression.MatchString(input) {
-					t.Errorf("expected %q not to match %s", input, test.expression)
-				}
-			}
-		})
-	}
-}
-
-func TestUpdateChangelog(t *testing.T) {
-	input := `# Changelog
-
-## [Unreleased]
-
-### Added
-
-- A feature.
-
-### Changed
-
-### Fixed
-
-- A fix.
-
-## [1.2.0] - 2026-01-01
-
-### Added
-
-- An older feature.
-`
-	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
-	got, err := updateChangelog(input, "1.3.0", date)
+	prURL, err := openDraftPR(eff, "/worktree", "release", "1.2.3")
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `# Changelog
-
-## [Unreleased]
-
-### Added
-
-### Changed
-
-### Deprecated
-
-### :boom: Breaking Changes
-
-### Fixed
-
-### Security
-
-## [1.3.0] - 2026-08-04
-
-### Added
-
-- A feature.
-
-### Fixed
-
-- A fix.
-
-## [1.2.0] - 2026-01-01
-
-### Added
-
-- An older feature.
-`
-	if got != want {
-		t.Fatalf("unexpected changelog:\n--- got ---\n%s--- want ---\n%s", got, want)
+	if prURL != "https://example.com/pr" {
+		t.Fatalf("unexpected PR URL: %q", prURL)
 	}
+	testEqual(t, eff.commands.String(), `
+		/worktree: gh pr create --draft --base main --head release --title "Prepare release 1.2.3" --body "Prepare Go SDK release 1.2.3."
+	`)
 }
 
-func TestUpdateChangelogRejectsInvalidState(t *testing.T) {
-	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
+func TestPushBranch(t *testing.T) {
+	eff := newMockEffects(nil)
 
-	_, err := updateChangelog("# Changelog\n", "1.3.0", date)
-	if err == nil || !strings.Contains(err.Error(), "could not find") {
-		t.Fatalf("expected missing Unreleased error, got %v", err)
-	}
-
-	emptyUnreleased := `
-## [Unreleased]
-
-### Added
-`
-	_, err = updateChangelog(emptyUnreleased, "1.3.0", date)
-	if err == nil || !strings.Contains(err.Error(), "appears to be empty") {
-		t.Fatalf("expected empty Unreleased error, got %v", err)
-	}
-
-	duplicateRelease := `
-## [Unreleased]
-
-- New
-
-## [1.3.0] - 2026-01-01
-`
-	_, err = updateChangelog(duplicateRelease, "1.3.0", date)
-	if err == nil || !strings.Contains(err.Error(), "already has") {
-		t.Fatalf("expected duplicate release error, got %v", err)
-	}
-}
-
-func TestReplaceSDKVersion(t *testing.T) {
-	input := `
-const (
-	SDKVersion = "1.47.0"
-	SupportedServerVersions = ">=1.0.0 <2.0.0"
-)
-`
-	got, err := replaceSDKVersion(input, "1.48.0")
+	err := pushBranch(eff, "/worktree", "release")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(got, `SDKVersion = "1.48.0"`) {
-		t.Fatalf("SDKVersion was not replaced:\n%s", got)
+	testEqual(t, eff.commands.String(), `
+		/worktree: git push --set-upstream origin release
+	`)
+}
+
+func TestCommitRelease(t *testing.T) {
+	eff := newMockEffects(nil)
+
+	err := commitRelease(eff, "/worktree", "1.2.3")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(got, `SupportedServerVersions = ">=1.0.0 <2.0.0"`) {
-		t.Fatalf("SupportedServerVersions changed:\n%s", got)
+	testEqual(t, eff.commands.String(), `
+		/worktree: git commit -m "Prepare release 1.2.3" -- CHANGELOG.md internal/version.go
+	`)
+}
+
+func TestCreateDraftPRStopsBeforePush(t *testing.T) {
+	eff := newMockEffects(nil)
+
+	_, err := createDraftPR(eff, "/worktree", "release", "1.2.3", true)
+	if err == nil || !strings.Contains(err.Error(), "--stop-before-push") {
+		t.Fatalf("expected stop-before-push error, got %v", err)
+	}
+	testEqual(t, eff.commands.String(), `
+		/worktree: git commit -m "Prepare release 1.2.3" -- CHANGELOG.md internal/version.go
+	`)
+}
+
+func TestUpdateFile(t *testing.T) {
+	eff := newMockEffects(nil)
+	eff.files["version.txt"] = "old"
+
+	updated, err := updateFile(eff, "version.txt", func(contents string) (string, error) {
+		return contents + "-new", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated != "old-new" || eff.files["version.txt"] != "old-new" {
+		t.Fatalf("unexpected updated file: returned %q, stored %q", updated, eff.files["version.txt"])
 	}
 }
 
-func TestVerifyAPIVersionFile(t *testing.T) {
-	release := `
-module example.com/test
-require go.temporal.io/api v1.63.4
-`
-	if err := validateGoMod(release); err != nil {
-		t.Fatalf("expected release version to be valid, got %v", err)
-	}
-
-	prerelease := `
-module example.com/test
-require go.temporal.io/api v1.64.0-rc.1
-`
-	if err := validateGoMod(prerelease); err == nil {
-		t.Fatal("expected prerelease version to be invalid")
-	}
-
-	pseudoVersion := `
-module example.com/test
-require go.temporal.io/api v1.63.1-0.20260730213819-7f6a96199578
-`
-	if err := validateGoMod(pseudoVersion); err == nil {
-		t.Fatal("expected pseudo-version to be invalid")
-	}
-
-	commitPseudoVersion := `
-module example.com/test
-require go.temporal.io/api v0.0.0-20260730213819-7f6a96199578
-`
-	if err := validateGoMod(commitPseudoVersion); err == nil {
-		t.Fatal("expected commit pseudo-version to be invalid")
-	}
-}
-
-// MOCK INTEGRATION TEST
-
-type recordedCommand struct {
-	name string
-	args []string
-}
-
-// testWorld embeds DryRun, records the commands being run, and returns canned responses for certain commands.
-type testWorld struct {
-	DryRun
-	commands []recordedCommand
-}
-
-func (eff *testWorld) runCommand(_ string, name string, args ...string) (string, error) {
-	eff.commands = append(eff.commands, recordedCommand{name: name, args: append([]string(nil), args...)})
-	if name == "gh" && len(args) >= 2 {
-		switch args[0] {
-		case "pr":
-			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
-		case "release":
-			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc\n", nil
+func TestCreateWorktree(t *testing.T) {
+	eff := newMockEffects(func(cmd command) (string, error) {
+		if cmd.String() == `git log -1 "--format=%s (%h)"` {
+			return "Initial commit (abc123)\n", nil
 		}
+		return "", nil
+	})
+
+	root, cleanup, err := createWorktree(eff, "/foo/bar", "quux")
+	if err != nil {
+		t.Fatal(err)
 	}
-	return "", nil
+	testEqual(t, eff.commands.String(), `
+		/foo/bar: git worktree add -b quux /tmp/prepare-go-release-123456 origin/main
+		/tmp/prepare-go-release-123456: git log -1 "--format=%s (%h)"
+	`)
+	testEqual(t, eff.output.String(), `
+		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
+	`)
+	if root != eff.tempDir {
+		t.Fatalf("unexpected worktree root: got %q, want %q", root, eff.tempDir)
+	}
+
+	err = cleanup()
+	if err != nil {
+		t.Fatal(err)
+	}
+	testEqual(t, eff.commands.String(), `
+		/foo/bar: git worktree add -b quux /tmp/prepare-go-release-123456 origin/main
+		/tmp/prepare-go-release-123456: git log -1 "--format=%s (%h)"
+		/foo/bar: git worktree remove --force /tmp/prepare-go-release-123456
+	`)
 }
 
-func TestPrepareRelease(t *testing.T) {
-	root := t.TempDir()
-	outputDir := t.TempDir()
+func TestFetchMain(t *testing.T) {
+	eff := newMockEffects(nil)
+
+	err := fetchMain(eff, "/repo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testEqual(t, eff.commands.String(), `/repo: git fetch origin main`)
+}
+
+func TestValidateReleaseFilesRejectsNonIncreasingVersion(t *testing.T) {
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk
+		require go.temporal.io/api v1.63.4
+	`)
+	versionGo := stripIndentation(`
+		const (
+			SDKVersion = "1.47.0"
+		)
+	`)
+
+	eff := newMockEffects(nil)
+
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
+	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
+
+	err := validateReleaseFiles(eff, eff.tempDir, "1.47.0")
+	if err == nil || !strings.Contains(err.Error(), "must increment") {
+		t.Fatalf("expected version increase error, got %v", err)
+	}
+	testEqual(t, eff.output.String(), "")
+}
+
+func TestValidateReleaseFilesRejectsInvalidChangelog(t *testing.T) {
+	eff := newMockEffects(nil)
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = "module go.temporal.io/sdk\nrequire go.temporal.io/api v1.63.4\n"
+	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.47.0"`
+	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = "## [Unreleased]\n\n## [1.47.0]\n\n## [1.46.0]\n\n## [1.46.0]\n"
+
+	err := validateReleaseFiles(eff, eff.tempDir, "1.48.0")
+	if err == nil || !strings.Contains(err.Error(), `found 2 sections for "1.46.0"`) {
+		t.Fatalf("expected duplicate changelog section error, got %v", err)
+	}
+}
+
+func TestPrepareDraftPRValidatesBeforeCreatingBranch(t *testing.T) {
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk
+		require go.temporal.io/api v1.63.1-0.20260730213819-7f6a96199578
+	`)
+
+	eff := newMockEffects(func(cmd command) (string, error) {
+		if cmd.String() == `git log -1 "--format=%s (%h)"` {
+			return "Initial commit (abc123)\n", nil
+		}
+		return "", nil
+	})
+
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
+
+	err := prepareEverything(eff, "1.48.0", time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC), false)
+	if err == nil || !strings.Contains(err.Error(), "must use an official release") {
+		t.Fatalf("expected API version validation failure, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Worktree preserved at "+eff.tempDir) ||
+		!strings.Contains(err.Error(), "git branch --delete --force chore/release-1.48.0") {
+		t.Fatalf("expected worktree cleanup instructions, got %v", err)
+	}
+	testEqual(t, eff.commands.String(), `
+		/repo: git fetch origin main
+		/repo: git worktree add -b chore/release-1.48.0 `+eff.tempDir+` origin/main
+		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
+	`)
+	testEqual(t, eff.output.String(), `
+		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
+	`)
+}
+
+func TestPrepareDraftPRLeavesWorktreeAfterFailure(t *testing.T) {
+	changelog := stripIndentation(`
+		## [Unreleased]
+
+		### Fixed
+
+		- A fix.
+
+		## [1.47.0] - 2026-07-28
+
+		### Added
+
+		- A previous feature.
+	`)
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk
+		require go.temporal.io/api v1.63.4
+	`)
+	versionGo := stripIndentation(`
+		const (
+			SDKVersion = "1.47.0"
+		)
+	`)
+
+	eff := newMockEffects(func(cmd command) (string, error) {
+		switch cmd.String() {
+		case `git log -1 "--format=%s (%h)"`:
+			return "Initial commit (abc123)\n", nil
+		case `git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go`:
+			return "", errors.New("command failed")
+		}
+		return "", nil
+	})
+
+	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = changelog
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
+	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
+
+	err := prepareEverything(eff, "1.48.0", time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC), false)
+	if err == nil || !strings.Contains(err.Error(), "command failed") {
+		t.Fatalf("expected command failure, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "Worktree preserved at "+eff.tempDir) ||
+		!strings.Contains(err.Error(), "git branch --delete --force chore/release-1.48.0") {
+		t.Fatalf("expected worktree cleanup instructions, got %v", err)
+	}
+	if !strings.HasSuffix(strings.TrimSpace(eff.commands.String()),
+		"git commit -m \"Prepare release 1.48.0\" -- CHANGELOG.md internal/version.go") {
+		t.Fatalf("unexpected final command:\n%s", eff.commands.String())
+	}
+	if strings.Contains(eff.commands.String(), "git worktree remove") {
+		t.Fatal("worktree was removed after failure")
+	}
+	testEqual(t, eff.output.String(), `
+		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
+	`)
+}
+
+func TestPrepareDraftPRLeavesDirectoryIfWorktreeCreationFails(t *testing.T) {
+	var eff *mockEffects
+	eff = newMockEffects(func(cmd command) (string, error) {
+		if cmd.String() == "git worktree add -b chore/release-1.48.0 "+eff.tempDir+" origin/main" {
+			return "", errors.New("command failed")
+		}
+		return "", nil
+	})
+
+	err := prepareEverything(eff, "1.48.0", time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC), false)
+	if err == nil || !strings.Contains(err.Error(), "command failed") {
+		t.Fatalf("expected worktree creation failure, got %v", err)
+	}
+	testEqual(t, eff.commands.String(), `
+		/repo: git fetch origin main
+		/repo: git worktree add -b chore/release-1.48.0 `+eff.tempDir+` origin/main
+	`)
+	testEqual(t, eff.output.String(), "")
+}
+
+func TestPrepareEverything(t *testing.T) {
 	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
 	version := "1.48.0"
 
-	// INPUT
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk
+		require go.temporal.io/api v1.63.4
+	`)
 
-	changelog := `
-# Changelog
+	changelog := stripIndentation(`
+		# Changelog
 
-## [Unreleased]
+		## [Unreleased]
 
-### Fixed
+		### Fixed
 
-- A fix.
-`
-	goMod := `
-module go.temporal.io/sdk
-require go.temporal.io/api v1.63.4
-`
-	versionGo := `
-const (
-	SDKVersion = "1.47.0"
-)
-`
+		- A fix.
 
-	// EXPECTED OUTPUT
+		## [1.47.0] - 2026-07-28
 
-	updatedChangelog := `# Changelog
+		### Added
 
-## [Unreleased]
+		- A previous feature.
+	`)
+	updatedChangelog := stripIndentation(`
+		# Changelog
 
-### Added
+		## [Unreleased]
 
-### Changed
+		### Added
 
-### Deprecated
+		### Changed
 
-### :boom: Breaking Changes
+		### Deprecated
 
-### Fixed
+		### :boom: Breaking Changes
 
-### Security
+		### Fixed
 
-## [1.48.0] - 2026-08-04
+		### Security
 
-### Fixed
+		## [1.48.0] - 2026-08-04
 
-- A fix.
-`
-	updatedVersionGo := `
-const (
-	SDKVersion = "1.48.0"
-)
-`
-	releaseBody := `# Highlights
+		### Fixed
 
-### Fixed
+		- A fix.
 
-- A fix.
-`
-	wantCommands := []recordedCommand{
-		{name: "git", args: []string{"status", "--porcelain"}},
-		{name: "git", args: []string{"fetch", "origin", "main"}},
-		{name: "git", args: []string{"switch", "--create", "chore/release-1.48.0", "origin/main"}},
-		{name: "git", args: []string{"commit", "-m", "Prepare release 1.48.0", "--", "CHANGELOG.md", "internal/version.go"}},
-		{name: "git", args: []string{"push", "--set-upstream", "origin", "chore/release-1.48.0"}},
-		{name: "gh", args: []string{"pr", "create", "--base", "main", "--head", "chore/release-1.48.0", "--title", "Prepare release 1.48.0", "--body", "Prepare Go SDK release 1.48.0."}},
-		{name: "gh", args: []string{"release", "create", "v1.48.0", "--draft", "--title", "v1.48.0", "--notes", releaseBody, "--generate-notes"}},
-	}
+		## [1.47.0] - 2026-07-28
+
+		### Added
+
+		- A previous feature.
+	`)
+
+	versionGo := stripIndentation(`
+		const (
+			SDKVersion = "1.47.0"
+		)
+	`)
+	updatedVersionGo := stripIndentation(`
+		const (
+			SDKVersion = "1.48.0"
+		)
+	`)
+
+	var eff *mockEffects
+	eff = newMockEffects(func(cmd command) (string, error) {
+		switch cmd.String() {
+		case `git log -1 "--format=%s (%h)"`:
+			return "Initial commit (abc123)\n", nil
+		case `git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go`:
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")], updatedChangelog)
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "go.mod")], goMod)
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "internal", "version.go")], updatedVersionGo)
+		case `gh pr create --draft --base main --head chore/release-1.48.0 --title "Prepare release 1.48.0" --body "Prepare Go SDK release 1.48.0."`:
+			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
+		case `gh release create v1.48.0 --draft --title v1.48.0 --notes "# Highlights\n\n### Fixed\n\n- A fix.\n" --generate-notes`:
+			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc\n", nil
+		}
+		return "", nil
+	})
+
+	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = changelog
+	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
+	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
 
 	// TESTS
 
-	if err := os.Mkdir(filepath.Join(root, "internal"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for path, contents := range map[string]string{
-		filepath.Join(root, "CHANGELOG.md"):           changelog,
-		filepath.Join(root, "go.mod"):                 goMod,
-		filepath.Join(root, "internal", "version.go"): versionGo,
-	} {
-		if err := os.WriteFile(path, []byte(contents), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	eff := &testWorld{DryRun: DryRun{Output: &bytes.Buffer{}, TempDir: outputDir}}
-	prURL, releaseURL, err := prepareRelease(eff, root, version, date)
+	err := prepareEverything(eff, version, date, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	gotChangelog, err := os.ReadFile(filepath.Join(outputDir, "CHANGELOG.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(gotChangelog) != updatedChangelog {
-		t.Fatalf("unexpected changelog:\n--- got ---\n%s--- want ---\n%s", gotChangelog, updatedChangelog)
-	}
-	gotGoMod, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := string(gotGoMod); got != goMod {
-		t.Fatalf("unexpected go.mod:\n--- got ---\n%s--- want ---\n%s", got, goMod)
-	}
-	gotVersionGo, err := os.ReadFile(filepath.Join(outputDir, "version.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := string(gotVersionGo); got != updatedVersionGo {
-		t.Fatalf("unexpected version.go:\n--- got ---\n%s--- want ---\n%s", got, updatedVersionGo)
-	}
-	if !reflect.DeepEqual(eff.commands, wantCommands) {
-		t.Fatalf("unexpected commands:\n--- got ---\n%#v\n--- want ---\n%#v", eff.commands, wantCommands)
-	}
-	if prURL != "https://github.com/temporalio/sdk-go/pull/123" {
-		t.Fatalf("unexpected PR link: %q", prURL)
-	}
-	if releaseURL != "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc" {
-		t.Fatalf("unexpected draft release link: %q", releaseURL)
-	}
+	testEqual(t, eff.commands.String(), `
+		/repo: git fetch origin main
+		/repo: git worktree add -b chore/release-1.48.0 `+eff.tempDir+` origin/main
+		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
+		`+eff.tempDir+`: git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
+		`+eff.tempDir+`: git push --set-upstream origin chore/release-1.48.0
+		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-1.48.0 --title "Prepare release 1.48.0" --body "Prepare Go SDK release 1.48.0."
+		`+eff.tempDir+`: gh release create v1.48.0 --draft --title v1.48.0 --notes "# Highlights\n\n### Fixed\n\n- A fix.\n" --generate-notes
+		/repo: git worktree remove --force `+eff.tempDir,
+	)
+	testEqual(t, eff.output.String(), `
+		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
+		PR: https://github.com/temporalio/sdk-go/pull/123
+		Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-abc
+		Cleaned up worktree.
+	`)
 }

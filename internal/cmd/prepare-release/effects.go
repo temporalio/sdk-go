@@ -3,25 +3,36 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 type Effects interface {
+	// printf prints to stdout.
+	printf(format string, args ...any)
+	// repoRoot locates the SDK repository relative to this command's source file.
 	repoRoot() (string, error)
+	// runCommand executes a command with the given arguments and returns its stdout.
 	runCommand(root, name string, args ...string) (string, error)
+	// mkdirTemp creates a temporary directory and returns its path.
+	mkdirTemp(dir, pattern string) (string, error)
+	// readFile reads a file as text.
 	readFile(path string) (string, error)
-	updateFile(path string, update func(string) (string, error)) error
+	// writeFile writes text to a file.
+	writeFile(path, contents string) error
 }
-
-// REAL WORLD
 
 type RealWorld struct{}
 
-// repoRoot locates the SDK repository relative to this command's source file.
+var _ Effects = RealWorld{}
+
+func (RealWorld) printf(format string, args ...any) {
+	fmt.Printf(format, args...)
+}
+
 func (RealWorld) repoRoot() (string, error) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {
@@ -30,89 +41,36 @@ func (RealWorld) repoRoot() (string, error) {
 	return filepath.Clean(filepath.Join(filepath.Dir(file), "../../..")), nil
 }
 
-// runCommand executes a process, forwarding its output while also returning stdout.
-func (RealWorld) runCommand(root, name string, args ...string) (string, error) {
-	fmt.Printf("Running command: %s... ", formatCommand(name, args...))
+func (eff RealWorld) runCommand(root, name string, args ...string) (string, error) {
+	eff.printf("> %s...\n", formatCommand(name, args...))
 	cmd := exec.Command(name, args...)
 	cmd.Dir = root
 	cmd.Stdin = os.Stdin
-	var output bytes.Buffer
-	cmd.Stdout = io.MultiWriter(os.Stdout, &output)
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("%s failed: %w", formatCommand(name, args...), err)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if err != nil {
+		if commandStderr := strings.TrimSpace(stderr.String()); commandStderr != "" {
+			return "", fmt.Errorf("%w\n%s", err, commandStderr)
+		}
+		return "", err
 	}
-	fmt.Printf("done\n")
-	return output.String(), nil
+	return stdout.String(), nil
 }
 
-// readFile reads a file as text for the pure update and validation helpers.
+func (RealWorld) mkdirTemp(dir, pattern string) (string, error) {
+	return os.MkdirTemp(dir, pattern)
+}
+
 func (RealWorld) readFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
-	return string(data), err
-}
-
-// updateFile applies update and writes the resulting text back to path.
-func (eff RealWorld) updateFile(path string, update func(string) (string, error)) error {
-	data, err := eff.readFile(path)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
+		return "", fmt.Errorf("read %s: %w", path, err)
 	}
-	updated, err := update(data)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return nil
+	return string(data), nil
 }
 
-// DRY RUN
-
-type DryRun struct {
-	Output  io.Writer
-	TempDir string
+func (RealWorld) writeFile(path, contents string) error {
+	return os.WriteFile(path, []byte(contents), 0o644)
 }
-
-// repoRoot uses the real repository layout without mutating the filesystem.
-func (DryRun) repoRoot() (string, error) {
-	return RealWorld{}.repoRoot()
-}
-
-func (eff DryRun) print(name string, args ...string) error {
-	_, err := fmt.Fprintln(eff.Output, formatCommand(name, args...))
-	return err
-}
-
-// runCommand prints the runCommand instead of executing it.
-func (eff DryRun) runCommand(_ string, name string, args ...string) (string, error) {
-	return "", eff.print(name, args...)
-}
-
-// readFile reads input needed to validate what a dry run would update.
-func (DryRun) readFile(path string) (string, error) {
-	data, err := os.ReadFile(path)
-	return string(data), err
-}
-
-// updateFile writes the proposed contents to the dry-run directory.
-func (eff DryRun) updateFile(path string, update func(string) (string, error)) error {
-	data, err := eff.readFile(path)
-	if err != nil {
-		return fmt.Errorf("read %s: %w", path, err)
-	}
-	updated, err := update(data)
-	if err != nil {
-		return err
-	}
-	outputPath := filepath.Join(eff.TempDir, filepath.Base(path))
-	if err := os.WriteFile(outputPath, []byte(updated), 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", outputPath, err)
-	}
-	_, err = fmt.Fprintf(eff.Output, "write %s\n", outputPath)
-	return err
-}
-
-var _ Effects = RealWorld{}
-var _ Effects = DryRun{}
