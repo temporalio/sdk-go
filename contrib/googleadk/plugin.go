@@ -2,8 +2,13 @@ package googleadk
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 
+	"go.opentelemetry.io/otel"
+	otelloglobal "go.opentelemetry.io/otel/log/global"
+
+	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 )
@@ -31,6 +36,10 @@ import (
 // handle them. For the workflow/activity test environments use NewActivities +
 // Register instead: test environments construct no real worker, so plugins do
 // not run there.
+//
+// At worker start and workflow replayer creation the plugin also logs a
+// best-effort warning when a global OpenTelemetry provider is recognizably not
+// replay-safe — see "Telemetry and replay" in the README.
 func NewPlugin(cfg Config) (worker.Plugin, error) {
 	acts, err := NewActivities(cfg)
 	if err != nil {
@@ -46,8 +55,23 @@ func NewPlugin(cfg Config) (worker.Plugin, error) {
 	// before/after without the last one falling through to Close.
 	var mu sync.Mutex
 	replayerKeys := make(map[string]int)
+	// The plugin hooks expose no worker logger, so the warning goes through
+	// the process-default slog. The globals are read at hook time, not at
+	// NewPlugin, so providers installed between plugin and worker/replayer
+	// construction are still seen.
+	warnOnGlobals := func() {
+		warnOnNonReplaySafeTelemetryProviders(log.NewStructuredLogger(slog.Default()),
+			otel.GetTracerProvider(), otelloglobal.GetLoggerProvider(), otel.GetMeterProvider())
+	}
 	return temporal.NewSimplePlugin(temporal.SimplePluginOptions{
 		Name: "go.temporal.io/sdk/contrib/googleadk",
+		// Once per replayer construction — the replayer-side counterpart of
+		// the worker-start warning; RunContextBefore would repeat it per
+		// replayed workflow.
+		ConfigureWorkflowReplayer: func(context.Context, worker.PluginConfigureWorkflowReplayerOptions) error {
+			warnOnGlobals()
+			return nil
+		},
 		RunContextBefore: func(_ context.Context, o temporal.SimplePluginRunContextBeforeOptions) error {
 			if o.WorkflowReplayer {
 				// Activity registration is a no-op on a replayer; just record
@@ -57,6 +81,7 @@ func NewPlugin(cfg Config) (worker.Plugin, error) {
 				mu.Unlock()
 				return nil
 			}
+			warnOnGlobals()
 			acts.registerAll(o.Registry)
 			return nil
 		},

@@ -320,8 +320,96 @@ closes cached MCP toolsets at worker stop — no interceptors, no data converter
 so it composes with other entries in `worker.Options.Plugins` (e.g. interceptor-
 or converter-based plugins like `sdk-go/contrib/opentelemetry`) without conflict.
 On the ADK side, add other ADK plugins to `runner.PluginConfig.Plugins` as usual.
-ADK emits its own OpenTelemetry spans; register your tracing interceptor on the
-worker as usual.
+ADK also emits its own OpenTelemetry telemetry from inside the workflow — see the
+next section before wiring exporters.
+
+## Telemetry and replay
+
+ADK records its telemetry through the **OpenTelemetry process globals** from code
+that runs **inside the workflow**: at this adk-go pin that means spans (with
+token usage as `gen_ai.usage.*` span attributes and span durations as latency)
+and `gen_ai.*` log events; OTel **metrics** are pending upstream
+([adk-go#479](https://github.com/google/adk-go/issues/479)). Workflow code
+re-executes on every history **replay** — worker restarts, redeploys, sticky-cache
+eviction — and each replay re-reads the recorded Activity results from history and
+re-emits identical telemetry, so observed counts inflate by one full copy per
+replay, without bound over a workflow's lifetime. Temporal's replay-safe telemetry
+(`workflow.GetMetricsHandler`, replay-gated tracing interceptors) never applies,
+because ADK bypasses it via the OTel globals it captured at package init.
+
+Wrap your real providers in this package's replay-safe wrappers and install them
+as the globals. The wrappers drop any emission whose context carries a replaying
+workflow (recovered from the context bridged by `googleadk.NewContext`) and
+delegate everything else — worker, client, and Activity telemetry — unchanged:
+
+```go
+import (
+	"go.opentelemetry.io/otel"
+	otellogglobal "go.opentelemetry.io/otel/log/global"
+
+	"go.temporal.io/sdk/contrib/googleadk"
+)
+
+func main() {
+	// Must be the FIRST global providers set in the process: ADK captures the
+	// global proxy tracer/logger at package init, and the proxy binds its
+	// delegate on the first Set call only — a provider installed earlier
+	// permanently bypasses the wrappers.
+	otel.SetTracerProvider(googleadk.NewReplaySafeTracerProvider(myTracerProvider))
+	otellogglobal.SetLoggerProvider(googleadk.NewReplaySafeLoggerProvider(myLoggerProvider))
+	otel.SetMeterProvider(googleadk.NewReplaySafeMeterProvider(myMeterProvider))
+
+	// ... Temporal client, worker, googleadk.NewPlugin wiring as usual ...
+}
+```
+
+`googleadk.NewPlugin` logs a best-effort warning at worker start and at
+workflow replayer creation when a global provider is a raw OTel SDK provider
+installed unwrapped.
+Only that positively-recognized case warns; wrapped, no-op, never-set, and
+custom providers stay silent. The check is best-effort — the OTel global proxy
+binds its delegate on the first `Set*Provider` call permanently, so it cannot
+see through a process that sets a global more than once — but a raw SDK
+provider installed once and never wrapped, the realistic misconfiguration, is
+recognized.
+
+With the wrappers installed, replays add nothing. Point telemetry (log events,
+metric recordings) is recorded on first execution, **at-least-once** rather
+than exactly-once: a workflow task that fails or times out after emitting
+re-executes live and records again — the same semantics and caveat as
+`workflow.GetMetricsHandler`.
+
+Spans carry a weaker contract, because ADK holds each span open across the
+model call's Activity await and the wrappers make a span's replayed
+re-creation non-recording:
+
+- **Sticky-cache eviction (graceful):** a span still open at eviction is
+  force-ended by ADK and exported exactly once, with whatever attributes it
+  had at that point. A `generate_content` span evicted mid-model-call loses
+  its `gen_ai.usage.*` token attributes — ADK attaches them only when the
+  model call returns, and by then the span's replay re-creation is
+  non-recording — and child spans started after the eviction lose their
+  parent linkage. A tiny sticky cache is the worst case: with
+  `worker.SetStickyWorkflowCacheSize(0)` (or `WORKFLOW_CACHE_SIZE=0` in this
+  repo's tests) every model call straddles an eviction, so span counts and
+  point telemetry stay exact but every `generate_content` span loses its
+  token attributes. Without the wrappers the same truncated span is exported
+  *plus* one duplicate per replay.
+- **Worker shutdown, crash, or redeploy:** spans open at that moment are lost
+  entirely — nothing force-ends them at worker stop or process exit, and their
+  re-creation during the catch-up replay on the next worker is non-recording.
+  Spans are therefore **at-most-once** across worker restarts, the same tradeoff
+  Temporal's replay-gated tracing interceptors make. (Without the wrappers a
+  restart's catch-up replay re-records such a span live, recovering it at the
+  price of one duplicate copy of every other signal per replay.) If token
+  usage must survive restarts, derive it from Activity-side telemetry, which
+  the wrappers never gate.
+
+`NewReplaySafeMeterProvider` is forward-looking: it gates
+synchronous instrument recordings (observable instruments pass through, since
+their callbacks never run under a workflow context), covering both your own
+workflow-side recordings through the global meter today and ADK's metrics once
+adk-go#479 lands.
 
 ## Supported & not-yet-supported
 

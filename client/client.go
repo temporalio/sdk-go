@@ -242,6 +242,12 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
+	// CancelWorkflowOptions contains parameters for [Client.CancelWorkflowWithOptions].
+	CancelWorkflowOptions = internal.CancelWorkflowOptions
+
+	// TerminateWorkflowOptions contains parameters for [Client.TerminateWorkflowWithOptions].
+	TerminateWorkflowOptions = internal.TerminateWorkflowOptions
+
 	// CompleteActivityByIDOptions provides options for CompleteActivityByIDWithOptions.
 	//
 	// ActivityType, WorkflowType, and TaskQueue values are not validated by the SDK.
@@ -1210,6 +1216,11 @@ type (
 		//  - serviceerror.Unavailable
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
+		// CancelWorkflowWithOptions requests cancellation of a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error
+
 		// TerminateWorkflow terminates a workflow execution. Terminate stops a workflow execution immediately without
 		// letting the workflow to perform any cleanup
 		// workflowID is required, other parameters are optional.
@@ -1221,6 +1232,11 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
+
+		// TerminateWorkflowWithOptions terminates a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		//  - workflow ID of the workflow.

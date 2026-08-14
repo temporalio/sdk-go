@@ -169,6 +169,11 @@ type (
 		//  - serviceerror.Unavailable
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
+		// CancelWorkflowWithOptions requests cancellation of a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error
+
 		// TerminateWorkflow terminates a workflow execution.
 		// workflowID is required, other parameters are optional.
 		//  - workflow ID of the workflow.
@@ -179,6 +184,11 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
+
+		// TerminateWorkflowWithOptions terminates a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		//  - workflow ID of the workflow.
@@ -970,6 +980,20 @@ type (
 		// NOTE: Experimental
 		WorkerHeartbeatInterval time.Duration
 
+		// SdkName overrides the SDK name reported in worker heartbeats. When empty,
+		// the built-in SDKName ("temporal-go") is used. This is intended for SDKs that
+		// embed the Go SDK to run another language (e.g. roadrunner-temporal for PHP),
+		// so heartbeats report the wrapping SDK instead of temporal-go.
+		//
+		// NOTE: Experimental
+		SdkName string
+
+		// SdkVersion overrides the SDK version reported in worker heartbeats. When empty,
+		// the built-in SDKVersion is used. See SdkName.
+		//
+		// NOTE: Experimental
+		SdkVersion string
+
 		// ExternalStorage configures external payload storage for this client.
 		// When set, payloads that exceed ExternalStorage.PayloadSizeThreshold
 		// are offloaded to an external store (e.g. S3, GCS) by the configured
@@ -1072,6 +1096,53 @@ type (
 		// be created as false. This is set to true when server capabilities are
 		// fetched.
 		excludeInternalFromRetry *atomic.Bool
+	}
+
+	// CancelWorkflowOptions contains parameters for cancelling a workflow execution.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.CancelWorkflowOptions]
+	CancelWorkflowOptions struct {
+		// WorkflowID is the ID of the workflow execution to cancel.
+		WorkflowID string
+
+		// RunID is the run ID of the workflow execution to cancel. If empty, the
+		// currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
+		RunID string
+
+		// FirstExecutionRunID is the run ID of the first execution in the workflow
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
+		FirstExecutionRunID string
+
+		// Reason is the reason for requesting cancellation of the workflow execution.
+		Reason string
+	}
+
+	// TerminateWorkflowOptions contains parameters for terminating a workflow execution.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.TerminateWorkflowOptions]
+	TerminateWorkflowOptions struct {
+		// WorkflowID is the ID of the workflow execution to terminate.
+		WorkflowID string
+
+		// RunID is the run ID of the workflow execution to terminate. If empty,
+		// the currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
+		RunID string
+
+		// FirstExecutionRunID is the run ID of the first execution in the workflow
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
+		FirstExecutionRunID string
+
+		// Reason is the reason for terminating the workflow execution.
+		Reason string
+
+		// Details are additional values attached to the termination event.
+		Details []interface{}
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
@@ -1623,6 +1694,16 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		panic(fmt.Sprintf("invalid PayloadLimits options: %v", err))
 	}
 
+	// Fall back to the built-in SDK name/version when not overridden.
+	sdkName := options.SdkName
+	if sdkName == "" {
+		sdkName = SDKName
+	}
+	sdkVersion := options.SdkVersion
+	if sdkVersion == "" {
+		sdkVersion = SDKVersion
+	}
+
 	client := &WorkflowClient{
 		workflowService:          workflowServiceClient,
 		conn:                     conn,
@@ -1644,6 +1725,8 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
 		workerGroupingKey:       uuid.NewString(),
+		sdkName:                 sdkName,
+		sdkVersion:              sdkVersion,
 		storageParams:           storageParams,
 		storageDriverTypes:      storageDriverTypes,
 		payloadWarningLimits:    payloadWarningLimits,
