@@ -6,8 +6,7 @@ import (
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
-
+	sdkactivity "go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -126,13 +125,6 @@ func tracerResetDuringSpan(ctx workflow.Context) error {
 	return nil
 }
 
-func tracerStartCallerOptionsWorkflow(ctx workflow.Context) (int, error) {
-	opts := make([]trace.SpanStartOption, 0, 1)
-	_, span := Tracer("test").Start(ctx, "span", opts...)
-	span.End()
-	return len(opts), nil
-}
-
 func tracerWorkflowTaskRetry(ctx workflow.Context) error {
 	_, span := Tracer("test").Start(ctx, "workflow-task-retry-span")
 	span.End()
@@ -150,6 +142,19 @@ func localActivity(ctx context.Context) error {
 	_, span := otel.Tracer("localActivity").Start(ctx, "local-activity-span")
 	defer span.End()
 	return nil
+}
+
+// taskTokenCh stands in for the external system the activity hands its task token to.
+var taskTokenCh = make(chan []byte, 1)
+
+func asyncCompletionActivity(ctx context.Context) error {
+	taskTokenCh <- sdkactivity.GetInfo(ctx).TaskToken
+	return sdkactivity.ErrResultPending
+}
+
+func asyncCompletionWorkflow(ctx workflow.Context) error {
+	ao := workflow.ActivityOptions{StartToCloseTimeout: 15 * time.Second}
+	return workflow.ExecuteActivity(workflow.WithActivityOptions(ctx, ao), asyncCompletionActivity).Get(ctx, nil)
 }
 
 func handleComprehensiveQuery(ctx workflow.Context) (string, error) {
@@ -286,6 +291,10 @@ func standaloneActivity(context.Context) error {
 
 // standaloneWorkflow exercises workflow spans and scheduled starts.
 func standaloneWorkflow(workflow.Context) error {
+	return nil
+}
+
+func unservedWorkflow(workflow.Context) error {
 	return nil
 }
 

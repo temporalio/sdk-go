@@ -22,12 +22,15 @@ import (
 )
 
 const (
+	ctxTimeout                = 30 * time.Second
 	integrationTaskQueue      = "opentelemetry-v2-integration"
 	scheduleID                = "otel-schedule"
 	comprehensiveWorkflowID   = "comprehensive-outbound"
 	comprehensiveUpdateID     = "comprehensive-update"
 	updateWithStartWorkflowID = "otel-update-with-start"
 	updateWithStartUpdateID   = "comprehensive-update-with-start"
+	unservedTaskQueue         = "opentelemetry-v2-unserved"
+	terminateReason           = "otel-terminate-reason"
 )
 
 // nexusOp starts nexusHandlerWorkflow.
@@ -93,7 +96,9 @@ func (s *integrationTestSuite) runScenario(pluginOpts PluginOptions) []sdktrace.
 	w.RegisterWorkflow(standaloneWorkflow)
 	w.RegisterWorkflow(signalWithStartTarget)
 	w.RegisterWorkflow(updateTargetWorkflow)
+	w.RegisterWorkflow(asyncCompletionWorkflow)
 	w.RegisterActivity(activity)
+	w.RegisterActivity(asyncCompletionActivity)
 	w.RegisterActivity(localActivity)
 	w.RegisterActivity(standaloneActivity)
 
@@ -151,6 +156,40 @@ func (s *integrationTestSuite) runScenario(pluginOpts PluginOptions) []sdktrace.
 	s.Require().NoError(err)
 	s.Require().NoError(standaloneRun.Get(ctx, nil))
 
+	asyncRun, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:        "otel-async-completion-" + uuid.NewString(),
+		TaskQueue: integrationTaskQueue,
+	}, asyncCompletionWorkflow)
+	s.Require().NoError(err)
+
+	tokenCtx, cancelToken := context.WithTimeout(ctx, ctxTimeout)
+	defer cancelToken()
+	var taskToken []byte
+	select {
+	case taskToken = <-taskTokenCh:
+	case <-tokenCtx.Done():
+		s.Require().Fail("timed out waiting for activity task token")
+	}
+	s.Require().NoError(c.CompleteActivity(ctx, taskToken, nil, nil))
+	s.Require().NoError(asyncRun.Get(ctx, nil))
+
+	cancelTarget, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:        "otel-cancel-target-" + uuid.NewString(),
+		TaskQueue: unservedTaskQueue,
+	}, unservedWorkflow)
+	s.Require().NoError(err)
+	s.Require().NoError(c.CancelWorkflow(ctx, cancelTarget.GetID(), ""))
+
+	terminateTarget, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:        "otel-terminate-target-" + uuid.NewString(),
+		TaskQueue: unservedTaskQueue,
+	}, unservedWorkflow)
+	s.Require().NoError(err)
+	s.Require().NoError(c.TerminateWorkflow(ctx, terminateTarget.GetID(), "", terminateReason))
+
+	_, err = c.DescribeWorkflow(ctx, comprehensiveWorkflowID, "")
+	s.Require().NoError(err)
+
 	scheduleHandle, err := c.ScheduleClient().Create(ctx, client.ScheduleOptions{
 		ID:   scheduleID,
 		Spec: client.ScheduleSpec{},
@@ -205,7 +244,7 @@ func (s *integrationTestSuite) requireUpdateIDs(spans []sdktrace.ReadOnlySpan) {
 		workflowID string
 		updateID   string
 	}{
-		{"UpdateWorkflow:testUpdate", comprehensiveWorkflowID, comprehensiveUpdateID},
+		{"StartWorkflowUpdate:testUpdate", comprehensiveWorkflowID, comprehensiveUpdateID},
 		{"UpdateWithStartWorkflow:doUpdate", updateWithStartWorkflowID, updateWithStartUpdateID},
 	} {
 		span := s.requireSpanNamed(spans, expected.spanName)
@@ -217,6 +256,13 @@ func (s *integrationTestSuite) requireUpdateIDs(spans []sdktrace.ReadOnlySpan) {
 func (s *integrationTestSuite) requireContinueAsNewErrorNotRecorded(spans []sdktrace.ReadOnlySpan) {
 	s.T().Helper()
 	runSpan := s.requireSpanNamed(spans, "RunWorkflow:comprehensiveWorkflow")
+	s.Require().Equal(codes.Unset, runSpan.Status().Code)
+	s.Require().Empty(runSpan.Events())
+}
+
+func (s *integrationTestSuite) requireResultPendingErrorNotRecorded(spans []sdktrace.ReadOnlySpan) {
+	s.T().Helper()
+	runSpan := s.requireSpanNamed(spans, "RunActivity:asyncCompletionActivity")
 	s.Require().Equal(codes.Unset, runSpan.Status().Code)
 	s.Require().Empty(runSpan.Events())
 }
@@ -259,13 +305,15 @@ var fullTree = []string{
 	"            RunWorkflow:nexusCancelHandlerWorkflow",
 	"              nexus-cancel-handler-span",
 	"        RunCancelNexusOperationHandler:" + nexusServiceName + "/nexusCancelHandlerWorkflow",
+	// Cancels the backing nexusCancelHandlerWorkflow, not the unserved target.
+	"          CancelWorkflow",
 	// Continue-as-new links the outbound, continued-run, and user spans.
 	"      ContinueAsNew:comprehensiveWorkflow",
 	"        RunWorkflow:comprehensiveWorkflow",
 	"          comprehensive-outbound-workflow-span",
 	"      comprehensive-outbound-workflow-span",
 	// Update user spans follow their current inbound operation.
-	"  UpdateWorkflow:testUpdate",
+	"  StartWorkflowUpdate:testUpdate",
 	"    ValidateUpdate:testUpdate",
 	"      validate-update-span",
 	"        validate-update-span-child",
@@ -282,6 +330,16 @@ var fullTree = []string{
 	"    RunActivity:standaloneActivity",
 	"  StartWorkflow:standaloneWorkflow",
 	"    RunWorkflow:standaloneWorkflow",
+	"  StartWorkflow:asyncCompletionWorkflow",
+	"    RunWorkflow:asyncCompletionWorkflow",
+	"      StartActivity:asyncCompletionActivity",
+	"        RunActivity:asyncCompletionActivity",
+	// Cancel, terminate, and describe target the unserved workflows.
+	"  StartWorkflow:unservedWorkflow",
+	"  CancelWorkflow",
+	"  StartWorkflow:unservedWorkflow",
+	"  TerminateWorkflow",
+	"  DescribeWorkflow",
 	"  CreateSchedule:" + scheduleID,
 	// Signal-with-start links client, worker, signal, and user spans.
 	"  SignalWithStartWorkflow:signalWithStartTarget",
@@ -339,6 +397,8 @@ var disabledTree = []string{
 	"            RunWorkflow:nexusCancelHandlerWorkflow",
 	"              nexus-cancel-handler-span",
 	"        RunCancelNexusOperationHandler:" + nexusServiceName + "/nexusCancelHandlerWorkflow",
+	// Cancels the backing nexusCancelHandlerWorkflow, not the unserved target.
+	"          CancelWorkflow",
 	"      ContinueAsNew:comprehensiveWorkflow",
 	"        RunWorkflow:comprehensiveWorkflow",
 	"          comprehensive-outbound-workflow-span",
@@ -348,6 +408,16 @@ var disabledTree = []string{
 	"    RunActivity:standaloneActivity",
 	"  StartWorkflow:standaloneWorkflow",
 	"    RunWorkflow:standaloneWorkflow",
+	"  StartWorkflow:asyncCompletionWorkflow",
+	"    RunWorkflow:asyncCompletionWorkflow",
+	"      StartActivity:asyncCompletionActivity",
+	"        RunActivity:asyncCompletionActivity",
+	// Cancel, terminate, and describe target the unserved workflows.
+	"  StartWorkflow:unservedWorkflow",
+	"  CancelWorkflow",
+	"  StartWorkflow:unservedWorkflow",
+	"  TerminateWorkflow",
+	"  DescribeWorkflow",
 	"  CreateSchedule:" + scheduleID,
 	// SignalWithStartWorkflow remains.
 	"  SignalWithStartWorkflow:signalWithStartTarget",
@@ -362,6 +432,7 @@ func (s *integrationTestSuite) TestComprehensive() {
 		s.requireUniqueSpanIDs(spans)
 		s.requireUpdateIDs(spans)
 		s.requireContinueAsNewErrorNotRecorded(spans)
+		s.requireResultPendingErrorNotRecorded(spans)
 	})
 
 	s.Run("all-disabled", func() {
@@ -376,5 +447,6 @@ func (s *integrationTestSuite) TestComprehensive() {
 		s.Require().Equal(disabledTree, s.formatSpanTree(spans))
 		s.requireUniqueSpanIDs(spans)
 		s.requireContinueAsNewErrorNotRecorded(spans)
+		s.requireResultPendingErrorNotRecorded(spans)
 	})
 }

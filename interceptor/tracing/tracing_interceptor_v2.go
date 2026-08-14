@@ -18,10 +18,14 @@ import (
 )
 
 const (
-	workflowIDTagKey = "temporalWorkflowID"
-	runIDTagKey      = "temporalRunID"
-	activityIDTagKey = "temporalActivityID"
-	updateIDTagKey   = "temporalUpdateID"
+	workflowIDTagKey      = "temporalWorkflowID"
+	runIDTagKey           = "temporalRunID"
+	activityIDTagKey      = "temporalActivityID"
+	updateIDTagKey        = "temporalUpdateID"
+	terminateReasonTagKey = "temporalTerminateReason"
+	nexusServiceTagKey    = "temporalNexusService"
+	nexusOperationTagKey  = "temporalNexusOperation"
+	nexusEndpointTagKey   = "temporalNexusEndpoint"
 )
 
 // tracerCommon contains context-independent tracing operations.
@@ -84,6 +88,9 @@ func (BaseTracer) GetLogger(logger log.Logger, ref TracerSpanRef) log.Logger {
 func (BaseTracer) SpanName(options *TracerStartSpanOptions) string {
 	if options.Operation == "" {
 		return options.Name
+	}
+	if options.Name == "" {
+		return options.Operation
 	}
 	return fmt.Sprintf("%s:%s", options.Operation, options.Name)
 }
@@ -328,7 +335,7 @@ func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
 		return t.Next.UpdateWorkflow(ctx, in)
 	}
 	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
-		Operation: "UpdateWorkflow",
+		Operation: "StartWorkflowUpdate",
 		Name:      in.UpdateName,
 		Tags: map[string]string{
 			workflowIDTagKey: in.WorkflowID,
@@ -380,6 +387,75 @@ func (t *tracingClientOutboundInterceptor) ExecuteActivity(
 	return t.Next.ExecuteActivity(ctx, in)
 }
 
+func (t *tracingClientOutboundInterceptor) ExecuteNexusOperation(
+	ctx context.Context,
+	in *interceptor.ClientExecuteNexusOperationInput,
+) (handle client.NexusOperationHandle, err error) {
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
+		Operation: "StartNexusOperation",
+		Name:      in.Service + "/" + in.OperationType,
+		Tags:      nexusTags(in.Endpoint, in.Service, in.OperationType),
+	}, t.root.nexusHeaderWriter(t.root.tracer, in.NexusHeader))
+	if err != nil {
+		return nil, err
+	}
+	defer endSpan(&err)
+
+	return t.Next.ExecuteNexusOperation(ctx, in)
+}
+
+func (t *tracingClientOutboundInterceptor) CancelWorkflow(
+	ctx context.Context,
+	in *interceptor.ClientCancelWorkflowInput,
+) (err error) {
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
+		Operation: "CancelWorkflow",
+		Tags:      workflowExecutionTags(in.WorkflowID, in.RunID),
+	}, nil)
+	if err != nil {
+		return err
+	}
+	defer endSpan(&err)
+
+	return t.Next.CancelWorkflow(ctx, in)
+}
+
+func (t *tracingClientOutboundInterceptor) TerminateWorkflow(
+	ctx context.Context,
+	in *interceptor.ClientTerminateWorkflowInput,
+) (err error) {
+	tags := workflowExecutionTags(in.WorkflowID, in.RunID)
+	if in.Reason != "" {
+		tags[terminateReasonTagKey] = in.Reason
+	}
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
+		Operation: "TerminateWorkflow",
+		Tags:      tags,
+	}, nil)
+	if err != nil {
+		return err
+	}
+	defer endSpan(&err)
+
+	return t.Next.TerminateWorkflow(ctx, in)
+}
+
+func (t *tracingClientOutboundInterceptor) DescribeWorkflow(
+	ctx context.Context,
+	in *interceptor.ClientDescribeWorkflowInput,
+) (out *interceptor.ClientDescribeWorkflowOutput, err error) {
+	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
+		Operation: "DescribeWorkflow",
+		Tags:      workflowExecutionTags(in.WorkflowID, in.RunID),
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer endSpan(&err)
+
+	return t.Next.DescribeWorkflow(ctx, in)
+}
+
 type tracingActivityOutboundInterceptor struct {
 	interceptor.ActivityOutboundInterceptorBase
 	root *tracingInterceptor
@@ -422,22 +498,14 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 	if err != nil {
 		return nil, err
 	}
-	defer endSpan(&err)
 
-	return t.Next.ExecuteActivity(ctx, in)
-}
-
-func workflowTags(info *workflow.Info) map[string]string {
-	return map[string]string{
-		workflowIDTagKey: info.WorkflowExecution.ID,
-		runIDTagKey:      info.WorkflowExecution.RunID,
+	var spanErr error
+	defer endSpan(&spanErr)
+	ret, err = t.Next.ExecuteActivity(ctx, in)
+	if err != activity.ErrResultPending {
+		spanErr = err
 	}
-}
-
-func workflowTagsWithUpdate(info *workflow.Info, updateID string) map[string]string {
-	tags := workflowTags(info)
-	tags[updateIDTagKey] = updateID
-	return tags
+	return ret, err
 }
 
 type tracingWorkflowInboundInterceptor struct {
@@ -690,7 +758,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.
 	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "StartNexusOperation",
 		Name:      input.Client.Service() + "/" + operationName,
-		Tags:      workflowTags(info),
+		Tags:      workflowTagsWithNexus(info, input.Client.Endpoint(), input.Client.Service(), operationName),
 	}, t.root.nexusHeaderWriter(t.root.workflowTracer, input.NexusHeader))
 	if err != nil {
 		return nexusOperationFuture{workflowFutureFromErr(ctx, err)}
@@ -729,12 +797,34 @@ type tracingNexusOperationInboundInterceptor struct {
 	root *tracingInterceptor
 }
 
+func (t *tracingNexusOperationInboundInterceptor) Init(
+	ctx context.Context,
+	outbound interceptor.NexusOperationOutboundInterceptor,
+) error {
+	i := &tracingNexusOperationOutboundInterceptor{root: t.root}
+	i.Next = outbound
+	return t.Next.Init(ctx, i)
+}
+
+type tracingNexusOperationOutboundInterceptor struct {
+	interceptor.NexusOperationOutboundInterceptorBase
+	root *tracingInterceptor
+}
+
+func (t *tracingNexusOperationOutboundInterceptor) GetLogger(ctx context.Context) log.Logger {
+	if span := t.root.tracer.SpanFromContext(ctx); span != nil {
+		return t.root.tracer.GetLogger(t.Next.GetLogger(ctx), span)
+	}
+	return t.Next.GetLogger(ctx)
+}
+
 func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Context, input interceptor.NexusCancelOperationInput) (err error) {
 	info := nexus.ExtractHandlerInfo(ctx)
 	ctx, endSpan, err := startInboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation:  "RunCancelNexusOperationHandler",
 		Name:       info.Service + "/" + info.Operation,
 		DependedOn: true,
+		Tags:       nexusTags("", info.Service, info.Operation),
 	}, t.root.nexusHeaderReader(t.root.tracer, input.Options.Header))
 	if err != nil {
 		return err
@@ -750,6 +840,7 @@ func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Con
 		Operation:  "RunStartNexusOperationHandler",
 		Name:       info.Service + "/" + info.Operation,
 		DependedOn: true,
+		Tags:       nexusTags("", info.Service, info.Operation),
 	}, t.root.nexusHeaderReader(t.root.tracer, input.Options.Header))
 	if err != nil {
 		return nil, err
@@ -839,6 +930,45 @@ func (t *tracingInterceptor) readSpanFromNexusHeader(tracer tracerCommon, header
 	return tracer.UnmarshalSpan(header)
 }
 
+func nexusTags(endpoint, service, operation string) map[string]string {
+	tags := map[string]string{
+		nexusServiceTagKey:   service,
+		nexusOperationTagKey: operation,
+	}
+	if endpoint != "" {
+		tags[nexusEndpointTagKey] = endpoint
+	}
+	return tags
+}
+
+func workflowExecutionTags(workflowID, runID string) map[string]string {
+	tags := map[string]string{workflowIDTagKey: workflowID}
+	if runID != "" {
+		tags[runIDTagKey] = runID
+	}
+	return tags
+}
+
+func workflowTags(info *workflow.Info) map[string]string {
+	return workflowExecutionTags(info.WorkflowExecution.ID, info.WorkflowExecution.RunID)
+}
+
+func workflowTagsWithUpdate(info *workflow.Info, updateID string) map[string]string {
+	tags := workflowTags(info)
+	tags[updateIDTagKey] = updateID
+	return tags
+}
+
+func workflowTagsWithNexus(info *workflow.Info, endpoint, service, operation string) map[string]string {
+	tags := workflowTags(info)
+	tags[nexusServiceTagKey] = service
+	tags[nexusOperationTagKey] = operation
+	if endpoint != "" {
+		tags[nexusEndpointTagKey] = endpoint
+	}
+	return tags
+}
+
 func startInboundSpan(
 	t Tracer,
 	ctx context.Context,
@@ -886,9 +1016,12 @@ func startOutboundSpan(
 
 	span := t.CreateSpan(ctx, options)
 
-	if err := headerWriter(span); err != nil {
-		finishSpan(span)(&err)
-		return ctx, nil, err
+	if headerWriter != nil {
+		err := headerWriter(span)
+		if err != nil {
+			finishSpan(span)(&err)
+			return ctx, nil, err
+		}
 	}
 
 	return t.ContextWithSpan(ctx, span), finishSpan(span), nil
