@@ -673,12 +673,19 @@ func (d *syncWorkflowDefinition) Close() {
 // This way rootCtx can be used to pass values to the coroutine code.
 func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context), allBlockedCallback func() bool) (*dispatcherImpl, Context) {
 	env := getWorkflowEnvironment(rootCtx)
+	deadlockDetector := newDeadlockDetector()
 
 	result := &dispatcherImpl{
 		interceptor:        interceptor.outboundInterceptor,
 		logger:             env.GetLogger(),
-		deadlockDetector:   newDeadlockDetector(),
+		deadlockDetector:   deadlockDetector,
 		allBlockedCallback: allBlockedCallback,
+	}
+	if env, ok := env.(*workflowEnvironmentImpl); ok {
+		env.logger = &loggerWithoutDeadlockDetection{
+			underlying: env.logger,
+			detector:   deadlockDetector,
+		}
 	}
 	interceptor.dispatcher = result
 	ctxWithState := result.interceptor.Go(rootCtx, "root", root)

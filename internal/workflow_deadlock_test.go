@@ -42,6 +42,34 @@ func TestDeadlockDetector(t *testing.T) {
 	})
 }
 
+func TestLoggerWithoutDeadlockDetection(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const timeout = 500 * time.Millisecond
+		detector := newDeadlockDetector()
+		ticker := detector.begin(timeout)
+		defer ticker.end()
+		logger := &loggerWithoutDeadlockDetection{
+			underlying: slowLogger{delay: timeout + 100*time.Millisecond},
+			detector:   detector,
+		}
+
+		logger.Warn("slow log")
+		select {
+		case <-ticker.reached():
+			t.Fatal("logger triggered workflow deadlock detection")
+		default:
+		}
+
+		time.Sleep(timeout)
+		synctest.Wait()
+		select {
+		case <-ticker.reached():
+		default:
+			t.Fatal("deadlock timeout was not restored after logging")
+		}
+	})
+}
+
 func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
 	runWorkflow := func(t *testing.T, conv converter.DataConverter) error {
 		var suite WorkflowTestSuite
@@ -101,6 +129,15 @@ func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
 type slowToPayloadsConverter struct {
 	converter.DataConverter
 }
+
+type slowLogger struct {
+	delay time.Duration
+}
+
+func (l slowLogger) Debug(string, ...interface{}) { time.Sleep(l.delay) }
+func (l slowLogger) Info(string, ...interface{})  { time.Sleep(l.delay) }
+func (l slowLogger) Warn(string, ...interface{})  { time.Sleep(l.delay) }
+func (l slowLogger) Error(string, ...interface{}) { time.Sleep(l.delay) }
 
 func (s *slowToPayloadsConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
 	time.Sleep(payloadConverterTime)

@@ -7,6 +7,7 @@ import (
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/log"
 )
 
 type deadlockDetector struct {
@@ -23,6 +24,47 @@ type deadlockTicker struct {
 	paused              bool
 	expectedExpiration  time.Time
 	pausedWithRemaining time.Duration
+}
+
+type loggerWithoutDeadlockDetection struct {
+	underlying log.Logger
+	detector   *deadlockDetector
+}
+
+func (l *loggerWithoutDeadlockDetection) Debug(msg string, keyvals ...interface{}) {
+	l.call(func() { l.underlying.Debug(msg, keyvals...) })
+}
+
+func (l *loggerWithoutDeadlockDetection) Info(msg string, keyvals ...interface{}) {
+	l.call(func() { l.underlying.Info(msg, keyvals...) })
+}
+
+func (l *loggerWithoutDeadlockDetection) Warn(msg string, keyvals ...interface{}) {
+	l.call(func() { l.underlying.Warn(msg, keyvals...) })
+}
+
+func (l *loggerWithoutDeadlockDetection) Error(msg string, keyvals ...interface{}) {
+	l.call(func() { l.underlying.Error(msg, keyvals...) })
+}
+
+func (l *loggerWithoutDeadlockDetection) call(f func()) {
+	l.detector.pause()
+	defer l.detector.resume()
+	f()
+}
+
+func (l *loggerWithoutDeadlockDetection) With(keyvals ...interface{}) log.Logger {
+	return &loggerWithoutDeadlockDetection{
+		underlying: log.With(l.underlying, keyvals...),
+		detector:   l.detector,
+	}
+}
+
+func (l *loggerWithoutDeadlockDetection) WithCallerSkip(depth int) log.Logger {
+	return &loggerWithoutDeadlockDetection{
+		underlying: log.Skip(l.underlying, depth),
+		detector:   l.detector,
+	}
 }
 
 // PauseDeadlockDetector pauses the deadlock detector for all coroutines.

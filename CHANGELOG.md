@@ -35,6 +35,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Prevent slow workflow logger output from being misidentified as a workflow deadlock.
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
   command is pending.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
