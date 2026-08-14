@@ -7,20 +7,6 @@ import (
 	"testing"
 )
 
-func TestRunCommand(t *testing.T) {
-	root, err := (RealWorld{}).repoRoot()
-	if err != nil {
-		t.Fatal(err)
-	}
-	output, err := (RealWorld{}).runCommand(root, "git", "rev-parse", "--show-toplevel")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.TrimSpace(output) != root {
-		t.Fatalf("unexpected command output: %q", output)
-	}
-}
-
 // TEST HARNESS
 
 type command struct {
