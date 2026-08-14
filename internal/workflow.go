@@ -2639,6 +2639,15 @@ func (wc *workflowEnvironmentInterceptor) IsReplaying(ctx Context) bool {
 	return wc.env.IsReplaying()
 }
 
+// IsReadOnly returns whether ctx is running where workflow state cannot be mutated.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/workflow.IsReadOnly]
+func IsReadOnly(ctx Context) bool {
+	return getCoroutineState(ctx).dispatcher.getIsReadOnly()
+}
+
 // HasLastCompletionResult checks if there is completion result from previous runs.
 // This is used in combination with cron schedule. A workflow can be started with an optional cron schedule.
 // If a cron workflow wants to pass some data to next schedule, it can return any data and that data will become

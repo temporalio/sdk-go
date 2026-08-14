@@ -631,10 +631,18 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			}
 
 			// Invoke
-			result, err := envInterceptor.inboundInterceptor.HandleQuery(
-				rootCtx,
-				&HandleQueryInput{QueryType: queryType, Args: args},
-			)
+			result, err := func() (interface{}, error) {
+				state := getCoroutineState(rootCtx)
+
+				prev := state.dispatcher.getIsReadOnly()
+				state.dispatcher.setIsReadOnly(true)
+				defer state.dispatcher.setIsReadOnly(prev)
+
+				return envInterceptor.inboundInterceptor.HandleQuery(
+					rootCtx,
+					&HandleQueryInput{QueryType: queryType, Args: args},
+				)
+			}()
 
 			// Encode the result
 			var serializedResult *commonpb.Payloads
@@ -726,6 +734,14 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 // For troubleshooting stack pretty printing only.
 // Set to true to see full stack trace that includes framework methods.
 const disableCleanStackTraces = false
+
+func getCoroutineState(ctx Context) *coroutineState {
+	s := ctx.Value(coroutinesContextKey)
+	if s == nil {
+		panic("getCoroutineState: not workflow context")
+	}
+	return s.(*coroutineState)
+}
 
 func getState(ctx Context) *coroutineState {
 	s := ctx.Value(coroutinesContextKey)
@@ -1036,19 +1052,18 @@ func (s *coroutineState) initialYield(stackDepth int, status string) {
 	s.blocked.Swap(false)
 }
 
-// isPanicking reports whether the current goroutine is executing during panic unwinding. It checks
-// for runtime.gopanic on the call stack via runtime.Callers().
+// isPanicking reports whether the current goroutine is executing during panic
+// unwinding. It checks for runtime.gopanic on the call stack using
+// runtime.Callers() and runtime.FuncForPC().
 func isPanicking() bool {
 	var pcs [20]uintptr
 	n := runtime.Callers(1, pcs[:])
-	frames := runtime.CallersFrames(pcs[:n])
-	for {
-		frame, more := frames.Next()
-		if frame.Function == "runtime.gopanic" {
+	for i := range n {
+		// Subtract 1 from the PC to get the call site rather than the
+		// return address, which ensures FuncForPC resolves the correct
+		// function even at function boundaries.
+		if fn := runtime.FuncForPC(pcs[i] - 1); fn != nil && fn.Name() == "runtime.gopanic" {
 			return true
-		}
-		if !more {
-			break
 		}
 	}
 	return false

@@ -1,4 +1,4 @@
-module go.temporal.io/sdk/contrib/aws/s3driver
+module go.temporal.io/sdk/contrib/gcp/gcsdriver
 
 go 1.25.4
 

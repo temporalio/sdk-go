@@ -11,6 +11,14 @@ or Security.
 
 ## [Unreleased]
 
+### Added
+
+- `NewReplaySafeTracerProvider`, `NewReplaySafeLoggerProvider`, and
+  `NewReplaySafeMeterProvider`: wrap the global OpenTelemetry providers so ADK
+  telemetry emitted from workflow code is not re-emitted on history replay. See
+  "Telemetry and replay" in the README.
+- `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.
+
 ## [0.2.0] - 2026-07-22
 
 ### Added

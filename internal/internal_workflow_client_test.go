@@ -362,6 +362,107 @@ func (s *workflowRunSuite) TearDownTest() {
 	s.mockCtrl.Finish()
 }
 
+func (s *workflowRunSuite) TestCancelWorkflowWithOptions() {
+	firstExecutionRunID := "first execution run ID"
+	reason := "test reason"
+	s.workflowServiceClient.EXPECT().
+		RequestCancelWorkflowExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.RequestCancelWorkflowExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.RequestCancelWorkflowExecutionResponse, error) {
+			s.Equal(DefaultNamespace, request.Namespace)
+			s.Equal(workflowID, request.GetWorkflowExecution().GetWorkflowId())
+			s.Equal(runID, request.GetWorkflowExecution().GetRunId())
+			s.Equal(identity, request.Identity)
+			s.NotEmpty(request.RequestId)
+			s.Equal(firstExecutionRunID, request.FirstExecutionRunId)
+			s.Equal(reason, request.Reason)
+			return &workflowservice.RequestCancelWorkflowExecutionResponse{}, nil
+		})
+
+	err := s.workflowClient.CancelWorkflowWithOptions(context.Background(), CancelWorkflowOptions{
+		WorkflowID:          workflowID,
+		RunID:               runID,
+		FirstExecutionRunID: firstExecutionRunID,
+		Reason:              reason,
+	})
+	s.NoError(err)
+}
+
+func (s *workflowRunSuite) TestCancelWorkflowLegacyMethod() {
+	s.workflowServiceClient.EXPECT().
+		RequestCancelWorkflowExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.RequestCancelWorkflowExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.RequestCancelWorkflowExecutionResponse, error) {
+			s.Equal(workflowID, request.GetWorkflowExecution().GetWorkflowId())
+			s.Equal(runID, request.GetWorkflowExecution().GetRunId())
+			s.Empty(request.FirstExecutionRunId)
+			s.Empty(request.Reason)
+			return &workflowservice.RequestCancelWorkflowExecutionResponse{}, nil
+		})
+
+	s.NoError(s.workflowClient.CancelWorkflow(context.Background(), workflowID, runID))
+}
+
+func (s *workflowRunSuite) TestTerminateWorkflowWithOptions() {
+	firstExecutionRunID := "first execution run ID"
+	reason := "test reason"
+	details := []interface{}{42, "test detail"}
+	expectedDetails, err := s.dataConverter.ToPayloads(details...)
+	s.NoError(err)
+
+	s.workflowServiceClient.EXPECT().
+		TerminateWorkflowExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.TerminateWorkflowExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.TerminateWorkflowExecutionResponse, error) {
+			s.Equal(DefaultNamespace, request.Namespace)
+			s.Equal(workflowID, request.GetWorkflowExecution().GetWorkflowId())
+			s.Equal(runID, request.GetWorkflowExecution().GetRunId())
+			s.Equal(identity, request.Identity)
+			s.Equal(reason, request.Reason)
+			s.True(proto.Equal(expectedDetails, request.Details))
+			s.Equal(firstExecutionRunID, request.FirstExecutionRunId)
+			return &workflowservice.TerminateWorkflowExecutionResponse{}, nil
+		})
+
+	err = s.workflowClient.TerminateWorkflowWithOptions(context.Background(), TerminateWorkflowOptions{
+		WorkflowID:          workflowID,
+		RunID:               runID,
+		FirstExecutionRunID: firstExecutionRunID,
+		Reason:              reason,
+		Details:             details,
+	})
+	s.NoError(err)
+}
+
+func (s *workflowRunSuite) TestTerminateWorkflowLegacyMethod() {
+	s.workflowServiceClient.EXPECT().
+		TerminateWorkflowExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.TerminateWorkflowExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.TerminateWorkflowExecutionResponse, error) {
+			s.Equal(workflowID, request.GetWorkflowExecution().GetWorkflowId())
+			s.Equal(runID, request.GetWorkflowExecution().GetRunId())
+			s.Equal("test reason", request.Reason)
+			s.Empty(request.FirstExecutionRunId)
+			return &workflowservice.TerminateWorkflowExecutionResponse{}, nil
+		})
+
+	s.NoError(s.workflowClient.TerminateWorkflow(
+		context.Background(), workflowID, runID, "test reason", "test detail",
+	))
+}
+
 func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
 	createResponse := &workflowservice.StartWorkflowExecutionResponse{
 		RunId: runID,
@@ -1006,6 +1107,7 @@ func (s *workflowRunSuite) TestGetWorkflowNoRunId() {
 		workflowID,
 		"",
 	)
+	s.Equal(runID, workflowRunNoRunID.GetRunID())
 	s.Equal(runID, workflowRunNoRunID.GetRunID())
 }
 

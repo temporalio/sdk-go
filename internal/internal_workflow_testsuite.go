@@ -233,6 +233,7 @@ type (
 		workflowDef    WorkflowDefinition
 		changeVersions map[string]Version
 		openSessions   map[string]*SessionInfo
+		randoms        map[string]*workflowRandomStream
 
 		// mutableSideEffect holds the last recorded value per MutableSideEffect id
 		// so the test environment can honor the user-supplied equals function the
@@ -337,6 +338,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 		changeVersions:    make(map[string]Version),
 		openSessions:      make(map[string]*SessionInfo),
+		randoms:           make(map[string]*workflowRandomStream),
 		mutableSideEffect: make(map[string]*commonpb.Payloads),
 
 		doneChannel:                 make(chan struct{}),
@@ -494,7 +496,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 	childEnv.header = params.Header
 	childEnv.workflowInfo.Attempt = params.attempt
 	childEnv.workflowInfo.WorkflowExecution.ID = params.WorkflowID
-	childEnv.workflowInfo.WorkflowExecution.RunID = params.WorkflowID + "_RunID"
+	childEnv.workflowInfo.WorkflowExecution.RunID = getStringID(env.nextID()) + "_RunID"
 	childEnv.workflowInfo.Namespace = params.Namespace
 	childEnv.workflowInfo.TaskQueueName = params.TaskQueueName
 	childEnv.workflowInfo.WorkflowExecutionTimeout = params.WorkflowExecutionTimeout
@@ -739,6 +741,10 @@ func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 
 func (env *testWorkflowEnvironmentImpl) GenerateSequence() int64 {
 	return env.nextID()
+}
+
+func (env *testWorkflowEnvironmentImpl) GetRandomStream(name string) WorkflowRandomStream {
+	return getRandomStream(env.randoms, env.workflowInfo.currentRunID, name)
 }
 
 func (env *testWorkflowEnvironmentImpl) QueueUpdate(name string, f func()) {
