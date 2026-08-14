@@ -26,6 +26,10 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
+  but decoded through the workflow serialization context, so a context-aware `DataConverter` or
+  `PayloadCodec` saw mismatched contexts for local activity results.
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
   command is pending.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only

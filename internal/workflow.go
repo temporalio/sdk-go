@@ -1288,6 +1288,12 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		Attempt:                     1, // Attempts always start at one
 	}
 
+	// Decode the local activity result with the same activity serialization
+	// context it was encoded with, instead of the workflow context.
+	if df, ok := future.(*decodeFutureImpl); ok {
+		df.dataConverter = params.DataConverter
+	}
+
 	Go(ctx, func(ctx Context) {
 		for {
 			f := wc.scheduleLocalActivity(ctx, params)

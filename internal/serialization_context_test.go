@@ -13,6 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 // serCtxSigningCodec adds a context-derived signature on Encode and verifies on Decode.
@@ -268,6 +270,55 @@ func (s *SerializationContextTestSuite) TestLocalActivityRoundTrip_CapturingDC()
 		}
 	}
 	s.True(foundLocal, "should have captured ActivitySerializationContext with IsLocal=true")
+}
+
+func (s *SerializationContextTestSuite) TestLocalActivityResult_EncodedWithLocalActivityContext() {
+	plainWorkerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    "default-test-namespace",
+		WorkflowID:   "wf-local-activity",
+		WorkflowType: "TestWorkflow",
+		ActivityType: "myLocalActivity",
+		TaskQueue:    "default-test-taskqueue",
+		IsLocal:      true,
+	}
+	localActivityDC := converter.WithDataConverterSerializationContext(plainWorkerDC, actCtx)
+
+	activityFn := func(_ context.Context, input string) (string, error) {
+		return input, nil
+	}
+
+	params := ExecuteLocalActivityParams{
+		ExecuteLocalActivityOptions: ExecuteLocalActivityOptions{StartToCloseTimeout: time.Minute},
+		ActivityFn:                  activityFn,
+		ActivityType:                actCtx.ActivityType,
+		InputArgs:                   []interface{}{"hello"},
+		WorkflowInfo: &WorkflowInfo{
+			Namespace:         actCtx.Namespace,
+			WorkflowExecution: WorkflowExecution{ID: actCtx.WorkflowID, RunID: "run-id"},
+			WorkflowType:      WorkflowType{Name: actCtx.WorkflowType},
+			TaskQueueName:     actCtx.TaskQueue,
+		},
+		DataConverter: localActivityDC,
+		Attempt:       1,
+		ScheduledTime: time.Now(),
+	}
+
+	task := newLocalActivityTask(params, func(*LocalActivityResultWrapper) {}, "1")
+	lath := &localActivityTaskHandler{
+		backgroundContext: context.Background(),
+		metricsHandler:    metrics.NopHandler,
+		logger:            ilog.NewNopLogger(),
+	}
+
+	result := lath.executeLocalActivityTask(task)
+	s.NoError(result.err)
+	s.NotNil(result.result)
+
+	var decoded string
+	s.NoError(localActivityDC.FromPayloads(result.result, &decoded))
+	s.Equal("hello", decoded)
 }
 
 func (s *SerializationContextTestSuite) TestWorkflowInput_RequiresContext() {

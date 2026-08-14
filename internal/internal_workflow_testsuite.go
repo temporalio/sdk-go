@@ -1833,7 +1833,6 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		backgroundContext:  env.workerOptions.BackgroundActivityContext,
 		metricsHandler:     env.metricsHandler,
 		logger:             env.logger,
-		dataConverter:      env.dataConverter,
 		contextPropagators: env.contextPropagators,
 		interceptors:       env.registry.interceptors,
 		workerStopChannel:  env.workerStopChannel,
@@ -2019,7 +2018,11 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 			env.onLocalActivityCanceledListener(activityInfo)
 		}
 	} else if env.onLocalActivityCompletedListener != nil {
-		env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, env.GetDataConverter()), nil)
+		dataConverter := result.task.params.DataConverter
+		if dataConverter == nil {
+			dataConverter = env.GetDataConverter()
+		}
+		env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, dataConverter), nil)
 	}
 	env.startWorkflowTask()
 }
