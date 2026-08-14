@@ -2,6 +2,7 @@ package test_test
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -175,22 +176,18 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	var err error
 	trafficController := test.NewSimpleTrafficController()
-	ts.client, err = client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ContextPropagators: []workflow.ContextPropagator{
+	ts.client, err = ts.newDefaultClient(func(options *client.Options) {
+		options.WorkerHeartbeatInterval = -1
+		options.ContextPropagators = []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
-		},
-		MetricsHandler:          metricsHandler,
-		TrafficController:       trafficController,
-		Interceptors:            clientInterceptors,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
-		WorkerHeartbeatInterval: -1,
-		PayloadLimits: client.PayloadLimitOptions{
+		}
+		options.MetricsHandler = metricsHandler
+		options.TrafficController = trafficController
+		options.Interceptors = clientInterceptors
+		options.PayloadLimits = client.PayloadLimitOptions{
 			PayloadSizeWarning: 128,
-		},
+		}
 	})
 	ts.NoError(err)
 
@@ -962,6 +959,72 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 	ts.Error(err)
 	var canceledErr *temporal.CanceledError
 	ts.True(errors.As(err, &canceledErr))
+}
+
+func (ts *IntegrationTestSuite) TestCancellationWithOptions() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	workflowID := "test-cancellation-with-options"
+	reason := "test cancellation"
+	run, err := ts.client.ExecuteWorkflow(
+		ctx, ts.startWorkflowOptions(workflowID), ts.workflows.Basic,
+	)
+	ts.NoError(err)
+
+	err = ts.client.CancelWorkflowWithOptions(ctx, client.CancelWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: uuid.NewString(),
+		Reason:              reason,
+	})
+	ts.Error(err)
+
+	ts.NoError(ts.client.CancelWorkflowWithOptions(ctx, client.CancelWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: run.GetRunID(),
+		Reason:              reason,
+	}))
+	var canceledErr *temporal.CanceledError
+	ts.ErrorAs(run.Get(ctx, nil), &canceledErr)
+
+	history := ts.client.GetWorkflowHistory(
+		ctx, workflowID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
+	)
+	found := false
+	for history.HasNext() {
+		event, err := history.Next()
+		ts.NoError(err)
+		if attributes := event.GetWorkflowExecutionCancelRequestedEventAttributes(); attributes != nil {
+			ts.Equal(reason, attributes.GetCause())
+			found = true
+		}
+	}
+	ts.True(found, "workflow history did not contain a cancellation-requested event")
+}
+
+func (ts *IntegrationTestSuite) TestTerminationWithOptions() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	workflowID := "test-termination-with-options"
+	run, err := ts.client.ExecuteWorkflow(
+		ctx, ts.startWorkflowOptions(workflowID), ts.workflows.Basic,
+	)
+	ts.NoError(err)
+
+	err = ts.client.TerminateWorkflowWithOptions(ctx, client.TerminateWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: uuid.NewString(),
+		Reason:              "test termination",
+	})
+	ts.Error(err)
+
+	ts.NoError(ts.client.TerminateWorkflowWithOptions(ctx, client.TerminateWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: run.GetRunID(),
+		Reason:              "test termination",
+		Details:             []interface{}{"test detail"},
+	}))
+	var terminatedErr *temporal.TerminatedError
+	ts.ErrorAs(run.Get(ctx, nil), &terminatedErr)
 }
 
 func (ts *IntegrationTestSuite) TestCascadingCancellation() {
@@ -5226,30 +5289,25 @@ func (ts *IntegrationTestSuite) testWorkerFatalError(useWorkerRun bool) {
 	// Allow the worker to fail faster so the test does not take 2 minutes.
 	internal.SetRetryLongPollGracePeriod(5 * time.Second)
 	// Make a new client that will fail a poll with a namespace not found
-	c, err := client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		ConnectionOptions: client.ConnectionOptions{
-			TLS: ts.config.TLS,
-			DialOptions: []grpc.DialOption{
-				grpc.WithUnaryInterceptor(func(
-					ctx context.Context,
-					method string,
-					req interface{},
-					reply interface{},
-					cc *grpc.ClientConn,
-					invoker grpc.UnaryInvoker,
-					opts ...grpc.CallOption,
-				) error {
-					if method == "/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue" {
-						// We sleep a bit to let all internal workers start
-						time.Sleep(1 * time.Second)
-						return serviceerror.NewNamespaceNotFound(ts.config.Namespace)
-					}
-					return invoker(ctx, method, req, reply, cc, opts...)
-				}),
-			},
-		},
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.DialOptions = []grpc.DialOption{
+			grpc.WithUnaryInterceptor(func(
+				ctx context.Context,
+				method string,
+				req interface{},
+				reply interface{},
+				cc *grpc.ClientConn,
+				invoker grpc.UnaryInvoker,
+				opts ...grpc.CallOption,
+			) error {
+				if method == "/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue" {
+					// We sleep a bit to let all internal workers start
+					time.Sleep(1 * time.Second)
+					return serviceerror.NewNamespaceNotFound(ts.config.Namespace)
+				}
+				return invoker(ctx, method, req, reply, cc, opts...)
+			}),
+		}
 	})
 	ts.NoError(err)
 	defer c.Close()
@@ -7149,13 +7207,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 	seriesName := "deploy-test-" + uuid.NewString()
 
-	c, err := client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		ConnectionOptions: client.ConnectionOptions{
-			TLS: ts.config.TLS,
-		},
-	})
+	c, err := ts.newDefaultClient()
 	ts.NoError(err)
 	defer c.Close()
 
@@ -7187,29 +7239,24 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 
 func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
 	nonfirstLAAttemptCounts := make([]uint32, 0)
-	c, err := client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		ConnectionOptions: client.ConnectionOptions{
-			TLS: ts.config.TLS,
-			DialOptions: []grpc.DialOption{
-				grpc.WithUnaryInterceptor(func(
-					ctx context.Context,
-					method string,
-					req interface{},
-					reply interface{},
-					cc *grpc.ClientConn,
-					invoker grpc.UnaryInvoker,
-					opts ...grpc.CallOption,
-				) error {
-					if method == "/temporal.api.workflowservice.v1.WorkflowService/RespondWorkflowTaskCompleted" {
-						asReq := req.(*workflowservice.RespondWorkflowTaskCompletedRequest)
-						nonfirstLAAttemptCounts = append(nonfirstLAAttemptCounts, asReq.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
-					}
-					return invoker(ctx, method, req, reply, cc, opts...)
-				}),
-			},
-		},
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.DialOptions = []grpc.DialOption{
+			grpc.WithUnaryInterceptor(func(
+				ctx context.Context,
+				method string,
+				req interface{},
+				reply interface{},
+				cc *grpc.ClientConn,
+				invoker grpc.UnaryInvoker,
+				opts ...grpc.CallOption,
+			) error {
+				if method == "/temporal.api.workflowservice.v1.WorkflowService/RespondWorkflowTaskCompleted" {
+					asReq := req.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+					nonfirstLAAttemptCounts = append(nonfirstLAAttemptCounts, asReq.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
+				}
+				return invoker(ctx, method, req, reply, cc, opts...)
+			}),
+		}
 	})
 	ts.NoError(err)
 	defer c.Close()
@@ -7897,12 +7944,8 @@ func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
 		converter.NewJSONPayloadConverter(),
 	)
 	zlibConv := converter.NewCodecDataConverter(dc, converter.NewZlibCodec(converter.ZlibCodecOptions{}))
-	c, err := client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-		DataConverter:     zlibConv,
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = zlibConv
 	})
 	defer c.Close()
 	ts.NoError(err)
@@ -7998,12 +8041,9 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 
 	// Configure client/worker with logger, capture logs
 	logger := ilog.NewMemoryLogger()
-	c, err := client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            logger,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-		MetricsHandler:    ts.metricsHandler,
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Logger = logger
+		options.MetricsHandler = ts.metricsHandler
 	})
 	ts.NoError(err)
 	defer c.Close()
@@ -8819,7 +8859,12 @@ func (c *clientPluginForTest) NewClient(
 	if c.failNew {
 		return fmt.Errorf("intentional client error")
 	}
-	// Confirm our interceptor was set
+	if options.ClientOptions.HostPort != c.ts.config.ServiceAddr {
+		return fmt.Errorf("plugin did not configure host port: got %q, want %q", options.ClientOptions.HostPort, c.ts.config.ServiceAddr)
+	}
+	if options.ClientOptions.ConnectionOptions.TLS != c.ts.config.TLS {
+		return fmt.Errorf("plugin did not configure TLS")
+	}
 	c.ts.Len(options.ClientOptions.Interceptors, 1)
 	return next(ctx, options)
 }
@@ -8830,12 +8875,19 @@ func (ts *IntegrationTestSuite) TestClientPlugin() {
 
 	// Failing dial first
 	plugin := &clientPluginForTest{ts: ts, failNew: true}
-	_, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
+	_, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Plugins = []client.Plugin{plugin}
+	})
 	ts.ErrorContains(err, "intentional client error")
 
 	// Now succeed dial and run simple workflow
 	plugin = &clientPluginForTest{ts: ts}
-	cl, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
+	cl, err := ts.newDefaultClient(func(options *client.Options) {
+		// Set garbage values to ensure plugin overwrites them
+		options.HostPort = "127.0.0.1:1"
+		options.ConnectionOptions.TLS = &tls.Config{ServerName: "plugin-must-overwrite.invalid"}
+		options.Plugins = []client.Plugin{plugin}
+	})
 	ts.NoError(err)
 	defer cl.Close()
 	wrk := worker.New(cl, ts.taskQueueName, worker.Options{})
@@ -9109,7 +9161,9 @@ func (ts *IntegrationTestSuite) TestSimplePlugin() {
 	ts.NoError(err)
 
 	// Just run a simple workflow and stop worker
-	cl, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
+	cl, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Plugins = []client.Plugin{plugin}
+	})
 	ts.NoError(err)
 	defer cl.Close()
 	wrk := worker.New(cl, ts.taskQueueName, worker.Options{})
@@ -9159,7 +9213,9 @@ func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
 	// Just run a simple workflow with a do-nothing plugin and make sure it works as normal
 	plugin, err := temporal.NewSimplePlugin(temporal.SimplePluginOptions{Name: "simple-plugin"})
 	ts.NoError(err)
-	cl, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
+	cl, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Plugins = []client.Plugin{plugin}
+	})
 	ts.NoError(err)
 	defer cl.Close()
 	wrk := worker.New(cl, ts.taskQueueName, worker.Options{})
@@ -9490,11 +9546,8 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 		poison:        poison,
 	}
 
-	cl, err := client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		DataConverter:     dc,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	cl, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = dc
 	})
 	ts.NoError(err)
 	defer cl.Close()
@@ -9614,12 +9667,9 @@ func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
-	client, err := client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            logger,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-		MetricsHandler:    ts.metricsHandler,
+	client, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Logger = logger
+		options.MetricsHandler = ts.metricsHandler
 	})
 	ts.NoError(err)
 	defer client.Close()

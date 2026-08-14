@@ -1413,7 +1413,7 @@ func (ts *WorkerDeploymentTestSuite) TestDeleteDeployment() {
 	worker1.Stop()
 	ts.client.Close()
 
-	client2, err := ts.newClient()
+	client2, err := ts.newIntegrationTestClient()
 	ts.NoError(err)
 	ts.client = client2
 

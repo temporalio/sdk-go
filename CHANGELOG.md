@@ -23,6 +23,7 @@ to docs, or any other relevant information.
 ### Added
 
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+- Added `client.Client.CancelWorkflowWithOptions` and `client.Client.TerminateWorkflowWithOptions` to target a workflow execution chain by its first execution run ID. Cancellation options can also specify a reason.
 - Added experimental `workflow.GetRandomStream` for named deterministic pseudorandom values in workflows.
 - Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
   path.
@@ -44,7 +45,7 @@ to docs, or any other relevant information.
   updates the recorded value when it changes, matching the real worker. Previously it ignored
   equals and returned a freshly computed value on every call.
 
-## [1.46.0] - 2026-07-28
+## [1.47.0] - 2026-07-28
 
 ### Added
 
