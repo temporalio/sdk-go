@@ -62,7 +62,11 @@ func TestPayloadSerializerDeserializeErrors(t *testing.T) {
 				require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
 				require.Equal(t, "invalid operation input", handlerErr.Message)
 				require.ErrorIs(t, handlerErr.Cause, nonRetryableValidationErr)
-				require.ErrorContains(t, handlerErr.Cause, "invalid payload")
+				var appErr *ApplicationError
+				require.ErrorAs(t, handlerErr.Cause, &appErr)
+				require.Equal(t, payloadValidationErrorType, appErr.Type())
+				require.True(t, appErr.NonRetryable())
+				require.ErrorContains(t, appErr, "invalid payload")
 			},
 		},
 		{

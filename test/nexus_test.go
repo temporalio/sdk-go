@@ -1248,7 +1248,9 @@ func TestNexusOperationInputDeserializationError(t *testing.T) {
 		require.ErrorAs(t, err, &handlerErr)
 		// Non-retryable payload validation errors indicate invalid input.
 		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
-		// Only the cause crosses the wire, so the handler error message is asserted in the unit tests.
+		// This client surfaces the cause as a nexus.FailureError rather than an ApplicationError, and
+		// nexusHandlerErrorToProto only serializes the cause, so the handler error message does not
+		// cross the wire either. Both are asserted in the unit tests instead.
 		require.ErrorContains(t, handlerErr.Cause, "deserialization payload validation error")
 	})
 
