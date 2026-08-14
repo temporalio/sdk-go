@@ -1189,6 +1189,18 @@ func (dc inputDeserializationErrorDataConverter) FromPayload(payload *common.Pay
 				"FakeDeserializationError",
 				temporal.ApplicationErrorOptions{NonRetryable: true},
 			)
+		case "payload-validation-error":
+			return temporal.NewApplicationErrorWithOptions(
+				"deserialization payload validation error",
+				"PayloadValidationError",
+				temporal.ApplicationErrorOptions{NonRetryable: true},
+			)
+		case "retryable-payload-validation-error":
+			return temporal.NewApplicationErrorWithOptions(
+				"deserialization retryable payload validation error",
+				"PayloadValidationError",
+				temporal.ApplicationErrorOptions{},
+			)
 		case "handler-error":
 			// Not using NOT_FOUND, the test Nexus client retries 404s while the endpoint propagates.
 			return &nexus.HandlerError{
@@ -1228,6 +1240,25 @@ func TestNexusOperationInputDeserializationError(t *testing.T) {
 			require.Equal(t, nexus.HandlerErrorRetryBehaviorNonRetryable, handlerErr.RetryBehavior)
 		}
 		require.ErrorContains(t, handlerErr.Cause, "deserialization application error")
+	})
+
+	t.Run("payload-validation-error", func(t *testing.T) {
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "payload-validation-error", nexus.StartOperationOptions{})
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		// Non-retryable payload validation errors indicate invalid input.
+		require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
+		// Only the cause crosses the wire, so the handler error message is asserted in the unit tests.
+		require.ErrorContains(t, handlerErr.Cause, "deserialization payload validation error")
+	})
+
+	t.Run("retryable-payload-validation-error", func(t *testing.T) {
+		_, err := nexusclient.ExecuteOperation(ctx, nc, syncOp, "retryable-payload-validation-error", nexus.StartOperationOptions{})
+		var handlerErr *nexus.HandlerError
+		require.ErrorAs(t, err, &handlerErr)
+		// Only non-retryable payload validation errors are translated to bad requests.
+		require.Equal(t, nexus.HandlerErrorTypeInternal, handlerErr.Type)
+		require.ErrorContains(t, handlerErr.Cause, "deserialization retryable payload validation error")
 	})
 
 	t.Run("handler-error", func(t *testing.T) {
