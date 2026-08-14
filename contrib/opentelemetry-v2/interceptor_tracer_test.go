@@ -267,15 +267,12 @@ func (s *integrationTestSuite) requireResultPendingErrorNotRecorded(spans []sdkt
 	s.Require().Empty(runSpan.Events())
 }
 
-// fullTree is the span tree with all tracing enabled.
+// fullTree is the span tree with Temporal spans enabled.
 var fullTree = []string{
-	// Client operations share one root span.
 	"client-span",
-	// The external workflow links client, worker, and user spans.
 	"  StartWorkflow:externalWorkflowWithSignal",
 	"    RunWorkflow:externalWorkflowWithSignal",
 	"      external-workflow-with-signal-span",
-	// Headers link outbound spans to downstream inbound spans.
 	"  StartWorkflow:comprehensiveWorkflow",
 	"    RunWorkflow:comprehensiveWorkflow",
 	"      query-handler-span",
@@ -298,7 +295,6 @@ var fullTree = []string{
 	"          StartWorkflow:nexusHandlerWorkflow",
 	"            RunWorkflow:nexusHandlerWorkflow",
 	"              workflow-with-nexus-handler-span",
-	// Start and cancellation handlers share the outbound operation parent.
 	"      StartNexusOperation:" + nexusServiceName + "/nexusCancelHandlerWorkflow",
 	"        RunStartNexusOperationHandler:" + nexusServiceName + "/nexusCancelHandlerWorkflow",
 	"          StartWorkflow:nexusCancelHandlerWorkflow",
@@ -357,18 +353,10 @@ var fullTree = []string{
 	"    HandleSignal:updateSignal",
 }
 
-// disabledTree omits signal, query, and update spans. Their user spans become
-// roots, while SignalWithStartWorkflow remains.
-var disabledTree = []string{
-	// Re-rooted after update parents are dropped.
-	"validate-update-span",
-	"  validate-update-span-child",
-	"update-handler-span",
-	"  update-handler-child-span",
-	// Re-rooted after UpdateWithStartWorkflow is dropped.
-	"update start",
-	"RunWorkflow:updateTargetWorkflow",
-	"  update-target-workflow-span",
+// queryUpdateSignalDisabledTree is fullTree without the signal, query, and
+// update Temporal spans. Everything below a removed span reattaches to the
+// nearest surviving ancestor.
+var queryUpdateSignalDisabledTree = []string{
 	"client-span",
 	"  StartWorkflow:externalWorkflowWithSignal",
 	"    RunWorkflow:externalWorkflowWithSignal",
@@ -399,10 +387,16 @@ var disabledTree = []string{
 	"        RunCancelNexusOperationHandler:" + nexusServiceName + "/nexusCancelHandlerWorkflow",
 	// Cancels the backing nexusCancelHandlerWorkflow, not the unserved target.
 	"          CancelWorkflow",
+	// Continue-as-new links the outbound, continued-run, and user spans.
 	"      ContinueAsNew:comprehensiveWorkflow",
 	"        RunWorkflow:comprehensiveWorkflow",
 	"          comprehensive-outbound-workflow-span",
 	"      comprehensive-outbound-workflow-span",
+	// Update user spans reattach to the client span.
+	"  validate-update-span",
+	"    validate-update-span-child",
+	"  update-handler-span",
+	"    update-handler-child-span",
 	// Headers link standalone StartActivity and RunActivity spans.
 	"  StartActivity:standaloneActivity",
 	"    RunActivity:standaloneActivity",
@@ -419,15 +413,42 @@ var disabledTree = []string{
 	"  TerminateWorkflow",
 	"  DescribeWorkflow",
 	"  CreateSchedule:" + scheduleID,
-	// SignalWithStartWorkflow remains.
-	"  SignalWithStartWorkflow:signalWithStartTarget",
-	"    RunWorkflow:signalWithStartTarget",
-	"      signal-with-start-target-span",
+	// Signal-with-start and update-with-start still propagate to the workflows
+	// they start.
+	"  RunWorkflow:signalWithStartTarget",
+	"    signal-with-start-target-span",
+	"  update start",
+	"  RunWorkflow:updateTargetWorkflow",
+	"    update-target-workflow-span",
+}
+
+// noTemporalSpansTree is fullTree without any Temporal spans. Only user spans
+// remain, and each reattaches to the nearest surviving ancestor.
+var noTemporalSpansTree = []string{
+	"client-span",
+	"  validate-update-span",
+	"    validate-update-span-child",
+	"  update-handler-span",
+	"    update-handler-child-span",
+	"  query-handler-span",
+	"    query-handler-child-span",
+	"  activity-span",
+	"  local-activity-span",
+	"  child-workflow-with-signal-span",
+	"  external-workflow-with-signal-span",
+	"  workflow-with-nexus-handler-span",
+	"  nexus-cancel-handler-span",
+	// Continue-as-new emits the user span once per run.
+	"  comprehensive-outbound-workflow-span",
+	"  comprehensive-outbound-workflow-span",
+	"  signal-with-start-target-span",
+	"  update start",
+	"  update-target-workflow-span",
 }
 
 func (s *integrationTestSuite) TestComprehensive() {
-	s.Run("full", func() {
-		spans := s.runScenario(PluginOptions{})
+	s.Run("with-temporal-spans", func() {
+		spans := s.runScenario(PluginOptions{TracerOptions: tracing.TracerOptions{AddTemporalSpans: true}})
 		s.Require().Equal(fullTree, s.formatSpanTree(spans))
 		s.requireUniqueSpanIDs(spans)
 		s.requireUpdateIDs(spans)
@@ -435,18 +456,24 @@ func (s *integrationTestSuite) TestComprehensive() {
 		s.requireResultPendingErrorNotRecorded(spans)
 	})
 
-	s.Run("all-disabled", func() {
+	s.Run("with-temporal-spans-query-update-signal-disabled", func() {
 		spans := s.runScenario(PluginOptions{
 			TracerOptions: tracing.TracerOptions{
+				AddTemporalSpans:     true,
 				DisableSignalTracing: true,
 				DisableQueryTracing:  true,
 				DisableUpdateTracing: true,
 			},
-			DisableBaggage: true,
 		})
-		s.Require().Equal(disabledTree, s.formatSpanTree(spans))
+		s.Require().Equal(queryUpdateSignalDisabledTree, s.formatSpanTree(spans))
 		s.requireUniqueSpanIDs(spans)
 		s.requireContinueAsNewErrorNotRecorded(spans)
 		s.requireResultPendingErrorNotRecorded(spans)
+	})
+
+	s.Run("no-temporal-spans", func() {
+		spans := s.runScenario(PluginOptions{})
+		s.Require().Equal(noTemporalSpansTree, s.formatSpanTree(spans))
+		s.requireUniqueSpanIDs(spans)
 	})
 }

@@ -15,6 +15,7 @@ import (
 
 	sdkactivity "go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/interceptor/tracing"
 	ilog "go.temporal.io/sdk/internal/log"
 	temporalnexus "go.temporal.io/sdk/temporalnexus"
 	"go.temporal.io/sdk/worker"
@@ -150,7 +151,9 @@ func (s *loggerTestSuite) TestNexusHandlerLoggerTraceFields() {
 	recorder := s.newSpanRecorder()
 	logger := ilog.NewMemoryLogger()
 
-	plugin, err := NewPlugin(PluginOptions{})
+	plugin, err := NewPlugin(PluginOptions{
+		TracerOptions: tracing.TracerOptions{AddTemporalSpans: true},
+	})
 	s.Require().NoError(err)
 	c := s.newDevServerClient(client.Options{
 		Plugins: []client.Plugin{plugin},

@@ -68,6 +68,10 @@ func tracerWorkflow(ctx workflow.Context, end bool) error {
 	processorTracer := Tracer("processorTracer")
 	recorderTracer := Tracer("recorderTracer")
 
+	// The context given to ContinueAsNew decides the next run's parent span.
+	// The workflow context keeps the next run out from under this run's spans.
+	continueCtx := ctx
+
 	ctx, beginProcessingSpan := processorTracer.Start(ctx, "process start")
 	ctx, recordingResultsSpan := recorderTracer.Start(ctx, "record results")
 
@@ -75,10 +79,24 @@ func tracerWorkflow(ctx workflow.Context, end bool) error {
 	recordingResultsSpan.End()
 
 	if !end {
-		return workflow.NewContinueAsNewError(ctx, tracerWorkflow, true)
+		return workflow.NewContinueAsNewError(continueCtx, tracerWorkflow, true)
 	}
 
 	return nil
+}
+
+// chainedContinueAsNewWorkflow is the counterpart to tracerWorkflow. It passes
+// its user span's context to ContinueAsNew, so the continued run parents under
+// that span rather than starting its own tree.
+func chainedContinueAsNewWorkflow(ctx workflow.Context, finalRun bool) error {
+	ctx, span := Tracer("chainedContinueAsNewWorkflow").Start(ctx, "chained-span")
+	defer span.End()
+
+	if finalRun {
+		return nil
+	}
+
+	return workflow.NewContinueAsNewError(ctx, chainedContinueAsNewWorkflow, true)
 }
 
 func tracerResetWorkflow(ctx workflow.Context) error {

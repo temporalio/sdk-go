@@ -15,6 +15,7 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor"
+	"go.temporal.io/sdk/interceptor/tracing"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
@@ -46,7 +47,9 @@ func (s *otelTestSuite) newTestWorkflowEnvironment(
 ) (*tracetest.SpanRecorder, *testsuite.TestWorkflowEnvironment) {
 	s.T().Helper()
 	recorder := s.newSpanRecorder()
-	_, workerInterceptor := newTracingInterceptors(PluginOptions{})
+	_, workerInterceptor := newTracingInterceptors(PluginOptions{
+		TracerOptions: tracing.TracerOptions{AddTemporalSpans: true},
+	})
 
 	var testEnv testsuite.WorkflowTestSuite
 	if len(logger) > 0 {

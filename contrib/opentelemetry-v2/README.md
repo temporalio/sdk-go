@@ -18,21 +18,36 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.temporal.io/sdk/client"
 	temporalotel "go.temporal.io/sdk/contrib/opentelemetry-v2"
+	"go.temporal.io/sdk/worker"
 )
 
+// Create a replay-safe tracer provider and set it as the OpenTelemetry global
 provider := temporalotel.NewReplaySafeTracerProvider(sdktrace.WithBatcher(exporter))
 otel.SetTracerProvider(provider)
-defer provider.Shutdown(ctx) // after clients and workers stop
 
+// Register the plugin on the client
 plugin, err := temporalotel.NewPlugin(temporalotel.PluginOptions{})
 if err != nil {
 	return err
 }
-
 c, err := client.Dial(client.Options{Plugins: []client.Plugin{plugin}})
+if err != nil {
+	return err
+}
+
+// Workers created from this client automatically get the plugin
+w := worker.New(c, "my-task-queue", worker.Options{})
 ```
 
-Workers from this client are configured automatically.
+## Temporal spans
+
+By default the plugin creates no spans of its own. It propagates trace context
+through Temporal headers, so spans your own code creates stay connected across
+clients, workflows, activities, and Nexus operations.
+
+Set `PluginOptions.TracerOptions.AddTemporalSpans` to also emit a span per
+Temporal operation, such as `StartWorkflow`, `RunWorkflow`, `RunActivity`, and
+`ContinueAsNew`.
 
 ## User spans in workflow code
 

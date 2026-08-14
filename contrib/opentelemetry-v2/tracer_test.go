@@ -32,11 +32,14 @@ func TestTracerIntegrationTestSuite(t *testing.T) {
 
 func (s *tracerIntegrationTestSuite) SetupSuite() {
 	s.otelTestSuite.SetupSuite()
-	s.client = s.newDevServerClient(client.Options{})
+	s.recorder = s.newSpanRecorder()
+	plugin, err := NewPlugin(PluginOptions{})
+	s.Require().NoError(err)
+	s.client = s.newDevServerClient(client.Options{Plugins: []client.Plugin{plugin}})
 }
 
 func (s *tracerIntegrationTestSuite) SetupTest() {
-	s.recorder = s.newSpanRecorder()
+	s.recorder.Reset()
 	s.taskQueue = "opentelemetry-v2-tracer-" + uuid.NewString()
 	s.worker = worker.New(s.client, s.taskQueue, worker.Options{})
 	s.worker.RegisterWorkflow(tracerWorkflow)
@@ -44,6 +47,7 @@ func (s *tracerIntegrationTestSuite) SetupTest() {
 	s.worker.RegisterWorkflow(tracerResetLateSourceWorkflow)
 	s.worker.RegisterWorkflow(tracerResetDuringSpan)
 	s.worker.RegisterWorkflow(tracerWorkflowTaskRetry)
+	s.worker.RegisterWorkflow(chainedContinueAsNewWorkflow)
 	s.Require().NoError(s.worker.Start())
 }
 
@@ -87,6 +91,24 @@ func (s *tracerIntegrationTestSuite) TestTracerWorkflow() {
 		"process start", // ContinueAsNew
 		"  record results",
 		"    query start",
+	}, s.formatSpanTree(spans))
+	s.requireUniqueSpanIDs(spans)
+}
+
+func (s *tracerIntegrationTestSuite) TestContinueAsNewUnderUserSpan() {
+	ctx := context.Background()
+
+	run, err := s.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		TaskQueue: s.taskQueue,
+	}, chainedContinueAsNewWorkflow, false)
+	s.Require().NoError(err)
+	s.Require().NoError(run.Get(ctx, nil))
+
+	spans := s.recorder.Ended()
+
+	s.Require().Equal([]string{
+		"chained-span",
+		"  chained-span",
 	}, s.formatSpanTree(spans))
 	s.requireUniqueSpanIDs(spans)
 }
