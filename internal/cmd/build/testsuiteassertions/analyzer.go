@@ -37,6 +37,8 @@ type suiteType struct {
 // run reports testify suites that do not refresh embedded require assertions in SetupTest.
 func run(pass *analysis.Pass) (any, error) {
 	suites := make(map[*types.TypeName]*suiteType)
+	// Pass 1: collect affected suite declarations across the package. SetupTest
+	// may be declared in another file, so discovery must finish before validation.
 	for _, file := range pass.Files {
 		for _, decl := range file.Decls {
 			genDecl, ok := decl.(*ast.GenDecl)
@@ -88,6 +90,8 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 
+	// Pass 2: match SetupTest methods to the collected suite types, then validate
+	// each hook's signature and first-statement assertion rebinding.
 	for _, file := range pass.Files {
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
@@ -112,6 +116,8 @@ func run(pass *analysis.Pass) (any, error) {
 		}
 	}
 
+	// Pass 3: after every method has been seen, report affected suites that did
+	// not declare SetupTest anywhere in the package.
 	for typeName, suite := range suites {
 		if !suite.ignored && suite.setupTest == nil {
 			pass.Reportf(suite.spec.Name.Pos(), "%s embeds require.Assertions and suite.Suite; add SetupTest to rebind assertions with require.New(receiver.T())", typeName.Name())
