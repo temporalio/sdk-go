@@ -336,6 +336,15 @@ func (ts *ConfigAndClientSuiteBase) newDefaultClient(clientOpts ...ConfigureClie
 	return client.Dial(ts.newDefaultClientOptions(clientOpts...))
 }
 
+// newDefaultClientContext creates a client according to ts.config with SDK defaults,
+// using ctx while dialing.
+func (ts *ConfigAndClientSuiteBase) newDefaultClientContext(
+	ctx context.Context,
+	clientOpts ...ConfigureClientOptions,
+) (client.Client, error) {
+	return client.DialContext(ctx, ts.newDefaultClientOptions(clientOpts...))
+}
+
 func (ts *ConfigAndClientSuiteBase) newDefaultClientOptions(clientOpts ...ConfigureClientOptions) client.Options {
 	var options client.Options
 	if ts.envConfigClientOptions == nil {
