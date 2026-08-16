@@ -35,6 +35,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed worker payload-limit validation running before external storage for query results.
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
   command is pending.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only

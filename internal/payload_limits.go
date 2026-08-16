@@ -127,11 +127,33 @@ func (v *payloadLimitsVisitorImpl) Visit(ctx *proxy.VisitPayloadsContext, payloa
 		size = int64((&commonpb.Payloads{Payloads: payloads}).Size())
 	}
 
-	err := v.checkPayloadSize(size, getPayloadLimitChecks(ctx.Context))
-	if err != nil {
+	checks := getPayloadLimitChecks(ctx.Context)
+	switch ctx.Parent.(type) {
+	case *querypb.WorkflowQueryResult, *workflowservice.RespondQueryTaskCompletedRequest:
+		checks = limitCheckAll
+	}
+	err := v.checkPayloadSize(size, checks)
+	if err == nil {
+		return payloads, nil
+	}
+
+	// Query payloads must be checked here, after earlier visitors have had a
+	// chance to offload them to external storage. Match the server behavior by
+	// translating oversized results into failed query responses.
+	switch parent := ctx.Parent.(type) {
+	case *querypb.WorkflowQueryResult:
+		parent.Answer = nil
+		parent.ErrorMessage = err.Error()
+		parent.ResultType = enumspb.QUERY_RESULT_TYPE_FAILED
+		return payloads, nil
+	case *workflowservice.RespondQueryTaskCompletedRequest:
+		parent.ErrorMessage = err.Error()
+		parent.QueryResult = nil
+		parent.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
+		return payloads, nil
+	default:
 		return nil, err
 	}
-	return payloads, nil
 }
 
 // ContextHook is used here to specialize the limit check logic based on how server has one-off decisions
@@ -168,23 +190,9 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 			return nil, err
 		}
 		ctx = withPayloadLimitChecks(ctx, limitCheckNone)
-	case *querypb.WorkflowQueryResult:
-		err := v.checkPayloadSize(int64(msg.GetAnswer().Size()), limitCheckAll)
-		// Server translates too large results into failed query results
-		if err != nil {
-			msg.Answer = nil
-			msg.ErrorMessage = err.Error()
-			msg.ResultType = enumspb.QUERY_RESULT_TYPE_FAILED
-		}
-		ctx = withPayloadLimitChecks(ctx, limitCheckNone)
-	case *workflowservice.RespondQueryTaskCompletedRequest:
-		err := v.checkPayloadSize(int64(msg.GetQueryResult().Size()), limitCheckAll)
-		// Server translates too large results into failed query results
-		if err != nil {
-			msg.ErrorMessage = err.Error()
-			msg.QueryResult = nil
-			msg.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
-		}
+	// Query answer payloads are checked in Visit after earlier visitors transform them.
+	// Disable inherited checks for other query response payloads, including failure details.
+	case *querypb.WorkflowQueryResult, *workflowservice.RespondQueryTaskCompletedRequest:
 		ctx = withPayloadLimitChecks(ctx, limitCheckNone)
 	// CreateScheduleRequest has a custom size checking algorithm checked against the payload size limit.
 	case *workflowservice.CreateScheduleRequest:
