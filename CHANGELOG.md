@@ -42,6 +42,11 @@ to docs, or any other relevant information.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
   updates the recorded value when it changes, matching the real worker. Previously it ignored
   equals and returned a freshly computed value on every call.
+- `workflow.AwaitWithTimeout`, `AwaitWithOptions`, and `Channel.ReceiveWithTimeout` no longer yield
+  once unconditionally before their first condition check when the calling workflow execution
+  hasn't adopted `SDKFlagCancelAwaitTimerOnCondition` (e.g. an in-flight workflow replaying across
+  the flag's introduction). The extra yield could let another runnable coroutine emit its commands
+  first, causing a `TMPRL1100` non-determinism error on replay.
 
 ## [1.47.0] - 2026-07-28
 

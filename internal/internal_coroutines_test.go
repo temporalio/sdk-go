@@ -1296,6 +1296,29 @@ func TestAwaitWithTimeoutNoTimeout(t *testing.T) {
 	require.True(t, d.IsDone())
 }
 
+// Regression test for #2537: an already-true condition must return without
+// yielding, same as Await -- so "other coroutine" must not run before
+// "await returned" below.
+func TestAwaitWithTimeoutDoesNotYieldWhenConditionAlreadyTrue(t *testing.T) {
+	var history []string
+	var awaitOk bool
+	var awaitErr error
+	d := createNewDispatcher(func(ctx Context) {
+		Go(ctx, func(ctx Context) {
+			history = append(history, "other coroutine")
+		})
+		awaitOk, awaitErr = AwaitWithTimeout(ctx, time.Hour, func() bool { return true })
+		history = append(history, "await returned")
+	})
+	defer d.Close()
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.NoError(t, err)
+	require.NoError(t, awaitErr)
+	require.True(t, awaitOk)
+	require.True(t, d.IsDone())
+	require.Equal(t, []string{"await returned", "other coroutine"}, history)
+}
+
 func TestRecursiveEagerCoroutine(t *testing.T) {
 	// Verify eager coroutines run before normal coroutines
 	// even if they are scheduled in other eager coroutines
