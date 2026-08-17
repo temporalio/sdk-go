@@ -1465,6 +1465,13 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 
 	var unblockedTime time.Time
 	callerWf := func(ctx workflow.Context, cancellation workflow.NexusOperationCancellationType) error {
+		operationStarted := false
+		if err := workflow.SetQueryHandler(ctx, "operation-started", func() (bool, error) {
+			return operationStarted, nil
+		}); err != nil {
+			return err
+		}
+
 		c := workflow.NewNexusClient(tc.endpoint, "test")
 		fut := c.ExecuteOperation(ctx, op, "", workflow.NexusOperationOptions{
 			CancellationType: cancellation,
@@ -1473,6 +1480,7 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 		if err := fut.GetNexusOperationExecution().Get(ctx, nil); err != nil {
 			return err
 		}
+		operationStarted = true
 
 		disconCtx, _ := workflow.NewDisconnectedContext(ctx) // Use disconnected ctx so it is not auto canceled.
 		if cancellation == workflow.NexusOperationCancellationTypeTryCancel || cancellation == workflow.NexusOperationCancellationTypeWaitRequested {
@@ -1508,6 +1516,14 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 		_, descErr := tc.client.DescribeWorkflow(ctx, handlerID, "")
 		return descErr == nil
 	}, 2*time.Second, 20*time.Millisecond, "timed out waiting for handler wf to start")
+	require.Eventuallyf(t, func() bool {
+		value, queryErr := tc.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "operation-started")
+		if queryErr != nil {
+			return false
+		}
+		var operationStarted bool
+		return value.Get(&operationStarted) == nil && operationStarted
+	}, 5*time.Second, 100*time.Millisecond, "timed out waiting for caller to observe operation start")
 	require.NoError(t, tc.client.CancelWorkflow(ctx, run.GetID(), run.GetRunID()))
 
 	err = run.Get(ctx, nil)
