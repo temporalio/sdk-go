@@ -142,7 +142,7 @@ func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
 		Bucket:         StaticBucket("b"),
 		MaxPayloadSize: -1,
 	})
-	assert.EqualError(t, err, "max payload size must be positive, got -1")
+	assert.EqualError(t, err, "MaxPayloadSize must be positive, got -1")
 }
 
 // --- StaticBucket tests ---
