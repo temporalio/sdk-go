@@ -3,6 +3,7 @@ package a
 import (
 	req "github.com/stretchr/testify/require"
 	testifysuite "github.com/stretchr/testify/suite"
+	"importedsuite"
 )
 
 type validSuite struct {
@@ -129,6 +130,16 @@ type aliasSuite struct {
 func (s *aliasSuite) SetupTest() {
 	s.AssertionsAlias = req.New(s.T())
 }
+
+type aliasCannotSuppressSuite struct { // want "aliasCannotSuppressSuite embeds require.Assertions and suite.Suite; add SetupTest"
+	*req.Assertions
+	testifysuite.Suite
+}
+
+//testsuiteassertions:ignore aliases cannot define SetupTest
+type ignoredSuiteAlias = aliasCannotSuppressSuite
+
+type importedSuiteAlias = importedsuite.Suite
 
 //testsuiteassertions:ignore assertions are deliberately suite-scoped
 type ignoredSuite struct {

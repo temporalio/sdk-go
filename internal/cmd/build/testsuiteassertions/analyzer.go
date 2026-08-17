@@ -50,7 +50,11 @@ func run(pass *analysis.Pass) (any, error) {
 				if !ok {
 					continue
 				}
-				named, _ := types.Unalias(pass.TypesInfo.TypeOf(spec.Name)).(*types.Named)
+				typeName, _ := pass.TypesInfo.ObjectOf(spec.Name).(*types.TypeName)
+				if typeName == nil || typeName.IsAlias() {
+					continue
+				}
+				named, _ := typeName.Type().(*types.Named)
 				if named == nil {
 					continue
 				}
@@ -77,7 +81,7 @@ func run(pass *analysis.Pass) (any, error) {
 						commentGroups = append(commentGroups, genDecl.Doc)
 					}
 					ignored, invalidIgnore := findIgnoreDirective(commentGroups...)
-					suites[named.Obj()] = &suiteType{
+					suites[typeName] = &suiteType{
 						spec:            spec,
 						assertionsField: assertionsField,
 						ignored:         ignored || invalidIgnore.IsValid(),
