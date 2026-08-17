@@ -599,7 +599,8 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 			request.Links = links
 		}
 	}
-	if _, ok := NexusOperationContextFromGoContext(ctx); ok {
+	if _, ok := NexusOperationContextFromGoContext(ctx); ok &&
+		(len(request.GetCompletionCallbacks()) > 0 || len(request.GetLinks()) > 0) {
 		request.OnConflictOptions = &commonpb.OnConflictOptions{
 			AttachRequestId:           request.GetRequestId() != "",
 			AttachCompletionCallbacks: len(request.GetCompletionCallbacks()) > 0,
