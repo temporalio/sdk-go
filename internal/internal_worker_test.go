@@ -3008,7 +3008,7 @@ func testActivityErrorWithDetailsHelper(ctx context.Context, t *testing.T, dataC
 
 func TestActivityErrorWithDetailsWithDataConverter(t *testing.T) {
 	dc := iconverter.NewTestDataConverter()
-	ctx, _ := newActivityContext(context.Background(), nil, &activityEnvironment{dataConverter: dc})
+	ctx, _ := newActivityContext(t.Context(), nil, &activityEnvironment{dataConverter: dc})
 	testActivityErrorWithDetailsHelper(ctx, t, dc)
 }
 
@@ -3075,7 +3075,7 @@ func testActivityCanceledErrorHelper(ctx context.Context, t *testing.T, dataConv
 
 func TestActivityCanceledErrorWithDataConverter(t *testing.T) {
 	dc := iconverter.NewTestDataConverter()
-	ctx, _ := newActivityContext(context.Background(), nil, &activityEnvironment{dataConverter: dc})
+	ctx, _ := newActivityContext(t.Context(), nil, &activityEnvironment{dataConverter: dc})
 	testActivityCanceledErrorHelper(ctx, t, dc)
 }
 
@@ -3106,7 +3106,7 @@ func testActivityExecutionVariousTypesHelper(ctx context.Context, t *testing.T, 
 
 func TestActivityExecutionVariousTypesWithDataConverter(t *testing.T) {
 	dc := iconverter.NewTestDataConverter()
-	ctx, _ := newActivityContext(context.Background(), nil, &activityEnvironment{
+	ctx, _ := newActivityContext(t.Context(), nil, &activityEnvironment{
 		dataConverter: dc,
 	})
 	testActivityExecutionVariousTypesHelper(ctx, t, dc)
@@ -3243,7 +3243,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		WorkerLocalActivitiesPerSecond:                 222,
 		WorkerActivitiesPerSecond:                      99,
 		StickyScheduleToStartTimeout:                   555 * time.Minute,
-		BackgroundActivityContext:                      context.Background(),
+		BackgroundActivityContext:                      t.Context(),
 		MaxConcurrentWorkflowTaskExternalStorageVisits: 7,
 		MaxEagerActivityReservationsPerWorkflowTask:    &maxEagerActivityReservationsPerWorkflowTask,
 	}
@@ -3343,7 +3343,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 }
 
 func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParameters, paramsB workerExecutionParameters) {
-	require.Equal(t, paramsA.TaskQueue, paramsA.TaskQueue)
+	require.Equal(t, paramsA.TaskQueue, paramsB.TaskQueue)
 	require.Equal(t, paramsA.Identity, paramsB.Identity)
 	require.Equal(t, paramsA.DataConverter, paramsB.DataConverter)
 	require.Equal(t, paramsA.Tuner, paramsB.Tuner)

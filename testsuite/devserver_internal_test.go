@@ -12,7 +12,7 @@ import (
 )
 
 func TestWaitServerReady_respectsTimeout(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), time.Millisecond)
 	defer cancel()
 
 	hostPort, err := getFreeHostPort()
