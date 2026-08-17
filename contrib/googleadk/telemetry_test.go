@@ -407,10 +407,9 @@ func (m countingMeter) Float64Gauge(string, ...metric.Float64GaugeOption) (metri
 }
 
 // The counter/up-down-counter and histogram/gauge interface pairs share their
-// Add/Record signatures, so one double per signature covers two kinds, told
-// apart by the kind label. Enabled is implemented (always true) rather than
-// counted: the replay-safe wrappers delegate it untouched, so inner calls
-// legitimately recur on replay.
+// Add/Record and Enabled signatures, so one double per signature covers two
+// kinds, told apart by the kind label. Enabled is counted like the recording
+// methods: the wrappers gate it during replay, so no inner call may recur.
 
 type countingInt64Adder struct {
 	metricembedded.Int64Counter
@@ -420,7 +419,10 @@ type countingInt64Adder struct {
 }
 
 func (i countingInt64Adder) Add(context.Context, int64, ...metric.AddOption) { i.counts.inc(i.kind) }
-func (i countingInt64Adder) Enabled(context.Context) bool                    { return true }
+func (i countingInt64Adder) Enabled(context.Context) bool {
+	i.counts.inc(i.kind + ".Enabled")
+	return true
+}
 
 type countingFloat64Adder struct {
 	metricembedded.Float64Counter
@@ -432,7 +434,10 @@ type countingFloat64Adder struct {
 func (i countingFloat64Adder) Add(context.Context, float64, ...metric.AddOption) {
 	i.counts.inc(i.kind)
 }
-func (i countingFloat64Adder) Enabled(context.Context) bool { return true }
+func (i countingFloat64Adder) Enabled(context.Context) bool {
+	i.counts.inc(i.kind + ".Enabled")
+	return true
+}
 
 type countingInt64Recorder struct {
 	metricembedded.Int64Histogram
@@ -444,7 +449,10 @@ type countingInt64Recorder struct {
 func (i countingInt64Recorder) Record(context.Context, int64, ...metric.RecordOption) {
 	i.counts.inc(i.kind)
 }
-func (i countingInt64Recorder) Enabled(context.Context) bool { return true }
+func (i countingInt64Recorder) Enabled(context.Context) bool {
+	i.counts.inc(i.kind + ".Enabled")
+	return true
+}
 
 type countingFloat64Recorder struct {
 	metricembedded.Float64Histogram
@@ -456,7 +464,10 @@ type countingFloat64Recorder struct {
 func (i countingFloat64Recorder) Record(context.Context, float64, ...metric.RecordOption) {
 	i.counts.inc(i.kind)
 }
-func (i countingFloat64Recorder) Enabled(context.Context) bool { return true }
+func (i countingFloat64Recorder) Enabled(context.Context) bool {
+	i.counts.inc(i.kind + ".Enabled")
+	return true
+}
 
 // ----------------------------------------------------------------------------
 // Workflow under test: one ADK agent with one in-workflow function tool driven
@@ -535,11 +546,14 @@ func telemetryAgentWorkflow(ctx workflow.Context, in telemetryRunInput) (telemet
 	return res, nil
 }
 
-// gateProbeCalls are the gated operations instrumentGateWorkflow drives: one
-// per synchronous instrument kind plus both gated Logger methods.
+// gateProbeCalls are the gated operations instrumentGateWorkflow drives: the
+// recording and Enabled methods of every synchronous instrument kind plus both
+// gated Logger methods.
 var gateProbeCalls = []string{
 	"Int64Counter", "Int64UpDownCounter", "Int64Histogram", "Int64Gauge",
 	"Float64Counter", "Float64UpDownCounter", "Float64Histogram", "Float64Gauge",
+	"Int64Counter.Enabled", "Int64UpDownCounter.Enabled", "Int64Histogram.Enabled", "Int64Gauge.Enabled",
+	"Float64Counter.Enabled", "Float64UpDownCounter.Enabled", "Float64Histogram.Enabled", "Float64Gauge.Enabled",
 	"Logger.Emit", "Logger.Enabled",
 }
 
@@ -555,41 +569,49 @@ func instrumentGateWorkflow(ctx workflow.Context) error {
 	if err != nil {
 		return err
 	}
+	_ = ic.Enabled(adkCtx)
 	ic.Add(adkCtx, 1)
 	iud, err := meter.Int64UpDownCounter("gate_int64_updown")
 	if err != nil {
 		return err
 	}
+	_ = iud.Enabled(adkCtx)
 	iud.Add(adkCtx, 2)
 	ih, err := meter.Int64Histogram("gate_int64_histogram")
 	if err != nil {
 		return err
 	}
+	_ = ih.Enabled(adkCtx)
 	ih.Record(adkCtx, 3)
 	ig, err := meter.Int64Gauge("gate_int64_gauge")
 	if err != nil {
 		return err
 	}
+	_ = ig.Enabled(adkCtx)
 	ig.Record(adkCtx, 4)
 	fc, err := meter.Float64Counter("gate_float64_counter")
 	if err != nil {
 		return err
 	}
+	_ = fc.Enabled(adkCtx)
 	fc.Add(adkCtx, 5)
 	fud, err := meter.Float64UpDownCounter("gate_float64_updown")
 	if err != nil {
 		return err
 	}
+	_ = fud.Enabled(adkCtx)
 	fud.Add(adkCtx, 6)
 	fh, err := meter.Float64Histogram("gate_float64_histogram")
 	if err != nil {
 		return err
 	}
+	_ = fh.Enabled(adkCtx)
 	fh.Record(adkCtx, 7)
 	fg, err := meter.Float64Gauge("gate_float64_gauge")
 	if err != nil {
 		return err
 	}
+	_ = fg.Enabled(adkCtx)
 	fg.Record(adkCtx, 8)
 
 	logger := otelloglobal.GetLoggerProvider().Logger("gate-probe")
@@ -761,12 +783,12 @@ func TestReplayTelemetry(t *testing.T) {
 	})
 
 	// The subtests above exercise only the operations the agent scenario emits
-	// (spans, log Emit, Int64Counter.Add), but each of the eight sync instrument
-	// gates and Logger.Enabled's replay branch is an independent code path. This
-	// subtest drives all of them through the gated globals — live once, so every
-	// operation reaches the inner provider, then replayed, when none may reach
-	// it again — observed with call-counting doubles because SDK aggregation
-	// cannot see every suppressed recording.
+	// (spans, log Emit, Int64Counter.Add), but each sync instrument's recording
+	// and Enabled gate and Logger.Enabled's replay branch is an independent code
+	// path. This subtest drives all of them through the gated globals — live
+	// once, so every operation reaches the inner provider, then replayed, when
+	// none may reach it again — observed with call-counting doubles because SDK
+	// aggregation cannot see every suppressed recording.
 	t.Run("GateCoversEveryInstrumentKindAndEnabled", func(t *testing.T) {
 		counts := newCallCounts()
 		pointGlobalsAt(t,

@@ -406,10 +406,11 @@ re-creation non-recording:
   the wrappers never gate.
 
 `NewReplaySafeMeterProvider` is forward-looking: it gates
-synchronous instrument recordings (observable instruments pass through, since
-their callbacks never run under a workflow context), covering both your own
-workflow-side recordings through the global meter today and ADK's metrics once
-adk-go#479 lands.
+synchronous instrument recordings, and a gated instrument's `Enabled` hint
+reports false while its recording would be dropped (observable instruments
+pass through, since their callbacks never run under a workflow context) —
+covering both your own workflow-side recordings through the global meter today
+and ADK's metrics once adk-go#479 lands.
 
 ## Supported & not-yet-supported
 
