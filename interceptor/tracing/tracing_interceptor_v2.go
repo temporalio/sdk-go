@@ -1022,13 +1022,8 @@ func startOutboundSpan(
 		ctx = t.ContextWithSpan(ctx, curr)
 	}
 
-	if headerWriter != nil {
-		if err := headerWriter(curr); err != nil {
-			return ctx, nil, err
-		}
-	}
-
-	return ctx, finishSpan(curr, createSpan), nil
+	finish, err := writeSpanHeader(curr, createSpan, headerWriter)
+	return ctx, finish, err
 }
 
 func startOutboundWorkflowSpan(
@@ -1049,13 +1044,8 @@ func startOutboundWorkflowSpan(
 		ctx = t.ContextWithSpan(ctx, curr)
 	}
 
-	if headerWriter != nil {
-		if err := headerWriter(curr); err != nil {
-			return ctx, nil, err
-		}
-	}
-
-	return ctx, finishSpan(curr, createSpan), nil
+	finish, err := writeSpanHeader(curr, createSpan, headerWriter)
+	return ctx, finish, err
 }
 
 func isContinueAsNewError(err error) bool {
@@ -1087,6 +1077,25 @@ func finishSpan(span TracerSpanRef, created bool) func(err *error) {
 	}
 
 	return func(err *error) {}
+}
+
+func writeSpanHeader(
+	span TracerSpanRef,
+	created bool,
+	headerWriter func(TracerSpanRef) error,
+) (func(err *error), error) {
+	finish := finishSpan(span, created)
+
+	if headerWriter == nil {
+		return finish, nil
+	}
+
+	if err := headerWriter(span); err != nil {
+		finish(&err)
+		return nil, err
+	}
+
+	return finish, nil
 }
 
 func workflowFutureFromErr(ctx workflow.Context, err error) workflow.Future {
