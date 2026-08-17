@@ -123,7 +123,48 @@ func (b *builder) check() error {
 	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/doclink/doclink.go")); err != nil {
 		return fmt.Errorf("doclink check failed: %w", err)
 	}
+	// Check SetupTest bindings for embedded require assertions in testify suites.
+	testSuiteAssertions, err := b.getInstalledTool("go.temporal.io/sdk/internal/cmd/build/cmd/testsuiteassertions")
+	if err != nil {
+		return fmt.Errorf("failed getting testsuiteassertions: %w", err)
+	}
+	moduleDirs, err := findModuleDirs(os.DirFS(b.rootDir))
+	if err != nil {
+		return fmt.Errorf("failed finding Go modules: %w", err)
+	}
+	for _, moduleDir := range moduleDirs {
+		cmd := b.cmdFromRoot(testSuiteAssertions, "./...")
+		cmd.Dir = filepath.Join(b.rootDir, moduleDir)
+		if err := b.runCmd(cmd); err != nil {
+			return fmt.Errorf("testsuiteassertions check failed in %s: %w", moduleDir, err)
+		}
+	}
 	return nil
+}
+
+func findModuleDirs(root fs.FS) ([]string, error) {
+	var moduleDirs []string
+	err := fs.WalkDir(root, ".", func(p string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".build", ".git", "node_modules", "testdata", "vendor":
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.Name() == "go.mod" {
+			moduleDirs = append(moduleDirs, path.Dir(p))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(moduleDirs)
+	return moduleDirs, nil
 }
 
 func (b *builder) integrationTest() error {

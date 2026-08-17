@@ -162,6 +162,7 @@ func (s *ExternalStorageTestSuite) SetupSuite() {
 }
 
 func (s *ExternalStorageTestSuite) SetupTest() {
+	s.Assertions = require.New(s.T())
 	s.taskQueueName = taskQueuePrefix + "-ext-" + s.T().Name()
 	s.driver = newMemDriver("test")
 	var err error
