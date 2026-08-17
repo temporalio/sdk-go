@@ -80,7 +80,7 @@ func TestExecuteActivityFromLinklessNexusRequestOmitsOnConflictOptions(t *testin
 			return &workflowservice.StartActivityExecutionResponse{RunId: "run-id"}, nil
 		})
 
-	ctx := context.WithValue(context.Background(), nexusOperationContextKey, &NexusOperationContext{})
+	ctx := context.WithValue(t.Context(), nexusOperationContextKey, &NexusOperationContext{})
 	_, err := client.ExecuteActivity(ctx, ClientStartActivityOptions{
 		ID:                     "activity-id",
 		TaskQueue:              "task-queue",
