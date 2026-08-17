@@ -9,10 +9,31 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 )
+
+func TestFindModuleDirs(t *testing.T) {
+	moduleDirs, err := findModuleDirs(fstest.MapFS{
+		"go.mod":                         {},
+		"test/go.mod":                    {},
+		"contrib/example/go.mod":         {},
+		"contrib/example/nested/file.go": {},
+		"testdata/fixture/go.mod":        {},
+		"vendor/dependency/go.mod":       {},
+		".build/scratch/go.mod":          {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".", "contrib/example", "test"}
+	if !slices.Equal(want, moduleDirs) {
+		t.Fatalf("expected module directories %v, got %v", want, moduleDirs)
+	}
+}
 
 func TestTestOutputFlagsDefaultToFailures(t *testing.T) {
 	flags := addTestOutputFlags(flag.NewFlagSet("test", flag.ContinueOnError))
