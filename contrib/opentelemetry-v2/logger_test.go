@@ -18,6 +18,7 @@ import (
 	"go.temporal.io/sdk/interceptor/tracing"
 	ilog "go.temporal.io/sdk/internal/log"
 	temporalnexus "go.temporal.io/sdk/temporalnexus"
+	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -158,7 +159,7 @@ func (s *loggerTestSuite) TestNexusHandlerLoggerTraceFields() {
 	c := s.newDevServerClient(client.Options{
 		Plugins: []client.Plugin{plugin},
 		Logger:  logger,
-	})
+	}, testsuite.DevServerOptions{})
 
 	_, err = c.OperatorService().CreateNexusEndpoint(context.Background(), &operatorservice.CreateNexusEndpointRequest{
 		Spec: &nexuspb.EndpointSpec{

@@ -15,6 +15,7 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/temporal"
+	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 )
 
@@ -35,7 +36,10 @@ func (s *tracerIntegrationTestSuite) SetupSuite() {
 	s.recorder = s.newSpanRecorder()
 	plugin, err := NewPlugin(PluginOptions{})
 	s.Require().NoError(err)
-	s.client = s.newDevServerClient(client.Options{Plugins: []client.Plugin{plugin}})
+	s.client = s.newDevServerClient(
+		client.Options{Plugins: []client.Plugin{plugin}},
+		testsuite.DevServerOptions{},
+	)
 }
 
 func (s *tracerIntegrationTestSuite) SetupTest() {

@@ -18,6 +18,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/interceptor/tracing"
 	temporalnexus "go.temporal.io/sdk/temporalnexus"
+	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 )
 
@@ -67,6 +68,12 @@ func (s *integrationTestSuite) runScenario(pluginOpts PluginOptions) []sdktrace.
 
 	c := s.newDevServerClient(client.Options{
 		Plugins: []client.Plugin{plugin},
+	}, testsuite.DevServerOptions{
+		// Client-started Nexus operations require this pre-release server and its standalone feature flag.
+		CachedDownload: testsuite.CachedDownload{Version: "v1.7.2-one-time-versioning-override"},
+		ExtraArgs: []string{
+			"--dynamic-config-value", "nexusoperation.enableStandalone=true",
+		},
 	})
 
 	// All client calls share this parent span.
@@ -231,6 +238,18 @@ func (s *integrationTestSuite) runScenario(pluginOpts PluginOptions) []sdktrace.
 	s.Require().NoError(c.SignalWorkflow(ctx, updateWithStartRun.GetID(), "", "updateSignal", nil))
 	s.Require().NoError(updateWithStartRun.Get(ctx, nil))
 
+	nexusClient, err := c.NewNexusClient(client.NexusClientOptions{
+		Endpoint: nexusEndpointName,
+		Service:  nexusServiceName,
+	})
+	s.Require().NoError(err)
+	nexusHandle, err := nexusClient.ExecuteOperation(ctx, nexusOperationName, nil, client.StartNexusOperationOptions{
+		ID:                     "otel-nexus-operation-" + uuid.NewString(),
+		ScheduleToCloseTimeout: 10 * time.Second,
+	})
+	s.Require().NoError(err)
+	s.Require().NoError(nexusHandle.Get(ctx, nil))
+
 	clientSpan.End()
 	w.Stop()
 
@@ -351,6 +370,11 @@ var fullTree = []string{
 	"      update-target-workflow-span",
 	"  SignalWorkflow:updateSignal",
 	"    HandleSignal:updateSignal",
+	"  StartNexusOperation:" + nexusServiceName + "/nexusHandlerWorkflow",
+	"    RunStartNexusOperationHandler:" + nexusServiceName + "/nexusHandlerWorkflow",
+	"      StartWorkflow:nexusHandlerWorkflow",
+	"        RunWorkflow:nexusHandlerWorkflow",
+	"          workflow-with-nexus-handler-span",
 }
 
 // queryUpdateSignalDisabledTree is fullTree without the signal, query, and
@@ -420,6 +444,11 @@ var queryUpdateSignalDisabledTree = []string{
 	"  update start",
 	"  RunWorkflow:updateTargetWorkflow",
 	"    update-target-workflow-span",
+	"  StartNexusOperation:" + nexusServiceName + "/nexusHandlerWorkflow",
+	"    RunStartNexusOperationHandler:" + nexusServiceName + "/nexusHandlerWorkflow",
+	"      StartWorkflow:nexusHandlerWorkflow",
+	"        RunWorkflow:nexusHandlerWorkflow",
+	"          workflow-with-nexus-handler-span",
 }
 
 // noTemporalSpansTree is fullTree without any Temporal spans. Only user spans
@@ -444,6 +473,7 @@ var noTemporalSpansTree = []string{
 	"  signal-with-start-target-span",
 	"  update start",
 	"  update-target-workflow-span",
+	"  workflow-with-nexus-handler-span",
 }
 
 func (s *integrationTestSuite) TestComprehensive() {

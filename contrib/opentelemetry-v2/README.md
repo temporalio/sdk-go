@@ -14,16 +14,26 @@ the plugin on the client (examples import this module as `temporalotel`):
 
 ```go
 import (
+	"context"
+
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.temporal.io/sdk/client"
 	temporalotel "go.temporal.io/sdk/contrib/opentelemetry-v2"
 	"go.temporal.io/sdk/worker"
 )
 
+ctx := context.Background()
+exporter, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
+if err != nil {
+	return err
+}
+
 // Create a replay-safe tracer provider and set it as the OpenTelemetry global
 provider := temporalotel.NewReplaySafeTracerProvider(sdktrace.WithBatcher(exporter))
 otel.SetTracerProvider(provider)
+defer provider.Shutdown(ctx)
 
 // Register the plugin on the client
 plugin, err := temporalotel.NewPlugin(temporalotel.PluginOptions{})

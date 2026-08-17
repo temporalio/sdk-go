@@ -15,7 +15,9 @@ import (
 const interceptorRandomStream = "go.temporal.io/sdk/contrib/opentelemetry-v2/interceptor"
 const applicationRandomStream = "go.temporal.io/sdk/contrib/opentelemetry-v2/application"
 
-type replaySafeTracerProvider struct {
+// ReplaySafeTracerProvider is an OpenTelemetry tracer provider configured for
+// replay-safe workflow span IDs.
+type ReplaySafeTracerProvider struct {
 	*sdktrace.TracerProvider
 }
 
@@ -29,14 +31,14 @@ type replaySafeTracerProvider struct {
 // clients and workers stop.
 //
 // NOTE: Experimental
-func NewReplaySafeTracerProvider(opts ...sdktrace.TracerProviderOption) *replaySafeTracerProvider {
+func NewReplaySafeTracerProvider(opts ...sdktrace.TracerProviderOption) *ReplaySafeTracerProvider {
 	opts = append([]sdktrace.TracerProviderOption(nil), opts...)
 	opts = append(opts, sdktrace.WithIDGenerator(&generator{}))
-	return &replaySafeTracerProvider{sdktrace.NewTracerProvider(opts...)}
+	return &ReplaySafeTracerProvider{sdktrace.NewTracerProvider(opts...)}
 }
 
 func newReplaySafeTracer(name string) trace.Tracer {
-	provider, ok := otel.GetTracerProvider().(*replaySafeTracerProvider)
+	provider, ok := otel.GetTracerProvider().(*ReplaySafeTracerProvider)
 	if !ok {
 		panic("global tracer provider must be created by NewReplaySafeTracerProvider")
 	}

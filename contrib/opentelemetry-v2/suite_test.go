@@ -139,9 +139,12 @@ func formatSpanChildren(
 	return tree
 }
 
-func (s *otelTestSuite) newDevServerClient(options client.Options) client.Client {
+func (s *otelTestSuite) newDevServerClient(
+	options client.Options,
+	devServerOptions testsuite.DevServerOptions,
+) client.Client {
 	s.T().Helper()
-	srv, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{})
+	srv, err := testsuite.StartDevServer(context.Background(), devServerOptions)
 	s.Require().NoError(err)
 	s.T().Cleanup(func() { _ = srv.Stop() })
 
