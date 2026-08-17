@@ -139,7 +139,7 @@ func TestTaskHandlersTestSuite(t *testing.T) {
 func TestActivityCancellationCallbacksCancel(t *testing.T) {
 	registry := newActivityCancellationCallbacks()
 	taskToken := []byte{1, 2, 3}
-	ctx, cancel := context.WithCancelCause(context.Background())
+	ctx, cancel := context.WithCancelCause(t.Context())
 
 	unregister := registry.register(taskToken, cancel)
 	require.True(t, registry.cancel([]byte{1, 2, 3}))
@@ -2752,7 +2752,7 @@ func TestHistoryIteratorMaxEventID(t *testing.T) {
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtrl := gomock.NewController(t)
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	mockService.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetWorkflowExecutionHistoryResponse{

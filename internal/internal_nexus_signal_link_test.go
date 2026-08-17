@@ -48,7 +48,7 @@ func newSignalLinkTestClient(t *testing.T) (*workflowservicemock.MockWorkflowSer
 		Return(&workflowservice.GetSystemInfoResponse{}, nil)
 	client := NewServiceClient(svc, nil, ClientOptions{Namespace: signalLinkTestNamespace})
 	nctx := &NexusOperationContext{Namespace: signalLinkTestNamespace, TaskQueue: "tq"}
-	ctx := context.WithValue(context.Background(), nexusOperationContextKey, nctx)
+	ctx := context.WithValue(t.Context(), nexusOperationContextKey, nctx)
 	return svc, client, ctx, nctx
 }
 
@@ -214,5 +214,5 @@ func TestSignalOutsideNexusContextCapturesNoResponseLink(t *testing.T) {
 		Return(&workflowservice.SignalWorkflowExecutionResponse{Link: responseLink}, nil)
 
 	// No NexusOperationContext on the context, so this must not panic.
-	require.NoError(t, client.SignalWorkflow(context.Background(), signalLinkTestWorkflowID, "target-run", "test-signal", "payload"))
+	require.NoError(t, client.SignalWorkflow(t.Context(), signalLinkTestWorkflowID, "target-run", "test-signal", "payload"))
 }

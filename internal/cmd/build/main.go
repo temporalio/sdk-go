@@ -17,8 +17,10 @@ import (
 	"sort"
 	"strings"
 
+	_ "github.com/Antonboom/testifylint/analyzer"
 	_ "github.com/BurntSushi/toml"
 	_ "github.com/kisielk/errcheck/errcheck"
+	_ "github.com/ldez/usetesting"
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
@@ -89,6 +91,33 @@ func (b *builder) check() error {
 		return fmt.Errorf("failed getting staticcheck: %w", err)
 	} else if err := b.runCmd(b.cmdFromRoot(staticCheck, "./...")); err != nil {
 		return fmt.Errorf("staticcheck failed: %w", err)
+	}
+	// Run usetesting
+	if useTesting, err := b.getInstalledTool("github.com/ldez/usetesting/cmd/usetesting"); err != nil {
+		return fmt.Errorf("failed getting usetesting: %w", err)
+	} else if err := b.runCmd(b.cmdFromRoot(
+		useTesting,
+		"-contextbackground",
+		"-contexttodo",
+		"-oschdir=false",
+		"-oscreatetemp",
+		"-osmkdirtemp",
+		"-ossetenv",
+		"-ostempdir",
+		"./...",
+	)); err != nil {
+		return fmt.Errorf("usetesting failed: %w", err)
+	}
+	// Run correctness-oriented testifylint checks. Staticcheck remains the style baseline.
+	if testifyLint, err := b.getInstalledTool("github.com/Antonboom/testifylint"); err != nil {
+		return fmt.Errorf("failed getting testifylint: %w", err)
+	} else if err := b.runCmd(b.cmdFromRoot(
+		testifyLint,
+		"-disable-all",
+		"-enable=nil-compare,suite-broken-parallel,suite-method-signature,useless-assert",
+		"./...",
+	)); err != nil {
+		return fmt.Errorf("testifylint failed: %w", err)
 	}
 	// Run doclink check
 	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/doclink/doclink.go")); err != nil {

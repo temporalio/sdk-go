@@ -1234,7 +1234,7 @@ func TestPollerBalancerReturnsNilWhenOwnCountZero(t *testing.T) {
 	pb.registerPollerType("sticky")
 	pb.registerPollerType("non-sticky")
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Both types have count 0 — balance should return nil immediately for either type.
 	err := pb.balance(ctx, "sticky")
@@ -1251,7 +1251,7 @@ func TestPollerBalancerReturnsNilWhenOwnCountZero(t *testing.T) {
 
 	// Even though non-sticky count is 0, we should NOT block because our own count is 0.
 	// Run with a timeout to catch the bug where it would block indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	err = pb.balance(ctx, "sticky")
 	require.NoError(t, err, "balance should return nil when own count is 0, not block on other type's barrier")
@@ -1274,7 +1274,7 @@ func TestPollerBalancerBlocksWhenOtherTypeHasNoPollers(t *testing.T) {
 
 		done := make(chan error, 1)
 		go func() {
-			done <- pb.balance(context.Background(), "sticky")
+			done <- pb.balance(t.Context(), "sticky")
 		}()
 
 		synctest.Wait()
