@@ -25,6 +25,7 @@ to docs, or any other relevant information.
 - Added `-envconfig` support to the integration test harness, allowing integration tests to use
   standard client settings from `contrib/envconfig`.
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+- Added `client.WorkflowRun.GetFirstExecutionRunID` to expose the first execution run ID returned by the server when starting a workflow.
 - Added `client.Client.CancelWorkflowWithOptions` and `client.Client.TerminateWorkflowWithOptions` to target a workflow execution chain by its first execution run ID. Cancellation options can also specify a reason.
 - Added experimental `workflow.GetRandomStream` for named deterministic pseudorandom values in workflows.
 - Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
