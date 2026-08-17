@@ -29,6 +29,7 @@ type WorkerVersioningTestSuite struct {
 }
 
 func TestWorkerVersioningTestSuite(t *testing.T) {
+	requireLocalServer(t, NewConfig(), "deprecated worker versioning v0.1 and v0.2 are disabled on fresh Cloud namespaces")
 	suite.Run(t, new(WorkerVersioningTestSuite))
 }
 
