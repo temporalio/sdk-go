@@ -145,7 +145,18 @@ func (h *queryProbeHarness) tryQuery() (bool, error) {
 
 func (h *queryProbeHarness) query() bool {
 	h.t.Helper()
-	replaying, err := h.tryQuery()
+	// Dev-server RPCs can transiently fail on overloaded CI runners
+	// (context canceled / unavailable while pollers reconnect); retry
+	// briefly and only fail on a persistent error.
+	var replaying bool
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		replaying, err = h.tryQuery()
+		if err == nil {
+			return replaying
+		}
+		time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
+	}
 	require.NoError(h.t, err)
 	return replaying
 }
