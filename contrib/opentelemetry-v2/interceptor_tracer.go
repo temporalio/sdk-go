@@ -41,8 +41,9 @@ func (b *interceptorTracerBase) buildSpan(
 	ctx context.Context,
 	random io.Reader,
 	opts *tracing.TracerStartSpanOptions,
+	additionalOtelOpts ...trace.SpanStartOption,
 ) *tracerSpan {
-	var spanOpts []trace.SpanStartOption
+	var otelOpts []trace.SpanStartOption
 
 	otelCtx := context.WithValue(ctx, otelRandomKey{}, random)
 
@@ -50,11 +51,11 @@ func (b *interceptorTracerBase) buildSpan(
 
 	switch opts.Direction {
 	case tracing.SpanDirectionInbound:
-		spanOpts = append(spanOpts, trace.WithSpanKind(trace.SpanKindServer))
+		otelOpts = append(otelOpts, trace.WithSpanKind(trace.SpanKindServer))
 	case tracing.SpanDirectionOutbound:
-		spanOpts = append(spanOpts, trace.WithSpanKind(trace.SpanKindClient))
+		otelOpts = append(otelOpts, trace.WithSpanKind(trace.SpanKindClient))
 	default:
-		spanOpts = append(spanOpts, trace.WithSpanKind(trace.SpanKindUnspecified))
+		otelOpts = append(otelOpts, trace.WithSpanKind(trace.SpanKindUnspecified))
 	}
 
 	if len(opts.Tags) > 0 {
@@ -62,14 +63,12 @@ func (b *interceptorTracerBase) buildSpan(
 		for k, v := range opts.Tags {
 			attrs = append(attrs, attribute.String(k, v))
 		}
-		spanOpts = append(spanOpts, trace.WithAttributes(attrs...))
+		otelOpts = append(otelOpts, trace.WithAttributes(attrs...))
 	}
 
-	if !opts.Time.IsZero() {
-		spanOpts = append(spanOpts, trace.WithTimestamp(opts.Time))
-	}
+	otelOpts = append(otelOpts, additionalOtelOpts...)
 
-	_, span := b.otelTracer.Start(otelCtx, b.SpanName(opts), spanOpts...)
+	_, span := b.otelTracer.Start(otelCtx, b.SpanName(opts), otelOpts...)
 
 	tSpan := &tracerSpan{Span: span}
 	if !b.options.DisableBaggage {
@@ -126,14 +125,16 @@ func (t *workflowInterceptorTracer) CreateSpan(
 	// Outside a read-only context, exported workflow spans have two lifecycles:
 	// 1. Start live using wall-clock time, then end live using wall-clock time.
 	// 2. Start during replay using server time, then end live using wall-clock time.
-	if opts.Time.IsZero() && !workflow.IsReadOnly(ctx) && workflow.IsReplaying(ctx) {
-		opts.Time = workflow.Now(ctx)
+	var otelOpts []trace.SpanStartOption
+	if !workflow.IsReadOnly(ctx) && workflow.IsReplaying(ctx) {
+		otelOpts = append(otelOpts, trace.WithTimestamp(workflow.Now(ctx)))
 	}
 
 	span := t.buildSpan(
 		context.Background(),
 		interceptorReader(ctx),
 		opts,
+		otelOpts...,
 	)
 
 	if workflow.IsReadOnly(ctx) {

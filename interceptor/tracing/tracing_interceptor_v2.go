@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
@@ -110,15 +109,6 @@ type TracerOptions struct {
 	// spans created by application code remain connected.
 	AddTemporalSpans bool
 
-	// DisableSignalTracing can be set to disable signal tracing.
-	DisableSignalTracing bool
-
-	// DisableQueryTracing can be set to disable query tracing.
-	DisableQueryTracing bool
-
-	// DisableUpdateTracing can be set to disable update tracing.
-	DisableUpdateTracing bool
-
 	// AllowInvalidParentSpans will swallow errors interpreting parent
 	// spans from headers. Useful when migrating from one tracing library
 	// to another, while workflows/activities may be in progress.
@@ -142,13 +132,6 @@ type TracerStartSpanOptions struct {
 	Operation string
 	// Name is the specific activity, workflow, etc for the operation.
 	Name string
-
-	// Time indicates the start time of the span. A zero value lets the tracer
-	// choose the current time.
-	//
-	// For RunWorkflow and RunActivity operation types, this will match workflow.Info.WorkflowStartTime and
-	// activity.Info.StartedTime respectively
-	Time time.Time
 
 	// DependedOn is true if the parent depends on this span or false if it just
 	// is related to the parent. In OpenTracing terms, this is true for "ChildOf"
@@ -253,7 +236,7 @@ func (t *tracingClientOutboundInterceptor) CreateSchedule(ctx context.Context, i
 	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "CreateSchedule",
 		Name:      in.Options.ID,
-	}, t.root.headerWriter(t.root.tracer, ctx), false)
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +253,7 @@ func (t *tracingClientOutboundInterceptor) ExecuteWorkflow(
 		Operation: "StartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
-	}, t.root.headerWriter(t.root.tracer, ctx), false)
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +267,7 @@ func (t *tracingClientOutboundInterceptor) SignalWorkflow(ctx context.Context, i
 		Operation: "SignalWorkflow",
 		Name:      in.SignalName,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
-	}, t.root.headerWriter(t.root.tracer, ctx), t.root.tracer.Options().DisableSignalTracing)
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -301,7 +284,7 @@ func (t *tracingClientOutboundInterceptor) SignalWithStartWorkflow(
 		Operation: "SignalWithStartWorkflow",
 		Name:      in.WorkflowType,
 		Tags:      map[string]string{workflowIDTagKey: in.Options.ID},
-	}, t.root.headerWriter(t.root.tracer, ctx), t.root.tracer.Options().DisableSignalTracing)
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +301,7 @@ func (t *tracingClientOutboundInterceptor) QueryWorkflow(
 		Operation: "QueryWorkflow",
 		Name:      in.QueryType,
 		Tags:      map[string]string{workflowIDTagKey: in.WorkflowID},
-	}, t.root.headerWriter(t.root.tracer, ctx), t.root.tracer.Options().DisableQueryTracing)
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +321,7 @@ func (t *tracingClientOutboundInterceptor) UpdateWorkflow(
 			workflowIDTagKey: in.WorkflowID,
 			updateIDTagKey:   in.UpdateID,
 		},
-	}, t.root.headerWriter(t.root.tracer, ctx), t.root.tracer.Options().DisableUpdateTracing)
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +338,7 @@ func (t *tracingClientOutboundInterceptor) UpdateWithStartWorkflow(
 		Operation: "UpdateWithStartWorkflow",
 		Name:      in.UpdateOptions.UpdateName,
 		Tags:      map[string]string{workflowIDTagKey: in.UpdateOptions.WorkflowID, updateIDTagKey: in.UpdateOptions.UpdateID},
-	}, t.root.headerWriter(t.root.tracer, ctx), t.root.tracer.Options().DisableUpdateTracing)
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +355,7 @@ func (t *tracingClientOutboundInterceptor) ExecuteActivity(
 		Operation: "StartActivity",
 		Name:      in.ActivityType,
 		Tags:      map[string]string{activityIDTagKey: in.Options.ID},
-	}, t.root.headerWriter(t.root.tracer, ctx), false)
+	}, t.root.headerWriter(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -389,7 +372,7 @@ func (t *tracingClientOutboundInterceptor) ExecuteNexusOperation(
 		Operation: "StartNexusOperation",
 		Name:      in.Service + "/" + in.OperationType,
 		Tags:      nexusTags(in.Endpoint, in.Service, in.OperationType),
-	}, t.root.nexusHeaderWriter(t.root.tracer, in.NexusHeader), false)
+	}, t.root.nexusHeaderWriter(t.root.tracer, in.NexusHeader))
 	if err != nil {
 		return nil, err
 	}
@@ -405,7 +388,7 @@ func (t *tracingClientOutboundInterceptor) CancelWorkflow(
 	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "CancelWorkflow",
 		Tags:      workflowExecutionTags(in.WorkflowID, in.RunID),
-	}, nil, false)
+	}, nil)
 	if err != nil {
 		return err
 	}
@@ -425,7 +408,7 @@ func (t *tracingClientOutboundInterceptor) TerminateWorkflow(
 	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "TerminateWorkflow",
 		Tags:      tags,
-	}, nil, false)
+	}, nil)
 	if err != nil {
 		return err
 	}
@@ -441,7 +424,7 @@ func (t *tracingClientOutboundInterceptor) DescribeWorkflow(
 	ctx, endSpan, err := startOutboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation: "DescribeWorkflow",
 		Tags:      workflowExecutionTags(in.WorkflowID, in.RunID),
-	}, nil, false)
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -487,8 +470,7 @@ func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 			runIDTagKey:      info.WorkflowExecution.RunID,
 			activityIDTagKey: info.ActivityID,
 		},
-		Time: info.StartedTime,
-	}, t.root.headerReader(t.root.tracer, ctx), false)
+	}, t.root.headerReader(t.root.tracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -522,8 +504,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 		Operation: "RunWorkflow",
 		Name:      info.WorkflowType.Name,
 		Tags:      workflowTags(info),
-		Time:      info.WorkflowStartTime,
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx), false)
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +524,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, i
 		Operation: "HandleSignal",
 		Name:      in.SignalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx), t.root.workflowTracer.Options().DisableSignalTracing)
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -561,7 +542,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 		Operation: "HandleQuery",
 		Name:      in.QueryType,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx), t.root.workflowTracer.Options().DisableQueryTracing)
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -580,7 +561,7 @@ func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 		Operation: "ValidateUpdate",
 		Name:      in.Name,
 		Tags:      workflowTagsWithUpdate(info, currentUpdateInfo.ID),
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx), t.root.workflowTracer.Options().DisableUpdateTracing)
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -599,7 +580,7 @@ func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 		Operation: "HandleUpdate",
 		Name:      in.Name,
 		Tags:      workflowTagsWithUpdate(info, currentUpdateInfo.ID),
-	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx), t.root.workflowTracer.Options().DisableUpdateTracing)
+	}, t.root.workflowHeaderReader(t.root.workflowTracer, ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +605,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
 		Name:       activityType,
 		Tags:       workflowTags(info),
 		DependedOn: true,
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx), false)
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -644,7 +625,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 		Name:       activityType,
 		Tags:       workflowTags(info),
 		DependedOn: true,
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx), false)
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -670,7 +651,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
 		Operation: "StartChildWorkflow",
 		Name:      childWorkflowType,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx), false)
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return childWorkflowFuture{workflowFutureFromErr(ctx, err)}
 	}
@@ -691,7 +672,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 		Operation: "SignalExternalWorkflow",
 		Name:      signalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx), t.root.workflowTracer.Options().DisableSignalTracing)
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -711,7 +692,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 		Operation: "SignalChildWorkflow",
 		Name:      signalName,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx), t.root.workflowTracer.Options().DisableSignalTracing)
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return workflowFutureFromErr(ctx, err)
 	}
@@ -734,7 +715,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.
 		Operation: "StartNexusOperation",
 		Name:      input.Client.Service() + "/" + operationName,
 		Tags:      workflowTagsWithNexus(info, input.Client.Endpoint(), input.Client.Service(), operationName),
-	}, t.root.nexusHeaderWriter(t.root.workflowTracer, input.NexusHeader), false)
+	}, t.root.nexusHeaderWriter(t.root.workflowTracer, input.NexusHeader))
 	if err != nil {
 		return nexusOperationFuture{workflowFutureFromErr(ctx, err)}
 	}
@@ -753,7 +734,7 @@ func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 		Operation: "ContinueAsNew",
 		Name:      info.WorkflowType.Name,
 		Tags:      workflowTags(info),
-	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx), false)
+	}, t.root.workflowHeaderWriter(t.root.workflowTracer, ctx))
 	if err != nil {
 		return err
 	}
@@ -800,7 +781,7 @@ func (t *tracingNexusOperationInboundInterceptor) CancelOperation(ctx context.Co
 		Name:       info.Service + "/" + info.Operation,
 		DependedOn: true,
 		Tags:       nexusTags("", info.Service, info.Operation),
-	}, t.root.nexusHeaderReader(t.root.tracer, input.Options.Header), false)
+	}, t.root.nexusHeaderReader(t.root.tracer, input.Options.Header))
 	if err != nil {
 		return err
 	}
@@ -816,7 +797,7 @@ func (t *tracingNexusOperationInboundInterceptor) StartOperation(ctx context.Con
 		Name:       info.Service + "/" + info.Operation,
 		DependedOn: true,
 		Tags:       nexusTags("", info.Service, info.Operation),
-	}, t.root.nexusHeaderReader(t.root.tracer, input.Options.Header), false)
+	}, t.root.nexusHeaderReader(t.root.tracer, input.Options.Header))
 	if err != nil {
 		return nil, err
 	}
@@ -949,9 +930,8 @@ func startInboundSpan(
 	ctx context.Context,
 	options *TracerStartSpanOptions,
 	headerReader func() (TracerSpanRef, error),
-	disableSpanCreation bool,
 ) (context.Context, func(err *error), error) {
-	createSpan := t.Options().AddTemporalSpans && !disableSpanCreation
+	createSpan := t.Options().AddTemporalSpans
 
 	curr, err := parentFromHeader(t, headerReader)
 	if err != nil {
@@ -979,9 +959,8 @@ func startInboundWorkflowSpan(
 	ctx workflow.Context,
 	options *TracerStartSpanOptions,
 	headerReader func() (TracerSpanRef, error),
-	disableSpanCreation bool,
 ) (workflow.Context, func(err *error), error) {
-	createSpan := t.Options().AddTemporalSpans && !disableSpanCreation
+	createSpan := t.Options().AddTemporalSpans
 
 	curr, err := parentFromHeader(t, headerReader)
 	if err != nil {
@@ -1009,9 +988,8 @@ func startOutboundSpan(
 	ctx context.Context,
 	options *TracerStartSpanOptions,
 	headerWriter func(TracerSpanRef) error,
-	disableSpanCreation bool,
 ) (context.Context, func(err *error), error) {
-	createSpan := t.Options().AddTemporalSpans && !disableSpanCreation
+	createSpan := t.Options().AddTemporalSpans
 
 	curr := t.SpanFromContext(ctx)
 
@@ -1031,9 +1009,8 @@ func startOutboundWorkflowSpan(
 	ctx workflow.Context,
 	options *TracerStartSpanOptions,
 	headerWriter func(TracerSpanRef) error,
-	disableSpanCreation bool,
 ) (workflow.Context, func(err *error), error) {
-	createSpan := t.Options().AddTemporalSpans && !disableSpanCreation
+	createSpan := t.Options().AddTemporalSpans
 
 	curr := t.SpanFromContext(ctx)
 
