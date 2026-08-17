@@ -16,7 +16,6 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -102,17 +101,15 @@ func (d *transientFailDriver) attempts() (store, retrieve int) {
 // Nexus endpoint targeting a fresh task queue, returning the client, task queue, and
 // endpoint name.
 func newNexusExtStoreClient(t *testing.T, ctx context.Context, driver converter.StorageDriver) (client.Client, string, string) {
-	config := NewConfig()
+	clientBase := ConfigAndClientSuiteBase{}
+	clientBase.initConfig()
+	config := clientBase.config
 	require.NoError(t, WaitForTCP(time.Minute, config.ServiceAddr))
-	c, err := client.DialContext(ctx, client.Options{
-		HostPort:          config.ServiceAddr,
-		Namespace:         config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: config.TLS},
-		ExternalStorage: converter.ExternalStorage{
+	c, err := clientBase.newDefaultClientContext(ctx, func(options *client.Options) {
+		options.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{driver},
 			PayloadSizeThreshold: extStoreThreshold,
-		},
+		}
 	})
 	require.NoError(t, err)
 

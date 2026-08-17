@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/aws/aws-lambda-go/lambda"
@@ -532,26 +533,28 @@ func TestRunWorkerInternal_OnShutdownRunsAfterWorkerStop(t *testing.T) {
 }
 
 func TestRunWorkerInternal_TightDeadlineReturnsError(t *testing.T) {
-	deps, w, c := newTestDeps()
+	synctest.Test(t, func(t *testing.T) {
+		deps, w, c := newTestDeps()
 
-	// 2s deadline with 1500ms buffer → ~500ms workTime (≤ 1s), error.
-	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
-		if h, ok := handler.(func(context.Context) error); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			handlerErr := h(ctx)
-			assert.ErrorContains(t, handlerErr,
-				"almost no time for work")
+		// 2s deadline with 1500ms buffer → ~500ms workTime (≤ 1s), error.
+		deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+			if h, ok := handler.(func(context.Context) error); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				handlerErr := h(ctx)
+				assert.ErrorContains(t, handlerErr,
+					"almost no time for work")
+			}
 		}
-	}
 
-	err := runWorkerInternal(testVersion, func(ctx *Options) error {
-		ctx.ShutdownDeadlineBuffer = 1500 * time.Millisecond
-		return nil
-	}, deps)
-	require.NoError(t, err)
-	w.AssertExpectations(t)
-	c.AssertExpectations(t)
+		err := runWorkerInternal(testVersion, func(ctx *Options) error {
+			ctx.ShutdownDeadlineBuffer = 1500 * time.Millisecond
+			return nil
+		}, deps)
+		require.NoError(t, err)
+		w.AssertExpectations(t)
+		c.AssertExpectations(t)
+	})
 }
 
 type capturingLogger struct {
@@ -569,37 +572,39 @@ func (l *capturingLogger) Error(msg string, _ ...interface{}) {
 }
 
 func TestRunWorkerInternal_TightDeadlineLogsWarning(t *testing.T) {
-	deps, w, c := newTestDeps()
-	logger := &capturingLogger{}
-	deps.loadConfig = func() (client.Options, error) {
-		return client.Options{Logger: logger}, nil
-	}
-
-	// Use a small custom buffer so workTime lands in the warning band
-	// (> 1s but < 5s) without a long wait. 2s deadline, 500ms buffer → ~1.5s
-	// work time.
-	deps.startLambda = func(handler interface{}, options ...lambda.Option) {
-		if h, ok := handler.(func(context.Context) error); ok {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_ = h(ctx)
+	synctest.Test(t, func(t *testing.T) {
+		deps, w, c := newTestDeps()
+		logger := &capturingLogger{}
+		deps.loadConfig = func() (client.Options, error) {
+			return client.Options{Logger: logger}, nil
 		}
-	}
 
-	w.On("Start").Return(nil).Once()
-	w.On("Stop").Once()
-	c.On("Close").Once()
+		// Use a small custom buffer so workTime lands in the warning band
+		// (> 1s but < 5s) without a long wait. 2s deadline, 500ms buffer → ~1.5s
+		// work time.
+		deps.startLambda = func(handler interface{}, options ...lambda.Option) {
+			if h, ok := handler.(func(context.Context) error); ok {
+				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				defer cancel()
+				_ = h(ctx)
+			}
+		}
 
-	err := runWorkerInternal(testVersion, func(ctx *Options) error {
-		ctx.ShutdownDeadlineBuffer = 500 * time.Millisecond
-		return nil
-	}, deps)
+		w.On("Start").Return(nil).Once()
+		w.On("Stop").Once()
+		c.On("Close").Once()
 
-	require.NoError(t, err)
-	require.Len(t, logger.warns, 1)
-	assert.Contains(t, logger.warns[0], "less than 5s for work")
-	w.AssertExpectations(t)
-	c.AssertExpectations(t)
+		err := runWorkerInternal(testVersion, func(ctx *Options) error {
+			ctx.ShutdownDeadlineBuffer = 500 * time.Millisecond
+			return nil
+		}, deps)
+
+		require.NoError(t, err)
+		require.Len(t, logger.warns, 1)
+		assert.Contains(t, logger.warns[0], "less than 5s for work")
+		w.AssertExpectations(t)
+		c.AssertExpectations(t)
+	})
 }
 
 func TestRunWorkerInternal_PerInvocationLifecycle(t *testing.T) {

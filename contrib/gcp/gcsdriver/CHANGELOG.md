@@ -11,6 +11,8 @@ or Security.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-13
+
 ### Added
 
 - Initial release of the GCS storage driver for external payload storage,

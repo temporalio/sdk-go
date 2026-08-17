@@ -118,7 +118,7 @@ func TestContextAwareDataConverter(t *testing.T) {
 	})
 	t.Run("with activity context", func(t *testing.T) {
 		t.Parallel()
-		ctx := context.Background()
+		ctx := t.Context()
 		ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "e")
 
 		dc := WithContext(ctx, contextAwareDataConverter)

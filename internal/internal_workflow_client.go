@@ -375,26 +375,50 @@ func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOpt
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
+	return wc.CancelWorkflowWithOptions(ctx, CancelWorkflowOptions{
+		WorkflowID: workflowID,
+		RunID:      runID,
+	})
+}
+
+// CancelWorkflowWithOptions cancels a workflow execution with additional targeting options.
+func (wc *WorkflowClient) CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return err
 	}
 
-	return wc.interceptor.CancelWorkflow(ctx, &ClientCancelWorkflowInput{WorkflowID: workflowID, RunID: runID})
+	return wc.interceptor.CancelWorkflow(ctx, &ClientCancelWorkflowInput{
+		WorkflowID:          options.WorkflowID,
+		RunID:               options.RunID,
+		FirstExecutionRunID: options.FirstExecutionRunID,
+		Reason:              options.Reason,
+	})
 }
 
 // TerminateWorkflow terminates a workflow execution.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
+	return wc.TerminateWorkflowWithOptions(ctx, TerminateWorkflowOptions{
+		WorkflowID: workflowID,
+		RunID:      runID,
+		Reason:     reason,
+		Details:    details,
+	})
+}
+
+// TerminateWorkflowWithOptions terminates a workflow execution with additional targeting options.
+func (wc *WorkflowClient) TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return err
 	}
 
 	return wc.interceptor.TerminateWorkflow(ctx, &ClientTerminateWorkflowInput{
-		WorkflowID: workflowID,
-		RunID:      runID,
-		Reason:     reason,
-		Details:    details,
+		WorkflowID:          options.WorkflowID,
+		RunID:               options.RunID,
+		FirstExecutionRunID: options.FirstExecutionRunID,
+		Reason:              options.Reason,
+		Details:             options.Details,
 	})
 }
 
@@ -2664,7 +2688,9 @@ func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *Clie
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
 		},
-		Identity: w.client.identity,
+		Identity:            w.client.identity,
+		FirstExecutionRunId: in.FirstExecutionRunID,
+		Reason:              in.Reason,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -2688,9 +2714,10 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
 		},
-		Reason:   in.Reason,
-		Identity: w.client.identity,
-		Details:  detailsPayload,
+		Reason:              in.Reason,
+		Identity:            w.client.identity,
+		Details:             detailsPayload,
+		FirstExecutionRunId: in.FirstExecutionRunID,
 	}
 
 	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{

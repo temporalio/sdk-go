@@ -631,10 +631,18 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			}
 
 			// Invoke
-			result, err := envInterceptor.inboundInterceptor.HandleQuery(
-				rootCtx,
-				&HandleQueryInput{QueryType: queryType, Args: args},
-			)
+			result, err := func() (interface{}, error) {
+				state := getCoroutineState(rootCtx)
+
+				prev := state.dispatcher.getIsReadOnly()
+				state.dispatcher.setIsReadOnly(true)
+				defer state.dispatcher.setIsReadOnly(prev)
+
+				return envInterceptor.inboundInterceptor.HandleQuery(
+					rootCtx,
+					&HandleQueryInput{QueryType: queryType, Args: args},
+				)
+			}()
 
 			// Encode the result
 			var serializedResult *commonpb.Payloads
@@ -726,6 +734,14 @@ func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration
 // For troubleshooting stack pretty printing only.
 // Set to true to see full stack trace that includes framework methods.
 const disableCleanStackTraces = false
+
+func getCoroutineState(ctx Context) *coroutineState {
+	s := ctx.Value(coroutinesContextKey)
+	if s == nil {
+		panic("getCoroutineState: not workflow context")
+	}
+	return s.(*coroutineState)
+}
 
 func getState(ctx Context) *coroutineState {
 	s := ctx.Value(coroutinesContextKey)

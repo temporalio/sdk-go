@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	activitypb "go.temporal.io/api/activity/v1"
@@ -360,6 +361,107 @@ func (s *workflowRunSuite) SetupTest() {
 
 func (s *workflowRunSuite) TearDownTest() {
 	s.mockCtrl.Finish()
+}
+
+func (s *workflowRunSuite) TestCancelWorkflowWithOptions() {
+	firstExecutionRunID := "first execution run ID"
+	reason := "test reason"
+	s.workflowServiceClient.EXPECT().
+		RequestCancelWorkflowExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.RequestCancelWorkflowExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.RequestCancelWorkflowExecutionResponse, error) {
+			s.Equal(DefaultNamespace, request.Namespace)
+			s.Equal(workflowID, request.GetWorkflowExecution().GetWorkflowId())
+			s.Equal(runID, request.GetWorkflowExecution().GetRunId())
+			s.Equal(identity, request.Identity)
+			s.NotEmpty(request.RequestId)
+			s.Equal(firstExecutionRunID, request.FirstExecutionRunId)
+			s.Equal(reason, request.Reason)
+			return &workflowservice.RequestCancelWorkflowExecutionResponse{}, nil
+		})
+
+	err := s.workflowClient.CancelWorkflowWithOptions(context.Background(), CancelWorkflowOptions{
+		WorkflowID:          workflowID,
+		RunID:               runID,
+		FirstExecutionRunID: firstExecutionRunID,
+		Reason:              reason,
+	})
+	s.NoError(err)
+}
+
+func (s *workflowRunSuite) TestCancelWorkflowLegacyMethod() {
+	s.workflowServiceClient.EXPECT().
+		RequestCancelWorkflowExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.RequestCancelWorkflowExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.RequestCancelWorkflowExecutionResponse, error) {
+			s.Equal(workflowID, request.GetWorkflowExecution().GetWorkflowId())
+			s.Equal(runID, request.GetWorkflowExecution().GetRunId())
+			s.Empty(request.FirstExecutionRunId)
+			s.Empty(request.Reason)
+			return &workflowservice.RequestCancelWorkflowExecutionResponse{}, nil
+		})
+
+	s.NoError(s.workflowClient.CancelWorkflow(context.Background(), workflowID, runID))
+}
+
+func (s *workflowRunSuite) TestTerminateWorkflowWithOptions() {
+	firstExecutionRunID := "first execution run ID"
+	reason := "test reason"
+	details := []interface{}{42, "test detail"}
+	expectedDetails, err := s.dataConverter.ToPayloads(details...)
+	s.NoError(err)
+
+	s.workflowServiceClient.EXPECT().
+		TerminateWorkflowExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.TerminateWorkflowExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.TerminateWorkflowExecutionResponse, error) {
+			s.Equal(DefaultNamespace, request.Namespace)
+			s.Equal(workflowID, request.GetWorkflowExecution().GetWorkflowId())
+			s.Equal(runID, request.GetWorkflowExecution().GetRunId())
+			s.Equal(identity, request.Identity)
+			s.Equal(reason, request.Reason)
+			s.True(proto.Equal(expectedDetails, request.Details))
+			s.Equal(firstExecutionRunID, request.FirstExecutionRunId)
+			return &workflowservice.TerminateWorkflowExecutionResponse{}, nil
+		})
+
+	err = s.workflowClient.TerminateWorkflowWithOptions(context.Background(), TerminateWorkflowOptions{
+		WorkflowID:          workflowID,
+		RunID:               runID,
+		FirstExecutionRunID: firstExecutionRunID,
+		Reason:              reason,
+		Details:             details,
+	})
+	s.NoError(err)
+}
+
+func (s *workflowRunSuite) TestTerminateWorkflowLegacyMethod() {
+	s.workflowServiceClient.EXPECT().
+		TerminateWorkflowExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.TerminateWorkflowExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.TerminateWorkflowExecutionResponse, error) {
+			s.Equal(workflowID, request.GetWorkflowExecution().GetWorkflowId())
+			s.Equal(runID, request.GetWorkflowExecution().GetRunId())
+			s.Equal("test reason", request.Reason)
+			s.Empty(request.FirstExecutionRunId)
+			return &workflowservice.TerminateWorkflowExecutionResponse{}, nil
+		})
+
+	s.NoError(s.workflowClient.TerminateWorkflow(
+		context.Background(), workflowID, runID, "test reason", "test detail",
+	))
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflow_NoDup_Success() {
@@ -1126,19 +1228,21 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_DefaultTimeout() {
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_OperationNotExecuted() {
-	startOp := s.workflowClient.NewWithStartWorkflowOperation(
-		StartWorkflowOptions{
-			ID:                       workflowID,
-			WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
-			TaskQueue:                taskqueue,
-		}, workflowType,
-	)
+	synctest.Test(s.T(), func(t *testing.T) {
+		startOp := s.workflowClient.NewWithStartWorkflowOperation(
+			StartWorkflowOptions{
+				ID:                       workflowID,
+				WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+				TaskQueue:                taskqueue,
+			}, workflowType,
+		)
 
-	ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
+		ctxWithTimeout, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+		defer cancel()
 
-	_, err := startOp.Get(ctxWithTimeout)
-	require.EqualError(s.T(), err, "context deadline exceeded: operation was not executed")
+		_, err := startOp.Get(ctxWithTimeout)
+		require.EqualError(t, err, "context deadline exceeded: operation was not executed")
+	})
 }
 
 func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Abort() {
@@ -1173,35 +1277,37 @@ func (s *workflowRunSuite) TestExecuteWorkflowWithUpdate_Abort() {
 
 	for _, tt := range tests {
 		s.Run(tt.name, func() {
-			s.workflowServiceClient.EXPECT().
-				ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
-				DoAndReturn(tt.respFunc)
+			synctest.Test(s.T(), func(t *testing.T) {
+				s.workflowServiceClient.EXPECT().
+					ExecuteMultiOperation(gomock.Any(), gomock.Any(), gomock.Any()).
+					DoAndReturn(tt.respFunc)
 
-			startOp := s.workflowClient.NewWithStartWorkflowOperation(
-				StartWorkflowOptions{
-					ID:                       workflowID,
-					WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
-					TaskQueue:                taskqueue,
-				}, workflowType,
-			)
+				startOp := s.workflowClient.NewWithStartWorkflowOperation(
+					StartWorkflowOptions{
+						ID:                       workflowID,
+						WorkflowIDConflictPolicy: enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL,
+						TaskQueue:                taskqueue,
+					}, workflowType,
+				)
 
-			ctxWithTimeout, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-			defer cancel()
+				ctxWithTimeout, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+				defer cancel()
 
-			_, err := s.workflowClient.UpdateWithStartWorkflow(
-				ctxWithTimeout,
-				UpdateWithStartWorkflowOptions{
-					UpdateOptions: UpdateWorkflowOptions{
-						UpdateName:   "update",
-						WaitForStage: WorkflowUpdateStageCompleted,
+				_, err := s.workflowClient.UpdateWithStartWorkflow(
+					ctxWithTimeout,
+					UpdateWithStartWorkflowOptions{
+						UpdateOptions: UpdateWorkflowOptions{
+							UpdateName:   "update",
+							WaitForStage: WorkflowUpdateStageCompleted,
+						},
+						StartWorkflowOperation: startOp,
 					},
-					StartWorkflowOperation: startOp,
-				},
-			)
+				)
 
-			var expectedErr *WorkflowUpdateServiceTimeoutOrCanceledError
-			require.ErrorAs(s.T(), err, &expectedErr)
-			require.ErrorContains(s.T(), err, tt.expectedErr)
+				var expectedErr *WorkflowUpdateServiceTimeoutOrCanceledError
+				require.ErrorAs(t, err, &expectedErr)
+				require.ErrorContains(t, err, tt.expectedErr)
+			})
 		})
 	}
 }
@@ -1440,7 +1546,7 @@ func TestLoadCapabilitiesUnknownMethodUnimplementedUsesEmptyCapabilities(t *test
 		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
 	}
 
-	capabilities, err := client.loadCapabilities(context.Background())
+	capabilities, err := client.loadCapabilities(t.Context())
 	require.NoError(t, err)
 	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, capabilities))
 }
@@ -1461,7 +1567,7 @@ func TestLoadCapabilitiesNonUnknownMethodUnimplementedFails(t *testing.T) {
 		getSystemInfoTimeout:     defaultGetSystemInfoTimeout,
 	}
 
-	_, err := client.loadCapabilities(context.Background())
+	_, err := client.loadCapabilities(t.Context())
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed reaching server")
 	require.ErrorContains(t, err, "frontend has not loaded GetSystemInfo")
@@ -2387,7 +2493,7 @@ func TestClientCloseCount(t *testing.T) {
 	server, err := startTestGRPCServer()
 	require.NoError(t, err)
 	defer server.Stop()
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: server.addr})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: server.addr})
 	require.NoError(t, err)
 	workflowClient := client.(*WorkflowClient)
 
@@ -2395,11 +2501,11 @@ func TestClientCloseCount(t *testing.T) {
 	require.EqualValues(t, 1, atomic.LoadInt32(workflowClient.unclosedClients))
 
 	// Create two more and confirm counts
-	client2, err := NewClientFromExisting(context.Background(), client, ClientOptions{})
+	client2, err := NewClientFromExisting(t.Context(), client, ClientOptions{})
 	require.NoError(t, err)
 	require.EqualValues(t, 2, atomic.LoadInt32(workflowClient.unclosedClients))
 	require.Same(t, workflowClient.unclosedClients, client2.(*WorkflowClient).unclosedClients)
-	client3, err := NewClientFromExisting(context.Background(), client, ClientOptions{})
+	client3, err := NewClientFromExisting(t.Context(), client, ClientOptions{})
 	require.NoError(t, err)
 	require.EqualValues(t, 3, atomic.LoadInt32(workflowClient.unclosedClients))
 	require.Same(t, workflowClient.unclosedClients, client3.(*WorkflowClient).unclosedClients)
@@ -2428,7 +2534,7 @@ func TestCompletedUpdateHandle(t *testing.T) {
 	t.Run("error case", func(t *testing.T) {
 		err := errors.New(t.Name())
 		uh := completedUpdateHandle{err: err}
-		require.Error(t, uh.Get(context.TODO(), nil))
+		require.Error(t, uh.Get(t.Context(), nil))
 	})
 
 	t.Run("value case", func(t *testing.T) {
@@ -2437,13 +2543,13 @@ func TestCompletedUpdateHandle(t *testing.T) {
 		require.NoError(t, err)
 		uh := completedUpdateHandle{value: newEncodedValue(payloads, dc)}
 		var out string
-		require.NoError(t, uh.Get(context.TODO(), &out))
+		require.NoError(t, uh.Get(t.Context(), &out))
 		require.Equal(t, t.Name(), out)
 	})
 
 	t.Run("nil does not panic", func(t *testing.T) {
 		uh := completedUpdateHandle{}
-		require.NotPanics(t, func() { _ = uh.Get(context.TODO(), nil) })
+		require.NotPanics(t, func() { _ = uh.Get(t.Context(), nil) })
 	})
 }
 
@@ -2530,14 +2636,14 @@ func TestUpdate(t *testing.T) {
 			},
 			nil,
 		)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("sync error", func(t *testing.T) {
@@ -2553,10 +2659,10 @@ func TestUpdate(t *testing.T) {
 			},
 			nil,
 		)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.Error(t, err)
 		require.ErrorContains(t, err, want.Error())
 	})
@@ -2580,14 +2686,14 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			).Times(2)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("async delayed accepted", func(t *testing.T) {
@@ -2610,10 +2716,10 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.Error(t, err)
 		require.ErrorContains(t, err, want.Error())
 	})
@@ -2645,14 +2751,14 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			).Times(2)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("internal retry on nil outcome", func(t *testing.T) {
@@ -2683,65 +2789,64 @@ func TestUpdate(t *testing.T) {
 				nil,
 			)
 
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 	})
 	t.Run("default ctx timeout", func(t *testing.T) {
-		svc, client := init(t)
-		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
-		expectedDeadline := time.Now().Add(pollUpdateTimeout)
-		var actualDeadline time.Time // assigned below in mock
-		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
-			DoAndReturn(
-				func(
-					ctx context.Context,
-					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
-					_ ...grpc.CallOption,
-				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
-					actualDeadline, _ = ctx.Deadline()
-					return nil, errors.New("intentional error")
-				},
-			)
-		_ = handle.Get(context.TODO(), nil)
+		synctest.Test(t, func(t *testing.T) {
+			svc, client := init(t)
+			handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+			expectedDeadline := time.Now().Add(pollUpdateTimeout)
+			var actualDeadline time.Time // assigned below in mock
+			svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+				DoAndReturn(
+					func(
+						ctx context.Context,
+						_ *workflowservice.PollWorkflowExecutionUpdateRequest,
+						_ ...grpc.CallOption,
+					) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
+						actualDeadline, _ = ctx.Deadline()
+						return nil, errors.New("intentional error")
+					},
+				)
+			_ = handle.Get(t.Context(), nil)
 
-		// can't tell what the exact deadline will be so assert that the
-		// observed deadline passed to server rpc is within 2 seconds of the
-		// default pollUpdateTimout that is used when no other deadline/timeout
-		// is supplied by the caller.
-		require.WithinDuration(t, expectedDeadline, actualDeadline, 2*time.Second)
+			require.Equal(t, expectedDeadline, actualDeadline)
+		})
 	})
 	t.Run("parent ctx timeout", func(t *testing.T) {
-		svc, client := init(t)
-		handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
-		callerDeadline := time.Now().Add(50 * time.Millisecond)
-		svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
-			DoAndReturn(
-				func(
-					ctx context.Context,
-					_ *workflowservice.PollWorkflowExecutionUpdateRequest,
-					_ ...grpc.CallOption,
-				) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
-					thisDeadline, ok := ctx.Deadline()
-					require.True(t, ok)
-					require.LessOrEqual(t, thisDeadline, callerDeadline,
-						"caller timeout can be shortened but not extended")
-					ctxWillTimeoutIn := time.Until(thisDeadline)
-					sleepCtx(ctx, ctxWillTimeoutIn+3*time.Second)
-					require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
-					return nil, status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
-				},
-			)
-		callerCtx, cancel := context.WithDeadline(context.TODO(), callerDeadline)
-		defer cancel()
-		var got string
-		err := handle.Get(callerCtx, &got)
-		require.Error(t, err)
-		var rpcErr *WorkflowUpdateServiceTimeoutOrCanceledError
-		require.ErrorAs(t, err, &rpcErr)
+		synctest.Test(t, func(t *testing.T) {
+			svc, client := init(t)
+			handle := client.GetWorkflowUpdateHandle(GetWorkflowUpdateHandleOptions{})
+			callerDeadline := time.Now().Add(50 * time.Millisecond)
+			svc.EXPECT().PollWorkflowExecutionUpdate(gomock.Any(), gomock.Any()).
+				DoAndReturn(
+					func(
+						ctx context.Context,
+						_ *workflowservice.PollWorkflowExecutionUpdateRequest,
+						_ ...grpc.CallOption,
+					) (*workflowservice.PollWorkflowExecutionUpdateResponse, error) {
+						thisDeadline, ok := ctx.Deadline()
+						require.True(t, ok)
+						require.Equal(t, callerDeadline, thisDeadline)
+						ctxWillTimeoutIn := time.Until(thisDeadline)
+						sleepCtx(ctx, ctxWillTimeoutIn+3*time.Second)
+						require.ErrorIs(t, ctx.Err(), context.DeadlineExceeded)
+						return nil, status.Error(codes.DeadlineExceeded, context.DeadlineExceeded.Error())
+					},
+				)
+			callerCtx, cancel := context.WithDeadline(t.Context(), callerDeadline)
+			defer cancel()
+			var got string
+			err := handle.Get(callerCtx, &got)
+			require.Error(t, err)
+			var rpcErr *WorkflowUpdateServiceTimeoutOrCanceledError
+			require.ErrorAs(t, err, &rpcErr)
+		})
 	})
 	t.Run("parent ctx cancelled", func(t *testing.T) {
 		svc, client := init(t)
@@ -2756,7 +2861,7 @@ func TestUpdate(t *testing.T) {
 					return nil, status.Error(codes.Canceled, context.Canceled.Error())
 				},
 			)
-		callerCtx, cancel := context.WithCancel(context.TODO())
+		callerCtx, cancel := context.WithCancel(t.Context())
 		cancel()
 		var got string
 		err := handle.Get(callerCtx, &got)
@@ -2787,14 +2892,14 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("sync multiple step success", func(t *testing.T) {
@@ -2827,14 +2932,14 @@ func TestUpdate(t *testing.T) {
 				},
 				nil,
 			).Times(1)
-		handle, err := client.UpdateWorkflow(context.TODO(), req)
+		handle, err := client.UpdateWorkflow(t.Context(), req)
 		require.NoError(t, err)
 		var got string
-		err = handle.Get(context.TODO(), &got)
+		err = handle.Get(t.Context(), &got)
 		require.NoError(t, err)
 		require.Equal(t, want, got)
 		// Verify that calling Get with nil does not panic
-		err = handle.Get(context.TODO(), nil)
+		err = handle.Get(t.Context(), nil)
 		require.NoError(t, err)
 	})
 	t.Run("sync success exposes payloads", func(t *testing.T) {
@@ -2856,7 +2961,7 @@ func TestUpdate(t *testing.T) {
 		)
 		// Use PollWorkflowUpdate directly to access the raw output.
 		output, err := client.PollWorkflowUpdate(
-			context.TODO(),
+			t.Context(),
 			refFromRequest(req),
 		)
 		require.NoError(t, err)
@@ -2883,7 +2988,7 @@ func TestUpdate(t *testing.T) {
 		)
 		// Use PollWorkflowUpdate directly to access the raw output.
 		output, err := client.PollWorkflowUpdate(
-			context.TODO(),
+			t.Context(),
 			refFromRequest(req),
 		)
 		require.NoError(t, err)
@@ -2933,7 +3038,7 @@ func TestPollActivityResult(t *testing.T) {
 				nil,
 			)
 		out, err := client.interceptor.PollActivityResult(
-			context.Background(),
+			t.Context(),
 			&ClientPollActivityResultInput{ActivityID: "test-id", RunID: "run-id"},
 		)
 		require.NoError(t, err)
@@ -2961,7 +3066,7 @@ func TestPollActivityResult(t *testing.T) {
 				nil,
 			)
 		out, err := client.interceptor.PollActivityResult(
-			context.Background(),
+			t.Context(),
 			&ClientPollActivityResultInput{ActivityID: "test-id", RunID: "run-id"},
 		)
 		require.NoError(t, err)

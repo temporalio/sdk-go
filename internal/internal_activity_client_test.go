@@ -53,7 +53,7 @@ func TestExecuteActivityHeaderAvailableToInterceptors(t *testing.T) {
 	dummyActivity := func(ctx context.Context) error { return nil }
 	client.registry.RegisterActivityWithOptions(dummyActivity, RegisterActivityOptions{})
 
-	_, err := client.ExecuteActivity(context.Background(), ClientStartActivityOptions{
+	_, err := client.ExecuteActivity(t.Context(), ClientStartActivityOptions{
 		TaskQueue:           "test-tq",
 		ID:                  "test-activity-id",
 		StartToCloseTimeout: 1,

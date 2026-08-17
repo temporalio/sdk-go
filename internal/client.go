@@ -171,6 +171,11 @@ type (
 		//  - serviceerror.Unavailable
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
+		// CancelWorkflowWithOptions requests cancellation of a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error
+
 		// TerminateWorkflow terminates a workflow execution.
 		// workflowID is required, other parameters are optional.
 		//  - workflow ID of the workflow.
@@ -181,6 +186,11 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
+
+		// TerminateWorkflowWithOptions terminates a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		//  - workflow ID of the workflow.
@@ -1088,6 +1098,53 @@ type (
 		// be created as false. This is set to true when server capabilities are
 		// fetched.
 		excludeInternalFromRetry *atomic.Bool
+	}
+
+	// CancelWorkflowOptions contains parameters for cancelling a workflow execution.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.CancelWorkflowOptions]
+	CancelWorkflowOptions struct {
+		// WorkflowID is the ID of the workflow execution to cancel.
+		WorkflowID string
+
+		// RunID is the run ID of the workflow execution to cancel. If empty, the
+		// currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
+		RunID string
+
+		// FirstExecutionRunID is the run ID of the first execution in the workflow
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
+		FirstExecutionRunID string
+
+		// Reason is the reason for requesting cancellation of the workflow execution.
+		Reason string
+	}
+
+	// TerminateWorkflowOptions contains parameters for terminating a workflow execution.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.TerminateWorkflowOptions]
+	TerminateWorkflowOptions struct {
+		// WorkflowID is the ID of the workflow execution to terminate.
+		WorkflowID string
+
+		// RunID is the run ID of the workflow execution to terminate. If empty,
+		// the currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
+		RunID string
+
+		// FirstExecutionRunID is the run ID of the first execution in the workflow
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
+		FirstExecutionRunID string
+
+		// Reason is the reason for terminating the workflow execution.
+		Reason string
+
+		// Details are additional values attached to the termination event.
+		Details []interface{}
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
