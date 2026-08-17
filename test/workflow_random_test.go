@@ -44,6 +44,7 @@ func (ts *WorkflowRandomTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkflowRandomTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 
 	ts.worker = worker.New(ts.client, ts.taskQueueName, worker.Options{})

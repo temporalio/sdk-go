@@ -3,9 +3,12 @@ module go.temporal.io/sdk/internal/cmd/build
 go 1.25.4
 
 require (
+	github.com/Antonboom/testifylint v1.6.4
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
 	github.com/kisielk/errcheck v1.8.0
+	github.com/ldez/usetesting v0.5.0
 	go.temporal.io/sdk v1.32.1
+	golang.org/x/tools v0.44.0
 	honnef.co/go/tools v0.6.0
 )
 
@@ -31,7 +34,6 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
 	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect

@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 )
 
@@ -43,6 +44,25 @@ func TestCheckModuleDirs(t *testing.T) {
 	}
 	if !slices.Equal(moduleDirs, want) {
 		t.Fatalf("expected module dirs %q, got %q", want, moduleDirs)
+	}
+}
+
+func TestFindModuleDirs(t *testing.T) {
+	moduleDirs, err := findModuleDirs(fstest.MapFS{
+		"go.mod":                         {},
+		"test/go.mod":                    {},
+		"contrib/example/go.mod":         {},
+		"contrib/example/nested/file.go": {},
+		"testdata/fixture/go.mod":        {},
+		"vendor/dependency/go.mod":       {},
+		".build/scratch/go.mod":          {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".", "contrib/example", "test"}
+	if !slices.Equal(want, moduleDirs) {
+		t.Fatalf("expected module directories %v, got %v", want, moduleDirs)
 	}
 }
 

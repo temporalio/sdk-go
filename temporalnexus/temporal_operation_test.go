@@ -162,13 +162,13 @@ func TestDoubleStartGuard(t *testing.T) {
 	started.Store(true)
 	nc := NexusClient{asyncStarted: &started}
 
-	_, err := StartUntypedWorkflow[string](context.Background(), nc, client.StartWorkflowOptions{}, "ignored")
+	_, err := StartUntypedWorkflow[string](t.Context(), nc, client.StartWorkflowOptions{}, "ignored")
 	var handlerErr *nexus.HandlerError
 	require.ErrorAs(t, err, &handlerErr)
 	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
 	require.Contains(t, handlerErr.Message, "only one async operation")
 
-	_, err = StartWorkflow(context.Background(), nc, client.StartWorkflowOptions{}, func(_ workflow.Context, _ string) (string, error) { return "", nil }, "ignored")
+	_, err = StartWorkflow(t.Context(), nc, client.StartWorkflowOptions{}, func(_ workflow.Context, _ string) (string, error) { return "", nil }, "ignored")
 	require.ErrorAs(t, err, &handlerErr)
 	require.Equal(t, nexus.HandlerErrorTypeBadRequest, handlerErr.Type)
 }
@@ -180,7 +180,7 @@ func TestStartUpdateWorkflowGuards(t *testing.T) {
 	}
 	// attempt running async with an exhuasted nexusClient handler
 	nc.asyncStarted.Store(true)
-	ctx := internal.ContextWithNexusOperationContext(context.Background(), &internal.NexusOperationContext{})
+	ctx := internal.ContextWithNexusOperationContext(t.Context(), &internal.NexusOperationContext{})
 	_, err := StartUpdateWorkflow[string](ctx, nc, client.UpdateWorkflowOptions{
 		WorkflowID:   "emptyWorkflowID!",
 		UpdateName:   "upd",
