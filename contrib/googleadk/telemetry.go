@@ -116,13 +116,11 @@ func (l replaySafeLogger) Enabled(ctx context.Context, param otellog.EnabledPara
 }
 
 // NewReplaySafeMeterProvider wraps inner so synchronous instrument recordings
-// (Add/Record) made from replaying workflow code are dropped, and each sync
-// instrument's Enabled hint reports false in that state (a recording would be
-// dropped, so callers skip building it — the same contract as the wrapped
-// Logger's Enabled); everything else delegates to inner unchanged. Observable
-// (asynchronous) instruments and RegisterCallback pass through untouched:
-// their callbacks run on the metric reader's collect cycle, never under a
-// workflow context.
+// (Add/Record) made from replaying workflow code are dropped and each sync
+// instrument's Enabled reports false, matching the wrapped logger's Enabled;
+// everything else delegates to inner unchanged. Observable (asynchronous)
+// instruments and RegisterCallback pass through untouched: their callbacks
+// run on the metric reader's collect cycle, never under a workflow context.
 //
 // The pinned adk-go emits no OTel metrics yet (meter-provider init is upstream
 // TODO(#479)), so today this wrapper matters for workflow-side metrics your own
@@ -219,10 +217,6 @@ func (m replaySafeMeter) Float64Gauge(name string, opts ...metric.Float64GaugeOp
 	}
 	return replaySafeFloat64Gauge{Float64Gauge: inner}, err
 }
-
-// Each sync instrument wrapper gates its recording method AND Enabled: while
-// replaying, a recording would be dropped, so Enabled truthfully reports false
-// (mirroring replaySafeLogger.Enabled) and spares callers the attribute work.
 
 type replaySafeInt64Counter struct{ metric.Int64Counter }
 

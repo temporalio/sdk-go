@@ -405,36 +405,28 @@ re-creation non-recording:
   usage must survive restarts, derive it from Activity-side telemetry, which
   the wrappers never gate.
 
-`NewReplaySafeMeterProvider` is forward-looking: it gates
-synchronous instrument recordings, and a gated instrument's `Enabled` hint
-reports false while its recording would be dropped (observable instruments
-pass through, since their callbacks never run under a workflow context) —
-covering both your own workflow-side recordings through the global meter today
-and ADK's metrics once adk-go#479 lands.
+`NewReplaySafeMeterProvider` is forward-looking: it gates synchronous
+instrument recordings and reports their `Enabled` false while suppressed
+(observable instruments pass through — their callbacks never run under a
+workflow context), covering both your own workflow-side recordings through
+the global meter today and ADK's metrics once adk-go#479 lands.
 
 **Query handlers** are the one place the gate can drop live telemetry. The
-wrappers share `workflow.IsReplaying` — the SDK's only replay predicate — with
-`workflow.GetMetricsHandler` and `workflow.GetLogger`, and Go core leaves that
-flag wherever the last processed history event put it when it runs a query
-handler. A query served from a warm worker observes false; one served right
-after a catch-up replay (fresh or evicted worker) observes true whenever a
-command event or the workflow-completion event trails the last workflow task —
-an agent awaiting `InvokeModel`, for example. Queries are live once-per-request
-reads that never re-execute from history, so a recording dropped there is lost
-rather than deduplicated, exactly as it is for `workflow.GetMetricsHandler` in
-the same position. (Update validators never hit this: the SDK skips validators
-entirely during replay, so they always run live and their emissions always
-record.) If query-time telemetry matters, emit it on a context not derived
-from `googleadk.NewContext` — queries never replay, so an ungated recording
-stays exactly once per query.
+wrappers share `workflow.IsReplaying` (the SDK's only replay predicate) with
+`workflow.GetMetricsHandler`, and a query handler observes whatever the last
+processed history event left there: false on a warm worker, true right after
+a catch-up replay when a command event or the workflow's completion trails
+the last workflow task (e.g. an agent awaiting `InvokeModel`). Queries never
+re-execute from history, so a dropped recording is lost, not deduplicated. If
+query-time telemetry matters, emit it on a context not derived from
+`googleadk.NewContext` — queries never replay, so it records exactly once.
+Update validators are unaffected: the SDK never runs them during replay.
 
-**OTel Logs API status:** `NewReplaySafeLoggerProvider` is built on
-`go.opentelemetry.io/otel/log`, which is still pre-1.0 (`v0.19.x` at this pin):
-the Logs Bridge API can change shape between minor releases, so upgrading it
-may require a matching upgrade of this package and of any log bridges you use.
-An interface-surface test in this package fails on any method an upgrade would
-newly pass through ungated, so such a change is audited against the replay
-gate rather than silently widening it.
+**OTel Logs API status:** `NewReplaySafeLoggerProvider` is built on the
+pre-1.0 `go.opentelemetry.io/otel/log` (`v0.19.x` at this pin), which may
+change shape between minor releases; upgrading it can require a matching
+upgrade of this package. A surface test in this package fails on any method
+an upgrade would newly pass through ungated.
 
 ## Supported & not-yet-supported
 
