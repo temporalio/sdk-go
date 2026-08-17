@@ -133,10 +133,14 @@ func (b *builder) integrationTest() error {
 	pFlag := flagSet.String("p", "", "Passed to go test as -p")
 	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
+	envConfigFlag := flagSet.Bool("envconfig", false, "Load test server client options from envconfig")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
 	testOutputFlags := addTestOutputFlags(flagSet)
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
+	}
+	if *devServerFlag && *envConfigFlag {
+		return fmt.Errorf("-dev-server and -envconfig cannot be used together")
 	}
 	testOutput, err := b.prepareTestOutput(*testOutputFlags, "go-test.log")
 	if err != nil {
@@ -160,6 +164,9 @@ func (b *builder) integrationTest() error {
 	rerunArgs := []string{"go", "run", ".", "integration-test"}
 	if *devServerFlag {
 		rerunArgs = append(rerunArgs, "-dev-server")
+	}
+	if *envConfigFlag {
+		rerunArgs = append(rerunArgs, "-envconfig")
 	}
 	if *pFlag != "" {
 		rerunArgs = append(rerunArgs, "-p", *pFlag)
@@ -288,6 +295,9 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		args = append(args, "--", "-using-cli-dev-server")
 		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
+	}
+	if *envConfigFlag {
+		env = append(env, "TEMPORAL_TEST_ENV_CONFIG_SERVER=true")
 	}
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)
