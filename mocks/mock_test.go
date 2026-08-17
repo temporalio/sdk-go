@@ -16,6 +16,7 @@ import (
 func Test_MockClient(t *testing.T) {
 	testWorkflowID := "test-workflowid"
 	testRunID := "test-runid"
+	testFirstExecutionRunID := "test-first-execution-runid"
 	testWorkflowName := "workflow"
 	testWorkflowInput := "input"
 	mockClient := &Client{}
@@ -23,6 +24,7 @@ func Test_MockClient(t *testing.T) {
 	mockWorkflowRun := &WorkflowRun{}
 	mockWorkflowRun.On("GetID").Return(testWorkflowID).Times(4)
 	mockWorkflowRun.On("GetRunID").Return(testRunID).Times(4)
+	mockWorkflowRun.On("GetFirstExecutionRunID").Return(testFirstExecutionRunID).Times(4)
 	mockWorkflowRun.On("Get", mock.Anything, mock.Anything).Return(nil).Times(2)
 
 	mockClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockWorkflowRun, nil).Once()
@@ -31,7 +33,8 @@ func Test_MockClient(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, wr.GetID())
 	require.Equal(t, testRunID, wr.GetRunID())
-	require.NoError(t, mockWorkflowRun.Get(t.Context(), &testWorkflowID))
+	require.Equal(t, testFirstExecutionRunID, wr.GetFirstExecutionRunID())
+  require.NoError(t, mockWorkflowRun.Get(t.Context(), &testWorkflowID))
 
 	mockClient.On("SignalWithStartWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockWorkflowRun, nil).Once()
 	wr, err = mockClient.SignalWithStartWorkflow(t.Context(), "wid", "signal", "val", client.StartWorkflowOptions{}, testWorkflowName, testWorkflowInput)
@@ -39,6 +42,7 @@ func Test_MockClient(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, wr.GetID())
 	require.Equal(t, testRunID, wr.GetRunID())
+	require.Equal(t, testFirstExecutionRunID, wr.GetFirstExecutionRunID())
 
 	mockClient.On("CancelWorkflow", mock.Anything, testWorkflowID, testRunID).Return(nil).Once()
 	err = mockClient.CancelWorkflow(t.Context(), testWorkflowID, testRunID)
@@ -46,12 +50,14 @@ func Test_MockClient(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, wr.GetID())
 	require.Equal(t, testRunID, wr.GetRunID())
+	require.Equal(t, testFirstExecutionRunID, wr.GetFirstExecutionRunID())
 
 	mockClient.On("GetWorkflow", mock.Anything, testWorkflowID, testRunID).Return(mockWorkflowRun).Once()
 	wr = mockClient.GetWorkflow(t.Context(), testWorkflowID, testRunID)
 	mockClient.AssertExpectations(t)
 	require.Equal(t, testWorkflowID, wr.GetID())
 	require.Equal(t, testRunID, wr.GetRunID())
+	require.Equal(t, testFirstExecutionRunID, wr.GetFirstExecutionRunID())
 	require.NoError(t, wr.Get(t.Context(), &testWorkflowID))
 
 	mockHistoryIter := &HistoryEventIterator{}
