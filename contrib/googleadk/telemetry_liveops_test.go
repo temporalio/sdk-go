@@ -1,33 +1,24 @@
 package googleadk_test
 
 // Probes pinning how the replay gate interacts with the two LIVE read-only
-// operations that execute around history replay: query handlers and update
-// validators. Both are once-per-request operations — dropping their telemetry
-// is a real loss, not deduplication — so these tests document exactly when Go
-// core's workflow.IsReplaying (the only replay predicate the Go SDK exposes,
-// and the one the gate shares with workflow.GetMetricsHandler) reports true
-// for them.
+// operations that run around history replay: query handlers and update
+// validators. Both are once-per-request, so a dropped recording is a real
+// loss, not deduplication. The gate shares workflow.IsReplaying — the only
+// replay predicate the Go SDK exposes — with workflow.GetMetricsHandler and
+// workflow.GetLogger, so whatever these pins observe is core-consistent.
 //
-// Update validators are structurally safe: the SDK never re-runs a validator
-// while replaying accepted updates (internal_update.go skips validation under
-// IsReplaying), and a NEW update riding a catch-up workflow task is validated
-// in the task's final live batch, after the per-event replay flag has dropped —
-// so a validator always observes IsReplaying false and its telemetry always
-// records.
+// Update validators are structurally safe: the SDK skips validation while
+// replaying accepted updates (internal_update.go), and a NEW update riding a
+// catch-up workflow task is validated in the task's final live batch, so a
+// validator always observes IsReplaying false and its telemetry records.
 //
-// Query handlers inherit whatever the last processed history event left in the
-// flag, because Go runs them after event processing without resetting it.
-// Served from a warm cache they observe false; served right after a catch-up
-// replay they observe true or false depending on an incidental history shape
-// (whether the final delivered event classifies as replay — e.g. a pending
-// command event or the workflow-completion event vs. a bare
-// WorkflowTaskCompleted). workflow.GetMetricsHandler and workflow.GetLogger
-// share exactly these semantics, so the gate is core-consistent; the README
-// documents the workaround (emit query-path telemetry on a non-bridged
-// context). If Go core ever gains a finer predicate that excludes live
-// queries (the equivalent of Python's is_replaying_history_events or
-// TypeScript's isReplayingHistoryEvents), these pins will fail and the gate
-// should switch to it.
+// Query handlers inherit whatever the last processed history event left in
+// the flag: false from a warm cache, true right after a catch-up replay
+// whenever a command event or the workflow-completion event trails the last
+// workflow task. The README documents the workaround. These pins fail if core
+// changes what queries observe; if core instead adds a finer predicate that
+// excludes live queries (Python's is_replaying_history_events, TypeScript's
+// isReplayingHistoryEvents), the gate should switch to it.
 
 import (
 	"context"
@@ -138,13 +129,24 @@ func (h *queryProbeHarness) evict() {
 	h.startWorker()
 }
 
-// query returns what the handler observed for workflow.IsReplaying.
+// tryQuery returns what the handler observed for workflow.IsReplaying. It is
+// require-free so it can run inside require.Eventually's polling goroutine.
+func (h *queryProbeHarness) tryQuery() (bool, error) {
+	v, err := h.c.QueryWorkflow(h.ctx, h.run.GetID(), h.run.GetRunID(), "replay-probe")
+	if err != nil {
+		return false, err
+	}
+	var replaying bool
+	if err := v.Get(&replaying); err != nil {
+		return false, err
+	}
+	return replaying, nil
+}
+
 func (h *queryProbeHarness) query() bool {
 	h.t.Helper()
-	v, err := h.c.QueryWorkflow(h.ctx, h.run.GetID(), h.run.GetRunID(), "replay-probe")
+	replaying, err := h.tryQuery()
 	require.NoError(h.t, err)
-	var replaying bool
-	require.NoError(h.t, v.Get(&replaying))
 	return replaying
 }
 
@@ -153,12 +155,10 @@ func (h *queryProbeHarness) signal(done bool) {
 	require.NoError(h.t, h.c.SignalWorkflow(h.ctx, h.run.GetID(), h.run.GetRunID(), "control", done))
 }
 
-// TestQueryHandlerGateOnCommandFreeHistory: with no command event trailing the
-// last workflow task (an agent parked on a bare signal await, e.g. HITL), the
-// catch-up replay's final delivered event is the WorkflowTaskCompleted, which
-// Go classifies as non-replay — so even the query served right after a full
-// catch-up replay observes IsReplaying false and its recording survives the
-// gate.
+// TestQueryHandlerGateOnCommandFreeHistory: with no command event trailing
+// the last workflow task (a bare signal await, e.g. HITL), a catch-up replay
+// ends on the WorkflowTaskCompleted, which Go classifies as non-replay — so
+// even a query served right after a full catch-up replay records.
 func TestQueryHandlerGateOnCommandFreeHistory(t *testing.T) {
 	c, stop := devServer(t)
 	defer stop()
@@ -187,12 +187,11 @@ func TestQueryHandlerGateOnCommandFreeHistory(t *testing.T) {
 }
 
 // TestQueryHandlerGateWithPendingCommandOrCompletion pins the lossy polarity:
-// when a command event trails the last workflow task (pending timer/Activity —
-// an agent mid-model-call) or the workflow is complete, the catch-up replay
-// leaves IsReplaying true, Go core runs the query handler without resetting
-// it, and the gate drops the LIVE query-time recording. The recording is
-// dropped or kept purely by worker cache state — the next live workflow task
-// heals the flag and the same query records again.
+// when a command event trails the last workflow task (pending timer/Activity
+// — an agent mid-model-call) or the workflow is complete, a catch-up replay
+// leaves IsReplaying true and the gate drops the LIVE query-time recording.
+// The next live workflow task heals the flag, so the drop depends purely on
+// worker cache state.
 func TestQueryHandlerGateWithPendingCommandOrCompletion(t *testing.T) {
 	c, stop := devServer(t)
 	defer stop()
@@ -217,10 +216,12 @@ func TestQueryHandlerGateWithPendingCommandOrCompletion(t *testing.T) {
 		"the gate drops the live query-time recording after a catch-up replay — the query/validator predicate gap, Go polarity")
 
 	// The next live workflow task flips the flag back: the same query records
-	// again, proving the drop depends on cache state rather than on anything
-	// about the query itself.
+	// again.
 	h.signal(false)
-	require.Eventually(t, func() bool { return !h.query() }, 20*time.Second, 250*time.Millisecond,
+	require.Eventually(t, func() bool {
+		replaying, err := h.tryQuery()
+		return err == nil && !replaying
+	}, 20*time.Second, 250*time.Millisecond,
 		"after the live signal workflow task the query must observe IsReplaying false again")
 	afterWake := collectInt64Sum(t, capture.reader, "query_probe_recordings")
 	require.GreaterOrEqual(t, afterWake, int64(2), "post-wake queries record again")
@@ -309,14 +310,12 @@ func updateReplayProbeWorkflow(ctx workflow.Context) error {
 	return liveOpsControlLoop(ctx)
 }
 
-// TestUpdateValidatorTelemetryIsNeverReplaySuppressed is the Go analog of the
-// Python finding's validator half, proven absent: validators run exactly once
-// per update, always live, always observing IsReplaying false — INCLUDING an
-// update delivered right after a full catch-up replay on a fresh worker (the
-// scenario in which Python's is_replaying was true) — so validator-time
-// telemetry always passes the gate. Replays (worker catch-up and the workflow
-// replayer) re-execute accepted update HANDLERS, whose emissions the gate
-// correctly suppresses, but never validators.
+// TestUpdateValidatorTelemetryIsNeverReplaySuppressed: validators run exactly
+// once per update, always live, always observing IsReplaying false — including
+// an update delivered right after a full catch-up replay on a fresh worker —
+// so validator-time telemetry always passes the gate. Replays (worker catch-up
+// and the workflow replayer) re-execute accepted update HANDLERS, whose
+// emissions the gate suppresses, but never validators.
 func TestUpdateValidatorTelemetryIsNeverReplaySuppressed(t *testing.T) {
 	c, stop := devServer(t)
 	defer stop()
