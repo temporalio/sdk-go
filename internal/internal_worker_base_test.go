@@ -121,22 +121,74 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 	s.Equal(enumspb.TASK_QUEUE_KIND_UNSPECIFIED, bw.slotReservationData(mixedPoller).taskQueueKind)
 }
 
-func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesTaskQueueKind() {
-	supplier := &captureReservationInfoSlotSupplier{}
+func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesSlotInfoFields() {
+	logger := ilog.NewNopLogger()
+	metricsHandler := metrics.NewCapturingHandler()
+	reservedPermit := &SlotPermit{}
+	tryReservedPermit := &SlotPermit{}
+	markUsedCalls := 0
+	releaseCalls := 0
+	supplier := &callbackSlotSupplier{
+		reserveSlot: func(_ context.Context, info SlotReservationInfo) (*SlotPermit, error) {
+			s.Equal("test-task-queue", info.TaskQueue())
+			s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, info.TaskQueueKind())
+			s.Equal("test-build-id", info.WorkerBuildId())
+			s.Equal("test-worker-identity", info.WorkerIdentity())
+			s.Equal(0, info.NumIssuedSlots())
+			s.Same(logger, info.Logger())
+			s.Same(metricsHandler, info.MetricsHandler())
+			return reservedPermit, nil
+		},
+		tryReserveSlot: func(info SlotReservationInfo) *SlotPermit {
+			s.Equal("test-task-queue", info.TaskQueue())
+			s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, info.TaskQueueKind())
+			s.Equal("test-build-id", info.WorkerBuildId())
+			s.Equal("test-worker-identity", info.WorkerIdentity())
+			s.Equal(1, info.NumIssuedSlots())
+			s.Same(logger, info.Logger())
+			s.Same(metricsHandler, info.MetricsHandler())
+			return tryReservedPermit
+		},
+		markSlotUsed: func(info SlotMarkUsedInfo) {
+			s.Same(reservedPermit, info.Permit())
+			s.Same(logger, info.Logger())
+			s.Same(metricsHandler, info.MetricsHandler())
+			markUsedCalls++
+		},
+		releaseSlot: func(info SlotReleaseInfo) {
+			if releaseCalls == 0 {
+				s.Same(reservedPermit, info.Permit())
+				s.Equal(SlotReleaseReasonTaskProcessed, info.Reason())
+			} else {
+				s.Same(tryReservedPermit, info.Permit())
+				s.Equal(SlotReleaseReasonUnused, info.Reason())
+			}
+			s.Same(logger, info.Logger())
+			s.Same(metricsHandler, info.MetricsHandler())
+			releaseCalls++
+		},
+	}
 	trackingSupplier := newTrackingSlotSupplier(supplier, trackingSlotSupplierOptions{
-		logger:         ilog.NewNopLogger(),
-		metricsHandler: metrics.NopHandler,
+		logger:         logger,
+		metricsHandler: metricsHandler,
+		workerBuildId:  "test-build-id",
+		workerIdentity: "test-worker-identity",
 	})
-
-	permit, err := trackingSupplier.ReserveSlot(context.Background(), &slotReservationData{
+	reservationData := &slotReservationData{
 		taskQueue:     "test-task-queue",
 		taskQueueKind: enumspb.TASK_QUEUE_KIND_STICKY,
-	})
+	}
 
-	s.NoError(err)
-	s.NotNil(permit)
-	s.Equal("test-task-queue", supplier.taskQueue)
-	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, supplier.taskQueueKind)
+	permit, err := trackingSupplier.ReserveSlot(context.Background(), reservationData)
+	s.Require().NoError(err)
+	s.Same(reservedPermit, permit)
+	s.Same(tryReservedPermit, trackingSupplier.TryReserveSlot(reservationData))
+
+	trackingSupplier.MarkSlotUsed(reservedPermit)
+	trackingSupplier.ReleaseSlot(reservedPermit, SlotReleaseReasonTaskProcessed)
+	trackingSupplier.ReleaseSlot(tryReservedPermit, SlotReleaseReasonUnused)
+	s.Equal(1, markUsedCalls)
+	s.Equal(2, releaseCalls)
 }
 
 func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersCreatesBalancerForMultiplePollers() {
@@ -581,36 +633,33 @@ func (s *testSlotSupplier) ReleaseSlot(SlotReleaseInfo) {}
 
 func (s *testSlotSupplier) MaxSlots() int { return 0 }
 
-type captureReservationInfoSlotSupplier struct {
-	taskQueue     string
-	taskQueueKind enumspb.TaskQueueKind
+type callbackSlotSupplier struct {
+	reserveSlot    func(context.Context, SlotReservationInfo) (*SlotPermit, error)
+	tryReserveSlot func(SlotReservationInfo) *SlotPermit
+	markSlotUsed   func(SlotMarkUsedInfo)
+	releaseSlot    func(SlotReleaseInfo)
 }
 
-func (s *captureReservationInfoSlotSupplier) ReserveSlot(
+func (s *callbackSlotSupplier) ReserveSlot(
 	ctx context.Context,
 	info SlotReservationInfo,
 ) (*SlotPermit, error) {
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	default:
-	}
-	s.taskQueue = info.TaskQueue()
-	s.taskQueueKind = info.TaskQueueKind()
-	return &SlotPermit{}, nil
+	return s.reserveSlot(ctx, info)
 }
 
-func (s *captureReservationInfoSlotSupplier) TryReserveSlot(info SlotReservationInfo) *SlotPermit {
-	s.taskQueue = info.TaskQueue()
-	s.taskQueueKind = info.TaskQueueKind()
-	return &SlotPermit{}
+func (s *callbackSlotSupplier) TryReserveSlot(info SlotReservationInfo) *SlotPermit {
+	return s.tryReserveSlot(info)
 }
 
-func (s *captureReservationInfoSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
+func (s *callbackSlotSupplier) MarkSlotUsed(info SlotMarkUsedInfo) {
+	s.markSlotUsed(info)
+}
 
-func (s *captureReservationInfoSlotSupplier) ReleaseSlot(SlotReleaseInfo) {}
+func (s *callbackSlotSupplier) ReleaseSlot(info SlotReleaseInfo) {
+	s.releaseSlot(info)
+}
 
-func (s *captureReservationInfoSlotSupplier) MaxSlots() int { return 0 }
+func (s *callbackSlotSupplier) MaxSlots() int { return 0 }
 
 type limitedSlotSupplier struct {
 	slots    chan struct{}
