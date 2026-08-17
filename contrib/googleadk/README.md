@@ -412,6 +412,22 @@ pass through, since their callbacks never run under a workflow context) —
 covering both your own workflow-side recordings through the global meter today
 and ADK's metrics once adk-go#479 lands.
 
+**Query handlers** are the one place the gate can drop live telemetry. The
+wrappers share `workflow.IsReplaying` — the SDK's only replay predicate — with
+`workflow.GetMetricsHandler` and `workflow.GetLogger`, and Go core leaves that
+flag wherever the last processed history event put it when it runs a query
+handler. A query served from a warm worker observes false; one served right
+after a catch-up replay (fresh or evicted worker) observes true whenever a
+command event or the workflow-completion event trails the last workflow task —
+an agent awaiting `InvokeModel`, for example. Queries are live once-per-request
+reads that never re-execute from history, so a recording dropped there is lost
+rather than deduplicated, exactly as it is for `workflow.GetMetricsHandler` in
+the same position. (Update validators never hit this: the SDK skips validators
+entirely during replay, so they always run live and their emissions always
+record.) If query-time telemetry matters, emit it on a context not derived
+from `googleadk.NewContext` — queries never replay, so an ungated recording
+stays exactly once per query.
+
 ## Supported & not-yet-supported
 
 - **Supported:** single- and multi-agent (`SubAgents`) trees, in-workflow function
