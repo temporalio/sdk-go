@@ -428,6 +428,14 @@ record.) If query-time telemetry matters, emit it on a context not derived
 from `googleadk.NewContext` — queries never replay, so an ungated recording
 stays exactly once per query.
 
+**OTel Logs API status:** `NewReplaySafeLoggerProvider` is built on
+`go.opentelemetry.io/otel/log`, which is still pre-1.0 (`v0.19.x` at this pin):
+the Logs Bridge API can change shape between minor releases, so upgrading it
+may require a matching upgrade of this package and of any log bridges you use.
+An interface-surface test in this package fails on any method an upgrade would
+newly pass through ungated, so such a change is audited against the replay
+gate rather than silently widening it.
+
 ## Supported & not-yet-supported
 
 - **Supported:** single- and multi-agent (`SubAgents`) trees, in-workflow function
