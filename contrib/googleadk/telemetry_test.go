@@ -19,6 +19,7 @@ package googleadk_test
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"strings"
 	"sync"
@@ -560,62 +561,89 @@ var gateProbeCalls = []string{
 // instrumentGateWorkflow exercises every gated operation once through the
 // process-global providers, then sleeps so the recording workflow task is not
 // the history's final one — replayer passes replay it with IsReplaying true
-// regardless of how the replayer treats the last task.
+// regardless of how the replayer treats the last task. The inner doubles
+// return Enabled true, so every wrapper's Enabled must report exactly
+// !IsReplaying: a wrong value fails the live run or breaks replay.
 func instrumentGateWorkflow(ctx workflow.Context) error {
 	adkCtx := googleadk.NewContext(ctx)
 	meter := otel.Meter("gate-probe")
+
+	enabled := func(name string, got bool) error {
+		if want := !workflow.IsReplaying(ctx); got != want {
+			return fmt.Errorf("%s.Enabled = %v, want %v while IsReplaying = %v", name, got, want, !want)
+		}
+		return nil
+	}
 
 	ic, err := meter.Int64Counter("gate_int64_counter")
 	if err != nil {
 		return err
 	}
-	_ = ic.Enabled(adkCtx)
+	if err := enabled("Int64Counter", ic.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	ic.Add(adkCtx, 1)
 	iud, err := meter.Int64UpDownCounter("gate_int64_updown")
 	if err != nil {
 		return err
 	}
-	_ = iud.Enabled(adkCtx)
+	if err := enabled("Int64UpDownCounter", iud.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	iud.Add(adkCtx, 2)
 	ih, err := meter.Int64Histogram("gate_int64_histogram")
 	if err != nil {
 		return err
 	}
-	_ = ih.Enabled(adkCtx)
+	if err := enabled("Int64Histogram", ih.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	ih.Record(adkCtx, 3)
 	ig, err := meter.Int64Gauge("gate_int64_gauge")
 	if err != nil {
 		return err
 	}
-	_ = ig.Enabled(adkCtx)
+	if err := enabled("Int64Gauge", ig.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	ig.Record(adkCtx, 4)
 	fc, err := meter.Float64Counter("gate_float64_counter")
 	if err != nil {
 		return err
 	}
-	_ = fc.Enabled(adkCtx)
+	if err := enabled("Float64Counter", fc.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	fc.Add(adkCtx, 5)
 	fud, err := meter.Float64UpDownCounter("gate_float64_updown")
 	if err != nil {
 		return err
 	}
-	_ = fud.Enabled(adkCtx)
+	if err := enabled("Float64UpDownCounter", fud.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	fud.Add(adkCtx, 6)
 	fh, err := meter.Float64Histogram("gate_float64_histogram")
 	if err != nil {
 		return err
 	}
-	_ = fh.Enabled(adkCtx)
+	if err := enabled("Float64Histogram", fh.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	fh.Record(adkCtx, 7)
 	fg, err := meter.Float64Gauge("gate_float64_gauge")
 	if err != nil {
 		return err
 	}
-	_ = fg.Enabled(adkCtx)
+	if err := enabled("Float64Gauge", fg.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	fg.Record(adkCtx, 8)
 
 	logger := otelloglobal.GetLoggerProvider().Logger("gate-probe")
-	_ = logger.Enabled(adkCtx, otellog.EnabledParameters{})
+	if err := enabled("Logger", logger.Enabled(adkCtx, otellog.EnabledParameters{})); err != nil {
+		return err
+	}
 	var rec otellog.Record
 	rec.SetEventName("gate-event")
 	logger.Emit(adkCtx, rec)
@@ -788,7 +816,8 @@ func TestReplayTelemetry(t *testing.T) {
 	// path. This subtest drives all of them through the gated globals — live
 	// once, so every operation reaches the inner provider, then replayed, when
 	// none may reach it again — observed with call-counting doubles because SDK
-	// aggregation cannot see every suppressed recording.
+	// aggregation cannot see every suppressed recording. The workflow itself
+	// asserts each Enabled's return value is !IsReplaying.
 	t.Run("GateCoversEveryInstrumentKindAndEnabled", func(t *testing.T) {
 		counts := newCallCounts()
 		pointGlobalsAt(t,
