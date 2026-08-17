@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -63,41 +64,37 @@ func TestReserveSlotHonorsContextCancellation(t *testing.T) {
 		{"ramp throttle already elapsed", 50 * time.Millisecond},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			rcOpts := DefaultResourceControllerOptions()
-			rcOpts.MemTargetPercent = 0.8
-			rcOpts.CpuTargetPercent = 0.9
-			// Over the memory target, so the controller always declines and TryReserveSlot always
-			// returns nil. This is the sustained-pressure case the tuner exists to handle.
-			rcOpts.InfoSupplier = &FakeSystemInfoSupplier{memUse: 0.95, cpuUse: 0.95}
+			synctest.Test(t, func(t *testing.T) {
+				rcOpts := DefaultResourceControllerOptions()
+				rcOpts.MemTargetPercent = 0.8
+				rcOpts.CpuTargetPercent = 0.9
+				// Over the memory target, so the controller always declines and TryReserveSlot always
+				// returns nil. This is the sustained-pressure case the tuner exists to handle.
+				rcOpts.InfoSupplier = &FakeSystemInfoSupplier{memUse: 0.95, cpuUse: 0.95}
 
-			supplier, err := NewResourceBasedSlotSupplier(NewResourceController(rcOpts),
-				ResourceBasedSlotSupplierOptions{MinSlots: 0, MaxSlots: 1000, RampThrottle: tc.ramp})
-			require.NoError(t, err)
+				supplier, err := NewResourceBasedSlotSupplier(NewResourceController(rcOpts),
+					ResourceBasedSlotSupplierOptions{MinSlots: 0, MaxSlots: 1000, RampThrottle: tc.ramp})
+				require.NoError(t, err)
 
-			info := &reserveCallCounter{} // NumIssuedSlots is 10, past MinSlots
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+				info := &reserveCallCounter{} // NumIssuedSlots is 10, past MinSlots
+				ctx, cancel := context.WithCancel(context.Background())
+				defer cancel()
 
-			reserveErr := make(chan error, 1)
-			go func() {
-				_, err := supplier.ReserveSlot(ctx, info)
-				reserveErr <- err
-			}()
+				reserveErr := make(chan error, 1)
+				go func() {
+					_, err := supplier.ReserveSlot(ctx, info)
+					reserveErr <- err
+				}()
 
-			// Each retry iteration calls NumIssuedSlots once. Waiting for a second call means the
-			// loop is spinning, so cancelling now exercises the retry path rather than entry.
-			require.Eventually(t, func() bool {
-				return info.calls.Load() > 1
-			}, 2*time.Second, time.Millisecond, "ReserveSlot did not enter its retry loop")
+				// Each retry iteration calls NumIssuedSlots once. Waiting until ReserveSlot blocks on
+				// its retry timer means cancelling now exercises the retry path rather than entry.
+				synctest.Wait()
+				require.Greater(t, info.calls.Load(), int64(1), "ReserveSlot did not enter its retry loop")
 
-			cancel()
-
-			select {
-			case err := <-reserveErr:
-				require.ErrorIs(t, err, context.Canceled)
-			case <-time.After(2 * time.Second):
-				t.Fatal("ReserveSlot did not return after its context was cancelled")
-			}
+				cancel()
+				synctest.Wait()
+				require.ErrorIs(t, <-reserveErr, context.Canceled)
+			})
 		})
 	}
 }

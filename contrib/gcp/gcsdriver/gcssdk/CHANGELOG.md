@@ -11,6 +11,8 @@ or Security.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-13
+
 ### Added
 
 - Initial release of the GCS SDK client implementation backed by

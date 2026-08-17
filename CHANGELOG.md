@@ -43,7 +43,7 @@ to docs, or any other relevant information.
   updates the recorded value when it changes, matching the real worker. Previously it ignored
   equals and returned a freshly computed value on every call.
 
-## [1.46.0] - 2026-07-28
+## [1.47.0] - 2026-07-28
 
 ### Added
 
