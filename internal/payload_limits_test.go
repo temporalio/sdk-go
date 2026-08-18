@@ -349,6 +349,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
 		makeMsg     func() proto.Message
+		getPayloads func(proto.Message) *commonpb.Payloads
 		assertField func(t *testing.T, msg proto.Message)
 	}{
 		{
@@ -357,6 +358,9 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				return &querypb.WorkflowQueryResult{
 					Answer: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(200)}},
 				}
+			},
+			getPayloads: func(msg proto.Message) *commonpb.Payloads {
+				return msg.(*querypb.WorkflowQueryResult).Answer
 			},
 			assertField: func(t *testing.T, msg proto.Message) {
 				m := msg.(*querypb.WorkflowQueryResult)
@@ -371,6 +375,9 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				return &workflowservice.RespondQueryTaskCompletedRequest{
 					QueryResult: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(200)}},
 				}
+			},
+			getPayloads: func(msg proto.Message) *commonpb.Payloads {
+				return msg.(*workflowservice.RespondQueryTaskCompletedRequest).QueryResult
 			},
 			assertField: func(t *testing.T, msg proto.Message) {
 				m := msg.(*workflowservice.RespondQueryTaskCompletedRequest)
@@ -406,7 +413,49 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 			require.NoError(t, err)
 			require.Empty(t, logger.Lines())
 		})
+		t.Run(tc.name+" checks payload size after preceding visitor transforms it", func(t *testing.T) {
+			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000}, nil)
+			setErrorLimits(&payloadLimits{payloadSize: 10})
+			transformingVisitor := visitorFunc(func(
+				_ *proxy.VisitPayloadsContext,
+				_ []*commonpb.Payload,
+			) ([]*commonpb.Payload, error) {
+				return []*commonpb.Payload{makeTestPayload(1)}, nil
+			})
+			msg := tc.makeMsg()
+			err := visitProtoPayloads(
+				context.Background(),
+				newCompositePayloadVisitor(transformingVisitor, visitor),
+				msg,
+				0,
+			)
+			require.NoError(t, err)
+			payloads := tc.getPayloads(msg)
+			require.NotNil(t, payloads)
+			require.Len(t, payloads.Payloads, 1)
+			require.Len(t, payloads.Payloads[0].Data, 1)
+		})
 	}
+
+	t.Run("RespondQueryTaskCompletedRequest failure skips payload error and warning limits", func(t *testing.T) {
+		logger := ilog.NewMemoryLogger()
+		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
+		setErrorLimits(&payloadLimits{payloadSize: 10})
+		msg := &workflowservice.RespondQueryTaskCompletedRequest{
+			CompletedType: enumspb.QUERY_RESULT_TYPE_FAILED,
+			Failure: &failurepb.Failure{
+				FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
+					ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+						Details: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(200)}},
+					},
+				},
+			},
+		}
+		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		require.NoError(t, err)
+		require.Empty(t, logger.Lines())
+		require.NotNil(t, msg.Failure.GetApplicationFailureInfo().Details)
+	})
 
 	skipErrorOnlyTypes := []struct {
 		name string

@@ -311,9 +311,9 @@ func (s *ExternalStorageTestSuite) TestSignal() {
 var extStoreQueryType = "ext-query"
 var extStoreQueryDone = "ext-query-done"
 
-func extStoreQueryWorkflow(ctx workflow.Context, queryResult string) error {
+func extStoreQueryWorkflow(ctx workflow.Context, queryResultSize int) error {
 	_ = workflow.SetQueryHandler(ctx, extStoreQueryType, func() (string, error) {
-		return queryResult, nil
+		return strings.Repeat("a", queryResultSize), nil
 	})
 	workflow.GetSignalChannel(ctx, extStoreQueryDone).Receive(ctx, nil)
 	return nil
@@ -323,12 +323,13 @@ func (s *ExternalStorageTestSuite) TestQuery() {
 	s.worker.RegisterWorkflow(extStoreQueryWorkflow)
 	s.NoError(s.worker.Start())
 
-	large := strings.Repeat("a", 2_000_000+1024)
+	const largeSize = 2_000_000 + 1024
+	large := strings.Repeat("a", largeSize)
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
 	wfID := "ext-query-" + uuid.NewString()
-	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreQueryWorkflow, large)
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreQueryWorkflow, largeSize)
 	s.NoError(err)
 
 	// Poll until the workflow has registered its query handler.
@@ -342,12 +343,13 @@ func (s *ExternalStorageTestSuite) TestQuery() {
 	s.NoError(queryResp.Get(&result))
 	s.Equal(large, result)
 
+	storeCount, retrieveCount := s.driver.getStoreCounts()
+	s.Greater(storeCount, 0, "worker should have stored the large query result")
+	s.Greater(retrieveCount, 0, "client should have retrieved the large query result")
+
 	// Unblock the workflow.
 	s.NoError(s.client.SignalWorkflow(ctx, wfID, run.GetRunID(), extStoreQueryDone, nil))
 	s.NoError(run.Get(ctx, nil))
-
-	_, retrieveCount := s.driver.getStoreCounts()
-	s.Greater(retrieveCount, 0, "client should have retrieved the large query result")
 }
 
 // ---------------------------------------------------------------------------
