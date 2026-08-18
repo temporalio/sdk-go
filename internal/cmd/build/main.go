@@ -216,6 +216,9 @@ func (b *builder) integrationTest() error {
 	if *packagesFlag != "./..." {
 		rerunArgs = append(rerunArgs, "-packages", *packagesFlag)
 	}
+	if *timeoutFlag != "15m" {
+		rerunArgs = append(rerunArgs, "-timeout", *timeoutFlag)
+	}
 	testOutput.rerunCommand = formatShellCommand(rerunArgs)
 
 	// Also accept coverage file as env var

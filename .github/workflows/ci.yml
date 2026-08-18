@@ -290,12 +290,8 @@ jobs:
             -out "$cert_dir/client.pem" -extfile <(printf 'extendedKeyUsage=clientAuth')
           {
             echo "TEMPORAL_CLOUD_CLIENT_CA_PATH=$cert_dir/ca.pem"
-            echo 'TEMPORAL_CLIENT_CERT<<EOF'
-            cat "$cert_dir/client.pem"
-            echo EOF
-            echo 'TEMPORAL_CLIENT_KEY<<EOF'
-            cat "$cert_dir/client.key"
-            echo EOF
+            echo "TEMPORAL_TLS_CLIENT_CERT_PATH=$cert_dir/client.pem"
+            echo "TEMPORAL_TLS_CLIENT_KEY_PATH=$cert_dir/client.key"
           } >> "$GITHUB_ENV"
       - name: Create Cloud namespace
         id: create-cloud-namespace
@@ -306,11 +302,11 @@ jobs:
           TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
       - name: Integration tests against cloud
-        run: go run . integration-test -p 1 -packages . -timeout 45m
+        run: go run . integration-test -envconfig -p 1 -packages . -timeout 45m
         working-directory: ./internal/cmd/build
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
-          SERVICE_ADDR: ${{ steps.create-cloud-namespace.outputs.namespace }}.tmprl.cloud:7233
+          TEMPORAL_ADDRESS: ${{ steps.create-cloud-namespace.outputs.namespace }}.tmprl.cloud:7233
           TEMPORAL_NAMESPACE: ${{ steps.create-cloud-namespace.outputs.namespace }}
 
       - name: Upload full test logs
