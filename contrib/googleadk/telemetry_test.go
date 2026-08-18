@@ -11,11 +11,11 @@ package googleadk_test
 // gate's edge cases without a server.
 //
 // The README's eviction-path span semantics (a span open at sticky-cache
-// eviction is force-ended by ADK and exported once, truncated) are untested
-// here: exercising them needs worker.SetStickyWorkflowCacheSize(0), which is
-// process-global and must precede every worker start, so it cannot be flipped
-// inside this suite — other tests in the package start workers on the default
-// cache.
+// eviction is exported once, complete, by the catch-up replay's live End) are
+// covered by the straddle probes in telemetry_otelv2_probe_test.go, which
+// force an eviction with a worker restart and a sticky-cache purge instead of
+// worker.SetStickyWorkflowCacheSize(0) (process-global, so it cannot be
+// flipped inside this suite).
 
 import (
 	"context"
