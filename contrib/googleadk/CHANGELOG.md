@@ -11,6 +11,12 @@ or Security.
 
 ## [Unreleased]
 
+**Release blocker:** do not tag this module while `go.mod` pins
+`go.temporal.io/sdk` to a main-branch pseudo-version — a tagged release would
+force every consumer onto that unreleased SDK commit (unlike the third-party
+`adk/v2` pseudo-version pin, which has no tagged alternative). Move the pin to
+the next tagged SDK release first, then delete this note.
+
 ### Added
 
 - `NewReplaySafeTracerProvider`, `NewReplaySafeLoggerProvider`, and

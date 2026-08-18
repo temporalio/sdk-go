@@ -71,5 +71,6 @@ require (
 //
 // go.temporal.io/sdk is pinned to a main-branch pseudo-version because the
 // replay gate composes workflow.IsReadOnly (temporalio/sdk-go#2521), which
-// landed after the latest tagged release (v1.47.0). Revisit at the next SDK
-// release and move back to a tagged version.
+// landed after the latest tagged release (v1.47.0). Move back to a tagged
+// version at the next SDK release; do not tag this module while the
+// pseudo-version pin is in place (see CHANGELOG.md).
