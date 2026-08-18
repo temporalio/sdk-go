@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -101,7 +102,7 @@ func stripIndentation(text string) string {
 			}
 		}
 	}
-	return strings.Join(lines, "\n")
+	return filepath.ToSlash(strings.Join(lines, "\n"))
 }
 
 // testEqual compares two strings, ignoring surrounding whitespace and common indentation.
