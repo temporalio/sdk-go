@@ -41,7 +41,7 @@ import (
 func TestErrorWrapper_SimpleError(t *testing.T) {
 	require := require.New(t)
 
-	svcerr := errorInterceptor(context.Background(), "method", "request", "reply", nil,
+	svcerr := errorInterceptor(t.Context(), "method", "request", "reply", nil,
 		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			return status.Error(codes.NotFound, "Something not found")
 		})
@@ -53,7 +53,7 @@ func TestErrorWrapper_SimpleError(t *testing.T) {
 func TestErrorWrapper_ErrorWithFailure(t *testing.T) {
 	require := require.New(t)
 
-	svcerr := errorInterceptor(context.Background(), "method", "request", "reply", nil,
+	svcerr := errorInterceptor(t.Context(), "method", "request", "reply", nil,
 		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			st, _ := status.New(codes.AlreadyExists, "Something started").WithDetails(&errordetails.WorkflowExecutionAlreadyStartedFailure{
 				StartRequestId: "srId",
@@ -85,7 +85,7 @@ func (a authHeadersProvider) GetHeaders(context.Context) (map[string]string, err
 }
 
 func TestHeadersProvider_PopulateAuthToken(t *testing.T) {
-	require.NoError(t, headersProviderInterceptor(authHeadersProvider{token: "test-auth-token"})(context.Background(), "method", "request", "reply", nil,
+	require.NoError(t, headersProviderInterceptor(authHeadersProvider{token: "test-auth-token"})(t.Context(), "method", "request", "reply", nil,
 		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			md, ok := metadata.FromOutgoingContext(ctx)
 			if !ok {
@@ -100,7 +100,7 @@ func TestHeadersProvider_PopulateAuthToken(t *testing.T) {
 }
 
 func TestHeadersProvider_Error(t *testing.T) {
-	require.Error(t, headersProviderInterceptor(authHeadersProvider{err: errors.New("failed to populate headers")})(context.Background(), "method", "request", "reply", nil,
+	require.Error(t, headersProviderInterceptor(authHeadersProvider{err: errors.New("failed to populate headers")})(t.Context(), "method", "request", "reply", nil,
 		func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, opts ...grpc.CallOption) error {
 			return nil
 		}))
@@ -140,7 +140,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 			lastErr = err
 		} else {
 			_, err := workflowservice.NewWorkflowServiceClient(conn).GetSystemInfo(
-				context.Background(),
+				t.Context(),
 				&workflowservice.GetSystemInfoRequest{},
 			)
 			_ = conn.Close()
@@ -153,7 +153,7 @@ func TestMissingGetServerInfo(t *testing.T) {
 	require.NoError(t, lastErr)
 
 	// Create a new client and confirm client has empty capabilities set
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: l.Addr().String()})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: l.Addr().String()})
 	require.NoError(t, err)
 	workflowClient := client.(*WorkflowClient)
 	require.True(t, proto.Equal(&workflowservice.GetSystemInfoResponse_Capabilities{}, workflowClient.capabilities))
@@ -163,7 +163,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	// Build a common retry policy that will retry 2 times (so 3 attempts total)
 	retryConfig := retry.NewGrpcRetryConfig(10 * time.Nanosecond)
 	retryConfig.SetMaximumAttempts(3)
-	ctx := context.WithValue(context.Background(), retry.ConfigKey, retryConfig)
+	ctx := context.WithValue(t.Context(), retry.ConfigKey, retryConfig)
 
 	// Start a server that wants you to retry internal errors (the default)
 	srv, err := startTestGRPCServer()
@@ -174,7 +174,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -195,7 +195,7 @@ func TestInternalErrorRetry(t *testing.T) {
 	srv.signalWorkflowExecutionResponseError = status.Error(codes.Internal, "oh no, an internal error")
 
 	// Create client and make call
-	client, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	client, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 	_, err = client.WorkflowService().SignalWorkflowExecution(ctx, &workflowservice.SignalWorkflowExecutionRequest{})
@@ -213,19 +213,19 @@ func TestEagerAndLazyClient(t *testing.T) {
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
 
 	// Confirm eager dial fails
-	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	_, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.EqualError(t, err, "failed reaching server: some server failure")
 
 	// Confirm lazy dial succeeds but fails signal workflow
 	c, err := NewLazyClient(ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer c.Close()
-	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	err = c.SignalWorkflow(t.Context(), "workflow1", "", "my-signal", nil)
 	require.EqualError(t, err, "failed reaching server: some server failure")
 
 	// But if we call again without a sys info response error, it will succeed
 	srv.getSystemInfoResponseError = nil
-	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	err = c.SignalWorkflow(t.Context(), "workflow1", "", "my-signal", nil)
 	require.NoError(t, err)
 	// Verify version headers are set
 	require.Equal(
@@ -240,7 +240,7 @@ func TestEagerAndLazyClient(t *testing.T) {
 	)
 
 	// Now that there's no sys info response error, eager should succeed
-	c, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	c, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer c.Close()
 	// Verify version headers are set
@@ -257,7 +257,7 @@ func TestEagerAndLazyClient(t *testing.T) {
 
 	// And even if it starts erroring, the success was memoized so calls succeed
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
-	err = c.SignalWorkflow(context.Background(), "workflow1", "", "my-signal", nil)
+	err = c.SignalWorkflow(t.Context(), "workflow1", "", "my-signal", nil)
 	require.NoError(t, err)
 }
 
@@ -272,26 +272,26 @@ func TestCheckHealth(t *testing.T) {
 
 	// Confirm fail if can't init
 	srv.getSystemInfoResponseError = fmt.Errorf("some server failure")
-	_, err = c.CheckHealth(context.Background(), nil)
+	_, err = c.CheckHealth(t.Context(), nil)
 	require.EqualError(t, err, "failed reaching server: some server failure")
 
 	// Now if it can init, but health not registered
 	srv.getSystemInfoResponseError = nil
-	_, err = c.CheckHealth(context.Background(), nil)
+	_, err = c.CheckHealth(t.Context(), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "health check error")
 
 	// Now register the service but set it as bad
 	srv.healthServer.SetServingStatus("temporal.api.workflowservice.v1.WorkflowService",
 		grpc_health_v1.HealthCheckResponse_NOT_SERVING)
-	_, err = c.CheckHealth(context.Background(), nil)
+	_, err = c.CheckHealth(t.Context(), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "NOT_SERVING")
 
 	// Now set as serving and succeed
 	srv.healthServer.SetServingStatus("temporal.api.workflowservice.v1.WorkflowService",
 		grpc_health_v1.HealthCheckResponse_SERVING)
-	_, err = c.CheckHealth(context.Background(), nil)
+	_, err = c.CheckHealth(t.Context(), nil)
 	require.NoError(t, err)
 }
 
@@ -320,7 +320,7 @@ func TestDialOptions(t *testing.T) {
 			return invoker(ctx, method, req, reply, cc, opts...)
 		}
 	}
-	client, err := DialClient(context.Background(), ClientOptions{
+	client, err := DialClient(t.Context(), ClientOptions{
 		HostPort: srv.addr,
 		ConnectionOptions: ConnectionOptions{
 			DialOptions: []grpc.DialOption{
@@ -333,7 +333,7 @@ func TestDialOptions(t *testing.T) {
 	defer client.Close()
 
 	// Make call we know will error (ignore error)
-	_, _ = client.WorkflowService().SignalWorkflowExecution(context.TODO(),
+	_, _ = client.WorkflowService().SignalWorkflowExecution(t.Context(),
 		&workflowservice.SignalWorkflowExecutionRequest{})
 
 	// Confirm trace
@@ -370,14 +370,14 @@ func TestGrpcCompression(t *testing.T) {
 			require.NoError(t, err)
 			defer srv.Stop()
 
-			client, err := DialClient(context.Background(), ClientOptions{
+			client, err := DialClient(t.Context(), ClientOptions{
 				HostPort:          srv.addr,
 				ConnectionOptions: tc.connectionOptions,
 			})
 			require.NoError(t, err)
 			defer client.Close()
 
-			_, err = client.WorkflowService().SignalWorkflowExecution(context.Background(),
+			_, err = client.WorkflowService().SignalWorkflowExecution(t.Context(),
 				&workflowservice.SignalWorkflowExecutionRequest{
 					Namespace:  "test-namespace",
 					SignalName: strings.Repeat("test-signal", 100),
@@ -402,7 +402,7 @@ func TestGrpcCompressionDowngradesUnsupportedMethod(t *testing.T) {
 	srv.rejectGzipGetSystemInfo = true
 	srv.statsHandler.reset()
 
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -412,14 +412,14 @@ func TestGrpcCompressionDowngradesUnsupportedMethod(t *testing.T) {
 	require.Equal(t, grpcgzip.Name, getSystemInfoHistory[0])
 	require.NotEqual(t, grpcgzip.Name, getSystemInfoHistory[1])
 
-	_, err = client.WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
+	_, err = client.WorkflowService().GetSystemInfo(t.Context(), &workflowservice.GetSystemInfoRequest{})
 	require.NoError(t, err)
 	getSystemInfoHistory = srv.statsHandler.compressionHistoryForMethod(getSystemInfoMethod)
 	require.Len(t, getSystemInfoHistory, 3)
 	require.Equal(t, 1, countCompression(getSystemInfoHistory, grpcgzip.Name))
 	require.NotEqual(t, grpcgzip.Name, getSystemInfoHistory[2])
 
-	_, err = client.WorkflowService().SignalWorkflowExecution(context.Background(),
+	_, err = client.WorkflowService().SignalWorkflowExecution(t.Context(),
 		&workflowservice.SignalWorkflowExecutionRequest{
 			Namespace:  "test-namespace",
 			SignalName: strings.Repeat("test-signal", 100),
@@ -439,7 +439,7 @@ func TestGrpcCompressionNoneDoesNotInstallDowngrade(t *testing.T) {
 	srv.rejectGzipGetSystemInfo = true
 	srv.statsHandler.reset()
 
-	client, err := DialClient(context.Background(), ClientOptions{
+	client, err := DialClient(t.Context(), ClientOptions{
 		HostPort: srv.addr,
 		ConnectionOptions: ConnectionOptions{
 			GrpcCompression: &GrpcCompressionNone{},
@@ -464,7 +464,7 @@ func TestGrpcCompressionDoesNotDowngradeGenericUnimplemented(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	_, err = client.WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
+	_, err = client.WorkflowService().GetSystemInfo(t.Context(), &workflowservice.GetSystemInfoRequest{})
 	require.Error(t, err)
 
 	getSystemInfoHistory := srv.statsHandler.compressionHistoryForMethod(workflowServiceMethod("GetSystemInfo"))
@@ -473,7 +473,7 @@ func TestGrpcCompressionDoesNotDowngradeGenericUnimplemented(t *testing.T) {
 }
 
 func TestCustomResolver(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	// Create two gRPC servers
 	s1, err := startTestGRPCServer()
@@ -488,7 +488,7 @@ func TestCustomResolver(t *testing.T) {
 	builder := manual.NewBuilderWithScheme(scheme)
 	builder.InitialState(resolver.State{Addresses: []resolver.Address{{Addr: s1.addr}, {Addr: s2.addr}}})
 	resolver.Register(builder)
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: scheme + ":///whatever"})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: scheme + ":///whatever"})
 	require.NoError(t, err)
 	defer client.Close()
 
@@ -510,7 +510,7 @@ func TestCustomResolver(t *testing.T) {
 	var peerOut peer.Peer
 	for len(connected) < 2 {
 		req.RequestId = uuid.NewString()
-		_, err := client.WorkflowService().SignalWorkflowExecution(context.Background(), &req, grpc.Peer(&peerOut))
+		_, err := client.WorkflowService().SignalWorkflowExecution(t.Context(), &req, grpc.Peer(&peerOut))
 		if err == nil {
 			connected[peerOut.Addr] = struct{}{}
 		}
@@ -552,12 +552,12 @@ func TestResourceExhaustedCause(t *testing.T) {
 		Cause: enums.RESOURCE_EXHAUSTED_CAUSE_CONCURRENT_LIMIT,
 	})
 	srv.getSystemInfoResponseError = s.Err()
-	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
+	_, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
 	require.Error(t, err)
 
 	// Attempt dial with a cause-less resource exhausted
 	srv.getSystemInfoResponseError = status.New(codes.ResourceExhausted, "some resource exhausted").Err()
-	_, err = DialClient(context.Background(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
+	_, err = DialClient(t.Context(), ClientOptions{HostPort: srv.addr, MetricsHandler: handler})
 	require.Error(t, err)
 
 	// Make sure we have 1 metric with cause and 1 without
@@ -580,7 +580,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 	defer srv.Stop()
 
 	// Fixed string
-	client, err := DialClient(context.Background(), ClientOptions{
+	client, err := DialClient(t.Context(), ClientOptions{
 		HostPort:    srv.addr,
 		Credentials: NewAPIKeyStaticCredentials("my-api-key"),
 		ConnectionOptions: ConnectionOptions{
@@ -608,7 +608,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 
 	// Overwrite via context
 	_, err = client.WorkflowService().GetSystemInfo(
-		metadata.AppendToOutgoingContext(context.Background(), "authorization", "overridden value"),
+		metadata.AppendToOutgoingContext(t.Context(), "authorization", "overridden value"),
 		&workflowservice.GetSystemInfoRequest{},
 	)
 	require.NoError(t, err)
@@ -619,7 +619,7 @@ func TestCredentialsAPIKey(t *testing.T) {
 	)
 
 	// Callback
-	client, err = DialClient(context.Background(), ClientOptions{
+	client, err = DialClient(t.Context(), ClientOptions{
 		HostPort: srv.addr,
 		Credentials: NewAPIKeyDynamicCredentials(func(ctx context.Context) (string, error) {
 			return "my-callback-api-key", nil
@@ -654,13 +654,13 @@ func TestExistingContextMetadataJoinedWithSDKHeaders(t *testing.T) {
 	require.NoError(t, err)
 	defer srv.Stop()
 
-	client, err := DialClient(context.Background(), ClientOptions{HostPort: srv.addr})
+	client, err := DialClient(t.Context(), ClientOptions{HostPort: srv.addr})
 	require.NoError(t, err)
 	defer client.Close()
 
 	// Create a context with existing metadata
 	ctxWithMD := metadata.NewOutgoingContext(
-		context.Background(),
+		t.Context(),
 		metadata.New(map[string]string{"custom-header": "custom-value"}),
 	)
 
@@ -690,7 +690,7 @@ func TestNamespaceInterceptor(t *testing.T) {
 	defer srv.Stop()
 
 	// Fixed string
-	client, err := DialClient(context.Background(), ClientOptions{
+	client, err := DialClient(t.Context(), ClientOptions{
 		Namespace: "test-namespace",
 		HostPort:  srv.addr,
 	})
@@ -703,7 +703,7 @@ func TestNamespaceInterceptor(t *testing.T) {
 		metadata.ValueFromIncomingContext(srv.getSystemInfoRequestContext, temporalNamespaceHeaderKey),
 	)
 	// Verify namespace header is set on a request that does have namespace on the request
-	require.NoError(t, client.SignalWorkflow(context.Background(), "workflowid", "runid", "signalname", nil))
+	require.NoError(t, client.SignalWorkflow(t.Context(), "workflowid", "runid", "signalname", nil))
 	require.Equal(
 		t,
 		[]string{"test-namespace"},

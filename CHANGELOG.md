@@ -20,6 +20,26 @@ to docs, or any other relevant information.
 
 ## [Unreleased]
 
+### Added
+
+- Added `-envconfig` support to the integration test harness, allowing integration tests to use
+  standard client settings from `contrib/envconfig`.
+- Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+- Added `client.WorkflowRun.GetFirstExecutionRunID` to expose the first execution run ID returned by the server when starting a workflow.
+- Added `client.Client.CancelWorkflowWithOptions` and `client.Client.TerminateWorkflowWithOptions` to target a workflow execution chain by its first execution run ID. Cancellation options can also specify a reason.
+- Added experimental `workflow.GetRandomStream` for named deterministic pseudorandom values in workflows.
+- Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
+  path.
+- Added `go.temporal.io/sdk/interceptor/tracing`, a reworked tracing interceptor with
+  corrected span parenting and span directions for span-kind mapping. It backs the new
+  `contrib/opentelemetry-v2` module and is not span-compatible with the tracing interceptor
+  used by `contrib/opentelemetry` (v1).
+
+### Changed
+
+- Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
+- Replaced the internal `OnceCell` implementation with `sync.OnceValue` for lazy workflow run ID lookup.
+
 ### Fixed
 
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
@@ -30,8 +50,11 @@ to docs, or any other relevant information.
 - `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
   reset-workflow failure. Previously the raw payload proto was passed through undecoded, so
   calling `Details()` on the resulting `ApplicationError` failed instead of returning the value.
+- Nexus operation link propagation for stand-alone activities. When a Nexus operation handler uses
+  `client.ExecuteActivity`, inbound Nexus request links are forwarded to the activity and the
+  activity link returned by the server is propagated back to the Nexus operation caller.
 
-## [1.46.0] - 2026-07-28
+## [1.47.0] - 2026-07-28
 
 ### Added
 

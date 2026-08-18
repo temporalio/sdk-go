@@ -509,6 +509,11 @@ func (t *testSuiteClientForNexusOperations) CancelWorkflow(ctx context.Context, 
 	return <-doneCh
 }
 
+// CancelWorkflowWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error {
+	return t.CancelWorkflow(ctx, options.WorkflowID, options.RunID)
+}
+
 // CheckHealth implements Client.
 func (t *testSuiteClientForNexusOperations) CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error) {
 	return &CheckHealthResponse{}, nil
@@ -796,6 +801,11 @@ func (t *testSuiteClientForNexusOperations) TerminateWorkflow(ctx context.Contex
 	panic("not implemented in the test environment")
 }
 
+// TerminateWorkflowWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error {
+	panic("not implemented in the test environment")
+}
+
 // UpdateWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) UpdateWorkflow(ctx context.Context, options UpdateWorkflowOptions) (WorkflowUpdateHandle, error) {
 	panic("unimplemented in the test environment")
@@ -844,18 +854,6 @@ func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context,
 
 	activityID := options.ID
 	runID := uuid.NewString()
-
-	if options.responseInfo != nil {
-		options.responseInfo.Link = &commonpb.Link{
-			Variant: &commonpb.Link_Activity_{
-				Activity: &commonpb.Link_Activity{
-					Namespace:  t.env.workflowInfo.Namespace,
-					ActivityId: activityID,
-					RunId:      runID,
-				},
-			},
-		}
-	}
 
 	params := ExecuteActivityParams{
 		ExecuteActivityOptions: ExecuteActivityOptions{
@@ -1003,6 +1001,11 @@ func (t *testEnvWorkflowRunForNexusOperations) GetID() string {
 
 // GetRunID implements WorkflowRun.
 func (t *testEnvWorkflowRunForNexusOperations) GetRunID() string {
+	return t.RunID
+}
+
+// GetFirstExecutionRunID implements WorkflowRun.
+func (t *testEnvWorkflowRunForNexusOperations) GetFirstExecutionRunID() string {
 	return t.RunID
 }
 

@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"context"
 	"slices"
 	"strings"
 	"testing"
@@ -233,7 +232,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				"k": {Payloads: []*commonpb.Payload{makeTestPayload(200)}},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.Error(t, err)
 		var pse payloadSizeError
 		require.ErrorAs(t, err, &pse)
@@ -247,7 +246,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				"k": {Payloads: []*commonpb.Payload{makeTestPayload(200)}},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.True(t, hasWarningLine(logger))
 	})
@@ -259,7 +258,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 		msg := &commandpb.RecordMarkerCommandAttributes{
 			Details: map[string]*commonpb.Payloads{"k": {Payloads: []*commonpb.Payload{makeTestPayload(1)}}},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.Empty(t, logger.Lines())
 	})
@@ -273,7 +272,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				IndexedFields: map[string]*commonpb.Payload{"k": makeTestPayload(200)},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.Error(t, err)
 		var pse payloadSizeError
 		require.ErrorAs(t, err, &pse)
@@ -287,7 +286,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				IndexedFields: map[string]*commonpb.Payload{"k": makeTestPayload(200)},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.True(t, hasWarningLine(logger))
 	})
@@ -301,7 +300,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				IndexedFields: map[string]*commonpb.Payload{"k": makeTestPayload(1)},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.Empty(t, logger.Lines())
 	})
@@ -314,7 +313,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				Fields: map[string]*commonpb.Payload{"k": makeTestPayload(200)},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.Error(t, err)
 		var pse payloadSizeError
 		require.ErrorAs(t, err, &pse)
@@ -328,7 +327,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				Fields: map[string]*commonpb.Payload{"k": makeTestPayload(200)},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.True(t, hasWarningLine(logger))
 	})
@@ -342,7 +341,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				Fields: map[string]*commonpb.Payload{"k": makeTestPayload(1)},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.Empty(t, logger.Lines())
 	})
@@ -386,7 +385,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000}, nil)
 			setErrorLimits(&payloadLimits{payloadSize: 10})
 			msg := tc.makeMsg()
-			err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+			err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 			require.NoError(t, err)
 			tc.assertField(t, msg)
 		})
@@ -394,7 +393,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 			logger := ilog.NewMemoryLogger()
 			visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
 			msg := tc.makeMsg()
-			err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+			err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 			require.NoError(t, err)
 			require.True(t, hasWarningLine(logger))
 		})
@@ -403,7 +402,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
 			setErrorLimits(&payloadLimits{payloadSize: 10})
 			msg := tc.makeMsg()
-			err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+			err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 			require.NoError(t, err)
 			require.Empty(t, logger.Lines())
 		})
@@ -445,7 +444,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 			logger := ilog.NewMemoryLogger()
 			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
 			setErrorLimits(&payloadLimits{payloadSize: 10, memoSize: 10})
-			err := visitProtoPayloads(context.Background(), visitor, tc.msg, 0)
+			err := visitProtoPayloads(t.Context(), visitor, tc.msg, 0)
 			require.NoError(t, err)
 			require.True(t, hasWarningLine(logger))
 		})
@@ -475,7 +474,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 				},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.Empty(t, logger.Lines())
 	})
@@ -501,7 +500,7 @@ func TestCreateScheduleRequestSpecialization(t *testing.T) {
 		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
 		setErrorLimits(&payloadLimits{payloadSize: 100})
 		msg := makeScheduleRequest(60, 60)
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.Error(t, err)
 		var pse payloadSizeError
 		require.ErrorAs(t, err, &pse)
@@ -511,7 +510,7 @@ func TestCreateScheduleRequestSpecialization(t *testing.T) {
 		logger := ilog.NewMemoryLogger()
 		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10, memoSize: 10000}, logger)
 		msg := makeScheduleRequest(60, 60)
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.True(t, hasWarningLine(logger))
 	})
@@ -521,7 +520,7 @@ func TestCreateScheduleRequestSpecialization(t *testing.T) {
 		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10}, logger)
 		setErrorLimits(&payloadLimits{payloadSize: 10000, memoSize: 10})
 		msg := makeScheduleRequest(200, 1)
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.False(t, hasMemoWarningLine(logger))
 	})
@@ -535,7 +534,7 @@ func TestCreateScheduleRequestSpecialization(t *testing.T) {
 				Action: &schedulepb.ScheduleAction{},
 			},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 	})
 }
@@ -554,7 +553,7 @@ func TestMemoLimitsVisitorWarning(t *testing.T) {
 	t.Run("warning when aggregate memo size exceeds limit", func(t *testing.T) {
 		logger := ilog.NewMemoryLogger()
 		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10}, logger)
-		err := visitProtoPayloads(context.Background(), visitor, makeMemo(200), 0)
+		err := visitProtoPayloads(t.Context(), visitor, makeMemo(200), 0)
 		require.NoError(t, err)
 		require.True(t, hasMemoWarningLine(logger))
 	})
@@ -562,7 +561,7 @@ func TestMemoLimitsVisitorWarning(t *testing.T) {
 	t.Run("no warning when aggregate memo size is under limit", func(t *testing.T) {
 		logger := ilog.NewMemoryLogger()
 		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, logger)
-		err := visitProtoPayloads(context.Background(), visitor, makeMemo(10), 0)
+		err := visitProtoPayloads(t.Context(), visitor, makeMemo(10), 0)
 		require.NoError(t, err)
 		require.Empty(t, logger.Lines())
 	})
@@ -570,7 +569,7 @@ func TestMemoLimitsVisitorWarning(t *testing.T) {
 	t.Run("zero memo warning limit disables memo warning", func(t *testing.T) {
 		logger := ilog.NewMemoryLogger()
 		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 0}, logger)
-		err := visitProtoPayloads(context.Background(), visitor, makeMemo(10000), 0)
+		err := visitProtoPayloads(t.Context(), visitor, makeMemo(10000), 0)
 		require.NoError(t, err)
 		require.Empty(t, logger.Lines())
 	})
@@ -579,7 +578,7 @@ func TestMemoLimitsVisitorWarning(t *testing.T) {
 		logger := ilog.NewMemoryLogger()
 		// memo limit low, payload limit high — only memo warning should fire
 		visitor, _ := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10}, logger)
-		err := visitProtoPayloads(context.Background(), visitor, makeMemo(200), 0)
+		err := visitProtoPayloads(t.Context(), visitor, makeMemo(200), 0)
 		require.NoError(t, err)
 		require.True(t, hasMemoWarningLine(logger))
 		require.False(t, hasWarningLine(logger))
@@ -591,7 +590,7 @@ func TestMemoLimitsVisitorWarning(t *testing.T) {
 		msg := &workflowservice.StartWorkflowExecutionRequest{
 			Memo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"k": makeTestPayload(200)}},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.True(t, hasMemoWarningLine(logger))
 	})
@@ -603,7 +602,7 @@ func TestMemoLimitsVisitorWarning(t *testing.T) {
 		msg := &workflowservice.UpdateScheduleRequest{
 			Memo: &commonpb.Memo{Fields: map[string]*commonpb.Payload{"k": makeTestPayload(200)}},
 		}
-		err := visitProtoPayloads(context.Background(), visitor, msg, 0)
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.True(t, hasMemoWarningLine(logger))
 	})
@@ -617,7 +616,7 @@ func TestMemoLimitsVisitorError(t *testing.T) {
 	t.Run("error when aggregate memo size exceeds error limit", func(t *testing.T) {
 		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
 		setErrorLimits(&payloadLimits{memoSize: 10})
-		err := visitProtoPayloads(context.Background(), visitor, makeMemo(200), 0)
+		err := visitProtoPayloads(t.Context(), visitor, makeMemo(200), 0)
 		require.Error(t, err)
 		var pse payloadSizeError
 		require.ErrorAs(t, err, &pse)
@@ -628,14 +627,14 @@ func TestMemoLimitsVisitorError(t *testing.T) {
 	t.Run("no error when memo size is under error limit", func(t *testing.T) {
 		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
 		setErrorLimits(&payloadLimits{memoSize: 10000})
-		err := visitProtoPayloads(context.Background(), visitor, makeMemo(10), 0)
+		err := visitProtoPayloads(t.Context(), visitor, makeMemo(10), 0)
 		require.NoError(t, err)
 	})
 
 	t.Run("zero memo error limit means no error check", func(t *testing.T) {
 		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
 		setErrorLimits(&payloadLimits{memoSize: 0})
-		err := visitProtoPayloads(context.Background(), visitor, makeMemo(100000), 0)
+		err := visitProtoPayloads(t.Context(), visitor, makeMemo(100000), 0)
 		require.NoError(t, err)
 	})
 
@@ -643,7 +642,7 @@ func TestMemoLimitsVisitorError(t *testing.T) {
 		visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10000, memoSize: 10000}, nil)
 		// memo error limit low, payload error limit high
 		setErrorLimits(&payloadLimits{payloadSize: 100000, memoSize: 10})
-		err := visitProtoPayloads(context.Background(), visitor, makeMemo(200), 0)
+		err := visitProtoPayloads(t.Context(), visitor, makeMemo(200), 0)
 		require.Error(t, err)
 		var pse payloadSizeError
 		require.ErrorAs(t, err, &pse)
