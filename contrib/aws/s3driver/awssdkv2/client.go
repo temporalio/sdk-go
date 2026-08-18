@@ -75,6 +75,6 @@ func (c *s3Client) GetObject(ctx context.Context, bucket, key string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	defer output.Body.Close()
+	defer func() { _ = output.Body.Close() }()
 	return io.ReadAll(output.Body)
 }
