@@ -20,8 +20,9 @@ import (
 )
 
 const (
-	cloudAPIAddress  = "saas-api.tmprl.cloud:443"
-	operationTimeout = 10 * time.Minute
+	cloudAPIAddress      = "saas-api.tmprl.cloud:443"
+	cloudNamespaceRegion = "aws-ca-central-1"
+	operationTimeout     = 10 * time.Minute
 )
 
 func main() {
@@ -106,9 +107,9 @@ func create(ctx context.Context) error {
 	result, err := client.CreateNamespace(ctx, &cloudservicev1.CreateNamespaceRequest{
 		Spec: &namespacev1.NamespaceSpec{
 			Name:          namespace,
-			Regions:       []string{"aws-ca-central-1"},
 			RetentionDays: 1,
 			MtlsAuth:      &namespacev1.MtlsAuthSpec{AcceptedClientCa: ca, Enabled: true},
+			Replicas:      []*namespacev1.ReplicaSpec{{Region: cloudNamespaceRegion}},
 		},
 	})
 	if err != nil {

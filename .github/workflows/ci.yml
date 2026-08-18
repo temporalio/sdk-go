@@ -257,6 +257,7 @@ jobs:
 
   cloud-test:
     strategy:
+      fail-fast: false
       matrix:
         go-version: ["oldstable", "stable"]
         fips: [true, false]
@@ -264,7 +265,7 @@ jobs:
     if: ${{ github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go' }}
     runs-on: ubuntu-latest
     env:
-      TEMPORAL_IS_CLOUD_TESTS: "true"
+      TEMPORAL_TEST_CLOUD: "true"
       GODEBUG: ${{ matrix.fips && 'fips140=on' || '' }}
 
     steps:
@@ -302,12 +303,21 @@ jobs:
           TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
       - name: Integration tests against cloud
+        timeout-minutes: 50
         run: go run . integration-test -envconfig -p 1 -packages . -timeout 45m
         working-directory: ./internal/cmd/build
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
           TEMPORAL_ADDRESS: ${{ steps.create-cloud-namespace.outputs.namespace }}.tmprl.cloud:7233
           TEMPORAL_NAMESPACE: ${{ steps.create-cloud-namespace.outputs.namespace }}
+
+      - name: Delete Cloud namespace
+        if: ${{ always() && steps.create-cloud-namespace.outputs.namespace != '' }}
+        run: go run . delete "${{ steps.create-cloud-namespace.outputs.namespace }}"
+        working-directory: ./.github/scripts/cloud-namespace
+        env:
+          TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
+          TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
 
       - name: Upload full test logs
         id: upload-test-logs
@@ -325,14 +335,6 @@ jobs:
         run: echo "### [Download full test logs]($ARTIFACT_URL)" >> "$GITHUB_STEP_SUMMARY"
         env:
           ARTIFACT_URL: ${{ steps.upload-test-logs.outputs.artifact-url }}
-
-      - name: Delete Cloud namespace
-        if: ${{ always() && steps.create-cloud-namespace.outputs.namespace != '' }}
-        run: go run . delete "${{ steps.create-cloud-namespace.outputs.namespace }}"
-        working-directory: ./.github/scripts/cloud-namespace
-        env:
-          TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
-          TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
 
   features-test:
     uses: temporalio/features/.github/workflows/go.yaml@main

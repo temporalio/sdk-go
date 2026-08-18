@@ -34,7 +34,6 @@ type (
 		ServiceHTTPAddr         string
 		maxWorkflowCacheSize    int
 		Debug                   bool
-		IsCloud                 bool
 		Namespace               string
 		ShouldRegisterNamespace bool
 		TLS                     *tls.Config
@@ -150,13 +149,6 @@ func applySharedConfig(cfg *Config) {
 	if debug := getDebug(); debug != "" {
 		cfg.Debug = debug == "true"
 	}
-	if isCloud := strings.TrimSpace(os.Getenv("TEMPORAL_IS_CLOUD_TESTS")); isCloud != "" {
-		parsed, err := strconv.ParseBool(isCloud)
-		if err != nil {
-			panic(fmt.Sprintf("TEMPORAL_IS_CLOUD_TESTS must be a boolean, was %q", isCloud))
-		}
-		cfg.IsCloud = parsed
-	}
 }
 
 func (cfg Config) toClientOptions() client.Options {
@@ -197,37 +189,84 @@ func envConfigEnabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
 }
 
-func TestNewConfigCloudFlag(t *testing.T) {
-	t.Setenv("TEMPORAL_CLIENT_CERT", "")
-	t.Setenv("TEMPORAL_CLIENT_KEY", "")
-	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "")
-	if cfg := NewConfig(); cfg.IsCloud {
-		t.Fatal("expected TEMPORAL_IS_CLOUD_TESTS=false by default")
-	}
+type cloudTestSkipReason uint8
 
-	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "true")
-	if cfg := NewConfig(); !cfg.IsCloud {
-		t.Fatal("expected TEMPORAL_IS_CLOUD_TESTS=true to enable Cloud test mode")
-	}
+const (
+	// Inventory with: rg -n 'cloudRequiresLocalServer' test --glob '*_test.go'.
+	cloudRequiresLocalServer cloudTestSkipReason = iota + 1
+	// Inventory with: rg -n 'cloudUnavailable' test --glob '*_test.go'.
+	cloudUnavailable
+	// Inventory with: rg -n 'cloudNeedsAdaptation' test --glob '*_test.go'.
+	cloudNeedsAdaptation
+)
 
-	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "false")
-	if cfg := NewConfig(); cfg.IsCloud {
-		t.Fatal("expected TEMPORAL_IS_CLOUD_TESTS=false to disable Cloud test mode")
+func skipOnCloud(t testing.TB, reason cloudTestSkipReason, rationale string) {
+	t.Helper()
+	if cloudTestEnabled() {
+		t.Skipf("skipped on Cloud (%s): %s", reason, rationale)
 	}
-
-	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "sometimes")
-	defer func() {
-		if recovered := recover(); recovered == nil {
-			t.Fatal("expected invalid TEMPORAL_IS_CLOUD_TESTS to panic")
-		}
-	}()
-	NewConfig()
 }
 
-func requireLocalServer(t testing.TB, cfg Config, reason string) {
-	t.Helper()
-	if cfg.IsCloud {
-		t.Skipf("requires a local Temporal server: %s", reason)
+func (reason cloudTestSkipReason) String() string {
+	switch reason {
+	case cloudRequiresLocalServer:
+		return "requires_local_server"
+	case cloudUnavailable:
+		return "cloud_unavailable"
+	case cloudNeedsAdaptation:
+		return "needs_cloud_adaptation"
+	default:
+		panic(fmt.Sprintf("unknown Cloud test skip reason %d", reason))
+	}
+}
+
+func cloudTestEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("TEMPORAL_TEST_CLOUD"))
+	if value == "" {
+		return false
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		panic(fmt.Sprintf("TEMPORAL_TEST_CLOUD must be a boolean, was %q", value))
+	}
+	return enabled
+}
+
+func TestCloudTestEnabled(t *testing.T) {
+	t.Setenv("TEMPORAL_TEST_CLOUD", "")
+	if cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be disabled by default")
+	}
+	t.Setenv("TEMPORAL_TEST_CLOUD", "true")
+	if !cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be enabled")
+	}
+	t.Setenv("TEMPORAL_TEST_CLOUD", "false")
+	if cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be disabled")
+	}
+	t.Setenv("TEMPORAL_TEST_CLOUD", "sometimes")
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("expected invalid TEMPORAL_TEST_CLOUD to panic")
+		}
+	}()
+	cloudTestEnabled()
+}
+
+func TestCloudTestSkipReasonString(t *testing.T) {
+	tests := []struct {
+		reason cloudTestSkipReason
+		want   string
+	}{
+		{reason: cloudRequiresLocalServer, want: "requires_local_server"},
+		{reason: cloudUnavailable, want: "cloud_unavailable"},
+		{reason: cloudNeedsAdaptation, want: "needs_cloud_adaptation"},
+	}
+	for _, test := range tests {
+		if got := test.reason.String(); got != test.want {
+			t.Fatalf("expected %q, got %q", test.want, got)
+		}
 	}
 }
 
