@@ -7387,12 +7387,14 @@ func (ts *IntegrationTestSuite) TestNondeterministicUpdateRegistertion() {
 }
 
 func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
-	requireLocalServer(ts.T(), ts.config, "Cloud routing supplies namespace information for DescribeNamespace requests")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Unset namespace field will cause an invalid argument error
-	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{})
+	// Setting both namespace and ID causes an invalid argument error
+	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+		Id:        uuid.NewString(),
+	})
 
 	ts.assertMetricCount(metrics.TemporalRequestFailure, 1,
 		metrics.OperationTagName, "DescribeNamespace",
