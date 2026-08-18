@@ -23,7 +23,7 @@ func TestCreateDraftRelease(t *testing.T) {
 	testEqual(t, eff.commands.String(), `
 		/worktree: gh release create v1.2.3 --draft --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes
 	`)
-	testEqual(t, eff.files["/worktree/prepare-release-notes.md"], "Notes")
+	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "Notes")
 }
 
 func TestOpenDraftPR(t *testing.T) {

@@ -17,7 +17,7 @@ type command struct {
 }
 
 func (cmd command) String() string {
-	return formatCommand(cmd.name, cmd.args...)
+	return filepath.ToSlash(formatCommand(cmd.name, cmd.args...))
 }
 
 type mockEffects struct {
