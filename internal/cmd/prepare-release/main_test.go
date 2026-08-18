@@ -21,8 +21,9 @@ func TestCreateDraftRelease(t *testing.T) {
 		t.Fatalf("unexpected release URL: %q", releaseURL)
 	}
 	testEqual(t, eff.commands.String(), `
-		/worktree: gh release create v1.2.3 --draft --title v1.2.3 --notes Notes --generate-notes
+		/worktree: gh release create v1.2.3 --draft --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes
 	`)
+	testEqual(t, eff.files["/worktree/prepare-release-notes.md"], "Notes")
 }
 
 func TestOpenDraftPR(t *testing.T) {
@@ -359,7 +360,8 @@ func TestPrepareEverything(t *testing.T) {
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "internal", "version.go")], updatedVersionGo)
 		case `gh pr create --draft --base main --head chore/release-1.48.0 --title "Prepare release 1.48.0" --body "Prepare Go SDK release 1.48.0."`:
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
-		case `gh release create v1.48.0 --draft --title v1.48.0 --notes "# Highlights\n\n### Fixed\n\n- A fix.\n" --generate-notes`:
+		case `gh release create v1.48.0 --draft --title v1.48.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --generate-notes`:
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "prepare-release-notes.md")], "# Highlights\n\n### Fixed\n\n- A fix.\n")
 			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc\n", nil
 		}
 		return "", nil
@@ -383,12 +385,13 @@ func TestPrepareEverything(t *testing.T) {
 		`+eff.tempDir+`: git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
 		`+eff.tempDir+`: git push --set-upstream origin chore/release-1.48.0
 		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-1.48.0 --title "Prepare release 1.48.0" --body "Prepare Go SDK release 1.48.0."
-		`+eff.tempDir+`: gh release create v1.48.0 --draft --title v1.48.0 --notes "# Highlights\n\n### Fixed\n\n- A fix.\n" --generate-notes
+		`+eff.tempDir+`: gh release create v1.48.0 --draft --title v1.48.0 --notes-file `+eff.tempDir+`/prepare-release-notes.md --generate-notes
 		/repo: git worktree remove --force `+eff.tempDir,
 	)
 	testEqual(t, eff.output.String(), `
 		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
 		PR: https://github.com/temporalio/sdk-go/pull/123
+		Release notes: /tmp/prepare-go-release-123456/prepare-release-notes.md
 		Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-abc
 		Cleaned up worktree.
 	`)

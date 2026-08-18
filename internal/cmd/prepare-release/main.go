@@ -326,8 +326,15 @@ func openDraftPR(eff Effects, root, branch, version string) (string, error) {
 // createDraftRelease creates a draft release with the given version and release notes.
 func createDraftRelease(eff Effects, root, version, releaseNotes string) (string, error) {
 	tag := "v" + version
+	releaseNotesPath := filepath.Join(root, "prepare-release-notes.md")
+	err := eff.writeFile(releaseNotesPath, releaseNotes)
+	if err != nil {
+		return "", fmt.Errorf("write release notes to %s: %w", releaseNotesPath, err)
+	}
+	eff.printf("Release notes: %s\n", releaseNotesPath)
+
 	url, err := eff.runCommand(root, "gh", "release", "create", tag, "--draft", "--title", tag,
-		"--notes", releaseNotes, "--generate-notes")
+		"--notes-file", releaseNotesPath, "--generate-notes")
 	if err != nil {
 		return "", fmt.Errorf("create draft release: %w", err)
 	}
