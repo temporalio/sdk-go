@@ -42,7 +42,7 @@ func (RealWorld) repoRoot() (string, error) {
 }
 
 func (eff RealWorld) runCommand(root, name string, args ...string) (string, error) {
-	eff.printf("> %s...\n", formatCommand(name, args...))
+	printDetail(eff, "$ %s", formatCommand(name, args...))
 	cmd := exec.Command(name, args...)
 	cmd.Dir = root
 	cmd.Stdin = os.Stdin

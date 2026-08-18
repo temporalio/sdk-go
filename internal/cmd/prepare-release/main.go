@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 )
@@ -39,6 +40,15 @@ var changelogHeaders = []string{
 }
 
 var releaseFiles = []string{"CHANGELOG.md", "internal/version.go"}
+
+var releaseSteps = [...]string{
+	"Fetch main",
+	"Create release worktree",
+	"Commit release files",
+	"Push branch and create draft PR",
+	"Create draft release",
+	"Clean up temporary worktree",
+}
 
 // COMMAND-LINE WRAPPER
 
@@ -79,6 +89,7 @@ func run(args []string) error {
 
 func prepareEverything(eff Effects, version string, releaseDate time.Time, stopBeforePush bool) (retErr error) {
 	branch := "chore/release-" + version
+	eff.printf("Preparing Go SDK %s\n\n", version)
 
 	worktreeRoot, cleanupWorktree, err := prepareWorktree(eff, branch)
 	if err != nil {
@@ -102,14 +113,16 @@ func prepareEverything(eff Effects, version string, releaseDate time.Time, stopB
 	if err != nil {
 		return err
 	}
-	eff.printf("PR: %s\n", prURL)
+	printDetail(eff, "PR: %s", prURL)
 
+	printReleaseStep(eff, "Create draft release")
 	draftReleaseURL, err := createDraftRelease(eff, worktreeRoot, version, releaseNotes)
 	if err != nil {
 		return err
 	}
-	eff.printf("Draft release: %s\n", draftReleaseURL)
+	printDetail(eff, "Draft release: %s", draftReleaseURL)
 
+	printReleaseStep(eff, "Clean up temporary worktree")
 	err = cleanupWorktree()
 	if err != nil {
 		return err
@@ -124,11 +137,13 @@ func prepareWorktree(eff Effects, branch string) (worktreeRoot string, cleanup f
 		return "", nil, err
 	}
 
+	printReleaseStep(eff, "Fetch main")
 	err = fetchMain(eff, root)
 	if err != nil {
 		return "", nil, err
 	}
 
+	printReleaseStep(eff, "Create release worktree")
 	worktreeRoot, cleanupWorktree, err := createWorktree(eff, root, branch)
 	if err != nil {
 		return "", nil, err
@@ -217,7 +232,7 @@ func updateReleaseFiles(eff Effects, worktreeRoot, version string, releaseDate t
 }
 
 func createDraftPR(eff Effects, worktreeRoot, branch, version string, stopBeforePush bool) (string, error) {
-
+	printReleaseStep(eff, "Commit release files")
 	err := commitRelease(eff, worktreeRoot, version)
 	if err != nil {
 		return "", err
@@ -226,6 +241,7 @@ func createDraftPR(eff Effects, worktreeRoot, branch, version string, stopBefore
 		return "", errors.New("stopped before pushing release branch (--stop-before-push)")
 	}
 
+	printReleaseStep(eff, "Push branch and create draft PR")
 	err = pushBranch(eff, worktreeRoot, branch)
 	if err != nil {
 		return "", err
@@ -264,13 +280,14 @@ func createWorktree(eff Effects, root, branch string) (string, func() error, err
 	if err != nil {
 		return "", nil, fmt.Errorf("describe worktree: %w", err)
 	}
-	eff.printf("Created worktree: %s at HEAD: %s\n", worktreeRoot, strings.TrimSpace(head))
+	printDetail(eff, "Worktree: %s", worktreeRoot)
+	printDetail(eff, "HEAD: %s", strings.TrimSpace(head))
 	cleanup := func() error {
 		_, err := eff.runCommand(root, "git", "worktree", "remove", "--force", worktreeRoot)
 		if err != nil {
 			return fmt.Errorf("remove worktree: %w", err)
 		}
-		eff.printf("Cleaned up worktree.\n")
+		printDetail(eff, "Done.")
 		return nil
 	}
 	return worktreeRoot, cleanup, nil
@@ -331,7 +348,7 @@ func createDraftRelease(eff Effects, root, version, releaseNotes string) (string
 	if err != nil {
 		return "", fmt.Errorf("write release notes to %s: %w", releaseNotesPath, err)
 	}
-	eff.printf("Release notes: %s\n", releaseNotesPath)
+	printDetail(eff, "Release notes: %s", releaseNotesPath)
 
 	url, err := eff.runCommand(root, "gh", "release", "create", tag, "--draft", "--title", tag,
 		"--notes-file", releaseNotesPath, "--generate-notes")
@@ -339,4 +356,16 @@ func createDraftRelease(eff Effects, root, version, releaseNotes string) (string
 		return "", fmt.Errorf("create draft release: %w", err)
 	}
 	return strings.TrimSpace(url), nil
+}
+
+func printReleaseStep(eff Effects, name string) {
+	index := slices.Index(releaseSteps[:], name)
+	if index < 0 {
+		panic("unknown release step: " + name)
+	}
+	eff.printf("[%d/%d] %s\n", index+1, len(releaseSteps), name)
+}
+
+func printDetail(eff Effects, format string, args ...any) {
+	eff.printf("      "+format+"\n", args...)
 }
