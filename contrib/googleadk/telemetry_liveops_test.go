@@ -199,14 +199,19 @@ func TestQueryHandlerGateOnCommandFreeHistory(t *testing.T) {
 	rep := h.query()
 	require.False(t, rep.Replaying, "a query served from the live worker must not observe IsReplaying")
 	require.True(t, rep.Enabled, "the gated counter must report Enabled true inside a query handler")
-	require.EqualValues(t, 1, collectInt64Sum(t, capture.reader, "query_probe_recordings"))
+	// Counter asserts are monotonic (at least one new recording per asserted
+	// query) rather than exact: the server re-dispatches a query task whose
+	// response was lost or timed out, legitimately re-running the handler.
+	// Suppression — the regression these probes pin — shows as no increase.
+	afterLive := collectInt64Sum(t, capture.reader, "query_probe_recordings")
+	require.GreaterOrEqual(t, afterLive, int64(1))
 
 	h.evict()
 	rep = h.query()
 	require.False(t, rep.Replaying,
 		"after a catch-up replay of a command-free history the trailing WorkflowTaskCompleted resets the flag, so the query observes IsReplaying false")
 	require.True(t, rep.Enabled)
-	require.EqualValues(t, 2, collectInt64Sum(t, capture.reader, "query_probe_recordings"),
+	require.GreaterOrEqual(t, collectInt64Sum(t, capture.reader, "query_probe_recordings"), afterLive+1,
 		"the post-catch-up query recording must survive the gate")
 
 	h.signal(true)
@@ -238,7 +243,8 @@ func TestQueryHandlerGateWithPendingCommandOrCompletion(t *testing.T) {
 	rep := h.query()
 	require.False(t, rep.Replaying, "a query served from the live worker must not observe IsReplaying")
 	require.True(t, rep.Enabled)
-	require.EqualValues(t, 1, collectInt64Sum(t, capture.reader, "query_probe_recordings"))
+	afterLive := collectInt64Sum(t, capture.reader, "query_probe_recordings")
+	require.GreaterOrEqual(t, afterLive, int64(1))
 
 	h.evict()
 	rep = h.query()
@@ -246,7 +252,7 @@ func TestQueryHandlerGateWithPendingCommandOrCompletion(t *testing.T) {
 		"with a pending command event the catch-up replay leaves IsReplaying true and Go core does not reset it before running the query handler")
 	require.True(t, rep.Enabled,
 		"IsReadOnly must exclude the query handler from the gate even while IsReplaying reads true")
-	require.EqualValues(t, 2, collectInt64Sum(t, capture.reader, "query_probe_recordings"),
+	require.GreaterOrEqual(t, collectInt64Sum(t, capture.reader, "query_probe_recordings"), afterLive+1,
 		"the live query-time recording must survive the gate: IsReplaying && !IsReadOnly is false inside a query handler")
 
 	// The next live workflow task flips the flag back; queries record on both
@@ -270,7 +276,7 @@ func TestQueryHandlerGateWithPendingCommandOrCompletion(t *testing.T) {
 	rep = h.query()
 	require.True(t, rep.Replaying, "a query replayed to completion observes IsReplaying true")
 	require.True(t, rep.Enabled)
-	require.Equal(t, afterWake+1, collectInt64Sum(t, capture.reader, "query_probe_recordings"),
+	require.GreaterOrEqual(t, collectInt64Sum(t, capture.reader, "query_probe_recordings"), afterWake+1,
 		"the completed-run query recording must survive the gate too")
 }
 
