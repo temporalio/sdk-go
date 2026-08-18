@@ -11,6 +11,14 @@ or Security.
 
 ## [Unreleased]
 
+### Changed
+
+- Claim metadata now identifies the stored object with `object_name` instead of
+  `key`. Previous claims using `key` are still readable, so payloads already in 
+  history continue to resolve. Support for the legacy field will be removed when 
+  the driver reaches GA.
+- Store and retrieve error messages now report `object_name=` instead of `key=`.
+
 ## [0.1.0] - 2026-08-13
 
 ### Added
