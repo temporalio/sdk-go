@@ -1,24 +1,25 @@
 package googleadk_test
 
-// Probes pinning how the replay gate interacts with the two LIVE read-only
+// Probes regression-testing how the replay gate treats the two LIVE read-only
 // operations that run around history replay: query handlers and update
-// validators. Both are once-per-request, so a dropped recording is a real
-// loss, not deduplication. The gate shares workflow.IsReplaying — the only
-// replay predicate the Go SDK exposes — with workflow.GetMetricsHandler and
-// workflow.GetLogger, so whatever these pins observe is core-consistent.
+// validators. Both are once-per-request, so a dropped recording would be a
+// real loss, not deduplication. The gate composes workflow.IsReplaying with
+// !workflow.IsReadOnly (Experimental) — the Go analog of the finer replay
+// predicates other SDKs expose (Python's is_replaying_history_events,
+// TypeScript's isReplayingHistoryEvents) — so read-only contexts are never
+// suppressed, even when a catch-up replay leaves IsReplaying true.
 //
-// Update validators are structurally safe: the SDK skips validation while
-// replaying accepted updates (internal_update.go), and a NEW update riding a
-// catch-up workflow task is validated in the task's final live batch, so a
-// validator always observes IsReplaying false and its telemetry records.
+// Update validators are additionally structurally safe: the SDK skips
+// validation while replaying accepted updates (internal_update.go), and a NEW
+// update riding a catch-up workflow task is validated in the task's final
+// live batch, so a validator always observes IsReplaying false.
 //
 // Query handlers inherit whatever the last processed history event left in
-// the flag: false from a warm cache, true right after a catch-up replay
-// whenever a command event or the workflow-completion event trails the last
-// workflow task. The README documents the workaround. These pins fail if core
-// changes what queries observe; if core instead adds a finer predicate that
-// excludes live queries (Python's is_replaying_history_events, TypeScript's
-// isReplayingHistoryEvents), the gate should switch to it.
+// the IsReplaying flag: false from a warm cache or a command-free catch-up,
+// true right after a catch-up replay whenever a command event or the
+// workflow-completion event trails the last workflow task. IsReadOnly is what
+// keeps query-time telemetry recording in that second shape; these probes
+// fail if either predicate changes what query handlers observe.
 
 import (
 	"context"
@@ -57,18 +58,28 @@ type queryProbeInput struct {
 	PendingCommand bool
 }
 
-// queryReplayProbeWorkflow exposes a query that reports workflow.IsReplaying
-// as observed inside the handler and records one gated counter increment per
-// query served.
+// queryProbeReport is what the replay-probe query returns: the
+// workflow.IsReplaying value observed inside the handler and the gated
+// counter's Enabled result there.
+type queryProbeReport struct {
+	Replaying bool
+	Enabled   bool
+}
+
+// queryReplayProbeWorkflow exposes a query that records one gated counter
+// increment per query served and reports what the handler observed.
 func queryReplayProbeWorkflow(ctx workflow.Context, in queryProbeInput) error {
 	adkCtx := googleadk.NewContext(ctx)
 	counter, err := otel.Meter("liveops-probe").Int64Counter("query_probe_recordings")
 	if err != nil {
 		return err
 	}
-	if err := workflow.SetQueryHandler(ctx, "replay-probe", func() (bool, error) {
+	if err := workflow.SetQueryHandler(ctx, "replay-probe", func() (queryProbeReport, error) {
 		counter.Add(adkCtx, 1)
-		return workflow.IsReplaying(ctx), nil
+		return queryProbeReport{
+			Replaying: workflow.IsReplaying(ctx),
+			Enabled:   counter.Enabled(adkCtx),
+		}, nil
 	}); err != nil {
 		return err
 	}
@@ -129,36 +140,36 @@ func (h *queryProbeHarness) evict() {
 	h.startWorker()
 }
 
-// tryQuery returns what the handler observed for workflow.IsReplaying. It is
-// require-free so it can run inside require.Eventually's polling goroutine.
-func (h *queryProbeHarness) tryQuery() (bool, error) {
+// tryQuery returns the handler's report. It is require-free so it can run
+// inside require.Eventually's polling goroutine.
+func (h *queryProbeHarness) tryQuery() (queryProbeReport, error) {
+	var report queryProbeReport
 	v, err := h.c.QueryWorkflow(h.ctx, h.run.GetID(), h.run.GetRunID(), "replay-probe")
 	if err != nil {
-		return false, err
+		return report, err
 	}
-	var replaying bool
-	if err := v.Get(&replaying); err != nil {
-		return false, err
+	if err := v.Get(&report); err != nil {
+		return report, err
 	}
-	return replaying, nil
+	return report, nil
 }
 
-func (h *queryProbeHarness) query() bool {
+func (h *queryProbeHarness) query() queryProbeReport {
 	h.t.Helper()
 	// Dev-server RPCs can transiently fail on overloaded CI runners
 	// (context canceled / unavailable while pollers reconnect); retry
 	// briefly and only fail on a persistent error.
-	var replaying bool
+	var report queryProbeReport
 	var err error
 	for attempt := 0; attempt < 5; attempt++ {
-		replaying, err = h.tryQuery()
+		report, err = h.tryQuery()
 		if err == nil {
-			return replaying
+			return report
 		}
 		time.Sleep(time.Duration(attempt+1) * 200 * time.Millisecond)
 	}
 	require.NoError(h.t, err)
-	return replaying
+	return report
 }
 
 func (h *queryProbeHarness) signal(done bool) {
@@ -168,8 +179,9 @@ func (h *queryProbeHarness) signal(done bool) {
 
 // TestQueryHandlerGateOnCommandFreeHistory: with no command event trailing
 // the last workflow task (a bare signal await, e.g. HITL), a catch-up replay
-// ends on the WorkflowTaskCompleted, which Go classifies as non-replay — so
-// even a query served right after a full catch-up replay records.
+// ends on the WorkflowTaskCompleted, which Go classifies as non-replay — the
+// query handler observes IsReplaying false, and its telemetry records without
+// even needing the IsReadOnly leg of the gate.
 func TestQueryHandlerGateOnCommandFreeHistory(t *testing.T) {
 	c, stop := devServer(t)
 	defer stop()
@@ -184,12 +196,16 @@ func TestQueryHandlerGateOnCommandFreeHistory(t *testing.T) {
 
 	h := startQueryProbe(t, c, "adk-telemetry-query-signal", queryProbeInput{PendingCommand: false})
 
-	require.False(t, h.query(), "a query served from the live worker must not observe IsReplaying")
+	rep := h.query()
+	require.False(t, rep.Replaying, "a query served from the live worker must not observe IsReplaying")
+	require.True(t, rep.Enabled, "the gated counter must report Enabled true inside a query handler")
 	require.EqualValues(t, 1, collectInt64Sum(t, capture.reader, "query_probe_recordings"))
 
 	h.evict()
-	require.False(t, h.query(),
+	rep = h.query()
+	require.False(t, rep.Replaying,
 		"after a catch-up replay of a command-free history the trailing WorkflowTaskCompleted resets the flag, so the query observes IsReplaying false")
+	require.True(t, rep.Enabled)
 	require.EqualValues(t, 2, collectInt64Sum(t, capture.reader, "query_probe_recordings"),
 		"the post-catch-up query recording must survive the gate")
 
@@ -197,12 +213,14 @@ func TestQueryHandlerGateOnCommandFreeHistory(t *testing.T) {
 	require.NoError(t, h.run.Get(h.ctx, nil))
 }
 
-// TestQueryHandlerGateWithPendingCommandOrCompletion pins the lossy polarity:
-// when a command event trails the last workflow task (pending timer/Activity
-// — an agent mid-model-call) or the workflow is complete, a catch-up replay
-// leaves IsReplaying true and the gate drops the LIVE query-time recording.
-// The next live workflow task heals the flag, so the drop depends purely on
-// worker cache state.
+// TestQueryHandlerGateWithPendingCommandOrCompletion regression-tests the
+// IsReadOnly leg of the gate in the two history shapes where IsReplaying
+// alone used to drop live telemetry: when a command event trails the last
+// workflow task (pending timer/Activity — an agent mid-model-call) or the
+// workflow is complete, a catch-up replay leaves IsReplaying true when the
+// query handler runs. IsReadOnly excludes the handler from suppression, so
+// the once-per-request recording survives regardless of the trailing history
+// shape or worker cache state.
 func TestQueryHandlerGateWithPendingCommandOrCompletion(t *testing.T) {
 	c, stop := devServer(t)
 	defer stop()
@@ -217,34 +235,43 @@ func TestQueryHandlerGateWithPendingCommandOrCompletion(t *testing.T) {
 
 	h := startQueryProbe(t, c, "adk-telemetry-query-timer", queryProbeInput{PendingCommand: true})
 
-	require.False(t, h.query(), "a query served from the live worker must not observe IsReplaying")
+	rep := h.query()
+	require.False(t, rep.Replaying, "a query served from the live worker must not observe IsReplaying")
+	require.True(t, rep.Enabled)
 	require.EqualValues(t, 1, collectInt64Sum(t, capture.reader, "query_probe_recordings"))
 
 	h.evict()
-	require.True(t, h.query(),
+	rep = h.query()
+	require.True(t, rep.Replaying,
 		"with a pending command event the catch-up replay leaves IsReplaying true and Go core does not reset it before running the query handler")
-	require.EqualValues(t, 1, collectInt64Sum(t, capture.reader, "query_probe_recordings"),
-		"the gate drops the live query-time recording after a catch-up replay — the query/validator predicate gap, Go polarity")
+	require.True(t, rep.Enabled,
+		"IsReadOnly must exclude the query handler from the gate even while IsReplaying reads true")
+	require.EqualValues(t, 2, collectInt64Sum(t, capture.reader, "query_probe_recordings"),
+		"the live query-time recording must survive the gate: IsReplaying && !IsReadOnly is false inside a query handler")
 
-	// The next live workflow task flips the flag back: the same query records
-	// again.
+	// The next live workflow task flips the flag back; queries record on both
+	// sides of it.
 	h.signal(false)
 	require.Eventually(t, func() bool {
-		replaying, err := h.tryQuery()
-		return err == nil && !replaying
+		rep, err := h.tryQuery()
+		return err == nil && !rep.Replaying
 	}, 20*time.Second, 250*time.Millisecond,
 		"after the live signal workflow task the query must observe IsReplaying false again")
 	afterWake := collectInt64Sum(t, capture.reader, "query_probe_recordings")
-	require.GreaterOrEqual(t, afterWake, int64(2), "post-wake queries record again")
+	require.GreaterOrEqual(t, afterWake, int64(3),
+		"every query served — stale-flag polls included — must have recorded")
 
 	// Completed workflow, evicted worker: the catch-up replay ends on the
-	// workflow's completion, IsReplaying stays true, and the recording drops.
+	// workflow's completion and IsReplaying stays true — the recording must
+	// still survive.
 	h.signal(true)
 	require.NoError(t, h.run.Get(h.ctx, nil))
 	h.evict()
-	require.True(t, h.query(), "a query replayed to completion observes IsReplaying true")
-	require.Equal(t, afterWake, collectInt64Sum(t, capture.reader, "query_probe_recordings"),
-		"the completed-run query recording is dropped by the gate")
+	rep = h.query()
+	require.True(t, rep.Replaying, "a query replayed to completion observes IsReplaying true")
+	require.True(t, rep.Enabled)
+	require.Equal(t, afterWake+1, collectInt64Sum(t, capture.reader, "query_probe_recordings"),
+		"the completed-run query recording must survive the gate too")
 }
 
 // ----------------------------------------------------------------------------

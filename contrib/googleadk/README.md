@@ -41,7 +41,10 @@ and the `model.NewLLM` registry lookup from upstream `google.golang.org/adk/v2`
 (the registry itself stays application-owned; this package never registers into it).
 These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins
 `adk/v2` to a `main`-branch pseudo-version for now; it reverts to an ordinary
-tagged version once a release ships that includes them.
+tagged version once a release ships that includes them. `go.mod` similarly
+pins `go.temporal.io/sdk` to a `main`-branch pseudo-version: the replay-safe
+telemetry gate composes `workflow.IsReadOnly`, which landed after the latest
+tagged SDK release (v1.47.0).
 
 ## Module versioning
 
@@ -411,16 +414,16 @@ instrument recordings and reports their `Enabled` false while suppressed
 workflow context), covering both your own workflow-side recordings through
 the global meter today and ADK's metrics once adk-go#479 lands.
 
-**Query handlers** are the one place the gate can drop live telemetry. The
-wrappers share `workflow.IsReplaying` (the SDK's only replay predicate) with
-`workflow.GetMetricsHandler`, and a query handler observes whatever the last
-processed history event left there: false on a warm worker, true right after
-a catch-up replay when a command event or the workflow's completion trails
-the last workflow task (e.g. an agent awaiting `InvokeModel`). Queries never
-re-execute from history, so a dropped recording is lost, not deduplicated. If
-query-time telemetry matters, emit it on a context not derived from
-`googleadk.NewContext` — queries never replay, so it records exactly once.
-Update validators are unaffected: the SDK never runs them during replay.
+Telemetry from **query handlers** and **update validators** always records:
+the gate composes `workflow.IsReplaying` with `!workflow.IsReadOnly`
+(Experimental). Both are once-per-request operations that never re-execute
+from history — a query served right after a catch-up replay (e.g. an agent
+awaiting `InvokeModel` on a restarted worker) still observes `IsReplaying`
+true, because the flag retains whatever the last processed history event left
+there, but `IsReadOnly` excludes read-only contexts from suppression, so the
+recording is kept rather than lost. Side-effect functions are read-only
+contexts too, harmlessly so: they never execute during replay at all — their
+recorded markers supply the value.
 
 **OTel Logs API status:** `NewReplaySafeLoggerProvider` is built on the
 pre-1.0 `go.opentelemetry.io/otel/log` (`v0.19.x` at this pin), which may

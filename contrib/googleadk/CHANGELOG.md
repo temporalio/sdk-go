@@ -17,6 +17,10 @@ or Security.
   `NewReplaySafeMeterProvider`: wrap the global OpenTelemetry providers so ADK
   telemetry emitted from workflow code is not re-emitted on history replay;
   while suppressed, the logger's and sync instruments' `Enabled` report false.
+  The gate composes `workflow.IsReplaying` with `!workflow.IsReadOnly`
+  (Experimental), so telemetry from query handlers and update validators
+  always records; this pins `go.temporal.io/sdk` to a main-branch
+  pseudo-version until a tagged release ships `workflow.IsReadOnly`.
   See "Telemetry and replay" in the README.
 - `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.
 

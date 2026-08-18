@@ -24,19 +24,28 @@ import (
 // observed counts by one full copy per replay. The wrappers below suppress
 // emissions whose context carries a workflow.Context (stashed by NewContext
 // under wfCtxKey, refreshed per fan-out coroutine) that reports
-// workflow.IsReplaying. Recordings therefore happen on first execution only —
-// the same semantics as workflow.GetMetricsHandler. Contexts without a
-// workflow.Context always pass through, so the wrappers are safe to install
-// process-wide: worker, client, and Activity telemetry is untouched.
+// workflow.IsReplaying outside a read-only context. Recordings therefore
+// happen on first execution only — the same semantics as
+// workflow.GetMetricsHandler. Contexts without a workflow.Context always pass
+// through, so the wrappers are safe to install process-wide: worker, client,
+// and Activity telemetry is untouched.
 
 // replaySuppressed reports whether an emission carrying ctx originates from
-// workflow code that is currently replaying history.
+// workflow code that is re-executing history: workflow.IsReplaying composed
+// with !workflow.IsReadOnly (Experimental). The read-only contexts — query
+// handlers, update validators, and side-effect functions — are live or
+// non-replayed and never suppressed: queries run once per request and never
+// re-execute from history (IsReplaying merely retains whatever the last
+// processed history event left in the flag), the SDK skips validators when
+// replaying accepted updates, and side-effect functions do not run during
+// replay at all (their recorded markers supply the value), so IsReadOnly never
+// coincides with an actual history re-execution.
 func replaySuppressed(ctx context.Context) bool {
 	wfCtx, ok := workflowContext(ctx)
 	if !ok {
 		return false
 	}
-	return workflow.IsReplaying(wfCtx)
+	return workflow.IsReplaying(wfCtx) && !workflow.IsReadOnly(wfCtx)
 }
 
 // suppressedTracer produces the non-recording spans returned while replaying.
