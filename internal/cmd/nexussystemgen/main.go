@@ -10,6 +10,7 @@ package main
 
 import (
 	"fmt"
+	"go/format"
 	"io"
 	"log"
 	"os"
@@ -173,11 +174,16 @@ func copyFile(dst, src string) error {
 }
 
 func gofmt(path string) error {
-	cmd := exec.Command("gofmt", "-w", path)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("gofmt %s: %w", path, err)
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("reading generated Go file %s: %w", path, err)
+	}
+	formatted, err := format.Source(contents)
+	if err != nil {
+		return fmt.Errorf("formatting generated Go file %s: %w", path, err)
+	}
+	if err := os.WriteFile(path, formatted, 0o600); err != nil {
+		return fmt.Errorf("writing formatted Go file %s: %w", path, err)
 	}
 	return nil
 }
