@@ -28,6 +28,10 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- Final-worker shutdown now clears the sticky workflow cache without incrementing
+  `temporal_sticky_cache_total_forced_eviction`. A later `PurgeStickyWorkflowCache` call finds no
+  cached workflows, so stop-then-purge sequences may report fewer forced evictions.
+
 ### Fixed
 
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker

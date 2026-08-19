@@ -656,14 +656,12 @@ func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payload
 	w.err = err
 }
 
-func (w *workflowExecutionContextImpl) onEviction() {
+func (w *workflowExecutionContextImpl) onEviction(reason workflowCacheRemovalReason) {
 	// onEviction is run by LRU cache's removeFunc in separate goroutinue
 	w.mutex.Lock()
 
-	// Emit force eviction metrics.
-	// This metrics indicates too many concurrent running workflows to fit in sticky cache.
-	// Eviction on error or on workflow complete is normal and expected.
-	if w.err == nil && !w.isWorkflowCompleted {
+	// Final-worker cleanup is not an individual forced eviction.
+	if reason != workflowCacheRemovalReasonShutdown && w.err == nil && !w.isWorkflowCompleted {
 		w.wth.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
 	}
 

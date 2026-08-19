@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/suite"
-	commoncache "go.temporal.io/sdk/internal/common/cache"
 	"go.temporal.io/sdk/internal/common/metrics"
 )
 
@@ -62,29 +61,54 @@ func (s *WorkerCacheSuite) TestCreateAndFree() {
 	lease3.release()
 }
 
-func (s *WorkerCacheSuite) TestFinalReleaseClearsCacheAndRunsRemovalCallback() {
-	removed := make(chan interface{}, 1)
-	workflowCache := commoncache.New(10, &commoncache.Options{
-		RemovedFunc: func(value interface{}) {
-			removed <- value
-		},
-	})
-	value := &struct{}{}
-	workflowCache.Put("run-id", value)
-
-	cachePtr := &sharedWorkerCache{workerRefcount: 1, workflowCache: workflowCache}
+func (s *WorkerCacheSuite) TestFinalReleaseClearsWithoutMetric() {
+	cachePtr := &sharedWorkerCache{}
 	var lock sync.Mutex
-	lease := &workerCacheLease{sharedCache: cachePtr, lock: &lock}
+	cache, lease := newWorkerCache(cachePtr, &lock, 10)
+	metricsHandler := metrics.NewCapturingHandler()
+	workflowContext := &workflowExecutionContextImpl{
+		previousStartedEventID: 1,
+		wth: &workflowTaskHandlerImpl{
+			metricsHandler: metricsHandler,
+		},
+	}
+	_, err := cache.putWorkflowContext("run-id", workflowContext)
+	s.NoError(err)
+
 	lease.release()
 
-	s.Zero(workflowCache.Size())
+	s.Zero(cache.getWorkflowCache().Size())
 	s.Nil(cachePtr.workflowCache)
-	select {
-	case removedValue := <-removed:
-		s.Same(value, removedValue)
-	case <-time.After(time.Second):
-		s.Fail("removal callback did not run")
+	s.Eventually(func() bool {
+		workflowContext.mutex.Lock()
+		defer workflowContext.mutex.Unlock()
+
+		return workflowContext.previousStartedEventID == 0
+	}, time.Second, time.Millisecond)
+	s.Empty(metricsHandler.Counters())
+}
+
+func (s *WorkerCacheSuite) TestExplicitClearCountsForcedEviction() {
+	cachePtr := &sharedWorkerCache{}
+	var lock sync.Mutex
+	cache, lease := newWorkerCache(cachePtr, &lock, 10)
+	defer lease.release()
+	metricsHandler := metrics.NewCapturingHandler()
+	workflowContext := &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{
+			metricsHandler: metricsHandler,
+		},
 	}
+	_, err := cache.putWorkflowContext("run-id", workflowContext)
+	s.NoError(err)
+
+	cache.getWorkflowCache().Clear()
+
+	s.Eventually(func() bool {
+		counters := metricsHandler.Counters()
+		return len(counters) == 1 && counters[0].Value() == 1
+	}, time.Second, time.Millisecond)
+	s.Equal(metrics.StickyCacheTotalForcedEviction, metricsHandler.Counters()[0].Name)
 }
 
 func (s *WorkerCacheSuite) TestOldHandleCannotAffectLaterGeneration() {

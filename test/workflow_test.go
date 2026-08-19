@@ -1494,6 +1494,19 @@ func (w *Workflows) ShutdownDuringActiveTimerActivityWorkflow(ctx workflow.Conte
 	}
 }
 
+func (w *Workflows) StickyCacheSharedWorkerLifecycle(ctx workflow.Context) error {
+	count := 0
+	if err := workflow.SetQueryHandler(ctx, "sticky-cache-count", func() (int, error) { return count, nil }); err != nil {
+		return err
+	}
+	signals := workflow.GetSignalChannel(ctx, "sticky-cache-increment")
+	for {
+		var increment int
+		signals.Receive(ctx, &increment)
+		count += increment
+	}
+}
+
 func (w *Workflows) SignalWorkflow(ctx workflow.Context) (*commonpb.WorkflowType, error) {
 	s := workflow.NewSelector(ctx)
 
@@ -4346,6 +4359,10 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityWaitForWorkerStop)
 	worker.RegisterWorkflow(w.ActivityHeartbeatUntilSignal)
 	worker.RegisterWorkflow(w.ShutdownDuringActiveTimerActivityWorkflow)
+	worker.RegisterWorkflowWithOptions(
+		w.StickyCacheSharedWorkerLifecycle,
+		workflow.RegisterOptions{Name: "StickyCacheSharedWorkerLifecycle"},
+	)
 	worker.RegisterWorkflow(w.Basic)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)

@@ -2683,14 +2683,10 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				return plugin.StartWorker(ctx, options, next)
 			}
 		}
-		err := start(context.Background(), WorkerPluginStartWorkerOptions{
+		return start(context.Background(), WorkerPluginStartWorkerOptions{
 			WorkerInstanceKey: workerInstanceKey,
 			WorkerRegistry:    aw,
 		})
-		if err != nil {
-			aw.Stop()
-		}
-		return err
 	})
 	constructionComplete = true
 	return aw

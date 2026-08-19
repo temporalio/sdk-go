@@ -7,6 +7,13 @@ import (
 	"go.temporal.io/sdk/internal/common/cache"
 )
 
+type workflowCacheRemovalReason int
+
+const (
+	workflowCacheRemovalReasonOther workflowCacheRemovalReason = iota
+	workflowCacheRemovalReasonShutdown
+)
+
 // A WorkerCache instance is held by each worker to hold cached data. The contents of this struct should always be
 // pointers for any data shared with other workers, and owned values for any instance-specific caches.
 type WorkerCache struct {
@@ -87,7 +94,7 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int)
 		workflowCache := cache.New(cacheSize-1, &cache.Options{
 			RemovedFunc: func(cachedEntity interface{}) {
 				wc := cachedEntity.(*workflowExecutionContextImpl)
-				wc.onEviction()
+				wc.onEviction(workflowCacheRemovalReasonOther)
 			},
 		})
 		*storeIn = sharedWorkerCache{workflowCache: workflowCache, maxWorkflowCacheSize: cacheSize}
@@ -123,7 +130,10 @@ func (lease *workerCacheLease) release() {
 		lease.lock.Unlock()
 
 		if releasedCache != nil {
-			releasedCache.Clear()
+			releasedCache.ClearWithCallback(func(cachedEntity interface{}) {
+				wc := cachedEntity.(*workflowExecutionContextImpl)
+				wc.onEviction(workflowCacheRemovalReasonShutdown)
+			})
 		}
 	})
 }
