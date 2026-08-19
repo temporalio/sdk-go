@@ -1,0 +1,56 @@
+[
+  {
+    "scenario": "disabled",
+    "trial": 1,
+    "log": "disabled-1.log",
+    "result": "disabled-1.json"
+  },
+  {
+    "scenario": "purged",
+    "trial": 1,
+    "log": "purged-1.log",
+    "result": "purged-1.json"
+  },
+  {
+    "scenario": "unpurged",
+    "trial": 1,
+    "log": "unpurged-1.log",
+    "result": "unpurged-1.json"
+  },
+  {
+    "scenario": "disabled",
+    "trial": 2,
+    "log": "disabled-2.log",
+    "result": "disabled-2.json"
+  },
+  {
+    "scenario": "purged",
+    "trial": 2,
+    "log": "purged-2.log",
+    "result": "purged-2.json"
+  },
+  {
+    "scenario": "unpurged",
+    "trial": 2,
+    "log": "unpurged-2.log",
+    "result": "unpurged-2.json"
+  },
+  {
+    "scenario": "disabled",
+    "trial": 3,
+    "log": "disabled-3.log",
+    "result": "disabled-3.json"
+  },
+  {
+    "scenario": "purged",
+    "trial": 3,
+    "log": "purged-3.log",
+    "result": "purged-3.json"
+  },
+  {
+    "scenario": "unpurged",
+    "trial": 3,
+    "log": "unpurged-3.log",
+    "result": "unpurged-3.json"
+  }
+]

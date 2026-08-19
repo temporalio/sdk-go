@@ -1,0 +1,38 @@
+{
+  "scenario": "purged",
+  "trial": 3,
+  "workflow_count": 16,
+  "workflow_state_bytes": 524288,
+  "observed_sticky_cache_size": 16,
+  "baseline": {
+    "live_bytes": 1628600,
+    "heap_objects": 4009,
+    "scannable_bytes": 1218136,
+    "heap_object_bytes": 1628072,
+    "forced_gc_cycles": 2
+  },
+  "after_stop": {
+    "live_bytes": 3665912,
+    "heap_objects": 11830,
+    "scannable_bytes": 2704616,
+    "heap_object_bytes": 3660744,
+    "forced_gc_cycles": 4
+  },
+  "gc_workload": {
+    "cycles": 100,
+    "cpu_seconds": 0.273742455,
+    "cpu_seconds_per_gc": 0.00273742455,
+    "wall_seconds": 0.0720015
+  },
+  "workflow_coroutines_after_stop": 0,
+  "heap_profile": "purged-3.pprof",
+  "go_version": "go1.25.4",
+  "goos": "darwin",
+  "goarch": "arm64",
+  "gomaxprocs": 14,
+  "gogc": "",
+  "gomemlimit": "",
+  "godebug": "",
+  "sdk_commit": "0feb5a6813ab94b6e790260521a94914bb5e3267",
+  "shutdown_to_snapshot": 27234209
+}

@@ -1,0 +1,18 @@
+Running /Users/andrewyuan/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.25.4.darwin-arm64/bin/go in /Users/andrewyuan/all/sdk-go/test with args [test -count 1 -race -v -timeout 15m -run TestIntegrationSuite/TestBasic$ ./... -- -using-cli-dev-server]
+# go.temporal.io/sdk/test.test
+ld: warning: '/private/var/folders/hv/wr0_xb216zvf_kk5tfcwtjz80000gn/T/go-link-1000483690/000016.o' has malformed LC_DYSYMTAB, expected 98 undefined symbols to start at index 1626, found 95 undefined symbols starting at index 1626
+=== RUN   TestIntegrationSuite
+=== RUN   TestIntegrationSuite/TestBasic
+2026/07/29 16:25:44 INFO  Started Worker Namespace integration-test-namespace TaskQueue tq-8d070623-015c-4226-a57a-ac1f2b925bc5-TestIntegrationSuite/TestBasic WorkerID 32927@Andrews-MacBook-Pro-3.local@
+2026/07/29 16:25:44 INFO  calling ExecuteActivity Namespace integration-test-namespace TaskQueue tq-8d070623-015c-4226-a57a-ac1f2b925bc5-TestIntegrationSuite/TestBasic WorkerID 32927@Andrews-MacBook-Pro-3.local@ WorkflowType Basic WorkflowID test-basic RunID 019faf8d-f80a-70a4-9072-a7dc996f93f3 Attempt 1
+2026/07/29 16:25:44 DEBUG ExecuteActivity Namespace integration-test-namespace TaskQueue tq-8d070623-015c-4226-a57a-ac1f2b925bc5-TestIntegrationSuite/TestBasic WorkerID 32927@Andrews-MacBook-Pro-3.local@ WorkflowType Basic WorkflowID test-basic RunID 019faf8d-f80a-70a4-9072-a7dc996f93f3 Attempt 1 ActivityID 5 ActivityType Prefix_ToUpperWithDelay
+2026/07/29 16:25:45 DEBUG ExecuteActivity Namespace integration-test-namespace TaskQueue tq-8d070623-015c-4226-a57a-ac1f2b925bc5-TestIntegrationSuite/TestBasic WorkerID 32927@Andrews-MacBook-Pro-3.local@ WorkflowType Basic WorkflowID test-basic RunID 019faf8d-f80a-70a4-9072-a7dc996f93f3 Attempt 1 ActivityID 11 ActivityType Prefix_ToUpper
+2026/07/29 16:25:45 INFO  Stopped Worker Namespace integration-test-namespace TaskQueue tq-8d070623-015c-4226-a57a-ac1f2b925bc5-TestIntegrationSuite/TestBasic WorkerID 32927@Andrews-MacBook-Pro-3.local@
+--- PASS: TestIntegrationSuite (2.17s)
+    --- PASS: TestIntegrationSuite/TestBasic (1.15s)
+PASS
+ok  	go.temporal.io/sdk/test	4.039s
+?   	go.temporal.io/sdk/test/nexusclient	[no test files]
+testing: warning: no tests to run
+PASS
+ok  	go.temporal.io/sdk/test/replaytests	1.703s [no tests to run]
