@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -815,5 +816,47 @@ func TestCollapseParentFailureRowsPreservesAmbiguousParentOutput(t *testing.T) {
 		if strings.Contains(row.Details, "suite details") {
 			t.Fatalf("ambiguous parent output was copied to %q: %q", row.Test, row.Details)
 		}
+	}
+}
+
+func TestTestDirsRequiringGoNewerThan(t *testing.T) {
+	rootDir := t.TempDir()
+	for dir, goMod := range map[string]string{
+		".":             "module example.com/root\n\ngo 1.25.0\n",
+		"contrib/newer": "module example.com/newer\n\ngo 1.99.0\n",
+		"contrib/older": "module example.com/older\n\ngo 1.21.0\n",
+		"contrib/bare":  "module example.com/bare\n",
+	} {
+		absDir := filepath.Join(rootDir, filepath.FromSlash(dir))
+		if err := os.MkdirAll(absDir, 0777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(absDir, "go.mod"), []byte(goMod), 0666); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A test dir nested inside a module resolves the owning module's directive.
+	if err := os.MkdirAll(filepath.Join(rootDir, "contrib", "newer", "internal", "sub"), 0777); err != nil {
+		t.Fatal(err)
+	}
+
+	b := &builder{rootDir: rootDir}
+	testDirs := []string{".", "contrib/bare", "contrib/newer", "contrib/newer/internal/sub", "contrib/older"}
+	skipDirs, err := b.testDirsRequiringGoNewerThan(testDirs, "go1.25.13", "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var skipped []string
+	for dir := range skipDirs {
+		skipped = append(skipped, dir)
+	}
+	sort.Strings(skipped)
+	want := []string{"contrib/newer", "contrib/newer/internal/sub"}
+	if !slices.Equal(skipped, want) {
+		t.Fatalf("expected skipped dirs %q, got %q", want, skipped)
+	}
+	if reason := skipDirs["contrib/newer"]; !strings.Contains(reason, "go >= 1.99.0") {
+		t.Fatalf("unexpected skip reason: %q", reason)
 	}
 }

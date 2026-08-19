@@ -39,9 +39,10 @@ This package depends on the deterministic ADK `platform` seams
 (`WithTimeProvider`, `WithUUIDProvider`, `WithTaskRunner`), `tool/toolutils.PackTool`,
 and the `model.NewLLM` registry lookup from upstream `google.golang.org/adk/v2`
 (the registry itself stays application-owned; this package never registers into it).
-These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins
-`adk/v2` to a `main`-branch pseudo-version for now; it reverts to an ordinary
-tagged version once a release ships that includes them.
+Those seams have been in tagged ADK releases since v2.1.0; `go.mod` requires
+v2.2.0, the first release with the request-order confirmation resume
+(google/adk-go#1169) that makes multi-decision confirmation resumes
+replay-stable. The adk/v2 requirement also sets the Go floor: 1.26.5+.
 
 ## Module versioning
 

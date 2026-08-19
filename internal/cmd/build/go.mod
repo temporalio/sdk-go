@@ -8,6 +8,7 @@ require (
 	github.com/kisielk/errcheck v1.8.0
 	github.com/ldez/usetesting v0.5.0
 	go.temporal.io/sdk v1.32.1
+	golang.org/x/mod v0.35.0
 	golang.org/x/tools v0.44.0
 	honnef.co/go/tools v0.6.0
 )
@@ -28,7 +29,6 @@ require (
 	github.com/stretchr/testify v1.10.0 // indirect
 	go.temporal.io/api v1.63.4 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20250210185358-939b2ce775ac // indirect
-	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect

@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"go/version"
 	"io"
 	"io/fs"
 	"log"
@@ -21,6 +23,7 @@ import (
 	_ "github.com/BurntSushi/toml"
 	_ "github.com/kisielk/errcheck/errcheck"
 	_ "github.com/ldez/usetesting"
+	"golang.org/x/mod/modfile"
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
@@ -459,6 +462,15 @@ func (b *builder) unitTest() error {
 	}
 	sort.Strings(testDirs)
 
+	// With GOTOOLCHAIN=local (as CI sets), a module whose go directive is newer
+	// than the running toolchain fails every go command in it rather than
+	// switching toolchains. Skip its test dirs: the module has declared it does
+	// not support this Go version, and newer-toolchain runs still cover it.
+	skipDirs, err := b.testDirsRequiringNewerGo(testDirs)
+	if err != nil {
+		return fmt.Errorf("failed finding modules requiring a newer Go: %w", err)
+	}
+
 	// Create coverage dir if doing coverage
 	if *coverageFlag {
 		if err := os.MkdirAll(filepath.Join(b.rootDir, coverageDir), 0777); err != nil {
@@ -469,6 +481,10 @@ func (b *builder) unitTest() error {
 	// Run unit test for each dir
 	log.Printf("Running unit tests in dirs: %v", testDirs)
 	for _, testDir := range testDirs {
+		if reason := skipDirs[testDir]; reason != "" {
+			log.Printf("Skipping unit tests in %v: %v", testDir, reason)
+			continue
+		}
 		// Run unit test
 		args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", "5m"}
 		if *runFlag != "" {
@@ -491,6 +507,75 @@ func (b *builder) unitTest() error {
 	}
 
 	return nil
+}
+
+// testDirsRequiringNewerGo maps each test dir whose owning module requires a Go
+// newer than the running toolchain to a skip reason. It returns nothing when
+// GOTOOLCHAIN allows switching ("auto", "path", or a "+auto"/"+path" suffix) —
+// there the go command picks a toolchain satisfying the module's directive. With
+// a non-switching value ("local", as CI sets, or a pinned toolchain name) such a
+// module fails every go command instead, so its tests cannot run on this leg.
+func (b *builder) testDirsRequiringNewerGo(testDirs []string) (map[string]string, error) {
+	out, err := b.cmdFromRoot("go", "env", "GOTOOLCHAIN").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed running go env GOTOOLCHAIN: %w", err)
+	}
+	goToolchain := strings.TrimSpace(string(out))
+	switch {
+	case goToolchain == "auto" || goToolchain == "path":
+		return nil, nil
+	case strings.HasSuffix(goToolchain, "+auto") || strings.HasSuffix(goToolchain, "+path"):
+		return nil, nil
+	}
+	return b.testDirsRequiringGoNewerThan(testDirs, runtime.Version(), goToolchain)
+}
+
+func (b *builder) testDirsRequiringGoNewerThan(
+	testDirs []string,
+	toolchain string,
+	goToolchain string,
+) (map[string]string, error) {
+	if !version.IsValid(toolchain) {
+		// A devel toolchain reports a non-release version; treat it as newest.
+		return nil, nil
+	}
+	skipDirs := map[string]string{}
+	for _, testDir := range testDirs {
+		goVersion, err := b.moduleGoVersion(testDir)
+		if err != nil {
+			return nil, err
+		}
+		if goVersion != "" && version.Compare("go"+goVersion, toolchain) > 0 {
+			skipDirs[testDir] = fmt.Sprintf(
+				"module requires go >= %v, running %v with GOTOOLCHAIN=%v", goVersion, toolchain, goToolchain)
+		}
+	}
+	return skipDirs, nil
+}
+
+// moduleGoVersion returns the go directive of the module containing the
+// repo-relative dir, walking up to the repository root; empty if the module
+// declares none.
+func (b *builder) moduleGoVersion(dir string) (string, error) {
+	for {
+		data, err := os.ReadFile(filepath.Join(b.rootDir, filepath.FromSlash(dir), "go.mod"))
+		if err == nil {
+			file, err := modfile.ParseLax("go.mod", data, nil)
+			if err != nil {
+				return "", fmt.Errorf("failed parsing go.mod in %v: %w", dir, err)
+			}
+			if file.Go == nil {
+				return "", nil
+			}
+			return file.Go.Version, nil
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return "", fmt.Errorf("failed reading go.mod in %v: %w", dir, err)
+		}
+		if dir == "." {
+			return "", nil
+		}
+		dir = path.Dir(dir)
+	}
 }
 
 func (b *builder) cmdFromRoot(args ...string) *exec.Cmd {
