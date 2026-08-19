@@ -497,8 +497,8 @@ func warnOnNonReplaySafeTelemetryProviders(logger log.Logger, tracerProvider, lo
 		}
 		logger.Warn(fmt.Sprintf(
 			"The global OpenTelemetry %s is not replay-safe: ADK emits telemetry through it "+
-				"from workflow code, and every history replay will re-emit one full copy. Wrap it "+
-				"with googleadk.%s and install the wrapper as the first global provider set in the "+
+				"from workflow code, and every history replay will re-emit one full copy. Install a "+
+				"replay-safe provider from googleadk.%s as the first global provider set in the "+
 				"process; see \"Telemetry and replay\" in the contrib/googleadk README.",
 			global, wrapper),
 			"provider", fmt.Sprintf("%T", p))
