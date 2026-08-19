@@ -23,6 +23,7 @@ import (
 	lognoop "go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
@@ -66,8 +67,14 @@ func typeOf[T any]() reflect.Type { return reflect.TypeOf((*T)(nil)).Elem() }
 // or now declared).
 func TestReplaySafeWrapperSurface(t *testing.T) {
 	const observableRationale = "observable instruments record via reader collect-cycle callbacks that never run under a workflow context"
+	// The tracer wrapper gates span End, not the span's state mutations: a
+	// replay re-creation must re-accumulate everything a later live End
+	// exports, so delegating the mutators ungated is the mechanism, not an
+	// oversight.
+	const spanStateRationale = "span-state mutations must reach the inner span in every mode so a replay re-creation carries the full state its live End exports; only End (and TracerProvider) is gated"
 
 	innerMeter := replaySafeMeter{Meter: metricnoop.NewMeterProvider().Meter("audit")}
+	_, auditSpan := tracenoop.NewTracerProvider().Tracer("audit").Start(context.Background(), "audit")
 	instrument := func(v any, err error) any {
 		require.NoError(t, err)
 		return v
@@ -90,6 +97,21 @@ func TestReplaySafeWrapperSurface(t *testing.T) {
 			name:    "Tracer",
 			iface:   typeOf[trace.Tracer](),
 			wrapper: NewReplaySafeTracerProvider(tracenoop.NewTracerProvider()).Tracer("audit"),
+		},
+		{
+			name:    "Span",
+			iface:   typeOf[trace.Span](),
+			wrapper: &workflowSpan{Span: auditSpan},
+			delegated: map[string]string{
+				"AddEvent":      spanStateRationale,
+				"AddLink":       spanStateRationale,
+				"RecordError":   spanStateRationale,
+				"SetAttributes": spanStateRationale,
+				"SetName":       spanStateRationale,
+				"SetStatus":     spanStateRationale,
+				"IsRecording":   "reports the inner span's real state; replay re-creations are recording so IsRecording-guarded attribute code runs during replay too",
+				"SpanContext":   "pure read of the span's identity, replay-stable under NewWorkflowSpanIDGenerator",
+			},
 		},
 		{
 			name:    "LoggerProvider",
@@ -185,6 +207,17 @@ func TestReplaySafeWrapperSurface(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestWorkflowSpanTracerProviderReturnsReplaySafeWrapper: deriving a tracer
+// from a workflow span (span.TracerProvider().Tracer(...)) must yield gated
+// tracers, not the inner provider's raw ones.
+func TestWorkflowSpanTracerProviderReturnsReplaySafeWrapper(t *testing.T) {
+	inner := sdktrace.NewTracerProvider()
+	_, span := inner.Tracer("audit").Start(context.Background(), "audit")
+	wrapped, ok := (&workflowSpan{Span: span}).TracerProvider().(replaySafeTracerProvider)
+	require.True(t, ok, "a workflow span's TracerProvider must return the replay-safe wrapper")
+	require.Same(t, inner, wrapped.TracerProvider, "the wrapper must wrap the span's own provider")
 }
 
 // grownTracer simulates an OTel minor release adding an emitting method to an

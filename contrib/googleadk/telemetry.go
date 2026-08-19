@@ -183,6 +183,15 @@ func (s *workflowSpan) End(opts ...trace.SpanEndOption) {
 	s.Span.End(opts...)
 }
 
+// TracerProvider returns the replay-safe wrapper around the inner span's
+// provider rather than the inner provider itself: deriving a tracer from a
+// span is the documented way to create more spans on the span's pipeline, and
+// an unwrapped tracer reached that way from workflow code would bypass the
+// End gate and the stream-fed span IDs.
+func (s *workflowSpan) TracerProvider() trace.TracerProvider {
+	return NewReplaySafeTracerProvider(s.Span.TracerProvider())
+}
+
 // NewReplaySafeLoggerProvider wraps inner so log records emitted from replaying
 // workflow code are dropped; everything else delegates to inner unchanged.
 //
