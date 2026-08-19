@@ -401,8 +401,9 @@ span started from sequenced workflow code is a real span in every execution
 mode — a replay re-creates it with a workflow-time start and, with
 `NewWorkflowSpanIDGenerator` on the wrapped provider, the same trace and span
 IDs it drew on first execution — but its `End` is suppressed while the
-workflow is replaying. Each span is therefore exported by whichever execution
-reaches its `End` live:
+workflow is replaying. Tracers derived from a workflow span
+(`span.TracerProvider().Tracer(...)`) produce spans under the same contract.
+Each span is therefore exported by whichever execution reaches its `End` live:
 
 - **Sticky-cache eviction (graceful):** eviction teardown exports nothing —
   the SDK marks teardown as replay before coroutine defers run, so ADK's

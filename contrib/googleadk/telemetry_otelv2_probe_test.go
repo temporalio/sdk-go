@@ -18,9 +18,13 @@ package googleadk_test
 //     changes: the eviction force-End exported the still-open spans truncated
 //     — generate_content without its token attributes — and the catch-up
 //     recreation, being non-recording, could never complete them.
+//   - TestDerivedTracerSpansGatedAndDeterministic: a tracer derived from a
+//     workflow span (span.TracerProvider().Tracer(...)) yields spans with the
+//     same contract — stream-fed IDs, End gated, exported exactly once.
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"sync"
 	"sync/atomic"
@@ -592,6 +596,90 @@ func (t legacyReplaySafeTracer) Start(ctx context.Context, spanName string, opts
 		return legacySuppressedTracer.Start(ctx, spanName, opts...)
 	}
 	return t.Tracer.Start(ctx, spanName, opts...)
+}
+
+// ----------------------------------------------------------------------------
+// Derived tracers: span.TracerProvider().Tracer(...) is the documented OTel way
+// to create more spans on an existing span's pipeline. workflowSpan gates
+// TracerProvider, so the derived tracer must produce spans under the same
+// contract as the global wrapper: stream-fed deterministic IDs, End suppressed
+// while replaying, exported exactly once by the live execution.
+// ----------------------------------------------------------------------------
+
+func derivedTracerWorkflow(ctx workflow.Context) error {
+	adkCtx := googleadk.NewContext(ctx)
+	parentCtx, parent := otel.Tracer("derived-probe").Start(adkCtx, "parent")
+	provider := parent.TracerProvider()
+	if provider != parent.TracerProvider() {
+		return errors.New("a workflow span's TracerProvider must be stable across calls")
+	}
+	_, child := provider.Tracer("derived-probe-child").Start(parentCtx, "child")
+	child.End()
+	parent.End()
+	// Park the ends in a non-final workflow task so replayer passes replay them.
+	return workflow.Sleep(ctx, time.Millisecond)
+}
+
+func TestDerivedTracerSpansGatedAndDeterministic(t *testing.T) {
+	c, stop := devServer(t)
+	defer stop()
+
+	tp, starts, spans := newIDGeneratedCapture()
+	capture := newTelemetryCapture()
+	_, lp, mp := capture.providers()
+	pointGlobalsAt(t,
+		googleadk.NewReplaySafeTracerProvider(tp),
+		googleadk.NewReplaySafeLoggerProvider(lp),
+		googleadk.NewReplaySafeMeterProvider(mp),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	t.Cleanup(cancel)
+	const taskQueue = "adk-otelv2-derived-tracer"
+	w := worker.New(c, taskQueue, worker.Options{})
+	w.RegisterWorkflow(derivedTracerWorkflow)
+	require.NoError(t, w.Start())
+	t.Cleanup(w.Stop)
+
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:        taskQueue + "-" + time.Now().Format("150405.000"),
+		TaskQueue: taskQueue,
+	}, derivedTracerWorkflow)
+	require.NoError(t, err)
+	require.NoError(t, run.Get(ctx, nil))
+
+	liveStarts := starts.from(0)
+	liveEnded := spans.Ended()
+	require.Len(t, byName(liveEnded, "parent"), 1, "the live execution exports the parent span once")
+	require.Len(t, byName(liveEnded, "child"), 1, "the live execution exports the derived-tracer child once")
+	parent, child := byName(liveEnded, "parent")[0], byName(liveEnded, "child")[0]
+	require.Equal(t, parent.SpanContext().TraceID(), child.SpanContext().TraceID(),
+		"the derived child must share the workflow span's trace")
+	require.Equal(t, parent.SpanContext().SpanID(), child.Parent().SpanID(),
+		"the derived child must parent under the workflow span")
+
+	replayCtx, replayCancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer replayCancel()
+	var firstPass []startRecord
+	for i := 0; i < telemetryReplays; i++ {
+		before := starts.len()
+		replayer := worker.NewWorkflowReplayer()
+		replayer.RegisterWorkflow(derivedTracerWorkflow)
+		require.NoError(t, replayer.ReplayWorkflowExecution(replayCtx, c.WorkflowService(), nil, "default", workflow.Execution{
+			ID:    run.GetID(),
+			RunID: run.GetRunID(),
+		}))
+		pass := starts.from(before)
+		require.NotEmpty(t, pass, "replay must re-create the derived-tracer spans")
+		if i == 0 {
+			firstPass = pass
+		} else {
+			require.Equal(t, firstPass, pass, "replay passes must re-create the derived spans deterministically")
+		}
+	}
+	require.Equal(t, startSet(liveStarts), startSet(firstPass),
+		"replay must reproduce the live identities of both the workflow span and its derived-tracer child")
+	require.Len(t, spans.Ended(), len(liveEnded), "replays must export nothing through the derived tracer")
 }
 
 // TestStraddleSpanLegacyControl documents the behavior the alignment replaces:
