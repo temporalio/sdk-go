@@ -46,6 +46,7 @@ func (ts *WorkerVersioningTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkerVersioningTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 

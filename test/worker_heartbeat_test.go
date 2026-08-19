@@ -63,6 +63,7 @@ func (ts *WorkerHeartbeatTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkerHeartbeatTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 

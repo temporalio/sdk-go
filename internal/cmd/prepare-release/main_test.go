@@ -21,8 +21,9 @@ func TestCreateDraftRelease(t *testing.T) {
 		t.Fatalf("unexpected release URL: %q", releaseURL)
 	}
 	testEqual(t, eff.commands.String(), `
-		/worktree: gh release create v1.2.3 --draft --title v1.2.3 --notes Notes --generate-notes
+		/worktree: gh release create v1.2.3 --draft --title v1.2.3 --notes-file /worktree/prepare-release-notes.md --generate-notes
 	`)
+	testEqual(t, eff.files[filepath.Join("/worktree", "prepare-release-notes.md")], "Notes")
 }
 
 func TestOpenDraftPR(t *testing.T) {
@@ -110,7 +111,10 @@ func TestCreateWorktree(t *testing.T) {
 		/tmp/prepare-go-release-123456: git log -1 "--format=%s (%h)"
 	`)
 	testEqual(t, eff.output.String(), `
-		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
+		      $ git worktree add -b quux /tmp/prepare-go-release-123456 origin/main
+		      $ git log -1 "--format=%s (%h)"
+		      Worktree: /tmp/prepare-go-release-123456
+		      HEAD: Initial commit (abc123)
 	`)
 	if root != eff.tempDir {
 		t.Fatalf("unexpected worktree root: got %q, want %q", root, eff.tempDir)
@@ -201,7 +205,15 @@ func TestPrepareDraftPRValidatesBeforeCreatingBranch(t *testing.T) {
 		`+eff.tempDir+`: git log -1 "--format=%s (%h)"
 	`)
 	testEqual(t, eff.output.String(), `
-		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
+		Preparing Go SDK 1.48.0
+
+		[1/6] Fetch main
+		      $ git fetch origin main
+		[2/6] Create release worktree
+		      $ git worktree add -b chore/release-1.48.0 /tmp/prepare-go-release-123456 origin/main
+		      $ git log -1 "--format=%s (%h)"
+		      Worktree: /tmp/prepare-go-release-123456
+		      HEAD: Initial commit (abc123)
 	`)
 }
 
@@ -259,7 +271,17 @@ func TestPrepareDraftPRLeavesWorktreeAfterFailure(t *testing.T) {
 		t.Fatal("worktree was removed after failure")
 	}
 	testEqual(t, eff.output.String(), `
-		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
+		Preparing Go SDK 1.48.0
+
+		[1/6] Fetch main
+		      $ git fetch origin main
+		[2/6] Create release worktree
+		      $ git worktree add -b chore/release-1.48.0 /tmp/prepare-go-release-123456 origin/main
+		      $ git log -1 "--format=%s (%h)"
+		      Worktree: /tmp/prepare-go-release-123456
+		      HEAD: Initial commit (abc123)
+		[3/6] Commit release files
+		      $ git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
 	`)
 }
 
@@ -280,7 +302,14 @@ func TestPrepareDraftPRLeavesDirectoryIfWorktreeCreationFails(t *testing.T) {
 		/repo: git fetch origin main
 		/repo: git worktree add -b chore/release-1.48.0 `+eff.tempDir+` origin/main
 	`)
-	testEqual(t, eff.output.String(), "")
+	testEqual(t, eff.output.String(), `
+		Preparing Go SDK 1.48.0
+
+		[1/6] Fetch main
+		      $ git fetch origin main
+		[2/6] Create release worktree
+		      $ git worktree add -b chore/release-1.48.0 /tmp/prepare-go-release-123456 origin/main
+	`)
 }
 
 func TestPrepareEverything(t *testing.T) {
@@ -359,7 +388,8 @@ func TestPrepareEverything(t *testing.T) {
 			testEqual(t, eff.files[filepath.Join(eff.tempDir, "internal", "version.go")], updatedVersionGo)
 		case `gh pr create --draft --base main --head chore/release-1.48.0 --title "Prepare release 1.48.0" --body "Prepare Go SDK release 1.48.0."`:
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
-		case `gh release create v1.48.0 --draft --title v1.48.0 --notes "# Highlights\n\n### Fixed\n\n- A fix.\n" --generate-notes`:
+		case `gh release create v1.48.0 --draft --title v1.48.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --generate-notes`:
+			testEqual(t, eff.files[filepath.Join(eff.tempDir, "prepare-release-notes.md")], "## Highlights\n\n### Fixed\n\n- A fix.\n")
 			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc\n", nil
 		}
 		return "", nil
@@ -383,13 +413,31 @@ func TestPrepareEverything(t *testing.T) {
 		`+eff.tempDir+`: git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
 		`+eff.tempDir+`: git push --set-upstream origin chore/release-1.48.0
 		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-1.48.0 --title "Prepare release 1.48.0" --body "Prepare Go SDK release 1.48.0."
-		`+eff.tempDir+`: gh release create v1.48.0 --draft --title v1.48.0 --notes "# Highlights\n\n### Fixed\n\n- A fix.\n" --generate-notes
+		`+eff.tempDir+`: gh release create v1.48.0 --draft --title v1.48.0 --notes-file `+eff.tempDir+`/prepare-release-notes.md --generate-notes
 		/repo: git worktree remove --force `+eff.tempDir,
 	)
 	testEqual(t, eff.output.String(), `
-		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
-		PR: https://github.com/temporalio/sdk-go/pull/123
-		Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-abc
-		Cleaned up worktree.
+		Preparing Go SDK 1.48.0
+
+		[1/6] Fetch main
+		      $ git fetch origin main
+		[2/6] Create release worktree
+		      $ git worktree add -b chore/release-1.48.0 /tmp/prepare-go-release-123456 origin/main
+		      $ git log -1 "--format=%s (%h)"
+		      Worktree: /tmp/prepare-go-release-123456
+		      HEAD: Initial commit (abc123)
+		[3/6] Commit release files
+		      $ git commit -m "Prepare release 1.48.0" -- CHANGELOG.md internal/version.go
+		[4/6] Push branch and create draft PR
+		      $ git push --set-upstream origin chore/release-1.48.0
+		      $ gh pr create --draft --base main --head chore/release-1.48.0 --title "Prepare release 1.48.0" --body "Prepare Go SDK release 1.48.0."
+		      PR: https://github.com/temporalio/sdk-go/pull/123
+		[5/6] Create draft release
+		      Release notes: /tmp/prepare-go-release-123456/prepare-release-notes.md
+		      $ gh release create v1.48.0 --draft --title v1.48.0 --notes-file /tmp/prepare-go-release-123456/prepare-release-notes.md --generate-notes
+		      Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-abc
+		[6/6] Clean up temporary worktree
+		      $ git worktree remove --force /tmp/prepare-go-release-123456
+		      Done.
 	`)
 }

@@ -88,7 +88,7 @@ func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
 		logger:                ilog.NewDefaultLogger(),
 		numNormalPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowTask),
 	}
-	_, err := wtp.poll(context.Background())
+	_, err := wtp.poll(t.Context())
 	require.NoError(t, err)
 
 	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -107,7 +107,7 @@ func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
 		logger:          ilog.NewDefaultLogger(),
 		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeActivityTask),
 	}
-	_, err = atp.poll(context.Background())
+	_, err = atp.poll(t.Context())
 	require.NoError(t, err)
 }
 

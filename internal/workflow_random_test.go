@@ -23,8 +23,6 @@ func TestWorkflowRandomTestSuite(t *testing.T) {
 }
 
 func (s *workflowRandomTestSuite) TestDeriveSeed() {
-	s.Require().Equal(deriveSeed(workflowRandomTestRunID, workflowRandomTestName), deriveSeed(workflowRandomTestRunID, workflowRandomTestName))
-
 	cases := []struct {
 		runID string
 		name  string

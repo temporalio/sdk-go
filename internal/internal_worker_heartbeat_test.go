@@ -47,7 +47,7 @@ func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 
 		wfClient := NewServiceClient(mockService, nil, ClientOptions{})
 
-		heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
 		hw := &sharedNamespaceWorker{
 			client:          wfClient,
 			namespace:       "test-ns",
@@ -107,7 +107,7 @@ func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 			return &workflowservice.PollNexusTaskQueueResponse{}, nil
 		})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	hw := &sharedNamespaceWorker{
 		client: &WorkflowClient{
@@ -168,7 +168,7 @@ func TestWorkerCommandCancelActivity(t *testing.T) {
 		})
 
 	activityCancellationCallbacks := newActivityCancellationCallbacks()
-	activityCtx, activityCancel := context.WithCancelCause(context.Background())
+	activityCtx, activityCancel := context.WithCancelCause(t.Context())
 	defer activityCancel(nil)
 	unregisterActivity := activityCancellationCallbacks.register(activityTaskToken, activityCancel)
 	defer unregisterActivity()
@@ -215,7 +215,7 @@ func TestWorkerCommandsDisabledDoesNotPoll(t *testing.T) {
 			Identity:  "worker-identity",
 		})
 
-		heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
 		hw := &sharedNamespaceWorker{
 			client:                  wfClient,
 			namespace:               "test-ns",
