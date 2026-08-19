@@ -26,29 +26,71 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
-const nexGenVersion = "0.2.1"
-
-type commandOptions struct {
-	preserveBuildDir bool
-}
+const (
+	nexGenVersion = "0.2.1"
+	witFilePath   = "internal/nexussystem/wit/workflow-service.wit"
+	witDepsPath   = "internal/nexussystem/wit/deps"
+	dstPkgPath    = "workflow"
+)
 
 func main() {
-	options := commandOptions{}
-	flag.BoolVar(&options.preserveBuildDir, "preserve-build-dir", false, "preserve the build directory, even if the command succeeds")
-	flag.Parse()
-	if err := run(options); err != nil {
+	sdk, err := sdkRoot()
+	if err != nil {
+		log.Fatalf("gen-system-nexus: %v", err)
+	}
+	options, err := parseOptions(os.Args[1:], sdk)
+	if err != nil {
+		log.Fatalf("gen-system-nexus: %v", err)
+	}
+	if err = run(options); err != nil {
 		log.Fatalf("gen-system-nexus: %v", err)
 	}
 }
 
-func run(options commandOptions) (retErr error) {
-	// Locate the SDK root directory and create a temporary build directory
+type runOptions struct {
+	preserveBuildDir bool
+	witFile          string
+	witDepsDir       string
+	dstPkgDir        string
+}
 
-	sdk, err := sdkRoot()
-	if err != nil {
-		return err
+func parseOptions(args []string, sdk string) (runOptions, error) {
+	var options runOptions
+	var err error
+
+	// Parse command-line args
+	flags := flag.NewFlagSet("gen-system-nexus", flag.ContinueOnError)
+	flags.BoolVar(&options.preserveBuildDir, "preserve-build-dir", false, "preserve the build directory, even if the command succeeds")
+	if err := flags.Parse(args); err != nil {
+		return options, err
 	}
 
+	// Check that input files actually exist
+	options.witFile, err = resolveExistingPath(sdk, witFilePath)
+	if err != nil {
+		return options, err
+	}
+	options.witDepsDir, err = resolveExistingPath(sdk, witDepsPath)
+	if err != nil {
+		return options, err
+	}
+	options.dstPkgDir, err = resolveExistingPath(sdk, dstPkgPath)
+	if err != nil {
+		return options, err
+	}
+
+	return options, nil
+}
+
+func resolveExistingPath(root, relativePath string) (string, error) {
+	path := filepath.Join(root, filepath.FromSlash(relativePath))
+	if _, err := os.Stat(path); err != nil {
+		return "", fmt.Errorf("resolving path %s: %w", path, err)
+	}
+	return path, nil
+}
+
+func run(options runOptions) (retErr error) {
 	tmp, err := os.MkdirTemp("", "gen-system-nexus-")
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
@@ -65,10 +107,6 @@ func run(options commandOptions) (retErr error) {
 		}
 		log.Printf("Removed build directory")
 	}()
-
-	witFile := filepath.Join(sdk, "internal", "nexussystem", "wit", "workflow-service.wit")
-	witDepsDir := filepath.Join(sdk, "internal", "nexussystem", "wit", "deps")
-	dstPkgDir := filepath.Join(sdk, "workflow")
 
 	nexGenBuildDir := filepath.Join(tmp, "nexgen")
 	descriptorsBuildDir := filepath.Join(tmp, "descriptors")
@@ -91,8 +129,8 @@ func run(options commandOptions) (retErr error) {
 	serviceFile, err := genService(genServiceOptions{
 		nexGenExe:       nexGenExe,
 		descriptorsFile: descriptorsFile,
-		witFile:         witFile,
-		witDepsDir:      witDepsDir,
+		witFile:         options.witFile,
+		witDepsDir:      options.witDepsDir,
 		buildDir:        serviceBuildDir,
 	})
 	if err != nil {
@@ -102,7 +140,7 @@ func run(options commandOptions) (retErr error) {
 
 	// Run gofmt on the result and copy it to the destination.
 
-	outputFile, err := formatAndCopyFile(dstPkgDir, serviceFile)
+	outputFile, err := formatAndCopyFile(options.dstPkgDir, serviceFile)
 	if err != nil {
 		return err
 	}
