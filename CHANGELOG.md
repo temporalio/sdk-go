@@ -30,6 +30,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Stopped workers now release sticky workflow cache ownership immediately. When the final worker
+  stops, cached workflow state is cleared without waiting for garbage collection.
+
 ### Security
 
 ## [1.48.0] - 2026-08-18

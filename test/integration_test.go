@@ -8587,6 +8587,86 @@ func (ts *IntegrationTestSuite) TestShutdownDuringActiveTimerActivityWorkflows()
 	}
 }
 
+func (ts *IntegrationTestSuite) TestStickyCacheSharedWorkerLifecycle() {
+	if os.Getenv("WORKFLOW_CACHE_SIZE") == "0" {
+		ts.T().Skip("sticky cache is disabled")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:        "sticky-cache-shared-workers-" + uuid.NewString(),
+		TaskQueue: ts.taskQueueName,
+	}, "StickyCacheSharedWorkerLifecycle")
+	ts.NoError(err)
+	defer func() {
+		_ = ts.client.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "test complete")
+	}()
+	ts.waitForHistoryEvent(
+		run.GetID(),
+		run.GetRunID(),
+		enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
+		10*time.Second,
+	)
+
+	queryCount := func(expected int) {
+		var lastErr error
+		var lastCount int
+		matched := assert.Eventually(ts.T(), func() bool {
+			value, queryErr := ts.client.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "sticky-cache-count")
+			if queryErr != nil {
+				lastErr = queryErr
+				return false
+			}
+			lastErr = value.Get(&lastCount)
+			return lastErr == nil && lastCount == expected
+		}, 10*time.Second, 20*time.Millisecond)
+		if !matched {
+			ts.FailNowf("workflow query did not reach expected value", "expected=%d actual=%d lastErr=%v", expected, lastCount, lastErr)
+		}
+	}
+	queryCount(0)
+
+	secondWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(secondWorker)
+	ts.NoError(secondWorker.Start())
+	secondWorkerStopped := false
+	defer func() {
+		if !secondWorkerStopped {
+			secondWorker.Stop()
+		}
+	}()
+
+	ts.worker.Stop()
+	ts.workerStopped = true
+	ts.NoError(ts.client.SignalWorkflow(
+		ctx,
+		run.GetID(),
+		run.GetRunID(),
+		"sticky-cache-increment",
+		1,
+	))
+	queryCount(1)
+
+	secondWorker.Stop()
+	secondWorkerStopped = true
+
+	thirdWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{})
+	ts.registerWorkflowsAndActivities(thirdWorker)
+	ts.NoError(thirdWorker.Start())
+	defer thirdWorker.Stop()
+
+	ts.NoError(ts.client.SignalWorkflow(
+		ctx,
+		run.GetID(),
+		run.GetRunID(),
+		"sticky-cache-increment",
+		1,
+	))
+	queryCount(2)
+}
+
 func (ts *IntegrationTestSuite) TestLocalActivitySummary() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

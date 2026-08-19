@@ -42,6 +42,42 @@ type contextCapturingDC struct {
 	contexts *[]converter.SerializationContext
 }
 
+type slotSupplierWithSysInfo struct {
+	SlotSupplier
+	provider SysInfoProvider
+}
+
+type startFailWorkerPlugin struct {
+	WorkerPluginBase
+	startErr  error
+	stopCalls atomic.Int32
+}
+
+func (p *startFailWorkerPlugin) Name() string {
+	return "start-fail-worker-plugin"
+}
+
+func (p *startFailWorkerPlugin) StartWorker(
+	context.Context,
+	WorkerPluginStartWorkerOptions,
+	func(context.Context, WorkerPluginStartWorkerOptions) error,
+) error {
+	return p.startErr
+}
+
+func (p *startFailWorkerPlugin) StopWorker(
+	ctx context.Context,
+	options WorkerPluginStopWorkerOptions,
+	next func(context.Context, WorkerPluginStopWorkerOptions),
+) {
+	p.stopCalls.Add(1)
+	next(ctx, options)
+}
+
+func (s *slotSupplierWithSysInfo) SysInfoProvider() SysInfoProvider {
+	return s.provider
+}
+
 func (dc *contextCapturingDC) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
 	*dc.contexts = append(*dc.contexts, ctx)
 	return &contextCapturingDC{
@@ -302,8 +338,14 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
 	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflow)
+	sharedWorkerCacheLock.Lock()
+	refcountBeforeReplay := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
 	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBeforeReplay, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
@@ -1730,7 +1772,7 @@ func (s *internalWorkerTestSuite) testWorkflowTaskHandlerHelper(params workerExe
 }
 
 func (s *internalWorkerTestSuite) TestWorkflowTaskHandlerWithDataConverter() {
-	cache := NewWorkerCache()
+	cache := newTestWorkerCache(s.T())
 	params := workerExecutionParameters{
 		Namespace:     testNamespace,
 		Identity:      "identity",
@@ -2061,6 +2103,187 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.True(t, w.activityWorker.worker.isWorkerStarted)
 	assert.True(t, w.workflowWorker.worker.isWorkerStarted)
 	w.Stop()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerStopReleasesCacheOwnership() {
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+	s.Zero(refcountBefore)
+
+	worker := createWorker(s.service)
+	workerCache := worker.executionParams.cache
+	workflowContext := &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{
+			cache:          workerCache,
+			metricsHandler: metrics.NopHandler,
+		},
+	}
+	_, err := workerCache.putWorkflowContext("retained-run", workflowContext)
+	s.NoError(err)
+	s.Equal(1, workerCache.getWorkflowCache().Size())
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore+1, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+
+	worker.Stop()
+	s.Zero(workerCache.getWorkflowCache().Size())
+	s.NotPanics(worker.Stop)
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkersShareCacheUntilFinalStop() {
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+	s.Zero(refcountBefore)
+
+	firstWorker := createWorker(s.service)
+	secondWorker := createWorker(s.service)
+	firstCache := firstWorker.executionParams.cache
+	secondCache := secondWorker.executionParams.cache
+	s.Same(firstCache.getWorkflowCache(), secondCache.getWorkflowCache())
+
+	workflowContext := &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{
+			cache:          firstCache,
+			metricsHandler: metrics.NopHandler,
+		},
+	}
+	_, err := firstCache.putWorkflowContext("shared-run", workflowContext)
+	s.NoError(err)
+	s.Same(workflowContext, secondCache.getWorkflowContext("shared-run"))
+
+	firstWorker.Stop()
+	s.Same(workflowContext, secondCache.getWorkflowContext("shared-run"))
+
+	secondWorker.Stop()
+	s.Zero(firstCache.getWorkflowCache().Size())
+
+	thirdWorker := createWorker(s.service)
+	thirdCache := thirdWorker.executionParams.cache
+	s.NotSame(firstCache.getWorkflowCache(), thirdCache.getWorkflowCache())
+	_, err = thirdCache.putWorkflowContext("new-run", &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{
+			cache:          thirdCache,
+			metricsHandler: metrics.NopHandler,
+		},
+	})
+	s.NoError(err)
+	s.NotNil(thirdCache.getWorkflowContext("new-run"))
+	thirdWorker.Stop()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerStartFailureReleasesCacheOwnershipOnStop() {
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	startErr := errors.New("start failed")
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, startErr).Times(1)
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{})
+	s.ErrorIs(worker.Start(), startErr)
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore+1, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+
+	worker.Stop()
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerPluginStartFailureDoesNotImplicitlyStop() {
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+	startErr := errors.New("plugin start failed")
+	plugin := &startFailWorkerPlugin{startErr: startErr}
+
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{
+		Plugins: []WorkerPlugin{plugin},
+	})
+	s.ErrorIs(worker.Start(), startErr)
+	s.Zero(plugin.stopCalls.Load())
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore+1, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+
+	worker.Stop()
+	s.Equal(int32(1), plugin.stopCalls.Load())
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerFatalErrorReleasesCacheOwnership() {
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	worker := createWorker(s.service)
+	s.NoError(worker.Start())
+	worker.executionParams.WorkerFatalErrorCallback(errors.New("fatal worker error"))
+
+	select {
+	case <-worker.stopC:
+	default:
+		s.Fail("fatal error did not stop worker")
+	}
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerConstructionFailureReleasesCacheOwnership() {
+	fixedTuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{})
+	s.NoError(err)
+	workflowSupplier := &slotSupplierWithSysInfo{
+		SlotSupplier: fixedTuner.GetWorkflowTaskSlotSupplier(),
+		provider:     &FakeSystemInfoSupplier{},
+	}
+	tuner, err := NewCompositeTuner(CompositeTunerOptions{
+		WorkflowSlotSupplier:        workflowSupplier,
+		ActivitySlotSupplier:        fixedTuner.GetActivityTaskSlotSupplier(),
+		LocalActivitySlotSupplier:   fixedTuner.GetLocalActivitySlotSupplier(),
+		NexusSlotSupplier:           fixedTuner.GetNexusSlotSupplier(),
+		SessionActivitySlotSupplier: fixedTuner.GetSessionActivitySlotSupplier(),
+	})
+	s.NoError(err)
+
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
+	s.Panics(func() {
+		NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{
+			Tuner:           tuner,
+			SysInfoProvider: &FakeSystemInfoSupplier{},
+		})
+	})
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
 }
 
 func (s *internalWorkerTestSuite) TestCleanupIsBestEffort() {
