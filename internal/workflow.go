@@ -1092,7 +1092,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		IsLocal:      false,
 	}
 	dataConverter := converter.WithDataConverterSerializationContext(
-		getDataConverterFromWorkflowContext(ctx),
+		getRootDataConverterFromWorkflowContext(ctx),
 		actCtx,
 	)
 	future.(*decodeFutureImpl).dataConverter = dataConverter
@@ -1107,7 +1107,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		ActivityType:           *activityType,
 		Input:                  input,
 		DataConverter:          dataConverter,
-		FailureConverter:       converter.WithFailureConverterSerializationContext(wc.env.GetFailureConverter(), actCtx),
+		FailureConverter:       converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
 		Header:                 header,
 	}
 	params.ActivityID = activityID
@@ -1281,8 +1281,8 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                wfInfo,
-		DataConverter:               converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), actCtx),
-		FailureConverter:            converter.WithFailureConverterSerializationContext(wc.env.GetFailureConverter(), actCtx),
+		DataConverter:               converter.WithDataConverterSerializationContext(getRootDataConverterFromWorkflowContext(ctx), actCtx),
+		FailureConverter:            converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
 		Attempt:                     1, // Attempts always start at one
@@ -1430,7 +1430,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		Namespace:  cmp.Or(workflowOptionsFromCtx.Namespace, wfInfo.Namespace),
 		WorkflowID: childWorkflowID,
 	}
-	dc := converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), childWfCtx)
+	dc := converter.WithDataConverterSerializationContext(getRootDataConverterFromWorkflowContext(ctx), childWfCtx)
 	result.decodeFutureImpl.dataConverter = dc
 
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
@@ -1462,7 +1462,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	}
 
 	failureConverter := converter.WithFailureConverterSerializationContext(
-		wc.env.GetFailureConverter(),
+		getRootFailureConverterFromWorkflowContext(ctx),
 		childWfCtx,
 	)
 
@@ -1904,7 +1904,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 
 	wfInfo := env.WorkflowInfo()
 	dataConverter := converter.WithDataConverterSerializationContext(
-		getDataConverterFromWorkflowContext(ctx),
+		getRootDataConverterFromWorkflowContext(ctx),
 		converter.WorkflowSerializationContext{
 			// Use target namespace for cross-namespace signals, otherwise default to current workflow's.
 			Namespace:  cmp.Or(options.Namespace, wfInfo.Namespace),
@@ -2178,6 +2178,7 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).DataConverter = dc
+	getWorkflowEnvOptions(ctx1).RootDataConverter = dc
 	return ctx1
 }
 

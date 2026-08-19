@@ -257,6 +257,9 @@ type (
 		failureConverter    converter.FailureConverter
 		runTimeout          time.Duration
 
+		rootDataConverter    converter.DataConverter
+		rootFailureConverter converter.FailureConverter
+
 		heartbeatDetails *commonpb.Payloads
 
 		workerStopChannel  chan struct{}
@@ -478,6 +481,8 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 	if childEnv.failureConverter == nil {
 		childEnv.failureConverter = env.failureConverter
 	}
+	childEnv.rootDataConverter = env.GetRootDataConverter()
+	childEnv.rootFailureConverter = env.GetRootFailureConverter()
 	childEnv.registry = env.registry
 	childEnv.detachedChildWaitDisabled = env.detachedChildWaitDisabled
 
@@ -646,6 +651,8 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 			Namespace:  wInfo.Namespace,
 			WorkflowID: wInfo.WorkflowExecution.ID,
 		}
+		env.rootDataConverter = env.dataConverter
+		env.rootFailureConverter = env.failureConverter
 		env.dataConverter = converter.WithDataConverterSerializationContext(env.dataConverter, wfCtx)
 		env.failureConverter = converter.WithFailureConverterSerializationContext(env.failureConverter, wfCtx)
 	}
@@ -1332,6 +1339,20 @@ func (env *testWorkflowEnvironmentImpl) GetDataConverter() converter.DataConvert
 }
 
 func (env *testWorkflowEnvironmentImpl) GetFailureConverter() converter.FailureConverter {
+	return env.failureConverter
+}
+
+func (env *testWorkflowEnvironmentImpl) GetRootDataConverter() converter.DataConverter {
+	if env.rootDataConverter != nil {
+		return env.rootDataConverter
+	}
+	return env.dataConverter
+}
+
+func (env *testWorkflowEnvironmentImpl) GetRootFailureConverter() converter.FailureConverter {
+	if env.rootFailureConverter != nil {
+		return env.rootFailureConverter
+	}
 	return env.failureConverter
 }
 

@@ -160,6 +160,8 @@ type (
 		registry                 *registry
 		dataConverter            converter.DataConverter
 		failureConverter         converter.FailureConverter
+		rootDataConverter        converter.DataConverter
+		rootFailureConverter     converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
 		preferredVersionProvider PreferredVersionProvider
@@ -232,10 +234,14 @@ func newWorkflowExecutionEventHandler(
 		Namespace:  workflowInfo.Namespace,
 		WorkflowID: workflowInfo.WorkflowExecution.ID,
 	}
+	rootDataConverter := dataConverter
+	rootFailureConverter := failureConverter
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, wfCtx)
 	failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, wfCtx)
 
 	context := &workflowEnvironmentImpl{
+		rootDataConverter:            rootDataConverter,
+		rootFailureConverter:         rootFailureConverter,
 		workflowInfo:                 workflowInfo,
 		commandsHelper:               newCommandsHelper(),
 		sideEffectResult:             make(map[int64]*commonpb.Payloads),
@@ -748,6 +754,14 @@ func (wc *workflowEnvironmentImpl) GetDataConverter() converter.DataConverter {
 
 func (wc *workflowEnvironmentImpl) GetFailureConverter() converter.FailureConverter {
 	return wc.failureConverter
+}
+
+func (wc *workflowEnvironmentImpl) GetRootDataConverter() converter.DataConverter {
+	return wc.rootDataConverter
+}
+
+func (wc *workflowEnvironmentImpl) GetRootFailureConverter() converter.FailureConverter {
+	return wc.rootFailureConverter
 }
 
 func (wc *workflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
