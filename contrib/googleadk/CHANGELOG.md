@@ -26,9 +26,6 @@ or Security.
   crash is exported once by the catch-up replay's live `End`, complete with
   ADK's `gen_ai.usage.*` token attributes. See "Telemetry and replay" in the
   README.
-  (Experimental), so telemetry from
-  query handlers and update validators always records. See "Telemetry and
-  replay" in the README.
 - `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.
 - `NewReplaySafeTracerProvider` builds and owns its `sdktrace.TracerProvider`
   (`func(opts ...sdktrace.TracerProviderOption) *ReplaySafeTracerProvider`) and
