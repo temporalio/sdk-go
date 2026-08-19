@@ -5,7 +5,7 @@
 //
 // Usage: go run ./internal/cmd/nexussystemgen
 //
-// A pinned nex-gen revision is automatically installed unless NEX_GEN_BIN is set.
+// A pinned nexgen release is automatically installed unless NEX_GEN_BIN is set.
 package main
 
 import (
@@ -25,10 +25,7 @@ import (
 	"google.golang.org/protobuf/types/descriptorpb"
 )
 
-const (
-	nexGenRepo     = "https://github.com/temporalio/nex-gen"
-	nexGenRevision = "910abd5af733f7f8d86a3e74ebb5a9ff851a38e1"
-)
+const nexGenVersion = "0.2.1"
 
 func main() {
 	if err := run(); err != nil {
@@ -53,30 +50,33 @@ func run() error {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	serviceDst := filepath.Join(outPkgDir, "workflowservice.go")
-	serviceTmp := filepath.Join(tmpDir, "workflowservice.go")
+	generatedDir := filepath.Join(tmpDir, "workflow")
+	if err := os.Mkdir(generatedDir, 0o700); err != nil {
+		return fmt.Errorf("creating generated package directory: %w", err)
+	}
+	serviceTmp := filepath.Join(generatedDir, "workflowservice.go")
 
 	descriptors, err := buildDescriptorSet(tmpDir)
 	if err != nil {
 		return err
 	}
 
-	nexGen, err := nexGenBinary(repoRoot)
+	nexGen, err := nexGenBinary(tmpDir)
 	if err != nil {
 		return err
 	}
 
 	cmd := exec.Command(nexGen,
-		"generate",
-		"--lang", "go",
-		"--input", witMain,
-		"--input", witDeps,
+		"go",
+		witMain,
+		witDeps,
 		"--descriptors", descriptors,
-		"--output", tmpDir,
+		"--output", generatedDir,
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("running nex-gen: %w", err)
+		return fmt.Errorf("running nexgen: %w", err)
 	}
 
 	if err := gofmt(serviceTmp); err != nil {
@@ -119,37 +119,32 @@ func addFileDescriptor(set *descriptorpb.FileDescriptorSet, seen map[string]stru
 	set.File = append(set.File, protodesc.ToFileDescriptorProto(file))
 }
 
-// nexGenBinary returns the path to the pinned nex-gen binary, installing it with cargo if necessary.
-func nexGenBinary(repoRoot string) (string, error) {
+// nexGenBinary returns the path to the nexgen binary, installing a pinned version with cargo if necessary.
+func nexGenBinary(tmpDir string) (string, error) {
 	if nexGen := os.Getenv("NEX_GEN_BIN"); nexGen != "" {
 		return nexGen, nil
 	}
-	toolRoot := filepath.Join(repoRoot, ".build", "tools", "nex-gen-"+nexGenRevision)
-	binaryName := "nex-gen"
+	toolRoot := filepath.Join(tmpDir, "nexgen")
+	binaryName := "nexgen"
 	if runtime.GOOS == "windows" {
 		binaryName += ".exe"
 	}
 	binary := filepath.Join(toolRoot, "bin", binaryName)
-	if _, err := os.Stat(binary); err == nil {
-		return binary, nil
-	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("checking nex-gen binary %s: %w", binary, err)
-	}
 
 	cmd := exec.Command(
 		"cargo", "install", "--locked",
-		"--git", nexGenRepo,
-		"--rev", nexGenRevision,
+		"--features", "advanced",
+		"--version", "="+nexGenVersion,
 		"--root", toolRoot,
-		"nex-gen",
+		"nexgen",
 	)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("installing nex-gen revision %s with cargo: %w", nexGenRevision, err)
+		return "", fmt.Errorf("installing nexgen version %s with cargo: %w", nexGenVersion, err)
 	}
 	if _, err := os.Stat(binary); err != nil {
-		return "", fmt.Errorf("checking installed nex-gen binary %s: %w", binary, err)
+		return "", fmt.Errorf("checking installed nexgen binary %s: %w", binary, err)
 	}
 	return binary, nil
 }
