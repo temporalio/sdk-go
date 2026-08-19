@@ -302,8 +302,14 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
 	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflow)
+	sharedWorkerCacheLock.Lock()
+	refcountBeforeReplay := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
 	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBeforeReplay, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
@@ -1730,7 +1736,7 @@ func (s *internalWorkerTestSuite) testWorkflowTaskHandlerHelper(params workerExe
 }
 
 func (s *internalWorkerTestSuite) TestWorkflowTaskHandlerWithDataConverter() {
-	cache := NewWorkerCache()
+	cache := newTestWorkerCache(s.T())
 	params := workerExecutionParameters{
 		Namespace:     testNamespace,
 		Identity:      "identity",
@@ -2061,6 +2067,56 @@ func (s *internalWorkerTestSuite) TestNoActivitiesOrWorkflows() {
 	assert.True(t, w.activityWorker.worker.isWorkerStarted)
 	assert.True(t, w.workflowWorker.worker.isWorkerStarted)
 	w.Stop()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerStopReleasesCacheOwnership() {
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+	s.Zero(refcountBefore)
+
+	worker := createWorker(s.service)
+	workerCache := worker.executionParams.cache
+	workflowContext := &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{
+			cache:          workerCache,
+			metricsHandler: metrics.NopHandler,
+		},
+	}
+	_, err := workerCache.putWorkflowContext("retained-run", workflowContext)
+	s.NoError(err)
+	s.Equal(1, workerCache.getWorkflowCache().Size())
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore+1, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+
+	worker.Stop()
+	s.Zero(workerCache.getWorkflowCache().Size())
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerStartFailureReleasesCacheOwnership() {
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	startErr := errors.New("start failed")
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, startErr).Times(1)
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).Times(1)
+
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{})
+	s.ErrorIs(worker.Start(), startErr)
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
 }
 
 func (s *internalWorkerTestSuite) TestCleanupIsBestEffort() {

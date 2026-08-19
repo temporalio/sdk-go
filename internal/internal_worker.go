@@ -1291,6 +1291,7 @@ type AggregatedWorker struct {
 	heartbeatMetrics             *heartbeatMetricsHandler
 	heartbeatCallback            func() *workerpb.WorkerHeartbeat
 	workerPollCompleteOnShutdown *atomic.Bool
+	cacheLease                   *workerCacheLease
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1671,6 +1672,9 @@ func (aw *AggregatedWorker) Stop() {
 	})
 
 	aw.unregisterHeartbeatWorker()
+	if aw.cacheLease != nil {
+		aw.cacheLease.release()
+	}
 
 	aw.logger.Info("Stopped Worker")
 }
@@ -2111,7 +2115,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
 	}
-	cache := NewWorkerCache()
+	cache, cacheLease := NewWorkerCache()
+	defer cacheLease.release()
 	params := workerExecutionParameters{
 		Namespace:             namespace,
 		TaskQueue:             taskQueue,
@@ -2396,7 +2401,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
 
-	cache := NewWorkerCache()
+	cache, cacheLease := NewWorkerCache()
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
@@ -2659,6 +2664,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		heartbeatMetrics:             heartbeatMetrics,
 		heartbeatCallback:            heartbeatCallback,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		cacheLease:                   cacheLease,
 	}
 
 	// Set memoized start as a once-value that invokes plugins first
@@ -2671,10 +2677,14 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				return plugin.StartWorker(ctx, options, next)
 			}
 		}
-		return start(context.Background(), WorkerPluginStartWorkerOptions{
+		err := start(context.Background(), WorkerPluginStartWorkerOptions{
 			WorkerInstanceKey: workerInstanceKey,
 			WorkerRegistry:    aw,
 		})
+		if err != nil {
+			aw.Stop()
+		}
+		return err
 	})
 	return aw
 }

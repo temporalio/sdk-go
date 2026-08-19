@@ -112,7 +112,7 @@ func TestPollRequestsIncludeWorkerControlTaskQueue(t *testing.T) {
 }
 
 func TestWFTRacePrevention(t *testing.T) {
-	params := workerExecutionParameters{cache: NewWorkerCache()}
+	params := workerExecutionParameters{cache: newTestWorkerCache(t)}
 	ensureRequiredParams(&params)
 	var (
 		taskQueue    = taskqueuepb.TaskQueue{Name: t.Name() + "task-queue"}
@@ -205,7 +205,7 @@ func TestWFTRacePrevention(t *testing.T) {
 }
 
 func TestWFTCorruption(t *testing.T) {
-	cache := NewWorkerCache()
+	cache := newTestWorkerCache(t)
 	params := workerExecutionParameters{cache: cache}
 	ensureRequiredParams(&params)
 	wfType := commonpb.WorkflowType{Name: t.Name() + "-workflow-type"}
@@ -272,7 +272,7 @@ func TestWFTCorruption(t *testing.T) {
 	}()
 	completionChans[0] <- struct{}{}
 	// Until RespondWorkflowTaskCompleted returns an error the workflow should be in cache
-	require.True(t, (*cache.sharedCache.workflowCache).Exist(runID))
+	require.True(t, cache.getWorkflowCache().Exist(runID))
 	close(completionChans[0])
 	<-processTaskDone
 	// Workflow should not be in cache
@@ -280,7 +280,7 @@ func TestWFTCorruption(t *testing.T) {
 }
 
 func TestWFTReset(t *testing.T) {
-	cache := NewWorkerCache()
+	cache := newTestWorkerCache(t)
 	params := workerExecutionParameters{
 		cache: cache,
 	}
@@ -443,7 +443,7 @@ func (wth *panickingTaskHandler) ProcessWorkflowTask(
 }
 
 func TestWFTPanicInTaskHandler(t *testing.T) {
-	cache := NewWorkerCache()
+	cache := newTestWorkerCache(t)
 	params := workerExecutionParameters{cache: cache}
 	ensureRequiredParams(&params)
 	wfType := commonpb.WorkflowType{Name: t.Name() + "-workflow-type"}
@@ -486,7 +486,7 @@ func TestWFTPanicInTaskHandler(t *testing.T) {
 }
 
 func TestErrorToFailWorkflowTaskCause(t *testing.T) {
-	params := workerExecutionParameters{cache: NewWorkerCache()}
+	params := workerExecutionParameters{cache: newTestWorkerCache(t)}
 	ensureRequiredParams(&params)
 
 	taskHandler := newWorkflowTaskHandler(params, nil, newRegistry())
