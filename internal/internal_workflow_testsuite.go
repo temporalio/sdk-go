@@ -293,7 +293,7 @@ type (
 func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *registry) *testWorkflowEnvironmentImpl {
 	var r *registry
 	if parentRegistry == nil {
-		r = newRegistryWithOptions(registryOptions{disableAliasing: s.disableRegistrationAliasing})
+		r = newRegistryWithOptions(registryOptions{disableAliasing: s.disableRegistrationAliasing, antiAliasing: s.registrationAntiAliasing})
 	} else {
 		r = parentRegistry
 	}
@@ -737,6 +737,12 @@ func (w *testWorkflowDefinitionWrapper) OnWorkflowTaskStarted(timeout time.Durat
 
 func (env *testWorkflowEnvironmentImpl) TryUse(flag sdkFlag) bool {
 	return env.sdkFlags.tryUse(flag, true)
+}
+
+func (env *testWorkflowEnvironmentImpl) UseRegistrationAntiAliasing() bool {
+	// The test environment does not replay against recorded history, so the
+	// configured mode is used directly.
+	return env.registry.antiAliasing
 }
 
 func (env *testWorkflowEnvironmentImpl) GenerateSequence() int64 {
