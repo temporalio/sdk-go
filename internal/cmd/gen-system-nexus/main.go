@@ -78,7 +78,7 @@ func run() error {
 
 	// Run gofmt on the result, copy them to the destination, and clean up the build directory.
 
-	err = copyFormattedFiles(dstPkgDir, []string{serviceFile})
+	err = formatAndMoveFiles(dstPkgDir, []string{serviceFile})
 	if err != nil {
 		return err
 	}
@@ -183,8 +183,8 @@ func genService(options genServiceOptions) (string, error) {
 	return serviceFile, nil
 }
 
-// copyFormattedFiles formats Go source files and copies them into dstDir.
-func copyFormattedFiles(dstDir string, inputFiles []string) error {
+// formatAndMoveFiles formats Go source files and moves them into dstDir.
+func formatAndMoveFiles(dstDir string, inputFiles []string) error {
 	for _, inputFile := range inputFiles {
 		contents, err := os.ReadFile(inputFile)
 		if err != nil {
@@ -194,9 +194,13 @@ func copyFormattedFiles(dstDir string, inputFiles []string) error {
 		if err != nil {
 			return fmt.Errorf("formatting generated Go file %s: %w", inputFile, err)
 		}
+		if err := os.WriteFile(inputFile, formatted, 0o644); err != nil {
+			return fmt.Errorf("writing formatted Go file %s: %w", inputFile, err)
+		}
 		outputFile := filepath.Join(dstDir, filepath.Base(inputFile))
-		if err := os.WriteFile(outputFile, formatted, 0o644); err != nil {
-			return fmt.Errorf("writing formatted Go file %s: %w", outputFile, err)
+		// Rename only after formatting succeeds so a failed write cannot truncate the checked-in destination.
+		if err := os.Rename(inputFile, outputFile); err != nil {
+			return fmt.Errorf("moving formatted Go file from %s to %s: %w", inputFile, outputFile, err)
 		}
 	}
 	return nil
