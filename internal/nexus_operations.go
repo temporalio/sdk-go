@@ -855,18 +855,6 @@ func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context,
 	activityID := options.ID
 	runID := uuid.NewString()
 
-	if options.responseInfo != nil {
-		options.responseInfo.Link = &commonpb.Link{
-			Variant: &commonpb.Link_Activity_{
-				Activity: &commonpb.Link_Activity{
-					Namespace:  t.env.workflowInfo.Namespace,
-					ActivityId: activityID,
-					RunId:      runID,
-				},
-			},
-		}
-	}
-
 	params := ExecuteActivityParams{
 		ExecuteActivityOptions: ExecuteActivityOptions{
 			ActivityID:             activityID,
