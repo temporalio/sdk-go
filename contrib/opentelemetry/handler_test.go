@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -29,7 +30,7 @@ func TestTags(t *testing.T) {
 	handlerWithTag.Counter("testCounter").Inc(1)
 	// Assert result
 	var rm metricdata.ResourceMetrics
-	metricReader.Collect(ctx, &rm)
+	require.NoError(t, metricReader.Collect(ctx, &rm))
 	assert.Len(t, rm.ScopeMetrics, 1)
 	metrics := rm.ScopeMetrics[0].Metrics
 	assert.Len(t, metrics, 1)
@@ -70,7 +71,7 @@ func TestCounterHandler(t *testing.T) {
 	testCounter2.Inc(5)
 	// Assert result
 	var rm metricdata.ResourceMetrics
-	metricReader.Collect(ctx, &rm)
+	require.NoError(t, metricReader.Collect(ctx, &rm))
 	assert.Len(t, rm.ScopeMetrics, 1)
 	metrics := rm.ScopeMetrics[0].Metrics
 	assert.Len(t, metrics, 1)
@@ -107,7 +108,7 @@ func TestCounterHandlerWithMonotonicCounters(t *testing.T) {
 	taggedHandler.Counter("testCounter").Inc(3)
 
 	var rm metricdata.ResourceMetrics
-	metricReader.Collect(ctx, &rm)
+	require.NoError(t, metricReader.Collect(ctx, &rm))
 	assert.Len(t, rm.ScopeMetrics, 1)
 	metrics := rm.ScopeMetrics[0].Metrics
 	assert.Len(t, metrics, 1)
@@ -150,7 +151,7 @@ func TestGaugeHandler(t *testing.T) {
 
 	// Assert result
 	var rm metricdata.ResourceMetrics
-	metricReader.Collect(ctx, &rm)
+	require.NoError(t, metricReader.Collect(ctx, &rm))
 	assert.Len(t, rm.ScopeMetrics, 1)
 	metrics := rm.ScopeMetrics[0].Metrics
 	assert.Len(t, metrics, 1)
@@ -190,7 +191,7 @@ func TestTimerHandler(t *testing.T) {
 	testTimer2.Record(time.Millisecond)
 
 	var rm metricdata.ResourceMetrics
-	metricReader.Collect(ctx, &rm)
+	require.NoError(t, metricReader.Collect(ctx, &rm))
 	assert.Len(t, rm.ScopeMetrics, 1)
 	metrics := rm.ScopeMetrics[0].Metrics
 	assert.Len(t, metrics, 1)

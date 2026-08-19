@@ -166,7 +166,7 @@ func prepareReleaseNotes(text, version string) (string, error) {
 	if len(sections) == 0 {
 		return "", fmt.Errorf("changelog section for %q appears to be empty", version)
 	}
-	return "# Highlights\n\n" + strings.Join(sections, "\n") + "\n", nil
+	return "## Highlights\n\n" + strings.Join(sections, "\n") + "\n", nil
 }
 
 // findVersionSection returns the heading and content bounds for a changelog version.

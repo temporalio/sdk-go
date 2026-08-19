@@ -22,6 +22,20 @@ to docs, or any other relevant information.
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [1.48.0] - 2026-08-18
+
+### Added
+
 - Added `-envconfig` support to the integration test harness, allowing integration tests to use
   standard client settings from `contrib/envconfig`.
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
@@ -42,11 +56,21 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Data converter errors raised while deserializing Nexus operation input are no longer replaced with
+  a generic `BAD_REQUEST` handler error. A `temporal.ApplicationError` or a `nexus.HandlerError` is
+  now propagated to the caller as-is, and any other error is wrapped in a `BAD_REQUEST`
+  `nexus.HandlerError` that retains the original error as its cause. As an exception, a
+  non-retryable `temporal.ApplicationError` with type `PayloadValidationError` is reported as a
+  `BAD_REQUEST` `nexus.HandlerError` with the original error as its cause, since it indicates the
+  operation input itself is invalid.
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
   command is pending.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
   updates the recorded value when it changes, matching the real worker. Previously it ignored
   equals and returned a freshly computed value on every call.
+- Nexus operation link propagation for stand-alone activities. When a Nexus operation handler uses
+  `client.ExecuteActivity`, inbound Nexus request links are forwarded to the activity and the
+  activity link returned by the server is propagated back to the Nexus operation caller.
 
 ## [1.47.0] - 2026-07-28
 
