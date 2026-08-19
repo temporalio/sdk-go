@@ -141,6 +141,9 @@ type (
 
 		sideEffectCounterID int64
 
+		// randoms holds deterministic PRNGs keyed by name and scoped to a run.
+		randoms map[string]*workflowRandomStream
+
 		currentReplayTime time.Time // Indicates current replay time of the command.
 		currentLocalTime  time.Time // Local time when currentReplayTime was updated.
 
@@ -252,6 +255,7 @@ func newWorkflowExecutionEventHandler(
 		preferredVersionProvider:     preferredVersionProvider,
 		protocols:                    protocol.NewRegistry(),
 		mutableSideEffectCallCounter: make(map[string]int),
+		randoms:                      make(map[string]*workflowRandomStream),
 		sdkFlags:                     newSDKFlagSet(capabilities),
 		bufferedUpdateRequests:       make(map[string][]func()),
 	}
@@ -759,6 +763,10 @@ func (wc *workflowEnvironmentImpl) GenerateSequenceID() string {
 
 func (wc *workflowEnvironmentImpl) GenerateSequence() int64 {
 	return wc.commandsHelper.getNextID()
+}
+
+func (wc *workflowEnvironmentImpl) GetRandomStream(name string) WorkflowRandomStream {
+	return getRandomStream(wc.randoms, wc.workflowInfo.currentRunID, name)
 }
 
 func (wc *workflowEnvironmentImpl) CreateNewCommand(commandType enumspb.CommandType) *commandpb.Command {
@@ -1327,6 +1335,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 		attr := event.GetWorkflowTaskFailedEventAttributes()
 		if attr.GetCause() == enumspb.WORKFLOW_TASK_FAILED_CAUSE_RESET_WORKFLOW {
 			weh.workflowInfo.currentRunID = attr.GetNewRunId()
+			reseedRandoms(weh.randoms, weh.workflowInfo.currentRunID)
 		}
 	case enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED:
 		// No Operation

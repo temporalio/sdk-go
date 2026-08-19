@@ -6,7 +6,7 @@ require (
 	github.com/golang/mock v1.6.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
-	github.com/nexus-rpc/sdk-go v0.6.0
+	github.com/nexus-rpc/sdk-go v0.7.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/stretchr/testify v1.11.1
 	github.com/uber-go/tally/v4 v4.1.1
@@ -15,6 +15,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.43.0
 	go.temporal.io/api v1.63.4
 	go.temporal.io/sdk v1.46.0
+	go.temporal.io/sdk/contrib/envconfig v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentelemetry v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/opentracing v0.0.0-00010101000000-000000000000
 	go.temporal.io/sdk/contrib/sysinfo v0.0.0-00010101000000-000000000000
@@ -25,6 +26,7 @@ require (
 )
 
 require (
+	github.com/BurntSushi/toml v1.4.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cilium/ebpf v0.11.0 // indirect
 	github.com/containerd/cgroups/v3 v3.0.3 // indirect
@@ -68,6 +70,7 @@ require (
 
 replace (
 	go.temporal.io/sdk => ../
+	go.temporal.io/sdk/contrib/envconfig => ../contrib/envconfig
 	go.temporal.io/sdk/contrib/opentelemetry => ../contrib/opentelemetry
 	go.temporal.io/sdk/contrib/opentracing => ../contrib/opentracing
 	go.temporal.io/sdk/contrib/sysinfo => ../contrib/sysinfo

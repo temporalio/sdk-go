@@ -187,7 +187,7 @@ func SpanFromWorkflowContext(ctx workflow.Context) (trace.Span, bool) {
 	}
 
 	// Fallback to OpenTelemetry span extraction behavior
-	return trace.SpanFromContext(nil), false
+	return trace.SpanFromContext(context.Background()), false
 }
 
 func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {

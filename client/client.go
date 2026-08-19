@@ -242,6 +242,12 @@ type (
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.
 	StartWorkflowOptions = internal.StartWorkflowOptions
 
+	// CancelWorkflowOptions contains parameters for [Client.CancelWorkflowWithOptions].
+	CancelWorkflowOptions = internal.CancelWorkflowOptions
+
+	// TerminateWorkflowOptions contains parameters for [Client.TerminateWorkflowWithOptions].
+	TerminateWorkflowOptions = internal.TerminateWorkflowOptions
+
 	// CompleteActivityByIDOptions provides options for CompleteActivityByIDWithOptions.
 	//
 	// ActivityType, WorkflowType, and TaskQueue values are not validated by the SDK.
@@ -1133,9 +1139,10 @@ type (
 		//  - serviceerror.Unavailable
 		//  - serviceerror.WorkflowExecutionAlreadyStarted, when WorkflowExecutionErrorWhenAlreadyStarted is specified
 		//
-		// WorkflowRun has 3 methods:
-		//  - GetWorkflowID() string: which return the started workflow ID
+		// WorkflowRun provides:
+		//  - GetID() string: which returns the started workflow ID
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - GetFirstExecutionRunID() string: which returns the first execution run ID in the workflow chain
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
@@ -1154,8 +1161,10 @@ type (
 		//  - workflow ID of the workflow.
 		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
-		// WorkflowRun has 2 methods:
+		// WorkflowRun provides:
+		//  - GetID() string: which returns the workflow ID
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - GetFirstExecutionRunID() string: which is empty for handles returned by GetWorkflow
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
@@ -1210,6 +1219,11 @@ type (
 		//  - serviceerror.Unavailable
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
+		// CancelWorkflowWithOptions requests cancellation of a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error
+
 		// TerminateWorkflow terminates a workflow execution. Terminate stops a workflow execution immediately without
 		// letting the workflow to perform any cleanup
 		// workflowID is required, other parameters are optional.
@@ -1221,6 +1235,11 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...any) error
+
+		// TerminateWorkflowWithOptions terminates a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		//  - workflow ID of the workflow.

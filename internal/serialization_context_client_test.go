@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"context"
 	"testing"
 
 	"github.com/golang/mock/gomock"
@@ -40,7 +39,7 @@ func TestClientStartWorkflow_SerializationContext(t *testing.T) {
 	service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.StartWorkflowExecutionResponse{RunId: "run-1"}, nil)
 
-	_, err := client.ExecuteWorkflow(context.Background(), StartWorkflowOptions{
+	_, err := client.ExecuteWorkflow(t.Context(), StartWorkflowOptions{
 		ID:        "wf-start-test",
 		TaskQueue: "test-tq",
 	}, "myWorkflow", "arg1")
@@ -69,7 +68,7 @@ func TestClientSignalWorkflow_SerializationContext(t *testing.T) {
 	service.EXPECT().SignalWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.SignalWorkflowExecutionResponse{}, nil)
 
-	err := client.SignalWorkflow(context.Background(), "target-wf-signal", "", "my-signal", "data")
+	err := client.SignalWorkflow(t.Context(), "target-wf-signal", "", "my-signal", "data")
 	require.NoError(err)
 
 	captured := dc.getCapturedContexts()
@@ -96,7 +95,7 @@ func TestClientQueryWorkflow_SerializationContext(t *testing.T) {
 	service.EXPECT().QueryWorkflow(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.QueryWorkflowResponse{QueryResult: queryResult}, nil)
 
-	result, err := client.QueryWorkflow(context.Background(), "target-wf-query", "", "my-query")
+	result, err := client.QueryWorkflow(t.Context(), "target-wf-query", "", "my-query")
 	require.NoError(err)
 
 	var str string
@@ -124,7 +123,7 @@ func TestClientTerminateWorkflow_SerializationContext(t *testing.T) {
 	service.EXPECT().TerminateWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.TerminateWorkflowExecutionResponse{}, nil)
 
-	err := client.TerminateWorkflow(context.Background(), "target-wf-terminate", "", "reason", "detail")
+	err := client.TerminateWorkflow(t.Context(), "target-wf-terminate", "", "reason", "detail")
 	require.NoError(err)
 
 	captured := dc.getCapturedContexts()
@@ -156,7 +155,7 @@ func TestClientDescribeWorkflow_SerializationContext(t *testing.T) {
 			},
 		}, nil)
 
-	desc, err := client.DescribeWorkflow(context.Background(), "wf-describe-test", "run-1")
+	desc, err := client.DescribeWorkflow(t.Context(), "wf-describe-test", "run-1")
 	require.NoError(err)
 	require.NotNil(desc)
 
@@ -197,7 +196,7 @@ func TestClientPollWorkflowUpdate_SerializationContext(t *testing.T) {
 		},
 		UpdateId: "update-1",
 	}
-	output, err := client.PollWorkflowUpdate(context.Background(), ref)
+	output, err := client.PollWorkflowUpdate(t.Context(), ref)
 	require.NoError(err)
 	require.NotNil(output)
 
@@ -249,7 +248,7 @@ func TestClientUpdateWithStartWorkflow_SerializationContext(t *testing.T) {
 	)
 
 	_, err := client.UpdateWithStartWorkflow(
-		context.Background(),
+		t.Context(),
 		UpdateWithStartWorkflowOptions{
 			UpdateOptions: UpdateWorkflowOptions{
 				UpdateName:   "my-update",

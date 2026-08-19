@@ -38,7 +38,6 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/internal/common/retry"
 	"go.temporal.io/sdk/internal/common/serializer"
-	"go.temporal.io/sdk/internal/common/util"
 	"go.temporal.io/sdk/internal/extstore"
 	"go.temporal.io/sdk/log"
 )
@@ -125,6 +124,11 @@ type (
 		// called if there was a later run for this run.
 		GetRunID() string
 
+		// GetFirstExecutionRunID returns the run ID of the first execution in the
+		// workflow execution chain. The value may be empty if the server did not
+		// return it, such as when using GetWorkflow or an older server version.
+		GetFirstExecutionRunID() string
+
 		// Get will fill the workflow execution result to valuePtr, if workflow
 		// execution is a success, or return corresponding error. If valuePtr is
 		// nil, valuePtr will be ignored and only the corresponding error of the
@@ -170,8 +174,8 @@ type (
 	workflowRunImpl struct {
 		workflowType          string
 		workflowID            string
-		firstRunID            string
-		currentRunID          *util.OnceCell
+		firstExecutionRunID   string
+		currentRunID          func() string
 		iterFn                func(ctx context.Context, runID string) HistoryEventIterator
 		dataConverter         converter.DataConverter
 		failureConverter      converter.FailureConverter
@@ -260,7 +264,7 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 	// execution and extract run id from there. This is definitely less efficient than it could be if there was a more
 	// specific rpc method for this, or if there were more granular history filters - in which case it could be
 	// extracted from the `iterFn` inside of `workflowRunImpl`
-	var runIDCell util.OnceCell
+	var currentRunID func() string
 	if runID == "" {
 		fetcher := func() string {
 			execData, _ := wc.DescribeWorkflowExecution(ctx, workflowID, runID)
@@ -273,9 +277,9 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 			}
 			return ""
 		}
-		runIDCell = util.LazyOnceCell(fetcher)
+		currentRunID = sync.OnceValue(fetcher)
 	} else {
-		runIDCell = util.PopulatedOnceCell(runID)
+		currentRunID = func() string { return runID }
 	}
 
 	gwCtx := converter.WorkflowSerializationContext{
@@ -284,8 +288,7 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 	}
 	return &workflowRunImpl{
 		workflowID:            workflowID,
-		firstRunID:            runID,
-		currentRunID:          &runIDCell,
+		currentRunID:          currentRunID,
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(wc.failureConverter, gwCtx),
@@ -372,26 +375,50 @@ func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOpt
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *WorkflowClient) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
+	return wc.CancelWorkflowWithOptions(ctx, CancelWorkflowOptions{
+		WorkflowID: workflowID,
+		RunID:      runID,
+	})
+}
+
+// CancelWorkflowWithOptions cancels a workflow execution with additional targeting options.
+func (wc *WorkflowClient) CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return err
 	}
 
-	return wc.interceptor.CancelWorkflow(ctx, &ClientCancelWorkflowInput{WorkflowID: workflowID, RunID: runID})
+	return wc.interceptor.CancelWorkflow(ctx, &ClientCancelWorkflowInput{
+		WorkflowID:          options.WorkflowID,
+		RunID:               options.RunID,
+		FirstExecutionRunID: options.FirstExecutionRunID,
+		Reason:              options.Reason,
+	})
 }
 
 // TerminateWorkflow terminates a workflow execution.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
 func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...any) error {
+	return wc.TerminateWorkflowWithOptions(ctx, TerminateWorkflowOptions{
+		WorkflowID: workflowID,
+		RunID:      runID,
+		Reason:     reason,
+		Details:    details,
+	})
+}
+
+// TerminateWorkflowWithOptions terminates a workflow execution with additional targeting options.
+func (wc *WorkflowClient) TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return err
 	}
 
 	return wc.interceptor.TerminateWorkflow(ctx, &ClientTerminateWorkflowInput{
-		WorkflowID: workflowID,
-		RunID:      runID,
-		Reason:     reason,
-		Details:    details,
+		WorkflowID:          options.WorkflowID,
+		RunID:               options.RunID,
+		FirstExecutionRunID: options.FirstExecutionRunID,
+		Reason:              options.Reason,
+		Details:             options.Details,
 	})
 }
 
@@ -1887,7 +1914,11 @@ func (iter *historyEventIteratorImpl) Next() (*historypb.HistoryEvent, error) {
 }
 
 func (workflowRun *workflowRunImpl) GetRunID() string {
-	return workflowRun.currentRunID.Get()
+	return workflowRun.currentRunID()
+}
+
+func (workflowRun *workflowRunImpl) GetFirstExecutionRunID() string {
+	return workflowRun.firstExecutionRunID
 }
 
 func (workflowRun *workflowRunImpl) GetID() string {
@@ -1903,7 +1934,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 	valuePtr any,
 	options WorkflowRunGetOptions,
 ) error {
-	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID.Get())
+	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID())
 	if !iter.HasNext() {
 		panic("could not get last history event for workflow")
 	}
@@ -1972,7 +2003,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 
 	err = NewWorkflowExecutionError(
 		workflowRun.workflowID,
-		workflowRun.currentRunID.Get(),
+		workflowRun.currentRunID(),
 		workflowRun.workflowType,
 		err)
 
@@ -1989,8 +2020,7 @@ func (workflowRun *workflowRunImpl) follow(
 	newRunID string,
 	options WorkflowRunGetOptions,
 ) error {
-	curRunID := util.PopulatedOnceCell(newRunID)
-	workflowRun.currentRunID = &curRunID
+	workflowRun.currentRunID = func() string { return newRunID }
 	return workflowRun.GetWithOptions(ctx, valuePtr, options)
 }
 
@@ -2189,7 +2219,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
-	var runID string
+	var runID, firstExecutionRunID string
 	response, err := w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
 
 	eagerWorkflowTask := response.GetEagerWorkflowTask()
@@ -2202,10 +2232,12 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	// Allow already-started error
 	if e, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok && !in.Options.WorkflowExecutionErrorWhenAlreadyStarted {
 		runID = e.RunId
+		firstExecutionRunID = e.FirstExecutionRunId
 	} else if err != nil {
 		return nil, err
 	} else {
-		runID = response.RunId
+		runID = response.GetRunId()
+		firstExecutionRunID = response.GetFirstExecutionRunId()
 	}
 
 	if responseInfo := in.Options.responseInfo; responseInfo != nil {
@@ -2223,12 +2255,11 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
 	}
-	curRunIDCell := util.PopulatedOnceCell(runID)
 	return &workflowRunImpl{
 		workflowType:          in.WorkflowType,
 		workflowID:            workflowID,
-		firstRunID:            runID,
-		currentRunID:          &curRunIDCell,
+		firstExecutionRunID:   firstExecutionRunID,
+		currentRunID:          func() string { return runID },
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, wfCtx),
@@ -2283,16 +2314,16 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 		WorkflowID: startOp.input.Options.ID,
 	}
 	onStart := func(startResp *workflowservice.StartWorkflowExecutionResponse) {
-		runIDCell := util.PopulatedOnceCell(startResp.RunId)
+		runID := startResp.RunId
 		startOp.set(&workflowRunImpl{
-			workflowType:     startOp.input.WorkflowType,
-			workflowID:       startOp.input.Options.ID,
-			firstRunID:       startResp.RunId,
-			currentRunID:     &runIDCell,
-			iterFn:           iterFn,
-			dataConverter:    converter.WithDataConverterSerializationContext(w.client.dataConverter, startWfCtx),
-			failureConverter: converter.WithFailureConverterSerializationContext(w.client.failureConverter, startWfCtx),
-			registry:         w.client.registry,
+			workflowType:        startOp.input.WorkflowType,
+			workflowID:          startOp.input.Options.ID,
+			firstExecutionRunID: startResp.GetFirstExecutionRunId(),
+			currentRunID:        func() string { return runID },
+			iterFn:              iterFn,
+			dataConverter:       converter.WithDataConverterSerializationContext(w.client.dataConverter, startWfCtx),
+			failureConverter:    converter.WithFailureConverterSerializationContext(w.client.failureConverter, startWfCtx),
+			registry:            w.client.registry,
 		}, nil)
 	}
 
@@ -2635,12 +2666,12 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		Namespace:  w.client.namespace,
 		WorkflowID: in.Options.ID,
 	}
-	curRunIDCell := util.PopulatedOnceCell(response.GetRunId())
+	runID := response.GetRunId()
 	return &workflowRunImpl{
 		workflowType:          in.WorkflowType,
 		workflowID:            in.Options.ID,
-		firstRunID:            response.GetRunId(),
-		currentRunID:          &curRunIDCell,
+		firstExecutionRunID:   response.GetFirstExecutionRunId(),
+		currentRunID:          func() string { return runID },
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, swsCtx),
 		failureConverter:      converter.WithFailureConverterSerializationContext(w.client.failureConverter, swsCtx),
@@ -2657,7 +2688,9 @@ func (w *workflowClientInterceptor) CancelWorkflow(ctx context.Context, in *Clie
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
 		},
-		Identity: w.client.identity,
+		Identity:            w.client.identity,
+		FirstExecutionRunId: in.FirstExecutionRunID,
+		Reason:              in.Reason,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -2681,9 +2714,10 @@ func (w *workflowClientInterceptor) TerminateWorkflow(ctx context.Context, in *C
 			WorkflowId: in.WorkflowID,
 			RunId:      in.RunID,
 		},
-		Reason:   in.Reason,
-		Identity: w.client.identity,
-		Details:  detailsPayload,
+		Reason:              in.Reason,
+		Identity:            w.client.identity,
+		Details:             detailsPayload,
+		FirstExecutionRunId: in.FirstExecutionRunID,
 	}
 
 	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{

@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -54,7 +55,7 @@ func TestTryReserveSlotDoesNotBlockDuringRampWait(t *testing.T) {
 	require.NotNil(t, supplier.TryReserveSlot(info), "first eager reserve should succeed")
 	callsBeforeReserve := info.numIssuedCalls.Load()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	reserveReturned := make(chan struct{})
 	go func() {
@@ -107,7 +108,7 @@ func TestRampThrottleBoundsIssuanceAcrossConcurrentReserveSlot(t *testing.T) {
 	for range reservers {
 		wg.Go(func() {
 			<-start
-			permit, err := supplier.ReserveSlot(context.Background(), info)
+			permit, err := supplier.ReserveSlot(t.Context(), info)
 			at := time.Now()
 
 			mu.Lock()
@@ -140,23 +141,24 @@ func TestRampThrottleBoundsIssuanceAcrossConcurrentReserveSlot(t *testing.T) {
 // lastIssuedMu before the ramp wait must not let issuance past MinSlots exceed one slot per
 // RampThrottle.
 func TestRampThrottleStillBoundsIssuance(t *testing.T) {
-	const ramp = 100 * time.Millisecond
+	synctest.Test(t, func(t *testing.T) {
+		const ramp = 100 * time.Millisecond
 
-	rcOpts := DefaultResourceControllerOptions()
-	rcOpts.MemTargetPercent = 0.8
-	rcOpts.CpuTargetPercent = 0.9
-	rcOpts.InfoSupplier = &FakeSystemInfoSupplier{memUse: 0.1, cpuUse: 0.1}
+		rcOpts := DefaultResourceControllerOptions()
+		rcOpts.MemTargetPercent = 0.8
+		rcOpts.CpuTargetPercent = 0.9
+		rcOpts.InfoSupplier = &FakeSystemInfoSupplier{memUse: 0.1, cpuUse: 0.1}
 
-	supplier, err := NewResourceBasedSlotSupplier(NewResourceController(rcOpts),
-		ResourceBasedSlotSupplierOptions{MinSlots: 0, MaxSlots: 1000, RampThrottle: ramp})
-	require.NoError(t, err)
+		supplier, err := NewResourceBasedSlotSupplier(NewResourceController(rcOpts),
+			ResourceBasedSlotSupplierOptions{MinSlots: 0, MaxSlots: 1000, RampThrottle: ramp})
+		require.NoError(t, err)
 
-	info := &countingReserveInfo{issued: 10} // past MinSlots, so the throttle applies
+		info := &countingReserveInfo{issued: 10} // past MinSlots, so the throttle applies
 
-	require.NotNil(t, supplier.TryReserveSlot(info), "first slot should issue")
-	require.Nil(t, supplier.TryReserveSlot(info), "second slot within RampThrottle must be throttled")
+		require.NotNil(t, supplier.TryReserveSlot(info), "first slot should issue")
+		require.Nil(t, supplier.TryReserveSlot(info), "second slot within RampThrottle must be throttled")
 
-	require.Eventually(t, func() bool {
-		return supplier.TryReserveSlot(info) != nil
-	}, ramp*5, ramp/10, "slot should issue again after RampThrottle elapses")
+		time.Sleep(ramp + time.Nanosecond)
+		require.NotNil(t, supplier.TryReserveSlot(info), "slot should issue again after RampThrottle elapses")
+	})
 }

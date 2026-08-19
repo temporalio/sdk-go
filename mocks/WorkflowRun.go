@@ -53,6 +53,24 @@ func (_m *WorkflowRun) GetID() string {
 	return r0
 }
 
+// GetFirstExecutionRunID provides a mock function with given fields:
+func (_m *WorkflowRun) GetFirstExecutionRunID() string {
+	ret := _m.Called()
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetFirstExecutionRunID")
+	}
+
+	var r0 string
+	if rf, ok := ret.Get(0).(func() string); ok {
+		r0 = rf()
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+
+	return r0
+}
+
 // GetRunID provides a mock function with given fields:
 func (_m *WorkflowRun) GetRunID() string {
 	ret := _m.Called()

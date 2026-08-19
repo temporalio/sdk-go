@@ -161,6 +161,8 @@ type (
 		// TryUse returns true if this flag may currently be used.
 		TryUse(flag sdkFlag) bool
 		GenerateSequence() int64
+		// GetRandomStream returns a deterministic PRNG, memoized per name for the life of the workflow run.
+		GetRandomStream(name string) WorkflowRandomStream
 	}
 
 	// WorkflowDefinitionFactory factory for creating WorkflowDefinition instances.

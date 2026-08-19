@@ -37,6 +37,7 @@ func (ts *WorkerTunerTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkerTunerTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 

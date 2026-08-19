@@ -455,11 +455,6 @@ func startActivity[R any](
 		})
 	}
 
-	// Duplicated in links to be compatible with older servers that don't read links from callbacks.
-	internal.SetLinksOnStartActivityOptions(&activityOpts, links)
-	internal.SetOnConflictOptionsOnStartActivityOptions(&activityOpts)
-	responseInfo := internal.SetResponseInfoOnStartActivityOptions(&activityOpts)
-
 	handle, err := c.ExecuteActivity(ctx, activityOpts, activityType, args...)
 	if err != nil {
 		return TemporalOperationResult[R]{}, err
@@ -469,15 +464,6 @@ func startActivity[R any](
 		return TemporalOperationResult[R]{}, err
 	}
 
-	activityLink := internal.GetResponseLinkFromStartActivityResponseInfo(responseInfo).GetActivity()
-	if activityLink == nil {
-		activityLink = &commonpb.Link_Activity{
-			Namespace:  nctx.Namespace,
-			ActivityId: handle.GetID(),
-			RunId:      handle.GetRunID(),
-		}
-	}
-	nexus.AddHandlerLinks(ctx, ConvertLinkActivityToNexusLink(activityLink))
 	return NewAsyncResult[R](encodedToken), nil
 }
 

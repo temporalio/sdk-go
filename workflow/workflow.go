@@ -465,6 +465,39 @@ func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Co
 	return internal.SideEffectWithOptions(ctx, options, f)
 }
 
+// WorkflowRandomStream is a deterministic pseudorandom source.
+//
+// Caution: interleaving Read and Uint64 on the same source does not have a stable
+// bit ordering. Use distinct names for each.
+//
+// NOTE: Experimental
+type WorkflowRandomStream = internal.WorkflowRandomStream
+
+// GetRandomStream returns a deterministic pseudorandom source private to the given
+// name. Calling it again with the same name returns the same source, positioned
+// where earlier draws left it.
+//
+// Example:
+//
+//	buf := make([]byte, 32)
+//	c := workflow.GetRandomStream(ctx, "example.com/myplugin/bytes")
+//	c.Read(buf)
+//
+// A reset replays the same values up to the reset point, so decisions the
+// workflow already made still hold. Past that point the source starts a fresh
+// sequence rather than handing back the values the abandoned run drew.
+//
+// Each continue-as-new run gets an independently seeded sequence.
+//
+// Caution: each draw advances workflow state but is not recorded in history.
+// Replay must make the same draws in the same order. Do not draw in read-only
+// code; shared code can check [IsReadOnly].
+//
+// NOTE: Experimental
+func GetRandomStream(ctx Context, name string) WorkflowRandomStream {
+	return internal.GetRandomStream(ctx, name)
+}
+
 // MutableSideEffect executes the provided function once, then it looks up the history for the value with the given id.
 // If there is no existing value, then it records the function result as a value with the given id on history;
 // otherwise, it compares whether the existing value from history has changed from the new function result by calling
@@ -703,6 +736,14 @@ func SetCurrentDetails(ctx Context, details string) {
 // workflow causes workflow task to fail and temporal server will rescheduled later to retry.
 func IsReplaying(ctx Context) bool {
 	return internal.IsReplaying(ctx)
+}
+
+// IsReadOnly reports whether ctx is running where workflow state cannot be
+// mutated: a query handler, an update validator, or a side effect function.
+//
+// NOTE: Experimental
+func IsReadOnly(ctx Context) bool {
+	return internal.IsReadOnly(ctx)
 }
 
 // HasLastCompletionResult checks if there is completion result from previous runs.

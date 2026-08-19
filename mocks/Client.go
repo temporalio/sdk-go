@@ -41,6 +41,24 @@ func (_m *Client) CancelWorkflow(ctx context.Context, workflowID string, runID s
 	return r0
 }
 
+// CancelWorkflowWithOptions provides a mock function with given fields: ctx, options
+func (_m *Client) CancelWorkflowWithOptions(ctx context.Context, options client.CancelWorkflowOptions) error {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CancelWorkflowWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.CancelWorkflowOptions) error); ok {
+		r0 = rf(ctx, options)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // CheckHealth provides a mock function with given fields: ctx, request
 func (_m *Client) CheckHealth(ctx context.Context, request *client.CheckHealthRequest) (*client.CheckHealthResponse, error) {
 	ret := _m.Called(ctx, request)
@@ -1016,6 +1034,24 @@ func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runI
 	var r0 error
 	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...any) error); ok {
 		r0 = rf(ctx, workflowID, runID, reason, details...)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
+// TerminateWorkflowWithOptions provides a mock function with given fields: ctx, options
+func (_m *Client) TerminateWorkflowWithOptions(ctx context.Context, options client.TerminateWorkflowOptions) error {
+	ret := _m.Called(ctx, options)
+
+	if len(ret) == 0 {
+		panic("no return value specified for TerminateWorkflowWithOptions")
+	}
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(context.Context, client.TerminateWorkflowOptions) error); ok {
+		r0 = rf(ctx, options)
 	} else {
 		r0 = ret.Error(0)
 	}

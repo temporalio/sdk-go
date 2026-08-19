@@ -97,9 +97,10 @@ type (
 		// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 		// subjected to change in the future.
 		//
-		// WorkflowRun has three methods:
+		// WorkflowRun provides:
 		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - GetFirstExecutionRunID() string: which returns the first execution run ID in the workflow chain
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
@@ -118,9 +119,10 @@ type (
 		//  - workflow ID of the workflow.
 		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
-		// WorkflowRun has three methods:
+		// WorkflowRun provides:
 		//  - GetID() string: which return workflow ID (which is same as StartWorkflowOptions.ID if provided)
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - GetFirstExecutionRunID() string: which is empty for handles returned by GetWorkflow
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
@@ -169,6 +171,11 @@ type (
 		//  - serviceerror.Unavailable
 		CancelWorkflow(ctx context.Context, workflowID string, runID string) error
 
+		// CancelWorkflowWithOptions requests cancellation of a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error
+
 		// TerminateWorkflow terminates a workflow execution.
 		// workflowID is required, other parameters are optional.
 		//  - workflow ID of the workflow.
@@ -179,6 +186,11 @@ type (
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
 		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...any) error
+
+		// TerminateWorkflowWithOptions terminates a workflow execution.
+		// The options can specify the first execution run ID to ensure the request
+		// targets the intended workflow execution chain.
+		TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error
 
 		// GetWorkflowHistory gets history events of a particular workflow
 		//  - workflow ID of the workflow.
@@ -1086,6 +1098,53 @@ type (
 		// be created as false. This is set to true when server capabilities are
 		// fetched.
 		excludeInternalFromRetry *atomic.Bool
+	}
+
+	// CancelWorkflowOptions contains parameters for cancelling a workflow execution.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.CancelWorkflowOptions]
+	CancelWorkflowOptions struct {
+		// WorkflowID is the ID of the workflow execution to cancel.
+		WorkflowID string
+
+		// RunID is the run ID of the workflow execution to cancel. If empty, the
+		// currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
+		RunID string
+
+		// FirstExecutionRunID is the run ID of the first execution in the workflow
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
+		FirstExecutionRunID string
+
+		// Reason is the reason for requesting cancellation of the workflow execution.
+		Reason string
+	}
+
+	// TerminateWorkflowOptions contains parameters for terminating a workflow execution.
+	//
+	// Exposed as: [go.temporal.io/sdk/client.TerminateWorkflowOptions]
+	TerminateWorkflowOptions struct {
+		// WorkflowID is the ID of the workflow execution to terminate.
+		WorkflowID string
+
+		// RunID is the run ID of the workflow execution to terminate. If empty,
+		// the currently running execution for WorkflowID is targeted. This field is
+		// ignored when FirstExecutionRunID is set.
+		RunID string
+
+		// FirstExecutionRunID is the run ID of the first execution in the workflow
+		// execution chain. If set, RunID is ignored and the currently running
+		// execution for WorkflowID is targeted. The request fails if that execution
+		// is not part of this chain.
+		FirstExecutionRunID string
+
+		// Reason is the reason for terminating the workflow execution.
+		Reason string
+
+		// Details are additional values attached to the termination event.
+		Details []any
 	}
 
 	// StartWorkflowOptions configuration parameters for starting a workflow execution.

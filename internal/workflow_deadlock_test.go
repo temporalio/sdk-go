@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -10,30 +11,39 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
+const (
+	deadlockDetectionTime = 400 * time.Millisecond
+	payloadConverterTime  = 600 * time.Millisecond
+)
+
 func TestDeadlockDetector(t *testing.T) {
-	// Create a 500ms ticker and confirm it pauses/resumes properly. We have
-	// chosen to use real time instead of an abstract clock here for simplicity.
-	d := newDeadlockDetector()
-	ticker := d.begin(500 * time.Millisecond)
-	defer ticker.end()
-	d.pause()
-	// Confirm never reached while paused
-	select {
-	case <-time.After(600 * time.Millisecond):
-	case <-ticker.reached():
-		t.Fatal("unexpectedly reached deadlock")
-	}
-	// Resume and confirm reached
-	d.resume()
-	select {
-	case <-time.After(600 * time.Millisecond):
-		t.Fatal("unexpectedly didn't deadlock")
-	case <-ticker.reached():
-	}
+	synctest.Test(t, func(t *testing.T) {
+		const timeout = 500 * time.Millisecond
+		d := newDeadlockDetector()
+		ticker := d.begin(timeout)
+		defer ticker.end()
+		d.pause()
+
+		time.Sleep(timeout + 100*time.Millisecond)
+		select {
+		case <-ticker.reached():
+			t.Fatal("unexpectedly reached deadlock while paused")
+		default:
+		}
+
+		d.resume()
+		time.Sleep(timeout)
+		synctest.Wait()
+		select {
+		case <-ticker.reached():
+		default:
+			t.Fatal("deadlock timeout was not reached after resume")
+		}
+	})
 }
 
 func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
-	runWorkflow := func(conv converter.DataConverter) error {
+	runWorkflow := func(t *testing.T, conv converter.DataConverter) error {
 		var suite WorkflowTestSuite
 		activityFn := func(ctx context.Context, arg string) error {
 			return nil
@@ -44,7 +54,7 @@ func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
 			return ExecuteActivity(ctx, activityFn, "some arg").Get(ctx, nil)
 		}
 		env := suite.NewTestWorkflowEnvironment()
-		env.SetWorkerOptions(WorkerOptions{DeadlockDetectionTimeout: 400 * time.Millisecond})
+		env.SetWorkerOptions(WorkerOptions{DeadlockDetectionTimeout: deadlockDetectionTime})
 		env.RegisterWorkflow(workflowFn)
 		env.RegisterActivity(activityFn)
 		env.ExecuteWorkflow(workflowFn)
@@ -52,26 +62,48 @@ func TestDataConverterWithoutDeadlockDetection(t *testing.T) {
 		return env.GetWorkflowError()
 	}
 
-	// Run with a slow converter and confirm a deadlock is detected
-	conv := converter.GetDefaultDataConverter()
-	conv = &slowToPayloadsConverter{conv}
-	require.ErrorContains(t, runWorkflow(conv), "Potential deadlock detected")
+	t.Run("detects deadlock", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			conv := &slowToPayloadsConverter{
+				DataConverter: converter.GetDefaultDataConverter(),
+			}
+			require.ErrorContains(t, runWorkflow(t, conv), "Potential deadlock detected")
 
-	// Run with that same payload converter without deadlock detection
-	conv = DataConverterWithoutDeadlockDetection(conv)
-	require.NoError(t, runWorkflow(conv))
+			time.Sleep(payloadConverterTime - deadlockDetectionTime)
+			synctest.Wait()
+		})
+	})
 
-	// Also confirm outside of workflow, pause/resume is noop
-	_, err := conv.ToPayload("foo")
-	require.NoError(t, err)
-	_, err = conv.(ContextAware).WithWorkflowContext(Background()).ToPayload("foo")
-	require.NoError(t, err)
+	t.Run("disables deadlock detection", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			conv := converter.DataConverter(&slowToPayloadsConverter{
+				DataConverter: converter.GetDefaultDataConverter(),
+			})
+			conv = DataConverterWithoutDeadlockDetection(conv)
+			require.NoError(t, runWorkflow(t, conv))
+		})
+	})
+
+	t.Run("outside workflow", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			conv := converter.DataConverter(&slowToPayloadsConverter{
+				DataConverter: converter.GetDefaultDataConverter(),
+			})
+			conv = DataConverterWithoutDeadlockDetection(conv)
+			_, err := conv.ToPayload("foo")
+			require.NoError(t, err)
+			_, err = conv.(ContextAware).WithWorkflowContext(Background()).ToPayload("foo")
+			require.NoError(t, err)
+		})
+	})
 }
 
-type slowToPayloadsConverter struct{ converter.DataConverter }
+type slowToPayloadsConverter struct {
+	converter.DataConverter
+}
 
 func (s *slowToPayloadsConverter) ToPayloads(value ...any) (*commonpb.Payloads, error) {
-	time.Sleep(600 * time.Millisecond)
+	time.Sleep(payloadConverterTime)
 	return s.DataConverter.ToPayloads(value...)
 }
 
@@ -94,7 +126,7 @@ func TestDataConverterWithoutDeadlockDetectionContext(t *testing.T) {
 	})
 	t.Run("with activity context", func(t *testing.T) {
 		t.Parallel()
-		ctx := context.Background()
+		ctx := t.Context()
 		ctx = context.WithValue(ctx, ContextAwareDataConverterContextKey, "e")
 
 		dc := WithContext(ctx, conv)

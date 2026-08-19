@@ -605,8 +605,15 @@ type ClientSignalWithStartWorkflowInput struct {
 type ClientCancelWorkflowInput struct {
 	// WorkflowID is the ID of the workflow to cancel.
 	WorkflowID string
-	// RunID is the run ID of the workflow to cancel.
+	// RunID is the run ID of the workflow to cancel. It is ignored when
+	// FirstExecutionRunID is set.
 	RunID string
+	// FirstExecutionRunID is the run ID of the first execution in the workflow
+	// execution chain. If set, RunID is ignored and the currently running
+	// execution for WorkflowID is targeted.
+	FirstExecutionRunID string
+	// Reason is the reason for requesting cancellation.
+	Reason string
 }
 
 // ClientTerminateWorkflowInput is the input to
@@ -616,8 +623,13 @@ type ClientCancelWorkflowInput struct {
 type ClientTerminateWorkflowInput struct {
 	// WorkflowID is the ID of the workflow to terminate.
 	WorkflowID string
-	// RunID is the run ID of the workflow to terminate.
+	// RunID is the run ID of the workflow to terminate. It is ignored when
+	// FirstExecutionRunID is set.
 	RunID string
+	// FirstExecutionRunID is the run ID of the first execution in the workflow
+	// execution chain. If set, RunID is ignored and the currently running
+	// execution for WorkflowID is targeted.
+	FirstExecutionRunID string
 	// Reason is the reason for termination.
 	Reason string
 	// Details are the details of termination.

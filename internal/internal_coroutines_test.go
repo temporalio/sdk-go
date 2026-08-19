@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -52,23 +52,26 @@ func TestDispatcher(t *testing.T) {
 }
 
 func TestDispatcherDeferClose(t *testing.T) {
-	var value atomic.Bool
-	d := createNewDispatcher(func(ctx Context) {
-		// Block all coroutines on this channel
-		c1 := NewChannel(ctx)
-		defer func() {
-			value.Store(true)
-		}()
-		c1.Receive(ctx, nil)
+	synctest.Test(t, func(t *testing.T) {
+		var value atomic.Bool
+		d := createNewDispatcher(func(ctx Context) {
+			// Block all coroutines on this channel
+			c1 := NewChannel(ctx)
+			defer func() {
+				value.Store(true)
+			}()
+			c1.Receive(ctx, nil)
+		})
+		defer d.Close()
+		require.Equal(t, false, value.Load())
+		requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+		// Closing the dispatcher will cause the blocked goroutine to stop executing, but defers
+		// will still run.
+		d.Close()
+		require.True(t, d.IsClosed())
+		synctest.Wait()
+		require.True(t, value.Load())
 	})
-	defer d.Close()
-	require.Equal(t, false, value.Load())
-	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
-	// Closing the dispatcher will cause the blocked goroutine to stop executing, but defers
-	// will still run.
-	d.Close()
-	require.True(t, d.IsClosed())
-	require.Eventually(t, value.Load, time.Second, 10*time.Millisecond)
 }
 
 func TestDispatcherDeadlockedDefer(t *testing.T) {
@@ -93,34 +96,35 @@ func TestDispatcherDeadlockedDefer(t *testing.T) {
 }
 
 func TestDispatcherDeferCloseRace(t *testing.T) {
-	var value atomic.Int32
-	var d dispatcher
-	d = createNewDispatcher(func(ctx Context) {
-		// Block all coroutines on this channel
-		c1 := NewChannel(ctx)
-		for i := range 100 {
-			index := i
-			id := "coroutine_" + strconv.Itoa(index)
-			d.NewCoroutine(ctx, id, false, func(ctx Context) {
-				defer func() {
-					value.Store(int32(index))
-				}()
-				c1.Receive(ctx, nil)
-			})
-		}
-		c1.Receive(ctx, nil)
-	})
-	defer d.Close()
+	synctest.Test(t, func(t *testing.T) {
+		var value atomic.Int32
+		var d dispatcher
+		d = createNewDispatcher(func(ctx Context) {
+			// Block all coroutines on this channel
+			c1 := NewChannel(ctx)
+			for i := range 100 {
+				index := i
+				id := "coroutine_" + strconv.Itoa(index)
+				d.NewCoroutine(ctx, id, false, func(ctx Context) {
+					defer func() {
+						value.Store(int32(index))
+					}()
+					c1.Receive(ctx, nil)
+				})
+			}
+			c1.Receive(ctx, nil)
+		})
+		defer d.Close()
 
-	require.Equal(t, int32(0), value.Load())
-	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
-	// Closing the dispatcher will cause the blocked coroutine to stop executing, but defers
-	// will still run.
-	d.Close()
-	require.True(t, d.IsClosed())
-	require.Eventually(t, func() bool {
-		return value.Load() == int32(99)
-	}, time.Second, 10*time.Millisecond)
+		require.Equal(t, int32(0), value.Load())
+		requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+		// Closing the dispatcher will cause the blocked coroutine to stop executing, but defers
+		// will still run.
+		d.Close()
+		require.True(t, d.IsClosed())
+		synctest.Wait()
+		require.Equal(t, int32(99), value.Load())
+	})
 }
 
 func TestNonBlockingChildren(t *testing.T) {
@@ -1176,6 +1180,27 @@ func TestPanic(t *testing.T) {
 	require.Contains(t, panicError.StackTrace(), "go.temporal.io/sdk/internal.TestPanic")
 }
 
+func TestYieldDuringPanic(t *testing.T) {
+	// Verify that a deferred function attempting to yield (block) during panic
+	// unwinding is detected by inspecting the call stack and re-panicked with a
+	// descriptive error.
+	d := createNewDispatcher(func(ctx Context) {
+		c := NewNamedChannel(ctx, "test-chan")
+		GoNamed(ctx, "panicker", func(ctx Context) {
+			defer func() {
+				// This deferred function tries to block by receiving on a channel
+				// during panic unwinding. Stack inspection should catch this.
+				c.Receive(ctx, nil)
+			}()
+			panic("trigger unwinding")
+		})
+	})
+	defer d.Close()
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "yield during panic unwinding")
+}
+
 func TestChannelReceivePointer(t *testing.T) {
 	// This confirms that a sent pointer can be received as a pointer
 	d := createNewDispatcher(func(ctx Context) {
@@ -1983,4 +2008,13 @@ func TestChainAlreadyReadyFuturePropagates(t *testing.T) {
 	defer d.Close()
 	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
 	require.Equal(t, 42, result)
+}
+
+func BenchmarkIsPanicking(b *testing.B) {
+	// Benchmark the happy path (not panicking) which is the hot path
+	// that executes on every coroutine yield.
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		isPanicking()
+	}
 }

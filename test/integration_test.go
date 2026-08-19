@@ -2,6 +2,7 @@ package test_test
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
@@ -175,22 +176,18 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	var err error
 	trafficController := test.NewSimpleTrafficController()
-	ts.client, err = client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ContextPropagators: []workflow.ContextPropagator{
+	ts.client, err = ts.newDefaultClient(func(options *client.Options) {
+		options.WorkerHeartbeatInterval = -1
+		options.ContextPropagators = []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),
-		},
-		MetricsHandler:          metricsHandler,
-		TrafficController:       trafficController,
-		Interceptors:            clientInterceptors,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS},
-		WorkerHeartbeatInterval: -1,
-		PayloadLimits: client.PayloadLimitOptions{
+		}
+		options.MetricsHandler = metricsHandler
+		options.TrafficController = trafficController
+		options.Interceptors = clientInterceptors
+		options.PayloadLimits = client.PayloadLimitOptions{
 			PayloadSizeWarning: 128,
-		},
+		}
 	})
 	ts.NoError(err)
 
@@ -271,7 +268,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	ts.worker = worker.New(ts.client, ts.taskQueueName, options)
 	ts.workerStopped = false
 	ts.registerWorkflowsAndActivities(ts.worker)
-	if strings.Contains(ts.T().Name(), "TestExecuteNexusOperationSuite") {
+	if strings.Contains(ts.T().Name(), "TestExecuteNexusOperationSuite") ||
+		strings.Contains(ts.T().Name(), "TestStandaloneActivityStartLinks") {
 		ts.registerStandaloneNexusOperations(ts.worker)
 	}
 	if strings.Contains(ts.T().Name(), "NoWorker") {
@@ -962,6 +960,72 @@ func (ts *IntegrationTestSuite) TestCancellation() {
 	ts.Error(err)
 	var canceledErr *temporal.CanceledError
 	ts.True(errors.As(err, &canceledErr))
+}
+
+func (ts *IntegrationTestSuite) TestCancellationWithOptions() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	workflowID := "test-cancellation-with-options"
+	reason := "test cancellation"
+	run, err := ts.client.ExecuteWorkflow(
+		ctx, ts.startWorkflowOptions(workflowID), ts.workflows.Basic,
+	)
+	ts.NoError(err)
+
+	err = ts.client.CancelWorkflowWithOptions(ctx, client.CancelWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: uuid.NewString(),
+		Reason:              reason,
+	})
+	ts.Error(err)
+
+	ts.NoError(ts.client.CancelWorkflowWithOptions(ctx, client.CancelWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: run.GetRunID(),
+		Reason:              reason,
+	}))
+	var canceledErr *temporal.CanceledError
+	ts.ErrorAs(run.Get(ctx, nil), &canceledErr)
+
+	history := ts.client.GetWorkflowHistory(
+		ctx, workflowID, run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
+	)
+	found := false
+	for history.HasNext() {
+		event, err := history.Next()
+		ts.NoError(err)
+		if attributes := event.GetWorkflowExecutionCancelRequestedEventAttributes(); attributes != nil {
+			ts.Equal(reason, attributes.GetCause())
+			found = true
+		}
+	}
+	ts.True(found, "workflow history did not contain a cancellation-requested event")
+}
+
+func (ts *IntegrationTestSuite) TestTerminationWithOptions() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	workflowID := "test-termination-with-options"
+	run, err := ts.client.ExecuteWorkflow(
+		ctx, ts.startWorkflowOptions(workflowID), ts.workflows.Basic,
+	)
+	ts.NoError(err)
+
+	err = ts.client.TerminateWorkflowWithOptions(ctx, client.TerminateWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: uuid.NewString(),
+		Reason:              "test termination",
+	})
+	ts.Error(err)
+
+	ts.NoError(ts.client.TerminateWorkflowWithOptions(ctx, client.TerminateWorkflowOptions{
+		WorkflowID:          workflowID,
+		FirstExecutionRunID: run.GetRunID(),
+		Reason:              "test termination",
+		Details:             []any{"test detail"},
+	}))
+	var terminatedErr *temporal.TerminatedError
+	ts.ErrorAs(run.Get(ctx, nil), &terminatedErr)
 }
 
 func (ts *IntegrationTestSuite) TestCascadingCancellation() {
@@ -3300,6 +3364,95 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
 	ts.Equal(startActivitySpan.SpanContext().TraceID(), runActivitySpan.SpanContext().TraceID())
 }
 
+// TestStandaloneActivityStartLinks verifies that a stand-alone activity started from a stand-alone
+// Nexus operation handler carries a link back to the Nexus operation on its start request.
+func (ts *IntegrationTestSuite) TestStandaloneActivityStartLinks() {
+	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	endpoint := "standalone-activity-links-ep-" + uuid.NewString()
+	createResp, err := ts.client.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: endpoint,
+			Target: &nexuspb.EndpointTarget{
+				Variant: &nexuspb.EndpointTarget_Worker_{
+					Worker: &nexuspb.EndpointTarget_Worker{
+						Namespace: ts.config.Namespace,
+						TaskQueue: ts.taskQueueName,
+					},
+				},
+			},
+		},
+	})
+	ts.NoError(err)
+	defer func() {
+		_, _ = ts.client.OperatorService().DeleteNexusEndpoint(ctx, &operatorservice.DeleteNexusEndpointRequest{
+			Id:      createResp.Endpoint.Id,
+			Version: createResp.Endpoint.Version,
+		})
+	}()
+
+	nexusClient, err := ts.client.NewNexusClient(client.NexusClientOptions{
+		Endpoint: endpoint,
+		Service:  "test-standalone-service",
+	})
+	ts.NoError(err)
+
+	activityID := "standalone-link-" + uuid.NewString()
+	operationID := "standalone-link-op-" + uuid.NewString()
+	var operationHandle client.NexusOperationHandle
+	require.Eventually(ts.T(), func() bool {
+		operationHandle, err = nexusClient.ExecuteOperation(ctx, "start-standalone-activity", activityID, client.StartNexusOperationOptions{
+			ID:                     operationID,
+			ScheduleToCloseTimeout: 30 * time.Second,
+		})
+		return err == nil
+	}, 10*time.Second, 100*time.Millisecond, "timed out waiting for endpoint to propagate")
+
+	var startedActivityID string
+	ts.NoError(operationHandle.Get(ctx, &startedActivityID))
+	ts.Equal(activityID, startedActivityID)
+
+	activityHandle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{
+		ActivityID: startedActivityID,
+	})
+	var result string
+	ts.NoError(activityHandle.Get(ctx, &result))
+	ts.Equal(activityID, result)
+
+	descResp, err := ts.client.WorkflowService().DescribeActivityExecution(ctx, &workflowservice.DescribeActivityExecutionRequest{
+		Namespace:  ts.config.Namespace,
+		ActivityId: activityID,
+	})
+	ts.NoError(err)
+	var nexusOperationLink *commonpb.Link_NexusOperation
+	for _, link := range descResp.GetInfo().GetLinks() {
+		if nexusOp := link.GetNexusOperation(); nexusOp != nil {
+			nexusOperationLink = nexusOp
+		}
+	}
+	ts.Require().NotNil(nexusOperationLink, "activity must link back to the Nexus operation that started it")
+	ts.Equal(ts.config.Namespace, nexusOperationLink.GetNamespace())
+	ts.Equal(operationHandle.GetID(), nexusOperationLink.GetOperationId())
+	ts.Equal(operationHandle.GetRunID(), nexusOperationLink.GetRunId())
+
+	operationDescription, err := operationHandle.Describe(ctx, client.DescribeNexusOperationOptions{})
+	ts.NoError(err)
+	var activityLink *commonpb.Link_Activity
+	for _, link := range operationDescription.RawInfo.GetLinks() {
+		if activity := link.GetActivity(); activity != nil {
+			activityLink = activity
+		}
+	}
+	ts.Require().NotNil(activityLink, "Nexus operation must link to the activity started by its handler")
+	ts.Equal(ts.config.Namespace, activityLink.GetNamespace())
+	ts.Equal(activityHandle.GetID(), activityLink.GetActivityId())
+	ts.Equal(descResp.GetInfo().GetRunId(), activityLink.GetRunId())
+}
+
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
 	ts.T().Skip("issue-1650: Otel Tracing intergation tests are flaky")
 	ts.testOpenTelemetryTracing(true, false)
@@ -5222,30 +5375,25 @@ func (ts *IntegrationTestSuite) testWorkerFatalError(useWorkerRun bool) {
 	// Allow the worker to fail faster so the test does not take 2 minutes.
 	internal.SetRetryLongPollGracePeriod(5 * time.Second)
 	// Make a new client that will fail a poll with a namespace not found
-	c, err := client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		ConnectionOptions: client.ConnectionOptions{
-			TLS: ts.config.TLS,
-			DialOptions: []grpc.DialOption{
-				grpc.WithUnaryInterceptor(func(
-					ctx context.Context,
-					method string,
-					req any,
-					reply any,
-					cc *grpc.ClientConn,
-					invoker grpc.UnaryInvoker,
-					opts ...grpc.CallOption,
-				) error {
-					if method == "/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue" {
-						// We sleep a bit to let all internal workers start
-						time.Sleep(1 * time.Second)
-						return serviceerror.NewNamespaceNotFound(ts.config.Namespace)
-					}
-					return invoker(ctx, method, req, reply, cc, opts...)
-				}),
-			},
-		},
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.DialOptions = []grpc.DialOption{
+			grpc.WithUnaryInterceptor(func(
+				ctx context.Context,
+				method string,
+				req any,
+				reply any,
+				cc *grpc.ClientConn,
+				invoker grpc.UnaryInvoker,
+				opts ...grpc.CallOption,
+			) error {
+				if method == "/temporal.api.workflowservice.v1.WorkflowService/PollWorkflowTaskQueue" {
+					// We sleep a bit to let all internal workers start
+					time.Sleep(1 * time.Second)
+					return serviceerror.NewNamespaceNotFound(ts.config.Namespace)
+				}
+				return invoker(ctx, method, req, reply, cc, opts...)
+			}),
+		}
 	})
 	ts.NoError(err)
 	defer c.Close()
@@ -7143,13 +7291,7 @@ func (ts *IntegrationTestSuite) TestScheduleUpdateWorkflowActionMemo() {
 func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 	seriesName := "deploy-test-" + uuid.NewString()
 
-	c, err := client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		ConnectionOptions: client.ConnectionOptions{
-			TLS: ts.config.TLS,
-		},
-	})
+	c, err := ts.newDefaultClient()
 	ts.NoError(err)
 	defer c.Close()
 
@@ -7181,29 +7323,24 @@ func (ts *IntegrationTestSuite) TestNoVersioningBehaviorPanics() {
 
 func (ts *IntegrationTestSuite) TestSendsCorrectMeteringData() {
 	nonfirstLAAttemptCounts := make([]uint32, 0)
-	c, err := client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		ConnectionOptions: client.ConnectionOptions{
-			TLS: ts.config.TLS,
-			DialOptions: []grpc.DialOption{
-				grpc.WithUnaryInterceptor(func(
-					ctx context.Context,
-					method string,
-					req any,
-					reply any,
-					cc *grpc.ClientConn,
-					invoker grpc.UnaryInvoker,
-					opts ...grpc.CallOption,
-				) error {
-					if method == "/temporal.api.workflowservice.v1.WorkflowService/RespondWorkflowTaskCompleted" {
-						asReq := req.(*workflowservice.RespondWorkflowTaskCompletedRequest)
-						nonfirstLAAttemptCounts = append(nonfirstLAAttemptCounts, asReq.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
-					}
-					return invoker(ctx, method, req, reply, cc, opts...)
-				}),
-			},
-		},
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.DialOptions = []grpc.DialOption{
+			grpc.WithUnaryInterceptor(func(
+				ctx context.Context,
+				method string,
+				req any,
+				reply any,
+				cc *grpc.ClientConn,
+				invoker grpc.UnaryInvoker,
+				opts ...grpc.CallOption,
+			) error {
+				if method == "/temporal.api.workflowservice.v1.WorkflowService/RespondWorkflowTaskCompleted" {
+					asReq := req.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+					nonfirstLAAttemptCounts = append(nonfirstLAAttemptCounts, asReq.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
+				}
+				return invoker(ctx, method, req, reply, cc, opts...)
+			}),
+		}
 	})
 	ts.NoError(err)
 	defer c.Close()
@@ -7516,7 +7653,21 @@ func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worke
 			return input, nil
 		},
 	)
-	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp, linkEchoOp, signalEchoOp))
+	startStandaloneActivityOp := nexus.NewSyncOperation(
+		"start-standalone-activity",
+		func(ctx context.Context, activityID string, _ nexus.StartOperationOptions) (string, error) {
+			handle, err := temporalnexus.GetClient(ctx).ExecuteActivity(ctx, client.StartActivityOptions{
+				ID:                     activityID,
+				TaskQueue:              temporalnexus.GetOperationInfo(ctx).TaskQueue,
+				ScheduleToCloseTimeout: 30 * time.Second,
+			}, "EchoString", activityID)
+			if err != nil {
+				return "", err
+			}
+			return handle.GetID(), nil
+		},
+	)
+	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp, linkEchoOp, signalEchoOp, startStandaloneActivityOp))
 	w.RegisterNexusService(service)
 }
 
@@ -7891,12 +8042,8 @@ func (ts *IntegrationTestSuite) TestRawValueQueryMetadata() {
 		converter.NewJSONPayloadConverter(),
 	)
 	zlibConv := converter.NewCodecDataConverter(dc, converter.NewZlibCodec(converter.ZlibCodecOptions{}))
-	c, err := client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-		DataConverter:     zlibConv,
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = zlibConv
 	})
 	defer c.Close()
 	ts.NoError(err)
@@ -7992,12 +8139,9 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 
 	// Configure client/worker with logger, capture logs
 	logger := ilog.NewMemoryLogger()
-	c, err := client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            logger,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-		MetricsHandler:    ts.metricsHandler,
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Logger = logger
+		options.MetricsHandler = ts.metricsHandler
 	})
 	ts.NoError(err)
 	defer c.Close()
@@ -8813,7 +8957,12 @@ func (c *clientPluginForTest) NewClient(
 	if c.failNew {
 		return fmt.Errorf("intentional client error")
 	}
-	// Confirm our interceptor was set
+	if options.ClientOptions.HostPort != c.ts.config.ServiceAddr {
+		return fmt.Errorf("plugin did not configure host port: got %q, want %q", options.ClientOptions.HostPort, c.ts.config.ServiceAddr)
+	}
+	if options.ClientOptions.ConnectionOptions.TLS != c.ts.config.TLS {
+		return fmt.Errorf("plugin did not configure TLS")
+	}
 	c.ts.Len(options.ClientOptions.Interceptors, 1)
 	return next(ctx, options)
 }
@@ -8824,12 +8973,19 @@ func (ts *IntegrationTestSuite) TestClientPlugin() {
 
 	// Failing dial first
 	plugin := &clientPluginForTest{ts: ts, failNew: true}
-	_, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
+	_, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Plugins = []client.Plugin{plugin}
+	})
 	ts.ErrorContains(err, "intentional client error")
 
 	// Now succeed dial and run simple workflow
 	plugin = &clientPluginForTest{ts: ts}
-	cl, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
+	cl, err := ts.newDefaultClient(func(options *client.Options) {
+		// Set garbage values to ensure plugin overwrites them
+		options.HostPort = "127.0.0.1:1"
+		options.ConnectionOptions.TLS = &tls.Config{ServerName: "plugin-must-overwrite.invalid"}
+		options.Plugins = []client.Plugin{plugin}
+	})
 	ts.NoError(err)
 	defer cl.Close()
 	wrk := worker.New(cl, ts.taskQueueName, worker.Options{})
@@ -9103,7 +9259,9 @@ func (ts *IntegrationTestSuite) TestSimplePlugin() {
 	ts.NoError(err)
 
 	// Just run a simple workflow and stop worker
-	cl, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
+	cl, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Plugins = []client.Plugin{plugin}
+	})
 	ts.NoError(err)
 	defer cl.Close()
 	wrk := worker.New(cl, ts.taskQueueName, worker.Options{})
@@ -9153,7 +9311,9 @@ func (ts *IntegrationTestSuite) TestSimplePluginDoNothing() {
 	// Just run a simple workflow with a do-nothing plugin and make sure it works as normal
 	plugin, err := temporal.NewSimplePlugin(temporal.SimplePluginOptions{Name: "simple-plugin"})
 	ts.NoError(err)
-	cl, err := client.Dial(client.Options{Namespace: ts.config.Namespace, Plugins: []client.Plugin{plugin}})
+	cl, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Plugins = []client.Plugin{plugin}
+	})
 	ts.NoError(err)
 	defer cl.Close()
 	wrk := worker.New(cl, ts.taskQueueName, worker.Options{})
@@ -9484,11 +9644,8 @@ func (ts *IntegrationTestSuite) TestSessionCancelNDE() {
 		poison:        poison,
 	}
 
-	cl, err := client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		DataConverter:     dc,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	cl, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = dc
 	})
 	ts.NoError(err)
 	defer cl.Close()
@@ -9608,12 +9765,9 @@ func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
-	client, err := client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            logger,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
-		MetricsHandler:    ts.metricsHandler,
+	client, err := ts.newDefaultClient(func(options *client.Options) {
+		options.Logger = logger
+		options.MetricsHandler = ts.metricsHandler
 	})
 	ts.NoError(err)
 	defer client.Close()
@@ -10186,57 +10340,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 	retrySucceedActivityInput := "retry-succeed-act-" + uuid.NewString()
 	retryExhaustActivityInput := "retry-exhaust-act-" + uuid.NewString()
 
-	callerNexusStartedLinks := func(run client.WorkflowRun) []*commonpb.Link {
-		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		for iter.HasNext() {
-			e, err := iter.Next()
-			ts.NoError(err)
-			if e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
-				return e.GetLinks()
-			}
-		}
-		return nil
-	}
-
-	// verifyActivityLinks asserts forward (caller NexusOperationStarted -> activity) and
-	// backward (activity execution info -> caller workflow event) link plumbing.
-	//
-	// NEXUS-400: server does not currently emit Link_Activity on NexusOperationStarted nor
-	// Link_WorkflowEvent on the backing activity's execution info for activity-backed Nexus
-	// operations. Body commented out until the server fix lands; the helper stays in place
-	// so callers compile and the test table is unchanged.
-	verifyActivityLinks := func(activityID string) func(run client.WorkflowRun) {
-		_ = callerNexusStartedLinks
-		_ = activityID
-		return func(run client.WorkflowRun) {
-			// var fwd *commonpb.Link_Activity
-			// for _, link := range callerNexusStartedLinks(run) {
-			// 	if a := link.GetActivity(); a != nil {
-			// 		fwd = a
-			// 	}
-			// }
-			// ts.NotNil(fwd, "caller's NexusOperationStarted should have a Link_Activity")
-			// if fwd != nil {
-			// 	ts.Equal(activityID, fwd.GetActivityId())
-			// }
-			//
-			// handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: activityID})
-			// desc, err := handle.Describe(ctx, client.DescribeActivityOptions{})
-			// ts.NoError(err)
-			// var back *commonpb.Link_WorkflowEvent
-			// for _, link := range desc.RawExecutionInfo.GetLinks() {
-			// 	if w := link.GetWorkflowEvent(); w != nil {
-			// 		back = w
-			// 	}
-			// }
-			// ts.NotNil(back, "activity should have a Link_WorkflowEvent back to caller")
-			// if back != nil {
-			// 	ts.Equal(run.GetID(), back.GetWorkflowId())
-			// }
-			_ = run
-		}
-	}
-
 	// verifyActivityFinalStatus polls the activity's Describe until it reports the expected
 	// terminal status, asserting that server-side propagation of the Nexus operation outcome
 	// (cancellation, failure, timeout) actually reaches the backing activity.
@@ -10288,19 +10391,18 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 		expected string
 		verify   func(run client.WorkflowRun)
 	}{
-		{"Async with StartActivity", ts.workflows.TemporalOpAsyncActivityCaller, typedActivityInput, typedActivityInput, verifyActivityLinks("act-" + typedActivityInput)},
-		{"Async with StartUntypedActivity", ts.workflows.TemporalOpAsyncUntypedActivityCaller, untypedActivityInput, untypedActivityInput, verifyActivityLinks("act-untyped-" + untypedActivityInput)},
+		{"Async with StartActivity", ts.workflows.TemporalOpAsyncActivityCaller, typedActivityInput, typedActivityInput, nil},
+		{"Async with StartUntypedActivity", ts.workflows.TemporalOpAsyncUntypedActivityCaller, untypedActivityInput, untypedActivityInput, nil},
 		// Regression: activities registered with a custom name via activity.RegisterOptions.Name
 		// must be resolved through the worker's registry when scheduled via
 		// temporalnexus.StartActivity — otherwise the raw Go function name is sent and the
 		// activity fails as unregistered.
-		{"Async with StartActivity resolves worker-registered activity alias", ts.workflows.TemporalOpRenamedActivityCaller, renamedActivityInput, "renamed:" + renamedActivityInput, verifyActivityLinks("renamed-act-" + renamedActivityInput)},
+		{"Async with StartActivity resolves worker-registered activity alias", ts.workflows.TemporalOpRenamedActivityCaller, renamedActivityInput, "renamed:" + renamedActivityInput, nil},
 		{
 			"Cancel activity execution",
 			ts.workflows.TemporalOpCancelActivityCaller,
 			cancelActivityInput, "",
 			composeVerify(
-				verifyActivityLinks("cancel-act-"+cancelActivityInput),
 				verifyActivityFinalStatus("cancel-act-"+cancelActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_CANCELED),
 			),
 		},
@@ -10310,7 +10412,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			failureActivityInput,
 			"application:NexusActivityTestFailureType:activity failed: " + failureActivityInput,
 			composeVerify(
-				verifyActivityLinks("failing-act-"+failureActivityInput),
 				verifyActivityFinalStatus("failing-act-"+failureActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_FAILED),
 			),
 		},
@@ -10320,7 +10421,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			timeoutActivityInput,
 			"timeout:StartToClose",
 			composeVerify(
-				verifyActivityLinks("timeout-act-"+timeoutActivityInput),
 				verifyActivityFinalStatus("timeout-act-"+timeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
 			),
 		},
@@ -10330,7 +10430,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			stcTimeoutActivityInput,
 			"timeout:ScheduleToClose",
 			composeVerify(
-				verifyActivityLinks("schedule-to-close-act-"+stcTimeoutActivityInput),
 				verifyActivityFinalStatus("schedule-to-close-act-"+stcTimeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
 			),
 		},
@@ -10340,7 +10439,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			heartbeatTimeoutActivityInput,
 			"timeout:Heartbeat",
 			composeVerify(
-				verifyActivityLinks("heartbeat-act-"+heartbeatTimeoutActivityInput),
 				verifyActivityFinalStatus("heartbeat-act-"+heartbeatTimeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
 			),
 		},
@@ -10350,7 +10448,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			retrySucceedActivityInput,
 			retrySucceedActivityInput,
 			composeVerify(
-				verifyActivityLinks("retry-succeed-act-"+retrySucceedActivityInput),
 				verifyActivityFinalStatus("retry-succeed-act-"+retrySucceedActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED),
 				verifyActivityAttemptAtLeast("retry-succeed-act-"+retrySucceedActivityInput, 3),
 			),
@@ -10361,7 +10458,6 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			retryExhaustActivityInput,
 			"application:NexusActivityRetryTestFailureType:attempt 2 failed; will succeed on 999",
 			composeVerify(
-				verifyActivityLinks("retry-exhaust-act-"+retryExhaustActivityInput),
 				verifyActivityFinalStatus("retry-exhaust-act-"+retryExhaustActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_FAILED),
 				verifyActivityAttemptAtLeast("retry-exhaust-act-"+retryExhaustActivityInput, 2),
 			),
@@ -10455,31 +10551,23 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 		ts.Len(descResp.GetCallbacks(), 2,
 			"both callers must have attached callbacks to the same activity")
 
-		// Both callers' NexusOperationStarted events must carry a Link_Activity pointing at the
-		// shared activity (forward link from caller -> activity).
-		//
-		// NEXUS-400: server does not currently emit Link_Activity on NexusOperationStarted for
-		// activity-backed Nexus operations. Commented out until the server fix lands.
-		_ = activityID
-		// for _, run := range []client.WorkflowRun{runA, runB} {
-		// 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-		// 	var fwd *commonpb.Link_Activity
-		// 	for iter.HasNext() {
-		// 		e, err := iter.Next()
-		// 		ts.NoError(err)
-		// 		if e.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
-		// 			for _, link := range e.GetLinks() {
-		// 				if a := link.GetActivity(); a != nil {
-		// 					fwd = a
-		// 				}
-		// 			}
-		// 		}
-		// 	}
-		// 	ts.NotNil(fwd, "caller %s should have a Link_Activity on NexusOperationStarted", run.GetID())
-		// 	if fwd != nil {
-		// 		ts.Equal(activityID, fwd.GetActivityId())
-		// 	}
-		// }
+		// StartActivity attaches the caller's link to the completion callback (not the start
+		// request). The server stores each callback on the activity, so both callbacks must carry
+		// a workflow-event link back to their respective caller.
+		gotCallerLinkIDs := map[string]bool{}
+		for _, cb := range descResp.GetCallbacks() {
+			links := cb.GetInfo().GetCallback().GetLinks()
+			ts.Len(links, 1, "each callback must carry exactly one caller link")
+			for _, link := range links {
+				we := link.GetWorkflowEvent()
+				ts.NotNil(we, "callback link must be a Link_WorkflowEvent pointing at the caller")
+				if we != nil {
+					gotCallerLinkIDs[we.GetWorkflowId()] = true
+				}
+			}
+		}
+		ts.Equal(map[string]bool{runA.GetID(): true, runB.GetID(): true}, gotCallerLinkIDs,
+			"both callbacks must link back to their caller workflows")
 	})
 
 	// Caller workflow terminated mid-operation: the backing activity terminates its own
