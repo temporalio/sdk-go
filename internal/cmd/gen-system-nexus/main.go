@@ -8,6 +8,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"go/format"
@@ -33,14 +34,14 @@ type commandOptions struct {
 
 func main() {
 	options := commandOptions{}
-	flag.BoolVar(&options.preserveBuildDir, "preserve-build-dir", false, "preserve the temporary build directory")
+	flag.BoolVar(&options.preserveBuildDir, "preserve-build-dir", false, "preserve the build directory, even if the command succeeds")
 	flag.Parse()
 	if err := run(options); err != nil {
 		log.Fatalf("gen-system-nexus: %v", err)
 	}
 }
 
-func run(options commandOptions) error {
+func run(options commandOptions) (retErr error) {
 	// Locate the SDK root directory and create a temporary build directory
 
 	sdk, err := sdkRoot()
@@ -52,6 +53,18 @@ func run(options commandOptions) error {
 	if err != nil {
 		return fmt.Errorf("creating temp dir: %w", err)
 	}
+	defer func() {
+		if options.preserveBuildDir || retErr != nil {
+			log.Printf("Preserved build directory: %s", tmp)
+			return
+		}
+		err := os.RemoveAll(tmp)
+		if err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("removing build directory %s: %w", tmp, err))
+			return
+		}
+		log.Printf("Removed build directory")
+	}()
 
 	witFile := filepath.Join(sdk, "internal", "nexussystem", "wit", "workflow-service.wit")
 	witDepsDir := filepath.Join(sdk, "internal", "nexussystem", "wit", "deps")
@@ -67,11 +80,13 @@ func run(options commandOptions) error {
 	if err != nil {
 		return err
 	}
+	log.Printf("Using nexgen executable: %s", nexGenExe)
 
 	descriptorsFile, err := genProtoDescriptors(descriptorsBuildDir)
 	if err != nil {
 		return err
 	}
+	log.Printf("Generated proto descriptors: %s", descriptorsFile)
 
 	serviceFile, err := genService(genServiceOptions{
 		nexGenExe:       nexGenExe,
@@ -83,22 +98,15 @@ func run(options commandOptions) error {
 	if err != nil {
 		return err
 	}
+	log.Printf("Nexgen generated file: %s", serviceFile)
 
-	// Run gofmt on the result, copy them to the destination, and clean up the build directory.
+	// Run gofmt on the result and copy it to the destination.
 
-	err = formatAndMoveFiles(dstPkgDir, []string{serviceFile})
+	outputFile, err := formatAndCopyFile(dstPkgDir, serviceFile)
 	if err != nil {
 		return err
 	}
-
-	if options.preserveBuildDir {
-		log.Printf("preserved build directory: %s", tmp)
-	} else {
-		err = os.RemoveAll(tmp)
-		if err != nil {
-			return fmt.Errorf("removing build directory %s: %w", tmp, err)
-		}
-	}
+	log.Printf("Wrote %s", outputFile)
 
 	return nil
 }
@@ -195,27 +203,21 @@ func genService(options genServiceOptions) (string, error) {
 	return serviceFile, nil
 }
 
-// formatAndMoveFiles formats Go source files and moves them into dstDir.
-func formatAndMoveFiles(dstDir string, inputFiles []string) error {
-	for _, inputFile := range inputFiles {
-		contents, err := os.ReadFile(inputFile)
-		if err != nil {
-			return fmt.Errorf("reading generated Go file %s: %w", inputFile, err)
-		}
-		formatted, err := format.Source(contents)
-		if err != nil {
-			return fmt.Errorf("formatting generated Go file %s: %w", inputFile, err)
-		}
-		if err := os.WriteFile(inputFile, formatted, 0o644); err != nil {
-			return fmt.Errorf("writing formatted Go file %s: %w", inputFile, err)
-		}
-		outputFile := filepath.Join(dstDir, filepath.Base(inputFile))
-		// Rename only after formatting succeeds so a failed write cannot truncate the checked-in destination.
-		if err := os.Rename(inputFile, outputFile); err != nil {
-			return fmt.Errorf("moving formatted Go file from %s to %s: %w", inputFile, outputFile, err)
-		}
+// formatAndCopyFile formats a Go source file, copies it into dstDir, and returns its output path.
+func formatAndCopyFile(dstDir, inputFile string) (string, error) {
+	contents, err := os.ReadFile(inputFile)
+	if err != nil {
+		return "", fmt.Errorf("reading generated Go file %s: %w", inputFile, err)
 	}
-	return nil
+	formatted, err := format.Source(contents)
+	if err != nil {
+		return "", fmt.Errorf("formatting generated Go file %s: %w", inputFile, err)
+	}
+	outputFile := filepath.Join(dstDir, filepath.Base(inputFile))
+	if err := os.WriteFile(outputFile, formatted, 0o644); err != nil {
+		return "", fmt.Errorf("writing generated Go file %s: %w", outputFile, err)
+	}
+	return outputFile, nil
 }
 
 // sdkRoot returns the root of the Go SDK source tree
