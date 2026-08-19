@@ -18,7 +18,7 @@ or Security.
   telemetry emitted from workflow code is not re-emitted on history replay;
   while suppressed, the logger's and sync instruments' `Enabled` report false.
   The gate composes `workflow.IsReplaying` with `!workflow.IsReadOnly`
-  (Experimental, requires `go.temporal.io/sdk` >= v1.48.0), so telemetry from
+  (Experimental), so telemetry from
   query handlers and update validators always records. See "Telemetry and
   replay" in the README.
 - `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.

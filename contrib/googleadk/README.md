@@ -42,7 +42,7 @@ and the `model.NewLLM` registry lookup from upstream `google.golang.org/adk/v2`
 These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins a
 main-branch pseudo-version of `google.golang.org/adk/v2`; bump it to a tagged
 version once a release ships that includes them. The telemetry gate composes
-`workflow.IsReadOnly`, which requires `go.temporal.io/sdk` >= v1.48.0.
+`workflow.IsReadOnly`.
 
 ## Module versioning
 
