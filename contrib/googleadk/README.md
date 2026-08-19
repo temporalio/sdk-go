@@ -350,6 +350,8 @@ else — worker, client, and Activity telemetry — delegates unchanged:
 import (
 	"go.opentelemetry.io/otel"
 	otellogglobal "go.opentelemetry.io/otel/log/global"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"go.temporal.io/sdk/contrib/googleadk"
@@ -362,6 +364,8 @@ func main() {
 		sdktrace.WithIDGenerator(googleadk.NewWorkflowSpanIDGenerator()),
 		// exporters ...
 	)
+	myLoggerProvider := sdklog.NewLoggerProvider( /* processors ... */ )
+	myMeterProvider := sdkmetric.NewMeterProvider( /* readers ... */ )
 
 	// Must be the FIRST global providers set in the process: ADK captures the
 	// global proxy tracer/logger at package init, and the proxy binds its
