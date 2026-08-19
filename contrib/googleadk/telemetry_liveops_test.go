@@ -187,9 +187,9 @@ func TestQueryHandlerGateOnCommandFreeHistory(t *testing.T) {
 	defer stop()
 
 	capture := newTelemetryCapture()
-	tp, lp, mp := capture.providers()
+	_, lp, mp := capture.providers()
 	pointGlobalsAt(t,
-		googleadk.NewReplaySafeTracerProvider(tp),
+		capture.replaySafeTracerProvider(),
 		googleadk.NewReplaySafeLoggerProvider(lp),
 		googleadk.NewReplaySafeMeterProvider(mp),
 	)
@@ -231,9 +231,9 @@ func TestQueryHandlerGateWithPendingCommandOrCompletion(t *testing.T) {
 	defer stop()
 
 	capture := newTelemetryCapture()
-	tp, lp, mp := capture.providers()
+	_, lp, mp := capture.providers()
 	pointGlobalsAt(t,
-		googleadk.NewReplaySafeTracerProvider(tp),
+		capture.replaySafeTracerProvider(),
 		googleadk.NewReplaySafeLoggerProvider(lp),
 		googleadk.NewReplaySafeMeterProvider(mp),
 	)
@@ -365,9 +365,9 @@ func TestUpdateValidatorTelemetryIsNeverReplaySuppressed(t *testing.T) {
 	defer stop()
 
 	capture := newTelemetryCapture()
-	tp, lp, mp := capture.providers()
+	_, lp, mp := capture.providers()
 	pointGlobalsAt(t,
-		googleadk.NewReplaySafeTracerProvider(tp),
+		capture.replaySafeTracerProvider(),
 		googleadk.NewReplaySafeLoggerProvider(lp),
 		googleadk.NewReplaySafeMeterProvider(mp),
 	)

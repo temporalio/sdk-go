@@ -132,13 +132,13 @@ func intAttr(s sdktrace.ReadOnlySpan, key string) (int64, bool) {
 	return 0, false
 }
 
-// newIDGeneratedCapture builds a tracer provider carrying the workflow span-ID
-// generator, an OnStart recorder, and an exported-span recorder.
-func newIDGeneratedCapture() (*sdktrace.TracerProvider, *startRecordingProcessor, *tracetest.SpanRecorder) {
+// newIDGeneratedCapture builds a replay-safe tracer provider — which owns the
+// workflow span-ID generator — plus an OnStart recorder and an exported-span
+// recorder.
+func newIDGeneratedCapture() (*googleadk.ReplaySafeTracerProvider, *startRecordingProcessor, *tracetest.SpanRecorder) {
 	starts := &startRecordingProcessor{}
 	spans := tracetest.NewSpanRecorder()
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithIDGenerator(googleadk.NewWorkflowSpanIDGenerator()),
+	tp := googleadk.NewReplaySafeTracerProvider(
 		sdktrace.WithSpanProcessor(starts),
 		sdktrace.WithSpanProcessor(spans),
 	)
@@ -157,7 +157,7 @@ func TestSpanIDsDeterministicAcrossReplay(t *testing.T) {
 	capture := newTelemetryCapture()
 	_, lp, mp := capture.providers()
 	pointGlobalsAt(t,
-		googleadk.NewReplaySafeTracerProvider(tp),
+		tp,
 		googleadk.NewReplaySafeLoggerProvider(lp),
 		googleadk.NewReplaySafeMeterProvider(mp),
 	)
@@ -428,7 +428,7 @@ func TestStraddleSpanExportedOnceComplete(t *testing.T) {
 	capture := newTelemetryCapture()
 	_, lp, mp := capture.providers()
 	pointGlobalsAt(t,
-		googleadk.NewReplaySafeTracerProvider(tp),
+		tp,
 		googleadk.NewReplaySafeLoggerProvider(lp),
 		googleadk.NewReplaySafeMeterProvider(mp),
 	)
@@ -557,7 +557,7 @@ func TestTaskRetryReexportsSpan(t *testing.T) {
 
 	t.Run("AlignedCopiesShareOneSpanID", func(t *testing.T) {
 		tp, _, spans := newIDGeneratedCapture()
-		runProbe(t, "adk-otelv2-task-retry-aligned", googleadk.NewReplaySafeTracerProvider(tp))
+		runProbe(t, "adk-otelv2-task-retry-aligned", tp)
 		ended := byName(spans.Ended(), "retry-span")
 		require.Len(t, ended, 2, "both live attempts export the span (at-least-once)")
 		require.Equal(t, ended[0].SpanContext().SpanID(), ended[1].SpanContext().SpanID(),
@@ -628,7 +628,7 @@ func TestDerivedTracerSpansGatedAndDeterministic(t *testing.T) {
 	capture := newTelemetryCapture()
 	_, lp, mp := capture.providers()
 	pointGlobalsAt(t,
-		googleadk.NewReplaySafeTracerProvider(tp),
+		tp,
 		googleadk.NewReplaySafeLoggerProvider(lp),
 		googleadk.NewReplaySafeMeterProvider(mp),
 	)

@@ -23,7 +23,6 @@ import (
 	lognoop "go.opentelemetry.io/otel/log/noop"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
-	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 	tracenoop "go.opentelemetry.io/otel/trace/noop"
 )
@@ -91,12 +90,12 @@ func TestReplaySafeWrapperSurface(t *testing.T) {
 		{
 			name:    "TracerProvider",
 			iface:   typeOf[trace.TracerProvider](),
-			wrapper: NewReplaySafeTracerProvider(tracenoop.NewTracerProvider()),
+			wrapper: NewReplaySafeTracerProvider(),
 		},
 		{
 			name:    "Tracer",
 			iface:   typeOf[trace.Tracer](),
-			wrapper: NewReplaySafeTracerProvider(tracenoop.NewTracerProvider()).Tracer("audit"),
+			wrapper: NewReplaySafeTracerProvider().Tracer("audit"),
 		},
 		{
 			name:    "Span",
@@ -110,7 +109,7 @@ func TestReplaySafeWrapperSurface(t *testing.T) {
 				"SetName":       spanStateRationale,
 				"SetStatus":     spanStateRationale,
 				"IsRecording":   "reports the inner span's real state; replay re-creations are recording so IsRecording-guarded attribute code runs during replay too",
-				"SpanContext":   "pure read of the span's identity, replay-stable under NewWorkflowSpanIDGenerator",
+				"SpanContext":   "pure read of the span's identity, replay-stable under the workflow span-ID generator",
 			},
 		},
 		{
@@ -209,15 +208,16 @@ func TestReplaySafeWrapperSurface(t *testing.T) {
 	}
 }
 
-// TestWorkflowSpanTracerProviderReturnsReplaySafeWrapper: deriving a tracer
-// from a workflow span (span.TracerProvider().Tracer(...)) must yield gated
-// tracers, not the inner provider's raw ones.
-func TestWorkflowSpanTracerProviderReturnsReplaySafeWrapper(t *testing.T) {
-	inner := sdktrace.NewTracerProvider()
-	_, span := inner.Tracer("audit").Start(context.Background(), "audit")
-	wrapped, ok := (&workflowSpan{Span: span}).TracerProvider().(replaySafeTracerProvider)
-	require.True(t, ok, "a workflow span's TracerProvider must return the replay-safe wrapper")
-	require.Same(t, inner, wrapped.TracerProvider, "the wrapper must wrap the span's own provider")
+// TestWorkflowSpanTracerProviderReturnsOwnedProvider: deriving a tracer from a
+// workflow span (span.TracerProvider().Tracer(...)) must yield the owned
+// replay-safe provider — the one carrying the End gate and the span-ID
+// generator — not the inner span's raw provider.
+func TestWorkflowSpanTracerProviderReturnsOwnedProvider(t *testing.T) {
+	owned := NewReplaySafeTracerProvider()
+	_, span := owned.Tracer("audit").Start(context.Background(), "audit")
+	ws := &workflowSpan{Span: span, provider: owned}
+	require.Same(t, owned, ws.TracerProvider(),
+		"a workflow span's TracerProvider must return the owned replay-safe provider")
 }
 
 // grownTracer simulates an OTel minor release adding an emitting method to an
