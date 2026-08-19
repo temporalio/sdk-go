@@ -897,6 +897,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		backgroundContext:  env.workerOptions.BackgroundActivityContext,
 		metricsHandler:     env.metricsHandler,
 		logger:             env.logger,
+		dataConverter:      env.dataConverter,
 		interceptors:       env.registry.interceptors,
 		contextPropagators: env.contextPropagators,
 		workerStopChannel:  env.workerStopChannel,
@@ -1839,6 +1840,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteLocalActivity(params ExecuteLocal
 		backgroundContext:  env.workerOptions.BackgroundActivityContext,
 		metricsHandler:     env.metricsHandler,
 		logger:             env.logger,
+		dataConverter:      env.dataConverter,
 		contextPropagators: env.contextPropagators,
 		interceptors:       env.registry.interceptors,
 		workerStopChannel:  env.workerStopChannel,
@@ -2105,7 +2107,7 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 		<-waitCh
 	}
 
-	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false}
+	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false, dataConverter: getDataConverterFromActivityCtx(ctx)}
 	if mockRet := m.getActivityMockReturnWithActualArgs(ctx, inputArgs); mockRet != nil {
 		// check if mock returns function which must match to the actual function.
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
@@ -2295,6 +2297,13 @@ func (m *mockWrapper) getMockFn(mockRet mock.Arguments) interface{} {
 	return nil
 }
 
+func (m *mockWrapper) getDataConverter() converter.DataConverter {
+	if m.dataConverter != nil {
+		return m.dataConverter
+	}
+	return m.env.GetDataConverter()
+}
+
 func (m *mockWrapper) getMockValue(mockRet mock.Arguments) (*commonpb.Payloads, error) {
 	fnName := m.name
 	mockRetLen := len(mockRet)
@@ -2336,7 +2345,7 @@ func (m *mockWrapper) getMockValue(mockRet mock.Arguments) (*commonpb.Payloads, 
 				panic(fmt.Sprintf("mock of %v has incorrect return type, expected %v, but actual is %T (%v)",
 					fnName, expectedType, mockResult, mockResult))
 			}
-			result, encodeErr := encodeArg(m.env.GetDataConverter(), mockResult)
+			result, encodeErr := encodeArg(m.getDataConverter(), mockResult)
 			if encodeErr != nil {
 				panic(fmt.Sprintf("encode result from mock of %v failed: %v", fnName, encodeErr))
 			}

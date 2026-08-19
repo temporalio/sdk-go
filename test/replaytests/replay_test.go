@@ -28,7 +28,7 @@ func (c *replayTestSigningCodec) WithSerializationContext(ctx converter.Serializ
 	case converter.WorkflowSerializationContext:
 		return &replayTestSigningCodec{signature: sc.WorkflowID}
 	case converter.ActivitySerializationContext:
-		return &replayTestSigningCodec{signature: sc.WorkflowID + ":" + sc.ActivityType}
+		return &replayTestSigningCodec{signature: fmt.Sprintf("%s:%s:local=%t", sc.WorkflowID, sc.ActivityType, sc.IsLocal)}
 	}
 	return c
 }

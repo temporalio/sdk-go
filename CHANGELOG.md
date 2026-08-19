@@ -28,6 +28,14 @@ to docs, or any other relevant information.
 - Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
   path.
 
+### Breaking Changes
+
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
+  `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
+  context-derived encryption keys or AAD) may fail to decode local activity results recorded in
+  histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+
 ### Changed
 
 - Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.

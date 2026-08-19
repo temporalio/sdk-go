@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	"google.golang.org/protobuf/proto"
@@ -623,4 +624,79 @@ func (s *SerializationContextTestSuite) TestUpdateRoundTrip_SigningCodec() {
 	s.NoError(env.GetWorkflowError())
 	s.NoError(updateErr)
 	s.NotNil(updateResult)
+}
+
+// serCtxMarkerCodec marks payloads on Encode and requires the mark on Decode,
+// regardless of serialization context.
+type serCtxMarkerCodec struct{}
+
+func (c *serCtxMarkerCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		clone := proto.Clone(p).(*commonpb.Payload)
+		if clone.Metadata == nil {
+			clone.Metadata = map[string][]byte{}
+		}
+		clone.Metadata["codec-used"] = []byte("true")
+		result[i] = clone
+	}
+	return result, nil
+}
+
+func (c *serCtxMarkerCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		if string(p.Metadata["codec-used"]) != "true" {
+			return nil, fmt.Errorf("payload was not encoded with the configured codec")
+		}
+		clone := proto.Clone(p).(*commonpb.Payload)
+		delete(clone.Metadata, "codec-used")
+		result[i] = clone
+	}
+	return result, nil
+}
+
+func (s *SerializationContextTestSuite) TestActivityEnvironmentLocalActivity_UsesConfiguredDataConverter() {
+	env := s.NewTestActivityEnvironment()
+	env.SetDataConverter(converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxMarkerCodec{}))
+
+	activityFn := func(_ context.Context, input string) (string, error) {
+		return "got:" + input, nil
+	}
+	env.RegisterActivity(activityFn)
+
+	encoded, err := env.ExecuteLocalActivity(activityFn, "hello")
+	s.NoError(err)
+
+	var result string
+	s.NoError(encoded.Get(&result))
+	s.Equal("got:hello", result)
+}
+
+func (s *SerializationContextTestSuite) TestLocalActivityMock_SigningCodec() {
+	env := s.NewTestWorkflowEnvironment()
+	env.SetDataConverter(converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{}))
+
+	activityFn := func(_ context.Context, input string) (string, error) {
+		return input, nil
+	}
+	env.RegisterActivity(activityFn)
+	env.OnActivity(activityFn, mock.Anything, "hello").Return("mocked", nil)
+
+	workflow := func(ctx Context) (string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			StartToCloseTimeout: time.Minute,
+		})
+		var result string
+		err := ExecuteLocalActivity(ctx, activityFn, "hello").Get(ctx, &result)
+		return result, err
+	}
+
+	env.ExecuteWorkflow(workflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("mocked", result)
 }
