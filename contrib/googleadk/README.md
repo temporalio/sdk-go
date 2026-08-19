@@ -39,10 +39,10 @@ This package depends on the deterministic ADK `platform` seams
 (`WithTimeProvider`, `WithUUIDProvider`, `WithTaskRunner`), `tool/toolutils.PackTool`,
 and the `model.NewLLM` registry lookup from upstream `google.golang.org/adk/v2`
 (the registry itself stays application-owned; this package never registers into it).
-These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins
-tagged version once a release ships that includes them. `go.mod` similarly
-telemetry gate composes `workflow.IsReadOnly`, which landed after the latest
-tagged SDK release (v1.47.0).
+These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins a
+main-branch pseudo-version of `google.golang.org/adk/v2`; bump it to a tagged
+version once a release ships that includes them. The telemetry gate composes
+`workflow.IsReadOnly`, which requires `go.temporal.io/sdk` >= v1.48.0.
 
 ## Module versioning
 
@@ -347,11 +347,18 @@ delegate everything else — worker, client, and Activity telemetry — unchange
 import (
 	"go.opentelemetry.io/otel"
 	otellogglobal "go.opentelemetry.io/otel/log/global"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"go.temporal.io/sdk/contrib/googleadk"
 )
 
 func main() {
+	myTracerProvider := sdktrace.NewTracerProvider( /* exporters ... */ )
+	myLoggerProvider := sdklog.NewLoggerProvider( /* processors ... */ )
+	myMeterProvider := sdkmetric.NewMeterProvider( /* readers ... */ )
+
 	// Must be the FIRST global providers set in the process: ADK captures the
 	// global proxy tracer/logger at package init, and the proxy binds its
 	// delegate on the first Set call only — a provider installed earlier
