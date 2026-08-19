@@ -602,11 +602,6 @@ func (h *nexusTaskHandler) nexusHandlerErrorToProto(handlerErr *nexus.HandlerErr
 	}, nil
 }
 
-// payloadValidationErrorType is the ApplicationError type reserved for payload validation failures raised by a data
-// converter. A non-retryable error of this type reports invalid input and is translated into a BAD_REQUEST handler
-// error.
-const payloadValidationErrorType = "PayloadValidationError"
-
 // payloadSerializer is a fake nexus Serializer that uses a data converter to read from an embedded payload instead of
 // using the given nexus.Context. Supports only Deserialize.
 type payloadSerializer struct {

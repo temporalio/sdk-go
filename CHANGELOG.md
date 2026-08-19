@@ -22,6 +22,9 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
+  structured details for payload validation failures.
+
 ### Changed
 
 ### Deprecated
