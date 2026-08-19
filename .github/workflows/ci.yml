@@ -26,7 +26,7 @@ jobs:
 
       - name: Check generated files
         run: |
-          go run ./internal/cmd/nexussystemgen
+          go run ./internal/cmd/gen-system-nexus
           git diff --exit-code
 
   check:
