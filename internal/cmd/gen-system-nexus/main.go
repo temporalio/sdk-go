@@ -2,12 +2,13 @@
 //
 // The generated bindings are emitted directly into go.temporal.io/sdk/workflow.
 //
-// Usage: go run ./internal/cmd/gen-system-nexus
+// Usage: go run ./internal/cmd/gen-system-nexus [--preserve-build-dir]
 //
 // A pinned nexgen release is automatically installed unless NEX_GEN_BIN is set.
 package main
 
 import (
+	"flag"
 	"fmt"
 	"go/format"
 	"log"
@@ -26,13 +27,20 @@ import (
 
 const nexGenVersion = "0.2.1"
 
+type commandOptions struct {
+	preserveBuildDir bool
+}
+
 func main() {
-	if err := run(); err != nil {
+	options := commandOptions{}
+	flag.BoolVar(&options.preserveBuildDir, "preserve-build-dir", false, "preserve the temporary build directory")
+	flag.Parse()
+	if err := run(options); err != nil {
 		log.Fatalf("gen-system-nexus: %v", err)
 	}
 }
 
-func run() error {
+func run(options commandOptions) error {
 	// Locate the SDK root directory and create a temporary build directory
 
 	sdk, err := sdkRoot()
@@ -83,9 +91,13 @@ func run() error {
 		return err
 	}
 
-	err = os.RemoveAll(tmp)
-	if err != nil {
-		return fmt.Errorf("removing build directory %s: %w", tmp, err)
+	if options.preserveBuildDir {
+		log.Printf("preserved build directory: %s", tmp)
+	} else {
+		err = os.RemoveAll(tmp)
+		if err != nil {
+			return fmt.Errorf("removing build directory %s: %w", tmp, err)
+		}
 	}
 
 	return nil
