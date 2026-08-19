@@ -19,25 +19,19 @@ or Security.
   while suppressed, the logger's and sync instruments' `Enabled` report false.
   The gate composes `workflow.IsReplaying` with `!workflow.IsReadOnly`
   (Experimental, requires `go.temporal.io/sdk` >= v1.48.0), so telemetry from
-  query handlers and update validators always records. See "Telemetry and
-  replay" in the README.
+  query handlers and update validators always records. Workflow spans are
+  re-created during replay as real spans (with workflow-time starts) and their
+  `End` is suppressed while replaying: replays and eviction teardown export
+  nothing, and a span cut off by sticky-cache eviction, worker shutdown, or
+  crash is exported once by the catch-up replay's live `End`, complete with
+  ADK's `gen_ai.usage.*` token attributes. See "Telemetry and replay" in the
+  README.
 - `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.
 - `NewWorkflowSpanIDGenerator`: an `sdktrace.IDGenerator` for the provider
   wrapped by `NewReplaySafeTracerProvider` that draws workflow span IDs from
   `workflow.GetRandomStream`, so a span re-created on replay keeps its
   first-execution trace and span IDs (aligned with
   `contrib/opentelemetry-v2`).
-
-### Changed
-
-- `NewReplaySafeTracerProvider` now re-creates workflow spans during replay as
-  real spans (with workflow-time starts) and suppresses their `End` while
-  replaying, instead of returning non-recording spans from `Start`. Replays
-  still export nothing, and eviction teardown no longer exports truncated
-  spans; a span cut off by sticky-cache eviction, worker shutdown, or crash is
-  exported once by the catch-up replay's live `End`, complete with ADK's
-  `gen_ai.usage.*` token attributes. See the updated span contract in the
-  README's "Telemetry and replay".
 
 ## [0.2.0] - 2026-07-22
 
