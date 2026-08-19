@@ -35,6 +35,12 @@ to docs, or any other relevant information.
   `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
   context-derived encryption keys or AAD) may fail to decode local activity results recorded in
   histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+- Activity, local activity and child workflow serialization contexts are now applied to the
+  worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
+  the current workflow context. A context-aware converter that composed contexts (deriving its state
+  from both the workflow and the activity context) now sees only the activity or child workflow
+  context, and one whose `WithSerializationContext` returned a converter that is no longer
+  context-aware now receives the activity or child workflow context it previously never saw.
 
 ### Changed
 
