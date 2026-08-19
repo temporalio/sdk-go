@@ -2402,6 +2402,12 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
 
 	cache, cacheLease := NewWorkerCache()
+	constructionComplete := false
+	defer func() {
+		if !constructionComplete {
+			cacheLease.release()
+		}
+	}()
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
@@ -2686,6 +2692,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		}
 		return err
 	})
+	constructionComplete = true
 	return aw
 }
 

@@ -42,6 +42,15 @@ type contextCapturingDC struct {
 	contexts *[]converter.SerializationContext
 }
 
+type slotSupplierWithSysInfo struct {
+	SlotSupplier
+	provider SysInfoProvider
+}
+
+func (s *slotSupplierWithSysInfo) SysInfoProvider() SysInfoProvider {
+	return s.provider
+}
+
 func (dc *contextCapturingDC) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
 	*dc.contexts = append(*dc.contexts, ctx)
 	return &contextCapturingDC{
@@ -2113,6 +2122,39 @@ func (s *internalWorkerTestSuite) TestWorkerStartFailureReleasesCacheOwnership()
 	client := NewServiceClient(service, nil, ClientOptions{Namespace: "testNamespace"})
 	worker := NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{})
 	s.ErrorIs(worker.Start(), startErr)
+
+	sharedWorkerCacheLock.Lock()
+	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
+	sharedWorkerCacheLock.Unlock()
+}
+
+func (s *internalWorkerTestSuite) TestWorkerConstructionFailureReleasesCacheOwnership() {
+	fixedTuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{})
+	s.NoError(err)
+	workflowSupplier := &slotSupplierWithSysInfo{
+		SlotSupplier: fixedTuner.GetWorkflowTaskSlotSupplier(),
+		provider:     &FakeSystemInfoSupplier{},
+	}
+	tuner, err := NewCompositeTuner(CompositeTunerOptions{
+		WorkflowSlotSupplier:        workflowSupplier,
+		ActivitySlotSupplier:        fixedTuner.GetActivityTaskSlotSupplier(),
+		LocalActivitySlotSupplier:   fixedTuner.GetLocalActivitySlotSupplier(),
+		NexusSlotSupplier:           fixedTuner.GetNexusSlotSupplier(),
+		SessionActivitySlotSupplier: fixedTuner.GetSessionActivitySlotSupplier(),
+	})
+	s.NoError(err)
+
+	sharedWorkerCacheLock.Lock()
+	refcountBefore := sharedWorkerCachePtr.workerRefcount
+	sharedWorkerCacheLock.Unlock()
+
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
+	s.Panics(func() {
+		NewAggregatedWorker(client, "testTaskQueue", WorkerOptions{
+			Tuner:           tuner,
+			SysInfoProvider: &FakeSystemInfoSupplier{},
+		})
+	})
 
 	sharedWorkerCacheLock.Lock()
 	s.Equal(refcountBefore, sharedWorkerCachePtr.workerRefcount)
