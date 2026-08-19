@@ -40,9 +40,7 @@ This package depends on the deterministic ADK `platform` seams
 and the `model.NewLLM` registry lookup from upstream `google.golang.org/adk/v2`
 (the registry itself stays application-owned; this package never registers into it).
 These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins
-`adk/v2` to a `main`-branch pseudo-version for now; it reverts to an ordinary
 tagged version once a release ships that includes them. `go.mod` similarly
-pins `go.temporal.io/sdk` to a `main`-branch pseudo-version: the replay-safe
 telemetry gate composes `workflow.IsReadOnly`, which landed after the latest
 tagged SDK release (v1.47.0).
 

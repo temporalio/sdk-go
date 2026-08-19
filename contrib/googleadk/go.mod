@@ -4,7 +4,7 @@ go 1.25.4
 
 require (
 	github.com/google/uuid v1.6.0
-	github.com/nexus-rpc/sdk-go v0.6.0
+	github.com/nexus-rpc/sdk-go v0.7.0
 	github.com/stretchr/testify v1.11.1
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/log v0.19.0
@@ -13,7 +13,7 @@ require (
 	go.opentelemetry.io/otel/sdk/log v0.19.0
 	go.opentelemetry.io/otel/sdk/metric v1.43.0
 	go.opentelemetry.io/otel/trace v1.43.0
-	go.temporal.io/sdk v1.47.1-0.20260811214143-710d52121adc
+	go.temporal.io/sdk v1.48.0
 	go.temporal.io/sdk/contrib/workflowstreams v0.1.1
 	google.golang.org/adk/v2 v2.0.1-0.20260707195420-2a04f92f1776
 	google.golang.org/genai v1.57.0
@@ -69,8 +69,3 @@ require (
 // upstream google/adk-go after the latest tagged release (v2.0.0). Bump this to a
 // tagged release once one ships that includes them.
 //
-// go.temporal.io/sdk is pinned to a main-branch pseudo-version because the
-// replay gate composes workflow.IsReadOnly (temporalio/sdk-go#2521), which
-// landed after the latest tagged release (v1.47.0). Move back to a tagged
-// version at the next SDK release; do not tag this module while the
-// pseudo-version pin is in place (see CHANGELOG.md).

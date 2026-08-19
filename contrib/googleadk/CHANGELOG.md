@@ -11,12 +11,6 @@ or Security.
 
 ## [Unreleased]
 
-**Release blocker:** do not tag this module while `go.mod` pins
-`go.temporal.io/sdk` to a main-branch pseudo-version — a tagged release would
-force every consumer onto that unreleased SDK commit (unlike the third-party
-`adk/v2` pseudo-version pin, which has no tagged alternative). Move the pin to
-the next tagged SDK release first, then delete this note.
-
 ### Added
 
 - `NewReplaySafeTracerProvider`, `NewReplaySafeLoggerProvider`, and
@@ -24,10 +18,9 @@ the next tagged SDK release first, then delete this note.
   telemetry emitted from workflow code is not re-emitted on history replay;
   while suppressed, the logger's and sync instruments' `Enabled` report false.
   The gate composes `workflow.IsReplaying` with `!workflow.IsReadOnly`
-  (Experimental), so telemetry from query handlers and update validators
-  always records; this pins `go.temporal.io/sdk` to a main-branch
-  pseudo-version until a tagged release ships `workflow.IsReadOnly`.
-  See "Telemetry and replay" in the README.
+  (Experimental, requires `go.temporal.io/sdk` >= v1.48.0), so telemetry from
+  query handlers and update validators always records. See "Telemetry and
+  replay" in the README.
 - `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.
 
 ## [0.2.0] - 2026-07-22
