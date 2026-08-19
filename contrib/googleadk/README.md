@@ -347,6 +347,8 @@ else — worker, client, and Activity telemetry — delegates unchanged:
 
 ```go
 import (
+	"context"
+
 	"go.opentelemetry.io/otel"
 	otellogglobal "go.opentelemetry.io/otel/log/global"
 	sdklog "go.opentelemetry.io/otel/sdk/log"
@@ -357,12 +359,13 @@ import (
 )
 
 func main() {
-	// The ID generator gives a workflow span re-created on replay the same
-	// trace and span IDs it drew on first execution (span contract below).
-	myTracerProvider := sdktrace.NewTracerProvider(
-		sdktrace.WithIDGenerator(googleadk.NewWorkflowSpanIDGenerator()),
-		// exporters ...
-	)
+	// NewReplaySafeTracerProvider builds and owns the tracer provider, so it
+	// always installs the span-ID generator that gives a workflow span
+	// re-created on replay the same trace and span IDs it drew on first
+	// execution (span contract below). Pass the usual sdktrace options
+	// (exporters, resource, sampler). The logger and meter wrappers wrap your
+	// own providers.
+	tracerProvider := googleadk.NewReplaySafeTracerProvider( /* sdktrace.WithBatcher(exporter), ... */ )
 	myLoggerProvider := sdklog.NewLoggerProvider( /* processors ... */ )
 	myMeterProvider := sdkmetric.NewMeterProvider( /* readers ... */ )
 
@@ -370,9 +373,13 @@ func main() {
 	// global proxy tracer/logger at package init, and the proxy binds its
 	// delegate on the first Set call only — a provider installed earlier
 	// permanently bypasses the wrappers.
-	otel.SetTracerProvider(googleadk.NewReplaySafeTracerProvider(myTracerProvider))
+	otel.SetTracerProvider(tracerProvider)
 	otellogglobal.SetLoggerProvider(googleadk.NewReplaySafeLoggerProvider(myLoggerProvider))
 	otel.SetMeterProvider(googleadk.NewReplaySafeMeterProvider(myMeterProvider))
+
+	// You own the tracer provider; shut it down after your clients and workers
+	// stop so buffered spans flush.
+	defer func() { _ = tracerProvider.Shutdown(context.Background()) }()
 
 	// ... Temporal client, worker, googleadk.NewPlugin wiring as usual ...
 }
@@ -397,10 +404,10 @@ re-executes live and records again — the same semantics and caveat as
 Spans get the same at-least-once contract through a different mechanism,
 because ADK holds each span open across the model call's Activity await. A
 span started from sequenced workflow code is a real span in every execution
-mode — a replay re-creates it with a workflow-time start and, with
-`NewWorkflowSpanIDGenerator` on the wrapped provider, the same trace and span
-IDs it drew on first execution — but its `End` is suppressed while the
-workflow is replaying. Tracers derived from a workflow span
+mode — a replay re-creates it with a workflow-time start and the same trace and
+span IDs it drew on first execution (the owned provider always installs the
+span-ID generator) — but its `End` is suppressed while the workflow is
+replaying. Tracers derived from a workflow span
 (`span.TracerProvider().Tracer(...)`) produce spans under the same contract.
 Each span is therefore exported by whichever execution reaches its `End` live:
 
@@ -423,11 +430,6 @@ Each span is therefore exported by whichever execution reaches its `End` live:
   trace backends collapse them; span-count pipelines (e.g. the spanmetrics
   connector) see one extra copy per retried task, the same as they do for
   retried metric and log recordings.
-
-Without `NewWorkflowSpanIDGenerator` (or with a non-OTel-SDK provider that
-generates its own IDs) the replayed re-creation draws fresh random IDs, so a
-span exported by a catch-up replay does not stitch into its original trace —
-install the generator whenever the wrapped provider supports it.
 
 `NewReplaySafeMeterProvider` is forward-looking: it gates synchronous
 instrument recordings and reports their `Enabled` false while suppressed

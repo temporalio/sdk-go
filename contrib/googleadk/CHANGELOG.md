@@ -30,11 +30,12 @@ or Security.
   query handlers and update validators always records. See "Telemetry and
   replay" in the README.
 - `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.
-- `NewWorkflowSpanIDGenerator`: an `sdktrace.IDGenerator` for the provider
-  wrapped by `NewReplaySafeTracerProvider` that draws workflow span IDs from
+- `NewReplaySafeTracerProvider` builds and owns its `sdktrace.TracerProvider`
+  (`func(opts ...sdktrace.TracerProviderOption) *ReplaySafeTracerProvider`) and
+  force-installs a deterministic span-ID generator drawn from
   `workflow.GetRandomStream`, so a span re-created on replay keeps its
-  first-execution trace and span IDs (aligned with
-  `contrib/opentelemetry-v2`).
+  first-execution trace and span IDs and the generator can never be omitted
+  (aligned with `contrib/opentelemetry-v2`).
 
 ## [0.2.0] - 2026-07-22
 
