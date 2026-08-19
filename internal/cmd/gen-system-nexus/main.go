@@ -68,7 +68,7 @@ func run(options commandOptions) error {
 		return err
 	}
 
-	descriptorsFile, err := genDescriptorSet(descriptorsBuildDir)
+	descriptorsFile, err := genProtoDescriptors(descriptorsBuildDir)
 	if err != nil {
 		return err
 	}
@@ -131,16 +131,16 @@ func getNexGenExecutable(buildDir string) (string, error) {
 	return nexGenPath, nil
 }
 
-// genDescriptorSet generates a proto descriptor set for the workflowservice API.
+// genProtoDescriptors generates a proto descriptor set for the workflowservice API.
 // Equivalent to running protoc with --include_imports. Returns the generated file path.
-func genDescriptorSet(buildDir string) (string, error) {
+func genProtoDescriptors(buildDir string) (string, error) {
 	if err := os.Mkdir(buildDir, 0o700); err != nil {
 		return "", fmt.Errorf("creating descriptor build directory: %w", err)
 	}
 	descriptorsFile := filepath.Join(buildDir, "descriptors.bin")
 	set := &descriptorpb.FileDescriptorSet{}
 	seen := make(map[string]struct{})
-	addFileDescriptor(set, seen, workflowservice.File_temporal_api_workflowservice_v1_request_response_proto)
+	addProtoDescriptor(set, seen, workflowservice.File_temporal_api_workflowservice_v1_request_response_proto)
 
 	contents, err := proto.Marshal(set)
 	if err != nil {
@@ -152,15 +152,15 @@ func genDescriptorSet(buildDir string) (string, error) {
 	return descriptorsFile, nil
 }
 
-// addFileDescriptor recursively adds a file descriptor and its imports to the given set.
-func addFileDescriptor(set *descriptorpb.FileDescriptorSet, seen map[string]struct{}, file protoreflect.FileDescriptor) {
+// addProtoDescriptor recursively adds a file descriptor and its imports to the given set.
+func addProtoDescriptor(set *descriptorpb.FileDescriptorSet, seen map[string]struct{}, file protoreflect.FileDescriptor) {
 	if _, ok := seen[file.Path()]; ok {
 		return
 	}
 	seen[file.Path()] = struct{}{}
 	imports := file.Imports()
 	for i := range imports.Len() {
-		addFileDescriptor(set, seen, imports.Get(i))
+		addProtoDescriptor(set, seen, imports.Get(i))
 	}
 	set.File = append(set.File, protodesc.ToFileDescriptorProto(file))
 }
