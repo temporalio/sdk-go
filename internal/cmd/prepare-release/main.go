@@ -1,4 +1,9 @@
 // Command prepare-release prepares checked-in files for a Go SDK release.
+//
+// With no module argument it releases the main go.temporal.io/sdk module. Given a
+// contrib module directory it releases that module instead, using the
+// module-prefixed tag Go requires for sub-modules and leaving GitHub's "latest"
+// release pointing at the main SDK.
 package main
 
 import (
@@ -7,30 +12,36 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 )
 
+// versionCore matches a three-part semantic version with no leading "v" and no
+// prerelease or build suffix.
+const versionCore = `(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)`
+
 var (
-	// Matches release versions such as "1.48.0".
-	versionRE = regexp.MustCompile(`^1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	// Matches release versions such as "1.48.0" or "0.2.1".
+	versionRE = regexp.MustCompile(`^` + versionCore + `$`)
 	// Matches tagged Go module release versions such as "v1.48.0".
 	// Shouldn't match pseudo-versions such as "v1.48.0-0.20260804123456-abcdef123456".
-	taggedGoVersionRE = regexp.MustCompile(`^v1\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+	taggedGoVersionRE = regexp.MustCompile(`^v` + versionCore + `$`)
+	// Matches contrib module directories such as "contrib/envconfig" and
+	// "contrib/aws/s3driver/awssdkv2".
+	contribModuleRE = regexp.MustCompile(`^contrib(/[a-z0-9][a-z0-9._-]*)+$`)
 	// Matches changelog headings such as "## [1.48.0] - 2026-08-04".
 	changelogHeadingRE = regexp.MustCompile(`^## \[([^]]+)](?:\s+-\s+.*)?\s*$`)
 	// Matches changelog section headers such as "### :boom: Breaking Changes".
 	changelogHeaderRE = regexp.MustCompile(`^### (.+?)\s*$`)
 	// Matches the SDK version declaration: SDKVersion = "1.48.0".
 	sdkVersionRE = regexp.MustCompile(`(?m)^(\s*SDKVersion\s*=\s*")[^"]+("\s*)$`)
-	// Matches the go.temporal.io/api dependency line in go.mod.
-	apiVersionRE = regexp.MustCompile(`(?m)^\s*(?:require\s+)?go\.temporal\.io/api\s+(v\S+)\s*$`)
+	// Matches the module declaration in a go.mod.
+	moduleDeclarationRE = regexp.MustCompile(`(?m)^module\s+(\S+)\s*$`)
 )
 
-var changelogHeaders = []string{
+// sdkChangelogHeaders seed the emptied Unreleased section of the main SDK changelog.
+var sdkChangelogHeaders = []string{
 	"Added",
 	"Changed",
 	"Deprecated",
@@ -39,15 +50,16 @@ var changelogHeaders = []string{
 	"Security",
 }
 
-var releaseFiles = []string{"CHANGELOG.md", "internal/version.go"}
-
-var releaseSteps = [...]string{
-	"Fetch main",
-	"Create release worktree",
-	"Commit release files",
-	"Push branch and create draft PR",
-	"Create draft release",
-	"Clean up temporary worktree",
+// knownChangelogHeaders are dropped from a release when they hold no entries.
+// Contrib changelogs spell breaking changes without the emoji the SDK changelog uses.
+var knownChangelogHeaders = []string{
+	"Added",
+	"Changed",
+	"Deprecated",
+	"Breaking Changes",
+	":boom: Breaking Changes",
+	"Fixed",
+	"Security",
 }
 
 // COMMAND-LINE WRAPPER
@@ -62,34 +74,58 @@ func main() {
 }
 
 func run(args []string) error {
+	invocation, err := parseArgs(args)
+	if err != nil {
+		return err
+	}
+	return prepareEverything(RealWorld{}, invocation.target, invocation.version,
+		invocation.releaseDate, invocation.stopBeforePush)
+}
+
+// invocation is one parsed command line: which module to release, and how.
+type invocation struct {
+	target         releaseTarget
+	version        string
+	releaseDate    time.Time
+	stopBeforePush bool
+}
+
+// parseArgs resolves the command line. The module argument is optional so that the
+// main SDK module keeps its original invocation.
+func parseArgs(args []string) (invocation, error) {
 	flags := flag.NewFlagSet("prepare-release", flag.ContinueOnError)
 	date := flags.String("date", time.Now().Format(time.DateOnly), "release date in YYYY-MM-DD format")
 	stopBeforePush := flags.Bool("stop-before-push", false, "stop after committing the release files but before pushing")
 	err := flags.Parse(args)
 	if err != nil {
-		return err
+		return invocation{}, err
 	}
-	if flags.NArg() != 1 {
-		return errors.New("usage: prepare-release [--date YYYY-MM-DD] [--stop-before-push] VERSION")
+	if flags.NArg() < 1 || flags.NArg() > 2 {
+		return invocation{}, errors.New("usage: prepare-release [--date YYYY-MM-DD] [--stop-before-push] [MODULE] VERSION\n" +
+			"MODULE is a contrib module directory such as 'contrib/envconfig'; omit it to release the main SDK module")
 	}
-	version, err := validateVersion(flags.Arg(0))
+	target := sdkTarget()
+	if flags.NArg() == 2 {
+		target, err = contribTarget(flags.Arg(0))
+		if err != nil {
+			return invocation{}, err
+		}
+	}
+	version, err := validateVersion(flags.Arg(flags.NArg() - 1))
 	if err != nil {
-		return err
+		return invocation{}, err
 	}
 	releaseDate, err := time.Parse(time.DateOnly, *date)
 	if err != nil {
-		return fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *date, err)
+		return invocation{}, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *date, err)
 	}
-
-	err = prepareEverything(RealWorld{}, version, releaseDate, *stopBeforePush)
-	return err
+	return invocation{target: target, version: version, releaseDate: releaseDate, stopBeforePush: *stopBeforePush}, nil
 }
 
 // CORE LOGIC
 
-func prepareEverything(eff Effects, version string, releaseDate time.Time, stopBeforePush bool) (retErr error) {
-	branch := "chore/release-" + version
-	eff.printf("Preparing Go SDK %s\n\n", version)
+func prepareEverything(eff Effects, target releaseTarget, version string, releaseDate time.Time, stopBeforePush bool) (retErr error) {
+	branch := target.releaseBranch(version)
 
 	worktreeRoot, cleanupWorktree, err := prepareWorktree(eff, branch)
 	if err != nil {
@@ -109,20 +145,18 @@ func prepareEverything(eff Effects, version string, releaseDate time.Time, stopB
 		}
 	}()
 
-	releaseNotes, prURL, err := prepareDraftPR(eff, worktreeRoot, branch, version, releaseDate, stopBeforePush)
+	releaseNotes, prURL, err := prepareDraftPR(eff, target, worktreeRoot, branch, version, releaseDate, stopBeforePush)
 	if err != nil {
 		return err
 	}
-	printDetail(eff, "PR: %s", prURL)
+	eff.printf("PR: %s\n", prURL)
 
-	printReleaseStep(eff, "Create draft release")
-	draftReleaseURL, err := createDraftRelease(eff, worktreeRoot, version, releaseNotes)
+	draftReleaseURL, err := createDraftRelease(eff, target, worktreeRoot, version, releaseNotes)
 	if err != nil {
 		return err
 	}
-	printDetail(eff, "Draft release: %s", draftReleaseURL)
+	eff.printf("Draft release: %s\n", draftReleaseURL)
 
-	printReleaseStep(eff, "Clean up temporary worktree")
 	err = cleanupWorktree()
 	if err != nil {
 		return err
@@ -137,13 +171,11 @@ func prepareWorktree(eff Effects, branch string) (worktreeRoot string, cleanup f
 		return "", nil, err
 	}
 
-	printReleaseStep(eff, "Fetch main")
 	err = fetchMain(eff, root)
 	if err != nil {
 		return "", nil, err
 	}
 
-	printReleaseStep(eff, "Create release worktree")
 	worktreeRoot, cleanupWorktree, err := createWorktree(eff, root, branch)
 	if err != nil {
 		return "", nil, err
@@ -151,18 +183,18 @@ func prepareWorktree(eff Effects, branch string) (worktreeRoot string, cleanup f
 	return worktreeRoot, cleanupWorktree, nil
 }
 
-func prepareDraftPR(eff Effects, worktreeRoot, branch, version string, releaseDate time.Time, stopBeforePush bool) (string, string, error) {
-	err := validateReleaseFiles(eff, worktreeRoot, version)
+func prepareDraftPR(eff Effects, target releaseTarget, worktreeRoot, branch, version string, releaseDate time.Time, stopBeforePush bool) (string, string, error) {
+	err := validateRelease(eff, target, worktreeRoot, version)
 	if err != nil {
 		return "", "", err
 	}
 
-	releaseNotes, err := updateReleaseFiles(eff, worktreeRoot, version, releaseDate)
+	releaseNotes, err := updateReleaseFiles(eff, target, worktreeRoot, version, releaseDate)
 	if err != nil {
 		return "", "", err
 	}
 
-	prURL, err := createDraftPR(eff, worktreeRoot, branch, version, stopBeforePush)
+	prURL, err := createDraftPR(eff, target, worktreeRoot, branch, version, stopBeforePush)
 	if err != nil {
 		return "", "", err
 	}
@@ -170,47 +202,74 @@ func prepareDraftPR(eff Effects, worktreeRoot, branch, version string, releaseDa
 	return releaseNotes, prURL, nil
 }
 
-func validateReleaseFiles(eff Effects, worktreeRoot, newVersion string) error {
-	goMod, err := eff.readFile(filepath.Join(worktreeRoot, "go.mod"))
+// validateRelease confirms the module exists, depends on released Temporal code, has
+// not already been released at newVersion, and has a changelog ready to cut.
+func validateRelease(eff Effects, target releaseTarget, worktreeRoot, newVersion string) error {
+	goMod, err := eff.readFile(target.filePath(worktreeRoot, target.goModFile()))
 	if err != nil {
-		return err
+		return fmt.Errorf("%s is not a Go module in this repository: %w", target.name(), err)
 	}
-	err = validateGoMod(goMod)
+	err = validateModulePath(goMod, target.modulePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", target.name(), err)
+	}
+	err = validateDependency(goMod, target.dependency)
+	if err != nil {
+		return fmt.Errorf("%s: %w", target.name(), err)
 	}
 
-	versionGo, err := eff.readFile(filepath.Join(worktreeRoot, "internal", "version.go"))
+	tags, err := listTags(eff, worktreeRoot, target.tagPattern())
 	if err != nil {
 		return err
 	}
-	currentVersion, err := extractSDKVersion(versionGo)
+	newTag := target.tag(newVersion)
+	if contains(tags, newTag) {
+		return fmt.Errorf("%s %s has already been released; tag %s exists", target.name(), newVersion, newTag)
+	}
+
+	currentVersion, err := currentReleasedVersion(eff, target, worktreeRoot, tags)
 	if err != nil {
 		return err
 	}
 	err = validateVersionIncrease(currentVersion, newVersion)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", target.name(), err)
 	}
 
-	changelog, err := eff.readFile(filepath.Join(worktreeRoot, "CHANGELOG.md"))
+	changelog, err := eff.readFile(target.filePath(worktreeRoot, target.changelogFile()))
 	if err != nil {
-		return err
+		return fmt.Errorf("%s has no changelog to release: %w", target.name(), err)
 	}
 	err = validateChangelog(changelog, currentVersion)
 	if err != nil {
-		return err
+		return fmt.Errorf("%s: %w", target.name(), err)
 	}
 
+	if currentVersion == "" {
+		eff.printf("Preparing the first release of %s: %s (tag %s).\n", target.name(), newVersion, newTag)
+	} else {
+		eff.printf("Preparing %s %s, following %s (tag %s).\n", target.name(), newVersion, currentVersion, newTag)
+	}
 	return nil
 }
 
-func updateReleaseFiles(eff Effects, worktreeRoot, version string, releaseDate time.Time) (string, error) {
-	changelogPath := filepath.Join(worktreeRoot, "CHANGELOG.md")
-	versionPath := filepath.Join(worktreeRoot, "internal", "version.go")
+// currentReleasedVersion returns the module's current version, or "" if it has never
+// been released. Modules that embed their version declare it; the rest are versioned
+// only by their Go module tags.
+func currentReleasedVersion(eff Effects, target releaseTarget, worktreeRoot string, tags []string) (string, error) {
+	if target.versionFile == "" {
+		return latestReleasedVersion(tags, target.tagPrefix), nil
+	}
+	versionGo, err := eff.readFile(target.filePath(worktreeRoot, target.versionFile))
+	if err != nil {
+		return "", err
+	}
+	return extractSDKVersion(versionGo)
+}
 
-	updatedChangelog, err := updateFile(eff, changelogPath, func(text string) (string, error) {
-		return updateChangelog(text, version, releaseDate)
+func updateReleaseFiles(eff Effects, target releaseTarget, worktreeRoot, version string, releaseDate time.Time) (string, error) {
+	updatedChangelog, err := updateFile(eff, target.filePath(worktreeRoot, target.changelogFile()), func(text string) (string, error) {
+		return updateChangelog(text, version, releaseDate, target.seededHeaders)
 	})
 	if err != nil {
 		return "", err
@@ -221,19 +280,21 @@ func updateReleaseFiles(eff Effects, worktreeRoot, version string, releaseDate t
 		return "", err
 	}
 
-	_, err = updateFile(eff, versionPath, func(text string) (string, error) {
-		return replaceSDKVersion(text, version)
-	})
-	if err != nil {
-		return "", err
+	if target.versionFile != "" {
+		_, err = updateFile(eff, target.filePath(worktreeRoot, target.versionFile), func(text string) (string, error) {
+			return replaceSDKVersion(text, version)
+		})
+		if err != nil {
+			return "", err
+		}
 	}
 
 	return releaseNotes, nil
 }
 
-func createDraftPR(eff Effects, worktreeRoot, branch, version string, stopBeforePush bool) (string, error) {
-	printReleaseStep(eff, "Commit release files")
-	err := commitRelease(eff, worktreeRoot, version)
+func createDraftPR(eff Effects, target releaseTarget, worktreeRoot, branch, version string, stopBeforePush bool) (string, error) {
+
+	err := commitRelease(eff, target, worktreeRoot, version)
 	if err != nil {
 		return "", err
 	}
@@ -241,13 +302,12 @@ func createDraftPR(eff Effects, worktreeRoot, branch, version string, stopBefore
 		return "", errors.New("stopped before pushing release branch (--stop-before-push)")
 	}
 
-	printReleaseStep(eff, "Push branch and create draft PR")
 	err = pushBranch(eff, worktreeRoot, branch)
 	if err != nil {
 		return "", err
 	}
 
-	prURL, err := openDraftPR(eff, worktreeRoot, branch, version)
+	prURL, err := openDraftPR(eff, target, worktreeRoot, branch, version)
 	if err != nil {
 		return "", err
 	}
@@ -257,9 +317,9 @@ func createDraftPR(eff Effects, worktreeRoot, branch, version string, stopBefore
 
 // EFFECTFUL HELPERS
 
-// fetchMain fetches origin/main.
+// fetchMain fetches origin/main along with the tags that version every module.
 func fetchMain(eff Effects, root string) error {
-	_, err := eff.runCommand(root, "git", "fetch", "origin", "main")
+	_, err := eff.runCommand(root, "git", "fetch", "--tags", "origin", "main")
 	if err != nil {
 		return fmt.Errorf("fetch main: %w", err)
 	}
@@ -280,17 +340,31 @@ func createWorktree(eff Effects, root, branch string) (string, func() error, err
 	if err != nil {
 		return "", nil, fmt.Errorf("describe worktree: %w", err)
 	}
-	printDetail(eff, "Worktree: %s", worktreeRoot)
-	printDetail(eff, "HEAD: %s", strings.TrimSpace(head))
+	eff.printf("Created worktree: %s at HEAD: %s\n", worktreeRoot, strings.TrimSpace(head))
 	cleanup := func() error {
 		_, err := eff.runCommand(root, "git", "worktree", "remove", "--force", worktreeRoot)
 		if err != nil {
 			return fmt.Errorf("remove worktree: %w", err)
 		}
-		printDetail(eff, "Done.")
+		eff.printf("Cleaned up worktree.\n")
 		return nil
 	}
 	return worktreeRoot, cleanup, nil
+}
+
+// listTags returns the repository's tags matching the given glob pattern.
+func listTags(eff Effects, root, pattern string) ([]string, error) {
+	output, err := eff.runCommand(root, "git", "tag", "--list", pattern)
+	if err != nil {
+		return nil, fmt.Errorf("list tags matching %s: %w", pattern, err)
+	}
+	var tags []string
+	for _, line := range strings.Split(output, "\n") {
+		if tag := strings.TrimSpace(line); tag != "" {
+			tags = append(tags, tag)
+		}
+	}
+	return tags, nil
 }
 
 // updateFile reads the file at the given path, runs the update function on its contents,
@@ -311,9 +385,9 @@ func updateFile(eff Effects, path string, update func(string) (string, error)) (
 	return updated, nil
 }
 
-// commitRelease commits the release files with a message indicating the version.
-func commitRelease(eff Effects, root, version string) error {
-	args := append([]string{"commit", "-m", "Prepare release " + version, "--"}, releaseFiles...)
+// commitRelease commits the release files with a message indicating the module and version.
+func commitRelease(eff Effects, target releaseTarget, root, version string) error {
+	args := append([]string{"commit", "-m", "Prepare " + target.releaseSubject(version), "--"}, target.releaseFiles()...)
 	_, err := eff.runCommand(root, "git", args...)
 	if err != nil {
 		return fmt.Errorf("commit release files: %w", err)
@@ -331,41 +405,31 @@ func pushBranch(eff Effects, root, branch string) error {
 }
 
 // openDraftPR creates a draft pull request whose HEAD is the given branch.
-func openDraftPR(eff Effects, root, branch, version string) (string, error) {
+func openDraftPR(eff Effects, target releaseTarget, root, branch, version string) (string, error) {
 	url, err := eff.runCommand(root, "gh", "pr", "create", "--draft", "--base", "main", "--head", branch,
-		"--title", "Prepare release "+version, "--body", "Prepare Go SDK release "+version+".")
+		"--title", "Prepare "+target.releaseSubject(version),
+		"--body", "Prepare "+target.modulePath+" release "+version+".")
 	if err != nil {
 		return "", fmt.Errorf("create draft PR: %w", err)
 	}
 	return strings.TrimSpace(url), nil
 }
 
-// createDraftRelease creates a draft release with the given version and release notes.
-func createDraftRelease(eff Effects, root, version, releaseNotes string) (string, error) {
-	tag := "v" + version
-	releaseNotesPath := filepath.Join(root, "prepare-release-notes.md")
-	err := eff.writeFile(releaseNotesPath, releaseNotes)
-	if err != nil {
-		return "", fmt.Errorf("write release notes to %s: %w", releaseNotesPath, err)
+// createDraftRelease creates a draft release for the module's Go tag. Publishing the
+// draft is what creates the tag, so the release PR must be merged first.
+func createDraftRelease(eff Effects, target releaseTarget, root, version, releaseNotes string) (string, error) {
+	tag := target.tag(version)
+	args := []string{"release", "create", tag, "--draft", "--title", tag, "--notes", releaseNotes}
+	if target.generateNotes {
+		args = append(args, "--generate-notes")
 	}
-	printDetail(eff, "Release notes: %s", releaseNotesPath)
-
-	url, err := eff.runCommand(root, "gh", "release", "create", tag, "--draft", "--title", tag,
-		"--notes-file", releaseNotesPath, "--generate-notes")
+	if !target.markLatest {
+		// Only the main SDK module may own GitHub's "Latest" badge.
+		args = append(args, "--latest=false")
+	}
+	url, err := eff.runCommand(root, "gh", args...)
 	if err != nil {
 		return "", fmt.Errorf("create draft release: %w", err)
 	}
 	return strings.TrimSpace(url), nil
-}
-
-func printReleaseStep(eff Effects, name string) {
-	index := slices.Index(releaseSteps[:], name)
-	if index < 0 {
-		panic("unknown release step: " + name)
-	}
-	eff.printf("[%d/%d] %s\n", index+1, len(releaseSteps), name)
-}
-
-func printDetail(eff Effects, format string, args ...any) {
-	eff.printf("      "+format+"\n", args...)
 }
