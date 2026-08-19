@@ -28,7 +28,24 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
+  `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
+  context-derived encryption keys or AAD) may fail to decode local activity results recorded in
+  histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+- Activity, local activity and child workflow serialization contexts are now applied to the
+  worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
+  the current workflow context. A context-aware converter that composed contexts (deriving its state
+  from both the workflow and the activity context) now sees only the activity or child workflow
+  context, and one whose `WithSerializationContext` returned a converter that is no longer
+  context-aware now receives the activity or child workflow context it previously never saw.
+
 ### Fixed
+
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
+  but decoded through the workflow serialization context, so a context-aware `DataConverter` or
+  `PayloadCodec` saw mismatched contexts for local activity results.
 
 ### Security
 
@@ -49,20 +66,6 @@ to docs, or any other relevant information.
   `contrib/opentelemetry-v2` module and is not span-compatible with the tracing interceptor
   used by `contrib/opentelemetry` (v1).
 
-### Breaking Changes
-
-- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
-  (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
-  `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
-  context-derived encryption keys or AAD) may fail to decode local activity results recorded in
-  histories written by earlier SDK versions, both on replay and when continuing an open workflow.
-- Activity, local activity and child workflow serialization contexts are now applied to the
-  worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
-  the current workflow context. A context-aware converter that composed contexts (deriving its state
-  from both the workflow and the activity context) now sees only the activity or child workflow
-  context, and one whose `WithSerializationContext` returned a converter that is no longer
-  context-aware now receives the activity or child workflow context it previously never saw.
-
 ### Changed
 
 - Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
@@ -70,10 +73,6 @@ to docs, or any other relevant information.
 
 ### Fixed
 
-- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
-  (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
-  but decoded through the workflow serialization context, so a context-aware `DataConverter` or
-  `PayloadCodec` saw mismatched contexts for local activity results.
 - Data converter errors raised while deserializing Nexus operation input are no longer replaced with
   a generic `BAD_REQUEST` handler error. A `temporal.ApplicationError` or a `nexus.HandlerError` is
   now propagated to the caller as-is, and any other error is wrapped in a `BAD_REQUEST`
