@@ -37,9 +37,10 @@ type (
 		//
 		// Required
 		TaskQueue string
-		// ScheduleToCloseTimeout - Total time the caller is willing to wait for the Activity Execution to complete.
-		// ScheduleToCloseTimeout limits the total time of an Activity's execution including retries
-		// 		(use StartToCloseTimeout to limit the time of a single attempt).
+		// ScheduleToCloseTimeout - Maximum duration the Temporal Server allows for an Activity Execution
+		// from scheduling through closure, including retries. This does not control how long a client waits
+		// for the result: ExecuteActivity returns after the start RPC, and the context passed to
+		// ActivityHandle.Get controls the client-side wait. Use StartToCloseTimeout to limit a single attempt.
 		// The zero value of this uses default value.
 		// Either this option or StartToCloseTimeout is required: Defaults to unlimited.
 		ScheduleToCloseTimeout time.Duration
