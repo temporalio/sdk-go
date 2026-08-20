@@ -32,6 +32,15 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed `WorkflowReplayer` failing to replay workflows that execute local
+  activities referenced by method expression (e.g.
+  `ExecuteLocalActivity(ctx, (*Activities).Foo)`). The replayer only exposes
+  `RegisterWorkflow`, so such method-expression local activities can never be
+  registered and previously failed validation with
+  `expected N args for function: Foo but found M`. The replay fallback that
+  already existed for string-named local activities now also applies to
+  method-expression local activities.
+
 ### Security
 
 ## [1.48.0] - 2026-08-18

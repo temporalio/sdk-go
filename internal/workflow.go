@@ -1224,6 +1224,14 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		// that called local activities using non nil receiver.
 		if ok {
 			activityFn = activity.GetFunction()
+		} else if IsReplayNamespace(GetWorkflowInfo(ctx).Namespace) {
+			// When running the replayer (but not necessarily during all replays),
+			// we don't require the activities to be registered, so use a dummy
+			// function. Method-expression local activities are never registered
+			// on the WorkflowReplayer (it only exposes RegisterWorkflow), and
+			// validating localCtx.fn would fail because the unbound method
+			// expression carries an extra receiver argument.
+			activityFn = func(context.Context) error { panic("dummy replayer function") }
 		} else {
 			if err := validateFunctionArgs(localCtx.fn, args, false); err != nil {
 				settable.Set(nil, err)

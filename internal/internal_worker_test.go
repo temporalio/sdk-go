@@ -221,6 +221,25 @@ func testReplayWorkflowLocalActivity(ctx Context) error {
 	return err
 }
 
+type replayLocalActivities struct{}
+
+func (a *replayLocalActivities) ReplayLocalActivity(context.Context) error {
+	return nil
+}
+
+func testReplayWorkflowMethodLocalActivity(ctx Context) error {
+	ao := LocalActivityOptions{
+		ScheduleToCloseTimeout: time.Second,
+	}
+	ctx = WithLocalActivityOptions(ctx, ao)
+	err := ExecuteLocalActivity(ctx, (*replayLocalActivities).ReplayLocalActivity).Get(ctx, nil)
+	if err != nil {
+		getLogger().Error("activity failed with error.", tagError, err)
+		panic("Failed workflow")
+	}
+	return err
+}
+
 func testReplayWorkflowFromFile(ctx Context) error {
 	ao := ActivityOptions{
 		ScheduleToStartTimeout: time.Minute,
@@ -360,6 +379,38 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
 	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
 	require.NoError(s.T(), err)
 	replayer.RegisterWorkflow(testReplayWorkflowLocalActivity)
+	err = replayer.ReplayWorkflowHistory(logger, history)
+	require.NoError(s.T(), err)
+}
+
+func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_MethodLocalActivity() {
+	taskQueue := "taskQueue1"
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowType: &commonpb.WorkflowType{Name: "testReplayWorkflowMethodLocalActivity"},
+			TaskQueue:    &taskqueuepb.TaskQueue{Name: taskQueue},
+			Input:        testEncodeFunctionArgs(converter.GetDefaultDataConverter()),
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
+
+		createTestEventMarkerRecorded(5, &historypb.MarkerRecordedEventAttributes{
+			MarkerName:                   localActivityMarkerName,
+			Details:                      s.createLocalActivityMarkerDataForTest("1"),
+			WorkflowTaskCompletedEventId: 4,
+		}),
+
+		createTestEventWorkflowExecutionCompleted(6, &historypb.WorkflowExecutionCompletedEventAttributes{
+			WorkflowTaskCompletedEventId: 4,
+		}),
+	}
+
+	history := &historypb.History{Events: testEvents}
+	logger := getLogger()
+	replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(testReplayWorkflowMethodLocalActivity)
 	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
 }
