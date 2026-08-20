@@ -17,9 +17,6 @@ type releaseTarget struct {
 	// tagPrefix precedes "v<version>" in the module's Go release tag, per
 	// https://go.dev/ref/mod#vcs-version. It is empty for the main SDK module.
 	tagPrefix string
-	// dependency is the Temporal module that must resolve to an official release
-	// before this module can be released.
-	dependency string
 	// versionFile holds the SDKVersion constant a release rewrites. It is empty for
 	// modules that do not embed their version, whose current version comes from tags.
 	versionFile string
@@ -32,7 +29,6 @@ type releaseTarget struct {
 func sdkTarget() releaseTarget {
 	return releaseTarget{
 		modulePath:  "go.temporal.io/sdk",
-		dependency:  "go.temporal.io/api",
 		versionFile: "internal/version.go",
 		markLatest:  true,
 	}
@@ -50,7 +46,6 @@ func contribTarget(dir string) (releaseTarget, error) {
 		dir:        dir,
 		modulePath: "go.temporal.io/sdk/" + dir,
 		tagPrefix:  dir + "/",
-		dependency: "go.temporal.io/sdk",
 		// Contrib modules are never GitHub's latest release.
 	}, nil
 }

@@ -230,42 +230,51 @@ func TestValidateModulePath(t *testing.T) {
 	}
 }
 
-func TestValidateDependency(t *testing.T) {
+func TestValidateTemporalDependencies(t *testing.T) {
 	tests := []struct {
-		name       string
-		goMod      string
-		modulePath string
-		valid      bool
+		name  string
+		goMod string
+		valid bool
 	}{
-		{name: "release", goMod: "require go.temporal.io/api v1.63.4\n", modulePath: "go.temporal.io/api", valid: true},
-		{name: "prerelease", goMod: "require go.temporal.io/api v1.64.0-rc.1\n", modulePath: "go.temporal.io/api"},
+		{name: "release", goMod: "require go.temporal.io/api v1.63.4\n", valid: true},
+		{name: "prerelease", goMod: "require go.temporal.io/api v1.64.0-rc.1\n"},
 		{
-			name:       "pseudo-version",
-			goMod:      "require go.temporal.io/api v1.63.1-0.20260730213819-7f6a96199578\n",
-			modulePath: "go.temporal.io/api",
+			name:  "pseudo-version",
+			goMod: "require go.temporal.io/api v1.63.1-0.20260730213819-7f6a96199578\n",
 		},
 		{
-			name:       "commit pseudo-version",
-			goMod:      "require go.temporal.io/api v0.0.0-20260730213819-7f6a96199578\n",
-			modulePath: "go.temporal.io/api",
+			name:  "commit pseudo-version",
+			goMod: "require go.temporal.io/api v0.0.0-20260730213819-7f6a96199578\n",
 		},
-		{name: "missing", goMod: "module example.com/test\n", modulePath: "go.temporal.io/api"},
+		{name: "no Temporal dependency", goMod: "module example.com/test\n", valid: true},
 		{
-			name:       "contrib depends on a released SDK",
-			goMod:      "module go.temporal.io/sdk/contrib/tally\n\nrequire go.temporal.io/sdk v1.12.0\n",
-			modulePath: "go.temporal.io/sdk",
-			valid:      true,
+			name:  "non-Temporal pseudo-version",
+			goMod: "require example.com/dependency v0.0.0-20260730213819-7f6a96199578\n",
+			valid: true,
 		},
 		{
-			name:       "contrib depends on an unreleased SDK",
-			goMod:      "module go.temporal.io/sdk/contrib/tally\n\nrequire go.temporal.io/sdk v1.48.1-0.20260804123456-abcdef123456\n",
-			modulePath: "go.temporal.io/sdk",
+			name:  "contrib depends on a released SDK",
+			goMod: "module go.temporal.io/sdk/contrib/tally\n\nrequire go.temporal.io/sdk v1.12.0\n",
+			valid: true,
+		},
+		{
+			name:  "contrib depends on an unreleased SDK",
+			goMod: "module go.temporal.io/sdk/contrib/tally\n\nrequire go.temporal.io/sdk v1.48.1-0.20260804123456-abcdef123456\n",
+		},
+		{
+			name: "unreleased sibling contrib module",
+			goMod: stripIndentation(`
+				require (
+					go.temporal.io/sdk v1.48.0
+					go.temporal.io/sdk/contrib/gcp/gcsdriver v0.0.0-00010101000000-000000000000
+				)
+			`),
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateDependency(test.goMod, test.modulePath)
+			err := validateTemporalDependencies(test.goMod)
 			if test.valid && err != nil {
 				t.Fatalf("expected dependency to be valid, got %v", err)
 			}

@@ -134,15 +134,14 @@ func validateModulePath(goMod, modulePath string) error {
 	return nil
 }
 
-// validateDependency requires the given Temporal module to use a tagged version
-// (v1.XX.YY format) instead of a git snapshot (v1.XX.YY-0.YYYYMMDDHHMMSS-abcdef123456 format).
-func validateDependency(goMod, modulePath string) error {
-	match := moduleRequirementRE(modulePath).FindStringSubmatch(goMod)
-	if match == nil {
-		return fmt.Errorf("could not find %s in go.mod", modulePath)
-	}
-	if !goVersionRE.MatchString(match[1]) {
-		return fmt.Errorf("%s must use an official release, found %q", modulePath, match[1])
+// validateTemporalDependencies requires every Temporal module dependency to use a
+// tagged stable release instead of a prerelease or git snapshot.
+func validateTemporalDependencies(goMod string) error {
+	matches := temporalModuleRequirementRE.FindAllStringSubmatch(goMod, -1)
+	for _, match := range matches {
+		if !goVersionRE.MatchString(match[2]) {
+			return fmt.Errorf("%s must use an official release, found %q; use --allow-unofficial-dependencies to override", match[1], match[2])
+		}
 	}
 	return nil
 }

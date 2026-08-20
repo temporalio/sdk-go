@@ -303,6 +303,30 @@ func TestValidateReleaseRejectsUnreleasedSDKDependency(t *testing.T) {
 	}
 }
 
+func TestValidateReleaseAllowsUnofficialDependenciesWithFlag(t *testing.T) {
+	eff := newMockEffects(func(cmd command) (string, error) {
+		if cmd.String() == "git tag --list contrib/envconfig/v*" {
+			return "contrib/envconfig/v1.0.2\n", nil
+		}
+		return "", nil
+	})
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+		require go.temporal.io/sdk v1.48.1-0.20260804123456-abcdef123456
+	`)
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] =
+		"## [Unreleased]\n\n## [1.0.2] - 2026-07-28\n"
+
+	args := commandArgs{
+		target:                      contribEnvconfig(t),
+		version:                     "1.0.3",
+		allowUnofficialDependencies: true,
+	}
+	if err := validateRelease(eff, args, eff.tempDir); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestValidateReleaseRejectsAlreadyReleasedVersion(t *testing.T) {
 	eff := newMockEffects(func(cmd command) (string, error) {
 		if cmd.String() == "git tag --list contrib/envconfig/v*" {
@@ -721,10 +745,11 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 
 func TestParseArgs(t *testing.T) {
 	tests := []struct {
-		name    string
-		args    []string
-		wantDir string
-		wantErr string
+		name      string
+		args      []string
+		wantDir   string
+		wantAllow bool
+		wantErr   string
 	}{
 		{name: "SDK version only", args: []string{"1.48.0"}},
 		{name: "contrib module and version", args: []string{"contrib/envconfig", "1.0.3"}, wantDir: "contrib/envconfig"},
@@ -737,6 +762,7 @@ func TestParseArgs(t *testing.T) {
 		{name: "module without version", args: []string{"contrib/envconfig"}, wantErr: "invalid version"},
 		{name: "swapped arguments", args: []string{"1.0.3", "contrib/envconfig"}, wantErr: "invalid module"},
 		{name: "invalid date", args: []string{"--date", "August 4", "1.48.0"}, wantErr: "invalid release date"},
+		{name: "allow unofficial dependencies", args: []string{"--allow-unofficial-dependencies", "1.48.0"}, wantAllow: true},
 	}
 
 	for _, test := range tests {
@@ -753,6 +779,9 @@ func TestParseArgs(t *testing.T) {
 			}
 			if got.target.dir != test.wantDir {
 				t.Fatalf("unexpected module directory: got %q, want %q", got.target.dir, test.wantDir)
+			}
+			if got.allowUnofficialDependencies != test.wantAllow {
+				t.Fatalf("unexpected allow-unofficial-dependencies: got %t, want %t", got.allowUnofficialDependencies, test.wantAllow)
 			}
 		})
 	}

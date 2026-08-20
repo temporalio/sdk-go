@@ -33,6 +33,8 @@ var (
 	sdkVersionRE = regexp.MustCompile(`(?m)^(\s*SDKVersion\s*=\s*")[^"]+("\s*)$`)
 	// Matches the module declaration in a go.mod.
 	moduleDeclarationRE = regexp.MustCompile(`(?m)^module\s+(\S+)\s*$`)
+	// Matches go.temporal.io requirements in both single-line and block form.
+	temporalModuleRequirementRE = regexp.MustCompile(`(?m)^\s*(?:require\s+)?(go\.temporal\.io/\S+)\s+(v\S+)\s*(?://.*)?$`)
 )
 
 var changelogHeaders = []string{
@@ -69,6 +71,9 @@ type commandArgs struct {
 	version        string
 	releaseDate    time.Time
 	stopBeforePush bool
+	// allowUnofficialDependencies permits Temporal module requirements that are
+	// prereleases or pseudo-versions.
+	allowUnofficialDependencies bool
 }
 
 func parseArgs(args []string) (commandArgs, error) {
@@ -78,6 +83,8 @@ func parseArgs(args []string) (commandArgs, error) {
 	flags := flag.NewFlagSet("prepare-release", flag.ContinueOnError)
 	date := flags.String("date", time.Now().Format(time.DateOnly), "release date in YYYY-MM-DD format")
 	stopBeforePush := flags.Bool("stop-before-push", false, "stop after committing the release files but before pushing")
+	allowUnofficialDependencies := flags.Bool("allow-unofficial-dependencies", false,
+		"allow prerelease or pseudo-version dependencies on go.temporal.io modules")
 	err := flags.Parse(args)
 	if err != nil {
 		return commandArgs, err
@@ -87,15 +94,16 @@ func parseArgs(args []string) (commandArgs, error) {
 		return commandArgs, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *date, err)
 	}
 	commandArgs.stopBeforePush = *stopBeforePush
+	commandArgs.allowUnofficialDependencies = *allowUnofficialDependencies
 
 	// Parse positional arguments
 	if flags.NArg() < 1 || flags.NArg() > 2 {
-		return commandArgs, errors.New("usage: prepare-release [--date YYYY-MM-DD] [--stop-before-push] [MODULE] VERSION\n" +
+		return commandArgs, errors.New("usage: prepare-release [--date YYYY-MM-DD] [--stop-before-push] [--allow-unofficial-dependencies] [MODULE] VERSION\n" +
 			"optional argument MODULE is a contrib module directory like 'contrib/envconfig'; omit it to release the Go SDK")
 	}
 	if flags.NArg() == 1 {
 		commandArgs.target = sdkTarget()
-		commandArgs.version, err = validateVersion(flags.Arg(1))
+		commandArgs.version, err = validateVersion(flags.Arg(0))
 		if err != nil {
 			return commandArgs, err
 		}
@@ -105,7 +113,7 @@ func parseArgs(args []string) (commandArgs, error) {
 		if err != nil {
 			return commandArgs, err
 		}
-		commandArgs.version, err = validateVersion(flags.Arg(2))
+		commandArgs.version, err = validateVersion(flags.Arg(1))
 		if err != nil {
 			return commandArgs, err
 		}
@@ -207,9 +215,11 @@ func validateRelease(eff Effects, args commandArgs, worktreeRoot string) error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", target.name(), err)
 	}
-	err = validateDependency(goMod, target.dependency)
-	if err != nil {
-		return fmt.Errorf("%s: %w", target.name(), err)
+	if !args.allowUnofficialDependencies {
+		err = validateTemporalDependencies(goMod)
+		if err != nil {
+			return fmt.Errorf("%s: %w", target.name(), err)
+		}
 	}
 
 	tags, err := listTags(eff, worktreeRoot, target.tagPattern())
