@@ -141,7 +141,7 @@ func validateDependency(goMod, modulePath string) error {
 	if match == nil {
 		return fmt.Errorf("could not find %s in go.mod", modulePath)
 	}
-	if !taggedGoVersionRE.MatchString(match[1]) {
+	if !goVersionRE.MatchString(match[1]) {
 		return fmt.Errorf("%s must use an official release, found %q", modulePath, match[1])
 	}
 	return nil

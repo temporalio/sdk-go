@@ -23,7 +23,8 @@ func TestCreateDraftRelease(t *testing.T) {
 		return "https://example.com/release\n", nil
 	})
 
-	releaseURL, err := createDraftRelease(eff, sdkTarget(), "/worktree", "1.2.3", "Notes")
+	args := commandArgs{target: sdkTarget(), version: "1.2.3"}
+	releaseURL, err := createDraftRelease(eff, args, "/worktree", "Notes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +43,8 @@ func TestCreateDraftReleaseForContribModule(t *testing.T) {
 		return "https://example.com/release\n", nil
 	})
 
-	releaseURL, err := createDraftRelease(eff, contribEnvconfig(t), "/worktree", "1.2.3", "Notes")
+	args := commandArgs{target: contribEnvconfig(t), version: "1.2.3"}
+	releaseURL, err := createDraftRelease(eff, args, "/worktree", "Notes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +61,8 @@ func TestOpenDraftPR(t *testing.T) {
 		return "https://example.com/pr\n", nil
 	})
 
-	prURL, err := openDraftPR(eff, sdkTarget(), "/worktree", "release", "1.2.3")
+	args := commandArgs{target: sdkTarget(), version: "1.2.3"}
+	prURL, err := openDraftPR(eff, args, "/worktree", "release")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,7 +79,8 @@ func TestOpenDraftPRForContribModule(t *testing.T) {
 		return "https://example.com/pr\n", nil
 	})
 
-	_, err := openDraftPR(eff, contribEnvconfig(t), "/worktree", "release", "1.2.3")
+	args := commandArgs{target: contribEnvconfig(t), version: "1.2.3"}
+	_, err := openDraftPR(eff, args, "/worktree", "release")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +104,8 @@ func TestPushBranch(t *testing.T) {
 func TestCommitRelease(t *testing.T) {
 	eff := newMockEffects(nil)
 
-	err := commitRelease(eff, sdkTarget(), "/worktree", "1.2.3")
+	args := commandArgs{target: sdkTarget(), version: "1.2.3"}
+	err := commitRelease(eff, args, "/worktree")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +119,8 @@ func TestCommitRelease(t *testing.T) {
 func TestCommitReleaseForContribModule(t *testing.T) {
 	eff := newMockEffects(nil)
 
-	err := commitRelease(eff, contribEnvconfig(t), "/worktree", "1.2.3")
+	args := commandArgs{target: contribEnvconfig(t), version: "1.2.3"}
+	err := commitRelease(eff, args, "/worktree")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +132,8 @@ func TestCommitReleaseForContribModule(t *testing.T) {
 func TestCreateDraftPRStopsBeforePush(t *testing.T) {
 	eff := newMockEffects(nil)
 
-	_, err := createDraftPR(eff, sdkTarget(), "/worktree", "release", "1.2.3", true)
+	args := commandArgs{target: sdkTarget(), version: "1.2.3", stopBeforePush: true}
+	_, err := createDraftPR(eff, args, "/worktree", "release")
 	if err == nil || !strings.Contains(err.Error(), "--stop-before-push") {
 		t.Fatalf("expected stop-before-push error, got %v", err)
 	}
@@ -227,7 +234,8 @@ func TestValidateReleaseRejectsNonIncreasingVersion(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
 
-	err := validateRelease(eff, sdkTarget(), eff.tempDir, "1.47.0")
+	args := commandArgs{target: sdkTarget(), version: "1.47.0"}
+	err := validateRelease(eff, args, eff.tempDir)
 	if err == nil || !strings.Contains(err.Error(), "does not follow the current version 1.47.0") {
 		t.Fatalf("expected version increase error, got %v", err)
 	}
@@ -240,7 +248,8 @@ func TestValidateReleaseRejectsInvalidChangelog(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = `SDKVersion = "1.47.0"`
 	eff.files[filepath.Join(eff.tempDir, "CHANGELOG.md")] = "## [Unreleased]\n\n## [1.47.0]\n\n## [1.46.0]\n\n## [1.46.0]\n"
 
-	err := validateRelease(eff, sdkTarget(), eff.tempDir, "1.48.0")
+	args := commandArgs{target: sdkTarget(), version: "1.48.0"}
+	err := validateRelease(eff, args, eff.tempDir)
 	if err == nil || !strings.Contains(err.Error(), `found 2 sections for "1.46.0"`) {
 		t.Fatalf("expected duplicate changelog section error, got %v", err)
 	}
@@ -255,7 +264,8 @@ func TestValidateReleaseRejectsUnknownContribModule(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = validateRelease(eff, target, eff.tempDir, "1.0.3")
+	args := commandArgs{target: target, version: "1.0.3"}
+	err = validateRelease(eff, args, eff.tempDir)
 	if err == nil || !strings.Contains(err.Error(), "contrib/envconfg is not a Go module in this repository") {
 		t.Fatalf("expected unknown module error, got %v", err)
 	}
@@ -271,7 +281,8 @@ func TestValidateReleaseRejectsMismatchedModulePath(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] =
 		"module go.temporal.io/sdk/contrib/tally\nrequire go.temporal.io/sdk v1.48.0\n"
 
-	err := validateRelease(eff, target, eff.tempDir, "1.0.3")
+	args := commandArgs{target: target, version: "1.0.3"}
+	err := validateRelease(eff, args, eff.tempDir)
 	if err == nil || !strings.Contains(err.Error(), `declares module "go.temporal.io/sdk/contrib/tally", expected "go.temporal.io/sdk/contrib/envconfig"`) {
 		t.Fatalf("expected module path mismatch error, got %v", err)
 	}
@@ -285,7 +296,8 @@ func TestValidateReleaseRejectsUnreleasedSDKDependency(t *testing.T) {
 		require go.temporal.io/sdk v1.48.1-0.20260804123456-abcdef123456
 	`)
 
-	err := validateRelease(eff, contribEnvconfig(t), eff.tempDir, "1.0.3")
+	args := commandArgs{target: contribEnvconfig(t), version: "1.0.3"}
+	err := validateRelease(eff, args, eff.tempDir)
 	if err == nil || !strings.Contains(err.Error(), "go.temporal.io/sdk must use an official release") {
 		t.Fatalf("expected dependency validation error, got %v", err)
 	}
@@ -303,7 +315,8 @@ func TestValidateReleaseRejectsAlreadyReleasedVersion(t *testing.T) {
 		require go.temporal.io/sdk v1.48.0
 	`)
 
-	err := validateRelease(eff, contribEnvconfig(t), eff.tempDir, "1.0.3")
+	args := commandArgs{target: contribEnvconfig(t), version: "1.0.3"}
+	err := validateRelease(eff, args, eff.tempDir)
 	if err == nil || !strings.Contains(err.Error(), "tag contrib/envconfig/v1.0.3 exists") {
 		t.Fatalf("expected already-released error, got %v", err)
 	}
@@ -325,7 +338,8 @@ func TestValidateReleaseUsesTagsForContribVersion(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] =
 		"## [Unreleased]\n\n## [1.0.2] - 2026-07-28\n"
 
-	err := validateRelease(eff, contribEnvconfig(t), eff.tempDir, "1.0.3")
+	args := commandArgs{target: contribEnvconfig(t), version: "1.0.3"}
+	err := validateRelease(eff, args, eff.tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +347,8 @@ func TestValidateReleaseUsesTagsForContribVersion(t *testing.T) {
 		Preparing contrib/envconfig 1.0.3, following 1.0.2 (tag contrib/envconfig/v1.0.3).
 	`)
 
-	err = validateRelease(eff, contribEnvconfig(t), eff.tempDir, "1.2.0")
+	args.version = "1.2.0"
+	err = validateRelease(eff, args, eff.tempDir)
 	if err == nil || !strings.Contains(err.Error(), "does not follow the current version 1.0.2") {
 		t.Fatalf("expected version increase error, got %v", err)
 	}
@@ -348,7 +363,8 @@ func TestValidateReleaseAllowsFirstContribRelease(t *testing.T) {
 	`)
 	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "CHANGELOG.md")] = "## [Unreleased]\n"
 
-	err := validateRelease(eff, contribEnvconfig(t), eff.tempDir, "0.1.0")
+	args := commandArgs{target: contribEnvconfig(t), version: "0.1.0"}
+	err := validateRelease(eff, args, eff.tempDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -356,7 +372,8 @@ func TestValidateReleaseAllowsFirstContribRelease(t *testing.T) {
 		Preparing the first release of contrib/envconfig: 0.1.0 (tag contrib/envconfig/v0.1.0).
 	`)
 
-	err = validateRelease(eff, contribEnvconfig(t), eff.tempDir, "0.4.0")
+	args.version = "0.4.0"
+	err = validateRelease(eff, args, eff.tempDir)
 	if err == nil || !strings.Contains(err.Error(), "cannot be a first release") {
 		t.Fatalf("expected first release error, got %v", err)
 	}
@@ -377,7 +394,8 @@ func TestPrepareDraftPRValidatesBeforeCreatingBranch(t *testing.T) {
 
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
 
-	err := prepareEverything(eff, sdkTarget(), "1.48.0", time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC), false)
+	args := commandArgs{target: sdkTarget(), version: "1.48.0", releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}
+	err := prepareEverything(eff, args)
 	if err == nil || !strings.Contains(err.Error(), "must use an official release") {
 		t.Fatalf("expected API version validation failure, got %v", err)
 	}
@@ -433,7 +451,8 @@ func TestPrepareDraftPRLeavesWorktreeAfterFailure(t *testing.T) {
 	eff.files[filepath.Join(eff.tempDir, "go.mod")] = goMod
 	eff.files[filepath.Join(eff.tempDir, "internal", "version.go")] = versionGo
 
-	err := prepareEverything(eff, sdkTarget(), "1.48.0", time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC), false)
+	args := commandArgs{target: sdkTarget(), version: "1.48.0", releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}
+	err := prepareEverything(eff, args)
 	if err == nil || !strings.Contains(err.Error(), "command failed") {
 		t.Fatalf("expected command failure, got %v", err)
 	}
@@ -463,7 +482,8 @@ func TestPrepareDraftPRLeavesDirectoryIfWorktreeCreationFails(t *testing.T) {
 		return "", nil
 	})
 
-	err := prepareEverything(eff, sdkTarget(), "1.48.0", time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC), false)
+	args := commandArgs{target: sdkTarget(), version: "1.48.0", releaseDate: time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)}
+	err := prepareEverything(eff, args)
 	if err == nil || !strings.Contains(err.Error(), "command failed") {
 		t.Fatalf("expected worktree creation failure, got %v", err)
 	}
@@ -564,7 +584,8 @@ func TestPrepareEverything(t *testing.T) {
 
 	// TESTS
 
-	err := prepareEverything(eff, sdkTarget(), version, date, false)
+	args := commandArgs{target: sdkTarget(), version: version, releaseDate: date}
+	err := prepareEverything(eff, args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -660,7 +681,8 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 	eff.files[changelogPath] = changelog
 	eff.files[goModPath] = goMod
 
-	err := prepareEverything(eff, target, "1.0.3", date, false)
+	args := commandArgs{target: target, version: "1.0.3", releaseDate: date}
+	err := prepareEverything(eff, args)
 	if err != nil {
 		t.Fatal(err)
 	}

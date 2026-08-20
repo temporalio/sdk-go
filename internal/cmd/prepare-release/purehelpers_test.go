@@ -63,7 +63,7 @@ func TestRegularExpressions(t *testing.T) {
 		},
 		{
 			name:       "tagged Go version",
-			expression: taggedGoVersionRE,
+			expression: goVersionRE,
 			matches:    []string{"v1.63.4", "v1.64.0", "v0.2.1"},
 			rejects: []string{
 				"1.63.4",

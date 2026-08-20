@@ -1,9 +1,4 @@
-// Command prepare-release prepares checked-in files for a Go SDK release.
-//
-// With no module argument it releases the main go.temporal.io/sdk module. Given a
-// contrib module directory it releases that module instead, using the
-// module-prefixed tag Go requires for sub-modules and leaving GitHub's "latest"
-// release pointing at the main SDK.
+// Command prepare-release prepares PRs and Github Releases for a Go SDK release.
 package main
 
 import (
@@ -26,7 +21,7 @@ var (
 	versionRE = regexp.MustCompile(`^` + versionCore + `$`)
 	// Matches tagged Go module release versions such as "v1.48.0".
 	// Shouldn't match pseudo-versions such as "v1.48.0-0.20260804123456-abcdef123456".
-	taggedGoVersionRE = regexp.MustCompile(`^v` + versionCore + `$`)
+	goVersionRE = regexp.MustCompile(`^v` + versionCore + `$`)
 	// Matches contrib module directories such as "contrib/envconfig" and
 	// "contrib/aws/s3driver/awssdkv2".
 	contribModuleRE = regexp.MustCompile(`^contrib(/[a-z0-9][a-z0-9._-]*)+$`)
@@ -74,16 +69,15 @@ func main() {
 }
 
 func run(args []string) error {
-	invocation, err := parseArgs(args)
+	commandArgs, err := parseArgs(args)
 	if err != nil {
 		return err
 	}
-	return prepareEverything(RealWorld{}, invocation.target, invocation.version,
-		invocation.releaseDate, invocation.stopBeforePush)
+	return prepareEverything(RealWorld{}, commandArgs)
 }
 
-// invocation is one parsed command line: which module to release, and how.
-type invocation struct {
+// commandArgs is one parsed command line: which module to release, and how.
+type commandArgs struct {
 	target         releaseTarget
 	version        string
 	releaseDate    time.Time
@@ -92,40 +86,45 @@ type invocation struct {
 
 // parseArgs resolves the command line. The module argument is optional so that the
 // main SDK module keeps its original invocation.
-func parseArgs(args []string) (invocation, error) {
+func parseArgs(args []string) (commandArgs, error) {
 	flags := flag.NewFlagSet("prepare-release", flag.ContinueOnError)
 	date := flags.String("date", time.Now().Format(time.DateOnly), "release date in YYYY-MM-DD format")
 	stopBeforePush := flags.Bool("stop-before-push", false, "stop after committing the release files but before pushing")
 	err := flags.Parse(args)
 	if err != nil {
-		return invocation{}, err
+		return commandArgs{}, err
 	}
 	if flags.NArg() < 1 || flags.NArg() > 2 {
-		return invocation{}, errors.New("usage: prepare-release [--date YYYY-MM-DD] [--stop-before-push] [MODULE] VERSION\n" +
+		return commandArgs{}, errors.New("usage: prepare-release [--date YYYY-MM-DD] [--stop-before-push] [MODULE] VERSION\n" +
 			"MODULE is a contrib module directory such as 'contrib/envconfig'; omit it to release the main SDK module")
 	}
 	target := sdkTarget()
 	if flags.NArg() == 2 {
 		target, err = contribTarget(flags.Arg(0))
 		if err != nil {
-			return invocation{}, err
+			return commandArgs{}, err
 		}
 	}
 	version, err := validateVersion(flags.Arg(flags.NArg() - 1))
 	if err != nil {
-		return invocation{}, err
+		return commandArgs{}, err
 	}
 	releaseDate, err := time.Parse(time.DateOnly, *date)
 	if err != nil {
-		return invocation{}, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *date, err)
+		return commandArgs{}, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *date, err)
 	}
-	return invocation{target: target, version: version, releaseDate: releaseDate, stopBeforePush: *stopBeforePush}, nil
+	return commandArgs{
+		target: target,
+		version: version,
+		releaseDate: releaseDate,
+		stopBeforePush: *stopBeforePush,
+	}, nil
 }
 
 // CORE LOGIC
 
-func prepareEverything(eff Effects, target releaseTarget, version string, releaseDate time.Time, stopBeforePush bool) (retErr error) {
-	branch := target.releaseBranch(version)
+func prepareEverything(eff Effects, args commandArgs) (retErr error) {
+	branch := args.target.releaseBranch(args.version)
 
 	worktreeRoot, cleanupWorktree, err := prepareWorktree(eff, branch)
 	if err != nil {
@@ -145,13 +144,13 @@ func prepareEverything(eff Effects, target releaseTarget, version string, releas
 		}
 	}()
 
-	releaseNotes, prURL, err := prepareDraftPR(eff, target, worktreeRoot, branch, version, releaseDate, stopBeforePush)
+	releaseNotes, prURL, err := prepareDraftPR(eff, args, worktreeRoot, branch)
 	if err != nil {
 		return err
 	}
 	eff.printf("PR: %s\n", prURL)
 
-	draftReleaseURL, err := createDraftRelease(eff, target, worktreeRoot, version, releaseNotes)
+	draftReleaseURL, err := createDraftRelease(eff, args, worktreeRoot, releaseNotes)
 	if err != nil {
 		return err
 	}
@@ -183,18 +182,18 @@ func prepareWorktree(eff Effects, branch string) (worktreeRoot string, cleanup f
 	return worktreeRoot, cleanupWorktree, nil
 }
 
-func prepareDraftPR(eff Effects, target releaseTarget, worktreeRoot, branch, version string, releaseDate time.Time, stopBeforePush bool) (string, string, error) {
-	err := validateRelease(eff, target, worktreeRoot, version)
+func prepareDraftPR(eff Effects, args commandArgs, worktreeRoot, branch string) (string, string, error) {
+	err := validateRelease(eff, args, worktreeRoot)
 	if err != nil {
 		return "", "", err
 	}
 
-	releaseNotes, err := updateReleaseFiles(eff, target, worktreeRoot, version, releaseDate)
+	releaseNotes, err := updateReleaseFiles(eff, args, worktreeRoot)
 	if err != nil {
 		return "", "", err
 	}
 
-	prURL, err := createDraftPR(eff, target, worktreeRoot, branch, version, stopBeforePush)
+	prURL, err := createDraftPR(eff, args, worktreeRoot, branch)
 	if err != nil {
 		return "", "", err
 	}
@@ -204,7 +203,9 @@ func prepareDraftPR(eff Effects, target releaseTarget, worktreeRoot, branch, ver
 
 // validateRelease confirms the module exists, depends on released Temporal code, has
 // not already been released at newVersion, and has a changelog ready to cut.
-func validateRelease(eff Effects, target releaseTarget, worktreeRoot, newVersion string) error {
+func validateRelease(eff Effects, args commandArgs, worktreeRoot string) error {
+	target := args.target
+	newVersion := args.version
 	goMod, err := eff.readFile(target.filePath(worktreeRoot, target.goModFile()))
 	if err != nil {
 		return fmt.Errorf("%s is not a Go module in this repository: %w", target.name(), err)
@@ -227,7 +228,7 @@ func validateRelease(eff Effects, target releaseTarget, worktreeRoot, newVersion
 		return fmt.Errorf("%s %s has already been released; tag %s exists", target.name(), newVersion, newTag)
 	}
 
-	currentVersion, err := currentReleasedVersion(eff, target, worktreeRoot, tags)
+	currentVersion, err := currentReleasedVersion(eff, args, worktreeRoot, tags)
 	if err != nil {
 		return err
 	}
@@ -256,7 +257,8 @@ func validateRelease(eff Effects, target releaseTarget, worktreeRoot, newVersion
 // currentReleasedVersion returns the module's current version, or "" if it has never
 // been released. Modules that embed their version declare it; the rest are versioned
 // only by their Go module tags.
-func currentReleasedVersion(eff Effects, target releaseTarget, worktreeRoot string, tags []string) (string, error) {
+func currentReleasedVersion(eff Effects, args commandArgs, worktreeRoot string, tags []string) (string, error) {
+	target := args.target
 	if target.versionFile == "" {
 		return latestReleasedVersion(tags, target.tagPrefix), nil
 	}
@@ -267,9 +269,11 @@ func currentReleasedVersion(eff Effects, target releaseTarget, worktreeRoot stri
 	return extractSDKVersion(versionGo)
 }
 
-func updateReleaseFiles(eff Effects, target releaseTarget, worktreeRoot, version string, releaseDate time.Time) (string, error) {
+func updateReleaseFiles(eff Effects, args commandArgs, worktreeRoot string) (string, error) {
+	target := args.target
+	version := args.version
 	updatedChangelog, err := updateFile(eff, target.filePath(worktreeRoot, target.changelogFile()), func(text string) (string, error) {
-		return updateChangelog(text, version, releaseDate, target.seededHeaders)
+		return updateChangelog(text, version, args.releaseDate, target.seededHeaders)
 	})
 	if err != nil {
 		return "", err
@@ -292,13 +296,13 @@ func updateReleaseFiles(eff Effects, target releaseTarget, worktreeRoot, version
 	return releaseNotes, nil
 }
 
-func createDraftPR(eff Effects, target releaseTarget, worktreeRoot, branch, version string, stopBeforePush bool) (string, error) {
+func createDraftPR(eff Effects, args commandArgs, worktreeRoot, branch string) (string, error) {
 
-	err := commitRelease(eff, target, worktreeRoot, version)
+	err := commitRelease(eff, args, worktreeRoot)
 	if err != nil {
 		return "", err
 	}
-	if stopBeforePush {
+	if args.stopBeforePush {
 		return "", errors.New("stopped before pushing release branch (--stop-before-push)")
 	}
 
@@ -307,7 +311,7 @@ func createDraftPR(eff Effects, target releaseTarget, worktreeRoot, branch, vers
 		return "", err
 	}
 
-	prURL, err := openDraftPR(eff, target, worktreeRoot, branch, version)
+	prURL, err := openDraftPR(eff, args, worktreeRoot, branch)
 	if err != nil {
 		return "", err
 	}
@@ -386,9 +390,10 @@ func updateFile(eff Effects, path string, update func(string) (string, error)) (
 }
 
 // commitRelease commits the release files with a message indicating the module and version.
-func commitRelease(eff Effects, target releaseTarget, root, version string) error {
-	args := append([]string{"commit", "-m", "Prepare " + target.releaseSubject(version), "--"}, target.releaseFiles()...)
-	_, err := eff.runCommand(root, "git", args...)
+func commitRelease(eff Effects, commandArgs commandArgs, root string) error {
+	target := commandArgs.target
+	gitArgs := append([]string{"commit", "-m", "Prepare " + target.releaseSubject(commandArgs.version), "--"}, target.releaseFiles()...)
+	_, err := eff.runCommand(root, "git", gitArgs...)
 	if err != nil {
 		return fmt.Errorf("commit release files: %w", err)
 	}
@@ -405,10 +410,11 @@ func pushBranch(eff Effects, root, branch string) error {
 }
 
 // openDraftPR creates a draft pull request whose HEAD is the given branch.
-func openDraftPR(eff Effects, target releaseTarget, root, branch, version string) (string, error) {
+func openDraftPR(eff Effects, args commandArgs, root, branch string) (string, error) {
+	target := args.target
 	url, err := eff.runCommand(root, "gh", "pr", "create", "--draft", "--base", "main", "--head", branch,
-		"--title", "Prepare "+target.releaseSubject(version),
-		"--body", "Prepare "+target.modulePath+" release "+version+".")
+		"--title", "Prepare "+target.releaseSubject(args.version),
+		"--body", "Prepare "+target.modulePath+" release "+args.version+".")
 	if err != nil {
 		return "", fmt.Errorf("create draft PR: %w", err)
 	}
@@ -417,17 +423,18 @@ func openDraftPR(eff Effects, target releaseTarget, root, branch, version string
 
 // createDraftRelease creates a draft release for the module's Go tag. Publishing the
 // draft is what creates the tag, so the release PR must be merged first.
-func createDraftRelease(eff Effects, target releaseTarget, root, version, releaseNotes string) (string, error) {
-	tag := target.tag(version)
-	args := []string{"release", "create", tag, "--draft", "--title", tag, "--notes", releaseNotes}
+func createDraftRelease(eff Effects, commandArgs commandArgs, root, releaseNotes string) (string, error) {
+	target := commandArgs.target
+	tag := target.tag(commandArgs.version)
+	ghArgs := []string{"release", "create", tag, "--draft", "--title", tag, "--notes", releaseNotes}
 	if target.generateNotes {
-		args = append(args, "--generate-notes")
+		ghArgs = append(ghArgs, "--generate-notes")
 	}
 	if !target.markLatest {
 		// Only the main SDK module may own GitHub's "Latest" badge.
-		args = append(args, "--latest=false")
+		ghArgs = append(ghArgs, "--latest=false")
 	}
-	url, err := eff.runCommand(root, "gh", args...)
+	url, err := eff.runCommand(root, "gh", ghArgs...)
 	if err != nil {
 		return "", fmt.Errorf("create draft release: %w", err)
 	}
