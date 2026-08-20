@@ -22,7 +22,6 @@ import (
 	"go.temporal.io/sdk/contrib/sysinfo"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -47,13 +46,10 @@ func (ts *WorkerHeartbeatTestSuite) SetupSuite() {
 
 	var err error
 	// Create a client with heartbeating enabled
-	ts.client, err = client.Dial(client.Options{
-		HostPort:                ts.config.ServiceAddr,
-		Namespace:               ts.config.Namespace,
-		Logger:                  ilog.NewDefaultLogger(),
-		WorkerHeartbeatInterval: 1 * time.Second,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
-		Identity:                "WorkerHeartbeatTest",
+	ts.client, err = ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.GetSystemInfoTimeout = ctxTimeout
+		options.WorkerHeartbeatInterval = time.Second
+		options.Identity = "WorkerHeartbeatTest"
 	})
 	ts.NoError(err)
 }
@@ -67,6 +63,7 @@ func (ts *WorkerHeartbeatTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkerHeartbeatTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 
@@ -308,12 +305,9 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatDisabled() {
 	ctx := context.Background()
 
 	// Create a separate client with heartbeating disabled
-	clientNoHeartbeat, err := client.Dial(client.Options{
-		HostPort:                ts.config.ServiceAddr,
-		Namespace:               ts.config.Namespace,
-		Logger:                  ilog.NewDefaultLogger(),
-		WorkerHeartbeatInterval: -1,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
+	clientNoHeartbeat, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.GetSystemInfoTimeout = ctxTimeout
+		options.WorkerHeartbeatInterval = -1
 	})
 	ts.NoError(err)
 	defer clientNoHeartbeat.Close()
@@ -798,7 +792,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskProcessed() {
 	ts.NoError(ts.worker.Start())
 
 	numWorkflows := 3
-	for i := 0; i < numWorkflows; i++ {
+	for i := range numWorkflows {
 		workflowOptions := client.StartWorkflowOptions{
 			ID:        fmt.Sprintf("test-wf-processed-%d-%s", i, uuid.NewString()),
 			TaskQueue: ts.taskQueueName,
@@ -967,14 +961,11 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatPlugins() {
 	ts.NoError(err)
 
 	// Create a new client with the plugin
-	pluginClient, err := client.Dial(client.Options{
-		HostPort:                ts.config.ServiceAddr,
-		Namespace:               ts.config.Namespace,
-		Logger:                  ilog.NewDefaultLogger(),
-		WorkerHeartbeatInterval: 1 * time.Second,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
-		Identity:                "PluginTest",
-		Plugins:                 []client.Plugin{clientPlugin},
+	pluginClient, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.GetSystemInfoTimeout = ctxTimeout
+		options.WorkerHeartbeatInterval = time.Second
+		options.Identity = "PluginTest"
+		options.Plugins = []client.Plugin{clientPlugin}
 	})
 	ts.NoError(err)
 	defer pluginClient.Close()
@@ -1029,45 +1020,39 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 		pollErrors  []error
 	)
 
-	c, err := client.Dial(client.Options{
-		HostPort:                ts.config.ServiceAddr,
-		Namespace:               ts.config.Namespace,
-		Logger:                  ilog.NewDefaultLogger(),
-		WorkerHeartbeatInterval: 1 * time.Second,
-		ConnectionOptions: client.ConnectionOptions{
-			TLS:                  ts.config.TLS,
-			GetSystemInfoTimeout: ctxTimeout,
-			DialOptions: []grpc.DialOption{
-				grpc.WithUnaryInterceptor(func(
-					ctx context.Context,
-					method string,
-					req any,
-					reply any,
-					cc *grpc.ClientConn,
-					invoker grpc.UnaryInvoker,
-					opts ...grpc.CallOption,
-				) error {
-					if strings.HasSuffix(method, "/ShutdownWorker") {
-						mu.Lock()
-						shutdownReq = req.(*workflowservice.ShutdownWorkerRequest)
-						mu.Unlock()
-					}
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.GetSystemInfoTimeout = ctxTimeout
+		options.WorkerHeartbeatInterval = time.Second
+		options.ConnectionOptions.DialOptions = []grpc.DialOption{
+			grpc.WithUnaryInterceptor(func(
+				ctx context.Context,
+				method string,
+				req any,
+				reply any,
+				cc *grpc.ClientConn,
+				invoker grpc.UnaryInvoker,
+				opts ...grpc.CallOption,
+			) error {
+				if strings.HasSuffix(method, "/ShutdownWorker") {
+					mu.Lock()
+					shutdownReq = req.(*workflowservice.ShutdownWorkerRequest)
+					mu.Unlock()
+				}
 
-					err := invoker(ctx, method, req, reply, cc, opts...)
+				err := invoker(ctx, method, req, reply, cc, opts...)
 
-					isPoll := strings.HasSuffix(method, "/PollWorkflowTaskQueue") ||
-						strings.HasSuffix(method, "/PollActivityTaskQueue") ||
-						strings.HasSuffix(method, "/PollNexusTaskQueue")
-					if isPoll && err != nil {
-						mu.Lock()
-						pollErrors = append(pollErrors, err)
-						mu.Unlock()
-					}
+				isPoll := strings.HasSuffix(method, "/PollWorkflowTaskQueue") ||
+					strings.HasSuffix(method, "/PollActivityTaskQueue") ||
+					strings.HasSuffix(method, "/PollNexusTaskQueue")
+				if isPoll && err != nil {
+					mu.Lock()
+					pollErrors = append(pollErrors, err)
+					mu.Unlock()
+				}
 
-					return err
-				}),
-			},
-		},
+				return err
+			}),
+		}
 	})
 	ts.NoError(err)
 	defer c.Close()
@@ -1146,17 +1131,14 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatStorageDrivers() {
 	drivers := []converter.StorageDriver{driver1, driver2, driver3}
 
 	// Create a client with external storage configured
-	storageClient, err := client.Dial(client.Options{
-		HostPort:  ts.config.ServiceAddr,
-		Namespace: ts.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.ExternalStorage{
+	storageClient, err := ts.newDefaultClient(func(options *client.Options) {
+		options.ConnectionOptions.GetSystemInfoTimeout = ctxTimeout
+		options.ExternalStorage = converter.ExternalStorage{
 			Drivers:        drivers,
 			DriverSelector: &roundRobinSelector{drivers: drivers},
-		},
-		WorkerHeartbeatInterval: 1 * time.Second,
-		ConnectionOptions:       client.ConnectionOptions{TLS: ts.config.TLS, GetSystemInfoTimeout: ctxTimeout},
-		Identity:                "StorageDriverTest",
+		}
+		options.WorkerHeartbeatInterval = time.Second
+		options.Identity = "StorageDriverTest"
 	})
 	ts.NoError(err)
 	defer storageClient.Close()

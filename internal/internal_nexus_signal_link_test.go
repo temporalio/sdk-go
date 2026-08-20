@@ -48,7 +48,7 @@ func newSignalLinkTestClient(t *testing.T) (*workflowservicemock.MockWorkflowSer
 		Return(&workflowservice.GetSystemInfoResponse{}, nil)
 	client := NewServiceClient(svc, nil, ClientOptions{Namespace: signalLinkTestNamespace})
 	nctx := &NexusOperationContext{Namespace: signalLinkTestNamespace, TaskQueue: "tq"}
-	ctx := context.WithValue(context.Background(), nexusOperationContextKey, nctx)
+	ctx := context.WithValue(t.Context(), nexusOperationContextKey, nctx)
 	return svc, client, ctx, nctx
 }
 
@@ -66,7 +66,7 @@ func TestSignalForwardsRequestLinksAndCapturesResponseLink(t *testing.T) {
 	var sent *workflowservice.SignalWorkflowExecutionRequest
 	svc.EXPECT().
 		SignalWorkflowExecution(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, req *workflowservice.SignalWorkflowExecutionRequest, _ ...interface{}) (*workflowservice.SignalWorkflowExecutionResponse, error) {
+		DoAndReturn(func(_ context.Context, req *workflowservice.SignalWorkflowExecutionRequest, _ ...any) (*workflowservice.SignalWorkflowExecutionResponse, error) {
 			sent = req
 			return &workflowservice.SignalWorkflowExecutionResponse{Link: responseLink}, nil
 		})
@@ -94,7 +94,7 @@ func TestSignalAgainstOlderServerCapturesNoResponseLink(t *testing.T) {
 	var sent *workflowservice.SignalWorkflowExecutionRequest
 	svc.EXPECT().
 		SignalWorkflowExecution(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, req *workflowservice.SignalWorkflowExecutionRequest, _ ...interface{}) (*workflowservice.SignalWorkflowExecutionResponse, error) {
+		DoAndReturn(func(_ context.Context, req *workflowservice.SignalWorkflowExecutionRequest, _ ...any) (*workflowservice.SignalWorkflowExecutionResponse, error) {
 			sent = req
 			// Pre-1.31 server / flag-off server: response has no link.
 			return &workflowservice.SignalWorkflowExecutionResponse{}, nil
@@ -145,7 +145,7 @@ func TestSignalWithStartForwardsRequestLinksAndCapturesResponseLink(t *testing.T
 	var sent *workflowservice.SignalWithStartWorkflowExecutionRequest
 	svc.EXPECT().
 		SignalWithStartWorkflowExecution(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...interface{}) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
+		DoAndReturn(func(_ context.Context, req *workflowservice.SignalWithStartWorkflowExecutionRequest, _ ...any) (*workflowservice.SignalWithStartWorkflowExecutionResponse, error) {
 			sent = req
 			return &workflowservice.SignalWithStartWorkflowExecutionResponse{RunId: "target-run", SignalLink: responseLink}, nil
 		})
@@ -214,5 +214,5 @@ func TestSignalOutsideNexusContextCapturesNoResponseLink(t *testing.T) {
 		Return(&workflowservice.SignalWorkflowExecutionResponse{Link: responseLink}, nil)
 
 	// No NexusOperationContext on the context, so this must not panic.
-	require.NoError(t, client.SignalWorkflow(context.Background(), signalLinkTestWorkflowID, "target-run", "test-signal", "payload"))
+	require.NoError(t, client.SignalWorkflow(t.Context(), signalLinkTestWorkflowID, "target-run", "test-signal", "payload"))
 }

@@ -722,7 +722,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 	value := 12345
 	workflowFn := func(ctx Context) error {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
-		se := SideEffect(ctx, func(ctx Context) interface{} {
+		se := SideEffect(ctx, func(ctx Context) any {
 			return value
 		})
 		var v int
@@ -749,7 +749,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect() {
 func (s *WorkflowTestSuiteUnitTest) Test_OnSideEffectAndActivityMock() {
 	workflowFn := func(ctx Context) (string, error) {
 		ctx = WithActivityOptions(ctx, s.activityOptions)
-		se := SideEffectWithOptions(ctx, SideEffectOptions{Summary: "side-effect"}, func(ctx Context) interface{} {
+		se := SideEffectWithOptions(ctx, SideEffectOptions{Summary: "side-effect"}, func(ctx Context) any {
 			return "real-side-effect"
 		})
 		var seVal string
@@ -779,8 +779,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_OnSideEffectAndActivityMock() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_OnMutableSideEffect() {
 	workflowFn := func(ctx Context) (string, error) {
-		equals := func(a, b interface{}) bool { return a == b }
-		me := MutableSideEffect(ctx, "config-id", func(ctx Context) interface{} {
+		equals := func(a, b any) bool { return a == b }
+		me := MutableSideEffect(ctx, "config-id", func(ctx Context) any {
 			return "real-config"
 		}, equals)
 		var val string
@@ -806,8 +806,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_MutableSideEffect_HonorsEqualsFunc() {
 	// way the real worker does: a new value is only recorded when equals reports
 	// a change. See https://github.com/temporalio/sdk-go/issues/2109.
 	workflowFn := func(ctx Context) ([]int, error) {
-		var alwaysEqual = func(a, b interface{}) bool { return true }
-		var neverEqual = func(a, b interface{}) bool { return false }
+		var alwaysEqual = func(a, b any) bool { return true }
+		var neverEqual = func(a, b any) bool { return false }
 
 		get := func(v converter.EncodedValue) int {
 			var out int
@@ -817,21 +817,21 @@ func (s *WorkflowTestSuiteUnitTest) Test_MutableSideEffect_HonorsEqualsFunc() {
 
 		// equals always true: value stays pinned to the first (1), not 2.
 		pinnedFirst := get(MutableSideEffect(ctx, "pinned",
-			func(ctx Context) interface{} { return 1 }, alwaysEqual))
+			func(ctx Context) any { return 1 }, alwaysEqual))
 		pinnedSecond := get(MutableSideEffect(ctx, "pinned",
-			func(ctx Context) interface{} { return 2 }, alwaysEqual))
+			func(ctx Context) any { return 2 }, alwaysEqual))
 
 		// equals always false: value updates on every call.
 		changedFirst := get(MutableSideEffect(ctx, "changed",
-			func(ctx Context) interface{} { return 10 }, neverEqual))
+			func(ctx Context) any { return 10 }, neverEqual))
 		changedSecond := get(MutableSideEffect(ctx, "changed",
-			func(ctx Context) interface{} { return 20 }, neverEqual))
+			func(ctx Context) any { return 20 }, neverEqual))
 		// The previous call must have stored 20 as the new baseline. With equals
 		// true, this returns that stored baseline (20), not the newly computed 30.
 		// An implementation that returns the changed value but forgets to store it
 		// would keep a stale baseline (10) and return 10 here.
 		changedThird := get(MutableSideEffect(ctx, "changed",
-			func(ctx Context) interface{} { return 30 }, alwaysEqual))
+			func(ctx Context) any { return 30 }, alwaysEqual))
 
 		return []int{pinnedFirst, pinnedSecond, changedFirst, changedSecond, changedThird}, nil
 	}
@@ -875,7 +875,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SideEffect_WithVersion() {
 
 		v := GetVersion(ctx, "UniqueID", DefaultVersion, 1)
 		if v == 1 {
-			encodedUID := SideEffect(ctx, func(ctx Context) interface{} {
+			encodedUID := SideEffect(ctx, func(ctx Context) any {
 				return "TEST-UNIQUE-ID"
 			})
 			err := encodedUID.Get(&uniqueID)
@@ -1923,7 +1923,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockGetVersion() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_UpsertSearchAttributes_ReservedKey() {
 	workflowFn := func(ctx Context) error {
-		attr := map[string]interface{}{
+		attr := map[string]any{
 			TemporalChangeVersion: "some change version",
 		}
 		err := UpsertSearchAttributes(ctx, attr)
@@ -1943,7 +1943,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_UpsertSearchAttributes_ReservedKey() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 	workflowFn := func(ctx Context) error {
-		attr := map[string]interface{}{}
+		attr := map[string]any{}
 		err := UpsertSearchAttributes(ctx, attr)
 		s.Error(err)
 
@@ -1979,8 +1979,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertSearchAttributes() {
 
 	// has mock
 	env = s.NewTestWorkflowEnvironment()
-	env.OnUpsertSearchAttributes(map[string]interface{}{}).Return(errors.New("empty")).Once()
-	env.OnUpsertSearchAttributes(map[string]interface{}{"CustomIntField": 1}).Return(nil).Once()
+	env.OnUpsertSearchAttributes(map[string]any{}).Return(errors.New("empty")).Once()
+	env.OnUpsertSearchAttributes(map[string]any{"CustomIntField": 1}).Return(nil).Once()
 	env.OnUpsertSearchAttributes(mock.Anything).Return(nil).Once()
 
 	env.ExecuteWorkflow(workflowFn)
@@ -2044,7 +2044,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertTypedSearchAttributes() {
 
 func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertMemo() {
 	workflowFn := func(ctx Context) error {
-		memo := map[string]interface{}{}
+		memo := map[string]any{}
 		err := UpsertMemo(ctx, memo)
 		s.Error(err)
 
@@ -2081,8 +2081,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_MockUpsertMemo() {
 
 	// has mock
 	env = s.NewTestWorkflowEnvironment()
-	env.OnUpsertMemo(map[string]interface{}{}).Return(errors.New("empty")).Once()
-	env.OnUpsertMemo(map[string]interface{}{"CustomIntField": 1}).Return(nil).Once()
+	env.OnUpsertMemo(map[string]any{}).Return(errors.New("empty")).Once()
+	env.OnUpsertMemo(map[string]any{"CustomIntField": 1}).Return(nil).Once()
 	env.OnUpsertMemo(mock.Anything).Return(nil).Once()
 
 	env.ExecuteWorkflow(workflowFn)
@@ -2667,7 +2667,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	}
 
 	env.OnActivity(localActivityFn, mock.Anything, "local_activity").Return("hello mock", nil).Once()
-	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []interface{}) {
+	env.SetOnLocalActivityStartedListener(func(activityInfo *ActivityInfo, ctx context.Context, args []any) {
 		startedCount.Add(1)
 	})
 
@@ -2827,7 +2827,7 @@ func (s *WorkflowTestSuiteUnitTest) Test_SignalExternalWorkflow() {
 
 	// signal2 should fail
 	env.OnSignalExternalWorkflow("test-namespace", "test-workflow-id2", "test-runid2", signalName, signalData).Return(
-		func(namespace, workflowID, runID, signalName string, arg interface{}) error {
+		func(namespace, workflowID, runID, signalName string, arg any) error {
 			return errors.New("unknown external workflow")
 		}).Once()
 
@@ -4914,7 +4914,7 @@ func (s *WorkflowTestSuiteUnitTest) TestChannelWorkerPattern() {
 		// Two workers both selecting on the same channel
 		wg := NewWaitGroup(ctx)
 		wg.Add(2)
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			Go(ctx, func(ctx Context) {
 				defer wg.Done()
 				for {

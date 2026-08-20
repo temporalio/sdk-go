@@ -20,7 +20,7 @@ func mustSetUpdateHandler(
 	t *testing.T,
 	ctx Context,
 	name string,
-	handler interface{},
+	handler any,
 	opts UpdateHandlerOptions,
 ) {
 	t.Helper()
@@ -35,12 +35,12 @@ type testUpdateScheduler struct {
 type testUpdateCallbacks struct {
 	AcceptImpl   func()
 	RejectImpl   func(err error)
-	CompleteImpl func(success interface{}, err error)
+	CompleteImpl func(success any, err error)
 }
 
 func (tuc *testUpdateCallbacks) Accept()          { tuc.AcceptImpl() }
 func (tuc *testUpdateCallbacks) Reject(err error) { tuc.RejectImpl(err) }
-func (tuc *testUpdateCallbacks) Complete(success interface{}, err error) {
+func (tuc *testUpdateCallbacks) Complete(success any, err error) {
 	tuc.CompleteImpl(success, err)
 }
 
@@ -85,7 +85,7 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 			interceptor,
 			func(ctx Context) {
 				mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{Validator: panicFunc})
-				in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
+				in := UpdateInput{Name: t.Name(), Args: []any{}}
 				err = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
 			},
 			func() bool { return false })
@@ -105,7 +105,7 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 			interceptor,
 			func(ctx Context) {
 				mustSetUpdateHandler(t, ctx, t.Name(), panicFunc, UpdateHandlerOptions{})
-				in := UpdateInput{Name: t.Name(), Args: []interface{}{}}
+				in := UpdateInput{Name: t.Name(), Args: []any{}}
 				err = interceptor.inboundInterceptor.ValidateUpdate(ctx, &in)
 				require.Panics(t, func() {
 					_, _ = interceptor.inboundInterceptor.ExecuteUpdate(ctx, &in)
@@ -119,8 +119,8 @@ func TestUpdateHandlerPanicHandling(t *testing.T) {
 func TestUpdateHandlerFnValidation(t *testing.T) {
 	t.Parallel()
 	for _, tc := range [...]struct {
-		check func(require.TestingT, error, ...interface{})
-		fn    interface{}
+		check func(require.TestingT, error, ...any)
+		fn    any
 	}{
 		{require.Error, "not a function"},
 		{require.Error, func() {}},
@@ -144,8 +144,8 @@ func TestUpdateHandlerFnValidation(t *testing.T) {
 func TestUpdateValidatorFnValidation(t *testing.T) {
 	t.Parallel()
 	for _, tc := range [...]struct {
-		check func(require.TestingT, error, ...interface{})
-		fn    interface{}
+		check func(require.TestingT, error, ...any)
+		fn    any
 	}{
 		{require.Error, "not a function"},
 		{require.Error, func() {}},
@@ -308,11 +308,11 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		var (
 			resultErr error
 			accepted  bool
-			result    interface{}
+			result    any
 		)
 		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			AcceptImpl: func() { accepted = true },
-			CompleteImpl: func(success interface{}, err error) {
+			CompleteImpl: func(success any, err error) {
 				resultErr = err
 				result = success
 			},
@@ -340,11 +340,11 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		var (
 			resultErr error
 			accepted  bool
-			result    interface{}
+			result    any
 		)
 		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			AcceptImpl: func() { accepted = true },
-			CompleteImpl: func(success interface{}, err error) {
+			CompleteImpl: func(success any, err error) {
 				resultErr = err
 				result = success
 			},
@@ -385,7 +385,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 			resultErr error
 			rejectErr error
 			accepted  bool
-			result    interface{}
+			result    any
 		)
 		sched := &testUpdateScheduler{
 			SpawnImpl: func(ctx Context, _ string, _ bool, f func(Context)) Context {
@@ -400,7 +400,7 @@ func TestDefaultUpdateHandler(t *testing.T) {
 		defaultUpdateHandler(ctx, t.Name(), "testID", args, hdr, &testUpdateCallbacks{
 			RejectImpl: func(err error) { rejectErr = err },
 			AcceptImpl: func() { accepted = true },
-			CompleteImpl: func(success interface{}, err error) {
+			CompleteImpl: func(success any, err error) {
 				resultErr = err
 				result = success
 			},

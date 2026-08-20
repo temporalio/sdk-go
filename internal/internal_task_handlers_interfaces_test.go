@@ -66,7 +66,7 @@ func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{}
 }
 
-func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
+func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollActivityTaskQueueResponse) (any, error) {
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	fc := GetDefaultFailureConverter()

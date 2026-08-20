@@ -116,6 +116,8 @@ externally.
 
 ## Pull request expectations
 
+- Use the organization-wide [pull request template](https://github.com/temporalio/.github/blob/main/.github/pull_request_template.md)
+  when creating or updating a pull request description.
 - Keep changes focused and include tests for behavior changes.
 - Run `go run . check` from `internal/cmd/build`.
 - Run relevant unit tests, and integration tests with `-dev-server` when the

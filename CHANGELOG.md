@@ -22,21 +22,66 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
+  structured details for payload validation failures.
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+- Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+
+### Fixed
+
+- Corrected stand-alone activity API documentation to use activity terminology, document that
+  `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
+  `TerminateActivityOptions.Reason` as a termination reason.
+
+### Security
+
+## [1.48.0] - 2026-08-18
+
+### Added
+
+- Added `-envconfig` support to the integration test harness, allowing integration tests to use
+  standard client settings from `contrib/envconfig`.
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+- Added `client.WorkflowRun.GetFirstExecutionRunID` to expose the first execution run ID returned by the server when starting a workflow.
+- Added `client.Client.CancelWorkflowWithOptions` and `client.Client.TerminateWorkflowWithOptions` to target a workflow execution chain by its first execution run ID. Cancellation options can also specify a reason.
+- Added experimental `workflow.GetRandomStream` for named deterministic pseudorandom values in workflows.
+- Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
+  path.
+- Added `go.temporal.io/sdk/interceptor/tracing`, a reworked tracing interceptor with
+  corrected span parenting and span directions for span-kind mapping. It backs the new
+  `contrib/opentelemetry-v2` module and is not span-compatible with the tracing interceptor
+  used by `contrib/opentelemetry` (v1).
 
 ### Changed
 
 - Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
+- Replaced the internal `OnceCell` implementation with `sync.OnceValue` for lazy workflow run ID lookup.
 
 ### Fixed
 
+- Data converter errors raised while deserializing Nexus operation input are no longer replaced with
+  a generic `BAD_REQUEST` handler error. A `temporal.ApplicationError` or a `nexus.HandlerError` is
+  now propagated to the caller as-is, and any other error is wrapped in a `BAD_REQUEST`
+  `nexus.HandlerError` that retains the original error as its cause. As an exception, a
+  non-retryable `temporal.ApplicationError` with type `PayloadValidationError` is reported as a
+  `BAD_REQUEST` `nexus.HandlerError` with the original error as its cause, since it indicates the
+  operation input itself is invalid.
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
   command is pending.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
   updates the recorded value when it changes, matching the real worker. Previously it ignored
   equals and returned a freshly computed value on every call.
+- Nexus operation link propagation for stand-alone activities. When a Nexus operation handler uses
+  `client.ExecuteActivity`, inbound Nexus request links are forwarded to the activity and the
+  activity link returned by the server is propagated back to the Nexus operation caller.
 
-## [1.46.0] - 2026-07-28
+## [1.47.0] - 2026-07-28
 
 ### Added
 

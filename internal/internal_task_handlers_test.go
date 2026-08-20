@@ -8,6 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/golang/mock/gomock"
@@ -138,7 +139,7 @@ func TestTaskHandlersTestSuite(t *testing.T) {
 func TestActivityCancellationCallbacksCancel(t *testing.T) {
 	registry := newActivityCancellationCallbacks()
 	taskToken := []byte{1, 2, 3}
-	ctx, cancel := context.WithCancelCause(context.Background())
+	ctx, cancel := context.WithCancelCause(t.Context())
 
 	unregister := registry.register(taskToken, cancel)
 	require.True(t, registry.cancel([]byte{1, 2, 3}))
@@ -583,11 +584,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskStarted(3),
+		//lint:ignore SA1019 construct legacy history for replay compatibility
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2, BinaryChecksum: checksum1}),
 		createTestEventTimerStarted(5, 5),
 		createTestEventTimerFired(6, 5),
 		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskStarted(8),
+		//lint:ignore SA1019 construct legacy history for replay compatibility
 		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 7, BinaryChecksum: checksum2}),
 		createTestEventTimerStarted(10, 10),
 		createTestEventTimerFired(11, 10),
@@ -1252,7 +1255,6 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 }
 
 func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
-	checksum1 := "chck1"
 	numberOfSignalsToComplete, err := converter.GetDefaultDataConverter().ToPayloads(2)
 	t.NoError(err)
 	signal, err := converter.GetDefaultDataConverter().ToPayloads("signal data")
@@ -1265,7 +1267,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
-			ScheduledEventId: 2, BinaryChecksum: checksum1,
+			ScheduledEventId: 2,
 		}),
 		createTestEventWorkflowExecutionSignaledWithPayload(5, signalCh, signal),
 		createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{}),
@@ -1783,89 +1785,90 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_Message_Admitted_Paged() {
 }
 
 func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
-	backoffInterval := 10 * time.Millisecond
-	workflowComplete := false
-	var laFailures atomic.Uint64
+	synctest.Test(t.T(), func(_ *testing.T) {
+		backoffInterval := 10 * time.Millisecond
+		workflowComplete := false
+		var laFailures atomic.Uint64
 
-	retryLocalActivityWorkflowFunc := func(ctx Context, input []byte) error {
-		ao := LocalActivityOptions{
-			ScheduleToCloseTimeout: time.Minute,
-			RetryPolicy: &RetryPolicy{
-				InitialInterval:    backoffInterval,
-				BackoffCoefficient: 1.1,
-				MaximumInterval:    time.Minute,
-				MaximumAttempts:    5,
+		retryLocalActivityWorkflowFunc := func(ctx Context, input []byte) error {
+			ao := LocalActivityOptions{
+				ScheduleToCloseTimeout: time.Minute,
+				RetryPolicy: &RetryPolicy{
+					InitialInterval:    backoffInterval,
+					BackoffCoefficient: 1.1,
+					MaximumInterval:    time.Minute,
+					MaximumAttempts:    5,
+				},
+			}
+			ctx = WithLocalActivityOptions(ctx, ao)
+
+			err := ExecuteLocalActivity(ctx, func() error {
+				if laFailures.Load() > 2 {
+					return nil
+				}
+				laFailures.Add(1)
+				return errors.New("fail number " + strconv.Itoa(int(laFailures.Load())))
+			}).Get(ctx, nil)
+			workflowComplete = true
+			return err
+		}
+		t.registry.RegisterWorkflowWithOptions(
+			retryLocalActivityWorkflowFunc,
+			RegisterWorkflowOptions{Name: "RetryLocalActivityWorkflow"},
+		)
+
+		workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
+		now := time.Now()
+		onesec := 5 * time.Second
+		workflowTaskStartedEvent.EventTime = timestamppb.New(now)
+		testEvents := []*historypb.HistoryEvent{
+			createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+				WorkflowTaskTimeout: durationpb.New(onesec),
+				TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
 			},
+			),
+			createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+			workflowTaskStartedEvent,
 		}
-		ctx = WithLocalActivityOptions(ctx, ao)
 
-		err := ExecuteLocalActivity(ctx, func() error {
-			if laFailures.Load() > 2 {
-				return nil
+		task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflow")
+		stopCh := make(chan struct{})
+		params := t.getTestWorkerExecutionParams()
+		params.WorkerStopChannel = stopCh
+		defer close(stopCh)
+
+		taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+		laStopCh := make(chan struct{})
+		defer close(laStopCh)
+		laTunnel := newLocalActivityTunnel(laStopCh)
+		taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
+		t.True(ok)
+		taskHandlerImpl.laTunnel = laTunnel
+
+		laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil, stopCh)
+		go func() {
+			for {
+				task, _ := laTaskPoller.PollTask()
+				if task == nil {
+					return
+				}
+				_ = laTaskPoller.ProcessTask(task)
 			}
-			laFailures.Add(1)
-			return errors.New("fail number " + strconv.Itoa(int(laFailures.Load())))
-		}).Get(ctx, nil)
-		workflowComplete = true
-		return err
-	}
-	t.registry.RegisterWorkflowWithOptions(
-		retryLocalActivityWorkflowFunc,
-		RegisterWorkflowOptions{Name: "RetryLocalActivityWorkflow"},
-	)
+		}()
 
-	workflowTaskStartedEvent := createTestEventWorkflowTaskStarted(3)
-	now := time.Now()
-	onesec := 5 * time.Second
-	workflowTaskStartedEvent.EventTime = timestamppb.New(now)
-	testEvents := []*historypb.HistoryEvent{
-		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
-			WorkflowTaskTimeout: durationpb.New(onesec),
-			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
-		},
-		),
-		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
-		workflowTaskStartedEvent,
-	}
-
-	task := createWorkflowTask(testEvents, 0, "RetryLocalActivityWorkflow")
-	stopCh := make(chan struct{})
-	params := t.getTestWorkerExecutionParams()
-	params.WorkerStopChannel = stopCh
-	defer close(stopCh)
-
-	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
-	laStopCh := make(chan struct{})
-	defer close(laStopCh)
-	laTunnel := newLocalActivityTunnel(laStopCh)
-	taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
-	t.True(ok)
-	taskHandlerImpl.laTunnel = laTunnel
-
-	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil, stopCh)
-	go func() {
-		for {
-			task, _ := laTaskPoller.PollTask()
-			if task == nil {
-				return
-			}
-			_ = laTaskPoller.ProcessTask(task)
-		}
-	}()
-
-	laResultCh := make(chan *localActivityResult)
-	laRetryCh := make(chan *localActivityTask)
-	wftask := workflowTask{task: task, laResultCh: laResultCh, laRetryCh: laRetryCh}
-	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
-	response, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
-	t.NotNil(response)
-	t.NoError(err)
-	asWFTComplete := response.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
-	// There should be no non-first LA attempts since all the retries happen in one WFT
-	t.Equal(uint32(0), asWFTComplete.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
-	// wait long enough for wf to complete
-	time.Sleep(backoffInterval * 3)
-	t.True(workflowComplete)
+		laResultCh := make(chan *localActivityResult)
+		laRetryCh := make(chan *localActivityTask)
+		wftask := workflowTask{task: task, laResultCh: laResultCh, laRetryCh: laRetryCh}
+		wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+		response, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+		t.NotNil(response)
+		t.NoError(err)
+		asWFTComplete := response.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
+		// There should be no non-first LA attempts since all the retries happen in one WFT
+		t.Equal(uint32(0), asWFTComplete.MeteringMetadata.NonfirstLocalActivityExecutionAttempts)
+		synctest.Wait()
+		t.True(workflowComplete)
+	})
 }
 
 func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail() {
@@ -1962,7 +1965,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
 	mockService.EXPECT().
 		RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(_ interface{}, _ interface{}, _ ...interface{}) { invocationChannel <- 1 }).
+		Do(func(_ any, _ any, _ ...any) { invocationChannel <- 1 }).
 		Return(&heartbeatResponse, nil).
 		Times(2)
 
@@ -2059,7 +2062,7 @@ func (t *testActivityDeadline) ActivityType() ActivityType {
 	return ActivityType{Name: "test"}
 }
 
-func (t *testActivityDeadline) GetFunction() interface{} {
+func (t *testActivityDeadline) GetFunction() any {
 	return t.Execute
 }
 
@@ -2750,7 +2753,7 @@ func TestHistoryIteratorMaxEventID(t *testing.T) {
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{}),
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mockCtrl := gomock.NewController(t)
 	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
 	mockService.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetWorkflowExecutionHistoryResponse{

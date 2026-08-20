@@ -327,7 +327,8 @@ func nexusOperationFailure(params ExecuteNexusOperationParams, token string, cau
 				Service:        params.client.Service(),
 				Operation:      params.operation,
 				OperationToken: token,
-				OperationId:    token, // Also populate ID for backwards compatibility.
+				//lint:ignore SA1019 preserve legacy operation ID behavior in the test environment
+				OperationId: token, // Also populate ID for backwards compatibility.
 			},
 		},
 		Cause: cause,
@@ -509,6 +510,11 @@ func (t *testSuiteClientForNexusOperations) CancelWorkflow(ctx context.Context, 
 	return <-doneCh
 }
 
+// CancelWorkflowWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error {
+	return t.CancelWorkflow(ctx, options.WorkflowID, options.RunID)
+}
+
 // CheckHealth implements Client.
 func (t *testSuiteClientForNexusOperations) CheckHealth(ctx context.Context, request *CheckHealthRequest) (*CheckHealthResponse, error) {
 	return &CheckHealthResponse{}, nil
@@ -520,7 +526,7 @@ func (t *testSuiteClientForNexusOperations) Close() {
 }
 
 // CompleteActivity implements Client.
-func (t *testSuiteClientForNexusOperations) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
+func (t *testSuiteClientForNexusOperations) CompleteActivity(ctx context.Context, taskToken []byte, result any, err error) error {
 	panic("not implemented in the test environment")
 }
 
@@ -530,7 +536,7 @@ func (t *testSuiteClientForNexusOperations) CompleteActivityWithOptions(ctx cont
 }
 
 // CompleteActivityByID implements Client.
-func (t *testSuiteClientForNexusOperations) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result interface{}, err error) error {
+func (t *testSuiteClientForNexusOperations) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result any, err error) error {
 	panic("not implemented in the test environment")
 }
 
@@ -540,7 +546,7 @@ func (t *testSuiteClientForNexusOperations) CompleteActivityByIDWithOptions(ctx 
 }
 
 // CompleteActivityByActivityID implements Client.
-func (t *testSuiteClientForNexusOperations) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result interface{}, err error) error {
+func (t *testSuiteClientForNexusOperations) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result any, err error) error {
 	panic("not implemented in the test environment")
 }
 
@@ -570,7 +576,7 @@ func (t *testSuiteClientForNexusOperations) DescribeWorkflowExecution(ctx contex
 }
 
 // ExecuteWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
+func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow any, args ...any) (WorkflowRun, error) {
 	if set, ok := ctx.Value(IsWorkflowRunOpContextKey).(bool); !ok || !set {
 		panic("not implemented in the test environment")
 	}
@@ -670,7 +676,7 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 	return run, nil
 }
 
-func (t *testSuiteClientForNexusOperations) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation {
+func (t *testSuiteClientForNexusOperations) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow any, args ...any) WithStartWorkflowOperation {
 	panic("not implemented in the test environment")
 }
 
@@ -735,7 +741,7 @@ func (t *testSuiteClientForNexusOperations) OperatorService() operatorservice.Op
 }
 
 // QueryWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+func (t *testSuiteClientForNexusOperations) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...any) (converter.EncodedValue, error) {
 	panic("not implemented in the test environment")
 }
 
@@ -745,7 +751,7 @@ func (t *testSuiteClientForNexusOperations) QueryWorkflowWithOptions(ctx context
 }
 
 // RecordActivityHeartbeat implements Client.
-func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
+func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...any) error {
 	panic("not implemented in the test environment")
 }
 
@@ -755,7 +761,7 @@ func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatWithOptions(c
 }
 
 // RecordActivityHeartbeatByID implements Client.
-func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...interface{}) error {
+func (t *testSuiteClientForNexusOperations) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...any) error {
 	panic("not implemented in the test environment")
 }
 
@@ -782,17 +788,22 @@ func (t *testSuiteClientForNexusOperations) ScheduleClient() ScheduleClient {
 }
 
 // SignalWithStartWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{}, options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error) {
+func (t *testSuiteClientForNexusOperations) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any, options StartWorkflowOptions, workflow any, workflowArgs ...any) (WorkflowRun, error) {
 	panic("not implemented in the test environment")
 }
 
 // SignalWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
+func (t *testSuiteClientForNexusOperations) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error {
 	panic("not implemented in the test environment")
 }
 
 // TerminateWorkflow implements Client.
-func (t *testSuiteClientForNexusOperations) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
+func (t *testSuiteClientForNexusOperations) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...any) error {
+	panic("not implemented in the test environment")
+}
+
+// TerminateWorkflowWithOptions implements Client.
+func (t *testSuiteClientForNexusOperations) TerminateWorkflowWithOptions(ctx context.Context, options TerminateWorkflowOptions) error {
 	panic("not implemented in the test environment")
 }
 
@@ -844,18 +855,6 @@ func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context,
 
 	activityID := options.ID
 	runID := uuid.NewString()
-
-	if options.responseInfo != nil {
-		options.responseInfo.Link = &commonpb.Link{
-			Variant: &commonpb.Link_Activity_{
-				Activity: &commonpb.Link_Activity{
-					Namespace:  t.env.workflowInfo.Namespace,
-					ActivityId: activityID,
-					RunId:      runID,
-				},
-			},
-		}
-	}
 
 	params := ExecuteActivityParams{
 		ExecuteActivityOptions: ExecuteActivityOptions{
@@ -992,7 +991,7 @@ type testEnvWorkflowRunForNexusOperations struct {
 }
 
 // Get implements WorkflowRun.
-func (t *testEnvWorkflowRunForNexusOperations) Get(ctx context.Context, valuePtr interface{}) error {
+func (t *testEnvWorkflowRunForNexusOperations) Get(ctx context.Context, valuePtr any) error {
 	panic("not implemented in the test environment")
 }
 
@@ -1006,8 +1005,13 @@ func (t *testEnvWorkflowRunForNexusOperations) GetRunID() string {
 	return t.RunID
 }
 
+// GetFirstExecutionRunID implements WorkflowRun.
+func (t *testEnvWorkflowRunForNexusOperations) GetFirstExecutionRunID() string {
+	return t.RunID
+}
+
 // GetWithOptions implements WorkflowRun.
-func (t *testEnvWorkflowRunForNexusOperations) GetWithOptions(ctx context.Context, valuePtr interface{}, options WorkflowRunGetOptions) error {
+func (t *testEnvWorkflowRunForNexusOperations) GetWithOptions(ctx context.Context, valuePtr any, options WorkflowRunGetOptions) error {
 	panic("not implemented in the test environment")
 }
 

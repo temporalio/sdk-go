@@ -22,7 +22,7 @@ func TestByteSliceConverter(t *testing.T) {
 	assert.Equal(t, payload.Data, b)
 
 	var gotBytes []byte
-	var gotInterface interface{}
+	var gotInterface any
 
 	err = bc.FromPayload(payload, &gotBytes)
 	require.NoError(t, err)

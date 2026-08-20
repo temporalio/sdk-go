@@ -11,7 +11,6 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -69,7 +68,7 @@ func intTestChildWorkflow(ctx workflow.Context, input string) (string, error) {
 func intTestCombinedWorkflow(ctx workflow.Context, input string) (string, error) {
 	// Side effect
 	var sideEffectVal string
-	err := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	err := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		return "side"
 	}).Get(&sideEffectVal)
 	if err != nil {
@@ -101,12 +100,8 @@ func intTestCombinedWorkflow(ctx workflow.Context, input string) (string, error)
 func (ts *IntegrationTestSuite) newSerCtxClientAndWorker(taskQueue string) (client.Client, worker.Worker) {
 	codecDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &intTestSigningCodec{})
 
-	c, err := client.Dial(client.Options{
-		HostPort:          ts.config.ServiceAddr,
-		Namespace:         ts.config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		DataConverter:     codecDC,
-		ConnectionOptions: client.ConnectionOptions{TLS: ts.config.TLS},
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = codecDC
 	})
 	ts.NoError(err)
 

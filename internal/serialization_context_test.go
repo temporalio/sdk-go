@@ -329,7 +329,7 @@ func (s *SerializationContextTestSuite) TestSideEffect_SigningCodec() {
 
 	workflow := func(ctx Context) (string, error) {
 		var sideEffectResult string
-		encoded := SideEffect(ctx, func(ctx Context) interface{} {
+		encoded := SideEffect(ctx, func(ctx Context) any {
 			return "side-effect-value"
 		})
 		err := encoded.Get(&sideEffectResult)
@@ -521,7 +521,7 @@ func (s *SerializationContextTestSuite) TestUpdateResult_CapturingDC() {
 		env.UpdateWorkflow(updateName, "update-id", &TestUpdateCallback{
 			OnAccept:   func() {},
 			OnReject:   func(err error) { s.Fail("update rejected", err) },
-			OnComplete: func(result interface{}, err error) { s.NoError(err) },
+			OnComplete: func(result any, err error) { s.NoError(err) },
 		}, "hello")
 	}, time.Second)
 
@@ -557,13 +557,13 @@ func (s *SerializationContextTestSuite) TestUpdateRoundTrip_SigningCodec() {
 		return nil
 	}
 
-	var updateResult interface{}
+	var updateResult any
 	var updateErr error
 	env.RegisterDelayedCallback(func() {
 		env.UpdateWorkflow(updateName, "update-id", &TestUpdateCallback{
 			OnAccept:   func() {},
 			OnReject:   func(err error) { updateErr = err },
-			OnComplete: func(result interface{}, err error) { updateResult = result; updateErr = err },
+			OnComplete: func(result any, err error) { updateResult = result; updateErr = err },
 		}, "hello")
 	}, time.Second)
 

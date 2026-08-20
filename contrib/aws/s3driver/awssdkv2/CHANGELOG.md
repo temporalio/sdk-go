@@ -10,3 +10,14 @@ or Security.
 # Changelog
 
 ## [Unreleased]
+
+### Breaking Changes
+
+- Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+
+## [0.2.1] - 2026-08-13
+
+### Fixed
+
+- Corrected the module's minimum Temporal Go SDK requirement from v1.25.1 to
+  v1.43.1.

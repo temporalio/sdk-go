@@ -19,7 +19,6 @@ import (
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -163,19 +162,16 @@ func (s *ExternalStorageTestSuite) SetupSuite() {
 }
 
 func (s *ExternalStorageTestSuite) SetupTest() {
+	s.Assertions = require.New(s.T())
 	s.taskQueueName = taskQueuePrefix + "-ext-" + s.T().Name()
 	s.driver = newMemDriver("test")
 	var err error
-	s.client, err = client.Dial(client.Options{
-		HostPort:  s.config.ServiceAddr,
-		Namespace: s.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.ExternalStorage{
+	s.client, err = s.newDefaultClient(func(options *client.Options) {
+		options.WorkerHeartbeatInterval = -1
+		options.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{s.driver},
 			PayloadSizeThreshold: extStoreThreshold,
-		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
+		}
 	})
 	s.NoError(err)
 	s.worker = worker.New(s.client, s.taskQueueName, worker.Options{
@@ -406,17 +402,13 @@ func (s *ExternalStorageTestSuite) TestDriverSelector() {
 
 	var err error
 	s.client.Close()
-	s.client, err = client.Dial(client.Options{
-		HostPort:  s.config.ServiceAddr,
-		Namespace: s.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.ExternalStorage{
+	s.client, err = s.newDefaultClient(func(options *client.Options) {
+		options.WorkerHeartbeatInterval = -1
+		options.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{d1, d2},
 			DriverSelector:       selector,
 			PayloadSizeThreshold: extStoreThreshold,
-		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
+		}
 	})
 	s.NoError(err)
 	// Re-create worker bound to the new client.
@@ -497,12 +489,8 @@ func (s *ExternalStorageTestSuite) TestRetrieveFailure() {
 func (s *ExternalStorageTestSuite) TestWorkerWithoutExternalStorageFails() {
 	// Build a client and worker with no ExternalStorage. s.client still has the
 	// driver, so it can store the oversized input; the worker below cannot retrieve it.
-	noStorageClient, err := client.Dial(client.Options{
-		HostPort:                s.config.ServiceAddr,
-		Namespace:               s.config.Namespace,
-		Logger:                  ilog.NewDefaultLogger(),
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
+	noStorageClient, err := s.newDefaultClient(func(options *client.Options) {
+		options.WorkerHeartbeatInterval = -1
 	})
 	s.NoError(err)
 	defer noStorageClient.Close()
@@ -583,16 +571,12 @@ func (s *ExternalStorageTestSuite) TestNoStorageWhenBelowThreshold() {
 func (s *ExternalStorageTestSuite) TestDriverPanicOnRetrieve() {
 	pd := &panicMemDriver{memStorageDriver: newMemDriver("test"), panicOnRetrieve: true}
 
-	c, err := client.Dial(client.Options{
-		HostPort:  s.config.ServiceAddr,
-		Namespace: s.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.ExternalStorage{
+	c, err := s.newDefaultClient(func(options *client.Options) {
+		options.WorkerHeartbeatInterval = -1
+		options.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{pd},
 			PayloadSizeThreshold: extStoreThreshold,
-		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
+		}
 	})
 	s.NoError(err)
 	defer c.Close()
@@ -632,16 +616,12 @@ func extStorePanicOnStoreWorkflow(_ workflow.Context) (string, error) {
 func (s *ExternalStorageTestSuite) TestDriverPanicOnStore() {
 	pd := &panicMemDriver{memStorageDriver: newMemDriver("test"), panicOnStore: true}
 
-	c, err := client.Dial(client.Options{
-		HostPort:  s.config.ServiceAddr,
-		Namespace: s.config.Namespace,
-		Logger:    ilog.NewDefaultLogger(),
-		ExternalStorage: converter.ExternalStorage{
+	c, err := s.newDefaultClient(func(options *client.Options) {
+		options.WorkerHeartbeatInterval = -1
+		options.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{pd},
 			PayloadSizeThreshold: extStoreThreshold,
-		},
-		ConnectionOptions:       client.ConnectionOptions{TLS: s.config.TLS},
-		WorkerHeartbeatInterval: -1,
+		}
 	})
 	s.NoError(err)
 	defer c.Close()
@@ -881,7 +861,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_UpdateWorkflow() {
 		WorkflowID:   wfID,
 		RunID:        run.GetRunID(),
 		UpdateName:   extStoreTargetUpdateName,
-		Args:         []interface{}{oversized(72)},
+		Args:         []any{oversized(72)},
 		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	s.NoError(err)
@@ -984,7 +964,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_CreateSchedule() {
 		Action: &client.ScheduleWorkflowAction{
 			ID:                  workflowID,
 			Workflow:            extStoreTargetWorkflow,
-			Args:                []interface{}{oversized(72)},
+			Args:                []any{oversized(72)},
 			TaskQueue:           s.taskQueueName,
 			WorkflowTaskTimeout: 5 * time.Second,
 		},
@@ -1016,7 +996,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_UpdateSchedule() {
 		Action: &client.ScheduleWorkflowAction{
 			ID:                  workflowID,
 			Workflow:            extStoreTargetWorkflow,
-			Args:                []interface{}{"small"}, // below threshold; satisfies arg validation
+			Args:                []any{"small"}, // below threshold; satisfies arg validation
 			TaskQueue:           s.taskQueueName,
 			WorkflowTaskTimeout: 5 * time.Second,
 		},
@@ -1030,7 +1010,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_UpdateSchedule() {
 	s.NoError(handle.Update(ctx, client.ScheduleUpdateOptions{
 		DoUpdate: func(input client.ScheduleUpdateInput) (*client.ScheduleUpdate, error) {
 			action := input.Description.Schedule.Action.(*client.ScheduleWorkflowAction)
-			action.Args = []interface{}{oversized(72)}
+			action.Args = []any{oversized(72)}
 			return &client.ScheduleUpdate{Schedule: &input.Description.Schedule}, nil
 		},
 	}))
@@ -1197,7 +1177,7 @@ func (s *ExternalStorageTestSuite) TestTargetContext_UpdateWithStartWorkflow() {
 		StartWorkflowOperation: startOp,
 		UpdateOptions: client.UpdateWorkflowOptions{
 			UpdateName:   extStoreTargetUpdateName,
-			Args:         []interface{}{oversized(72)},
+			Args:         []any{oversized(72)},
 			WaitForStage: client.WorkflowUpdateStageCompleted,
 		},
 	})

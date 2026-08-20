@@ -84,6 +84,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		Namespace: ntp.namespace,
 		TaskQueue: &taskqueuepb.TaskQueue{Name: ntp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:  ntp.identity,
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              ntp.workerBuildID,
 			UseVersioning:        ntp.useBuildIDVersioning,
@@ -117,7 +118,7 @@ func (ntp *nexusTaskPoller) PollTask() (taskForWorker, error) {
 }
 
 // ProcessTask processes a new task
-func (ntp *nexusTaskPoller) ProcessTask(task interface{}) error {
+func (ntp *nexusTaskPoller) ProcessTask(task any) error {
 	if !ntp.shouldDrainOnShutdown() && ntp.stopping() {
 		return errStop
 	}

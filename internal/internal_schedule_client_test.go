@@ -67,7 +67,7 @@ func (s *scheduleClientTestSuite) TestCreateScheduleClient() {
 	}
 	createResp := &workflowservice.CreateScheduleResponse{}
 	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.CreateScheduleRequest, _ ...any) {
 			s.Nil(req.Schedule.Policies.CatchupWindow)
 		}).
 		Return(createResp, nil).
@@ -100,10 +100,10 @@ func (s *scheduleClientTestSuite) TestCreateScheduleNoID() {
 }
 
 func (s *scheduleClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {
-	memo := map[string]interface{}{
+	memo := map[string]any{
 		"testMemo": "memo value",
 	}
-	searchAttributes := map[string]interface{}{
+	searchAttributes := map[string]any{
 		"testAttr": "attr value",
 	}
 
@@ -129,7 +129,7 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWithMemoAndSearchAttr() {
 	createResp := &workflowservice.CreateScheduleResponse{}
 
 	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).
-		Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.CreateScheduleRequest, _ ...any) {
 			var resultMemo, resultAttr string
 			// verify the schedules memo and search attributes
 			err := converter.GetDefaultDataConverter().FromPayload(req.Memo.Fields["testMemo"], &resultMemo)
@@ -234,7 +234,7 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoDataConverter() 
 		dc := iconverter.NewTestDataConverter()
 		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
-		memo := map[string]interface{}{
+		memo := map[string]any{
 			"testMemo": "memo value",
 		}
 		wf := func(ctx Context) string { panic("this is just a stub") }
@@ -255,7 +255,7 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoDataConverter() 
 		}
 		createResp := &workflowservice.CreateScheduleResponse{}
 		s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).
-			Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+			Do(func(_ any, req *workflowservice.CreateScheduleRequest, _ ...any) {
 				startWorkflow := req.Schedule.Action.GetStartWorkflow()
 				encoding := string(startWorkflow.Memo.Fields["testMemo"].Metadata[converter.MetadataEncoding])
 				if sdkFlagsAllowed[SDKFlagMemoUserDCEncode] {
@@ -287,7 +287,7 @@ func (s *scheduleClientTestSuite) TestCreateScheduleWorkflowMemoUserAndDefaultCo
 		}
 		s.client = NewServiceClient(s.service, nil, ClientOptions{DataConverter: dc})
 
-		memo := map[string]interface{}{
+		memo := map[string]any{
 			"testMemo": make(chan int),
 		}
 		wf := func(ctx Context) string { panic("this is just a stub") }

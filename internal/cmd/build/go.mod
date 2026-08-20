@@ -1,12 +1,15 @@
 module go.temporal.io/sdk/internal/cmd/build
 
-go 1.25.4
+go 1.26.0
 
 require (
+	github.com/Antonboom/testifylint v1.6.4
 	github.com/BurntSushi/toml v1.4.1-0.20240526193622-a339e1f7089c
 	github.com/kisielk/errcheck v1.8.0
+	github.com/ldez/usetesting v0.5.0
 	go.temporal.io/sdk v1.32.1
-	honnef.co/go/tools v0.6.0
+	golang.org/x/tools v0.44.1-0.20260420230617-19499e7caabc
+	honnef.co/go/tools v0.8.0
 )
 
 require (
@@ -18,7 +21,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.26.1 // indirect
 	github.com/nexus-rpc/nexus-proto-annotations v0.1.0 // indirect
-	github.com/nexus-rpc/sdk-go v0.6.0 // indirect
+	github.com/nexus-rpc/sdk-go v0.7.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
@@ -31,8 +34,6 @@ require (
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
-	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260414002931-afd174a4e478 // indirect
 	google.golang.org/grpc v1.82.1 // indirect

@@ -29,35 +29,35 @@ func (l *ReplayLogger) check() bool {
 }
 
 // Debug writes message to the log if it is not a replay.
-func (l *ReplayLogger) Debug(msg string, keyvals ...interface{}) {
+func (l *ReplayLogger) Debug(msg string, keyvals ...any) {
 	if l.check() {
 		l.logger.Debug(msg, keyvals...)
 	}
 }
 
 // Info writes message to the log if it is not a replay.
-func (l *ReplayLogger) Info(msg string, keyvals ...interface{}) {
+func (l *ReplayLogger) Info(msg string, keyvals ...any) {
 	if l.check() {
 		l.logger.Info(msg, keyvals...)
 	}
 }
 
 // Warn writes message to the log if it is not a replay.
-func (l *ReplayLogger) Warn(msg string, keyvals ...interface{}) {
+func (l *ReplayLogger) Warn(msg string, keyvals ...any) {
 	if l.check() {
 		l.logger.Warn(msg, keyvals...)
 	}
 }
 
 // Error writes message to the log if it is not a replay.
-func (l *ReplayLogger) Error(msg string, keyvals ...interface{}) {
+func (l *ReplayLogger) Error(msg string, keyvals ...any) {
 	if l.check() {
 		l.logger.Error(msg, keyvals...)
 	}
 }
 
 // With returns new logger that prepend every log entry with keyvals.
-func (l *ReplayLogger) With(keyvals ...interface{}) log.Logger {
+func (l *ReplayLogger) With(keyvals ...any) log.Logger {
 	return NewReplayLogger(log.With(l.logger, keyvals...), l.isReplay, l.enableLoggingInReplay)
 }
 

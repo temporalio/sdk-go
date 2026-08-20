@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"context"
 	"crypto/tls"
 	"testing"
 
@@ -64,7 +63,7 @@ func TestAPIKeyCredentials_ExplicitTLSConfigPreservedWithAPIKey(t *testing.T) {
 
 func TestConnectionOptions_TLSAndTLSDisabledMutuallyExclusive(t *testing.T) {
 	// Test that setting both TLS and TLSDisabled returns an error
-	_, err := NewClient(context.Background(), ClientOptions{
+	_, err := NewClient(t.Context(), ClientOptions{
 		HostPort: "localhost:7233",
 		ConnectionOptions: ConnectionOptions{
 			TLS:         &tls.Config{},

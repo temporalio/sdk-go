@@ -3,6 +3,7 @@ package cache
 import (
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -43,14 +44,19 @@ func TestLRU(t *testing.T) {
 }
 
 func TestLRUWithTTL(t *testing.T) {
-	cache := New(5, &Options{
-		TTL: time.Millisecond * 100,
+	synctest.Test(t, func(t *testing.T) {
+		const ttl = 100 * time.Millisecond
+		cache := New(5, &Options{
+			TTL: ttl,
+		})
+		cache.Put("A", "foo")
+		assert.Equal(t, "foo", cache.Get("A"))
+		time.Sleep(ttl)
+		assert.Equal(t, "foo", cache.Get("A"))
+		time.Sleep(time.Nanosecond)
+		assert.Nil(t, cache.Get("A"))
+		assert.Equal(t, 0, cache.Size())
 	})
-	cache.Put("A", "foo")
-	assert.Equal(t, "foo", cache.Get("A"))
-	time.Sleep(time.Millisecond * 300)
-	assert.Nil(t, cache.Get("A"))
-	assert.Equal(t, 0, cache.Size())
 }
 
 func TestLRUCacheConcurrentAccess(t *testing.T) {
@@ -69,18 +75,16 @@ func TestLRUCacheConcurrentAccess(t *testing.T) {
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < 20; i++ {
-		wg.Add(1)
+	for range 20 {
 
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 
 			<-start
 
-			for j := 0; j < 1000; j++ {
+			for range 1000 {
 				cache.Get("A")
 			}
-		}()
+		})
 	}
 
 	close(start)
@@ -88,76 +92,64 @@ func TestLRUCacheConcurrentAccess(t *testing.T) {
 }
 
 func TestRemoveFunc(t *testing.T) {
-	ch := make(chan bool)
-	cache := New(5, &Options{
-		RemovedFunc: func(i interface{}) {
-			_, ok := i.(*testing.T)
-			assert.True(t, ok)
-			ch <- true
-		},
+	synctest.Test(t, func(t *testing.T) {
+		removed := false
+		cache := New(5, &Options{
+			RemovedFunc: func(i any) {
+				_, ok := i.(*testing.T)
+				assert.True(t, ok)
+				removed = true
+			},
+		})
+
+		cache.Put("testing", t)
+		cache.Delete("testing")
+		assert.Nil(t, cache.Get("testing"))
+		synctest.Wait()
+		assert.True(t, removed)
 	})
-
-	cache.Put("testing", t)
-	cache.Delete("testing")
-	assert.Nil(t, cache.Get("testing"))
-
-	timeout := time.NewTimer(time.Millisecond * 300)
-	select {
-	case b := <-ch:
-		assert.True(t, b)
-	case <-timeout.C:
-		t.Error("RemovedFunc did not send true on channel ch")
-	}
 }
 
 func TestRemovedFuncWithTTL(t *testing.T) {
-	ch := make(chan bool)
-	cache := New(5, &Options{
-		TTL: time.Millisecond * 50,
-		RemovedFunc: func(i interface{}) {
-			_, ok := i.(*testing.T)
-			assert.True(t, ok)
-			ch <- true
-		},
+	synctest.Test(t, func(t *testing.T) {
+		removed := false
+		cache := New(5, &Options{
+			TTL: time.Millisecond * 50,
+			RemovedFunc: func(i any) {
+				_, ok := i.(*testing.T)
+				assert.True(t, ok)
+				removed = true
+			},
+		})
+
+		cache.Put("A", t)
+		assert.Equal(t, t, cache.Get("A"))
+		time.Sleep(time.Millisecond * 100)
+		assert.Nil(t, cache.Get("A"))
+		synctest.Wait()
+		assert.True(t, removed)
 	})
-
-	cache.Put("A", t)
-	assert.Equal(t, t, cache.Get("A"))
-	time.Sleep(time.Millisecond * 100)
-	assert.Nil(t, cache.Get("A"))
-
-	timeout := time.NewTimer(time.Millisecond * 300)
-	select {
-	case b := <-ch:
-		assert.True(t, b)
-	case <-timeout.C:
-		t.Error("RemovedFunc did not send true on channel ch")
-	}
 }
 
 func TestClear(t *testing.T) {
-	ch := make(chan bool)
-	cache := New(5, &Options{
-		TTL: time.Millisecond * 50,
-		RemovedFunc: func(i interface{}) {
-			_, ok := i.(*testing.T)
-			assert.True(t, ok)
-			ch <- true
-		},
+	synctest.Test(t, func(t *testing.T) {
+		removed := false
+		cache := New(5, &Options{
+			TTL: time.Millisecond * 50,
+			RemovedFunc: func(i any) {
+				_, ok := i.(*testing.T)
+				assert.True(t, ok)
+				removed = true
+			},
+		})
+
+		cache.Put("A", t)
+		assert.Equal(t, t, cache.Get("A"))
+		cache.Clear()
+		assert.Nil(t, cache.Get("A"))
+		synctest.Wait()
+		assert.True(t, removed)
 	})
-
-	cache.Put("A", t)
-	assert.Equal(t, t, cache.Get("A"))
-	cache.Clear()
-	assert.Nil(t, cache.Get("A"))
-
-	timeout := time.NewTimer(time.Millisecond * 300)
-	select {
-	case b := <-ch:
-		assert.True(t, b)
-	case <-timeout.C:
-		t.Error("Clear did not send true on channel ch")
-	}
 }
 
 func TestLRUMax(t *testing.T) {

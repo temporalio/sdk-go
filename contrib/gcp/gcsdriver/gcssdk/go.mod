@@ -1,13 +1,13 @@
 module go.temporal.io/sdk/contrib/gcp/gcsdriver/gcssdk
 
-go 1.25.4
+go 1.26.0
 
 require (
 	cloud.google.com/go/storage v1.57.2
 	github.com/fsouza/fake-gcs-server v1.50.2
 	github.com/stretchr/testify v1.11.1
 	go.temporal.io/api v1.63.4
-	go.temporal.io/sdk v1.25.1
+	go.temporal.io/sdk v1.43.1
 	go.temporal.io/sdk/contrib/gcp/gcsdriver v0.0.0-00010101000000-000000000000
 )
 
@@ -57,7 +57,7 @@ require (
 	go.opentelemetry.io/otel/sdk v1.43.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
-	golang.org/x/crypto v0.51.0 // indirect
+	golang.org/x/crypto v0.52.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect

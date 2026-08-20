@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
-
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -52,23 +52,26 @@ func TestDispatcher(t *testing.T) {
 }
 
 func TestDispatcherDeferClose(t *testing.T) {
-	var value atomic.Bool
-	d := createNewDispatcher(func(ctx Context) {
-		// Block all coroutines on this channel
-		c1 := NewChannel(ctx)
-		defer func() {
-			value.Store(true)
-		}()
-		c1.Receive(ctx, nil)
+	synctest.Test(t, func(t *testing.T) {
+		var value atomic.Bool
+		d := createNewDispatcher(func(ctx Context) {
+			// Block all coroutines on this channel
+			c1 := NewChannel(ctx)
+			defer func() {
+				value.Store(true)
+			}()
+			c1.Receive(ctx, nil)
+		})
+		defer d.Close()
+		require.Equal(t, false, value.Load())
+		requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+		// Closing the dispatcher will cause the blocked goroutine to stop executing, but defers
+		// will still run.
+		d.Close()
+		require.True(t, d.IsClosed())
+		synctest.Wait()
+		require.True(t, value.Load())
 	})
-	defer d.Close()
-	require.Equal(t, false, value.Load())
-	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
-	// Closing the dispatcher will cause the blocked goroutine to stop executing, but defers
-	// will still run.
-	d.Close()
-	require.True(t, d.IsClosed())
-	require.Eventually(t, value.Load, time.Second, 10*time.Millisecond)
 }
 
 func TestDispatcherDeadlockedDefer(t *testing.T) {
@@ -93,40 +96,41 @@ func TestDispatcherDeadlockedDefer(t *testing.T) {
 }
 
 func TestDispatcherDeferCloseRace(t *testing.T) {
-	var value atomic.Int32
-	var d dispatcher
-	d = createNewDispatcher(func(ctx Context) {
-		// Block all coroutines on this channel
-		c1 := NewChannel(ctx)
-		for i := 0; i < 100; i++ {
-			index := i
-			id := "coroutine_" + strconv.Itoa(index)
-			d.NewCoroutine(ctx, id, false, func(ctx Context) {
-				defer func() {
-					value.Store(int32(index))
-				}()
-				c1.Receive(ctx, nil)
-			})
-		}
-		c1.Receive(ctx, nil)
-	})
-	defer d.Close()
+	synctest.Test(t, func(t *testing.T) {
+		var value atomic.Int32
+		var d dispatcher
+		d = createNewDispatcher(func(ctx Context) {
+			// Block all coroutines on this channel
+			c1 := NewChannel(ctx)
+			for i := range 100 {
+				index := i
+				id := "coroutine_" + strconv.Itoa(index)
+				d.NewCoroutine(ctx, id, false, func(ctx Context) {
+					defer func() {
+						value.Store(int32(index))
+					}()
+					c1.Receive(ctx, nil)
+				})
+			}
+			c1.Receive(ctx, nil)
+		})
+		defer d.Close()
 
-	require.Equal(t, int32(0), value.Load())
-	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
-	// Closing the dispatcher will cause the blocked coroutine to stop executing, but defers
-	// will still run.
-	d.Close()
-	require.True(t, d.IsClosed())
-	require.Eventually(t, func() bool {
-		return value.Load() == int32(99)
-	}, time.Second, 10*time.Millisecond)
+		require.Equal(t, int32(0), value.Load())
+		requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+		// Closing the dispatcher will cause the blocked coroutine to stop executing, but defers
+		// will still run.
+		d.Close()
+		require.True(t, d.IsClosed())
+		synctest.Wait()
+		require.Equal(t, int32(99), value.Load())
+	})
 }
 
 func TestNonBlockingChildren(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			ii := i
 			Go(ctx, func(ctx Context) {
 				history = append(history, fmt.Sprintf("child-%v", ii))
@@ -796,7 +800,7 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			})
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			ii := i // to reference within closure
 			Go(ctx, func(ctx Context) {
 				history = append(history, fmt.Sprintf("add-%v", ii))
@@ -1116,7 +1120,7 @@ func TestDispatchClose(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			ii := i
 			GoNamed(ctx, fmt.Sprintf("c-%v", i), func(ctx Context) {
 				c.Receive(ctx, nil) // blocked forever
@@ -1133,7 +1137,7 @@ func TestDispatchClose(t *testing.T) {
 	// 11 coroutines (3 lines each) + 10 nl
 	require.EqualValues(t, 11*3+10, len(strings.Split(stack, "\n")), stack)
 	require.Contains(t, stack, "coroutine root [blocked on forever_blocked.Receive]:")
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		require.Contains(t, stack, fmt.Sprintf("coroutine c-%v [blocked on forever_blocked.Receive]:", i))
 	}
 	beforeClose := runtime.NumGoroutine()
@@ -1151,7 +1155,7 @@ func TestPanic(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			ii := i
 			GoNamed(ctx, fmt.Sprintf("c-%v", i), func(ctx Context) {
 				if ii == 9 {
@@ -1901,7 +1905,7 @@ func TestContextCancelRace(t *testing.T) {
 			_ = Sleep(ctx, time.Hour)
 		}
 		// start a handful to increase odds of a race being detected
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			Go(ctx, racyCancel)
 		}
 
@@ -1929,7 +1933,7 @@ func TestContextChildCancelRace(t *testing.T) {
 			_ = Sleep(ctx, time.Hour)
 		}
 		// start a handful to increase odds of a race being detected
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			Go(ctx, racyCancel)
 		}
 

@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -204,8 +205,8 @@ func extractTypeValue(expr ast.Expr) string {
 			}
 		}
 	case *ast.Ident:
-		if strings.HasPrefix(t.Name, "internal.") {
-			return strings.TrimPrefix(t.Name, "internal.")
+		if after, ok := strings.CutPrefix(t.Name, "internal."); ok {
+			return after
 		}
 	case *ast.FuncType:
 		for _, param := range t.Params.List {
@@ -388,11 +389,12 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 					}
 				}
 			}
-			newTrimmedLine := exposedAs
+			var newTrimmedLine strings.Builder
+			newTrimmedLine.WriteString(exposedAs)
 			for i := range newLinks {
-				newTrimmedLine += newLinks[i] + ", "
+				newTrimmedLine.WriteString(newLinks[i] + ", ")
 			}
-			nextLine = strings.TrimSuffix(newTrimmedLine, ", ")
+			nextLine = strings.TrimSuffix(newTrimmedLine.String(), ", ")
 			trimmedNextLine = nextLine
 		}
 
@@ -569,12 +571,7 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 	}
 
 	if strings.HasSuffix(line, " struct {") {
-		for _, strToken := range tokens {
-			if strToken == private {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(tokens, private)
 	}
 
 	if insideStruct {
@@ -591,10 +588,8 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 	if strings.HasPrefix(line, "var ") ||
 		strings.HasPrefix(line, "const ") ||
 		strings.HasPrefix(line, "type ") {
-		for _, strToken := range tokens {
-			if strToken == private {
-				return true
-			}
+		if slices.Contains(tokens, private) {
+			return true
 		}
 	}
 	return false
