@@ -626,44 +626,15 @@ func (s *SerializationContextTestSuite) TestUpdateRoundTrip_SigningCodec() {
 	s.NotNil(updateResult)
 }
 
-// serCtxMarkerCodec marks payloads on Encode and requires the mark on Decode,
-// regardless of serialization context.
-type serCtxMarkerCodec struct{}
-
-func (c *serCtxMarkerCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	result := make([]*commonpb.Payload, len(payloads))
-	for i, p := range payloads {
-		clone := proto.Clone(p).(*commonpb.Payload)
-		if clone.Metadata == nil {
-			clone.Metadata = map[string][]byte{}
-		}
-		clone.Metadata["codec-used"] = []byte("true")
-		result[i] = clone
-	}
-	return result, nil
-}
-
-func (c *serCtxMarkerCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	result := make([]*commonpb.Payload, len(payloads))
-	for i, p := range payloads {
-		if string(p.Metadata["codec-used"]) != "true" {
-			return nil, fmt.Errorf("payload was not encoded with the configured codec")
-		}
-		clone := proto.Clone(p).(*commonpb.Payload)
-		delete(clone.Metadata, "codec-used")
-		result[i] = clone
-	}
-	return result, nil
-}
-
 func (s *SerializationContextTestSuite) TestActivityEnvironmentLocalActivity_UsesConfiguredDataConverter() {
+	dc := newSerCtxOneShotDataConverter()
 	env := s.NewTestActivityEnvironment()
-	env.SetDataConverter(converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxMarkerCodec{}))
+	env.SetDataConverter(dc)
 
 	activityFn := func(_ context.Context, input string) (string, error) {
 		return "got:" + input, nil
 	}
-	env.RegisterActivity(activityFn)
+	env.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "localActivityUnderTest"})
 
 	encoded, err := env.ExecuteLocalActivity(activityFn, "hello")
 	s.NoError(err)
@@ -671,6 +642,17 @@ func (s *SerializationContextTestSuite) TestActivityEnvironmentLocalActivity_Use
 	var result string
 	s.NoError(encoded.Get(&result))
 	s.Equal("got:hello", result)
+
+	var actCtx *converter.ActivitySerializationContext
+	for _, ctx := range dc.getEncodeContexts() {
+		if c, ok := ctx.(converter.ActivitySerializationContext); ok {
+			actCtx = &c
+			break
+		}
+	}
+	s.Require().NotNil(actCtx, "local activity result should be encoded with ActivitySerializationContext")
+	s.True(actCtx.IsLocal)
+	s.Equal("localActivityUnderTest", actCtx.ActivityType)
 }
 
 func (s *SerializationContextTestSuite) TestLocalActivityMock_SigningCodec() {
@@ -804,4 +786,46 @@ func (s *SerializationContextTestSuite) TestActivity_OneShotDataConverter() {
 		}
 	}
 	s.True(foundActivity, "activity payloads should be encoded with ActivitySerializationContext")
+}
+
+// serCtxWorkflowBindingDataConverter loses serialization context awareness once
+// bound to a workflow context, which ContextAware permits.
+type serCtxWorkflowBindingDataConverter struct {
+	*serCtxOneShotDataConverter
+}
+
+func (dc *serCtxWorkflowBindingDataConverter) WithWorkflowContext(Context) converter.DataConverter {
+	return dc.serCtxOneShotDataConverter.DataConverter
+}
+
+func (dc *serCtxWorkflowBindingDataConverter) WithContext(context.Context) converter.DataConverter {
+	return dc.serCtxOneShotDataConverter.DataConverter
+}
+
+func (s *SerializationContextTestSuite) TestLocalActivity_WorkflowBindingDropsSerializationContext() {
+	oneShot := newSerCtxOneShotDataConverter()
+	env := s.NewTestWorkflowEnvironment()
+	env.SetDataConverter(&serCtxWorkflowBindingDataConverter{serCtxOneShotDataConverter: oneShot})
+
+	activity := func(_ context.Context, input string) (string, error) {
+		return input, nil
+	}
+	env.RegisterActivity(activity)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{StartToCloseTimeout: time.Minute})
+		var result string
+		return ExecuteLocalActivity(ctx, activity, "test").Get(ctx, &result)
+	})
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	foundLocal := false
+	for _, ctx := range oneShot.getEncodeContexts() {
+		if actCtx, ok := ctx.(converter.ActivitySerializationContext); ok && actCtx.IsLocal {
+			foundLocal = true
+			break
+		}
+	}
+	s.True(foundLocal, "serialization context must be applied before the converter is bound to the workflow context")
 }

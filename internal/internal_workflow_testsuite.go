@@ -882,14 +882,29 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn interface{},
 	args ...interface{},
 ) (val converter.EncodedValue, err error) {
+	activityType, err := getValidatedActivityFunction(activityFn, args, env.registry)
+	if err != nil {
+		return nil, err
+	}
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    env.workflowInfo.Namespace,
+		WorkflowID:   env.workflowInfo.WorkflowExecution.ID,
+		WorkflowType: env.workflowInfo.WorkflowType.Name,
+		ActivityType: activityType.Name,
+		TaskQueue:    env.workflowInfo.TaskQueueName,
+		IsLocal:      true,
+	}
 	params := ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: ExecuteLocalActivityOptions{
 			ScheduleToCloseTimeout: env.testTimeout,
 		},
-		ActivityFn:   activityFn,
-		InputArgs:    args,
-		WorkflowInfo: env.workflowInfo,
-		Header:       env.header,
+		ActivityFn:       activityFn,
+		ActivityType:     activityType.Name,
+		InputArgs:        args,
+		WorkflowInfo:     env.workflowInfo,
+		DataConverter:    converter.WithDataConverterSerializationContext(env.GetRootDataConverter(), actCtx),
+		FailureConverter: converter.WithFailureConverterSerializationContext(env.GetRootFailureConverter(), actCtx),
+		Header:           env.header,
 	}
 	task := &localActivityTask{
 		activityID: "test-local-activity",
@@ -912,10 +927,9 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 
 	result := taskHandler.executeLocalActivityTask(task)
 	if result.err != nil {
-		activityType, _ := getValidatedActivityFunction(activityFn, args, env.registry)
 		return nil, env.wrapActivityError(ActivityID{id: task.activityID}, activityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, result.err)
 	}
-	return newEncodedValue(result.result, env.GetDataConverter()), nil
+	return newEncodedValue(result.result, params.DataConverter), nil
 }
 
 func (env *testWorkflowEnvironmentImpl) startWorkflowTask() {

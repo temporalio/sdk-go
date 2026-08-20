@@ -1091,10 +1091,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		TaskQueue:    cmp.Or(options.TaskQueueName, wfInfo.TaskQueueName),
 		IsLocal:      false,
 	}
-	dataConverter := converter.WithDataConverterSerializationContext(
-		getRootDataConverterFromWorkflowContext(ctx),
-		actCtx,
-	)
+	dataConverter := withRootDataConverterSerializationContext(ctx, actCtx)
 	future.(*decodeFutureImpl).dataConverter = dataConverter
 
 	input, err := encodeArgs(dataConverter, args)
@@ -1281,7 +1278,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                wfInfo,
-		DataConverter:               converter.WithDataConverterSerializationContext(getRootDataConverterFromWorkflowContext(ctx), actCtx),
+		DataConverter:               withRootDataConverterSerializationContext(ctx, actCtx),
 		FailureConverter:            converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
@@ -1430,7 +1427,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		Namespace:  cmp.Or(workflowOptionsFromCtx.Namespace, wfInfo.Namespace),
 		WorkflowID: childWorkflowID,
 	}
-	dc := converter.WithDataConverterSerializationContext(getRootDataConverterFromWorkflowContext(ctx), childWfCtx)
+	dc := withRootDataConverterSerializationContext(ctx, childWfCtx)
 	result.decodeFutureImpl.dataConverter = dc
 
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
@@ -1903,13 +1900,11 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	}
 
 	wfInfo := env.WorkflowInfo()
-	dataConverter := converter.WithDataConverterSerializationContext(
-		getRootDataConverterFromWorkflowContext(ctx),
-		converter.WorkflowSerializationContext{
-			// Use target namespace for cross-namespace signals, otherwise default to current workflow's.
-			Namespace:  cmp.Or(options.Namespace, wfInfo.Namespace),
-			WorkflowID: workflowID,
-		})
+	dataConverter := withRootDataConverterSerializationContext(ctx, converter.WorkflowSerializationContext{
+		// Use target namespace for cross-namespace signals, otherwise default to current workflow's.
+		Namespace:  cmp.Or(options.Namespace, wfInfo.Namespace),
+		WorkflowID: workflowID,
+	})
 	input, err := encodeArg(dataConverter, arg)
 	if err != nil {
 		settable.Set(nil, err)

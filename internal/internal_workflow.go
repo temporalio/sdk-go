@@ -1637,12 +1637,16 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	return WithWorkflowContext(ctx, dataConverter)
 }
 
-func getRootDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
+// withRootDataConverterSerializationContext applies sc to the worker-configured
+// data converter, before any other serialization context, and only then binds it
+// to the workflow context. Binding first would hand sc to a converter that is no
+// longer serialization context aware, silently dropping it.
+func withRootDataConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	if options == nil || options.RootDataConverter == nil {
-		return getDataConverterFromWorkflowContext(ctx)
+		return converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), sc)
 	}
-	return WithWorkflowContext(ctx, options.RootDataConverter)
+	return WithWorkflowContext(ctx, converter.WithDataConverterSerializationContext(options.RootDataConverter, sc))
 }
 
 func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataConverter {

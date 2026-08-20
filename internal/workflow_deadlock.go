@@ -154,6 +154,7 @@ type dataConverterWithoutDeadlock struct {
 
 // Exposed as: [go.temporal.io/sdk/workflow.ContextAware]
 var _ ContextAware = &dataConverterWithoutDeadlock{}
+var _ converter.DataConverterWithSerializationContext = &dataConverterWithoutDeadlock{}
 
 func (d *dataConverterWithoutDeadlock) ToPayload(value interface{}) (*commonpb.Payload, error) {
 	PauseDeadlockDetector(d.context)
@@ -197,4 +198,11 @@ func (d *dataConverterWithoutDeadlock) WithWorkflowContext(ctx Context) converte
 
 func (d *dataConverterWithoutDeadlock) WithContext(ctx context.Context) converter.DataConverter {
 	return &dataConverterWithoutDeadlock{context: d.context, underlying: WithContext(ctx, d.underlying)}
+}
+
+func (d *dataConverterWithoutDeadlock) WithSerializationContext(sc converter.SerializationContext) converter.DataConverter {
+	return &dataConverterWithoutDeadlock{
+		context:    d.context,
+		underlying: converter.WithDataConverterSerializationContext(d.underlying, sc),
+	}
 }
