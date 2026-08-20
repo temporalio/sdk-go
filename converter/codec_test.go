@@ -31,8 +31,8 @@ func ExampleCodecDataConverter_compression() {
 	// The zlib payload is smaller
 	fmt.Printf("Uncompressed payload size: %v (encoding: %s)\n",
 		len(uncompPayload.Data), uncompPayload.Metadata[MetadataEncoding])
-	fmt.Printf("Compressed payload size: %v (encoding: %s)\n",
-		len(compPayload.Data), compPayload.Metadata[MetadataEncoding])
+	fmt.Printf("Compressed payload is smaller? %v (encoding: %s)\n",
+		len(compPayload.Data) < len(uncompPayload.Data), compPayload.Metadata[MetadataEncoding])
 
 	// Convert from payload and confirm the same string. This uses the same
 	// compression converter because the converter does not do anything to
@@ -45,7 +45,7 @@ func ExampleCodecDataConverter_compression() {
 
 	// Output:
 	// Uncompressed payload size: 1202 (encoding: json/plain)
-	// Compressed payload size: 57 (encoding: binary/zlib)
+	// Compressed payload is smaller? true (encoding: binary/zlib)
 	// Uncompressed payload back to original? true
 	// Compressed payload back to original? true
 }

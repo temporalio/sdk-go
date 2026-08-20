@@ -1402,8 +1402,9 @@ func TestFailureToError_NexusOperationExecution_TokenFallbackToId(t *testing.T) 
 			Endpoint:         "ep",
 			Service:          "svc",
 			Operation:        "op",
-			OperationId:      "legacy-id",
-			OperationToken:   "",
+			//lint:ignore SA1019 construct a legacy failure to verify operation ID fallback
+			OperationId:    "legacy-id",
+			OperationToken: "",
 		}},
 		Message: "failed",
 	}

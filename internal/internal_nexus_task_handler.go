@@ -509,6 +509,7 @@ func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Respo
 		res.Variant = &nexuspb.Response_StartOperation{
 			StartOperation: &nexuspb.StartOperationResponse{
 				Variant: &nexuspb.StartOperationResponse_OperationError{
+					//lint:ignore SA1019 servers without Temporal failure responses require the legacy operation error variant
 					OperationError: &nexuspb.UnsuccessfulOperationError{
 						OperationState: state,
 						Failure:        failure,
