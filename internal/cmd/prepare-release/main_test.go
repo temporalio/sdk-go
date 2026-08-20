@@ -133,7 +133,7 @@ func TestCreateDraftPRStopsBeforePush(t *testing.T) {
 	eff := newMockEffects(nil)
 
 	args := commandArgs{target: sdkTarget(), version: "1.2.3", stopBeforePush: true}
-	_, err := createDraftPR(eff, args, "/worktree", "release")
+	_, err := createDraftPR(eff, args, "/worktree")
 	if err == nil || !strings.Contains(err.Error(), "--stop-before-push") {
 		t.Fatalf("expected stop-before-push error, got %v", err)
 	}

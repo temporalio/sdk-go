@@ -93,17 +93,17 @@ func (t releaseTarget) filePath(worktreeRoot, file string) string {
 }
 
 // releaseBranch names the branch holding the prepared release files.
-func (t releaseTarget) releaseBranch(version string) string {
-	if t.dir == "" {
-		return "chore/release-" + version
+func releaseBranch(args commandArgs) string {
+	if args.target.dir == "" {
+		return "chore/release-" + args.version
 	}
-	return "chore/release-" + strings.ReplaceAll(t.dir, "/", "-") + "-" + version
+	return "chore/release-" + strings.ReplaceAll(args.target.dir, "/", "-") + "-" + args.version
 }
 
 // releaseSubject describes the release in commit messages and pull request titles.
-func (t releaseTarget) releaseSubject(version string) string {
-	if t.dir == "" {
-		return "release " + version
+func releaseSubject(args commandArgs) string {
+	if args.target.dir == "" {
+		return "release " + args.version
 	}
-	return t.dir + " release " + version
+	return args.target.dir + " release " + args.version
 }

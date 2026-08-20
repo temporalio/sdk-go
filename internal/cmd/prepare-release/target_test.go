@@ -23,10 +23,11 @@ func TestSDKTarget(t *testing.T) {
 	if got := strings.Join(target.releaseFiles(), " "); got != "CHANGELOG.md internal/version.go" {
 		t.Errorf("unexpected release files: %q", got)
 	}
-	if got := target.releaseBranch("1.48.0"); got != "chore/release-1.48.0" {
+	args := commandArgs{target: target, version: "1.48.0"}
+	if got := releaseBranch(args); got != "chore/release-1.48.0" {
 		t.Errorf("unexpected branch: %q", got)
 	}
-	if got := target.releaseSubject("1.48.0"); got != "release 1.48.0" {
+	if got := releaseSubject(args); got != "release 1.48.0" {
 		t.Errorf("unexpected subject: %q", got)
 	}
 	if !target.markLatest {
@@ -60,10 +61,11 @@ func TestContribTarget(t *testing.T) {
 	if got := strings.Join(target.releaseFiles(), " "); got != "contrib/aws/s3driver/CHANGELOG.md" {
 		t.Errorf("unexpected release files: %q", got)
 	}
-	if got := target.releaseBranch("0.2.2"); got != "chore/release-contrib-aws-s3driver-0.2.2" {
+	args := commandArgs{target: target, version: "0.2.2"}
+	if got := releaseBranch(args); got != "chore/release-contrib-aws-s3driver-0.2.2" {
 		t.Errorf("unexpected branch: %q", got)
 	}
-	if got := target.releaseSubject("0.2.2"); got != "contrib/aws/s3driver release 0.2.2" {
+	if got := releaseSubject(args); got != "contrib/aws/s3driver release 0.2.2" {
 		t.Errorf("unexpected subject: %q", got)
 	}
 	if target.markLatest {

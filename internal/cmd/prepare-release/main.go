@@ -67,9 +67,10 @@ func run(args []string) error {
 
 // commandArgs is one parsed command line: which module to release, and how.
 type commandArgs struct {
-	target         releaseTarget
-	version        string
-	releaseDate    time.Time
+	target      releaseTarget
+	version     string
+	releaseDate time.Time
+	// stopBeforePush aborts execution just before pushing anything to GitHub.
 	stopBeforePush bool
 	// allowUnofficialDependencies permits Temporal module requirements that are
 	// prereleases or pseudo-versions.
@@ -125,9 +126,7 @@ func parseArgs(args []string) (commandArgs, error) {
 // CORE LOGIC
 
 func prepareEverything(eff Effects, args commandArgs) (retErr error) {
-	branch := args.target.releaseBranch(args.version)
-
-	worktreeRoot, cleanupWorktree, err := prepareWorktree(eff, branch)
+	worktreeRoot, cleanupWorktree, err := prepareWorktree(eff, args)
 	if err != nil {
 		return err
 	}
@@ -140,12 +139,12 @@ func prepareEverything(eff Effects, args commandArgs) (retErr error) {
 				retErr,
 				worktreeRoot,
 				formatCommand("git", "worktree", "remove", "--force", worktreeRoot),
-				formatCommand("git", "branch", "--delete", "--force", branch),
+				formatCommand("git", "branch", "--delete", "--force", releaseBranch(args)),
 			)
 		}
 	}()
 
-	releaseNotes, prURL, err := prepareDraftPR(eff, args, worktreeRoot, branch)
+	releaseNotes, prURL, err := prepareDraftPR(eff, args, worktreeRoot)
 	if err != nil {
 		return err
 	}
@@ -165,7 +164,7 @@ func prepareEverything(eff Effects, args commandArgs) (retErr error) {
 	return nil
 }
 
-func prepareWorktree(eff Effects, branch string) (worktreeRoot string, cleanup func() error, retErr error) {
+func prepareWorktree(eff Effects, args commandArgs) (worktreeRoot string, cleanup func() error, retErr error) {
 	root, err := eff.repoRoot()
 	if err != nil {
 		return "", nil, err
@@ -176,14 +175,14 @@ func prepareWorktree(eff Effects, branch string) (worktreeRoot string, cleanup f
 		return "", nil, err
 	}
 
-	worktreeRoot, cleanupWorktree, err := createWorktree(eff, root, branch)
+	worktreeRoot, cleanupWorktree, err := createWorktree(eff, root, releaseBranch(args))
 	if err != nil {
 		return "", nil, err
 	}
 	return worktreeRoot, cleanupWorktree, nil
 }
 
-func prepareDraftPR(eff Effects, args commandArgs, worktreeRoot, branch string) (string, string, error) {
+func prepareDraftPR(eff Effects, args commandArgs, worktreeRoot string) (string, string, error) {
 	err := validateRelease(eff, args, worktreeRoot)
 	if err != nil {
 		return "", "", err
@@ -194,7 +193,7 @@ func prepareDraftPR(eff Effects, args commandArgs, worktreeRoot, branch string) 
 		return "", "", err
 	}
 
-	prURL, err := createDraftPR(eff, args, worktreeRoot, branch)
+	prURL, err := createDraftPR(eff, args, worktreeRoot)
 	if err != nil {
 		return "", "", err
 	}
@@ -299,7 +298,7 @@ func updateReleaseFiles(eff Effects, args commandArgs, worktreeRoot string) (str
 	return releaseNotes, nil
 }
 
-func createDraftPR(eff Effects, args commandArgs, worktreeRoot, branch string) (string, error) {
+func createDraftPR(eff Effects, args commandArgs, worktreeRoot string) (string, error) {
 
 	err := commitRelease(eff, args, worktreeRoot)
 	if err != nil {
@@ -309,6 +308,7 @@ func createDraftPR(eff Effects, args commandArgs, worktreeRoot, branch string) (
 		return "", errors.New("stopped before pushing release branch (--stop-before-push)")
 	}
 
+	branch := releaseBranch(args)
 	err = pushBranch(eff, worktreeRoot, branch)
 	if err != nil {
 		return "", err
@@ -395,7 +395,7 @@ func updateFile(eff Effects, path string, update func(string) (string, error)) (
 // commitRelease commits the release files with a message indicating the module and version.
 func commitRelease(eff Effects, commandArgs commandArgs, root string) error {
 	target := commandArgs.target
-	gitArgs := append([]string{"commit", "-m", "Prepare " + target.releaseSubject(commandArgs.version), "--"}, target.releaseFiles()...)
+	gitArgs := append([]string{"commit", "-m", "Prepare " + releaseSubject(commandArgs), "--"}, target.releaseFiles()...)
 	_, err := eff.runCommand(root, "git", gitArgs...)
 	if err != nil {
 		return fmt.Errorf("commit release files: %w", err)
@@ -416,7 +416,7 @@ func pushBranch(eff Effects, root, branch string) error {
 func openDraftPR(eff Effects, args commandArgs, root, branch string) (string, error) {
 	target := args.target
 	url, err := eff.runCommand(root, "gh", "pr", "create", "--draft", "--base", "main", "--head", branch,
-		"--title", "Prepare "+target.releaseSubject(args.version),
+		"--title", "Prepare "+releaseSubject(args),
 		"--body", "Prepare "+target.modulePath+" release "+args.version+".")
 	if err != nil {
 		return "", fmt.Errorf("create draft PR: %w", err)
