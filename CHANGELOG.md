@@ -35,6 +35,10 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Corrected stand-alone activity API documentation to use activity terminology, document that
+  `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
+  `TerminateActivityOptions.Reason` as a termination reason.
+
 ### Security
 
 ## [1.48.0] - 2026-08-18
