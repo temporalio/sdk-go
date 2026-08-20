@@ -223,7 +223,7 @@ func updateChangelog(text, version string, releaseDate time.Time, seededHeaders 
 	if !ok {
 		return "", errors.New("could not find changelog section for 'Unreleased'")
 	}
-	unreleased := stripEmptyChangelogHeaders(stripOuterBlankLines(lines[start:end]))
+	unreleased := stripEmptyLevelThreeHeaders(stripOuterBlankLines(lines[start:end]))
 	if len(unreleased) == 0 {
 		return "", errors.New("changelog section for 'Unreleased' appears to be empty")
 	}
@@ -277,12 +277,11 @@ func seededUnreleasedLines(headers []string) []string {
 	return lines
 }
 
-// stripEmptyChangelogHeaders removes recognized sections that contain no content.
-func stripEmptyChangelogHeaders(lines []string) []string {
+// stripEmptyLevelThreeHeaders removes level-three sections that contain no content.
+func stripEmptyLevelThreeHeaders(lines []string) []string {
 	var filtered []string
 	for i := 0; i < len(lines); {
-		match := changelogHeaderRE.FindStringSubmatch(lines[i])
-		if match == nil || !contains(knownChangelogHeaders, match[1]) {
+		if !changelogHeaderRE.MatchString(lines[i]) {
 			filtered = append(filtered, lines[i])
 			i++
 			continue

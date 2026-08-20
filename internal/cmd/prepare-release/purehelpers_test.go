@@ -397,6 +397,8 @@ func TestUpdateChangelogWithoutSeededHeaders(t *testing.T) {
 
 ### Breaking Changes
 
+### Module-Specific Section
+
 ### Fixed
 
 - A fix.

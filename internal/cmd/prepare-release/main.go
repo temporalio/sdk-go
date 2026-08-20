@@ -45,18 +45,6 @@ var sdkChangelogHeaders = []string{
 	"Security",
 }
 
-// knownChangelogHeaders are dropped from a release when they hold no entries.
-// Contrib changelogs spell breaking changes without the emoji the SDK changelog uses.
-var knownChangelogHeaders = []string{
-	"Added",
-	"Changed",
-	"Deprecated",
-	"Breaking Changes",
-	":boom: Breaking Changes",
-	"Fixed",
-	"Security",
-}
-
 // COMMAND-LINE WRAPPER
 
 func main() {
@@ -114,9 +102,9 @@ func parseArgs(args []string) (commandArgs, error) {
 		return commandArgs{}, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *date, err)
 	}
 	return commandArgs{
-		target: target,
-		version: version,
-		releaseDate: releaseDate,
+		target:         target,
+		version:        version,
+		releaseDate:    releaseDate,
 		stopBeforePush: *stopBeforePush,
 	}, nil
 }
