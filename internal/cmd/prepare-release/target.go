@@ -40,7 +40,7 @@ func sdkTarget() releaseTarget {
 		modulePath:    "go.temporal.io/sdk",
 		dependency:    "go.temporal.io/api",
 		versionFile:   "internal/version.go",
-		seededHeaders: sdkChangelogHeaders,
+		seededHeaders: changelogHeaders,
 		markLatest:    true,
 		generateNotes: true,
 	}

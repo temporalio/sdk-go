@@ -35,8 +35,7 @@ var (
 	moduleDeclarationRE = regexp.MustCompile(`(?m)^module\s+(\S+)\s*$`)
 )
 
-// sdkChangelogHeaders seed the emptied Unreleased section of the main SDK changelog.
-var sdkChangelogHeaders = []string{
+var changelogHeaders = []string{
 	"Added",
 	"Changed",
 	"Deprecated",
@@ -72,41 +71,47 @@ type commandArgs struct {
 	stopBeforePush bool
 }
 
-// parseArgs resolves the command line. The module argument is optional so that the
-// main SDK module keeps its original invocation.
 func parseArgs(args []string) (commandArgs, error) {
+	var commandArgs commandArgs
+
+	// Parse flags
 	flags := flag.NewFlagSet("prepare-release", flag.ContinueOnError)
 	date := flags.String("date", time.Now().Format(time.DateOnly), "release date in YYYY-MM-DD format")
 	stopBeforePush := flags.Bool("stop-before-push", false, "stop after committing the release files but before pushing")
 	err := flags.Parse(args)
 	if err != nil {
-		return commandArgs{}, err
+		return commandArgs, err
 	}
+	commandArgs.releaseDate, err = time.Parse(time.DateOnly, *date)
+	if err != nil {
+		return commandArgs, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *date, err)
+	}
+	commandArgs.stopBeforePush = *stopBeforePush
+
+	// Parse positional arguments
 	if flags.NArg() < 1 || flags.NArg() > 2 {
-		return commandArgs{}, errors.New("usage: prepare-release [--date YYYY-MM-DD] [--stop-before-push] [MODULE] VERSION\n" +
-			"MODULE is a contrib module directory such as 'contrib/envconfig'; omit it to release the main SDK module")
+		return commandArgs, errors.New("usage: prepare-release [--date YYYY-MM-DD] [--stop-before-push] [MODULE] VERSION\n" +
+			"optional argument MODULE is a contrib module directory like 'contrib/envconfig'; omit it to release the Go SDK")
 	}
-	target := sdkTarget()
-	if flags.NArg() == 2 {
-		target, err = contribTarget(flags.Arg(0))
+	if flags.NArg() == 1 {
+		commandArgs.target = sdkTarget()
+		commandArgs.version, err = validateVersion(flags.Arg(1))
 		if err != nil {
-			return commandArgs{}, err
+			return commandArgs, err
 		}
 	}
-	version, err := validateVersion(flags.Arg(flags.NArg() - 1))
-	if err != nil {
-		return commandArgs{}, err
+	if flags.NArg() == 2 {
+		commandArgs.target, err = contribTarget(flags.Arg(0))
+		if err != nil {
+			return commandArgs, err
+		}
+		commandArgs.version, err = validateVersion(flags.Arg(2))
+		if err != nil {
+			return commandArgs, err
+		}
 	}
-	releaseDate, err := time.Parse(time.DateOnly, *date)
-	if err != nil {
-		return commandArgs{}, fmt.Errorf("invalid release date %q; expected YYYY-MM-DD: %w", *date, err)
-	}
-	return commandArgs{
-		target:         target,
-		version:        version,
-		releaseDate:    releaseDate,
-		stopBeforePush: *stopBeforePush,
-	}, nil
+
+	return commandArgs, nil
 }
 
 // CORE LOGIC
