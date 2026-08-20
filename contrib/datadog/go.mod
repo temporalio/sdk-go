@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/contrib/datadog
 
-go 1.25.4
+go 1.26.0
 
 require (
 	github.com/DataDog/dd-trace-go/v2 v2.8.1

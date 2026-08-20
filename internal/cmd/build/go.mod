@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/internal/cmd/build
 
-go 1.25.4
+go 1.26.0
 
 require (
 	github.com/Antonboom/testifylint v1.6.4

@@ -27,7 +27,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/activity.Info]
 	ActivityInfo struct {
 		// TaskToken is the token that identifies the activity task.
-		TaskToken    []byte
+		TaskToken []byte
 		// WorkflowType is the type of the workflow that started this activity.
 		WorkflowType *WorkflowType
 		// Namespace of the workflow that started this activity. Empty if this activity was not started by a workflow.
@@ -38,33 +38,33 @@ type (
 		WorkflowNamespace string
 		// Execution details of the workflow that started this activity. All fields are empty if this activity was not
 		// started by a workflow.
-		WorkflowExecution      WorkflowExecution
+		WorkflowExecution WorkflowExecution
 		// ActivityID is the ID of the activity.
-		ActivityID             string
+		ActivityID string
 		// ActivityRunID is the run ID of the activity. Empty if the activity was started by a workflow.
-		ActivityRunID          string
+		ActivityRunID string
 		// ActivityType is the type of the activity.
-		ActivityType           ActivityType
+		ActivityType ActivityType
 		// TaskQueue is the name of the task queue that the activity needs to be scheduled on.
-		TaskQueue              string
+		TaskQueue string
 		// Namespace is the namespace of this activity.
-		Namespace              string
+		Namespace string
 		// HeartbeatTimeout is the maximum time between heartbeats. 0 means no heartbeat needed.
-		HeartbeatTimeout       time.Duration
+		HeartbeatTimeout time.Duration
 		// ScheduleToCloseTimeout is the schedule to close timeout set by the activity options.
 		ScheduleToCloseTimeout time.Duration
 		// StartToCloseTimeout is the start to close timeout set by the activity options.
-		StartToCloseTimeout    time.Duration
+		StartToCloseTimeout time.Duration
 		// ScheduledTime is the time when the activity was scheduled by a workflow.
-		ScheduledTime          time.Time
+		ScheduledTime time.Time
 		// StartedTime is the time when the activity started.
-		StartedTime            time.Time
+		StartedTime time.Time
 		// Deadline is the time of activity timeout.
-		Deadline               time.Time
+		Deadline time.Time
 		// Attempt starts from 1, and increased by 1 for every retry if retry policy is specified.
-		Attempt                int32
+		Attempt int32
 		// IsLocalActivity is true if it is a local activity.
-		IsLocalActivity        bool
+		IsLocalActivity bool
 		// Priority settings that control relative ordering of task processing when activity tasks are backed up in a queue.
 		// If no priority is set, the default value is the zero value.
 		//
@@ -88,7 +88,7 @@ type (
 		// worker.Options.DisableRegistrationAliasing at the worker level to prevent
 		// ambiguity between string names and function references. Also users should
 		// always use this string name when executing this activity.
-		Name                          string
+		Name string
 		// DisableAlreadyRegisteredCheck disables the check for already registered activities.
 		DisableAlreadyRegisteredCheck bool
 
@@ -253,7 +253,7 @@ func IsActivity(ctx context.Context) bool {
 // of existing values may result in unexpected behavior similar to json.Unmarshal.
 //
 // Exposed as: [go.temporal.io/sdk/activity.GetHeartbeatDetails]
-func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
+func GetHeartbeatDetails(ctx context.Context, d ...any) error {
 	return getActivityOutboundInterceptor(ctx).GetHeartbeatDetails(ctx, d...)
 }
 
@@ -290,7 +290,7 @@ func GetWorkerStopChannel(ctx context.Context) <-chan struct{} {
 // cancellation, pause, and reset to the activity context.
 //
 // Exposed as: [go.temporal.io/sdk/activity.RecordHeartbeat]
-func RecordActivityHeartbeat(ctx context.Context, details ...interface{}) {
+func RecordActivityHeartbeat(ctx context.Context, details ...any) {
 	getActivityOutboundInterceptor(ctx).RecordHeartbeat(ctx, details...)
 }
 

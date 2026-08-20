@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/test
 
-go 1.25.4
+go 1.26.0
 
 require (
 	github.com/golang/mock v1.6.0

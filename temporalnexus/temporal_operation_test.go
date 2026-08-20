@@ -46,7 +46,7 @@ func TestToHandlerResultAsync(t *testing.T) {
 
 func TestToHandlerResultBothSet(t *testing.T) {
 	result := TemporalOperationResult[string]{
-		sync:  strPtr("value"),
+		sync:  new("value"),
 		token: "tok123",
 	}
 	_, err := result.toHandlerResult()
@@ -219,8 +219,4 @@ func TestStartUpdateWorkflowGuards(t *testing.T) {
 	var opError *nexus.HandlerError
 	require.ErrorAs(t, err, &opError)
 	require.Equal(t, opError.Cause.Error(), "nexus op workflow updates only support WorkflowUpdateStageAccepted for async updates")
-}
-
-func strPtr(s string) *string {
-	return &s
 }

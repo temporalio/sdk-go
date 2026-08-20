@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/contrib/opentelemetry
 
-go 1.25.4
+go 1.26.0
 
 require (
 	github.com/stretchr/testify v1.11.1

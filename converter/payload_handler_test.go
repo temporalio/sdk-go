@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,9 +33,7 @@ func (c *appendCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload,
 	result := make([]*commonpb.Payload, len(payloads))
 	for i, p := range payloads {
 		meta := make(map[string][]byte, len(p.GetMetadata()))
-		for k, v := range p.GetMetadata() {
-			meta[k] = v
-		}
+		maps.Copy(meta, p.GetMetadata())
 		meta[converter.MetadataEncoding] = []byte(string(p.GetMetadata()[converter.MetadataEncoding]) + c.encodingSuffix)
 		result[i] = &commonpb.Payload{
 			Metadata: meta,
@@ -56,9 +55,7 @@ func (c *appendCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload,
 			return nil, fmt.Errorf("appendCodec.Decode: expected trailing marker byte %d", c.marker)
 		}
 		meta := make(map[string][]byte, len(p.GetMetadata()))
-		for k, v := range p.GetMetadata() {
-			meta[k] = v
-		}
+		maps.Copy(meta, p.GetMetadata())
 		meta[converter.MetadataEncoding] = []byte(strings.TrimSuffix(enc, c.encodingSuffix))
 		result[i] = &commonpb.Payload{
 			Metadata: meta,

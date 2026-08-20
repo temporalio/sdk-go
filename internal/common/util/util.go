@@ -1,6 +1,7 @@
 package util
 
 import (
+	"maps"
 	"reflect"
 	"sync"
 	"time"
@@ -8,9 +9,7 @@ import (
 
 // MergeDictoRight copies the contents of src to dest
 func MergeDictoRight(src map[string]string, dest map[string]string) {
-	for k, v := range src {
-		dest[k] = v
-	}
+	maps.Copy(dest, src)
 }
 
 // MergeDicts creates a union of the two dicts
@@ -45,7 +44,7 @@ func AwaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 }
 
 // IsInterfaceNil check if interface is nil
-func IsInterfaceNil(i interface{}) bool {
+func IsInterfaceNil(i any) bool {
 	v := reflect.ValueOf(i)
-	return i == nil || (v.Kind() == reflect.Ptr && v.IsNil())
+	return i == nil || (v.Kind() == reflect.Pointer && v.IsNil())
 }

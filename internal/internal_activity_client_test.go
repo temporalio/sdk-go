@@ -75,7 +75,7 @@ func TestExecuteActivityFromLinklessNexusRequestOmitsOnConflictOptions(t *testin
 	var request *workflowservice.StartActivityExecutionRequest
 	service.EXPECT().
 		StartActivityExecution(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, req *workflowservice.StartActivityExecutionRequest, _ ...interface{}) (*workflowservice.StartActivityExecutionResponse, error) {
+		DoAndReturn(func(_ context.Context, req *workflowservice.StartActivityExecutionRequest, _ ...any) (*workflowservice.StartActivityExecutionResponse, error) {
 			request = req
 			return &workflowservice.StartActivityExecutionResponse{RunId: "run-id"}, nil
 		})

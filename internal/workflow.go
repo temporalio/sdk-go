@@ -189,10 +189,10 @@ type (
 		Name() string
 
 		// Send blocks until the data is sent.
-		Send(ctx Context, v interface{})
+		Send(ctx Context, v any)
 
 		// SendAsync try to send without blocking. It returns true if the data was sent, otherwise it returns false.
-		SendAsync(v interface{}) (ok bool)
+		SendAsync(v any) (ok bool)
 
 		// Close close the Channel, and prohibit subsequent sends.
 		Close()
@@ -218,7 +218,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		Receive(ctx Context, valuePtr interface{}) (more bool)
+		Receive(ctx Context, valuePtr any) (more bool)
 
 		// ReceiveWithTimeout blocks up to timeout until it receives a value, and then assigns the received value to the
 		// provided pointer.
@@ -233,7 +233,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr interface{}) (ok, more bool)
+		ReceiveWithTimeout(ctx Context, timeout time.Duration, valuePtr any) (ok, more bool)
 
 		// ReceiveAsync tries to receive from a Channel without blocking. If there is data available, it
 		// assigns the data to valuePtr and returns true. Otherwise, it returns false immediately.
@@ -241,14 +241,14 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		ReceiveAsync(valuePtr interface{}) (ok bool)
+		ReceiveAsync(valuePtr any) (ok bool)
 
 		// ReceiveAsyncWithMoreFlag is the same as ReceiveAsync but with an extra return value more that indicates
 		// whether the channel contains more data. more is false when the channel is closed.
 		//
 		// Note, values should not be reused for extraction here because merging on top of existing values may result in
 		// unexpected behavior similar to json.Unmarshal.
-		ReceiveAsyncWithMoreFlag(valuePtr interface{}) (ok bool, more bool)
+		ReceiveAsyncWithMoreFlag(valuePtr any) (ok bool, more bool)
 
 		// Len returns the number of buffered messages plus the number of blocked Send calls.
 		Len() int
@@ -276,7 +276,7 @@ type (
 		AddReceive(c ReceiveChannel, f func(c ReceiveChannel, more bool)) Selector
 		// AddSend registers a callback function to be called when a message is sent on a channel.
 		// The callback is called after the message is sent to the channel and Select(ctx) is called
-		AddSend(c SendChannel, v interface{}, f func()) Selector
+		AddSend(c SendChannel, v any, f func()) Selector
 		// AddFuture registers a callback function to be called when a future is ready.
 		// The callback is called when Select(ctx) is called.
 		// The callback is called once per ready future even if Select is called multiple times for the same
@@ -374,7 +374,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		Get(ctx Context, valuePtr interface{}) error
+		Get(ctx Context, valuePtr any) error
 
 		// When true Get is guaranteed to not block
 		IsReady() bool
@@ -385,8 +385,8 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/workflow.Settable]
 	Settable interface {
-		Set(value interface{}, err error)
-		SetValue(value interface{})
+		Set(value any, err error)
+		SetValue(value any)
 		SetError(err error)
 		Chain(future Future) // EncodedValue (or error) of the future become the same of the chained one.
 	}
@@ -407,7 +407,7 @@ type (
 		GetChildWorkflowExecution() Future
 
 		// SignalChildWorkflow sends a signal to the child workflow. This call will block until child workflow is started.
-		SignalChildWorkflow(ctx Context, signalName string, data interface{}) Future
+		SignalChildWorkflow(ctx Context, signalName string, data any) Future
 	}
 
 	// WorkflowType identifies a workflow type.
@@ -423,7 +423,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.Execution]
 	WorkflowExecution struct {
 		// ID is the identifier of the workflow execution.
-		ID    string
+		ID string
 		// RunID is the run identifier of the workflow execution.
 		RunID string
 	}
@@ -515,7 +515,7 @@ type (
 		CronSchedule string
 
 		// Memo - Optional non-indexed info that will be shown in list workflow.
-		Memo map[string]interface{}
+		Memo map[string]any
 
 		// SearchAttributes - Optional indexed info that can be used in query of List/Scan/Count workflow APIs. The key and value type must be registered on Temporal server side.
 		// Use GetSearchAttributes API to get valid key and corresponding value type.
@@ -524,7 +524,7 @@ type (
 		// Deprecated: Use TypedSearchAttributes instead.
 		//
 		// [Visibility]: https://docs.temporal.io/visibility
-		SearchAttributes map[string]interface{}
+		SearchAttributes map[string]any
 
 		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Workflow. Search Attributes are
 		// additional indexed information attributed to workflow and used for search and visibility. The search attributes
@@ -579,7 +579,7 @@ type (
 		// ambiguity between string names and function references. Also users should
 		// always use this string name when executing this workflow from a client or
 		// inside a workflow as a child workflow.
-		Name                          string
+		Name string
 		// DisableAlreadyRegisteredCheck disables the check for already registered workflows.
 		DisableAlreadyRegisteredCheck bool
 		// Optional: Provides a Versioning Behavior to workflows of this type. It is required
@@ -620,7 +620,7 @@ type (
 	}
 
 	localActivityContext struct {
-		fn       interface{}
+		fn       any
 		isMethod bool
 	}
 
@@ -662,7 +662,7 @@ type (
 		// as well as workflow actions such as scheduling activities and
 		// performing side-effects. A panic from this function will be treated
 		// as equivalent to returning an error.
-		Validator interface{}
+		Validator any
 		// UnfinishedPolicy is the policy to apply when a workflow exits while
 		// the update handler is still running.
 		UnfinishedPolicy HandlerUnfinishedPolicy
@@ -952,7 +952,7 @@ func (wc *workflowEnvironmentInterceptor) ValidateUpdate(ctx Context, in *Update
 	return handler.validate(ctx, in.Args)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteUpdate(ctx Context, in *UpdateInput) (interface{}, error) {
+func (wc *workflowEnvironmentInterceptor) ExecuteUpdate(ctx Context, in *UpdateInput) (any, error) {
 	eo := getWorkflowEnvOptions(ctx)
 
 	handler, ok := eo.updateHandlers[in.Name]
@@ -966,7 +966,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteUpdate(ctx Context, in *UpdateI
 	return handler.execute(ctx, in.Args)
 }
 
-func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQueryInput) (interface{}, error) {
+func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQueryInput) (any, error) {
 	eo := getWorkflowEnvOptions(ctx)
 	handler, ok := eo.queryHandlers[in.QueryType]
 	// Should never happen because its presence is checked before this call too
@@ -980,12 +980,12 @@ func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQue
 	return handler.execute(in.Args)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (interface{}, error) {
+func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (any, error) {
 	// Remove header from the context
 	ctx = workflowContextWithoutHeader(ctx)
 
 	// Always put the context first
-	args := append([]interface{}{ctx}, in.Args...)
+	args := append([]any{ctx}, in.Args...)
 	return executeFunction(wc.fn, args)
 }
 
@@ -1026,7 +1026,7 @@ func (wc *workflowEnvironmentInterceptor) Init(outbound WorkflowOutboundIntercep
 // ExecuteActivity returns Future with activity result or failure.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.ExecuteActivity]
-func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func ExecuteActivity(ctx Context, activity any, args ...any) Future {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	registry := getRegistryFromWorkflowContext(ctx)
@@ -1036,7 +1036,7 @@ func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Fut
 	return i.ExecuteActivity(ctx, activityType, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName string, args ...interface{}) Future {
+func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName string, args ...any) Future {
 	// Validate type and its arguments.
 	registry := getRegistryFromWorkflowContext(ctx)
 	future, settable := newDecodeFuture(ctx, typeName)
@@ -1124,7 +1124,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 	})
 
 	if cancellable {
-		cancellationCallback.fn = func(v interface{}, more bool) bool {
+		cancellationCallback.fn = func(v any, more bool) bool {
 			assertNotInReadOnlyStateCancellation(ctx)
 			if ctx.Err() == ErrCanceled {
 				wc.env.RequestCancelActivity(a)
@@ -1176,7 +1176,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 // ExecuteLocalActivity returns Future with local activity result or failure.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.ExecuteLocalActivity]
-func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}) Future {
+func ExecuteLocalActivity(ctx Context, activity any, args ...any) Future {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
@@ -1184,7 +1184,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	if alias, ok := env.GetRegistry().getActivityAlias(activityType); ok {
 		activityType = alias
 	}
-	var fn interface{}
+	var fn any
 	if _, ok := activity.(string); ok {
 		fn = nil
 	} else {
@@ -1200,7 +1200,7 @@ func ExecuteLocalActivity(ctx Context, activity interface{}, args ...interface{}
 	return i.ExecuteLocalActivity(ctx, activityType, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, typeName string, args ...interface{}) Future {
+func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, typeName string, args ...any) Future {
 	future, settable := newDecodeFuture(ctx, typeName)
 
 	envOptions := getWorkflowEnvOptions(ctx)
@@ -1210,7 +1210,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		return future
 	}
 
-	var activityFn interface{}
+	var activityFn any
 	localCtx := ctx.Value(localActivityFnContextKey).(*localActivityContext)
 	if localCtx == nil {
 		panic("ExecuteLocalActivity: Expected context key " + localActivityFnContextKey + " is missing")
@@ -1339,7 +1339,7 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 	})
 
 	if cancellable {
-		cancellationCallback.fn = func(v interface{}, more bool) bool {
+		cancellationCallback.fn = func(v any, more bool) bool {
 			assertNotInReadOnlyStateCancellation(ctx)
 			if ctx.Err() == ErrCanceled {
 				getWorkflowEnvironment(ctx).RequestCancelLocalActivity(la)
@@ -1380,7 +1380,7 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 // ExecuteChildWorkflow returns ChildWorkflowFuture.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.ExecuteChildWorkflow]
-func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interface{}) ChildWorkflowFuture {
+func ExecuteChildWorkflow(ctx Context, childWorkflow any, args ...any) ChildWorkflowFuture {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	env := getWorkflowEnvironment(ctx)
@@ -1393,7 +1393,7 @@ func ExecuteChildWorkflow(ctx Context, childWorkflow interface{}, args ...interf
 	return i.ExecuteChildWorkflow(ctx, workflowType, args...)
 }
 
-func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...interface{}) ChildWorkflowFuture {
+func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, childWorkflowType string, args ...any) ChildWorkflowFuture {
 	mainFuture, mainSettable := newDecodeFuture(ctx, childWorkflowType)
 	executionFuture, executionSettable := NewFuture(ctx)
 	result := &childWorkflowFutureImpl{
@@ -1485,7 +1485,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 			// Otherwise, we risk firing the cancel handler and then having the workflow "initiate" afterwards,
 			// which would result in an uncanceled workflow.
 			if cancellable {
-				cancellationCallback.fn = func(v interface{}, _ bool) bool {
+				cancellationCallback.fn = func(v any, _ bool) bool {
 					assertNotInReadOnlyStateCancellation(ctx)
 					if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
 						// child workflow started, and ctx canceled
@@ -1515,28 +1515,28 @@ type WorkflowInfo struct {
 	// The original runID before resetting. Using it instead of current runID can make workflow decision deterministic after reset. See also FirstRunId
 	OriginalRunID string
 	// The very first original RunId of the current Workflow Execution preserved along the chain of ContinueAsNew, Retry, Cron and Reset. Identifies the whole Runs chain of Workflow Execution.
-	FirstRunID               string
+	FirstRunID string
 	// WorkflowType is the type of the workflow.
-	WorkflowType             WorkflowType
+	WorkflowType WorkflowType
 	// TaskQueueName is the name of the task queue.
-	TaskQueueName            string
+	TaskQueueName string
 	// WorkflowExecutionTimeout is the timeout for the workflow execution.
 	WorkflowExecutionTimeout time.Duration
 	// WorkflowRunTimeout is the timeout for the workflow run.
-	WorkflowRunTimeout       time.Duration
+	WorkflowRunTimeout time.Duration
 	// WorkflowTaskTimeout is the timeout for the workflow task.
-	WorkflowTaskTimeout      time.Duration
+	WorkflowTaskTimeout time.Duration
 	// Namespace is the namespace of the workflow.
-	Namespace                string
+	Namespace string
 	// Attempt starts from 1 and increased by 1 for every retry if retry policy is specified.
-	Attempt                  int32
+	Attempt int32
 	// Time of the workflow start.
 	// workflow.Now at the beginning of a workflow can return a later time if the Workflow Worker was down.
-	WorkflowStartTime       time.Time
-	lastCompletionResult    *commonpb.Payloads
-	lastFailure             *failurepb.Failure
+	WorkflowStartTime    time.Time
+	lastCompletionResult *commonpb.Payloads
+	lastFailure          *failurepb.Failure
 	// CronSchedule is the cron schedule for the workflow.
-	CronSchedule            string
+	CronSchedule string
 	// ContinuedExecutionRunID is the run ID of the continued execution.
 	ContinuedExecutionRunID string
 	// ParentWorkflowNamespace is the namespace of the parent workflow.
@@ -1546,13 +1546,13 @@ type WorkflowInfo struct {
 	// RootWorkflowExecution is the first workflow execution in the chain of workflows. If a workflow is itself a root workflow, then this field is nil.
 	RootWorkflowExecution *WorkflowExecution
 	// Memo can be decoded using data converter (defaultDataConverter, or custom one if set).
-	Memo                  *commonpb.Memo
+	Memo *commonpb.Memo
 	// SearchAttributes can be decoded using defaultDataConverter.
 	//
 	// Deprecated: use [Workflow.GetTypedSearchAttributes] instead.
 	SearchAttributes *commonpb.SearchAttributes
 	// RetryPolicy is the retry policy of the workflow.
-	RetryPolicy      *RetryPolicy
+	RetryPolicy *RetryPolicy
 	// Priority settings that control relative ordering of task processing when workflow tasks are backed up in a queue.
 	// If no priority is set, the default value is the zero value.
 	//
@@ -1777,7 +1777,7 @@ func (wc *workflowEnvironmentInterceptor) NewTimerWithOptions(
 	})
 
 	if timerID != nil && cancellable {
-		cancellationCallback.fn = func(v interface{}, more bool) bool {
+		cancellationCallback.fn = func(v any, more bool) bool {
 			assertNotInReadOnlyStateCancellation(ctx)
 			if !future.IsReady() {
 				wc.env.RequestCancelTimer(*timerID)
@@ -1866,7 +1866,7 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 // SignalExternalWorkflow return Future with failure or empty success result.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.SignalExternalWorkflow]
-func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
+func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any) Future {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	// Put header on context before executing
@@ -1874,18 +1874,18 @@ func SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	return i.SignalExternalWorkflow(ctx, workflowID, runID, signalName, arg)
 }
 
-func (wc *workflowEnvironmentInterceptor) SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}) Future {
+func (wc *workflowEnvironmentInterceptor) SignalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any) Future {
 	const childWorkflowOnly = false // this means we are not limited to child workflow
 	return signalExternalWorkflow(ctx, workflowID, runID, signalName, arg, childWorkflowOnly)
 }
 
-func (wc *workflowEnvironmentInterceptor) SignalChildWorkflow(ctx Context, workflowID, signalName string, arg interface{}) Future {
+func (wc *workflowEnvironmentInterceptor) SignalChildWorkflow(ctx Context, workflowID, signalName string, arg any) Future {
 	const childWorkflowOnly = true // this means we are limited to child workflow
 	// Empty run ID to indicate current one
 	return signalExternalWorkflow(ctx, workflowID, "", signalName, arg, childWorkflowOnly)
 }
 
-func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg interface{}, childWorkflowOnly bool) Future {
+func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any, childWorkflowOnly bool) Future {
 	env := getWorkflowEnvironment(ctx)
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	options := getWorkflowEnvOptions(ctx1)
@@ -1970,13 +1970,13 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 // Exposed as: [go.temporal.io/sdk/workflow.UpsertSearchAttributes]
 //
 // [Visibility]: https://docs.temporal.io/visibility
-func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
+func UpsertSearchAttributes(ctx Context, attributes map[string]any) error {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.UpsertSearchAttributes(ctx, attributes)
 }
 
-func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error {
+func (wc *workflowEnvironmentInterceptor) UpsertSearchAttributes(ctx Context, attributes map[string]any) error {
 	if _, ok := attributes[TemporalChangeVersion]; ok {
 		return errors.New("TemporalChangeVersion is a reserved key that cannot be set, please use other key")
 	}
@@ -1992,7 +1992,7 @@ func UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdat
 
 func (wc *workflowEnvironmentInterceptor) UpsertTypedSearchAttributes(ctx Context, attributes ...SearchAttributeUpdate) error {
 	sa := SearchAttributes{
-		untypedValue: make(map[SearchAttributeKey]interface{}),
+		untypedValue: make(map[SearchAttributeKey]any),
 	}
 	for _, attribute := range attributes {
 		attribute(&sa)
@@ -2028,13 +2028,13 @@ func (wc *workflowEnvironmentInterceptor) UpsertTypedSearchAttributes(ctx Contex
 // This is only supported with Temporal Server 1.18+
 //
 // Exposed as: [go.temporal.io/sdk/workflow.UpsertMemo]
-func UpsertMemo(ctx Context, memo map[string]interface{}) error {
+func UpsertMemo(ctx Context, memo map[string]any) error {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.UpsertMemo(ctx, memo)
 }
 
-func (wc *workflowEnvironmentInterceptor) UpsertMemo(ctx Context, memo map[string]interface{}) error {
+func (wc *workflowEnvironmentInterceptor) UpsertMemo(ctx Context, memo map[string]any) error {
 	return wc.env.UpsertMemo(memo)
 }
 
@@ -2251,7 +2251,7 @@ func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) conve
 }
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
-func (b EncodedValue) Get(valuePtr interface{}) error {
+func (b EncodedValue) Get(valuePtr any) error {
 	if !b.HasValue() {
 		return ErrNoData
 	}
@@ -2309,7 +2309,7 @@ func (b EncodedValue) Payloads() *commonpb.Payloads {
 //	}
 //
 // Exposed as: [go.temporal.io/sdk/workflow.SideEffect]
-func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
+func SideEffect(ctx Context, f func(ctx Context) any) converter.EncodedValue {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SideEffect(ctx, f)
@@ -2325,17 +2325,17 @@ func SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedV
 // The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.SideEffectWithOptions]
-func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
+func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) any) converter.EncodedValue {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SideEffectWithOptions(ctx, options, f)
 }
 
-func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Context) interface{}) converter.EncodedValue {
+func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Context) any) converter.EncodedValue {
 	return wc.SideEffectWithOptions(ctx, SideEffectOptions{}, f)
 }
 
-func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) interface{}) converter.EncodedValue {
+func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) any) converter.EncodedValue {
 	dc := getDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() (*commonpb.Payloads, error) {
@@ -2374,7 +2374,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, opt
 // One good use case of MutableSideEffect() is to access dynamically changing config without breaking determinism.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.MutableSideEffect]
-func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+func MutableSideEffect(ctx Context, id string, f func(ctx Context) any, equals func(a, b any) bool) converter.EncodedValue {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.MutableSideEffect(ctx, id, f, equals)
@@ -2389,18 +2389,18 @@ func MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, 
 // The options parameter allows specifying additional options like a summary that will be displayed in UI/CLI.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.MutableSideEffectWithOptions]
-func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+func MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) any, equals func(a, b any) bool) converter.EncodedValue {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.MutableSideEffectWithOptions(ctx, id, options, f, equals)
 }
 
-func (wc *workflowEnvironmentInterceptor) MutableSideEffect(ctx Context, id string, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
+func (wc *workflowEnvironmentInterceptor) MutableSideEffect(ctx Context, id string, f func(ctx Context) any, equals func(a, b any) bool) converter.EncodedValue {
 	return wc.MutableSideEffectWithOptions(ctx, id, MutableSideEffectOptions{}, f, equals)
 }
 
-func (wc *workflowEnvironmentInterceptor) MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) interface{}, equals func(a, b interface{}) bool) converter.EncodedValue {
-	wrapperFunc := func() interface{} {
+func (wc *workflowEnvironmentInterceptor) MutableSideEffectWithOptions(ctx Context, id string, options MutableSideEffectOptions, f func(ctx Context) any, equals func(a, b any) bool) converter.EncodedValue {
+	wrapperFunc := func() any {
 		coroutineState := getState(ctx)
 		defer coroutineState.dispatcher.setIsReadOnly(false)
 		coroutineState.dispatcher.setIsReadOnly(true)
@@ -2537,7 +2537,7 @@ func (wc *workflowEnvironmentInterceptor) GetVersion(ctx Context, changeID strin
 // See [SetQueryHandlerWithOptions] to set additional options.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.SetQueryHandler]
-func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
+func SetQueryHandler(ctx Context, queryType string, handler any) error {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetQueryHandler(ctx, queryType, handler)
@@ -2549,20 +2549,20 @@ func SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
 // NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/workflow.SetQueryHandlerWithOptions]
-func SetQueryHandlerWithOptions(ctx Context, queryType string, handler interface{}, options QueryHandlerOptions) error {
+func SetQueryHandlerWithOptions(ctx Context, queryType string, handler any, options QueryHandlerOptions) error {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetQueryHandlerWithOptions(ctx, queryType, handler, options)
 }
 
-func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType string, handler interface{}) error {
+func (wc *workflowEnvironmentInterceptor) SetQueryHandler(ctx Context, queryType string, handler any) error {
 	return wc.SetQueryHandlerWithOptions(ctx, queryType, handler, QueryHandlerOptions{})
 }
 
 func (wc *workflowEnvironmentInterceptor) SetQueryHandlerWithOptions(
 	ctx Context,
 	queryType string,
-	handler interface{},
+	handler any,
 	options QueryHandlerOptions,
 ) error {
 	if strings.HasPrefix(queryType, "__") && !isWorkflowStreamReservedName(queryType) {
@@ -2595,13 +2595,13 @@ func (wc *workflowEnvironmentInterceptor) SetQueryHandlerWithOptions(
 // mutate workflow state in any way.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.SetUpdateHandlerWithOptions]
-func SetUpdateHandler(ctx Context, updateName string, handler interface{}, opts UpdateHandlerOptions) error {
+func SetUpdateHandler(ctx Context, updateName string, handler any, opts UpdateHandlerOptions) error {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.SetUpdateHandler(ctx, updateName, handler, opts)
 }
 
-func (wc *workflowEnvironmentInterceptor) SetUpdateHandler(ctx Context, name string, handler interface{}, opts UpdateHandlerOptions) error {
+func (wc *workflowEnvironmentInterceptor) SetUpdateHandler(ctx Context, name string, handler any, opts UpdateHandlerOptions) error {
 	if strings.HasPrefix(name, "__") && !isWorkflowStreamReservedName(name) {
 		return errors.New("update names starting with '__' are reserved for internal use")
 	}
@@ -2670,12 +2670,12 @@ func (wc *workflowEnvironmentInterceptor) HasLastCompletionResult(ctx Context) b
 // json.Unmarshal.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.GetLastCompletionResult]
-func GetLastCompletionResult(ctx Context, d ...interface{}) error {
+func GetLastCompletionResult(ctx Context, d ...any) error {
 	i := getWorkflowOutboundInterceptor(ctx)
 	return i.GetLastCompletionResult(ctx, d...)
 }
 
-func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d ...interface{}) error {
+func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d ...any) error {
 	info := wc.GetInfo(ctx)
 	if info.lastCompletionResult == nil {
 		return ErrNoData
