@@ -1,9 +1,0 @@
-steps:
-  - name: gcr.io/cloud-builders/docker
-    args:
-      - build
-      - --file=contrib/gcp/cloudrun/e2e/Dockerfile
-      - --tag=${_IMAGE}
-      - .
-images:
-  - ${_IMAGE}
