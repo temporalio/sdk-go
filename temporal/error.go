@@ -188,6 +188,12 @@ func NewNonRetryableApplicationError(message, errType string, cause error, detai
 	)
 }
 
+// NewPayloadValidationError creates a non-retryable ApplicationError for payloads that fail validation.
+// The error has type PayloadValidationError and carries details as its single detail.
+func NewPayloadValidationError(details any) error {
+	return internal.NewPayloadValidationError(details)
+}
+
 // CanceledErrorOptions should be used to set all the desired attributes of a new CanceledError
 // To get a new instance use CanceledErrorAttributes function.
 type CanceledErrorOptions = internal.CanceledErrorOptions
