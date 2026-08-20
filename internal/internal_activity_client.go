@@ -37,7 +37,7 @@ type (
 		//
 		// Required
 		TaskQueue string
-		// ScheduleToCloseTimeout - Total time that a workflow is willing to wait for an Activity to complete.
+		// ScheduleToCloseTimeout - Total time the caller is willing to wait for the Activity Execution to complete.
 		// ScheduleToCloseTimeout limits the total time of an Activity's execution including retries
 		// 		(use StartToCloseTimeout to limit the time of a single attempt).
 		// The zero value of this uses default value.
@@ -81,10 +81,10 @@ type (
 		// To disable retries, set MaximumAttempts to 1.
 		// The default RetryPolicy provided by the server can be overridden by the dynamic config.
 		RetryPolicy *RetryPolicy
-		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Workflow. Search Attributes are
-		// additional indexed information attributed to workflow and used for search and visibility. The search attributes
-		// can be used in query of List/Scan/Count workflow APIs. The key and its value type must be registered on Temporal
-		// server side. For supported operations on different server versions see [Visibility].
+		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Activity Execution. Search Attributes
+		// are additional indexed information attributed to the Activity Execution and used for search and visibility. The Search
+		// Attributes can be used in queries to ListActivities and CountActivities. The key and its value type must be registered on
+		// the Temporal Server. For supported operations on different server versions see [Visibility].
 		//
 		// Optional: default to none.
 		//
@@ -97,9 +97,8 @@ type (
 		//
 		// NOTE: Experimental
 		Summary string
-		// Details - General fixed details for this workflow execution that will appear in UI/CLI. This can be in
-		// Temporal markdown format and can span multiple lines. This is a fixed value on the workflow that cannot be
-		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
+		// Details - General fixed details for this Activity Execution that will appear in UI/CLI. This can be in
+		// Temporal Markdown format and can span multiple lines. This value cannot be updated after the Activity Execution starts.
 		//
 		// Optional: defaults to none/empty.
 		//
@@ -122,7 +121,8 @@ type (
 	}
 
 	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
-	// ActivityID and RunID are required.
+	// ActivityID is required. RunID is optional; if empty, the handle targets the latest Activity Execution with the given ID.
+	// To target a specific run when ActivityIDReusePolicy allows reuse of an activity ID, set RunID.
 	//
 	// NOTE: Experimental
 	//
@@ -236,7 +236,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.TerminateActivityOptions]
 	ClientTerminateActivityOptions struct {
-		// Reason is optional description of the reason for cancellation.
+		// Reason is optional description of the reason for termination.
 		Reason string
 	}
 
