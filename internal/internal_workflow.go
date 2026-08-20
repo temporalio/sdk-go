@@ -1637,8 +1637,6 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 
 // GetDataConverterFromWorkflowContext returns the data converter associated
 // with the workflow context, with workflow serialization context applied.
-//
-// Exposed as: [go.temporal.io/sdk/workflow.GetDataConverter]
 func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	return getDataConverterFromWorkflowContext(ctx)
 }
