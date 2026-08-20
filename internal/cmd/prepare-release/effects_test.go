@@ -53,7 +53,6 @@ func (eff *mockEffects) repoRoot() (string, error) {
 func (eff *mockEffects) runCommand(root, name string, args ...string) (string, error) {
 	cmd := command{root: root, name: name, args: append([]string(nil), args...)}
 	fmt.Fprintf(&eff.commands, "%s: %s\n", root, cmd.String())
-	printDetail(eff, "$ %s", cmd.String())
 	if eff.commandHandler == nil {
 		return "", nil
 	}

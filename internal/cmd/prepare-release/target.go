@@ -9,9 +9,6 @@ import (
 
 // releaseTarget describes one independently versioned Go module in this repository.
 type releaseTarget struct {
-	// dir is the module directory relative to the repository root, in slash form.
-	// It is empty for the main SDK module.
-	dir string
 	// modulePath is the import path the module's go.mod must declare.
 	modulePath string
 	// tagPrefix precedes "v<version>" in the module's Go release tag, per
@@ -43,19 +40,20 @@ func contribTarget(dir string) (releaseTarget, error) {
 			"invalid module %q; expected a contrib module directory such as 'contrib/envconfig'", dir)
 	}
 	return releaseTarget{
-		dir:        dir,
 		modulePath: "go.temporal.io/sdk/" + dir,
 		tagPrefix:  dir + "/",
 		// Contrib modules are never GitHub's latest release.
 	}, nil
 }
 
-// name identifies the module in log messages and errors.
-func (t releaseTarget) name() string {
-	if t.dir == "" {
-		return "the Go SDK module"
+// dir returns the module directory relative to the repository root, in slash form.
+// For go.temporal.io/sdk, it returns the empty string;
+// For go.temporal.io/sdk/contrib/envconfig, it returns "contrib/envconfig"; etc.
+func (t releaseTarget) dir() string {
+	if t.modulePath == "go.temporal.io/sdk" {
+		return ""
 	}
-	return t.dir
+	return strings.TrimPrefix(t.modulePath, "go.temporal.io/sdk/")
 }
 
 // tag returns the Go module release tag for the given version.
@@ -70,12 +68,12 @@ func (t releaseTarget) tagPattern() string {
 
 // changelogFile returns the module's changelog relative to the repository root.
 func (t releaseTarget) changelogFile() string {
-	return path.Join(t.dir, "CHANGELOG.md")
+	return path.Join(t.dir(), "CHANGELOG.md")
 }
 
 // goModFile returns the module's go.mod relative to the repository root.
 func (t releaseTarget) goModFile() string {
-	return path.Join(t.dir, "go.mod")
+	return path.Join(t.dir(), "go.mod")
 }
 
 // releaseFiles returns the checked-in files a release updates, relative to the repository root.
@@ -94,16 +92,16 @@ func (t releaseTarget) filePath(worktreeRoot, file string) string {
 
 // releaseBranch names the branch holding the prepared release files.
 func releaseBranch(args commandArgs) string {
-	if args.target.dir == "" {
+	if args.target.modulePath == "go.temporal.io/sdk" {
 		return "chore/release-" + args.version
 	}
-	return "chore/release-" + strings.ReplaceAll(args.target.dir, "/", "-") + "-" + args.version
+	return "chore/release-" + strings.ReplaceAll(args.target.dir(), "/", "-") + "-" + args.version
 }
 
 // releaseSubject describes the release in commit messages and pull request titles.
 func releaseSubject(args commandArgs) string {
-	if args.target.dir == "" {
+	if args.target.modulePath == "go.temporal.io/sdk" {
 		return "release " + args.version
 	}
-	return args.target.dir + " release " + args.version
+	return args.target.dir() + " release " + args.version
 }

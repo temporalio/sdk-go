@@ -208,16 +208,16 @@ func validateRelease(eff Effects, args commandArgs, worktreeRoot string) error {
 	newVersion := args.version
 	goMod, err := eff.readFile(target.filePath(worktreeRoot, target.goModFile()))
 	if err != nil {
-		return fmt.Errorf("%s is not a Go module in this repository: %w", target.name(), err)
+		return fmt.Errorf("%s is not a Go module in this repository: %w", target.modulePath, err)
 	}
 	err = validateModulePath(goMod, target.modulePath)
 	if err != nil {
-		return fmt.Errorf("%s: %w", target.name(), err)
+		return fmt.Errorf("%s: %w", target.modulePath, err)
 	}
 	if !args.allowUnofficialDependencies {
 		err = validateTemporalDependencies(goMod)
 		if err != nil {
-			return fmt.Errorf("%s: %w", target.name(), err)
+			return fmt.Errorf("%s: %w", target.modulePath, err)
 		}
 	}
 
@@ -227,7 +227,7 @@ func validateRelease(eff Effects, args commandArgs, worktreeRoot string) error {
 	}
 	newTag := target.tag(newVersion)
 	if contains(tags, newTag) {
-		return fmt.Errorf("%s %s has already been released; tag %s exists", target.name(), newVersion, newTag)
+		return fmt.Errorf("%s %s has already been released; tag %s exists", target.modulePath, newVersion, newTag)
 	}
 
 	currentVersion, err := currentReleasedVersion(eff, args, worktreeRoot, tags)
@@ -236,22 +236,22 @@ func validateRelease(eff Effects, args commandArgs, worktreeRoot string) error {
 	}
 	err = validateVersionIncrease(currentVersion, newVersion)
 	if err != nil {
-		return fmt.Errorf("%s: %w", target.name(), err)
+		return fmt.Errorf("%s: %w", target.modulePath, err)
 	}
 
 	changelog, err := eff.readFile(target.filePath(worktreeRoot, target.changelogFile()))
 	if err != nil {
-		return fmt.Errorf("%s has no changelog to release: %w", target.name(), err)
+		return fmt.Errorf("%s has no changelog to release: %w", target.modulePath, err)
 	}
 	err = validateChangelog(changelog, currentVersion)
 	if err != nil {
-		return fmt.Errorf("%s: %w", target.name(), err)
+		return fmt.Errorf("%s: %w", target.modulePath, err)
 	}
 
 	if currentVersion == "" {
-		eff.printf("Preparing the first release of %s: %s (tag %s).\n", target.name(), newVersion, newTag)
+		eff.printf("Preparing the first release of %s: %s (tag %s).\n", target.modulePath, newVersion, newTag)
 	} else {
-		eff.printf("Preparing %s %s, following %s (tag %s).\n", target.name(), newVersion, currentVersion, newTag)
+		eff.printf("Preparing %s %s, following %s (tag %s).\n", target.modulePath, newVersion, currentVersion, newTag)
 	}
 	return nil
 }
@@ -439,4 +439,8 @@ func createDraftRelease(eff Effects, commandArgs commandArgs, root, releaseNotes
 		return "", fmt.Errorf("create draft release: %w", err)
 	}
 	return strings.TrimSpace(url), nil
+}
+
+func printDetail(eff Effects, format string, args ...any) {
+	eff.printf("      "+format+"\n", args...)
 }

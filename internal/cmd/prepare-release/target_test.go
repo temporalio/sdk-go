@@ -97,7 +97,7 @@ func TestContribTargetTagPatternsDoNotOverlap(t *testing.T) {
 	}
 
 	if strings.HasPrefix(nested.tag("0.1.0"), parent.tagPrefix+"v") {
-		t.Errorf("nested tag %q would be read as a release of %s", nested.tag("0.1.0"), parent.name())
+		t.Errorf("nested tag %q would be read as a release of %s", nested.tag("0.1.0"), parent.modulePath)
 	}
 	if latestReleasedVersion([]string{nested.tag("9.9.9")}, parent.tagPrefix) != "" {
 		t.Error("nested module tags must not count as releases of the parent module")

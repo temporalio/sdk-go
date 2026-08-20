@@ -368,7 +368,7 @@ func TestValidateReleaseUsesTagsForContribVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
-		Preparing contrib/envconfig 1.0.3, following 1.0.2 (tag contrib/envconfig/v1.0.3).
+		Preparing go.temporal.io/sdk/contrib/envconfig 1.0.3, following 1.0.2 (tag contrib/envconfig/v1.0.3).
 	`)
 
 	args.version = "1.2.0"
@@ -393,7 +393,7 @@ func TestValidateReleaseAllowsFirstContribRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	testEqual(t, eff.output.String(), `
-		Preparing the first release of contrib/envconfig: 0.1.0 (tag contrib/envconfig/v0.1.0).
+		Preparing the first release of go.temporal.io/sdk/contrib/envconfig: 0.1.0 (tag contrib/envconfig/v0.1.0).
 	`)
 
 	args.version = "0.4.0"
@@ -493,7 +493,7 @@ func TestPrepareDraftPRLeavesWorktreeAfterFailure(t *testing.T) {
 	}
 	testEqual(t, eff.output.String(), `
 		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
-		Preparing the Go SDK module 1.48.0, following 1.47.0 (tag v1.48.0).
+		Preparing go.temporal.io/sdk 1.48.0, following 1.47.0 (tag v1.48.0).
 	`)
 }
 
@@ -627,7 +627,7 @@ func TestPrepareEverything(t *testing.T) {
 	)
 	testEqual(t, eff.output.String(), `
 		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
-		Preparing the Go SDK module 1.48.0, following 1.47.0 (tag v1.48.0).
+		Preparing go.temporal.io/sdk 1.48.0, following 1.47.0 (tag v1.48.0).
 		PR: https://github.com/temporalio/sdk-go/pull/123
 		Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-abc
 		Cleaned up worktree.
@@ -736,7 +736,7 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 	)
 	testEqual(t, eff.output.String(), `
 		Created worktree: /tmp/prepare-go-release-123456 at HEAD: Initial commit (abc123)
-		Preparing contrib/envconfig 1.0.3, following 1.0.2 (tag contrib/envconfig/v1.0.3).
+		Preparing go.temporal.io/sdk/contrib/envconfig 1.0.3, following 1.0.2 (tag contrib/envconfig/v1.0.3).
 		PR: https://github.com/temporalio/sdk-go/pull/123
 		Draft release: https://github.com/temporalio/sdk-go/releases/tag/untagged-abc
 		Cleaned up worktree.
@@ -777,8 +777,8 @@ func TestParseArgs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.target.dir != test.wantDir {
-				t.Fatalf("unexpected module directory: got %q, want %q", got.target.dir, test.wantDir)
+			if gotDir := got.target.dir(); gotDir != test.wantDir {
+				t.Fatalf("unexpected module directory: got %q, want %q", gotDir, test.wantDir)
 			}
 			if got.allowUnofficialDependencies != test.wantAllow {
 				t.Fatalf("unexpected allow-unofficial-dependencies: got %t, want %t", got.allowUnofficialDependencies, test.wantAllow)
