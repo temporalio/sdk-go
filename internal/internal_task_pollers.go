@@ -845,16 +845,19 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []byte, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondWorkflowTaskFailedRequest {
 	builtRequest := &workflowservice.RespondWorkflowTaskFailedRequest{
-		TaskToken:      taskToken,
-		Cause:          cause,
-		Failure:        wtp.failureConverter.ErrorToFailure(err),
-		Identity:       wtp.identity,
+		TaskToken: taskToken,
+		Cause:     cause,
+		Failure:   wtp.failureConverter.ErrorToFailure(err),
+		Identity:  wtp.identity,
+		//lint:ignore SA1019 retain the checksum used by servers without Build ID versioning support
 		BinaryChecksum: wtp.workerBuildID,
 		Namespace:      wtp.namespace,
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
 		WorkerVersion: &commonpb.WorkerVersionStamp{
 			BuildId:       wtp.workerBuildID,
 			UseVersioning: wtp.useBuildIDVersioning,
 		},
+		//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 		Deployment: &deploymentpb.Deployment{
 			BuildId:    wtp.workerBuildID,
 			SeriesName: wtp.getDeploymentName(),
@@ -1145,10 +1148,12 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 	}
 
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
-		Namespace:      wtp.namespace,
-		TaskQueue:      taskQueue,
-		Identity:       wtp.identity,
+		Namespace: wtp.namespace,
+		TaskQueue: taskQueue,
+		Identity:  wtp.identity,
+		//lint:ignore SA1019 retain the checksum used by servers without Build ID versioning support
 		BinaryChecksum: wtp.workerBuildID,
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              wtp.workerBuildID,
 			UseVersioning:        wtp.useBuildIDVersioning,
@@ -1408,6 +1413,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:          atp.identity,
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: wrapperspb.Double(atp.activitiesPerSecond)},
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              atp.workerBuildID,
 			UseVersioning:        atp.useBuildIDVersioning,
@@ -1602,11 +1608,13 @@ func convertActivityResultToRespondRequest(
 
 	if err == nil {
 		return &workflowservice.RespondActivityTaskCompletedRequest{
-			TaskToken:         taskToken,
-			Result:            result,
-			Identity:          identity,
-			Namespace:         namespace,
-			WorkerVersion:     versionStamp,
+			TaskToken: taskToken,
+			Result:    result,
+			Identity:  identity,
+			Namespace: namespace,
+			//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
+			WorkerVersion: versionStamp,
+			//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 			Deployment:        deployment,
 			DeploymentOptions: workerDeploymentOptions,
 		}
@@ -1617,21 +1625,25 @@ func convertActivityResultToRespondRequest(
 		var canceledErr *CanceledError
 		if errors.As(err, &canceledErr) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
-				TaskToken:         taskToken,
-				Details:           convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-				Identity:          identity,
-				Namespace:         namespace,
-				WorkerVersion:     versionStamp,
+				TaskToken: taskToken,
+				Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
+				Identity:  identity,
+				Namespace: namespace,
+				//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
+				WorkerVersion: versionStamp,
+				//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 				Deployment:        deployment,
 				DeploymentOptions: workerDeploymentOptions,
 			}
 		}
 		if errors.Is(err, context.Canceled) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
-				TaskToken:         taskToken,
-				Identity:          identity,
-				Namespace:         namespace,
-				WorkerVersion:     versionStamp,
+				TaskToken: taskToken,
+				Identity:  identity,
+				Namespace: namespace,
+				//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
+				WorkerVersion: versionStamp,
+				//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 				Deployment:        deployment,
 				DeploymentOptions: workerDeploymentOptions,
 			}
@@ -1645,11 +1657,13 @@ func convertActivityResultToRespondRequest(
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
-		TaskToken:         taskToken,
-		Failure:           failureConverter.ErrorToFailure(err),
-		Identity:          identity,
-		Namespace:         namespace,
-		WorkerVersion:     versionStamp,
+		TaskToken: taskToken,
+		Failure:   failureConverter.ErrorToFailure(err),
+		Identity:  identity,
+		Namespace: namespace,
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
+		WorkerVersion: versionStamp,
+		//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 		Deployment:        deployment,
 		DeploymentOptions: workerDeploymentOptions,
 	}

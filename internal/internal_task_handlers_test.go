@@ -584,11 +584,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskStarted(3),
+		//lint:ignore SA1019 construct legacy history for replay compatibility
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2, BinaryChecksum: checksum1}),
 		createTestEventTimerStarted(5, 5),
 		createTestEventTimerFired(6, 5),
 		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskStarted(8),
+		//lint:ignore SA1019 construct legacy history for replay compatibility
 		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 7, BinaryChecksum: checksum2}),
 		createTestEventTimerStarted(10, 10),
 		createTestEventTimerFired(11, 10),
@@ -1253,7 +1255,6 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 }
 
 func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
-	checksum1 := "chck1"
 	numberOfSignalsToComplete, err := converter.GetDefaultDataConverter().ToPayloads(2)
 	t.NoError(err)
 	signal, err := converter.GetDefaultDataConverter().ToPayloads("signal data")
@@ -1266,7 +1267,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
-			ScheduledEventId: 2, BinaryChecksum: checksum1,
+			ScheduledEventId: 2,
 		}),
 		createTestEventWorkflowExecutionSignaledWithPayload(5, signalCh, signal),
 		createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{}),
