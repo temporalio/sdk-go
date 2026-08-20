@@ -102,7 +102,7 @@ type slowToPayloadsConverter struct {
 	converter.DataConverter
 }
 
-func (s *slowToPayloadsConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
+func (s *slowToPayloadsConverter) ToPayloads(value ...any) (*commonpb.Payloads, error) {
 	time.Sleep(payloadConverterTime)
 	return s.DataConverter.ToPayloads(value...)
 }

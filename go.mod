@@ -1,6 +1,6 @@
 module go.temporal.io/sdk
 
-go 1.25.4
+go 1.26.0
 
 require (
 	github.com/facebookgo/clock v0.0.0-20150410010913-600d898af40a

@@ -104,6 +104,12 @@ func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 			if req.TaskQueue.GetKind() != enumspb.TASK_QUEUE_KIND_WORKER_COMMANDS {
 				t.Fatalf("task queue kind = %v, want worker commands", req.TaskQueue.GetKind())
 			}
+			if req.DeploymentOptions.GetBuildId() != "1.0" {
+				t.Fatalf("build ID = %q, want %q", req.DeploymentOptions.GetBuildId(), "1.0")
+			}
+			if req.DeploymentOptions.GetWorkerVersioningMode() != enumspb.WORKER_VERSIONING_MODE_UNVERSIONED {
+				t.Fatalf("worker versioning mode = %v, want unversioned", req.DeploymentOptions.GetWorkerVersioningMode())
+			}
 			return &workflowservice.PollNexusTaskQueueResponse{}, nil
 		})
 

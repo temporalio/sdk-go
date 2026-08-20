@@ -105,10 +105,8 @@ func TestRampThrottleBoundsIssuanceAcrossConcurrentReserveSlot(t *testing.T) {
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < reservers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range reservers {
+		wg.Go(func() {
 			<-start
 			permit, err := supplier.ReserveSlot(t.Context(), info)
 			at := time.Now()
@@ -120,7 +118,7 @@ func TestRampThrottleBoundsIssuanceAcrossConcurrentReserveSlot(t *testing.T) {
 				return
 			}
 			issuedAt = append(issuedAt, at)
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

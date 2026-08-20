@@ -47,7 +47,7 @@ func (i *isReadOnlyWorkerInterceptor) InterceptWorkflow(
 	}
 }
 
-func (i *isReadOnlyWorkflowInboundInterceptor) ExecuteWorkflow(ctx workflow.Context, in *interceptor.ExecuteWorkflowInput) (interface{}, error) {
+func (i *isReadOnlyWorkflowInboundInterceptor) ExecuteWorkflow(ctx workflow.Context, in *interceptor.ExecuteWorkflowInput) (any, error) {
 	isReadOnlyRec.record("ExecuteWorkflow", ctx)
 	return i.Next.ExecuteWorkflow(ctx, in)
 }
@@ -57,7 +57,7 @@ func (i *isReadOnlyWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context
 	return i.Next.HandleSignal(ctx, in)
 }
 
-func (i *isReadOnlyWorkflowInboundInterceptor) HandleQuery(ctx workflow.Context, in *interceptor.HandleQueryInput) (interface{}, error) {
+func (i *isReadOnlyWorkflowInboundInterceptor) HandleQuery(ctx workflow.Context, in *interceptor.HandleQueryInput) (any, error) {
 	isReadOnlyRec.record("HandleQuery", ctx)
 	return i.Next.HandleQuery(ctx, in)
 }
@@ -67,7 +67,7 @@ func (i *isReadOnlyWorkflowInboundInterceptor) ValidateUpdate(ctx workflow.Conte
 	return i.Next.ValidateUpdate(ctx, in)
 }
 
-func (i *isReadOnlyWorkflowInboundInterceptor) ExecuteUpdate(ctx workflow.Context, in *interceptor.UpdateInput) (interface{}, error) {
+func (i *isReadOnlyWorkflowInboundInterceptor) ExecuteUpdate(ctx workflow.Context, in *interceptor.UpdateInput) (any, error) {
 	isReadOnlyRec.record("ExecuteUpdate", ctx)
 	return i.Next.ExecuteUpdate(ctx, in)
 }
@@ -97,7 +97,7 @@ func isReadOnlyWorkflow(ctx workflow.Context) error {
 
 	isReadOnlyRec.record("workflowTask", ctx)
 
-	workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		isReadOnlyRec.record("sideEffect", ctx)
 		return nil
 	}).Get(nil)

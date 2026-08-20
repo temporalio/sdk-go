@@ -594,16 +594,16 @@ func (s *replayTestSuite) TestAwaitWithTimeoutNoTimerCancel() {
 
 type captureConverter struct {
 	converter.DataConverter
-	toPayloads   []interface{}
-	fromPayloads []interface{}
+	toPayloads   []any
+	fromPayloads []any
 }
 
-func (c *captureConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
+func (c *captureConverter) ToPayloads(value ...any) (*commonpb.Payloads, error) {
 	c.toPayloads = append(c.toPayloads, value...)
 	return c.DataConverter.ToPayloads(value...)
 }
 
-func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
 	// Call then get pointers
 	err := c.DataConverter.FromPayloads(payloads, valuePtrs...)
 	for _, v := range valuePtrs {

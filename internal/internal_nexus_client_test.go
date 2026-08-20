@@ -149,7 +149,7 @@ func TestResolveNexusOperationName(t *testing.T) {
 	require.Equal(t, "my-op", name)
 
 	// Typed operation reference with correct input type
-	op := mockOperationReference{name: "typed-op", inputType: reflect.TypeOf("")}
+	op := mockOperationReference{name: "typed-op", inputType: reflect.TypeFor[string]()}
 	name, err = resolveNexusOperationName(op, "hello")
 	require.NoError(t, err)
 	require.Equal(t, "typed-op", name)

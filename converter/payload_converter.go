@@ -8,11 +8,11 @@ import (
 type PayloadConverter interface {
 	// ToPayload converts a single value to payload. It should return nil if the
 	// PayloadConverter can not convert the passed value (i.e. type is unknown).
-	ToPayload(value interface{}) (*commonpb.Payload, error)
+	ToPayload(value any) (*commonpb.Payload, error)
 	// FromPayload converts single value from payload. valuePtr should be a
 	// reference to a variable of a type corresponding to the payload
 	// encoding. Otherwise it should return error.
-	FromPayload(payload *commonpb.Payload, valuePtr interface{}) error
+	FromPayload(payload *commonpb.Payload, valuePtr any) error
 	// ToString converts payload object into human readable string.
 	ToString(*commonpb.Payload) string
 

@@ -128,7 +128,7 @@ type (
 			runID string,
 			signalName string,
 			input *commonpb.Payloads,
-			arg interface{},
+			arg any,
 			header *commonpb.Header,
 			childWorkflowOnly bool,
 			callback ResultHandler,
@@ -140,15 +140,15 @@ type (
 			handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 		)
 		IsReplaying() bool
-		MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool, summary string) converter.EncodedValue
+		MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
 		GetFailureConverter() converter.FailureConverter
 		AddSession(sessionInfo *SessionInfo)
 		RemoveSession(sessionID string)
 		GetContextPropagators() []ContextPropagator
-		UpsertSearchAttributes(attributes map[string]interface{}) error
+		UpsertSearchAttributes(attributes map[string]any) error
 		UpsertTypedSearchAttributes(attributes SearchAttributes) error
-		UpsertMemo(memoMap map[string]interface{}) error
+		UpsertMemo(memoMap map[string]any) error
 		GetRegistry() *registry
 		// QueueUpdate request of type name
 		QueueUpdate(name string, f func())
@@ -458,22 +458,18 @@ func (bw *baseWorker) Start() {
 		}
 
 		if taskWorker.pollerAutoscaler != nil {
-			bw.stopWG.Add(1)
-			go func() {
-				defer bw.stopWG.Done()
+			bw.stopWG.Go(func() {
 				taskWorker.pollerAutoscaler.run(bw.stopCh)
-			}()
+			})
 		}
 	}
 
 	// When all pollers have exited, close taskQueueCh so the dispatcher
 	// knows no more polled tasks will arrive and can drain what remains.
-	bw.stopWG.Add(1)
-	go func() {
-		defer bw.stopWG.Done()
+	bw.stopWG.Go(func() {
 		bw.pollerWG.Wait()
 		close(bw.taskQueueCh)
-	}()
+	})
 
 	bw.stopWG.Add(1)
 	go bw.runTaskDispatcher()
@@ -629,9 +625,7 @@ func (bw *baseWorker) reserveSlotAsync(
 	reserveChan chan<- *SlotPermit,
 	taskWorker scalableTaskPoller,
 ) {
-	bw.stopWG.Add(1)
-	go func() {
-		defer bw.stopWG.Done()
+	bw.stopWG.Go(func() {
 		reservationData := bw.slotReservationData(taskWorker)
 		s, err := bw.slotSupplier.ReserveSlot(ctx, &reservationData)
 		if err != nil {
@@ -650,7 +644,7 @@ func (bw *baseWorker) reserveSlotAsync(
 		case <-ctx.Done():
 			bw.releaseSlot(s, SlotReleaseReasonUnused)
 		}
-	}()
+	})
 }
 
 func (bw *baseWorker) slotReservationData(taskWorker scalableTaskPoller) slotReservationData {
@@ -698,9 +692,7 @@ func (bw *baseWorker) getDeploymentOptions() WorkerDeploymentOptions {
 }
 
 func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
-	bw.stopWG.Add(1)
-	go func() {
-		defer bw.stopWG.Done()
+	bw.stopWG.Go(func() {
 
 		task := eagerOrPolled.getTask()
 		permit := eagerOrPolled.getPermit()
@@ -728,7 +720,7 @@ func (bw *baseWorker) processTaskAsync(eagerOrPolled eagerOrPolledTask) {
 				bw.logger.Info("Task processing failed with error", tagError, err)
 			}
 		}
-	}()
+	})
 }
 
 func (bw *baseWorker) runTaskDispatcher() {

@@ -41,7 +41,7 @@ func (d *deploymentClientTestSuite) TearDownTest() {
 }
 
 func (d *deploymentClientTestSuite) TestSetCurrentDeployment() {
-	metadata := map[string]interface{}{
+	metadata := map[string]any{
 		"data1": "metadata 1",
 	}
 
@@ -58,7 +58,7 @@ func (d *deploymentClientTestSuite) TestSetCurrentDeployment() {
 	createResp := &workflowservice.SetCurrentDeploymentResponse{}
 
 	d.service.EXPECT().SetCurrentDeployment(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResp, nil).
-		Do(func(_ interface{}, req *workflowservice.SetCurrentDeploymentRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.SetCurrentDeploymentRequest, _ ...any) {
 			var resultMeta string
 			// verify the metadata
 			err := d.dataConverter.FromPayload(req.UpdateMetadata.UpsertEntries["data1"], &resultMeta)

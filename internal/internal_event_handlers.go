@@ -5,6 +5,7 @@ package internal
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"sync"
 	"time"
@@ -431,7 +432,7 @@ func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(
 	runID string,
 	signalName string,
 	input *commonpb.Payloads,
-	_ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ interface{},
+	_ /* THIS IS FOR TEST FRAMEWORK. DO NOT USE HERE. */ any,
 	header *commonpb.Header,
 	childWorkflowOnly bool,
 	callback ResultHandler,
@@ -442,7 +443,7 @@ func (wc *workflowEnvironmentImpl) SignalExternalWorkflow(
 	command.setData(&scheduledSignal{callback: callback})
 }
 
-func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]interface{}) error {
+func (wc *workflowEnvironmentImpl) UpsertSearchAttributes(attributes map[string]any) error {
 	// This has to be used in WorkflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
 	attr, err := validateAndSerializeSearchAttributes(attributes)
 	if err != nil {
@@ -472,7 +473,7 @@ func (wc *workflowEnvironmentImpl) UpsertTypedSearchAttributes(attributes Search
 		return errors.New("TemporalChangeVersion is a reserved key that cannot be set, please use other key")
 	}
 
-	attr := make(map[string]interface{})
+	attr := make(map[string]any)
 	for k, v := range rawSearchAttributes.GetIndexedFields() {
 		attr[k] = v
 	}
@@ -494,13 +495,11 @@ func mergeSearchAttributes(current, upsert *commonpb.SearchAttributes) *commonpb
 	}
 
 	fields := current.IndexedFields
-	for k, v := range upsert.IndexedFields {
-		fields[k] = v
-	}
+	maps.Copy(fields, upsert.IndexedFields)
 	return current
 }
 
-func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*commonpb.SearchAttributes, error) {
+func validateAndSerializeSearchAttributes(attributes map[string]any) (*commonpb.SearchAttributes, error) {
 	if len(attributes) == 0 {
 		return nil, errSearchAttributesNotSet
 	}
@@ -511,7 +510,7 @@ func validateAndSerializeSearchAttributes(attributes map[string]interface{}) (*c
 	return attr, nil
 }
 
-func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]interface{}) error {
+func (wc *workflowEnvironmentImpl) UpsertMemo(memoMap map[string]any) error {
 	// This has to be used in WorkflowEnvironment implementations instead of in Workflow for testsuite mock purpose.
 	memo, err := validateAndSerializeMemo(memoMap, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
@@ -549,7 +548,7 @@ func mergeMemo(current, upsert *commonpb.Memo) *commonpb.Memo {
 	return current
 }
 
-func validateAndSerializeMemo(memoMap map[string]interface{}, dc converter.DataConverter, useUserDC bool) (*commonpb.Memo, error) {
+func validateAndSerializeMemo(memoMap map[string]any, dc converter.DataConverter, useUserDC bool) (*commonpb.Memo, error) {
 	if len(memoMap) == 0 {
 		return nil, errMemoNotSet
 	}
@@ -1034,8 +1033,8 @@ func resolvePreferredVersion(
 	return input.MaxSupported
 }
 
-func createSearchAttributesForChangeVersion(changeID string, version Version, existingChangeVersions map[string]Version) map[string]interface{} {
-	return map[string]interface{}{
+func createSearchAttributesForChangeVersion(changeID string, version Version, existingChangeVersions map[string]Version) map[string]any {
+	return map[string]any{
 		TemporalChangeVersion: getChangeVersions(changeID, version, existingChangeVersions),
 	}
 }
@@ -1153,7 +1152,7 @@ func (wc *workflowEnvironmentImpl) lookupMutableSideEffect(id string) *commonpb.
 	return payloads
 }
 
-func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interface{}, equals func(a, b interface{}) bool, summary string) converter.EncodedValue {
+func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string) converter.EncodedValue {
 	wc.mutableSideEffectCallCounter[id]++
 	callCount := wc.mutableSideEffectCallCounter[id]
 
@@ -1185,7 +1184,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() interfa
 	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()), summary)
 }
 
-func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOldValue *commonpb.Payloads, equals func(a, b interface{}) bool) bool {
+func (wc *workflowEnvironmentImpl) isEqualValue(newValue any, encodedOldValue *commonpb.Payloads, equals func(a, b any) bool) bool {
 	return isEqualMutableSideEffectValue(wc.GetDataConverter(), newValue, encodedOldValue, equals)
 }
 
@@ -1194,7 +1193,7 @@ func (wc *workflowEnvironmentImpl) isEqualValue(newValue interface{}, encodedOld
 // user-supplied equals function. It is shared by the real worker and the test
 // environment so both honor equals identically. A nil newValue is compared by
 // its encoded form to avoid invoking equals with a nil.
-func isEqualMutableSideEffectValue(dc converter.DataConverter, newValue interface{}, encodedOldValue *commonpb.Payloads, equals func(a, b interface{}) bool) bool {
+func isEqualMutableSideEffectValue(dc converter.DataConverter, newValue any, encodedOldValue *commonpb.Payloads, equals func(a, b any) bool) bool {
 	if newValue == nil {
 		newEncodedValue, err := dc.ToPayloads(nil)
 		if err != nil {
@@ -1207,7 +1206,7 @@ func isEqualMutableSideEffectValue(dc converter.DataConverter, newValue interfac
 	return equals(newValue, oldValue)
 }
 
-func decodeValue(encodedValue converter.EncodedValue, value interface{}) interface{} {
+func decodeValue(encodedValue converter.EncodedValue, value any) any {
 	// We need to decode oldValue out of encodedValue, first we need to prepare valuePtr as the same type as value
 	valuePtr := reflect.New(reflect.TypeOf(value)).Interface()
 	if err := encodedValue.Get(valuePtr); err != nil {
@@ -1217,7 +1216,7 @@ func decodeValue(encodedValue converter.EncodedValue, value interface{}) interfa
 	return decodedValue
 }
 
-func (wc *workflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payloads {
+func (wc *workflowEnvironmentImpl) encodeValue(value any) *commonpb.Payloads {
 	payload, err := wc.encodeArg(value)
 	if err != nil {
 		panic(err)
@@ -1225,12 +1224,12 @@ func (wc *workflowEnvironmentImpl) encodeValue(value interface{}) *commonpb.Payl
 	return payload
 }
 
-func (wc *workflowEnvironmentImpl) encodeArg(arg interface{}) (*commonpb.Payloads, error) {
+func (wc *workflowEnvironmentImpl) encodeArg(arg any) (*commonpb.Payloads, error) {
 	return wc.GetDataConverter().ToPayloads(arg)
 }
 
 func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountHint int, data *commonpb.Payloads, summary string) converter.EncodedValue {
-	details, err := encodeArgs(wc.GetDataConverter(), []interface{}{id, data})
+	details, err := encodeArgs(wc.GetDataConverter(), []any{id, data})
 	if err != nil {
 		panic(err)
 	}

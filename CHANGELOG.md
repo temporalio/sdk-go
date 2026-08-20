@@ -22,12 +22,16 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
+  structured details for payload validation failures.
+
 ### Changed
 
 ### Deprecated
 
 ### :boom: Breaking Changes
 
+- Raised the minimum supported Go version from 1.25.4 to 1.26.0.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
   `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
