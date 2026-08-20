@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/contrib/gcp/gcsdriver/gcssdk
 
-go 1.25.4
+go 1.26.0
 
 require (
 	cloud.google.com/go/storage v1.57.2

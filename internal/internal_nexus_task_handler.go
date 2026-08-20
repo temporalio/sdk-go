@@ -509,6 +509,7 @@ func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Respo
 		res.Variant = &nexuspb.Response_StartOperation{
 			StartOperation: &nexuspb.StartOperationResponse{
 				Variant: &nexuspb.StartOperationResponse_OperationError{
+					//lint:ignore SA1019 servers without Temporal failure responses require the legacy operation error variant
 					OperationError: &nexuspb.UnsuccessfulOperationError{
 						OperationState: state,
 						Failure:        failure,
@@ -601,11 +602,6 @@ func (h *nexusTaskHandler) nexusHandlerErrorToProto(handlerErr *nexus.HandlerErr
 		RetryBehavior: retryBehavior,
 	}, nil
 }
-
-// payloadValidationErrorType is the ApplicationError type reserved for payload validation failures raised by a data
-// converter. A non-retryable error of this type reports invalid input and is translated into a BAD_REQUEST handler
-// error.
-const payloadValidationErrorType = "PayloadValidationError"
 
 // payloadSerializer is a fake nexus Serializer that uses a data converter to read from an embedded payload instead of
 // using the given nexus.Context. Supports only Deserialize.

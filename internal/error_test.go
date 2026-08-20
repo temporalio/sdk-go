@@ -488,7 +488,7 @@ func Test_CanceledErrorWithOptions(t *testing.T) {
 	// Test with all options
 	err = NewCanceledErrorWithOptions(CanceledErrorOptions{
 		Message: "full cancellation",
-		Details: []interface{}{testErrorDetails3},
+		Details: []any{testErrorDetails3},
 		Cause:   causeErr,
 	})
 	require.True(t, errors.As(err, &canceledErr))
@@ -507,7 +507,7 @@ func Test_CanceledErrorWithOptions_RoundTrip(t *testing.T) {
 	causeErr := NewApplicationError("app error", "TestError", false, nil)
 	err := NewCanceledErrorWithOptions(CanceledErrorOptions{
 		Message: "operation was canceled",
-		Details: []interface{}{testErrorDetails1, testErrorDetails2, testErrorDetails3},
+		Details: []any{testErrorDetails1, testErrorDetails2, testErrorDetails3},
 		Cause:   causeErr,
 	})
 
@@ -795,7 +795,7 @@ func Test_convertErrorToFailure_ApplicationErrorWithExtraRequests(t *testing.T) 
 		ApplicationErrorOptions{
 			NonRetryable: true,
 			Cause:        errors.New("cause error"),
-			Details:      []interface{}{"details", 2208},
+			Details:      []any{"details", 2208},
 			Category:     ApplicationErrorCategoryBenign,
 		},
 	)
@@ -1402,8 +1402,9 @@ func TestFailureToError_NexusOperationExecution_TokenFallbackToId(t *testing.T) 
 			Endpoint:         "ep",
 			Service:          "svc",
 			Operation:        "op",
-			OperationId:      "legacy-id",
-			OperationToken:   "",
+			//lint:ignore SA1019 construct a legacy failure to verify operation ID fallback
+			OperationId:    "legacy-id",
+			OperationToken: "",
 		}},
 		Message: "failed",
 	}

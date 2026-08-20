@@ -156,7 +156,7 @@ func startTestGRPCServer() (*testGRPCServer, error) {
 func (t *testGRPCServer) waitUntilServing() error {
 	// Try 20 times, waiting 100ms between
 	var lastErr error
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		conn, err := grpc.NewClient(t.addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			lastErr = err

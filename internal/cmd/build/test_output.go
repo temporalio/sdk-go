@@ -462,11 +462,11 @@ func serverLineMatchesTest(line, testName string) bool {
 }
 
 func serverLogTime(line string) (time.Time, bool) {
-	index := strings.Index(line, "time=")
-	if index < 0 {
+	_, after, ok := strings.Cut(line, "time=")
+	if !ok {
 		return time.Time{}, false
 	}
-	value := line[index+len("time="):]
+	value := after
 	if space := strings.IndexByte(value, ' '); space >= 0 {
 		value = value[:space]
 	}

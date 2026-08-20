@@ -584,11 +584,13 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_BinaryChecksum() {
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskStarted(3),
+		//lint:ignore SA1019 construct legacy history for replay compatibility
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 2, BinaryChecksum: checksum1}),
 		createTestEventTimerStarted(5, 5),
 		createTestEventTimerFired(6, 5),
 		createTestEventWorkflowTaskScheduled(7, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: taskQueue}}),
 		createTestEventWorkflowTaskStarted(8),
+		//lint:ignore SA1019 construct legacy history for replay compatibility
 		createTestEventWorkflowTaskCompleted(9, &historypb.WorkflowTaskCompletedEventAttributes{ScheduledEventId: 7, BinaryChecksum: checksum2}),
 		createTestEventTimerStarted(10, 10),
 		createTestEventTimerFired(11, 10),
@@ -1253,7 +1255,6 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_InvalidQueryTask() {
 }
 
 func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
-	checksum1 := "chck1"
 	numberOfSignalsToComplete, err := converter.GetDefaultDataConverter().ToPayloads(2)
 	t.NoError(err)
 	signal, err := converter.GetDefaultDataConverter().ToPayloads("signal data")
@@ -1266,7 +1267,7 @@ func (t *TaskHandlersTestSuite) TestConsistentQuery_Success() {
 		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
 		createTestEventWorkflowTaskStarted(3),
 		createTestEventWorkflowTaskCompleted(4, &historypb.WorkflowTaskCompletedEventAttributes{
-			ScheduledEventId: 2, BinaryChecksum: checksum1,
+			ScheduledEventId: 2,
 		}),
 		createTestEventWorkflowExecutionSignaledWithPayload(5, signalCh, signal),
 		createTestEventWorkflowTaskScheduled(6, &historypb.WorkflowTaskScheduledEventAttributes{}),
@@ -1964,7 +1965,7 @@ func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
 	mockService.EXPECT().
 		RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(_ interface{}, _ interface{}, _ ...interface{}) { invocationChannel <- 1 }).
+		Do(func(_ any, _ any, _ ...any) { invocationChannel <- 1 }).
 		Return(&heartbeatResponse, nil).
 		Times(2)
 
@@ -2061,7 +2062,7 @@ func (t *testActivityDeadline) ActivityType() ActivityType {
 	return ActivityType{Name: "test"}
 }
 
-func (t *testActivityDeadline) GetFunction() interface{} {
+func (t *testActivityDeadline) GetFunction() any {
 	return t.Execute
 }
 

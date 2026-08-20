@@ -102,7 +102,7 @@ func querySignalWorkflowFunc(ctx Context, numSignals int) error {
 	})
 
 	ch := GetSignalChannel(ctx, signalCh)
-	for i := 0; i < numSignals; i++ {
+	for range numSignals {
 		// update queryResult when signal is received
 		ch.Receive(ctx, &queryResult)
 
@@ -154,7 +154,7 @@ func (ga greeterActivity) Execute(context.Context, *commonpb.Payloads) (*commonp
 	return converter.GetDefaultDataConverter().ToPayloads([]byte("World"))
 }
 
-func (ga greeterActivity) GetFunction() interface{} {
+func (ga greeterActivity) GetFunction() any {
 	return ga.Execute
 }
 

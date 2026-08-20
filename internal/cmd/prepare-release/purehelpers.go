@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -87,7 +88,7 @@ func validateChangelog(text, currentVersion string) error {
 	// Count the number of sections for each version.
 	counts := make(map[string]int)
 	var versions []string
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		match := changelogHeadingRE.FindStringSubmatch(line)
 		if match == nil {
 			continue
@@ -231,12 +232,7 @@ func stripOuterBlankLines(lines []string) []string {
 }
 
 func contains(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, value)
 }
 
 func hasNonblank(lines []string) bool {

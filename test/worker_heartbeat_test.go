@@ -792,7 +792,7 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerHeartbeatWorkflowTaskProcessed() {
 	ts.NoError(ts.worker.Start())
 
 	numWorkflows := 3
-	for i := 0; i < numWorkflows; i++ {
+	for i := range numWorkflows {
 		workflowOptions := client.StartWorkflowOptions{
 			ID:        fmt.Sprintf("test-wf-processed-%d-%s", i, uuid.NewString()),
 			TaskQueue: ts.taskQueueName,

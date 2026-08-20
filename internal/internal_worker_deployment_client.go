@@ -206,8 +206,9 @@ func (h *workerDeploymentHandleImpl) SetCurrentVersion(ctx context.Context, opti
 	}
 
 	request := &workflowservice.SetWorkerDeploymentCurrentVersionRequest{
-		Namespace:               h.workflowClient.namespace,
-		DeploymentName:          h.Name,
+		Namespace:      h.workflowClient.namespace,
+		DeploymentName: h.Name,
+		//lint:ignore SA1019 retain the canonical version string for older servers
 		Version:                 h.buildIdToVersionStr(options.BuildID),
 		BuildId:                 options.BuildID,
 		ConflictToken:           options.ConflictToken,
@@ -245,8 +246,9 @@ func (h *workerDeploymentHandleImpl) SetRampingVersion(ctx context.Context, opti
 	}
 
 	request := &workflowservice.SetWorkerDeploymentRampingVersionRequest{
-		Namespace:               h.workflowClient.namespace,
-		DeploymentName:          h.Name,
+		Namespace:      h.workflowClient.namespace,
+		DeploymentName: h.Name,
+		//lint:ignore SA1019 retain the canonical version string for older servers
 		Version:                 h.buildIdToVersionStr(options.BuildID),
 		BuildId:                 options.BuildID,
 		Percentage:              options.Percentage,
@@ -376,7 +378,8 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 
 	request := &workflowservice.DescribeWorkerDeploymentVersionRequest{
 		Namespace: h.workflowClient.namespace,
-		Version:   h.buildIdToVersionStr(options.BuildID),
+		//lint:ignore SA1019 retain the canonical version string for older servers
+		Version: h.buildIdToVersionStr(options.BuildID),
 		DeploymentVersion: &deployment.WorkerDeploymentVersion{
 			BuildId:        options.BuildID,
 			DeploymentName: h.Name,
@@ -413,7 +416,8 @@ func (h *workerDeploymentHandleImpl) DeleteVersion(ctx context.Context, options 
 
 	request := &workflowservice.DeleteWorkerDeploymentVersionRequest{
 		Namespace: h.workflowClient.namespace,
-		Version:   h.buildIdToVersionStr(options.BuildID),
+		//lint:ignore SA1019 retain the canonical version string for older servers
+		Version: h.buildIdToVersionStr(options.BuildID),
 		DeploymentVersion: &deployment.WorkerDeploymentVersion{
 			BuildId:        options.BuildID,
 			DeploymentName: h.Name,
@@ -466,7 +470,8 @@ func (h *workerDeploymentHandleImpl) UpdateVersionMetadata(ctx context.Context, 
 	}
 
 	request := &workflowservice.UpdateWorkerDeploymentVersionMetadataRequest{
-		Namespace:         h.workflowClient.namespace,
+		Namespace: h.workflowClient.namespace,
+		//lint:ignore SA1019 retain the canonical version string for older servers
 		Version:           options.Version.toCanonicalString(),
 		DeploymentVersion: options.Version.toProto(),
 		UpsertEntries:     workerDeploymentUpsertEntriesMetadataToProto(h.workflowClient.dataConverter, options.MetadataUpdate),

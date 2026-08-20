@@ -2,7 +2,7 @@ package log
 
 // With creates a child Logger that includes the supplied key-value pairs in each log entry. It does this by
 // using the supplied logger if it implements WithLogger; otherwise, it does so by intercepting every log call.
-func With(logger Logger, keyvals ...interface{}) Logger {
+func With(logger Logger, keyvals ...any) Logger {
 	if wl, ok := logger.(WithLogger); ok {
 		return wl.With(keyvals...)
 	}
@@ -24,34 +24,34 @@ var _ WithSkipCallers = (*withLogger)(nil)
 
 type withLogger struct {
 	logger  Logger
-	keyvals []interface{}
+	keyvals []any
 }
 
-func newWithLogger(logger Logger, keyvals ...interface{}) *withLogger {
+func newWithLogger(logger Logger, keyvals ...any) *withLogger {
 	return &withLogger{logger: Skip(logger, 1), keyvals: keyvals}
 }
 
-func (l *withLogger) prependKeyvals(keyvals []interface{}) []interface{} {
+func (l *withLogger) prependKeyvals(keyvals []any) []any {
 	return append(l.keyvals, keyvals...)
 }
 
 // Debug writes message to the log.
-func (l *withLogger) Debug(msg string, keyvals ...interface{}) {
+func (l *withLogger) Debug(msg string, keyvals ...any) {
 	l.logger.Debug(msg, l.prependKeyvals(keyvals)...)
 }
 
 // Info writes message to the log.
-func (l *withLogger) Info(msg string, keyvals ...interface{}) {
+func (l *withLogger) Info(msg string, keyvals ...any) {
 	l.logger.Info(msg, l.prependKeyvals(keyvals)...)
 }
 
 // Warn writes message to the log.
-func (l *withLogger) Warn(msg string, keyvals ...interface{}) {
+func (l *withLogger) Warn(msg string, keyvals ...any) {
 	l.logger.Warn(msg, l.prependKeyvals(keyvals)...)
 }
 
 // Error writes message to the log.
-func (l *withLogger) Error(msg string, keyvals ...interface{}) {
+func (l *withLogger) Error(msg string, keyvals ...any) {
 	l.logger.Error(msg, l.prependKeyvals(keyvals)...)
 }
 

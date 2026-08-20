@@ -28,7 +28,7 @@ func (m *mockWorkflowDefinition) OnWorkflowTaskStarted(d time.Duration) {
 }
 
 func testDecodeValueHelper(t *testing.T, env *workflowEnvironmentImpl) {
-	equals := func(a, b interface{}) bool {
+	equals := func(a, b any) bool {
 		ao := a.(ActivityOptions)
 		bo := b.(ActivityOptions)
 		return ao.TaskQueue == bo.TaskQueue
@@ -64,7 +64,7 @@ func Test_DecodedValuePtr(t *testing.T) {
 	env := &workflowEnvironmentImpl{
 		dataConverter: converter.GetDefaultDataConverter(),
 	}
-	equals := func(a, b interface{}) bool {
+	equals := func(a, b any) bool {
 		ao := a.(*ActivityOptions)
 		bo := b.(*ActivityOptions)
 		return ao.TaskQueue == bo.TaskQueue
@@ -84,11 +84,11 @@ func Test_DecodedValueNil(t *testing.T) {
 	env := &workflowEnvironmentImpl{
 		dataConverter: converter.GetDefaultDataConverter(),
 	}
-	equals := func(a, b interface{}) bool {
+	equals := func(a, b any) bool {
 		return a == nil && b == nil
 	}
 	// newValue is nil, old value is nil
-	var value interface{}
+	var value any
 	blob := env.encodeValue(value)
 	isEqual := env.isEqualValue(value, blob, equals)
 	require.True(t, isEqual)
@@ -109,13 +109,13 @@ func Test_ValidateAndSerializeSearchAttributes(t *testing.T) {
 	_, err := validateAndSerializeSearchAttributes(nil)
 	require.EqualError(t, err, "search attributes is empty")
 
-	attr := map[string]interface{}{
+	attr := map[string]any{
 		"JustKey": make(chan int),
 	}
 	_, err = validateAndSerializeSearchAttributes(attr)
 	require.EqualError(t, err, "encode search attribute [JustKey] error: unable to encode: json: unsupported type: chan int")
 
-	attr = map[string]interface{}{
+	attr = map[string]any{
 		"key": 1,
 	}
 	searchAttr, err := validateAndSerializeSearchAttributes(attr)
@@ -169,7 +169,7 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 	err := env.UpsertSearchAttributes(nil)
 	require.Error(t, err)
 
-	err = env.UpsertSearchAttributes(map[string]interface{}{
+	err = env.UpsertSearchAttributes(map[string]any{
 		TemporalChangeVersion: []string{"change2-1", "change1-1"}},
 	)
 	require.NoError(t, err)
@@ -177,7 +177,7 @@ func Test_UpsertSearchAttributes(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, int64(7), env.GenerateSequence())
 
-	err = env.UpsertSearchAttributes(map[string]interface{}{"key": 1})
+	err = env.UpsertSearchAttributes(map[string]any{"key": 1})
 	require.NoError(t, err)
 	require.Equal(t, int64(8), env.GenerateSequence())
 }
@@ -233,7 +233,6 @@ func Test_MergeSearchAttributes(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			result := mergeSearchAttributes(test.current, test.upsert)
@@ -247,7 +246,7 @@ func Test_ValidateAndSerializeMemo(t *testing.T) {
 	_, err := validateAndSerializeMemo(nil, nil, false)
 	require.EqualError(t, err, "memo is empty")
 
-	attr := map[string]interface{}{
+	attr := map[string]any{
 		"JustKey": make(chan int),
 	}
 	_, err = validateAndSerializeMemo(attr, nil, false)
@@ -257,7 +256,7 @@ func Test_ValidateAndSerializeMemo(t *testing.T) {
 		"encode workflow memo error: unable to encode: json: unsupported type: chan int",
 	)
 
-	attr = map[string]interface{}{
+	attr = map[string]any{
 		"key": 1,
 	}
 	memo, err := validateAndSerializeMemo(attr, nil, false)
@@ -282,7 +281,7 @@ func Test_UpsertMemo(t *testing.T) {
 	err := env.UpsertMemo(nil)
 	require.Error(t, err)
 
-	err = env.UpsertMemo(map[string]interface{}{"key": 1})
+	err = env.UpsertMemo(map[string]any{"key": 1})
 	require.NoError(t, err)
 	_, ok := env.commandsHelper.commands[makeCommandID(commandTypeModifyProperties, "6")]
 	require.True(t, ok)
@@ -340,7 +339,6 @@ func Test_MergeMemo(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(
 			test.name,
 			func(t *testing.T) {
@@ -374,7 +372,6 @@ func Test_GetChangeVersion(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			result := getChangeVersion(test.changeID, test.version)
@@ -410,7 +407,6 @@ func Test_GetChangeVersions(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			result := getChangeVersions(test.changeID, test.version, test.existingChangeVersions)
@@ -428,7 +424,7 @@ func Test_CreateSearchAttributesForChangeVersion(t *testing.T) {
 }
 
 func TestUpdateEvents(t *testing.T) {
-	mustPayload := func(i interface{}) *commonpb.Payload {
+	mustPayload := func(i any) *commonpb.Payload {
 		t.Helper()
 		p, err := converter.NewJSONPayloadConverter().ToPayload(i)
 		if err != nil {
@@ -493,7 +489,7 @@ func TestUpdateEvents(t *testing.T) {
 }
 
 func TestUpdateEventsPanic(t *testing.T) {
-	mustPayload := func(i interface{}) *commonpb.Payload {
+	mustPayload := func(i any) *commonpb.Payload {
 		t.Helper()
 		p, err := converter.NewJSONPayloadConverter().ToPayload(i)
 		if err != nil {

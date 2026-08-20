@@ -133,7 +133,7 @@ func addWFTFailedCapture(opts *client.Options, ch chan<- enumspb.WorkflowTaskFai
 		grpc.WithUnaryInterceptor(func(
 			ctx context.Context,
 			method string,
-			req, reply interface{},
+			req, reply any,
 			cc *grpc.ClientConn,
 			invoker grpc.UnaryInvoker,
 			callOpts ...grpc.CallOption,
@@ -557,7 +557,6 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityHeartbeat() {
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
 
-
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningClientCustom() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -763,7 +762,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeWarningUpdateInput() {
 		WorkflowID:   run.GetID(),
 		RunID:        run.GetRunID(),
 		UpdateName:   updateName,
-		Args:         []interface{}{updatePayload},
+		Args:         []any{updatePayload},
 		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	ts.NoError(err)

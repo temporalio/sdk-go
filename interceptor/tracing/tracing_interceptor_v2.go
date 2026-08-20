@@ -146,8 +146,7 @@ type TracerStartSpanOptions struct {
 }
 
 // TracerSpanRef represents a span reference such as a parent.
-type TracerSpanRef interface {
-}
+type TracerSpanRef any
 
 // TracerSpan represents a span.
 type TracerSpan interface {
@@ -459,7 +458,7 @@ func (t *tracingActivityInboundInterceptor) Init(outbound interceptor.ActivityOu
 func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 	ctx context.Context,
 	in *interceptor.ExecuteActivityInput,
-) (ret interface{}, err error) {
+) (ret any, err error) {
 	info := activity.GetInfo(ctx)
 	ctx, endSpan, err := startInboundSpan(t.root.tracer, ctx, &TracerStartSpanOptions{
 		Operation:  "RunActivity",
@@ -498,7 +497,7 @@ func (t *tracingWorkflowInboundInterceptor) Init(outbound interceptor.WorkflowOu
 func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 	ctx workflow.Context,
 	in *interceptor.ExecuteWorkflowInput,
-) (ret interface{}, err error) {
+) (ret any, err error) {
 	info := workflow.GetInfo(ctx)
 	ctx, endSpan, err := startInboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "RunWorkflow",
@@ -536,7 +535,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, i
 func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	ctx workflow.Context,
 	in *interceptor.HandleQueryInput,
-) (val interface{}, err error) {
+) (val any, err error) {
 	info := workflow.GetInfo(ctx)
 	ctx, endSpan, err := startInboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
 		Operation: "HandleQuery",
@@ -573,7 +572,7 @@ func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 	ctx workflow.Context,
 	in *interceptor.UpdateInput,
-) (val interface{}, err error) {
+) (val any, err error) {
 	info := workflow.GetInfo(ctx)
 	currentUpdateInfo := workflow.GetCurrentUpdateInfo(ctx)
 	ctx, endSpan, err := startInboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
@@ -597,7 +596,7 @@ type tracingWorkflowOutboundInterceptor struct {
 func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
 	ctx workflow.Context,
 	activityType string,
-	args ...interface{},
+	args ...any,
 ) workflow.Future {
 	info := workflow.GetInfo(ctx)
 	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
@@ -617,7 +616,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
 func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 	ctx workflow.Context,
 	activityType string,
-	args ...interface{},
+	args ...any,
 ) workflow.Future {
 	info := workflow.GetInfo(ctx)
 	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
@@ -644,7 +643,7 @@ func (t *tracingWorkflowOutboundInterceptor) GetLogger(ctx workflow.Context) log
 func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
 	ctx workflow.Context,
 	childWorkflowType string,
-	args ...interface{},
+	args ...any,
 ) workflow.ChildWorkflowFuture {
 	info := workflow.GetInfo(ctx)
 	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
@@ -665,7 +664,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	workflowID string,
 	runID string,
 	signalName string,
-	arg interface{},
+	arg any,
 ) workflow.Future {
 	info := workflow.GetInfo(ctx)
 	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
@@ -685,7 +684,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	ctx workflow.Context,
 	workflowID string,
 	signalName string,
-	arg interface{},
+	arg any,
 ) workflow.Future {
 	info := workflow.GetInfo(ctx)
 	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
@@ -726,8 +725,8 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.
 
 func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 	ctx workflow.Context,
-	wfn interface{},
-	args ...interface{},
+	wfn any,
+	args ...any,
 ) error {
 	info := workflow.GetInfo(ctx)
 	ctx, endSpan, err := startOutboundWorkflowSpan(t.root.workflowTracer, ctx, &TracerStartSpanOptions{
@@ -1089,6 +1088,6 @@ type childWorkflowFuture struct{ workflow.Future }
 
 func (e childWorkflowFuture) GetChildWorkflowExecution() workflow.Future { return e }
 
-func (e childWorkflowFuture) SignalChildWorkflow(ctx workflow.Context, signalName string, data interface{}) workflow.Future {
+func (e childWorkflowFuture) SignalChildWorkflow(ctx workflow.Context, signalName string, data any) workflow.Future {
 	return e
 }

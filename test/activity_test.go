@@ -189,7 +189,7 @@ func (a *Activities) LongRunningHeartbeat(ctx context.Context, delay time.Durati
 }
 
 func (a *Activities) HeartbeatSpecificCount(ctx context.Context, interval time.Duration, count int) error {
-	for i := 0; i < count; i++ {
+	for range count {
 		time.Sleep(interval)
 		activity.RecordHeartbeat(ctx)
 	}

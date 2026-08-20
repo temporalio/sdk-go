@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	workerservicepb "go.temporal.io/api/nexusservices/workerservice/v1"
@@ -296,8 +297,9 @@ func (hw *sharedNamespaceWorker) pollWorkerCommandTask() (*workflowservice.PollN
 		},
 		Identity:          hw.client.identity,
 		WorkerInstanceKey: hw.workerInstanceKey,
-		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
-			BuildId: "1.0",
+		DeploymentOptions: &deploymentpb.WorkerDeploymentOptions{
+			BuildId:              "1.0",
+			WorkerVersioningMode: enumspb.WORKER_VERSIONING_MODE_UNVERSIONED,
 		},
 	})
 }
