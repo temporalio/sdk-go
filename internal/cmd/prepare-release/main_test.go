@@ -52,7 +52,7 @@ func TestCreateDraftReleaseForContribModule(t *testing.T) {
 		t.Fatalf("unexpected release URL: %q", releaseURL)
 	}
 	testEqual(t, eff.commands.String(), `
-		/worktree: gh release create contrib/envconfig/v1.2.3 --draft --title contrib/envconfig/v1.2.3 --notes Notes --latest=false
+		/worktree: gh release create contrib/envconfig/v1.2.3 --draft --title contrib/envconfig/v1.2.3 --notes Notes --generate-notes --latest=false
 	`)
 }
 
@@ -637,12 +637,24 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 
 		- An older fix.
 	`)
-	// Contrib changelogs are not reseeded with the SDK's section headers, and empty
-	// sections are dropped from the release.
+	// Empty sections are dropped from the release and the canonical section headers
+	// are seeded into Unreleased.
 	updatedChangelog := stripIndentation(`
 		# Changelog
 
 		## [Unreleased]
+
+		### Added
+
+		### Changed
+
+		### Deprecated
+
+		### :boom: Breaking Changes
+
+		### Fixed
+
+		### Security
 
 		## [1.0.3] - 2026-08-04
 
@@ -672,7 +684,7 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 			testEqual(t, eff.files[goModPath], goMod)
 		case `gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --title "Prepare contrib/envconfig release 1.0.3" --body "Prepare go.temporal.io/sdk/contrib/envconfig release 1.0.3."`:
 			return "https://github.com/temporalio/sdk-go/pull/123\n", nil
-		case `gh release create contrib/envconfig/v1.0.3 --draft --title contrib/envconfig/v1.0.3 --notes "# Highlights\n\n### Added\n\n- A feature.\n" --latest=false`:
+		case `gh release create contrib/envconfig/v1.0.3 --draft --title contrib/envconfig/v1.0.3 --notes "# Highlights\n\n### Added\n\n- A feature.\n" --generate-notes --latest=false`:
 			return "https://github.com/temporalio/sdk-go/releases/tag/untagged-abc\n", nil
 		}
 		return "", nil
@@ -695,7 +707,7 @@ func TestPrepareEverythingForContribModule(t *testing.T) {
 		`+eff.tempDir+`: git commit -m "Prepare contrib/envconfig release 1.0.3" -- contrib/envconfig/CHANGELOG.md
 		`+eff.tempDir+`: git push --set-upstream origin chore/release-contrib-envconfig-1.0.3
 		`+eff.tempDir+`: gh pr create --draft --base main --head chore/release-contrib-envconfig-1.0.3 --title "Prepare contrib/envconfig release 1.0.3" --body "Prepare go.temporal.io/sdk/contrib/envconfig release 1.0.3."
-		`+eff.tempDir+`: gh release create contrib/envconfig/v1.0.3 --draft --title contrib/envconfig/v1.0.3 --notes "# Highlights\n\n### Added\n\n- A feature.\n" --latest=false
+		`+eff.tempDir+`: gh release create contrib/envconfig/v1.0.3 --draft --title contrib/envconfig/v1.0.3 --notes "# Highlights\n\n### Added\n\n- A feature.\n" --generate-notes --latest=false
 		/repo: git worktree remove --force `+eff.tempDir,
 	)
 	testEqual(t, eff.output.String(), `

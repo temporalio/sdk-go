@@ -208,9 +208,9 @@ func replaceSDKVersion(text, version string) (string, error) {
 	return sdkVersionRE.ReplaceAllString(text, "${1}"+version+"${2}"), nil
 }
 
-// updateChangelog moves Unreleased entries into a dated version section, reseeding the
-// Unreleased section with the given section headers.
-func updateChangelog(text, version string, releaseDate time.Time, seededHeaders []string) (string, error) {
+// updateChangelog moves Unreleased entries into a dated version section and reseeds
+// the Unreleased section.
+func updateChangelog(text, version string, releaseDate time.Time) (string, error) {
 	_, err := validateVersion(version)
 	if err != nil {
 		return "", err
@@ -228,7 +228,7 @@ func updateChangelog(text, version string, releaseDate time.Time, seededHeaders 
 		return "", errors.New("changelog section for 'Unreleased' appears to be empty")
 	}
 	next := append([]string{}, lines[:heading]...)
-	next = append(next, seededUnreleasedLines(seededHeaders)...)
+	next = append(next, seededUnreleasedLines(changelogHeaders)...)
 	next = append(next, "## ["+version+"] - "+releaseDate.Format(time.DateOnly), "")
 	next = append(next, unreleased...)
 	next = append(next, "")

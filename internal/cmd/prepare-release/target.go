@@ -23,26 +23,18 @@ type releaseTarget struct {
 	// versionFile holds the SDKVersion constant a release rewrites. It is empty for
 	// modules that do not embed their version, whose current version comes from tags.
 	versionFile string
-	// seededHeaders are the changelog section headers written into the emptied
-	// Unreleased section. Contrib changelogs seed no headers.
-	seededHeaders []string
 	// markLatest reports whether GitHub should treat the release as the repository's
 	// latest release. Only the main SDK module may be latest.
 	markLatest bool
-	// generateNotes reports whether GitHub should append its generated commit summary
-	// to the changelog-derived release notes.
-	generateNotes bool
 }
 
 // sdkTarget describes the main go.temporal.io/sdk module at the repository root.
 func sdkTarget() releaseTarget {
 	return releaseTarget{
-		modulePath:    "go.temporal.io/sdk",
-		dependency:    "go.temporal.io/api",
-		versionFile:   "internal/version.go",
-		seededHeaders: changelogHeaders,
-		markLatest:    true,
-		generateNotes: true,
+		modulePath:  "go.temporal.io/sdk",
+		dependency:  "go.temporal.io/api",
+		versionFile: "internal/version.go",
+		markLatest:  true,
 	}
 }
 
@@ -59,8 +51,7 @@ func contribTarget(dir string) (releaseTarget, error) {
 		modulePath: "go.temporal.io/sdk/" + dir,
 		tagPrefix:  dir + "/",
 		dependency: "go.temporal.io/sdk",
-		// Contrib modules seed no changelog headers and are never GitHub's latest
-		// release; their CHANGELOG.md is their only release notes.
+		// Contrib modules are never GitHub's latest release.
 	}, nil
 }
 

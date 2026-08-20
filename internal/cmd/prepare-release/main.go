@@ -266,7 +266,7 @@ func updateReleaseFiles(eff Effects, args commandArgs, worktreeRoot string) (str
 	target := args.target
 	version := args.version
 	updatedChangelog, err := updateFile(eff, target.filePath(worktreeRoot, target.changelogFile()), func(text string) (string, error) {
-		return updateChangelog(text, version, args.releaseDate, target.seededHeaders)
+		return updateChangelog(text, version, args.releaseDate)
 	})
 	if err != nil {
 		return "", err
@@ -419,10 +419,7 @@ func openDraftPR(eff Effects, args commandArgs, root, branch string) (string, er
 func createDraftRelease(eff Effects, commandArgs commandArgs, root, releaseNotes string) (string, error) {
 	target := commandArgs.target
 	tag := target.tag(commandArgs.version)
-	ghArgs := []string{"release", "create", tag, "--draft", "--title", tag, "--notes", releaseNotes}
-	if target.generateNotes {
-		ghArgs = append(ghArgs, "--generate-notes")
-	}
+	ghArgs := []string{"release", "create", tag, "--draft", "--title", tag, "--notes", releaseNotes, "--generate-notes"}
 	if !target.markLatest {
 		// Only the main SDK module may own GitHub's "Latest" badge.
 		ghArgs = append(ghArgs, "--latest=false")

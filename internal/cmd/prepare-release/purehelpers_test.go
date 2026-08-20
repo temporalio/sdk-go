@@ -347,7 +347,7 @@ func TestUpdateChangelog(t *testing.T) {
 - An older feature.
 `
 	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
-	got, err := updateChangelog(input, "1.3.0", date, changelogHeaders)
+	got, err := updateChangelog(input, "1.3.0", date)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -388,9 +388,7 @@ func TestUpdateChangelog(t *testing.T) {
 	}
 }
 
-// Contrib changelogs document their own headings rather than seeding them, and spell
-// breaking changes without the emoji the SDK changelog uses.
-func TestUpdateChangelogWithoutSeededHeaders(t *testing.T) {
+func TestUpdateChangelogUsesCanonicalSeededHeaders(t *testing.T) {
 	input := `# Changelog
 
 ## [Unreleased]
@@ -410,13 +408,25 @@ func TestUpdateChangelogWithoutSeededHeaders(t *testing.T) {
 - An older feature.
 `
 	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
-	got, err := updateChangelog(input, "0.2.1", date, nil)
+	got, err := updateChangelog(input, "0.2.1", date)
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := `# Changelog
 
 ## [Unreleased]
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
 
 ## [0.2.1] - 2026-08-04
 
@@ -438,7 +448,7 @@ func TestUpdateChangelogWithoutSeededHeaders(t *testing.T) {
 func TestUpdateChangelogPreservesHistory(t *testing.T) {
 	history := "## [1.2.0] - 2026-01-01\n\n```go\nfirst()\n\n\nsecond()\n```\n"
 	input := "## [Unreleased]\n\n### Fixed\n\n- A fix.\n\n" + history
-	got, err := updateChangelog(input, "1.3.0", time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC), changelogHeaders)
+	got, err := updateChangelog(input, "1.3.0", time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +460,7 @@ func TestUpdateChangelogPreservesHistory(t *testing.T) {
 func TestUpdateChangelogRejectsInvalidState(t *testing.T) {
 	date := time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC)
 
-	_, err := updateChangelog("# Changelog\n", "1.3.0", date, changelogHeaders)
+	_, err := updateChangelog("# Changelog\n", "1.3.0", date)
 	if err == nil || !strings.Contains(err.Error(), "could not find") {
 		t.Fatalf("expected missing Unreleased error, got %v", err)
 	}
@@ -460,7 +470,7 @@ func TestUpdateChangelogRejectsInvalidState(t *testing.T) {
 
 ### Added
 `
-	_, err = updateChangelog(emptyUnreleased, "1.3.0", date, changelogHeaders)
+	_, err = updateChangelog(emptyUnreleased, "1.3.0", date)
 	if err == nil || !strings.Contains(err.Error(), "appears to be empty") {
 		t.Fatalf("expected empty Unreleased error, got %v", err)
 	}
@@ -472,7 +482,7 @@ func TestUpdateChangelogRejectsInvalidState(t *testing.T) {
 
 ## [1.3.0] - 2026-01-01
 `
-	_, err = updateChangelog(duplicateRelease, "1.3.0", date, changelogHeaders)
+	_, err = updateChangelog(duplicateRelease, "1.3.0", date)
 	if err == nil || !strings.Contains(err.Error(), "already has") {
 		t.Fatalf("expected duplicate release error, got %v", err)
 	}
