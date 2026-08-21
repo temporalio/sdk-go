@@ -219,3 +219,75 @@ func TestDescribeActivityStripsUnrequestedPayloads(t *testing.T) {
 		require.False(t, desc.HasLastFailure())
 	})
 }
+
+// TestUpdateActivityOptionsMask asserts that the field mask names exactly the options the caller
+// asked to change, and that the two combinations the server would reject are caught locally.
+func TestUpdateActivityOptionsMask(t *testing.T) {
+	newClient := func(t *testing.T, request **workflowservice.UpdateActivityExecutionOptionsRequest) *WorkflowClient {
+		t.Helper()
+		service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+		service.EXPECT().
+			UpdateActivityExecutionOptions(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, req *workflowservice.UpdateActivityExecutionOptionsRequest, _ ...any) (*workflowservice.UpdateActivityExecutionOptionsResponse, error) {
+				*request = req
+				return &workflowservice.UpdateActivityExecutionOptionsResponse{
+					ActivityOptions: req.GetActivityOptions(),
+				}, nil
+			}).
+			AnyTimes()
+		client := NewServiceClient(service, nil, ClientOptions{})
+		client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+		return client
+	}
+
+	t.Run("mask names only the changed options", func(t *testing.T) {
+		var request *workflowservice.UpdateActivityExecutionOptionsRequest
+		client := newClient(t, &request)
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+
+		options, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsChanges{
+			TaskQueue:           &TaskQueueChange{Value: "new-tq"},
+			StartToCloseTimeout: &DurationChange{Value: 90 * time.Second},
+		})
+		require.NoError(t, err)
+		require.ElementsMatch(t,
+			[]string{"task_queue.name", "start_to_close_timeout"},
+			request.GetUpdateMask().GetPaths())
+		require.False(t, request.GetRestoreOriginal())
+		require.Equal(t, "new-tq", options.TaskQueue)
+		require.Equal(t, 90*time.Second, options.StartToCloseTimeout)
+	})
+
+	t.Run("a zero-valued change still names its path", func(t *testing.T) {
+		var request *workflowservice.UpdateActivityExecutionOptionsRequest
+		client := newClient(t, &request)
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+
+		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsChanges{
+			HeartbeatTimeout: &DurationChange{},
+		})
+		require.NoError(t, err)
+		require.Equal(t, []string{"heartbeat_timeout"}, request.GetUpdateMask().GetPaths())
+	})
+
+	t.Run("restore sends an empty mask", func(t *testing.T) {
+		var request *workflowservice.UpdateActivityExecutionOptionsRequest
+		client := newClient(t, &request)
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+
+		_, err := handle.RestoreOriginalOptions(t.Context())
+		require.NoError(t, err)
+		require.True(t, request.GetRestoreOriginal())
+		require.Empty(t, request.GetUpdateMask().GetPaths())
+	})
+
+	t.Run("an update naming nothing is rejected", func(t *testing.T) {
+		var request *workflowservice.UpdateActivityExecutionOptionsRequest
+		client := newClient(t, &request)
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+
+		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsChanges{})
+		require.ErrorContains(t, err, "at least one option change")
+		require.Nil(t, request)
+	})
+}

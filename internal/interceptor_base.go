@@ -652,6 +652,16 @@ func (c *ClientOutboundInterceptorBase) ResetActivity(
 	return c.Next.ResetActivity(ctx, in)
 }
 
+// UpdateActivityOptions implements ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) UpdateActivityOptions(
+	ctx context.Context,
+	in *ClientUpdateActivityOptionsInput,
+) (*ClientUpdateActivityOptionsOutput, error) {
+	return c.Next.UpdateActivityOptions(ctx, in)
+}
+
 // DescribeActivity implements ClientOutboundInterceptor.DescribeActivity.
 //
 // NOTE: Experimental

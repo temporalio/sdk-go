@@ -950,6 +950,14 @@ func (h *testEnvActivityHandleForNexusOperations) Reset(ctx context.Context, opt
 	panic("not implemented in the test environment")
 }
 
+func (h *testEnvActivityHandleForNexusOperations) UpdateOptions(ctx context.Context, options ClientActivityOptionsChanges) (*ClientActivityOptions, error) {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) RestoreOriginalOptions(ctx context.Context) (*ClientActivityOptions, error) {
+	panic("not implemented in the test environment")
+}
+
 func (t *testSuiteClientForNexusOperations) ListActivities(ctx context.Context, options ClientListActivitiesOptions) (ClientListActivitiesResult, error) {
 	panic("unimplemented in the test environment")
 }

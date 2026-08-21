@@ -16,6 +16,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/extstore"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 const pollActivityTimeout = 60 * time.Second
@@ -221,6 +222,14 @@ type (
 		// is currently running, that attempt is asked to yield and the reset is applied once it
 		// does.
 		Reset(ctx context.Context, options ClientResetActivityOptions) error
+		// UpdateOptions changes some of the activity's options, leaving the rest untouched, and
+		// returns the options as they stand after the update. At least one change must be set.
+		UpdateOptions(ctx context.Context, options ClientActivityOptionsChanges) (*ClientActivityOptions, error)
+		// RestoreOriginalOptions reverts every option changed by UpdateOptions back to the value
+		// the activity was scheduled with, and returns the restored options. It is a separate
+		// call because the server does not allow the restore flag to be combined with any
+		// individual option change.
+		RestoreOriginalOptions(ctx context.Context) (*ClientActivityOptions, error)
 	}
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
@@ -297,6 +306,86 @@ type (
 		// ResetHeartbeat discards the persisted heartbeat details instead of carrying them into
 		// the new attempt. Off by default.
 		ResetHeartbeat bool
+	}
+
+	// ClientActivityOptions describes the options an activity is currently running with. It is
+	// returned by ClientActivityHandle.UpdateOptions and RestoreOriginalOptions.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ActivityOptions]
+	ClientActivityOptions struct {
+		TaskQueue              string
+		ScheduleToCloseTimeout time.Duration
+		ScheduleToStartTimeout time.Duration
+		StartToCloseTimeout    time.Duration
+		HeartbeatTimeout       time.Duration
+		StartDelay             time.Duration
+		RetryPolicy            *RetryPolicy
+		Priority               Priority
+	}
+
+	// ClientActivityOptionsChanges describes changes to the options of a running activity, as
+	// used by ClientActivityHandle.UpdateOptions. A nil entry means do not change that option;
+	// a non-nil entry sets it to the wrapped value.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ActivityOptionsChanges]
+	ClientActivityOptionsChanges struct {
+		// If non-nil, change the task queue.
+		TaskQueue *TaskQueueChange
+		// If non-nil, change the schedule-to-close timeout.
+		ScheduleToCloseTimeout *DurationChange
+		// If non-nil, change the schedule-to-start timeout.
+		ScheduleToStartTimeout *DurationChange
+		// If non-nil, change the start-to-close timeout.
+		StartToCloseTimeout *DurationChange
+		// If non-nil, change the heartbeat timeout.
+		HeartbeatTimeout *DurationChange
+		// If non-nil, change the start delay.
+		StartDelay *DurationChange
+		// If non-nil, change the retry policy.
+		RetryPolicy *RetryPolicyChange
+		// If non-nil, change the priority.
+		Priority *PriorityChange
+	}
+
+	// TaskQueueChange sets a task queue when used with ClientActivityOptionsChanges.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.TaskQueueChange]
+	TaskQueueChange struct {
+		Value string
+	}
+
+	// DurationChange sets a duration when used with ClientActivityOptionsChanges. A wrapper
+	// holding the zero duration clears the option, which a bare time.Duration could not express.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.DurationChange]
+	DurationChange struct {
+		Value time.Duration
+	}
+
+	// RetryPolicyChange sets a retry policy when used with ClientActivityOptionsChanges.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.RetryPolicyChange]
+	RetryPolicyChange struct {
+		Value RetryPolicy
+	}
+
+	// PriorityChange sets a priority when used with ClientActivityOptionsChanges.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.PriorityChange]
+	PriorityChange struct {
+		Value Priority
 	}
 
 	// ClientTerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
@@ -656,6 +745,39 @@ func (h *clientActivityHandleImpl) Reset(ctx context.Context, options ClientRese
 		RestoreOriginalOptions: options.RestoreOriginalOptions,
 		ResetHeartbeat:         options.ResetHeartbeat,
 	})
+}
+
+func (h *clientActivityHandleImpl) UpdateOptions(
+	ctx context.Context,
+	options ClientActivityOptionsChanges,
+) (*ClientActivityOptions, error) {
+	if err := h.client.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	out, err := h.client.interceptor.UpdateActivityOptions(ctx, &ClientUpdateActivityOptionsInput{
+		ActivityID: h.id,
+		RunID:      h.runID,
+		Changes:    options,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out.Options, nil
+}
+
+func (h *clientActivityHandleImpl) RestoreOriginalOptions(ctx context.Context) (*ClientActivityOptions, error) {
+	if err := h.client.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	out, err := h.client.interceptor.UpdateActivityOptions(ctx, &ClientUpdateActivityOptionsInput{
+		ActivityID:      h.id,
+		RunID:           h.runID,
+		RestoreOriginal: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out.Options, nil
 }
 
 func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
@@ -1116,6 +1238,100 @@ func (w *workflowClientInterceptor) ResetActivity(
 	}
 	_, err := w.client.WorkflowService().ResetActivityExecution(grpcCtx, request)
 	return err
+}
+
+// activityOptionsChangesToProto builds the ActivityOptions message and the field mask naming
+// exactly the options the caller asked to change.
+func activityOptionsChangesToProto(changes ClientActivityOptionsChanges) (*activitypb.ActivityOptions, []string) {
+	options := &activitypb.ActivityOptions{}
+	var paths []string
+	if changes.TaskQueue != nil {
+		options.TaskQueue = &taskqueuepb.TaskQueue{Name: changes.TaskQueue.Value}
+		paths = append(paths, "task_queue.name")
+	}
+	if changes.ScheduleToCloseTimeout != nil {
+		options.ScheduleToCloseTimeout = durationpb.New(changes.ScheduleToCloseTimeout.Value)
+		paths = append(paths, "schedule_to_close_timeout")
+	}
+	if changes.ScheduleToStartTimeout != nil {
+		options.ScheduleToStartTimeout = durationpb.New(changes.ScheduleToStartTimeout.Value)
+		paths = append(paths, "schedule_to_start_timeout")
+	}
+	if changes.StartToCloseTimeout != nil {
+		options.StartToCloseTimeout = durationpb.New(changes.StartToCloseTimeout.Value)
+		paths = append(paths, "start_to_close_timeout")
+	}
+	if changes.HeartbeatTimeout != nil {
+		options.HeartbeatTimeout = durationpb.New(changes.HeartbeatTimeout.Value)
+		paths = append(paths, "heartbeat_timeout")
+	}
+	if changes.StartDelay != nil {
+		options.StartDelay = durationpb.New(changes.StartDelay.Value)
+		paths = append(paths, "start_delay")
+	}
+	if changes.RetryPolicy != nil {
+		policy := changes.RetryPolicy.Value
+		options.RetryPolicy = convertToPBRetryPolicy(&policy)
+		paths = append(paths, "retry_policy")
+	}
+	if changes.Priority != nil {
+		options.Priority = convertToPBPriority(changes.Priority.Value)
+		paths = append(paths, "priority")
+	}
+	return options, paths
+}
+
+func activityOptionsFromProto(options *activitypb.ActivityOptions) *ClientActivityOptions {
+	return &ClientActivityOptions{
+		TaskQueue:              options.GetTaskQueue().GetName(),
+		ScheduleToCloseTimeout: options.GetScheduleToCloseTimeout().AsDuration(),
+		ScheduleToStartTimeout: options.GetScheduleToStartTimeout().AsDuration(),
+		StartToCloseTimeout:    options.GetStartToCloseTimeout().AsDuration(),
+		HeartbeatTimeout:       options.GetHeartbeatTimeout().AsDuration(),
+		StartDelay:             options.GetStartDelay().AsDuration(),
+		RetryPolicy:            convertFromPBRetryPolicy(options.GetRetryPolicy()),
+		Priority:               convertFromPBPriority(options.GetPriority()),
+	}
+}
+
+func (w *workflowClientInterceptor) UpdateActivityOptions(
+	ctx context.Context,
+	in *ClientUpdateActivityOptionsInput,
+) (*ClientUpdateActivityOptionsOutput, error) {
+	options, paths := activityOptionsChangesToProto(in.Changes)
+	// The server rejects the restore flag alongside individual changes, and an update naming
+	// nothing would silently do nothing. Fail before the round trip in both cases.
+	if in.RestoreOriginal && len(paths) > 0 {
+		return nil, errors.New("RestoreOriginalOptions cannot be combined with individual option changes")
+	}
+	if !in.RestoreOriginal && len(paths) == 0 {
+		return nil, errors.New("UpdateOptions requires at least one option change")
+	}
+	mask, err := fieldmaskpb.New(&activitypb.ActivityOptions{}, paths...)
+	if err != nil {
+		return nil, fmt.Errorf("invalid field mask for ActivityOptions: %w", err)
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.UpdateActivityExecutionOptionsRequest{
+		Namespace:       w.client.namespace,
+		ActivityId:      in.ActivityID,
+		RunId:           in.RunID,
+		Identity:        w.client.identity,
+		RequestId:       uuid.NewString(),
+		ActivityOptions: options,
+		UpdateMask:      mask,
+		RestoreOriginal: in.RestoreOriginal,
+	}
+	resp, err := w.client.WorkflowService().UpdateActivityExecutionOptions(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientUpdateActivityOptionsOutput{
+		Options: activityOptionsFromProto(resp.GetActivityOptions()),
+	}, nil
 }
 
 func (w *workflowClientInterceptor) TerminateActivity(

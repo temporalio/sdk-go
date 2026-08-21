@@ -463,6 +463,12 @@ type ClientOutboundInterceptor interface {
 	// NOTE: Experimental
 	ResetActivity(context.Context, *ClientResetActivityInput) error
 
+	// UpdateActivityOptions intercepts client.ActivityHandle.UpdateOptions and
+	// client.ActivityHandle.RestoreOriginalOptions.
+	//
+	// NOTE: Experimental
+	UpdateActivityOptions(context.Context, *ClientUpdateActivityOptionsInput) (*ClientUpdateActivityOptionsOutput, error)
+
 	// DescribeActivity intercepts client.ActivityHandle.Describe.
 	//
 	// NOTE: Experimental
@@ -797,6 +803,35 @@ type ClientResetActivityInput struct {
 	RestoreOriginalOptions bool
 	// ResetHeartbeat discards the persisted heartbeat details.
 	ResetHeartbeat bool
+}
+
+// ClientUpdateActivityOptionsInput is the input to
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateActivityOptionsInput]
+type ClientUpdateActivityOptionsInput struct {
+	// ActivityID is the ID of the activity.
+	ActivityID string
+	// RunID is the run ID of the activity to update.
+	RunID string
+	// Changes are the individual option changes to apply. Empty when RestoreOriginal is set.
+	Changes ClientActivityOptionsChanges
+	// RestoreOriginal reverts every option to the value the activity was scheduled with. The
+	// server does not allow it to be combined with any entry in Changes.
+	RestoreOriginal bool
+}
+
+// ClientUpdateActivityOptionsOutput is the output of
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateActivityOptionsOutput]
+type ClientUpdateActivityOptionsOutput struct {
+	// Options are the activity's options after the update.
+	Options *ClientActivityOptions
 }
 
 // ClientDescribeActivityInput is the input to

@@ -1047,6 +1047,38 @@ type (
 	// NOTE: Experimental
 	ResetActivityOptions = internal.ClientResetActivityOptions
 
+	// ActivityOptions describes the options an activity is currently running with, as returned
+	// by ActivityHandle.UpdateOptions and ActivityHandle.RestoreOriginalOptions.
+	//
+	// NOTE: Experimental
+	ActivityOptions = internal.ClientActivityOptions
+
+	// ActivityOptionsChanges describes changes to the options of a running activity. A nil
+	// entry means do not change that option.
+	//
+	// NOTE: Experimental
+	ActivityOptionsChanges = internal.ClientActivityOptionsChanges
+
+	// TaskQueueChange sets a task queue when used with ActivityOptionsChanges.
+	//
+	// NOTE: Experimental
+	TaskQueueChange = internal.TaskQueueChange
+
+	// DurationChange sets a duration when used with ActivityOptionsChanges.
+	//
+	// NOTE: Experimental
+	DurationChange = internal.DurationChange
+
+	// RetryPolicyChange sets a retry policy when used with ActivityOptionsChanges.
+	//
+	// NOTE: Experimental
+	RetryPolicyChange = internal.RetryPolicyChange
+
+	// PriorityChange sets a priority when used with ActivityOptionsChanges.
+	//
+	// NOTE: Experimental
+	PriorityChange = internal.PriorityChange
+
 	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
 	//
 	// NOTE: Experimental
