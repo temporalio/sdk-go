@@ -570,6 +570,40 @@ func (p *proxyClientOutbound) TerminateActivity(
 	return
 }
 
+func (p *proxyClientOutbound) PauseActivity(
+	ctx context.Context,
+	in *interceptor.ClientPauseActivityInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) UnpauseActivity(
+	ctx context.Context,
+	in *interceptor.ClientUnpauseActivityInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) ResetActivity(
+	ctx context.Context,
+	in *interceptor.ClientResetActivityInput,
+) (err error) {
+	err, _ = p.invoke(ctx, in)[0].Interface().(error)
+	return
+}
+
+func (p *proxyClientOutbound) UpdateActivityOptions(
+	ctx context.Context,
+	in *interceptor.ClientUpdateActivityOptionsInput,
+) (ret *interceptor.ClientUpdateActivityOptionsOutput, err error) {
+	vals := p.invoke(ctx, in)
+	ret, _ = vals[0].Interface().(*interceptor.ClientUpdateActivityOptionsOutput)
+	err, _ = vals[1].Interface().(error)
+	return
+}
+
 func (p *proxyClientOutbound) DescribeActivity(
 	ctx context.Context,
 	in *interceptor.ClientDescribeActivityInput,

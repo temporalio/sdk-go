@@ -3289,7 +3289,23 @@ func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
 	err = handle3.Terminate(ctx, client.TerminateActivityOptions{Reason: "test terminate"})
 	ts.NoError(err)
 
-	// Verify all 6 interceptor methods were called
+	// Operator commands. The activity does not heartbeat, so it never yields the attempt; that
+	// is fine here because this test asserts only that each command reaches the interceptor.
+	handle4, err := ts.client.ExecuteActivity(ctx, makeOptions(), "interceptorTestActivityWait")
+	ts.NoError(err)
+	<-activityStarted
+	ts.NoError(handle4.Pause(ctx, client.PauseActivityOptions{Reason: "test pause"}))
+	ts.NoError(handle4.Unpause(ctx, client.UnpauseActivityOptions{Reason: "test unpause"}))
+	_, err = handle4.UpdateOptions(ctx, client.ActivityOptionsChanges{
+		StartToCloseTimeout: &client.DurationChange{Value: 90 * time.Second},
+	})
+	ts.NoError(err)
+	_, err = handle4.RestoreOriginalOptions(ctx)
+	ts.NoError(err)
+	ts.NoError(handle4.Reset(ctx, client.ResetActivityOptions{}))
+	ts.NoError(handle4.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
+
+	// Verify all 10 interceptor methods were called
 	expectedCalls := []string{
 		"ClientOutboundInterceptor.ExecuteActivity",
 		"ClientOutboundInterceptor.GetActivityHandle",
@@ -3297,6 +3313,10 @@ func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
 		"ClientOutboundInterceptor.CancelActivity",
 		"ClientOutboundInterceptor.TerminateActivity",
 		"ClientOutboundInterceptor.PollActivityResult",
+		"ClientOutboundInterceptor.PauseActivity",
+		"ClientOutboundInterceptor.UnpauseActivity",
+		"ClientOutboundInterceptor.ResetActivity",
+		"ClientOutboundInterceptor.UpdateActivityOptions",
 	}
 
 	recordedCalls := make(map[string]bool)
