@@ -291,3 +291,100 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		require.Nil(t, request)
 	})
 }
+
+// TestActivityOperatorCommandRequestFields asserts the request fields the server never echoes
+// back, so they cannot be checked by observing activity state: identity, a fresh request ID, and
+// the reason and jitter the caller supplied.
+func TestActivityOperatorCommandRequestFields(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	client := NewServiceClient(service, nil, ClientOptions{Identity: "test-identity"})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	var pause *workflowservice.PauseActivityExecutionRequest
+	var unpause *workflowservice.UnpauseActivityExecutionRequest
+	var reset *workflowservice.ResetActivityExecutionRequest
+	var update *workflowservice.UpdateActivityExecutionOptionsRequest
+
+	service.EXPECT().PauseActivityExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PauseActivityExecutionRequest, _ ...any) (*workflowservice.PauseActivityExecutionResponse, error) {
+			pause = req
+			return &workflowservice.PauseActivityExecutionResponse{}, nil
+		}).AnyTimes()
+	service.EXPECT().UnpauseActivityExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.UnpauseActivityExecutionRequest, _ ...any) (*workflowservice.UnpauseActivityExecutionResponse, error) {
+			unpause = req
+			return &workflowservice.UnpauseActivityExecutionResponse{}, nil
+		}).AnyTimes()
+	service.EXPECT().ResetActivityExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.ResetActivityExecutionRequest, _ ...any) (*workflowservice.ResetActivityExecutionResponse, error) {
+			reset = req
+			return &workflowservice.ResetActivityExecutionResponse{}, nil
+		}).AnyTimes()
+	service.EXPECT().UpdateActivityExecutionOptions(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.UpdateActivityExecutionOptionsRequest, _ ...any) (*workflowservice.UpdateActivityExecutionOptionsResponse, error) {
+			update = req
+			return &workflowservice.UpdateActivityExecutionOptionsResponse{}, nil
+		}).AnyTimes()
+
+	handle := client.GetActivityHandle(ClientGetActivityHandleOptions{
+		ActivityID: "activity-id",
+		RunID:      "run-id",
+	})
+	ctx := t.Context()
+	require.NoError(t, handle.Pause(ctx, ClientPauseActivityOptions{Reason: "pause-reason"}))
+	require.NoError(t, handle.Unpause(ctx, ClientUnpauseActivityOptions{
+		Reason: "unpause-reason",
+		Jitter: 5 * time.Second,
+	}))
+	require.NoError(t, handle.Reset(ctx, ClientResetActivityOptions{Jitter: 7 * time.Second}))
+	_, err := handle.UpdateOptions(ctx, ClientActivityOptionsChanges{
+		HeartbeatTimeout: &DurationChange{Value: 25 * time.Second},
+	})
+	require.NoError(t, err)
+
+	for name, got := range map[string]struct {
+		activityID string
+		runID      string
+		identity   string
+		requestID  string
+	}{
+		"pause":   {pause.GetActivityId(), pause.GetRunId(), pause.GetIdentity(), pause.GetRequestId()},
+		"unpause": {unpause.GetActivityId(), unpause.GetRunId(), unpause.GetIdentity(), unpause.GetRequestId()},
+		"reset":   {reset.GetActivityId(), reset.GetRunId(), reset.GetIdentity(), reset.GetRequestId()},
+		"update":  {update.GetActivityId(), update.GetRunId(), update.GetIdentity(), update.GetRequestId()},
+	} {
+		require.Equal(t, "activity-id", got.activityID, name)
+		require.Equal(t, "run-id", got.runID, name)
+		require.Equal(t, "test-identity", got.identity, name)
+		require.NotEmpty(t, got.requestID, name)
+	}
+
+	// Request IDs must be fresh per call, not reused across commands.
+	require.ElementsMatch(t,
+		[]string{pause.GetRequestId(), unpause.GetRequestId(), reset.GetRequestId(), update.GetRequestId()},
+		uniqueStrings(pause.GetRequestId(), unpause.GetRequestId(), reset.GetRequestId(), update.GetRequestId()))
+
+	require.Equal(t, "pause-reason", pause.GetReason())
+	require.Equal(t, "unpause-reason", unpause.GetReason())
+	require.Equal(t, 5*time.Second, unpause.GetJitter().AsDuration())
+	require.Equal(t, 7*time.Second, reset.GetJitter().AsDuration())
+
+	// A zero jitter is left off the wire rather than sent as an explicit zero duration, so the
+	// server applies its own default instead of "no jitter".
+	require.NoError(t, handle.Unpause(ctx, ClientUnpauseActivityOptions{}))
+	require.Nil(t, unpause.GetJitter())
+	require.NoError(t, handle.Reset(ctx, ClientResetActivityOptions{}))
+	require.Nil(t, reset.GetJitter())
+}
+
+func uniqueStrings(values ...string) []string {
+	seen := map[string]struct{}{}
+	var unique []string
+	for _, v := range values {
+		if _, ok := seen[v]; !ok {
+			seen[v] = struct{}{}
+			unique = append(unique, v)
+		}
+	}
+	return unique
+}
