@@ -50,8 +50,8 @@ func WithSequentialToolFanout() ContextOption {
 //
 //   - time:  platform.Now resolves to workflow.Now(ctx), so every ADK event
 //     timestamp is deterministic and replay-stable.
-//   - uuid:  platform.NewUUID resolves to a deterministic generator seeded from
-//     a single workflow.SideEffect value plus a per-context counter, so IDs are
+//   - uuid:  platform.NewUUID resolves to a deterministic generator that draws
+//     from the workflow's random stream (workflow.GetRandomStream), so IDs are
 //     replay-stable without emitting one history event per ID.
 //   - tasks: platform.RunTasks resolves to a workflow.Go-based fan-out (or
 //     sequential execution when WithSequentialToolFanout is set), so ADK's tool

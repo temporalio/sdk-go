@@ -192,10 +192,11 @@ the model SDK's own retries (see below), or override the fallbacks.
   automatically; with manual wiring, call `Activities.Close` yourself after
   `worker.Run` returns.
 - **Deterministic by construction.** `NewContext` binds ADK's `platform.Now` to
-  `workflow.Now`, `platform.NewUUID` to a deterministic seeded generator, and
-  `platform.RunTasks` to a `workflow.Go` fan-out, so the agent loop replays
-  deterministically. Concurrent tool fan-out is on by default; use
-  `NewContext(ctx, googleadk.WithSequentialToolFanout())` for a serial fallback.
+  `workflow.Now`, `platform.NewUUID` to a deterministic generator drawn from the
+  workflow random stream, and `platform.RunTasks` to a `workflow.Go` fan-out, so
+  the agent loop replays deterministically. Concurrent tool fan-out is on by
+  default; use `NewContext(ctx, googleadk.WithSequentialToolFanout())` for a
+  serial fallback.
 - **Typed failures.** Model / tool / MCP failures surface as Temporal
   `ApplicationError`s tagged `googleadk.ModelError` / `.ToolError` / `.McpError`.
   Classify with `IsNonRetryable(err)`; never string-match. Upstream HTTP status

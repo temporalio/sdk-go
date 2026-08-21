@@ -34,9 +34,10 @@ or Security.
   invocation/tool IDs) now draws from `workflow.GetRandomStream` instead of a
   `workflow.SideEffect`-seeded counter, dropping a per-workflow marker event and
   giving query/update-validator contexts ordinary random IDs. This changes the
-  generated IDs and the command history: a workflow started on v0.2.0 (which
-  recorded the SideEffect marker) must finish on v0.2.0 — replaying it on the
-  new provider is non-deterministic.
+  generated IDs and the command history: a workflow that recorded the SideEffect
+  marker under an earlier release (v0.1.0 or v0.2.0) must finish on that release,
+  because replaying it on the new provider is non-deterministic. Drain in-flight
+  runs before upgrading.
 - `NewReplaySafeTracerProvider` builds and owns its `sdktrace.TracerProvider`
   (`func(opts ...sdktrace.TracerProviderOption) *ReplaySafeTracerProvider`) and
   force-installs a deterministic span-ID generator drawn from
