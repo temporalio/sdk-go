@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	activitypb "go.temporal.io/api/activity/v1"
 	commonpb "go.temporal.io/api/common/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 )
@@ -144,5 +145,77 @@ func TestDescribeActivityPayloadOptInsReachRequest(t *testing.T) {
 		require.True(t, request.GetIncludeOutcome())
 		require.True(t, request.GetIncludeHeartbeatDetails())
 		require.True(t, request.GetIncludeLastFailure())
+	})
+}
+
+// TestDescribeActivityStripsUnrequestedPayloads asserts that payloads returned by a server that
+// ignores the opt-in flags are dropped client-side, so the Has* accessors always agree with what
+// the caller asked for.
+func TestDescribeActivityStripsUnrequestedPayloads(t *testing.T) {
+	newOverSharingService := func(t *testing.T) *workflowservicemock.MockWorkflowServiceClient {
+		t.Helper()
+		service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+		service.EXPECT().
+			DescribeActivityExecution(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, _ *workflowservice.DescribeActivityExecutionRequest, _ ...any) (*workflowservice.DescribeActivityExecutionResponse, error) {
+				payloads := &commonpb.Payloads{Payloads: []*commonpb.Payload{{Data: []byte("x")}}}
+				return &workflowservice.DescribeActivityExecutionResponse{
+					Info: &activitypb.ActivityExecutionInfo{
+						ActivityId:       "activity-id",
+						SearchAttributes: &commonpb.SearchAttributes{},
+						HeartbeatDetails: payloads,
+						LastFailure:      &failurepb.Failure{Message: "boom"},
+					},
+					Input: payloads,
+					Outcome: &activitypb.ActivityExecutionOutcome{
+						Value: &activitypb.ActivityExecutionOutcome_Result{Result: payloads},
+					},
+				}, nil
+			})
+		return service
+	}
+
+	describeWith := func(t *testing.T, options ClientDescribeActivityOptions) *ClientActivityExecutionDescription {
+		t.Helper()
+		client := NewServiceClient(newOverSharingService(t), nil, ClientOptions{})
+		client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+		desc, err := handle.Describe(t.Context(), options)
+		require.NoError(t, err)
+		return desc
+	}
+
+	t.Run("nothing requested", func(t *testing.T) {
+		desc := describeWith(t, ClientDescribeActivityOptions{})
+		require.False(t, desc.HasInput())
+		require.False(t, desc.HasResult())
+		require.False(t, desc.HasHeartbeatDetails())
+		require.False(t, desc.HasLastFailure())
+		require.ErrorIs(t, desc.GetInput(nil), ErrNoData)
+		require.ErrorIs(t, desc.GetResult(nil), ErrNoData)
+		require.ErrorIs(t, desc.GetHeartbeatDetails(nil), ErrNoData)
+		require.NoError(t, desc.GetFailure())
+		require.NoError(t, desc.GetLastFailure())
+	})
+
+	t.Run("everything requested", func(t *testing.T) {
+		desc := describeWith(t, ClientDescribeActivityOptions{
+			IncludeInput:            true,
+			IncludeOutcome:          true,
+			IncludeHeartbeatDetails: true,
+			IncludeLastFailure:      true,
+		})
+		require.True(t, desc.HasInput())
+		require.True(t, desc.HasResult())
+		require.True(t, desc.HasHeartbeatDetails())
+		require.True(t, desc.HasLastFailure())
+	})
+
+	t.Run("each flag is independent", func(t *testing.T) {
+		desc := describeWith(t, ClientDescribeActivityOptions{IncludeInput: true})
+		require.True(t, desc.HasInput())
+		require.False(t, desc.HasResult())
+		require.False(t, desc.HasHeartbeatDetails())
+		require.False(t, desc.HasLastFailure())
 	})
 }
