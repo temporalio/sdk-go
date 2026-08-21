@@ -8,6 +8,8 @@ import (
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	activitypb "go.temporal.io/api/activity/v1"
+	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 )
@@ -90,4 +92,57 @@ func TestExecuteActivityFromLinklessNexusRequestOmitsOnConflictOptions(t *testin
 	require.Empty(t, request.GetLinks())
 	require.Empty(t, request.GetCompletionCallbacks())
 	require.Nil(t, request.GetOnConflictOptions())
+}
+
+// TestDescribeActivityPayloadOptInsReachRequest asserts that the four api#792 opt-in flags
+// travel from the caller's options all the way to the DescribeActivityExecution request, and
+// that the zero-value options ask for nothing.
+func TestDescribeActivityPayloadOptInsReachRequest(t *testing.T) {
+	describeWith := func(t *testing.T, options ClientDescribeActivityOptions) *workflowservice.DescribeActivityExecutionRequest {
+		t.Helper()
+		service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+		client := NewServiceClient(service, nil, ClientOptions{})
+		client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+		var request *workflowservice.DescribeActivityExecutionRequest
+		service.EXPECT().
+			DescribeActivityExecution(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, req *workflowservice.DescribeActivityExecutionRequest, _ ...any) (*workflowservice.DescribeActivityExecutionResponse, error) {
+				request = req
+				return &workflowservice.DescribeActivityExecutionResponse{
+					Info: &activitypb.ActivityExecutionInfo{
+						ActivityId: "activity-id",
+						// A real server always sends this; the describe conversion
+						// reads it without a nil guard.
+						SearchAttributes: &commonpb.SearchAttributes{},
+					},
+				}, nil
+			})
+
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+		_, err := handle.Describe(t.Context(), options)
+		require.NoError(t, err)
+		return request
+	}
+
+	t.Run("default asks for nothing", func(t *testing.T) {
+		request := describeWith(t, ClientDescribeActivityOptions{})
+		require.False(t, request.GetIncludeInput())
+		require.False(t, request.GetIncludeOutcome())
+		require.False(t, request.GetIncludeHeartbeatDetails())
+		require.False(t, request.GetIncludeLastFailure())
+	})
+
+	t.Run("each flag is forwarded", func(t *testing.T) {
+		request := describeWith(t, ClientDescribeActivityOptions{
+			IncludeInput:            true,
+			IncludeOutcome:          true,
+			IncludeHeartbeatDetails: true,
+			IncludeLastFailure:      true,
+		})
+		require.True(t, request.GetIncludeInput())
+		require.True(t, request.GetIncludeOutcome())
+		require.True(t, request.GetIncludeHeartbeatDetails())
+		require.True(t, request.GetIncludeLastFailure())
+	})
 }

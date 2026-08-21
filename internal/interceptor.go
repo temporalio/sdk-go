@@ -742,6 +742,14 @@ type ClientDescribeActivityInput struct {
 	ActivityID string
 	// RunID is the run ID of the activity to describe.
 	RunID string
+	// IncludeInput requests the arguments the activity was scheduled with.
+	IncludeInput bool
+	// IncludeOutcome requests the activity's result or failure, if it has closed.
+	IncludeOutcome bool
+	// IncludeHeartbeatDetails requests the most recent heartbeat details.
+	IncludeHeartbeatDetails bool
+	// IncludeLastFailure requests the failure of the most recent failed attempt.
+	IncludeLastFailure bool
 }
 
 // ClientDescribeActivityOutput is the output of

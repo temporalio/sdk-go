@@ -214,12 +214,28 @@ type (
 	}
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
-	// For future compatibility, currently unused.
+	//
+	// The payload-bearing fields of the description are opt-in: the server omits each of them
+	// unless the corresponding flag is set. Requesting them costs an extra read on the server,
+	// so ask only for what will be used.
 	//
 	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.DescribeActivityOptions]
-	ClientDescribeActivityOptions struct{}
+	ClientDescribeActivityOptions struct {
+		// IncludeInput requests the arguments the activity was scheduled with.
+		// See ClientActivityExecutionDescription.GetInput.
+		IncludeInput bool
+		// IncludeOutcome requests the activity's result or failure, if it has closed.
+		// See ClientActivityExecutionDescription.GetResult and GetFailure.
+		IncludeOutcome bool
+		// IncludeHeartbeatDetails requests the most recent heartbeat details.
+		// See ClientActivityExecutionDescription.GetHeartbeatDetails.
+		IncludeHeartbeatDetails bool
+		// IncludeLastFailure requests the failure of the most recent failed attempt.
+		// See ClientActivityExecutionDescription.GetLastFailure.
+		IncludeLastFailure bool
+	}
 
 	// ClientCancelActivityOptions contains options for ClientActivityHandle.Cancel call.
 	//
@@ -431,8 +447,12 @@ func (h *clientActivityHandleImpl) Describe(ctx context.Context, options ClientD
 		return nil, err
 	}
 	out, err := h.client.interceptor.DescribeActivity(ctx, &ClientDescribeActivityInput{
-		ActivityID: h.id,
-		RunID:      h.runID,
+		ActivityID:              h.id,
+		RunID:                   h.runID,
+		IncludeInput:            options.IncludeInput,
+		IncludeOutcome:          options.IncludeOutcome,
+		IncludeHeartbeatDetails: options.IncludeHeartbeatDetails,
+		IncludeLastFailure:      options.IncludeLastFailure,
 	})
 	if err != nil {
 		return nil, err
@@ -756,9 +776,13 @@ func (w *workflowClientInterceptor) DescribeActivity(
 	defer cancel()
 
 	request := &workflowservice.DescribeActivityExecutionRequest{
-		Namespace:  w.client.namespace,
-		ActivityId: in.ActivityID,
-		RunId:      in.RunID,
+		Namespace:               w.client.namespace,
+		ActivityId:              in.ActivityID,
+		RunId:                   in.RunID,
+		IncludeInput:            in.IncludeInput,
+		IncludeOutcome:          in.IncludeOutcome,
+		IncludeHeartbeatDetails: in.IncludeHeartbeatDetails,
+		IncludeLastFailure:      in.IncludeLastFailure,
 	}
 	resp, err := w.client.WorkflowService().DescribeActivityExecution(grpcCtx, request)
 	if err != nil {

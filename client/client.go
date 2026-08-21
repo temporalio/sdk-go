@@ -1022,7 +1022,7 @@ type (
 	ActivityExecutionDescription = internal.ClientActivityExecutionDescription
 
 	// DescribeActivityOptions contains options for ClientActivityHandle.Describe call.
-	// For future compatibility, currently unused.
+	// The payload-bearing fields of the description are opt-in; see the type for details.
 	//
 	// NOTE: Experimental
 	DescribeActivityOptions = internal.ClientDescribeActivityOptions
