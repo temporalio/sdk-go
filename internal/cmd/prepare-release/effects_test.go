@@ -20,6 +20,10 @@ func (cmd command) String() string {
 	return filepath.ToSlash(formatCommand(cmd.name, cmd.args...))
 }
 
+// mockTempDir is the worktree path newMockEffects hands out. Tests that build file
+// paths before creating their mock use it directly.
+const mockTempDir = "/tmp/prepare-go-release-123456"
+
 type mockEffects struct {
 	commandHandler func(command) (string, error)
 	commands       strings.Builder
@@ -33,7 +37,7 @@ func newMockEffects(handler func(command) (string, error)) *mockEffects {
 	return &mockEffects{
 		commandHandler: handler,
 		repoRootPath:   "/repo",
-		tempDir:        "/tmp/prepare-go-release-123456",
+		tempDir:        mockTempDir,
 		files:          make(map[string]string),
 	}
 }
@@ -49,7 +53,6 @@ func (eff *mockEffects) repoRoot() (string, error) {
 func (eff *mockEffects) runCommand(root, name string, args ...string) (string, error) {
 	cmd := command{root: root, name: name, args: append([]string(nil), args...)}
 	fmt.Fprintf(&eff.commands, "%s: %s\n", root, cmd.String())
-	printDetail(eff, "$ %s", cmd.String())
 	if eff.commandHandler == nil {
 		return "", nil
 	}
