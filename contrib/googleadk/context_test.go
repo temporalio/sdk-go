@@ -209,7 +209,7 @@ func TestDeterministicTimeProvider(t *testing.T) {
 }
 
 // uuidWorkflow generates n IDs through ADK's platform.NewUUID, bound by
-// NewContext to the deterministic seeded generator.
+// NewContext to the deterministic stream-backed generator.
 func uuidWorkflow(ctx workflow.Context, n int) ([]string, error) {
 	adkCtx := googleadk.NewContext(ctx)
 	ids := make([]string, n)
@@ -220,9 +220,9 @@ func uuidWorkflow(ctx workflow.Context, n int) ([]string, error) {
 }
 
 // TestDeterministicUUIDProvider proves NewContext installs a deterministic UUID
-// generator: the IDs are well-formed and unique within a run, and (because they
-// derive from a single SideEffect seed plus a counter) replay-stable — the
-// replay test exercises the cross-replay guarantee end to end.
+// generator: the IDs are well-formed and unique within a run. They are drawn
+// from the workflow's deterministic random stream, so replays reproduce them;
+// the integration replay tests exercise that cross-replay guarantee end to end.
 func TestDeterministicUUIDProvider(t *testing.T) {
 	const n = 8
 	var s testsuite.WorkflowTestSuite

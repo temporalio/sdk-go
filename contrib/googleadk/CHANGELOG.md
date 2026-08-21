@@ -27,6 +27,16 @@ or Security.
   ADK's `gen_ai.usage.*` token attributes. See "Telemetry and replay" in the
   README.
 - `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.
+
+### Changed
+
+- The deterministic UUID provider (`platform.WithUUIDProvider`, used for ADK's
+  invocation/tool IDs) now draws from `workflow.GetRandomStream` instead of a
+  `workflow.SideEffect`-seeded counter, dropping a per-workflow marker event and
+  giving query/update-validator contexts ordinary random IDs. This changes the
+  generated IDs and the command history: a workflow started on v0.2.0 (which
+  recorded the SideEffect marker) must finish on v0.2.0 — replaying it on the
+  new provider is non-deterministic.
 - `NewReplaySafeTracerProvider` builds and owns its `sdktrace.TracerProvider`
   (`func(opts ...sdktrace.TracerProviderOption) *ReplaySafeTracerProvider`) and
   force-installs a deterministic span-ID generator drawn from
