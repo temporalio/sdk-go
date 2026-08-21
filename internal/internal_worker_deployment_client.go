@@ -364,6 +364,19 @@ func workerDeploymentVersionInfoFromProto(info *deployment.WorkerDeploymentVersi
 	}
 }
 
+func workerDeploymentVersionTaskQueuesFromProto(tqInfos []*workflowservice.DescribeWorkerDeploymentVersionResponse_VersionTaskQueue) []WorkerDeploymentTaskQueueInfo {
+	result := []WorkerDeploymentTaskQueueInfo{}
+	for _, info := range tqInfos {
+		result = append(result, WorkerDeploymentTaskQueueInfo{
+			Name:               info.GetName(),
+			Type:               TaskQueueType(info.GetType()),
+			Stats:              statsFromResponse(info.GetStats()),
+			StatsByPriorityKey: statsByPriorityKeyFromResponse(info.GetStatsByPriorityKey()),
+		})
+	}
+	return result
+}
+
 func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, options WorkerDeploymentDescribeVersionOptions) (WorkerDeploymentVersionDescription, error) {
 
 	if err := h.validate(); err != nil {
@@ -384,6 +397,7 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 			BuildId:        options.BuildID,
 			DeploymentName: h.Name,
 		},
+		ReportTaskQueueStats: options.ReportTaskQueueStats,
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
@@ -394,7 +408,8 @@ func (h *workerDeploymentHandleImpl) DescribeVersion(ctx context.Context, option
 	}
 
 	return WorkerDeploymentVersionDescription{
-		Info: workerDeploymentVersionInfoFromProto(resp.GetWorkerDeploymentVersionInfo()),
+		Info:           workerDeploymentVersionInfoFromProto(resp.GetWorkerDeploymentVersionInfo()),
+		TaskQueueInfos: workerDeploymentVersionTaskQueuesFromProto(resp.GetVersionTaskQueues()),
 	}, nil
 }
 
