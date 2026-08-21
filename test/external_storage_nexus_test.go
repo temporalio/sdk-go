@@ -156,6 +156,7 @@ func startNexusExtStoreCaller(t *testing.T, ctx context.Context, c client.Client
 // TestNexusExternalStorageOperationInput verifies that an operation input offloaded to
 // external storage by the caller is retrieved before the handler runs.
 func TestNexusExternalStorageOperationInput(t *testing.T) {
+	skipOnCloud(t, cloudUnavailable, "Nexus external-storage tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -178,6 +179,7 @@ func TestNexusExternalStorageOperationInput(t *testing.T) {
 // TestNexusExternalStorageOperationResult verifies that a large synchronous result is
 // offloaded when completing the task and retrieved by the caller.
 func TestNexusExternalStorageOperationResult(t *testing.T) {
+	skipOnCloud(t, cloudUnavailable, "Nexus external-storage tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -201,6 +203,7 @@ func TestNexusExternalStorageOperationResult(t *testing.T) {
 // storage failure while offloading the result fails the task retryably and then
 // recovers on redelivery.
 func TestNexusExternalStorageTransientStoreFailureRecovers(t *testing.T) {
+	skipOnCloud(t, cloudUnavailable, "Nexus external-storage tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

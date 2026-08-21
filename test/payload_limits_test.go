@@ -34,6 +34,7 @@ type PayloadLimitsTestSuite struct {
 }
 
 func TestPayloadLimitsTestSuite(t *testing.T) {
+	skipOnCloud(t, cloudRequiresLocalServer, "the suite starts a private dev server with custom payload-limit dynamic configuration")
 	suite.Run(t, new(PayloadLimitsTestSuite))
 }
 

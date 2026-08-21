@@ -216,6 +216,7 @@ func (b *builder) integrationTest() error {
 	envConfigFlag := flagSet.Bool("envconfig", false, "Load test server client options from envconfig")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
 	testOutputFlags := addTestOutputFlags(flagSet)
+	timeoutFlag := flagSet.String("timeout", "15m", "Passed to go test as -timeout")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
@@ -253,6 +254,9 @@ func (b *builder) integrationTest() error {
 	}
 	if *packagesFlag != "./..." {
 		rerunArgs = append(rerunArgs, "-packages", *packagesFlag)
+	}
+	if *timeoutFlag != "15m" {
+		rerunArgs = append(rerunArgs, "-timeout", *timeoutFlag)
 	}
 	testOutput.rerunCommand = formatShellCommand(rerunArgs)
 
@@ -360,7 +364,7 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", "15m"}
+	args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", *timeoutFlag}
 	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
