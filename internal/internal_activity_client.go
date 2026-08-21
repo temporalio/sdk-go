@@ -276,6 +276,9 @@ type (
 		TypedSearchAttributes SearchAttributes
 		TaskQueue             string
 		ExecutionDuration     time.Duration
+		// ExecutionTime is when the activity became eligible to run, i.e. ScheduleTime plus
+		// any start delay. Zero if the activity has not become eligible yet.
+		ExecutionTime time.Time
 	}
 
 	// ClientActivityExecutionDescription contains detailed information about an activity execution.
@@ -287,7 +290,15 @@ type (
 	ClientActivityExecutionDescription struct {
 		ClientActivityExecutionInfo
 		// Raw PB message this struct was built from.
-		RawExecutionInfo        *activitypb.ActivityExecutionInfo
+		RawExecutionInfo *activitypb.ActivityExecutionInfo
+		// RawDescription is the raw describe response. Unlike RawExecutionInfo it also carries
+		// the opt-in Input and Outcome payloads. See ClientDescribeActivityOptions.
+		RawDescription          *workflowservice.DescribeActivityExecutionResponse
+		ScheduleToCloseTimeout  time.Duration
+		ScheduleToStartTimeout  time.Duration
+		StartToCloseTimeout     time.Duration
+		HeartbeatTimeout        time.Duration
+		StartDelay              time.Duration
 		RunState                enumspb.PendingActivityState
 		LastHeartbeatTime       time.Time
 		LastStartedTime         time.Time
@@ -318,11 +329,14 @@ type (
 )
 
 // HasHeartbeatDetails returns whether heartbeat details are present. Use GetHeartbeatDetails to retrieve them.
+// The details are only returned when ClientDescribeActivityOptions.IncludeHeartbeatDetails was set.
 func (d *ClientActivityExecutionDescription) HasHeartbeatDetails() bool {
 	return len(d.RawExecutionInfo.GetHeartbeatDetails().GetPayloads()) > 0
 }
 
-// GetHeartbeatDetails retrieves heartbeat details. Returns ErrNoData if heartbeat details are not present.
+// GetHeartbeatDetails retrieves heartbeat details. Returns ErrNoData if heartbeat details are not
+// present, which includes the case where they were not requested via
+// ClientDescribeActivityOptions.IncludeHeartbeatDetails.
 // The details are deserialized into provided pointers using the data converter of the client used to make the Describe call.
 // Returns error if data conversion fails.
 func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...any) error {
@@ -336,8 +350,81 @@ func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...an
 	return d.dataConverter.FromPayloads(details, valuePtrs...)
 }
 
-// GetLastFailure returns the last failure of the activity execution, using the failure converter of the client used to
-// make the Describe call. Returns nil if there was no failure.
+// HasInput returns whether the activity's input is present. Use GetInput to retrieve it.
+// The input is only returned when ClientDescribeActivityOptions.IncludeInput was set.
+func (d *ClientActivityExecutionDescription) HasInput() bool {
+	return len(d.RawDescription.GetInput().GetPayloads()) > 0
+}
+
+// GetInput retrieves the arguments the activity was scheduled with. Returns ErrNoData if the
+// input is not present, which includes the case where it was not requested via
+// ClientDescribeActivityOptions.IncludeInput.
+// The arguments are deserialized into the provided pointers, one per argument, using the data
+// converter of the client used to make the Describe call. Returns error if data conversion fails.
+func (d *ClientActivityExecutionDescription) GetInput(valuePtrs ...any) error {
+	input := d.RawDescription.GetInput()
+	if input == nil {
+		return ErrNoData
+	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, input, 0); err != nil {
+		return err
+	}
+	return d.dataConverter.FromPayloads(input, valuePtrs...)
+}
+
+// HasResult returns whether the activity completed successfully and its result is present. Use
+// GetResult to retrieve it. The outcome is only returned when
+// ClientDescribeActivityOptions.IncludeOutcome was set.
+func (d *ClientActivityExecutionDescription) HasResult() bool {
+	_, ok := d.RawDescription.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
+	return ok
+}
+
+// GetResult retrieves the result of a successfully completed activity. Returns ErrNoData if the
+// result is not present, which includes an activity that is still running, one that failed, and
+// one whose outcome was not requested via ClientDescribeActivityOptions.IncludeOutcome.
+// The result is deserialized into valuePtr using the data converter of the client used to make
+// the Describe call. Returns error if data conversion fails.
+func (d *ClientActivityExecutionDescription) GetResult(valuePtr any) error {
+	outcome, ok := d.RawDescription.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
+	if !ok {
+		return ErrNoData
+	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, outcome.Result, 0); err != nil {
+		return err
+	}
+	return d.dataConverter.FromPayloads(outcome.Result, valuePtr)
+}
+
+// GetFailure returns the failure the activity closed with, using the failure converter of the
+// client used to make the Describe call. Returns nil if the activity did not fail, or if the
+// outcome was not requested via ClientDescribeActivityOptions.IncludeOutcome.
+//
+// This is the terminal failure of the execution. It differs from GetLastFailure, which reports
+// the failure of the most recent attempt of an activity that may still be retrying.
+func (d *ClientActivityExecutionDescription) GetFailure() error {
+	outcome, ok := d.RawDescription.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Failure)
+	if !ok {
+		return nil
+	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, outcome.Failure, 0); err != nil {
+		return err
+	}
+	return d.failureConverter.FailureToError(outcome.Failure)
+}
+
+// HasLastFailure returns whether the failure of the most recent failed attempt is present. Use
+// GetLastFailure to retrieve it. The last failure is only returned when
+// ClientDescribeActivityOptions.IncludeLastFailure was set.
+func (d *ClientActivityExecutionDescription) HasLastFailure() bool {
+	return d.RawExecutionInfo.GetLastFailure() != nil
+}
+
+// GetLastFailure returns the failure of the most recent failed attempt, using the failure converter
+// of the client used to make the Describe call. Returns nil if there was no failure, or if it was
+// not requested via ClientDescribeActivityOptions.IncludeLastFailure.
+//
+// For the terminal failure of a closed execution, see GetFailure.
 func (d *ClientActivityExecutionDescription) GetLastFailure() error {
 	failure := d.RawExecutionInfo.GetLastFailure()
 	if failure == nil {
@@ -538,6 +625,7 @@ func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientList
 						TypedSearchAttributes: convertToTypedSearchAttributes(wc.logger, ex.SearchAttributes.IndexedFields),
 						TaskQueue:             ex.TaskQueue,
 						ExecutionDuration:     ex.ExecutionDuration.AsDuration(),
+						ExecutionTime:         ex.ExecutionTime.AsTime(),
 					}, nil) {
 						return
 					}
@@ -812,8 +900,15 @@ func (w *workflowClientInterceptor) DescribeActivity(
 				TypedSearchAttributes: convertToTypedSearchAttributes(w.client.logger, info.SearchAttributes.IndexedFields),
 				TaskQueue:             info.TaskQueue,
 				ExecutionDuration:     info.ExecutionDuration.AsDuration(),
+				ExecutionTime:         info.ExecutionTime.AsTime(),
 			},
 			RawExecutionInfo:        info,
+			RawDescription:          resp,
+			ScheduleToCloseTimeout:  info.ScheduleToCloseTimeout.AsDuration(),
+			ScheduleToStartTimeout:  info.ScheduleToStartTimeout.AsDuration(),
+			StartToCloseTimeout:     info.StartToCloseTimeout.AsDuration(),
+			HeartbeatTimeout:        info.HeartbeatTimeout.AsDuration(),
+			StartDelay:              info.StartDelay.AsDuration(),
 			RunState:                info.RunState,
 			LastHeartbeatTime:       info.LastHeartbeatTime.AsTime(),
 			LastStartedTime:         info.LastStartedTime.AsTime(),
