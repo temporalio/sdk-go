@@ -327,7 +327,8 @@ func nexusOperationFailure(params ExecuteNexusOperationParams, token string, cau
 				Service:        params.client.Service(),
 				Operation:      params.operation,
 				OperationToken: token,
-				OperationId:    token, // Also populate ID for backwards compatibility.
+				//lint:ignore SA1019 preserve legacy operation ID behavior in the test environment
+				OperationId: token, // Also populate ID for backwards compatibility.
 			},
 		},
 		Cause: cause,

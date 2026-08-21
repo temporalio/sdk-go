@@ -22,6 +22,9 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
+  structured details for payload validation failures.
+
 ### Changed
 
 ### Deprecated
@@ -31,6 +34,10 @@ to docs, or any other relevant information.
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
 
 ### Fixed
+
+- Corrected stand-alone activity API documentation to use activity terminology, document that
+  `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
+  `TerminateActivityOptions.Reason` as a termination reason.
 
 ### Security
 

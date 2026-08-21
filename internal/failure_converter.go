@@ -160,8 +160,9 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 			Endpoint:         err.Endpoint,
 			Service:          err.Service,
 			Operation:        err.Operation,
-			OperationId:      token,
-			OperationToken:   token,
+			//lint:ignore SA1019 populate the legacy operation ID for backwards-compatible failure decoding
+			OperationId:    token,
+			OperationToken: token,
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
 	case *nexus.HandlerError:

@@ -1190,11 +1190,9 @@ func (dc inputDeserializationErrorDataConverter) FromPayload(payload *common.Pay
 				temporal.ApplicationErrorOptions{NonRetryable: true},
 			)
 		case "payload-validation-error":
-			return temporal.NewApplicationErrorWithOptions(
-				"deserialization payload validation error",
-				"PayloadValidationError",
-				temporal.ApplicationErrorOptions{NonRetryable: true},
-			)
+			return temporal.NewPayloadValidationError([]map[string]string{
+				{"path": "operationInput", "reason": "must be valid"},
+			})
 		case "retryable-payload-validation-error":
 			return temporal.NewApplicationErrorWithOptions(
 				"deserialization retryable payload validation error",
@@ -1295,7 +1293,10 @@ func TestNexusOperationInputDeserializationError(t *testing.T) {
 		require.ErrorAs(t, handlerErr.Cause, &appErr)
 		require.Equal(t, "PayloadValidationError", appErr.Type())
 		require.True(t, appErr.NonRetryable())
-		require.ErrorContains(t, appErr, "deserialization payload validation error")
+		require.Equal(t, "Payload validation failed", appErr.Message())
+		var violations []map[string]string
+		require.NoError(t, appErr.Details(&violations))
+		require.Equal(t, []map[string]string{{"path": "operationInput", "reason": "must be valid"}}, violations)
 	})
 
 	t.Run("retryable-payload-validation-error", func(t *testing.T) {

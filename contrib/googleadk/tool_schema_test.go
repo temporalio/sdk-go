@@ -26,7 +26,7 @@ type schemaArgs struct {
 	Query    string `json:"query"`
 	Untagged string
 	Secret   string      `json:"-"`
-	Dash     string      `json:"-,"`
+	Dash     string      `json:"-,"` //lint:ignore SA5008 Go 1.26 encoding/json uses json:"-," for a literal "-" field name; this compatibility case is intentional.
 	Inner    schemaInner `json:"inner"`
 }
 
