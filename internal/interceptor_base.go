@@ -642,6 +642,16 @@ func (c *ClientOutboundInterceptorBase) UnpauseActivity(
 	return c.Next.UnpauseActivity(ctx, in)
 }
 
+// ResetActivity implements ClientOutboundInterceptor.ResetActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) ResetActivity(
+	ctx context.Context,
+	in *ClientResetActivityInput,
+) error {
+	return c.Next.ResetActivity(ctx, in)
+}
+
 // DescribeActivity implements ClientOutboundInterceptor.DescribeActivity.
 //
 // NOTE: Experimental
