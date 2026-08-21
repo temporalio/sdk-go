@@ -32,9 +32,24 @@ to docs, or any other relevant information.
 ### :boom: Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
+  `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
+  context-derived encryption keys or AAD) may fail to decode local activity results recorded in
+  histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+- Activity, local activity and child workflow serialization contexts are now applied to the
+  worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
+  the current workflow context. A context-aware converter that composed contexts (deriving its state
+  from both the workflow and the activity context) now sees only the activity or child workflow
+  context, and one whose `WithSerializationContext` returned a converter that is no longer
+  context-aware now receives the activity or child workflow context it previously never saw.
 
 ### Fixed
 
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
+  but decoded through the workflow serialization context, so a context-aware `DataConverter` or
+  `PayloadCodec` saw mismatched contexts for local activity results.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.

@@ -257,6 +257,9 @@ type (
 		failureConverter    converter.FailureConverter
 		runTimeout          time.Duration
 
+		rootDataConverter    converter.DataConverter
+		rootFailureConverter converter.FailureConverter
+
 		heartbeatDetails *commonpb.Payloads
 
 		workerStopChannel  chan struct{}
@@ -478,6 +481,8 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 	if childEnv.failureConverter == nil {
 		childEnv.failureConverter = env.failureConverter
 	}
+	childEnv.rootDataConverter = env.GetRootDataConverter()
+	childEnv.rootFailureConverter = env.GetRootFailureConverter()
 	childEnv.registry = env.registry
 	childEnv.detachedChildWaitDisabled = env.detachedChildWaitDisabled
 
@@ -646,6 +651,8 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflowInternal(delayStart time.
 			Namespace:  wInfo.Namespace,
 			WorkflowID: wInfo.WorkflowExecution.ID,
 		}
+		env.rootDataConverter = env.dataConverter
+		env.rootFailureConverter = env.failureConverter
 		env.dataConverter = converter.WithDataConverterSerializationContext(env.dataConverter, wfCtx)
 		env.failureConverter = converter.WithFailureConverterSerializationContext(env.failureConverter, wfCtx)
 	}
@@ -875,14 +882,29 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn any,
 	args ...any,
 ) (val converter.EncodedValue, err error) {
+	activityType, err := getValidatedActivityFunction(activityFn, args, env.registry)
+	if err != nil {
+		return nil, err
+	}
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    env.workflowInfo.Namespace,
+		WorkflowID:   env.workflowInfo.WorkflowExecution.ID,
+		WorkflowType: env.workflowInfo.WorkflowType.Name,
+		ActivityType: activityType.Name,
+		TaskQueue:    env.workflowInfo.TaskQueueName,
+		IsLocal:      true,
+	}
 	params := ExecuteLocalActivityParams{
 		ExecuteLocalActivityOptions: ExecuteLocalActivityOptions{
 			ScheduleToCloseTimeout: env.testTimeout,
 		},
-		ActivityFn:   activityFn,
-		InputArgs:    args,
-		WorkflowInfo: env.workflowInfo,
-		Header:       env.header,
+		ActivityFn:       activityFn,
+		ActivityType:     activityType.Name,
+		InputArgs:        args,
+		WorkflowInfo:     env.workflowInfo,
+		DataConverter:    converter.WithDataConverterSerializationContext(env.GetRootDataConverter(), actCtx),
+		FailureConverter: converter.WithFailureConverterSerializationContext(env.GetRootFailureConverter(), actCtx),
+		Header:           env.header,
 	}
 	task := &localActivityTask{
 		activityID: "test-local-activity",
@@ -897,6 +919,7 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 		backgroundContext:  env.workerOptions.BackgroundActivityContext,
 		metricsHandler:     env.metricsHandler,
 		logger:             env.logger,
+		dataConverter:      env.dataConverter,
 		interceptors:       env.registry.interceptors,
 		contextPropagators: env.contextPropagators,
 		workerStopChannel:  env.workerStopChannel,
@@ -904,10 +927,9 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 
 	result := taskHandler.executeLocalActivityTask(task)
 	if result.err != nil {
-		activityType, _ := getValidatedActivityFunction(activityFn, args, env.registry)
 		return nil, env.wrapActivityError(ActivityID{id: task.activityID}, activityType.Name, enumspb.RETRY_STATE_UNSPECIFIED, result.err)
 	}
-	return newEncodedValue(result.result, env.GetDataConverter()), nil
+	return newEncodedValue(result.result, params.DataConverter), nil
 }
 
 func (env *testWorkflowEnvironmentImpl) startWorkflowTask() {
@@ -1331,6 +1353,20 @@ func (env *testWorkflowEnvironmentImpl) GetDataConverter() converter.DataConvert
 }
 
 func (env *testWorkflowEnvironmentImpl) GetFailureConverter() converter.FailureConverter {
+	return env.failureConverter
+}
+
+func (env *testWorkflowEnvironmentImpl) GetRootDataConverter() converter.DataConverter {
+	if env.rootDataConverter != nil {
+		return env.rootDataConverter
+	}
+	return env.dataConverter
+}
+
+func (env *testWorkflowEnvironmentImpl) GetRootFailureConverter() converter.FailureConverter {
+	if env.rootFailureConverter != nil {
+		return env.rootFailureConverter
+	}
 	return env.failureConverter
 }
 
@@ -2022,7 +2058,11 @@ func (env *testWorkflowEnvironmentImpl) handleLocalActivityResult(result *localA
 			env.onLocalActivityCanceledListener(activityInfo)
 		}
 	} else if env.onLocalActivityCompletedListener != nil {
-		env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, env.GetDataConverter()), nil)
+		dataConverter := result.task.params.DataConverter
+		if dataConverter == nil {
+			dataConverter = env.GetDataConverter()
+		}
+		env.onLocalActivityCompletedListener(activityInfo, newEncodedValue(result.result, dataConverter), nil)
 	}
 	env.startWorkflowTask()
 }
@@ -2099,7 +2139,7 @@ func (a *activityExecutorWrapper) ExecuteWithActualArgs(ctx context.Context, inp
 		<-waitCh
 	}
 
-	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false}
+	m := &mockWrapper{env: a.env, name: a.name, fn: a.fn, isWorkflow: false, dataConverter: getDataConverterFromActivityCtx(ctx)}
 	if mockRet := m.getActivityMockReturnWithActualArgs(ctx, inputArgs); mockRet != nil {
 		// check if mock returns function which must match to the actual function.
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
@@ -2289,6 +2329,13 @@ func (m *mockWrapper) getMockFn(mockRet mock.Arguments) any {
 	return nil
 }
 
+func (m *mockWrapper) getDataConverter() converter.DataConverter {
+	if m.dataConverter != nil {
+		return m.dataConverter
+	}
+	return m.env.GetDataConverter()
+}
+
 func (m *mockWrapper) getMockValue(mockRet mock.Arguments) (*commonpb.Payloads, error) {
 	fnName := m.name
 	mockRetLen := len(mockRet)
@@ -2330,7 +2377,7 @@ func (m *mockWrapper) getMockValue(mockRet mock.Arguments) (*commonpb.Payloads, 
 				panic(fmt.Sprintf("mock of %v has incorrect return type, expected %v, but actual is %T (%v)",
 					fnName, expectedType, mockResult, mockResult))
 			}
-			result, encodeErr := encodeArg(m.env.GetDataConverter(), mockResult)
+			result, encodeErr := encodeArg(m.getDataConverter(), mockResult)
 			if encodeErr != nil {
 				panic(fmt.Sprintf("encode result from mock of %v failed: %v", fnName, encodeErr))
 			}

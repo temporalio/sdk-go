@@ -195,6 +195,7 @@ type (
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 		OnConflictOptions        *OnConflictOptions
 		DataConverter            converter.DataConverter
+		RootDataConverter        converter.DataConverter
 		RetryPolicy              *commonpb.RetryPolicy
 		Priority                 *commonpb.Priority
 		CronSchedule             string
@@ -508,6 +509,7 @@ func newWorkflowContext(
 	ctx = WithWorkflowTaskTimeout(ctx, info.WorkflowTaskTimeout)
 	ctx = WithTaskQueue(ctx, info.TaskQueueName)
 	ctx = WithDataConverter(ctx, env.GetDataConverter())
+	getWorkflowEnvOptions(ctx).RootDataConverter = rootDataConverterFromEnvironment(env)
 	ctx = withContextPropagators(ctx, env.GetContextPropagators())
 	getActivityOptions(ctx).OriginalTaskQueueName = info.TaskQueueName
 
@@ -1633,6 +1635,37 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	}
 
 	return WithWorkflowContext(ctx, dataConverter)
+}
+
+// withRootDataConverterSerializationContext applies sc to the worker-configured
+// data converter, before any other serialization context, and only then binds it
+// to the workflow context. Binding first would hand sc to a converter that is no
+// longer serialization context aware, silently dropping it.
+func withRootDataConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.DataConverter {
+	options := getWorkflowEnvOptions(ctx)
+	if options == nil || options.RootDataConverter == nil {
+		return converter.WithDataConverterSerializationContext(getDataConverterFromWorkflowContext(ctx), sc)
+	}
+	return WithWorkflowContext(ctx, converter.WithDataConverterSerializationContext(options.RootDataConverter, sc))
+}
+
+func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataConverter {
+	if root, ok := env.(interface {
+		GetRootDataConverter() converter.DataConverter
+	}); ok {
+		return root.GetRootDataConverter()
+	}
+	return env.GetDataConverter()
+}
+
+func getRootFailureConverterFromWorkflowContext(ctx Context) converter.FailureConverter {
+	env := getWorkflowEnvironment(ctx)
+	if root, ok := env.(interface {
+		GetRootFailureConverter() converter.FailureConverter
+	}); ok {
+		return root.GetRootFailureConverter()
+	}
+	return env.GetFailureConverter()
 }
 
 func getRegistryFromWorkflowContext(ctx Context) *registry {
