@@ -448,6 +448,16 @@ type ClientOutboundInterceptor interface {
 	// NOTE: Experimental
 	TerminateActivity(context.Context, *ClientTerminateActivityInput) error
 
+	// PauseActivity intercepts client.ActivityHandle.Pause.
+	//
+	// NOTE: Experimental
+	PauseActivity(context.Context, *ClientPauseActivityInput) error
+
+	// UnpauseActivity intercepts client.ActivityHandle.Unpause.
+	//
+	// NOTE: Experimental
+	UnpauseActivity(context.Context, *ClientUnpauseActivityInput) error
+
 	// DescribeActivity intercepts client.ActivityHandle.Describe.
 	//
 	// NOTE: Experimental
@@ -729,6 +739,38 @@ type ClientTerminateActivityInput struct {
 	RunID string
 	// Reason is the reason for termination.
 	Reason string
+}
+
+// ClientPauseActivityInput is the input to
+// ClientOutboundInterceptor.PauseActivity.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientPauseActivityInput]
+type ClientPauseActivityInput struct {
+	// ActivityID is the ID of the activity.
+	ActivityID string
+	// RunID is the run ID of the activity to pause.
+	RunID string
+	// Reason is the reason for pausing.
+	Reason string
+}
+
+// ClientUnpauseActivityInput is the input to
+// ClientOutboundInterceptor.UnpauseActivity.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUnpauseActivityInput]
+type ClientUnpauseActivityInput struct {
+	// ActivityID is the ID of the activity.
+	ActivityID string
+	// RunID is the run ID of the activity to unpause.
+	RunID string
+	// Reason is the reason for unpausing.
+	Reason string
+	// Jitter, if non-zero, delays the next attempt by a random duration in [0, Jitter).
+	Jitter time.Duration
 }
 
 // ClientDescribeActivityInput is the input to

@@ -178,4 +178,3 @@ type ExternalStorage struct {
 type PayloadVisitor interface {
 	Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error)
 }
-

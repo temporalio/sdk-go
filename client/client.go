@@ -1032,6 +1032,16 @@ type (
 	// NOTE: Experimental
 	CancelActivityOptions = internal.ClientCancelActivityOptions
 
+	// PauseActivityOptions contains options for ClientActivityHandle.Pause call.
+	//
+	// NOTE: Experimental
+	PauseActivityOptions = internal.ClientPauseActivityOptions
+
+	// UnpauseActivityOptions contains options for ClientActivityHandle.Unpause call.
+	//
+	// NOTE: Experimental
+	UnpauseActivityOptions = internal.ClientUnpauseActivityOptions
+
 	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
 	//
 	// NOTE: Experimental

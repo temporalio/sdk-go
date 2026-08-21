@@ -622,6 +622,26 @@ func (c *ClientOutboundInterceptorBase) TerminateActivity(
 	return c.Next.TerminateActivity(ctx, in)
 }
 
+// PauseActivity implements ClientOutboundInterceptor.PauseActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) PauseActivity(
+	ctx context.Context,
+	in *ClientPauseActivityInput,
+) error {
+	return c.Next.PauseActivity(ctx, in)
+}
+
+// UnpauseActivity implements ClientOutboundInterceptor.UnpauseActivity.
+//
+// NOTE: Experimental
+func (c *ClientOutboundInterceptorBase) UnpauseActivity(
+	ctx context.Context,
+	in *ClientUnpauseActivityInput,
+) error {
+	return c.Next.UnpauseActivity(ctx, in)
+}
+
 // DescribeActivity implements ClientOutboundInterceptor.DescribeActivity.
 //
 // NOTE: Experimental

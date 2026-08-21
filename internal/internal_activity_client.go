@@ -211,6 +211,12 @@ type (
 		Cancel(ctx context.Context, options ClientCancelActivityOptions) error
 		// Terminate terminates the activity.
 		Terminate(ctx context.Context, options ClientTerminateActivityOptions) error
+		// Pause pauses the activity. A paused activity stops being retried and, if an attempt is
+		// currently running, that attempt is asked to yield. Pausing an already-paused activity
+		// is a no-op.
+		Pause(ctx context.Context, options ClientPauseActivityOptions) error
+		// Unpause resumes a paused activity. Unpausing an activity that is not paused is a no-op.
+		Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error
 	}
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
@@ -245,6 +251,29 @@ type (
 	ClientCancelActivityOptions struct {
 		// Reason is optional description of the reason for cancellation.
 		Reason string
+	}
+
+	// ClientPauseActivityOptions contains options for ClientActivityHandle.Pause call.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.PauseActivityOptions]
+	ClientPauseActivityOptions struct {
+		// Reason is optional description of the reason for pausing.
+		Reason string
+	}
+
+	// ClientUnpauseActivityOptions contains options for ClientActivityHandle.Unpause call.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.UnpauseActivityOptions]
+	ClientUnpauseActivityOptions struct {
+		// Reason is optional description of the reason for unpausing.
+		Reason string
+		// Jitter, if non-zero, delays the next attempt by a random duration in [0, Jitter). Use it
+		// to spread the load of unpausing many activities at once.
+		Jitter time.Duration
 	}
 
 	// ClientTerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
@@ -566,6 +595,29 @@ func (h *clientActivityHandleImpl) Terminate(ctx context.Context, options Client
 		ActivityID: h.id,
 		RunID:      h.runID,
 		Reason:     options.Reason,
+	})
+}
+
+func (h *clientActivityHandleImpl) Pause(ctx context.Context, options ClientPauseActivityOptions) error {
+	if err := h.client.ensureInitialized(ctx); err != nil {
+		return err
+	}
+	return h.client.interceptor.PauseActivity(ctx, &ClientPauseActivityInput{
+		ActivityID: h.id,
+		RunID:      h.runID,
+		Reason:     options.Reason,
+	})
+}
+
+func (h *clientActivityHandleImpl) Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error {
+	if err := h.client.ensureInitialized(ctx); err != nil {
+		return err
+	}
+	return h.client.interceptor.UnpauseActivity(ctx, &ClientUnpauseActivityInput{
+		ActivityID: h.id,
+		RunID:      h.runID,
+		Reason:     options.Reason,
+		Jitter:     options.Jitter,
 	})
 }
 
@@ -961,6 +1013,47 @@ func (w *workflowClientInterceptor) CancelActivity(
 		Reason:     in.Reason,
 	}
 	_, err := w.client.WorkflowService().RequestCancelActivityExecution(grpcCtx, request)
+	return err
+}
+
+func (w *workflowClientInterceptor) PauseActivity(
+	ctx context.Context,
+	in *ClientPauseActivityInput,
+) error {
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.PauseActivityExecutionRequest{
+		Namespace:  w.client.namespace,
+		ActivityId: in.ActivityID,
+		RunId:      in.RunID,
+		Identity:   w.client.identity,
+		RequestId:  uuid.NewString(),
+		Reason:     in.Reason,
+	}
+	_, err := w.client.WorkflowService().PauseActivityExecution(grpcCtx, request)
+	return err
+}
+
+func (w *workflowClientInterceptor) UnpauseActivity(
+	ctx context.Context,
+	in *ClientUnpauseActivityInput,
+) error {
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.UnpauseActivityExecutionRequest{
+		Namespace:  w.client.namespace,
+		ActivityId: in.ActivityID,
+		RunId:      in.RunID,
+		Identity:   w.client.identity,
+		RequestId:  uuid.NewString(),
+		Reason:     in.Reason,
+	}
+	if in.Jitter != 0 {
+		request.Jitter = durationpb.New(in.Jitter)
+	}
+	_, err := w.client.WorkflowService().UnpauseActivityExecution(grpcCtx, request)
 	return err
 }
 

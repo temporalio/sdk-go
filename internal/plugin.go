@@ -304,13 +304,13 @@ type WorkerPluginReplayWorkflowOptions struct {
 
 	// All fields below are coalesced from overloads. No guarantees are made
 	// about their values.
-	Logger                log.Logger
+	Logger log.Logger
 	// WorkflowServiceClient is the client used to communicate with the Temporal Server.
 	WorkflowServiceClient workflowservice.WorkflowServiceClient
 	// Namespace is the namespace for the replay.
-	Namespace             string
+	Namespace string
 	// OriginalExecution is the original workflow execution being replayed.
-	OriginalExecution     WorkflowExecution
+	OriginalExecution WorkflowExecution
 }
 
 type pluginNamePanicForTypeChecking struct{}

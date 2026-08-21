@@ -112,7 +112,7 @@ type (
 		// ConflictToken is a conflict token to serialize updates.
 		ConflictToken VersioningConflictToken
 		// Operation is the operation to perform.
-		Operation     VersioningOperation
+		Operation VersioningOperation
 	}
 
 	// VersioningOperation is an interface for the different operations that can be
@@ -149,7 +149,7 @@ type (
 		// RuleIndex is the index to insert the rule at.
 		RuleIndex int32
 		// Rule is the rule to insert.
-		Rule      VersioningAssignmentRule
+		Rule VersioningAssignmentRule
 	}
 
 	// VersioningOperationReplaceAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
@@ -167,9 +167,9 @@ type (
 		// RuleIndex is the index to replace the rule at.
 		RuleIndex int32
 		// Rule is the rule to replace.
-		Rule      VersioningAssignmentRule
+		Rule VersioningAssignmentRule
 		// Force bypasses the unconditional rule validation if true.
-		Force     bool
+		Force bool
 	}
 
 	// VersioningOperationDeleteAssignmentRule is an operation for UpdateWorkerVersioningRulesOptions
@@ -187,7 +187,7 @@ type (
 		// RuleIndex is the index to delete the rule at.
 		RuleIndex int32
 		// Force bypasses the unconditional rule validation if true.
-		Force     bool
+		Force bool
 	}
 
 	// VersioningOperationAddRedirectRule is an operation for UpdateWorkerVersioningRulesOptions
@@ -253,7 +253,7 @@ type (
 		// TargetBuildID is the target build ID to commit.
 		TargetBuildID string
 		// Force bypasses the zero pollers validation if true.
-		Force         bool
+		Force bool
 	}
 )
 
@@ -377,9 +377,9 @@ type WorkerVersioningRules struct {
 	// AssignmentRules is the list of assignment rules.
 	AssignmentRules []*VersioningAssignmentRuleWithTimestamp
 	// RedirectRules is the list of redirect rules.
-	RedirectRules   []*VersioningRedirectRuleWithTimestamp
+	RedirectRules []*VersioningRedirectRuleWithTimestamp
 	// ConflictToken is the current conflict token.
-	ConflictToken   VersioningConflictToken
+	ConflictToken VersioningConflictToken
 }
 
 func versioningAssignmentRuleToProto(rule *VersioningAssignmentRule) *taskqueuepb.BuildIdAssignmentRule {
