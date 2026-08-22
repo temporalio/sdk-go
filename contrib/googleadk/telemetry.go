@@ -2,7 +2,9 @@ package googleadk
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
+	"io"
 
 	otellog "go.opentelemetry.io/otel/log"
 	"go.opentelemetry.io/otel/metric"
@@ -10,7 +12,6 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
-	"go.opentelemetry.io/otel/trace/noop"
 
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
@@ -21,14 +22,17 @@ import (
 // from code that runs inside the workflow. Workflow code re-executes on every
 // history replay, so without a gate each replay re-emits all of it: token-usage
 // numbers are re-read from history and re-attached identically, inflating
-// observed counts by one full copy per replay. The wrappers below suppress
-// emissions whose context carries a workflow.Context (stashed by NewContext
-// under wfCtxKey, refreshed per fan-out coroutine) that reports
-// workflow.IsReplaying outside a read-only context. Recordings therefore
-// happen on first execution only — the same semantics as
-// workflow.GetMetricsHandler. Contexts without a workflow.Context always pass
-// through, so the wrappers are safe to install process-wide: worker, client,
-// and Activity telemetry is untouched.
+// observed counts by one full copy per replay. The log and metric wrappers
+// below suppress emissions whose context carries a workflow.Context (stashed
+// by NewContext under wfCtxKey, refreshed per fan-out coroutine) that reports
+// workflow.IsReplaying outside a read-only context, so recordings happen on
+// first execution only — the same semantics as workflow.GetMetricsHandler.
+// The tracer wrapper gates span End rather than Start (see
+// NewReplaySafeTracerProvider): replays re-create spans without re-exporting
+// them, and a span cut off by eviction or restart is exported once, complete,
+// by the catch-up replay's live End. Contexts without a workflow.Context
+// always pass through, so the wrappers are safe to install process-wide:
+// worker, client, and Activity telemetry is untouched.
 
 // replaySuppressed reports whether an emission carrying ctx originates from
 // workflow code that is re-executing history: workflow.IsReplaying composed
@@ -48,42 +52,151 @@ func replaySuppressed(ctx context.Context) bool {
 	return workflow.IsReplaying(wfCtx) && !workflow.IsReadOnly(wfCtx)
 }
 
-// suppressedTracer produces the non-recording spans returned while replaying.
-var suppressedTracer = noop.NewTracerProvider().Tracer("googleadk.replay-suppressed")
+// spanRandomStreamPrefix names the per-tracer workflow random streams feeding
+// the span-ID generator, so a workflow span re-created on replay draws the same
+// trace and span IDs it drew on first execution.
+const spanRandomStreamPrefix = "go.temporal.io/sdk/contrib/googleadk/spans/"
 
-// NewReplaySafeTracerProvider wraps inner so spans started from replaying
-// workflow code become non-recording no-ops; everything else delegates to
-// inner unchanged.
+// otelRandomKey carries the io.Reader the span-ID generator draws from.
+type otelRandomKey struct{}
+
+// workflowSpanIDGenerator draws trace and span IDs from the io.Reader the
+// replay-safe tracer attaches to the span-start context (a
+// workflow.GetRandomStream for sequenced workflow spans) and falls back to
+// crypto/rand for every other span. NewReplaySafeTracerProvider force-installs
+// it so a workflow span re-created during replay keeps its first-execution
+// identity: a span cut off by eviction, shutdown, or crash is exported after
+// the catch-up replay under its original trace and span IDs, and spans exported
+// live keep valid parent links into spans whose re-creation was itself never
+// re-exported.
+type workflowSpanIDGenerator struct{}
+
+func (g workflowSpanIDGenerator) NewIDs(ctx context.Context) (trace.TraceID, trace.SpanID) {
+	var tid trace.TraceID
+	for !tid.IsValid() {
+		readSpanRandom(ctx, tid[:])
+	}
+	return tid, g.NewSpanID(ctx, tid)
+}
+
+func (workflowSpanIDGenerator) NewSpanID(ctx context.Context, _ trace.TraceID) trace.SpanID {
+	var sid trace.SpanID
+	for !sid.IsValid() {
+		readSpanRandom(ctx, sid[:])
+	}
+	return sid
+}
+
+func readSpanRandom(ctx context.Context, p []byte) {
+	r, _ := ctx.Value(otelRandomKey{}).(io.Reader)
+	if r == nil {
+		r = rand.Reader
+	}
+	_, _ = io.ReadFull(r, p)
+}
+
+// ReplaySafeTracerProvider owns the sdktrace.TracerProvider it is built around
+// and force-installs the workflow span-ID generator, so the deterministic-ID
+// generator that lets a replay-recreated span keep its identity can never be
+// omitted. It embeds the owned *sdktrace.TracerProvider, so Shutdown and
+// ForceFlush promote through; the caller owns the provider and must shut it down
+// after its clients and workers stop.
+type ReplaySafeTracerProvider struct {
+	*sdktrace.TracerProvider
+}
+
+// NewReplaySafeTracerProvider builds an sdktrace.TracerProvider from opts and
+// force-installs the workflow span-ID generator so spans started from sequenced
+// workflow code are real spans in every execution mode, replay included, but
+// are exported at most once: End is suppressed while the workflow is replaying
+// (and during eviction teardown, which the SDK marks as replay), so a span
+// whose lifetime lay entirely inside replayed history is re-created but never
+// re-exported, while a span cut off by eviction, shutdown, or crash is exported
+// by the catch-up replay's live End with everything it accumulated — for ADK's
+// generate_content spans, the gen_ai.usage.* token attributes. Spans started
+// during replay carry a workflow-time start timestamp; live spans keep
+// wall-clock starts. Everything without a workflow context on it delegates to
+// the owned provider unchanged.
+//
+// Any WithIDGenerator in opts is overridden: the generator is what gives a
+// re-created span its first-execution trace and span IDs, so the provider always
+// owns it.
 //
 // Install it as the FIRST global tracer provider in the process:
 //
-//	otel.SetTracerProvider(googleadk.NewReplaySafeTracerProvider(realProvider))
+//	tp := googleadk.NewReplaySafeTracerProvider(sdktrace.WithBatcher(exporter))
+//	otel.SetTracerProvider(tp)
+//	defer tp.Shutdown(ctx)
 //
 // ADK captures otel.GetTracerProvider().Tracer(...) at package init, and the
 // OTel global proxy binds its delegate on the first SetTracerProvider call
 // only — if some other provider is installed first, ADK's cached tracer
-// bypasses this wrapper permanently. Replays add no spans, but a span still
-// open when its workflow leaves the worker is truncated (sticky-cache
-// eviction) or lost (worker shutdown, crash): the replay re-creation on
-// resume is non-recording. See "Telemetry and replay" in the README for the
-// span-lifetime contract.
-func NewReplaySafeTracerProvider(inner trace.TracerProvider) trace.TracerProvider {
-	return replaySafeTracerProvider{TracerProvider: inner}
+// bypasses this wrapper permanently. See "Telemetry and replay" in the README
+// for the span-lifetime contract.
+func NewReplaySafeTracerProvider(opts ...sdktrace.TracerProviderOption) *ReplaySafeTracerProvider {
+	opts = append([]sdktrace.TracerProviderOption(nil), opts...)
+	opts = append(opts, sdktrace.WithIDGenerator(workflowSpanIDGenerator{}))
+	return &ReplaySafeTracerProvider{sdktrace.NewTracerProvider(opts...)}
 }
 
-type replaySafeTracerProvider struct{ trace.TracerProvider }
-
-func (p replaySafeTracerProvider) Tracer(name string, opts ...trace.TracerOption) trace.Tracer {
-	return replaySafeTracer{Tracer: p.TracerProvider.Tracer(name, opts...)}
+func (p *ReplaySafeTracerProvider) Tracer(name string, opts ...trace.TracerOption) trace.Tracer {
+	return replaySafeTracer{Tracer: p.TracerProvider.Tracer(name, opts...), name: name, owner: p}
 }
 
-type replaySafeTracer struct{ trace.Tracer }
+type replaySafeTracer struct {
+	trace.Tracer
+	name  string
+	owner *ReplaySafeTracerProvider
+}
 
 func (t replaySafeTracer) Start(ctx context.Context, spanName string, opts ...trace.SpanStartOption) (context.Context, trace.Span) {
-	if replaySuppressed(ctx) {
-		return suppressedTracer.Start(ctx, spanName, opts...)
+	wfCtx, ok := workflowContext(ctx)
+	if !ok || workflow.IsReadOnly(wfCtx) {
+		// Non-workflow spans and read-only (query/validator/side-effect) spans
+		// are once-per-request: ordinary random IDs, wall-clock times, real End.
+		return t.Tracer.Start(ctx, spanName, opts...)
 	}
-	return t.Tracer.Start(ctx, spanName, opts...)
+
+	// Sequenced workflow span. Exported spans have two lifecycles: start live
+	// and end live (wall-clock), or start during replay (workflow time) and
+	// end live. An End reached while still replaying is suppressed, so replays
+	// re-create spans without re-exporting them.
+	ctx = context.WithValue(ctx, otelRandomKey{}, workflow.GetRandomStream(wfCtx, spanRandomStreamPrefix+t.name))
+	if workflow.IsReplaying(wfCtx) {
+		// Prepended so a caller-supplied WithTimestamp still wins.
+		opts = append([]trace.SpanStartOption{trace.WithTimestamp(workflow.Now(wfCtx))}, opts...)
+	}
+
+	spanCtx, span := t.Tracer.Start(ctx, spanName, opts...)
+	wrapped := &workflowSpan{Span: span, wfCtx: wfCtx, provider: t.owner}
+	return trace.ContextWithSpan(spanCtx, wrapped), wrapped
+}
+
+// workflowSpan suppresses End while its workflow is replaying. The SDK also
+// flags eviction teardown as replay before running coroutine defers, so ADK's
+// deferred force-End of a still-open span exports nothing at eviction; the
+// span is exported once, by whichever execution reaches its End live.
+type workflowSpan struct {
+	trace.Span
+	wfCtx    workflow.Context
+	provider *ReplaySafeTracerProvider
+}
+
+func (s *workflowSpan) End(opts ...trace.SpanEndOption) {
+	if workflow.IsReplaying(s.wfCtx) {
+		return
+	}
+	s.Span.End(opts...)
+}
+
+// TracerProvider returns the owning replay-safe provider rather than the inner
+// span's provider: deriving a tracer from a span is the documented way to create
+// more spans on the span's pipeline, and an unwrapped tracer reached that way
+// from workflow code would bypass the End gate and the stream-fed span IDs. The
+// owned provider carries the generator, so tracers derived through it stay
+// replay-safe.
+func (s *workflowSpan) TracerProvider() trace.TracerProvider {
+	return s.provider
 }
 
 // NewReplaySafeLoggerProvider wraps inner so log records emitted from replaying
@@ -384,8 +497,8 @@ func warnOnNonReplaySafeTelemetryProviders(logger log.Logger, tracerProvider, lo
 		}
 		logger.Warn(fmt.Sprintf(
 			"The global OpenTelemetry %s is not replay-safe: ADK emits telemetry through it "+
-				"from workflow code, and every history replay will re-emit one full copy. Wrap it "+
-				"with googleadk.%s and install the wrapper as the first global provider set in the "+
+				"from workflow code, and every history replay will re-emit one full copy. Install a "+
+				"replay-safe provider from googleadk.%s as the first global provider set in the "+
 				"process; see \"Telemetry and replay\" in the contrib/googleadk README.",
 			global, wrapper),
 			"provider", fmt.Sprintf("%T", p))

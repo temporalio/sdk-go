@@ -11,11 +11,11 @@ package googleadk_test
 // gate's edge cases without a server.
 //
 // The README's eviction-path span semantics (a span open at sticky-cache
-// eviction is force-ended by ADK and exported once, truncated) are untested
-// here: exercising them needs worker.SetStickyWorkflowCacheSize(0), which is
-// process-global and must precede every worker start, so it cannot be flipped
-// inside this suite — other tests in the package start workers on the default
-// cache.
+// eviction is exported once, complete, by the catch-up replay's live End) are
+// covered by the straddle probes in telemetry_otelv2_probe_test.go, which
+// force an eviction with a worker restart and a sticky-cache purge instead of
+// worker.SetStickyWorkflowCacheSize(0) (process-global, so it cannot be
+// flipped inside this suite).
 
 import (
 	"context"
@@ -249,6 +249,15 @@ func (c telemetryCapture) providers() (trace.TracerProvider, otellog.LoggerProvi
 	return sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(c.spans)),
 		sdklog.NewLoggerProvider(sdklog.WithProcessor(c.logs)),
 		sdkmetric.NewMeterProvider(sdkmetric.WithReader(c.reader))
+}
+
+// replaySafeTracerProvider builds the owned replay-safe tracer provider around
+// the capture's span recorder. Unlike the raw logger and meter providers from
+// providers(), the tracer provider must be built by NewReplaySafeTracerProvider
+// (it owns the sdktrace provider and force-installs the span-ID generator), so
+// it cannot be produced by wrapping an existing provider.
+func (c telemetryCapture) replaySafeTracerProvider() *googleadk.ReplaySafeTracerProvider {
+	return googleadk.NewReplaySafeTracerProvider(sdktrace.WithSpanProcessor(c.spans))
 }
 
 type telemetrySnapshot struct {
@@ -730,9 +739,9 @@ func TestReplayTelemetry(t *testing.T) {
 
 	t.Run("WrappersSuppressReplayDuplicates", func(t *testing.T) {
 		capture := newTelemetryCapture()
-		tp, lp, mp := capture.providers()
+		_, lp, mp := capture.providers()
 		pointGlobalsAt(t,
-			googleadk.NewReplaySafeTracerProvider(tp),
+			capture.replaySafeTracerProvider(),
 			googleadk.NewReplaySafeLoggerProvider(lp),
 			googleadk.NewReplaySafeMeterProvider(mp),
 		)
@@ -867,9 +876,9 @@ func TestReplayTelemetry(t *testing.T) {
 func TestReplaySafeProvidersPassThroughNonWorkflowContext(t *testing.T) {
 	ctx := context.Background()
 	capture := newTelemetryCapture()
-	tp, lp, mp := capture.providers()
+	_, lp, mp := capture.providers()
 
-	sctx, span := googleadk.NewReplaySafeTracerProvider(tp).Tracer("t").Start(ctx, "plain-span")
+	sctx, span := capture.replaySafeTracerProvider().Tracer("t").Start(ctx, "plain-span")
 	require.True(t, span.IsRecording(), "non-workflow spans must be real recording spans")
 	require.Equal(t, span, trace.SpanFromContext(sctx))
 	span.End()
@@ -1010,8 +1019,8 @@ func TestReplaySafeMeterObservablePassthrough(t *testing.T) {
 // live (IsReplaying false) — the gate is replay-only, not workflow-only.
 func TestReplaySafeProvidersRecordDuringLiveWorkflow(t *testing.T) {
 	capture := newTelemetryCapture()
-	tp, lp, mp := capture.providers()
-	tracer := googleadk.NewReplaySafeTracerProvider(tp).Tracer("t")
+	_, lp, mp := capture.providers()
+	tracer := capture.replaySafeTracerProvider().Tracer("t")
 	logger := googleadk.NewReplaySafeLoggerProvider(lp).Logger("t")
 	counter, err := googleadk.NewReplaySafeMeterProvider(mp).Meter("t").Int64Counter("live_counter")
 	require.NoError(t, err)
