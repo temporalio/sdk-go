@@ -80,7 +80,10 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
 		}
 		for _, v := range d.Info.VersionSummaries {
 			if v.Version == version {
-				return true
+				_, err = dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
+					BuildID: version.BuildID,
+				})
+				return err == nil
 			}
 		}
 		return false
