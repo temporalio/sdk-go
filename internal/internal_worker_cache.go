@@ -66,7 +66,8 @@ func NewWorkerCache() *WorkerCache {
 	return newWorkerCache(sharedWorkerCachePtr, &sharedWorkerCacheLock, desiredWorkflowCacheSize)
 }
 
-// This private version allows us to test functionality without affecting the global shared cache
+// newWorkerCache creates a cache backed by the provided store. Replayers use it to isolate
+// one-shot execution state from live workers, and tests use it to avoid global cache state.
 func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int) *WorkerCache {
 	lock.Lock()
 	defer lock.Unlock()
