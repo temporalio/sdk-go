@@ -2,7 +2,7 @@ package googleadk
 
 import (
 	"context"
-	cryptorand "crypto/rand"
+	"crypto/rand"
 	"fmt"
 	"io"
 
@@ -90,7 +90,7 @@ func (workflowSpanIDGenerator) NewSpanID(ctx context.Context, _ trace.TraceID) t
 func readSpanRandom(ctx context.Context, p []byte) {
 	r, _ := ctx.Value(otelRandomKey{}).(io.Reader)
 	if r == nil {
-		r = cryptorand.Reader
+		r = rand.Reader
 	}
 	_, _ = io.ReadFull(r, p)
 }
