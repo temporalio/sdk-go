@@ -39,9 +39,10 @@ This package depends on the deterministic ADK `platform` seams
 (`WithTimeProvider`, `WithUUIDProvider`, `WithTaskRunner`), `tool/toolutils.PackTool`,
 and the `model.NewLLM` registry lookup from upstream `google.golang.org/adk/v2`
 (the registry itself stays application-owned; this package never registers into it).
-These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins
-`adk/v2` to a `main`-branch pseudo-version for now; it reverts to an ordinary
-tagged version once a release ships that includes them.
+These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins a
+main-branch pseudo-version of `google.golang.org/adk/v2`; bump it to a tagged
+version once a release ships that includes them. The telemetry gate composes
+`workflow.IsReadOnly`.
 
 ## Module versioning
 
@@ -346,11 +347,18 @@ delegate everything else — worker, client, and Activity telemetry — unchange
 import (
 	"go.opentelemetry.io/otel"
 	otellogglobal "go.opentelemetry.io/otel/log/global"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"go.temporal.io/sdk/contrib/googleadk"
 )
 
 func main() {
+	myTracerProvider := sdktrace.NewTracerProvider( /* exporters ... */ )
+	myLoggerProvider := sdklog.NewLoggerProvider( /* processors ... */ )
+	myMeterProvider := sdkmetric.NewMeterProvider( /* readers ... */ )
+
 	// Must be the FIRST global providers set in the process: ADK captures the
 	// global proxy tracer/logger at package init, and the proxy binds its
 	// delegate on the first Set call only — a provider installed earlier
@@ -405,11 +413,28 @@ re-creation non-recording:
   usage must survive restarts, derive it from Activity-side telemetry, which
   the wrappers never gate.
 
-`NewReplaySafeMeterProvider` is forward-looking: it gates
-synchronous instrument recordings (observable instruments pass through, since
-their callbacks never run under a workflow context), covering both your own
-workflow-side recordings through the global meter today and ADK's metrics once
-adk-go#479 lands.
+`NewReplaySafeMeterProvider` is forward-looking: it gates synchronous
+instrument recordings and reports their `Enabled` false while suppressed
+(observable instruments pass through — their callbacks never run under a
+workflow context), covering both your own workflow-side recordings through
+the global meter today and ADK's metrics once adk-go#479 lands.
+
+Telemetry from **query handlers** and **update validators** always records:
+the gate composes `workflow.IsReplaying` with `!workflow.IsReadOnly`
+(Experimental). Both are once-per-request operations that never re-execute
+from history — a query served right after a catch-up replay (e.g. an agent
+awaiting `InvokeModel` on a restarted worker) still observes `IsReplaying`
+true, because the flag retains whatever the last processed history event left
+there, but `IsReadOnly` excludes read-only contexts from suppression, so the
+recording is kept rather than lost. Side-effect functions are read-only
+contexts too, harmlessly so: they never execute during replay at all — their
+recorded markers supply the value.
+
+**OTel Logs API status:** `NewReplaySafeLoggerProvider` is built on the
+pre-1.0 `go.opentelemetry.io/otel/log` (`v0.19.x` at this pin), which may
+change shape between minor releases; upgrading it can require a matching
+upgrade of this package. A surface test in this package fails on any method
+an upgrade would newly pass through ungated.
 
 ## Supported & not-yet-supported
 

@@ -24,19 +24,28 @@ import (
 // observed counts by one full copy per replay. The wrappers below suppress
 // emissions whose context carries a workflow.Context (stashed by NewContext
 // under wfCtxKey, refreshed per fan-out coroutine) that reports
-// workflow.IsReplaying. Recordings therefore happen on first execution only —
-// the same semantics as workflow.GetMetricsHandler. Contexts without a
-// workflow.Context always pass through, so the wrappers are safe to install
-// process-wide: worker, client, and Activity telemetry is untouched.
+// workflow.IsReplaying outside a read-only context. Recordings therefore
+// happen on first execution only — the same semantics as
+// workflow.GetMetricsHandler. Contexts without a workflow.Context always pass
+// through, so the wrappers are safe to install process-wide: worker, client,
+// and Activity telemetry is untouched.
 
 // replaySuppressed reports whether an emission carrying ctx originates from
-// workflow code that is currently replaying history.
+// workflow code that is re-executing history: workflow.IsReplaying composed
+// with !workflow.IsReadOnly (Experimental). The read-only contexts — query
+// handlers, update validators, and side-effect functions — are live or
+// non-replayed and never suppressed: queries run once per request and never
+// re-execute from history (IsReplaying merely retains whatever the last
+// processed history event left in the flag), the SDK skips validators when
+// replaying accepted updates, and side-effect functions do not run during
+// replay at all (their recorded markers supply the value), so IsReadOnly never
+// coincides with an actual history re-execution.
 func replaySuppressed(ctx context.Context) bool {
 	wfCtx, ok := workflowContext(ctx)
 	if !ok {
 		return false
 	}
-	return workflow.IsReplaying(wfCtx)
+	return workflow.IsReplaying(wfCtx) && !workflow.IsReadOnly(wfCtx)
 }
 
 // suppressedTracer produces the non-recording spans returned while replaying.
@@ -116,10 +125,11 @@ func (l replaySafeLogger) Enabled(ctx context.Context, param otellog.EnabledPara
 }
 
 // NewReplaySafeMeterProvider wraps inner so synchronous instrument recordings
-// (Add/Record) made from replaying workflow code are dropped; everything else
-// delegates to inner unchanged. Observable (asynchronous) instruments and
-// RegisterCallback pass through untouched: their callbacks run on the metric
-// reader's collect cycle, never under a workflow context.
+// (Add/Record) made from replaying workflow code are dropped and each sync
+// instrument's Enabled reports false, matching the wrapped logger's Enabled;
+// everything else delegates to inner unchanged. Observable (asynchronous)
+// instruments and RegisterCallback pass through untouched: their callbacks
+// run on the metric reader's collect cycle, never under a workflow context.
 //
 // The pinned adk-go emits no OTel metrics yet (meter-provider init is upstream
 // TODO(#479)), so today this wrapper matters for workflow-side metrics your own
@@ -226,6 +236,13 @@ func (c replaySafeInt64Counter) Add(ctx context.Context, incr int64, opts ...met
 	c.Int64Counter.Add(ctx, incr, opts...)
 }
 
+func (c replaySafeInt64Counter) Enabled(ctx context.Context) bool {
+	if replaySuppressed(ctx) {
+		return false
+	}
+	return c.Int64Counter.Enabled(ctx)
+}
+
 type replaySafeInt64UpDownCounter struct{ metric.Int64UpDownCounter }
 
 func (c replaySafeInt64UpDownCounter) Add(ctx context.Context, incr int64, opts ...metric.AddOption) {
@@ -233,6 +250,13 @@ func (c replaySafeInt64UpDownCounter) Add(ctx context.Context, incr int64, opts 
 		return
 	}
 	c.Int64UpDownCounter.Add(ctx, incr, opts...)
+}
+
+func (c replaySafeInt64UpDownCounter) Enabled(ctx context.Context) bool {
+	if replaySuppressed(ctx) {
+		return false
+	}
+	return c.Int64UpDownCounter.Enabled(ctx)
 }
 
 type replaySafeInt64Histogram struct{ metric.Int64Histogram }
@@ -244,6 +268,13 @@ func (h replaySafeInt64Histogram) Record(ctx context.Context, v int64, opts ...m
 	h.Int64Histogram.Record(ctx, v, opts...)
 }
 
+func (h replaySafeInt64Histogram) Enabled(ctx context.Context) bool {
+	if replaySuppressed(ctx) {
+		return false
+	}
+	return h.Int64Histogram.Enabled(ctx)
+}
+
 type replaySafeInt64Gauge struct{ metric.Int64Gauge }
 
 func (g replaySafeInt64Gauge) Record(ctx context.Context, v int64, opts ...metric.RecordOption) {
@@ -251,6 +282,13 @@ func (g replaySafeInt64Gauge) Record(ctx context.Context, v int64, opts ...metri
 		return
 	}
 	g.Int64Gauge.Record(ctx, v, opts...)
+}
+
+func (g replaySafeInt64Gauge) Enabled(ctx context.Context) bool {
+	if replaySuppressed(ctx) {
+		return false
+	}
+	return g.Int64Gauge.Enabled(ctx)
 }
 
 type replaySafeFloat64Counter struct{ metric.Float64Counter }
@@ -262,6 +300,13 @@ func (c replaySafeFloat64Counter) Add(ctx context.Context, incr float64, opts ..
 	c.Float64Counter.Add(ctx, incr, opts...)
 }
 
+func (c replaySafeFloat64Counter) Enabled(ctx context.Context) bool {
+	if replaySuppressed(ctx) {
+		return false
+	}
+	return c.Float64Counter.Enabled(ctx)
+}
+
 type replaySafeFloat64UpDownCounter struct{ metric.Float64UpDownCounter }
 
 func (c replaySafeFloat64UpDownCounter) Add(ctx context.Context, incr float64, opts ...metric.AddOption) {
@@ -269,6 +314,13 @@ func (c replaySafeFloat64UpDownCounter) Add(ctx context.Context, incr float64, o
 		return
 	}
 	c.Float64UpDownCounter.Add(ctx, incr, opts...)
+}
+
+func (c replaySafeFloat64UpDownCounter) Enabled(ctx context.Context) bool {
+	if replaySuppressed(ctx) {
+		return false
+	}
+	return c.Float64UpDownCounter.Enabled(ctx)
 }
 
 type replaySafeFloat64Histogram struct{ metric.Float64Histogram }
@@ -280,6 +332,13 @@ func (h replaySafeFloat64Histogram) Record(ctx context.Context, v float64, opts 
 	h.Float64Histogram.Record(ctx, v, opts...)
 }
 
+func (h replaySafeFloat64Histogram) Enabled(ctx context.Context) bool {
+	if replaySuppressed(ctx) {
+		return false
+	}
+	return h.Float64Histogram.Enabled(ctx)
+}
+
 type replaySafeFloat64Gauge struct{ metric.Float64Gauge }
 
 func (g replaySafeFloat64Gauge) Record(ctx context.Context, v float64, opts ...metric.RecordOption) {
@@ -287,6 +346,13 @@ func (g replaySafeFloat64Gauge) Record(ctx context.Context, v float64, opts ...m
 		return
 	}
 	g.Float64Gauge.Record(ctx, v, opts...)
+}
+
+func (g replaySafeFloat64Gauge) Enabled(ctx context.Context) bool {
+	if replaySuppressed(ctx) {
+		return false
+	}
+	return g.Float64Gauge.Enabled(ctx)
 }
 
 // isRawOTelSDKProvider reports whether p is one of the concrete OTel SDK

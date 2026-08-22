@@ -15,8 +15,12 @@ or Security.
 
 - `NewReplaySafeTracerProvider`, `NewReplaySafeLoggerProvider`, and
   `NewReplaySafeMeterProvider`: wrap the global OpenTelemetry providers so ADK
-  telemetry emitted from workflow code is not re-emitted on history replay. See
-  "Telemetry and replay" in the README.
+  telemetry emitted from workflow code is not re-emitted on history replay;
+  while suppressed, the logger's and sync instruments' `Enabled` report false.
+  The gate composes `workflow.IsReplaying` with `!workflow.IsReadOnly`
+  (Experimental), so telemetry from
+  query handlers and update validators always records. See "Telemetry and
+  replay" in the README.
 - `NewPlugin` warns when a raw (unwrapped) OTel SDK provider is installed globally.
 
 ## [0.2.0] - 2026-07-22
