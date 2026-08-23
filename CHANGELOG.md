@@ -50,6 +50,7 @@ to docs, or any other relevant information.
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
   but decoded through the workflow serialization context, so a context-aware `DataConverter` or
   `PayloadCodec` saw mismatched contexts for local activity results.
+- Workflow replays no longer retain one-shot workflow state in the process-wide sticky cache.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
