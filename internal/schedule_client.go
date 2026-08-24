@@ -319,6 +319,12 @@ type (
 		// Schedule - Describes when Actions should be taken.
 		Spec ScheduleSpec
 
+		// TimeSkippingConfig - Configures time skipping for Workflow Executions
+		// started by this Schedule.
+		//
+		// NOTE: Experimental
+		TimeSkippingConfig *commonpb.TimeSkippingConfig
+
 		// Action - Which Action to take.
 		Action ScheduleAction
 
@@ -515,6 +521,12 @@ type (
 
 		// Schedule - Describes when Actions should be taken.
 		Spec *ScheduleSpec
+
+		// TimeSkippingConfig - Configures time skipping for Workflow Executions
+		// started by this Schedule.
+		//
+		// NOTE: Experimental
+		TimeSkippingConfig *commonpb.TimeSkippingConfig
 
 		// SchedulePolicies - this schedules policies
 		Policy *SchedulePolicies
