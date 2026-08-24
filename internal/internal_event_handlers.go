@@ -1301,7 +1301,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			incrementWorkflowTaskFailureCounter(weh.metricsHandler, "NonDeterminismError")
+			incrementWorkflowTaskFailureCounter(weh.metricsHandler, metrics.FailureReasonNonDeterminismError)
 			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.Complete(nil, newWorkflowPanicError(p, st))
@@ -1517,7 +1517,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessMessage(
 ) error {
 	defer func() {
 		if p := recover(); p != nil {
-			incrementWorkflowTaskFailureCounter(weh.metricsHandler, "NonDeterminismError")
+			incrementWorkflowTaskFailureCounter(weh.metricsHandler, metrics.FailureReasonNonDeterminismError)
 			topLine := fmt.Sprintf("process message for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.Complete(nil, newWorkflowPanicError(p, st))
