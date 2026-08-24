@@ -173,7 +173,7 @@ func TestMalformedRequestLinkLogsStructuredFields(t *testing.T) {
 	var entry map[string]any
 	require.NoError(t, json.Unmarshal(bytes.TrimSpace(output.Bytes()), &entry))
 	require.Equal(t, "Failed to parse link url", entry["msg"])
-	require.Equal(t, malformedURL, entry["LinkURL"])
+	require.Equal(t, malformedURL, entry[tagLinkURL])
 	require.Equal(t, `parse "https://example.com/%zz": invalid URL escape "%zz"`, entry[tagError])
 	require.NotContains(t, entry, "!BADKEY")
 	require.NotContains(t, entry, malformedURL)
