@@ -35,17 +35,24 @@ func counterWorkflow(ctx workflow.Context) (int, error) {
 		return 0, err
 	}
 
-	updateHandler := func(ctx workflow.Context, amount int, sleepDuration time.Duration) (updateAddOutput, error) {
+	updateHandler := func(
+		ctx workflow.Context,
+		amount int,
+		sleepDuration time.Duration,
+		waitForSignal string,
+	) (updateAddOutput, error) {
 		counter += amount
 		newCounterVal := counter
-		if sleepDuration != 0 {
+		if waitForSignal != "" {
+			workflow.GetSignalChannel(ctx, waitForSignal).Receive(ctx, nil)
+		} else if sleepDuration != 0 {
 			_ = workflow.Sleep(ctx, sleepDuration)
 		}
 		return updateAddOutput{Count: newCounterVal}, nil
 	}
 
 	// used for testing invalid updates
-	updateValidator := func(ctx workflow.Context, amount int, sleepDuration time.Duration) error {
+	updateValidator := func(ctx workflow.Context, amount int, sleepDuration time.Duration, waitForSignal string) error {
 		if amount%5 != 0 {
 			return invalidIncrementError
 		}
