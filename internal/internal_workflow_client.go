@@ -2876,6 +2876,9 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		return nil, err
 	}
 
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(resp.GetLink())
+	}
 	if resp.QueryRejected != nil {
 		return nil, &QueryRejectedError{
 			queryRejected: resp.QueryRejected,
