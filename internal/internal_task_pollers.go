@@ -587,9 +587,9 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagError, taskErr)
 		emitFailMetric = true
 		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
-		failureReason = "WorkflowError"
+		failureReason = metrics.FailureReasonWorkflowError
 		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
-			failureReason = "NonDeterminismError"
+			failureReason = metrics.FailureReasonNonDeterminismError
 		}
 		taskCompletion = &workflowTaskCompletion{rawRequest: failWorkflowTask}
 	}
@@ -624,9 +624,9 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		}
 		wtp.logger.Warn("Workflow task postprocess error: "+taskErr.Error(), keyvals...)
 		emitFailMetric = true
-		failureReason = "WorkflowError"
+		failureReason = metrics.FailureReasonWorkflowError
 		if errors.As(taskErr, new(payloadSizeError)) {
-			failureReason = "PayloadsTooLarge"
+			failureReason = metrics.FailureReasonPayloadsTooLarge
 		}
 		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
 	}
@@ -679,7 +679,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		if secondEmitFailMetric {
 			emitFailMetric = true
 			// Overwriting the original failure reason for metrics purposes
-			failureReason = "GrpcMessageTooLarge"
+			failureReason = metrics.FailureReasonGrpcMessageTooLarge
 		}
 		// We already know the first error was GRPC message too large, if there was another error when reporting the first error
 		// to the server it's probably more interesting for the user.
@@ -1034,7 +1034,9 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			}
 			if err != nil && !isBenignApplicationError(err) {
 				metricsHandler.Counter(metrics.LocalActivityFailedCounter).Inc(1)
-				metricsHandler.Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
+				metricsHandler.
+					WithTags(metrics.ActivityTaskFailedTags(metrics.FailureReasonActivityError)).
+					Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
 			}
 		}()
 
@@ -1489,14 +1491,18 @@ func (atp *activityTaskPoller) ProcessTask(task any) error {
 
 	// err is returned in case of internal failure, such as unable to propagate context or context timeout.
 	if err != nil {
-		activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+		activityMetricsHandler.
+			WithTags(metrics.ActivityTaskFailedTags(metrics.FailureReasonActivityError)).
+			Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		return err
 	}
 
 	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
 	if req, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
 		if !isBenignProtoApplicationFailure(req.Failure) {
-			activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+			activityMetricsHandler.
+				WithTags(metrics.ActivityTaskFailedTags(metrics.FailureReasonActivityError)).
+				Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		}
 	}
 	activityMetricsHandler.Timer(metrics.ActivityExecutionLatency).Record(time.Since(executionStartTime))
