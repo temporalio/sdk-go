@@ -25,10 +25,11 @@
 //
 // ADK records OpenTelemetry telemetry (spans, gen_ai.* log events) through the
 // process globals from workflow code, which re-executes on every history
-// replay. Wrap the real providers with [NewReplaySafeTracerProvider],
-// [NewReplaySafeLoggerProvider] and [NewReplaySafeMeterProvider], installed as
-// the first global providers set in the process, so replays re-emit nothing.
-// See "Telemetry and replay" in the README.
+// replay. Install this package's replay-safe providers as the first global
+// providers set in the process — [NewReplaySafeTracerProvider] builds and owns
+// the tracer provider, while [NewReplaySafeLoggerProvider] and
+// [NewReplaySafeMeterProvider] wrap your logger and meter providers — so
+// replays re-emit nothing. See "Telemetry and replay" in the README.
 //
 // This package targets Google ADK for Go v2 (google.golang.org/adk/v2). It
 // depends on the deterministic platform seams (platform.WithTimeProvider,

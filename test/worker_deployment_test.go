@@ -785,20 +785,21 @@ func (ts *WorkerDeploymentTestSuite) TestUpdateWorkflowExecutionOptions() {
 	handle1, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("1"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle1)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle1, v1.BuildID)
 
 	handle2, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("2"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle2)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle2, v1.BuildID)
 
 	handle3, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("3"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle3, v1.BuildID)
 
 	handle4, err := ts.client.ExecuteWorkflow(ctx, ts.startWorkflowOptions("4"), "WaitSignalToStartVersioned")
 	ts.NoError(err)
 
-	ts.waitForWorkflowRunning(ctx, handle4)
+	ts.waitForWorkflowRunningOnVersion(ctx, handle4, v1.BuildID)
 
 	// Wait for v2 to appear in the deployment before pinning a workflow to it.
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
