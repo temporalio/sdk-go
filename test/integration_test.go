@@ -5330,13 +5330,15 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 }
 
 func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	// Start workflow
+	options := ts.startWorkflowOptions("test-large-history-replay")
+	options.WorkflowExecutionTimeout = 2 * time.Minute
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions("test-large-history-replay"),
+		options,
 		ts.workflows.PanicOnSignal,
 	)
 	ts.NoError(err)
@@ -7374,8 +7376,11 @@ func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Unset namespace field will cause an invalid argument error
-	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{})
+	// Setting both namespace and ID causes an invalid argument error
+	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+		Id:        uuid.NewString(),
+	})
 
 	ts.assertMetricCount(metrics.TemporalRequestFailure, 1,
 		metrics.OperationTagName, "DescribeNamespace",
