@@ -87,7 +87,9 @@ type (
 		//  - RespondActivityTaskCompletedRequest
 		//  - RespondActivityTaskFailedRequest
 		//  - RespondActivityTaskCanceledRequest
-		Execute(taskQueue string, task *workflowservice.PollActivityTaskQueueResponse) (any, error)
+		// The second return is the error that produced a failed response, when the worker itself
+		// produced it; it does not mean Execute failed. The third does.
+		Execute(taskQueue string, task *workflowservice.PollActivityTaskQueueResponse) (any, error, error)
 	}
 )
 

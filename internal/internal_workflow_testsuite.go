@@ -849,7 +849,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	env.addNewActivityHandle(task, func(result *commonpb.Payloads, err error) {}, env.GetDataConverter(), env.GetFailureConverter())
 	activityID := ActivityID{id: task.ActivityId}
 
-	result, err := taskHandler.Execute(defaultTestTaskQueue, task)
+	result, _, err := taskHandler.Execute(defaultTestTaskQueue, task)
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
@@ -1754,7 +1754,7 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 
 	for {
 		var err error
-		result, err = taskHandler.Execute(parameters.TaskQueueName, task)
+		result, _, err = taskHandler.Execute(parameters.TaskQueueName, task)
 		if err != nil {
 			if err == context.DeadlineExceeded {
 				return err
