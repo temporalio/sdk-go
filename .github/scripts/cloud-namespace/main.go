@@ -17,11 +17,13 @@ import (
 
 const (
 	cloudNamespaceRegion = "aws-ca-central-1"
-	operationTimeout     = 10 * time.Minute
+	commandTimeout       = 10 * time.Minute
 )
 
 func main() {
-	if err := run(context.Background(), os.Args[1:]); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	if err := run(ctx, os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -115,8 +117,6 @@ func deleteNamespace(ctx context.Context, client cloudservice.CloudServiceClient
 }
 
 func waitForOperation(ctx context.Context, client cloudservice.CloudServiceClient, operation *cloudoperation.AsyncOperation) error {
-	ctx, cancel := context.WithTimeout(ctx, operationTimeout)
-	defer cancel()
 	for {
 		result, err := client.GetAsyncOperation(ctx, &cloudservice.GetAsyncOperationRequest{AsyncOperationId: operation.Id})
 		if err != nil {

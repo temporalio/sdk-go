@@ -296,6 +296,7 @@ jobs:
           } >> "$GITHUB_ENV"
       - name: Create Cloud namespace
         id: create-cloud-namespace
+        timeout-minutes: 12
         run: go run . create
         working-directory: ./.github/scripts/cloud-namespace
         env:
@@ -315,6 +316,7 @@ jobs:
 
       - name: Delete Cloud namespace
         if: ${{ always() && steps.create-cloud-namespace.outputs.namespace != '' }}
+        timeout-minutes: 12
         run: go run . delete "${{ steps.create-cloud-namespace.outputs.namespace }}"
         working-directory: ./.github/scripts/cloud-namespace
         env:

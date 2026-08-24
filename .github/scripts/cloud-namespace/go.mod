@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/.github/scripts/cloud-namespace
 
-go 1.25.4
+go 1.26.0
 
 require go.temporal.io/cloud-sdk v0.16.0
 
