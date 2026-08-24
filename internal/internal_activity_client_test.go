@@ -388,3 +388,47 @@ func uniqueStrings(values ...string) []string {
 	}
 	return unique
 }
+
+// TestResetActivityFlagsReachRequest asserts the reset flags travel to the wire. Their effect
+// is server-side and deferred, so an integration test cannot cheaply distinguish a flag that
+// was never sent from one the server has not applied yet.
+func TestResetActivityFlagsReachRequest(t *testing.T) {
+	resetWith := func(t *testing.T, options ClientResetActivityOptions) *workflowservice.ResetActivityExecutionRequest {
+		t.Helper()
+		service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+		client := NewServiceClient(service, nil, ClientOptions{})
+		client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+		var request *workflowservice.ResetActivityExecutionRequest
+		service.EXPECT().
+			ResetActivityExecution(gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, req *workflowservice.ResetActivityExecutionRequest, _ ...any) (*workflowservice.ResetActivityExecutionResponse, error) {
+				request = req
+				return &workflowservice.ResetActivityExecutionResponse{}, nil
+			})
+
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+		require.NoError(t, handle.Reset(t.Context(), options))
+		return request
+	}
+
+	t.Run("all flags default off", func(t *testing.T) {
+		request := resetWith(t, ClientResetActivityOptions{})
+		require.False(t, request.GetKeepPaused())
+		require.False(t, request.GetRestoreOriginalOptions())
+		// As of api#848 and temporal#11417 a reset carries the persisted heartbeat details
+		// into the new attempt unless the caller asks otherwise.
+		require.False(t, request.GetResetHeartbeat())
+	})
+
+	t.Run("each flag is forwarded", func(t *testing.T) {
+		request := resetWith(t, ClientResetActivityOptions{
+			KeepPaused:             true,
+			RestoreOriginalOptions: true,
+			ResetHeartbeat:         true,
+		})
+		require.True(t, request.GetKeepPaused())
+		require.True(t, request.GetRestoreOriginalOptions())
+		require.True(t, request.GetResetHeartbeat())
+	})
+}

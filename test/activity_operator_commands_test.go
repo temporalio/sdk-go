@@ -358,25 +358,33 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 	})
 
 	ts.Run("Reset restores the original options", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
 
-		handle := startRunningSlowActivity(ctx, func(o *client.StartActivityOptions) {
-			o.StartToCloseTimeout = 45 * time.Second
-		})
-		_, err := handle.UpdateOptions(ctx, client.ActivityOptionsChanges{
+		// Start delayed so the activity sits scheduled. With no worker holding an attempt the
+		// server applies the restore immediately, rather than deferring it until the running
+		// attempt yields on its next heartbeat.
+		handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
+			ID:                  newID(),
+			TaskQueue:           ts.taskQueueName,
+			StartToCloseTimeout: 45 * time.Second,
+			StartDelay:          300 * time.Second,
+		}, "opQuickActivity")
+		ts.NoError(err)
+
+		_, err = handle.UpdateOptions(ctx, client.ActivityOptionsChanges{
 			StartToCloseTimeout: &client.DurationChange{Value: 90 * time.Second},
 		})
 		ts.NoError(err)
 
 		ts.NoError(handle.Reset(ctx, client.ResetActivityOptions{RestoreOriginalOptions: true}))
 
-		// The server defers the restore while a worker is mid-attempt, so allow a long window
-		// for the worker to yield.
+		// RestoreOriginalOptions reverts the changed option to the value the activity was
+		// created with.
 		ts.Eventually(func() bool {
 			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
 			return err == nil && description.StartToCloseTimeout == 45*time.Second
-		}, 60*time.Second, 500*time.Millisecond)
+		}, 20*time.Second, 200*time.Millisecond)
 		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 	})
 
