@@ -1945,6 +1945,42 @@ func TestContextChildCancelRace(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 }
 
+func TestContextCancelOrder(t *testing.T) {
+	const childCount = 10
+
+	for range childCount {
+		var suite WorkflowTestSuite
+		env := suite.NewTestWorkflowEnvironment()
+		wf := func(ctx Context) ([]int, error) {
+			ctx, cancel := WithCancel(ctx)
+			selector := NewSelector(ctx)
+			order := make([]int, 0, childCount)
+
+			for i := range childCount {
+				childCtx, _ := WithCancel(ctx)
+				selector.AddFuture(NewTimer(childCtx, time.Hour), func(Future) {
+					order = append(order, i)
+				})
+			}
+
+			// Parent cancellation must resolve child futures in creation order.
+			cancel()
+			for range childCount {
+				selector.Select(ctx)
+			}
+
+			return order, nil
+		}
+		env.RegisterWorkflow(wf)
+		env.ExecuteWorkflow(wf)
+		require.NoError(t, env.GetWorkflowError())
+
+		var order []int
+		require.NoError(t, env.GetWorkflowResult(&order))
+		require.Equal(t, []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, order)
+	}
+}
+
 func TestDeadlockDetectorStackTrace(t *testing.T) {
 	d := createNewDispatcher(func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")

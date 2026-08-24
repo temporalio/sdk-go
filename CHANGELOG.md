@@ -60,6 +60,7 @@ to docs, or any other relevant information.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
+- Made workflow child-context cancellation propagation deterministic.
 
 ### Security
 

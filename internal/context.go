@@ -2,6 +2,7 @@ package internal
 
 import (
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -218,10 +219,7 @@ func propagateCancel(parent Context, child canceler) {
 			child.cancel(false, parentErr)
 		} else {
 			p.childrenLock.Lock()
-			if p.children == nil {
-				p.children = make(map[canceler]bool)
-			}
-			p.children[child] = true
+			p.children = append(p.children, child)
 			p.childrenLock.Unlock()
 		}
 	} else {
@@ -252,8 +250,8 @@ func removeChild(parent Context, child canceler) {
 		return
 	}
 	p.childrenLock.Lock()
-	if p.children != nil {
-		delete(p.children, child)
+	if i := slices.Index(p.children, child); i != -1 {
+		p.children = slices.Delete(p.children, i, i+1)
 	}
 	p.childrenLock.Unlock()
 }
@@ -272,7 +270,7 @@ type cancelCtx struct {
 
 	done Channel // closed by the first cancel call.
 
-	children     map[canceler]bool // set to nil by the first cancel call
+	children     []canceler // creation order preserves workflow determinism; nil after cancel
 	childrenLock sync.Mutex
 	err          error // set to non-nil by the first cancel call
 	errLock      sync.RWMutex
@@ -314,7 +312,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	children := c.children
 	c.children = nil
 	c.childrenLock.Unlock()
-	for child := range children {
+	for _, child := range children {
 		// NOTE: acquiring the child's lock while holding parent's lock.
 		child.cancel(false, err)
 	}
