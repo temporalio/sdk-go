@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -186,6 +187,85 @@ func getDebug() string {
 
 func envConfigEnabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
+}
+
+// Inventory skip reasons with .github/scripts/cloud-test-inventory.sh.
+type cloudTestSkipReason uint8
+
+const (
+	cloudRequiresLocalServer cloudTestSkipReason = iota + 1
+	cloudRequiresProvisioning
+	cloudNeedsAdaptation
+)
+
+func skipOnCloud(t testing.TB, reason cloudTestSkipReason, rationale string) {
+	t.Helper()
+	if cloudTestEnabled() {
+		t.Skipf("skipped on Cloud (%s): %s", reason, rationale)
+	}
+}
+
+func (reason cloudTestSkipReason) String() string {
+	switch reason {
+	case cloudRequiresLocalServer:
+		return "requires_local_server"
+	case cloudRequiresProvisioning:
+		return "requires_cloud_provisioning"
+	case cloudNeedsAdaptation:
+		return "needs_cloud_adaptation"
+	default:
+		panic(fmt.Sprintf("unknown Cloud test skip reason %d", reason))
+	}
+}
+
+func cloudTestEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("TEMPORAL_TEST_CLOUD"))
+	if value == "" {
+		return false
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		panic(fmt.Sprintf("TEMPORAL_TEST_CLOUD must be a boolean, was %q", value))
+	}
+	return enabled
+}
+
+func TestCloudTestEnabled(t *testing.T) {
+	t.Setenv("TEMPORAL_TEST_CLOUD", "")
+	if cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be disabled by default")
+	}
+	t.Setenv("TEMPORAL_TEST_CLOUD", "true")
+	if !cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be enabled")
+	}
+	t.Setenv("TEMPORAL_TEST_CLOUD", "false")
+	if cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be disabled")
+	}
+	t.Setenv("TEMPORAL_TEST_CLOUD", "sometimes")
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("expected invalid TEMPORAL_TEST_CLOUD to panic")
+		}
+	}()
+	cloudTestEnabled()
+}
+
+func TestCloudTestSkipReasonString(t *testing.T) {
+	tests := []struct {
+		reason cloudTestSkipReason
+		want   string
+	}{
+		{reason: cloudRequiresLocalServer, want: "requires_local_server"},
+		{reason: cloudRequiresProvisioning, want: "requires_cloud_provisioning"},
+		{reason: cloudNeedsAdaptation, want: "needs_cloud_adaptation"},
+	}
+	for _, test := range tests {
+		if got := test.reason.String(); got != test.want {
+			t.Fatalf("expected %q, got %q", test.want, got)
+		}
+	}
 }
 
 // WaitForTCP waits until target tcp address is available.

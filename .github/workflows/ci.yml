@@ -303,9 +303,12 @@ jobs:
           TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
       - name: Integration tests against cloud
-        run: 'go run . integration-test -envconfig -p 1 -packages . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
+        timeout-minutes: 50
+        run: go run . integration-test -envconfig -p 1 -packages . -timeout 45m
         working-directory: ./internal/cmd/build
         env:
+          # Tests marked with skipOnCloud call t.Skip when this is true.
+          TEMPORAL_TEST_CLOUD: "true"
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
           TEMPORAL_ADDRESS: ${{ steps.create-cloud-namespace.outputs.namespace }}.tmprl.cloud:7233
           TEMPORAL_NAMESPACE: ${{ steps.create-cloud-namespace.outputs.namespace }}
