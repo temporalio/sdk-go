@@ -135,7 +135,7 @@ func FetchMetadata(ctx context.Context, opts ...Option) (*Metadata, error) {
 		return nil, fmt.Errorf("cloudrun: requesting instance ID from the metadata server "+
 			"(is this process running on a Cloud Run worker pool or service?): %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
