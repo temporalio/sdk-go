@@ -80,6 +80,7 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
 		}
 		for _, v := range d.Info.VersionSummaries {
 			if v.Version == version {
+				// The deployment can list a version before its version workflow is queryable.
 				_, err = dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
 					BuildID: version.BuildID,
 				})
