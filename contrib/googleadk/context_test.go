@@ -209,7 +209,7 @@ func TestDeterministicTimeProvider(t *testing.T) {
 }
 
 // uuidWorkflow generates n IDs through ADK's platform.NewUUID, bound by
-// NewContext to the deterministic seeded generator.
+// NewContext to the deterministic stream-backed generator.
 func uuidWorkflow(ctx workflow.Context, n int) ([]string, error) {
 	adkCtx := googleadk.NewContext(ctx)
 	ids := make([]string, n)
@@ -219,24 +219,29 @@ func uuidWorkflow(ctx workflow.Context, n int) ([]string, error) {
 	return ids, nil
 }
 
-// TestDeterministicUUIDProvider proves NewContext installs a deterministic UUID
-// generator: the IDs are well-formed and unique within a run, and (because they
-// derive from a single SideEffect seed plus a counter) replay-stable — the
-// replay test exercises the cross-replay guarantee end to end.
+// TestDeterministicUUIDProvider proves NewContext installs a replay-stable UUID
+// generator: the IDs are well-formed and unique within a run, and re-executing
+// the same run reproduces them exactly. The IDs are drawn from the workflow's
+// random stream (workflow.GetRandomStream), which is seeded from the run ID, so
+// re-executing the run — what replay does — redraws the same bytes in the same
+// order. The integration span probes exercise the same GetRandomStream
+// mechanism across real WorkflowReplayer passes.
 func TestDeterministicUUIDProvider(t *testing.T) {
 	const n = 8
-	var s testsuite.WorkflowTestSuite
-	env := s.NewTestWorkflowEnvironment()
-	env.RegisterWorkflow(uuidWorkflow)
-	env.ExecuteWorkflow(uuidWorkflow, n)
+	run := func() []string {
+		var s testsuite.WorkflowTestSuite
+		env := s.NewTestWorkflowEnvironment()
+		env.RegisterWorkflow(uuidWorkflow)
+		env.ExecuteWorkflow(uuidWorkflow, n)
+		require.True(t, env.IsWorkflowCompleted())
+		require.NoError(t, env.GetWorkflowError())
+		var ids []string
+		require.NoError(t, env.GetWorkflowResult(&ids))
+		return ids
+	}
 
-	require.True(t, env.IsWorkflowCompleted())
-	require.NoError(t, env.GetWorkflowError())
-
-	var ids []string
-	require.NoError(t, env.GetWorkflowResult(&ids))
+	ids := run()
 	require.Len(t, ids, n)
-
 	seen := map[string]bool{}
 	for _, id := range ids {
 		_, err := uuid.Parse(id)
@@ -244,4 +249,9 @@ func TestDeterministicUUIDProvider(t *testing.T) {
 		assert.False(t, seen[id], "duplicate UUID %q", id)
 		seen[id] = true
 	}
+
+	// The test environment uses a fixed run ID, so a second execution re-seeds
+	// the same random stream and must redraw the identical IDs in order — the
+	// cross-replay stability guarantee, since replay re-executes the same run.
+	require.Equal(t, ids, run(), "the UUID stream must reproduce identically when the run re-executes")
 }

@@ -2,8 +2,6 @@ package googleadk
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -52,8 +50,8 @@ func WithSequentialToolFanout() ContextOption {
 //
 //   - time:  platform.Now resolves to workflow.Now(ctx), so every ADK event
 //     timestamp is deterministic and replay-stable.
-//   - uuid:  platform.NewUUID resolves to a deterministic generator seeded from
-//     a single workflow.SideEffect value plus a per-context counter, so IDs are
+//   - uuid:  platform.NewUUID resolves to a deterministic generator that draws
+//     from the workflow's random stream (workflow.GetRandomStream), so IDs are
 //     replay-stable without emitting one history event per ID.
 //   - tasks: platform.RunTasks resolves to a workflow.Go-based fan-out (or
 //     sequential execution when WithSequentialToolFanout is set), so ADK's tool
@@ -94,32 +92,25 @@ func workflowContext(ctx context.Context) (workflow.Context, bool) {
 	return wfCtx, true
 }
 
+// uuidRandomStream names the workflow random stream that feeds
+// newDeterministicUUIDProvider.
+const uuidRandomStream = "go.temporal.io/sdk/contrib/googleadk/uuid"
+
 // newDeterministicUUIDProvider returns a platform.UUIDProvider whose output is
-// stable across workflow replays. The seed is captured once through
-// workflow.SideEffect (recorded in history), and each call derives a fresh v5
-// UUID from (seed, counter). Because the values are derived rather than drawn
-// from a random source, no per-ID history event is written.
+// stable across workflow replays. IDs are drawn from the workflow's
+// deterministic random stream (workflow.GetRandomStream), so a replay
+// reproduces them with no per-ID history event. Read-only contexts (query
+// handlers, update validators, side-effect functions) are live,
+// once-per-request operations and get ordinary random UUIDs.
 func newDeterministicUUIDProvider(ctx workflow.Context) platform.UUIDProvider {
-	var (
-		mu        sync.Mutex
-		counter   uint64
-		namespace uuid.UUID
-		seeded    bool
-	)
+	stream := workflow.GetRandomStream(ctx, uuidRandomStream)
 	return func() string {
-		mu.Lock()
-		defer mu.Unlock()
-		if !seeded {
-			var seed string
-			// SideEffect records the seed in history, so replay reuses it.
-			_ = workflow.SideEffect(ctx, func(workflow.Context) interface{} {
-				return uuid.NewString()
-			}).Get(&seed)
-			namespace = uuid.NewSHA1(uuid.Nil, []byte(seed))
-			seeded = true
+		if workflow.IsReadOnly(ctx) {
+			return uuid.New().String()
 		}
-		counter++
-		return uuid.NewSHA1(namespace, []byte(fmt.Sprintf("%d", counter))).String()
+		// The stream is an infinite deterministic reader; the read cannot fail.
+		id, _ := uuid.NewRandomFromReader(stream)
+		return id.String()
 	}
 }
 

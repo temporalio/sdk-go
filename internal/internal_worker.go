@@ -2111,7 +2111,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
 	}
-	cache := NewWorkerCache()
+	cache := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
 	params := workerExecutionParameters{
 		Namespace:             namespace,
 		TaskQueue:             taskQueue,

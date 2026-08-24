@@ -19,11 +19,14 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
+- Add support for Workflow Queries as Nexus Operations.
 
 ### Added
 
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
-  structured details for payload validation failures.
+  optional structured details for payload validation failures. Passing `nil` omits details.
+- Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
+  workflow-, activity-, and workflow-update-backed Nexus operations.
 
 ### Changed
 
@@ -50,6 +53,7 @@ to docs, or any other relevant information.
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
   but decoded through the workflow serialization context, so a context-aware `DataConverter` or
   `PayloadCodec` saw mismatched contexts for local activity results.
+- Workflow replays no longer retain one-shot workflow state in the process-wide sticky cache.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.

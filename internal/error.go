@@ -433,6 +433,9 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 //
 // Exposed as: [go.temporal.io/sdk/temporal.NewPayloadValidationError]
 func NewPayloadValidationError(details any) error {
+	if details == nil {
+		return NewApplicationError("Payload validation failed", payloadValidationErrorType, true, nil)
+	}
 	return NewApplicationError("Payload validation failed", payloadValidationErrorType, true, nil, details)
 }
 
