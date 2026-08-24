@@ -3,6 +3,7 @@ package test_test
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"time"
 
@@ -42,8 +43,9 @@ type queryInput struct {
 }
 
 func (ts *IntegrationTestSuite) TestNexusQueryWorkflowOperation() {
-	// TODO: Re-enable this test once a cli version with the server change is tagged
-	ts.T().SkipNow()
+	if os.Getenv("DISABLE_NEXUS_SDK_ERGONOMICS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
 	ctx, cancel := context.WithTimeout(context.TODO(), nexusQueryTestTimeout)
 	defer cancel()
 
