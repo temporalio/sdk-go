@@ -435,10 +435,36 @@ func (s *replayTestSuite) TestCancelOrder() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(CancelOrderSelectWorkflow)
 
+	// These histories predate ordered child cancellation.
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replay-tests-cancel-order.json")
 	s.NoError(err)
 
 	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replay-tests-cancel-order-timer-resolved.json")
+	s.NoError(err)
+}
+
+func (s *replayTestSuite) TestOrderedChildCancel() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(OrderedChildCancelWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "ordered-child-cancel.json")
+	s.NoError(err)
+}
+
+func (s *replayTestSuite) TestLegacyChildCancel() {
+	const replayAttempts = 100
+
+	// Legacy map traversal can reproduce this reversed cancellation order only
+	// on some attempts. An ordered replay never can.
+	var err error
+	for range replayAttempts {
+		replayer := worker.NewWorkflowReplayer()
+		replayer.RegisterWorkflow(OrderedChildCancelWorkflow)
+		err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewNopLogger(), "legacy-child-cancel.json")
+		if err == nil {
+			return
+		}
+	}
 	s.NoError(err)
 }
 

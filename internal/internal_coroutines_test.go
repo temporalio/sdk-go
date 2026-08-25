@@ -1945,12 +1945,13 @@ func TestContextChildCancelRace(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 }
 
-func TestContextCancelOrder(t *testing.T) {
+func TestContextCancelOrderWithFlag(t *testing.T) {
 	const childCount = 10
 
 	for range childCount {
 		var suite WorkflowTestSuite
 		env := suite.NewTestWorkflowEnvironment()
+		env.impl.sdkFlags.set(SDKFlagOrderedChildCancel)
 		wf := func(ctx Context) ([]int, error) {
 			ctx, cancel := WithCancel(ctx)
 			selector := NewSelector(ctx)

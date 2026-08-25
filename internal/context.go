@@ -219,7 +219,11 @@ func propagateCancel(parent Context, child canceler) {
 			child.cancel(false, parentErr)
 		} else {
 			p.childrenLock.Lock()
-			p.children = append(p.children, child)
+			if p.children == nil {
+				p.children = make(map[canceler]bool)
+			}
+			p.children[child] = true
+			p.orderedChildren = append(p.orderedChildren, child)
 			p.childrenLock.Unlock()
 		}
 	} else {
@@ -250,8 +254,9 @@ func removeChild(parent Context, child canceler) {
 		return
 	}
 	p.childrenLock.Lock()
-	if i := slices.Index(p.children, child); i != -1 {
-		p.children = slices.Delete(p.children, i, i+1)
+	delete(p.children, child)
+	if i := slices.Index(p.orderedChildren, child); i != -1 {
+		p.orderedChildren = slices.Delete(p.orderedChildren, i, i+1)
 	}
 	p.childrenLock.Unlock()
 }
@@ -270,10 +275,12 @@ type cancelCtx struct {
 
 	done Channel // closed by the first cancel call.
 
-	children     []canceler // creation order preserves workflow determinism; nil after cancel
-	childrenLock sync.Mutex
-	err          error // set to non-nil by the first cancel call
-	errLock      sync.RWMutex
+	// Keep both orders because unflagged histories require map traversal.
+	children        map[canceler]bool
+	orderedChildren []canceler
+	childrenLock    sync.Mutex
+	err             error // set to non-nil by the first cancel call
+	errLock         sync.RWMutex
 }
 
 func (c *cancelCtx) Done() Channel {
@@ -310,11 +317,18 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	c.done.Close()
 	c.childrenLock.Lock()
 	children := c.children
+	orderedChildren := c.orderedChildren
 	c.children = nil
+	c.orderedChildren = nil
 	c.childrenLock.Unlock()
-	for _, child := range children {
-		// NOTE: acquiring the child's lock while holding parent's lock.
-		child.cancel(false, err)
+	if len(orderedChildren) > 1 && getWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
+		for _, child := range orderedChildren {
+			child.cancel(false, err)
+		}
+	} else {
+		for child := range children {
+			child.cancel(false, err)
+		}
 	}
 
 	if removeFromParent {
