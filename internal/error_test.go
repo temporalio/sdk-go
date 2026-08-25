@@ -1271,9 +1271,8 @@ func Test_convertFailureToError_ResetWorkflowFailure(t *testing.T) {
 	require.True(errors.As(err, &applicationErr))
 	require.Equal(true, applicationErr.NonRetryable())
 
-	// Before the fix, the raw *commonpb.Payloads proto was passed straight through as the
-	// error's details instead of being wrapped by newEncodedValues, so Details() panicked
-	// with a reflect type mismatch instead of decoding the payload.
+	// Before the fix, the raw *commonpb.Payloads proto was treated as a single
+	// detail value, so Details() returned ErrTooManyArg instead of decoding it.
 	var str string
 	var n int
 	require.NoError(applicationErr.Details(&str, &n))
