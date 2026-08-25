@@ -27,6 +27,9 @@ to docs, or any other relevant information.
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
   workflow-, activity-, and workflow-update-backed Nexus operations.
+- Workflow task completions larger than the gRPC request size limit are now paginated automatically
+  when the namespace supports it. Paginated workflow task completions require Temporal Server 1.32.0
+  or later.
 - The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
   metrics now carry a `failure_reason` attribute. Each is now split into one time series per
   reason, which may affect existing dashboards.

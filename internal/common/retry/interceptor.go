@@ -10,6 +10,7 @@ import (
 
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/util/backoffutils"
+	errordetailspb "go.temporal.io/api/errordetails/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -150,6 +151,11 @@ func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 	if _, ok := err.(*GrpcMessageTooLargeError); ok {
 		return false
 	}
+	// Buffer loss on a paginated completion is recovered by resending every page from page 0, not by
+	// retrying the single failed request, so it must never be retried at the gRPC layer.
+	if IsWorkflowTaskCompletionBufferLost(err) {
+		return false
+	}
 	grpcStatus := status.Convert(err)
 	if grpcStatus == nil {
 		return false
@@ -160,6 +166,22 @@ func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 	}
 	if errCode == codes.Internal {
 		return !excludeInternalFromRetry.Load()
+	}
+	return false
+}
+
+// IsWorkflowTaskCompletionBufferLost reports whether err carries the server's
+// WorkflowTaskCompletionBufferLostFailure detail, meaning it dropped the buffered pages of a
+// paginated RespondWorkflowTaskCompleted and they must be resent from page 0.
+func IsWorkflowTaskCompletionBufferLost(err error) bool {
+	grpcStatus := status.Convert(err)
+	if grpcStatus == nil {
+		return false
+	}
+	for _, detail := range grpcStatus.Details() {
+		if _, ok := detail.(*errordetailspb.WorkflowTaskCompletionBufferLostFailure); ok {
+			return true
+		}
 	}
 	return false
 }
