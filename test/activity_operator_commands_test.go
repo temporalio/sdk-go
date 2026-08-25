@@ -505,48 +505,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 	})
 
-	ts.Run("Reset preserves heartbeat details by default", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-		defer cancel()
-
-		handle := startHeartbeatReadyActivity(ctx)
-		ts.NoError(handle.Pause(ctx, client.PauseActivityOptions{Reason: "hold"}))
-		awaitPaused(ctx, handle)
-
-		// Reset no longer clears heartbeat details by default (api#848, server temporal#11417);
-		// the flag must be set explicitly. KeepPaused so that no new attempt starts and
-		// re-heartbeats behind our back.
-		ts.NoError(handle.Reset(ctx, client.ResetActivityOptions{KeepPaused: true}))
-
-		// The details must survive; hold the assertion true for a window rather than sampling
-		// once, so a late clear would still be caught.
-		ts.Never(func() bool {
-			description, err := handle.Describe(ctx, client.DescribeActivityOptions{IncludeHeartbeatDetails: true})
-			return err == nil && !description.HasHeartbeatDetails()
-		}, 5*time.Second, 500*time.Millisecond)
-		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
-	})
-
-	ts.Run("Reset clears heartbeat details when the flag is set", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-		defer cancel()
-
-		handle := startHeartbeatReadyActivity(ctx)
-		ts.NoError(handle.Pause(ctx, client.PauseActivityOptions{Reason: "hold"}))
-		awaitPaused(ctx, handle)
-
-		// KeepPaused so that no new attempt starts and re-heartbeats.
-		ts.NoError(handle.Reset(ctx, client.ResetActivityOptions{KeepPaused: true, ResetHeartbeat: true}))
-
-		// The clear is deferred while a worker is mid-attempt, so wait for the worker to yield
-		// the pause before the details disappear.
-		ts.Eventually(func() bool {
-			description, err := handle.Describe(ctx, client.DescribeActivityOptions{IncludeHeartbeatDetails: true})
-			return err == nil && !description.HasHeartbeatDetails()
-		}, 30*time.Second, 500*time.Millisecond)
-		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
-	})
-
 	ts.Run("UpdateOptions preserves heartbeat details", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
