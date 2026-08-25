@@ -17,7 +17,9 @@ import (
 
 const (
 	cloudNamespaceRegion = "aws-ca-central-1"
-	commandTimeout       = 10 * time.Minute
+	// Keep this shorter than the Actions step timeout so the command can report
+	// a useful error before Actions terminates it.
+	commandTimeout = 10 * time.Minute
 )
 
 func main() {
