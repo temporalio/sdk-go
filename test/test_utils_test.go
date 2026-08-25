@@ -189,7 +189,6 @@ func envConfigEnabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
 }
 
-// Inventory skip reasons with .github/scripts/cloud-test-inventory.sh.
 type cloudTestSkipReason uint8
 
 const (
