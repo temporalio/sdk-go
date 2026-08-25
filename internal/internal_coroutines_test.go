@@ -1945,6 +1945,19 @@ func TestContextChildCancelRace(t *testing.T) {
 	require.NoError(t, env.GetWorkflowError())
 }
 
+type orderCanceler struct {
+	index int
+	order *[]int
+}
+
+func (c *orderCanceler) cancel(bool, error) {
+	*c.order = append(*c.order, c.index)
+}
+
+func (c *orderCanceler) Done() Channel {
+	return nil
+}
+
 func TestContextCancelOrderWithFlag(t *testing.T) {
 	const childCount = 10
 
@@ -1954,21 +1967,13 @@ func TestContextCancelOrderWithFlag(t *testing.T) {
 		env.impl.sdkFlags.set(SDKFlagOrderedChildCancel)
 		wf := func(ctx Context) ([]int, error) {
 			ctx, cancel := WithCancel(ctx)
-			selector := NewSelector(ctx)
 			order := make([]int, 0, childCount)
 
 			for i := range childCount {
-				childCtx, _ := WithCancel(ctx)
-				selector.AddFuture(NewTimer(childCtx, time.Hour), func(Future) {
-					order = append(order, i)
-				})
+				propagateCancel(ctx, &orderCanceler{index: i, order: &order})
 			}
 
-			// Parent cancellation must resolve child futures in creation order.
 			cancel()
-			for range childCount {
-				selector.Select(ctx)
-			}
 
 			return order, nil
 		}
