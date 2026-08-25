@@ -38,6 +38,7 @@ func main() {
 
 const coverageDir = ".build/coverage"
 const defaultTestLogDir = ".build/test-logs"
+const integrationTestModuleDir = "test"
 const unitTestPackageConcurrency = "1"
 const unitTestWorkers = 2
 
@@ -216,6 +217,23 @@ func findModuleDirs(root fs.FS) ([]string, error) {
 	}
 	sort.Strings(moduleDirs)
 	return moduleDirs, nil
+}
+
+func findUnitModuleDirs(root fs.FS) ([]string, error) {
+	moduleDirs, err := findModuleDirs(root)
+	if err != nil {
+		return nil, err
+	}
+
+	// Integration tests have their own command and server setup.
+	unitModuleDirs := make([]string, 0, len(moduleDirs))
+	for _, moduleDir := range moduleDirs {
+		if moduleDir == integrationTestModuleDir || strings.HasPrefix(moduleDir, integrationTestModuleDir+"/") {
+			continue
+		}
+		unitModuleDirs = append(unitModuleDirs, moduleDir)
+	}
+	return unitModuleDirs, nil
 }
 
 func (b *builder) integrationTest() error {
@@ -453,9 +471,13 @@ func (b *builder) unitTest() error {
 	}
 	testOutput.rerunCommand = "go run . unit-test"
 
-	moduleDirs, err := b.checkModuleDirs()
+	moduleNames, err := findUnitModuleDirs(os.DirFS(b.rootDir))
 	if err != nil {
 		return fmt.Errorf("failed finding modules to test: %w", err)
+	}
+	moduleDirs := make([]string, 0, len(moduleNames))
+	for _, moduleName := range moduleNames {
+		moduleDirs = append(moduleDirs, filepath.Join(b.rootDir, filepath.FromSlash(moduleName)))
 	}
 
 	// Create coverage dir if doing coverage
