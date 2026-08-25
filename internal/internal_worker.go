@@ -690,12 +690,12 @@ func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
 type registry struct {
 	sync.Mutex
 	nexusServices                 map[string]*nexus.Service
-	workflowFuncMap               map[string]interface{}
+	workflowFuncMap               map[string]any
 	workflowAliasMap              map[string]string
 	workflowVersioningBehaviorMap map[string]VersioningBehavior
 	activityFuncMap               map[string]activity
 	activityAliasMap              map[string]string
-	dynamicWorkflow               interface{}
+	dynamicWorkflow               any
 	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
 	dynamicActivity               activity
 	_                             DynamicRegisterActivityOptions
@@ -706,12 +706,12 @@ type registryOptions struct {
 	disableAliasing bool
 }
 
-func (r *registry) RegisterWorkflow(af interface{}) {
+func (r *registry) RegisterWorkflow(af any) {
 	r.RegisterWorkflowWithOptions(af, RegisterWorkflowOptions{})
 }
 
 func (r *registry) RegisterWorkflowWithOptions(
-	wf interface{},
+	wf any,
 	options RegisterWorkflowOptions,
 ) {
 	// Support direct registration of WorkflowDefinition
@@ -761,7 +761,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 	}
 }
 
-func (r *registry) RegisterDynamicWorkflow(wf interface{}, options DynamicRegisterWorkflowOptions) {
+func (r *registry) RegisterDynamicWorkflow(wf any, options DynamicRegisterWorkflowOptions) {
 	r.Lock()
 	defer r.Unlock()
 	// Support direct registration of WorkflowDefinition
@@ -784,12 +784,12 @@ func (r *registry) RegisterDynamicWorkflow(wf interface{}, options DynamicRegist
 	r.dynamicWorkflowOptions = options
 }
 
-func (r *registry) RegisterActivity(af interface{}) {
+func (r *registry) RegisterActivity(af any) {
 	r.RegisterActivityWithOptions(af, RegisterActivityOptions{})
 }
 
 func (r *registry) RegisterActivityWithOptions(
-	af interface{},
+	af any,
 	options RegisterActivityOptions,
 ) {
 	// Support direct registration of activity
@@ -806,7 +806,7 @@ func (r *registry) RegisterActivityWithOptions(
 	}
 	// Validate that it is a function
 	fnType := reflect.TypeOf(af)
-	if fnType.Kind() == reflect.Ptr && fnType.Elem().Kind() == reflect.Struct {
+	if fnType.Kind() == reflect.Pointer && fnType.Elem().Kind() == reflect.Struct {
 		registerErr := r.registerActivityStructWithOptions(af, options)
 		if registerErr != nil {
 			panic(registerErr)
@@ -841,7 +841,7 @@ func (r *registry) RegisterActivityWithOptions(
 	}
 }
 
-func (r *registry) registerActivityStructWithOptions(aStruct interface{}, options RegisterActivityOptions) error {
+func (r *registry) registerActivityStructWithOptions(aStruct any, options RegisterActivityOptions) error {
 	r.Lock()
 	defer r.Unlock()
 
@@ -878,7 +878,7 @@ func (r *registry) registerActivityStructWithOptions(aStruct interface{}, option
 	return nil
 }
 
-func (r *registry) RegisterDynamicActivity(af interface{}, options DynamicRegisterActivityOptions) {
+func (r *registry) RegisterDynamicActivity(af any, options DynamicRegisterActivityOptions) {
 	r.Lock()
 	defer r.Unlock()
 	// Support direct registration of activity
@@ -919,7 +919,7 @@ func (r *registry) getWorkflowAlias(fnName string) (string, bool) {
 	return alias, ok
 }
 
-func (r *registry) getWorkflowFn(fnName string) (interface{}, bool) {
+func (r *registry) getWorkflowFn(fnName string) (any, bool) {
 	r.Lock()
 	defer r.Unlock()
 	if fn, ok := r.workflowFuncMap[fnName]; ok {
@@ -1096,7 +1096,7 @@ func validateFnFormat(fnType reflect.Type, isWorkflow, isDynamic bool) error {
 				"expected function to have two arguments, first being workflow.Context and second being an EncodedValues type, found %d arguments", fnType.NumIn(),
 			)
 		}
-		if fnType.In(1) != reflect.TypeOf((*converter.EncodedValues)(nil)).Elem() {
+		if fnType.In(1) != reflect.TypeFor[converter.EncodedValues]() {
 			return fmt.Errorf("expected function to EncodedValues as second argument, got %s", fnType.In(1).Elem())
 		}
 	}
@@ -1127,7 +1127,7 @@ func newRegistry() *registry { return newRegistryWithOptions(registryOptions{}) 
 
 func newRegistryWithOptions(options registryOptions) *registry {
 	r := &registry{
-		workflowFuncMap:               make(map[string]interface{}),
+		workflowFuncMap:               make(map[string]any),
 		workflowVersioningBehaviorMap: make(map[string]VersioningBehavior),
 		activityFuncMap:               make(map[string]activity),
 		nexusServices:                 make(map[string]*nexus.Service),
@@ -1142,7 +1142,7 @@ func newRegistryWithOptions(options registryOptions) *registry {
 // Wrapper to execute workflow functions.
 type workflowExecutor struct {
 	workflowType string
-	fn           interface{}
+	fn           any
 	interceptors []WorkerInterceptor
 	dynamic      bool
 }
@@ -1151,11 +1151,11 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
 	fnType := reflect.TypeOf(we.fn)
 
-	var args []interface{}
+	var args []any
 	var err error
 	if we.dynamic {
 		// Dynamic workflows take in a single EncodedValues, encode all data into single EncodedValues
-		args = []interface{}{newEncodedValues(input, dataConverter)}
+		args = []any{newEncodedValues(input, dataConverter)}
 	} else {
 		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
 		if err != nil {
@@ -1180,7 +1180,7 @@ func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*com
 // Wrapper to execute activity functions.
 type activityExecutor struct {
 	name             string
-	fn               interface{}
+	fn               any
 	skipInterceptors bool
 	dynamic          bool
 }
@@ -1189,7 +1189,7 @@ func (ae *activityExecutor) ActivityType() ActivityType {
 	return ActivityType{Name: ae.name}
 }
 
-func (ae *activityExecutor) GetFunction() interface{} {
+func (ae *activityExecutor) GetFunction() any {
 	return ae.fn
 }
 
@@ -1197,11 +1197,11 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 	fnType := reflect.TypeOf(ae.fn)
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
-	var args []interface{}
+	var args []any
 	var err error
 	if ae.dynamic {
 		// Dynamic activities take in a single EncodedValues, encode all data into single EncodedValues
-		args = []interface{}{newEncodedValues(input, dataConverter)}
+		args = []any{newEncodedValues(input, dataConverter)}
 	} else {
 		args, err = decodeArgsToRawValues(dataConverter, fnType, input)
 		if err != nil {
@@ -1214,7 +1214,7 @@ func (ae *activityExecutor) Execute(ctx context.Context, input *commonpb.Payload
 	return ae.ExecuteWithActualArgs(ctx, args)
 }
 
-func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []interface{}) (*commonpb.Payloads, error) {
+func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []any) (*commonpb.Payloads, error) {
 	dataConverter := getDataConverterFromActivityCtx(ctx)
 
 	envInterceptor := getActivityEnvironmentInterceptor(ctx)
@@ -1294,7 +1294,7 @@ type AggregatedWorker struct {
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
+func (aw *AggregatedWorker) RegisterWorkflow(w any) {
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
@@ -1310,7 +1310,7 @@ func (aw *AggregatedWorker) RegisterWorkflow(w interface{}) {
 }
 
 // RegisterWorkflowWithOptions registers workflow implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w any, options RegisterWorkflowOptions) {
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
@@ -1327,7 +1327,7 @@ func (aw *AggregatedWorker) RegisterWorkflowWithOptions(w interface{}, options R
 }
 
 // RegisterDynamicWorkflow registers dynamic workflow implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+func (aw *AggregatedWorker) RegisterDynamicWorkflow(w any, options DynamicRegisterWorkflowOptions) {
 	if aw.workflowWorker == nil {
 		panic("workflow worker disabled, cannot register workflow")
 	}
@@ -1343,7 +1343,7 @@ func (aw *AggregatedWorker) RegisterDynamicWorkflow(w interface{}, options Dynam
 }
 
 // RegisterActivity registers activity implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
+func (aw *AggregatedWorker) RegisterActivity(a any) {
 	if aw.pluginRegistryOptions.OnRegisterActivity != nil {
 		aw.pluginRegistryOptions.OnRegisterActivity(a, RegisterActivityOptions{})
 	}
@@ -1351,7 +1351,7 @@ func (aw *AggregatedWorker) RegisterActivity(a interface{}) {
 }
 
 // RegisterActivityWithOptions registers activity implementation with the AggregatedWorker
-func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options RegisterActivityOptions) {
+func (aw *AggregatedWorker) RegisterActivityWithOptions(a any, options RegisterActivityOptions) {
 	if aw.pluginRegistryOptions.OnRegisterActivity != nil {
 		aw.pluginRegistryOptions.OnRegisterActivity(a, options)
 	}
@@ -1360,7 +1360,7 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a interface{}, options R
 
 // RegisterDynamicActivity registers the dynamic activity function with options.
 // Registering activities via a structure is not supported for dynamic activities.
-func (aw *AggregatedWorker) RegisterDynamicActivity(a interface{}, options DynamicRegisterActivityOptions) {
+func (aw *AggregatedWorker) RegisterDynamicActivity(a any, options DynamicRegisterActivityOptions) {
 	if aw.pluginRegistryOptions.OnRegisterActivity != nil {
 		aw.pluginRegistryOptions.OnRegisterDynamicActivity(a, options)
 	}
@@ -1593,7 +1593,7 @@ func getBinaryChecksum() string {
 // Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 // Returns error if the worker fails to start or there is a fatal error
 // during execution.
-func (aw *AggregatedWorker) Run(interruptCh <-chan interface{}) error {
+func (aw *AggregatedWorker) Run(interruptCh <-chan any) error {
 	if err := aw.Start(); err != nil {
 		return err
 	}
@@ -1887,7 +1887,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 }
 
 // RegisterWorkflow registers workflow function to replay
-func (aw *WorkflowReplayer) RegisterWorkflow(w interface{}) {
+func (aw *WorkflowReplayer) RegisterWorkflow(w any) {
 	if aw.pluginRegistryOptions.OnRegisterWorkflow != nil {
 		aw.pluginRegistryOptions.OnRegisterWorkflow(w, RegisterWorkflowOptions{})
 	}
@@ -1895,7 +1895,7 @@ func (aw *WorkflowReplayer) RegisterWorkflow(w interface{}) {
 }
 
 // RegisterWorkflowWithOptions registers workflow function with custom workflow name to replay
-func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options RegisterWorkflowOptions) {
+func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w any, options RegisterWorkflowOptions) {
 	if aw.pluginRegistryOptions.OnRegisterWorkflow != nil {
 		aw.pluginRegistryOptions.OnRegisterWorkflow(w, options)
 	}
@@ -1903,7 +1903,7 @@ func (aw *WorkflowReplayer) RegisterWorkflowWithOptions(w interface{}, options R
 }
 
 // RegisterDynamicWorkflow registers a dynamic workflow function to replay
-func (aw *WorkflowReplayer) RegisterDynamicWorkflow(w interface{}, options DynamicRegisterWorkflowOptions) {
+func (aw *WorkflowReplayer) RegisterDynamicWorkflow(w any, options DynamicRegisterWorkflowOptions) {
 	if aw.pluginRegistryOptions.OnRegisterDynamicWorkflow != nil {
 		aw.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, options)
 	}
@@ -1998,7 +1998,7 @@ func (aw *WorkflowReplayer) ReplayWorkflowExecution(ctx context.Context, service
 }
 
 // GetWorkflowResult get the result of a succesfully replayed workflow.
-func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr interface{}) error {
+func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr any) error {
 	aw.mu.Lock()
 	defer aw.mu.Unlock()
 	if workflowID == "" {
@@ -2111,7 +2111,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
 	}
-	cache := NewWorkerCache()
+	cache := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
 	params := workerExecutionParameters{
 		Namespace:             namespace,
 		TaskQueue:             taskQueue,
@@ -2706,7 +2706,7 @@ func processTestTags(wOptions *WorkerOptions, ep *workerExecutionParameters) {
 
 func isWorkflowContext(inType reflect.Type) bool {
 	// NOTE: We don't expect any one to derive from workflow context.
-	return inType == reflect.TypeOf((*Context)(nil)).Elem()
+	return inType == reflect.TypeFor[Context]()
 }
 
 func isValidResultType(inType reflect.Type) bool {
@@ -2720,11 +2720,11 @@ func isValidResultType(inType reflect.Type) bool {
 }
 
 func isError(inType reflect.Type) bool {
-	errorElem := reflect.TypeOf((*error)(nil)).Elem()
+	errorElem := reflect.TypeFor[error]()
 	return inType != nil && inType.Implements(errorElem)
 }
 
-func getFunctionName(i interface{}) (name string, isMethod bool) {
+func getFunctionName(i any) (name string, isMethod bool) {
 	if fullName, ok := i.(string); ok {
 		return fullName, false
 	}
@@ -2745,7 +2745,7 @@ func getFunctionName(i interface{}) (name string, isMethod bool) {
 	return strings.TrimSuffix(shortName, "-fm"), isMethod
 }
 
-func getActivityFunctionName(r *registry, i interface{}) string {
+func getActivityFunctionName(r *registry, i any) string {
 	result, _ := getFunctionName(i)
 	if alias, ok := r.getActivityAlias(result); ok {
 		result = alias
@@ -2753,7 +2753,7 @@ func getActivityFunctionName(r *registry, i interface{}) string {
 	return result
 }
 
-func getWorkflowFunctionName(r *registry, workflowFunc interface{}) (string, error) {
+func getWorkflowFunctionName(r *registry, workflowFunc any) (string, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {
@@ -2912,25 +2912,25 @@ func getTestTags(ctx context.Context) map[string]map[string]string {
 
 // Same as executeFunction but injects the workflow context as the first
 // parameter if the function takes it (regardless of existing parameters).
-func executeFunctionWithWorkflowContext(ctx Context, fn interface{}, args []interface{}) (interface{}, error) {
+func executeFunctionWithWorkflowContext(ctx Context, fn any, args []any) (any, error) {
 	if fnType := reflect.TypeOf(fn); fnType.NumIn() > 0 && isWorkflowContext(fnType.In(0)) {
-		args = append([]interface{}{ctx}, args...)
+		args = append([]any{ctx}, args...)
 	}
 	return executeFunction(fn, args)
 }
 
 // Same as executeFunction but injects the context as the first parameter if the
 // function takes it (regardless of existing parameters).
-func executeFunctionWithContext(ctx context.Context, fn interface{}, args []interface{}) (interface{}, error) {
+func executeFunctionWithContext(ctx context.Context, fn any, args []any) (any, error) {
 	if fnType := reflect.TypeOf(fn); fnType.NumIn() > 0 && isActivityContext(fnType.In(0)) {
-		args = append([]interface{}{ctx}, args...)
+		args = append([]any{ctx}, args...)
 	}
 	return executeFunction(fn, args)
 }
 
 // Executes function and ensures that there is always 1 or 2 results and second
 // result is error.
-func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
+func executeFunction(fn any, args []any) (any, error) {
 	fnValue := reflect.ValueOf(fn)
 	reflectArgs := make([]reflect.Value, len(args))
 	for i, arg := range args {
@@ -2961,8 +2961,8 @@ func executeFunction(fn interface{}, args []interface{}) (interface{}, error) {
 		}
 	}
 	// If there are two results, convert the first only if it's not a nil pointer
-	var res interface{}
-	if len(retValues) > 1 && (retValues[0].Kind() != reflect.Ptr || !retValues[0].IsNil()) {
+	var res any
+	if len(retValues) > 1 && (retValues[0].Kind() != reflect.Pointer || !retValues[0].IsNil()) {
 		res = retValues[0].Interface()
 	}
 	return res, err

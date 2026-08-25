@@ -87,7 +87,7 @@ type (
 		//  - RespondActivityTaskCompletedRequest
 		//  - RespondActivityTaskFailedRequest
 		//  - RespondActivityTaskCanceledRequest
-		Execute(taskQueue string, task *workflowservice.PollActivityTaskQueueResponse) (interface{}, error)
+		Execute(taskQueue string, task *workflowservice.PollActivityTaskQueueResponse) (any, error)
 	}
 )
 

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -87,7 +88,7 @@ func validateChangelog(text, currentVersion string) error {
 	// Count the number of sections for each version.
 	counts := make(map[string]int)
 	var versions []string
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		match := changelogHeadingRE.FindStringSubmatch(line)
 		if match == nil {
 			continue
@@ -166,7 +167,7 @@ func prepareReleaseNotes(text, version string) (string, error) {
 	if len(sections) == 0 {
 		return "", fmt.Errorf("changelog section for %q appears to be empty", version)
 	}
-	return "# Highlights\n\n" + strings.Join(sections, "\n") + "\n", nil
+	return "## Highlights\n\n" + strings.Join(sections, "\n") + "\n", nil
 }
 
 // findVersionSection returns the heading and content bounds for a changelog version.
@@ -231,12 +232,7 @@ func stripOuterBlankLines(lines []string) []string {
 }
 
 func contains(values []string, value string) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, value)
 }
 
 func hasNonblank(lines []string) bool {

@@ -145,8 +145,11 @@ func versioningOverrideToProto(versioningOverride VersioningOverride) *workflowp
 	switch v := versioningOverride.(type) {
 	case *PinnedVersioningOverride:
 		return &workflowpb.VersioningOverride{
-			Behavior:      versioningBehaviorToProto(v.behavior()),
+			//lint:ignore SA1019 populate legacy versioning fields for compatibility with servers that do not support the override oneof
+			Behavior: versioningBehaviorToProto(v.behavior()),
+			//lint:ignore SA1019 populate legacy versioning fields for compatibility with servers that do not support the override oneof
 			PinnedVersion: v.Version.toCanonicalString(),
+			//lint:ignore SA1019 populate legacy versioning fields for compatibility with servers that do not support the override oneof
 			Deployment: &deploymentpb.Deployment{
 				SeriesName: v.Version.DeploymentName,
 				BuildId:    v.Version.BuildID,
@@ -160,6 +163,7 @@ func versioningOverrideToProto(versioningOverride VersioningOverride) *workflowp
 		}
 	case *AutoUpgradeVersioningOverride:
 		return &workflowpb.VersioningOverride{
+			//lint:ignore SA1019 populate legacy versioning fields for compatibility with servers that do not support the override oneof
 			Behavior: versioningBehaviorToProto(v.behavior()),
 			Override: &workflowpb.VersioningOverride_AutoUpgrade{AutoUpgrade: true},
 		}

@@ -81,7 +81,7 @@ type TracerOptions struct {
 	//
 	// This is used internally to set the span on contexts not natively supported
 	// by tracing systems such as [workflow.Context].
-	SpanContextKey interface{}
+	SpanContextKey any
 
 	// HeaderKey is the key name on the Temporal header to serialize the span to.
 	// This should never be empty.
@@ -150,8 +150,7 @@ type TracerStartSpanOptions struct {
 }
 
 // TracerSpanRef represents a span reference such as a parent.
-type TracerSpanRef interface {
-}
+type TracerSpanRef any
 
 // TracerSpan represents a span.
 type TracerSpan interface {
@@ -442,7 +441,7 @@ func (t *tracingActivityInboundInterceptor) Init(outbound ActivityOutboundInterc
 func (t *tracingActivityInboundInterceptor) ExecuteActivity(
 	ctx context.Context,
 	in *ExecuteActivityInput,
-) (interface{}, error) {
+) (any, error) {
 	// Start span reading from header
 	info := activity.GetInfo(ctx)
 	span, ctx, err := t.root.startSpanFromContext(ctx, &TracerStartSpanOptions{
@@ -495,7 +494,7 @@ func (t *tracingWorkflowInboundInterceptor) Init(outbound WorkflowOutboundInterc
 func (t *tracingWorkflowInboundInterceptor) ExecuteWorkflow(
 	ctx workflow.Context,
 	in *ExecuteWorkflowInput,
-) (interface{}, error) {
+) (any, error) {
 	// Start span reading from header
 	span, ctx, err := t.root.startSpanFromWorkflowContext(ctx, &TracerStartSpanOptions{
 		Operation: "RunWorkflow",
@@ -551,7 +550,7 @@ func (t *tracingWorkflowInboundInterceptor) HandleSignal(ctx workflow.Context, i
 func (t *tracingWorkflowInboundInterceptor) HandleQuery(
 	ctx workflow.Context,
 	in *HandleQueryInput,
-) (interface{}, error) {
+) (any, error) {
 	// Only add tracing if enabled and not replaying
 	if t.root.options.DisableQueryTracing || workflow.IsReplaying(ctx) {
 		return t.Next.HandleQuery(ctx, in)
@@ -623,7 +622,7 @@ func (t *tracingWorkflowInboundInterceptor) ValidateUpdate(
 func (t *tracingWorkflowInboundInterceptor) ExecuteUpdate(
 	ctx workflow.Context,
 	in *UpdateInput,
-) (interface{}, error) {
+) (any, error) {
 	// Only add tracing if enabled and not replaying
 	if t.root.options.DisableUpdateTracing {
 		return t.Next.ExecuteUpdate(ctx, in)
@@ -663,7 +662,7 @@ type tracingWorkflowOutboundInterceptor struct {
 func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
 	ctx workflow.Context,
 	activityType string,
-	args ...interface{},
+	args ...any,
 ) workflow.Future {
 	// Start span writing to header
 	span, ctx, err := t.startNonReplaySpan(ctx, "StartActivity", activityType, true, t.root.workflowHeaderWriter(ctx))
@@ -678,7 +677,7 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteActivity(
 func (t *tracingWorkflowOutboundInterceptor) ExecuteLocalActivity(
 	ctx workflow.Context,
 	activityType string,
-	args ...interface{},
+	args ...any,
 ) workflow.Future {
 	// Start span writing to header
 	span, ctx, err := t.startNonReplaySpan(ctx, "StartActivity", activityType, true, t.root.workflowHeaderWriter(ctx))
@@ -700,7 +699,7 @@ func (t *tracingWorkflowOutboundInterceptor) GetLogger(ctx workflow.Context) log
 func (t *tracingWorkflowOutboundInterceptor) ExecuteChildWorkflow(
 	ctx workflow.Context,
 	childWorkflowType string,
-	args ...interface{},
+	args ...any,
 ) workflow.ChildWorkflowFuture {
 	// Start span writing to header
 	span, ctx, errFut := t.startNonReplaySpan(ctx, "StartChildWorkflow", childWorkflowType, false, t.root.workflowHeaderWriter(ctx))
@@ -717,7 +716,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalExternalWorkflow(
 	workflowID string,
 	runID string,
 	signalName string,
-	arg interface{},
+	arg any,
 ) workflow.Future {
 	// Start span writing to header if enabled
 	if !t.root.options.DisableSignalTracing {
@@ -737,7 +736,7 @@ func (t *tracingWorkflowOutboundInterceptor) SignalChildWorkflow(
 	ctx workflow.Context,
 	workflowID string,
 	signalName string,
-	arg interface{},
+	arg any,
 ) workflow.Future {
 	// Start span writing to header if enabled
 	if !t.root.options.DisableSignalTracing {
@@ -774,8 +773,8 @@ func (t *tracingWorkflowOutboundInterceptor) ExecuteNexusOperation(ctx workflow.
 
 func (t *tracingWorkflowOutboundInterceptor) NewContinueAsNewError(
 	ctx workflow.Context,
-	wfn interface{},
-	args ...interface{},
+	wfn any,
+	args ...any,
 ) error {
 	err := t.Next.NewContinueAsNewError(ctx, wfn, args...)
 	if !workflow.IsReplaying(ctx) {
@@ -904,7 +903,7 @@ func (t *tracingInterceptor) startSpanFromWorkflowContext(
 
 // Note, this does not put the span on the context
 func (t *tracingInterceptor) startSpan(
-	ctx interface{ Value(interface{}) interface{} },
+	ctx interface{ Value(any) any },
 	options *TracerStartSpanOptions,
 	headerReader func() (TracerSpanRef, error),
 	headerWriter func(span TracerSpan) error,
@@ -1040,6 +1039,6 @@ type childWorkflowFuture struct{ workflow.Future }
 
 func (e childWorkflowFuture) GetChildWorkflowExecution() workflow.Future { return e }
 
-func (e childWorkflowFuture) SignalChildWorkflow(ctx workflow.Context, signalName string, data interface{}) workflow.Future {
+func (e childWorkflowFuture) SignalChildWorkflow(ctx workflow.Context, signalName string, data any) workflow.Future {
 	return e
 }

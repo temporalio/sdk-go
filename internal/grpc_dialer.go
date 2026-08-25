@@ -185,7 +185,7 @@ func requiredInterceptors(
 
 func newGzipDowngradeInterceptor() grpc.UnaryClientInterceptor {
 	var gzipUnsupportedMethods sync.Map
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if _, ok := gzipUnsupportedMethods.Load(method); ok {
 			return invoker(ctx, method, req, reply, cc, appendIdentityCompressor(opts)...)
 		}
@@ -214,7 +214,7 @@ func appendIdentityCompressor(opts []grpc.CallOption) []grpc.CallOption {
 }
 
 func namespaceProviderInterceptor() grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if nsReq, ok := req.(interface{ GetNamespace() string }); ok {
 			// Only add namespace if it doesn't already exist
 			if md, _ := metadata.FromOutgoingContext(ctx); len(md.Get(temporalNamespaceHeaderKey)) == 0 {
@@ -226,7 +226,7 @@ func namespaceProviderInterceptor() grpc.UnaryClientInterceptor {
 }
 
 func trafficControllerInterceptor(controller TrafficController) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		err := controller.CheckCallAllowed(ctx, method, req, reply)
 		// Break execution chain and return an error without sending actual request to the server.
 		if err != nil {
@@ -237,7 +237,7 @@ func trafficControllerInterceptor(controller TrafficController) grpc.UnaryClient
 }
 
 func headersProviderInterceptor(headersProvider HeadersProvider) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		headers, err := headersProvider.GetHeaders(ctx)
 		if err != nil {
 			return err
@@ -249,7 +249,7 @@ func headersProviderInterceptor(headersProvider HeadersProvider) grpc.UnaryClien
 	}
 }
 
-func errorInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+func errorInterceptor(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	err := invoker(ctx, method, req, reply, cc, opts...)
 	var grpcMessageTooLargeErr *retry.GrpcMessageTooLargeError
 	if !errors.As(err, &grpcMessageTooLargeErr) {

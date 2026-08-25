@@ -636,9 +636,11 @@ func Test_CancelExternalWorkflowStateMachine_Succeed(t *testing.T) {
 	require.Equal(
 		t,
 		&commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
-			Namespace:         namespace,
-			WorkflowId:        workflowID,
-			RunId:             runID,
+			//lint:ignore SA1019 verify legacy command compatibility fields
+			Namespace:  namespace,
+			WorkflowId: workflowID,
+			RunId:      runID,
+			//lint:ignore SA1019 verify legacy command compatibility fields
 			Control:           cancellationID,
 			ChildWorkflowOnly: false,
 		},
@@ -682,9 +684,11 @@ func Test_CancelExternalWorkflowStateMachine_Failed(t *testing.T) {
 	require.Equal(
 		t,
 		&commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
-			Namespace:         namespace,
-			WorkflowId:        workflowID,
-			RunId:             runID,
+			//lint:ignore SA1019 verify legacy command compatibility fields
+			Namespace:  namespace,
+			WorkflowId: workflowID,
+			RunId:      runID,
+			//lint:ignore SA1019 verify legacy command compatibility fields
 			Control:           cancellationID,
 			ChildWorkflowOnly: false,
 		},

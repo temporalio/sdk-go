@@ -166,11 +166,11 @@ func TestConcurrentRetrier(t *testing.T) {
 	// Verify valid sleep times.
 	ch := make(chan time.Duration, 3)
 	go func() {
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			ch <- retrier.throttleInternal(nil)
 		}
 	}()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		val := <-ch
 		t.Logf("Duration: %d\n", val)
 		a.True(val > 0)
@@ -179,11 +179,11 @@ func TestConcurrentRetrier(t *testing.T) {
 	a.Equal(int64(0), retrier.failureCount)
 	// Verify we don't have any sleep times.
 	go func() {
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			ch <- retrier.throttleInternal(nil)
 		}
 	}()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		val := <-ch
 		t.Logf("Duration: %d\n", val)
 		a.Equal(done, val)

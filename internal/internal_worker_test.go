@@ -307,6 +307,11 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
+	liveWorkerCache := NewWorkerCache()
+	runtime.SetFinalizer(liveWorkerCache, nil)
+	defer liveWorkerCache.close(&sharedWorkerCacheLock)
+	cacheSizeBeforeReplay := liveWorkerCache.getWorkflowCache().Size()
+
 	taskQueue := "taskQueue1"
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
@@ -325,6 +330,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowEx
 	replayer.RegisterWorkflow(testReplayWorkflow)
 	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
+	require.Equal(s.T(), cacheSizeBeforeReplay, liveWorkerCache.getWorkflowCache().Size())
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {
@@ -710,7 +716,7 @@ func testReplayWorkflowGetVersionWithSideEffect(ctx Context) error {
 
 	v := GetVersion(ctx, "UniqueID", DefaultVersion, 1)
 	if v == 1 {
-		encodedUID := SideEffect(ctx, func(ctx Context) interface{} {
+		encodedUID := SideEffect(ctx, func(ctx Context) any {
 			return "TEST-UNIQUE-ID"
 		})
 		err := encodedUID.Get(&uniqueID)
@@ -1489,7 +1495,7 @@ func testReplayWorkflowSideEffect(ctx Context) error {
 		return err
 	}
 
-	encodedRandom := SideEffect(ctx, func(ctx Context) interface{} {
+	encodedRandom := SideEffect(ctx, func(ctx Context) any {
 		return 100
 	})
 
@@ -2037,11 +2043,9 @@ func (s *internalWorkerTestSuite) TestCreateWorkerRun() {
 	worker.RegisterActivity(testActivityNoResult)
 	worker.RegisterWorkflow(testWorkflowReturnStruct)
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		_ = worker.Run(InterruptCh())
-	}()
+	})
 	time.Sleep(time.Millisecond * 200)
 	p, err := os.FindProcess(os.Getpid())
 	assert.NoError(s.T(), err)
@@ -2115,7 +2119,7 @@ type mockPollActivityTaskQueueRequest struct {
 	tps float64
 }
 
-func (m *mockPollActivityTaskQueueRequest) Matches(x interface{}) bool {
+func (m *mockPollActivityTaskQueueRequest) Matches(x any) bool {
 	v, ok := x.(*workflowservice.PollActivityTaskQueueRequest)
 	if !ok {
 		return false
@@ -2212,7 +2216,7 @@ func (s *internalWorkerTestSuite) testCompleteActivityHelper(opt ClientOptions) 
 	t := s.T()
 	mockService := s.service
 	wfClient := NewServiceClient(mockService, nil, opt)
-	var completedRequest, canceledRequest, failedRequest interface{}
+	var completedRequest, canceledRequest, failedRequest any
 	mockService.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedRequest, opts ...grpc.CallOption) {
 			completedRequest = request
@@ -2255,7 +2259,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivityWithContextAwareDataConver
 	response := &workflowservice.RespondActivityTaskCompletedResponse{}
 
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
-		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...any) {
 			dc := client.dataConverter
 			results := dc.ToStrings(req.Result)
 			s.Equal("\"t?st\"", results[0])
@@ -2268,7 +2272,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivityById() {
 	t := s.T()
 	mockService := s.service
 	wfClient := NewServiceClient(mockService, nil, ClientOptions{Namespace: "testNamespace"})
-	var completedRequest, canceledRequest, failedRequest interface{}
+	var completedRequest, canceledRequest, failedRequest any
 	mockService.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.RespondActivityTaskCompletedByIdResponse{}, nil).Do(
 		func(ctx context.Context, request *workflowservice.RespondActivityTaskCompletedByIdRequest, opts ...grpc.CallOption) {
 			completedRequest = request
@@ -2306,7 +2310,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivityByIDWithContextAwareDataCo
 	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
 
 	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
-		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...any) {
 			dc := client.dataConverter
 			results := dc.ToStrings(req.Result)
 			s.Equal("\"t?st\"", results[0])
@@ -2350,7 +2354,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivityByID_DelegatesToWithOption
 
 	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
 	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
-		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...any) {
 			s.Equal(DefaultNamespace, req.Namespace)
 			s.Equal("wid", req.WorkflowId)
 			s.Equal("rid", req.RunId)
@@ -2374,7 +2378,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatByIDWithOptions_Ser
 		WorkflowID:   "wid",
 		RunID:        "rid",
 		ActivityID:   "aid",
-		Details:      []interface{}{"progress"},
+		Details:      []any{"progress"},
 		ActivityType: "MyActivity",
 		WorkflowType: "MyWorkflow",
 		TaskQueue:    "my-queue",
@@ -2426,7 +2430,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivity_DelegatesToWithOptions() 
 
 	response := &workflowservice.RespondActivityTaskCompletedResponse{}
 	s.service.EXPECT().RespondActivityTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
-		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.RespondActivityTaskCompletedRequest, _ ...any) {
 			s.Equal([]byte("token"), req.TaskToken)
 		})
 
@@ -2466,7 +2470,7 @@ func (s *internalWorkerTestSuite) TestCompleteActivityByActivityID_DelegatesToWi
 
 	response := &workflowservice.RespondActivityTaskCompletedByIdResponse{}
 	s.service.EXPECT().RespondActivityTaskCompletedById(gomock.Any(), gomock.Any(), gomock.Any()).Return(response, nil).
-		Do(func(_ interface{}, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.RespondActivityTaskCompletedByIdRequest, _ ...any) {
 			s.Equal(DefaultNamespace, req.Namespace)
 			s.Equal("aid", req.ActivityId)
 		})
@@ -2485,7 +2489,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeatWithOptions_Seriali
 
 	err := client.RecordActivityHeartbeatWithOptions(context.Background(), RecordActivityHeartbeatOptions{
 		TaskToken:    []byte("token"),
-		Details:      []interface{}{"progress"},
+		Details:      []any{"progress"},
 		Namespace:    DefaultNamespace,
 		WorkflowID:   "wid",
 		ActivityType: "MyActivity",
@@ -2510,7 +2514,7 @@ func (s *internalWorkerTestSuite) TestRecordActivityHeartbeat_DelegatesToWithOpt
 
 	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
 	s.service.EXPECT().RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).Return(&heartbeatResponse, nil).
-		Do(func(_ interface{}, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...interface{}) {
+		Do(func(_ any, req *workflowservice.RecordActivityTaskHeartbeatRequest, _ ...any) {
 			s.Equal([]byte("token"), req.TaskToken)
 		})
 
@@ -2574,7 +2578,7 @@ type activitiesCallingOptionsWorkflow struct {
 }
 
 func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (result []byte, err error) {
-	type exeType func(activity interface{}, args ...interface{}) Future
+	type exeType func(activity any, args ...any) Future
 	type exeAndCtx struct {
 		exe exeType
 		ctx Context
@@ -2585,14 +2589,14 @@ func (w activitiesCallingOptionsWorkflow) Execute(ctx Context, input []byte) (re
 		StartToCloseTimeout:    5 * time.Second,
 	}
 	nonlocalCtx := WithActivityOptions(ctx, ao)
-	nonlocalExecutor := func(activity interface{}, args ...interface{}) Future {
+	nonlocalExecutor := func(activity any, args ...any) Future {
 		return ExecuteActivity(nonlocalCtx, activity, args...)
 	}
 	localOptions := LocalActivityOptions{
 		StartToCloseTimeout: time.Second * 5,
 	}
 	localCtx := WithLocalActivityOptions(ctx, localOptions)
-	localExecutor := func(activity interface{}, args ...interface{}) Future {
+	localExecutor := func(activity any, args ...any) Future {
 		return ExecuteLocalActivity(localCtx, activity, args...)
 	}
 	nonlocal := exeAndCtx{exe: nonlocalExecutor, ctx: nonlocalCtx}
@@ -2868,7 +2872,7 @@ func TestVariousActivitySchedulingOption(t *testing.T) {
 	testVariousActivitySchedulingOptionWithDataConverter(t, w.Execute)
 }
 
-func testVariousActivitySchedulingOption(t *testing.T, wf interface{}) {
+func testVariousActivitySchedulingOption(t *testing.T, wf any) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 	env.RegisterWorkflow(wf)
@@ -2878,7 +2882,7 @@ func testVariousActivitySchedulingOption(t *testing.T, wf interface{}) {
 	require.NoError(t, env.GetWorkflowError())
 }
 
-func testVariousActivitySchedulingOptionWithDataConverter(t *testing.T, wf interface{}) {
+func testVariousActivitySchedulingOptionWithDataConverter(t *testing.T, wf any) {
 	ts := &WorkflowTestSuite{}
 	env := ts.NewTestWorkflowEnvironment()
 	env.SetDataConverter(iconverter.NewTestDataConverter())
@@ -3121,7 +3125,7 @@ func TestActivityNilArgs(t *testing.T) {
 		return nil
 	}
 
-	args := []interface{}{nil, nil, nil, nil}
+	args := []any{nil, nil, nil, nil}
 	_, err := getValidatedActivityFunction(activityFn, args, newRegistry())
 	require.NoError(t, err)
 
@@ -3129,7 +3133,7 @@ func TestActivityNilArgs(t *testing.T) {
 	data, err := encodeArgs(dataConverter, args)
 	require.NoError(t, err)
 
-	reflectArgs, err := decodeArgs(dataConverter, reflect.TypeOf(activityFn), data)
+	reflectArgs, err := decodeArgs(dataConverter, reflect.TypeFor[func(name string, idx int, strptr *string, wt *commonpb.WorkflowType) error](), data)
 	require.NoError(t, err)
 
 	reflectResults := reflect.ValueOf(activityFn).Call(reflectArgs)
@@ -3144,7 +3148,6 @@ func TestWorkerOptionInvalid(t *testing.T) {
 		NewAggregatedWorker(&WorkflowClient{}, "worker-options-tq", WorkerOptions{MaxConcurrentWorkflowTaskExternalStorageVisits: -1})
 	})
 	for _, value := range []int{0, -1} {
-		value := value
 		require.PanicsWithValue(
 			t,
 			"MaxEagerActivityReservationsPerWorkflowTask must be positive; set DisableEagerActivities to disable eager activity execution",
@@ -3358,7 +3361,7 @@ func assertWorkerExecutionParamsEqual(t *testing.T, paramsA workerExecutionParam
 }
 
 // Encode function args
-func testEncodeFunctionArgs(dataConverter converter.DataConverter, args ...interface{}) *commonpb.Payloads {
+func testEncodeFunctionArgs(dataConverter converter.DataConverter, args ...any) *commonpb.Payloads {
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		fmt.Println(err)
@@ -3405,7 +3408,7 @@ func TestIsNonRetriableError(t *testing.T) {
 
 func TestWorkerRegisterDisabledWorkflow(t *testing.T) {
 	// Expect panic
-	var recovered interface{}
+	var recovered any
 	func() {
 		defer func() { recovered = recover() }()
 		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{DisableWorkflowWorker: true})
@@ -3416,7 +3419,7 @@ func TestWorkerRegisterDisabledWorkflow(t *testing.T) {
 
 func TestWorkerBuildIDAndSessionPanic(t *testing.T) {
 	// Expect panic
-	var recovered interface{}
+	var recovered any
 	func() {
 		defer func() { recovered = recover() }()
 		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{
