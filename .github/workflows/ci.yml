@@ -31,6 +31,7 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: stable
+          cache-dependency-path: '**/go.sum'
 
       - name: Check
         run: go run . check
@@ -62,6 +63,7 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ matrix.go-version }}
+          cache-dependency-path: '**/go.sum'
 
       - name: Unit test
         run: go run . unit-test
@@ -112,6 +114,7 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ matrix.go-version }}
+          cache-dependency-path: '**/go.sum'
 
       - name: Integration tests (without cache)
         run: go run . integration-test -dev-server
@@ -163,6 +166,7 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ matrix.go-version }}
+          cache-dependency-path: '**/go.sum'
 
       - name: Integration tests (with cache)
         run: go run . integration-test -dev-server
@@ -203,6 +207,7 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: stable
+          cache-dependency-path: '**/go.sum'
 
       - name: Docker compose - checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -280,6 +285,7 @@ jobs:
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version: ${{ matrix.go-version }}
+          cache-dependency-path: '**/go.sum'
       - name: Selected integration tests against cloud
         # Keep this list intentionally small. Add cloud-safe tests here when
         # they cover behavior that cannot be validated against the local dev server.
