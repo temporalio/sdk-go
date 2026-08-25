@@ -652,9 +652,9 @@ type pendingActivityTaskHandler struct {
 	executed chan struct{}
 }
 
-func (h *pendingActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (any, error, error) {
+func (h *pendingActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (activityTaskResult, error) {
 	close(h.executed)
-	return ErrActivityResultPending, nil, nil
+	return activityTaskResult{response: ErrActivityResultPending}, nil
 }
 
 func TestDoPollGracefulShutdown(t *testing.T) {

@@ -35,11 +35,11 @@ func newNoResponseActivityTaskHandler() *noResponseActivityTaskHandler {
 	return &noResponseActivityTaskHandler{isExecuteCalled: make(chan struct{})}
 }
 
-func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (any, error, error) {
+func (ath noResponseActivityTaskHandler) Execute(string, *workflowservice.PollActivityTaskQueueResponse) (activityTaskResult, error) {
 	close(ath.isExecuteCalled)
 	c := make(chan struct{})
 	<-c
-	return nil, nil, nil
+	return activityTaskResult{}, nil
 }
 
 func (ath noResponseActivityTaskHandler) BlockedOnExecuteCalled() error {

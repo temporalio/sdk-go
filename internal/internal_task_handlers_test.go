@@ -2118,7 +2118,8 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionDeadline() {
 			WorkflowNamespace: "namespace",
 		}
 		td := fmt.Sprintf("testIndex: %v, testDetails: %v", i, d)
-		r, _, err := activityHandler.Execute(taskqueue, pats)
+		res, err := activityHandler.Execute(taskqueue, pats)
+		r := res.response
 		t.logger.Info(fmt.Sprintf("test: %v, result: %v err: %v", td, r, err))
 		t.Equal(d.err, err, td)
 		if err != nil {
@@ -2177,7 +2178,8 @@ func (t *TaskHandlersTestSuite) TestActivityExecutionWorkerStop() {
 		WorkflowNamespace: "namespace",
 	}
 	close(workerStopCh)
-	r, _, err := activityHandler.Execute(taskqueue, pats)
+	res, err := activityHandler.Execute(taskqueue, pats)
+	r := res.response
 	t.NoError(err)
 	t.NotNil(r)
 }
@@ -2224,7 +2226,8 @@ func (t *TaskHandlersTestSuite) TestActivityCancellationUsesIsCanceledError() {
 		WorkflowNamespace: wep.Namespace,
 	}
 
-	result, _, err := activityHandler.Execute(taskqueue, pats)
+	res, err := activityHandler.Execute(taskqueue, pats)
+	result := res.response
 	t.Require().NoError(err)
 
 	canceledReq, ok := result.(*workflowservice.RespondActivityTaskCanceledRequest)

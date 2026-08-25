@@ -1487,7 +1487,8 @@ func (atp *activityTaskPoller) ProcessTask(task any) error {
 	executionStartTime := time.Now()
 
 	// Process the activity task.
-	request, failureErr, err := atp.taskHandler.Execute(atp.taskQueueName, activityTask.task)
+	result, err := atp.taskHandler.Execute(atp.taskQueueName, activityTask.task)
+	request := result.response
 
 	// err is returned in case of internal failure, such as unable to propagate context or context timeout.
 	if err != nil {
@@ -1501,7 +1502,7 @@ func (atp *activityTaskPoller) ProcessTask(task any) error {
 	if req, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
 		if !isBenignProtoApplicationFailure(req.Failure) {
 			failureReason := metrics.FailureReasonActivityError
-			if errors.As(failureErr, new(payloadSizeError)) {
+			if errors.As(result.failureErr, new(payloadSizeError)) {
 				failureReason = metrics.FailureReasonPayloadsTooLarge
 			}
 			activityMetricsHandler.
