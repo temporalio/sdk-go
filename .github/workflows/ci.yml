@@ -303,21 +303,7 @@ jobs:
           GITHUB_JOB_INDEX: ${{ strategy.job-index }}
           TEMPORAL_CLIENT_CLOUD_API_KEY: ${{ secrets.TEMPORAL_CLIENT_CLOUD_API_KEY }}
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
-      - name: Selected integration tests against cloud
-        if: ${{ matrix.go-version != 'stable' || matrix.fips }}
-        # Keep this list intentionally small. Add cloud-safe tests here when
-        # they cover behavior that cannot be validated against the local dev server.
-        run: 'go run . integration-test -envconfig -p 1 -packages . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
-        working-directory: ./internal/cmd/build
-        env:
-          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
-          TEMPORAL_ADDRESS: ${{ steps.create-cloud-namespace.outputs.namespace }}.tmprl.cloud:7233
-          TEMPORAL_NAMESPACE: ${{ steps.create-cloud-namespace.outputs.namespace }}
-
-      - name: Full integration tests against cloud
-        # Local CI covers the Go-version matrix. Run the full Cloud suite once
-        # to limit remote load while retaining oldstable and FIPS smoke coverage.
-        if: ${{ matrix.go-version == 'stable' && !matrix.fips }}
+      - name: Integration tests against cloud
         timeout-minutes: 50
         run: go run . integration-test -envconfig -cloud -p 1 -packages . -timeout 45m
         working-directory: ./internal/cmd/build
