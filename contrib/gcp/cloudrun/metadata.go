@@ -11,6 +11,7 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
+	"go.temporal.io/sdk/workflow"
 )
 
 const (
@@ -208,16 +209,19 @@ func (m *Metadata) ApplyToClientOptions(o *client.Options) {
 }
 
 // ApplyToWorkerOptions enables Worker Deployment Versioning on the given worker options using the
-// Cloud Run deployment version (see [Metadata.DeploymentVersion]). It returns an error, leaving the
-// options unchanged, if the deployment version cannot be built.
+// Cloud Run deployment version (see [Metadata.DeploymentVersion]), pinning workflows to this
+// version by default ([workflow.VersioningBehaviorPinned]). A per-workflow versioning behavior, if
+// set, takes precedence. It returns an error, leaving the options unchanged, if the deployment
+// version cannot be built.
 func (m *Metadata) ApplyToWorkerOptions(o *worker.Options) error {
 	v, err := m.DeploymentVersion()
 	if err != nil {
 		return err
 	}
 	o.DeploymentOptions = worker.DeploymentOptions{
-		UseVersioning: true,
-		Version:       v,
+		UseVersioning:             true,
+		Version:                   v,
+		DefaultVersioningBehavior: workflow.VersioningBehaviorPinned,
 	}
 	return nil
 }

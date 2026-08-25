@@ -94,9 +94,10 @@ Apply the metadata to your options:
 - `ApplyToClientOptions(&clientOptions)` sets `Identity` to `"<instanceID>@<revision>"` (falling
   back to `"<instanceID>@<name>"`, or just the instance ID) unless you already set an identity.
 - `ApplyToWorkerOptions(&workerOptions)` sets `DeploymentOptions` to enable Worker Deployment
-  Versioning with `DeploymentName: <name>, BuildID: <revision>`. It returns an error when the name
-  or revision is unknown (typically because the process is not running on a Cloud Run worker pool or
-  service).
+  Versioning with `DeploymentName: <name>, BuildID: <revision>`, pinning workflows to this version
+  by default (`workflow.VersioningBehaviorPinned`; a per-workflow behavior takes precedence). It
+  returns an error when the name or revision is unknown (typically because the process is not
+  running on a Cloud Run worker pool or service).
 
 If you prefer to wire the values in yourself, `WorkerIdentity()` returns the identity string and
 `DeploymentVersion()` returns the `worker.WorkerDeploymentVersion` directly.
