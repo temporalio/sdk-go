@@ -3439,7 +3439,6 @@ func (t *otelTracer) spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.
 }
 
 func TestNexusTracingInterceptor(t *testing.T) {
-	t.Skip("this test is flaky in CI and needs to be restructured")
 	cases := []struct {
 		name   string
 		tracer func(t *testing.T) interceptortest.TestTracer
@@ -3514,11 +3513,8 @@ func TestNexusTracingInterceptor(t *testing.T) {
 						interceptortest.Span("StartNexusOperation:test/workflow-op",
 							interceptortest.Span("RunStartNexusOperationHandler:test/workflow-op",
 								interceptortest.Span("StartWorkflow:waitForCancelWorkflow",
-									interceptortest.Span("RunWorkflow:waitForCancelWorkflow")))))),
-				// Note that the span is not attached since the server as of 1.27 does not propagate headers to the cancel
-				// request.  This assertion will have to change once the server fixes this behavior. It's left here as a
-				// reminder.
-				interceptortest.Span("RunCancelNexusOperationHandler:test/workflow-op"),
+									interceptortest.Span("RunWorkflow:waitForCancelWorkflow"))),
+							interceptortest.Span("RunCancelNexusOperationHandler:test/workflow-op")))),
 			}, tracer.FinishedSpans())
 		})
 	}

@@ -87,6 +87,23 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
 	}, 5*time.Second, 100*time.Millisecond)
 }
 
+func sameTaskQueues(a, b []client.WorkerDeploymentTaskQueueInfo) bool {
+	if len(a) != len(b) {
+		return false
+	}
+
+	queues := make(map[client.WorkerDeploymentTaskQueueInfo]struct{}, len(a))
+	for _, queue := range a {
+		queues[queue] = struct{}{}
+	}
+	for _, queue := range b {
+		if _, ok := queues[queue]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropagation(
 	ctx context.Context,
 	deploymentName string,
@@ -165,7 +182,6 @@ func (ts *WorkerDeploymentTestSuite) runWorkflowAndCheckV1(ctx context.Context, 
 }
 
 func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
-	ts.T().Skip("issue-1650: Build ID integration tests are flaky")
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
@@ -233,6 +249,10 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 		ts.NoError(res.Get(&didRun))
 		return didRun
 	}, time.Second*10, time.Millisecond*100)
+	v1Description, err := dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
+		BuildID: v1.BuildID,
+	})
+	ts.NoError(err)
 	worker1.Stop()
 
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
@@ -251,6 +271,15 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	defer worker2.Stop()
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
+	ts.Eventually(func() bool {
+		v2Description, err := dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
+			BuildID: v2.BuildID,
+		})
+		return err == nil && sameTaskQueues(
+			v1Description.Info.TaskQueuesInfos,
+			v2Description.Info.TaskQueuesInfos,
+		)
+	}, 5*time.Second, 100*time.Millisecond)
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		BuildID:       v2.BuildID,

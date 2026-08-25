@@ -978,12 +978,10 @@ func (t *TaskHandlersTestSuite) TestWithTruncatedHistory() {
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer() {
-	t.T().Skip("issue-1650: SideEffectDefer test is flaky")
 	t.testSideEffectDeferHelper(1)
 }
 
 func (t *TaskHandlersTestSuite) TestSideEffectDefer_NoCache() {
-	t.T().Skip("issue-1650: SideEffectDefer test is flaky")
 	t.testSideEffectDeferHelper(0)
 }
 
@@ -1957,48 +1955,47 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	<-doneCh
 }
 
-func (t *TaskHandlersTestSuite) TestHeartBeat_NoError() {
-	t.T().Skip("issue-1650: TestHeartBeat_NoError is flaky")
-	mockCtrl := gomock.NewController(t.T())
-	mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
-	invocationChannel := make(chan int, 2)
-	heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
-	mockService.EXPECT().
-		RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
-		Do(func(_ any, _ any, _ ...any) { invocationChannel <- 1 }).
-		Return(&heartbeatResponse, nil).
-		Times(2)
+func TestHeartBeat_NoError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const heartbeatThrottleInterval = time.Second
 
-	temporalInvoker := &temporalInvoker{
-		identity:                  "Test_Temporal_Invoker",
-		service:                   mockService,
-		taskToken:                 nil,
-		heartbeatThrottleInterval: time.Second,
-	}
+		mockCtrl := gomock.NewController(t)
+		mockService := workflowservicemock.NewMockWorkflowServiceClient(mockCtrl)
+		invocationChannel := make(chan int, 2)
+		heartbeatResponse := workflowservice.RecordActivityTaskHeartbeatResponse{CancelRequested: false}
+		mockService.EXPECT().
+			RecordActivityTaskHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+			Do(func(_ any, _ any, _ ...any) { invocationChannel <- 1 }).
+			Return(&heartbeatResponse, nil).
+			Times(2)
 
-	heartbeatErr := temporalInvoker.Heartbeat(context.Background(), nil, false)
-	t.NoError(heartbeatErr)
+		temporalInvoker := newServiceInvoker(
+			nil, "Test_Temporal_Invoker", mockService, metrics.NopHandler, func(error) {}, heartbeatThrottleInterval,
+			make(chan struct{}), testNamespace, &atomic.Bool{}, nil, nil,
+		)
+		defer temporalInvoker.Close(t.Context(), false)
 
-	select {
-	case <-invocationChannel:
-	case <-time.After(3 * time.Second):
-		t.Fail("did not get expected 1st call to record heartbeat")
-	}
+		firstHeartbeatTime := time.Now()
+		heartbeatErr := temporalInvoker.Heartbeat(t.Context(), nil, false)
+		require.NoError(t, heartbeatErr)
+		<-invocationChannel
+		require.Zero(t, time.Since(firstHeartbeatTime))
 
-	heartbeatErr = temporalInvoker.Heartbeat(context.Background(), nil, false)
-	t.NoError(heartbeatErr)
+		secondHeartbeatTime := time.Now()
+		heartbeatErr = temporalInvoker.Heartbeat(t.Context(), nil, false)
+		require.NoError(t, heartbeatErr)
+		synctest.Wait()
 
-	select {
-	case <-invocationChannel:
-		t.Fail("got unexpected call to record heartbeat. 2nd call should come via batch timer")
-	default:
-	}
+		select {
+		case <-invocationChannel:
+			t.Fatal("second heartbeat was not batched")
+		default:
+		}
 
-	select {
-	case <-invocationChannel:
-	case <-time.After(3 * time.Second):
-		t.Fail("did not get expected 2nd call to record heartbeat via batch timer")
-	}
+		<-invocationChannel
+		require.Equal(t, heartbeatThrottleInterval, time.Since(secondHeartbeatTime))
+		synctest.Wait()
+	})
 }
 
 func (t *TaskHandlersTestSuite) TestHeartBeat_NilResponseWithError() {
