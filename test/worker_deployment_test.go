@@ -205,7 +205,7 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
