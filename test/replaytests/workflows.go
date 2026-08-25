@@ -769,6 +769,26 @@ func AwaitWithTimeoutNoTimerCancelWorkflow(ctx workflow.Context) (bool, error) {
 	})
 }
 
+// AlreadyTrueConditionThenMoreWorkflow is used to test replay of a workflow
+// history recorded before SDKFlagSkipAwaitTimerWhenConditionMet was
+// introduced (#2537): an AwaitWithTimeout call whose condition is already
+// true at entry still creates a timer under the pre-fix code, since the
+// flag defaults to disabled. The fixture captures that orphaned timer
+// followed by genuine subsequent activity (a second, real timer) in a later
+// workflow task, so the orphaned timer isn't merely the last event before
+// completion -- replaying it must still reproduce the orphaned timer
+// exactly, since the flag was never recorded as used in this history.
+func AlreadyTrueConditionThenMoreWorkflow(ctx workflow.Context) (bool, error) {
+	ok, err := workflow.AwaitWithTimeout(ctx, 10*time.Second, func() bool {
+		return true
+	})
+	if err != nil {
+		return false, err
+	}
+	_ = workflow.Sleep(ctx, 1*time.Second)
+	return ok, nil
+}
+
 func MemoChildWorkflowGob(ctx workflow.Context, input string) (string, error) {
 	info := workflow.GetInfo(ctx)
 

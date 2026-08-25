@@ -751,15 +751,24 @@ func (wc *workflowEnvironmentInterceptor) awaitWithOptions(ctx Context, options 
 	defer state.unblocked()
 
 	// Matches Await's contract: an already-satisfied condition returns
-	// without yielding. Must NOT be gated by SDKFlagCancelAwaitTimerOnCondition
-	// below -- that flag only governs cancelling the timer mid-wait. Coupling
-	// them here yielded once unconditionally on every pre-flag workflow before
-	// its first condition() check, an extra command that breaks replay (#2537).
-	if condition() {
+	// without yielding or creating a timer (#2537). Gated by its own flag,
+	// separate from SDKFlagCancelAwaitTimerOnCondition below (which only
+	// governs cancelling an already-created timer mid-wait): an in-flight
+	// workflow whose history already recorded the pre-fix orphaned timer
+	// for an already-satisfied call must keep reproducing that timer when
+	// replaying that exact history segment. TryUse only returns true during
+	// replay if this flag was already recorded in that segment's history,
+	// so this stays safe for workflows that predate the flag while still
+	// fixing the bug for anything genuinely new going forward.
+	skipTimerWhenConditionMet := wc.env.TryUse(SDKFlagSkipAwaitTimerWhenConditionMet)
+	if skipTimerWhenConditionMet && condition() {
 		return true, nil
 	}
 
 	cancelTimerOnCondition := wc.env.TryUse(SDKFlagCancelAwaitTimerOnCondition)
+	if cancelTimerOnCondition && condition() {
+		return true, nil
+	}
 
 	timerCtx := ctx
 	var cancelTimer func()

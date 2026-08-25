@@ -38,6 +38,17 @@ const (
 	// we will fallback onto the default data converter. If the default DC fails, the user DC error will be returned.
 	SDKFlagMemoUserDCEncode               = 7
 	SDKFlagWorkflowNewChannelLostMessages = 8
+	// SDKFlagSkipAwaitTimerWhenConditionMet will cause AwaitWithTimeout,
+	// AwaitWithOptions, and Channel.ReceiveWithTimeout to return immediately,
+	// without creating a timer, when the condition is already satisfied at
+	// entry -- matching Await's own contract. Gated separately from
+	// SDKFlagCancelAwaitTimerOnCondition (which only governs cancelling an
+	// already-created timer mid-wait): an in-flight workflow whose history
+	// already has the pre-fix orphaned timer for an already-satisfied call
+	// must keep reproducing that timer on replay of that exact history
+	// segment. Only a workflow that has this flag newly recorded going
+	// forward can safely skip creating it.
+	SDKFlagSkipAwaitTimerWhenConditionMet = 9
 	SDKFlagUnknown                        = math.MaxUint32
 )
 
@@ -55,6 +66,7 @@ var sdkFlagsAllowed = map[sdkFlag]bool{
 	SDKFlagCancelAwaitTimerOnCondition:    false,
 	SDKFlagMemoUserDCEncode:               true,
 	SDKFlagWorkflowNewChannelLostMessages: true,
+	SDKFlagSkipAwaitTimerWhenConditionMet: false,
 }
 
 func init() {
