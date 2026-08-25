@@ -23,14 +23,9 @@ to docs, or any other relevant information.
 ### Added
 
 - Added standalone-activity operator commands to `client.ActivityHandle`: `Pause`, `Unpause`,
-  `Reset`, `UpdateOptions` and `RestoreOriginalOptions`. `UpdateOptions` takes a
-  `client.ActivityOptionsChanges` whose nil entries are left untouched, mirroring
-  `WorkflowExecutionOptionsChanges`, and returns the resulting `client.ActivityOptions`.
+  `Reset`, `UpdateOptions` and `RestoreOriginalOptions`.
 - Added opt-in payload fields to `client.DescribeActivityOptions`: `IncludeInput`,
   `IncludeOutcome`, `IncludeHeartbeatDetails` and `IncludeLastFailure`, all defaulting to false.
-  `client.ActivityExecutionDescription` gained `HasInput`/`GetInput`, `HasResult`/`GetResult`,
-  `GetFailure` and `HasLastFailure`, along with the activity's four timeouts, `StartDelay` and
-  `ExecutionTime`.
 
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   structured details for payload validation failures.
