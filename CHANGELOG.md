@@ -60,6 +60,10 @@ to docs, or any other relevant information.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
+- `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
+  reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
+  so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
+  decoding it.
 
 ### Security
 
@@ -99,9 +103,6 @@ to docs, or any other relevant information.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
   updates the recorded value when it changes, matching the real worker. Previously it ignored
   equals and returned a freshly computed value on every call.
-- `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
-  reset-workflow failure. Previously the raw payload proto was passed through undecoded, so
-  calling `Details()` on the resulting `ApplicationError` failed instead of returning the value.
 - Nexus operation link propagation for stand-alone activities. When a Nexus operation handler uses
   `client.ExecuteActivity`, inbound Nexus request links are forwarded to the activity and the
   activity link returned by the server is propagated back to the Nexus operation caller.
