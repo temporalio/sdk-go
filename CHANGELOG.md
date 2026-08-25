@@ -60,6 +60,13 @@ to docs, or any other relevant information.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
+- `workflow.AwaitWithTimeout`, `AwaitWithOptions`, and `Channel.ReceiveWithTimeout` no longer create
+  a timer or yield before their first condition check when the condition is already satisfied at
+  entry, matching `Await`'s own contract. The extra yield could let another runnable coroutine emit
+  its commands first, causing a `TMPRL1100` non-determinism error. Gated behind a new SDK flag
+  (`SDKFlagSkipAwaitTimerWhenConditionMet`, disabled by default for this release) rather than fixed
+  unconditionally: an in-flight workflow whose history already recorded the pre-fix timer for an
+  already-satisfied call needs to keep reproducing it on replay of that exact history segment.
 
 ### Security
 

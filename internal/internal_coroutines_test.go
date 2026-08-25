@@ -1296,6 +1296,65 @@ func TestAwaitWithTimeoutNoTimeout(t *testing.T) {
 	require.True(t, d.IsDone())
 }
 
+// Regression test for #2537: an already-true condition must return without
+// yielding, same as Await -- so "other coroutine" must not run before
+// "await returned" below. This is gated by SDKFlagSkipAwaitTimerWhenConditionMet
+// (see internal_flags.go), which defaults to disabled so in-flight workflows
+// whose history already recorded the pre-fix orphaned timer keep reproducing
+// it on replay; simulate the flag having been rolled out to exercise the
+// fixed behavior here.
+func TestAwaitWithTimeoutDoesNotYieldWhenConditionAlreadyTrue(t *testing.T) {
+	previous := sdkFlagsAllowed[SDKFlagSkipAwaitTimerWhenConditionMet]
+	sdkFlagsAllowed[SDKFlagSkipAwaitTimerWhenConditionMet] = true
+	defer func() { sdkFlagsAllowed[SDKFlagSkipAwaitTimerWhenConditionMet] = previous }()
+
+	var history []string
+	var awaitOk bool
+	var awaitErr error
+	d := createNewDispatcher(func(ctx Context) {
+		Go(ctx, func(ctx Context) {
+			history = append(history, "other coroutine")
+		})
+		awaitOk, awaitErr = AwaitWithTimeout(ctx, time.Hour, func() bool { return true })
+		history = append(history, "await returned")
+	})
+	defer d.Close()
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.NoError(t, err)
+	require.NoError(t, awaitErr)
+	require.True(t, awaitOk)
+	require.True(t, d.IsDone())
+	require.Equal(t, []string{"await returned", "other coroutine"}, history)
+}
+
+// Companion to the test above: with SDKFlagSkipAwaitTimerWhenConditionMet at
+// its real default (disabled), an already-true condition still yields once
+// before returning, exactly as before this fix. This is not itself a bug --
+// it's the backward-compatibility contract the flag exists for: an in-flight
+// workflow whose history already recorded this yield (and the timer that
+// came with it, pre-fix) must keep reproducing it on replay. See
+// TestAwaitWithTimeoutAlreadyTrueCondition in test/replaytests for the real
+// recorded-history version of this same guarantee.
+func TestAwaitWithTimeoutYieldsWhenConditionAlreadyTrueAndFlagDisabled(t *testing.T) {
+	var history []string
+	var awaitOk bool
+	var awaitErr error
+	d := createNewDispatcher(func(ctx Context) {
+		Go(ctx, func(ctx Context) {
+			history = append(history, "other coroutine")
+		})
+		awaitOk, awaitErr = AwaitWithTimeout(ctx, time.Hour, func() bool { return true })
+		history = append(history, "await returned")
+	})
+	defer d.Close()
+	err := d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout)
+	require.NoError(t, err)
+	require.NoError(t, awaitErr)
+	require.True(t, awaitOk)
+	require.True(t, d.IsDone())
+	require.Equal(t, []string{"other coroutine", "await returned"}, history)
+}
+
 func TestRecursiveEagerCoroutine(t *testing.T) {
 	// Verify eager coroutines run before normal coroutines
 	// even if they are scheduled in other eager coroutines

@@ -592,6 +592,20 @@ func (s *replayTestSuite) TestAwaitWithTimeoutNoTimerCancel() {
 	s.NoError(err)
 }
 
+func (s *replayTestSuite) TestAwaitWithTimeoutAlreadyTrueCondition() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(AlreadyTrueConditionThenMoreWorkflow)
+	// Verify we can still replay an old workflow history recorded before
+	// SDKFlagSkipAwaitTimerWhenConditionMet existed: an AwaitWithTimeout
+	// call whose condition was already true at entry still created a timer
+	// (the pre-fix bug, #2537), followed by genuine later activity. Captured
+	// live against a real server from the pre-fix code, then hand-verified
+	// against the fix to confirm this exact scenario -- not just "condition
+	// becomes true mid-wait" (already covered above) -- replays correctly.
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "await-with-timeout-already-true-condition.json")
+	s.NoError(err)
+}
+
 type captureConverter struct {
 	converter.DataConverter
 	toPayloads   []any
