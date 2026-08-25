@@ -28,8 +28,8 @@ to docs, or any other relevant information.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
   workflow-, activity-, and workflow-update-backed Nexus operations.
 - The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
-  metrics now carry a `failure_reason` attribute, currently always `ActivityError`. Each is now
-  split into one time series per reason, which may affect existing dashboards.
+  metrics now carry a `failure_reason` attribute. Each is now split into one time series per
+  reason, which may affect existing dashboards.
 
 ### Changed
 
