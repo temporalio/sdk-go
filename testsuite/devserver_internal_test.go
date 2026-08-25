@@ -33,7 +33,7 @@ func TestWaitServerReady_respectsTimeout(t *testing.T) {
 		// Even though the timeout is only a millisecond,
 		// we'll allow for a slack of up to 10 milliseconds
 		// to account for slow CI machines.
-		// Keep this below the retry interval so an extra retry fails.
+		// Anything smaller than 1 second is fine to use here.
 		// Increase only if CI scheduler jitter exceeds this allowance.
 	)
 }
