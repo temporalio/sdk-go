@@ -189,31 +189,18 @@ func envConfigEnabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
 }
 
-type cloudTestSkipReason uint8
+type cloudTestSkipReason string
 
 const (
-	cloudRequiresLocalServer cloudTestSkipReason = iota + 1
-	cloudRequiresProvisioning
-	cloudNeedsAdaptation
+	cloudRequiresLocalServer  cloudTestSkipReason = "requires_local_server"
+	cloudRequiresProvisioning cloudTestSkipReason = "requires_cloud_provisioning"
+	cloudNeedsAdaptation      cloudTestSkipReason = "needs_cloud_adaptation"
 )
 
 func skipOnCloud(t testing.TB, reason cloudTestSkipReason, rationale string) {
 	t.Helper()
 	if cloudTestEnabled() {
 		t.Skipf("skipped on Cloud (%s): %s", reason, rationale)
-	}
-}
-
-func (reason cloudTestSkipReason) String() string {
-	switch reason {
-	case cloudRequiresLocalServer:
-		return "requires_local_server"
-	case cloudRequiresProvisioning:
-		return "requires_cloud_provisioning"
-	case cloudNeedsAdaptation:
-		return "needs_cloud_adaptation"
-	default:
-		panic(fmt.Sprintf("unknown Cloud test skip reason %d", reason))
 	}
 }
 
@@ -249,22 +236,6 @@ func TestCloudTestEnabled(t *testing.T) {
 		}
 	}()
 	cloudTestEnabled()
-}
-
-func TestCloudTestSkipReasonString(t *testing.T) {
-	tests := []struct {
-		reason cloudTestSkipReason
-		want   string
-	}{
-		{reason: cloudRequiresLocalServer, want: "requires_local_server"},
-		{reason: cloudRequiresProvisioning, want: "requires_cloud_provisioning"},
-		{reason: cloudNeedsAdaptation, want: "needs_cloud_adaptation"},
-	}
-	for _, test := range tests {
-		if got := test.reason.String(); got != test.want {
-			t.Fatalf("expected %q, got %q", test.want, got)
-		}
-	}
 }
 
 // WaitForTCP waits until target tcp address is available.
