@@ -104,8 +104,23 @@ func sameTaskQueues(a, b []client.WorkerDeploymentTaskQueueInfo) bool {
 	return true
 }
 
+func taskQueuesReady(queues []client.WorkerDeploymentTaskQueueInfo, name string) bool {
+	expected := []client.WorkerDeploymentTaskQueueInfo{
+		{Name: name, Type: client.TaskQueueTypeWorkflow},
+		{Name: name, Type: client.TaskQueueTypeActivity},
+	}
+
+	return sameTaskQueues(queues, expected)
+}
+
 func TestSameTaskQueuesRequiresQueues(t *testing.T) {
 	require.False(t, sameTaskQueues(nil, nil))
+}
+
+func TestTaskQueuesReadyRequiresBothTypes(t *testing.T) {
+	require.False(t, taskQueuesReady([]client.WorkerDeploymentTaskQueueInfo{
+		{Name: "task-queue", Type: client.TaskQueueTypeWorkflow},
+	}, "task-queue"))
 }
 
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropagation(
@@ -253,6 +268,18 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 		ts.NoError(res.Get(&didRun))
 		return didRun
 	}, time.Second*10, time.Millisecond*100)
+
+	ts.Eventually(func() bool {
+		v1Description, err := dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
+			BuildID: v1.BuildID,
+		})
+		if err != nil {
+			return false
+		}
+
+		return taskQueuesReady(v1Description.Info.TaskQueuesInfos, ts.taskQueueName)
+	}, 5*time.Second, 100*time.Millisecond)
+
 	worker1.Stop()
 
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
@@ -272,24 +299,10 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
 	ts.Eventually(func() bool {
-		v1Description, err := dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
-			BuildID: v1.BuildID,
-		})
-		if err != nil {
-			return false
-		}
-
 		v2Description, err := dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
 			BuildID: v2.BuildID,
 		})
-		if err != nil {
-			return false
-		}
-
-		return sameTaskQueues(
-			v1Description.Info.TaskQueuesInfos,
-			v2Description.Info.TaskQueuesInfos,
-		)
+		return err == nil && taskQueuesReady(v2Description.Info.TaskQueuesInfos, ts.taskQueueName)
 	}, 5*time.Second, 100*time.Millisecond)
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
