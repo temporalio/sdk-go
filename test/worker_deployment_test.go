@@ -969,6 +969,7 @@ func (ts *WorkerDeploymentTestSuite) TestListDeployments() {
 }
 
 func (ts *WorkerDeploymentTestSuite) TestDeploymentDrainage() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "Cloud uses the default 180-second drainage visibility grace period")
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
