@@ -61,7 +61,7 @@ type (
 	// taskProcessor interface to process tasks
 	taskProcessor interface {
 		// ProcessTask processes a task
-		ProcessTask(interface{}) error
+		ProcessTask(any) error
 	}
 
 	pollerScaleDecision struct {
@@ -434,7 +434,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 }
 
 // ProcessTask processes a task which could be workflow task or local activity result
-func (wtp *workflowTaskProcessor) ProcessTask(task interface{}) error {
+func (wtp *workflowTaskProcessor) ProcessTask(task any) error {
 	if !wtp.shouldDrainOnShutdown() && wtp.stopping() {
 		return errStop
 	}
@@ -587,9 +587,9 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagError, taskErr)
 		emitFailMetric = true
 		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
-		failureReason = "WorkflowError"
+		failureReason = metrics.FailureReasonWorkflowError
 		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
-			failureReason = "NonDeterminismError"
+			failureReason = metrics.FailureReasonNonDeterminismError
 		}
 		taskCompletion = &workflowTaskCompletion{rawRequest: failWorkflowTask}
 	}
@@ -624,9 +624,9 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		}
 		wtp.logger.Warn("Workflow task postprocess error: "+taskErr.Error(), keyvals...)
 		emitFailMetric = true
-		failureReason = "WorkflowError"
+		failureReason = metrics.FailureReasonWorkflowError
 		if errors.As(taskErr, new(payloadSizeError)) {
-			failureReason = "PayloadsTooLarge"
+			failureReason = metrics.FailureReasonPayloadsTooLarge
 		}
 		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
 	}
@@ -637,7 +637,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	response, err = wtp.sendTaskCompletedRequest(taskCompletion, task)
 
 	completionEventId := task.GetStartedEventId() + 1
-	loggerDurationKeyVals := []interface{}{
+	loggerDurationKeyVals := []any{
 		tagWorkflowType, task.WorkflowType.GetName(),
 		tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
 		tagRunID, task.WorkflowExecution.GetRunId(),
@@ -679,7 +679,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		if secondEmitFailMetric {
 			emitFailMetric = true
 			// Overwriting the original failure reason for metrics purposes
-			failureReason = "GrpcMessageTooLarge"
+			failureReason = metrics.FailureReasonGrpcMessageTooLarge
 		}
 		// We already know the first error was GRPC message too large, if there was another error when reporting the first error
 		// to the server it's probably more interesting for the user.
@@ -845,16 +845,19 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []byte, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondWorkflowTaskFailedRequest {
 	builtRequest := &workflowservice.RespondWorkflowTaskFailedRequest{
-		TaskToken:      taskToken,
-		Cause:          cause,
-		Failure:        wtp.failureConverter.ErrorToFailure(err),
-		Identity:       wtp.identity,
+		TaskToken: taskToken,
+		Cause:     cause,
+		Failure:   wtp.failureConverter.ErrorToFailure(err),
+		Identity:  wtp.identity,
+		//lint:ignore SA1019 retain the checksum used by servers without Build ID versioning support
 		BinaryChecksum: wtp.workerBuildID,
 		Namespace:      wtp.namespace,
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
 		WorkerVersion: &commonpb.WorkerVersionStamp{
 			BuildId:       wtp.workerBuildID,
 			UseVersioning: wtp.useBuildIDVersioning,
 		},
+		//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 		Deployment: &deploymentpb.Deployment{
 			BuildId:    wtp.workerBuildID,
 			SeriesName: wtp.getDeploymentName(),
@@ -938,7 +941,7 @@ func (latp *localActivityTaskPoller) PollTask() (taskForWorker, error) {
 	return task, nil
 }
 
-func (latp *localActivityTaskPoller) ProcessTask(task interface{}) error {
+func (latp *localActivityTaskPoller) ProcessTask(task any) error {
 	if latp.stopping() {
 		return errStop
 	}
@@ -979,8 +982,12 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			tagAttempt, task.attempt,
 		)
 	})
+	dataConverter := task.params.DataConverter
+	if dataConverter == nil {
+		dataConverter = lath.dataConverter
+	}
 	ctx, err := WithLocalActivityTask(lath.backgroundContext, task, lath.logger, lath.metricsHandler,
-		lath.dataConverter, lath.interceptors, lath.client, lath.workerStopChannel)
+		dataConverter, lath.interceptors, lath.client, lath.workerStopChannel)
 	if err != nil {
 		return &localActivityResult{task: task, err: fmt.Errorf("failed building context: %w", err)}
 	}
@@ -1027,7 +1034,9 @@ func (lath *localActivityTaskHandler) executeLocalActivityTask(task *localActivi
 			}
 			if err != nil && !isBenignApplicationError(err) {
 				metricsHandler.Counter(metrics.LocalActivityFailedCounter).Inc(1)
-				metricsHandler.Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
+				metricsHandler.
+					WithTags(metrics.ActivityTaskFailedTags(metrics.FailureReasonActivityError)).
+					Counter(metrics.LocalActivityExecutionFailedCounter).Inc(1)
 			}
 		}()
 
@@ -1145,10 +1154,12 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 	}
 
 	builtRequest := &workflowservice.PollWorkflowTaskQueueRequest{
-		Namespace:      wtp.namespace,
-		TaskQueue:      taskQueue,
-		Identity:       wtp.identity,
+		Namespace: wtp.namespace,
+		TaskQueue: taskQueue,
+		Identity:  wtp.identity,
+		//lint:ignore SA1019 retain the checksum used by servers without Build ID versioning support
 		BinaryChecksum: wtp.workerBuildID,
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              wtp.workerBuildID,
 			UseVersioning:        wtp.useBuildIDVersioning,
@@ -1408,6 +1419,7 @@ func (atp *activityTaskPoller) poll(ctx context.Context) (taskForWorker, error) 
 		TaskQueue:         &taskqueuepb.TaskQueue{Name: atp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:          atp.identity,
 		TaskQueueMetadata: &taskqueuepb.TaskQueueMetadata{MaxTasksPerSecond: wrapperspb.Double(atp.activitiesPerSecond)},
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              atp.workerBuildID,
 			UseVersioning:        atp.useBuildIDVersioning,
@@ -1454,7 +1466,7 @@ func (atp *activityTaskPoller) PollTask() (taskForWorker, error) {
 }
 
 // ProcessTask processes a new task
-func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
+func (atp *activityTaskPoller) ProcessTask(task any) error {
 	if !atp.shouldDrainOnShutdown() && atp.stopping() {
 		return errStop
 	}
@@ -1479,14 +1491,18 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 
 	// err is returned in case of internal failure, such as unable to propagate context or context timeout.
 	if err != nil {
-		activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+		activityMetricsHandler.
+			WithTags(metrics.ActivityTaskFailedTags(metrics.FailureReasonActivityError)).
+			Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		return err
 	}
 
 	// in case if activity execution failed, request should be of type RespondActivityTaskFailedRequest
 	if req, ok := request.(*workflowservice.RespondActivityTaskFailedRequest); ok {
 		if !isBenignProtoApplicationFailure(req.Failure) {
-			activityMetricsHandler.Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
+			activityMetricsHandler.
+				WithTags(metrics.ActivityTaskFailedTags(metrics.FailureReasonActivityError)).
+				Counter(metrics.ActivityExecutionFailedCounter).Inc(1)
 		}
 	}
 	activityMetricsHandler.Timer(metrics.ActivityExecutionLatency).Record(time.Since(executionStartTime))
@@ -1515,7 +1531,7 @@ func (atp *activityTaskPoller) ProcessTask(task interface{}) error {
 func reportActivityComplete(
 	ctx context.Context,
 	service workflowservice.WorkflowServiceClient,
-	request interface{},
+	request any,
 	rpcMetricsHandler metrics.Handler,
 ) error {
 	if request == nil {
@@ -1549,7 +1565,7 @@ func reportActivityComplete(
 func reportActivityCompleteByID(
 	ctx context.Context,
 	service workflowservice.WorkflowServiceClient,
-	request interface{},
+	request any,
 	rpcMetricsHandler metrics.Handler,
 ) error {
 	if request == nil {
@@ -1593,7 +1609,7 @@ func convertActivityResultToRespondRequest(
 	versionStamp *commonpb.WorkerVersionStamp,
 	deployment *deploymentpb.Deployment,
 	workerDeploymentOptions *deploymentpb.WorkerDeploymentOptions,
-) interface{} {
+) any {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point
@@ -1602,11 +1618,13 @@ func convertActivityResultToRespondRequest(
 
 	if err == nil {
 		return &workflowservice.RespondActivityTaskCompletedRequest{
-			TaskToken:         taskToken,
-			Result:            result,
-			Identity:          identity,
-			Namespace:         namespace,
-			WorkerVersion:     versionStamp,
+			TaskToken: taskToken,
+			Result:    result,
+			Identity:  identity,
+			Namespace: namespace,
+			//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
+			WorkerVersion: versionStamp,
+			//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 			Deployment:        deployment,
 			DeploymentOptions: workerDeploymentOptions,
 		}
@@ -1617,21 +1635,25 @@ func convertActivityResultToRespondRequest(
 		var canceledErr *CanceledError
 		if errors.As(err, &canceledErr) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
-				TaskToken:         taskToken,
-				Details:           convertErrDetailsToPayloads(canceledErr.details, dataConverter),
-				Identity:          identity,
-				Namespace:         namespace,
-				WorkerVersion:     versionStamp,
+				TaskToken: taskToken,
+				Details:   convertErrDetailsToPayloads(canceledErr.details, dataConverter),
+				Identity:  identity,
+				Namespace: namespace,
+				//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
+				WorkerVersion: versionStamp,
+				//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 				Deployment:        deployment,
 				DeploymentOptions: workerDeploymentOptions,
 			}
 		}
 		if errors.Is(err, context.Canceled) {
 			return &workflowservice.RespondActivityTaskCanceledRequest{
-				TaskToken:         taskToken,
-				Identity:          identity,
-				Namespace:         namespace,
-				WorkerVersion:     versionStamp,
+				TaskToken: taskToken,
+				Identity:  identity,
+				Namespace: namespace,
+				//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
+				WorkerVersion: versionStamp,
+				//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 				Deployment:        deployment,
 				DeploymentOptions: workerDeploymentOptions,
 			}
@@ -1645,11 +1667,13 @@ func convertActivityResultToRespondRequest(
 	}
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
-		TaskToken:         taskToken,
-		Failure:           failureConverter.ErrorToFailure(err),
-		Identity:          identity,
-		Namespace:         namespace,
-		WorkerVersion:     versionStamp,
+		TaskToken: taskToken,
+		Failure:   failureConverter.ErrorToFailure(err),
+		Identity:  identity,
+		Namespace: namespace,
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
+		WorkerVersion: versionStamp,
+		//lint:ignore SA1019 retain legacy deployment metadata for servers predating deployment options
 		Deployment:        deployment,
 		DeploymentOptions: workerDeploymentOptions,
 	}
@@ -1666,7 +1690,7 @@ func convertActivityResultToRespondRequestByID(
 	dataConverter converter.DataConverter,
 	failureConverter converter.FailureConverter,
 	cancelAllowed bool,
-) interface{} {
+) any {
 	if err == ErrActivityResultPending {
 		// activity result is pending and will be completed asynchronously.
 		// nothing to report at this point

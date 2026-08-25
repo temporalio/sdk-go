@@ -79,7 +79,7 @@ func Workflow2(ctx workflow.Context, name string) error {
 
 	workflow.GetVersion(ctx, "test-change", workflow.DefaultVersion, 1)
 
-	_ = workflow.UpsertSearchAttributes(ctx, map[string]interface{}{"CustomKeywordField": "testkey"})
+	_ = workflow.UpsertSearchAttributes(ctx, map[string]any{"CustomKeywordField": "testkey"})
 
 	workflow.GetVersion(ctx, "test-change-2", workflow.DefaultVersion, 1)
 
@@ -130,7 +130,7 @@ func ContinueAsNewWorkflow(ctx workflow.Context, continueAsNew bool) error {
 }
 
 func UpsertMemoWorkflow(ctx workflow.Context, memo string) error {
-	err := workflow.UpsertMemo(ctx, map[string]interface{}{
+	err := workflow.UpsertMemo(ctx, map[string]any{
 		"Test key": memo,
 	})
 	if err != nil {
@@ -147,13 +147,13 @@ func UpsertMemoWorkflow(ctx workflow.Context, memo string) error {
 		return err
 	}
 
-	return workflow.UpsertMemo(ctx, map[string]interface{}{
+	return workflow.UpsertMemo(ctx, map[string]any{
 		"Test key": memo,
 	})
 }
 
 func UpsertSearchAttributesWorkflow(ctx workflow.Context, field string) error {
-	err := workflow.UpsertSearchAttributes(ctx, map[string]interface{}{
+	err := workflow.UpsertSearchAttributes(ctx, map[string]any{
 		"CustomStringField": field,
 	})
 	if err != nil {
@@ -171,13 +171,13 @@ func UpsertSearchAttributesWorkflow(ctx workflow.Context, field string) error {
 		return err
 	}
 
-	return workflow.UpsertSearchAttributes(ctx, map[string]interface{}{
+	return workflow.UpsertSearchAttributes(ctx, map[string]any{
 		"CustomStringField": field,
 	})
 }
 
 func SideEffectWorkflow(ctx workflow.Context, field string) error {
-	encodedRandom := workflow.SideEffect(ctx, func(ctx workflow.Context) interface{} {
+	encodedRandom := workflow.SideEffect(ctx, func(ctx workflow.Context) any {
 		return rand.Intn(100)
 	})
 
@@ -216,8 +216,8 @@ func MutableSideEffectWorkflow(ctx workflow.Context) ([]int, error) {
 		err := workflow.MutableSideEffect(
 			ctx,
 			"side-effect-1",
-			func(ctx workflow.Context) interface{} { return retVal },
-			func(a, b interface{}) bool { return a.(int) == b.(int) },
+			func(ctx workflow.Context) any { return retVal },
+			func(a, b any) bool { return a.(int) == b.(int) },
 		).Get(&newVal)
 		if err != nil {
 			panic(err)
@@ -248,14 +248,14 @@ func MutableSideEffectWorkflow(ctx workflow.Context) ([]int, error) {
 }
 
 func VersionLoopWorkflow(ctx workflow.Context, changeID string, iterations int) error {
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
 	}
 	return workflow.Sleep(ctx, time.Second)
 }
 
 func VersionLoopWorkflowMultipleTasks(ctx workflow.Context, changeID string, iterations int) error {
-	for i := 0; i < iterations; i++ {
+	for i := range iterations {
 		workflow.GetVersion(ctx, fmt.Sprintf("%s:%d", changeID, i), workflow.DefaultVersion, 1)
 		err := workflow.Sleep(ctx, time.Millisecond)
 		if err != nil {
@@ -311,7 +311,7 @@ func DuplicateChildWorkflow(ctx workflow.Context) error {
 	}).AddDefault(func() {
 		err = workflow.Sleep(ctx, time.Second)
 	})
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		selector.Select(ctx)
 		if err != nil {
 			return err
@@ -416,9 +416,9 @@ func VersionAndMutableSideEffectWorkflow(ctx workflow.Context, name string) (str
 func generateUUID(ctx workflow.Context, sideEffectID string) (string, error) {
 	var generatedUUID string
 
-	err := workflow.MutableSideEffect(ctx, sideEffectID, func(ctx workflow.Context) interface{} {
+	err := workflow.MutableSideEffect(ctx, sideEffectID, func(ctx workflow.Context) any {
 		return uuid.NewString()
-	}, func(a, b interface{}) bool {
+	}, func(a, b any) bool {
 		return a.(string) == b.(string)
 	}).Get(&generatedUUID)
 	if err != nil {
@@ -439,7 +439,7 @@ func CancelOrderSelectWorkflow(ctx workflow.Context) error {
 		err = timerf.Get(ctx, nil)
 		// do something different on cancel error
 		if !temporal.IsCanceledError(err) {
-			_ = workflow.UpsertSearchAttributes(ctx, map[string]interface{}{"CustomKeywordField": "testkey"})
+			_ = workflow.UpsertSearchAttributes(ctx, map[string]any{"CustomKeywordField": "testkey"})
 		} else {
 			var result string
 			ao := workflow.ActivityOptions{
@@ -657,7 +657,7 @@ func TripWorkflow(ctx workflow.Context, tripCounter int) error {
 
 	// TripCh to wait on trip completed event signals
 	tripCh := workflow.GetSignalChannel(ctx, "trip_event")
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		var trip int
 		tripCh.Receive(ctx, &trip)
 		logger.Info("Trip complete event received.", "Total", trip)
@@ -811,7 +811,7 @@ func MemoChildWorkflowGob(ctx workflow.Context, input string) (string, error) {
 func MemoEncodingWorkflowGob(ctx workflow.Context, memoValue string) (string, error) {
 	// Execute a child workflow with memo
 	cwo := workflow.ChildWorkflowOptions{
-		Memo: map[string]interface{}{
+		Memo: map[string]any{
 			"test-memo-key": memoValue,
 		},
 	}
@@ -824,7 +824,7 @@ func MemoEncodingWorkflowGob(ctx workflow.Context, memoValue string) (string, er
 	}
 
 	// Also upsert memo in the parent workflow
-	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+	err = workflow.UpsertMemo(ctx, map[string]any{
 		"parent-memo-key": "parent-" + memoValue,
 	})
 	if err != nil {
@@ -869,7 +869,7 @@ func MemoChildWorkflowJSON(ctx workflow.Context) (string, error) {
 
 func MemoEncodingWorkflowJSON(ctx workflow.Context, memoValue string) (string, error) {
 	cwo := workflow.ChildWorkflowOptions{
-		Memo: map[string]interface{}{
+		Memo: map[string]any{
 			"test-memo-key": memoValue,
 		},
 	}
@@ -882,7 +882,7 @@ func MemoEncodingWorkflowJSON(ctx workflow.Context, memoValue string) (string, e
 	}
 
 	// Also upsert memo in the parent workflow
-	err = workflow.UpsertMemo(ctx, map[string]interface{}{
+	err = workflow.UpsertMemo(ctx, map[string]any{
 		"parent-memo-key": "parent-" + memoValue,
 	})
 	if err != nil {
@@ -941,7 +941,7 @@ func ChannelWorkerWorkflow(ctx workflow.Context) error {
 
 	wg := workflow.NewWaitGroup(ctx)
 	wg.Add(2)
-	for i := 0; i < 2; i++ {
+	for range 2 {
 		workflow.Go(ctx, func(ctx workflow.Context) {
 			defer wg.Done()
 			for {

@@ -55,7 +55,7 @@ func TestTryReserveSlotDoesNotBlockDuringRampWait(t *testing.T) {
 	require.NotNil(t, supplier.TryReserveSlot(info), "first eager reserve should succeed")
 	callsBeforeReserve := info.numIssuedCalls.Load()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	reserveReturned := make(chan struct{})
 	go func() {
@@ -105,12 +105,10 @@ func TestRampThrottleBoundsIssuanceAcrossConcurrentReserveSlot(t *testing.T) {
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
-	for i := 0; i < reservers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range reservers {
+		wg.Go(func() {
 			<-start
-			permit, err := supplier.ReserveSlot(context.Background(), info)
+			permit, err := supplier.ReserveSlot(t.Context(), info)
 			at := time.Now()
 
 			mu.Lock()
@@ -120,7 +118,7 @@ func TestRampThrottleBoundsIssuanceAcrossConcurrentReserveSlot(t *testing.T) {
 				return
 			}
 			issuedAt = append(issuedAt, at)
-		}()
+		})
 	}
 	close(start)
 	wg.Wait()

@@ -9,10 +9,62 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 )
+
+func TestCheckModuleDirs(t *testing.T) {
+	rootDir := t.TempDir()
+	for _, moduleDir := range []string{
+		"contrib/alpha",
+		"contrib/nested/bravo",
+		"internal/ignored",
+	} {
+		dir := filepath.Join(rootDir, filepath.FromSlash(moduleDir))
+		if err := os.MkdirAll(dir, 0777); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "go.mod"), nil, 0666); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	b := &builder{rootDir: rootDir}
+	moduleDirs, err := b.checkModuleDirs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		rootDir,
+		filepath.Join(rootDir, "contrib", "alpha"),
+		filepath.Join(rootDir, "contrib", "nested", "bravo"),
+	}
+	if !slices.Equal(moduleDirs, want) {
+		t.Fatalf("expected module dirs %q, got %q", want, moduleDirs)
+	}
+}
+
+func TestFindModuleDirs(t *testing.T) {
+	moduleDirs, err := findModuleDirs(fstest.MapFS{
+		"go.mod":                         {},
+		"test/go.mod":                    {},
+		"contrib/example/go.mod":         {},
+		"contrib/example/nested/file.go": {},
+		"testdata/fixture/go.mod":        {},
+		"vendor/dependency/go.mod":       {},
+		".build/scratch/go.mod":          {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".", "contrib/example", "test"}
+	if !slices.Equal(want, moduleDirs) {
+		t.Fatalf("expected module directories %v, got %v", want, moduleDirs)
+	}
+}
 
 func TestTestOutputFlagsDefaultToFailures(t *testing.T) {
 	flags := addTestOutputFlags(flag.NewFlagSet("test", flag.ContinueOnError))

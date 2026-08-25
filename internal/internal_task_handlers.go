@@ -258,7 +258,7 @@ func (e workflowTaskHeartbeatError) Error() string {
 	return e.Message
 }
 
-func historyMismatchErrorf(f string, v ...interface{}) historyMismatchError {
+func historyMismatchErrorf(f string, v ...any) historyMismatchError {
 	return historyMismatchError{message: fmt.Sprintf(f, v...)}
 }
 
@@ -1913,16 +1913,17 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			backoffStartInterval = durationpb.New(contErr.BackoffStartInterval)
 		}
 		closeCommand.Attributes = &commandpb.Command_ContinueAsNewWorkflowExecutionCommandAttributes{ContinueAsNewWorkflowExecutionCommandAttributes: &commandpb.ContinueAsNewWorkflowExecutionCommandAttributes{
-			WorkflowType:              &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
-			Input:                     contErr.Input,
-			TaskQueue:                 &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
-			WorkflowRunTimeout:        durationpb.New(contErr.WorkflowRunTimeout),
-			WorkflowTaskTimeout:       durationpb.New(contErr.WorkflowTaskTimeout),
-			BackoffStartInterval:      backoffStartInterval,
-			Header:                    contErr.Header,
-			Memo:                      workflowContext.workflowInfo.Memo,
-			SearchAttributes:          sanitizeSearchAttributesForStart(workflowContext.workflowInfo.SearchAttributes),
-			RetryPolicy:               convertToPBRetryPolicy(retryPolicy),
+			WorkflowType:         &commonpb.WorkflowType{Name: contErr.WorkflowType.Name},
+			Input:                contErr.Input,
+			TaskQueue:            &taskqueuepb.TaskQueue{Name: contErr.TaskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
+			WorkflowRunTimeout:   durationpb.New(contErr.WorkflowRunTimeout),
+			WorkflowTaskTimeout:  durationpb.New(contErr.WorkflowTaskTimeout),
+			BackoffStartInterval: backoffStartInterval,
+			Header:               contErr.Header,
+			Memo:                 workflowContext.workflowInfo.Memo,
+			SearchAttributes:     sanitizeSearchAttributesForStart(workflowContext.workflowInfo.SearchAttributes),
+			RetryPolicy:          convertToPBRetryPolicy(retryPolicy),
+			//lint:ignore SA1019 preserve deprecated build-ID versioning behavior
 			InheritBuildId:            useCompat,
 			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),
 		}}
@@ -1994,15 +1995,17 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		Identity:                   wth.identity,
 		ReturnNewWorkflowTask:      true,
 		ForceCreateNewWorkflowTask: forceNewWorkflowTask,
-		BinaryChecksum:             wth.workerBuildID,
-		QueryResults:               queryResults,
-		Namespace:                  wth.namespace,
-		MeteringMetadata:           &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
+		//lint:ignore SA1019 support servers without build-ID versioning
+		BinaryChecksum:   wth.workerBuildID,
+		QueryResults:     queryResults,
+		Namespace:        wth.namespace,
+		MeteringMetadata: &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,
 			SdkName:       eventHandler.getNewSdkNameAndReset(),
 			SdkVersion:    eventHandler.getNewSdkVersionAndReset(),
 		},
+		//lint:ignore SA1019 preserve deprecated build-ID versioning behavior
 		WorkerVersionStamp: &commonpb.WorkerVersionStamp{
 			BuildId:       wth.workerBuildID,
 			UseVersioning: wth.useBuildIDForVersioning,
@@ -2010,6 +2013,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		Capabilities: &workflowservice.RespondWorkflowTaskCompletedRequest_Capabilities{
 			DiscardSpeculativeWorkflowTaskWithEvents: true,
 		},
+		//lint:ignore SA1019 support legacy worker deployment APIs
 		Deployment: &deploymentpb.Deployment{
 			BuildId:    wth.workerBuildID,
 			SeriesName: seriesName,
@@ -2240,10 +2244,7 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	// small that the context is cancelled before it even starts the call.
 	// Therefore, we'll make sure not to timeout the context faster than the
 	// minimum RPC timeout.
-	recordTimeout := i.heartbeatThrottleInterval
-	if recordTimeout < minRPCTimeout {
-		recordTimeout = minRPCTimeout
-	}
+	recordTimeout := max(i.heartbeatThrottleInterval, minRPCTimeout)
 	ctx, cancel := context.WithTimeout(ctx, recordTimeout)
 	defer cancel()
 
@@ -2356,7 +2357,7 @@ func newServiceInvoker(
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result interface{}, err error) {
+func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result any, err error) {
 	traceLog(func() {
 		if t.WorkflowExecution.GetWorkflowId() == "" {
 			ath.logger.Debug("Processing new standalone activity task",
@@ -2554,11 +2555,13 @@ func (ath *activityTaskHandlerImpl) visitorErrorToActivityFailure(msgPrefix stri
 	ath.logger.Error(msgPrefix+err.Error(), keyvals...)
 
 	return &workflowservice.RespondActivityTaskFailedRequest{
-		TaskToken:         t.TaskToken,
-		Failure:           ath.failureConverter.ErrorToFailure(err),
-		Identity:          ath.identity,
-		Namespace:         ath.namespace,
-		WorkerVersion:     ath.versionStamp,
+		TaskToken: t.TaskToken,
+		Failure:   ath.failureConverter.ErrorToFailure(err),
+		Identity:  ath.identity,
+		Namespace: ath.namespace,
+		//lint:ignore SA1019 preserve deprecated build-ID versioning behavior
+		WorkerVersion: ath.versionStamp,
+		//lint:ignore SA1019 support legacy worker deployment APIs
 		Deployment:        ath.deployment,
 		DeploymentOptions: ath.workerDeploymentOptions,
 	}

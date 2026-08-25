@@ -1,6 +1,6 @@
 module go.temporal.io/sdk/contrib/envconfig
 
-go 1.25.4
+go 1.26.0
 
 require (
 	github.com/BurntSushi/toml v1.4.0
@@ -17,11 +17,11 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.22.0 // indirect
 	github.com/nexus-rpc/nexus-proto-annotations v0.1.0 // indirect
-	github.com/nexus-rpc/sdk-go v0.6.0 // indirect
+	github.com/nexus-rpc/sdk-go v0.7.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/robfig/cron v1.2.0 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
-	go.temporal.io/api v1.63.4 // indirect
+	go.temporal.io/api v1.63.5 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect

@@ -17,8 +17,10 @@ import (
 	"sort"
 	"strings"
 
+	_ "github.com/Antonboom/testifylint/analyzer"
 	_ "github.com/BurntSushi/toml"
 	_ "github.com/kisielk/errcheck/errcheck"
+	_ "github.com/ldez/usetesting"
 	_ "honnef.co/go/tools/staticcheck"
 
 	"go.temporal.io/sdk/client"
@@ -74,27 +76,134 @@ func (b *builder) run() error {
 }
 
 func (b *builder) check() error {
+	moduleDirs, err := b.checkModuleDirs()
+	if err != nil {
+		return fmt.Errorf("failed finding modules to check: %w", err)
+	}
+
 	// Run go vet
-	if err := b.runCmd(b.cmdFromRoot("go", "vet", "./...")); err != nil {
+	if err := b.runCmdInDirs(moduleDirs, "go", "vet", "./..."); err != nil {
 		return fmt.Errorf("go vet failed: %w", err)
 	}
 	// Run errcheck
 	if errCheck, err := b.getInstalledTool("github.com/kisielk/errcheck"); err != nil {
 		return fmt.Errorf("failed getting errcheck: %w", err)
-	} else if err := b.runCmd(b.cmdFromRoot(errCheck, "./...")); err != nil {
+	} else if err := b.runCmdInDirs(moduleDirs, errCheck, "./..."); err != nil {
 		return fmt.Errorf("errcheck failed: %w", err)
 	}
 	// Run staticcheck
 	if staticCheck, err := b.getInstalledTool("honnef.co/go/tools/cmd/staticcheck"); err != nil {
 		return fmt.Errorf("failed getting staticcheck: %w", err)
-	} else if err := b.runCmd(b.cmdFromRoot(staticCheck, "./...")); err != nil {
+	} else if err := b.runCmdInDirs(moduleDirs, staticCheck, "./..."); err != nil {
 		return fmt.Errorf("staticcheck failed: %w", err)
+	}
+	// Run usetesting
+	if useTesting, err := b.getInstalledTool("github.com/ldez/usetesting/cmd/usetesting"); err != nil {
+		return fmt.Errorf("failed getting usetesting: %w", err)
+	} else if err := b.runCmd(b.cmdFromRoot(
+		useTesting,
+		"-contextbackground",
+		"-contexttodo",
+		"-oschdir=false",
+		"-oscreatetemp",
+		"-osmkdirtemp",
+		"-ossetenv",
+		"-ostempdir",
+		"./...",
+	)); err != nil {
+		return fmt.Errorf("usetesting failed: %w", err)
+	}
+	// Run correctness-oriented testifylint checks. Staticcheck remains the style baseline.
+	if testifyLint, err := b.getInstalledTool("github.com/Antonboom/testifylint"); err != nil {
+		return fmt.Errorf("failed getting testifylint: %w", err)
+	} else if err := b.runCmd(b.cmdFromRoot(
+		testifyLint,
+		"-disable-all",
+		"-enable=nil-compare,suite-broken-parallel,suite-method-signature,useless-assert",
+		"./...",
+	)); err != nil {
+		return fmt.Errorf("testifylint failed: %w", err)
 	}
 	// Run doclink check
 	if err := b.runCmd(b.cmdFromRoot("go", "run", "./internal/cmd/tools/doclink/doclink.go")); err != nil {
 		return fmt.Errorf("doclink check failed: %w", err)
 	}
+	// Check SetupTest bindings for embedded require assertions in testify suites.
+	testSuiteAssertions, err := b.getInstalledTool("go.temporal.io/sdk/internal/cmd/build/cmd/testsuiteassertions")
+	if err != nil {
+		return fmt.Errorf("failed getting testsuiteassertions: %w", err)
+	}
+	allModuleDirs, err := findModuleDirs(os.DirFS(b.rootDir))
+	if err != nil {
+		return fmt.Errorf("failed finding Go modules: %w", err)
+	}
+	for _, moduleDir := range allModuleDirs {
+		cmd := b.cmdFromRoot(testSuiteAssertions, "./...")
+		cmd.Dir = filepath.Join(b.rootDir, moduleDir)
+		if err := b.runCmd(cmd); err != nil {
+			return fmt.Errorf("testsuiteassertions check failed in %s: %w", moduleDir, err)
+		}
+	}
 	return nil
+}
+
+func (b *builder) checkModuleDirs() ([]string, error) {
+	moduleDirs := []string{b.rootDir}
+	contribDir := filepath.Join(b.rootDir, "contrib")
+	err := filepath.WalkDir(contribDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Name() == "go.mod" {
+			moduleDirs = append(moduleDirs, filepath.Dir(p))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(moduleDirs[1:])
+	return moduleDirs, nil
+}
+
+func (b *builder) runCmdInDirs(dirs []string, args ...string) error {
+	for _, dir := range dirs {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = dir
+		if err := b.runCmd(cmd); err != nil {
+			moduleDir, relErr := filepath.Rel(b.rootDir, dir)
+			if relErr != nil {
+				moduleDir = dir
+			}
+			return fmt.Errorf("failed in module %q: %w", moduleDir, err)
+		}
+	}
+	return nil
+}
+
+func findModuleDirs(root fs.FS) ([]string, error) {
+	var moduleDirs []string
+	err := fs.WalkDir(root, ".", func(p string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			switch entry.Name() {
+			case ".build", ".git", "node_modules", "testdata", "vendor":
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if entry.Name() == "go.mod" {
+			moduleDirs = append(moduleDirs, path.Dir(p))
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(moduleDirs)
+	return moduleDirs, nil
 }
 
 func (b *builder) integrationTest() error {
@@ -104,10 +213,14 @@ func (b *builder) integrationTest() error {
 	pFlag := flagSet.String("p", "", "Passed to go test as -p")
 	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
+	envConfigFlag := flagSet.Bool("envconfig", false, "Load test server client options from envconfig")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
 	testOutputFlags := addTestOutputFlags(flagSet)
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
+	}
+	if *devServerFlag && *envConfigFlag {
+		return fmt.Errorf("-dev-server and -envconfig cannot be used together")
 	}
 	testOutput, err := b.prepareTestOutput(*testOutputFlags, "go-test.log")
 	if err != nil {
@@ -131,6 +244,9 @@ func (b *builder) integrationTest() error {
 	rerunArgs := []string{"go", "run", ".", "integration-test"}
 	if *devServerFlag {
 		rerunArgs = append(rerunArgs, "-dev-server")
+	}
+	if *envConfigFlag {
+		rerunArgs = append(rerunArgs, "-envconfig")
 	}
 	if *pFlag != "" {
 		rerunArgs = append(rerunArgs, "-p", *pFlag)
@@ -183,7 +299,7 @@ func (b *builder) integrationTest() error {
 		devServerLogger := sdklog.NewStructuredLogger(slog.New(slog.NewTextHandler(devServerStdout, nil)))
 		devServer, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{
 			CachedDownload: testsuite.CachedDownload{
-				Version: "v1.7.2-one-time-versioning-override",
+				Version: "v1.8.3-server-1.32.0-162.0",
 			},
 			ClientOptions: &client.Options{
 				HostPort:  "127.0.0.1:7233",
@@ -259,6 +375,9 @@ func (b *builder) integrationTest() error {
 	if *devServerFlag {
 		args = append(args, "--", "-using-cli-dev-server")
 		env = append(env, "TEMPORAL_NAMESPACE=integration-test-namespace")
+	}
+	if *envConfigFlag {
+		env = append(env, "TEMPORAL_TEST_ENV_CONFIG_SERVER=true")
 	}
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)

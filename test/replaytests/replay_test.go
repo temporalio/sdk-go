@@ -2,11 +2,13 @@ package replaytests
 
 import (
 	"context"
+	"fmt"
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
+	"google.golang.org/protobuf/proto"
 	"reflect"
 	"testing"
 
@@ -16,6 +18,47 @@ import (
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 )
+
+type replayTestSigningCodec struct {
+	signature string
+}
+
+func (c *replayTestSigningCodec) WithSerializationContext(ctx converter.SerializationContext) converter.PayloadCodec {
+	switch sc := ctx.(type) {
+	case converter.WorkflowSerializationContext:
+		return &replayTestSigningCodec{signature: sc.WorkflowID}
+	case converter.ActivitySerializationContext:
+		return &replayTestSigningCodec{signature: fmt.Sprintf("%s:%s:local=%t", sc.WorkflowID, sc.ActivityType, sc.IsLocal)}
+	}
+	return c
+}
+
+func (c *replayTestSigningCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		clone := proto.Clone(p).(*commonpb.Payload)
+		if clone.Metadata == nil {
+			clone.Metadata = map[string][]byte{}
+		}
+		clone.Metadata["ctx-signature"] = []byte(c.signature)
+		result[i] = clone
+	}
+	return result, nil
+}
+
+func (c *replayTestSigningCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		sig := string(p.Metadata["ctx-signature"])
+		if sig != c.signature {
+			return nil, fmt.Errorf("signature mismatch: got %q, want %q", sig, c.signature)
+		}
+		clone := proto.Clone(p).(*commonpb.Payload)
+		delete(clone.Metadata, "ctx-signature")
+		result[i] = clone
+	}
+	return result, nil
+}
 
 type replayTestSuite struct {
 	suite.Suite
@@ -148,6 +191,18 @@ func (s *replayTestSuite) TestBadReplayLocalActivity() {
 	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-local-activity-2.json")
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "nondeterministic workflow: missing replay command for MarkerRecorded")
+}
+
+func (s *replayTestSuite) TestReplayLocalActivitySerializationContext() {
+	codecDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &replayTestSigningCodec{})
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		DataConverter: codecDC,
+	})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(LocalActivityWorkflow)
+
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "local-activity-serialization-context.json")
+	require.NoError(s.T(), err)
 }
 
 func (s *replayTestSuite) TestContinueAsNewWorkflow() {
@@ -553,16 +608,16 @@ func (s *replayTestSuite) TestAwaitWithTimeoutAlreadyTrueCondition() {
 
 type captureConverter struct {
 	converter.DataConverter
-	toPayloads   []interface{}
-	fromPayloads []interface{}
+	toPayloads   []any
+	fromPayloads []any
 }
 
-func (c *captureConverter) ToPayloads(value ...interface{}) (*commonpb.Payloads, error) {
+func (c *captureConverter) ToPayloads(value ...any) (*commonpb.Payloads, error) {
 	c.toPayloads = append(c.toPayloads, value...)
 	return c.DataConverter.ToPayloads(value...)
 }
 
-func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error {
+func (c *captureConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
 	// Call then get pointers
 	err := c.DataConverter.FromPayloads(payloads, valuePtrs...)
 	for _, v := range valuePtrs {

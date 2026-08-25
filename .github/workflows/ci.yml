@@ -226,6 +226,7 @@ jobs:
           DISABLE_PRIORITY_TESTS: "1"
           DISABLE_STANDALONE_ACTIVITY_TESTS: "1"
           DISABLE_STANDALONE_NEXUS_TESTS: "1"
+          DISABLE_NEXUS_SDK_ERGONOMICS_TESTS: "1"
           DISABLE_ACTIVITY_BACKED_NEXUS_TESTS: "1"
           DISABLE_NEXUS_CALLER_TIMEOUT_TESTS: "1"
           DISABLE_NEW_NEXUS_ERROR_FORMAT_TESTS: "1"
@@ -266,10 +267,10 @@ jobs:
     if: ${{ github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go' }}
     runs-on: ubuntu-latest
     env:
-      SERVICE_ADDR: sdk-ci.a2dd6.tmprl.cloud:7233
+      TEMPORAL_ADDRESS: sdk-ci.a2dd6.tmprl.cloud:7233
       TEMPORAL_NAMESPACE: sdk-ci.a2dd6
-      TEMPORAL_CLIENT_CERT: ${{ secrets.TEMPORAL_CLIENT_CERT }}
-      TEMPORAL_CLIENT_KEY: ${{ secrets.TEMPORAL_CLIENT_KEY }}
+      TEMPORAL_TLS_CLIENT_CERT_DATA: ${{ secrets.TEMPORAL_CLIENT_CERT }}
+      TEMPORAL_TLS_CLIENT_KEY_DATA: ${{ secrets.TEMPORAL_CLIENT_KEY }}
       GODEBUG: ${{ matrix.fips && 'fips140=on' || '' }}
 
     steps:
@@ -282,7 +283,7 @@ jobs:
       - name: Selected integration tests against cloud
         # Keep this list intentionally small. Add cloud-safe tests here when
         # they cover behavior that cannot be validated against the local dev server.
-        run: 'go run . integration-test -p 1 -packages . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
+        run: 'go run . integration-test -envconfig -p 1 -packages . -run "TestIntegrationSuite/(TestBasic|TestShutdownDuringActiveTimerActivityWorkflows)$"'
         working-directory: ./internal/cmd/build
         env:
           TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}

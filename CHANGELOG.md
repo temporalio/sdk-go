@@ -19,14 +19,66 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
+- Add support for Workflow Queries as Nexus Operations.
 
 ### Added
 
+- Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
+  optional structured details for payload validation failures. Passing `nil` omits details.
+- Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
+  workflow-, activity-, and workflow-update-backed Nexus operations.
+- The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
+  metrics now carry a `failure_reason` attribute, currently always `ActivityError`. Each is now
+  split into one time series per reason, which may affect existing dashboards.
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+- Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
+  `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
+  context-derived encryption keys or AAD) may fail to decode local activity results recorded in
+  histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+- Activity, local activity and child workflow serialization contexts are now applied to the
+  worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
+  the current workflow context. A context-aware converter that composed contexts (deriving its state
+  from both the workflow and the activity context) now sees only the activity or child workflow
+  context, and one whose `WithSerializationContext` returned a converter that is no longer
+  context-aware now receives the activity or child workflow context it previously never saw.
+
+### Fixed
+
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
+  but decoded through the workflow serialization context, so a context-aware `DataConverter` or
+  `PayloadCodec` saw mismatched contexts for local activity results.
+- Workflow replays no longer retain one-shot workflow state in the process-wide sticky cache.
+- Corrected stand-alone activity API documentation to use activity terminology, document that
+  `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
+  `TerminateActivityOptions.Reason` as a termination reason.
+
+### Security
+
+## [1.48.0] - 2026-08-18
+
+### Added
+
+- Added `-envconfig` support to the integration test harness, allowing integration tests to use
+  standard client settings from `contrib/envconfig`.
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+- Added `client.WorkflowRun.GetFirstExecutionRunID` to expose the first execution run ID returned by the server when starting a workflow.
 - Added `client.Client.CancelWorkflowWithOptions` and `client.Client.TerminateWorkflowWithOptions` to target a workflow execution chain by its first execution run ID. Cancellation options can also specify a reason.
 - Added experimental `workflow.GetRandomStream` for named deterministic pseudorandom values in workflows.
 - Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
   path.
+- Added `go.temporal.io/sdk/interceptor/tracing`, a reworked tracing interceptor with
+  corrected span parenting and span directions for span-kind mapping. It backs the new
+  `contrib/opentelemetry-v2` module and is not span-compatible with the tracing interceptor
+  used by `contrib/opentelemetry` (v1).
 
 ### Changed
 
@@ -35,6 +87,13 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Data converter errors raised while deserializing Nexus operation input are no longer replaced with
+  a generic `BAD_REQUEST` handler error. A `temporal.ApplicationError` or a `nexus.HandlerError` is
+  now propagated to the caller as-is, and any other error is wrapped in a `BAD_REQUEST`
+  `nexus.HandlerError` that retains the original error as its cause. As an exception, a
+  non-retryable `temporal.ApplicationError` with type `PayloadValidationError` is reported as a
+  `BAD_REQUEST` `nexus.HandlerError` with the original error as its cause, since it indicates the
+  operation input itself is invalid.
 - Prevent workflow task failures when an activity with a custom ID completes while its cancellation
   command is pending.
 - `TestWorkflowEnvironment.MutableSideEffect` now honors the provided equals function and only
@@ -47,6 +106,9 @@ to docs, or any other relevant information.
   (`SDKFlagSkipAwaitTimerWhenConditionMet`, disabled by default for this release) rather than fixed
   unconditionally: an in-flight workflow whose history already recorded the pre-fix timer for an
   already-satisfied call needs to keep reproducing it on replay of that exact history segment.
+- Nexus operation link propagation for stand-alone activities. When a Nexus operation handler uses
+  `client.ExecuteActivity`, inbound Nexus request links are forwarded to the activity and the
+  activity link returned by the server is propagated back to the Nexus operation caller.
 
 ## [1.47.0] - 2026-07-28
 

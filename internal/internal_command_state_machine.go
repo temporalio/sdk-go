@@ -41,15 +41,15 @@ type (
 		handleInitiatedEvent()
 
 		handleCommandSent()
-		setData(data interface{})
-		getData() interface{}
+		setData(data any)
+		getData() any
 	}
 
 	commandStateMachineBase struct {
 		id      commandID
 		state   commandState
 		history []string
-		data    interface{}
+		data    any
 		helper  *commandsHelper
 	}
 
@@ -472,11 +472,11 @@ func (d *commandStateMachineBase) isDone() bool {
 	return d.state == commandStateCompleted || d.state == commandStateCompletedAfterCancellationCommandSent
 }
 
-func (d *commandStateMachineBase) setData(data interface{}) {
+func (d *commandStateMachineBase) setData(data any) {
 	d.data = data
 }
 
-func (d *commandStateMachineBase) getData() interface{} {
+func (d *commandStateMachineBase) getData() any {
 	return d.data
 }
 
@@ -1457,9 +1457,11 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 		panic("cancellation on external workflow should use cancellation ID")
 	}
 	attributes := &commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
-		Namespace:         namespace,
-		WorkflowId:        workflowID,
-		RunId:             runID,
+		//lint:ignore SA1019 preserve cross-namespace command compatibility
+		Namespace:  namespace,
+		WorkflowId: workflowID,
+		RunId:      runID,
+		//lint:ignore SA1019 control correlates command state with initiated history
 		Control:           cancellationID,
 		ChildWorkflowOnly: false,
 	}
@@ -1523,13 +1525,15 @@ func (h *commandsHelper) signalExternalWorkflowExecution(
 	childWorkflowOnly bool,
 ) commandStateMachine {
 	attributes := &commandpb.SignalExternalWorkflowExecutionCommandAttributes{
+		//lint:ignore SA1019 preserve cross-namespace command compatibility
 		Namespace: namespace,
 		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
-		SignalName:        signalName,
-		Input:             input,
+		SignalName: signalName,
+		Input:      input,
+		//lint:ignore SA1019 control correlates command state with initiated history
 		Control:           signalID,
 		ChildWorkflowOnly: childWorkflowOnly,
 		Header:            header,

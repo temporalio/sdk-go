@@ -34,7 +34,7 @@ func TestRetrySuccess(t *testing.T) {
 	policy.SetMaximumInterval(5 * time.Millisecond)
 	policy.SetMaximumAttempts(10)
 
-	err := Retry(context.Background(), op, policy, nil)
+	err := Retry(t.Context(), op, policy, nil)
 	assert.NoError(t, err)
 	assert.Equal(t, 5, i)
 }
@@ -58,7 +58,7 @@ func TestNoRetryAfterContextDone(t *testing.T) {
 		policy.SetMaximumAttempts(10)
 
 		const timeout = 50 * time.Millisecond
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		ctx, cancel := context.WithTimeout(t.Context(), timeout)
 		defer cancel()
 
 		start := time.Now()
@@ -86,7 +86,7 @@ func TestRetryFailed(t *testing.T) {
 	policy.SetMaximumInterval(5 * time.Millisecond)
 	policy.SetMaximumAttempts(5)
 
-	err := Retry(context.Background(), op, policy, nil)
+	err := Retry(t.Context(), op, policy, nil)
 	assert.Error(t, err)
 	assert.Equal(t, 5, i)
 }
@@ -116,7 +116,7 @@ func TestIsRetryableSuccess(t *testing.T) {
 	policy.SetMaximumInterval(5 * time.Millisecond)
 	policy.SetMaximumAttempts(10)
 
-	err := Retry(context.Background(), op, policy, isRetryable)
+	err := Retry(t.Context(), op, policy, isRetryable)
 	assert.NoError(t, err, "Retry count: %v", i)
 	assert.Equal(t, 5, i)
 }
@@ -138,7 +138,7 @@ func TestIsRetryableFailure(t *testing.T) {
 	policy.SetMaximumInterval(5 * time.Millisecond)
 	policy.SetMaximumAttempts(10)
 
-	err := Retry(context.Background(), op, policy, IgnoreErrors([]error{&someError{}}))
+	err := Retry(t.Context(), op, policy, IgnoreErrors([]error{&someError{}}))
 	assert.Error(t, err)
 	assert.Equal(t, 1, i)
 }
@@ -166,11 +166,11 @@ func TestConcurrentRetrier(t *testing.T) {
 	// Verify valid sleep times.
 	ch := make(chan time.Duration, 3)
 	go func() {
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			ch <- retrier.throttleInternal(nil)
 		}
 	}()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		val := <-ch
 		t.Logf("Duration: %d\n", val)
 		a.True(val > 0)
@@ -179,11 +179,11 @@ func TestConcurrentRetrier(t *testing.T) {
 	a.Equal(int64(0), retrier.failureCount)
 	// Verify we don't have any sleep times.
 	go func() {
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			ch <- retrier.throttleInternal(nil)
 		}
 	}()
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		val := <-ch
 		t.Logf("Duration: %d\n", val)
 		a.Equal(done, val)
@@ -216,7 +216,7 @@ func TestRetryDeadlineExceeded(t *testing.T) {
 	policy.SetBackoffCoefficient(1)
 	policy.SetMaximumAttempts(3)
 
-	err := Retry(context.Background(), op, policy, nil)
+	err := Retry(t.Context(), op, policy, nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, actualError)
 
@@ -229,7 +229,7 @@ func TestRetryDeadlineExceeded(t *testing.T) {
 		}
 		return actualError
 	}
-	err = Retry(context.Background(), op, policy, nil)
+	err = Retry(t.Context(), op, policy, nil)
 	assert.Error(t, err)
 	assert.ErrorIs(t, err, actualError)
 }

@@ -111,7 +111,7 @@ func (e *eagerActivityExecutor) handleResponse(
 	// Give back unfulfilled slots and record for later use
 	unfulfilledSlots := amountSlotsReserved - len(resp.GetActivityTasks())
 	// Release unneeded permits
-	for i := 0; i < unfulfilledSlots; i++ {
+	for range unfulfilledSlots {
 		unneededPermit := reservedPermits[len(reservedPermits)-1]
 		reservedPermits = reservedPermits[:len(reservedPermits)-1]
 		e.activityWorker.releaseSlot(unneededPermit, SlotReleaseReasonUnused)

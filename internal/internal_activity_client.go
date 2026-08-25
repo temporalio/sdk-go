@@ -37,9 +37,10 @@ type (
 		//
 		// Required
 		TaskQueue string
-		// ScheduleToCloseTimeout - Total time that a workflow is willing to wait for an Activity to complete.
-		// ScheduleToCloseTimeout limits the total time of an Activity's execution including retries
-		// 		(use StartToCloseTimeout to limit the time of a single attempt).
+		// ScheduleToCloseTimeout - Maximum duration the Temporal Server allows for an Activity Execution
+		// from scheduling through closure, including retries. This does not control how long a client waits
+		// for the result: ExecuteActivity returns after the start RPC, and the context passed to
+		// ActivityHandle.Get controls the client-side wait. Use StartToCloseTimeout to limit a single attempt.
 		// The zero value of this uses default value.
 		// Either this option or StartToCloseTimeout is required: Defaults to unlimited.
 		ScheduleToCloseTimeout time.Duration
@@ -81,10 +82,10 @@ type (
 		// To disable retries, set MaximumAttempts to 1.
 		// The default RetryPolicy provided by the server can be overridden by the dynamic config.
 		RetryPolicy *RetryPolicy
-		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Workflow. Search Attributes are
-		// additional indexed information attributed to workflow and used for search and visibility. The search attributes
-		// can be used in query of List/Scan/Count workflow APIs. The key and its value type must be registered on Temporal
-		// server side. For supported operations on different server versions see [Visibility].
+		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Activity Execution. Search Attributes
+		// are additional indexed information attributed to the Activity Execution and used for search and visibility. The Search
+		// Attributes can be used in queries to ListActivities and CountActivities. The key and its value type must be registered on
+		// the Temporal Server. For supported operations on different server versions see [Visibility].
 		//
 		// Optional: default to none.
 		//
@@ -97,9 +98,8 @@ type (
 		//
 		// NOTE: Experimental
 		Summary string
-		// Details - General fixed details for this workflow execution that will appear in UI/CLI. This can be in
-		// Temporal markdown format and can span multiple lines. This is a fixed value on the workflow that cannot be
-		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
+		// Details - General fixed details for this Activity Execution that will appear in UI/CLI. This can be in
+		// Temporal Markdown format and can span multiple lines. This value cannot be updated after the Activity Execution starts.
 		//
 		// Optional: defaults to none/empty.
 		//
@@ -113,31 +113,17 @@ type (
 		// StartDelay - Time to wait before dispatching the activity. This delay is not applied to retry attempts.
 		StartDelay time.Duration
 
-		// responseInfo holds the response Link populated by the server when the activity is started.
-		// Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
-		responseInfo *startActivityResponseInfo
 		// requestID is the request ID used to dedup retried starts.
 		// Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
 		requestID string
 		// callbacks is the set of completion callbacks the server should invoke when the activity
 		// reaches a terminal state. Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
 		callbacks []*commonpb.Callback
-		// links to be associated with the activity. Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
-		links []*commonpb.Link
-		// onConflictOptions configures behavior when ActivityIdConflictPolicy is USE_EXISTING and an
-		// activity with the same ID is already running. Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
-		onConflictOptions *OnConflictOptions
-	}
-
-	// startActivityResponseInfo can be populated by the SDK to receive additional fields from the
-	// StartActivityExecution response. Only settable by the SDK.
-	startActivityResponseInfo struct {
-		// Link to the started activity event.
-		Link *commonpb.Link
 	}
 
 	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
-	// ActivityID and RunID are required.
+	// ActivityID is required. RunID is optional; if empty, the handle targets the latest Activity Execution with the given ID.
+	// To target a specific run when ActivityIDReusePolicy allows reuse of an activity ID, set RunID.
 	//
 	// NOTE: Experimental
 	//
@@ -251,7 +237,7 @@ type (
 	//
 	// Exposed as: [go.temporal.io/sdk/client.TerminateActivityOptions]
 	ClientTerminateActivityOptions struct {
-		// Reason is optional description of the reason for cancellation.
+		// Reason is optional description of the reason for termination.
 		Reason string
 	}
 
@@ -605,6 +591,23 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if err = in.Options.validateAndSetInRequest(request, dataConverter); err != nil {
 		return nil, err
 	}
+	// When invoked from inside a Nexus operation handler, attach the operation's inbound caller
+	// links to the start request so the backing activity links back to the caller. Async
+	// Nexus-backed activities carry these on the completion callback instead, so skip when a
+	// callback is already present to avoid duplicating them.
+	if len(request.CompletionCallbacks) == 0 {
+		if links, ok := ctx.Value(NexusOperationRequestLinksKey).([]*commonpb.Link); ok {
+			request.Links = links
+		}
+	}
+	if _, ok := NexusOperationContextFromGoContext(ctx); ok &&
+		(len(request.GetCompletionCallbacks()) > 0 || len(request.GetLinks()) > 0) {
+		request.OnConflictOptions = &commonpb.OnConflictOptions{
+			AttachRequestId:           request.GetRequestId() != "",
+			AttachCompletionCallbacks: len(request.GetCompletionCallbacks()) > 0,
+			AttachLinks:               len(request.GetLinks()) > 0,
+		}
+	}
 	if request.Input, err = encodeArgs(dataConverter, in.Args); err != nil {
 		return nil, err
 	}
@@ -632,8 +635,8 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	} else {
 		runID = resp.RunId
 	}
-	if in.Options.responseInfo != nil {
-		in.Options.responseInfo.Link = resp.Link
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(resp.GetLink())
 	}
 
 	return &clientActivityHandleImpl{
@@ -685,14 +688,6 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 		request.RequestId = options.requestID
 	}
 	request.CompletionCallbacks = options.callbacks
-	request.Links = options.links
-	if options.onConflictOptions != nil {
-		request.OnConflictOptions = &commonpb.OnConflictOptions{
-			AttachRequestId:           options.onConflictOptions.AttachRequestID,
-			AttachCompletionCallbacks: options.onConflictOptions.AttachCompletionCallbacks,
-			AttachLinks:               options.onConflictOptions.AttachLinks,
-		}
-	}
 	return nil
 }
 
@@ -706,43 +701,6 @@ func SetRequestIDOnStartActivityOptions(opts *ClientStartActivityOptions, reques
 // ClientStartActivityOptions. Callbacks are purposefully not exposed to users for the time being.
 func SetCallbacksOnStartActivityOptions(opts *ClientStartActivityOptions, callbacks []*commonpb.Callback) {
 	opts.callbacks = callbacks
-}
-
-// SetLinksOnStartActivityOptions is an internal-only method for setting links on
-// ClientStartActivityOptions. Links are purposefully not exposed to users for the time being.
-func SetLinksOnStartActivityOptions(opts *ClientStartActivityOptions, links []*commonpb.Link) {
-	opts.links = links
-}
-
-// SetOnConflictOptionsOnStartActivityOptions is an internal-only method for setting on-conflict
-// options on ClientStartActivityOptions. Used to ensure that when an activity with the same ID is
-// already running and the conflict policy is USE_EXISTING, the caller's request ID, callback, and
-// links are attached to the existing activity.
-func SetOnConflictOptionsOnStartActivityOptions(opts *ClientStartActivityOptions) {
-	opts.onConflictOptions = &OnConflictOptions{
-		AttachRequestID:           true,
-		AttachCompletionCallbacks: true,
-		AttachLinks:               true,
-	}
-}
-
-// SetResponseInfoOnStartActivityOptions is an internal-only method for setting a response info
-// pointer on ClientStartActivityOptions. The returned pointer is populated by ExecuteActivity with
-// the start response's Link.
-func SetResponseInfoOnStartActivityOptions(opts *ClientStartActivityOptions) *startActivityResponseInfo {
-	if opts.responseInfo == nil {
-		opts.responseInfo = &startActivityResponseInfo{}
-	}
-	return opts.responseInfo
-}
-
-// GetResponseLinkFromStartActivityResponseInfo returns the activity start Link captured from the
-// server response, or nil if none was captured.
-func GetResponseLinkFromStartActivityResponseInfo(info *startActivityResponseInfo) *commonpb.Link {
-	if info == nil {
-		return nil
-	}
-	return info.Link
 }
 
 func (w *workflowClientInterceptor) GetActivityHandle(

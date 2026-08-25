@@ -27,8 +27,11 @@ func Test_WorkflowExecutionOptions_fromProtoResponse(t *testing.T) {
 			response: &workflowservice.UpdateWorkflowExecutionOptionsResponse{
 				WorkflowExecutionOptions: &workflowpb.WorkflowExecutionOptions{
 					VersioningOverride: &workflowpb.VersioningOverride{
-						Behavior:      enumspb.VersioningBehavior(VersioningBehaviorPinned),
+						//lint:ignore SA1019 construct a legacy versioning response to verify backwards-compatible decoding
+						Behavior: enumspb.VersioningBehavior(VersioningBehaviorPinned),
+						//lint:ignore SA1019 construct a legacy versioning response to verify backwards-compatible decoding
 						PinnedVersion: "my series.v1",
+						//lint:ignore SA1019 construct a legacy versioning response to verify backwards-compatible decoding
 						Deployment: &deploymentpb.Deployment{
 							SeriesName: "my series",
 							BuildId:    "v1",

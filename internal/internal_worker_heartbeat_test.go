@@ -47,7 +47,7 @@ func TestStopCancelsInFlightHeartbeatRPC(t *testing.T) {
 
 		wfClient := NewServiceClient(mockService, nil, ClientOptions{})
 
-		heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
 		hw := &sharedNamespaceWorker{
 			client:          wfClient,
 			namespace:       "test-ns",
@@ -104,10 +104,16 @@ func TestWorkerCommandPollUsesWorkerCommandsQueue(t *testing.T) {
 			if req.TaskQueue.GetKind() != enumspb.TASK_QUEUE_KIND_WORKER_COMMANDS {
 				t.Fatalf("task queue kind = %v, want worker commands", req.TaskQueue.GetKind())
 			}
+			if req.DeploymentOptions.GetBuildId() != "1.0" {
+				t.Fatalf("build ID = %q, want %q", req.DeploymentOptions.GetBuildId(), "1.0")
+			}
+			if req.DeploymentOptions.GetWorkerVersioningMode() != enumspb.WORKER_VERSIONING_MODE_UNVERSIONED {
+				t.Fatalf("worker versioning mode = %v, want unversioned", req.DeploymentOptions.GetWorkerVersioningMode())
+			}
 			return &workflowservice.PollNexusTaskQueueResponse{}, nil
 		})
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	hw := &sharedNamespaceWorker{
 		client: &WorkflowClient{
@@ -168,7 +174,7 @@ func TestWorkerCommandCancelActivity(t *testing.T) {
 		})
 
 	activityCancellationCallbacks := newActivityCancellationCallbacks()
-	activityCtx, activityCancel := context.WithCancelCause(context.Background())
+	activityCtx, activityCancel := context.WithCancelCause(t.Context())
 	defer activityCancel(nil)
 	unregisterActivity := activityCancellationCallbacks.register(activityTaskToken, activityCancel)
 	defer unregisterActivity()
@@ -215,7 +221,7 @@ func TestWorkerCommandsDisabledDoesNotPoll(t *testing.T) {
 			Identity:  "worker-identity",
 		})
 
-		heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
+		heartbeatCtx, heartbeatCancel := context.WithCancel(t.Context())
 		hw := &sharedNamespaceWorker{
 			client:                  wfClient,
 			namespace:               "test-ns",
