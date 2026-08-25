@@ -824,6 +824,33 @@ func newWorkflowPanicError(value interface{}, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
 }
 
+// codecRequestedWorkflowTaskFailure is implemented by the error CodecDataConverter
+// produces when a PayloadCodec returns a converter.WorkflowTaskFailureError, so
+// the worker can recognize a codec-originated request without checking the final
+// workflow error or depending on exported converter API. A WorkflowTaskFailureError
+// returned directly by workflow code does not satisfy it and stays an ordinary error.
+type codecRequestedWorkflowTaskFailure interface {
+	RequestsWorkflowTaskFailure() bool
+}
+
+// codecWorkflowTaskFailureFrom reports whether err carries a codec-originated
+// WorkflowTaskFailureError, unwrapping a workflowPanicError first so encode-side
+// markers (which are panicked) are recognized too. When true it returns the
+// underlying error to surface as the Workflow Task failure, dropping any
+// workflowPanicError wrapper so the failure is not treated as a workflow panic.
+func codecWorkflowTaskFailureFrom(err error) (error, bool) {
+	var tagged codecRequestedWorkflowTaskFailure
+	if errors.As(err, &tagged) {
+		return err, true
+	}
+	if panicErr, ok := err.(*workflowPanicError); ok {
+		if inner, ok := panicErr.value.(error); ok && errors.As(inner, &tagged) {
+			return inner, true
+		}
+	}
+	return nil, false
+}
+
 // Error from error interface
 func (e *PanicError) Error() string {
 	return e.message()

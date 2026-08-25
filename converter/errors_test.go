@@ -20,7 +20,7 @@ func TestWorkflowTaskFailureError_UnwrapAndMatch(t *testing.T) {
 	wrapped := fmt.Errorf("unable to decode the workflow function input payload with error: %w", err)
 	var marker *WorkflowTaskFailureError
 	require.True(t, errors.As(wrapped, &marker))
-	require.Equal(t, cause, marker.Cause)
+	require.Equal(t, cause, marker.cause)
 
 	// Error() delegates to the wrapped cause.
 	require.Equal(t, cause.Error(), err.Error())

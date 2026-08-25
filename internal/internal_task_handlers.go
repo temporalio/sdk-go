@@ -1306,16 +1306,16 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 	task := workflowTask.task
 
 	if workflowError == nil && w.err != nil {
-		// A PayloadCodec running workflow-side code (e.g. decoding workflow input
-		// or an activity result) may return a *converter.WorkflowTaskFailureError
-		// to request that the current Workflow Task fail while the Workflow
-		// Execution stays open. Honor it here, before the WorkflowPanicPolicy
-		// switch below, so the behavior is independent of that policy and is not
-		// classified or logged as a workflow panic. Returning the error converts
-		// it into a WorkflowTaskFailed which the server retries.
-		var codecTaskErr *converter.WorkflowTaskFailureError
-		if errors.As(w.err, &codecTaskErr) {
-			return nil, w.err
+		// A PayloadCodec running workflow-side code (encoding activity arguments,
+		// decoding workflow input or an activity result, etc.) may return a
+		// *converter.WorkflowTaskFailureError to request that the current Workflow
+		// Task fail while the Workflow Execution stays open. It is tagged at the
+		// codec boundary so only codec-originated markers are honored here, before
+		// the WorkflowPanicPolicy switch, making the behavior identical under both
+		// policies and keeping it out of the workflow-panic logging path. Returning
+		// the error becomes a WorkflowTaskFailed which the server retries.
+		if codecErr, ok := codecWorkflowTaskFailureFrom(w.err); ok {
+			return nil, codecErr
 		}
 		if panicErr, ok := w.err.(*workflowPanicError); ok {
 			workflowError = panicErr
