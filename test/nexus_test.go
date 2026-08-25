@@ -3407,14 +3407,61 @@ type opentracingTracer struct {
 	mock *mocktracer.MockTracer
 }
 
+const (
+	traceWorkflowIDTag = "temporalWorkflowID"
+	traceRunIDTag      = "temporalRunID"
+)
+
+type replaySpanKey struct {
+	name       string
+	workflowID string
+	runID      string
+}
+
 func (t *opentracingTracer) FinishedSpans() []*interceptortest.SpanInfo {
 	return t.spanChildren(t.mock.FinishedSpans(), 0)
 }
 
+func newReplaySpanKey(name, workflowID, runID string) *replaySpanKey {
+	if !strings.HasPrefix(name, "RunWorkflow:") || workflowID == "" || runID == "" {
+		return nil
+	}
+
+	return &replaySpanKey{name: name, workflowID: workflowID, runID: runID}
+}
+
+func appendReplaySpan(
+	spans []*interceptortest.SpanInfo,
+	span *interceptortest.SpanInfo,
+	key *replaySpanKey,
+	replays map[replaySpanKey]*interceptortest.SpanInfo,
+) []*interceptortest.SpanInfo {
+	if key == nil {
+		return append(spans, span)
+	}
+
+	// Replay emits another RunWorkflow span for the same execution.
+	if existing := replays[*key]; existing != nil {
+		existing.Children = append(existing.Children, span.Children...)
+		return spans
+	}
+
+	replays[*key] = span
+	return append(spans, span)
+}
+
 func (t *opentracingTracer) spanChildren(spans []*mocktracer.MockSpan, parentID int) (ret []*interceptortest.SpanInfo) {
+	replays := make(map[replaySpanKey]*interceptortest.SpanInfo)
 	for _, s := range spans {
 		if s.ParentID == parentID {
-			ret = append(ret, interceptortest.Span(s.OperationName, t.spanChildren(spans, s.SpanContext.SpanID)...))
+			workflowID, _ := s.Tag(traceWorkflowIDTag).(string)
+			runID, _ := s.Tag(traceRunIDTag).(string)
+			ret = appendReplaySpan(
+				ret,
+				interceptortest.Span(s.OperationName, t.spanChildren(spans, s.SpanContext.SpanID)...),
+				newReplaySpanKey(s.OperationName, workflowID, runID),
+				replays,
+			)
 		}
 	}
 	return
@@ -3430,9 +3477,24 @@ func (t *otelTracer) FinishedSpans() []*interceptortest.SpanInfo {
 }
 
 func (t *otelTracer) spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.SpanID) (ret []*interceptortest.SpanInfo) {
+	replays := make(map[replaySpanKey]*interceptortest.SpanInfo)
 	for _, s := range spans {
 		if s.Parent().SpanID() == parentID {
-			ret = append(ret, interceptortest.Span(s.Name(), t.spanChildren(spans, s.SpanContext().SpanID())...))
+			var workflowID, runID string
+			for _, attr := range s.Attributes() {
+				switch string(attr.Key) {
+				case traceWorkflowIDTag:
+					workflowID = attr.Value.AsString()
+				case traceRunIDTag:
+					runID = attr.Value.AsString()
+				}
+			}
+			ret = appendReplaySpan(
+				ret,
+				interceptortest.Span(s.Name(), t.spanChildren(spans, s.SpanContext().SpanID())...),
+				newReplaySpanKey(s.Name(), workflowID, runID),
+				replays,
+			)
 		}
 	}
 	return
