@@ -160,11 +160,13 @@ func NewCodecDataConverter(parent DataConverter, codecs ...PayloadCodec) DataCon
 }
 
 func (e *CodecDataConverter) encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	return encodePayloads(payloads, e.codecs)
+	encoded, err := encodePayloads(payloads, e.codecs)
+	return encoded, tagCodecRequestedTaskFailure(err)
 }
 
 func (e *CodecDataConverter) decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
-	return decodePayloads(payloads, e.codecs)
+	decoded, err := decodePayloads(payloads, e.codecs)
+	return decoded, tagCodecRequestedTaskFailure(err)
 }
 
 // ToPayload implements DataConverter.ToPayload performing encoding on the
