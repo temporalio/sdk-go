@@ -205,34 +205,34 @@ func skipOnCloud(t testing.TB, reason cloudTestSkipReason, rationale string) {
 }
 
 func cloudTestEnabled() bool {
-	value := strings.TrimSpace(os.Getenv("TEMPORAL_TEST_CLOUD"))
+	value := strings.TrimSpace(os.Getenv("TEMPORAL_IS_CLOUD_TESTS"))
 	if value == "" {
 		return false
 	}
 	enabled, err := strconv.ParseBool(value)
 	if err != nil {
-		panic(fmt.Sprintf("TEMPORAL_TEST_CLOUD must be a boolean, was %q", value))
+		panic(fmt.Sprintf("TEMPORAL_IS_CLOUD_TESTS must be a boolean, was %q", value))
 	}
 	return enabled
 }
 
 func TestCloudTestEnabled(t *testing.T) {
-	t.Setenv("TEMPORAL_TEST_CLOUD", "")
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "")
 	if cloudTestEnabled() {
 		t.Fatal("expected Cloud test mode to be disabled by default")
 	}
-	t.Setenv("TEMPORAL_TEST_CLOUD", "true")
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "true")
 	if !cloudTestEnabled() {
 		t.Fatal("expected Cloud test mode to be enabled")
 	}
-	t.Setenv("TEMPORAL_TEST_CLOUD", "false")
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "false")
 	if cloudTestEnabled() {
 		t.Fatal("expected Cloud test mode to be disabled")
 	}
-	t.Setenv("TEMPORAL_TEST_CLOUD", "sometimes")
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "sometimes")
 	defer func() {
 		if recovered := recover(); recovered == nil {
-			t.Fatal("expected invalid TEMPORAL_TEST_CLOUD to panic")
+			t.Fatal("expected invalid TEMPORAL_IS_CLOUD_TESTS to panic")
 		}
 	}()
 	cloudTestEnabled()
