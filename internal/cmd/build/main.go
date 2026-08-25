@@ -16,6 +16,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 
 	_ "github.com/Antonboom/testifylint/analyzer"
 	_ "github.com/BurntSushi/toml"
@@ -37,6 +38,17 @@ func main() {
 
 const coverageDir = ".build/coverage"
 const defaultTestLogDir = ".build/test-logs"
+const unitTestPackageConcurrency = "1"
+const unitTestWorkers = 2
+
+type unitCoverage int
+
+const (
+	unitCoverageDisabled unitCoverage = iota
+	unitCoverageEnabled
+)
+
+var testFailureReportMu sync.Mutex
 
 const (
 	testConsoleOutputFull     = "full"
@@ -441,23 +453,10 @@ func (b *builder) unitTest() error {
 	}
 	testOutput.rerunCommand = "go run . unit-test"
 
-	// Find every non ./test-prefixed package that has a test file
-	testDirMap := map[string]struct{}{}
-	var testDirs []string
-	err = fs.WalkDir(os.DirFS(b.rootDir), ".", func(p string, d fs.DirEntry, err error) error {
-		if (!strings.HasPrefix(p, "test") || strings.HasPrefix(p, "testsuite")) && strings.HasSuffix(p, "_test.go") {
-			dir := path.Dir(p)
-			if _, ok := testDirMap[dir]; !ok {
-				testDirMap[dir] = struct{}{}
-				testDirs = append(testDirs, dir)
-			}
-		}
-		return nil
-	})
+	moduleDirs, err := b.checkModuleDirs()
 	if err != nil {
-		return fmt.Errorf("failed walking test dirs: %w", err)
+		return fmt.Errorf("failed finding modules to test: %w", err)
 	}
-	sort.Strings(testDirs)
 
 	// Create coverage dir if doing coverage
 	if *coverageFlag {
@@ -466,30 +465,166 @@ func (b *builder) unitTest() error {
 		}
 	}
 
-	// Run unit test for each dir
-	log.Printf("Running unit tests in dirs: %v", testDirs)
-	for _, testDir := range testDirs {
-		// Run unit test
-		args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", "5m"}
-		if *runFlag != "" {
-			args = append(args, "-run", *runFlag)
+	// Run modules concurrently while keeping package output sequential.
+	log.Printf("Running unit tests in modules with %d workers: %v", unitTestWorkers, moduleDirs)
+	coverage := unitCoverageDisabled
+	if *coverageFlag {
+		coverage = unitCoverageEnabled
+	}
+	return b.runUnitModules(moduleDirs, *runFlag, coverage, testOutput)
+}
+
+type unitWorker struct {
+	output   testOutput
+	stdout   bytes.Buffer
+	stderr   bytes.Buffer
+	failures []unitFailure
+}
+
+type unitFailure struct {
+	moduleDir string
+	err       error
+}
+
+func (b *builder) runUnitModules(
+	moduleDirs []string,
+	run string,
+	coverage unitCoverage,
+	output testOutput,
+) error {
+	tempDir, err := os.MkdirTemp(filepath.Dir(output.logPath), ".unit-test-")
+	if err != nil {
+		return fmt.Errorf("failed creating unit test log directory: %w", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(tempDir); err != nil {
+			log.Printf("Failed removing temporary unit test logs: %v", err)
 		}
-		if *coverageFlag {
-			args = append(
-				args,
-				"-coverprofile="+filepath.Join(b.rootDir, coverageDir, "unit-test-"+strings.ReplaceAll(testDir, "/", "-")+".out"),
-				"-coverpkg=./...",
-			)
-		}
-		args = append(args, ".")
-		cmd := b.cmdFromRoot(args...)
-		// Need to run inside directory
-		cmd.Dir = filepath.Join(b.rootDir, testDir)
-		if err := b.runTestCmd(cmd, testOutput); err != nil {
-			return fmt.Errorf("unit test failed in %v: %w", testDir, err)
+	}()
+
+	workers := make([]unitWorker, unitTestWorkers)
+	for i := range workers {
+		if err := b.prepareUnitWorker(tempDir, i, output, &workers[i]); err != nil {
+			return err
 		}
 	}
 
+	jobs := make(chan string)
+	var wait sync.WaitGroup
+	for i := range workers {
+		wait.Add(1)
+		go func(worker *unitWorker) {
+			defer wait.Done()
+			for moduleDir := range jobs {
+				if err := b.runUnitModule(moduleDir, run, coverage, worker.output); err != nil {
+					worker.failures = append(worker.failures, unitFailure{moduleDir: moduleDir, err: err})
+				}
+			}
+		}(&workers[i])
+	}
+	for _, moduleDir := range moduleDirs {
+		jobs <- moduleDir
+	}
+	close(jobs)
+	wait.Wait()
+
+	for i := range workers {
+		if err := mergeWorkerOutput(output, &workers[i]); err != nil {
+			return err
+		}
+	}
+	for i := range workers {
+		if len(workers[i].failures) > 0 {
+			failure := workers[i].failures[0]
+			return fmt.Errorf("unit test failed in %v: %w", failure.moduleDir, failure.err)
+		}
+	}
+	return nil
+}
+
+func (b *builder) prepareUnitWorker(tempDir string, index int, output testOutput, worker *unitWorker) error {
+	prefix := filepath.Join(tempDir, fmt.Sprintf("%03d", index))
+	workerOutput := output
+	workerOutput.logPath = prefix + ".log"
+	workerOutput.jsonLogPath = prefix + ".json"
+	for _, path := range []string{workerOutput.logPath, workerOutput.jsonLogPath} {
+		file, err := os.Create(path)
+		if err != nil {
+			return fmt.Errorf("failed preparing worker output %q: %w", path, err)
+		}
+		if err := file.Close(); err != nil {
+			return fmt.Errorf("failed closing worker output %q: %w", path, err)
+		}
+	}
+	workerOutput.stdout = &worker.stdout
+	workerOutput.stderr = &worker.stderr
+	worker.output = workerOutput
+	return nil
+}
+
+func (b *builder) runUnitModule(moduleDir string, run string, coverage unitCoverage, output testOutput) error {
+	args := []string{
+		"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", "5m",
+		"-p", unitTestPackageConcurrency,
+	}
+	if run != "" {
+		args = append(args, "-run", run)
+	}
+	if coverage == unitCoverageEnabled {
+		moduleName, err := filepath.Rel(b.rootDir, moduleDir)
+		if err != nil {
+			return fmt.Errorf("failed resolving module %q: %w", moduleDir, err)
+		}
+		if moduleName == "." {
+			moduleName = "root"
+		}
+		moduleName = strings.ReplaceAll(moduleName, string(filepath.Separator), "-")
+		coverageFile := filepath.Join(b.rootDir, coverageDir, "unit-test-"+moduleName+".out")
+		args = append(args, "-coverprofile="+coverageFile, "-coverpkg=./...")
+	}
+	args = append(args, "./...")
+
+	cmd := b.cmdFromRoot(args...)
+	cmd.Dir = moduleDir
+	return b.runTestCmd(cmd, output)
+}
+
+func mergeWorkerOutput(output testOutput, worker *unitWorker) error {
+	for _, pair := range [][2]string{
+		{output.logPath, worker.output.logPath},
+		{output.jsonLogPath, worker.output.jsonLogPath},
+	} {
+		if err := appendFile(pair[0], pair[1]); err != nil {
+			return err
+		}
+	}
+	if _, err := worker.stdout.WriteTo(output.stdout); err != nil {
+		return fmt.Errorf("failed writing worker stdout: %w", err)
+	}
+	if _, err := worker.stderr.WriteTo(output.stderr); err != nil {
+		return fmt.Errorf("failed writing worker stderr: %w", err)
+	}
+	return nil
+}
+
+func appendFile(destination, source string) error {
+	file, err := os.OpenFile(destination, os.O_WRONLY|os.O_APPEND, 0666)
+	if err != nil {
+		return fmt.Errorf("failed opening merged test log %q: %w", destination, err)
+	}
+	defer file.Close()
+	return writeFile(file, source)
+}
+
+func writeFile(writer io.Writer, source string) error {
+	file, err := os.Open(source)
+	if err != nil {
+		return fmt.Errorf("failed opening module output %q: %w", source, err)
+	}
+	defer file.Close()
+	if _, err := io.Copy(writer, file); err != nil {
+		return fmt.Errorf("failed merging module output %q: %w", source, err)
+	}
 	return nil
 }
 
@@ -531,6 +666,8 @@ func addTestOutputFlags(flagSet *flag.FlagSet) *testOutputFlags {
 type testOutput struct {
 	logPath         string
 	jsonLogPath     string
+	finalLogPath    string
+	finalJSONPath   string
 	combinedLogPath string
 	serverLogPath   string
 	rerunCommand    string
@@ -590,6 +727,8 @@ func (b *builder) prepareTestOutput(flags testOutputFlags, logName string) (test
 	return testOutput{
 		logPath:       logPath,
 		jsonLogPath:   jsonLogPath,
+		finalLogPath:  logPath,
+		finalJSONPath: jsonLogPath,
 		consoleOutput: flags.consoleOutput,
 		stdout:        os.Stdout,
 		stderr:        os.Stderr,
@@ -658,6 +797,8 @@ func (b *builder) runTestCmd(cmd *exec.Cmd, testOutput testOutput) error {
 	jsonCloseErr := jsonLogFile.Close()
 	rows := results.failures()
 	if runErr != nil {
+		testFailureReportMu.Lock()
+		defer testFailureReportMu.Unlock()
 		summaryErr := appendTestFailureRows(os.Getenv("GITHUB_STEP_SUMMARY"), rows)
 		if summaryErr != nil {
 			log.Printf("Failed writing test failure summary: %v", summaryErr)
