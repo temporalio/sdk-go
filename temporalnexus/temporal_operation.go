@@ -145,7 +145,8 @@ func (nc NexusClient) GetWorkflowClient() client.Client {
 // The workflow parameter must have the signature func(workflow.Context, I) (O, error).
 // For workflows that don't follow this signature, use [StartUntypedWorkflow].
 //
-// These are free functions because Go does not allow generic methods on non-generic structs.
+// Use this package-level function for compatibility with Go versions before 1.27. When building
+// with Go 1.27 or later, the same operation is also available as a method on [NexusClient].
 //
 // NOTE: Experimental
 func StartWorkflow[I, O any, WF func(workflow.Context, I) (O, error)](
@@ -196,7 +197,8 @@ func StartUntypedWorkflow[R any](
 // It returns either an async result with a workflow update operation token for pending
 // operations or a sync response if the update is already completed.
 //
-// These are free functions because Go does not allow generic methods on non-generic structs.
+// Use this package-level function for compatibility with Go versions before 1.27. When building
+// with Go 1.27 or later, the same operation is also available as a method on [NexusClient].
 //
 // NOTE: Experimental
 func StartUpdateWorkflow[R any](
@@ -347,7 +349,8 @@ func validateUpdateWorkflowNexusOperation(u client.UpdateWorkflowOptions) error 
 // activityOpts must specify an ID and at least one of StartToCloseTimeout
 // or ScheduleToCloseTimeout. TaskQueue defaults to the current worker's task queue when empty.
 //
-// These are free functions because Go does not allow generic methods on non-generic structs.
+// Use this package-level function for compatibility with Go versions before 1.27. When building
+// with Go 1.27 or later, the same operation is also available as a method on [NexusClient].
 func StartActivity[I, O any, AF func(context.Context, I) (O, error)](
 	ctx context.Context,
 	nc NexusClient,

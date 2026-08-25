@@ -95,6 +95,13 @@ func WorkflowTaskFailedTags(reason string) map[string]string {
 	}
 }
 
+// ActivityTaskFailedTags returns a set of tags for an activity task failure.
+func ActivityTaskFailedTags(reason string) map[string]string {
+	return map[string]string{
+		FailureReasonTagName: reason,
+	}
+}
+
 // RequestFailureCodeTags returns a set of tags for a request failure.
 func RequestFailureCodeTags(statusCode codes.Code) map[string]string {
 	asStr := canonicalString(statusCode)

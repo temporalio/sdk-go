@@ -35,6 +35,7 @@ type updateAddInput struct {
 	WorkflowID         string
 	Amount             int
 	SleepDuration      time.Duration
+	WaitForSignal      string
 	ExpectSyncResponse bool // hint to the caller workflow that the async token will not be set (a retried completed update is sync)
 }
 
@@ -67,7 +68,7 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
 				WorkflowID:   input.WorkflowID,
 				UpdateID:     input.UpdateID,
 				UpdateName:   addUpdate,
-				Args:         []any{input.Amount, input.SleepDuration},
+				Args:         []any{input.Amount, input.SleepDuration, input.WaitForSignal},
 				WaitForStage: client.WorkflowUpdateStageAccepted,
 			})
 		},
@@ -275,7 +276,7 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 				WorkflowID:   input.WorkflowID,
 				UpdateID:     input.UpdateID,
 				UpdateName:   addUpdate,
-				Args:         []any{input.Amount, input.SleepDuration},
+				Args:         []any{input.Amount, input.SleepDuration, input.WaitForSignal},
 				WaitForStage: client.WorkflowUpdateStageAccepted,
 			})
 		},
@@ -320,11 +321,16 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 	}
 
 	// start the update, it will get admitted
+	releaseSignal := "release-" + uuid.NewString()
 	callerWorkflowRun, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                  "delayed-" + uuid.NewString(),
 		TaskQueue:           callerTaskQueue,
 		WorkflowTaskTimeout: time.Second,
-	}, callerWorkflow, updateAddInput{WorkflowID: handlerWorkflowID, Amount: 5})
+	}, callerWorkflow, updateAddInput{
+		WorkflowID:    handlerWorkflowID,
+		Amount:        5,
+		WaitForSignal: releaseSignal,
+	})
 	ts.NoError(err)
 
 	// now, start the worker so that counter workflow can actually handle the update
@@ -337,45 +343,18 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 	defer handlerWorker.Stop()
 	defer stopCounterWf()
 
+	ts.waitForHistoryEvent(
+		callerWorkflowRun.GetID(),
+		callerWorkflowRun.GetRunID(),
+		enums.EVENT_TYPE_NEXUS_OPERATION_STARTED,
+		10*time.Second,
+	)
+	ts.NoError(ts.client.SignalWorkflow(ctx, handlerWorkflowID, "", releaseSignal, nil))
+
 	// verify count, no errors
 	var out updateAddOutput
 	ts.NoError(callerWorkflowRun.Get(ctx, &out))
 	ts.Equal(out.Count, 5)
-}
-
-func counterWorkflow(ctx workflow.Context) (int, error) {
-	counter := 0
-
-	updateHandler := func(ctx workflow.Context, amount int, sleepDuration time.Duration) (updateAddOutput, error) {
-		counter += amount
-		newCounterVal := counter
-		if sleepDuration != 0 {
-			_ = workflow.Sleep(ctx, sleepDuration)
-		}
-		return updateAddOutput{Count: newCounterVal}, nil
-	}
-
-	// used for testing invalid updates
-	updateValidator := func(ctx workflow.Context, amount int, sleepDuration time.Duration) error {
-		if amount%5 != 0 {
-			return invalidIncrementError
-		}
-		return nil
-	}
-
-	if err := workflow.SetUpdateHandlerWithOptions(ctx,
-		addUpdate,
-		updateHandler,
-		workflow.UpdateHandlerOptions{
-			Validator: updateValidator,
-		},
-	); err != nil {
-		return 0, err
-	}
-
-	workflow.GetSignalChannel(ctx, doneSignal).Receive(ctx, nil)
-	workflow.GetLogger(ctx).Info("finished workflow, exiting now...", "final counter", counter)
-	return counter, nil
 }
 
 // caller workflow
@@ -411,69 +390,4 @@ func getCallerWorkflow(
 
 		return out, nil
 	}
-}
-
-func checkForLink(links []*common.Link, requiredLink *common.Link) bool {
-	for _, link := range links {
-		if link.Equal(requiredLink) {
-			return true
-		}
-	}
-	return false
-}
-
-func getEventLinks(ctx context.Context,
-	c client.Client, workflowRun client.WorkflowRun,
-	filter func(e *history.HistoryEvent) bool,
-) []*common.Link {
-	events := getEvents(ctx, c, workflowRun, filter)
-	eventLinks := make([]*common.Link, 0, len(events))
-	for _, event := range events {
-		eventLinks = append(eventLinks, event.GetLinks()...)
-	}
-	return eventLinks
-}
-
-func getEventIDByType(ctx context.Context, c client.Client, workflowRun client.WorkflowRun, eventType enums.EventType) int64 {
-	events := getEvents(ctx, c, workflowRun, func(e *history.HistoryEvent) bool {
-		return e.GetEventType() == eventType
-	})
-	if len(events) == 0 {
-		return -1
-	}
-	return events[0].EventId
-}
-
-// get the request ID of the singular nexus op in this workflow run
-func getNexusOpRequestID(ctx context.Context, c client.Client, workflowRun client.WorkflowRun) (string, error) {
-	events := getEvents(ctx, c, workflowRun, func(e *history.HistoryEvent) bool {
-		return e.GetEventType() == enums.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED
-	})
-	if len(events) == 0 {
-		return "", errors.New("no nexus op event found")
-	}
-	if len(events) > 1 {
-		return "", errors.New("multiple nexus ops events found, cannot determine specific requestID")
-	}
-	return events[0].GetNexusOperationScheduledEventAttributes().RequestId, nil
-}
-
-func getEvents(ctx context.Context,
-	c client.Client, workflowRun client.WorkflowRun,
-	filter func(e *history.HistoryEvent) bool,
-) []*history.HistoryEvent {
-	iter := c.GetWorkflowHistory(ctx,
-		workflowRun.GetID(), workflowRun.GetRunID(),
-		false, enums.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
-	events := []*history.HistoryEvent{}
-	for iter.HasNext() {
-		event, err := iter.Next()
-		if err != nil {
-			continue
-		}
-		if filter(event) {
-			events = append(events, event)
-		}
-	}
-	return events
 }

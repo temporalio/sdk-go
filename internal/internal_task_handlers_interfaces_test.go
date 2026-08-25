@@ -66,21 +66,21 @@ func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{}
 }
 
-func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollActivityTaskQueueResponse) (any, error) {
+func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollActivityTaskQueueResponse) (activityTaskResult, error) {
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	fc := GetDefaultFailureConverter()
 	if err != nil {
 		failure := fc.ErrorToFailure(NewApplicationError(err.Error(), getErrType(err), false, nil))
-		return &workflowservice.RespondActivityTaskFailedRequest{
+		return activityTaskResult{response: &workflowservice.RespondActivityTaskFailedRequest{
 			TaskToken: task.TaskToken,
 			Failure:   failure,
-		}, nil
+		}}, nil
 	}
-	return &workflowservice.RespondActivityTaskCompletedRequest{
+	return activityTaskResult{response: &workflowservice.RespondActivityTaskCompletedRequest{
 		TaskToken: task.TaskToken,
 		Result:    result,
-	}, nil
+	}}, nil
 }
 
 // Test suite.
@@ -131,7 +131,8 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 
 	// Execute activity task and respond to the service.
 	taskHandler := newSampleActivityTaskHandler()
-	request, err := taskHandler.Execute(taskqueue, response)
+	taskResult, err := taskHandler.Execute(taskqueue, response)
+	request := taskResult.response
 	s.NoError(err)
 	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCompletedRequest:

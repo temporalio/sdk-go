@@ -199,7 +199,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		}
 		linkURL, err := url.Parse(link.GetUrl())
 		if err != nil {
-			nctx.log.Error("Failed to parse link url: %s", link.GetUrl(), tagError, err)
+			nctx.log.Error("Failed to parse link url", tagLinkURL, link.GetUrl(), tagError, err)
 			return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "failed to parse link url"), nil
 		}
 		nexusLinks = append(nexusLinks, nexus.Link{

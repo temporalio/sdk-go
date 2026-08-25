@@ -2357,7 +2357,7 @@ func newServiceInvoker(
 }
 
 // Execute executes an implementation of the activity.
-func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result any, err error) {
+func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice.PollActivityTaskQueueResponse) (result activityTaskResult, err error) {
 	traceLog(func() {
 		if t.WorkflowExecution.GetWorkflowId() == "" {
 			ath.logger.Debug("Processing new standalone activity task",
@@ -2399,7 +2399,10 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	}
 
 	if err := visitProtoPayloads(canCtx, ath.inboundPayloadVisitor, t, ath.payloadVisitorConcurrency); err != nil {
-		return ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err), nil
+		return activityTaskResult{
+			response:   ath.visitorErrorToActivityFailure("Activity task preprocess error: ", t, err),
+			failureErr: err,
+		}, nil
 	}
 
 	heartbeatThrottleInterval := ath.getHeartbeatThrottleInterval(t.GetHeartbeatTimeout().AsDuration())
@@ -2413,13 +2416,13 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	ctx, err := WithActivityTask(canCtx, t, taskQueue, invoker, ath.logger, metricsHandler,
 		ath.dataConverter, ath.workerStopCh, ath.contextPropagators, ath.registry.interceptors, ath.client)
 	if err != nil {
-		return nil, err
+		return activityTaskResult{}, err
 	}
 
 	// We must capture the context here because it is changed later to one that is
 	// cancelled when the activity is done
 	defer func(ctx context.Context) {
-		_, activityCompleted := result.(*workflowservice.RespondActivityTaskCompletedRequest)
+		_, activityCompleted := result.response.(*workflowservice.RespondActivityTaskCompletedRequest)
 		invoker.Close(ctx, !activityCompleted) // flush buffered heartbeat if activity was not successfully completed.
 	}(ctx)
 
@@ -2428,9 +2431,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		// In case if activity is not registered we should report a failure to the server to allow activity retry
 		// instead of making it stuck on the same attempt.
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
-		return convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
+		return activityTaskResult{response: convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions), nil
+			dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)}, nil
 	}
 
 	// panic handler
@@ -2447,15 +2450,17 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 				tagPanicStack, st)
 			metricsHandler.Counter(metrics.ActivityTaskErrorCounter).Inc(1)
 			panicErr := newPanicError(p, st)
-			result = convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-				dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
+			result = activityTaskResult{
+				response: convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
+					dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions),
+			}
 		}
 	}()
 
 	// propagate context information into the activity context from the headers
 	ctx, err = contextWithHeaderPropagated(ctx, t.Header, ath.contextPropagators)
 	if err != nil {
-		return nil, err
+		return activityTaskResult{}, err
 	}
 
 	info := getActivityEnv(ctx)
@@ -2469,7 +2474,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	// skip sending another response regardless of what the activity returned.
 	var hbVisitorErr heartbeatVisitorError
 	if errors.As(context.Cause(canCtx), &hbVisitorErr) {
-		return nil, nil
+		return activityTaskResult{}, nil
 	}
 
 	// Cancels that don't originate from the server will have separate cancel reasons, like
@@ -2486,7 +2491,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			tagResult, output,
 			tagError, err,
 		)
-		return nil, ctx.Err()
+		return activityTaskResult{}, ctx.Err()
 	}
 	if err != nil && err != ErrActivityResultPending {
 		logFunc := ath.logger.Error // Default to Error
@@ -2530,11 +2535,14 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		}
 		outboundCtx := extstore.WithStorageTarget(outboundBase, storageTarget)
 		if err := visitProtoPayloads(outboundCtx, ath.outboundPayloadVisitor, msg, ath.payloadVisitorConcurrency); err != nil {
-			return ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err), nil
+			return activityTaskResult{
+				response:   ath.visitorErrorToActivityFailure("Activity task postprocess error: ", t, err),
+				failureErr: err,
+			}, nil
 		}
 	}
 
-	return response, nil
+	return activityTaskResult{response: response}, nil
 }
 
 func (ath *activityTaskHandlerImpl) visitorErrorToActivityFailure(msgPrefix string, t *workflowservice.PollActivityTaskQueueResponse, err error) *workflowservice.RespondActivityTaskFailedRequest {
