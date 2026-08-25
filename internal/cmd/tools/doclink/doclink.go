@@ -5,9 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/build"
+	"go/build/constraint"
 	"go/format"
 	"go/parser"
 	"go/token"
+	"go/version"
 	"log"
 	"os"
 	"path/filepath"
@@ -23,6 +26,8 @@ type (
 		fix     bool
 	}
 )
+
+const goBuildPrefix = "//go:build "
 
 var changesNeeded = false
 
@@ -56,6 +61,14 @@ func run() error {
 			return nil
 		}
 		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			supported, err := supportsGoSyntax(path, build.Default.ReleaseTags[len(build.Default.ReleaseTags)-1])
+			if err != nil {
+				return fmt.Errorf("failed to inspect build constraint in %s: %v", path, err)
+			}
+			if !supported {
+				return nil
+			}
+
 			file, err := os.Open(path)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %v", path, err)
@@ -141,6 +154,36 @@ func run() error {
 		return fmt.Errorf("error walking the path %s: %v", cfg.rootDir, err)
 	}
 	return nil
+}
+
+// supportsGoSyntax skips files requiring syntax newer than this toolchain.
+func supportsGoSyntax(path, toolchain string) (supported bool, retErr error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		if err := file.Close(); retErr == nil {
+			retErr = err
+		}
+	}()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if !strings.HasPrefix(line, goBuildPrefix) {
+			continue
+		}
+
+		expr, err := constraint.Parse(line)
+		if err != nil {
+			return false, err
+		}
+		minimum := constraint.GoVersion(expr)
+		return minimum == "" || version.Compare(toolchain, minimum) >= 0, nil
+	}
+
+	return true, scanner.Err()
 }
 
 // Traverse the AST of public packages to identify wrappers for internal objects

@@ -15,6 +15,24 @@ func TestIsValidDefinitionWithMatchGroupedInterface(t *testing.T) {
 	}
 }
 
+func TestSupportsGoSyntax(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "future.go")
+	if err := os.WriteFile(path, []byte("//go:build go1.27\n\npackage future\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	supported, err := supportsGoSyntax(path, "go1.26")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if supported {
+		t.Fatal("expected future Go syntax to be skipped")
+	}
+}
+
 func TestIsValidDefinitionWithMatchGroupedNamedType(t *testing.T) {
 	t.Parallel()
 
