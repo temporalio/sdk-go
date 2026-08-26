@@ -1699,15 +1699,15 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowAndParentWorkflow() {
 	err = ts.client.CancelWorkflow(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
 
+	err = ts.client.GetWorkflow(context.Background(), childWorkflowID, "").Get(context.Background(), nil)
+	var canceledError *temporal.CanceledError
+	ts.ErrorAs(err, &canceledError)
+
 	err = ts.client.CancelWorkflow(context.Background(), run.GetID(), "")
 	ts.NoError(err)
 
 	err = run.Get(context.Background(), nil)
 	ts.NoError(err)
-
-	err = ts.client.GetWorkflow(context.Background(), childWorkflowID, "").Get(context.Background(), nil)
-	var canceledError *temporal.CanceledError
-	ts.ErrorAs(err, &canceledError)
 }
 
 func (ts *IntegrationTestSuite) TestChildWorkflowDuplicatePanic_Regression() {
