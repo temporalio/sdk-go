@@ -281,9 +281,6 @@ func (b *builder) integrationTest() error {
 	if *cloudFlag {
 		rerunArgs = append(rerunArgs, "-cloud")
 	}
-	if *runFileFlag != "" {
-		rerunArgs = append(rerunArgs, "-run-file", *runFileFlag)
-	}
 	if *pFlag != "" {
 		rerunArgs = append(rerunArgs, "-p", *pFlag)
 	}
