@@ -66,6 +66,21 @@ func TestFindModuleDirs(t *testing.T) {
 	}
 }
 
+func TestReadRunFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shard.run")
+	if err := os.WriteFile(path, []byte("^TestShard$\n"), 0666); err != nil {
+		t.Fatal(err)
+	}
+
+	run, err := readRunFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run != "^TestShard$" {
+		t.Fatalf("expected trimmed run expression, got %q", run)
+	}
+}
+
 func TestTestOutputFlagsDefaultToFailures(t *testing.T) {
 	flags := addTestOutputFlags(flag.NewFlagSet("test", flag.ContinueOnError))
 	if flags.consoleOutput != testConsoleOutputFailures {

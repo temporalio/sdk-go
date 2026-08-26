@@ -206,10 +206,25 @@ func findModuleDirs(root fs.FS) ([]string, error) {
 	return moduleDirs, nil
 }
 
+func readRunFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("failed reading run file %q: %w", path, err)
+	}
+
+	run := strings.TrimSpace(string(data))
+	if run == "" {
+		return "", fmt.Errorf("run file %q is empty", path)
+	}
+
+	return run, nil
+}
+
 func (b *builder) integrationTest() error {
 	// Supports some flags
 	flagSet := flag.NewFlagSet("integration-test", flag.ContinueOnError)
 	runFlag := flagSet.String("run", "", "Passed to go test as -run")
+	runFileFlag := flagSet.String("run-file", "", "Read the go test -run expression from a repository-relative file")
 	pFlag := flagSet.String("p", "", "Passed to go test as -p")
 	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
@@ -226,6 +241,16 @@ func (b *builder) integrationTest() error {
 	}
 	if *cloudFlag && !*envConfigFlag {
 		return fmt.Errorf("-cloud requires -envconfig")
+	}
+	if *runFlag != "" && *runFileFlag != "" {
+		return fmt.Errorf("-run and -run-file cannot be used together")
+	}
+	if *runFileFlag != "" {
+		run, err := readRunFile(filepath.Join(b.rootDir, *runFileFlag))
+		if err != nil {
+			return err
+		}
+		*runFlag = run
 	}
 	testOutput, err := b.prepareTestOutput(*testOutputFlags, "go-test.log")
 	if err != nil {
@@ -255,6 +280,9 @@ func (b *builder) integrationTest() error {
 	}
 	if *cloudFlag {
 		rerunArgs = append(rerunArgs, "-cloud")
+	}
+	if *runFileFlag != "" {
+		rerunArgs = append(rerunArgs, "-run-file", *runFileFlag)
 	}
 	if *pFlag != "" {
 		rerunArgs = append(rerunArgs, "-p", *pFlag)

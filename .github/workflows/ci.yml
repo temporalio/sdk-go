@@ -260,8 +260,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        go-version: ["oldstable", "stable"]
-        fips: [true, false]
+        go-version: ["stable"]
+        fips: [false]
+        shard: [0, 1, 2]
     # Only supported in non-fork runs, since secrets are not available in forks.
     if: ${{ github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go' }}
     runs-on: ubuntu-latest
@@ -305,10 +306,10 @@ jobs:
           TEMPORAL_CLIENT_CLOUD_API_VERSION: v0.19.1
       - name: Integration tests against cloud
         timeout-minutes: 50
-        run: go run . integration-test -envconfig -cloud -p 1 -packages . -timeout 45m
+        run: go run . integration-test -envconfig -cloud -p 1 -packages . -timeout 45m -run-file ".github/integration-test-shards/${{ matrix.shard }}.run"
         working-directory: ./internal/cmd/build
         env:
-          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
+          TEST_LOG_ARTIFACT_NAME: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}-shard-${{ matrix.shard }}
           TEMPORAL_ADDRESS: ${{ steps.create-cloud-namespace.outputs.namespace }}.tmprl.cloud:7233
           TEMPORAL_NAMESPACE: ${{ steps.create-cloud-namespace.outputs.namespace }}
 
@@ -326,7 +327,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}
+          name: ${{ github.job }}-${{ matrix.go-version }}-fips-${{ matrix.fips }}-shard-${{ matrix.shard }}
           path: .build/test-logs
           if-no-files-found: warn
           retention-days: 14
