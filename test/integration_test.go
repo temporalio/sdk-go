@@ -292,8 +292,6 @@ func (ts *IntegrationTestSuite) TearDownTest() {
 }
 
 func (ts *IntegrationTestSuite) TestBasic() {
-	ts.T().Fatal("controlled shard diagnostic failure")
-
 	var expected []string
 	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
 	ts.NoError(err)
