@@ -170,11 +170,10 @@ func supportsGoSyntax(path, toolchain string) (supported bool, retErr error) {
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if !strings.HasPrefix(line, goBuildPrefix) {
+		line := scanner.Text()
+		if !constraint.IsGoBuild(line) {
 			continue
 		}
-
 		expr, err := constraint.Parse(line)
 		if err != nil {
 			return false, err
