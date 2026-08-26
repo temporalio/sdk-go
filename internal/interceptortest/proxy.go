@@ -357,6 +357,19 @@ func (p *proxyWorkflowOutbound) RequestCancelExternalWorkflow(
 	return
 }
 
+func (p *proxyWorkflowOutbound) RequestCancelExternalWorkflowWithOptions(
+	ctx workflow.Context,
+	options workflow.RequestCancelExternalWorkflowOptions,
+) (ret workflow.Future) {
+	ret, _ = p.invoke(ctx, options)[0].Interface().(workflow.Future)
+	return
+}
+
+func (p *proxyWorkflowOutbound) GetCancellationReason(ctx workflow.Context) (ret string) {
+	ret, _ = p.invoke(ctx)[0].Interface().(string)
+	return
+}
+
 func (p *proxyWorkflowOutbound) SignalExternalWorkflow(
 	ctx workflow.Context,
 	workflowID string,

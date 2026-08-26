@@ -2227,6 +2227,11 @@ func (w *Workflows) CronWorkflow(ctx workflow.Context) (int, error) {
 	return retme, nil
 }
 
+func (w *Workflows) ReturnCancellationReason(ctx workflow.Context) (string, error) {
+	ctx.Done().Receive(ctx, nil)
+	return workflow.GetCancellationReason(ctx), nil
+}
+
 func (w *Workflows) WaitForCancelWithDisconnectedContextWorkflow(ctx workflow.Context) (err error) {
 	ao := workflow.ActivityOptions{
 		StartToCloseTimeout: 1 * time.Minute,
@@ -4365,6 +4370,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.AwaitWithTimeoutConditionAlreadyTrue)
 	worker.RegisterWorkflow(w.CascadingCancellation)
 	worker.RegisterWorkflow(w.WaitForCancelWithDisconnectedContextWorkflow)
+	worker.RegisterWorkflow(w.ReturnCancellationReason)
 	worker.RegisterWorkflow(w.ChildWorkflowWithRetryPolicy)
 	worker.RegisterWorkflow(w.ChildWorkflowWithCustomRetryPolicy)
 	worker.RegisterWorkflow(w.ChildWorkflowRetryOnError)

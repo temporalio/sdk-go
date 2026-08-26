@@ -110,8 +110,9 @@ type (
 		TypedSearchAttributes() SearchAttributes
 		Complete(result *commonpb.Payloads, err error)
 		RegisterCancelHandler(handler func())
-		RequestCancelChildWorkflow(namespace, workflowID string)
-		RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler)
+		GetCancellationReason() string
+		RequestCancelChildWorkflow(namespace, workflowID, reason string)
+		RequestCancelExternalWorkflow(namespace, workflowID, runID, reason string, callback ResultHandler)
 		ExecuteChildWorkflow(params ExecuteWorkflowParams, callback ResultHandler, startedHandler func(r WorkflowExecution, e error))
 		ExecuteNexusOperation(params ExecuteNexusOperationParams, callback func(*commonpb.Payload, error), startedHandler func(token string, e error)) int64
 		RequestCancelNexusOperation(seq int64)

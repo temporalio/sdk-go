@@ -1002,6 +1002,27 @@ func (ts *IntegrationTestSuite) TestCancellationWithOptions() {
 	ts.True(found, "workflow history did not contain a cancellation-requested event")
 }
 
+func (ts *IntegrationTestSuite) TestCancellationReasonInWorkflow() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+	workflowID := "test-cancellation-reason-in-workflow"
+	reason := "test cancellation reason"
+	run, err := ts.client.ExecuteWorkflow(
+		ctx, ts.startWorkflowOptions(workflowID), ts.workflows.ReturnCancellationReason,
+	)
+	ts.NoError(err)
+
+	ts.NoError(ts.client.CancelWorkflowWithOptions(ctx, client.CancelWorkflowOptions{
+		WorkflowID: workflowID,
+		RunID:      run.GetRunID(),
+		Reason:     reason,
+	}))
+
+	var observed string
+	ts.NoError(run.Get(ctx, &observed))
+	ts.Equal(reason, observed)
+}
+
 func (ts *IntegrationTestSuite) TestTerminationWithOptions() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
