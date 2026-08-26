@@ -434,16 +434,18 @@ type (
 		RawExecutionInfo *activitypb.ActivityExecutionInfo
 		// RawDescription is the raw describe response. Unlike RawExecutionInfo it also carries
 		// the opt-in Input and Outcome payloads. See ClientDescribeActivityOptions.
-		RawDescription          *workflowservice.DescribeActivityExecutionResponse
-		ScheduleToCloseTimeout  time.Duration
-		ScheduleToStartTimeout  time.Duration
-		StartToCloseTimeout     time.Duration
-		HeartbeatTimeout        time.Duration
-		StartDelay              time.Duration
-		RunState                enumspb.PendingActivityState
-		LastHeartbeatTime       time.Time
-		LastStartedTime         time.Time
-		Attempt                 int32
+		RawDescription         *workflowservice.DescribeActivityExecutionResponse
+		ScheduleToCloseTimeout time.Duration
+		ScheduleToStartTimeout time.Duration
+		StartToCloseTimeout    time.Duration
+		HeartbeatTimeout       time.Duration
+		StartDelay             time.Duration
+		RunState               enumspb.PendingActivityState
+		LastHeartbeatTime      time.Time
+		LastStartedTime        time.Time
+		Attempt                int32
+		// TotalHeartbeatCount is the number of heartbeats recorded across all attempts.
+		TotalHeartbeatCount     int64
 		RetryPolicy             *RetryPolicy
 		ExpirationTime          time.Time
 		LastWorkerIdentity      string
@@ -1140,6 +1142,7 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			LastHeartbeatTime:       info.LastHeartbeatTime.AsTime(),
 			LastStartedTime:         info.LastStartedTime.AsTime(),
 			Attempt:                 info.Attempt,
+			TotalHeartbeatCount:     info.TotalHeartbeatCount,
 			RetryPolicy:             convertFromPBRetryPolicy(info.RetryPolicy),
 			ExpirationTime:          info.ExpirationTime.AsTime(),
 			LastWorkerIdentity:      info.LastWorkerIdentity,

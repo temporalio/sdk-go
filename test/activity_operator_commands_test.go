@@ -410,6 +410,24 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 	})
 
+	ts.Run("Describe reports the total heartbeat count", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+
+		// The count tracks heartbeats the server recorded, not calls the activity made: the
+		// SDK throttles them to roughly 0.8x the heartbeat timeout, so a short timeout is what
+		// makes a second heartbeat arrive promptly.
+		handle := startRunningSlowActivity(ctx, func(o *client.StartActivityOptions) {
+			o.HeartbeatTimeout = 3 * time.Second
+		})
+
+		ts.Eventually(func() bool {
+			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+			return err == nil && description.TotalHeartbeatCount >= 2
+		}, 20*time.Second, 200*time.Millisecond)
+		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
+	})
+
 	ts.Run("Describe input and result are opt-in", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
