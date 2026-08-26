@@ -28,8 +28,8 @@ to docs, or any other relevant information.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
   workflow-, activity-, and workflow-update-backed Nexus operations.
 - The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
-  metrics now carry a `failure_reason` attribute, currently always `ActivityError`. Each is now
-  split into one time series per reason, which may affect existing dashboards.
+  metrics now carry a `failure_reason` attribute. Each is now split into one time series per
+  reason, which may affect existing dashboards.
 
 ### Changed
 
@@ -52,6 +52,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
   but decoded through the workflow serialization context, so a context-aware `DataConverter` or
@@ -60,6 +61,10 @@ to docs, or any other relevant information.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
+- `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
+  reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
+  so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
+  decoding it.
 
 ### Security
 
