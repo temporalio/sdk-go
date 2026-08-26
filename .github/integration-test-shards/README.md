@@ -1,7 +1,7 @@
-Generated from PR #2576's stable, non-FIPS Cloud test durations.
+Generated from #2622's first stable, non-FIPS Cloud shard run.
 
 | Shard | Tests | Baseline seconds |
 |---|---:|---:|
-| 0 | 89 | 280.42 |
-| 1 | 130 | 280.15 |
-| 2 | 90 | 280.43 |
+| 0 | 90 | 246.81 |
+| 1 | 129 | 246.72 |
+| 2 | 90 | 246.80 |
