@@ -436,6 +436,26 @@ func TestResetActivityFlagsReachRequest(t *testing.T) {
 	})
 }
 
+// TestUpdateActivityOptionsRestoreIsExclusive asserts the guard the handle methods cannot
+// reach: UpdateOptions always sends RestoreOriginal=false and RestoreOriginalOptions always
+// sends empty changes, so only a hand-built interceptor input can combine the two. The
+// server rejects that combination, so the root invoker refuses it before the round trip.
+func TestUpdateActivityOptionsRestoreIsExclusive(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	client := NewServiceClient(service, nil, ClientOptions{})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	// No RPC expectation is registered, so reaching the service would fail the mock.
+	_, err := client.interceptor.UpdateActivityOptions(t.Context(), &ClientUpdateActivityOptionsInput{
+		ActivityID:      "activity-id",
+		RestoreOriginal: true,
+		Changes: ClientActivityOptionsChanges{
+			HeartbeatTimeout: &DurationChange{Value: 25 * time.Second},
+		},
+	})
+	require.ErrorContains(t, err, "cannot be combined")
+}
+
 // counts UpdateActivityOptions calls
 type recordingOutboundInterceptor struct {
 	updateCalls int
