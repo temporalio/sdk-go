@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	activitypb "go.temporal.io/api/activity/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/activity"
@@ -465,6 +466,43 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.Equal("ping-echoed", echoed)
 		// A successful outcome has no failure arm.
 		ts.NoError(description.GetFailure())
+	})
+
+	ts.Run("Description exposes the whole response", func() {
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+		defer cancel()
+
+		handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
+			ID:                  newID(),
+			TaskQueue:           ts.taskQueueName,
+			StartToCloseTimeout: 60 * time.Second,
+		}, "opEchoActivity", "ping")
+		ts.NoError(err)
+		ts.NoError(handle.Get(ctx, nil))
+
+		description, err := handle.Describe(ctx, client.DescribeActivityOptions{
+			IncludeInput:   true,
+			IncludeOutcome: true,
+		})
+		ts.NoError(err)
+
+		// RawDescription is the entire describe response. The decoded accessors are derived
+		// from it, so the raw payloads and the decoded values must agree, and input must not
+		// be confused with the result.
+		ts.Equal(handle.GetID(), description.RawDescription.GetInfo().GetActivityId())
+		ts.Same(description.RawExecutionInfo, description.RawDescription.GetInfo())
+
+		var word string
+		ts.NoError(description.GetInput(&word))
+		ts.Equal("ping", word)
+		ts.Len(description.RawDescription.GetInput().GetPayloads(), 1)
+
+		var echoed string
+		ts.NoError(description.GetResult(&echoed))
+		ts.Equal("ping-echoed", echoed)
+		_, rawHasResult := description.RawDescription.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
+		ts.True(rawHasResult)
+		ts.Equal(description.HasResult(), rawHasResult)
 	})
 
 	ts.Run("Describe reports the outcome failure", func() {
