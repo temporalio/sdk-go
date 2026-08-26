@@ -21,6 +21,7 @@ const (
 	tagQueryType                    = "QueryType"
 	tagResult                       = "Result"
 	tagError                        = "Error"
+	tagLinkURL                      = "LinkURL"
 	tagStackTrace                   = "StackTrace"
 	tagAttempt                      = "Attempt"
 	tagTaskFirstEventID             = "TaskFirstEventID"

@@ -1699,15 +1699,15 @@ func (ts *IntegrationTestSuite) TestCancelChildWorkflowAndParentWorkflow() {
 	err = ts.client.CancelWorkflow(context.Background(), childWorkflowID, "")
 	ts.NoError(err)
 
+	err = ts.client.GetWorkflow(context.Background(), childWorkflowID, "").Get(context.Background(), nil)
+	var canceledError *temporal.CanceledError
+	ts.ErrorAs(err, &canceledError)
+
 	err = ts.client.CancelWorkflow(context.Background(), run.GetID(), "")
 	ts.NoError(err)
 
 	err = run.Get(context.Background(), nil)
 	ts.NoError(err)
-
-	err = ts.client.GetWorkflow(context.Background(), childWorkflowID, "").Get(context.Background(), nil)
-	var canceledError *temporal.CanceledError
-	ts.ErrorAs(err, &canceledError)
 }
 
 func (ts *IntegrationTestSuite) TestChildWorkflowDuplicatePanic_Regression() {
@@ -8174,7 +8174,8 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 	defer testWorker.Stop()
 
 	var appErr *temporal.ApplicationError
-	currCount := ts.metricCount(metrics.ActivityExecutionFailedCounter)
+	currCount := ts.metricCount(metrics.ActivityExecutionFailedCounter,
+		metrics.FailureReasonTagName, metrics.FailureReasonActivityError)
 
 	runNonBenign, err := c.ExecuteWorkflow(
 		context.Background(),
@@ -8196,7 +8197,8 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 
 	// Expect initial count to have incremented because the activity failed with non-benign err.
 	currCount++
-	ts.assertMetricCount(metrics.ActivityExecutionFailedCounter, currCount)
+	ts.assertMetricCount(metrics.ActivityExecutionFailedCounter, currCount,
+		metrics.FailureReasonTagName, metrics.FailureReasonActivityError)
 
 	runBenign, err := c.ExecuteWorkflow(
 		context.Background(),
@@ -8216,7 +8218,8 @@ func (ts *IntegrationTestSuite) TestActivityFailureMetric_BenignHandling() {
 	}))
 
 	// Expect count to not have incremented because the activity failed with benign err.
-	ts.assertMetricCount(metrics.ActivityExecutionFailedCounter, currCount)
+	ts.assertMetricCount(metrics.ActivityExecutionFailedCounter, currCount,
+		metrics.FailureReasonTagName, metrics.FailureReasonActivityError)
 }
 
 func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() {
@@ -8241,7 +8244,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 	ts.worker.RegisterWorkflow(wfWithLocalActAppErr)
 
 	var appErr *temporal.ApplicationError
-	currCount := ts.metricCount(metrics.LocalActivityExecutionFailedCounter)
+	currCount := ts.metricCount(metrics.LocalActivityExecutionFailedCounter,
+		metrics.FailureReasonTagName, metrics.FailureReasonActivityError)
 
 	runNonBenign, err := ts.client.ExecuteWorkflow(
 		context.Background(),
@@ -8258,7 +8262,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 
 	// Expect initial count to have incremented because the activity failed with non-benign err.
 	currCount++
-	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
+	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount,
+		metrics.FailureReasonTagName, metrics.FailureReasonActivityError)
 
 	runBenign, err := ts.client.ExecuteWorkflow(
 		context.Background(),
@@ -8274,7 +8279,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityFailureMetric_BenignHandling() 
 	ts.True(appErr.Category() == temporal.ApplicationErrorCategoryBenign)
 
 	// Expect count to remain unchanged
-	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount)
+	ts.assertMetricCount(metrics.LocalActivityExecutionFailedCounter, currCount,
+		metrics.FailureReasonTagName, metrics.FailureReasonActivityError)
 }
 
 func (ts *IntegrationTestSuite) registerWorkerShutdownCancelWorkflow(w worker.Worker) (

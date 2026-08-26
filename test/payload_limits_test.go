@@ -17,6 +17,7 @@ import (
 	workflowservice "go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
@@ -387,8 +388,10 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
+	metricsHandler := metrics.NewCapturingHandler()
 	ts.ResetClientAndWorker(func(opts *client.Options) {
 		opts.Logger = logger
+		opts.MetricsHandler = metricsHandler
 	}, nil)
 
 	wfName := "payload-size-error-activity-result"
@@ -446,6 +449,16 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
 
 	// Verify failure is logged
 	ts.assertLogContains(logger, payloadErrorMessage)
+
+	// The worker turns the oversized result into an activity task failure, so it must be counted
+	// under its own reason rather than the generic activity one.
+	var reasons []string
+	for _, counter := range metricsHandler.Counters() {
+		if counter.Name == metrics.ActivityExecutionFailedCounter {
+			reasons = append(reasons, counter.Tags[metrics.FailureReasonTagName])
+		}
+	}
+	ts.Contains(reasons, metrics.FailureReasonPayloadsTooLarge)
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
