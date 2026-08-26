@@ -281,14 +281,17 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		require.Empty(t, request.GetUpdateMask().GetPaths())
 	})
 
-	t.Run("an update naming nothing is rejected", func(t *testing.T) {
+	t.Run("an update naming nothing is rejected before the interceptor chain", func(t *testing.T) {
 		var request *workflowservice.UpdateActivityExecutionOptionsRequest
 		client := newClient(t, &request)
+		recorder := &recordingOutboundInterceptor{}
+		client.interceptor = recorder.intercept(client.interceptor)
 		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
 
 		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsChanges{})
 		require.ErrorContains(t, err, "at least one option change")
 		require.Nil(t, request)
+		require.Zero(t, recorder.updateCalls)
 	})
 }
 
@@ -431,4 +434,26 @@ func TestResetActivityFlagsReachRequest(t *testing.T) {
 		require.True(t, request.GetRestoreOriginalOptions())
 		require.True(t, request.GetResetHeartbeat())
 	})
+}
+
+// counts UpdateActivityOptions calls
+type recordingOutboundInterceptor struct {
+	updateCalls int
+}
+
+func (r *recordingOutboundInterceptor) intercept(next ClientOutboundInterceptor) ClientOutboundInterceptor {
+	return &recordingOutbound{ClientOutboundInterceptorBase: ClientOutboundInterceptorBase{Next: next}, parent: r}
+}
+
+type recordingOutbound struct {
+	ClientOutboundInterceptorBase
+	parent *recordingOutboundInterceptor
+}
+
+func (r *recordingOutbound) UpdateActivityOptions(
+	ctx context.Context,
+	in *ClientUpdateActivityOptionsInput,
+) (*ClientUpdateActivityOptionsOutput, error) {
+	r.parent.updateCalls++
+	return r.ClientOutboundInterceptorBase.UpdateActivityOptions(ctx, in)
 }

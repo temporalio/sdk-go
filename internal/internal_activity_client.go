@@ -752,6 +752,9 @@ func (h *clientActivityHandleImpl) UpdateOptions(
 	ctx context.Context,
 	options ClientActivityOptionsChanges,
 ) (*ClientActivityOptions, error) {
+	if !options.anyChange() {
+		return nil, errors.New("UpdateOptions requires at least one option change")
+	}
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -1296,18 +1299,21 @@ func activityOptionsFromProto(options *activitypb.ActivityOptions) *ClientActivi
 	}
 }
 
+// anyChange reports whether any option is set. It delegates to the conversion so the two
+// cannot disagree about what counts as a change.
+func (c ClientActivityOptionsChanges) anyChange() bool {
+	_, paths := activityOptionsChangesToProto(c)
+	return len(paths) > 0
+}
+
 func (w *workflowClientInterceptor) UpdateActivityOptions(
 	ctx context.Context,
 	in *ClientUpdateActivityOptionsInput,
 ) (*ClientUpdateActivityOptionsOutput, error) {
 	options, paths := activityOptionsChangesToProto(in.Changes)
-	// The server rejects the restore flag alongside individual changes, and an update naming
-	// nothing would silently do nothing. Fail before the round trip in both cases.
+	// The handle doesn't do this, but an interceptor could.
 	if in.RestoreOriginal && len(paths) > 0 {
 		return nil, errors.New("RestoreOriginalOptions cannot be combined with individual option changes")
-	}
-	if !in.RestoreOriginal && len(paths) == 0 {
-		return nil, errors.New("UpdateOptions requires at least one option change")
 	}
 	mask, err := fieldmaskpb.New(&activitypb.ActivityOptions{}, paths...)
 	if err != nil {
