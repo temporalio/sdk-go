@@ -27,8 +27,6 @@ type (
 	}
 )
 
-const goBuildPrefix = "//go:build "
-
 var changesNeeded = false
 
 func main() {
