@@ -65,6 +65,17 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 	alwaysFailActivity := func(ctx context.Context) error {
 		return temporal.NewApplicationError("deliberate failure", "")
 	}
+	// Heartbeats, fails the first attempt, then succeeds. One execution of this carries
+	// input, a result, heartbeat details and a last failure all at once, which is what lets a
+	// single describe exercise every payload field.
+	heartbeatFailIncrement := func(ctx context.Context, value int) (int, error) {
+		activity.RecordHeartbeat(ctx, "heartbeat details")
+		if activity.GetInfo(ctx).Attempt == 1 {
+			return 0, temporal.NewApplicationError("deliberate first-attempt failure", "")
+		}
+		return value + 1, nil
+	}
+
 	// Records the same heartbeat details until cancelled. The details are re-sent on every beat
 	// rather than once, because the SDK delivers cancellation through the heartbeat response: an
 	// activity that stops heartbeating never learns it has been asked to yield, and the server
@@ -86,6 +97,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 	ts.worker.RegisterActivityWithOptions(echoActivity, activity.RegisterOptions{Name: "opEchoActivity"})
 	ts.worker.RegisterActivityWithOptions(alwaysFailActivity, activity.RegisterOptions{Name: "opAlwaysFailActivity"})
 	ts.worker.RegisterActivityWithOptions(heartbeatingActivity, activity.RegisterOptions{Name: "opHeartbeatingActivity"})
+	ts.worker.RegisterActivityWithOptions(heartbeatFailIncrement, activity.RegisterOptions{Name: "opHeartbeatFailIncrement"})
 
 	newID := func() string { return fmt.Sprintf("act-%v", uuid.NewString()) }
 
@@ -389,28 +401,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 	})
 
-	ts.Run("Describe payload fields are opt-in", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-		defer cancel()
-
-		handle := startHeartbeatReadyActivity(ctx)
-
-		// Assert the default really is "off" rather than the SDK quietly requesting everything:
-		// same activity, same moment, two describes.
-		bare, err := handle.Describe(ctx, client.DescribeActivityOptions{})
-		ts.NoError(err)
-		ts.False(bare.HasHeartbeatDetails())
-
-		optedIn, err := handle.Describe(ctx, client.DescribeActivityOptions{IncludeHeartbeatDetails: true})
-		ts.NoError(err)
-		ts.True(optedIn.HasHeartbeatDetails())
-		var details string
-		ts.NoError(optedIn.GetHeartbeatDetails(&details))
-		ts.Equal("hb-details", details)
-
-		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
-	})
-
 	ts.Run("Describe reports the total heartbeat count", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
@@ -427,45 +417,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			return err == nil && description.TotalHeartbeatCount >= 2
 		}, 20*time.Second, 200*time.Millisecond)
 		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
-	})
-
-	ts.Run("Describe input and result are opt-in", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-		defer cancel()
-
-		handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
-			ID:                  newID(),
-			TaskQueue:           ts.taskQueueName,
-			StartToCloseTimeout: 60 * time.Second,
-		}, "opEchoActivity", "ping")
-		ts.NoError(err)
-		var result string
-		ts.NoError(handle.Get(ctx, &result))
-		ts.Equal("ping-echoed", result)
-
-		bare, err := handle.Describe(ctx, client.DescribeActivityOptions{})
-		ts.NoError(err)
-		ts.False(bare.HasInput())
-		ts.False(bare.HasResult())
-		ts.ErrorIs(bare.GetInput(nil), temporal.ErrNoData)
-		ts.ErrorIs(bare.GetResult(nil), temporal.ErrNoData)
-		ts.NoError(bare.GetFailure())
-
-		description, err := handle.Describe(ctx, client.DescribeActivityOptions{
-			IncludeInput:   true,
-			IncludeOutcome: true,
-		})
-		ts.NoError(err)
-		ts.True(description.HasInput())
-		var word string
-		ts.NoError(description.GetInput(&word))
-		ts.Equal("ping", word)
-		ts.True(description.HasResult())
-		var echoed string
-		ts.NoError(description.GetResult(&echoed))
-		ts.Equal("ping-echoed", echoed)
-		// A successful outcome has no failure arm.
-		ts.NoError(description.GetFailure())
 	})
 
 	ts.Run("Description exposes the whole response", func() {
@@ -505,7 +456,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.Equal(description.HasResult(), rawHasResult)
 	})
 
-	ts.Run("Describe reports the outcome failure", func() {
+	ts.Run("Describe payloads", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
 
@@ -513,21 +464,73 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			ID:                  newID(),
 			TaskQueue:           ts.taskQueueName,
 			StartToCloseTimeout: 60 * time.Second,
+			HeartbeatTimeout:    5 * time.Second,
+			RetryPolicy: &temporal.RetryPolicy{
+				InitialInterval:    100 * time.Millisecond,
+				BackoffCoefficient: 1.0,
+				MaximumAttempts:    2,
+			},
+		}, "opHeartbeatFailIncrement", 1)
+		ts.NoError(err)
+		var result int
+		ts.NoError(handle.Get(ctx, &result))
+		ts.Equal(2, result)
+
+		// Nothing requested: every payload field is absent, and the accessors agree with the
+		// Has* flags rather than merely being empty.
+		bare, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+		ts.NoError(err)
+		ts.False(bare.HasInput())
+		ts.False(bare.HasResult())
+		ts.False(bare.HasHeartbeatDetails())
+		ts.False(bare.HasLastFailure())
+		ts.ErrorIs(bare.GetInput(nil), temporal.ErrNoData)
+		ts.ErrorIs(bare.GetResult(nil), temporal.ErrNoData)
+		ts.NoError(bare.GetFailure())
+		ts.NoError(bare.GetLastFailure())
+
+		// All four requested. The activity succeeded on its second attempt, so it has a result
+		// and a last failure at the same time, and no terminal failure.
+		full, err := handle.Describe(ctx, client.DescribeActivityOptions{
+			IncludeInput:            true,
+			IncludeOutcome:          true,
+			IncludeHeartbeatDetails: true,
+			IncludeLastFailure:      true,
+		})
+		ts.NoError(err)
+		var input int
+		ts.NoError(full.GetInput(&input))
+		ts.Equal(1, input)
+		ts.True(full.HasResult())
+		var got int
+		ts.NoError(full.GetResult(&got))
+		ts.Equal(2, got)
+		ts.NoError(full.GetFailure())
+		ts.True(full.HasHeartbeatDetails())
+		var details string
+		ts.NoError(full.GetHeartbeatDetails(&details))
+		ts.Equal("heartbeat details", details)
+		ts.True(full.HasLastFailure())
+		ts.Error(full.GetLastFailure())
+
+		// The other arm of the oneof, on an activity that never succeeds.
+		failed, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
+			ID:                  newID(),
+			TaskQueue:           ts.taskQueueName,
+			StartToCloseTimeout: 60 * time.Second,
 			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
 		}, "opAlwaysFailActivity")
 		ts.NoError(err)
-		ts.Error(handle.Get(ctx, nil))
+		ts.Error(failed.Get(ctx, nil))
 
-		// The other arm of the oneof: a terminally failed activity has a failure and no result.
-		description, err := handle.Describe(ctx, client.DescribeActivityOptions{IncludeOutcome: true})
+		desc, err := failed.Describe(ctx, client.DescribeActivityOptions{
+			IncludeOutcome: true, IncludeLastFailure: true,
+		})
 		ts.NoError(err)
-		ts.False(description.HasResult())
-		ts.ErrorIs(description.GetResult(nil), temporal.ErrNoData)
-
-		failure := description.GetFailure()
-		ts.Error(failure)
+		ts.False(desc.HasResult())
+		ts.ErrorIs(desc.GetResult(nil), temporal.ErrNoData)
 		var applicationErr *temporal.ApplicationError
-		ts.True(errors.As(failure, &applicationErr))
+		ts.True(errors.As(desc.GetFailure(), &applicationErr))
 		ts.Contains(applicationErr.Error(), "deliberate failure")
 	})
 
