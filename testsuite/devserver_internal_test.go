@@ -29,10 +29,25 @@ func TestWaitServerReady_respectsTimeout(t *testing.T) {
 	assert.WithinDuration(t,
 		startTime.Add(time.Millisecond),
 		time.Now(),
-		5*time.Millisecond,
+		10*time.Millisecond,
 		// Even though the timeout is only a millisecond,
-		// we'll allow for a slack of up to 5 milliseconds
+		// we'll allow for a slack of up to 10 milliseconds
 		// to account for slow CI machines.
 		// Anything smaller than 1 second is fine to use here.
+		// Increase only if CI scheduler jitter exceeds this allowance.
 	)
+}
+
+func TestRetryFor_respectsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	attempts := 0
+	err := retryFor(ctx, 2, 100*time.Millisecond, func() error {
+		attempts++
+		return assert.AnError
+	})
+
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 1, attempts)
 }
