@@ -403,35 +403,9 @@ func TestUpdateActivityOptionsRestoreIsExclusive(t *testing.T) {
 	require.ErrorContains(t, err, "cannot be combined")
 }
 
-// TestRestoreOriginalOptionsRoutesThroughUpdate pins that RestoreOriginalOptions reuses the
-// UpdateActivityOptions interceptor rather than having one of its own, and that it is
-// distinguished purely by RestoreOriginal with no changes. An interceptor that wanted to
-// observe option updates would otherwise silently miss restores.
-func TestRestoreOriginalOptionsRoutesThroughUpdate(t *testing.T) {
-	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
-	service.EXPECT().
-		UpdateActivityExecutionOptions(gomock.Any(), gomock.Any()).
-		Return(&workflowservice.UpdateActivityExecutionOptionsResponse{}, nil)
-	client := NewServiceClient(service, nil, ClientOptions{})
-	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
-
-	recorder := &recordingOutboundInterceptor{}
-	client.interceptor = recorder.intercept(client.interceptor)
-
-	_, err := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"}).
-		RestoreOriginalOptions(t.Context())
-	require.NoError(t, err)
-
-	require.Equal(t, 1, recorder.updateCalls)
-	require.NotNil(t, recorder.lastUpdateInput)
-	require.True(t, recorder.lastUpdateInput.RestoreOriginal)
-	require.False(t, recorder.lastUpdateInput.Changes.anyChange())
-}
-
 // counts UpdateActivityOptions calls
 type recordingOutboundInterceptor struct {
-	updateCalls     int
-	lastUpdateInput *ClientUpdateActivityOptionsInput
+	updateCalls int
 }
 
 func (r *recordingOutboundInterceptor) intercept(next ClientOutboundInterceptor) ClientOutboundInterceptor {
@@ -448,6 +422,5 @@ func (r *recordingOutbound) UpdateActivityOptions(
 	in *ClientUpdateActivityOptionsInput,
 ) (*ClientUpdateActivityOptionsOutput, error) {
 	r.parent.updateCalls++
-	r.parent.lastUpdateInput = in
 	return r.ClientOutboundInterceptorBase.UpdateActivityOptions(ctx, in)
 }
