@@ -1244,29 +1244,40 @@ func (w *workflowClientInterceptor) ResetActivity(
 func activityOptionsChangesToProto(changes ClientActivityOptionsChanges) (*activitypb.ActivityOptions, []string) {
 	options := &activitypb.ActivityOptions{}
 	var paths []string
+	// A zero value means "clear this option": the path is named in the mask so the server
+	// acts on it, but the field is left unset so the option is removed rather than set to
+	// zero. Sending an explicit zero would rely on the server normalizing it back to unset.
+	setDuration := func(value time.Duration, path string, assign func(*durationpb.Duration)) {
+		if value != 0 {
+			assign(durationpb.New(value))
+		}
+		paths = append(paths, path)
+	}
 	if changes.TaskQueue != nil {
-		options.TaskQueue = &taskqueuepb.TaskQueue{Name: changes.TaskQueue.Value}
+		if changes.TaskQueue.Value != "" {
+			options.TaskQueue = &taskqueuepb.TaskQueue{Name: changes.TaskQueue.Value}
+		}
 		paths = append(paths, "task_queue.name")
 	}
 	if changes.ScheduleToCloseTimeout != nil {
-		options.ScheduleToCloseTimeout = durationpb.New(changes.ScheduleToCloseTimeout.Value)
-		paths = append(paths, "schedule_to_close_timeout")
+		setDuration(changes.ScheduleToCloseTimeout.Value, "schedule_to_close_timeout",
+			func(d *durationpb.Duration) { options.ScheduleToCloseTimeout = d })
 	}
 	if changes.ScheduleToStartTimeout != nil {
-		options.ScheduleToStartTimeout = durationpb.New(changes.ScheduleToStartTimeout.Value)
-		paths = append(paths, "schedule_to_start_timeout")
+		setDuration(changes.ScheduleToStartTimeout.Value, "schedule_to_start_timeout",
+			func(d *durationpb.Duration) { options.ScheduleToStartTimeout = d })
 	}
 	if changes.StartToCloseTimeout != nil {
-		options.StartToCloseTimeout = durationpb.New(changes.StartToCloseTimeout.Value)
-		paths = append(paths, "start_to_close_timeout")
+		setDuration(changes.StartToCloseTimeout.Value, "start_to_close_timeout",
+			func(d *durationpb.Duration) { options.StartToCloseTimeout = d })
 	}
 	if changes.HeartbeatTimeout != nil {
-		options.HeartbeatTimeout = durationpb.New(changes.HeartbeatTimeout.Value)
-		paths = append(paths, "heartbeat_timeout")
+		setDuration(changes.HeartbeatTimeout.Value, "heartbeat_timeout",
+			func(d *durationpb.Duration) { options.HeartbeatTimeout = d })
 	}
 	if changes.StartDelay != nil {
-		options.StartDelay = durationpb.New(changes.StartDelay.Value)
-		paths = append(paths, "start_delay")
+		setDuration(changes.StartDelay.Value, "start_delay",
+			func(d *durationpb.Duration) { options.StartDelay = d })
 	}
 	if changes.RetryPolicy != nil {
 		policy := changes.RetryPolicy.Value
