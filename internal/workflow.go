@@ -438,6 +438,23 @@ type (
 	// Exposed as: [go.temporal.io/sdk/workflow.Version]
 	Version int
 
+	// RequestCancelExternalWorkflowOptions are the parameters for
+	// [RequestCancelExternalWorkflowWithOptions].
+	//
+	// Exposed as: [go.temporal.io/sdk/workflow.RequestCancelExternalWorkflowOptions]
+	RequestCancelExternalWorkflowOptions struct {
+		// WorkflowID is the workflow ID of the target workflow. Required.
+		WorkflowID string
+
+		// RunID indicates the instance of the target workflow. Optional: when empty, the currently
+		// running instance of WorkflowID is targeted.
+		RunID string
+
+		// Reason is a human readable explanation of why the cancellation is requested. Optional.
+		// The target workflow reads it through [GetCancellationReason].
+		Reason string
+	}
+
 	// ChildWorkflowOptions stores all child workflow specific parameters that will be stored inside of a Context.
 	// The current timeout resolution implementation is in seconds and uses math.Ceil(d.Seconds()) as the duration. But is
 	// subjected to change in the future.
@@ -1492,7 +1509,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 					assertNotInReadOnlyStateCancellation(ctx)
 					if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
 						// child workflow started, and ctx canceled
-						getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, r.ID)
+						getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, r.ID, "")
 					}
 					return false
 				}
@@ -1833,12 +1850,29 @@ func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future
 	return i.RequestCancelExternalWorkflow(ctx, workflowID, runID)
 }
 
+// RequestCancelExternalWorkflowWithOptions is [RequestCancelExternalWorkflow] with the addition of
+// a reason, which the target workflow observes through [GetCancellationReason].
+//
+// Exposed as: [go.temporal.io/sdk/workflow.RequestCancelExternalWorkflowWithOptions]
+func RequestCancelExternalWorkflowWithOptions(ctx Context, options RequestCancelExternalWorkflowOptions) Future {
+	assertNotInReadOnlyState(ctx)
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.RequestCancelExternalWorkflowWithOptions(ctx, options)
+}
+
 func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
+	return wc.RequestCancelExternalWorkflowWithOptions(ctx, RequestCancelExternalWorkflowOptions{
+		WorkflowID: workflowID,
+		RunID:      runID,
+	})
+}
+
+func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflowWithOptions(ctx Context, options RequestCancelExternalWorkflowOptions) Future {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	options := getWorkflowEnvOptions(ctx1)
+	envOptions := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
 
-	if workflowID == "" {
+	if options.WorkflowID == "" {
 		settable.Set(nil, errWorkflowIDNotSet)
 		return future
 	}
@@ -1848,13 +1882,28 @@ func (wc *workflowEnvironmentInterceptor) RequestCancelExternalWorkflow(ctx Cont
 	}
 
 	wc.env.RequestCancelExternalWorkflow(
-		options.Namespace,
-		workflowID,
-		runID,
+		envOptions.Namespace,
+		options.WorkflowID,
+		options.RunID,
+		options.Reason,
 		resultCallback,
 	)
 
 	return future
+}
+
+// GetCancellationReason returns the reason the workflow execution was asked to cancel, as given by
+// whoever requested the cancellation. It is empty until the workflow is asked to cancel, and stays
+// empty when the cancellation carried no reason.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.GetCancellationReason]
+func GetCancellationReason(ctx Context) string {
+	i := getWorkflowOutboundInterceptor(ctx)
+	return i.GetCancellationReason(ctx)
+}
+
+func (wc *workflowEnvironmentInterceptor) GetCancellationReason(ctx Context) string {
+	return wc.env.GetCancellationReason()
 }
 
 // SignalExternalWorkflow can be used to send signal info to an external workflow.

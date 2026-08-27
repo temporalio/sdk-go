@@ -235,6 +235,8 @@ type (
 		openSessions   map[string]*SessionInfo
 		randoms        map[string]*workflowRandomStream
 
+		cancellationReason string
+
 		// mutableSideEffect holds the last recorded value per MutableSideEffect id
 		// so the test environment can honor the user-supplied equals function the
 		// same way the real worker does (only update when the value changed).
@@ -1230,7 +1232,7 @@ func (env *testWorkflowEnvironmentImpl) handleParentClosePolicy() {
 			case enumspb.PARENT_CLOSE_POLICY_TERMINATE:
 				handle.env.Complete(nil, newTerminatedError())
 			case enumspb.PARENT_CLOSE_POLICY_REQUEST_CANCEL:
-				handle.env.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
+				handle.env.cancelWorkflow("", func(result *commonpb.Payloads, err error) {})
 			}
 		}
 	}
@@ -2582,6 +2584,10 @@ func (env *testWorkflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
 	env.workflowCancelHandler = handler
 }
 
+func (env *testWorkflowEnvironmentImpl) GetCancellationReason() string {
+	return env.cancellationReason
+}
+
 func (env *testWorkflowEnvironmentImpl) RegisterSignalHandler(
 	handler func(name string, input *commonpb.Payloads, header *commonpb.Header) error,
 ) {
@@ -2600,18 +2606,19 @@ func (env *testWorkflowEnvironmentImpl) RegisterQueryHandler(
 	env.queryHandler = handler
 }
 
-func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(_, workflowID string) {
+func (env *testWorkflowEnvironmentImpl) RequestCancelChildWorkflow(_, workflowID, reason string) {
 	if childHandle, ok := env.runningWorkflows[workflowID]; ok && !childHandle.handled {
 		// current workflow is a parent workflow, and we are canceling a child workflow
 		childEnv := childHandle.env
-		childEnv.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
+		childEnv.cancelWorkflow(reason, func(result *commonpb.Payloads, err error) {})
 		return
 	}
 }
 
-func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID string, callback ResultHandler) {
+func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace, workflowID, runID, reason string, callback ResultHandler) {
 	if env.workflowInfo.WorkflowExecution.ID == workflowID {
 		cancelFunc := func() {
+			env.cancellationReason = reason
 			env.workflowCancelHandler()
 
 			if env.isChildWorkflow() && env.onChildWorkflowCanceledListener != nil {
@@ -2642,7 +2649,7 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 		env.postCallback(func() {
 			callback(nil, nil)
 		}, true)
-		childEnv.cancelWorkflow(callback)
+		childEnv.cancelWorkflow(reason, callback)
 		return
 	}
 
@@ -2650,11 +2657,21 @@ func (env *testWorkflowEnvironmentImpl) RequestCancelExternalWorkflow(namespace,
 	// so it can block and wait on the requested delay time (if configured). If we run it in main thread, and the mock
 	// configured to delay, it will block the main loop which stops the world.
 	env.runningCount++
+	method := mockMethodForRequestCancelExternalWorkflow
+	args := []any{namespace, workflowID, runID}
+	var fn any = mockFnRequestCancelExternalWorkflow
+	for _, call := range env.workflowMock.ExpectedCalls {
+		if call.Method == mockMethodForRequestCancelExternalWorkflowWithOptions {
+			method = mockMethodForRequestCancelExternalWorkflowWithOptions
+			args = []any{namespace, workflowID, runID, reason}
+			fn = mockFnRequestCancelExternalWorkflowWithOptions
+			break
+		}
+	}
 	go func() {
-		args := []any{namespace, workflowID, runID}
 		// below call will panic if mock is not properly setup.
-		mockRet := env.workflowMock.MethodCalled(mockMethodForRequestCancelExternalWorkflow, args...)
-		m := &mockWrapper{name: mockMethodForRequestCancelExternalWorkflow, fn: mockFnRequestCancelExternalWorkflow}
+		mockRet := env.workflowMock.MethodCalled(method, args...)
+		m := &mockWrapper{name: method, fn: fn}
 		var err error
 		if mockFn := m.getMockFn(mockRet); mockFn != nil {
 			_, err = executeFunctionWithContext(context.TODO(), mockFn, args)
@@ -3383,17 +3400,18 @@ func (a *testActivityHandle) getActivityInfo() *ActivityInfo {
 	}
 }
 
-func (env *testWorkflowEnvironmentImpl) cancelWorkflow(callback ResultHandler) {
-	env.cancelWorkflowByID(env.workflowInfo.WorkflowExecution.ID, env.workflowInfo.WorkflowExecution.RunID, callback)
+func (env *testWorkflowEnvironmentImpl) cancelWorkflow(reason string, callback ResultHandler) {
+	env.cancelWorkflowByID(env.workflowInfo.WorkflowExecution.ID, env.workflowInfo.WorkflowExecution.RunID, reason, callback)
 }
 
-func (env *testWorkflowEnvironmentImpl) cancelWorkflowByID(workflowID string, runID string, callback ResultHandler) {
+func (env *testWorkflowEnvironmentImpl) cancelWorkflowByID(workflowID string, runID string, reason string, callback ResultHandler) {
 	env.postCallback(func() {
 		// RequestCancelWorkflow needs to be run in main thread
 		env.RequestCancelExternalWorkflow(
 			env.workflowInfo.Namespace,
 			workflowID,
 			runID,
+			reason,
 			callback,
 		)
 	}, true)
@@ -3642,6 +3660,11 @@ func mockFnSignalExternalWorkflow(string, string, string, string, any) error {
 
 // function signature for mock RequestCancelExternalWorkflow
 func mockFnRequestCancelExternalWorkflow(string, string, string) error {
+	return nil
+}
+
+// function signature for mock RequestCancelExternalWorkflowWithOptions
+func mockFnRequestCancelExternalWorkflowWithOptions(string, string, string, string) error {
 	return nil
 }
 

@@ -1736,7 +1736,8 @@ func isCommandMatchEvent(d *commandpb.Command, e *historypb.HistoryEvent, obes [
 		eventAttributes := e.GetRequestCancelExternalWorkflowExecutionInitiatedEventAttributes()
 		commandAttributes := d.GetRequestCancelExternalWorkflowExecutionCommandAttributes()
 		if checkNamespacesInCommandAndEvent(eventAttributes.GetNamespace(), commandAttributes.GetNamespace()) || //lint:ignore SA1019 deprecated namespace field
-			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.GetWorkflowId() {
+			eventAttributes.WorkflowExecution.GetWorkflowId() != commandAttributes.GetWorkflowId() ||
+			eventAttributes.GetReason() != commandAttributes.GetReason() {
 			return false
 		}
 

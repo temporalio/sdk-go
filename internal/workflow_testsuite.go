@@ -516,6 +516,7 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow any, args ...any) *MockCal
 
 const mockMethodForSignalExternalWorkflow = "workflow.SignalExternalWorkflow"
 const mockMethodForRequestCancelExternalWorkflow = "workflow.RequestCancelExternalWorkflow"
+const mockMethodForRequestCancelExternalWorkflowWithOptions = "workflow.RequestCancelExternalWorkflowWithOptions"
 const mockMethodForGetVersion = "workflow.GetVersion"
 const mockMethodForSideEffect = "workflow.SideEffect"
 const mockMethodForMutableSideEffect = "workflow.MutableSideEffect"
@@ -574,6 +575,19 @@ func (e *TestWorkflowEnvironment) OnSignalExternalWorkflow(namespace, workflowID
 // therefore are not concurrency-safe with workflow code.
 func (e *TestWorkflowEnvironment) OnRequestCancelExternalWorkflow(namespace, workflowID, runID string) *MockCallWrapper {
 	call := e.workflowMock.On(mockMethodForRequestCancelExternalWorkflow, namespace, workflowID, runID)
+	return e.wrapWorkflowCall(call)
+}
+
+// OnRequestCancelExternalWorkflowWithOptions setup a mock for cancellation of an external workflow
+// like OnRequestCancelExternalWorkflow, with the cancellation reason as an additional argument to
+// match on. When at least one mock is registered through this method, every external workflow
+// cancellation in the test is matched against these reason-aware mocks instead of the ones
+// registered through OnRequestCancelExternalWorkflow.
+//
+// Mock callbacks here are run on a separate goroutine than the workflow and
+// therefore are not concurrency-safe with workflow code.
+func (e *TestWorkflowEnvironment) OnRequestCancelExternalWorkflowWithOptions(namespace, workflowID, runID, reason string) *MockCallWrapper {
+	call := e.workflowMock.On(mockMethodForRequestCancelExternalWorkflowWithOptions, namespace, workflowID, runID, reason)
 	return e.wrapWorkflowCall(call)
 }
 
@@ -1177,12 +1191,26 @@ func (e *TestWorkflowEnvironment) CompleteActivity(taskToken []byte, result any,
 
 // CancelWorkflow requests cancellation (through workflow Context) to the currently running test workflow.
 func (e *TestWorkflowEnvironment) CancelWorkflow() {
-	e.impl.cancelWorkflow(func(result *commonpb.Payloads, err error) {})
+	e.CancelWorkflowWithReason("")
+}
+
+// CancelWorkflowWithReason requests cancellation (through workflow Context) to the currently
+// running test workflow, and records reason as the cancellation reason the workflow observes
+// through [go.temporal.io/sdk/workflow.GetCancellationReason].
+func (e *TestWorkflowEnvironment) CancelWorkflowWithReason(reason string) {
+	e.impl.cancelWorkflow(reason, func(result *commonpb.Payloads, err error) {})
 }
 
 // CancelWorkflowByID requests cancellation (through workflow Context) to the specified workflow.
 func (e *TestWorkflowEnvironment) CancelWorkflowByID(workflowID string, runID string) {
-	e.impl.cancelWorkflowByID(workflowID, runID, func(result *commonpb.Payloads, err error) {})
+	e.CancelWorkflowByIDWithReason(workflowID, runID, "")
+}
+
+// CancelWorkflowByIDWithReason requests cancellation (through workflow Context) to the specified
+// workflow, and records reason as the cancellation reason the workflow observes through
+// [go.temporal.io/sdk/workflow.GetCancellationReason].
+func (e *TestWorkflowEnvironment) CancelWorkflowByIDWithReason(workflowID string, runID string, reason string) {
+	e.impl.cancelWorkflowByID(workflowID, runID, reason, func(result *commonpb.Payloads, err error) {})
 }
 
 // SignalWorkflow sends signal to the currently running test workflow.

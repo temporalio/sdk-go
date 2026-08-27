@@ -136,6 +136,9 @@ type (
 	// ChildWorkflowOptions stores all child workflow specific parameters that will be stored inside of a Context.
 	ChildWorkflowOptions = internal.ChildWorkflowOptions
 
+	// RequestCancelExternalWorkflowOptions are the parameters for RequestCancelExternalWorkflowWithOptions.
+	RequestCancelExternalWorkflowOptions = internal.RequestCancelExternalWorkflowOptions
+
 	// RegisterOptions consists of options for registering a workflow
 	RegisterOptions = internal.RegisterWorkflowOptions
 
@@ -384,6 +387,19 @@ func GetUnhandledSignalNames(ctx Context) []string {
 // RequestCancelExternalWorkflow return Future with failure or empty success result.
 func RequestCancelExternalWorkflow(ctx Context, workflowID, runID string) Future {
 	return internal.RequestCancelExternalWorkflow(ctx, workflowID, runID)
+}
+
+// RequestCancelExternalWorkflowWithOptions is RequestCancelExternalWorkflow with the addition of a
+// reason, which the target workflow observes through GetCancellationReason.
+func RequestCancelExternalWorkflowWithOptions(ctx Context, options RequestCancelExternalWorkflowOptions) Future {
+	return internal.RequestCancelExternalWorkflowWithOptions(ctx, options)
+}
+
+// GetCancellationReason returns the reason the workflow execution was asked to cancel, as given by
+// whoever requested the cancellation. It is empty until the workflow is asked to cancel, and stays
+// empty when the cancellation carried no reason.
+func GetCancellationReason(ctx Context) string {
+	return internal.GetCancellationReason(ctx)
 }
 
 // SignalExternalWorkflow can be used to send signal info to an external workflow.

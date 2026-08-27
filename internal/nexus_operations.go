@@ -500,19 +500,19 @@ func (t *testSuiteClientForNexusOperations) DescribeWorkflow(ctx context.Context
 
 // CancelWorkflow implements Client.
 func (t *testSuiteClientForNexusOperations) CancelWorkflow(ctx context.Context, workflowID string, runID string) error {
-	if set, ok := ctx.Value(IsWorkflowRunOpContextKey).(bool); !ok || !set {
-		panic("not implemented in the test environment")
-	}
-	doneCh := make(chan error)
-	t.env.cancelWorkflowByID(workflowID, runID, func(result *commonpb.Payloads, err error) {
-		doneCh <- err
-	})
-	return <-doneCh
+	return t.CancelWorkflowWithOptions(ctx, CancelWorkflowOptions{WorkflowID: workflowID, RunID: runID})
 }
 
 // CancelWorkflowWithOptions implements Client.
 func (t *testSuiteClientForNexusOperations) CancelWorkflowWithOptions(ctx context.Context, options CancelWorkflowOptions) error {
-	return t.CancelWorkflow(ctx, options.WorkflowID, options.RunID)
+	if set, ok := ctx.Value(IsWorkflowRunOpContextKey).(bool); !ok || !set {
+		panic("not implemented in the test environment")
+	}
+	doneCh := make(chan error)
+	t.env.cancelWorkflowByID(options.WorkflowID, options.RunID, options.Reason, func(result *commonpb.Payloads, err error) {
+		doneCh <- err
+	})
+	return <-doneCh
 }
 
 // CheckHealth implements Client.

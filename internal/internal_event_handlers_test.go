@@ -15,6 +15,7 @@ import (
 
 	"go.temporal.io/sdk/converter"
 	iconverter "go.temporal.io/sdk/internal/converter"
+	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/internal/protocol"
 )
 
@@ -550,4 +551,39 @@ func TestUpdateEventsPanic(t *testing.T) {
 			Body:               body,
 		}, false, false)
 	})
+}
+
+func TestWorkflowExecutionCancelRequestedCause(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		cause string
+	}{
+		{name: "with cause", cause: "user asked nicely"},
+		{name: "without cause", cause: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var causeInsideHandler string
+			weh := &workflowExecutionEventHandlerImpl{
+				workflowEnvironmentImpl: &workflowEnvironmentImpl{
+					workflowInfo: &WorkflowInfo{TaskQueueName: "tq"},
+					logger:       ilog.NewNopLogger(),
+				},
+			}
+			weh.cancelHandler = func() {
+				causeInsideHandler = weh.GetCancellationReason()
+			}
+
+			require.NoError(t, weh.ProcessEvent(&historypb.HistoryEvent{
+				EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCEL_REQUESTED,
+				Attributes: &historypb.HistoryEvent_WorkflowExecutionCancelRequestedEventAttributes{
+					WorkflowExecutionCancelRequestedEventAttributes: &historypb.WorkflowExecutionCancelRequestedEventAttributes{
+						Cause: tc.cause,
+					},
+				},
+			}, false, false))
+
+			require.Equal(t, tc.cause, causeInsideHandler)
+			require.Equal(t, tc.cause, weh.GetCancellationReason())
+		})
+	}
 }

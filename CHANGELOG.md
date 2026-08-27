@@ -30,6 +30,14 @@ to docs, or any other relevant information.
 - The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
   metrics now carry a `failure_reason` attribute. Each is now split into one time series per
   reason, which may affect existing dashboards.
+- Workflow cancellation now carries a reason. A workflow reads why it was asked to cancel with
+  `workflow.GetCancellationReason(ctx)` and sets one when cancelling another workflow with
+  `workflow.RequestCancelExternalWorkflowWithOptions`. In the test environment,
+  `TestWorkflowEnvironment.CancelWorkflowWithReason` and `CancelWorkflowByIDWithReason` set the
+  reason the workflow observes, and `OnRequestCancelExternalWorkflowWithOptions` mocks external
+  cancellations with the reason as a matchable argument.
+  `interceptor.WorkflowOutboundInterceptor` gained the corresponding
+  `RequestCancelExternalWorkflowWithOptions` and `GetCancellationReason` methods.
 
 ### Changed
 
@@ -49,6 +57,10 @@ to docs, or any other relevant information.
   from both the workflow and the activity context) now sees only the activity or child workflow
   context, and one whose `WithSerializationContext` returned a converter that is no longer
   context-aware now receives the activity or child workflow context it previously never saw.
+- `WorkflowEnvironment` gained `GetCancellationReason() string`, `RequestCancelExternalWorkflow`
+  gained a `reason` parameter before the callback, and `RequestCancelChildWorkflow` gained a
+  trailing `reason` parameter. The interface is aliased publicly as
+  `internalbindings.WorkflowEnvironment`, so out-of-tree implementations must be updated.
 
 ### Fixed
 

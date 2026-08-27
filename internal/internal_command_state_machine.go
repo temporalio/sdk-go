@@ -78,8 +78,9 @@ type (
 
 	childWorkflowCommandStateMachine struct {
 		*commandStateMachineBase
-		attributes    *commandpb.StartChildWorkflowExecutionCommandAttributes
-		startMetadata *sdk.UserMetadata
+		attributes         *commandpb.StartChildWorkflowExecutionCommandAttributes
+		startMetadata      *sdk.UserMetadata
+		cancellationReason string
 	}
 
 	naiveCommandStateMachine struct {
@@ -722,6 +723,7 @@ func (d *childWorkflowCommandStateMachine) getCommand() *commandpb.Command {
 			Namespace:         d.attributes.Namespace, //lint:ignore SA1019 deprecated namespace field
 			WorkflowId:        d.attributes.WorkflowId,
 			ChildWorkflowOnly: true,
+			Reason:            d.cancellationReason,
 		}}
 		return command
 	default:
@@ -1424,7 +1426,7 @@ func (h *commandsHelper) handleStartChildWorkflowExecutionFailed(workflowID stri
 	return command
 }
 
-func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workflowID, runID string, cancellationID string, childWorkflowOnly bool) commandStateMachine {
+func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workflowID, runID string, cancellationID, reason string, childWorkflowOnly bool) commandStateMachine {
 	if childWorkflowOnly {
 		// For cancellation of child workflow only, we do not use cancellation ID
 		// since the child workflow cancellation go through the existing child workflow
@@ -1443,6 +1445,7 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 		}
 		// targeting child workflow
 		command := h.getCommand(makeCommandID(commandTypeChildWorkflow, workflowID))
+		command.(*childWorkflowCommandStateMachine).cancellationReason = reason
 		command.cancel()
 		return command
 	}
@@ -1464,6 +1467,7 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 		//lint:ignore SA1019 control correlates command state with initiated history
 		Control:           cancellationID,
 		ChildWorkflowOnly: false,
+		Reason:            reason,
 	}
 	command := h.newCancelExternalWorkflowStateMachine(attributes, cancellationID)
 	h.addCommand(command)
