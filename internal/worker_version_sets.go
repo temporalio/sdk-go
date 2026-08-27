@@ -128,11 +128,11 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.BuildIDOpAddNewCompatibleVersion]
 	BuildIDOpAddNewCompatibleVersion struct {
 		// BuildID is the build ID to add.
-		BuildID string
+		BuildID                   string
 		// ExistingCompatibleBuildID is an existing build ID in the target set.
 		ExistingCompatibleBuildID string
 		// MakeSetDefault designates the target set as the default set if true.
-		MakeSetDefault bool
+		MakeSetDefault            bool
 	}
 	// BuildIDOpPromoteSet is an operation to promote a compatible set to default.
 	//
@@ -199,7 +199,7 @@ type GetWorkerBuildIdCompatibilityOptions struct {
 	// TaskQueue is the task queue to query.
 	TaskQueue string
 	// MaxSets is the maximum number of sets to return.
-	MaxSets int
+	MaxSets   int
 }
 
 // Exposed as: [go.temporal.io/sdk/client.GetWorkerTaskReachabilityOptions]
