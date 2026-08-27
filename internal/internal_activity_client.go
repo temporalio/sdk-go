@@ -234,9 +234,7 @@ type (
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
 	//
-	// The payload-bearing fields of the description are opt-in: the server omits each of them
-	// unless the corresponding flag is set. Requesting them costs an extra read on the server,
-	// so ask only for what will be used.
+	// The payload-bearing fields of the description are opt-in, since payloads are large.
 	//
 	// NOTE: Experimental
 	//
@@ -417,8 +415,6 @@ type (
 		TypedSearchAttributes SearchAttributes
 		TaskQueue             string
 		ExecutionDuration     time.Duration
-		// ExecutionTime is when the activity became eligible to run, i.e. ScheduleTime plus
-		// any start delay. Zero if the activity has not become eligible yet.
 		ExecutionTime time.Time
 	}
 
@@ -431,9 +427,7 @@ type (
 	ClientActivityExecutionDescription struct {
 		ClientActivityExecutionInfo
 		// Raw PB message this struct was built from.
-		RawExecutionInfo *activitypb.ActivityExecutionInfo
-		// RawDescription is the raw describe response. Unlike RawExecutionInfo it also carries
-		// the opt-in Input and Outcome payloads. See ClientDescribeActivityOptions.
+		RawExecutionInfo        *activitypb.ActivityExecutionInfo
 		RawDescription          *workflowservice.DescribeActivityExecutionResponse
 		ScheduleToCloseTimeout  time.Duration
 		ScheduleToStartTimeout  time.Duration
