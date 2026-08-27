@@ -415,7 +415,7 @@ type (
 		TypedSearchAttributes SearchAttributes
 		TaskQueue             string
 		ExecutionDuration     time.Duration
-		ExecutionTime time.Time
+		ExecutionTime         time.Time
 	}
 
 	// ClientActivityExecutionDescription contains detailed information about an activity execution.
