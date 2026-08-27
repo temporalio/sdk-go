@@ -52,6 +52,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
+  `serviceerror.WorkflowExecutionAlreadyStarted` errors.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
