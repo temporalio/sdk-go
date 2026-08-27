@@ -52,6 +52,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
+  request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
