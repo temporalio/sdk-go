@@ -612,7 +612,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.InheritBuildId = determineInheritBuildIdFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
-	startMetadata, err := buildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
+	startMetadata, err := BuildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return
@@ -660,7 +660,7 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params ExecuteNexusOper
 		NexusHeader:            params.nexusHeader,
 	}
 
-	startMetadata, err := buildUserMetadata(params.options.Summary, "", wc.dataConverter)
+	startMetadata, err := BuildUserMetadata(params.options.Summary, "", wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return 0
@@ -818,7 +818,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
 	scheduleTaskAttr.Priority = parameters.Priority
 
-	startMetadata, err := buildUserMetadata(parameters.Summary, "", wc.dataConverter)
+	startMetadata, err := BuildUserMetadata(parameters.Summary, "", wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return ActivityID{}
@@ -1080,7 +1080,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 		}
 	}
 
-	userMetadata, err := buildUserMetadata(summary, "", wc.dataConverter)
+	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
 		panic(fmt.Sprintf("failed to build user metadata for side effect: %v", err))
 	}
@@ -1233,7 +1233,7 @@ func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountH
 	if err != nil {
 		panic(err)
 	}
-	userMetadata, err := buildUserMetadata(summary, "", wc.dataConverter)
+	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
 		panic(fmt.Sprintf("failed to build user metadata for mutable side effect: %v", err))
 	}
@@ -1811,7 +1811,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			panicMsg := fmt.Sprintf("[TMPRL1100] code executed local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
-		startMetadata, err := buildUserMetadata(la.params.Summary, "", weh.dataConverter)
+		startMetadata, err := BuildUserMetadata(la.params.Summary, "", weh.dataConverter)
 		if err != nil {
 			return err
 		}

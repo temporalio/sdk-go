@@ -2172,7 +2172,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		Priority:                 ConvertToPBPriority(in.Options.Priority),
 	}
 
-	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
+	startRequest.UserMetadata, err = BuildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -2622,7 +2622,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		signalWithStartRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
 	}
 
-	signalWithStartRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
+	signalWithStartRequest.UserMetadata, err = BuildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -3188,7 +3188,7 @@ func (q *QueryRejectedError) Error() string {
 	return fmt.Sprintf("query rejected: %s", q.queryRejected.Status.String())
 }
 
-func buildUserMetadata(
+func BuildUserMetadata(
 	summary string,
 	details string,
 	dataConverter converter.DataConverter,

@@ -666,7 +666,7 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	if err != nil {
 		return err
 	}
-	userMetadata, err := buildUserMetadata(options.Summary, options.Details, dataConverter)
+	userMetadata, err := BuildUserMetadata(options.Summary, options.Details, dataConverter)
 	if err != nil {
 		return err
 	}
