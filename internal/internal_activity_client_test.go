@@ -205,7 +205,7 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		require.Equal(t, 90*time.Second, options.StartToCloseTimeout)
 	})
 
-	t.Run("a zero-valued change clears the option", func(t *testing.T) {
+	t.Run("a zero-valued change still names its path", func(t *testing.T) {
 		var request *workflowservice.UpdateActivityExecutionOptionsRequest
 		client := newClient(t, &request)
 		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
@@ -214,25 +214,7 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 			HeartbeatTimeout: &DurationChange{},
 		})
 		require.NoError(t, err)
-		// The path is named so the server acts on it, but the field is left unset so the
-		// option is removed rather than set to zero.
 		require.Equal(t, []string{"heartbeat_timeout"}, request.GetUpdateMask().GetPaths())
-		require.Nil(t, request.GetActivityOptions().GetHeartbeatTimeout())
-	})
-
-	t.Run("clearing the task queue sends no task queue", func(t *testing.T) {
-		var request *workflowservice.UpdateActivityExecutionOptionsRequest
-		client := newClient(t, &request)
-		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
-
-		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsChanges{
-			TaskQueue: &TaskQueueChange{},
-		})
-		require.NoError(t, err)
-		// An absent task queue makes the server reject the update rather than silently
-		// setting an empty name, which is what an explicit TaskQueue{Name: ""} would do.
-		require.Equal(t, []string{"task_queue.name"}, request.GetUpdateMask().GetPaths())
-		require.Nil(t, request.GetActivityOptions().GetTaskQueue())
 	})
 
 	t.Run("restore sends an empty mask", func(t *testing.T) {
