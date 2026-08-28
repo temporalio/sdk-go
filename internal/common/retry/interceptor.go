@@ -11,6 +11,7 @@ import (
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/util/backoffutils"
 	errordetailspb "go.temporal.io/api/errordetails/v1"
+	"go.temporal.io/api/serviceerror"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -173,8 +174,13 @@ func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 // IsWorkflowTaskCompletionBufferLost reports whether err carries the server's
 // WorkflowTaskCompletionBufferLostFailure detail, meaning it dropped the buffered pages of a
 // paginated RespondWorkflowTaskCompleted and they must be resent from page 0.
+//
+// serviceerror.ToStatus (not status.Convert) is required because the client's errorInterceptor has
+// already converted the error into a *serviceerror.WorkflowTaskCompletionBufferLost by the time it
+// reaches the resend loop; that type carries the detail on its Status() but not via gRPC's
+// GRPCStatus(), so status.Convert would drop it and report codes.Unknown.
 func IsWorkflowTaskCompletionBufferLost(err error) bool {
-	grpcStatus := status.Convert(err)
+	grpcStatus := serviceerror.ToStatus(err)
 	if grpcStatus == nil {
 		return false
 	}
