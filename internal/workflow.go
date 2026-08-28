@@ -3080,7 +3080,7 @@ func NewNexusClient(endpoint, service string) NexusClient {
 	if service == "" {
 		panic("service must not be empty")
 	}
-	if strings.HasPrefix(endpoint, temporalPrefix) && endpoint != systemNexusEndpoint  {
+	if strings.HasPrefix(endpoint, temporalPrefix) {
 		panic("endpoint cannot use reserved __temporal_ prefix")
 	}
 	if strings.HasPrefix(service, temporalPrefix) {

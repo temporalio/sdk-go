@@ -79,7 +79,11 @@ func payloadsToProto(ctx Context, values []any) (*common.Payloads, error) {
 // --- Memo (temporal.api.common.v1.Memo) ---
 
 func memoToProto(ctx Context, memo map[string]any) (*common.Memo, error) {
-	return internal.EncodeWorkflowMemo(ctx, memo)
+	return internal.GetWorkflowMemo(
+		memo,
+		internal.GetDataConverterFromWorkflowContext(ctx),
+		internal.GetWorkflowEnvironment(ctx).TryUse(internal.SDKFlagMemoUserDCEncode),
+	)
 }
 
 // --- SearchAttributes (temporal.api.common.v1.SearchAttributes) ---
@@ -98,4 +102,8 @@ func versioningOverrideToProto(_ Context, versioningOverride *client.VersioningO
 		return nil, nil
 	}
 	return internal.VersioningOverrideToProto(*versioningOverride), nil
+}
+
+func newSystemNexusClient(service string) NexusClient {
+	return internal.NewSystemNexusClient(service)
 }

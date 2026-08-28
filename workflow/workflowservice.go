@@ -167,7 +167,7 @@ func signalWithStartWorkflow(ctx Context, request signalWithStartWorkflowRequest
 		resultSettable.SetError(err)
 		return result
 	}
-	c := NewNexusClient("__temporal_system", "temporal.api.workflowservice.v1.WorkflowService")
+	c := newSystemNexusClient("temporal.api.workflowservice.v1.WorkflowService")
 	fut := c.ExecuteOperation(ctx, "SignalWithStartWorkflowExecution", requestProto, NexusOperationOptions{})
 	result, resultSettable := NewFuture(ctx)
 	Go(ctx, func(ctx Context) {
