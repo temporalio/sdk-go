@@ -442,7 +442,7 @@ type roundRobinSelector struct {
 	idx     *int
 }
 
-func (r *roundRobinSelector) SelectDriver(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+func (r *roundRobinSelector) SelectDriver(_ converter.StorageDriverSelectContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	d := r.drivers[*r.idx%len(r.drivers)]
