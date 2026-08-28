@@ -3089,6 +3089,14 @@ func NewNexusClient(endpoint, service string) NexusClient {
 	return nexusClient{endpoint, service}
 }
 
+// Create a [NexusClient] for System Nexus APIs using the "__temporal_system" endpoint.
+func NewSystemNexusClient(service string) NexusClient {
+	if service == "" {
+		panic("service must not be empty")
+	}
+	return nexusClient{systemNexusEndpoint, service}
+}
+
 func (c nexusClient) Endpoint() string {
 	return c.endpoint
 }
