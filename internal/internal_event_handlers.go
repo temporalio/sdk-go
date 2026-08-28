@@ -552,7 +552,7 @@ func validateAndSerializeMemo(memoMap map[string]any, dc converter.DataConverter
 	if len(memoMap) == 0 {
 		return nil, errMemoNotSet
 	}
-	return getWorkflowMemo(memoMap, dc, useUserDC)
+	return GetWorkflowMemo(memoMap, dc, useUserDC)
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
@@ -571,7 +571,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if params.WorkflowID == "" {
 		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
 	}
-	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
+	memo, err := GetWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -579,7 +579,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		callback(nil, err)
 		return
 	}
-	searchAttr, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
+	searchAttr, err := SerializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})

@@ -828,8 +828,8 @@ func NewChannel(ctx Context) Channel {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewNamedChannel]
 func NewNamedChannel(ctx Context, name string) Channel {
-	env := getWorkflowEnvironment(ctx)
-	dc := getDataConverterFromWorkflowContext(ctx)
+	env := GetWorkflowEnvironment(ctx)
+	dc := GetDataConverterFromWorkflowContext(ctx)
 	return &channelImpl{name: name, dataConverter: dc, env: env}
 }
 
@@ -837,8 +837,8 @@ func NewNamedChannel(ctx Context, name string) Channel {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewBufferedChannel]
 func NewBufferedChannel(ctx Context, size int) Channel {
-	env := getWorkflowEnvironment(ctx)
-	dc := getDataConverterFromWorkflowContext(ctx)
+	env := GetWorkflowEnvironment(ctx)
+	dc := GetDataConverterFromWorkflowContext(ctx)
 	return &channelImpl{size: size, dataConverter: dc, env: env}
 }
 
@@ -847,8 +847,8 @@ func NewBufferedChannel(ctx Context, size int) Channel {
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewNamedBufferedChannel]
 func NewNamedBufferedChannel(ctx Context, name string, size int) Channel {
-	env := getWorkflowEnvironment(ctx)
-	dc := getDataConverterFromWorkflowContext(ctx)
+	env := GetWorkflowEnvironment(ctx)
+	dc := GetDataConverterFromWorkflowContext(ctx)
 	return &channelImpl{name: name, size: size, dataConverter: dc, env: env}
 }
 
@@ -1073,7 +1073,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		return future
 	}
 
-	env := getWorkflowEnvironment(ctx)
+	env := GetWorkflowEnvironment(ctx)
 	// Generate activity ID before serialization so it's available to context-aware data converters
 	scheduleID := env.GenerateSequence()
 	var activityID string
@@ -1112,7 +1112,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	a := getWorkflowEnvironment(ctx).ExecuteActivity(params, func(r *commonpb.Payloads, e error) {
+	a := GetWorkflowEnvironment(ctx).ExecuteActivity(params, func(r *commonpb.Payloads, e error) {
 		settable.Set(r, e)
 		if cancellable {
 			// future is done, we don't need the cancellation callback anymore.
@@ -1176,7 +1176,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 func ExecuteLocalActivity(ctx Context, activity any, args ...any) Future {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
-	env := getWorkflowEnvironment(ctx)
+	env := GetWorkflowEnvironment(ctx)
 	activityType, isMethod := getFunctionName(activity)
 	if alias, ok := env.GetRegistry().getActivityAlias(activityType); ok {
 		activityType = alias
@@ -1261,7 +1261,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		return future
 	}
 
-	env := getWorkflowEnvironment(ctx)
+	env := GetWorkflowEnvironment(ctx)
 	wfInfo := env.WorkflowInfo()
 	actCtx := converter.ActivitySerializationContext{
 		Namespace:    wfInfo.Namespace,
@@ -1345,7 +1345,7 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 		cancellationCallback.fn = func(v any, more bool) bool {
 			assertNotInReadOnlyStateCancellation(ctx)
 			if ctx.Err() == ErrCanceled {
-				getWorkflowEnvironment(ctx).RequestCancelLocalActivity(la)
+				GetWorkflowEnvironment(ctx).RequestCancelLocalActivity(la)
 			}
 			return false
 		}
@@ -1386,8 +1386,8 @@ func (wc *workflowEnvironmentInterceptor) scheduleLocalActivity(ctx Context, par
 func ExecuteChildWorkflow(ctx Context, childWorkflow any, args ...any) ChildWorkflowFuture {
 	assertNotInReadOnlyState(ctx)
 	i := getWorkflowOutboundInterceptor(ctx)
-	env := getWorkflowEnvironment(ctx)
-	workflowType, err := getWorkflowFunctionName(env.GetRegistry(), childWorkflow)
+	env := GetWorkflowEnvironment(ctx)
+	workflowType, err := GetWorkflowFunctionName(env.GetRegistry(), childWorkflow)
 	if err != nil {
 		panic(err)
 	}
@@ -1412,7 +1412,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 	}
 
 	workflowOptionsFromCtx := getWorkflowEnvOptions(ctx)
-	env := getWorkflowEnvironment(ctx)
+	env := GetWorkflowEnvironment(ctx)
 
 	// Generate child workflow ID before serialization so it's available to context-aware data converters
 	var childWorkflowID string
@@ -1476,7 +1476,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 
 	ctxDone, cancellable := ctx.Done().(*channelImpl)
 	cancellationCallback := &receiveCallback{}
-	getWorkflowEnvironment(ctx).ExecuteChildWorkflow(params, func(r *commonpb.Payloads, e error) {
+	GetWorkflowEnvironment(ctx).ExecuteChildWorkflow(params, func(r *commonpb.Payloads, e error) {
 		mainSettable.Set(r, e)
 		if cancellable {
 			// future is done, we don't need cancellation anymore
@@ -1492,7 +1492,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 					assertNotInReadOnlyStateCancellation(ctx)
 					if ctx.Err() == ErrCanceled && !mainFuture.IsReady() {
 						// child workflow started, and ctx canceled
-						getWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, r.ID)
+						GetWorkflowEnvironment(ctx).RequestCancelChildWorkflow(options.Namespace, r.ID)
 					}
 					return false
 				}
@@ -1889,7 +1889,7 @@ func (wc *workflowEnvironmentInterceptor) SignalChildWorkflow(ctx Context, workf
 }
 
 func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, arg any, childWorkflowOnly bool) Future {
-	env := getWorkflowEnvironment(ctx)
+	env := GetWorkflowEnvironment(ctx)
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	options := getWorkflowEnvOptions(ctx1)
 	future, settable := NewFuture(ctx1)
@@ -2059,7 +2059,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.WorkflowTaskTimeout = cwo.WorkflowTaskTimeout
 	wfOptions.WaitForCancellation = cwo.WaitForCancellation
 	wfOptions.WorkflowIDReusePolicy = cwo.WorkflowIDReusePolicy
-	wfOptions.RetryPolicy = convertToPBRetryPolicy(cwo.RetryPolicy)
+	wfOptions.RetryPolicy = ConvertToPBRetryPolicy(cwo.RetryPolicy)
 	wfOptions.CronSchedule = cwo.CronSchedule
 	wfOptions.Memo = cwo.Memo
 	wfOptions.SearchAttributes = cwo.SearchAttributes
@@ -2068,7 +2068,7 @@ func WithChildWorkflowOptions(ctx Context, cwo ChildWorkflowOptions) Context {
 	wfOptions.VersioningIntent = cwo.VersioningIntent
 	wfOptions.StaticSummary = cwo.StaticSummary
 	wfOptions.StaticDetails = cwo.StaticDetails
-	wfOptions.Priority = convertToPBPriority(cwo.Priority)
+	wfOptions.Priority = ConvertToPBPriority(cwo.Priority)
 
 	return ctx1
 }
@@ -2182,7 +2182,7 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 // Exposed as: [go.temporal.io/sdk/workflow.WithWorkflowPriority]
 func WithWorkflowPriority(ctx Context, priority Priority) Context {
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).Priority = convertToPBPriority(priority)
+	getWorkflowEnvOptions(ctx1).Priority = ConvertToPBPriority(priority)
 	return ctx1
 }
 
@@ -2338,7 +2338,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffect(ctx Context, f func(ctx Con
 }
 
 func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Context) any) converter.EncodedValue {
-	dc := getDataConverterFromWorkflowContext(ctx)
+	dc := GetDataConverterFromWorkflowContext(ctx)
 	future, settable := NewFuture(ctx)
 	wrapperFunc := func() (*commonpb.Payloads, error) {
 		coroutineState := getState(ctx)
@@ -2683,7 +2683,7 @@ func (wc *workflowEnvironmentInterceptor) GetLastCompletionResult(ctx Context, d
 		return ErrNoData
 	}
 
-	encodedVal := newEncodedValues(info.lastCompletionResult, getDataConverterFromWorkflowContext(ctx))
+	encodedVal := newEncodedValues(info.lastCompletionResult, GetDataConverterFromWorkflowContext(ctx))
 	return encodedVal.Get(d...)
 }
 
@@ -2727,10 +2727,10 @@ func WithActivityOptions(ctx Context, options ActivityOptions) Context {
 	eap.HeartbeatTimeout = options.HeartbeatTimeout
 	eap.WaitForCancellation = options.WaitForCancellation
 	eap.ActivityID = options.ActivityID
-	eap.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
+	eap.RetryPolicy = ConvertToPBRetryPolicy(options.RetryPolicy)
 	eap.DisableEagerExecution = options.DisableEagerExecution
 	eap.VersioningIntent = options.VersioningIntent
-	eap.Priority = convertToPBPriority(options.Priority)
+	eap.Priority = ConvertToPBPriority(options.Priority)
 	eap.Summary = options.Summary
 	return ctx1
 }
@@ -2874,7 +2874,7 @@ func WithWaitForCancellation(ctx Context, wait bool) Context {
 // Exposed as: [go.temporal.io/sdk/workflow.WithRetryPolicy]
 func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).RetryPolicy = convertToPBRetryPolicy(&retryPolicy)
+	getActivityOptions(ctx1).RetryPolicy = ConvertToPBRetryPolicy(&retryPolicy)
 	return ctx1
 }
 
@@ -2883,11 +2883,11 @@ func WithRetryPolicy(ctx Context, retryPolicy RetryPolicy) Context {
 // Exposed as: [go.temporal.io/sdk/workflow.WithPriority]
 func WithPriority(ctx Context, priority Priority) Context {
 	ctx1 := setActivityParametersIfNotExist(ctx)
-	getActivityOptions(ctx1).Priority = convertToPBPriority(priority)
+	getActivityOptions(ctx1).Priority = ConvertToPBPriority(priority)
 	return ctx1
 }
 
-func convertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
+func ConvertToPBRetryPolicy(retryPolicy *RetryPolicy) *commonpb.RetryPolicy {
 	if retryPolicy == nil {
 		return nil
 	}
@@ -2918,7 +2918,7 @@ func convertFromPBRetryPolicy(retryPolicy *commonpb.RetryPolicy) *RetryPolicy {
 	return &p
 }
 
-func convertToPBPriority(priority Priority) *commonpb.Priority {
+func ConvertToPBPriority(priority Priority) *commonpb.Priority {
 	// If the priority only contains default values, return nil instead
 	// - since there's no need to send the default values to the server.
 	//

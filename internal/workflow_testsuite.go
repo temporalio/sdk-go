@@ -499,7 +499,7 @@ func (e *TestWorkflowEnvironment) OnWorkflow(workflow any, args ...any) *MockCal
 		if err := validateFnFormat(fType, true, false); err != nil {
 			panic(err)
 		}
-		fnName, _ := getWorkflowFunctionName(e.impl.registry, workflow)
+		fnName, _ := GetWorkflowFunctionName(e.impl.registry, workflow)
 		if alias, ok := e.impl.registry.getWorkflowAlias(fnName); ok {
 			fnName = alias
 		}
@@ -1268,7 +1268,7 @@ func (e *TestWorkflowEnvironment) SetLastError(err error) {
 
 // SetMemoOnStart sets the memo when start workflow.
 func (e *TestWorkflowEnvironment) SetMemoOnStart(memo map[string]any) error {
-	memoStruct, err := getWorkflowMemo(memo, e.impl.GetDataConverter(), e.impl.TryUse(SDKFlagMemoUserDCEncode))
+	memoStruct, err := GetWorkflowMemo(memo, e.impl.GetDataConverter(), e.impl.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		return err
 	}
@@ -1290,7 +1290,7 @@ func (e *TestWorkflowEnvironment) SetSearchAttributesOnStart(searchAttributes ma
 
 // SetTypedSearchAttributesOnStart sets the search attributes when start workflow.
 func (e *TestWorkflowEnvironment) SetTypedSearchAttributesOnStart(searchAttributes SearchAttributes) error {
-	attr, err := serializeSearchAttributes(nil, searchAttributes)
+	attr, err := SerializeSearchAttributes(nil, searchAttributes)
 	if err != nil {
 		return err
 	}

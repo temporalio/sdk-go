@@ -59,5 +59,5 @@ func (r *workflowRandomStream) reseed(seed [32]byte) {
 
 // Exposed as: [go.temporal.io/sdk/workflow.GetRandomStream]
 func GetRandomStream(ctx Context, name string) WorkflowRandomStream {
-	return getWorkflowEnvironment(ctx).GetRandomStream(name)
+	return GetWorkflowEnvironment(ctx).GetRandomStream(name)
 }

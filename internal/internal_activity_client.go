@@ -677,12 +677,12 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	request.ScheduleToStartTimeout = durationpb.New(options.ScheduleToStartTimeout)
 	request.StartToCloseTimeout = durationpb.New(options.StartToCloseTimeout)
 	request.HeartbeatTimeout = durationpb.New(options.HeartbeatTimeout)
-	request.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
+	request.RetryPolicy = ConvertToPBRetryPolicy(options.RetryPolicy)
 	request.IdReusePolicy = options.ActivityIDReusePolicy
 	request.IdConflictPolicy = options.ActivityIDConflictPolicy
 	request.SearchAttributes = searchAttrs
 	request.UserMetadata = userMetadata
-	request.Priority = convertToPBPriority(options.Priority)
+	request.Priority = ConvertToPBPriority(options.Priority)
 	request.StartDelay = durationpb.New(options.StartDelay)
 	if options.requestID != "" {
 		request.RequestId = options.requestID
