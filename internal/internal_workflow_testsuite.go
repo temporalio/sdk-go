@@ -2761,13 +2761,19 @@ func (env *testWorkflowEnvironmentImpl) newTestNexusTaskHandler(
 		panic(fmt.Errorf("failed to create nexus handler: %w", err))
 	}
 
+	var dataConverter converter.DataConverter
+	if opHandle.params.client.Endpoint() == systemNexusEndpoint {
+		dataConverter = systemNexusDataConverter
+	} else {
+		dataConverter = env.dataConverter
+	}
 	return newNexusTaskHandler(
 		handler,
 		env.identity,
 		env.workflowInfo.Namespace,
 		env.workflowInfo.TaskQueueName,
 		&testSuiteClientForNexusOperations{env: env},
-		env.dataConverter,
+		dataConverter,
 		env.failureConverter,
 		env.logger,
 		env.metricsHandler,
