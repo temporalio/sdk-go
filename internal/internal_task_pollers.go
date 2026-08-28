@@ -635,10 +635,16 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
 	}
 
-	// A completion whose recombined command bytes exceed the namespace limit would be rejected and
-	// the workflow terminated by the server, so fail it proactively rather than sending doomed
-	// pages. Only buffered command bytes count toward that limit, not messages or metadata.
-	if req, ok := taskCompletion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest); ok && wtp.workflowTaskCompletionPagination != nil {
+	// The namespace limit governs the server's recombined page buffer, so it only applies to a
+	// completion large enough to be paginated; a completion that fits in a single request is never
+	// buffered and is left for the server to accept. A paginated completion whose buffered command
+	// bytes would exceed the limit is rejected and the workflow terminated by the server, so fail it
+	// proactively rather than sending doomed pages. Only buffered command bytes count toward the
+	// limit, not messages or metadata.
+	if req, ok := taskCompletion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest); ok &&
+		wtp.workflowTaskCompletionPagination != nil &&
+		wtp.workflowTaskCompletionPagination.enabled.Load() &&
+		proto.Size(req) > maxWorkflowTaskCompletionPageBytes {
 		if limit := wtp.workflowTaskCompletionPagination.sizeLimit.Load(); limit > 0 {
 			var commandBytes int64
 			for _, command := range req.Commands {
