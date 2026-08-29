@@ -67,7 +67,7 @@ func (c *s3Client) Describe() map[string]string {
 	return map[string]string{"client_region": region}
 }
 
-func (c *s3Client) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
+func (c *s3Client) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
 	output, err := c.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
@@ -75,6 +75,5 @@ func (c *s3Client) GetObject(ctx context.Context, bucket, key string) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = output.Body.Close() }()
-	return io.ReadAll(output.Body)
+	return output.Body, nil
 }

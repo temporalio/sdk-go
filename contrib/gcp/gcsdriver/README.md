@@ -66,6 +66,7 @@ Characters outside GCS's safe set are percent-encoded per byte of their UTF-8 re
 - Identical serialized bytes within the same Namespace and Workflow (or Standalone Activity) share the same GCS object — the key is content-addressable within that scope. The same bytes used across different Workflows or Namespaces produce distinct GCS objects because the key includes the Namespace and Workflow/Standalone Activity identifiers.
 - Only payloads at or above `ExternalStorage.PayloadSizeThreshold` (default: 256 KiB) are offloaded; smaller payloads are stored inline. Set `ExternalStorage.PayloadSizeThreshold` to `0` or leave unset to use the default threshold. To store all payloads in external storage, set `ExternalStorage.PayloadSizeThreshold` to `1`.
 - `Options.MaxPayloadSize` (default: 50 MiB) sets a hard upper limit on the serialized size of any single payload. An error is returned at store time if a payload exceeds this limit.
+- `Options.MaxRetrieveSize` (default: `max(MaxPayloadSize, 50 MiB)`) limits the maximum bytes read from external storage per payload during retrieval. Objects exceeding this limit are rejected.
 - Override `Options.DriverName` only when registering multiple `gcsdriver` instances with distinct configurations under the same `ExternalStorage.Drivers` list.
 
 ## Dynamic Bucket Selection
@@ -107,8 +108,10 @@ To use a GCS-compatible storage service or a different client library, implement
 type Client interface {
     PutObject(ctx context.Context, bucket, key string, data []byte) error
     ObjectExists(ctx context.Context, bucket, key string) (bool, error)
-    GetObject(ctx context.Context, bucket, key string) ([]byte, error)
+    GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error)
 }
 ```
+
+*Note: In previous versions, `GetObject` returned `([]byte, error)`. If migrating a custom client, update it to return a reader and let the driver close it.*
 
 Pass your implementation as `Options.Client` when calling `NewDriver`.

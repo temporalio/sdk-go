@@ -1,11 +1,14 @@
 package s3driver
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -52,7 +55,7 @@ func (m *memClient) ObjectExists(_ context.Context, bucket, key string) (bool, e
 	return ok, nil
 }
 
-func (m *memClient) GetObject(_ context.Context, bucket, key string) ([]byte, error) {
+func (m *memClient) GetObject(_ context.Context, bucket, key string) (io.ReadCloser, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	d, ok := m.data[memKey(bucket, key)]
@@ -61,7 +64,7 @@ func (m *memClient) GetObject(_ context.Context, bucket, key string) ([]byte, er
 	}
 	cp := make([]byte, len(d))
 	copy(cp, d)
-	return cp, nil
+	return io.NopCloser(bytes.NewReader(cp)), nil
 }
 
 func (m *memClient) Describe() map[string]string { return m.describe }
@@ -145,6 +148,55 @@ func TestNewS3StorageDriver_NegativeMaxPayloadSize(t *testing.T) {
 	assert.EqualError(t, err, "MaxPayloadSize must be positive, got -1")
 }
 
+func TestNewS3StorageDriver_NegativeMaxRetrieveSize(t *testing.T) {
+	_, err := NewDriver(Options{
+		Client:          newMemClient(),
+		Bucket:          StaticBucket("b"),
+		MaxRetrieveSize: -1,
+	})
+	assert.EqualError(t, err, "MaxRetrieveSize must be positive, got -1")
+}
+
+func TestNewS3StorageDriver_DefaultMaxRetrieveSize(t *testing.T) {
+	mc := newMemClient()
+	d, err := NewDriver(Options{
+		Client: mc,
+		Bucket: StaticBucket("b"),
+	})
+	require.NoError(t, err)
+	typedDriver, ok := d.(*s3StorageDriver)
+	require.True(t, ok)
+	assert.Equal(t, 50*1024*1024, typedDriver.maxRetrieveSize)
+}
+
+func TestNewS3StorageDriver_MaxRetrieveSizeDefaultsToMaxPayloadSize(t *testing.T) {
+	mc := newMemClient()
+	d, err := NewDriver(Options{
+		Client:         mc,
+		Bucket:         StaticBucket("b"),
+		MaxPayloadSize: 100 * 1024 * 1024,
+	})
+	require.NoError(t, err)
+	typedDriver, ok := d.(*s3StorageDriver)
+	require.True(t, ok)
+	assert.Equal(t, 100*1024*1024, typedDriver.maxRetrieveSize)
+}
+
+func TestNewS3StorageDriver_ExplicitMaxRetrieveSize(t *testing.T) {
+	mc := newMemClient()
+	d, err := NewDriver(Options{
+		Client:          mc,
+		Bucket:          StaticBucket("b"),
+		MaxPayloadSize:  100 * 1024 * 1024,
+		MaxRetrieveSize: 10 * 1024 * 1024,
+	})
+	require.NoError(t, err)
+	typedDriver, ok := d.(*s3StorageDriver)
+	require.True(t, ok)
+	// Explicit value wins over max(MaxPayloadSize, default).
+	assert.Equal(t, 10*1024*1024, typedDriver.maxRetrieveSize)
+}
+
 // --- StaticBucket tests ---
 
 func TestStaticBucket(t *testing.T) {
@@ -191,14 +243,17 @@ func TestStore_Deduplication(t *testing.T) {
 	d := newDriver(t, mc)
 	p := testPayload("duplicate-me")
 
-	_, err := d.Store(storeCtx(), []*commonpb.Payload{p})
+	claims1, err := d.Store(storeCtx(), []*commonpb.Payload{p})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), mc.putCount.Load())
 
-	// Store same payload again — should skip the upload.
-	_, err = d.Store(storeCtx(), []*commonpb.Payload{p})
+	// Store same payload again — writes unconditionally (idempotent overwrite).
+	claims2, err := d.Store(storeCtx(), []*commonpb.Payload{p})
 	require.NoError(t, err)
-	assert.Equal(t, int64(1), mc.putCount.Load())
+	assert.Equal(t, int64(2), mc.putCount.Load())
+
+	// Both stores should produce identical claims.
+	assert.Equal(t, claims1[0].ClaimData, claims2[0].ClaimData)
 }
 
 func TestStore_MultiplePayloads(t *testing.T) {
@@ -288,7 +343,7 @@ func (e *errClient) ObjectExists(ctx context.Context, bucket, key string) (bool,
 	return e.memClient.ObjectExists(ctx, bucket, key)
 }
 
-func (e *errClient) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
+func (e *errClient) GetObject(ctx context.Context, bucket, key string) (io.ReadCloser, error) {
 	if e.getErr != nil {
 		return nil, e.getErr
 	}
@@ -307,17 +362,7 @@ func TestStore_PutObjectError(t *testing.T) {
 	assert.ErrorContains(t, err, ", client_region=ap-southeast-2]: access denied")
 }
 
-func TestStore_ObjectExistsError(t *testing.T) {
-	ec := &errClient{
-		memClient: newMemClient(),
-		existsErr: errors.New("network timeout"),
-	}
-	d := newDriver(t, ec)
 
-	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
-	assert.ErrorContains(t, err, "existence check failed [bucket=test-bucket, key=")
-	assert.ErrorContains(t, err, ", client_region=ap-southeast-2]: network timeout")
-}
 
 // --- Retrieve tests ---
 
@@ -465,6 +510,84 @@ func TestRetrieve_ClaimMissingHashValue(t *testing.T) {
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
 	assert.EqualError(t, err, `claim missing field "hash_value"`)
+}
+
+func TestRetrieve_MaxRetrieveSizeExceeded(t *testing.T) {
+	mc := newMemClient()
+	d, err := NewDriver(Options{
+		Client:          mc,
+		Bucket:          StaticBucket("test-bucket"),
+		MaxRetrieveSize: 10,
+	})
+	require.NoError(t, err)
+
+	// Inject an oversized blob directly into the memClient, bypassing Store.
+	mc.mu.Lock()
+	mc.data[memKey("test-bucket", "v0/d/sha256/fakehash")] = make([]byte, 100)
+	mc.mu.Unlock()
+
+	claims := []converter.StorageDriverClaim{{
+		ClaimData: map[string]string{
+			"bucket":         "test-bucket",
+			"key":            "v0/d/sha256/fakehash",
+			"hash_algorithm": "sha256",
+			"hash_value":     "fakehash",
+		},
+	}}
+
+	_, err = d.Retrieve(retrieveCtx(), claims)
+	assert.ErrorIs(t, err, ErrPayloadTooLarge)
+	assert.ErrorContains(t, err, "exceeds MaxRetrieveSize of 10 bytes")
+}
+
+func TestRetrieve_MaxRetrieveSizeExactlyAtLimit(t *testing.T) {
+	mc := newMemClient()
+	d, err := NewDriver(Options{
+		Client:          mc,
+		Bucket:          StaticBucket("test-bucket"),
+		MaxPayloadSize:  1024,
+		MaxRetrieveSize: 1024,
+	})
+	require.NoError(t, err)
+
+	// Store a payload that is exactly the retrieve size limit.
+	payload := testPayload(strings.Repeat("x", 900))
+	claims, err := d.Store(storeCtx(), []*commonpb.Payload{payload})
+	require.NoError(t, err)
+
+	// Verify we can retrieve it — the serialized proto may be slightly larger
+	// than the raw data but should be within the 1024 limit.
+	result, err := d.Retrieve(retrieveCtx(), claims)
+	require.NoError(t, err)
+	assert.Equal(t, payload.Data, result[0].Data)
+}
+
+func TestRetrieve_MaxRetrieveSizeOneByteOver(t *testing.T) {
+	mc := newMemClient()
+	limit := 50
+	d, err := NewDriver(Options{
+		Client:          mc,
+		Bucket:          StaticBucket("test-bucket"),
+		MaxRetrieveSize: limit,
+	})
+	require.NoError(t, err)
+
+	// Inject a blob that is exactly limit+1 bytes.
+	mc.mu.Lock()
+	mc.data[memKey("test-bucket", "v0/d/sha256/fakehash")] = make([]byte, limit+1)
+	mc.mu.Unlock()
+
+	claims := []converter.StorageDriverClaim{{
+		ClaimData: map[string]string{
+			"bucket":         "test-bucket",
+			"key":            "v0/d/sha256/fakehash",
+			"hash_algorithm": "sha256",
+			"hash_value":     "fakehash",
+		},
+	}}
+
+	_, err = d.Retrieve(retrieveCtx(), claims)
+	assert.ErrorIs(t, err, ErrPayloadTooLarge)
 }
 
 // --- Key generation tests ---
