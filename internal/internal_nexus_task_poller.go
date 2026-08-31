@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
@@ -25,6 +26,7 @@ type nexusTaskPoller struct {
 	inboundPayloadVisitor  PayloadVisitor
 	outboundPayloadVisitor PayloadVisitor
 	backgroundContext      context.Context
+	pollerGroups           *pollerGroupManager
 }
 
 type nexusTask struct {
@@ -37,6 +39,7 @@ func newNexusTaskPoller(
 	taskHandler *nexusTaskHandler,
 	service workflowservice.WorkflowServiceClient,
 	params workerExecutionParameters,
+	pollerGroups *pollerGroupManager,
 ) *nexusTaskPoller {
 	backgroundContext := params.BackgroundContext
 	if backgroundContext == nil {
@@ -52,6 +55,7 @@ func newNexusTaskPoller(
 			capabilities:                 params.capabilities,
 			pollTimeTracker:              params.pollTimeTracker,
 			workerInstanceKey:            params.workerInstanceKey,
+			pollerGroupInfoStore:         params.pollerGroupInfoStore,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
 		taskHandler:     taskHandler,
@@ -65,6 +69,7 @@ func newNexusTaskPoller(
 		inboundPayloadVisitor:  params.inboundPayloadVisitor,
 		outboundPayloadVisitor: params.outboundPayloadVisitor,
 		backgroundContext:      backgroundContext,
+		pollerGroups:           pollerGroups,
 	}
 }
 
@@ -77,6 +82,15 @@ func (ntp *nexusTaskPoller) pollNexusTaskQueue(ctx context.Context, request *wor
 }
 
 func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
+	lease := ntp.pollerGroups.reserve()
+	defer lease.release()
+	return ntp.pollWithLease(ctx, lease)
+}
+
+func (ntp *nexusTaskPoller) pollWithLease(
+	ctx context.Context,
+	lease pollerGroupLease,
+) (taskForWorker, error) {
 	traceLog(func() {
 		ntp.logger.Debug("nexusTaskPoller::Poll")
 	})
@@ -97,9 +111,14 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		WorkerInstanceKey: ntp.workerInstanceKey,
 	}
 
+	request.PollerGroupId = lease.groupIDOrEmpty()
+
 	response, err := ntp.pollNexusTaskQueue(ctx, request)
 	if err != nil {
 		return nil, err
+	}
+	if response != nil {
+		ntp.updatePollerGroups(ntp.pollerGroups, response.GetPollerGroupsInfo())
 	}
 	if response == nil || len(response.TaskToken) == 0 {
 		// No operation info is available on empty poll. Emit using base scope.
@@ -113,8 +132,17 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 }
 
 // PollTask polls a new task
-func (ntp *nexusTaskPoller) PollTask() (taskForWorker, error) {
-	return ntp.doPoll(ntp.poll)
+func (ntp *nexusTaskPoller) PollTask(lease pollerGroupLease) (taskForWorker, error) {
+	poll := ntp.poll
+	if lease.manager != nil {
+		if lease.manager != ntp.pollerGroups {
+			return nil, errors.New("nexus poller-group lease belongs to a different manager")
+		}
+		poll = func(ctx context.Context) (taskForWorker, error) {
+			return ntp.pollWithLease(ctx, lease)
+		}
+	}
+	return ntp.doPoll(poll)
 }
 
 // ProcessTask processes a new task
@@ -143,7 +171,7 @@ func (ntp *nexusTaskPoller) ProcessTask(task any) error {
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
 		// context wasn't propagated to us, use a background context.
-		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()))
+		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()), response.GetPollerGroupId())
 		if err != nil {
 			return err
 		}
@@ -280,6 +308,7 @@ func (ntp *nexusTaskPoller) reportExternalStorageFailure(
 		response.TaskToken,
 		handlerErr,
 		getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()),
+		response.GetPollerGroupId(),
 	)
 	if err != nil {
 		return err
