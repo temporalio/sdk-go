@@ -228,6 +228,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.LocalActivityWorkerOnly = true
 	}
 
+	if strings.Contains(ts.T().Name(), "WorkflowTaskCompletionPagination") {
+		// This workflow serializes a large (~5 MiB) completion in a single workflow task; on slow CI
+		// hardware that can exceed the default 1s deadlock-detection window.
+		options.DeadlockDetectionTimeout = 10 * time.Second
+	}
+
 	if strings.Contains(ts.T().Name(), "CancelTimerViaDeferAfterWFTFailure") ||
 		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
 		options.WorkflowPanicPolicy = worker.BlockWorkflow
