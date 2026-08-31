@@ -1090,6 +1090,9 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 
 	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
+		if _, ok := codecWorkflowTaskFailureFrom(err); ok {
+			panic(err)
+		}
 		panic(fmt.Sprintf("failed to build user metadata for side effect: %v", err))
 	}
 	wc.commandsHelper.recordSideEffectMarker(sideEffectID, result, wc.dataConverter, userMetadata)
@@ -1243,6 +1246,9 @@ func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountH
 	}
 	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
+		if _, ok := codecWorkflowTaskFailureFrom(err); ok {
+			panic(err)
+		}
 		panic(fmt.Sprintf("failed to build user metadata for mutable side effect: %v", err))
 	}
 	wc.commandsHelper.recordMutableSideEffectMarker(id, callCountHint, details, wc.dataConverter, userMetadata)
