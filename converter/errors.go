@@ -2,6 +2,8 @@ package converter
 
 import (
 	"errors"
+
+	"go.temporal.io/sdk/internal/codecerror"
 )
 
 var (
@@ -30,19 +32,19 @@ var (
 )
 
 // WorkflowTaskFailureError, when returned from a PayloadCodec's Encode or Decode
-// during workflow-side payload processing (for example decoding a workflow's
-// input or an activity result, or encoding activity arguments), requests that
-// the current Workflow Task fail rather than the Workflow Execution. The task is
-// failed and retried by the server while the execution stays open, so a
-// transient codec failure can recover on a later attempt. It is honored
-// independently of the worker's WorkflowPanicPolicy and is not classified or
-// logged as a workflow panic.
+// on a workflow-side payload path the SDK routes through Workflow Task
+// completion, requests that the current Workflow Task fail rather than the
+// Workflow Execution, so the server retries the task while the execution stays
+// open and a transient codec failure can recover. The honored paths are decoding
+// workflow input, decoding an activity or child-workflow result delivered through
+// a Future, encoding activity or child-workflow arguments, and encoding a side
+// effect's summary. It is honored identically under both WorkflowPanicPolicy
+// values and is not logged as a workflow panic.
 //
-// Outside workflow-side codec processing (on the client or in an activity
-// worker) it behaves as an ordinary error. A codec that keeps returning it will
-// keep failing the Workflow Task, so it should back a genuinely transient
-// failure. The wrapped cause is preserved through errors.Is and errors.As so
-// failure converters and observability tooling still see the original error.
+// Other codec paths keep their existing behavior: signal decoding drops the
+// signal, update-argument decoding rejects the update, and query decoding fails
+// the query. On the client or in an activity worker the marker is an ordinary
+// error. The wrapped cause is preserved through errors.Is and errors.As.
 type WorkflowTaskFailureError struct {
 	cause error
 }
@@ -71,36 +73,16 @@ func NewWorkflowTaskFailureError(cause error) error {
 	return &WorkflowTaskFailureError{cause: cause}
 }
 
-// codecRequestedTaskFailure wraps a WorkflowTaskFailureError that a PayloadCodec
-// returned from Encode or Decode. CodecDataConverter applies it at the codec
-// boundary (see tagCodecRequestedTaskFailure) so the SDK can tell a codec-originated
-// request apart from a WorkflowTaskFailureError returned directly by workflow code.
-// It unwraps to the original error so errors.Is/As and failure conversion are
-// unaffected. The type is unexported; the SDK detects it via the exported method
-// below, so nothing new appears in the public API.
-type codecRequestedTaskFailure struct {
-	err error
-}
-
-func (e *codecRequestedTaskFailure) Error() string { return e.err.Error() }
-func (e *codecRequestedTaskFailure) Unwrap() error { return e.err }
-
-// RequestsWorkflowTaskFailure identifies this error, to the SDK worker, as a
-// PayloadCodec's request to fail the current Workflow Task. It is defined on an
-// unexported type on purpose so it does not widen the public API surface.
-func (e *codecRequestedTaskFailure) RequestsWorkflowTaskFailure() bool { return true }
-
-// tagCodecRequestedTaskFailure wraps err in a codecRequestedTaskFailure when err
-// is, or wraps, a *WorkflowTaskFailureError, and returns it unchanged otherwise
-// (including nil). It is applied only at the PayloadCodec boundary so a marker
-// returned directly from workflow code is never tagged.
+// tagCodecRequestedTaskFailure tags a *WorkflowTaskFailureError with the codec
+// origin marker (see internal/codecerror), applied only at the PayloadCodec
+// boundary so a marker returned directly from workflow code is never tagged.
 func tagCodecRequestedTaskFailure(err error) error {
 	if err == nil {
 		return nil
 	}
 	var marker *WorkflowTaskFailureError
 	if errors.As(err, &marker) {
-		return &codecRequestedTaskFailure{err: err}
+		return codecerror.Tag(err)
 	}
 	return err
 }
