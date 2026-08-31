@@ -686,7 +686,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		return nil, err
 	}
 
-	userMetadata, err := buildUserMetadata(in.Options.Summary, "", dataConverter)
+	userMetadata, err := BuildUserMetadata(in.Options.Summary, "", dataConverter)
 	if err != nil {
 		return nil, err
 	}

@@ -2762,7 +2762,7 @@ func getActivityFunctionName(r *registry, i any) string {
 	return result
 }
 
-func getWorkflowFunctionName(r *registry, workflowFunc any) (string, error) {
+func GetWorkflowFunctionName(r *registry, workflowFunc any) (string, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {

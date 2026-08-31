@@ -244,7 +244,7 @@ func CompleteSession(ctx Context) {
 	}
 
 	sessionInfo.SessionState = SessionStateClosed
-	getWorkflowEnvironment(ctx).RemoveSession(sessionInfo.SessionID)
+	GetWorkflowEnvironment(ctx).RemoveSession(sessionInfo.SessionID)
 	GetLogger(ctx).Debug("Completed session", "sessionID", sessionInfo.SessionID)
 }
 
@@ -367,7 +367,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 		}
 		var canceledErr *CanceledError
 		if !errors.As(err, &canceledErr) {
-			getWorkflowEnvironment(creationCtx).RemoveSession(sessionID)
+			GetWorkflowEnvironment(creationCtx).RemoveSession(sessionID)
 			GetLogger(creationCtx).Debug("Session failed", "sessionID", sessionID, tagError, err)
 			sessionInfo.SessionState = SessionStateFailed
 			sessionCancelFunc()
@@ -375,7 +375,7 @@ func createSession(ctx Context, creationTaskqueue string, options *SessionOption
 	})
 
 	logger.Debug("Created session", "sessionID", sessionID)
-	getWorkflowEnvironment(ctx).AddSession(sessionInfo)
+	GetWorkflowEnvironment(ctx).AddSession(sessionInfo)
 	return sessionCtx, nil
 }
 
