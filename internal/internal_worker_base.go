@@ -315,13 +315,26 @@ type (
 	barrier chan struct{}
 
 	autoscalingTaskPollerRunner struct {
-		autoscaler   *pollerAutoscaler
-		pollerGroups *pollerGroupManager
-		queueKind    enumspb.TaskQueueKind
-		wakeCh       chan struct{}
-		activeMu     sync.Mutex
+		autoscaler        *pollerAutoscaler
+		pollerGroups      *pollerGroupManager
+		workflowAdmission *workflowPollAdmission
+		queueKind         enumspb.TaskQueueKind
+		wakeCh            chan struct{}
+		activeMu          sync.Mutex
 		// active counts admitted logical poll attempts, not supporting goroutines.
 		active int
+	}
+
+	// workflowPollAdmission shares an admission budget between normal and
+	// sticky Workflow poll runners. pollerGroupManager owns per-group coverage
+	// and selects which runner may claim each group-routed poll.
+	workflowPollAdmission struct {
+		mu               sync.Mutex
+		pollerGroups     *pollerGroupManager
+		normalAutoscaler *pollerAutoscaler
+		stickyAutoscaler *pollerAutoscaler
+		activeNormal     int
+		activeSticky     int
 	}
 
 	// pollerBalancer is used to balance the number of poll requests from different poller types
@@ -1257,6 +1270,9 @@ func newAutoscalingTaskPollerRunner(
 }
 
 func (r *autoscalingTaskPollerRunner) acquire(ctx context.Context) (pollerGroupLease, func(), error) {
+	if r.workflowAdmission != nil {
+		return r.workflowAdmission.acquire(ctx, r)
+	}
 	for {
 		// Capture the store notification before evaluating admission. If the
 		// snapshot changes during the evaluation, this channel is closed and the
@@ -1291,6 +1307,83 @@ func (r *autoscalingTaskPollerRunner) acquire(ctx context.Context) (pollerGroupL
 		case <-pollerGroupsChanged:
 		}
 	}
+}
+
+func (c *workflowPollAdmission) acquire(
+	ctx context.Context,
+	runner *autoscalingTaskPollerRunner,
+) (pollerGroupLease, func(), error) {
+	for {
+		pollerGroupsChanged := c.pollerGroups.groupInfos.changed()
+		c.mu.Lock()
+		canAcquire := c.activeNormal+c.activeSticky < c.effectiveTarget()
+		if canAcquire && c.pollerGroups.requiredMin() == 0 {
+			canAcquire = c.activeForKind(runner.queueKind) < runner.effectiveTarget()
+		}
+		var lease pollerGroupLease
+		var ok bool
+		if canAcquire {
+			lease, ok = c.pollerGroups.tryReserveWorkflowPoll(runner.queueKind)
+		} else {
+			// Current normal and sticky coverage may temporarily exceed the
+			// aggregate target while stale or ungrouped polls drain.
+			lease, ok = c.pollerGroups.tryReserveRequired(runner.queueKind)
+		}
+		if ok {
+			if runner.queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
+				c.activeSticky++
+			} else {
+				c.activeNormal++
+			}
+			c.mu.Unlock()
+			return lease, func() { c.release(runner.queueKind) }, nil
+		}
+		c.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return pollerGroupLease{}, nil, ctx.Err()
+		case <-runner.wakeCh:
+		case <-pollerGroupsChanged:
+		}
+	}
+}
+
+// activeForKind expects c.mu to be held.
+func (c *workflowPollAdmission) activeForKind(queueKind enumspb.TaskQueueKind) int {
+	if queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
+		return c.activeSticky
+	}
+	return c.activeNormal
+}
+
+// effectiveTarget expects c.mu to be held.
+func (c *workflowPollAdmission) effectiveTarget() int {
+	groups := c.pollerGroups.requiredMin()
+	normal := effectivePollerTarget(
+		int(c.normalAutoscaler.target.Load()),
+		c.normalAutoscaler.minPollerCount,
+		c.normalAutoscaler.maxPollerCount,
+		groups,
+	)
+	sticky := effectivePollerTarget(
+		int(c.stickyAutoscaler.target.Load()),
+		c.stickyAutoscaler.minPollerCount,
+		c.stickyAutoscaler.maxPollerCount,
+		groups,
+	)
+	return normal + sticky
+}
+
+func (c *workflowPollAdmission) release(queueKind enumspb.TaskQueueKind) {
+	c.mu.Lock()
+	if queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
+		c.activeSticky--
+	} else {
+		c.activeNormal--
+	}
+	c.mu.Unlock()
+	c.pollerGroups.signalWaiters()
 }
 
 func (r *autoscalingTaskPollerRunner) tryReservePollerGroup() (pollerGroupLease, bool) {
@@ -1342,9 +1435,43 @@ func (r *autoscalingTaskPollerRunner) signal() {
 }
 
 func (r *autoscalingTaskPollerRunner) activePolls() int {
+	if r.workflowAdmission != nil {
+		r.workflowAdmission.mu.Lock()
+		defer r.workflowAdmission.mu.Unlock()
+		return r.workflowAdmission.activeForKind(r.queueKind)
+	}
 	r.activeMu.Lock()
 	defer r.activeMu.Unlock()
 	return r.active
+}
+
+// configureWorkflowPollAdmission gives normal and sticky Workflow runners a
+// shared admission budget while preserving their separate autoscalers.
+func configureWorkflowPollAdmission(taskPollers []scalableTaskPoller, pollerGroups *pollerGroupManager) {
+	var normal, sticky *autoscalingTaskPollerRunner
+	for _, taskPoller := range taskPollers {
+		runner := taskPoller.autoscalingRunner
+		if runner == nil {
+			continue
+		}
+		if runner.queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
+			sticky = runner
+		} else if _, ok := taskPoller.taskPoller.(*workflowTaskPoller); ok {
+			normal = runner
+		}
+	}
+	if normal == nil || sticky == nil {
+		return
+	}
+	admission := &workflowPollAdmission{
+		pollerGroups:     pollerGroups,
+		normalAutoscaler: normal.autoscaler,
+		stickyAutoscaler: sticky.autoscaler,
+	}
+	normal.workflowAdmission = admission
+	sticky.workflowAdmission = admission
+	normal.autoscaler.targetChangedCallback = pollerGroups.signalWaiters
+	sticky.autoscaler.targetChangedCallback = pollerGroups.signalWaiters
 }
 
 func newScalableTaskPoller(

@@ -1148,13 +1148,32 @@ func (wtp *workflowTaskPoller) release(kind enumspb.TaskQueueKind) {
 	wtp.requestLock.Unlock()
 }
 
-func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind, backlogCountHint int64) {
+func (wtp *workflowTaskPoller) updateBacklog(
+	taskQueueKind enumspb.TaskQueueKind,
+	responseGroupID string,
+	backlogCountHint int64,
+) {
 	if taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.stickyCacheSize <= 0 {
 		// we only care about sticky backlog for now.
 		return
 	}
+	if wtp.pollerGroups != nil {
+		wtp.pollerGroups.updateWorkflowStickyBacklog(responseGroupID, backlogCountHint)
+		return
+	}
 	wtp.requestLock.Lock()
 	wtp.stickyBacklog = backlogCountHint
+	wtp.requestLock.Unlock()
+}
+
+// resetUngroupedBacklog clears the task-queue-wide hint after a poll error.
+func (wtp *workflowTaskPoller) resetUngroupedBacklog(taskQueueKind enumspb.TaskQueueKind) {
+	if taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.stickyCacheSize <= 0 || wtp.pollerGroups != nil {
+		return
+	}
+
+	wtp.requestLock.Lock()
+	wtp.stickyBacklog = 0
 	wtp.requestLock.Unlock()
 }
 
@@ -1283,7 +1302,7 @@ func (wtp *workflowTaskPoller) pollWithLease(
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
 	if err != nil {
-		wtp.updateBacklog(queueKind, 0)
+		wtp.resetUngroupedBacklog(queueKind)
 		return nil, err
 	}
 
@@ -1294,7 +1313,7 @@ func (wtp *workflowTaskPoller) pollWithLease(
 	if response == nil || len(response.TaskToken) == 0 {
 		// Emit using base scope as no workflow type information is available in the case of empty poll
 		wtp.metricsHandler.Counter(metrics.WorkflowTaskQueuePollEmptyCounter).Inc(1)
-		wtp.updateBacklog(queueKind, 0)
+		wtp.updateBacklog(queueKind, response.GetPollerGroupId(), response.GetBacklogCountHint())
 		return &workflowTask{}, nil
 	}
 
@@ -1304,7 +1323,7 @@ func (wtp *workflowTaskPoller) pollWithLease(
 		wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowTask)
 	}
 
-	wtp.updateBacklog(queueKind, response.GetBacklogCountHint())
+	wtp.updateBacklog(queueKind, response.GetPollerGroupId(), response.GetBacklogCountHint())
 
 	task := wtp.toWorkflowTask(response)
 	traceLog(func() {

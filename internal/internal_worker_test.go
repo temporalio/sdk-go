@@ -1862,10 +1862,17 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	workflowGroups := workflowPollers[0].autoscalingRunner.pollerGroups
 	require.NotNil(s.T(), workflowGroups)
 	require.Same(s.T(), worker.client.pollerGroupInfoStore, workflowGroups.groupInfos)
+	var workflowAdmission *workflowPollAdmission
 	for _, p := range workflowPollers {
 		require.NotNil(s.T(), p.autoscalingRunner)
 		require.Same(s.T(), workflowGroups, p.autoscalingRunner.pollerGroups)
+		if workflowAdmission == nil {
+			workflowAdmission = p.autoscalingRunner.workflowAdmission
+		} else {
+			require.Same(s.T(), workflowAdmission, p.autoscalingRunner.workflowAdmission)
+		}
 	}
+	require.NotNil(s.T(), workflowAdmission)
 	activityPollers := worker.activityWorker.worker.options.taskPollers
 	require.NotEmpty(s.T(), activityPollers)
 	require.NotNil(s.T(), activityPollers[0].autoscalingRunner)

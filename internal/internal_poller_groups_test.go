@@ -202,7 +202,7 @@ func TestPollerGroupManagerReserveWorkflowPollFillsCoverageBeforeWeights(t *test
 	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, lease.queueKind)
 }
 
-func TestPollerGroupManagerReserveWorkflowPollKeepsRunnerQueueKind(t *testing.T) {
+func TestPollerGroupManagerReserveWorkflowPollUsesSelectedGroupBacklog(t *testing.T) {
 	manager := newPollerGroupManager(pollerGroupModeWorkflowWithSticky, nil)
 	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
 
@@ -212,8 +212,115 @@ func TestPollerGroupManagerReserveWorkflowPollKeepsRunnerQueueKind(t *testing.T)
 	normalLease := requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL)
 	require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, normalLease.queueKind)
 
+	manager.updateWorkflowStickyBacklog("group-a", 1)
 	extraStickyLease := requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
 	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, extraStickyLease.queueKind)
+}
+
+func TestPollerGroupManagerFloatingPollSelectsGroupBeforeQueueKind(t *testing.T) {
+	manager := newPollerGroupManager(pollerGroupModeWorkflowWithSticky, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "normal-group", Weight: 0},
+		{Id: "sticky-group", Weight: 100},
+	}))
+
+	for range 2 {
+		requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL)
+		requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
+	}
+	manager.updateWorkflowStickyBacklog("sticky-group", 5)
+
+	_, ok := manager.tryReserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.False(t, ok, "the normal runner must not reroll a selected group with sticky backlog")
+
+	manager.tracker.mu.Lock()
+	decision := manager.tracker.workflowDecision
+	manager.tracker.mu.Unlock()
+	require.NotNil(t, decision.group)
+	require.Equal(t, "sticky-group", decision.group.groupID)
+	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, decision.queueKind)
+	require.Equal(t, int64(1), decision.version)
+
+	lease := requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
+	require.Equal(t, "sticky-group", lease.groupIDOrEmpty())
+}
+
+func TestPollerGroupManagerWorkflowCoverageOverridesStickyBacklog(t *testing.T) {
+	manager := newPollerGroupManager(pollerGroupModeWorkflowWithSticky, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 0},
+		{Id: "group-b", Weight: 100},
+	}))
+
+	normalB := requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.Equal(t, "group-b", normalB.groupIDOrEmpty())
+	requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL)
+	requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
+	requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
+	manager.updateWorkflowStickyBacklog("group-b", 5)
+	require.Equal(t, "group-b", requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY).groupIDOrEmpty())
+
+	normalB.release()
+	_, ok := manager.tryReserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY)
+	require.False(t, ok, "floating sticky capacity must wait for missing normal coverage")
+	require.Equal(t, "group-b", requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL).groupIDOrEmpty())
+}
+
+func TestPollerGroupManagerZeroBacklogChoosesNormalFloatingPoll(t *testing.T) {
+	manager := newPollerGroupManager(pollerGroupModeWorkflowWithSticky, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
+	requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL)
+	requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
+	manager.updateWorkflowStickyBacklog("group-a", 3)
+	requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
+
+	manager.updateWorkflowStickyBacklog("group-a", 0)
+	_, ok := manager.tryReserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY)
+	require.False(t, ok)
+	require.Equal(t, "group-a", requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL).groupIDOrEmpty())
+}
+
+func TestPollerGroupManagerRemovedAndReaddedGroupLosesBacklog(t *testing.T) {
+	manager := newPollerGroupManager(pollerGroupModeWorkflowWithSticky, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
+	oldNormal := requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL)
+	oldSticky := requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
+	manager.updateWorkflowStickyBacklog("group-a", 3)
+
+	manager.updateGroups(testPollerGroupsInfo(2, nil))
+	manager.updateGroups(testPollerGroupsInfo(3, []*taskqueuepb.PollerGroupInfo{{Id: "group-a", Weight: 1}}))
+	requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL)
+	requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
+
+	_, ok := manager.tryReserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY)
+	require.False(t, ok, "a re-added group must not inherit sticky backlog")
+	requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL)
+
+	oldNormal.release()
+	oldSticky.release()
+}
+
+func TestPollerGroupManagerWeightUpdateReconsidersPendingDecision(t *testing.T) {
+	manager := newPollerGroupManager(pollerGroupModeWorkflowWithSticky, nil)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "normal-group", Weight: 0},
+		{Id: "sticky-group", Weight: 100},
+	}))
+	for range 2 {
+		requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL)
+		requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
+	}
+	manager.updateWorkflowStickyBacklog("sticky-group", 5)
+	_, ok := manager.tryReserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.False(t, ok)
+
+	manager.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
+		{Id: "normal-group", Weight: 100},
+		{Id: "sticky-group", Weight: 0},
+	}))
+	_, ok = manager.tryReserveWorkflowPoll(enumspb.TASK_QUEUE_KIND_STICKY)
+	require.False(t, ok, "a newer weight snapshot must invalidate the pending sticky decision")
+	require.Equal(t, "normal-group", requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_NORMAL).groupIDOrEmpty())
 }
 
 func TestPollerGroupManagerBlocksExtraNormalUntilAllStickyGroupsCovered(t *testing.T) {
@@ -284,6 +391,7 @@ func TestPollerGroupManagerReserveWorkflowPollFallsBackBeforeGroupsKnown(t *test
 
 	lease := requireWorkflowPollLease(t, manager, enumspb.TASK_QUEUE_KIND_STICKY)
 	require.Empty(t, lease.groupIDOrEmpty())
+	require.Same(t, manager, lease.manager)
 	require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, lease.queueKind)
 }
 
@@ -349,4 +457,97 @@ func TestPollerGroupManagersConcurrentSharedUpdatesAndReservations(t *testing.T)
 
 	require.Equal(t, 2, activity.requiredMin())
 	require.Equal(t, 2, workflow.requiredMin())
+}
+
+func TestPollerGroupManagerConcurrentStickyRoutingChurn(t *testing.T) {
+	const (
+		groupA           = "group-a"
+		groupB           = "group-b"
+		stressIterations = 1000
+	)
+	groupInfos := newPollerGroupInfoStore()
+	manager := newPollerGroupManager(pollerGroupModeWorkflowWithSticky, groupInfos)
+	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: groupA, Weight: 1},
+		{Id: groupB, Weight: 1},
+	}))
+
+	start := make(chan struct{})
+	reserved := make(chan int, 2)
+	var wg sync.WaitGroup
+	wg.Add(4)
+
+	go func() {
+		defer wg.Done()
+		<-start
+
+		for i := range stressIterations {
+			var groups []*taskqueuepb.PollerGroupInfo
+			switch i % 4 {
+			case 0:
+				groups = []*taskqueuepb.PollerGroupInfo{{Id: groupA, Weight: 100}, {Id: groupB, Weight: 0}}
+			case 1:
+				groups = []*taskqueuepb.PollerGroupInfo{{Id: groupA, Weight: 0}, {Id: groupB, Weight: 100}}
+			case 2:
+				groups = []*taskqueuepb.PollerGroupInfo{{Id: groupA, Weight: 1}}
+			case 3:
+				groups = []*taskqueuepb.PollerGroupInfo{{Id: groupB, Weight: 1}}
+			}
+			manager.updateGroups(testPollerGroupsInfo(int64(i+2), groups))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-start
+
+		for i := range stressIterations {
+			manager.updateWorkflowStickyBacklog(groupA, int64(i%3))
+			manager.updateWorkflowStickyBacklog(groupB, int64((i+1)%3))
+		}
+	}()
+
+	reserve := func(queueKind enumspb.TaskQueueKind) {
+		defer wg.Done()
+		<-start
+
+		count := 0
+		for range stressIterations {
+			lease, ok := manager.tryReserveWorkflowPoll(queueKind)
+			if !ok {
+				continue
+			}
+			lease.release()
+			count++
+		}
+		reserved <- count
+	}
+	go reserve(enumspb.TASK_QUEUE_KIND_NORMAL)
+	go reserve(enumspb.TASK_QUEUE_KIND_STICKY)
+
+	close(start)
+	wg.Wait()
+	close(reserved)
+	for count := range reserved {
+		require.Positive(t, count)
+	}
+
+	finalVersion := int64(stressIterations + 2)
+	manager.updateGroups(testPollerGroupsInfo(finalVersion, []*taskqueuepb.PollerGroupInfo{
+		{Id: groupA, Weight: 1},
+		{Id: groupB, Weight: 1},
+	}))
+	manager.updateWorkflowStickyBacklog(groupA, 0)
+	manager.updateWorkflowStickyBacklog(groupB, 0)
+	require.Equal(t, finalVersion, groupInfos.snapshot().version)
+
+	manager.tracker.mu.Lock()
+	defer manager.tracker.mu.Unlock()
+	require.Nil(t, manager.tracker.workflowDecision.group)
+	require.Len(t, manager.tracker.groups, 2)
+	for _, group := range manager.tracker.groups {
+		require.Zero(t, group.workflowPendingNormal)
+		require.Zero(t, group.workflowPendingSticky)
+		require.Zero(t, group.stickyBacklog)
+	}
 }

@@ -95,6 +95,8 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Workflow poller autoscaling now uses each selected poller group's sticky backlog to allocate
+  floating polling capacity between normal and sticky task queues after required group coverage.
 - Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
 - Replaced the internal `OnceCell` implementation with `sync.OnceValue` for lazy workflow run ID lookup.
 

@@ -33,13 +33,18 @@ type (
 
 	// pollerGroupSnapshot is immutable after publication.
 	pollerGroupSnapshot struct {
-		weights    map[string]float32
-		version    int64
-		versionSet bool
+		weights map[string]float32
+		// generations identifies the current incarnation of each group ID. A
+		// group keeps its generation across weight updates, but receives a new one
+		// when removed and re-added.
+		generations map[string]int64
+		version     int64
+		versionSet  bool
 	}
 
-	// pollerGroupManager is owned by a polling path and combines shared routing
-	// state with its local coverage tracker.
+	// pollerGroupManager combines shared routing state with local poll coverage.
+	// For Workflow polling, it also selects whether normal or sticky may poll
+	// next; workflowPollAdmission enforces their shared admission budget.
 	pollerGroupManager struct {
 		groupInfos *pollerGroupInfoStore
 		tracker    *pollerGroupTracker
@@ -63,14 +68,24 @@ type (
 
 	// pollerGroupTracker is the manager-owned pending-poll coverage accounting.
 	pollerGroupTracker struct {
-		mode   pollerGroupMode
-		mu     sync.Mutex
-		groups map[string]*pollerGroupState
+		mode             pollerGroupMode
+		mu               sync.Mutex
+		groups           map[string]*pollerGroupState
+		workflowDecision workflowPollDecision
+	}
+
+	workflowPollDecision struct {
+		group     *pollerGroupState
+		queueKind enumspb.TaskQueueKind
+		version   int64
 	}
 
 	// pollerGroupState is the tracker-owned pending-poll state for one group.
 	pollerGroupState struct {
 		groupID string
+		// generation prevents a re-added group from inheriting pending counts or
+		// sticky backlog when this tracker did not observe the removal snapshot.
+		generation int64
 
 		// Activity/Nexus use total pending
 		pendingPollCount int
@@ -78,6 +93,7 @@ type (
 		// Workflow uses queue-kind-specific pending counts
 		workflowPendingNormal int
 		workflowPendingSticky int
+		stickyBacklog         int64
 	}
 )
 
@@ -89,7 +105,10 @@ const (
 
 func newPollerGroupInfoStore() *pollerGroupInfoStore {
 	return &pollerGroupInfoStore{
-		current: pollerGroupSnapshot{weights: make(map[string]float32)},
+		current: pollerGroupSnapshot{
+			weights:     make(map[string]float32),
+			generations: make(map[string]int64),
+		},
 		changedCh: make(chan struct{}),
 	}
 }
@@ -118,7 +137,8 @@ func (m *pollerGroupManager) reserve() pollerGroupLease {
 	if m == nil || m.groupInfos == nil || m.tracker == nil {
 		return pollerGroupLease{}
 	}
-	group := m.tracker.reserve(m.groupInfos.snapshot().weights)
+	snapshot := m.groupInfos.snapshot()
+	group := m.tracker.reserve(snapshot.weights, snapshot.generations)
 	return pollerGroupLease{
 		manager: m,
 		group:   group,
@@ -134,7 +154,8 @@ func (m *pollerGroupManager) tryReserveRequired(
 	if m == nil || m.groupInfos == nil || m.tracker == nil {
 		return pollerGroupLease{}, false
 	}
-	group := m.tracker.tryReserveRequired(m.groupInfos.snapshot().weights, queueKind)
+	snapshot := m.groupInfos.snapshot()
+	group := m.tracker.tryReserveRequired(snapshot.weights, snapshot.generations, queueKind)
 	if group == nil {
 		return pollerGroupLease{}, false
 	}
@@ -153,8 +174,15 @@ func (m *pollerGroupManager) tryReserveWorkflowPoll(
 	if m == nil || m.groupInfos == nil || m.tracker == nil {
 		return pollerGroupLease{queueKind: queueKind}, true
 	}
-	group, ok := m.tracker.tryReserveWorkflowPoll(m.groupInfos.snapshot().weights, queueKind)
-	if !ok {
+	snapshot := m.groupInfos.snapshot()
+	if len(snapshot.weights) == 0 {
+		return pollerGroupLease{manager: m, queueKind: queueKind}, true
+	}
+	group, wakeWaiters := m.tracker.tryReserveWorkflowPoll(snapshot, queueKind)
+	if wakeWaiters {
+		m.signalWaiters()
+	}
+	if group == nil {
 		return pollerGroupLease{}, false
 	}
 	lease := pollerGroupLease{
@@ -162,8 +190,21 @@ func (m *pollerGroupManager) tryReserveWorkflowPoll(
 		group:     group,
 		queueKind: queueKind,
 	}
-	m.signalWaiters()
 	return lease, true
+}
+
+func (m *pollerGroupManager) updateWorkflowStickyBacklog(groupID string, backlog int64) {
+	if m == nil || m.tracker == nil || groupID == "" {
+		return
+	}
+	snapshot := m.groupInfos.snapshot()
+	if m.tracker.updateWorkflowStickyBacklog(
+		snapshot,
+		groupID,
+		backlog,
+	) {
+		m.signalWaiters()
+	}
 }
 
 func (m *pollerGroupManager) updateGroups(info *taskqueuepb.PollerGroupsInfo) {
@@ -209,13 +250,13 @@ func (l pollerGroupLease) release() {
 	l.manager.signalWaiters()
 }
 
-func (t *pollerGroupTracker) reserve(weights map[string]float32) *pollerGroupState {
+func (t *pollerGroupTracker) reserve(weights map[string]float32, generations map[string]int64) *pollerGroupState {
 	if t == nil {
 		return nil
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.syncGroups(weights)
+	t.syncGroups(weights, generations)
 
 	if len(t.groups) == 0 {
 		return nil
@@ -242,6 +283,7 @@ func (t *pollerGroupTracker) reserve(weights map[string]float32) *pollerGroupSta
 
 func (t *pollerGroupTracker) tryReserveRequired(
 	weights map[string]float32,
+	generations map[string]int64,
 	queueKind enumspb.TaskQueueKind,
 ) *pollerGroupState {
 	if t == nil {
@@ -249,7 +291,7 @@ func (t *pollerGroupTracker) tryReserveRequired(
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.syncGroups(weights)
+	t.syncGroups(weights, generations)
 
 	var candidates map[string]float32
 	if t.mode == pollerGroupModeNonWorkflow {
@@ -275,40 +317,70 @@ func (t *pollerGroupTracker) tryReserveRequired(
 	return group
 }
 
-// tryReserveWorkflowPoll first satisfies per-group coverage for queueKind. It
-// blocks additional polls for that kind while the other required workflow kind
-// still has a coverage gap. Once both kinds are covered, it selects additional
-// polls using the server-provided weights.
+// tryReserveWorkflowPoll first satisfies normal and sticky coverage. Once
+// coverage is complete, it retains one weighted group decision until the
+// runner selected by that group's sticky backlog claims it. The manager handles
+// empty snapshots, so a nil group means the requested runner must wait.
+// wakeWaiters reports whether another runner should recheck admission.
 func (t *pollerGroupTracker) tryReserveWorkflowPoll(
-	weights map[string]float32,
+	snapshot pollerGroupSnapshot,
 	queueKind enumspb.TaskQueueKind,
-) (*pollerGroupState, bool) {
+) (selectedGroup *pollerGroupState, wakeWaiters bool) {
 	if t == nil {
-		return nil, true
+		return nil, false
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.syncGroups(weights)
+	wakeWaiters = t.syncWorkflowSnapshot(snapshot)
 
 	if len(t.groups) == 0 {
-		return nil, true
+		return nil, wakeWaiters
 	}
 
-	candidates := t.workflowCoverageCandidates(weights, queueKind)
-	if len(candidates) == 0 {
-		// The requested kind already covers every group. Do not admit an
-		// additional poll while another required workflow kind remains uncovered.
-		if t.workflowCoverageMissing() {
-			return nil, false
+	if t.workflowCoverageMissing() {
+		if t.workflowDecision.group != nil {
+			t.workflowDecision = workflowPollDecision{}
+			wakeWaiters = true
 		}
-		candidates = weights
+		candidates := t.workflowCoverageCandidates(snapshot.weights, queueKind)
+		if len(candidates) == 0 {
+			return nil, wakeWaiters
+		}
+		groupID := choosePollerGroup(candidates)
+		if groupID == "" {
+			return nil, wakeWaiters
+		}
+		group := t.groups[groupID]
+		t.incrementWorkflowPending(group, queueKind)
+		return group, true
 	}
 
-	groupID := choosePollerGroup(candidates)
-	if groupID == "" {
+	if t.workflowDecision.group == nil {
+		groupID := choosePollerGroup(snapshot.weights)
+		if groupID == "" {
+			return nil, wakeWaiters
+		}
+		group := t.groups[groupID]
+		decisionKind := enumspb.TASK_QUEUE_KIND_NORMAL
+		if t.mode == pollerGroupModeWorkflowWithSticky && group.stickyBacklog > 0 {
+			decisionKind = enumspb.TASK_QUEUE_KIND_STICKY
+		}
+		t.workflowDecision = workflowPollDecision{
+			group:     group,
+			queueKind: decisionKind,
+			version:   snapshot.version,
+		}
+		wakeWaiters = true
+	}
+
+	if t.workflowDecision.queueKind != queueKind {
+		return nil, wakeWaiters
+	}
+	group := t.workflowDecision.group
+	t.workflowDecision = workflowPollDecision{}
+	if t.groups[group.groupID] != group {
 		return nil, true
 	}
-	group := t.groups[groupID]
 	t.incrementWorkflowPending(group, queueKind)
 	return group, true
 }
@@ -319,16 +391,58 @@ func (t *pollerGroupTracker) release(group *pollerGroupState, queueKind enumspb.
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.decrementPending(group, queueKind)
+	if current := t.groups[group.groupID]; current != group {
+		return
+	}
+	becameUncovered := t.decrementPending(group, queueKind)
+	if t.mode != pollerGroupModeNonWorkflow && becameUncovered {
+		t.workflowDecision = workflowPollDecision{}
+	}
 }
 
-func (t *pollerGroupTracker) syncGroups(weights map[string]float32) {
+func (t *pollerGroupTracker) updateWorkflowStickyBacklog(
+	snapshot pollerGroupSnapshot,
+	groupID string,
+	backlog int64,
+) bool {
+	if t == nil || t.mode == pollerGroupModeNonWorkflow || groupID == "" {
+		return false
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	wakeWaiters := t.syncWorkflowSnapshot(snapshot)
+	group := t.groups[groupID]
+	if group == nil || group.stickyBacklog == backlog {
+		return wakeWaiters
+	}
+	group.stickyBacklog = backlog
+	t.workflowDecision = workflowPollDecision{}
+	return true
+}
+
+func (t *pollerGroupTracker) syncWorkflowSnapshot(snapshot pollerGroupSnapshot) bool {
+	t.syncGroups(snapshot.weights, snapshot.generations)
+	// Discard decisions made with stale routing data.
+	if t.workflowDecision.group == nil ||
+		t.workflowDecision.version == snapshot.version {
+		return false
+	}
+
+	t.workflowDecision = workflowPollDecision{}
+	return true
+}
+
+func (t *pollerGroupTracker) syncGroups(weights map[string]float32, generations map[string]int64) {
 	if t.groups == nil {
 		t.groups = make(map[string]*pollerGroupState)
 	}
 	for groupID := range weights {
-		if _, ok := t.groups[groupID]; !ok {
-			t.groups[groupID] = &pollerGroupState{groupID: groupID}
+		group, ok := t.groups[groupID]
+		if !ok || group.generation != generations[groupID] {
+			t.groups[groupID] = &pollerGroupState{
+				groupID:    groupID,
+				generation: generations[groupID],
+			}
 		}
 	}
 	for groupID := range t.groups {
@@ -373,23 +487,26 @@ func (t *pollerGroupTracker) incrementWorkflowPending(group *pollerGroupState, q
 	}
 }
 
-func (t *pollerGroupTracker) decrementPending(group *pollerGroupState, queueKind enumspb.TaskQueueKind) {
+func (t *pollerGroupTracker) decrementPending(group *pollerGroupState, queueKind enumspb.TaskQueueKind) bool {
 	if group == nil {
-		return
+		return false
 	}
 	if t.mode == pollerGroupModeNonWorkflow {
 		if group.pendingPollCount > 0 {
 			group.pendingPollCount--
 		}
-		return
+		return false
 	}
 	if queueKind == enumspb.TASK_QUEUE_KIND_STICKY {
 		if group.workflowPendingSticky > 0 {
 			group.workflowPendingSticky--
 		}
-	} else if group.workflowPendingNormal > 0 {
+		return group.workflowPendingSticky == 0
+	}
+	if group.workflowPendingNormal > 0 {
 		group.workflowPendingNormal--
 	}
+	return group.workflowPendingNormal == 0
 }
 
 // choosePollerGroup picks a random group using the configured weights.
@@ -476,16 +593,23 @@ func (s *pollerGroupInfoStore) updateGroups(info *taskqueuepb.PollerGroupsInfo) 
 	}
 
 	weights := make(map[string]float32, len(info.GetPollerGroups()))
+	generations := make(map[string]int64, len(info.GetPollerGroups()))
 	for _, group := range info.GetPollerGroups() {
 		if groupID := group.GetId(); groupID != "" {
 			weights[groupID] = group.GetWeight()
+			generation, ok := s.current.generations[groupID]
+			if !ok {
+				generation = info.GetVersion()
+			}
+			generations[groupID] = generation
 		}
 	}
 
 	s.current = pollerGroupSnapshot{
-		weights:    weights,
-		version:    info.GetVersion(),
-		versionSet: true,
+		weights:     weights,
+		generations: generations,
+		version:     info.GetVersion(),
+		versionSet:  true,
 	}
 	close(s.changedCh)
 	s.changedCh = make(chan struct{})

@@ -558,6 +558,7 @@ func buildWorkflowScalableTaskPollers(
 				),
 			)
 		}
+		configureWorkflowPollAdmission(scalableTaskPollers, pollerGroups)
 		return scalableTaskPollers
 	default: // *pollerBehaviorSimpleMaximum
 		return []scalableTaskPoller{
