@@ -351,6 +351,82 @@ func (s *ExternalStorageTestSuite) TestQuery() {
 }
 
 // ---------------------------------------------------------------------------
+// TestUpdateAndQueryOverErrorLimit — an Update result and a Query result, both
+// over the dev server's default 2 MiB blob-size error limit, round-trip through
+// external storage instead of being rejected.
+// ---------------------------------------------------------------------------
+
+var extStoreQueryAndUpdateName = "ext-query-and-update-set"
+var extStoreQueryAndUpdateQueryType = "ext-query-and-update-query"
+var extStoreQueryAndUpdateDone = "ext-query-and-update-done"
+
+// extStoreQueryAndUpdateResult is the oversized value both the update and query
+// handlers below return, well above the dev server's default 2 MiB blob-size
+// error limit. Shared by the workflow and its test so the two can't drift apart.
+var extStoreQueryAndUpdateResult = strings.Repeat("a", 3*1024*1024)
+
+// extStoreQueryAndUpdateWorkflow computes its oversized result internally so the
+// workflow start request and the update invocation stay small; only the Update
+// and Query *results* are large, isolating the completion path this test targets
+// from the (already covered) input-offload path.
+func extStoreQueryAndUpdateWorkflow(ctx workflow.Context) error {
+	large := extStoreQueryAndUpdateResult
+	if err := workflow.SetQueryHandler(ctx, extStoreQueryAndUpdateQueryType, func() (string, error) {
+		return large, nil
+	}); err != nil {
+		return err
+	}
+	if err := workflow.SetUpdateHandler(ctx, extStoreQueryAndUpdateName, func(_ workflow.Context) (string, error) {
+		return large, nil
+	}); err != nil {
+		return err
+	}
+	workflow.GetSignalChannel(ctx, extStoreQueryAndUpdateDone).Receive(ctx, nil)
+	return nil
+}
+
+func (s *ExternalStorageTestSuite) TestUpdateAndQueryOverErrorLimit() {
+	s.worker.RegisterWorkflow(extStoreQueryAndUpdateWorkflow)
+	s.NoError(s.worker.Start())
+
+	expected := extStoreQueryAndUpdateResult
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	wfID := "ext-query-and-update-" + uuid.NewString()
+	run, err := s.client.ExecuteWorkflow(ctx, s.startOpts(wfID), extStoreQueryAndUpdateWorkflow)
+	s.NoError(err)
+
+	// Update leg: oversized result is offloaded by external storage.
+	handle, err := s.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   wfID,
+		RunID:        run.GetRunID(),
+		UpdateName:   extStoreQueryAndUpdateName,
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	s.NoError(err)
+	var updateResult string
+	s.NoError(handle.Get(ctx, &updateResult))
+	s.Equal(expected, updateResult, "Update result should round-trip through external storage")
+
+	// Query leg: returns over-sized value that external storage should offload
+	// before payload limits are validated.
+	queryResp, err := s.client.QueryWorkflow(ctx, wfID, run.GetRunID(), extStoreQueryAndUpdateQueryType)
+	s.NoError(err)
+	var queryResult string
+	s.NoError(queryResp.Get(&queryResult))
+	s.Equal(expected, queryResult, "Query result should round-trip through external storage")
+
+	// Unblock and finish the workflow.
+	s.NoError(s.client.SignalWorkflow(ctx, wfID, run.GetRunID(), extStoreQueryAndUpdateDone, nil))
+	s.NoError(run.Get(ctx, nil))
+
+	storeCount, retrieveCount := s.driver.getStoreCounts()
+	s.GreaterOrEqual(storeCount, 2, "driver.Store should be called for both the update result and the query result")
+	s.Greater(retrieveCount, 0, "client should have retrieved at least one oversized result")
+}
+
+// ---------------------------------------------------------------------------
 // TestMixedSizes — only oversized payloads are stored; small ones are inline
 // ---------------------------------------------------------------------------
 

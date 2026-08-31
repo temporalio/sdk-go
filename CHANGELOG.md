@@ -73,6 +73,12 @@ to docs, or any other relevant information.
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
   so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
   decoding it.
+- Query results are now checked against the server's blob-size error limit after
+  external storage has had a chance to offload them, matching how update and activity
+  results of the same size already behaved. A query result large enough to be offloaded
+  to `client.Options.ExternalStorage` is now stored instead of failing locally with
+  `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
+  query result now fails the workflow task instead of returning a failed query result.
 
 ### Security
 
