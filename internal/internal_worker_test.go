@@ -2296,6 +2296,148 @@ func (s *internalWorkerTestSuite) TestDescribeNamespacePollerGroupsSeedWorkflowN
 	releaseNormalPollOnce.Do(func() { close(releaseNormalPoll) })
 }
 
+func (s *internalWorkerTestSuite) TestWorkflowSimpleMaximumTransitionsToGroupedAutoscaling() {
+	namespace := "testNamespace"
+	taskQueue := "runtime-workflow-transition-tq"
+	groupID := "runtime-group"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:  namespace,
+			State: enumspb.NAMESPACE_STATE_REGISTERED,
+		},
+	}, nil).AnyTimes()
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+
+	polls := make(chan *workflowservice.PollWorkflowTaskQueueRequest, 20)
+	var publishGroups sync.Once
+	var transitionStage atomic.Int32
+	var publishEmptyGroups sync.Once
+	var republishGroups sync.Once
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, opts ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			select {
+			case polls <- proto.Clone(req).(*workflowservice.PollWorkflowTaskQueueRequest):
+			default:
+			}
+
+			response := &workflowservice.PollWorkflowTaskQueueResponse{}
+			publishGroups.Do(func() {
+				response.PollerGroupsInfo = testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+					{Id: groupID, Weight: 1},
+				})
+			})
+			switch transitionStage.Load() {
+			case 1:
+				if req.GetPollerGroupId() == groupID {
+					publishEmptyGroups.Do(func() {
+						response.PollerGroupsInfo = testPollerGroupsInfo(2, nil)
+					})
+				}
+			case 2:
+				if req.GetPollerGroupId() == "" {
+					republishGroups.Do(func() {
+						response.PollerGroupsInfo = testPollerGroupsInfo(3, []*taskqueuepb.PollerGroupInfo{
+							{Id: groupID, Weight: 1},
+						})
+					})
+				}
+			}
+			return response, nil
+		},
+	).AnyTimes()
+
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace:               namespace,
+		WorkerHeartbeatInterval: time.Minute,
+	})
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 2}),
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+		NexusTaskPollerBehavior:    NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+	})
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	stickyEnabled := worker.workflowWorker.taskProcessor.stickyCacheSize > 0
+	var sawNormal, sawSticky bool
+	require.Eventually(s.T(), func() bool {
+		for {
+			select {
+			case req := <-polls:
+				if req.GetPollerGroupId() != groupID {
+					continue
+				}
+				switch req.GetTaskQueue().GetKind() {
+				case enumspb.TASK_QUEUE_KIND_NORMAL:
+					sawNormal = true
+				case enumspb.TASK_QUEUE_KIND_STICKY:
+					sawSticky = true
+				}
+			default:
+				return sawNormal && (sawSticky || !stickyEnabled)
+			}
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+
+	heartbeat := worker.heartbeatCallback()
+	require.True(s.T(), heartbeat.GetWorkflowPollerInfo().GetIsAutoscaling())
+
+	for len(polls) > 0 {
+		<-polls
+	}
+	transitionStage.Store(1)
+	require.Eventually(s.T(), func() bool {
+		workflowBehavior, _, _ := worker.executionParams.pollerBehaviorState.snapshot()
+		_, isSimpleMaximum := workflowBehavior.(*pollerBehaviorSimpleMaximum)
+		if !isSimpleMaximum {
+			return false
+		}
+		heartbeat = worker.heartbeatCallback()
+		if heartbeat.GetWorkflowPollerInfo().GetIsAutoscaling() {
+			return false
+		}
+		select {
+		case req := <-polls:
+			return req.GetPollerGroupId() == ""
+		default:
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+
+	for len(polls) > 0 {
+		<-polls
+	}
+	transitionStage.Store(2)
+	sawNormal, sawSticky = false, false
+	require.Eventually(s.T(), func() bool {
+		for {
+			select {
+			case req := <-polls:
+				if req.GetPollerGroupId() != groupID {
+					continue
+				}
+				switch req.GetTaskQueue().GetKind() {
+				case enumspb.TASK_QUEUE_KIND_NORMAL:
+					sawNormal = true
+				case enumspb.TASK_QUEUE_KIND_STICKY:
+					sawSticky = true
+				}
+			default:
+				if !sawNormal || (!sawSticky && stickyEnabled) {
+					return false
+				}
+				workflowBehavior, _, _ := worker.executionParams.pollerBehaviorState.snapshot()
+				_, isAutoscaling := workflowBehavior.(*pollerBehaviorAutoscaling)
+				heartbeat = worker.heartbeatCallback()
+				return isAutoscaling && heartbeat.GetWorkflowPollerInfo().GetIsAutoscaling()
+			}
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+}
+
 func (s *internalWorkerTestSuite) TestDescribeNamespacePollerGroupsSeedActivityPolls() {
 	namespace := "testNamespace"
 	taskQueue := "seeded-activity-tq"
@@ -2316,7 +2458,10 @@ func (s *internalWorkerTestSuite) TestDescribeNamespacePollerGroupsSeedActivityP
 		},
 	).AnyTimes()
 
-	client := NewServiceClient(service, nil, ClientOptions{Namespace: namespace})
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace:               namespace,
+		WorkerHeartbeatInterval: time.Minute,
+	})
 	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
 		DisableWorkflowWorker:      true,
 		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 2}),
@@ -2335,6 +2480,201 @@ func (s *internalWorkerTestSuite) TestDescribeNamespacePollerGroupsSeedActivityP
 				}
 			default:
 				return false
+			}
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+
+	require.Nil(s.T(), worker.activityWorker.worker.pollerTransition)
+	worker.executionParams.pollerGroupInfoStore.updateGroups(testPollerGroupsInfo(2, nil))
+	heartbeat := worker.heartbeatCallback()
+	require.True(s.T(), heartbeat.GetActivityPollerInfo().GetIsAutoscaling())
+}
+
+func (s *internalWorkerTestSuite) TestActivitySimpleMaximumTransitionsToGroupedAutoscaling() {
+	namespace := "testNamespace"
+	taskQueue := "runtime-activity-transition-tq"
+	groupID := "runtime-group"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:  namespace,
+			State: enumspb.NAMESPACE_STATE_REGISTERED,
+		},
+	}, nil).AnyTimes()
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
+	polls := make(chan string, 20)
+	var publishGroups sync.Once
+	var transitionStage atomic.Int32
+	var publishEmptyGroups sync.Once
+	var republishGroups sync.Once
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, req *workflowservice.PollActivityTaskQueueRequest, opts ...grpc.CallOption) (*workflowservice.PollActivityTaskQueueResponse, error) {
+			select {
+			case polls <- req.GetPollerGroupId():
+			default:
+			}
+
+			response := &workflowservice.PollActivityTaskQueueResponse{}
+			publishGroups.Do(func() {
+				response.PollerGroupsInfo = testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+					{Id: groupID, Weight: 1},
+				})
+			})
+			switch transitionStage.Load() {
+			case 1:
+				if req.GetPollerGroupId() == groupID {
+					publishEmptyGroups.Do(func() {
+						response.PollerGroupsInfo = testPollerGroupsInfo(2, nil)
+					})
+				}
+			case 2:
+				if req.GetPollerGroupId() == "" {
+					republishGroups.Do(func() {
+						response.PollerGroupsInfo = testPollerGroupsInfo(3, []*taskqueuepb.PollerGroupInfo{
+							{Id: groupID, Weight: 1},
+						})
+					})
+				}
+			}
+			return response, nil
+		},
+	).AnyTimes()
+
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace:               namespace,
+		WorkerHeartbeatInterval: time.Minute,
+	})
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
+		DisableWorkflowWorker:      true,
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 2}),
+		NexusTaskPollerBehavior:    NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+	})
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	require.Eventually(s.T(), func() bool {
+		for {
+			select {
+			case id := <-polls:
+				if id == groupID {
+					return true
+				}
+			default:
+				return false
+			}
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+
+	heartbeat := worker.heartbeatCallback()
+	require.True(s.T(), heartbeat.GetActivityPollerInfo().GetIsAutoscaling())
+
+	for len(polls) > 0 {
+		<-polls
+	}
+	transitionStage.Store(1)
+	require.Eventually(s.T(), func() bool {
+		_, activityBehavior, _ := worker.executionParams.pollerBehaviorState.snapshot()
+		_, isSimpleMaximum := activityBehavior.(*pollerBehaviorSimpleMaximum)
+		if !isSimpleMaximum {
+			return false
+		}
+		heartbeat = worker.heartbeatCallback()
+		if heartbeat.GetActivityPollerInfo().GetIsAutoscaling() {
+			return false
+		}
+		select {
+		case id := <-polls:
+			return id == ""
+		default:
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+
+	for len(polls) > 0 {
+		<-polls
+	}
+	transitionStage.Store(2)
+	require.Eventually(s.T(), func() bool {
+		for {
+			select {
+			case id := <-polls:
+				if id == groupID {
+					_, activityBehavior, _ := worker.executionParams.pollerBehaviorState.snapshot()
+					_, isAutoscaling := activityBehavior.(*pollerBehaviorAutoscaling)
+					heartbeat = worker.heartbeatCallback()
+					if isAutoscaling && heartbeat.GetActivityPollerInfo().GetIsAutoscaling() {
+						return true
+					}
+				}
+			default:
+				return false
+			}
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+}
+
+func (s *internalWorkerTestSuite) TestSessionActivityTransitionsButCreationStaysFixed() {
+	namespace := "testNamespace"
+	taskQueue := "runtime-session-transition-tq"
+	groupID := "runtime-group"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:  namespace,
+			State: enumspb.NAMESPACE_STATE_REGISTERED,
+		},
+	}, nil).AnyTimes()
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollWorkflowTaskQueueResponse{}, nil).AnyTimes()
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: namespace})
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
+		EnableSessionWorker: true,
+	})
+	worker.RegisterActivity(testActivityNoResult)
+	sessionTaskQueue := worker.sessionWorker.getActivityWorkerTaskQueue()
+	creationTaskQueue := worker.sessionWorker.getCreationWorkerTaskQueue()
+
+	polls := make(chan *workflowservice.PollActivityTaskQueueRequest, 50)
+	var publishGroups sync.Once
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, req *workflowservice.PollActivityTaskQueueRequest, opts ...grpc.CallOption) (*workflowservice.PollActivityTaskQueueResponse, error) {
+			select {
+			case polls <- proto.Clone(req).(*workflowservice.PollActivityTaskQueueRequest):
+			default:
+			}
+
+			response := &workflowservice.PollActivityTaskQueueResponse{}
+			publishGroups.Do(func() {
+				response.PollerGroupsInfo = testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+					{Id: groupID, Weight: 1},
+				})
+			})
+			return response, nil
+		},
+	).AnyTimes()
+
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	var sawSessionGrouped, sawCreationUngrouped bool
+	require.Eventually(s.T(), func() bool {
+		for {
+			select {
+			case req := <-polls:
+				switch req.GetTaskQueue().GetName() {
+				case sessionTaskQueue:
+					sawSessionGrouped = sawSessionGrouped || req.GetPollerGroupId() == groupID
+				case creationTaskQueue:
+					require.Empty(s.T(), req.GetPollerGroupId())
+					sawCreationUngrouped = true
+				}
+			default:
+				return sawSessionGrouped && sawCreationUngrouped
 			}
 		}
 	}, 2*time.Second, 10*time.Millisecond)
@@ -2383,6 +2723,139 @@ func (s *internalWorkerTestSuite) TestDescribeNamespacePollerGroupsSeedNexusPoll
 			case id := <-polls:
 				if id == groupID {
 					return true
+				}
+			default:
+				return false
+			}
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+}
+
+func (s *internalWorkerTestSuite) TestNexusSimpleMaximumTransitionsToGroupedAutoscaling() {
+	namespace := "testNamespace"
+	taskQueue := "runtime-nexus-transition-tq"
+	groupID := "runtime-group"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:  namespace,
+			State: enumspb.NAMESPACE_STATE_REGISTERED,
+		},
+	}, nil).AnyTimes()
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
+	polls := make(chan string, 20)
+	var publishGroups sync.Once
+	var transitionStage atomic.Int32
+	var publishEmptyGroups sync.Once
+	var republishGroups sync.Once
+	service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, req *workflowservice.PollNexusTaskQueueRequest, opts ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+			select {
+			case polls <- req.GetPollerGroupId():
+			default:
+			}
+
+			response := &workflowservice.PollNexusTaskQueueResponse{}
+			publishGroups.Do(func() {
+				response.PollerGroupsInfo = testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+					{Id: groupID, Weight: 1},
+				})
+			})
+			switch transitionStage.Load() {
+			case 1:
+				if req.GetPollerGroupId() == groupID {
+					publishEmptyGroups.Do(func() {
+						response.PollerGroupsInfo = testPollerGroupsInfo(2, nil)
+					})
+				}
+			case 2:
+				if req.GetPollerGroupId() == "" {
+					republishGroups.Do(func() {
+						response.PollerGroupsInfo = testPollerGroupsInfo(3, []*taskqueuepb.PollerGroupInfo{
+							{Id: groupID, Weight: 1},
+						})
+					})
+				}
+			}
+			return response, nil
+		},
+	).AnyTimes()
+
+	client := NewServiceClient(service, nil, ClientOptions{
+		Namespace:               namespace,
+		WorkerHeartbeatInterval: time.Minute,
+	})
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
+		DisableWorkflowWorker:      true,
+		LocalActivityWorkerOnly:    true,
+		WorkflowTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+		NexusTaskPollerBehavior:    NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 2}),
+	})
+	nexusService := nexus.NewService("runtime-transition-service")
+	require.NoError(s.T(), nexusService.Register(nexus.NewSyncOperation("op", func(ctx context.Context, input string, opts nexus.StartOperationOptions) (string, error) {
+		return "", nil
+	})))
+	worker.RegisterNexusService(nexusService)
+
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	require.Eventually(s.T(), func() bool {
+		for {
+			select {
+			case id := <-polls:
+				if id == groupID {
+					return true
+				}
+			default:
+				return false
+			}
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+
+	heartbeat := worker.heartbeatCallback()
+	require.True(s.T(), heartbeat.GetNexusPollerInfo().GetIsAutoscaling())
+
+	for len(polls) > 0 {
+		<-polls
+	}
+	transitionStage.Store(1)
+	require.Eventually(s.T(), func() bool {
+		_, _, nexusBehavior := worker.executionParams.pollerBehaviorState.snapshot()
+		_, isSimpleMaximum := nexusBehavior.(*pollerBehaviorSimpleMaximum)
+		if !isSimpleMaximum {
+			return false
+		}
+		heartbeat = worker.heartbeatCallback()
+		if heartbeat.GetNexusPollerInfo().GetIsAutoscaling() {
+			return false
+		}
+		select {
+		case id := <-polls:
+			return id == ""
+		default:
+			return false
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+
+	for len(polls) > 0 {
+		<-polls
+	}
+	transitionStage.Store(2)
+	require.Eventually(s.T(), func() bool {
+		for {
+			select {
+			case id := <-polls:
+				if id == groupID {
+					_, _, nexusBehavior := worker.executionParams.pollerBehaviorState.snapshot()
+					_, isAutoscaling := nexusBehavior.(*pollerBehaviorAutoscaling)
+					heartbeat = worker.heartbeatCallback()
+					if isAutoscaling && heartbeat.GetNexusPollerInfo().GetIsAutoscaling() {
+						return true
+					}
 				}
 			default:
 				return false

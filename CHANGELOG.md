@@ -86,6 +86,12 @@ to docs, or any other relevant information.
   corrected span parenting and span directions for span-kind mapping. It backs the new
   `contrib/opentelemetry-v2` module and is not span-compatible with the tracing interceptor
   used by `contrib/opentelemetry` (v1).
+- Simple-maximum task pollers now switch to poller-group-aware autoscaling when runtime poll
+  responses introduce poller groups.
+- Task pollers originally configured with `SimpleMaximum` now switch to poller-group-aware
+  autoscaling when runtime poll responses introduce poller groups, and return to their original
+  `SimpleMaximum` configuration when a newer response clears the groups. Task pollers configured
+  with autoscaling remain autoscaling when groups are cleared.
 
 ### Changed
 

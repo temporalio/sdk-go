@@ -257,6 +257,21 @@ type (
 
 		noRepoll atomic.Bool
 		pollerWG sync.WaitGroup
+
+		pollerTransition *pollerTransition
+	}
+
+	// pollerTransition stores what an originally fixed worker needs to follow
+	// runtime poller-group state after it starts.
+	pollerTransition struct {
+		// groupInfos is the shared source of truth for whether this originally
+		// fixed worker currently needs grouped autoscaling.
+		groupInfos      *pollerGroupInfoStore
+		taskPollerTypes []string
+		// These callbacks construct grouped pollers or restore externally visible
+		// state when the controller returns to the original fixed pollers.
+		buildAutoscaling func() []scalableTaskPoller
+		restoreFixed     func()
 	}
 
 	eagerOrPolledTask interface {
@@ -436,6 +451,30 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 	}
 }
 
+// setPollerTransition records what a fixed worker needs to switch
+// to grouped autoscaling if poller-group information appears, and to restore its
+// fixed mode if that information later clears. It only configures the transition;
+// runPollerTransitionController performs any mode changes after the worker starts.
+func (bw *baseWorker) setPollerTransition(
+	groupInfos *pollerGroupInfoStore,
+	taskPollerTypes []string,
+	buildAutoscaling func() []scalableTaskPoller,
+	restoreFixed func(),
+) {
+	if bw.isWorkerStarted {
+		panic("cannot configure poller transition after worker start")
+	}
+	if bw.pollerTransition != nil {
+		panic("poller transition already configured")
+	}
+	bw.pollerTransition = &pollerTransition{
+		groupInfos:       groupInfos,
+		taskPollerTypes:  taskPollerTypes,
+		buildAutoscaling: buildAutoscaling,
+		restoreFixed:     restoreFixed,
+	}
+}
+
 // Start creates the fixed control goroutines for polling, autoscaling, and
 // dispatch. Autoscaling poll-attempt and task-processing goroutines are created
 // dynamically while the worker is running.
@@ -452,27 +491,12 @@ func (bw *baseWorker) Start() {
 		}
 	}
 
-	for _, taskWorker := range bw.options.taskPollers {
-		if taskWorker.autoscalingRunner != nil {
-			// Autoscaling pollers are created with both a runner and an autoscaler.
-			// The runner's manager opens polls under the current target.
-			bw.stopWG.Add(1)
-			bw.pollerWG.Add(1)
-			go bw.runAutoscalingPoller(taskWorker)
-
-			// The autoscaler's separate loop periodically refreshes scaling signals.
-			bw.stopWG.Add(1)
-			go func() {
-				defer bw.stopWG.Done()
-				taskWorker.pollerAutoscaler.run(bw.stopCh)
-			}()
-		} else {
-			for i := 0; i < taskWorker.pollerCount; i++ {
-				bw.stopWG.Add(1)
-				bw.pollerWG.Add(1)
-				go bw.runPoller(taskWorker)
-			}
-		}
+	if bw.pollerTransition == nil {
+		bw.startPollers(bw.options.taskPollers, nil, bw.pollerBalancer)
+	} else {
+		bw.stopWG.Add(1)
+		bw.pollerWG.Add(1)
+		go bw.runPollerTransitionController()
 	}
 
 	// When all pollers have exited, close taskQueueCh so the dispatcher
@@ -496,6 +520,105 @@ func (bw *baseWorker) Start() {
 	})
 }
 
+func (bw *baseWorker) startPollers(
+	taskPollers []scalableTaskPoller,
+	loopStop <-chan struct{},
+	balancer *pollerBalancer,
+) {
+	// loopStop belongs to one polling mode. Unlike bw.stopCh, closing it retires
+	// only that mode during a runtime transition and does not stop the worker.
+	for _, taskWorker := range taskPollers {
+		if taskWorker.autoscalingRunner != nil {
+			// Autoscaling pollers are created with both a runner and an autoscaler.
+			// The runner's manager opens polls under the current target.
+			bw.stopWG.Add(1)
+			bw.pollerWG.Add(1)
+			go bw.runAutoscalingPoller(taskWorker, loopStop, balancer)
+
+			// The autoscaler's separate loop periodically refreshes scaling signals.
+			autoscalerStop := loopStop
+			if autoscalerStop == nil {
+				autoscalerStop = bw.stopCh
+			}
+			bw.stopWG.Add(1)
+			go func(stop <-chan struct{}) {
+				defer bw.stopWG.Done()
+				taskWorker.pollerAutoscaler.run(stop)
+			}(autoscalerStop)
+		} else {
+			for i := 0; i < taskWorker.pollerCount; i++ {
+				bw.stopWG.Add(1)
+				bw.pollerWG.Add(1)
+				go bw.runPoller(taskWorker, loopStop, balancer)
+			}
+		}
+	}
+}
+
+// runPollerTransitionController keeps an originally fixed worker's polling mode
+// aligned with the latest poller-group snapshot until the worker stops.
+func (bw *baseWorker) runPollerTransitionController() {
+	defer bw.stopWG.Done()
+	defer bw.pollerWG.Done()
+
+	var grouped bool
+	var modeStarted bool
+	// modeStop is owned by this controller and shared by all loops in the active
+	// mode. Closing it retires those loops after their replacement has started.
+	var modeStop chan struct{}
+	defer func() {
+		if modeStop != nil {
+			close(modeStop)
+		}
+	}()
+
+	for {
+		changed := bw.pollerTransition.groupInfos.changed()
+		wantGrouped := bw.pollerTransition.groupInfos.len() > 0
+		if !modeStarted || grouped != wantGrouped {
+			// Give the replacement its own stop channel before retiring the current
+			// mode, avoiding a gap where neither mode can open polls.
+			nextStop := make(chan struct{})
+			if wantGrouped {
+				bw.startPollers(
+					bw.pollerTransition.buildAutoscaling(),
+					nextStop,
+					newPollerBalancer(bw.pollerTransition.taskPollerTypes),
+				)
+			} else {
+				bw.pollerTransition.restoreFixed()
+				bw.startPollers(bw.options.taskPollers, nextStop, bw.pollerBalancer)
+			}
+			if modeStop != nil {
+				close(modeStop)
+			}
+			modeStop = nextStop
+			grouped = wantGrouped
+			modeStarted = true
+		}
+
+		select {
+		case <-bw.stopCh:
+			return
+		case <-changed:
+		}
+	}
+}
+
+func newPollerBalancer(taskPollerTypes []string) *pollerBalancer {
+	if len(taskPollerTypes) <= 1 {
+		return nil
+	}
+	balancer := &pollerBalancer{
+		pollerCount:   make(map[string]int),
+		pollerBarrier: make(map[string]barrier),
+	}
+	for _, taskPollerType := range taskPollerTypes {
+		balancer.registerPollerType(taskPollerType)
+	}
+	return balancer
+}
+
 func (bw *baseWorker) isStop() bool {
 	select {
 	case <-bw.stopCh:
@@ -509,7 +632,11 @@ func (bw *baseWorker) shouldDrainOnShutdown() bool {
 	return bw.options.workerPollCompleteOnShutdown != nil && bw.options.workerPollCompleteOnShutdown.Load()
 }
 
-func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
+func (bw *baseWorker) runPoller(
+	taskWorker scalableTaskPoller,
+	loopStop <-chan struct{},
+	balancer *pollerBalancer,
+) {
 	defer bw.stopWG.Done()
 	defer bw.pollerWG.Done()
 	bw.metricsHandler.Counter(metrics.PollerStartCounter).Inc(1)
@@ -522,9 +649,14 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 		if bw.noRepoll.Load() {
 			return
 		}
+		select {
+		case <-loopStop:
+			return
+		default:
+		}
 		// Call the balancer to make sure one poller type doesn't starve the others of slots.
-		if bw.pollerBalancer != nil {
-			if bw.pollerBalancer.balance(bw.limiterContext, taskWorker.taskPollerType) != nil {
+		if balancer != nil {
+			if balancer.balance(bw.limiterContext, taskWorker.taskPollerType) != nil {
 				return
 			}
 		}
@@ -533,6 +665,8 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 
 		select {
 		case <-bw.stopCh:
+			return
+		case <-loopStop:
 			return
 		case permit := <-reserveChan:
 			if permit == nil { // There was an error reserving a slot
@@ -546,12 +680,21 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				bw.releaseSlot(permit, SlotReleaseReasonUnused)
 				return
 			}
-			if bw.pollerBalancer != nil {
-				bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
+			if balancer != nil {
+				balancer.incrementPoller(taskWorker.taskPollerType)
+			}
+			select {
+			case <-loopStop:
+				if balancer != nil {
+					balancer.decrementPoller(taskWorker.taskPollerType)
+				}
+				bw.releaseSlot(permit, SlotReleaseReasonUnused)
+				return
+			default:
 			}
 			bw.pollTask(taskWorker, permit, pollerGroupLease{})
-			if bw.pollerBalancer != nil {
-				bw.pollerBalancer.decrementPoller(taskWorker.taskPollerType)
+			if balancer != nil {
+				balancer.decrementPoller(taskWorker.taskPollerType)
 			}
 		}
 	}
@@ -562,14 +705,31 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 // synchronously, and loops. The autoscaling path instead uses this goroutine as
 // a manager: it waits for runner admission, reserves a slot, then spawns one
 // short-lived goroutine per logical poll. The configured poller limit bounds
-// logical active polls, not the supporting goroutine count.
-func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
+// logical active polls, not the supporting goroutine count. Closing loopStop
+// retires this polling mode by stopping new admission and slot reservations;
+// logical polls already in flight finish before the manager returns.
+func (bw *baseWorker) runAutoscalingPoller(
+	taskWorker scalableTaskPoller,
+	loopStop <-chan struct{},
+	balancer *pollerBalancer,
+) {
 	defer bw.stopWG.Done()
 	defer bw.pollerWG.Done()
 
-	ctx, cancelfn := context.WithCancel(context.Background())
+	ctx, cancelfn := context.WithCancel(bw.limiterContext)
 	reserveChan := make(chan *SlotPermit)
 	var pollWG sync.WaitGroup
+	if loopStop != nil {
+		// Convert the mode-scoped stop channel into the context used by admission,
+		// balancing, and slot reservation. In-flight poll RPCs still finish below.
+		go func() {
+			select {
+			case <-loopStop:
+				cancelfn()
+			case <-ctx.Done():
+			}
+		}()
+	}
 
 	defer pollWG.Wait()
 	defer cancelfn()
@@ -580,13 +740,13 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		}
 		// Call the balancer before reserving a slot so one poller type cannot
 		// hold slots while waiting for another type to start polling.
-		if bw.pollerBalancer != nil {
-			if bw.pollerBalancer.balance(bw.limiterContext, taskWorker.taskPollerType) != nil {
+		if balancer != nil {
+			if balancer.balance(ctx, taskWorker.taskPollerType) != nil {
 				return
 			}
 		}
 
-		lease, releaseActive, err := taskWorker.autoscalingRunner.acquire(bw.limiterContext)
+		lease, releaseActive, err := taskWorker.autoscalingRunner.acquire(ctx)
 		if err != nil {
 			return
 		}
@@ -595,7 +755,7 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 
 		var permit *SlotPermit
 		select {
-		case <-bw.stopCh:
+		case <-ctx.Done():
 			lease.release()
 			releaseActive()
 			return
@@ -610,6 +770,16 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			}
 			continue
 		}
+		// A slot and cancellation can become ready together. If the slot won the
+		// select after this mode stopped, release its reservations without polling.
+		select {
+		case <-ctx.Done():
+			bw.releaseSlot(permit, SlotReleaseReasonUnused)
+			lease.release()
+			releaseActive()
+			return
+		default:
+		}
 
 		if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
 			bw.releaseSlot(permit, SlotReleaseReasonUnused)
@@ -617,8 +787,8 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			releaseActive()
 			return
 		}
-		if bw.pollerBalancer != nil {
-			bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
+		if balancer != nil {
+			balancer.incrementPoller(taskWorker.taskPollerType)
 		}
 
 		pollWG.Add(1)
@@ -628,8 +798,8 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			defer pollWG.Done()
 			defer releaseActive()
 			defer lease.release()
-			if bw.pollerBalancer != nil {
-				defer bw.pollerBalancer.decrementPoller(taskWorker.taskPollerType)
+			if balancer != nil {
+				defer balancer.decrementPoller(taskWorker.taskPollerType)
 			}
 			bw.pollTask(taskWorker, slotPermit, lease)
 		}(permit)
@@ -1048,6 +1218,7 @@ func (prh *pollerAutoscaler) handleError(err error) {
 
 func (prh *pollerAutoscaler) run(stopCh <-chan struct{}) {
 	ticker := time.NewTicker(pollerAutoscalingReportInterval)
+	defer ticker.Stop()
 	// Here we periodically check if we should permit increasing the
 	// poller count further. We do this by comparing the number of ingested items in the
 	// current period with the number of ingested items in the previous period. If we
