@@ -86,9 +86,17 @@ to docs, or any other relevant information.
   corrected span parenting and span directions for span-kind mapping. It backs the new
   `contrib/opentelemetry-v2` module and is not span-compatible with the tracing interceptor
   used by `contrib/opentelemetry` (v1).
+- Simple-maximum task pollers now switch to poller-group-aware autoscaling when runtime poll
+  responses introduce poller groups.
+- Task pollers originally configured with `SimpleMaximum` now switch to poller-group-aware
+  autoscaling when runtime poll responses introduce poller groups, and return to their original
+  `SimpleMaximum` configuration when a newer response clears the groups. Task pollers configured
+  with autoscaling remain autoscaling when groups are cleared.
 
 ### Changed
 
+- Workflow poller autoscaling now uses each selected poller group's sticky backlog to allocate
+  floating polling capacity between normal and sticky task queues after required group coverage.
 - Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
 - Replaced the internal `OnceCell` implementation with `sync.OnceValue` for lazy workflow run ID lookup.
 
@@ -158,6 +166,10 @@ to docs, or any other relevant information.
   environment. This lets host processes that register a single shared factory (e.g.
   `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
 - Merged link-converter class in the server and sdk-go and moved it to api-go
+- Added poller-group-aware autoscaling for multi-cell namespaces. Autoscaling workers maintain poll
+  coverage for every server-provided group and distribute additional polls according to the provided weights. 
+  Required group coverage may exceed the configured maximum poller count; workflow normal and sticky pollers
+  maintain coverage independently.
 - Nexus operations with `NexusOperationCancellationTypeAbandon` no longer panic the workflow task when
   the operation later starts or completes after the caller is canceled.
 - Session worker: stopping a worker while it is at its maximum concurrent session count no longer blocks
