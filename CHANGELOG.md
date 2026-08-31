@@ -23,11 +23,13 @@ to docs, or any other relevant information.
 ### Added
 
 - `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
-  from `Encode` or `Decode` while the SDK runs workflow-side code (encoding activity
-  arguments, decoding workflow input or an activity result returned from a `Future`,
-  etc.) to fail the current Workflow Task rather than the Workflow Execution. The
-  server then retries the task while the Workflow Execution stays open, so a transient
-  codec failure can recover on a later attempt. It is only honored when it originates
+  from `Encode` or `Decode` on a workflow-side payload path to fail the current
+  Workflow Task rather than the Workflow Execution. The server then retries the task
+  while the Workflow Execution stays open, so a transient codec failure can recover on
+  a later attempt. The honored paths are decoding workflow input, decoding an activity
+  or child-workflow result returned from a `Future`, encoding activity or
+  child-workflow arguments, and encoding a side effect's summary; signal, update, and
+  query decoding keep their existing behavior. It is only honored when it originates
   from a codec, so returning it directly from workflow code stays an ordinary error.
   The marker is honored identically under both `WorkflowPanicPolicy` values, is not
   logged or classified as a workflow panic, preserves its cause via

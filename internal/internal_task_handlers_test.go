@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -102,6 +103,34 @@ func registerWorkflows(r *registry) {
 		codecChildWorkflowArgWorkflowFunc,
 		RegisterWorkflowOptions{Name: "CodecChildArg_Workflow"},
 	)
+	r.RegisterWorkflowWithOptions(
+		codecSideEffectSummaryWorkflowFunc,
+		RegisterWorkflowOptions{Name: "CodecSideEffectSummary_Workflow"},
+	)
+	r.RegisterWorkflowWithOptions(
+		codecMutableSideEffectSummaryWorkflowFunc,
+		RegisterWorkflowOptions{Name: "CodecMutableSideEffectSummary_Workflow"},
+	)
+}
+
+const (
+	sideEffectSummarySentinel        = "side-effect-summary-sentinel"
+	mutableSideEffectSummarySentinel = "mutable-side-effect-summary-sentinel"
+)
+
+func codecSideEffectSummaryWorkflowFunc(ctx Context, _ []byte) error {
+	SideEffectWithOptions(ctx, SideEffectOptions{Summary: sideEffectSummarySentinel}, func(Context) interface{} {
+		return 1
+	})
+	return nil
+}
+
+func codecMutableSideEffectSummaryWorkflowFunc(ctx Context, _ []byte) error {
+	MutableSideEffectWithOptions(ctx, "mse-id", MutableSideEffectOptions{Summary: mutableSideEffectSummarySentinel},
+		func(Context) interface{} { return 1 },
+		func(a, b interface{}) bool { return a == b },
+	)
+	return nil
 }
 
 func codecEncodeArgWorkflowFunc(ctx Context, _ []byte) error {
@@ -1210,6 +1239,48 @@ func (c *wftFailureCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payl
 	return payloads, c.decodeErr
 }
 
+// summaryEncodeFailCodec returns encodeErr from Encode only for the payload
+// whose data contains sentinel, so a side effect's own value encoding passes
+// and only its summary encoding fails. Decode is a passthrough.
+type summaryEncodeFailCodec struct {
+	sentinel  string
+	encodeErr error
+}
+
+func (c *summaryEncodeFailCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	for _, p := range payloads {
+		if bytes.Contains(p.GetData(), []byte(c.sentinel)) {
+			return payloads, c.encodeErr
+		}
+	}
+	return payloads, nil
+}
+
+func (c *summaryEncodeFailCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	return payloads, nil
+}
+
+func (t *TaskHandlersTestSuite) processSummaryEncodeFailure(workflowName, sentinel string, policy WorkflowPanicPolicy, cause error) (*workflowTaskCompletion, error) {
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+	task := createWorkflowTask(testEvents, 0, workflowName)
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = policy
+	params.DataConverter = converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&summaryEncodeFailCodec{sentinel: sentinel, encodeErr: converter.NewWorkflowTaskFailureError(cause)},
+	)
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	wftask := workflowTask{task: task}
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+	wfctx.Unlock(err)
+	return request, err
+}
+
 func (t *TaskHandlersTestSuite) processInputDecodeFailure(policy WorkflowPanicPolicy, decodeErr error) (*workflowTaskCompletion, error) {
 	input, err := converter.GetDefaultDataConverter().ToPayloads([]byte("test-input"))
 	t.NoError(err)
@@ -1386,6 +1457,40 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_C
 		wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 		request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 		wfctx.Unlock(err)
+
+		t.Error(err, "policy %v", policy)
+		t.Nil(request, "policy %v", policy)
+		var marker *converter.WorkflowTaskFailureError
+		t.True(errors.As(err, &marker), "policy %v", policy)
+		t.True(errors.Is(err, cause), "policy %v", policy)
+	}
+}
+
+// A PayloadCodec that returns a WorkflowTaskFailureError while encoding a
+// SideEffect's summary fails the current Workflow Task rather than the Workflow
+// Execution. Summary encoding otherwise panics with a formatted string that
+// would drop the marker, so this guards that the summary path preserves it,
+// under both BlockWorkflow and FailWorkflow.
+func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_SideEffectSummaryEncode() {
+	for _, policy := range []WorkflowPanicPolicy{BlockWorkflow, FailWorkflow} {
+		cause := errors.New("transient codec failure on side effect summary: 503")
+		request, err := t.processSummaryEncodeFailure("CodecSideEffectSummary_Workflow", sideEffectSummarySentinel, policy, cause)
+
+		t.Error(err, "policy %v", policy)
+		t.Nil(request, "policy %v", policy)
+		var marker *converter.WorkflowTaskFailureError
+		t.True(errors.As(err, &marker), "policy %v", policy)
+		t.True(errors.Is(err, cause), "policy %v", policy)
+	}
+}
+
+// The MutableSideEffect summary path mirrors SideEffect: a marker returned while
+// encoding the summary fails the Workflow Task rather than the Workflow
+// Execution, under both policies.
+func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_MutableSideEffectSummaryEncode() {
+	for _, policy := range []WorkflowPanicPolicy{BlockWorkflow, FailWorkflow} {
+		cause := errors.New("transient codec failure on mutable side effect summary: 503")
+		request, err := t.processSummaryEncodeFailure("CodecMutableSideEffectSummary_Workflow", mutableSideEffectSummarySentinel, policy, cause)
 
 		t.Error(err, "policy %v", policy)
 		t.Nil(request, "policy %v", policy)
