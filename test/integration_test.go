@@ -3296,9 +3296,8 @@ func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
 	<-activityStarted
 	ts.NoError(handle4.Pause(ctx, client.PauseActivityOptions{Reason: "test pause"}))
 	ts.NoError(handle4.Unpause(ctx, client.UnpauseActivityOptions{Reason: "test unpause"}))
-	_, err = handle4.UpdateOptions(ctx, client.ActivityOptionsChanges{
-		StartToCloseTimeout: &client.DurationChange{Value: 90 * time.Second},
-	})
+	_, err = handle4.UpdateOptions(ctx,
+		client.ActivityOptionsKeys.StartToCloseTimeout.ValueSet(90*time.Second))
 	ts.NoError(err)
 	_, err = handle4.RestoreOriginalOptions(ctx)
 	ts.NoError(err)

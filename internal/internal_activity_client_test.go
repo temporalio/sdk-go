@@ -192,10 +192,9 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		client := newClient(t, &request)
 		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
 
-		options, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsChanges{
-			TaskQueue:           &TaskQueueChange{Value: "new-tq"},
-			StartToCloseTimeout: &DurationChange{Value: 90 * time.Second},
-		})
+		options, err := handle.UpdateOptions(t.Context(),
+			ClientActivityOptionsKeys.TaskQueue.ValueSet("new-tq"),
+			ClientActivityOptionsKeys.StartToCloseTimeout.ValueSet(90*time.Second))
 		require.NoError(t, err)
 		require.ElementsMatch(t,
 			[]string{"task_queue.name", "start_to_close_timeout"},
@@ -205,16 +204,57 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		require.Equal(t, 90*time.Second, options.StartToCloseTimeout)
 	})
 
-	t.Run("a zero-valued change still names its path", func(t *testing.T) {
+	t.Run("ValueSet of zero sends an explicit zero", func(t *testing.T) {
 		var request *workflowservice.UpdateActivityExecutionOptionsRequest
 		client := newClient(t, &request)
 		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
 
-		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsChanges{
-			HeartbeatTimeout: &DurationChange{},
-		})
+		_, err := handle.UpdateOptions(t.Context(),
+			ClientActivityOptionsKeys.HeartbeatTimeout.ValueSet(0))
 		require.NoError(t, err)
-		require.Equal(t, []string{"heartbeat_timeout"}, request.GetUpdateMask().GetPaths())
+		require.ElementsMatch(t, []string{"heartbeat_timeout"}, request.GetUpdateMask().GetPaths())
+		// Present and zero, which is distinct from absent: the caller asked for zero.
+		require.NotNil(t, request.GetActivityOptions().GetHeartbeatTimeout())
+		require.Zero(t, request.GetActivityOptions().GetHeartbeatTimeout().AsDuration())
+	})
+
+	t.Run("ValueUnset names the path but leaves the field absent", func(t *testing.T) {
+		var request *workflowservice.UpdateActivityExecutionOptionsRequest
+		client := newClient(t, &request)
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+
+		_, err := handle.UpdateOptions(t.Context(),
+			ClientActivityOptionsKeys.HeartbeatTimeout.ValueUnset())
+		require.NoError(t, err)
+		require.ElementsMatch(t, []string{"heartbeat_timeout"}, request.GetUpdateMask().GetPaths())
+		// Absent, which is how the server is told to clear the option.
+		require.Nil(t, request.GetActivityOptions().GetHeartbeatTimeout())
+	})
+
+	t.Run("a repeated key resolves to its last update", func(t *testing.T) {
+		var request *workflowservice.UpdateActivityExecutionOptionsRequest
+		client := newClient(t, &request)
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+
+		_, err := handle.UpdateOptions(t.Context(),
+			ClientActivityOptionsKeys.HeartbeatTimeout.ValueSet(5*time.Second),
+			ClientActivityOptionsKeys.HeartbeatTimeout.ValueUnset())
+		require.NoError(t, err)
+		// The later unset wins, and the path is named once.
+		require.ElementsMatch(t, []string{"heartbeat_timeout"}, request.GetUpdateMask().GetPaths())
+		require.Nil(t, request.GetActivityOptions().GetHeartbeatTimeout())
+	})
+
+	t.Run("a hand-built zero update is rejected, not silently ignored", func(t *testing.T) {
+		var request *workflowservice.UpdateActivityExecutionOptionsRequest
+		client := newClient(t, &request)
+		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+
+		// The zero value is constructible outside this package, since the fields are unexported
+		// but the empty composite literal is not. It must not become an empty-mask no-op.
+		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsUpdate{})
+		require.ErrorContains(t, err, "not a valid option update")
+		require.Nil(t, request)
 	})
 
 	t.Run("restore sends an empty mask", func(t *testing.T) {
@@ -235,8 +275,8 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		client.interceptor = recorder.intercept(client.interceptor)
 		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
 
-		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsChanges{})
-		require.ErrorContains(t, err, "at least one option change")
+		_, err := handle.UpdateOptions(t.Context())
+		require.ErrorContains(t, err, "at least one option update")
 		require.Nil(t, request)
 		require.Zero(t, recorder.updateCalls)
 	})
@@ -287,9 +327,8 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 		Jitter: 5 * time.Second,
 	}))
 	require.NoError(t, handle.Reset(ctx, ClientResetActivityOptions{Jitter: 7 * time.Second}))
-	_, err := handle.UpdateOptions(ctx, ClientActivityOptionsChanges{
-		HeartbeatTimeout: &DurationChange{Value: 25 * time.Second},
-	})
+	_, err := handle.UpdateOptions(ctx,
+		ClientActivityOptionsKeys.HeartbeatTimeout.ValueSet(25*time.Second))
 	require.NoError(t, err)
 
 	for name, got := range map[string]struct {
@@ -396,8 +435,8 @@ func TestUpdateActivityOptionsRestoreIsExclusive(t *testing.T) {
 	_, err := client.interceptor.UpdateActivityOptions(t.Context(), &ClientUpdateActivityOptionsInput{
 		ActivityID:      "activity-id",
 		RestoreOriginal: true,
-		Changes: ClientActivityOptionsChanges{
-			HeartbeatTimeout: &DurationChange{Value: 25 * time.Second},
+		Updates: []ClientActivityOptionsUpdate{
+			ClientActivityOptionsKeys.HeartbeatTimeout.ValueSet(25 * time.Second),
 		},
 	})
 	require.ErrorContains(t, err, "cannot be combined")

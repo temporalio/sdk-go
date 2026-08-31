@@ -224,7 +224,7 @@ type (
 		Reset(ctx context.Context, options ClientResetActivityOptions) error
 		// UpdateOptions changes some of the activity's options, leaving the rest untouched, and
 		// returns the options as they stand after the update. At least one change must be set.
-		UpdateOptions(ctx context.Context, options ClientActivityOptionsChanges) (*ClientActivityOptions, error)
+		UpdateOptions(ctx context.Context, updates ...ClientActivityOptionsUpdate) (*ClientActivityOptions, error)
 		// RestoreOriginalOptions reverts every option changed by UpdateOptions back to the value
 		// the activity was scheduled with, and returns the restored options. It is a separate
 		// call because the server does not allow the restore flag to be combined with any
@@ -323,69 +323,117 @@ type (
 		Priority               Priority
 	}
 
-	// ClientActivityOptionsChanges describes changes to the options of a running activity, as
-	// used by ClientActivityHandle.UpdateOptions. A nil entry means do not change that option;
-	// a non-nil entry sets it to the wrapped value.
+	// ClientActivityOptionsKey is a typed key for one updatable activity option. Use the keys
+	// on ClientActivityOptionsKeys rather than constructing these directly.
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as: [go.temporal.io/sdk/client.ActivityOptionsChanges]
-	ClientActivityOptionsChanges struct {
-		// If non-nil, change the task queue.
-		TaskQueue *TaskQueueChange
-		// If non-nil, change the schedule-to-close timeout.
-		ScheduleToCloseTimeout *DurationChange
-		// If non-nil, change the schedule-to-start timeout.
-		ScheduleToStartTimeout *DurationChange
-		// If non-nil, change the start-to-close timeout.
-		StartToCloseTimeout *DurationChange
-		// If non-nil, change the heartbeat timeout.
-		HeartbeatTimeout *DurationChange
-		// If non-nil, change the start delay.
-		StartDelay *DurationChange
-		// If non-nil, change the retry policy.
-		RetryPolicy *RetryPolicyChange
-		// If non-nil, change the priority.
-		Priority *PriorityChange
+	// Exposed as: [go.temporal.io/sdk/client.ActivityOptionsKey]
+	ClientActivityOptionsKey[T any] struct {
+		// name is the field-mask path this key updates.
+		name string
+		// set writes the value onto the request's ActivityOptions.
+		set func(*activitypb.ActivityOptions, T)
 	}
 
-	// TaskQueueChange sets a task queue when used with ClientActivityOptionsChanges.
+	// ClientActivityOptionsUpdate is a single change to an activity's options, created via
+	// ClientActivityOptionsKey.ValueSet or ClientActivityOptionsKey.ValueUnset and passed to
+	// ClientActivityHandle.UpdateOptions. An option with no update is left untouched.
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as: [go.temporal.io/sdk/client.TaskQueueChange]
-	TaskQueueChange struct {
-		Value string
+	// Exposed as: [go.temporal.io/sdk/client.ActivityOptionsUpdate]
+	ClientActivityOptionsUpdate struct {
+		// name is the field-mask path being updated.
+		name string
+		// apply writes the value onto the request's ActivityOptions. A nil apply means the
+		// option is being cleared: its path is named in the mask while the field is left absent.
+		apply func(*activitypb.ActivityOptions)
 	}
+)
 
-	// DurationChange sets a duration when used with ClientActivityOptionsChanges. A wrapper
-	// holding the zero duration clears the option, which a bare time.Duration could not express.
-	//
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/client.DurationChange]
-	DurationChange struct {
-		Value time.Duration
+// ValueSet creates an update that sets this option to the given value.
+func (k ClientActivityOptionsKey[T]) ValueSet(value T) ClientActivityOptionsUpdate {
+	return ClientActivityOptionsUpdate{
+		name:  k.name,
+		apply: func(options *activitypb.ActivityOptions) { k.set(options, value) },
 	}
+}
 
-	// RetryPolicyChange sets a retry policy when used with ClientActivityOptionsChanges.
-	//
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/client.RetryPolicyChange]
-	RetryPolicyChange struct {
-		Value RetryPolicy
-	}
+// ValueUnset creates an update that clears this option server-side. It names the option's path
+// with no apply, so the field mask asks the server to act on the field while the field itself is
+// left absent.
+func (k ClientActivityOptionsKey[T]) ValueUnset() ClientActivityOptionsUpdate {
+	return ClientActivityOptionsUpdate{name: k.name}
+}
 
-	// PriorityChange sets a priority when used with ClientActivityOptionsChanges.
-	//
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/client.PriorityChange]
-	PriorityChange struct {
-		Value Priority
-	}
+// ClientActivityOptionsKeys holds the activity options that ClientActivityHandle.UpdateOptions
+// can change.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/client.ActivityOptionsKeys]
+var ClientActivityOptionsKeys = struct {
+	TaskQueue              ClientActivityOptionsKey[string]
+	ScheduleToCloseTimeout ClientActivityOptionsKey[time.Duration]
+	ScheduleToStartTimeout ClientActivityOptionsKey[time.Duration]
+	StartToCloseTimeout    ClientActivityOptionsKey[time.Duration]
+	HeartbeatTimeout       ClientActivityOptionsKey[time.Duration]
+	StartDelay             ClientActivityOptionsKey[time.Duration]
+	RetryPolicy            ClientActivityOptionsKey[RetryPolicy]
+	Priority               ClientActivityOptionsKey[Priority]
+}{
+	TaskQueue: ClientActivityOptionsKey[string]{
+		name: "task_queue.name",
+		set: func(options *activitypb.ActivityOptions, value string) {
+			options.TaskQueue = &taskqueuepb.TaskQueue{Name: value}
+		},
+	},
+	ScheduleToCloseTimeout: ClientActivityOptionsKey[time.Duration]{
+		name: "schedule_to_close_timeout",
+		set: func(options *activitypb.ActivityOptions, value time.Duration) {
+			options.ScheduleToCloseTimeout = durationpb.New(value)
+		},
+	},
+	ScheduleToStartTimeout: ClientActivityOptionsKey[time.Duration]{
+		name: "schedule_to_start_timeout",
+		set: func(options *activitypb.ActivityOptions, value time.Duration) {
+			options.ScheduleToStartTimeout = durationpb.New(value)
+		},
+	},
+	StartToCloseTimeout: ClientActivityOptionsKey[time.Duration]{
+		name: "start_to_close_timeout",
+		set: func(options *activitypb.ActivityOptions, value time.Duration) {
+			options.StartToCloseTimeout = durationpb.New(value)
+		},
+	},
+	HeartbeatTimeout: ClientActivityOptionsKey[time.Duration]{
+		name: "heartbeat_timeout",
+		set: func(options *activitypb.ActivityOptions, value time.Duration) {
+			options.HeartbeatTimeout = durationpb.New(value)
+		},
+	},
+	StartDelay: ClientActivityOptionsKey[time.Duration]{
+		name: "start_delay",
+		set: func(options *activitypb.ActivityOptions, value time.Duration) {
+			options.StartDelay = durationpb.New(value)
+		},
+	},
+	RetryPolicy: ClientActivityOptionsKey[RetryPolicy]{
+		name: "retry_policy",
+		set: func(options *activitypb.ActivityOptions, value RetryPolicy) {
+			options.RetryPolicy = convertToPBRetryPolicy(&value)
+		},
+	},
+	Priority: ClientActivityOptionsKey[Priority]{
+		name: "priority",
+		set: func(options *activitypb.ActivityOptions, value Priority) {
+			options.Priority = convertToPBPriority(value)
+		},
+	},
+}
 
+type (
 	// ClientTerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
 	//
 	// NOTE: Experimental
@@ -744,10 +792,17 @@ func (h *clientActivityHandleImpl) Reset(ctx context.Context, options ClientRese
 
 func (h *clientActivityHandleImpl) UpdateOptions(
 	ctx context.Context,
-	options ClientActivityOptionsChanges,
+	updates ...ClientActivityOptionsUpdate,
 ) (*ClientActivityOptions, error) {
-	if !options.anyChange() {
-		return nil, errors.New("UpdateOptions requires at least one option change")
+	if len(updates) == 0 {
+		return nil, errors.New("UpdateOptions requires at least one option update")
+	}
+	for i, update := range updates {
+		if update.name == "" {
+			return nil, fmt.Errorf(
+				"UpdateOptions update at index %d is not a valid option update; "+
+					"create one with ActivityOptionsKey.ValueSet or ValueUnset", i)
+		}
 	}
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return nil, err
@@ -755,7 +810,7 @@ func (h *clientActivityHandleImpl) UpdateOptions(
 	out, err := h.client.interceptor.UpdateActivityOptions(ctx, &ClientUpdateActivityOptionsInput{
 		ActivityID: h.id,
 		RunID:      h.runID,
-		Changes:    options,
+		Updates:    updates,
 	})
 	if err != nil {
 		return nil, err
@@ -1239,43 +1294,19 @@ func (w *workflowClientInterceptor) ResetActivity(
 	return err
 }
 
-// activityOptionsChangesToProto builds the ActivityOptions message and the field mask naming
-// exactly the options the caller asked to change.
-func activityOptionsChangesToProto(changes ClientActivityOptionsChanges) (*activitypb.ActivityOptions, []string) {
+func activityOptionsUpdatesToProto(updates []ClientActivityOptionsUpdate) (*activitypb.ActivityOptions, []string) {
+	// For repeated keys, later updates override earlier ones.
+	byPath := make(map[string]func(*activitypb.ActivityOptions), len(updates))
+	for _, update := range updates {
+		byPath[update.name] = update.apply
+	}
 	options := &activitypb.ActivityOptions{}
-	var paths []string
-	if changes.TaskQueue != nil {
-		options.TaskQueue = &taskqueuepb.TaskQueue{Name: changes.TaskQueue.Value}
-		paths = append(paths, "task_queue.name")
-	}
-	if changes.ScheduleToCloseTimeout != nil {
-		options.ScheduleToCloseTimeout = durationpb.New(changes.ScheduleToCloseTimeout.Value)
-		paths = append(paths, "schedule_to_close_timeout")
-	}
-	if changes.ScheduleToStartTimeout != nil {
-		options.ScheduleToStartTimeout = durationpb.New(changes.ScheduleToStartTimeout.Value)
-		paths = append(paths, "schedule_to_start_timeout")
-	}
-	if changes.StartToCloseTimeout != nil {
-		options.StartToCloseTimeout = durationpb.New(changes.StartToCloseTimeout.Value)
-		paths = append(paths, "start_to_close_timeout")
-	}
-	if changes.HeartbeatTimeout != nil {
-		options.HeartbeatTimeout = durationpb.New(changes.HeartbeatTimeout.Value)
-		paths = append(paths, "heartbeat_timeout")
-	}
-	if changes.StartDelay != nil {
-		options.StartDelay = durationpb.New(changes.StartDelay.Value)
-		paths = append(paths, "start_delay")
-	}
-	if changes.RetryPolicy != nil {
-		policy := changes.RetryPolicy.Value
-		options.RetryPolicy = convertToPBRetryPolicy(&policy)
-		paths = append(paths, "retry_policy")
-	}
-	if changes.Priority != nil {
-		options.Priority = convertToPBPriority(changes.Priority.Value)
-		paths = append(paths, "priority")
+	paths := make([]string, 0, len(byPath))
+	for path, apply := range byPath {
+		paths = append(paths, path)
+		if apply != nil {
+			apply(options)
+		}
 	}
 	return options, paths
 }
@@ -1293,18 +1324,11 @@ func activityOptionsFromProto(options *activitypb.ActivityOptions) *ClientActivi
 	}
 }
 
-// anyChange reports whether any option is set. It delegates to the conversion so the two
-// cannot disagree about what counts as a change.
-func (c ClientActivityOptionsChanges) anyChange() bool {
-	_, paths := activityOptionsChangesToProto(c)
-	return len(paths) > 0
-}
-
 func (w *workflowClientInterceptor) UpdateActivityOptions(
 	ctx context.Context,
 	in *ClientUpdateActivityOptionsInput,
 ) (*ClientUpdateActivityOptionsOutput, error) {
-	options, paths := activityOptionsChangesToProto(in.Changes)
+	options, paths := activityOptionsUpdatesToProto(in.Updates)
 	// The handle doesn't do this, but an interceptor could.
 	if in.RestoreOriginal && len(paths) > 0 {
 		return nil, errors.New("RestoreOriginalOptions cannot be combined with individual option changes")

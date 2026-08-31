@@ -247,9 +247,8 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			o.ScheduleToCloseTimeout = 120 * time.Second
 		})
 
-		updated, err := handle.UpdateOptions(ctx, client.ActivityOptionsChanges{
-			StartToCloseTimeout: &client.DurationChange{Value: 90 * time.Second},
-		})
+		updated, err := handle.UpdateOptions(ctx,
+			client.ActivityOptionsKeys.StartToCloseTimeout.ValueSet(90*time.Second))
 		ts.NoError(err)
 
 		// Only start-to-close changed; schedule-to-close kept its original value.
@@ -279,20 +278,19 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		}, "opQuickActivity")
 		ts.NoError(err)
 
-		updated, err := handle.UpdateOptions(ctx, client.ActivityOptionsChanges{
-			TaskQueue:              &client.TaskQueueChange{Value: "updated-tq"},
-			ScheduleToCloseTimeout: &client.DurationChange{Value: 200 * time.Second},
-			ScheduleToStartTimeout: &client.DurationChange{Value: 15 * time.Second},
-			StartToCloseTimeout:    &client.DurationChange{Value: 90 * time.Second},
-			HeartbeatTimeout:       &client.DurationChange{Value: 25 * time.Second},
-			StartDelay:             &client.DurationChange{Value: 500 * time.Second},
-			RetryPolicy: &client.RetryPolicyChange{Value: temporal.RetryPolicy{
+		updated, err := handle.UpdateOptions(ctx,
+			client.ActivityOptionsKeys.TaskQueue.ValueSet("updated-tq"),
+			client.ActivityOptionsKeys.ScheduleToCloseTimeout.ValueSet(200*time.Second),
+			client.ActivityOptionsKeys.ScheduleToStartTimeout.ValueSet(15*time.Second),
+			client.ActivityOptionsKeys.StartToCloseTimeout.ValueSet(90*time.Second),
+			client.ActivityOptionsKeys.HeartbeatTimeout.ValueSet(25*time.Second),
+			client.ActivityOptionsKeys.StartDelay.ValueSet(500*time.Second),
+			client.ActivityOptionsKeys.RetryPolicy.ValueSet(temporal.RetryPolicy{
 				InitialInterval:    time.Second,
 				BackoffCoefficient: 2.0,
 				MaximumAttempts:    7,
-			}},
-			Priority: &client.PriorityChange{Value: temporal.Priority{PriorityKey: 3}},
-		})
+			}),
+			client.ActivityOptionsKeys.Priority.ValueSet(temporal.Priority{PriorityKey: 3}))
 		ts.NoError(err)
 
 		ts.Equal("updated-tq", updated.TaskQueue)
@@ -320,9 +318,8 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			o.StartToCloseTimeout = 45 * time.Second
 		})
 
-		changed, err := handle.UpdateOptions(ctx, client.ActivityOptionsChanges{
-			StartToCloseTimeout: &client.DurationChange{Value: 90 * time.Second},
-		})
+		changed, err := handle.UpdateOptions(ctx,
+			client.ActivityOptionsKeys.StartToCloseTimeout.ValueSet(90*time.Second))
 		ts.NoError(err)
 		ts.Equal(90*time.Second, changed.StartToCloseTimeout)
 
@@ -342,9 +339,8 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		awaitPaused(ctx, handle)
 
 		// Updating options while paused applies, and leaves the activity paused.
-		updated, err := handle.UpdateOptions(ctx, client.ActivityOptionsChanges{
-			StartToCloseTimeout: &client.DurationChange{Value: 99 * time.Second},
-		})
+		updated, err := handle.UpdateOptions(ctx,
+			client.ActivityOptionsKeys.StartToCloseTimeout.ValueSet(99*time.Second))
 		ts.NoError(err)
 		ts.Equal(99*time.Second, updated.StartToCloseTimeout)
 
@@ -385,9 +381,8 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		}, "opQuickActivity")
 		ts.NoError(err)
 
-		_, err = handle.UpdateOptions(ctx, client.ActivityOptionsChanges{
-			StartToCloseTimeout: &client.DurationChange{Value: 90 * time.Second},
-		})
+		_, err = handle.UpdateOptions(ctx,
+			client.ActivityOptionsKeys.StartToCloseTimeout.ValueSet(90*time.Second))
 		ts.NoError(err)
 
 		ts.NoError(handle.Reset(ctx, client.ResetActivityOptions{RestoreOriginalOptions: true}))
@@ -569,9 +564,8 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		defer cancel()
 
 		handle := startHeartbeatReadyActivity(ctx)
-		_, err := handle.UpdateOptions(ctx, client.ActivityOptionsChanges{
-			StartToCloseTimeout: &client.DurationChange{Value: 90 * time.Second},
-		})
+		_, err := handle.UpdateOptions(ctx,
+			client.ActivityOptionsKeys.StartToCloseTimeout.ValueSet(90*time.Second))
 		ts.NoError(err)
 
 		description, err := handle.Describe(ctx, client.DescribeActivityOptions{IncludeHeartbeatDetails: true})
