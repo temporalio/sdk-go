@@ -2,14 +2,15 @@
 
 > ⚠️ **This package is experimental; its API may change in a future release.** ⚠️
 
-A metadata helper for identifying [Temporal](https://temporal.io) workers that run on
+A plugin that configures [Temporal](https://temporal.io) workers that run on
 [Google Cloud Run](https://cloud.google.com/run) — both Cloud Run **worker pools** and Cloud Run
-**services**. It reads the current Cloud Run instance's metadata and applies a worker **identity**
-and a **`worker.WorkerDeploymentVersion`** to your own, normal long-lived worker.
+**services**. Register `cloudrun.Plugin` once on your client and it reads the current Cloud Run
+instance's metadata and applies a worker **identity** and a pinned **`worker.WorkerDeploymentVersion`**
+to the client and every worker created from it.
 
 Unlike the AWS Lambda worker (`contrib/aws/lambdaworker`), this is **not** a worker wrapper: Cloud
 Run runs a long-lived container, so there is no per-invocation handler to wrap. You own the worker
-lifecycle; this package just supplies the identifiers.
+lifecycle; the plugin just supplies the identifiers.
 
 ## Add to your project
 
@@ -30,7 +31,6 @@ go get go.temporal.io/sdk/contrib/gcp/cloudrun@latest
 package main
 
 import (
-    "context"
     "log"
 
     "go.temporal.io/sdk/client"
@@ -39,30 +39,18 @@ import (
 )
 
 func main() {
-    // Read Cloud Run instance metadata once, at startup. Never call this from workflow code:
-    // it performs a network request, which the SDK's workflowcheck analyzer flags in workflows.
-    md, err := cloudrun.FetchMetadata(context.Background())
-    if err != nil {
-        log.Fatalf("fetching Cloud Run metadata: %v", err)
-    }
-
-    // Apply the derived worker identity to the client options. A user-set identity always wins.
-    clientOptions := client.Options{}
-    md.ApplyToClientOptions(&clientOptions)
-
-    c, err := client.Dial(clientOptions)
+    // Register the Cloud Run plugin on the client. When the client connects, it reads the instance
+    // metadata once (never from workflow code), sets the derived worker identity unless one is
+    // already set, and opts each worker created from the client into PINNED deployment versioning.
+    c, err := client.Dial(client.Options{
+        Plugins: []client.Plugin{cloudrun.NewPlugin(cloudrun.PluginOptions{})},
+    })
     if err != nil {
         log.Fatalf("dialing Temporal server: %v", err)
     }
     defer c.Close()
 
-    // Apply Worker Deployment Versioning (deployment name + build ID) to the worker options.
-    workerOptions := worker.Options{}
-    if err := md.ApplyToWorkerOptions(&workerOptions); err != nil {
-        log.Fatalf("configuring worker versioning: %v", err)
-    }
-
-    w := worker.New(c, "my-task-queue", workerOptions)
+    w := worker.New(c, "my-task-queue", worker.Options{})
 
     // Register your workflows and activities on w here, then run the long-lived worker.
     if err := w.Run(worker.InterruptCh()); err != nil {
@@ -73,7 +61,9 @@ func main() {
 
 ## How it works
 
-`FetchMetadata` gathers three pieces of information about the current Cloud Run instance:
+`cloudrun.Plugin` fetches the instance metadata once, when the client connects, using
+`FetchMetadata` under the hood. `FetchMetadata` gathers three pieces of information about the current
+Cloud Run instance:
 
 - **Name** (the Temporal deployment name) — from the `CLOUD_RUN_WORKER_POOL` environment variable on
   a Cloud Run worker pool, falling back to `K_SERVICE` on a Cloud Run service.
@@ -89,19 +79,22 @@ func main() {
 > services receive `K_SERVICE` and `K_REVISION`. `FetchMetadata` checks the worker-pool variables
 > first, then the service variables.
 
-Apply the metadata to your options:
+The plugin then applies the metadata:
 
-- `ApplyToClientOptions(&clientOptions)` sets `Identity` to `"<instanceID>@<revision>"` (falling
-  back to `"<instanceID>@<name>"`, or just the instance ID) unless you already set an identity.
-- `ApplyToWorkerOptions(&workerOptions)` sets `DeploymentOptions` to enable Worker Deployment
-  Versioning with `DeploymentName: <name>, BuildID: <revision>`, pinning workflows to this version
-  by default (`workflow.VersioningBehaviorPinned`; a per-workflow behavior takes precedence). It
-  returns an error when the name or revision is unknown (typically because the process is not
-  running on a Cloud Run worker pool or service).
+- On the **client**, it sets `Identity` to `"<instanceID>@<revision>"` (falling back to
+  `"<instanceID>@<name>"`, or just the instance ID) unless you already set an identity — a user-set
+  identity always wins.
+- On each **worker**, it sets `DeploymentOptions` to enable Worker Deployment Versioning with
+  `DeploymentName: <name>, BuildID: <revision>`, pinning workflows to this version by default
+  (`workflow.VersioningBehaviorPinned`; a per-workflow behavior takes precedence).
 
-If you prefer to wire the values in yourself, `WorkerIdentity()` returns the identity string and
-`DeploymentVersion()` returns the `worker.WorkerDeploymentVersion` directly.
+If the metadata fetch fails — typically because the process is not running on a Cloud Run worker
+pool or service — `client.Dial` returns a clear error rather than silently doing nothing. For tests
+and advanced use, inject a pre-built `Metadata` (or a custom metadata URL / HTTP client) via
+`cloudrun.PluginOptions`.
 
-Because `FetchMetadata` makes an HTTP call to the metadata server, call it once at worker startup —
-never inside a workflow, where the SDK's `workflowcheck` analyzer flags `net/http` usage as
-non-deterministic.
+If you prefer to wire the values in yourself instead of using the plugin, call `FetchMetadata`
+directly: `WorkerIdentity()` returns the identity string and `DeploymentVersion()` returns the
+`worker.WorkerDeploymentVersion`. Because `FetchMetadata` makes an HTTP call to the metadata server,
+call it once at worker startup — never inside a workflow, where the SDK's `workflowcheck` analyzer
+flags `net/http` usage as non-deterministic.

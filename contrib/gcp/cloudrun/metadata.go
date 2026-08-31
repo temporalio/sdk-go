@@ -9,9 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/worker"
-	"go.temporal.io/sdk/workflow"
 )
 
 const (
@@ -43,10 +41,9 @@ const (
 )
 
 // Metadata describes the Google Cloud Run instance that a worker process is running on, covering
-// both Cloud Run worker pools and Cloud Run services. Use [FetchMetadata] to populate it at worker
-// startup, then apply it to your client and worker options with [Metadata.ApplyToClientOptions] and
-// [Metadata.ApplyToWorkerOptions] (or read [Metadata.WorkerIdentity] and
-// [Metadata.DeploymentVersion] directly).
+// both Cloud Run worker pools and Cloud Run services. Register [Plugin] to fetch and apply it
+// automatically, or use [FetchMetadata] to populate it at worker startup and read
+// [Metadata.WorkerIdentity] and [Metadata.DeploymentVersion] directly.
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future
 // release.
@@ -165,9 +162,9 @@ func firstNonEmptyEnv(names ...string) string {
 
 // WorkerIdentity returns a client identity string for the Cloud Run instance, in the form
 // "<InstanceID>@<Revision>". If the revision is unknown it falls back to "<InstanceID>@<Name>", and
-// if both are unknown it returns just the instance ID. Pass the result to
-// [go.temporal.io/sdk/client.Options.Identity] when dialing the Temporal server, or use
-// [Metadata.ApplyToClientOptions].
+// if both are unknown it returns just the instance ID. [Plugin] applies this to
+// [go.temporal.io/sdk/client.Options.Identity] automatically; pass it there yourself if you are not
+// using the plugin.
 func (m *Metadata) WorkerIdentity() string {
 	switch {
 	case m.Revision != "":
@@ -180,9 +177,9 @@ func (m *Metadata) WorkerIdentity() string {
 }
 
 // DeploymentVersion returns the [worker.WorkerDeploymentVersion] for the Cloud Run instance, using
-// the name as the deployment name and the revision as the build ID. Set it on
-// [go.temporal.io/sdk/worker.DeploymentOptions.Version] (with UseVersioning enabled) to opt the
-// worker into Worker Deployment Versioning, or use [Metadata.ApplyToWorkerOptions].
+// the name as the deployment name and the revision as the build ID. [Plugin] sets it on
+// [go.temporal.io/sdk/worker.DeploymentOptions] (with UseVersioning enabled) automatically; set it
+// there yourself if you are not using the plugin.
 //
 // It returns an error if either the name or the revision is unknown, which typically means the
 // process is not running on a Cloud Run worker pool or service.
@@ -197,31 +194,4 @@ func (m *Metadata) DeploymentVersion() (worker.WorkerDeploymentVersion, error) {
 		DeploymentName: m.Name,
 		BuildID:        m.Revision,
 	}, nil
-}
-
-// ApplyToClientOptions sets the Cloud Run-derived worker identity (see [Metadata.WorkerIdentity])
-// on the given client options, unless an identity is already set — a user-provided identity always
-// wins. Call it before dialing the Temporal server.
-func (m *Metadata) ApplyToClientOptions(o *client.Options) {
-	if o.Identity == "" {
-		o.Identity = m.WorkerIdentity()
-	}
-}
-
-// ApplyToWorkerOptions enables Worker Deployment Versioning on the given worker options using the
-// Cloud Run deployment version (see [Metadata.DeploymentVersion]), pinning workflows to this
-// version by default ([workflow.VersioningBehaviorPinned]). A per-workflow versioning behavior, if
-// set, takes precedence. It returns an error, leaving the options unchanged, if the deployment
-// version cannot be built.
-func (m *Metadata) ApplyToWorkerOptions(o *worker.Options) error {
-	v, err := m.DeploymentVersion()
-	if err != nil {
-		return err
-	}
-	o.DeploymentOptions = worker.DeploymentOptions{
-		UseVersioning:             true,
-		Version:                   v,
-		DefaultVersioningBehavior: workflow.VersioningBehaviorPinned,
-	}
-	return nil
 }

@@ -11,10 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/contrib/gcp/cloudrun"
 	"go.temporal.io/sdk/worker"
-	"go.temporal.io/sdk/workflow"
 )
 
 // testInstanceID is a representative Cloud Run instance ID as returned by the GCP metadata server.
@@ -197,47 +195,4 @@ func TestMetadata_DeploymentVersion(t *testing.T) {
 			assert.Contains(t, err.Error(), "cloudrun:")
 		})
 	}
-}
-
-// TestMetadata_ApplyToClientOptions covers spec item 5: the client-side apply sets the identity only
-// when it is unset, so a user-provided identity always wins.
-func TestMetadata_ApplyToClientOptions(t *testing.T) {
-	md := cloudrun.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"}
-
-	t.Run("sets identity when unset", func(t *testing.T) {
-		var o client.Options
-		md.ApplyToClientOptions(&o)
-		assert.Equal(t, "i-1@rev-1", o.Identity)
-	})
-
-	t.Run("preserves a user-provided identity", func(t *testing.T) {
-		o := client.Options{Identity: "user-identity"}
-		md.ApplyToClientOptions(&o)
-		assert.Equal(t, "user-identity", o.Identity)
-	})
-}
-
-// TestMetadata_ApplyToWorkerOptions covers spec item 5: the worker-side apply enables versioning,
-// sets the deployment version, and pins the default versioning behavior. On incomplete metadata it
-// returns an error and leaves the options unchanged.
-func TestMetadata_ApplyToWorkerOptions(t *testing.T) {
-	t.Run("enables pinned deployment versioning", func(t *testing.T) {
-		md := cloudrun.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"}
-		var o worker.Options
-		require.NoError(t, md.ApplyToWorkerOptions(&o))
-
-		assert.True(t, o.DeploymentOptions.UseVersioning)
-		assert.Equal(t,
-			worker.WorkerDeploymentVersion{DeploymentName: "my-pool", BuildID: "rev-1"},
-			o.DeploymentOptions.Version)
-		assert.Equal(t, workflow.VersioningBehaviorPinned, o.DeploymentOptions.DefaultVersioningBehavior)
-	})
-
-	t.Run("errors and leaves options unchanged when metadata incomplete", func(t *testing.T) {
-		md := cloudrun.Metadata{InstanceID: "i-1", Name: "my-pool"} // revision empty
-		var o worker.Options
-		err := md.ApplyToWorkerOptions(&o)
-		require.Error(t, err)
-		assert.Equal(t, worker.DeploymentOptions{}, o.DeploymentOptions)
-	})
 }
