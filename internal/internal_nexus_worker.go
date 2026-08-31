@@ -86,13 +86,42 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 	}
 
 	baseWorker := newBaseWorker(bwo)
-
-	return &nexusWorker{
+	w := &nexusWorker{
 		executionParameters: opts.executionParameters,
 		workflowService:     opts.workflowService,
 		worker:              baseWorker,
 		stopC:               workerStopChannel,
-	}, nil
+	}
+	// Only originally fixed pollers need runtime transition configuration.
+	if _, ok := params.NexusTaskPollerBehavior.(*pollerBehaviorSimpleMaximum); ok {
+		baseWorker.setPollerTransition(
+			params.pollerGroupInfoStore,
+			[]string{metrics.PollerTypeNexusTask},
+			func() []scalableTaskPoller {
+				params.serverSupportsAutoscaling.Store(true)
+				autoscaling := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{})
+				groups := newPollerGroupManager(pollerGroupModeNonWorkflow, params.pollerGroupInfoStore)
+				groupedPoller := *poller
+				groupedPoller.pollerGroups = groups
+				params.pollerBehaviorState.set(metrics.PollerTypeNexusTask, autoscaling)
+				return []scalableTaskPoller{
+					newScalableTaskPoller(
+						&groupedPoller,
+						params.Logger,
+						autoscaling,
+						metrics.PollerTypeNexusTask,
+						params.serverSupportsAutoscaling,
+						groups,
+					),
+				}
+			},
+			func() {
+				params.pollerBehaviorState.set(metrics.PollerTypeNexusTask, params.NexusTaskPollerBehavior)
+			},
+		)
+	}
+
+	return w, nil
 }
 
 // Start the worker.
