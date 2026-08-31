@@ -1,4 +1,4 @@
-// Package cloudrun configures a Temporal worker that runs on Google Cloud Run, covering both Cloud
+// Package workerid configures a Temporal worker that runs on Google Cloud Run, covering both Cloud
 // Run worker pools and Cloud Run services.
 //
 // Unlike AWS Lambda, Cloud Run runs a long-lived container: there is no per-invocation handler to
@@ -30,7 +30,7 @@
 //	    // Register the Cloud Run plugin on the client. It fetches the instance metadata when the
 //	    // client connects, sets the worker identity, and pins each worker's deployment version.
 //	    c, err := client.Dial(client.Options{
-//	        Plugins: []client.Plugin{cloudrun.NewPlugin(cloudrun.PluginOptions{})},
+//	        Plugins: []client.Plugin{workerid.NewPlugin(workerid.PluginOptions{})},
 //	    })
 //	    if err != nil {
 //	        log.Fatalf("dialing Temporal server: %v", err)
@@ -55,7 +55,7 @@
 // Because [FetchMetadata] performs a network request, call it at worker startup and never from
 // workflow code: the SDK's workflowcheck analyzer flags net/http usage inside workflows because it
 // is non-deterministic.
-package cloudrun
+package workerid
 
 import (
 	"log"

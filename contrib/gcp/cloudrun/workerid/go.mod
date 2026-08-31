@@ -1,4 +1,4 @@
-module go.temporal.io/sdk/contrib/gcp/cloudrun
+module go.temporal.io/sdk/contrib/gcp/cloudrun/workerid
 
 go 1.26.0
 
@@ -33,4 +33,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace go.temporal.io/sdk => ../../../
+replace go.temporal.io/sdk => ../../../../

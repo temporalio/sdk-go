@@ -1,4 +1,4 @@
-package cloudrun_test
+package workerid_test
 
 import (
 	"context"
@@ -10,19 +10,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/contrib/gcp/cloudrun"
+	"go.temporal.io/sdk/contrib/gcp/cloudrun/workerid"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
 
 // completeMetadata is a fully populated Cloud Run metadata value, as the plugin sees it after a
 // successful fetch on a Cloud Run worker pool.
-var completeMetadata = &cloudrun.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"}
+var completeMetadata = &workerid.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"}
 
 // TestPlugin_ImplementsInterfaces confirms the plugin satisfies both the client and worker plugin
 // interfaces, so it can be registered once on client.Options.Plugins and propagate to workers.
 func TestPlugin_ImplementsInterfaces(t *testing.T) {
-	plugin := cloudrun.NewPlugin(cloudrun.PluginOptions{Metadata: completeMetadata})
+	plugin := workerid.NewPlugin(workerid.PluginOptions{Metadata: completeMetadata})
 	var (
 		_ client.Plugin = plugin
 		_ worker.Plugin = plugin
@@ -35,7 +35,7 @@ func TestPlugin_ImplementsInterfaces(t *testing.T) {
 // TestPlugin_ConfigureClient_SetsIdentityWhenUnset covers the client hook: it sets the derived
 // worker identity only when the caller has not set one, so a user-provided identity always wins.
 func TestPlugin_ConfigureClient_SetsIdentityWhenUnset(t *testing.T) {
-	plugin := cloudrun.NewPlugin(cloudrun.PluginOptions{Metadata: completeMetadata})
+	plugin := workerid.NewPlugin(workerid.PluginOptions{Metadata: completeMetadata})
 
 	t.Run("sets identity when unset", func(t *testing.T) {
 		o := client.Options{}
@@ -54,7 +54,7 @@ func TestPlugin_ConfigureClient_SetsIdentityWhenUnset(t *testing.T) {
 
 // TestPlugin_ConfigureClient_NilOptions covers the guard against missing client options.
 func TestPlugin_ConfigureClient_NilOptions(t *testing.T) {
-	plugin := cloudrun.NewPlugin(cloudrun.PluginOptions{Metadata: completeMetadata})
+	plugin := workerid.NewPlugin(workerid.PluginOptions{Metadata: completeMetadata})
 	err := plugin.ConfigureClient(context.Background(), client.PluginConfigureClientOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cloudrun:")
@@ -63,7 +63,7 @@ func TestPlugin_ConfigureClient_NilOptions(t *testing.T) {
 // TestPlugin_ConfigureWorker_SetsPinnedDeploymentOptions covers the worker hook: it enables Worker
 // Deployment Versioning with the Cloud Run deployment version and a PINNED default behavior.
 func TestPlugin_ConfigureWorker_SetsPinnedDeploymentOptions(t *testing.T) {
-	plugin := cloudrun.NewPlugin(cloudrun.PluginOptions{Metadata: completeMetadata})
+	plugin := workerid.NewPlugin(workerid.PluginOptions{Metadata: completeMetadata})
 
 	o := worker.Options{}
 	require.NoError(t, plugin.ConfigureWorker(context.Background(),
@@ -81,7 +81,7 @@ func TestPlugin_ConfigureWorker_SetsPinnedDeploymentOptions(t *testing.T) {
 // missing or incomplete the hook leaves the options unchanged and returns nil rather than erroring.
 func TestPlugin_ConfigureWorker_LeavesOptionsUnchangedWithoutMetadata(t *testing.T) {
 	t.Run("no metadata fetched yet", func(t *testing.T) {
-		plugin := cloudrun.NewPlugin(cloudrun.PluginOptions{}) // ConfigureClient never called
+		plugin := workerid.NewPlugin(workerid.PluginOptions{}) // ConfigureClient never called
 		o := worker.Options{}
 		require.NoError(t, plugin.ConfigureWorker(context.Background(),
 			worker.PluginConfigureWorkerOptions{WorkerOptions: &o}))
@@ -89,8 +89,8 @@ func TestPlugin_ConfigureWorker_LeavesOptionsUnchangedWithoutMetadata(t *testing
 	})
 
 	t.Run("incomplete metadata (missing revision)", func(t *testing.T) {
-		plugin := cloudrun.NewPlugin(cloudrun.PluginOptions{
-			Metadata: &cloudrun.Metadata{InstanceID: "i-1", Name: "my-pool"},
+		plugin := workerid.NewPlugin(workerid.PluginOptions{
+			Metadata: &workerid.Metadata{InstanceID: "i-1", Name: "my-pool"},
 		})
 		o := worker.Options{}
 		require.NoError(t, plugin.ConfigureWorker(context.Background(),
@@ -99,7 +99,7 @@ func TestPlugin_ConfigureWorker_LeavesOptionsUnchangedWithoutMetadata(t *testing
 	})
 
 	t.Run("nil worker options", func(t *testing.T) {
-		plugin := cloudrun.NewPlugin(cloudrun.PluginOptions{Metadata: completeMetadata})
+		plugin := workerid.NewPlugin(workerid.PluginOptions{Metadata: completeMetadata})
 		require.NoError(t, plugin.ConfigureWorker(context.Background(),
 			worker.PluginConfigureWorkerOptions{}))
 	})
@@ -117,7 +117,7 @@ func TestPlugin_FetchesAndCachesFromMetadataServer(t *testing.T) {
 	srv := newStubMetadataServer(http.StatusOK, testInstanceID)
 	defer srv.Close()
 
-	plugin := cloudrun.NewPlugin(cloudrun.PluginOptions{MetadataURL: srv.URL})
+	plugin := workerid.NewPlugin(workerid.PluginOptions{MetadataURL: srv.URL})
 
 	// Before connect, nothing is fetched.
 	assert.Nil(t, plugin.Metadata())
@@ -150,7 +150,7 @@ func TestPlugin_ConfigureClient_FailsFastOffPlatform(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 
-	plugin := cloudrun.NewPlugin(cloudrun.PluginOptions{
+	plugin := workerid.NewPlugin(workerid.PluginOptions{
 		MetadataURL: url,
 		HTTPClient:  &http.Client{Timeout: time.Second},
 	})

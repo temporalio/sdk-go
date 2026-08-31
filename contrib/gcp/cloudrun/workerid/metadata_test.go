@@ -1,4 +1,4 @@
-package cloudrun_test
+package workerid_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.temporal.io/sdk/contrib/gcp/cloudrun"
+	"go.temporal.io/sdk/contrib/gcp/cloudrun/workerid"
 	"go.temporal.io/sdk/worker"
 )
 
@@ -80,7 +80,7 @@ func TestFetchMetadata_EnvPrecedence(t *testing.T) {
 			srv := newStubMetadataServer(http.StatusOK, testInstanceID)
 			defer srv.Close()
 
-			md, err := cloudrun.FetchMetadata(context.Background(), cloudrun.WithMetadataURL(srv.URL))
+			md, err := workerid.FetchMetadata(context.Background(), workerid.WithMetadataURL(srv.URL))
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantName, md.Name)
 			assert.Equal(t, tt.wantRev, md.Revision)
@@ -101,7 +101,7 @@ func TestFetchMetadata_SendsHeaderAndTrimsBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	md, err := cloudrun.FetchMetadata(context.Background(), cloudrun.WithMetadataURL(srv.URL))
+	md, err := workerid.FetchMetadata(context.Background(), workerid.WithMetadataURL(srv.URL))
 	require.NoError(t, err)
 	assert.Equal(t, "Google", <-gotFlavor)
 	assert.Equal(t, testInstanceID, md.InstanceID)
@@ -113,7 +113,7 @@ func TestFetchMetadata_ErrorOnNon200(t *testing.T) {
 	srv := newStubMetadataServer(http.StatusInternalServerError, "boom")
 	defer srv.Close()
 
-	md, err := cloudrun.FetchMetadata(context.Background(), cloudrun.WithMetadataURL(srv.URL))
+	md, err := workerid.FetchMetadata(context.Background(), workerid.WithMetadataURL(srv.URL))
 	require.Error(t, err)
 	assert.Nil(t, md)
 	assert.Contains(t, err.Error(), "500")
@@ -127,10 +127,10 @@ func TestFetchMetadata_ErrorWhenUnreachable(t *testing.T) {
 	url := srv.URL
 	srv.Close() // Nothing is listening on url now.
 
-	md, err := cloudrun.FetchMetadata(
+	md, err := workerid.FetchMetadata(
 		context.Background(),
-		cloudrun.WithMetadataURL(url),
-		cloudrun.WithHTTPClient(&http.Client{Timeout: time.Second}),
+		workerid.WithMetadataURL(url),
+		workerid.WithHTTPClient(&http.Client{Timeout: time.Second}),
 	)
 	require.Error(t, err)
 	assert.Nil(t, md)
@@ -142,22 +142,22 @@ func TestFetchMetadata_ErrorWhenUnreachable(t *testing.T) {
 func TestMetadata_WorkerIdentity(t *testing.T) {
 	tests := []struct {
 		name string
-		md   cloudrun.Metadata
+		md   workerid.Metadata
 		want string
 	}{
 		{
 			name: "instanceID@revision, revision preferred over name",
-			md:   cloudrun.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"},
+			md:   workerid.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"},
 			want: "i-1@rev-1",
 		},
 		{
 			name: "falls back to instanceID@name when revision empty",
-			md:   cloudrun.Metadata{InstanceID: "i-1", Name: "my-pool"},
+			md:   workerid.Metadata{InstanceID: "i-1", Name: "my-pool"},
 			want: "i-1@my-pool",
 		},
 		{
 			name: "bare instanceID when name and revision empty",
-			md:   cloudrun.Metadata{InstanceID: "i-1"},
+			md:   workerid.Metadata{InstanceID: "i-1"},
 			want: "i-1",
 		},
 	}
@@ -173,7 +173,7 @@ func TestMetadata_WorkerIdentity(t *testing.T) {
 // buildID=revision), and it is a clear error when either the name or the revision is empty.
 func TestMetadata_DeploymentVersion(t *testing.T) {
 	t.Run("name and revision set", func(t *testing.T) {
-		md := cloudrun.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"}
+		md := workerid.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"}
 		v, err := md.DeploymentVersion()
 		require.NoError(t, err)
 		assert.Equal(t, worker.WorkerDeploymentVersion{DeploymentName: "my-pool", BuildID: "rev-1"}, v)
@@ -181,11 +181,11 @@ func TestMetadata_DeploymentVersion(t *testing.T) {
 
 	errorCases := []struct {
 		name string
-		md   cloudrun.Metadata
+		md   workerid.Metadata
 	}{
-		{"name empty", cloudrun.Metadata{InstanceID: "i-1", Revision: "rev-1"}},
-		{"revision empty", cloudrun.Metadata{InstanceID: "i-1", Name: "my-pool"}},
-		{"both empty", cloudrun.Metadata{InstanceID: "i-1"}},
+		{"name empty", workerid.Metadata{InstanceID: "i-1", Revision: "rev-1"}},
+		{"revision empty", workerid.Metadata{InstanceID: "i-1", Name: "my-pool"}},
+		{"both empty", workerid.Metadata{InstanceID: "i-1"}},
 	}
 	for _, tt := range errorCases {
 		t.Run("error when "+tt.name, func(t *testing.T) {
