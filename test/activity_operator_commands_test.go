@@ -26,59 +26,13 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.T().SkipNow()
 	}
 
-	// Long-running activity that heartbeats and runs until cancellation.
-	slowActivity := func(ctx context.Context) error {
-		for {
-			activity.RecordHeartbeat(ctx)
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(100 * time.Millisecond):
-			}
-		}
-	}
-	quickActivity := func(ctx context.Context) (string, error) {
-		return "resumed", nil
-	}
-	// Fails the first two attempts so retries are forced, then succeeds.
-	failThenSucceedActivity := func(ctx context.Context) (string, error) {
-		if activity.GetInfo(ctx).Attempt < 3 {
-			return "", errors.New("retryable failure")
-		}
-		return "done", nil
-	}
-	echoActivity := func(ctx context.Context, word string) (string, error) {
-		return word + "-echoed", nil
-	}
-	alwaysFailActivity := func(ctx context.Context) error {
-		return temporal.NewApplicationError("deliberate failure", "")
-	}
-	heartbeatFailIncrement := func(ctx context.Context, value int) (int, error) {
-		activity.RecordHeartbeat(ctx, "heartbeat details")
-		if activity.GetInfo(ctx).Attempt == 1 {
-			return 0, temporal.NewApplicationError("deliberate first-attempt failure", "")
-		}
-		return value + 1, nil
-	}
-
-	heartbeatingActivity := func(ctx context.Context) error {
-		for {
-			activity.RecordHeartbeat(ctx, "hb-details")
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(100 * time.Millisecond):
-			}
-		}
-	}
-
-	ts.worker.RegisterActivityWithOptions(slowActivity, activity.RegisterOptions{Name: "opSlowActivity"})
-	ts.worker.RegisterActivityWithOptions(quickActivity, activity.RegisterOptions{Name: "opQuickActivity"})
-	ts.worker.RegisterActivityWithOptions(failThenSucceedActivity, activity.RegisterOptions{Name: "opFailThenSucceedActivity"})
-	ts.worker.RegisterActivityWithOptions(echoActivity, activity.RegisterOptions{Name: "opEchoActivity"})
-	ts.worker.RegisterActivityWithOptions(alwaysFailActivity, activity.RegisterOptions{Name: "opAlwaysFailActivity"})
-	ts.worker.RegisterActivityWithOptions(heartbeatingActivity, activity.RegisterOptions{Name: "opHeartbeatingActivity"})
-	ts.worker.RegisterActivityWithOptions(heartbeatFailIncrement, activity.RegisterOptions{Name: "opHeartbeatFailIncrement"})
+	ts.worker.RegisterActivity(opSlowActivity)
+	ts.worker.RegisterActivity(opQuickActivity)
+	ts.worker.RegisterActivity(opFailThenSucceedActivity)
+	ts.worker.RegisterActivity(opEchoActivity)
+	ts.worker.RegisterActivity(opAlwaysFailActivity)
+	ts.worker.RegisterActivity(opHeartbeatingActivity)
+	ts.worker.RegisterActivity(opHeartbeatFailIncrement)
 
 	newID := func() string { return fmt.Sprintf("act-%v", uuid.NewString()) }
 
@@ -93,7 +47,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		if mutate != nil {
 			mutate(&options)
 		}
-		handle, err := ts.client.ExecuteActivity(ctx, options, "opSlowActivity")
+		handle, err := ts.client.ExecuteActivity(ctx, options, opSlowActivity)
 		ts.NoError(err)
 		ts.Eventually(func() bool {
 			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
@@ -110,7 +64,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			TaskQueue:           ts.taskQueueName,
 			StartToCloseTimeout: 60 * time.Second,
 			HeartbeatTimeout:    30 * time.Second,
-		}, "opHeartbeatingActivity")
+		}, opHeartbeatingActivity)
 		ts.NoError(err)
 		ts.Eventually(func() bool {
 			description, err := handle.Describe(ctx, client.DescribeActivityOptions{
@@ -138,7 +92,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			TaskQueue:           ts.taskQueueName,
 			StartToCloseTimeout: 60 * time.Second,
 			StartDelay:          30 * time.Second,
-		}, "opQuickActivity")
+		}, opQuickActivity)
 		ts.NoError(err)
 
 		ts.NoError(handle.Pause(ctx, client.PauseActivityOptions{Reason: "pause-before-unpause"}))
@@ -172,7 +126,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 				MaximumInterval:    200 * time.Millisecond,
 				MaximumAttempts:    50,
 			},
-		}, "opFailThenSucceedActivity")
+		}, opFailThenSucceedActivity)
 		ts.NoError(err)
 
 		ts.Eventually(func() bool {
@@ -199,7 +153,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			TaskQueue:           ts.taskQueueName,
 			StartToCloseTimeout: 60 * time.Second,
 			StartDelay:          30 * time.Second,
-		}, "opQuickActivity")
+		}, opQuickActivity)
 		ts.NoError(err)
 
 		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
@@ -253,7 +207,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			ScheduleToCloseTimeout: 100 * time.Second,
 			StartToCloseTimeout:    30 * time.Second,
 			StartDelay:             300 * time.Second,
-		}, "opQuickActivity")
+		}, opQuickActivity)
 		ts.NoError(err)
 
 		updated, err := handle.UpdateOptions(ctx,
@@ -356,7 +310,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			TaskQueue:           ts.taskQueueName,
 			StartToCloseTimeout: 45 * time.Second,
 			StartDelay:          300 * time.Second,
-		}, "opQuickActivity")
+		}, opQuickActivity)
 		ts.NoError(err)
 
 		_, err = handle.UpdateOptions(ctx,
@@ -395,7 +349,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			ID:                  newID(),
 			TaskQueue:           ts.taskQueueName,
 			StartToCloseTimeout: 60 * time.Second,
-		}, "opEchoActivity", "ping")
+		}, opEchoActivity, "ping")
 		ts.NoError(err)
 		ts.NoError(handle.Get(ctx, nil))
 
@@ -435,7 +389,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 				BackoffCoefficient: 1.0,
 				MaximumAttempts:    2,
 			},
-		}, "opHeartbeatFailIncrement", 1)
+		}, opHeartbeatFailIncrement, 1)
 		ts.NoError(err)
 		var result int
 		ts.NoError(handle.Get(ctx, &result))
@@ -484,7 +438,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			TaskQueue:           ts.taskQueueName,
 			StartToCloseTimeout: 60 * time.Second,
 			RetryPolicy:         &temporal.RetryPolicy{MaximumAttempts: 1},
-		}, "opAlwaysFailActivity")
+		}, opAlwaysFailActivity)
 		ts.NoError(err)
 		ts.Error(failed.Get(ctx, nil))
 
@@ -543,4 +497,56 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.True(description.HasHeartbeatDetails())
 		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 	})
+}
+
+// opSlowActivity heartbeats and runs until cancellation.
+func opSlowActivity(ctx context.Context) error {
+	for {
+		activity.RecordHeartbeat(ctx)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func opQuickActivity(ctx context.Context) (string, error) {
+	return "resumed", nil
+}
+
+// opFailThenSucceedActivity fails the first two attempts so retries are forced, then succeeds.
+func opFailThenSucceedActivity(ctx context.Context) (string, error) {
+	if activity.GetInfo(ctx).Attempt < 3 {
+		return "", errors.New("retryable failure")
+	}
+	return "done", nil
+}
+
+func opEchoActivity(ctx context.Context, word string) (string, error) {
+	return word + "-echoed", nil
+}
+
+func opAlwaysFailActivity(ctx context.Context) error {
+	return temporal.NewApplicationError("deliberate failure", "")
+}
+
+// opHeartbeatingActivity heartbeats details and runs until cancellation.
+func opHeartbeatingActivity(ctx context.Context) error {
+	for {
+		activity.RecordHeartbeat(ctx, "hb-details")
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func opHeartbeatFailIncrement(ctx context.Context, value int) (int, error) {
+	activity.RecordHeartbeat(ctx, "heartbeat details")
+	if activity.GetInfo(ctx).Attempt == 1 {
+		return 0, temporal.NewApplicationError("deliberate first-attempt failure", "")
+	}
+	return value + 1, nil
 }
