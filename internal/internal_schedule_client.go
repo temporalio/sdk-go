@@ -113,8 +113,9 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		ScheduleId: ID,
 		RequestId:  uuid.NewString(),
 		Schedule: &schedulepb.Schedule{
-			Spec:   convertToPBScheduleSpec(&in.Options.Spec),
-			Action: action,
+			Spec:               convertToPBScheduleSpec(&in.Options.Spec),
+			Action:             action,
+			TimeSkippingConfig: in.Options.TimeSkippingConfig,
 			Policies: &schedulepb.SchedulePolicies{
 				OverlapPolicy:  in.Options.Overlap,
 				CatchupWindow:  catchupWindow,
@@ -510,8 +511,9 @@ func scheduleDescriptionFromPB(
 
 	return &ScheduleDescription{
 		Schedule: Schedule{
-			Action: actionDescription,
-			Spec:   convertFromPBScheduleSpec(describeResponse.Schedule.Spec),
+			Action:             actionDescription,
+			Spec:               convertFromPBScheduleSpec(describeResponse.Schedule.Spec),
+			TimeSkippingConfig: describeResponse.Schedule.TimeSkippingConfig,
 			Policy: &SchedulePolicies{
 				Overlap:        describeResponse.Schedule.Policies.GetOverlapPolicy(),
 				CatchupWindow:  describeResponse.Schedule.Policies.GetCatchupWindow().AsDuration(),
@@ -556,8 +558,9 @@ func convertToPBSchedule(ctx context.Context, client *WorkflowClient, schedule *
 	}
 
 	return &schedulepb.Schedule{
-		Spec:   convertToPBScheduleSpec(schedule.Spec),
-		Action: action,
+		Spec:               convertToPBScheduleSpec(schedule.Spec),
+		Action:             action,
+		TimeSkippingConfig: schedule.TimeSkippingConfig,
 		Policies: &schedulepb.SchedulePolicies{
 			OverlapPolicy:  schedule.Policy.Overlap,
 			CatchupWindow:  catchupWindow,
