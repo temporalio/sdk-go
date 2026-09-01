@@ -29,9 +29,9 @@ const (
 	claimKeyHashAlgorithm = "hash_algorithm"
 	claimKeyHashValue     = "hash_value"
 
-	// TODO: v0.1.0 stored the object name under "key". Retrieve still accepts it so
-	// claims already written to history remain readable. Remove once the driver
-	// reaches GA.
+	// TODO: v0.1.0 stored the object name under "key". Store still writes it and
+	// Retrieve still accepts it, so claims stay readable in both directions while
+	// a deployment runs mixed driver versions. Remove once the driver reaches GA.
 	claimKeyObjectNameLegacy = "key"
 )
 
@@ -168,10 +168,11 @@ func (d *gcsStorageDriver) Store(
 			}
 			claims[i] = converter.StorageDriverClaim{
 				ClaimData: map[string]string{
-					claimKeyBucket:        pp.bucket,
-					claimKeyObjectName:    name,
-					claimKeyHashAlgorithm: hashAlgorithm,
-					claimKeyHashValue:     pp.hexDigest,
+					claimKeyBucket:           pp.bucket,
+					claimKeyObjectName:       name,
+					claimKeyObjectNameLegacy: name,
+					claimKeyHashAlgorithm:    hashAlgorithm,
+					claimKeyHashValue:        pp.hexDigest,
 				},
 			}
 			return nil

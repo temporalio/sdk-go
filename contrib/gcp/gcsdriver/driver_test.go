@@ -179,6 +179,18 @@ func TestStore_SinglePayload(t *testing.T) {
 	assert.Equal(t, expectedDigest, claims[0].ClaimData["hash_value"])
 }
 
+// Claims must stay readable by v0.1.0, which looks for the object name under
+// "key".
+func TestStore_WritesLegacyObjectNameClaim(t *testing.T) {
+	d := newDriver(t, newMemClient())
+
+	claims, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("hello")})
+	require.NoError(t, err)
+	require.Len(t, claims, 1)
+
+	assert.Equal(t, claims[0].ClaimData[claimKeyObjectName], claims[0].ClaimData[claimKeyObjectNameLegacy])
+}
+
 func TestStore_EmptyPayloads(t *testing.T) {
 	mc := newMemClient()
 	d := newDriver(t, mc)
@@ -442,21 +454,6 @@ func TestRetrieve_LegacyObjectNameClaim(t *testing.T) {
 	}}
 
 	restored, err := d.Retrieve(retrieveCtx(), []converter.StorageDriverClaim{legacy})
-	require.NoError(t, err)
-	require.Len(t, restored, 1)
-	assert.True(t, proto.Equal(original, restored[0]))
-}
-
-func TestRetrieve_ObjectNameTakesPrecedenceOverLegacy(t *testing.T) {
-	mc := newMemClient()
-	d := newDriver(t, mc)
-	original := testPayload("addressed by object_name")
-
-	claims, err := d.Store(storeCtx(), []*commonpb.Payload{original})
-	require.NoError(t, err)
-	claims[0].ClaimData[claimKeyObjectNameLegacy] = "v0/d/sha256/nonexistent"
-
-	restored, err := d.Retrieve(retrieveCtx(), claims)
 	require.NoError(t, err)
 	require.Len(t, restored, 1)
 	assert.True(t, proto.Equal(original, restored[0]))
