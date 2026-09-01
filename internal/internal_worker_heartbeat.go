@@ -80,8 +80,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		workerCtx:                     heartbeatCtx,
 		heartbeatCancel:               heartbeatCancel,
 		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
-		environmentInfo:               m.environmentInfo,
-		pendingEnvironment:            make(map[string]struct{}),
+		heartbeatSuccessCallbacks:     make(map[string]func()),
 		activityCancellationCallbacks: newActivityCancellationCallbacks(),
 		workerControlTaskQueue:        controlTaskQueue,
 		workerInstanceKey:             uuid.NewString(),
@@ -117,9 +116,7 @@ func (m *heartbeatManager) registerWorker(
 
 	hw.callbacksMutex.Lock()
 	hw.callbacks[worker.workerInstanceKey] = worker.heartbeatCallback
-	if hw.environmentInfo != nil {
-		hw.pendingEnvironment[worker.workerInstanceKey] = struct{}{}
-	}
+	hw.heartbeatSuccessCallbacks[worker.workerInstanceKey] = worker.heartbeatSuccess
 	hw.callbacksMutex.Unlock()
 
 	if hw.started.CompareAndSwap(false, true) {
@@ -144,7 +141,7 @@ func (m *heartbeatManager) unregisterWorker(worker *AggregatedWorker) {
 
 	hw.callbacksMutex.Lock()
 	delete(hw.callbacks, worker.workerInstanceKey)
-	delete(hw.pendingEnvironment, worker.workerInstanceKey)
+	delete(hw.heartbeatSuccessCallbacks, worker.workerInstanceKey)
 	remaining := len(hw.callbacks)
 	hw.callbacksMutex.Unlock()
 
@@ -167,10 +164,9 @@ type sharedNamespaceWorker struct {
 	// callbacksMutex should only be unlocked under
 	callbacksMutex sync.RWMutex
 	callbacks      map[string]func() *workerpb.WorkerHeartbeat // workerInstanceKey -> callback
-	// environmentInfo is attached to each worker's heartbeats until the server accepts one, at
-	// which point the worker is removed from pendingEnvironment. Both are guarded by callbacksMutex.
-	environmentInfo    *workerpb.EnvironmentInfo
-	pendingEnvironment map[string]struct{} // workerInstanceKey -> environment not yet delivered
+	// heartbeatSuccessCallbacks are invoked after the server accepts a heartbeat batch that
+	// included the corresponding worker. Guarded by callbacksMutex.
+	heartbeatSuccessCallbacks map[string]func() // workerInstanceKey -> callback
 
 	activityCancellationCallbacks *activityCancellationCallbacks
 	workerCommandsSupported       bool
@@ -224,34 +220,26 @@ func (hw *sharedNamespaceWorker) run() {
 }
 
 func (hw *sharedNamespaceWorker) sendHeartbeats() error {
-	type heartbeatSource struct {
-		workerInstanceKey  string
-		callback           func() *workerpb.WorkerHeartbeat
-		includeEnvironment bool
-	}
 	hw.callbacksMutex.RLock()
-	sources := make([]heartbeatSource, 0, len(hw.callbacks))
+	callbacks := make([]func() *workerpb.WorkerHeartbeat, 0, len(hw.callbacks))
+	successCallbacks := make([]func(), 0, len(hw.callbacks))
 	for key, cb := range hw.callbacks {
 		if cb != nil {
-			_, includeEnvironment := hw.pendingEnvironment[key]
-			sources = append(sources, heartbeatSource{key, cb, includeEnvironment})
+			callbacks = append(callbacks, cb)
+			if onSuccess := hw.heartbeatSuccessCallbacks[key]; onSuccess != nil {
+				successCallbacks = append(successCallbacks, onSuccess)
+			}
 		}
 	}
 	hw.callbacksMutex.RUnlock()
 
-	if len(sources) == 0 {
+	if len(callbacks) == 0 {
 		return nil
 	}
 
-	heartbeats := make([]*workerpb.WorkerHeartbeat, 0, len(sources))
-	var environmentSent []string
-	for _, source := range sources {
-		hb := source.callback()
-		if source.includeEnvironment {
-			hb.Environment = hw.environmentInfo
-			environmentSent = append(environmentSent, source.workerInstanceKey)
-		}
-		heartbeats = append(heartbeats, hb)
+	heartbeats := make([]*workerpb.WorkerHeartbeat, 0, len(callbacks))
+	for _, cb := range callbacks {
+		heartbeats = append(heartbeats, cb())
 	}
 
 	_, err := hw.client.recordWorkerHeartbeat(hw.workerCtx, &workflowservice.RecordWorkerHeartbeatRequest{
@@ -270,12 +258,8 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 		return nil
 	}
 
-	if len(environmentSent) > 0 {
-		hw.callbacksMutex.Lock()
-		for _, key := range environmentSent {
-			delete(hw.pendingEnvironment, key)
-		}
-		hw.callbacksMutex.Unlock()
+	for _, onSuccess := range successCallbacks {
+		onSuccess()
 	}
 	return nil
 }
