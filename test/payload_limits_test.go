@@ -482,9 +482,11 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
 		},
 		workflow.RegisterOptions{Name: wfname},
 	)
+	workflowOptions := ts.startWorkflowOptions(ts.T().Name())
+	workflowOptions.WorkflowExecutionTimeout = time.Minute
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions(ts.T().Name()),
+		workflowOptions,
 		wfname,
 	)
 	ts.NoError(err)
