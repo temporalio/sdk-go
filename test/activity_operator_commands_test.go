@@ -193,8 +193,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
 
-		// Start delayed so the activity sits scheduled; pausing from there reaches a true PAUSED
-		// state rather than the PAUSE_REQUESTED of a running activity.
+		// Start delayed so it reaches PAUSED.
 		handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
 			ID:                  newID(),
 			TaskQueue:           ts.taskQueueName,
@@ -349,9 +348,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
 
-		// Start delayed so the activity sits scheduled. With no worker holding an attempt the
-		// server applies the restore immediately, rather than deferring it until the running
-		// attempt yields on its next heartbeat.
+		// Start delayed so the restore is applied immediately.
 		handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
 			ID:                  newID(),
 			TaskQueue:           ts.taskQueueName,
@@ -366,8 +363,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 
 		ts.NoError(handle.Reset(ctx, client.ResetActivityOptions{RestoreOriginalOptions: true}))
 
-		// RestoreOriginalOptions reverts the changed option to the value the activity was
-		// created with.
 		ts.Eventually(func() bool {
 			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
 			return err == nil && description.StartToCloseTimeout == 45*time.Second
@@ -379,9 +374,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
 
-		// The count tracks heartbeats the server recorded, not calls the activity made: the
-		// SDK throttles them to roughly 0.8x the heartbeat timeout, so a short timeout is what
-		// makes a second heartbeat arrive promptly.
 		handle := startRunningSlowActivity(ctx, func(o *client.StartActivityOptions) {
 			o.HeartbeatTimeout = 3 * time.Second
 		})
