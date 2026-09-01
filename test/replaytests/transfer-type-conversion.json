@@ -1,0 +1,93 @@
+{
+ "events": [
+  {
+   "eventId": "1",
+   "eventTime": "2026-08-31T12:00:00Z",
+   "eventType": "WorkflowExecutionStarted",
+   "taskId": "1",
+   "workflowExecutionStartedEventAttributes": {
+    "workflowType": {
+     "name": "TransferTypeWorkflow"
+    },
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "input": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "InJlcGxheS1pbnB1dCI="
+      }
+     ]
+    },
+    "workflowExecutionTimeout": "0s",
+    "workflowRunTimeout": "0s",
+    "workflowTaskTimeout": "10s",
+    "originalExecutionRunId": "0e412d48-7eca-4a93-a477-6aaad3da1891",
+    "identity": "replay-test-worker",
+    "firstExecutionRunId": "0e412d48-7eca-4a93-a477-6aaad3da1891",
+    "attempt": 1,
+    "firstWorkflowTaskBackoff": "0s",
+    "header": {}
+   }
+  },
+  {
+   "eventId": "2",
+   "eventTime": "2026-08-31T12:00:00.001Z",
+   "eventType": "WorkflowTaskScheduled",
+   "taskId": "2",
+   "workflowTaskScheduledEventAttributes": {
+    "taskQueue": {
+     "name": "replay-test",
+     "kind": "Normal"
+    },
+    "startToCloseTimeout": "10s",
+    "attempt": 1
+   }
+  },
+  {
+   "eventId": "3",
+   "eventTime": "2026-08-31T12:00:00.002Z",
+   "eventType": "WorkflowTaskStarted",
+   "taskId": "3",
+   "workflowTaskStartedEventAttributes": {
+    "scheduledEventId": "2",
+    "identity": "replay-test-worker",
+    "requestId": "ac210534-9d86-4fc9-b127-e21e7f46afac"
+   }
+  },
+  {
+   "eventId": "4",
+   "eventTime": "2026-08-31T12:00:00.003Z",
+   "eventType": "WorkflowTaskCompleted",
+   "taskId": "4",
+   "workflowTaskCompletedEventAttributes": {
+    "scheduledEventId": "2",
+    "startedEventId": "3",
+    "identity": "replay-test-worker"
+   }
+  },
+  {
+   "eventId": "5",
+   "eventTime": "2026-08-31T12:00:00.004Z",
+   "eventType": "WorkflowExecutionCompleted",
+   "taskId": "5",
+   "workflowExecutionCompletedEventAttributes": {
+    "result": {
+     "payloads": [
+      {
+       "metadata": {
+        "encoding": "anNvbi9wbGFpbg=="
+       },
+       "data": "InJlcGxheS1pbnB1dC1yZXN1bHQi"
+      }
+     ]
+    },
+    "workflowTaskCompletedEventId": "4"
+   }
+  }
+ ]
+}

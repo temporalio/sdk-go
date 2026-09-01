@@ -88,7 +88,7 @@ type (
 
 func newEncodedValues(values *commonpb.Payloads, dc converter.DataConverter) converter.EncodedValues {
 	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
+		dc = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 	}
 	return &EncodedValues{values, dc}
 }

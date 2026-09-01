@@ -56,6 +56,7 @@ func NewDefaultFailureConverter(opt DefaultFailureConverterOptions) *DefaultFail
 	if opt.DataConverter == nil {
 		opt.DataConverter = converter.GetDefaultDataConverter()
 	}
+	opt.DataConverter = wrapTransferTypeDataConverter(opt.DataConverter)
 	return &DefaultFailureConverter{
 		dataConverter:          opt.DataConverter,
 		encodeCommonAttributes: opt.EncodeCommonAttributes,

@@ -91,6 +91,7 @@ func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 
 	w.RegisterWorkflow(Workflow1)
 	w.RegisterWorkflow(Workflow2)
+	w.RegisterWorkflow(TransferTypeWorkflow)
 	w.RegisterActivity(helloworldActivity)
 
 	_ = w.Start()
@@ -112,9 +113,23 @@ func (s *replayTestSuite) TestGenerateWorkflowHistory() {
 	var res2 string
 	_ = we2.Get(context.Background(), &res2)
 
+	workflowOptions3 := client.StartWorkflowOptions{
+		ID:        "replay-tests-transfer-type-conversion",
+		TaskQueue: "replay-test",
+	}
+	we3, _ := c.ExecuteWorkflow(
+		context.Background(),
+		workflowOptions3,
+		TransferTypeWorkflow,
+		replayTransferTypeValue{Value: "replay-input"},
+	)
+	var res3 replayTransferTypeValue
+	_ = we3.Get(context.Background(), &res3)
+
 	// Now run:
 	// temporal workflow show --workflow-id replay-tests-workflow1 --output json > workflow1.json
 	// temporal workflow show --workflow-id replay-tests-workflow2 --output json > workflow2.json
+	// temporal workflow show --workflow-id replay-tests-transfer-type-conversion --output json > transfer-type-conversion.json
 }
 
 func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
@@ -129,6 +144,14 @@ func (s *replayTestSuite) TestReplayWorkflowHistoryFromFile() {
 		err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), testFile)
 		require.NoError(s.T(), err, "file: %s", testFile)
 	}
+}
+
+func (s *replayTestSuite) TestTransferTypeConversion() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(TransferTypeWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "transfer-type-conversion.json")
+	require.NoError(s.T(), err)
 }
 
 func (s *replayTestSuite) TestReplayWorkflowWithBadUnknownEvent() {

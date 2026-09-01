@@ -129,7 +129,7 @@ func deploymentMetadataUpdateToProto(dc converter.DataConverter, update Deployme
 		} else {
 			dataConverter := dc
 			if dataConverter == nil {
-				dataConverter = converter.GetDefaultDataConverter()
+				dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 			}
 			metadataBytes, err := dataConverter.ToPayload(v)
 			if err != nil {

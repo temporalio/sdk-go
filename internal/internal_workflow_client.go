@@ -2034,7 +2034,7 @@ func encodeMemoValue(value any, dc converter.DataConverter, useUserDC bool) (*co
 			return payload, nil
 		}
 
-		payload, err := converter.GetDefaultDataConverter().ToPayload(value)
+		payload, err := wrapTransferTypeDataConverter(converter.GetDefaultDataConverter()).ToPayload(value)
 
 		// If fallback default data converter fails, return original user data converter error
 		if err != nil {
@@ -2042,7 +2042,7 @@ func encodeMemoValue(value any, dc converter.DataConverter, useUserDC bool) (*co
 		}
 		return payload, nil
 	}
-	payload, err := converter.GetDefaultDataConverter().ToPayload(value)
+	payload, err := wrapTransferTypeDataConverter(converter.GetDefaultDataConverter()).ToPayload(value)
 	if err != nil {
 		return nil, err
 	}
@@ -2058,7 +2058,7 @@ func GetWorkflowMemo(input map[string]any, dc converter.DataConverter, useUserDC
 	}
 
 	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
+		dc = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 	}
 
 	memo := make(map[string]*commonpb.Payload, len(input))
@@ -2118,7 +2118,7 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = converter.GetDefaultDataConverter()
+		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 	}
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
@@ -2984,7 +2984,7 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 ) (*workflowservice.UpdateWorkflowExecutionRequest, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = converter.GetDefaultDataConverter()
+		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 	}
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,

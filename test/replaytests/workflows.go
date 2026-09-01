@@ -3,14 +3,14 @@ package replaytests
 import (
 	"context"
 	"fmt"
-	"go.temporal.io/sdk/converter"
-	iconverter "go.temporal.io/sdk/internal/converter"
 	"math/rand"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/temporalnexus"
 
 	"go.temporal.io/api/enums/v1"
@@ -19,6 +19,45 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
+
+type replayTransferTypeValue struct {
+	Value       string
+	Unsupported func()
+}
+
+func (replayTransferTypeValue) TransferTypeConverter() converter.TransferTypeConverter {
+	return replayTransferTypeConverter{}
+}
+
+type replayTransferTypeConverter struct{}
+
+func (replayTransferTypeConverter) NewTransferType() any {
+	return new(string)
+}
+
+func (replayTransferTypeConverter) ToTransferType(value any) (any, error) {
+	switch value := value.(type) {
+	case replayTransferTypeValue:
+		return value.Value, nil
+	case *replayTransferTypeValue:
+		return value.Value, nil
+	default:
+		return nil, fmt.Errorf("expected replayTransferTypeValue or *replayTransferTypeValue, got %T", value)
+	}
+}
+
+func (replayTransferTypeConverter) FromTransferType(value any) (any, error) {
+	transferValue, ok := value.(*string)
+	if !ok {
+		return nil, fmt.Errorf("expected *string, got %T", value)
+	}
+	return replayTransferTypeValue{Value: *transferValue}, nil
+}
+
+func TransferTypeWorkflow(_ workflow.Context, input replayTransferTypeValue) (replayTransferTypeValue, error) {
+	input.Value += "-result"
+	return input, nil
+}
 
 // Workflow1 test workflow
 func Workflow1(ctx workflow.Context, name string) error {

@@ -62,7 +62,7 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = converter.GetDefaultDataConverter()
+		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 	}
 
 	if in.Options.Action == nil {
@@ -915,7 +915,7 @@ func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]any
 
 	memo := make(map[string]*commonpb.Payload)
 	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
+		dc = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 	}
 
 	for k, v := range input {

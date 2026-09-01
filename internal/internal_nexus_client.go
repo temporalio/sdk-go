@@ -665,7 +665,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 ) (ClientNexusOperationHandle, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = converter.GetDefaultDataConverter()
+		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 	}
 
 	if in.Options.ID == "" {

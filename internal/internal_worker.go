@@ -300,6 +300,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.DataConverter = converter.GetDefaultDataConverter()
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
+	params.DataConverter = wrapTransferTypeDataConverter(params.DataConverter)
 	if params.FailureConverter == nil {
 		params.FailureConverter = GetDefaultFailureConverter()
 	}
@@ -1250,7 +1251,7 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	if env != nil && env.dataConverter != nil {
 		dataConverter = env.dataConverter
 	} else {
-		dataConverter = converter.GetDefaultDataConverter()
+		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 	}
 	return WithContext(ctx, dataConverter)
 }
@@ -1880,6 +1881,10 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 			return nil, err
 		}
 	}
+	if options.DataConverter == nil {
+		options.DataConverter = converter.GetDefaultDataConverter()
+	}
+	options.DataConverter = wrapTransferTypeDataConverter(options.DataConverter)
 
 	storageParams, err := extstore.ExternalStorageToParams(options.ExternalStorage)
 	if err != nil {
@@ -2027,7 +2032,7 @@ func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr any) e
 	}
 	dc := aw.dataConverter
 	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
+		dc = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
 	}
 	return dc.FromPayloads(payloads, valuePtr)
 }
@@ -2913,6 +2918,7 @@ func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
 		client.dataConverter = converter.GetDefaultDataConverter()
 	}
+	client.dataConverter = wrapTransferTypeDataConverter(client.dataConverter)
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace
 	}

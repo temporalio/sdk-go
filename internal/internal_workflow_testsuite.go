@@ -346,7 +346,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 		doneChannel:                 make(chan struct{}),
 		workerStopChannel:           make(chan struct{}),
-		dataConverter:               converter.GetDefaultDataConverter(),
+		dataConverter:               wrapTransferTypeDataConverter(converter.GetDefaultDataConverter()),
 		failureConverter:            GetDefaultFailureConverter(),
 		runTimeout:                  maxWorkflowTimeout,
 		bufferedUpdateRequests:      make(map[string][]func()),
@@ -574,7 +574,11 @@ func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
 }
 
 func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter.DataConverter) {
-	env.dataConverter = dataConverter
+	wrapped := wrapTransferTypeDataConverter(dataConverter)
+	env.dataConverter = wrapped
+	if env.rootDataConverter != nil {
+		env.rootDataConverter = wrapped
+	}
 }
 
 func (env *testWorkflowEnvironmentImpl) setFailureConverter(failureConverter converter.FailureConverter) {
