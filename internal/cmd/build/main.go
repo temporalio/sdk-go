@@ -375,6 +375,10 @@ func (b *builder) integrationTest() error {
 				"--dynamic-config-value", "activity.startDelayEnabled=true",
 				"--dynamic-config-value", "history.enableUpdateCallbacks=true",
 				"--dynamic-config-value", "activity.enableCallbacks=true",
+				"--dynamic-config-value", "history.enableWorkflowTaskCompletionPagination=true",
+				// Pagination clears the gRPC request limit, but the recombined completion still
+				// persists as one transaction, so raise the persistence limit above it.
+				"--dynamic-config-value", "system.transactionSizeLimit=33554432",
 			},
 		})
 		if err != nil {
