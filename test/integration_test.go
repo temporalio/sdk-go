@@ -81,33 +81,17 @@ type transferTypeIntegrationValue struct {
 	Unsupported func()
 }
 
+var transferTypeIntegrationConverter = converter.NewTypedTransferTypeConverter[transferTypeIntegrationValue, string](
+	func(value transferTypeIntegrationValue) (string, error) {
+		return value.Value, nil
+	},
+	func(value string) (transferTypeIntegrationValue, error) {
+		return transferTypeIntegrationValue{Value: value}, nil
+	},
+)
+
 func (transferTypeIntegrationValue) TransferTypeConverter() converter.TransferTypeConverter {
-	return transferTypeIntegrationConverter{}
-}
-
-type transferTypeIntegrationConverter struct{}
-
-func (transferTypeIntegrationConverter) NewTransferType() any {
-	return new(string)
-}
-
-func (transferTypeIntegrationConverter) ToTransferType(value any) (any, error) {
-	switch value := value.(type) {
-	case transferTypeIntegrationValue:
-		return value.Value, nil
-	case *transferTypeIntegrationValue:
-		return value.Value, nil
-	default:
-		return nil, fmt.Errorf("expected transferTypeIntegrationValue or *transferTypeIntegrationValue, got %T", value)
-	}
-}
-
-func (transferTypeIntegrationConverter) FromTransferType(value any) (any, error) {
-	transferValue, ok := value.(*string)
-	if !ok {
-		return nil, fmt.Errorf("expected *string, got %T", value)
-	}
-	return transferTypeIntegrationValue{Value: *transferValue}, nil
+	return transferTypeIntegrationConverter
 }
 
 type IntegrationTestSuite struct {

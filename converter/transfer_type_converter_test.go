@@ -10,33 +10,17 @@ type customerReference struct {
 	ID string
 }
 
+var customerReferenceConverterInstance = converter.NewTypedTransferTypeConverter[customerReference, string](
+	func(value customerReference) (string, error) {
+		return value.ID, nil
+	},
+	func(value string) (customerReference, error) {
+		return customerReference{ID: value}, nil
+	},
+)
+
 func (customerReference) TransferTypeConverter() converter.TransferTypeConverter {
-	return customerReferenceTransferTypeConverter{}
-}
-
-type customerReferenceTransferTypeConverter struct{}
-
-func (customerReferenceTransferTypeConverter) NewTransferType() any {
-	return new(string)
-}
-
-func (customerReferenceTransferTypeConverter) ToTransferType(value any) (any, error) {
-	switch value := value.(type) {
-	case customerReference:
-		return value.ID, nil
-	case *customerReference:
-		return value.ID, nil
-	default:
-		return nil, fmt.Errorf("expected customerReference or *customerReference, got %T", value)
-	}
-}
-
-func (customerReferenceTransferTypeConverter) FromTransferType(value any) (any, error) {
-	id, ok := value.(*string)
-	if !ok {
-		return nil, fmt.Errorf("expected *string, got %T", value)
-	}
-	return customerReference{ID: *id}, nil
+	return customerReferenceConverterInstance
 }
 
 func ExampleTransferTypeConvertible() {

@@ -30,9 +30,10 @@ to docs, or any other relevant information.
   `client.Options.DisableWorkerEnvironmentInfo`.
 - Added experimental transfer type conversion for top-level application values. Marked values use
   another Go value as the input to the configured data converter, while the configured converter and
-  codecs continue to define the payload representation and add no transfer-specific metadata. Adding
-  or changing a transfer mapping can affect workflow replay and mixed-version deployments because the
-  mapping is part of the payload and workflow-history compatibility contract.
+  codecs continue to define the payload representation and add no transfer-specific metadata.
+  `converter.NewTypedTransferTypeConverter` defines mappings with statically typed conversion
+  functions. Adding or changing a transfer mapping can affect workflow replay and mixed-version
+  deployments because the mapping is part of the payload and workflow-history compatibility contract.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting

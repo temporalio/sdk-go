@@ -25,33 +25,17 @@ type replayTransferTypeValue struct {
 	Unsupported func()
 }
 
+var replayTransferTypeConverter = converter.NewTypedTransferTypeConverter[replayTransferTypeValue, string](
+	func(value replayTransferTypeValue) (string, error) {
+		return value.Value, nil
+	},
+	func(value string) (replayTransferTypeValue, error) {
+		return replayTransferTypeValue{Value: value}, nil
+	},
+)
+
 func (replayTransferTypeValue) TransferTypeConverter() converter.TransferTypeConverter {
-	return replayTransferTypeConverter{}
-}
-
-type replayTransferTypeConverter struct{}
-
-func (replayTransferTypeConverter) NewTransferType() any {
-	return new(string)
-}
-
-func (replayTransferTypeConverter) ToTransferType(value any) (any, error) {
-	switch value := value.(type) {
-	case replayTransferTypeValue:
-		return value.Value, nil
-	case *replayTransferTypeValue:
-		return value.Value, nil
-	default:
-		return nil, fmt.Errorf("expected replayTransferTypeValue or *replayTransferTypeValue, got %T", value)
-	}
-}
-
-func (replayTransferTypeConverter) FromTransferType(value any) (any, error) {
-	transferValue, ok := value.(*string)
-	if !ok {
-		return nil, fmt.Errorf("expected *string, got %T", value)
-	}
-	return replayTransferTypeValue{Value: *transferValue}, nil
+	return replayTransferTypeConverter
 }
 
 func TransferTypeWorkflow(_ workflow.Context, input replayTransferTypeValue) (replayTransferTypeValue, error) {
