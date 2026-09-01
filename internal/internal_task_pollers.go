@@ -122,6 +122,7 @@ type (
 		pendingStickyPollCount  int
 		stickyBacklog           int64
 		requestLock             sync.Mutex
+		slotAdmission           *workflowSlotAdmission
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
 
@@ -1116,6 +1117,14 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 	wtp.requestLock.Lock()
 	wtp.stickyBacklog = backlogCountHint
 	wtp.requestLock.Unlock()
+
+	if wtp.slotAdmission != nil {
+		wtp.slotAdmission.setStickyBacklog(backlogCountHint)
+	}
+}
+
+func (wtp *workflowTaskPoller) setSlotAdmission(admission *workflowSlotAdmission) {
+	wtp.slotAdmission = admission
 }
 
 // getNextPollRequest returns appropriate next poll request based on poller configuration and mode.
