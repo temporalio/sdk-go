@@ -325,6 +325,8 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
 		ts.NoError(err)
 		ts.True(isPaused(description.RunState))
+		// The new value is visible on a fresh describe, not just in the update's return value.
+		ts.Equal(99*time.Second, description.StartToCloseTimeout)
 		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 	})
 
@@ -403,9 +405,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		})
 		ts.NoError(err)
 
-		// RawDescription is the entire describe response. The decoded accessors are derived
-		// from it, so the raw payloads and the decoded values must agree, and input must not
-		// be confused with the result.
 		ts.Equal(handle.GetID(), description.RawDescription.GetInfo().GetActivityId())
 		ts.Same(description.RawExecutionInfo, description.RawDescription.GetInfo())
 
@@ -479,7 +478,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.True(full.HasLastFailure())
 		ts.Error(full.GetLastFailure())
 
-		// The other arm of the oneof, on an activity that never succeeds.
+		// Failed activity.
 		failed, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
 			ID:                  newID(),
 			TaskQueue:           ts.taskQueueName,
