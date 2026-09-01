@@ -422,13 +422,13 @@ var ClientActivityOptionsKeys = struct {
 	RetryPolicy: ClientActivityOptionsKey[RetryPolicy]{
 		name: "retry_policy",
 		set: func(options *activitypb.ActivityOptions, value RetryPolicy) {
-			options.RetryPolicy = convertToPBRetryPolicy(&value)
+			options.RetryPolicy = ConvertToPBRetryPolicy(&value)
 		},
 	},
 	Priority: ClientActivityOptionsKey[Priority]{
 		name: "priority",
 		set: func(options *activitypb.ActivityOptions, value Priority) {
-			options.Priority = convertToPBPriority(value)
+			options.Priority = ConvertToPBPriority(value)
 		},
 	},
 }
