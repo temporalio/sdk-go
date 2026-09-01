@@ -20,8 +20,14 @@ type workflowSlotAdmission struct {
 	normalActive  int
 	stickyActive  int
 	stickyBacklog int64
+	groupBacklogs map[string]stickyGroupBacklog
 	wakeCh        chan struct{}
 	mu            sync.Mutex
+}
+
+type stickyGroupBacklog struct {
+	generation int64
+	backlog    int64
 }
 
 type slotAdmissionPoller interface {
@@ -36,8 +42,9 @@ func newWorkflowSlotAdmission(maxSlots int) *workflowSlotAdmission {
 	}
 
 	return &workflowSlotAdmission{
-		maxSlots: maxSlots,
-		wakeCh:   make(chan struct{}),
+		maxSlots:      maxSlots,
+		groupBacklogs: make(map[string]stickyGroupBacklog),
+		wakeCh:        make(chan struct{}),
 	}
 }
 
@@ -167,14 +174,55 @@ func (a *workflowSlotAdmission) changeActive(kind enumspb.TaskQueueKind, change 
 
 func (a *workflowSlotAdmission) setStickyBacklog(backlog int64) {
 	a.mu.Lock()
+	clear(a.groupBacklogs)
+	a.setStickyBacklogLocked(backlog)
+	a.mu.Unlock()
+}
+
+// setStickyGroupBacklog aggregates current group hints for global slot admission.
+func (a *workflowSlotAdmission) setStickyGroupBacklog(
+	groupID string,
+	backlog int64,
+	snapshot pollerGroupSnapshot,
+) {
+	if len(snapshot.weights) == 0 {
+		if groupID != "" {
+			backlog = 0
+		}
+		a.setStickyBacklog(backlog)
+		return
+	}
+
+	a.mu.Lock()
+	for id, state := range a.groupBacklogs {
+		generation, ok := snapshot.generations[id]
+		if !ok || generation != state.generation {
+			delete(a.groupBacklogs, id)
+		}
+	}
+	if generation, ok := snapshot.generations[groupID]; ok {
+		a.groupBacklogs[groupID] = stickyGroupBacklog{
+			generation: generation,
+			backlog:    max(backlog, 0),
+		}
+	}
+
+	var total int64
+	for _, state := range a.groupBacklogs {
+		total += state.backlog
+	}
+	a.setStickyBacklogLocked(total)
+	a.mu.Unlock()
+}
+
+// setStickyBacklogLocked expects a.mu to be held.
+func (a *workflowSlotAdmission) setStickyBacklogLocked(backlog int64) {
 	if backlog == a.stickyBacklog {
-		a.mu.Unlock()
 		return
 	}
 
 	a.stickyBacklog = backlog
 	a.wakeWaiters()
-	a.mu.Unlock()
 }
 
 func (a *workflowSlotAdmission) wakeWaiters() {

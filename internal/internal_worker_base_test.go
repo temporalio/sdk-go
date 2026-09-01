@@ -127,6 +127,26 @@ func (s *ScalableTaskPollerSuite) TestSlotReservationDataUsesKnownTaskQueueKind(
 		nil,
 	)
 	s.Equal(enumspb.TASK_QUEUE_KIND_UNSPECIFIED, bw.slotReservationData(mixedPoller).taskQueueKind)
+
+	activityPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 1},
+		metrics.PollerTypeActivityTask,
+		&atomic.Bool{},
+		nil,
+	)
+	s.Equal(enumspb.TASK_QUEUE_KIND_NORMAL, bw.slotReservationData(activityPoller).taskQueueKind)
+
+	nexusPoller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		ilog.NewNopLogger(),
+		&pollerBehaviorSimpleMaximum{maximumNumberOfPollers: 1},
+		metrics.PollerTypeNexusTask,
+		&atomic.Bool{},
+		nil,
+	)
+	s.Equal(enumspb.TASK_QUEUE_KIND_NORMAL, bw.slotReservationData(nexusPoller).taskQueueKind)
 }
 
 func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesTaskQueueKind() {
@@ -1853,6 +1873,47 @@ func TestWorkflowSlotAdmissionIgnoresUnchangedBacklog(t *testing.T) {
 	require.Equal(t, wakeCh, admission.wakeCh)
 }
 
+func TestWorkflowSlotAdmissionAggregatesGroupBacklog(t *testing.T) {
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+		{Id: "group-b", Weight: 1},
+	}))
+	admission := newWorkflowSlotAdmission(3)
+	admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+	admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	admission.setStickyGroupBacklog("group-a", 1, groupStore.snapshot())
+	admission.setStickyGroupBacklog("group-b", 1, groupStore.snapshot())
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(
+		t,
+		admission.waitForAdmission(ctx, enumspb.TASK_QUEUE_KIND_NORMAL),
+		context.Canceled,
+		"backlog from both groups should favor sticky admission",
+	)
+}
+
+func TestWorkflowSlotAdmissionDropsStaleGroupBacklog(t *testing.T) {
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+		{Id: "group-b", Weight: 1},
+	}))
+	admission := newWorkflowSlotAdmission(3)
+	admission.setStickyGroupBacklog("group-a", 3, groupStore.snapshot())
+
+	groupStore.updateGroups(testPollerGroupsInfo(2, nil))
+	groupStore.updateGroups(testPollerGroupsInfo(3, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	}))
+	admission.setStickyGroupBacklog("", 0, groupStore.snapshot())
+
+	require.Zero(t, admission.stickyBacklog)
+	require.Empty(t, admission.groupBacklogs)
+}
+
 func (s *ScalableTaskPollerSuite) TestWorkflowSlotAdmissionConfiguration() {
 	behavior := &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: 1,
@@ -1882,7 +1943,7 @@ func (s *ScalableTaskPollerSuite) TestWorkflowSlotAdmissionConfiguration() {
 	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_NORMAL, bw.options.taskPollers[0].admissionKind)
 	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_STICKY, bw.options.taskPollers[1].admissionKind)
 
-	sticky.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, 3)
+	sticky.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, "", 3)
 	require.Equal(s.T(), int64(3), bw.workflowAdmission.stickyBacklog)
 }
 

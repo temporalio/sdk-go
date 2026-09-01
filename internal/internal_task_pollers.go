@@ -1136,6 +1136,7 @@ func (wtp *workflowTaskPoller) release(kind enumspb.TaskQueueKind) {
 
 func (wtp *workflowTaskPoller) updateBacklog(
 	taskQueueKind enumspb.TaskQueueKind,
+	responseGroupID string,
 	backlogCountHint int64,
 ) {
 	if taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.stickyCacheSize <= 0 {
@@ -1143,7 +1144,15 @@ func (wtp *workflowTaskPoller) updateBacklog(
 		return
 	}
 	if wtp.slotAdmission != nil {
-		wtp.slotAdmission.setStickyBacklog(backlogCountHint)
+		if wtp.pollerGroups == nil {
+			wtp.slotAdmission.setStickyBacklog(backlogCountHint)
+		} else {
+			wtp.slotAdmission.setStickyGroupBacklog(
+				responseGroupID,
+				backlogCountHint,
+				wtp.pollerGroups.groupStore.snapshot(),
+			)
+		}
 	}
 	if wtp.mode != Mixed {
 		return
@@ -1266,7 +1275,7 @@ func (wtp *workflowTaskPoller) poll(
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
 	if err != nil {
-		wtp.updateBacklog(queueKind, 0)
+		wtp.updateBacklog(queueKind, "", 0)
 		return nil, err
 	}
 
@@ -1277,7 +1286,7 @@ func (wtp *workflowTaskPoller) poll(
 	if response == nil || len(response.TaskToken) == 0 {
 		// Emit using base scope as no workflow type information is available in the case of empty poll
 		wtp.metricsHandler.Counter(metrics.WorkflowTaskQueuePollEmptyCounter).Inc(1)
-		wtp.updateBacklog(queueKind, response.GetBacklogCountHint())
+		wtp.updateBacklog(queueKind, response.GetPollerGroupId(), response.GetBacklogCountHint())
 		return &workflowTask{}, nil
 	}
 
@@ -1287,7 +1296,7 @@ func (wtp *workflowTaskPoller) poll(
 		wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowTask)
 	}
 
-	wtp.updateBacklog(queueKind, response.GetBacklogCountHint())
+	wtp.updateBacklog(queueKind, response.GetPollerGroupId(), response.GetBacklogCountHint())
 
 	task := wtp.toWorkflowTask(response)
 	traceLog(func() {

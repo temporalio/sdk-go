@@ -303,6 +303,28 @@ func TestWorkflowPollRejectsLeaseFromDifferentManager(t *testing.T) {
 	require.EqualError(t, err, "workflow poller-group lease belongs to a different manager")
 }
 
+func TestWorkflowStickyBacklogAggregatesPollerGroups(t *testing.T) {
+	pollerGroups := newTestPollerGroupManager()
+	pollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+		{Id: "group-b", Weight: 1},
+	}))
+	admission := newWorkflowSlotAdmission(3)
+	poller := &workflowTaskPoller{
+		mode:            Sticky,
+		stickyCacheSize: 1,
+		pollerGroups:    pollerGroups,
+		slotAdmission:   admission,
+	}
+
+	poller.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, "group-a", 1)
+	poller.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, "group-b", 2)
+	require.Equal(t, int64(3), admission.stickyBacklog)
+
+	poller.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, "group-a", 0)
+	require.Equal(t, int64(2), admission.stickyBacklog)
+}
+
 // This test simulates a namespace going from non-MCN to MCN
 func TestWorkflowPollResponseSeedsPollerGroupsAfterUngroupedTaskPoll(t *testing.T) {
 	t.Parallel()

@@ -558,6 +558,7 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 			if bw.pollerBalancer != nil {
 				bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
 			}
+			// Fixed pollers do not reserve groups; their requests remain ungrouped.
 			bw.pollTask(taskWorker, permit, pollerGroupLease{})
 			if bw.pollerBalancer != nil {
 				bw.pollerBalancer.decrementPoller(taskWorker.taskPollerType)
@@ -588,6 +589,8 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		if bw.noRepoll.Load() {
 			return
 		}
+		// Call the balancer before reserving a slot so one poller type cannot
+		// hold slots while waiting for another type to start polling.
 		if bw.pollerBalancer != nil {
 			if bw.pollerBalancer.balance(bw.limiterContext, taskWorker.taskPollerType) != nil {
 				return
@@ -692,21 +695,20 @@ func (bw *baseWorker) slotReservationData(taskWorker scalableTaskPoller) slotRes
 }
 
 func taskQueueKindForPoller(taskWorker scalableTaskPoller) (enumspb.TaskQueueKind, bool) {
-	if taskWorker.autoscalingRunner == nil {
-		return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
-	}
-	return taskQueueKindForAutoscalingPollerType(taskWorker.taskPollerType)
-}
-
-func taskQueueKindForAutoscalingPollerType(taskPollerType string) (enumspb.TaskQueueKind, bool) {
-	switch taskPollerType {
+	switch taskWorker.taskPollerType {
 	case metrics.PollerTypeWorkflowStickyTask:
 		return enumspb.TASK_QUEUE_KIND_STICKY, true
-	case metrics.PollerTypeWorkflowTask, metrics.PollerTypeActivityTask, metrics.PollerTypeNexusTask:
+	case metrics.PollerTypeWorkflowTask:
+		// Autoscaling workflow pollers are split by queue kind. SimpleMaximum
+		// workflow pollers are mixed, so their kind is unknown before polling.
+		if taskWorker.autoscalingRunner != nil {
+			return enumspb.TASK_QUEUE_KIND_NORMAL, true
+		}
+	case metrics.PollerTypeActivityTask, metrics.PollerTypeNexusTask:
 		return enumspb.TASK_QUEUE_KIND_NORMAL, true
-	default:
-		return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
 	}
+
+	return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
 }
 
 func (bw *baseWorker) tryReserveSlot() *SlotPermit {

@@ -10,9 +10,8 @@ import (
 // The client owns pollerGroupSnapshotStore. Each poller kind uses an independent
 // manager so its autoscaling target and in-flight coverage remain independent.
 type (
-	// pollerGroupSnapshotStore holds client-wide group membership, weights, and
-	// versions learned from poll responses. Managers and schedulers share this
-	// routing snapshot but keep their in-flight poll state local.
+	// pollerGroupSnapshotStore holds the server's namespace-wide routing snapshot.
+	// All task queues share it, but keep their in-flight poll state local.
 	pollerGroupSnapshotStore struct {
 		mu      sync.RWMutex
 		current pollerGroupSnapshot
