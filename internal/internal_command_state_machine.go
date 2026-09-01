@@ -1604,7 +1604,7 @@ func (h *commandsHelper) startTimer(
 	options TimerOptions,
 	dc converter.DataConverter,
 ) commandStateMachine {
-	startMetadata, err := buildUserMetadata(options.Summary, "", dc)
+	startMetadata, err := BuildUserMetadata(options.Summary, "", dc)
 	if err != nil {
 		panic(err)
 	}

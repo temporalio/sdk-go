@@ -80,7 +80,7 @@ func (nc *NexusOperationContext) ResponseLinks() []*commonpb.Link {
 }
 
 func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
-	return getWorkflowFunctionName(nc.registry, wf)
+	return GetWorkflowFunctionName(nc.registry, wf)
 }
 
 // ResolveActivityName returns the registered name of the given activity function reference (or
@@ -618,8 +618,8 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 				ParentClosePolicy:        enums.PARENT_CLOSE_POLICY_ABANDON,
 				Memo:                     options.Memo,
 				CronSchedule:             options.CronSchedule,
-				RetryPolicy:              convertToPBRetryPolicy(options.RetryPolicy),
-				Priority:                 convertToPBPriority(options.Priority),
+				RetryPolicy:              ConvertToPBRetryPolicy(options.RetryPolicy),
+				Priority:                 ConvertToPBPriority(options.Priority),
 			},
 		}, func(result *commonpb.Payloads, wfErr error) {
 			// This callback handles async completion of Nexus operations. If there was an error when
@@ -864,7 +864,7 @@ func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context,
 			ScheduleToStartTimeout: options.ScheduleToStartTimeout,
 			StartToCloseTimeout:    options.StartToCloseTimeout,
 			HeartbeatTimeout:       options.HeartbeatTimeout,
-			RetryPolicy:            convertToPBRetryPolicy(options.RetryPolicy),
+			RetryPolicy:            ConvertToPBRetryPolicy(options.RetryPolicy),
 		},
 		ActivityType:  *activityType,
 		Input:         input,
