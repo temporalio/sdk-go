@@ -28,6 +28,11 @@ to docs, or any other relevant information.
   platforms), and the operating system and architecture. This is sent
   once per worker with the first heartbeat accepted by the server and can be turned off with
   `client.Options.DisableWorkerEnvironmentInfo`.
+- Added caller-side `converter.NexusSerializationContext` support for Nexus operation inputs,
+  results, and failures. Each scheduled operation retains an isolated contextual data and failure
+  converter keyed by its endpoint, service, and resolved operation name, including across replay.
+  Nexus handlers do not yet receive this context and must use compatible static converter
+  configuration for their endpoint/task queue.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting

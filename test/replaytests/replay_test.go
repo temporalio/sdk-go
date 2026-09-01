@@ -24,6 +24,63 @@ type replayTestSigningCodec struct {
 	signature string
 }
 
+type replayNexusLegacyFallbackCodecState struct {
+	legacyDecodedContexts []converter.NexusSerializationContext
+}
+
+type replayNexusLegacyFallbackCodec struct {
+	state   *replayNexusLegacyFallbackCodecState
+	context *converter.NexusSerializationContext
+}
+
+func (c *replayNexusLegacyFallbackCodec) WithSerializationContext(
+	ctx converter.SerializationContext,
+) converter.PayloadCodec {
+	nexusCtx, ok := ctx.(converter.NexusSerializationContext)
+	if !ok {
+		return c
+	}
+	return &replayNexusLegacyFallbackCodec{state: c.state, context: &nexusCtx}
+}
+
+func (c *replayNexusLegacyFallbackCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if c.context == nil {
+		return payloads, nil
+	}
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, payload := range payloads {
+		result[i] = proto.Clone(payload).(*commonpb.Payload)
+		if result[i].Metadata == nil {
+			result[i].Metadata = make(map[string][]byte)
+		}
+		result[i].Metadata["nexus-context"] = []byte(
+			c.context.Endpoint + ":" + c.context.Service + ":" + c.context.Operation,
+		)
+	}
+	return result, nil
+}
+
+func (c *replayNexusLegacyFallbackCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if c.context == nil {
+		return payloads, nil
+	}
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, payload := range payloads {
+		result[i] = proto.Clone(payload).(*commonpb.Payload)
+		signature, ok := result[i].Metadata["nexus-context"]
+		if !ok {
+			c.state.legacyDecodedContexts = append(c.state.legacyDecodedContexts, *c.context)
+			continue
+		}
+		expected := c.context.Endpoint + ":" + c.context.Service + ":" + c.context.Operation
+		if string(signature) != expected {
+			return nil, fmt.Errorf("Nexus context mismatch: got %q, want %q", signature, expected)
+		}
+		delete(result[i].Metadata, "nexus-context")
+	}
+	return result, nil
+}
+
 func (c *replayTestSigningCodec) WithSerializationContext(ctx converter.SerializationContext) converter.PayloadCodec {
 	switch sc := ctx.(type) {
 	case converter.WorkflowSerializationContext:
@@ -607,6 +664,30 @@ func (s *replayTestSuite) TestCancelNexusOperation() {
 	replayer.RegisterWorkflow(CancelNexusOperationAfterCompleteWorkflow)
 	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-after-complete.json")
 	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is completed")
+}
+
+func (s *replayTestSuite) TestNexusSerializationContextReplayWithLegacyFallback() {
+	state := &replayNexusLegacyFallbackCodecState{}
+	codecDC := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&replayNexusLegacyFallbackCodec{state: state},
+	)
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		DataConverter: codecDC,
+	})
+	s.Require().NoError(err)
+	replayer.RegisterWorkflow(CancelNexusOperationAfterCompleteWorkflow)
+
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(
+		ilog.NewDefaultLogger(),
+		"nexus-cancel-after-complete.json",
+	)
+	s.Require().NoError(err)
+	s.Contains(state.legacyDecodedContexts, converter.NexusSerializationContext{
+		Endpoint:  "replay-endpoint",
+		Service:   "replay-service",
+		Operation: CancelOp.Name(),
+	})
 }
 
 func (s *replayTestSuite) TestAwaitWithTimeoutNoTimerCancel() {

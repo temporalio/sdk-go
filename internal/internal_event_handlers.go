@@ -72,6 +72,7 @@ type (
 		endpoint          string
 		service           string
 		operation         string
+		failureConverter  converter.FailureConverter
 	}
 
 	scheduledChildWorkflow struct {
@@ -667,6 +668,10 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params ExecuteNexusOper
 	}
 
 	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr, startMetadata)
+	failureConverter := params.failureConverter
+	if failureConverter == nil {
+		failureConverter = wc.failureConverter
+	}
 	command.setData(&scheduledNexusOperation{
 		startedCallback:   startedHandler,
 		completedCallback: callback,
@@ -674,6 +679,7 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params ExecuteNexusOper
 		endpoint:          params.client.Endpoint(),
 		service:           params.client.Service(),
 		operation:         params.operation,
+		failureConverter:  failureConverter,
 	})
 
 	wc.logger.Debug("ScheduleNexusOperation",
@@ -2088,7 +2094,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCompleted(even
 	state := command.getData().(*scheduledNexusOperation)
 	var err error
 	if failure != nil {
-		err = weh.failureConverter.FailureToError(failure)
+		err = state.failureConverter.FailureToError(failure)
 	}
 	// Also unblock the start future
 	if state.startedCallback != nil {
@@ -2149,7 +2155,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequestD
 	state := command.getData().(*scheduledNexusOperation)
 	err := ErrCanceled
 	if failure != nil {
-		err = weh.failureConverter.FailureToError(failure)
+		err = state.failureConverter.FailureToError(failure)
 	}
 
 	if state.cancellationType == NexusOperationCancellationTypeWaitRequested {
