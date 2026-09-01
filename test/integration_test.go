@@ -228,6 +228,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.LocalActivityWorkerOnly = true
 	}
 
+	if strings.Contains(ts.T().Name(), "WorkflowTaskCompletionPagination") {
+		// This workflow serializes a large (~5 MiB) completion in a single workflow task; on slow CI
+		// hardware that can exceed the default 1s deadlock-detection window.
+		options.DeadlockDetectionTimeout = 10 * time.Second
+	}
+
 	if strings.Contains(ts.T().Name(), "CancelTimerViaDeferAfterWFTFailure") ||
 		strings.Contains(ts.T().Name(), "TestNonDeterminismFailureCause") {
 		options.WorkflowPanicPolicy = worker.BlockWorkflow
@@ -291,9 +297,27 @@ func (ts *IntegrationTestSuite) TearDownTest() {
 	}
 }
 
+func (ts *IntegrationTestSuite) TestWorkflowTaskCompletionPagination() {
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	resp, err := ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+	})
+	ts.NoError(err)
+	if !resp.GetNamespaceInfo().GetCapabilities().GetWorkflowTaskCompletionPagination() {
+		ts.T().Skip("server does not support workflow_task_completion_pagination namespace capability")
+	}
+
+	// The completion is larger than the gRPC request size limit, so it succeeds only if it is
+	// paginated.
+	err = ts.executeWorkflow("test-wft-completion-pagination", ts.workflows.WorkflowTaskCompletionPagination, nil)
+	ts.NoError(err)
+}
+
 func (ts *IntegrationTestSuite) TestBasic() {
 	var expected []string
-	err := ts.executeWorkflow("test-basic", ts.workflows.Basic, &expected)
+	err := ts.executeWorkflow("test-basic-"+ts.taskQueueName, ts.workflows.Basic, &expected)
 	ts.NoError(err)
 	ts.EqualValues(expected, ts.activities.invoked())
 	ts.Equal([]string{"Go", "ExecuteWorkflow begin", "ExecuteActivity", "ExecuteActivity", "ExecuteWorkflow end"},
