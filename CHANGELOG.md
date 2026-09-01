@@ -24,19 +24,10 @@ to docs, or any other relevant information.
 
 - `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
   from `Encode` or `Decode` on a workflow-side payload path to fail the current
-  Workflow Task rather than the Workflow Execution. The server then retries the task
-  while the Workflow Execution stays open, so a transient codec failure can recover on
-  a later attempt. The honored paths are decoding workflow input, decoding an activity
-  or child-workflow result returned from a `Future`, encoding activity or
-  child-workflow arguments, and encoding a side effect's summary; signal, update, and
-  query decoding keep their existing behavior. It is only honored when it originates
-  from a codec, so returning it directly from workflow code stays an ordinary error.
-  The marker is honored identically under both `WorkflowPanicPolicy` values, is not
-  logged or classified as a workflow panic, preserves its cause via
-  `errors.Is`/`errors.As`, and behaves as an ordinary error in Activity worker and
-  client contexts. In-codec retry remains the primary recovery mechanism since codec
-  calls consume the Workflow Task timeout budget; the marker is a backstop after
-  local retries are exhausted.
+  Workflow Task rather than the Workflow Execution, so the server retries the task and
+  a transient codec failure can recover while the execution stays open. See the
+  `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
+  guidance.
 
 ### Fixed
 
