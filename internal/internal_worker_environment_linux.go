@@ -1,7 +1,6 @@
 package internal
 
 import (
-	"bufio"
 	"os"
 	"strings"
 
@@ -35,14 +34,12 @@ func linuxVersion() string {
 }
 
 func osReleaseValue(path, key string) string {
-	f, err := os.Open(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return ""
 	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		k, v, ok := strings.Cut(scanner.Text(), "=")
+	for _, line := range strings.Split(string(content), "\n") {
+		k, v, ok := strings.Cut(line, "=")
 		if ok && k == key {
 			return strings.Trim(strings.TrimSpace(v), `"'`)
 		}
