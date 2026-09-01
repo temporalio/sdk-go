@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
+	enumspb "go.temporal.io/api/enums/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	operatorservice "go.temporal.io/api/operatorservice/v1"
 	"google.golang.org/protobuf/proto"
@@ -170,7 +171,7 @@ type intTestNexusHMACCodec struct {
 
 const intTestNexusHMACEncoding = "binary/nexus-hmac-test"
 
-func intTestNexusContextKey(endpoint, service, operation string) string {
+func intTestNexusCodecKey(endpoint, service, operation string) string {
 	return "endpoint:" + endpoint + "|service:" + service + "|operation:" + operation
 }
 
@@ -179,7 +180,7 @@ func (c *intTestNexusCodecSelector) WithSerializationContext(ctx converter.Seria
 	if !ok {
 		return c
 	}
-	key := intTestNexusContextKey(sc.Endpoint, sc.Service, sc.Operation)
+	key := intTestNexusCodecKey(sc.Endpoint, sc.Service, sc.Operation)
 	// Select payload codec based on the Nexus service, endpoint, and operation.
 	if codec, ok := c.codecs[key]; ok {
 		return codec
@@ -242,39 +243,35 @@ func (c *intTestNexusHMACCodec) Decode(payloads []*commonpb.Payload) ([]*commonp
 	return result, nil
 }
 
-func intTestNexusCallerWorkflow(ctx workflow.Context, hmacEndpointName, zlibEndpointName string) (string, error) {
+type intTestNexusCallerResult struct {
+	HMAC string
+	Zlib string
+}
+
+func intTestNexusCallerWorkflow(ctx workflow.Context, hmacEndpointName, zlibEndpointName string) (intTestNexusCallerResult, error) {
 	// Schedule both operations before awaiting either result. Each future must
 	// retain the converter selected for its own Nexus operation context.
 	hmacFuture := workflow.NewNexusClient(hmacEndpointName, intTestNexusService).ExecuteOperation(
 		ctx,
 		intTestNexusOperation,
-		intTestNexusInput{Value: "hmac"},
+		intTestNexusInput{Value: "result"},
 		workflow.NexusOperationOptions{},
 	)
 	zlibFuture := workflow.NewNexusClient(zlibEndpointName, intTestNexusService).ExecuteOperation(
 		ctx,
 		intTestNexusOperation.Name(),
-		intTestNexusInput{Value: "zlib"},
+		intTestNexusInput{Value: "result"},
 		workflow.NexusOperationOptions{},
 	)
 
-	var results []string
-	var operationErr error
-	selector := workflow.NewSelector(ctx)
-	handleFuture := func(f workflow.Future) {
-		var result string
-		if err := f.Get(ctx, &result); err != nil {
-			operationErr = err
-			return
-		}
-		results = append(results, result)
+	var result intTestNexusCallerResult
+	if err := hmacFuture.Get(ctx, &result.HMAC); err != nil {
+		return result, err
 	}
-	selector.AddFuture(hmacFuture, handleFuture)
-	selector.AddFuture(zlibFuture, handleFuture)
-	for len(results) < 2 && operationErr == nil {
-		selector.Select(ctx)
+	if err := zlibFuture.Get(ctx, &result.Zlib); err != nil {
+		return result, err
 	}
-	return strings.Join(results, "|"), operationErr
+	return result, nil
 }
 
 func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsolation() {
@@ -288,8 +285,8 @@ func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsol
 	hmacCodec := &intTestNexusHMACCodec{key: []byte("nexus-hmac-key")}
 	zlibCodec := converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true})
 	codecSelector := &intTestNexusCodecSelector{codecs: map[string]converter.PayloadCodec{
-		intTestNexusContextKey(hmacEndpointName, intTestNexusService, intTestNexusOperation.Name()): hmacCodec,
-		intTestNexusContextKey(zlibEndpointName, intTestNexusService, intTestNexusOperation.Name()): zlibCodec,
+		intTestNexusCodecKey(hmacEndpointName, intTestNexusService, intTestNexusOperation.Name()): hmacCodec,
+		intTestNexusCodecKey(zlibEndpointName, intTestNexusService, intTestNexusOperation.Name()): zlibCodec,
 	}}
 
 	callerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codecSelector)
@@ -375,7 +372,36 @@ func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsol
 		TaskQueue: callerTaskQueue,
 	}, intTestNexusCallerWorkflow, hmacEndpointName, zlibEndpointName)
 	ts.NoError(err)
-	var result string
+	var result intTestNexusCallerResult
 	ts.NoError(run.Get(ctx, &result))
-	ts.ElementsMatch([]string{"hmac", "zlib"}, strings.Split(result, "|"))
+	// Both endpoint-specific codecs must decode the same logical result.
+	ts.Equal(intTestNexusCallerResult{HMAC: "result", Zlib: "result"}, result)
+
+	// Compare the raw results in history to verify that the same logical value
+	// was encoded differently for each endpoint.
+	scheduledEndpoints := map[int64]string{}
+	encodedResults := map[string]*commonpb.Payload{}
+	history := callerClient.GetWorkflowHistory(
+		ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT,
+	)
+	for history.HasNext() {
+		event, err := history.Next()
+		ts.Require().NoError(err)
+		switch event.GetEventType() {
+		case enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED:
+			scheduledEndpoints[event.GetEventId()] = event.GetNexusOperationScheduledEventAttributes().GetEndpoint()
+		case enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED:
+			attrs := event.GetNexusOperationCompletedEventAttributes()
+			encodedResults[scheduledEndpoints[attrs.GetScheduledEventId()]] = attrs.GetResult()
+		}
+	}
+	hmacEncodedResult := encodedResults[hmacEndpointName]
+	zlibEncodedResult := encodedResults[zlibEndpointName]
+	ts.Require().NotNil(hmacEncodedResult)
+	ts.Require().NotNil(zlibEncodedResult)
+	// Each endpoint must use the codec selected from its Nexus context.
+	ts.Equal(intTestNexusHMACEncoding, string(hmacEncodedResult.Metadata[converter.MetadataEncoding]))
+	ts.Equal("binary/zlib", string(zlibEncodedResult.Metadata[converter.MetadataEncoding]))
+	// HMAC and zlib must produce different bytes for the same input.
+	ts.NotEqual(hmacEncodedResult.Data, zlibEncodedResult.Data)
 }

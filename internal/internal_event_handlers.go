@@ -2052,14 +2052,14 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationStarted(event *historypb.HistoryEvent) error {
 	attributes := event.GetNexusOperationStartedEventAttributes()
 	command := weh.commandsHelper.handleNexusOperationStarted(attributes.ScheduledEventId)
-	state := command.getData().(*scheduledNexusOperation)
-	if state.startedCallback != nil {
+	scheduledOperation := command.getData().(*scheduledNexusOperation)
+	if scheduledOperation.startedCallback != nil {
 		token := attributes.OperationToken
 		if token == "" {
 			token = attributes.OperationId //lint:ignore SA1019 this field is sent by servers older than 1.27.0.
 		}
-		state.startedCallback(token, nil)
-		state.startedCallback = nil
+		scheduledOperation.startedCallback(token, nil)
+		scheduledOperation.startedCallback = nil
 	}
 	return nil
 }
@@ -2091,19 +2091,19 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCompleted(even
 		panic(fmt.Errorf("invalid event type, not a Nexus Operation resolution: %v", event.EventType))
 	}
 	command := weh.commandsHelper.handleNexusOperationCompleted(scheduledEventId)
-	state := command.getData().(*scheduledNexusOperation)
+	scheduledOperation := command.getData().(*scheduledNexusOperation)
 	var err error
 	if failure != nil {
-		err = state.failureConverter.FailureToError(failure)
+		err = scheduledOperation.failureConverter.FailureToError(failure)
 	}
 	// Also unblock the start future
-	if state.startedCallback != nil {
-		state.startedCallback("", err) // We didn't get a started event, the operation completed synchronously.
-		state.startedCallback = nil
+	if scheduledOperation.startedCallback != nil {
+		scheduledOperation.startedCallback("", err) // We didn't get a started event, the operation completed synchronously.
+		scheduledOperation.startedCallback = nil
 	}
-	if state.completedCallback != nil {
-		state.completedCallback(result, err)
-		state.completedCallback = nil
+	if scheduledOperation.completedCallback != nil {
+		scheduledOperation.completedCallback(result, err)
+		scheduledOperation.completedCallback = nil
 	}
 	return nil
 }
@@ -2113,16 +2113,16 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequeste
 	scheduledEventId := attrs.GetScheduledEventId()
 
 	command := weh.commandsHelper.handleNexusOperationCancelRequested(scheduledEventId)
-	state := command.getData().(*scheduledNexusOperation)
+	scheduledOperation := command.getData().(*scheduledNexusOperation)
 	err := ErrCanceled
-	if state.cancellationType == NexusOperationCancellationTypeTryCancel {
-		if state.startedCallback != nil {
-			state.startedCallback("", err)
-			state.startedCallback = nil
+	if scheduledOperation.cancellationType == NexusOperationCancellationTypeTryCancel {
+		if scheduledOperation.startedCallback != nil {
+			scheduledOperation.startedCallback("", err)
+			scheduledOperation.startedCallback = nil
 		}
-		if state.completedCallback != nil {
-			state.completedCallback(nil, err)
-			state.completedCallback = nil
+		if scheduledOperation.completedCallback != nil {
+			scheduledOperation.completedCallback(nil, err)
+			scheduledOperation.completedCallback = nil
 		}
 	}
 	return nil
@@ -2152,20 +2152,20 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequestD
 	}
 
 	command := weh.commandsHelper.handleNexusOperationCancelRequestDelivered(scheduledEventID)
-	state := command.getData().(*scheduledNexusOperation)
+	scheduledOperation := command.getData().(*scheduledNexusOperation)
 	err := ErrCanceled
 	if failure != nil {
-		err = state.failureConverter.FailureToError(failure)
+		err = scheduledOperation.failureConverter.FailureToError(failure)
 	}
 
-	if state.cancellationType == NexusOperationCancellationTypeWaitRequested {
-		if state.startedCallback != nil {
-			state.startedCallback("", err)
-			state.startedCallback = nil
+	if scheduledOperation.cancellationType == NexusOperationCancellationTypeWaitRequested {
+		if scheduledOperation.startedCallback != nil {
+			scheduledOperation.startedCallback("", err)
+			scheduledOperation.startedCallback = nil
 		}
-		if state.completedCallback != nil {
-			state.completedCallback(nil, err)
-			state.completedCallback = nil
+		if scheduledOperation.completedCallback != nil {
+			scheduledOperation.completedCallback(nil, err)
+			scheduledOperation.completedCallback = nil
 		}
 	}
 
