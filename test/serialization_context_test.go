@@ -2,6 +2,9 @@ package test_test
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -9,14 +12,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	commonpb "go.temporal.io/api/common/v1"
-	failurepb "go.temporal.io/api/failure/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	operatorservice "go.temporal.io/api/operatorservice/v1"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
-	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -142,233 +143,237 @@ func (ts *IntegrationTestSuite) TestSerializationContext_EndToEnd() {
 
 type intTestNexusInput struct {
 	Value string
-	Fail  bool
 }
 
+const (
+	intTestNexusService       = "serialization-context-service"
+	intTestNexusOperationName = "serialization-context-operation"
+)
+
 var intTestNexusOperation = nexus.NewSyncOperation(
-	"serialization-context-operation",
+	intTestNexusOperationName,
 	func(_ context.Context, input intTestNexusInput, _ nexus.StartOperationOptions) (string, error) {
-		if input.Fail {
-			return "", &nexus.OperationError{
-				State:   nexus.OperationStateFailed,
-				Message: "expected Nexus failure",
-				Cause:   fmt.Errorf("expected Nexus failure cause"),
-			}
-		}
 		return input.Value, nil
 	},
 )
 
-type intTestNexusCodec struct {
-	key string
+// intTestNexusCodecSelector selects a codec using the endpoint, service, and
+// resolved operation name. It passes through non-Nexus payloads unchanged.
+type intTestNexusCodecSelector struct {
+	codecs map[string]converter.PayloadCodec
+	err    error
 }
 
-func (c *intTestNexusCodec) WithSerializationContext(ctx converter.SerializationContext) converter.PayloadCodec {
-	switch sc := ctx.(type) {
-	case converter.WorkflowSerializationContext:
-		return &intTestNexusCodec{key: "workflow:" + sc.WorkflowID}
-	case converter.NexusSerializationContext:
-		return &intTestNexusCodec{key: "endpoint:" + sc.Endpoint}
-	default:
+type intTestNexusHMACCodec struct {
+	key []byte
+}
+
+const intTestNexusHMACEncoding = "binary/nexus-hmac-test"
+
+func intTestNexusContextKey(endpoint, service, operation string) string {
+	return "endpoint:" + endpoint + "|service:" + service + "|operation:" + operation
+}
+
+func (c *intTestNexusCodecSelector) WithSerializationContext(ctx converter.SerializationContext) converter.PayloadCodec {
+	sc, ok := ctx.(converter.NexusSerializationContext)
+	if !ok {
 		return c
 	}
+	key := intTestNexusContextKey(sc.Endpoint, sc.Service, sc.Operation)
+	// Select payload codec based on the Nexus service, endpoint, and operation.
+	if codec, ok := c.codecs[key]; ok {
+		return codec
+	}
+	return &intTestNexusCodecSelector{err: fmt.Errorf("no Nexus payload codec configured for %q", key)}
 }
 
-func (c *intTestNexusCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+func (c *intTestNexusCodecSelector) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return payloads, nil
+}
+
+func (c *intTestNexusCodecSelector) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if c.err != nil {
+		return nil, c.err
+	}
+	return payloads, nil
+}
+
+func (c *intTestNexusHMACCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	result := make([]*commonpb.Payload, len(payloads))
 	for i, payload := range payloads {
-		result[i] = proto.Clone(payload).(*commonpb.Payload)
-		if result[i].Metadata == nil {
-			result[i].Metadata = make(map[string][]byte)
+		payloadBytes, err := (proto.MarshalOptions{Deterministic: true}).Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal Nexus payload: %w", err)
 		}
-		result[i].Metadata["nexus-endpoint-key"] = []byte(c.key)
+		mac := hmac.New(sha256.New, c.key)
+		_, _ = mac.Write(payloadBytes)
+		result[i] = &commonpb.Payload{
+			Metadata: map[string][]byte{converter.MetadataEncoding: []byte(intTestNexusHMACEncoding)},
+			Data:     append(mac.Sum(nil), payloadBytes...),
+		}
 	}
 	return result, nil
 }
 
-func (c *intTestNexusCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+func (c *intTestNexusHMACCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	result := make([]*commonpb.Payload, len(payloads))
 	for i, payload := range payloads {
-		key := string(payload.Metadata["nexus-endpoint-key"])
-		if key != c.key {
-			return nil, fmt.Errorf("Nexus endpoint key mismatch: got %q, want %q", key, c.key)
+		encoding := string(payload.Metadata[converter.MetadataEncoding])
+		if encoding != intTestNexusHMACEncoding {
+			return nil, fmt.Errorf("Nexus payload encoding mismatch: got %q, want %q", encoding, intTestNexusHMACEncoding)
 		}
-		result[i] = proto.Clone(payload).(*commonpb.Payload)
-		delete(result[i].Metadata, "nexus-endpoint-key")
+		if len(payload.Data) < sha256.Size {
+			return nil, fmt.Errorf("Nexus HMAC payload is too short: got %d bytes", len(payload.Data))
+		}
+		signature, payloadBytes := payload.Data[:sha256.Size], payload.Data[sha256.Size:]
+		mac := hmac.New(sha256.New, c.key)
+		_, _ = mac.Write(payloadBytes)
+		if !hmac.Equal(signature, mac.Sum(nil)) {
+			return nil, errors.New("Nexus payload HMAC mismatch")
+		}
+		result[i] = &commonpb.Payload{}
+		if err := proto.Unmarshal(payloadBytes, result[i]); err != nil {
+			return nil, fmt.Errorf("unmarshal Nexus payload: %w", err)
+		}
 	}
 	return result, nil
 }
 
-type intTestNexusFailureConverter struct {
-	converter.FailureConverter
-	key string
-}
-
-func (c *intTestNexusFailureConverter) WithSerializationContext(
-	ctx converter.SerializationContext,
-) converter.FailureConverter {
-	if nexusCtx, ok := ctx.(converter.NexusSerializationContext); ok {
-		return &intTestNexusFailureConverter{
-			FailureConverter: c.FailureConverter,
-			key:              "endpoint:" + nexusCtx.Endpoint,
-		}
-	}
-	return c
-}
-
-func (c *intTestNexusFailureConverter) ErrorToFailure(err error) *failurepb.Failure {
-	failure := c.FailureConverter.ErrorToFailure(err)
-	if failure == nil || c.key == "" {
-		return failure
-	}
-	failure = proto.Clone(failure).(*failurepb.Failure)
-	failure.Source = c.key
-	return failure
-}
-
-func (c *intTestNexusFailureConverter) FailureToError(failure *failurepb.Failure) error {
-	if c.key == "" {
-		return c.FailureConverter.FailureToError(failure)
-	}
-	for current := failure; current != nil; current = current.Cause {
-		if current.Source == c.key {
-			return c.FailureConverter.FailureToError(failure)
-		}
-	}
-	return fmt.Errorf("Nexus failure key mismatch: missing %q", c.key)
-}
-
-func intTestNexusCallerWorkflow(ctx workflow.Context, endpoints []string) (string, error) {
-	first := workflow.NewNexusClient(endpoints[0], "serialization-context-service").ExecuteOperation(
+func intTestNexusCallerWorkflow(ctx workflow.Context, hmacEndpointName, zlibEndpointName string) (string, error) {
+	// Schedule both operations before awaiting either result. Each future must
+	// retain the converter selected for its own Nexus operation context.
+	hmacFuture := workflow.NewNexusClient(hmacEndpointName, intTestNexusService).ExecuteOperation(
 		ctx,
 		intTestNexusOperation,
-		intTestNexusInput{Value: "first"},
+		intTestNexusInput{Value: "hmac"},
 		workflow.NexusOperationOptions{},
 	)
-	second := workflow.NewNexusClient(endpoints[1], "serialization-context-service").ExecuteOperation(
+	zlibFuture := workflow.NewNexusClient(zlibEndpointName, intTestNexusService).ExecuteOperation(
 		ctx,
 		intTestNexusOperation.Name(),
-		intTestNexusInput{Value: "second"},
+		intTestNexusInput{Value: "zlib"},
 		workflow.NexusOperationOptions{},
 	)
 
 	var results []string
 	var operationErr error
 	selector := workflow.NewSelector(ctx)
-	for _, future := range []workflow.Future{first, second} {
-		selector.AddFuture(future, func(f workflow.Future) {
-			var result string
-			if err := f.Get(ctx, &result); err != nil {
-				operationErr = err
-				return
-			}
-			results = append(results, result)
-		})
+	handleFuture := func(f workflow.Future) {
+		var result string
+		if err := f.Get(ctx, &result); err != nil {
+			operationErr = err
+			return
+		}
+		results = append(results, result)
 	}
+	selector.AddFuture(hmacFuture, handleFuture)
+	selector.AddFuture(zlibFuture, handleFuture)
 	for len(results) < 2 && operationErr == nil {
 		selector.Select(ctx)
 	}
 	return strings.Join(results, "|"), operationErr
 }
 
-func intTestNexusFailureWorkflow(ctx workflow.Context, endpoint string) error {
-	return workflow.NewNexusClient(endpoint, "serialization-context-service").ExecuteOperation(
-		ctx,
-		intTestNexusOperation,
-		intTestNexusInput{Fail: true},
-		workflow.NexusOperationOptions{},
-	).Get(ctx, nil)
-}
-
 func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsolation() {
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
-	callerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &intTestNexusCodec{})
+	hmacEndpointName := "nexus-ser-ctx-hmac-" + uuid.NewString()
+	zlibEndpointName := "nexus-ser-ctx-zlib-" + uuid.NewString()
+	hmacCodec := &intTestNexusHMACCodec{key: []byte("nexus-hmac-key")}
+	zlibCodec := converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true})
+	codecSelector := &intTestNexusCodecSelector{codecs: map[string]converter.PayloadCodec{
+		intTestNexusContextKey(hmacEndpointName, intTestNexusService, intTestNexusOperation.Name()): hmacCodec,
+		intTestNexusContextKey(zlibEndpointName, intTestNexusService, intTestNexusOperation.Name()): zlibCodec,
+	}}
+
+	callerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codecSelector)
 	callerClient, err := ts.newDefaultClient(func(options *client.Options) {
 		options.DataConverter = callerDC
-		options.FailureConverter = &intTestNexusFailureConverter{
-			FailureConverter: temporal.GetDefaultFailureConverter(),
-		}
 	})
 	ts.NoError(err)
 	defer callerClient.Close()
 
-	endpointNames := []string{"nexus-ser-ctx-a-" + uuid.NewString(), "nexus-ser-ctx-b-" + uuid.NewString()}
-	handlerTaskQueues := []string{"nexus-ser-ctx-handler-a-" + uuid.NewString(), "nexus-ser-ctx-handler-b-" + uuid.NewString()}
-	for i := range endpointNames {
-		response, err := callerClient.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
-			Spec: &nexuspb.EndpointSpec{
-				Name: endpointNames[i],
-				Target: &nexuspb.EndpointTarget{Variant: &nexuspb.EndpointTarget_Worker_{
-					Worker: &nexuspb.EndpointTarget_Worker{
-						Namespace: ts.config.Namespace,
-						TaskQueue: handlerTaskQueues[i],
-					},
-				}},
-			},
-		})
-		ts.NoError(err)
-		defer func(endpoint *nexuspb.Endpoint) {
-			_, _ = callerClient.OperatorService().DeleteNexusEndpoint(ctx, &operatorservice.DeleteNexusEndpointRequest{
-				Id: endpoint.Id, Version: endpoint.Version,
-			})
-		}(response.Endpoint)
-	}
-
-	var handlerWorkers []worker.Worker
-	for i := range endpointNames {
-		handlerDC := converter.NewCodecDataConverter(
-			converter.GetDefaultDataConverter(),
-			&intTestNexusCodec{key: "endpoint:" + endpointNames[i]},
-		)
-		handlerClient, err := ts.newDefaultClient(func(options *client.Options) {
-			options.DataConverter = handlerDC
-			options.FailureConverter = &intTestNexusFailureConverter{
-				FailureConverter: temporal.GetDefaultFailureConverter(),
-				key:              "endpoint:" + endpointNames[i],
-			}
-		})
-		ts.NoError(err)
-		defer handlerClient.Close()
-
-		handlerWorker := worker.New(handlerClient, handlerTaskQueues[i], worker.Options{
-			DisableWorkflowWorker: true,
-		})
-		service := nexus.NewService("serialization-context-service")
-		ts.NoError(service.Register(intTestNexusOperation))
-		handlerWorker.RegisterNexusService(service)
-		ts.NoError(handlerWorker.Start())
-		handlerWorkers = append(handlerWorkers, handlerWorker)
-	}
+	hmacHandlerTaskQueue := "nexus-ser-ctx-handler-hmac-" + uuid.NewString()
+	zlibHandlerTaskQueue := "nexus-ser-ctx-handler-zlib-" + uuid.NewString()
+	hmacEndpointResponse, err := callerClient.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: hmacEndpointName,
+			Target: &nexuspb.EndpointTarget{Variant: &nexuspb.EndpointTarget_Worker_{
+				Worker: &nexuspb.EndpointTarget_Worker{
+					Namespace: ts.config.Namespace,
+					TaskQueue: hmacHandlerTaskQueue,
+				},
+			}},
+		},
+	})
+	ts.NoError(err)
 	defer func() {
-		for _, handlerWorker := range handlerWorkers {
-			handlerWorker.Stop()
-		}
+		_, _ = callerClient.OperatorService().DeleteNexusEndpoint(ctx, &operatorservice.DeleteNexusEndpointRequest{
+			Id: hmacEndpointResponse.Endpoint.Id, Version: hmacEndpointResponse.Endpoint.Version,
+		})
 	}()
+	zlibEndpointResponse, err := callerClient.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+		Spec: &nexuspb.EndpointSpec{
+			Name: zlibEndpointName,
+			Target: &nexuspb.EndpointTarget{Variant: &nexuspb.EndpointTarget_Worker_{
+				Worker: &nexuspb.EndpointTarget_Worker{
+					Namespace: ts.config.Namespace,
+					TaskQueue: zlibHandlerTaskQueue,
+				},
+			}},
+		},
+	})
+	ts.NoError(err)
+	defer func() {
+		_, _ = callerClient.OperatorService().DeleteNexusEndpoint(ctx, &operatorservice.DeleteNexusEndpointRequest{
+			Id: zlibEndpointResponse.Endpoint.Id, Version: zlibEndpointResponse.Endpoint.Version,
+		})
+	}()
+
+	// Each handler uses the codec selected for its endpoint. Inputs and results
+	// round trip only if the caller selects and retains that same codec.
+	hmacHandlerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), hmacCodec)
+	hmacHandlerClient, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = hmacHandlerDC
+	})
+	ts.NoError(err)
+	defer hmacHandlerClient.Close()
+	hmacHandlerWorker := worker.New(hmacHandlerClient, hmacHandlerTaskQueue, worker.Options{DisableWorkflowWorker: true})
+	hmacService := nexus.NewService(intTestNexusService)
+	ts.NoError(hmacService.Register(intTestNexusOperation))
+	hmacHandlerWorker.RegisterNexusService(hmacService)
+	ts.NoError(hmacHandlerWorker.Start())
+	defer hmacHandlerWorker.Stop()
+
+	zlibHandlerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), zlibCodec)
+	zlibHandlerClient, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = zlibHandlerDC
+	})
+	ts.NoError(err)
+	defer zlibHandlerClient.Close()
+	zlibHandlerWorker := worker.New(zlibHandlerClient, zlibHandlerTaskQueue, worker.Options{DisableWorkflowWorker: true})
+	zlibService := nexus.NewService(intTestNexusService)
+	ts.NoError(zlibService.Register(intTestNexusOperation))
+	zlibHandlerWorker.RegisterNexusService(zlibService)
+	ts.NoError(zlibHandlerWorker.Start())
+	defer zlibHandlerWorker.Stop()
 
 	callerTaskQueue := "nexus-ser-ctx-caller-" + uuid.NewString()
 	callerWorker := worker.New(callerClient, callerTaskQueue, worker.Options{})
 	callerWorker.RegisterWorkflow(intTestNexusCallerWorkflow)
-	callerWorker.RegisterWorkflow(intTestNexusFailureWorkflow)
 	ts.NoError(callerWorker.Start())
 	defer callerWorker.Stop()
 
 	run, err := callerClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:        "nexus-ser-ctx-caller-" + uuid.NewString(),
 		TaskQueue: callerTaskQueue,
-	}, intTestNexusCallerWorkflow, endpointNames)
+	}, intTestNexusCallerWorkflow, hmacEndpointName, zlibEndpointName)
 	ts.NoError(err)
 	var result string
 	ts.NoError(run.Get(ctx, &result))
-	ts.ElementsMatch([]string{"first", "second"}, strings.Split(result, "|"))
-
-	failureRun, err := callerClient.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID:        "nexus-ser-ctx-failure-" + uuid.NewString(),
-		TaskQueue: callerTaskQueue,
-	}, intTestNexusFailureWorkflow, endpointNames[1])
-	ts.NoError(err)
-	err = failureRun.Get(ctx, nil)
-	ts.ErrorContains(err, "expected Nexus failure")
-	ts.NotContains(err.Error(), "Nexus failure key mismatch")
+	ts.ElementsMatch([]string{"hmac", "zlib"}, strings.Split(result, "|"))
 }
