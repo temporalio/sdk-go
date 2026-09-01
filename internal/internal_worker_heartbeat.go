@@ -30,21 +30,28 @@ type heartbeatManager struct {
 	client   *WorkflowClient
 	interval time.Duration
 	logger   log.Logger
+	// environmentInfo is reported once per worker, or nil when reporting is disabled.
+	environmentInfo *workerpb.EnvironmentInfo
 
 	workersMutex sync.Mutex
 	workers      map[string]*sharedNamespaceWorker // namespace -> worker
 }
 
 // newHeartbeatManager creates a new heartbeatManager.
-func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger) *heartbeatManager {
+func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger, disableEnvironmentInfo bool) *heartbeatManager {
 	if logger == nil {
 		logger = ilog.NewDefaultLogger()
 	}
+	var environmentInfo *workerpb.EnvironmentInfo
+	if !disableEnvironmentInfo {
+		environmentInfo = detectEnvironmentInfo()
+	}
 	return &heartbeatManager{
-		client:   client,
-		interval: interval,
-		logger:   logger,
-		workers:  make(map[string]*sharedNamespaceWorker),
+		client:          client,
+		interval:        interval,
+		logger:          logger,
+		environmentInfo: environmentInfo,
+		workers:         make(map[string]*sharedNamespaceWorker),
 	}
 }
 
@@ -73,6 +80,8 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		workerCtx:                     heartbeatCtx,
 		heartbeatCancel:               heartbeatCancel,
 		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
+		environmentInfo:               m.environmentInfo,
+		pendingEnvironment:            make(map[string]struct{}),
 		activityCancellationCallbacks: newActivityCancellationCallbacks(),
 		workerControlTaskQueue:        controlTaskQueue,
 		workerInstanceKey:             uuid.NewString(),
@@ -108,6 +117,9 @@ func (m *heartbeatManager) registerWorker(
 
 	hw.callbacksMutex.Lock()
 	hw.callbacks[worker.workerInstanceKey] = worker.heartbeatCallback
+	if hw.environmentInfo != nil {
+		hw.pendingEnvironment[worker.workerInstanceKey] = struct{}{}
+	}
 	hw.callbacksMutex.Unlock()
 
 	if hw.started.CompareAndSwap(false, true) {
@@ -132,6 +144,7 @@ func (m *heartbeatManager) unregisterWorker(worker *AggregatedWorker) {
 
 	hw.callbacksMutex.Lock()
 	delete(hw.callbacks, worker.workerInstanceKey)
+	delete(hw.pendingEnvironment, worker.workerInstanceKey)
 	remaining := len(hw.callbacks)
 	hw.callbacksMutex.Unlock()
 
@@ -154,6 +167,10 @@ type sharedNamespaceWorker struct {
 	// callbacksMutex should only be unlocked under
 	callbacksMutex sync.RWMutex
 	callbacks      map[string]func() *workerpb.WorkerHeartbeat // workerInstanceKey -> callback
+	// environmentInfo is attached to each worker's heartbeats until the server accepts one, at
+	// which point the worker is removed from pendingEnvironment. Both are guarded by callbacksMutex.
+	environmentInfo    *workerpb.EnvironmentInfo
+	pendingEnvironment map[string]struct{} // workerInstanceKey -> environment not yet delivered
 
 	activityCancellationCallbacks *activityCancellationCallbacks
 	workerCommandsSupported       bool
@@ -207,22 +224,33 @@ func (hw *sharedNamespaceWorker) run() {
 }
 
 func (hw *sharedNamespaceWorker) sendHeartbeats() error {
+	type heartbeatSource struct {
+		workerInstanceKey  string
+		callback           func() *workerpb.WorkerHeartbeat
+		includeEnvironment bool
+	}
 	hw.callbacksMutex.RLock()
-	callbacks := make([]func() *workerpb.WorkerHeartbeat, 0, len(hw.callbacks))
-	for _, cb := range hw.callbacks {
+	sources := make([]heartbeatSource, 0, len(hw.callbacks))
+	for key, cb := range hw.callbacks {
 		if cb != nil {
-			callbacks = append(callbacks, cb)
+			_, includeEnvironment := hw.pendingEnvironment[key]
+			sources = append(sources, heartbeatSource{key, cb, includeEnvironment})
 		}
 	}
 	hw.callbacksMutex.RUnlock()
 
-	if len(callbacks) == 0 {
+	if len(sources) == 0 {
 		return nil
 	}
 
-	heartbeats := make([]*workerpb.WorkerHeartbeat, 0, len(callbacks))
-	for _, cb := range callbacks {
-		hb := cb()
+	heartbeats := make([]*workerpb.WorkerHeartbeat, 0, len(sources))
+	var environmentSent []string
+	for _, source := range sources {
+		hb := source.callback()
+		if source.includeEnvironment {
+			hb.Environment = hw.environmentInfo
+			environmentSent = append(environmentSent, source.workerInstanceKey)
+		}
 		heartbeats = append(heartbeats, hb)
 	}
 
@@ -239,6 +267,15 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 		}
 		// For other errors, log and continue heartbeating
 		hw.logger.Warn("Failed to send heartbeat", "Error", err)
+		return nil
+	}
+
+	if len(environmentSent) > 0 {
+		hw.callbacksMutex.Lock()
+		for _, key := range environmentSent {
+			delete(hw.pendingEnvironment, key)
+		}
+		hw.callbacksMutex.Unlock()
 	}
 	return nil
 }

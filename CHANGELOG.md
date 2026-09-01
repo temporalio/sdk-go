@@ -23,6 +23,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Worker heartbeats now report the Go runtime version, detected hosting environments (Docker,
+  Kubernetes, and common cloud platforms), and the operating system and architecture. This is sent
+  once per worker with the first heartbeat accepted by the server and can be turned off with
+  `client.Options.DisableWorkerEnvironmentInfo`.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
