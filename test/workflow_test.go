@@ -4313,7 +4313,7 @@ func (w *Workflows) WorkflowTaskCompletionPagination(ctx workflow.Context) error
 	input := strings.Repeat("a", 400*1024)
 	var futures []workflow.Future
 	for i := 0; i < 13; i++ {
-		futures = append(futures, workflow.ExecuteActivity(ctx, "EchoString", input))
+		futures = append(futures, workflow.ExecuteActivity(ctx, "ConsumeString", input))
 	}
 	for _, future := range futures {
 		if err := future.Get(ctx, nil); err != nil {

@@ -310,8 +310,14 @@ func (ts *IntegrationTestSuite) TestWorkflowTaskCompletionPagination() {
 	}
 
 	// The completion is larger than the gRPC request size limit, so it succeeds only if it is
-	// paginated.
-	err = ts.executeWorkflow("test-wft-completion-pagination", ts.workflows.WorkflowTaskCompletionPagination, nil)
+	// paginated. Building and paginating a ~5 MiB completion, then persisting it, is far heavier than
+	// a normal task. The suite defaults (15s run / 1s task) are too tight for it on slow CI hardware,
+	// so restore the standard 10s task timeout (which the suite helper lowers to 1s) and give the run
+	// ample headroom.
+	options := ts.startWorkflowOptions("test-wft-completion-pagination")
+	options.WorkflowExecutionTimeout = time.Minute
+	options.WorkflowTaskTimeout = 10 * time.Second
+	err = ts.executeWorkflowWithOption(options, ts.workflows.WorkflowTaskCompletionPagination, nil)
 	ts.NoError(err)
 }
 
