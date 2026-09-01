@@ -1856,18 +1856,39 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	s.IsType(&pollerBehaviorAutoscaling{}, worker.executionParams.NexusTaskPollerBehavior)
 
 	// The actual running pollers reflect the autoscaling structure.
-	require.NotEmpty(s.T(), worker.workflowWorker.worker.options.taskPollers)
-	for _, p := range worker.workflowWorker.worker.options.taskPollers {
-		s.NotNil(p.autoscalingRunner)
+	workflowPollers := worker.workflowWorker.worker.options.taskPollers
+	require.NotEmpty(s.T(), workflowPollers)
+	require.NotNil(s.T(), workflowPollers[0].autoscalingRunner)
+	workflowGroups := workflowPollers[0].autoscalingRunner.pollerGroups
+	require.NotNil(s.T(), workflowGroups)
+	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, workflowGroups.groupStore)
+	for _, p := range workflowPollers {
+		require.NotNil(s.T(), p.autoscalingRunner)
+		require.Same(s.T(), worker.client.pollerGroupSnapshotStore, p.autoscalingRunner.pollerGroups.groupStore)
 	}
-	require.NotEmpty(s.T(), worker.activityWorker.worker.options.taskPollers)
-	for _, p := range worker.activityWorker.worker.options.taskPollers {
-		s.NotNil(p.autoscalingRunner)
+	if len(workflowPollers) > 1 {
+		require.NotSame(s.T(), workflowGroups, workflowPollers[1].autoscalingRunner.pollerGroups)
+	}
+	activityPollers := worker.activityWorker.worker.options.taskPollers
+	require.NotEmpty(s.T(), activityPollers)
+	require.NotNil(s.T(), activityPollers[0].autoscalingRunner)
+	activityGroups := activityPollers[0].autoscalingRunner.pollerGroups
+	require.NotNil(s.T(), activityGroups)
+	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, activityGroups.groupStore)
+	for _, p := range activityPollers {
+		require.NotNil(s.T(), p.autoscalingRunner)
+		require.Same(s.T(), activityGroups, p.autoscalingRunner.pollerGroups)
 	}
 	require.NotNil(s.T(), worker.nexusWorker)
-	require.NotEmpty(s.T(), worker.nexusWorker.worker.options.taskPollers)
-	for _, p := range worker.nexusWorker.worker.options.taskPollers {
-		s.NotNil(p.autoscalingRunner)
+	nexusPollers := worker.nexusWorker.worker.options.taskPollers
+	require.NotEmpty(s.T(), nexusPollers)
+	require.NotNil(s.T(), nexusPollers[0].autoscalingRunner)
+	nexusGroups := nexusPollers[0].autoscalingRunner.pollerGroups
+	require.NotNil(s.T(), nexusGroups)
+	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, nexusGroups.groupStore)
+	for _, p := range nexusPollers {
+		require.NotNil(s.T(), p.autoscalingRunner)
+		require.Same(s.T(), nexusGroups, p.autoscalingRunner.pollerGroups)
 	}
 
 	// Auto-enroll implies full autoscaling support, including scale-down.
@@ -1979,9 +2000,15 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker()
 
 	require.NotNil(s.T(), worker.sessionWorker)
 
-	require.NotEmpty(s.T(), worker.sessionWorker.activityWorker.worker.options.taskPollers)
-	for _, p := range worker.sessionWorker.activityWorker.worker.options.taskPollers {
-		s.NotNil(p.autoscalingRunner)
+	activityPollers := worker.sessionWorker.activityWorker.worker.options.taskPollers
+	require.NotEmpty(s.T(), activityPollers)
+	require.NotNil(s.T(), activityPollers[0].autoscalingRunner)
+	activityGroups := activityPollers[0].autoscalingRunner.pollerGroups
+	require.NotNil(s.T(), activityGroups)
+	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, activityGroups.groupStore)
+	for _, p := range activityPollers {
+		require.NotNil(s.T(), p.autoscalingRunner)
+		require.Same(s.T(), activityGroups, p.autoscalingRunner.pollerGroups)
 	}
 
 	require.Len(s.T(), worker.sessionWorker.creationWorker.worker.options.taskPollers, 1)
@@ -2206,6 +2233,93 @@ func setupPollingMocks(namespace string, service *workflowservicemock.MockWorkfl
 	workflowTask := &workflowservice.PollWorkflowTaskQueueResponse{}
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(workflowTask, nil).AnyTimes()
 	service.EXPECT().RespondWorkflowTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+}
+
+func (s *internalWorkerTestSuite) TestDescribeNamespacePollerGroupsSeedWorkflowNormalAndStickyPolls() {
+	namespace := "testNamespace"
+	taskQueue := "seeded-workflow-tq"
+	groupID := "seeded-group"
+	service := workflowservicemock.NewMockWorkflowServiceClient(s.mockCtrl)
+	service.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+	expectDescribeNamespaceWithPollerGroup(service, namespace, groupID)
+	service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.PollActivityTaskQueueResponse{}, nil).AnyTimes()
+
+	polls := make(chan *workflowservice.PollWorkflowTaskQueueRequest, 20)
+	releaseNormalPoll := make(chan struct{})
+	var releaseNormalPollOnce sync.Once
+	defer releaseNormalPollOnce.Do(func() { close(releaseNormalPoll) })
+	var blockNormalPollOnce sync.Once
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).DoAndReturn(
+		func(ctx context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, opts ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			select {
+			case polls <- proto.Clone(req).(*workflowservice.PollWorkflowTaskQueueRequest):
+			default:
+			}
+			if req.GetPollerGroupId() == groupID && req.GetTaskQueue().GetKind() == enumspb.TASK_QUEUE_KIND_NORMAL {
+				blockNormalPollOnce.Do(func() {
+					select {
+					case <-releaseNormalPoll:
+					case <-ctx.Done():
+					}
+				})
+			}
+			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+		},
+	).AnyTimes()
+
+	client := NewServiceClient(service, nil, ClientOptions{Namespace: namespace})
+	worker := NewAggregatedWorker(client, taskQueue, WorkerOptions{
+		WorkflowTaskPollerBehavior: seededTestAutoscalingPollerBehavior(),
+		ActivityTaskPollerBehavior: NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+		NexusTaskPollerBehavior:    NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1}),
+	})
+	require.NoError(s.T(), worker.Start())
+	defer worker.Stop()
+
+	var sawNormal, sawSticky bool
+	require.Eventually(s.T(), func() bool {
+		for {
+			select {
+			case req := <-polls:
+				if req.GetPollerGroupId() != groupID {
+					continue
+				}
+				switch req.GetTaskQueue().GetKind() {
+				case enumspb.TASK_QUEUE_KIND_NORMAL:
+					sawNormal = true
+				case enumspb.TASK_QUEUE_KIND_STICKY:
+					sawSticky = true
+				}
+			default:
+				return sawNormal && sawSticky
+			}
+		}
+	}, 2*time.Second, 10*time.Millisecond)
+	releaseNormalPollOnce.Do(func() { close(releaseNormalPoll) })
+}
+
+func expectDescribeNamespaceWithPollerGroup(service *workflowservicemock.MockWorkflowServiceClient, namespace string, groupID string) {
+	service.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).Return(&workflowservice.DescribeNamespaceResponse{
+		NamespaceInfo: &namespacepb.NamespaceInfo{
+			Name:  namespace,
+			State: enumspb.NAMESPACE_STATE_REGISTERED,
+			Capabilities: &namespacepb.NamespaceInfo_Capabilities{
+				PollerAutoscaling: true,
+			},
+		},
+		PollerGroupsInfo: testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+			{Id: groupID, Weight: 1},
+		}),
+	}, nil).AnyTimes()
+}
+
+func seededTestAutoscalingPollerBehavior() PollerBehavior {
+	return NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{
+		InitialNumberOfPollers: 2,
+		MinimumNumberOfPollers: 1,
+		MaximumNumberOfPollers: 2,
+	})
 }
 
 func createWorkerWithDataConverter(service *workflowservicemock.MockWorkflowServiceClient) *AggregatedWorker {

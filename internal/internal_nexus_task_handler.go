@@ -96,9 +96,16 @@ func newNexusTaskHandler(
 
 func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueResponse) (*workflowservice.RespondNexusTaskCompletedRequest, *workflowservice.RespondNexusTaskFailedRequest, error) {
 	failureReasonSupport := getEffectiveTemporalFailureResponses(task.GetRequest().GetCapabilities().GetTemporalFailureResponses())
+	pollerGroupID := task.GetPollerGroupId()
 	nctx, handlerErr := h.newNexusOperationContext(task)
 	if handlerErr != nil {
-		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport, h.failureConverter)
+		failureRequest, err := h.fillInFailure(
+			task.TaskToken,
+			handlerErr,
+			failureReasonSupport,
+			h.failureConverter,
+			pollerGroupID,
+		)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -113,13 +120,19 @@ func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueRespo
 		return nil, nil, err
 	}
 	if handlerErr != nil {
-		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport, failureConverter)
+		failureRequest, err := h.fillInFailure(
+			task.TaskToken,
+			handlerErr,
+			failureReasonSupport,
+			failureConverter,
+			pollerGroupID,
+		)
 		if err != nil {
 			return nil, nil, err
 		}
 		return nil, failureRequest, nil
 	}
-	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport)
+	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport, pollerGroupID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -132,18 +145,25 @@ func (h *nexusTaskHandler) ExecuteContext(nctx *NexusOperationContext, task *wor
 		h.failureConverter,
 		nctx.nexusSerializationContext,
 	)
+	pollerGroupID := task.GetPollerGroupId()
 	res, handlerErr, err := h.execute(nctx, task)
 	if err != nil {
 		return nil, nil, err
 	}
 	if handlerErr != nil {
-		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport, failureConverter)
+		failureRequest, err := h.fillInFailure(
+			task.TaskToken,
+			handlerErr,
+			failureReasonSupport,
+			failureConverter,
+			pollerGroupID,
+		)
 		if err != nil {
 			return nil, nil, err
 		}
 		return nil, failureRequest, nil
 	}
-	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport)
+	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport, pollerGroupID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -517,7 +537,7 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 	}, nil
 }
 
-func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response, failureReasonSupport bool) (*workflowservice.RespondNexusTaskCompletedRequest, error) {
+func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response, failureReasonSupport bool, pollerGroupID string) (*workflowservice.RespondNexusTaskCompletedRequest, error) {
 	// Handle conversion of Failure to OperationError for backwards compatibility with old servers.
 	if res.GetStartOperation().GetFailure() != nil && !failureReasonSupport {
 		// Convert to operation error for backwards compatibility.
@@ -547,10 +567,11 @@ func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Respo
 		}
 	}
 	return &workflowservice.RespondNexusTaskCompletedRequest{
-		Identity:  h.identity,
-		Namespace: h.namespace,
-		TaskToken: taskToken,
-		Response:  res,
+		Identity:      h.identity,
+		Namespace:     h.namespace,
+		TaskToken:     taskToken,
+		Response:      res,
+		PollerGroupId: pollerGroupID,
 	}, nil
 }
 
@@ -559,11 +580,13 @@ func (h *nexusTaskHandler) fillInFailure(
 	handlerError *nexus.HandlerError,
 	failureReasonSupport bool,
 	failureConverter converter.FailureConverter,
+	pollerGroupID string,
 ) (*workflowservice.RespondNexusTaskFailedRequest, error) {
 	r := &workflowservice.RespondNexusTaskFailedRequest{
-		Identity:  h.identity,
-		Namespace: h.namespace,
-		TaskToken: taskToken,
+		Identity:      h.identity,
+		Namespace:     h.namespace,
+		TaskToken:     taskToken,
+		PollerGroupId: pollerGroupID,
 	}
 	if failureReasonSupport {
 		r.Failure = failureConverter.ErrorToFailure(handlerError)

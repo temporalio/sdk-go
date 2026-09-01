@@ -49,7 +49,10 @@ type (
 		// Default: 1
 		MinimumNumberOfPollers int
 
-		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed to scale up to.
+		// Poller-group coverage takes precedence: the worker may exceed this value to
+		// maintain at least one poll per server-provided group. For workflow tasks,
+		// this coverage minimum applies independently to normal and sticky pollers.
 		//
 		// Default: 100
 		MaximumNumberOfPollers int
