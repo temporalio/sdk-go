@@ -1,9 +1,11 @@
 package converter
 
-// SerializationContext provides metadata about where serialization is occurring.
-// Implementations include [WorkflowSerializationContext] for workflow-level
-// payloads, [ActivitySerializationContext] for activity-level payloads, and
-// [NexusSerializationContext] for caller-side Nexus operation payloads.
+// SerializationContext provides metadata about where serialization is occurring,
+// with the concrete type depending on the context:
+//
+//   - [WorkflowSerializationContext] for workflow-level payloads.
+//   - [ActivitySerializationContext] for activity-level payloads.
+//   - [NexusSerializationContext] for workflows calling Nexus operations.
 type SerializationContext interface {
 	isSerializationContext()
 }
@@ -35,9 +37,8 @@ type ActivitySerializationContext struct {
 
 func (ActivitySerializationContext) isSerializationContext() {}
 
-// NexusSerializationContext is the serialization context for caller-side Nexus
-// operation input, successful result, and failure decoding. Operation summaries
-// and user metadata use the workflow serialization context instead.
+// NexusSerializationContext is used by workflows calling Nexus operations when
+// encoding operation inputs and decoding successful results or failures.
 //
 // Operation is the resolved operation name. This context is not propagated to
 // Nexus handlers, which must use compatible converter configuration.

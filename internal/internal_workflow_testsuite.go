@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -2780,10 +2781,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 	callback func(*commonpb.Payload, error),
 	startedHandler func(opID string, e error),
 ) int64 {
-	failureConverter := params.failureConverter
-	if failureConverter == nil {
-		failureConverter = env.failureConverter
-	}
+	failureConverter := cmp.Or(params.failureConverter, env.failureConverter)
 	seq := env.nextID()
 	// Use lower case header values to simulate how the Nexus SDK (used internally by the "real" server) would transmit
 	// these headers over the wire.

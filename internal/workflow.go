@@ -3134,6 +3134,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
+	// Nexus context and data converters.
 	nsc := converter.NexusSerializationContext{
 		Endpoint:  input.Client.Endpoint(),
 		Service:   input.Client.Service(),
