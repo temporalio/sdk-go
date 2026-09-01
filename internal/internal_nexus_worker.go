@@ -29,6 +29,10 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 	params := opts.executionParameters
 	params.WorkerStopChannel = getReadOnlyChannel(workerStopChannel)
 	ensureRequiredParams(&params)
+	var pollerGroups *pollerGroupManager
+	if _, ok := params.NexusTaskPollerBehavior.(*pollerBehaviorAutoscaling); ok {
+		pollerGroups = newPollerGroupManager(params.pollerGroupSnapshotStore)
+	}
 	poller := newNexusTaskPoller(
 		newNexusTaskHandler(
 			opts.handler,
@@ -44,6 +48,7 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 		),
 		opts.workflowService,
 		params,
+		pollerGroups,
 	)
 
 	bwo := baseWorkerOptions{
@@ -57,6 +62,7 @@ func newNexusWorker(opts nexusWorkerOptions) (*nexusWorker, error) {
 				params.NexusTaskPollerBehavior,
 				metrics.PollerTypeNexusTask,
 				params.serverSupportsAutoscaling,
+				pollerGroups,
 			),
 		},
 		taskProcessor:                poller,
