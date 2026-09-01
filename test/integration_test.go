@@ -886,6 +886,7 @@ func (ts *IntegrationTestSuite) TestContinueAsNew() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
 	startOptions := ts.startWorkflowOptions("test-continueasnew-carryover")
 	startOptions.Memo = map[string]any{
@@ -903,6 +904,7 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewOmitsUnsetSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
 	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
 	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
@@ -1425,6 +1427,7 @@ func (ts *IntegrationTestSuite) TestChildWFRetryOnTimeout() {
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
 	err := ts.executeWorkflow("test-childwf-success-memo-searchAttr", ts.workflows.ChildWorkflowSuccess, &result)
 	ts.NoError(err)
@@ -1876,6 +1879,7 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelMutableSideEffects() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	options := ts.startWorkflowOptions("test-wf-typed-search-attributes")
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
 	options.EnableEagerStart = false
@@ -1887,6 +1891,7 @@ func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestSignalWithStartWorkflowTypedSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	wfID := "test-signal-with-start-wf-typed-search-attributes"
 	options := ts.startWorkflowOptions(wfID)
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
@@ -1906,6 +1911,7 @@ func (ts *IntegrationTestSuite) TestSignalWithStartWorkflowTypedSearchAttributes
 }
 
 func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	options := ts.startWorkflowOptions("test-child-wf-typed-search-attributes")
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
 	options.EnableEagerStart = false
@@ -3391,6 +3397,7 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
 // TestStandaloneActivityStartLinks verifies that a stand-alone activity started from a stand-alone
 // Nexus operation handler carries a link back to the Nexus operation on its start request.
 func (ts *IntegrationTestSuite) TestStandaloneActivityStartLinks() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "standalone activity test creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -5354,13 +5361,15 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 }
 
 func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	// Start workflow
+	options := ts.startWorkflowOptions("test-large-history-replay")
+	options.WorkflowExecutionTimeout = 2 * time.Minute
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions("test-large-history-replay"),
+		options,
 		ts.workflows.PanicOnSignal,
 	)
 	ts.NoError(err)
@@ -5615,6 +5624,7 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6185,6 +6195,7 @@ func (ts *IntegrationTestSuite) TestScheduleTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleWorkflowActionTypedSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scheduleID := "test-schedule-typed-search-attributes"
@@ -6804,6 +6815,7 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleList() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -6875,6 +6887,7 @@ func (ts *IntegrationTestSuite) TestScheduleList() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdate() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -7398,8 +7411,11 @@ func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Unset namespace field will cause an invalid argument error
-	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{})
+	// Setting both namespace and ID causes an invalid argument error
+	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+		Id:        uuid.NewString(),
+	})
 
 	ts.assertMetricCount(metrics.TemporalRequestFailure, 1,
 		metrics.OperationTagName, "DescribeNamespace",
@@ -9384,6 +9400,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 	}
 	ts.worker.RegisterActivityWithOptions(readFromChannelActivity, activity.RegisterOptions{Name: "readFromChannelActivity"})
 	ts.Run("Describe activity", func() {
+		skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 		timeBeforeStart := time.Now().Add(-time.Millisecond)
 
 		options := makeOptions()
@@ -9617,6 +9634,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 	})
 
 	ts.Run("Execute activity with start delay", func() {
+		skipOnCloud(ts.T(), cloudRequiresProvisioning, "activity start delay is not enabled on fresh Cloud namespaces")
 		startDelay := 2 * time.Second
 		options := makeOptions()
 		options.StartDelay = startDelay
@@ -9830,6 +9848,7 @@ func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
 }
 
 func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "standalone Nexus tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -10176,6 +10195,7 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 }
 
 func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "Temporal-backed Nexus tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -10331,6 +10351,7 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityHeartbeatDetailsRegression
 // and sync operations) so the failure/timeout/retry surface for activity-backed operations
 // can grow without bloating the workflow-backed table.
 func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "activity-backed Nexus tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_ACTIVITY_BACKED_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}
