@@ -192,6 +192,7 @@ type (
 	// baseWorker may invoke taskPoller concurrently from multiple poll loops.
 	scalableTaskPoller struct {
 		taskPollerType string
+		admissionKind  enumspb.TaskQueueKind
 		// pollerCount is the number of fixed poll loops to start. There may be fewer
 		// active polls due to limited slots or rate limiting.
 		pollerCount       int
@@ -250,6 +251,7 @@ type (
 		fatalErrCb         func(error)
 		sessionTokenBucket *sessionTokenBucket
 		pollerBalancer     *pollerBalancer
+		workflowAdmission  *workflowSlotAdmission
 
 		lastPollTaskErrMessage string
 		lastPollTaskErrStarted time.Time
@@ -410,13 +412,7 @@ func newBaseWorker(
 	if options.pollerRate > 0 {
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
-	// If we have multiple task workers, we need to balance the pollers
-	if len(options.taskPollers) > 1 {
-		bw.pollerBalancer = &pollerBalancer{
-			pollerCount:   make(map[string]int),
-			pollerBarrier: make(map[string]barrier),
-		}
-	}
+	bw.configurePollers(options.taskPollers)
 
 	return bw
 }
@@ -427,11 +423,25 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 		panic("task pollers already initialized")
 	}
 	bw.options.taskPollers = taskPollers
-	if len(taskPollers) > 1 {
-		bw.pollerBalancer = &pollerBalancer{
-			pollerCount:   make(map[string]int),
-			pollerBarrier: make(map[string]barrier),
+	bw.configurePollers(taskPollers)
+}
+
+func (bw *baseWorker) configurePollers(taskPollers []scalableTaskPoller) {
+	if len(taskPollers) <= 1 {
+		return
+	}
+
+	if bw.slotSupplier != nil {
+		admission := newWorkflowSlotAdmission(bw.slotSupplier.inner.MaxSlots())
+		if admission != nil && admission.attachPollers(taskPollers) {
+			bw.workflowAdmission = admission
+			return
 		}
+	}
+
+	bw.pollerBalancer = &pollerBalancer{
+		pollerCount:   make(map[string]int),
+		pollerBarrier: make(map[string]barrier),
 	}
 }
 
@@ -559,9 +569,9 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 // runAutoscalingPoller is the autoscaling counterpart to runPoller. runPoller is
 // itself the long-lived poller: it reserves a slot, opens one poll RPC
 // synchronously, and loops. The autoscaling path instead uses this goroutine as
-// a manager: it waits for runner admission, reserves a slot, then spawns one
-// short-lived goroutine per logical poll. The configured poller limit bounds
-// logical active polls, not the supporting goroutine count.
+// a manager: it waits for poll and queue-kind admission, reserves a slot, then
+// spawns one short-lived goroutine per logical poll. The configured poller limit
+// bounds logical active polls, not the supporting goroutine count.
 func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 	defer bw.stopWG.Done()
 	defer bw.pollerWG.Done()
@@ -569,6 +579,7 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 	ctx, cancelfn := context.WithCancel(context.Background())
 	reserveChan := make(chan *SlotPermit)
 	var pollWG sync.WaitGroup
+	queueKind := taskWorker.admissionKind
 
 	defer pollWG.Wait()
 	defer cancelfn()
@@ -577,8 +588,6 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		if bw.noRepoll.Load() {
 			return
 		}
-		// Call the balancer before reserving a slot so one poller type cannot
-		// hold slots while waiting for another type to start polling.
 		if bw.pollerBalancer != nil {
 			if bw.pollerBalancer.balance(bw.limiterContext, taskWorker.taskPollerType) != nil {
 				return
@@ -588,6 +597,14 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		lease, releaseActive, err := taskWorker.autoscalingRunner.acquire(bw.limiterContext)
 		if err != nil {
 			return
+		}
+		// Arbitrate queue kind immediately before reserving the shared slot.
+		if bw.workflowAdmission != nil {
+			if bw.workflowAdmission.waitForAdmission(bw.limiterContext, queueKind) != nil {
+				lease.release()
+				releaseActive()
+				return
+			}
 		}
 
 		bw.reserveSlotAsync(ctx, reserveChan, taskWorker)
@@ -616,7 +633,9 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			releaseActive()
 			return
 		}
-		if bw.pollerBalancer != nil {
+		if bw.workflowAdmission != nil {
+			bw.workflowAdmission.start(queueKind)
+		} else if bw.pollerBalancer != nil {
 			bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
 		}
 
@@ -627,7 +646,9 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			defer pollWG.Done()
 			defer releaseActive()
 			defer lease.release()
-			if bw.pollerBalancer != nil {
+			if bw.workflowAdmission != nil {
+				defer bw.workflowAdmission.finish(queueKind)
+			} else if bw.pollerBalancer != nil {
 				defer bw.pollerBalancer.decrementPoller(taskWorker.taskPollerType)
 			}
 			bw.pollTask(taskWorker, slotPermit, lease)
