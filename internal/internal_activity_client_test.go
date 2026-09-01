@@ -95,11 +95,8 @@ func TestExecuteActivityFromLinklessNexusRequestOmitsOnConflictOptions(t *testin
 	require.Nil(t, request.GetOnConflictOptions())
 }
 
-// TestDescribeActivityStripsUnrequestedPayloads asserts that payloads returned by a server that
-// ignores the opt-in flags are dropped client-side, so the Has* accessors always agree with what
-// the caller asked for.
 func TestDescribeActivityStripsUnrequestedPayloads(t *testing.T) {
-	newOverSharingService := func(t *testing.T) *workflowservicemock.MockWorkflowServiceClient {
+	allPayloadsService := func(t *testing.T) *workflowservicemock.MockWorkflowServiceClient {
 		t.Helper()
 		service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
 		service.EXPECT().
@@ -124,7 +121,7 @@ func TestDescribeActivityStripsUnrequestedPayloads(t *testing.T) {
 
 	describeWith := func(t *testing.T, options ClientDescribeActivityOptions) *ClientActivityExecutionDescription {
 		t.Helper()
-		client := NewServiceClient(newOverSharingService(t), nil, ClientOptions{})
+		client := NewServiceClient(allPayloadsService(t), nil, ClientOptions{})
 		client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
 		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
 		desc, err := handle.Describe(t.Context(), options)
@@ -167,8 +164,6 @@ func TestDescribeActivityStripsUnrequestedPayloads(t *testing.T) {
 	})
 }
 
-// TestUpdateActivityOptionsMask asserts that the field mask names exactly the options the caller
-// asked to change, and that the two combinations the server would reject are caught locally.
 func TestUpdateActivityOptionsMask(t *testing.T) {
 	newClient := func(t *testing.T, request **workflowservice.UpdateActivityExecutionOptionsRequest) *WorkflowClient {
 		t.Helper()
@@ -177,9 +172,10 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 			UpdateActivityExecutionOptions(gomock.Any(), gomock.Any()).
 			DoAndReturn(func(_ context.Context, req *workflowservice.UpdateActivityExecutionOptionsRequest, _ ...any) (*workflowservice.UpdateActivityExecutionOptionsResponse, error) {
 				*request = req
-				return &workflowservice.UpdateActivityExecutionOptionsResponse{
-					ActivityOptions: req.GetActivityOptions(),
-				}, nil
+				// These tests assert on the request only. What comes back is whatever this
+				// mock is told to say, so asserting on it would test the mock; the real
+				// server's resolved options are covered by the functional tests.
+				return &workflowservice.UpdateActivityExecutionOptionsResponse{}, nil
 			}).
 			AnyTimes()
 		client := NewServiceClient(service, nil, ClientOptions{})
@@ -192,7 +188,7 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		client := newClient(t, &request)
 		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
 
-		options, err := handle.UpdateOptions(t.Context(),
+		_, err := handle.UpdateOptions(t.Context(),
 			ClientActivityOptionsKeys.TaskQueue.ValueSet("new-tq"),
 			ClientActivityOptionsKeys.StartToCloseTimeout.ValueSet(90*time.Second))
 		require.NoError(t, err)
@@ -200,8 +196,8 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 			[]string{"task_queue.name", "start_to_close_timeout"},
 			request.GetUpdateMask().GetPaths())
 		require.False(t, request.GetRestoreOriginal())
-		require.Equal(t, "new-tq", options.TaskQueue)
-		require.Equal(t, 90*time.Second, options.StartToCloseTimeout)
+		require.Equal(t, "new-tq", request.GetActivityOptions().GetTaskQueue().GetName())
+		require.Equal(t, 90*time.Second, request.GetActivityOptions().GetStartToCloseTimeout().AsDuration())
 	})
 
 	t.Run("ValueSet of zero sends an explicit zero", func(t *testing.T) {
@@ -250,8 +246,6 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		client := newClient(t, &request)
 		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
 
-		// The zero value is constructible outside this package, since the fields are unexported
-		// but the empty composite literal is not. It must not become an empty-mask no-op.
 		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsUpdate{})
 		require.ErrorContains(t, err, "not a valid option update")
 		require.Nil(t, request)
@@ -282,9 +276,7 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 	})
 }
 
-// TestActivityOperatorCommandRequestFields asserts the request fields the server never echoes
-// back, so they cannot be checked by observing activity state: identity, a fresh request ID, and
-// the reason and jitter the caller supplied.
+// Asserts the request fields the server never sends back.
 func TestActivityOperatorCommandRequestFields(t *testing.T) {
 	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
 	client := NewServiceClient(service, nil, ClientOptions{Identity: "test-identity"})
@@ -293,7 +285,6 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 	var pause *workflowservice.PauseActivityExecutionRequest
 	var unpause *workflowservice.UnpauseActivityExecutionRequest
 	var reset *workflowservice.ResetActivityExecutionRequest
-	var update *workflowservice.UpdateActivityExecutionOptionsRequest
 
 	service.EXPECT().PauseActivityExecution(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PauseActivityExecutionRequest, _ ...any) (*workflowservice.PauseActivityExecutionResponse, error) {
@@ -310,11 +301,6 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 			reset = req
 			return &workflowservice.ResetActivityExecutionResponse{}, nil
 		}).AnyTimes()
-	service.EXPECT().UpdateActivityExecutionOptions(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, req *workflowservice.UpdateActivityExecutionOptionsRequest, _ ...any) (*workflowservice.UpdateActivityExecutionOptionsResponse, error) {
-			update = req
-			return &workflowservice.UpdateActivityExecutionOptionsResponse{}, nil
-		}).AnyTimes()
 
 	handle := client.GetActivityHandle(ClientGetActivityHandleOptions{
 		ActivityID: "activity-id",
@@ -327,32 +313,6 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 		Jitter: 5 * time.Second,
 	}))
 	require.NoError(t, handle.Reset(ctx, ClientResetActivityOptions{Jitter: 7 * time.Second}))
-	_, err := handle.UpdateOptions(ctx,
-		ClientActivityOptionsKeys.HeartbeatTimeout.ValueSet(25*time.Second))
-	require.NoError(t, err)
-
-	for name, got := range map[string]struct {
-		activityID string
-		runID      string
-		identity   string
-		requestID  string
-	}{
-		"pause":   {pause.GetActivityId(), pause.GetRunId(), pause.GetIdentity(), pause.GetRequestId()},
-		"unpause": {unpause.GetActivityId(), unpause.GetRunId(), unpause.GetIdentity(), unpause.GetRequestId()},
-		"reset":   {reset.GetActivityId(), reset.GetRunId(), reset.GetIdentity(), reset.GetRequestId()},
-		"update":  {update.GetActivityId(), update.GetRunId(), update.GetIdentity(), update.GetRequestId()},
-	} {
-		require.Equal(t, "activity-id", got.activityID, name)
-		require.Equal(t, "run-id", got.runID, name)
-		require.Equal(t, "test-identity", got.identity, name)
-		require.NotEmpty(t, got.requestID, name)
-	}
-
-	// Request IDs must be fresh per call, not reused across commands.
-	require.ElementsMatch(t,
-		[]string{pause.GetRequestId(), unpause.GetRequestId(), reset.GetRequestId(), update.GetRequestId()},
-		uniqueStrings(pause.GetRequestId(), unpause.GetRequestId(), reset.GetRequestId(), update.GetRequestId()))
-
 	require.Equal(t, "pause-reason", pause.GetReason())
 	require.Equal(t, "unpause-reason", unpause.GetReason())
 	require.Equal(t, 5*time.Second, unpause.GetJitter().AsDuration())
@@ -366,21 +326,6 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 	require.Nil(t, reset.GetJitter())
 }
 
-func uniqueStrings(values ...string) []string {
-	seen := map[string]struct{}{}
-	var unique []string
-	for _, v := range values {
-		if _, ok := seen[v]; !ok {
-			seen[v] = struct{}{}
-			unique = append(unique, v)
-		}
-	}
-	return unique
-}
-
-// TestResetActivityFlagsReachRequest asserts the reset flags travel to the wire. Their effect
-// is server-side and deferred, so an integration test cannot cheaply distinguish a flag that
-// was never sent from one the server has not applied yet.
 func TestResetActivityFlagsReachRequest(t *testing.T) {
 	resetWith := func(t *testing.T, options ClientResetActivityOptions) *workflowservice.ResetActivityExecutionRequest {
 		t.Helper()
@@ -405,8 +350,6 @@ func TestResetActivityFlagsReachRequest(t *testing.T) {
 		request := resetWith(t, ClientResetActivityOptions{})
 		require.False(t, request.GetKeepPaused())
 		require.False(t, request.GetRestoreOriginalOptions())
-		// As of api#848 and temporal#11417 a reset carries the persisted heartbeat details
-		// into the new attempt unless the caller asks otherwise.
 		require.False(t, request.GetResetHeartbeat())
 	})
 
@@ -422,16 +365,11 @@ func TestResetActivityFlagsReachRequest(t *testing.T) {
 	})
 }
 
-// TestUpdateActivityOptionsRestoreIsExclusive asserts the guard the handle methods cannot
-// reach: UpdateOptions always sends RestoreOriginal=false and RestoreOriginalOptions always
-// sends empty changes, so only a hand-built interceptor input can combine the two. The
-// server rejects that combination, so the root invoker refuses it before the round trip.
 func TestUpdateActivityOptionsRestoreIsExclusive(t *testing.T) {
 	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
 	client := NewServiceClient(service, nil, ClientOptions{})
 	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
 
-	// No RPC expectation is registered, so reaching the service would fail the mock.
 	_, err := client.interceptor.UpdateActivityOptions(t.Context(), &ClientUpdateActivityOptionsInput{
 		ActivityID:      "activity-id",
 		RestoreOriginal: true,

@@ -519,8 +519,7 @@ func (d *ClientActivityExecutionDescription) HasHeartbeatDetails() bool {
 }
 
 // GetHeartbeatDetails retrieves heartbeat details. Returns ErrNoData if heartbeat details are not
-// present, which includes the case where they were not requested via
-// ClientDescribeActivityOptions.IncludeHeartbeatDetails.
+// present (nonexistent or unrequested via IncludeHeartbeatDetails).
 // The details are deserialized into provided pointers using the data converter of the client used to make the Describe call.
 // Returns error if data conversion fails.
 func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...any) error {
@@ -541,8 +540,7 @@ func (d *ClientActivityExecutionDescription) HasInput() bool {
 }
 
 // GetInput retrieves the arguments the activity was scheduled with. Returns ErrNoData if the
-// input is not present, which includes the case where it was not requested via
-// ClientDescribeActivityOptions.IncludeInput.
+// input is not present (nonexistent or unrequested via IncludeInput).
 // The arguments are deserialized into the provided pointers, one per argument, using the data
 // converter of the client used to make the Describe call. Returns error if data conversion fails.
 func (d *ClientActivityExecutionDescription) GetInput(valuePtrs ...any) error {

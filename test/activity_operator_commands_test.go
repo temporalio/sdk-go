@@ -16,18 +16,11 @@ import (
 	"go.temporal.io/sdk/temporal"
 )
 
-// A running activity does not transition straight to PAUSED on pause: the server records
-// PAUSE_REQUESTED and only moves to PAUSED once the worker drops the attempt. A long-running
-// heartbeating activity that has not yet noticed the pause stays in PAUSE_REQUESTED, so both
-// states count as "paused" for an observability assertion.
 func isPaused(state enumspb.PendingActivityState) bool {
 	return state == enumspb.PENDING_ACTIVITY_STATE_PAUSED ||
 		state == enumspb.PENDING_ACTIVITY_STATE_PAUSE_REQUESTED
 }
 
-// TestActivityOperatorCommandsSuite covers pause, unpause, reset and update-options on standalone
-// activities. Each case asserts an observable server-side state change rather than a successful
-// RPC.
 func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
 		ts.T().SkipNow()
@@ -44,7 +37,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 			}
 		}
 	}
-	// Returns immediately. Used with a start delay so it can be paused while scheduled.
 	quickActivity := func(ctx context.Context) (string, error) {
 		return "resumed", nil
 	}
@@ -55,19 +47,12 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		}
 		return "done", nil
 	}
-	// Takes an argument and returns a value derived from it, so a completed execution has both
-	// an input and a successful outcome to read back off describe.
 	echoActivity := func(ctx context.Context, word string) (string, error) {
 		return word + "-echoed", nil
 	}
-	// Always fails. Paired with a single-attempt retry policy so the activity reaches a terminal
-	// failure outcome rather than retrying.
 	alwaysFailActivity := func(ctx context.Context) error {
 		return temporal.NewApplicationError("deliberate failure", "")
 	}
-	// Heartbeats, fails the first attempt, then succeeds. One execution of this carries
-	// input, a result, heartbeat details and a last failure all at once, which is what lets a
-	// single describe exercise every payload field.
 	heartbeatFailIncrement := func(ctx context.Context, value int) (int, error) {
 		activity.RecordHeartbeat(ctx, "heartbeat details")
 		if activity.GetInfo(ctx).Attempt == 1 {
@@ -76,10 +61,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		return value + 1, nil
 	}
 
-	// Records the same heartbeat details until cancelled. The details are re-sent on every beat
-	// rather than once, because the SDK delivers cancellation through the heartbeat response: an
-	// activity that stops heartbeating never learns it has been asked to yield, and the server
-	// defers a paused activity's reset until the running attempt does yield.
 	heartbeatingActivity := func(ctx context.Context) error {
 		for {
 			activity.RecordHeartbeat(ctx, "hb-details")
@@ -101,8 +82,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 
 	newID := func() string { return fmt.Sprintf("act-%v", uuid.NewString()) }
 
-	// startRunningSlowActivity starts a slow activity and waits until it is actually running on
-	// the worker, so that the operator command under test acts on a started attempt.
+	// Starts a slow activity and waits until it is actually running.
 	startRunningSlowActivity := func(ctx context.Context, mutate func(*client.StartActivityOptions)) client.ActivityHandle {
 		options := client.StartActivityOptions{
 			ID:                  newID(),
@@ -122,8 +102,8 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		return handle
 	}
 
-	// startHeartbeatReadyActivity starts the heartbeating activity and waits until the details
-	// have actually been persisted, so a later assertion about them is meaningful.
+	// Starts the heartbeating activity and waits until the details have actually been
+	// persisted.
 	startHeartbeatReadyActivity := func(ctx context.Context) client.ActivityHandle {
 		handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
 			ID:                  newID(),
