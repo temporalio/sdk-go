@@ -187,13 +187,16 @@ type (
 		Close()
 	}
 
+	// scalableTaskPoller is the reusable poller plus its concurrency-control
+	// configuration. It does not represent a goroutine or a single poll attempt;
+	// baseWorker may invoke taskPoller concurrently from multiple poll loops.
 	scalableTaskPoller struct {
 		taskPollerType      string
 		autoscalingBalancer *workflowAutoscalingBalancer
 		pollKind            enumspb.TaskQueueKind
 
-		// pollerCount is the number of pollers tasks to start. There may be less than this
-		// due to limited slots, rate limiting, or poller autoscaling.
+		// pollerCount is the number of fixed poll loops to start. There may be fewer
+		// active polls due to limited slots or rate limiting.
 		pollerCount       int
 		taskPoller        taskPoller
 		pollerAutoscaler  *pollerAutoscaler
@@ -296,10 +299,12 @@ type (
 	}
 
 	autoscalingTaskPollerRunner struct {
-		autoscaler *pollerAutoscaler
-		wakeCh     chan struct{}
-		activeMu   sync.Mutex
-		active     int
+		autoscaler   *pollerAutoscaler
+		pollerGroups *pollerGroupManager
+		wakeCh       chan struct{}
+		activeMu     sync.Mutex
+		// active counts admitted logical poll attempts, not supporting goroutines.
+		active int
 	}
 )
 
@@ -428,7 +433,9 @@ func (bw *baseWorker) validatePollers(taskPollers []scalableTaskPoller) {
 	}
 }
 
-// Start starts a fixed set of routines to do the work.
+// Start creates the fixed control goroutines for polling, autoscaling, and
+// dispatch. Autoscaling poll-attempt and task-processing goroutines are created
+// dynamically while the worker is running.
 func (bw *baseWorker) Start() {
 	if bw.isWorkerStarted {
 		return
@@ -438,21 +445,24 @@ func (bw *baseWorker) Start() {
 
 	for _, taskWorker := range bw.options.taskPollers {
 		if taskWorker.autoscalingRunner != nil {
+			// Autoscaling pollers are created with both a runner and an autoscaler.
+			// The runner's manager opens polls under the current target.
 			bw.stopWG.Add(1)
 			bw.pollerWG.Add(1)
 			go bw.runAutoscalingPoller(taskWorker)
+
+			// The autoscaler's separate loop periodically refreshes scaling signals.
+			bw.stopWG.Add(1)
+			go func() {
+				defer bw.stopWG.Done()
+				taskWorker.pollerAutoscaler.run(bw.stopCh)
+			}()
 		} else {
 			for i := 0; i < taskWorker.pollerCount; i++ {
 				bw.stopWG.Add(1)
 				bw.pollerWG.Add(1)
 				go bw.runPoller(taskWorker)
 			}
-		}
-
-		if taskWorker.pollerAutoscaler != nil {
-			bw.stopWG.Go(func() {
-				taskWorker.pollerAutoscaler.run(bw.stopCh)
-			})
 		}
 	}
 
@@ -520,7 +530,7 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				bw.releaseSlot(permit, SlotReleaseReasonUnused)
 				return
 			}
-			bw.pollTask(taskWorker, permit)
+			bw.pollTask(taskWorker, permit, pollerGroupLease{})
 		}
 	}
 }
@@ -553,7 +563,7 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 				return
 			}
 		}
-		releaseActive, err := taskWorker.autoscalingRunner.acquire(bw.limiterContext)
+		lease, releaseActive, err := taskWorker.autoscalingRunner.acquire(bw.limiterContext)
 		if err != nil {
 			return
 		}
@@ -571,11 +581,13 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		var permit *SlotPermit
 		select {
 		case <-bw.stopCh:
+			lease.release()
 			releaseActive()
 			return
 		case permit = <-reserveChan:
 		}
 		if permit == nil { // There was an error reserving a slot
+			lease.release()
 			releaseActive()
 			// Avoid spamming reserve hard in the event it's constantly failing
 			if ctx.Err() == nil {
@@ -586,6 +598,7 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 
 		if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
 			bw.releaseSlot(permit, SlotReleaseReasonUnused)
+			lease.release()
 			releaseActive()
 			return
 		}
@@ -599,10 +612,11 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			defer bw.stopWG.Done()
 			defer pollWG.Done()
 			defer releaseActive()
+			defer lease.release()
 			if balancer != nil {
 				defer balancer.finish(taskWorker.pollKind)
 			}
-			bw.pollTask(taskWorker, slotPermit)
+			bw.pollTask(taskWorker, slotPermit, lease)
 		}(permit)
 	}
 }
@@ -643,19 +657,21 @@ func (bw *baseWorker) slotReservationData(taskWorker scalableTaskPoller) slotRes
 }
 
 func taskQueueKindForPoller(taskWorker scalableTaskPoller) (enumspb.TaskQueueKind, bool) {
-	switch taskWorker.taskPollerType {
+	if taskWorker.autoscalingRunner == nil {
+		return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
+	}
+	return taskQueueKindForAutoscalingPollerType(taskWorker.taskPollerType)
+}
+
+func taskQueueKindForAutoscalingPollerType(taskPollerType string) (enumspb.TaskQueueKind, bool) {
+	switch taskPollerType {
 	case metrics.PollerTypeWorkflowStickyTask:
 		return enumspb.TASK_QUEUE_KIND_STICKY, true
-	case metrics.PollerTypeWorkflowTask:
-		// Autoscaling workflow pollers are split by queue kind. SimpleMaximum
-		// workflow pollers are mixed, so their kind is not known at reservation time.
-		if taskWorker.autoscalingRunner != nil {
-			return enumspb.TASK_QUEUE_KIND_NORMAL, true
-		}
-	case metrics.PollerTypeActivityTask, metrics.PollerTypeNexusTask:
+	case metrics.PollerTypeWorkflowTask, metrics.PollerTypeActivityTask, metrics.PollerTypeNexusTask:
 		return enumspb.TASK_QUEUE_KIND_NORMAL, true
+	default:
+		return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
 	}
-	return enumspb.TASK_QUEUE_KIND_UNSPECIFIED, false
 }
 
 func (bw *baseWorker) tryReserveSlot() *SlotPermit {
@@ -779,7 +795,11 @@ func (bw *baseWorker) runEagerTaskDispatcher() {
 	}
 }
 
-func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPermit) {
+func (bw *baseWorker) pollTask(
+	taskWorker scalableTaskPoller,
+	slotPermit *SlotPermit,
+	lease pollerGroupLease,
+) {
 	var err error
 	var task taskForWorker
 	didSendTask := false
@@ -791,7 +811,7 @@ func (bw *baseWorker) pollTask(taskWorker scalableTaskPoller, slotPermit *SlotPe
 
 	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
-		task, err = taskWorker.taskPoller.PollTask()
+		task, err = taskWorker.taskPoller.PollTask(lease)
 		bw.logPollTaskError(err)
 		if err != nil {
 			// We retry "non retriable" errors while long polling for a while, because some proxies return
@@ -969,19 +989,21 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 func (prh *pollerAutoscaler) updateTarget(f func(int64) int64) {
 	target := prh.target.Load()
 	newTarget := f(target)
-	if newTarget < int64(prh.minPollerCount) {
-		newTarget = int64(prh.minPollerCount)
-	} else if newTarget > int64(prh.maxPollerCount) {
-		newTarget = int64(prh.maxPollerCount)
-	}
+	newTarget = int64(effectivePollerTarget(
+		int(newTarget),
+		prh.minPollerCount,
+		prh.maxPollerCount,
+		0,
+	))
 	for !prh.target.CompareAndSwap(target, newTarget) {
 		target = prh.target.Load()
 		newTarget = f(target)
-		if newTarget < int64(prh.minPollerCount) {
-			newTarget = int64(prh.minPollerCount)
-		} else if newTarget > int64(prh.maxPollerCount) {
-			newTarget = int64(prh.maxPollerCount)
-		}
+		newTarget = int64(effectivePollerTarget(
+			int(newTarget),
+			prh.minPollerCount,
+			prh.maxPollerCount,
+			0,
+		))
 	}
 	if prh.targetChangedCallback != nil {
 		traceLog(func() {
@@ -1033,30 +1055,89 @@ func (prh *pollerAutoscaler) newPeriod() {
 	prh.scaleUpAllowed.Store(float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1)
 }
 
-func newAutoscalingTaskPollerRunner(autoscaler *pollerAutoscaler) *autoscalingTaskPollerRunner {
-	return &autoscalingTaskPollerRunner{
-		autoscaler: autoscaler,
-		wakeCh:     make(chan struct{}, 1),
+func newAutoscalingTaskPollerRunner(
+	autoscaler *pollerAutoscaler,
+	pollerGroups *pollerGroupManager,
+) *autoscalingTaskPollerRunner {
+	runner := &autoscalingTaskPollerRunner{
+		autoscaler:   autoscaler,
+		pollerGroups: pollerGroups,
+		wakeCh:       make(chan struct{}, 1),
 	}
+	autoscaler.targetChangedCallback = runner.signal
+	return runner
 }
 
-func (r *autoscalingTaskPollerRunner) acquire(ctx context.Context) (func(), error) {
+func (r *autoscalingTaskPollerRunner) acquire(ctx context.Context) (pollerGroupLease, func(), error) {
 	for {
+		// Capture the store notification before evaluating admission. If the
+		// snapshot changes during the evaluation, this channel is closed and the
+		// runner immediately tries again instead of missing the update.
+		var pollerGroupsChanged <-chan struct{}
+		if r.pollerGroups != nil {
+			pollerGroupsChanged = r.pollerGroups.groupStore.changed()
+		}
 		r.activeMu.Lock()
-		target := int(r.autoscaler.target.Load())
+		target := r.effectiveTarget()
+		var lease pollerGroupLease
+		var ok bool
 		if r.active < target {
+			lease, ok = r.tryReservePollerGroup()
+		} else {
+			// Polls for removed groups, and ungrouped polls issued before groups
+			// became known, still count as active. Let mandatory current coverage
+			// temporarily exceed the autoscaling target while those polls drain.
+			lease, ok = r.pollerGroups.tryReserveRequired()
+		}
+		if ok {
 			r.active++
 			r.activeMu.Unlock()
-			return r.release, nil
+			return lease, r.release, nil
 		}
 		r.activeMu.Unlock()
 
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return pollerGroupLease{}, nil, ctx.Err()
 		case <-r.wakeCh:
+		case <-pollerGroupsChanged:
 		}
 	}
+}
+
+func (r *autoscalingTaskPollerRunner) tryReservePollerGroup() (pollerGroupLease, bool) {
+	if r.pollerGroups == nil {
+		return pollerGroupLease{}, true
+	}
+	return r.pollerGroups.reserve(), true
+}
+
+// effectiveTarget expects the r.activeMu lock to already be held
+func (r *autoscalingTaskPollerRunner) effectiveTarget() int {
+	target := int(r.autoscaler.target.Load())
+	requiredMin := 0
+	if r.pollerGroups != nil {
+		requiredMin = r.pollerGroups.requiredMin()
+	}
+	return effectivePollerTarget(
+		target,
+		r.autoscaler.minPollerCount,
+		r.autoscaler.maxPollerCount,
+		requiredMin,
+	)
+}
+
+func effectivePollerTarget(current, configuredMin, configuredMax, requiredMin int) int {
+	effectiveMin := max(configuredMin, requiredMin)
+	effectiveMax := max(configuredMax, effectiveMin)
+
+	if current < effectiveMin {
+		return effectiveMin
+	}
+	if current > effectiveMax {
+		return effectiveMax
+	}
+	return current
 }
 
 func (r *autoscalingTaskPollerRunner) release() {
@@ -1085,6 +1166,7 @@ func newScalableTaskPoller(
 	pollerBehavior PollerBehavior,
 	taskPollerType string,
 	serverSupportsAutoscaling *atomic.Bool,
+	pollerGroups *pollerGroupManager,
 ) scalableTaskPoller {
 	tw := scalableTaskPoller{
 		taskPoller:     poller,
@@ -1099,12 +1181,11 @@ func newScalableTaskPoller(
 			logger:                    logger,
 			serverSupportsAutoscaling: serverSupportsAutoscaling,
 		})
-		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler)
-		tw.pollerAutoscaler.targetChangedCallback = func() {
-			tw.autoscalingRunner.signal()
-		}
 	case *pollerBehaviorSimpleMaximum:
 		tw.pollerCount = p.maximumNumberOfPollers
+	}
+	if tw.pollerAutoscaler != nil {
+		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler, pollerGroups)
 	}
 	return tw
 }

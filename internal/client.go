@@ -1724,14 +1724,15 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		eagerDispatcher: &eagerWorkflowDispatcher{
 			workersByTaskQueue: make(map[string]map[eagerWorker]struct{}),
 		},
-		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
-		workerHeartbeatInterval: heartbeatInterval,
-		workerGroupingKey:       uuid.NewString(),
-		sdkName:                 sdkName,
-		sdkVersion:              sdkVersion,
-		storageParams:           storageParams,
-		storageDriverTypes:      storageDriverTypes,
-		payloadWarningLimits:    payloadWarningLimits,
+		getSystemInfoTimeout:     options.ConnectionOptions.GetSystemInfoTimeout,
+		workerHeartbeatInterval:  heartbeatInterval,
+		workerGroupingKey:        uuid.NewString(),
+		pollerGroupSnapshotStore: newPollerGroupSnapshotStore(),
+		sdkName:                  sdkName,
+		sdkVersion:               sdkVersion,
+		storageParams:            storageParams,
+		storageDriverTypes:       storageDriverTypes,
+		payloadWarningLimits:     payloadWarningLimits,
 	}
 
 	if heartbeatInterval > 0 {

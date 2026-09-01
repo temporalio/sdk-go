@@ -2873,7 +2873,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		if err != nil {
 			// No retries for operations, fail the operation immediately.
 			//lint:ignore SA4006 fillInFailure cannot fail for a handler error without a cause.
-			failure, err = taskHandler.fillInFailure(task.TaskToken, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "%s", err.Error()), false)
+			failure, err = taskHandler.fillInFailure(task.TaskToken, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "%s", err.Error()), false, task.GetPollerGroupId())
 		}
 		if failure != nil {
 			// Convert to a nexus HandlerError first to simulate the flow in the server.
