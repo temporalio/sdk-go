@@ -278,6 +278,8 @@ func intTestNexusCallerWorkflow(ctx workflow.Context, hmacEndpointName, zlibEndp
 }
 
 func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsolation() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "test creates Nexus endpoints through Operator Service")
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
