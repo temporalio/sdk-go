@@ -255,6 +255,7 @@ var workflowOp = temporalnexus.NewWorkflowRunOperation(
 )
 
 func TestNexusSyncOperation(t *testing.T) {
+	skipOnCloud(t, cloudRequiresLocalServer, "creates Nexus endpoints through Operator Service and uses the local HTTP frontend")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 
@@ -419,6 +420,7 @@ func TestNexusSyncOperation(t *testing.T) {
 }
 
 func TestNexusWorkflowRunOperation(t *testing.T) {
+	skipOnCloud(t, cloudRequiresLocalServer, "creates Nexus endpoints through Operator Service and uses the local HTTP frontend")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -482,6 +484,7 @@ func TestNexusWorkflowRunOperation(t *testing.T) {
 }
 
 func TestOperationSummary(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -550,6 +553,7 @@ func TestOperationSummary(t *testing.T) {
 }
 
 func TestOperationInfo(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -598,6 +602,7 @@ func TestOperationInfo(t *testing.T) {
 }
 
 func TestSyncOperationFromWorkflow(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	testCases := []struct {
 		name                       string
 		disableTemporalFailureResp bool
@@ -1155,6 +1160,7 @@ func runSyncOperationFromWorkflowTest(t *testing.T, temporalFailureResp bool) {
 }
 
 func TestInvalidOperationInput(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -1221,6 +1227,7 @@ type inputDeserializationCallerInput struct {
 }
 
 func TestNexusOperationInputDeserializationError(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx, withDataConverter(inputDeserializationErrorDataConverter{
@@ -1336,6 +1343,7 @@ func TestNexusOperationInputDeserializationError(t *testing.T) {
 }
 
 func TestAsyncOperationFromWorkflow(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -1715,6 +1723,7 @@ func runCancellationTypeTest(ctx context.Context, tc *testContext, cancellationT
 }
 
 func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "1" {
 		t.Skip()
 	}
@@ -1845,6 +1854,7 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 }
 
 func TestAsyncOperationFromWorkflow_MultipleCallers(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") == "1" {
 		t.Skip()
 	}
@@ -2079,6 +2089,7 @@ func (o *manualAsyncOp) Start(ctx context.Context, input nexus.NoValue, options 
 // TestAsyncOperationCompletionCustomFailureConverter tests the completion path when a failure is generated with a
 // custom failure converter.
 func TestAsyncOperationCompletionCustomFailureConverter(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -2133,6 +2144,7 @@ func TestAsyncOperationCompletionCustomFailureConverter(t *testing.T) {
 }
 
 func TestNewNexusClientValidation(t *testing.T) {
+	skipOnCloud(t, cloudNeedsAdaptation, "uses endpoint-creating test setup even though the endpoint is not used")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -2165,6 +2177,7 @@ func TestNewNexusClientValidation(t *testing.T) {
 }
 
 func TestReplay(t *testing.T) {
+	skipOnCloud(t, cloudNeedsAdaptation, "uses a live endpoint to generate history instead of a captured fixture")
 	ctx, cancel := context.WithTimeout(context.Background(), defaultNexusTestTimeout)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -3445,6 +3458,7 @@ func (i *nexusInterceptor) Info(msg string, keyvals ...any) {
 }
 
 func TestInterceptors(t *testing.T) {
+	skipOnCloud(t, cloudNeedsAdaptation, "combines a real-server endpoint test with an in-memory test environment")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*30)
 	defer cancel()
 	tc := newTestContext(t, ctx)
@@ -3752,6 +3766,7 @@ func TestWorkflowTestSuite_WorkflowRunOperation_StartToCloseTimeout(t *testing.T
 }
 
 func TestNexusTimeoutInteraction(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_NEXUS_CALLER_TIMEOUT_TESTS") == "1" {
 		t.Skip()
 	}
@@ -3880,6 +3895,7 @@ func callee(ctx workflow.Context) (string, error) {
 // implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_RESPONSE_LINK_TESTS so it is
 // skipped by default.
 func TestNexusSignalOperationLinks(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("ENABLE_SIGNAL_RESPONSE_LINK_TESTS") != "1" {
 		t.Skip("set ENABLE_SIGNAL_RESPONSE_LINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
 	}
@@ -3960,6 +3976,7 @@ func TestNexusSignalOperationLinks(t *testing.T) {
 // Requires a real server with history.enableCHASMSignalBacklinks=true; gated behind
 // ENABLE_SIGNAL_RESPONSE_LINK_TESTS so it is skipped by default.
 func TestNexusMultiSignalOperationLinks(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("ENABLE_SIGNAL_RESPONSE_LINK_TESTS") != "1" {
 		t.Skip("set ENABLE_SIGNAL_RESPONSE_LINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
 	}
@@ -4067,6 +4084,7 @@ func asyncHandler(ctx workflow.Context, _ nexus.NoValue) (string, error) {
 // implemented by the in-memory test server. Gated behind ENABLE_SIGNAL_RESPONSE_LINK_TESTS so it is
 // skipped by default.
 func TestNexusAsyncSignalOperationLinks(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("ENABLE_SIGNAL_RESPONSE_LINK_TESTS") != "1" {
 		t.Skip("set ENABLE_SIGNAL_RESPONSE_LINK_TESTS=1 and run against a server with history.enableCHASMSignalBacklinks=true")
 	}

@@ -4454,6 +4454,27 @@ func (w *Workflows) TemporalOpTerminateCallerCaller(ctx workflow.Context, _ stri
 	return result, err
 }
 
+// WorkflowTaskCompletionPagination schedules many activities in a single workflow task so the
+// completion (~5 MiB across the commands) exceeds the gRPC request size limit and must be
+// paginated. Each input is well under the per-blob size limit, so it is the aggregate completion
+// size that drives pagination.
+func (w *Workflows) WorkflowTaskCompletionPagination(ctx workflow.Context) error {
+	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
+		StartToCloseTimeout: 30 * time.Second,
+	})
+	input := strings.Repeat("a", 400*1024)
+	var futures []workflow.Future
+	for i := 0; i < 13; i++ {
+		futures = append(futures, workflow.ExecuteActivity(ctx, "EchoString", input))
+	}
+	for _, future := range futures {
+		if err := future.Get(ctx, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.TemporalOpEcho)
 	worker.RegisterWorkflow(w.TemporalOpWaitForCancel)
@@ -4621,6 +4642,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.AwaitWithOptions)
 	worker.RegisterWorkflow(w.WorkflowWithRejectableUpdate)
 	worker.RegisterWorkflow(w.WorkflowWithUpdate)
+	worker.RegisterWorkflow(w.WorkflowTaskCompletionPagination)
 
 	worker.RegisterWorkflow(w.child)
 	worker.RegisterWorkflow(w.childWithRetryPolicy)
