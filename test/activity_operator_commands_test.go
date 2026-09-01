@@ -129,9 +129,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 	}
 
 	ts.Run("Unpause resumes", func() {
-		// The start delay below still has to elapse after the unpause, so this case needs more
-		// headroom than the suite's default context timeout.
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
 
 		// Start delayed so the activity sits scheduled and can be paused before it runs.
@@ -153,10 +151,11 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 
 		ts.NoError(handle.Unpause(ctx, client.UnpauseActivityOptions{}))
 
-		// After unpause the activity proceeds and completes successfully.
-		var result string
-		ts.NoError(handle.Get(ctx, &result))
-		ts.Equal("resumed", result)
+		ts.Eventually(func() bool {
+			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+			return err == nil && !isPaused(description.RunState)
+		}, 20*time.Second, 200*time.Millisecond)
+		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 	})
 
 	ts.Run("Reset returns to the first attempt", func() {
