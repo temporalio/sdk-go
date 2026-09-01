@@ -55,6 +55,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Workflow autoscaling now favors sticky polls when sticky work is backlogged while preserving
+  normal and sticky access to shared workflow slots.
 - `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
   `serviceerror.WorkflowExecutionAlreadyStarted` errors.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
