@@ -41,6 +41,9 @@ to docs, or any other relevant information.
 ### :boom: Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Experimental external storage: `converter.StorageDriverSelector.SelectDriver` now receives a
+  `converter.StorageDriverSelectContext` instead of a `converter.StorageDriverStoreContext`.
+  Update the parameter type; the new type carries the same `Context` and `Target` fields.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
   `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
