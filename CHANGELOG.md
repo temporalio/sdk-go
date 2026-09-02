@@ -23,8 +23,9 @@ to docs, or any other relevant information.
 
 ### Added
 
-- Worker heartbeats now report the Go runtime version, detected hosting environments (Docker,
-  Kubernetes, and common cloud platforms), and the operating system and architecture. This is sent
+- Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
+  a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
+  platforms), and the operating system and architecture. This is sent
   once per worker with the first heartbeat accepted by the server and can be turned off with
   `client.Options.DisableWorkerEnvironmentInfo`.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with

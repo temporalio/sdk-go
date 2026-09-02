@@ -2,6 +2,7 @@ package internal
 
 import (
 	"runtime"
+	"runtime/debug"
 	"testing"
 
 	workerpb "go.temporal.io/api/worker/v1"
@@ -99,5 +100,84 @@ func TestCgroupsIndicateDocker(t *testing.T) {
 		if got := cgroupsIndicateDocker(cgroups); got != want {
 			t.Errorf("cgroupsIndicateDocker(%q) = %v, want %v", cgroups, got, want)
 		}
+	}
+}
+
+func TestDetectRuntimesRoadRunner(t *testing.T) {
+	t.Parallel()
+	goRuntime := workerpb.EnvironmentInfo_Runtime_RUNTIME_TYPE_GO
+	rrRuntime := workerpb.EnvironmentInfo_Runtime_RUNTIME_TYPE_ROADRUNNER
+
+	cases := []struct {
+		name      string
+		buildInfo *debug.BuildInfo
+		want      []*workerpb.EnvironmentInfo_Runtime
+	}{
+		{
+			name:      "no build info",
+			buildInfo: nil,
+			want:      []*workerpb.EnvironmentInfo_Runtime{{Type: goRuntime, Version: runtime.Version()}},
+		},
+		{
+			name: "plain go program",
+			buildInfo: &debug.BuildInfo{
+				Main: debug.Module{Path: "example.com/worker", Version: "(devel)"},
+				Deps: []*debug.Module{{Path: "go.temporal.io/sdk", Version: "v1.50.0"}},
+			},
+			want: []*workerpb.EnvironmentInfo_Runtime{{Type: goRuntime, Version: runtime.Version()}},
+		},
+		{
+			name: "roadrunner release binary",
+			buildInfo: &debug.BuildInfo{
+				Main: debug.Module{Path: "github.com/roadrunner-server/roadrunner/v2025", Version: "v2025.1.2"},
+				Deps: []*debug.Module{{Path: "github.com/temporalio/roadrunner-temporal/v6", Version: "v6.1.0"}},
+			},
+			want: []*workerpb.EnvironmentInfo_Runtime{
+				{Type: goRuntime, Version: runtime.Version()},
+				{Type: rrRuntime, Version: "v2025.1.2"},
+			},
+		},
+		{
+			name: "roadrunner built from source without tag",
+			buildInfo: &debug.BuildInfo{
+				Main: debug.Module{Path: "github.com/roadrunner-server/roadrunner/v2025", Version: "(devel)"},
+			},
+			want: []*workerpb.EnvironmentInfo_Runtime{
+				{Type: goRuntime, Version: runtime.Version()},
+				{Type: rrRuntime},
+			},
+		},
+		{
+			name: "fork embedding the temporal plugin",
+			buildInfo: &debug.BuildInfo{
+				Main: debug.Module{Path: "example.com/custom-rr", Version: "v1.0.0"},
+				Deps: []*debug.Module{{Path: "github.com/temporalio/roadrunner-temporal/v6", Version: "v6.1.0"}},
+			},
+			want: []*workerpb.EnvironmentInfo_Runtime{
+				{Type: goRuntime, Version: runtime.Version()},
+				{Type: rrRuntime},
+			},
+		},
+		{
+			name: "similarly named module is not roadrunner",
+			buildInfo: &debug.BuildInfo{
+				Main: debug.Module{Path: "github.com/roadrunner-server/roadrunner-tools", Version: "v1.0.0"},
+				Deps: []*debug.Module{{Path: "github.com/temporalio/roadrunner-temporal-docs", Version: "v1.0.0"}},
+			},
+			want: []*workerpb.EnvironmentInfo_Runtime{{Type: goRuntime, Version: runtime.Version()}},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := detectRuntimes(tc.buildInfo)
+			if len(got) != len(tc.want) {
+				t.Fatalf("runtimes = %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i].GetType() != tc.want[i].GetType() || got[i].GetVersion() != tc.want[i].GetVersion() {
+					t.Fatalf("runtime %d = %v, want %v", i, got[i], tc.want[i])
+				}
+			}
+		})
 	}
 }

@@ -3,22 +3,71 @@ package internal
 import (
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strings"
 
 	workerpb "go.temporal.io/api/worker/v1"
 )
 
+const (
+	// roadRunnerModulePrefix is the main module of every RoadRunner binary.
+	roadRunnerModulePrefix = "github.com/roadrunner-server/roadrunner"
+	// roadRunnerTemporalModulePrefix is the RoadRunner plugin through which the PHP SDK uses this SDK.
+	roadRunnerTemporalModulePrefix = "github.com/temporalio/roadrunner-temporal"
+)
+
 // detectEnvironmentInfo collects the runtime, hosting environment, and platform information
 // reported in the first accepted worker heartbeat.
 func detectEnvironmentInfo() *workerpb.EnvironmentInfo {
+	buildInfo, _ := debug.ReadBuildInfo()
 	return &workerpb.EnvironmentInfo{
-		Runtimes: []*workerpb.EnvironmentInfo_Runtime{{
-			Type:    workerpb.EnvironmentInfo_Runtime_RUNTIME_TYPE_GO,
-			Version: runtime.Version(),
-		}},
+		Runtimes:            detectRuntimes(buildInfo),
 		HostingEnvironments: detectHostingEnvironments(os.LookupEnv, isDocker),
 		Platform:            detectPlatform(),
 	}
+}
+
+// detectRuntimes always reports the Go runtime, and additionally RoadRunner when this SDK is
+// linked into a RoadRunner binary (the PHP SDK's execution model). RoadRunner is identified from
+// the binary's build info rather than from anything the PHP SDK passes in.
+func detectRuntimes(buildInfo *debug.BuildInfo) []*workerpb.EnvironmentInfo_Runtime {
+	runtimes := []*workerpb.EnvironmentInfo_Runtime{{
+		Type:    workerpb.EnvironmentInfo_Runtime_RUNTIME_TYPE_GO,
+		Version: runtime.Version(),
+	}}
+	if version, ok := roadRunnerVersion(buildInfo); ok {
+		runtimes = append(runtimes, &workerpb.EnvironmentInfo_Runtime{
+			Type:    workerpb.EnvironmentInfo_Runtime_RUNTIME_TYPE_ROADRUNNER,
+			Version: version,
+		})
+	}
+	return runtimes
+}
+
+func roadRunnerVersion(buildInfo *debug.BuildInfo) (string, bool) {
+	if buildInfo == nil {
+		return "", false
+	}
+	if isModule(buildInfo.Main.Path, roadRunnerModulePrefix) {
+		// "(devel)" is Go's placeholder for builds outside of a tagged module.
+		if buildInfo.Main.Version == "(devel)" {
+			return "", true
+		}
+		return buildInfo.Main.Version, true
+	}
+	for _, dep := range buildInfo.Deps {
+		if isModule(dep.Path, roadRunnerTemporalModulePrefix) {
+			// A RoadRunner binary built from a fork or vendored main module: RoadRunner is present,
+			// but its version is not knowable from the plugin alone.
+			return "", true
+		}
+	}
+	return "", false
+}
+
+func isModule(path, prefix string) bool {
+	rest, ok := strings.CutPrefix(path, prefix)
+	return ok && (rest == "" || strings.HasPrefix(rest, "/"))
 }
 
 // detectHostingEnvironments identifies hosting environments from well-known indicators. Several
