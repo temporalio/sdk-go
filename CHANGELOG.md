@@ -41,6 +41,9 @@ to docs, or any other relevant information.
 ### :boom: Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Experimental external storage: `converter.StorageDriverSelector.SelectDriver` now receives a
+  `converter.StorageDriverSelectContext` instead of a `converter.StorageDriverStoreContext`.
+  Update the parameter type; the new type carries the same `Context` and `Target` fields.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
   `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
@@ -57,6 +60,8 @@ to docs, or any other relevant information.
 
 - Workflow autoscaling now favors sticky polls when sticky work is backlogged while preserving
   normal and sticky access to shared workflow slots.
+- Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
+  request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
 - `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
   `serviceerror.WorkflowExecutionAlreadyStarted` errors.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.

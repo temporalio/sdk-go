@@ -310,8 +310,14 @@ func (ts *IntegrationTestSuite) TestWorkflowTaskCompletionPagination() {
 	}
 
 	// The completion is larger than the gRPC request size limit, so it succeeds only if it is
-	// paginated.
-	err = ts.executeWorkflow("test-wft-completion-pagination", ts.workflows.WorkflowTaskCompletionPagination, nil)
+	// paginated. Building and paginating a ~5 MiB completion, then persisting it, is far heavier than
+	// a normal task. The suite defaults (15s run / 1s task) are too tight for it on slow CI hardware,
+	// so restore the standard 10s task timeout (which the suite helper lowers to 1s) and give the run
+	// ample headroom.
+	options := ts.startWorkflowOptions("test-wft-completion-pagination")
+	options.WorkflowExecutionTimeout = time.Minute
+	options.WorkflowTaskTimeout = 10 * time.Second
+	err = ts.executeWorkflowWithOption(options, ts.workflows.WorkflowTaskCompletionPagination, nil)
 	ts.NoError(err)
 }
 
@@ -886,6 +892,7 @@ func (ts *IntegrationTestSuite) TestContinueAsNew() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
 	startOptions := ts.startWorkflowOptions("test-continueasnew-carryover")
 	startOptions.Memo = map[string]any{
@@ -903,6 +910,7 @@ func (ts *IntegrationTestSuite) TestContinueAsNewCarryOver() {
 }
 
 func (ts *IntegrationTestSuite) TestContinueAsNewOmitsUnsetSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
 	stringKey := temporal.NewSearchAttributeKeyString("CustomStringField")
 	keywordKey := temporal.NewSearchAttributeKeyKeyword("CustomKeywordField")
@@ -1425,6 +1433,7 @@ func (ts *IntegrationTestSuite) TestChildWFRetryOnTimeout() {
 }
 
 func (ts *IntegrationTestSuite) TestChildWFWithMemoAndSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	var result string
 	err := ts.executeWorkflow("test-childwf-success-memo-searchAttr", ts.workflows.ChildWorkflowSuccess, &result)
 	ts.NoError(err)
@@ -1876,6 +1885,7 @@ func (ts *IntegrationTestSuite) TestWorkflowWithParallelMutableSideEffects() {
 }
 
 func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	options := ts.startWorkflowOptions("test-wf-typed-search-attributes")
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
 	options.EnableEagerStart = false
@@ -1887,6 +1897,7 @@ func (ts *IntegrationTestSuite) TestWorkflowTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestSignalWithStartWorkflowTypedSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	wfID := "test-signal-with-start-wf-typed-search-attributes"
 	options := ts.startWorkflowOptions(wfID)
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
@@ -1906,6 +1917,7 @@ func (ts *IntegrationTestSuite) TestSignalWithStartWorkflowTypedSearchAttributes
 }
 
 func (ts *IntegrationTestSuite) TestChildWorkflowTypedSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	options := ts.startWorkflowOptions("test-child-wf-typed-search-attributes")
 	// Need to disable eager workflow start until https://github.com/temporalio/temporal/pull/5124 fixed
 	options.EnableEagerStart = false
@@ -3391,6 +3403,7 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityTracing() {
 // TestStandaloneActivityStartLinks verifies that a stand-alone activity started from a stand-alone
 // Nexus operation handler carries a link back to the Nexus operation on its start request.
 func (ts *IntegrationTestSuite) TestStandaloneActivityStartLinks() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "standalone activity test creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_ACTIVITY_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -3475,20 +3488,91 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityStartLinks() {
 	ts.Equal(ts.config.Namespace, activityLink.GetNamespace())
 	ts.Equal(activityHandle.GetID(), activityLink.GetActivityId())
 	ts.Equal(descResp.GetInfo().GetRunId(), activityLink.GetRunId())
+
+	retryInput := "standalone-retry-" + uuid.NewString()
+	retryOperationID := "standalone-retry-op-" + uuid.NewString()
+	retryOperationHandle, err := nexusClient.ExecuteOperation(
+		ctx,
+		"retry-two-standalone-activities",
+		retryInput,
+		client.StartNexusOperationOptions{
+			ID:                     retryOperationID,
+			ScheduleToCloseTimeout: 30 * time.Second,
+		},
+	)
+	ts.NoError(err)
+
+	var retryResult synchronousActivityRetryResult
+	ts.NoError(retryOperationHandle.Get(ctx, &retryResult))
+	ts.Equal([]string{retryInput + "-a", retryInput + "-b"}, retryResult.ActivityIDs)
+	ts.NotEqual(retryResult.ActivityIDs[0], retryResult.ActivityIDs[1])
+	ts.Require().Len(retryResult.RequestIDs, 2, "handler should fail once and then be redelivered once")
+	ts.NotEmpty(retryResult.RequestIDs[0])
+	ts.Equal(retryResult.RequestIDs[0], retryResult.RequestIDs[1], "Nexus request ID must remain stable across redelivery")
+	ts.Require().Len(retryResult.RunIDsByAttempt, 2)
+	ts.Require().Len(retryResult.RunIDsByAttempt[0], 2)
+	ts.Require().Len(retryResult.RunIDsByAttempt[1], 2)
+	ts.NotEqual(retryResult.RunIDsByAttempt[0][0], retryResult.RunIDsByAttempt[0][1],
+		"the two activities must have distinct runs")
+
+	expectedActivityLinks := make(map[string]string, len(retryResult.ActivityIDs))
+	for i, activityID := range retryResult.ActivityIDs {
+		originalRunID := retryResult.RunIDsByAttempt[0][i]
+		ts.NotEmpty(originalRunID)
+		ts.Equal(originalRunID, retryResult.RunIDsByAttempt[1][i],
+			"redelivered start must resolve to the original run for activity %s", activityID)
+
+		activityHandle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{
+			ActivityID: activityID,
+			RunID:      originalRunID,
+		})
+		var activityResult string
+		ts.NoError(activityHandle.Get(ctx, &activityResult))
+		ts.Equal(activityID, activityResult)
+
+		description, err := ts.client.WorkflowService().DescribeActivityExecution(ctx, &workflowservice.DescribeActivityExecutionRequest{
+			Namespace:  ts.config.Namespace,
+			ActivityId: activityID,
+			RunId:      originalRunID,
+		})
+		ts.NoError(err)
+		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED, description.GetInfo().GetStatus())
+		ts.Equal(int32(1), description.GetInfo().GetAttempt(), "activity %s must execute exactly once", activityID)
+		ts.Equal(originalRunID, description.GetInfo().GetRunId())
+		ts.Empty(description.GetCallbacks(), "synchronous activity starts must not create completion callbacks")
+		ts.Require().Len(description.GetInfo().GetLinks(), 1, "activity %s must have exactly one Nexus backlink", activityID)
+		nexusLink := description.GetInfo().GetLinks()[0].GetNexusOperation()
+		ts.Require().NotNil(nexusLink)
+		ts.Equal(ts.config.Namespace, nexusLink.GetNamespace())
+		ts.Equal(retryOperationHandle.GetID(), nexusLink.GetOperationId())
+		ts.Equal(retryOperationHandle.GetRunID(), nexusLink.GetRunId())
+		expectedActivityLinks[activityID] = originalRunID
+	}
+
+	retryOperationDescription, err := retryOperationHandle.Describe(ctx, client.DescribeNexusOperationOptions{})
+	ts.NoError(err)
+	ts.Equal(enumspb.NEXUS_OPERATION_EXECUTION_STATUS_COMPLETED, retryOperationDescription.Status)
+	ts.Equal(int32(2), retryOperationDescription.Attempt, "Nexus handler should have exactly one redelivery")
+	ts.Require().Len(retryOperationDescription.RawInfo.GetLinks(), 2, "operation must have exactly one link per activity")
+	actualActivityLinks := make(map[string]string, 2)
+	for _, link := range retryOperationDescription.RawInfo.GetLinks() {
+		activityLink := link.GetActivity()
+		ts.Require().NotNil(activityLink)
+		ts.Equal(ts.config.Namespace, activityLink.GetNamespace())
+		actualActivityLinks[activityLink.GetActivityId()] = activityLink.GetRunId()
+	}
+	ts.Equal(expectedActivityLinks, actualActivityLinks)
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracing() {
-	ts.T().Skip("issue-1650: Otel Tracing intergation tests are flaky")
 	ts.testOpenTelemetryTracing(true, false)
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithUpdateWithStart() {
-	ts.T().Skip("issue-1650: Otel Tracing intergation tests are flaky")
 	ts.testOpenTelemetryTracing(true, true)
 }
 
 func (ts *IntegrationTestSuite) TestOpenTelemetryTracingWithoutMessages() {
-	ts.T().Skip("issue-1650: Otel Tracing intergation tests are flaky")
 	ts.testOpenTelemetryTracing(false, false)
 }
 
@@ -5354,13 +5438,15 @@ func (ts *IntegrationTestSuite) TestQueryOnlyCoroutineUsage() {
 }
 
 func (ts *IntegrationTestSuite) TestLargeHistoryReplay() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
 	// Start workflow
+	options := ts.startWorkflowOptions("test-large-history-replay")
+	options.WorkflowExecutionTimeout = 2 * time.Minute
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions("test-large-history-replay"),
+		options,
 		ts.workflows.PanicOnSignal,
 	)
 	ts.NoError(err)
@@ -5615,6 +5701,7 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 }
 
 func (ts *IntegrationTestSuite) TestDeterminismUpsertSearchAttributesConditional() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -6185,6 +6272,7 @@ func (ts *IntegrationTestSuite) TestScheduleTypedSearchAttributes() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleWorkflowActionTypedSearchAttributes() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scheduleID := "test-schedule-typed-search-attributes"
@@ -6804,6 +6892,7 @@ func (ts *IntegrationTestSuite) TestScheduleBackfill() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleList() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -6875,6 +6964,7 @@ func (ts *IntegrationTestSuite) TestScheduleList() {
 }
 
 func (ts *IntegrationTestSuite) TestScheduleUpdate() {
+	skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	// Create a paused workflow
@@ -7398,8 +7488,11 @@ func (ts *IntegrationTestSuite) TestRequestFailureMetric() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Unset namespace field will cause an invalid argument error
-	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{})
+	// Setting both namespace and ID causes an invalid argument error
+	_, _ = ts.client.WorkflowService().DescribeNamespace(ctx, &workflowservice.DescribeNamespaceRequest{
+		Namespace: ts.config.Namespace,
+		Id:        uuid.NewString(),
+	})
 
 	ts.assertMetricCount(metrics.TemporalRequestFailure, 1,
 		metrics.OperationTagName, "DescribeNamespace",
@@ -7625,6 +7718,18 @@ func (ts *IntegrationTestSuite) startWorkflowOptions(wfID string) client.StartWo
 	return wfOptions
 }
 
+type synchronousActivityRetryResult struct {
+	RequestIDs      []string
+	ActivityIDs     []string
+	RunIDsByAttempt [][]string
+}
+
+type synchronousActivityRetryState struct {
+	sync.Mutex
+	requestIDs      []string
+	runIDsByAttempt [][]string
+}
+
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
 	ts.workflows.register(w)
 	ts.activities.register(w)
@@ -7691,7 +7796,53 @@ func (ts *IntegrationTestSuite) registerStandaloneNexusOperations(w worker.Worke
 			return handle.GetID(), nil
 		},
 	)
-	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp, linkEchoOp, signalEchoOp, startStandaloneActivityOp))
+	retryStates := sync.Map{}
+	retryTwoActivitiesOp := nexus.NewSyncOperation(
+		"retry-two-standalone-activities",
+		func(ctx context.Context, input string, opts nexus.StartOperationOptions) (synchronousActivityRetryResult, error) {
+			activityIDs := []string{input + "-a", input + "-b"}
+			runIDs := make([]string, len(activityIDs))
+			for i, activityID := range activityIDs {
+				handle, err := temporalnexus.GetClient(ctx).ExecuteActivity(ctx, client.StartActivityOptions{
+					ID:                       activityID,
+					TaskQueue:                temporalnexus.GetOperationInfo(ctx).TaskQueue,
+					StartToCloseTimeout:      30 * time.Second,
+					ActivityIDConflictPolicy: enumspb.ACTIVITY_ID_CONFLICT_POLICY_USE_EXISTING,
+					RetryPolicy:              &temporal.RetryPolicy{MaximumAttempts: 1},
+				}, "delayedEchoNexusActivity", activityID)
+				if err != nil {
+					return synchronousActivityRetryResult{}, err
+				}
+				runIDs[i] = handle.GetRunID()
+			}
+
+			value, _ := retryStates.LoadOrStore(input, &synchronousActivityRetryState{})
+			state := value.(*synchronousActivityRetryState)
+			state.Lock()
+			state.requestIDs = append(state.requestIDs, opts.RequestID)
+			state.runIDsByAttempt = append(state.runIDsByAttempt, append([]string(nil), runIDs...))
+			result := synchronousActivityRetryResult{
+				RequestIDs:      append([]string(nil), state.requestIDs...),
+				ActivityIDs:     activityIDs,
+				RunIDsByAttempt: make([][]string, len(state.runIDsByAttempt)),
+			}
+			for i, attemptRunIDs := range state.runIDsByAttempt {
+				result.RunIDsByAttempt[i] = append([]string(nil), attemptRunIDs...)
+			}
+			attempt := len(state.requestIDs)
+			state.Unlock()
+
+			if attempt == 1 {
+				return synchronousActivityRetryResult{}, &nexus.HandlerError{
+					Type:          nexus.HandlerErrorTypeInternal,
+					Message:       "force handler redelivery after starting activities",
+					RetryBehavior: nexus.HandlerErrorRetryBehaviorRetryable,
+				}
+			}
+			return result, nil
+		},
+	)
+	ts.NoError(service.Register(syncOp, asyncOp, asyncEchoOp, linkEchoOp, signalEchoOp, startStandaloneActivityOp, retryTwoActivitiesOp))
 	w.RegisterNexusService(service)
 }
 
@@ -9384,6 +9535,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 	}
 	ts.worker.RegisterActivityWithOptions(readFromChannelActivity, activity.RegisterOptions{Name: "readFromChannelActivity"})
 	ts.Run("Describe activity", func() {
+		skipOnCloud(ts.T(), cloudNeedsAdaptation, "requires custom namespace search attributes")
 		timeBeforeStart := time.Now().Add(-time.Millisecond)
 
 		options := makeOptions()
@@ -9617,6 +9769,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 	})
 
 	ts.Run("Execute activity with start delay", func() {
+		skipOnCloud(ts.T(), cloudRequiresProvisioning, "activity start delay is not enabled on fresh Cloud namespaces")
 		startDelay := 2 * time.Second
 		options := makeOptions()
 		options.StartDelay = startDelay
@@ -9830,6 +9983,7 @@ func (ts *IntegrationTestSuite) TestPayloadSizeWarningDefaultSize() {
 }
 
 func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "standalone Nexus tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -10176,6 +10330,7 @@ func (ts *IntegrationTestSuite) TestExecuteNexusOperationSuite() {
 }
 
 func (ts *IntegrationTestSuite) TestTemporalOperationSuite() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "Temporal-backed Nexus tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
@@ -10331,6 +10486,7 @@ func (ts *IntegrationTestSuite) TestStandaloneActivityHeartbeatDetailsRegression
 // and sync operations) so the failure/timeout/retry surface for activity-backed operations
 // can grow without bloating the workflow-backed table.
 func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "activity-backed Nexus tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_ACTIVITY_BACKED_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -10361,10 +10517,13 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 
 	typedActivityInput := "typed-act-" + uuid.NewString()
 	untypedActivityInput := "untyped-act-" + uuid.NewString()
+	doubleStartActivityInput := "double-start-act-" + uuid.NewString()
+	asyncHandlerRetryActivityInput := "async-handler-retry-act-" + uuid.NewString()
 	renamedActivityInput := "renamed-act-" + uuid.NewString()
 	failureActivityInput := "failure-act-" + uuid.NewString()
 	timeoutActivityInput := "timeout-act-" + uuid.NewString()
 	cancelActivityInput := "cancel-act-" + uuid.NewString()
+	customCancelActivityInput := "custom-cancel-act-" + uuid.NewString()
 	stcTimeoutActivityInput := "stc-act-" + uuid.NewString()
 	heartbeatTimeoutActivityInput := "heartbeat-act-" + uuid.NewString()
 	retrySucceedActivityInput := "retry-succeed-act-" + uuid.NewString()
@@ -10384,6 +10543,184 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 				return desc.Status == expected
 			}, 10*time.Second, 200*time.Millisecond,
 				"activity %s never reached status %s", activityID, expected)
+		}
+	}
+
+	cancelActivityOnceRunning := func(activityID string) func(client.WorkflowRun) {
+		return func(run client.WorkflowRun) {
+			handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: activityID})
+			require.Eventually(ts.T(), func() bool {
+				desc, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+				return err == nil && desc.Status == enumspb.ACTIVITY_EXECUTION_STATUS_RUNNING
+			}, 10*time.Second, 200*time.Millisecond, "activity %s never reached RUNNING", activityID)
+			ts.NoError(ts.client.SignalWorkflow(
+				ctx,
+				run.GetID(),
+				run.GetRunID(),
+				temporalOpCancelActivitySignal,
+				nil,
+			))
+		}
+	}
+
+	verifyNexusOperationCanceled := func(run client.WorkflowRun) {
+		var operationID string
+		canceledEvents := 0
+		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for iter.HasNext() {
+			event, err := iter.Next()
+			ts.NoError(err)
+			if attrs := event.GetNexusOperationStartedEventAttributes(); attrs != nil {
+				operationID = attrs.GetOperationId()
+			}
+			if attrs := event.GetNexusOperationCanceledEventAttributes(); attrs != nil {
+				canceledEvents++
+				ts.NotNil(attrs.GetFailure(), "expected canceled event to carry failure details")
+				ts.NotNil(attrs.GetFailure().GetCause(), "expected canceled event failure to include a cause")
+				ts.NotNil(attrs.GetFailure().GetCause().GetCanceledFailureInfo(), "expected canceled event cause to be a canceled failure")
+			}
+		}
+		ts.NotEmpty(operationID, "expected NexusOperationStarted event with operation ID")
+		ts.Equal(1, canceledEvents, "expected exactly one NexusOperationCanceled event")
+	}
+
+	verifyCustomCancelActivityCalledOnce := func(activityID string) func(client.WorkflowRun) {
+		return func(_ client.WorkflowRun) {
+			value, ok := temporalOpCustomCancelActivityCalls.Load(activityID)
+			ts.True(ok, "expected custom cancel handler to record %s", activityID)
+			if !ok {
+				return
+			}
+			ts.Equal(int32(1), value.(*atomic.Int32).Load(), "expected custom cancel handler to run exactly once for %s", activityID)
+
+			runIDValue, ok := temporalOpCustomCancelActivityRunIDs.Load(activityID)
+			ts.True(ok, "expected custom cancel handler to capture a run ID for %s", activityID)
+			if !ok {
+				return
+			}
+			recordedRunID, ok := runIDValue.(string)
+			ts.True(ok, "expected custom cancel handler to store run ID as a string for %s", activityID)
+			if !ok {
+				return
+			}
+			ts.NotEmpty(recordedRunID, "expected custom cancel handler to receive a non-empty run ID for %s", activityID)
+
+			handle := ts.client.GetActivityHandle(client.GetActivityHandleOptions{ActivityID: activityID})
+			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
+			ts.NoError(err)
+			ts.Equal(recordedRunID, description.ActivityRunID, "expected custom cancel handler run ID to match described activity run ID")
+		}
+	}
+
+	verifyWorkflowActivityLinks := func(activityID string) func(client.WorkflowRun) {
+		return func(run client.WorkflowRun) {
+			description, err := ts.client.WorkflowService().DescribeActivityExecution(ctx, &workflowservice.DescribeActivityExecutionRequest{
+				Namespace:  ts.config.Namespace,
+				ActivityId: activityID,
+			})
+			ts.NoError(err)
+			activityRunID := description.GetInfo().GetRunId()
+			ts.NotEmpty(activityRunID)
+
+			var scheduledEvent, startedEvent *historypb.HistoryEvent
+			iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+			for iter.HasNext() {
+				event, err := iter.Next()
+				ts.NoError(err)
+				switch event.GetEventType() {
+				case enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED:
+					scheduledEvent = event
+				case enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED:
+					startedEvent = event
+				}
+			}
+			ts.Require().NotNil(scheduledEvent)
+			ts.Require().NotNil(startedEvent)
+			ts.Require().Len(startedEvent.GetLinks(), 1, "NexusOperationStarted must have exactly one Activity link")
+			activityLink := startedEvent.GetLinks()[0].GetActivity()
+			ts.Require().NotNil(activityLink)
+			ts.Equal(ts.config.Namespace, activityLink.GetNamespace())
+			ts.Equal(activityID, activityLink.GetActivityId())
+			ts.Equal(activityRunID, activityLink.GetRunId())
+
+			ts.Require().Len(description.GetCallbacks(), 1, "SAA must have exactly one completion callback")
+			callbackLinks := description.GetCallbacks()[0].GetInfo().GetCallback().GetLinks()
+			ts.Require().Len(callbackLinks, 1, "SAA callback must have exactly one caller link")
+			workflowLink := callbackLinks[0].GetWorkflowEvent()
+			ts.Require().NotNil(workflowLink)
+			ts.Equal(ts.config.Namespace, workflowLink.GetNamespace())
+			ts.Equal(run.GetID(), workflowLink.GetWorkflowId())
+			ts.Equal(run.GetRunID(), workflowLink.GetRunId())
+			switch ref := workflowLink.GetReference().(type) {
+			case *commonpb.Link_WorkflowEvent_EventRef:
+				ts.Equal(scheduledEvent.GetEventId(), ref.EventRef.GetEventId())
+				ts.Equal(enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED, ref.EventRef.GetEventType())
+			case *commonpb.Link_WorkflowEvent_RequestIdRef:
+				ts.Equal(scheduledEvent.GetNexusOperationScheduledEventAttributes().GetRequestId(), ref.RequestIdRef.GetRequestId())
+				ts.Equal(enumspb.EVENT_TYPE_NEXUS_OPERATION_SCHEDULED, ref.RequestIdRef.GetEventType())
+			default:
+				ts.Failf("unexpected callback link reference", "got %T", ref)
+			}
+		}
+	}
+
+	verifyOnlyFirstActivityStarted := func(firstActivityID, secondActivityID string) func(client.WorkflowRun) {
+		return func(_ client.WorkflowRun) {
+			first, err := ts.client.WorkflowService().DescribeActivityExecution(ctx, &workflowservice.DescribeActivityExecutionRequest{
+				Namespace:  ts.config.Namespace,
+				ActivityId: firstActivityID,
+			})
+			ts.NoError(err)
+			ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED, first.GetInfo().GetStatus())
+			ts.Equal(int32(1), first.GetInfo().GetAttempt())
+			ts.Len(first.GetCallbacks(), 1)
+
+			_, err = ts.client.WorkflowService().DescribeActivityExecution(ctx, &workflowservice.DescribeActivityExecutionRequest{
+				Namespace:  ts.config.Namespace,
+				ActivityId: secondActivityID,
+			})
+			var notFound *serviceerror.NotFound
+			ts.ErrorAs(err, &notFound, "rejected second start must not create an activity")
+		}
+	}
+
+	verifyAsyncHandlerRetry := func(input, activityID string) func(client.WorkflowRun) {
+		return func(run client.WorkflowRun) {
+			value, ok := temporalOpAsyncHandlerRetryStates.Load(input)
+			ts.Require().True(ok, "expected async handler retry state for %s", input)
+			state := value.(*temporalOpAsyncHandlerRetryState)
+			state.Lock()
+			requestIDs := append([]string(nil), state.requestIDs...)
+			state.Unlock()
+			ts.Require().Len(requestIDs, 2, "async handler should fail once and then be redelivered once")
+			ts.NotEmpty(requestIDs[0])
+			ts.Equal(requestIDs[0], requestIDs[1], "Nexus request ID must remain stable across async handler redelivery")
+
+			description, err := ts.client.WorkflowService().DescribeActivityExecution(ctx, &workflowservice.DescribeActivityExecutionRequest{
+				Namespace:  ts.config.Namespace,
+				ActivityId: activityID,
+			})
+			ts.NoError(err)
+			ts.NotEmpty(description.GetInfo().GetRunId())
+			ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED, description.GetInfo().GetStatus())
+			ts.Equal(int32(1), description.GetInfo().GetAttempt(), "handler redelivery must reuse one Activity run")
+			ts.Require().Len(description.GetCallbacks(), 1, "handler redelivery must attach exactly one callback")
+
+			startedEvents := 0
+			completedEvents := 0
+			iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+			for iter.HasNext() {
+				event, err := iter.Next()
+				ts.NoError(err)
+				if event.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_STARTED {
+					startedEvents++
+				}
+				if event.GetEventType() == enumspb.EVENT_TYPE_NEXUS_OPERATION_COMPLETED {
+					completedEvents++
+				}
+			}
+			ts.Equal(1, startedEvents, "caller must record exactly one Nexus operation start")
+			ts.Equal(1, completedEvents, "caller must record exactly one Nexus operation completion")
 		}
 	}
 
@@ -10415,25 +10752,65 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		wf       func(workflow.Context, string) (string, error)
-		input    string
-		expected string
-		verify   func(run client.WorkflowRun)
+		name       string
+		wf         func(workflow.Context, string) (string, error)
+		input      string
+		expected   string
+		beforeWait func(run client.WorkflowRun)
+		verify     func(run client.WorkflowRun)
 	}{
-		{"Async with StartActivity", ts.workflows.TemporalOpAsyncActivityCaller, typedActivityInput, typedActivityInput, nil},
-		{"Async with StartUntypedActivity", ts.workflows.TemporalOpAsyncUntypedActivityCaller, untypedActivityInput, untypedActivityInput, nil},
+		{"Async with StartActivity", ts.workflows.TemporalOpAsyncActivityCaller, typedActivityInput, typedActivityInput, nil, verifyWorkflowActivityLinks("act-" + typedActivityInput)},
+		{"Async with StartUntypedActivity", ts.workflows.TemporalOpAsyncUntypedActivityCaller, untypedActivityInput, untypedActivityInput, nil, nil},
+		{
+			"Async rejects second StartActivity and first completes",
+			ts.workflows.TemporalOpDoubleStartActivityCaller,
+			doubleStartActivityInput,
+			doubleStartActivityInput,
+			nil,
+			verifyOnlyFirstActivityStarted(
+				"double-start-first-"+doubleStartActivityInput,
+				"double-start-second-"+doubleStartActivityInput,
+			),
+		},
+		{
+			"Async handler retry reuses one activity and callback",
+			ts.workflows.TemporalOpAsyncHandlerRetryActivityCaller,
+			asyncHandlerRetryActivityInput,
+			asyncHandlerRetryActivityInput,
+			nil,
+			composeVerify(
+				verifyWorkflowActivityLinks("async-handler-retry-act-"+asyncHandlerRetryActivityInput),
+				verifyAsyncHandlerRetry(
+					asyncHandlerRetryActivityInput,
+					"async-handler-retry-act-"+asyncHandlerRetryActivityInput,
+				),
+			),
+		},
 		// Regression: activities registered with a custom name via activity.RegisterOptions.Name
 		// must be resolved through the worker's registry when scheduled via
 		// temporalnexus.StartActivity — otherwise the raw Go function name is sent and the
 		// activity fails as unregistered.
-		{"Async with StartActivity resolves worker-registered activity alias", ts.workflows.TemporalOpRenamedActivityCaller, renamedActivityInput, "renamed:" + renamedActivityInput, nil},
+		{"Async with StartActivity resolves worker-registered activity alias", ts.workflows.TemporalOpRenamedActivityCaller, renamedActivityInput, "renamed:" + renamedActivityInput, nil, nil},
 		{
 			"Cancel activity execution",
 			ts.workflows.TemporalOpCancelActivityCaller,
-			cancelActivityInput, "",
+			cancelActivityInput,
+			temporalOpCancelActivityResultCanceled,
+			cancelActivityOnceRunning("cancel-act-" + cancelActivityInput),
 			composeVerify(
 				verifyActivityFinalStatus("cancel-act-"+cancelActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_CANCELED),
+				verifyNexusOperationCanceled,
+			),
+		},
+		{
+			"Custom cancel terminates activity execution",
+			ts.workflows.TemporalOpCustomCancelActivityCaller,
+			customCancelActivityInput,
+			temporalOpCancelActivityResultTerminated,
+			cancelActivityOnceRunning("custom-cancel-act-" + customCancelActivityInput),
+			composeVerify(
+				verifyActivityFinalStatus("custom-cancel-act-"+customCancelActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TERMINATED),
+				verifyCustomCancelActivityCalledOnce("custom-cancel-act-"+customCancelActivityInput),
 			),
 		},
 		{
@@ -10441,6 +10818,7 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			ts.workflows.TemporalOpFailingActivityCaller,
 			failureActivityInput,
 			"application:NexusActivityTestFailureType:activity failed: " + failureActivityInput,
+			nil,
 			composeVerify(
 				verifyActivityFinalStatus("failing-act-"+failureActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_FAILED),
 			),
@@ -10450,6 +10828,7 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			ts.workflows.TemporalOpTimeoutActivityCaller,
 			timeoutActivityInput,
 			"timeout:StartToClose",
+			nil,
 			composeVerify(
 				verifyActivityFinalStatus("timeout-act-"+timeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
 			),
@@ -10459,6 +10838,7 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			ts.workflows.TemporalOpScheduleToCloseTimeoutCaller,
 			stcTimeoutActivityInput,
 			"timeout:ScheduleToClose",
+			nil,
 			composeVerify(
 				verifyActivityFinalStatus("schedule-to-close-act-"+stcTimeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
 			),
@@ -10468,6 +10848,7 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			ts.workflows.TemporalOpHeartbeatTimeoutCaller,
 			heartbeatTimeoutActivityInput,
 			"timeout:Heartbeat",
+			nil,
 			composeVerify(
 				verifyActivityFinalStatus("heartbeat-act-"+heartbeatTimeoutActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_TIMED_OUT),
 			),
@@ -10477,6 +10858,7 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			ts.workflows.TemporalOpRetryThenSucceedCaller,
 			retrySucceedActivityInput,
 			retrySucceedActivityInput,
+			nil,
 			composeVerify(
 				verifyActivityFinalStatus("retry-succeed-act-"+retrySucceedActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_COMPLETED),
 				verifyActivityAttemptAtLeast("retry-succeed-act-"+retrySucceedActivityInput, 3),
@@ -10487,6 +10869,7 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 			ts.workflows.TemporalOpRetryExhaustCaller,
 			retryExhaustActivityInput,
 			"application:NexusActivityRetryTestFailureType:attempt 2 failed; will succeed on 999",
+			nil,
 			composeVerify(
 				verifyActivityFinalStatus("retry-exhaust-act-"+retryExhaustActivityInput, enumspb.ACTIVITY_EXECUTION_STATUS_FAILED),
 				verifyActivityAttemptAtLeast("retry-exhaust-act-"+retryExhaustActivityInput, 2),
@@ -10496,6 +10879,9 @@ func (ts *IntegrationTestSuite) TestActivityBackedNexusOperationSuite() {
 		ts.Run(tc.name, func() {
 			run, err := ts.client.ExecuteWorkflow(ctx, startOpts, tc.wf, tc.input)
 			ts.NoError(err)
+			if tc.beforeWait != nil {
+				tc.beforeWait(run)
+			}
 			var result string
 			ts.NoError(run.Get(ctx, &result))
 			ts.Equal(tc.expected, result)
