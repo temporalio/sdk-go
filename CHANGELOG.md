@@ -23,11 +23,6 @@ to docs, or any other relevant information.
 
 ### Added
 
-- Added standalone-activity operator commands to `client.ActivityHandle`: `Pause`, `Unpause`,
-  `Reset`, `UpdateOptions` and `RestoreOriginalOptions`.
-- Added opt-in payload fields to `client.DescribeActivityOptions`: `IncludeInput`,
-  `IncludeOutcome`, `IncludeHeartbeatDetails` and `IncludeLastFailure`, all defaulting to false.
-
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
@@ -38,6 +33,20 @@ to docs, or any other relevant information.
 - The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
   metrics now carry a `failure_reason` attribute. Each is now split into one time series per
   reason, which may affect existing dashboards.
+
+#### Standalone Activity operator commands
+
+- `client.ActivityHandle` now supports operator commands for standalone activities: `Pause`,
+  `Unpause`, `Reset`, `UpdateOptions` and `RestoreOriginalOptions`.
+- Added opt-in payload fields to `client.DescribeActivityOptions`: `IncludeInput`,
+  `IncludeOutcome`, `IncludeHeartbeatDetails` and `IncludeLastFailure`.
+- Added missing description fields: `ExecutionTime` and `TotalHeartbeatCount`.
+
+### :boom: Breaking Changes
+
+- Description payload fields that previously came back unconditionally are now opt-in and must be
+  requested via `client.DescribeActivityOptions`: `GetHeartbeatDetails` (`IncludeHeartbeatDetails`)
+  and `GetLastFailure` (`IncludeLastFailure`).
 
 ### Changed
 
