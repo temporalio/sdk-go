@@ -297,10 +297,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger.Info("No metrics handler configured for temporal worker. Use NopHandler as default.")
 	}
 	if params.DataConverter == nil {
-		params.DataConverter = converter.GetDefaultDataConverter()
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
-	params.DataConverter = wrapTransferTypeDataConverter(params.DataConverter)
+	params.DataConverter = effectiveDataConverter(params.DataConverter)
 	if params.FailureConverter == nil {
 		params.FailureConverter = GetDefaultFailureConverter()
 	}
@@ -1247,14 +1246,10 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []an
 func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
 	var dataConverter converter.DataConverter
 
-	env := getActivityEnvironmentFromCtx(ctx)
-	if env != nil && env.dataConverter != nil {
+	if env := getActivityEnvironmentFromCtx(ctx); env != nil {
 		dataConverter = env.dataConverter
-	} else {
-		dataConverter = converter.GetDefaultDataConverter()
 	}
-	dataConverter = wrapTransferTypeDataConverter(dataConverter)
-	return WithContext(ctx, dataConverter)
+	return WithContext(ctx, effectiveDataConverter(dataConverter))
 }
 
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
@@ -1882,10 +1877,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 			return nil, err
 		}
 	}
-	if options.DataConverter == nil {
-		options.DataConverter = converter.GetDefaultDataConverter()
-	}
-	options.DataConverter = wrapTransferTypeDataConverter(options.DataConverter)
+	options.DataConverter = effectiveDataConverter(options.DataConverter)
 
 	storageParams, err := extstore.ExternalStorageToParams(options.ExternalStorage)
 	if err != nil {
@@ -2032,10 +2024,7 @@ func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr any) e
 		return errors.New("workflow result not found")
 	}
 	dc := aw.dataConverter
-	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
-	}
-	dc = wrapTransferTypeDataConverter(dc)
+	dc = effectiveDataConverter(dc)
 	return dc.FromPayloads(payloads, valuePtr)
 }
 
@@ -2917,10 +2906,7 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 
 // setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
-	if client.dataConverter == nil {
-		client.dataConverter = converter.GetDefaultDataConverter()
-	}
-	client.dataConverter = wrapTransferTypeDataConverter(client.dataConverter)
+	client.dataConverter = effectiveDataConverter(client.dataConverter)
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace
 	}

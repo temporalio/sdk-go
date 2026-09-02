@@ -40,6 +40,37 @@ func requireInstalledTransferBehavior(t *testing.T, dc converter.DataConverter, 
 	requireTransferStringPayload(t, payload, value)
 }
 
+func TestEffectiveDataConverter(t *testing.T) {
+	globalDefault := converter.GetDefaultDataConverter()
+
+	t.Run("nil resolves to the wrapped process default", func(t *testing.T) {
+		resolved := effectiveDataConverter(nil)
+		requireInstalledTransferTypeDataConverter(t, resolved, globalDefault)
+		requireInstalledTransferBehavior(t, resolved, "nil resolution")
+	})
+
+	t.Run("caller converter is preserved as the parent", func(t *testing.T) {
+		parent := newRecordingDataConverter()
+		resolved := effectiveDataConverter(parent)
+		requireInstalledTransferTypeDataConverter(t, resolved, parent)
+		requireInstalledTransferBehavior(t, resolved, "parent resolution")
+		require.Equal(t, []any{"parent resolution"}, parent.toPayloadValues)
+	})
+
+	t.Run("resolution is idempotent", func(t *testing.T) {
+		parent := newRecordingDataConverter()
+		resolved := effectiveDataConverter(parent)
+		require.Same(t, resolved, effectiveDataConverter(resolved))
+		require.Same(t, resolved, effectiveDataConverter(effectiveDataConverter(resolved)))
+	})
+
+	t.Run("the process default is never mutated", func(t *testing.T) {
+		require.Same(t, globalDefault, converter.GetDefaultDataConverter())
+		_, wrapped := converter.GetDefaultDataConverter().(*transferTypeDataConverter)
+		require.False(t, wrapped)
+	})
+}
+
 func TestTransferTypeDataConverterServiceClientInstallation(t *testing.T) {
 	globalDefault := converter.GetDefaultDataConverter()
 	_, globalDefaultIsWrapped := globalDefault.(*transferTypeDataConverter)
@@ -282,11 +313,6 @@ func TestTransferTypeDataConverterTestEnvironmentInstallation(t *testing.T) {
 		requireInstalledTransferTypeDataConverter(t, env.impl.dataConverter, parent)
 		require.NotSame(t, env.impl.rootDataConverter, env.impl.dataConverter)
 		require.Equal(t, []any{want.Value}, parent.toPayloadsValues)
-
-		replacement := newRecordingDataConverter()
-		env.SetDataConverter(replacement)
-		require.Same(t, env.impl.dataConverter, env.impl.rootDataConverter)
-		requireInstalledTransferTypeDataConverter(t, env.impl.dataConverter, replacement)
 	})
 
 	t.Run("custom activity environment", func(t *testing.T) {

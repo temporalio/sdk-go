@@ -1680,6 +1680,17 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowValidation() {
 	s.ErrorContains(err, "workflow ID from options not used")
 }
 
+// requireWrappedDataConverter asserts that dc is the transfer type wrapper
+// installed around parent.
+func (s *workflowClientTestSuite) requireWrappedDataConverter(
+	dc converter.DataConverter,
+	parent converter.DataConverter,
+) {
+	wrapped, ok := dc.(*transferTypeDataConverter)
+	s.Require().Truef(ok, "data converter has type %T, want *transferTypeDataConverter", dc)
+	s.Equal(parent, wrapped.parent)
+}
+
 func (s *workflowClientTestSuite) TestStartWorkflow() {
 	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
@@ -1699,7 +1710,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.IsType((*transferTypeDataConverter)(nil), client.dataConverter)
+	s.requireWrappedDataConverter(client.dataConverter, converter.GetDefaultDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
@@ -1739,7 +1750,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNotSupported() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.IsType((*transferTypeDataConverter)(nil), client.dataConverter)
+	s.requireWrappedDataConverter(client.dataConverter, converter.GetDefaultDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.False(processTask)
@@ -1778,7 +1789,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNoWorker() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.IsType((*transferTypeDataConverter)(nil), client.dataConverter)
+	s.requireWrappedDataConverter(client.dataConverter, converter.GetDefaultDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.False(processTask)
@@ -1816,7 +1827,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflow() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.IsType((*transferTypeDataConverter)(nil), client.dataConverter)
+	s.requireWrappedDataConverter(client.dataConverter, converter.GetDefaultDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.True(processTask)
@@ -1888,7 +1899,7 @@ func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
 		})
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, input)
-	s.Equal(iconverter.NewTestDataConverter(), client.dataConverter)
+	s.requireWrappedDataConverter(client.dataConverter, iconverter.NewTestDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
