@@ -1442,6 +1442,23 @@ func TestWorkflowSlotAdmissionRejectsInvalidKind(t *testing.T) {
 	require.EqualError(t, err, invalidAdmissionKindMessage)
 }
 
+func TestWorkflowSlotAdmissionIgnoresInvalidKind(t *testing.T) {
+	admission := newWorkflowSlotAdmission(2)
+
+	func() {
+		admission.mu.Lock()
+		defer admission.mu.Unlock()
+
+		require.False(t, admission.canAdmit(enumspb.TASK_QUEUE_KIND_UNSPECIFIED))
+	}()
+
+	admission.start(enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
+	admission.finish(enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
+
+	require.Zero(t, admission.normalActive)
+	require.Zero(t, admission.stickyActive)
+}
+
 func TestWorkflowSlotAdmissionStickyStartWakesNormal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		admission := newWorkflowSlotAdmission(4)
@@ -1504,8 +1521,6 @@ func (s *ScalableTaskPollerSuite) TestWorkflowSlotAdmissionConfiguration() {
 	require.Nil(s.T(), bw.pollerBalancer)
 	require.Nil(s.T(), normal.slotAdmission)
 	require.Same(s.T(), bw.workflowAdmission, sticky.slotAdmission)
-	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_NORMAL, bw.options.taskPollers[0].admissionKind)
-	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_STICKY, bw.options.taskPollers[1].admissionKind)
 
 	sticky.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, 3)
 	require.Equal(s.T(), int64(3), bw.workflowAdmission.stickyBacklog)

@@ -10,6 +10,7 @@ import (
 )
 
 const (
+	// One queued sticky task does not justify suppressing normal polls.
 	minMeaningfulStickyBacklog  int64 = 2
 	invalidAdmissionKindMessage       = "workflow slot admission requires a normal or sticky queue kind"
 )
@@ -29,8 +30,8 @@ type slotAdmissionPoller interface {
 }
 
 func newWorkflowSlotAdmission(maxSlots int) *workflowSlotAdmission {
-	// Zero means the supplier has no well-defined capacity. Invalid negative
-	// values also disable capacity-aware admission.
+	// Zero means the supplier does not expose a finite upper bound, as permitted
+	// for suppliers with dynamic capacity. Negative values are invalid.
 	if maxSlots <= 0 {
 		return nil
 	}
@@ -80,8 +81,7 @@ func (a *workflowSlotAdmission) attachPollers(taskPollers []scalableTaskPoller) 
 		return false
 	}
 
-	normalWorker.admissionKind = enumspb.TASK_QUEUE_KIND_NORMAL
-	stickyWorker.admissionKind = enumspb.TASK_QUEUE_KIND_STICKY
+	// Only sticky poll responses update the backlog used for admission.
 	stickyPoller.setSlotAdmission(a)
 	return true
 }
@@ -113,33 +113,39 @@ func (a *workflowSlotAdmission) waitForAdmission(ctx context.Context, kind enums
 func (a *workflowSlotAdmission) canAdmit(kind enumspb.TaskQueueKind) bool {
 	switch kind {
 	case enumspb.TASK_QUEUE_KIND_NORMAL:
+		// Always allow a first normal poll.
 		if a.normalActive == 0 {
 			return true
 		}
+		// Preserve capacity for the first sticky poll.
 		if a.stickyActive == 0 && a.normalActive+1 >= a.maxSlots {
 			return false
 		}
-		if a.hasStickyBacklog() {
+		// Prefer sticky if there is a sticky backlog
+		if a.needsMoreStickyPolls() {
 			return false
 		}
 	case enumspb.TASK_QUEUE_KIND_STICKY:
+		// Always allow a first sticky poll.
 		if a.stickyActive == 0 {
 			return true
 		}
+		// Preserve capacity for the first normal poll.
 		if a.normalActive == 0 && a.stickyActive+1 >= a.maxSlots {
 			return false
 		}
-		if a.hasStickyBacklog() {
+		// Let sticky polls catch up with their backlog.
+		if a.needsMoreStickyPolls() {
 			return true
 		}
 	default:
-		panic(invalidAdmissionKindMessage)
+		return false
 	}
 
 	return a.normalActive+a.stickyActive < a.maxSlots
 }
 
-func (a *workflowSlotAdmission) hasStickyBacklog() bool {
+func (a *workflowSlotAdmission) needsMoreStickyPolls() bool {
 	return a.stickyBacklog >= minMeaningfulStickyBacklog && a.stickyBacklog > int64(a.stickyActive)
 }
 
@@ -159,7 +165,8 @@ func (a *workflowSlotAdmission) changeActive(kind enumspb.TaskQueueKind, change 
 	case enumspb.TASK_QUEUE_KIND_STICKY:
 		a.stickyActive += change
 	default:
-		panic(invalidAdmissionKindMessage)
+		a.mu.Unlock()
+		return
 	}
 	a.wakeWaiters()
 	a.mu.Unlock()

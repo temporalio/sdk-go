@@ -189,7 +189,6 @@ type (
 
 	scalableTaskPoller struct {
 		taskPollerType string
-		admissionKind  enumspb.TaskQueueKind
 		// pollerCount is the number of pollers tasks to start. There may be less than this
 		// due to limited slots, rate limiting, or poller autoscaling.
 		pollerCount       int
@@ -568,7 +567,7 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 	ctx, cancelfn := context.WithCancel(context.Background())
 	reserveChan := make(chan *SlotPermit)
 	var pollWG sync.WaitGroup
-	queueKind := taskWorker.admissionKind
+	queueKind, _ := taskQueueKindForPoller(taskWorker)
 
 	defer pollWG.Wait()
 	defer cancelfn()
@@ -587,7 +586,7 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		if err != nil {
 			return
 		}
-		// Arbitrate queue kind immediately before reserving the shared slot.
+		// Balance normal and sticky polls. Waiting here avoids holding a slot.
 		if bw.workflowAdmission != nil {
 			if bw.workflowAdmission.waitForAdmission(bw.limiterContext, queueKind) != nil {
 				releaseActive()
