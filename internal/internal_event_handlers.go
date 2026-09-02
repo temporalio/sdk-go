@@ -161,6 +161,8 @@ type (
 		registry                 *registry
 		dataConverter            converter.DataConverter
 		failureConverter         converter.FailureConverter
+		rootDataConverter        converter.DataConverter
+		rootFailureConverter     converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
 		preferredVersionProvider PreferredVersionProvider
@@ -233,10 +235,14 @@ func newWorkflowExecutionEventHandler(
 		Namespace:  workflowInfo.Namespace,
 		WorkflowID: workflowInfo.WorkflowExecution.ID,
 	}
+	rootDataConverter := dataConverter
+	rootFailureConverter := failureConverter
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, wfCtx)
 	failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, wfCtx)
 
 	context := &workflowEnvironmentImpl{
+		rootDataConverter:            rootDataConverter,
+		rootFailureConverter:         rootFailureConverter,
 		workflowInfo:                 workflowInfo,
 		commandsHelper:               newCommandsHelper(),
 		sideEffectResult:             make(map[int64]*commonpb.Payloads),
@@ -546,7 +552,7 @@ func validateAndSerializeMemo(memoMap map[string]any, dc converter.DataConverter
 	if len(memoMap) == 0 {
 		return nil, errMemoNotSet
 	}
-	return getWorkflowMemo(memoMap, dc, useUserDC)
+	return GetWorkflowMemo(memoMap, dc, useUserDC)
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
@@ -565,7 +571,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if params.WorkflowID == "" {
 		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
 	}
-	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
+	memo, err := GetWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -573,7 +579,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		callback(nil, err)
 		return
 	}
-	searchAttr, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
+	searchAttr, err := SerializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -606,7 +612,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.InheritBuildId = determineInheritBuildIdFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
-	startMetadata, err := buildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
+	startMetadata, err := BuildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return
@@ -654,7 +660,7 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params ExecuteNexusOper
 		NexusHeader:            params.nexusHeader,
 	}
 
-	startMetadata, err := buildUserMetadata(params.options.Summary, "", wc.dataConverter)
+	startMetadata, err := BuildUserMetadata(params.options.Summary, "", wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return 0
@@ -749,6 +755,14 @@ func (wc *workflowEnvironmentImpl) GetFailureConverter() converter.FailureConver
 	return wc.failureConverter
 }
 
+func (wc *workflowEnvironmentImpl) GetRootDataConverter() converter.DataConverter {
+	return wc.rootDataConverter
+}
+
+func (wc *workflowEnvironmentImpl) GetRootFailureConverter() converter.FailureConverter {
+	return wc.rootFailureConverter
+}
+
 func (wc *workflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
 	return wc.contextPropagators
 }
@@ -804,7 +818,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
 	scheduleTaskAttr.Priority = parameters.Priority
 
-	startMetadata, err := buildUserMetadata(parameters.Summary, "", wc.dataConverter)
+	startMetadata, err := BuildUserMetadata(parameters.Summary, "", wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return ActivityID{}
@@ -1066,7 +1080,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 		}
 	}
 
-	userMetadata, err := buildUserMetadata(summary, "", wc.dataConverter)
+	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
 		panic(fmt.Sprintf("failed to build user metadata for side effect: %v", err))
 	}
@@ -1219,7 +1233,7 @@ func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountH
 	if err != nil {
 		panic(err)
 	}
-	userMetadata, err := buildUserMetadata(summary, "", wc.dataConverter)
+	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
 		panic(fmt.Sprintf("failed to build user metadata for mutable side effect: %v", err))
 	}
@@ -1287,7 +1301,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			incrementWorkflowTaskFailureCounter(weh.metricsHandler, "NonDeterminismError")
+			incrementWorkflowTaskFailureCounter(weh.metricsHandler, metrics.FailureReasonNonDeterminismError)
 			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.Complete(nil, newWorkflowPanicError(p, st))
@@ -1503,7 +1517,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessMessage(
 ) error {
 	defer func() {
 		if p := recover(); p != nil {
-			incrementWorkflowTaskFailureCounter(weh.metricsHandler, "NonDeterminismError")
+			incrementWorkflowTaskFailureCounter(weh.metricsHandler, metrics.FailureReasonNonDeterminismError)
 			topLine := fmt.Sprintf("process message for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.Complete(nil, newWorkflowPanicError(p, st))
@@ -1797,7 +1811,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			panicMsg := fmt.Sprintf("[TMPRL1100] code executed local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
-		startMetadata, err := buildUserMetadata(la.params.Summary, "", weh.dataConverter)
+		startMetadata, err := BuildUserMetadata(la.params.Summary, "", weh.dataConverter)
 		if err != nil {
 			return err
 		}

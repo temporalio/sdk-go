@@ -19,6 +19,18 @@ import (
 // For example, NewZlibCodec returns a PayloadCodec that can be used for
 // compression.
 // These can be used (and even chained) in NewCodecDataConverter.
+//
+// PayloadCodec methods may run while processing a Workflow Task or in a Client
+// or Activity context. When called during Workflow Task processing, returning
+// an error may fail the Workflow Execution, depending on the operation. A panic
+// is handled according to the Worker's WorkflowPanicPolicy. With the default
+// BlockWorkflow policy, a panic fails the current Workflow Task so that the
+// Temporal Service can retry it. With the FailWorkflow policy, a panic instead
+// fails the Workflow Execution.
+//
+// Codec implementations should handle transient failures locally when
+// possible. Panicking outside Workflow Task processing does not request a
+// Workflow Task retry.
 type PayloadCodec interface {
 	// Encode optionally encodes the given payloads which are guaranteed to never
 	// be nil. The parameters must not be mutated.

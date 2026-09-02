@@ -189,7 +189,7 @@ func NewNonRetryableApplicationError(message, errType string, cause error, detai
 }
 
 // NewPayloadValidationError creates a non-retryable ApplicationError for payloads that fail validation.
-// The error has type PayloadValidationError and carries details as its single detail.
+// The error has type PayloadValidationError and, when details is non-nil, carries it as its single detail.
 func NewPayloadValidationError(details any) error {
 	return internal.NewPayloadValidationError(details)
 }
@@ -216,12 +216,12 @@ func IsApplicationError(err error) bool {
 	return errors.As(err, &applicationError)
 }
 
-// IsWorkflowExecutionAlreadyStartedError return if the err is a
-// WorkflowExecutionAlreadyStartedError or if an error in the chain is a
-// ChildWorkflowExecutionAlreadyStartedError.
+// IsWorkflowExecutionAlreadyStartedError returns true if an error in the chain
+// is a WorkflowExecutionAlreadyStartedError or ChildWorkflowExecutionAlreadyStartedError.
 func IsWorkflowExecutionAlreadyStartedError(err error) bool {
-	if _, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok {
-		return ok
+	var alreadyStartedError *serviceerror.WorkflowExecutionAlreadyStarted
+	if errors.As(err, &alreadyStartedError) {
+		return true
 	}
 	var childError *ChildWorkflowExecutionAlreadyStartedError
 	return errors.As(err, &childError)

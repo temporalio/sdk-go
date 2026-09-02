@@ -248,6 +248,9 @@ type (
 		// Set to true during start() when the namespace has the poller_autoscaling capability.
 		serverSupportsAutoscaling *atomic.Bool
 
+		// Resolved during start() from the namespace's pagination capability and size limit.
+		workflowTaskCompletionPagination *workflowTaskCompletionPaginationConfig
+
 		inboundPayloadVisitor PayloadVisitor
 
 		outboundPayloadVisitor PayloadVisitor
@@ -1424,6 +1427,11 @@ func (aw *AggregatedWorker) start() error {
 		aw.workerPollCompleteOnShutdown.Store(true)
 	}
 
+	if nsData.capabilities.GetWorkflowTaskCompletionPagination() {
+		aw.executionParams.workflowTaskCompletionPagination.enabled.Store(true)
+		aw.executionParams.workflowTaskCompletionPagination.sizeLimit.Store(nsData.limits.GetWorkflowTaskCompletionSizeLimitError())
+	}
+
 	if nsData.capabilities.GetPollerAutoscaling() {
 		aw.executionParams.serverSupportsAutoscaling.Store(true)
 	}
@@ -2111,7 +2119,7 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
 	}
-	cache := NewWorkerCache()
+	cache := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
 	params := workerExecutionParameters{
 		Namespace:             namespace,
 		TaskQueue:             taskQueue,
@@ -2432,14 +2440,15 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
-		capabilities:                  &capabilities,
-		pollTimeTracker:               &pollTimeTracker{},
-		workerInstanceKey:             workerInstanceKey,
-		workerControlTaskQueue:        workerControlTaskQueue(client.namespace, client.workerGroupingKey),
-		activityCancellationCallbacks: activityCancellationCallbacks,
-		workerPollCompleteOnShutdown:  workerPollCompleteOnShutdown,
-		serverSupportsAutoscaling:     &atomic.Bool{},
-		inboundPayloadVisitor:         extstore.NewExternalRetrievalVisitor(client.storageParams),
+		capabilities:                     &capabilities,
+		pollTimeTracker:                  &pollTimeTracker{},
+		workerInstanceKey:                workerInstanceKey,
+		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		activityCancellationCallbacks:    activityCancellationCallbacks,
+		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
+		serverSupportsAutoscaling:        &atomic.Bool{},
+		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
+		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(client.storageParams),
 		outboundPayloadVisitor: newCompositePayloadVisitor(
 			extstore.NewExternalStorageVisitor(client.storageParams),
 			payloadLimitVisitor,
@@ -2753,7 +2762,7 @@ func getActivityFunctionName(r *registry, i any) string {
 	return result
 }
 
-func getWorkflowFunctionName(r *registry, workflowFunc any) (string, error) {
+func GetWorkflowFunctionName(r *registry, workflowFunc any) (string, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {

@@ -19,11 +19,20 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
+- Add support for Workflow Queries as Nexus Operations.
 
 ### Added
 
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
-  structured details for payload validation failures.
+  optional structured details for payload validation failures. Passing `nil` omits details.
+- Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
+  workflow-, activity-, and workflow-update-backed Nexus operations.
+- Workflow task completions larger than the gRPC request size limit are now paginated automatically
+  when the namespace supports it. Paginated workflow task completions require Temporal Server 1.32.0
+  or later.
+- The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
+  metrics now carry a `failure_reason` attribute. Each is now split into one time series per
+  reason, which may affect existing dashboards.
 
 ### Changed
 
@@ -32,12 +41,40 @@ to docs, or any other relevant information.
 ### :boom: Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Experimental external storage: `converter.StorageDriverSelector.SelectDriver` now receives a
+  `converter.StorageDriverSelectContext` instead of a `converter.StorageDriverStoreContext`.
+  Update the parameter type; the new type carries the same `Context` and `Target` fields.
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
+  `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
+  context-derived encryption keys or AAD) may fail to decode local activity results recorded in
+  histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+- Activity, local activity and child workflow serialization contexts are now applied to the
+  worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
+  the current workflow context. A context-aware converter that composed contexts (deriving its state
+  from both the workflow and the activity context) now sees only the activity or child workflow
+  context, and one whose `WithSerializationContext` returned a converter that is no longer
+  context-aware now receives the activity or child workflow context it previously never saw.
 
 ### Fixed
 
+- Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
+  request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
+- `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
+  `serviceerror.WorkflowExecutionAlreadyStarted` errors.
+- Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
+- Local activity results are now serialized with the local activity's `ActivitySerializationContext`
+  (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
+  but decoded through the workflow serialization context, so a context-aware `DataConverter` or
+  `PayloadCodec` saw mismatched contexts for local activity results.
+- Workflow replays no longer retain one-shot workflow state in the process-wide sticky cache.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
+- `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
+  reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
+  so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
+  decoding it.
 
 ### Security
 

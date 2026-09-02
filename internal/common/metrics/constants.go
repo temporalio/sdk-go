@@ -92,3 +92,13 @@ const (
 	PollerTypeActivityTask       = "activity_task"
 	PollerTypeNexusTask          = "nexus_task"
 )
+
+// Values for the FailureReasonTagName tag. These must remain consistent across SDKs.
+const (
+	FailureReasonWorkflowError       = "WorkflowError"
+	FailureReasonActivityError       = "ActivityError"
+	FailureReasonNonDeterminismError = "NonDeterminismError"
+	FailureReasonPayloadsTooLarge    = "PayloadsTooLarge"
+	FailureReasonGrpcMessageTooLarge = "GrpcMessageTooLarge"
+	FailureReasonRequestTooLarge     = "RequestTooLarge"
+)

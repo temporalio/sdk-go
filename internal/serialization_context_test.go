@@ -8,11 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
+	ilog "go.temporal.io/sdk/internal/log"
 )
 
 // serCtxSigningCodec adds a context-derived signature on Encode and verifies on Decode.
@@ -268,6 +271,55 @@ func (s *SerializationContextTestSuite) TestLocalActivityRoundTrip_CapturingDC()
 		}
 	}
 	s.True(foundLocal, "should have captured ActivitySerializationContext with IsLocal=true")
+}
+
+func (s *SerializationContextTestSuite) TestLocalActivityResult_EncodedWithLocalActivityContext() {
+	plainWorkerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{})
+
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    "default-test-namespace",
+		WorkflowID:   "wf-local-activity",
+		WorkflowType: "TestWorkflow",
+		ActivityType: "myLocalActivity",
+		TaskQueue:    "default-test-taskqueue",
+		IsLocal:      true,
+	}
+	localActivityDC := converter.WithDataConverterSerializationContext(plainWorkerDC, actCtx)
+
+	activityFn := func(_ context.Context, input string) (string, error) {
+		return input, nil
+	}
+
+	params := ExecuteLocalActivityParams{
+		ExecuteLocalActivityOptions: ExecuteLocalActivityOptions{StartToCloseTimeout: time.Minute},
+		ActivityFn:                  activityFn,
+		ActivityType:                actCtx.ActivityType,
+		InputArgs:                   []interface{}{"hello"},
+		WorkflowInfo: &WorkflowInfo{
+			Namespace:         actCtx.Namespace,
+			WorkflowExecution: WorkflowExecution{ID: actCtx.WorkflowID, RunID: "run-id"},
+			WorkflowType:      WorkflowType{Name: actCtx.WorkflowType},
+			TaskQueueName:     actCtx.TaskQueue,
+		},
+		DataConverter: localActivityDC,
+		Attempt:       1,
+		ScheduledTime: time.Now(),
+	}
+
+	task := newLocalActivityTask(params, func(*LocalActivityResultWrapper) {}, "1")
+	lath := &localActivityTaskHandler{
+		backgroundContext: context.Background(),
+		metricsHandler:    metrics.NopHandler,
+		logger:            ilog.NewNopLogger(),
+	}
+
+	result := lath.executeLocalActivityTask(task)
+	s.NoError(result.err)
+	s.NotNil(result.result)
+
+	var decoded string
+	s.NoError(localActivityDC.FromPayloads(result.result, &decoded))
+	s.Equal("hello", decoded)
 }
 
 func (s *SerializationContextTestSuite) TestWorkflowInput_RequiresContext() {
@@ -572,4 +624,208 @@ func (s *SerializationContextTestSuite) TestUpdateRoundTrip_SigningCodec() {
 	s.NoError(env.GetWorkflowError())
 	s.NoError(updateErr)
 	s.NotNil(updateResult)
+}
+
+func (s *SerializationContextTestSuite) TestActivityEnvironmentLocalActivity_UsesConfiguredDataConverter() {
+	dc := newSerCtxOneShotDataConverter()
+	env := s.NewTestActivityEnvironment()
+	env.SetDataConverter(dc)
+
+	activityFn := func(_ context.Context, input string) (string, error) {
+		return "got:" + input, nil
+	}
+	env.RegisterActivityWithOptions(activityFn, RegisterActivityOptions{Name: "localActivityUnderTest"})
+
+	encoded, err := env.ExecuteLocalActivity(activityFn, "hello")
+	s.NoError(err)
+
+	var result string
+	s.NoError(encoded.Get(&result))
+	s.Equal("got:hello", result)
+
+	var actCtx *converter.ActivitySerializationContext
+	for _, ctx := range dc.getEncodeContexts() {
+		if c, ok := ctx.(converter.ActivitySerializationContext); ok {
+			actCtx = &c
+			break
+		}
+	}
+	s.Require().NotNil(actCtx, "local activity result should be encoded with ActivitySerializationContext")
+	s.True(actCtx.IsLocal)
+	s.Equal("localActivityUnderTest", actCtx.ActivityType)
+}
+
+func (s *SerializationContextTestSuite) TestLocalActivityMock_SigningCodec() {
+	env := s.NewTestWorkflowEnvironment()
+	env.SetDataConverter(converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &serCtxSigningCodec{}))
+
+	activityFn := func(_ context.Context, input string) (string, error) {
+		return input, nil
+	}
+	env.RegisterActivity(activityFn)
+	env.OnActivity(activityFn, mock.Anything, "hello").Return("mocked", nil)
+
+	workflow := func(ctx Context) (string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			StartToCloseTimeout: time.Minute,
+		})
+		var result string
+		err := ExecuteLocalActivity(ctx, activityFn, "hello").Get(ctx, &result)
+		return result, err
+	}
+
+	env.ExecuteWorkflow(workflow)
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	var result string
+	s.NoError(env.GetWorkflowResult(&result))
+	s.Equal("mocked", result)
+}
+
+// serCtxOneShotDataConverter returns a converter that records the context it was
+// given but no longer implements DataConverterWithSerializationContext, which the
+// interface permits.
+type serCtxOneShotDataConverter struct {
+	converter.DataConverter
+	mu       *sync.Mutex
+	contexts *[]converter.SerializationContext
+}
+
+func newSerCtxOneShotDataConverter() *serCtxOneShotDataConverter {
+	contexts := make([]converter.SerializationContext, 0)
+	return &serCtxOneShotDataConverter{
+		DataConverter: converter.GetDefaultDataConverter(),
+		mu:            &sync.Mutex{},
+		contexts:      &contexts,
+	}
+}
+
+func (dc *serCtxOneShotDataConverter) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
+	return &serCtxBoundDataConverter{
+		DataConverter: dc.DataConverter,
+		ctx:           ctx,
+		mu:            dc.mu,
+		contexts:      dc.contexts,
+	}
+}
+
+func (dc *serCtxOneShotDataConverter) getEncodeContexts() []converter.SerializationContext {
+	dc.mu.Lock()
+	defer dc.mu.Unlock()
+	out := make([]converter.SerializationContext, len(*dc.contexts))
+	copy(out, *dc.contexts)
+	return out
+}
+
+type serCtxBoundDataConverter struct {
+	converter.DataConverter
+	ctx      converter.SerializationContext
+	mu       *sync.Mutex
+	contexts *[]converter.SerializationContext
+}
+
+func (dc *serCtxBoundDataConverter) ToPayloads(values ...interface{}) (*commonpb.Payloads, error) {
+	dc.mu.Lock()
+	*dc.contexts = append(*dc.contexts, dc.ctx)
+	dc.mu.Unlock()
+	return dc.DataConverter.ToPayloads(values...)
+}
+
+func (s *SerializationContextTestSuite) TestLocalActivity_OneShotDataConverter() {
+	dc := newSerCtxOneShotDataConverter()
+	env := s.NewTestWorkflowEnvironment()
+	env.SetDataConverter(dc)
+
+	activity := func(_ context.Context, input string) (string, error) {
+		return input, nil
+	}
+	env.RegisterActivity(activity)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{StartToCloseTimeout: time.Minute})
+		var result string
+		return ExecuteLocalActivity(ctx, activity, "test").Get(ctx, &result)
+	})
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	foundLocal := false
+	for _, ctx := range dc.getEncodeContexts() {
+		if actCtx, ok := ctx.(converter.ActivitySerializationContext); ok && actCtx.IsLocal {
+			foundLocal = true
+			break
+		}
+	}
+	s.True(foundLocal, "local activity payloads should be encoded with ActivitySerializationContext")
+}
+
+func (s *SerializationContextTestSuite) TestActivity_OneShotDataConverter() {
+	dc := newSerCtxOneShotDataConverter()
+	env := s.NewTestWorkflowEnvironment()
+	env.SetDataConverter(dc)
+
+	activity := func(_ context.Context, input string) (string, error) {
+		return input, nil
+	}
+	env.RegisterActivity(activity)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		ctx = WithActivityOptions(ctx, ActivityOptions{StartToCloseTimeout: time.Minute})
+		var result string
+		return ExecuteActivity(ctx, activity, "test").Get(ctx, &result)
+	})
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	foundActivity := false
+	for _, ctx := range dc.getEncodeContexts() {
+		if _, ok := ctx.(converter.ActivitySerializationContext); ok {
+			foundActivity = true
+			break
+		}
+	}
+	s.True(foundActivity, "activity payloads should be encoded with ActivitySerializationContext")
+}
+
+// serCtxWorkflowBindingDataConverter loses serialization context awareness once
+// bound to a workflow context, which ContextAware permits.
+type serCtxWorkflowBindingDataConverter struct {
+	*serCtxOneShotDataConverter
+}
+
+func (dc *serCtxWorkflowBindingDataConverter) WithWorkflowContext(Context) converter.DataConverter {
+	return dc.serCtxOneShotDataConverter.DataConverter
+}
+
+func (dc *serCtxWorkflowBindingDataConverter) WithContext(context.Context) converter.DataConverter {
+	return dc.serCtxOneShotDataConverter.DataConverter
+}
+
+func (s *SerializationContextTestSuite) TestLocalActivity_WorkflowBindingDropsSerializationContext() {
+	oneShot := newSerCtxOneShotDataConverter()
+	env := s.NewTestWorkflowEnvironment()
+	env.SetDataConverter(&serCtxWorkflowBindingDataConverter{serCtxOneShotDataConverter: oneShot})
+
+	activity := func(_ context.Context, input string) (string, error) {
+		return input, nil
+	}
+	env.RegisterActivity(activity)
+
+	env.ExecuteWorkflow(func(ctx Context) error {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{StartToCloseTimeout: time.Minute})
+		var result string
+		return ExecuteLocalActivity(ctx, activity, "test").Get(ctx, &result)
+	})
+	s.True(env.IsWorkflowCompleted())
+	s.NoError(env.GetWorkflowError())
+
+	foundLocal := false
+	for _, ctx := range oneShot.getEncodeContexts() {
+		if actCtx, ok := ctx.(converter.ActivitySerializationContext); ok && actCtx.IsLocal {
+			foundLocal = true
+			break
+		}
+	}
+	s.True(foundLocal, "serialization context must be applied before the converter is bound to the workflow context")
 }
