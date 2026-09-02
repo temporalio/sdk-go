@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -213,8 +214,14 @@ func (h *nexusTaskHandler) handleStartOperation(
 	if len(requestLinks) > 0 {
 		ctx = context.WithValue(ctx, NexusOperationRequestLinksKey, requestLinks)
 	}
+	// Handle old servers that may not send a request ID. Generate one if missing.
+	requestID := req.RequestId
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
+	nctx.RequestID = requestID
 	startOptions := nexus.StartOperationOptions{
-		RequestID:      req.RequestId,
+		RequestID:      requestID,
 		CallbackURL:    req.Callback,
 		Header:         header,
 		CallbackHeader: callbackHeader,
