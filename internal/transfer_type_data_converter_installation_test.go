@@ -288,7 +288,11 @@ func TestTransferTypeDataConverterTestEnvironmentInstallation(t *testing.T) {
 		requireInstalledTransferBehavior(t, installed, "default activity environment")
 	})
 
-	t.Run("custom workflow environment preserves and replaces root", func(t *testing.T) {
+	// This subtest used to end by calling SetDataConverter again after
+	// ExecuteWorkflow and asserting that rootDataConverter was replaced. That
+	// flow is not supported, and it was the only thing keeping a dead branch in
+	// testWorkflowEnvironmentImpl.setDataConverter alive. Both are gone.
+	t.Run("custom workflow environment preserves root", func(t *testing.T) {
 		parent := newRecordingDataConverter()
 		env := suite.NewTestWorkflowEnvironment()
 		env.SetDataConverter(parent)
