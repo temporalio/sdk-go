@@ -552,6 +552,35 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionPreservesBothQueueKinds()
 	})
 }
 
+func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionErrorLogged() {
+	logger := ilog.NewMemoryLogger()
+	behavior := &pollerBehaviorAutoscaling{
+		initialNumberOfPollers: 1,
+		maximumNumberOfPollers: 1,
+		minimumNumberOfPollers: 1,
+	}
+	poller := newScalableTaskPoller(
+		newBlockingProbeTaskPoller(),
+		logger,
+		behavior,
+		"invalid",
+		&atomic.Bool{},
+	)
+	bw := &baseWorker{
+		workflowAdmission: newWorkflowSlotAdmission(1),
+		limiterContext:    s.T().Context(),
+		logger:            logger,
+	}
+	bw.stopWG.Add(1)
+	bw.pollerWG.Add(1)
+
+	bw.runAutoscalingPoller(poller)
+
+	require.Equal(s.T(), []string{
+		"ERROR Workflow slot admission failed. Error " + invalidAdmissionKindMessage + "\n",
+	}, logger.Lines())
+}
+
 type blockingProbeTaskPoller struct {
 	signals chan struct{}
 	done    chan struct{}

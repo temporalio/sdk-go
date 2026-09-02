@@ -588,8 +588,11 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		}
 		// Balance normal and sticky polls. Waiting here avoids holding a slot.
 		if bw.workflowAdmission != nil {
-			if bw.workflowAdmission.waitForAdmission(bw.limiterContext, queueKind) != nil {
+			if err := bw.workflowAdmission.waitForAdmission(bw.limiterContext, queueKind); err != nil {
 				releaseActive()
+				if !errors.Is(err, context.Canceled) {
+					bw.logger.Error("Workflow slot admission failed.", tagError, err)
+				}
 				return
 			}
 		}
