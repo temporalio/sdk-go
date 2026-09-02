@@ -1547,6 +1547,7 @@ type WorkflowInfo struct {
 	// ParentWorkflowExecution is the execution of the parent workflow.
 	ParentWorkflowExecution *WorkflowExecution
 	// RootWorkflowExecution is the first workflow execution in the chain of workflows. If a workflow is itself a root workflow, then this field is nil.
+	// Its namespace is not retained and may differ from this workflow's namespace for cross-namespace child workflows. Track it separately if needed.
 	RootWorkflowExecution *WorkflowExecution
 	// Memo can be decoded using data converter (defaultDataConverter, or custom one if set).
 	Memo *commonpb.Memo

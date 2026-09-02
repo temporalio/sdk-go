@@ -1189,6 +1189,7 @@ type WorkflowExecutionMetadata struct {
 	// This field is only set if the workflow execution is a child of another workflow execution
 	ParentWorkflowExecution *WorkflowExecution
 	// RootWorkflowExecution is the root workflow execution
+	// Its namespace is not retained and may differ from this workflow's namespace for cross-namespace child workflows. Track it separately if needed.
 	RootWorkflowExecution *WorkflowExecution
 	// WorkflowStartTime is the time when the workflow execution started
 	WorkflowStartTime time.Time
