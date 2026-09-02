@@ -91,6 +91,42 @@ func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentVersion(
 	}, 5*time.Second, 100*time.Millisecond)
 }
 
+func sameTaskQueues(a, b []client.WorkerDeploymentTaskQueueInfo) bool {
+	if len(a) == 0 || len(a) != len(b) {
+		return false
+	}
+
+	queues := make(map[client.WorkerDeploymentTaskQueueInfo]struct{}, len(a))
+	for _, queue := range a {
+		queues[queue] = struct{}{}
+	}
+	for _, queue := range b {
+		if _, ok := queues[queue]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func taskQueuesReady(queues []client.WorkerDeploymentTaskQueueInfo, name string) bool {
+	expected := []client.WorkerDeploymentTaskQueueInfo{
+		{Name: name, Type: client.TaskQueueTypeWorkflow},
+		{Name: name, Type: client.TaskQueueTypeActivity},
+	}
+
+	return sameTaskQueues(queues, expected)
+}
+
+func TestSameTaskQueuesRequiresQueues(t *testing.T) {
+	require.False(t, sameTaskQueues(nil, nil))
+}
+
+func TestTaskQueuesReadyRequiresBothTypes(t *testing.T) {
+	require.False(t, taskQueuesReady([]client.WorkerDeploymentTaskQueueInfo{
+		{Name: "task-queue", Type: client.TaskQueueTypeWorkflow},
+	}, "task-queue"))
+}
+
 func (ts *WorkerDeploymentTestSuite) waitForWorkerDeploymentRoutingConfigPropagation(
 	ctx context.Context,
 	deploymentName string,
@@ -169,12 +205,11 @@ func (ts *WorkerDeploymentTestSuite) runWorkflowAndCheckV1(ctx context.Context, 
 }
 
 func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
-	ts.T().Skip("issue-1650: Build ID integration tests are flaky")
 	if os.Getenv("DISABLE_SERVER_1_27_TESTS") != "" {
 		ts.T().Skip("temporal server 1.27+ required")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	deploymentName := "deploy-test-" + uuid.NewString()
@@ -237,6 +272,18 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 		ts.NoError(res.Get(&didRun))
 		return didRun
 	}, time.Second*10, time.Millisecond*100)
+
+	ts.Eventually(func() bool {
+		v1Description, err := dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
+			BuildID: v1.BuildID,
+		})
+		if err != nil {
+			return false
+		}
+
+		return taskQueuesReady(v1Description.Info.TaskQueuesInfos, ts.taskQueueName)
+	}, 5*time.Second, 100*time.Millisecond)
+
 	worker1.Stop()
 
 	worker2 := worker.New(ts.client, ts.taskQueueName, worker.Options{
@@ -255,6 +302,12 @@ func (ts *WorkerDeploymentTestSuite) TestBuildIDChangesOverWorkflowLifetime() {
 	defer worker2.Stop()
 
 	ts.waitForWorkerDeploymentVersion(ctx, dHandle, v2)
+	ts.Eventually(func() bool {
+		v2Description, err := dHandle.DescribeVersion(ctx, client.WorkerDeploymentDescribeVersionOptions{
+			BuildID: v2.BuildID,
+		})
+		return err == nil && taskQueuesReady(v2Description.Info.TaskQueuesInfos, ts.taskQueueName)
+	}, 5*time.Second, 100*time.Millisecond)
 
 	_, err = dHandle.SetCurrentVersion(ctx, client.WorkerDeploymentSetCurrentVersionOptions{
 		BuildID:       v2.BuildID,
