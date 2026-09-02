@@ -3633,6 +3633,7 @@ func (t *otelTracer) spanChildren(spans []sdktrace.ReadOnlySpan, parentID trace.
 }
 
 func TestNexusTracingInterceptor(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	cases := []struct {
 		name   string
 		tracer func(t *testing.T) interceptortest.TestTracer
