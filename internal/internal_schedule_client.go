@@ -62,8 +62,9 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = wrapTransferTypeDataConverter(dataConverter)
 
 	if in.Options.Action == nil {
 		return nil, fmt.Errorf("no schedule action in options")
@@ -915,8 +916,9 @@ func encodeScheduleWorkflowMemo(dc converter.DataConverter, input map[string]any
 
 	memo := make(map[string]*commonpb.Payload)
 	if dc == nil {
-		dc = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dc = converter.GetDefaultDataConverter()
 	}
+	dc = wrapTransferTypeDataConverter(dc)
 
 	for k, v := range input {
 		if enc, ok := v.(*commonpb.Payload); ok {

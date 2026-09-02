@@ -1588,8 +1588,9 @@ func getValidatedWorkflowFunction(workflowFunc any, args []any, dataConverter co
 	}
 
 	if dataConverter == nil {
-		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = wrapTransferTypeDataConverter(dataConverter)
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		return nil, nil, err
@@ -1618,8 +1619,9 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions.runningUpdatesHandles = make(map[string]UpdateInfo)
 	}
 	if newOptions.DataConverter == nil {
-		newOptions.DataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		newOptions.DataConverter = converter.GetDefaultDataConverter()
 	}
+	newOptions.DataConverter = wrapTransferTypeDataConverter(newOptions.DataConverter)
 
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
@@ -1631,8 +1633,9 @@ func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	if options != nil && options.DataConverter != nil {
 		dataConverter = options.DataConverter
 	} else {
-		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = wrapTransferTypeDataConverter(dataConverter)
 
 	return WithWorkflowContext(ctx, dataConverter)
 }

@@ -575,8 +575,9 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 ) (ClientActivityHandle, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = wrapTransferTypeDataConverter(dataConverter)
 
 	request := &workflowservice.StartActivityExecutionRequest{
 		Namespace:    w.client.namespace,

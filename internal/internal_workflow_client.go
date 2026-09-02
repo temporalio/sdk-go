@@ -2034,7 +2034,9 @@ func encodeMemoValue(value any, dc converter.DataConverter, useUserDC bool) (*co
 			return payload, nil
 		}
 
-		payload, err := wrapTransferTypeDataConverter(converter.GetDefaultDataConverter()).ToPayload(value)
+		defaultDataConverter := converter.GetDefaultDataConverter()
+		defaultDataConverter = wrapTransferTypeDataConverter(defaultDataConverter)
+		payload, err := defaultDataConverter.ToPayload(value)
 
 		// If fallback default data converter fails, return original user data converter error
 		if err != nil {
@@ -2042,7 +2044,9 @@ func encodeMemoValue(value any, dc converter.DataConverter, useUserDC bool) (*co
 		}
 		return payload, nil
 	}
-	payload, err := wrapTransferTypeDataConverter(converter.GetDefaultDataConverter()).ToPayload(value)
+	defaultDataConverter := converter.GetDefaultDataConverter()
+	defaultDataConverter = wrapTransferTypeDataConverter(defaultDataConverter)
+	payload, err := defaultDataConverter.ToPayload(value)
 	if err != nil {
 		return nil, err
 	}
@@ -2058,8 +2062,9 @@ func GetWorkflowMemo(input map[string]any, dc converter.DataConverter, useUserDC
 	}
 
 	if dc == nil {
-		dc = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dc = converter.GetDefaultDataConverter()
 	}
+	dc = wrapTransferTypeDataConverter(dc)
 
 	memo := make(map[string]*commonpb.Payload, len(input))
 	for k, v := range input {
@@ -2118,8 +2123,9 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = wrapTransferTypeDataConverter(dataConverter)
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
@@ -2984,8 +2990,9 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 ) (*workflowservice.UpdateWorkflowExecutionRequest, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = wrapTransferTypeDataConverter(dataConverter)
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,

@@ -1251,8 +1251,9 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	if env != nil && env.dataConverter != nil {
 		dataConverter = env.dataConverter
 	} else {
-		dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = wrapTransferTypeDataConverter(dataConverter)
 	return WithContext(ctx, dataConverter)
 }
 
@@ -2032,8 +2033,9 @@ func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr any) e
 	}
 	dc := aw.dataConverter
 	if dc == nil {
-		dc = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+		dc = converter.GetDefaultDataConverter()
 	}
+	dc = wrapTransferTypeDataConverter(dc)
 	return dc.FromPayloads(payloads, valuePtr)
 }
 

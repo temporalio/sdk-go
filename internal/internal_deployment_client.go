@@ -129,8 +129,9 @@ func deploymentMetadataUpdateToProto(dc converter.DataConverter, update Deployme
 		} else {
 			dataConverter := dc
 			if dataConverter == nil {
-				dataConverter = wrapTransferTypeDataConverter(converter.GetDefaultDataConverter())
+				dataConverter = converter.GetDefaultDataConverter()
 			}
+			dataConverter = wrapTransferTypeDataConverter(dataConverter)
 			metadataBytes, err := dataConverter.ToPayload(v)
 			if err != nil {
 				panic(fmt.Sprintf("encode deployment metadata error: %v", err.Error()))
