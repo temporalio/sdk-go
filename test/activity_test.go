@@ -378,6 +378,14 @@ func (a *Activities) EchoString(ctx context.Context, message string) (string, er
 	return message, nil
 }
 
+// ConsumeString accepts a (possibly large) input but returns nothing, so callers can inflate the
+// size of a workflow task completion via activity inputs without also inflating history with echoed
+// results.
+func (a *Activities) ConsumeString(ctx context.Context, message string) error {
+	a.append("ConsumeString")
+	return nil
+}
+
 func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duration) (string, error) {
 	stopCh := activity.GetWorkerStopChannel(ctx)
 	// Mark activity as invoked then wait for it to be stopped
