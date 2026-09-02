@@ -27,6 +27,7 @@ import (
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/operatorservice/v1"
 	"go.temporal.io/api/serviceerror"
+	sdkactivity "go.temporal.io/sdk/activity"
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/contrib/opentelemetry"
 	"go.temporal.io/sdk/contrib/opentracing"
@@ -2574,6 +2575,123 @@ func TestWorkflowTestSuite_ActivityBackedNexusOperation(t *testing.T) {
 	var got string
 	require.NoError(t, env.GetWorkflowResult(&got))
 	require.Equal(t, "echo:hello", got)
+}
+
+func TestWorkflowTestSuite_ActivityBackedNexusOperationValidation(t *testing.T) {
+	const taskQueue = "activity-validation-task-queue"
+
+	type validationInput struct {
+		Mode       string
+		ActivityID string
+	}
+	type validationResult struct {
+		ValidationError     string
+		HandlerErrorType    string
+		ValidActivityResult string
+	}
+
+	validationActivity := func(_ context.Context, result validationResult) (validationResult, error) {
+		result.ValidActivityResult = "completed"
+		return result, nil
+	}
+	op := temporalnexus.MustNewTemporalOperation(temporalnexus.TemporalOperationOptions[validationInput, validationResult]{
+		Name: "activity-validation-op",
+		Start: func(ctx context.Context, nc temporalnexus.NexusClient, input validationInput, _ temporalnexus.StartTemporalOperationOptions) (temporalnexus.TemporalOperationResult[validationResult], error) {
+			var validationErr error
+			switch input.Mode {
+			case "missing-id":
+				_, validationErr = temporalnexus.StartUntypedActivity[validationResult](ctx, nc, client.StartActivityOptions{
+					StartToCloseTimeout: time.Minute,
+				}, validationActivity, validationResult{})
+			case "missing-timeouts":
+				_, validationErr = temporalnexus.StartUntypedActivity[validationResult](ctx, nc, client.StartActivityOptions{
+					ID: input.ActivityID + "-invalid",
+				}, validationActivity, validationResult{})
+			case "invalid-args":
+				_, validationErr = temporalnexus.StartUntypedActivity[validationResult](ctx, nc, client.StartActivityOptions{
+					ID:                  input.ActivityID + "-invalid",
+					StartToCloseTimeout: time.Minute,
+				}, validationActivity)
+			default:
+				return temporalnexus.TemporalOperationResult[validationResult]{}, fmt.Errorf("unknown validation mode %q", input.Mode)
+			}
+			if validationErr == nil {
+				return temporalnexus.TemporalOperationResult[validationResult]{}, fmt.Errorf("expected %s validation to fail", input.Mode)
+			}
+
+			result := validationResult{ValidationError: validationErr.Error()}
+			var handlerErr *nexus.HandlerError
+			if errors.As(validationErr, &handlerErr) {
+				result.HandlerErrorType = string(handlerErr.Type)
+			}
+			return temporalnexus.StartActivity(ctx, nc, client.StartActivityOptions{
+				ID:                  input.ActivityID + "-valid",
+				StartToCloseTimeout: time.Minute,
+			}, validationActivity, result)
+		},
+	})
+	callerWorkflow := func(ctx workflow.Context, input validationInput) (validationResult, error) {
+		c := workflow.NewNexusClient("endpoint", "test")
+		var result validationResult
+		err := c.ExecuteOperation(ctx, op, input, workflow.NexusOperationOptions{}).Get(ctx, &result)
+		return result, err
+	}
+
+	service := nexus.NewService("test")
+	require.NoError(t, service.Register(op))
+
+	for _, tc := range []struct {
+		name                 string
+		mode                 string
+		expectedError        string
+		expectedHandlerError string
+	}{
+		{
+			name:          "missing activity ID",
+			mode:          "missing-id",
+			expectedError: "activity ID is required",
+		},
+		{
+			name:                 "missing close timeouts",
+			mode:                 "missing-timeouts",
+			expectedError:        "at least one of StartToCloseTimeout or ScheduleToCloseTimeout is required",
+			expectedHandlerError: string(nexus.HandlerErrorTypeBadRequest),
+		},
+		{
+			name:          "invalid untyped activity arguments",
+			mode:          "invalid-args",
+			expectedError: "expected 1 args for function",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			suite := testsuite.WorkflowTestSuite{}
+			env := suite.NewTestWorkflowEnvironment()
+			env.SetStartWorkflowOptions(client.StartWorkflowOptions{TaskQueue: taskQueue})
+			env.RegisterActivity(validationActivity)
+			env.RegisterNexusService(service)
+
+			startedActivities := 0
+			startedTaskQueue := ""
+			env.SetOnActivityStartedListener(func(info *sdkactivity.Info, _ context.Context, _ converter.EncodedValues) {
+				startedActivities++
+				startedTaskQueue = info.TaskQueue
+			})
+
+			env.ExecuteWorkflow(callerWorkflow, validationInput{
+				Mode:       tc.mode,
+				ActivityID: "validation-" + tc.mode,
+			})
+			require.True(t, env.IsWorkflowCompleted())
+			require.NoError(t, env.GetWorkflowError())
+			var result validationResult
+			require.NoError(t, env.GetWorkflowResult(&result))
+			require.Contains(t, result.ValidationError, tc.expectedError)
+			require.Equal(t, tc.expectedHandlerError, result.HandlerErrorType)
+			require.Equal(t, "completed", result.ValidActivityResult)
+			require.Equal(t, 1, startedActivities, "only the valid retry should start an activity")
+			require.Equal(t, taskQueue, startedTaskQueue, "empty activity task queue should default to the Nexus worker task queue")
+		})
+	}
 }
 
 func TestWorkflowTestSuite_WorkflowRunOperation_ScheduleToCloseTimeout(t *testing.T) {

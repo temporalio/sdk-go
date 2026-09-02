@@ -38,6 +38,7 @@ type NexusOperationInfo struct {
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
 	client         Client
+	RequestID      string
 	Namespace      string
 	TaskQueue      string
 	Endpoint       string
