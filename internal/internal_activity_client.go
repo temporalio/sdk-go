@@ -1136,22 +1136,6 @@ func (w *workflowClientInterceptor) DescribeActivity(
 		return nil, errors.New("DescribeActivityExecution response doesn't contain info")
 	}
 
-	// The server is expected to omit payload fields that were not requested, but an older or
-	// buggy server may return them anyway, which would let the Has* accessors disagree with
-	// what the caller asked for.
-	if !in.IncludeInput {
-		resp.Input = nil
-	}
-	if !in.IncludeOutcome {
-		resp.Outcome = nil
-	}
-	if !in.IncludeHeartbeatDetails {
-		info.HeartbeatDetails = nil
-	}
-	if !in.IncludeLastFailure {
-		info.LastFailure = nil
-	}
-
 	var lastDeploymentVersion *WorkerDeploymentVersion
 	if info.LastDeploymentVersion != nil {
 		v := workerDeploymentVersionFromProto(info.LastDeploymentVersion)
