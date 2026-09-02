@@ -1,4 +1,4 @@
-package cloudrun
+package otel
 
 import (
 	"context"
@@ -18,31 +18,31 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
-func TestOpenTelemetryPluginDefaults(t *testing.T) {
+func TestPluginDefaults(t *testing.T) {
 	clearEnvironment(t)
 
-	plugin := newTestPlugin(t, OpenTelemetryPluginOptions{})
+	plugin := newTestPlugin(t, PluginOptions{})
 	require.Equal(t, DefaultOTLPEndpoint, plugin.Endpoint())
 	require.Equal(t, DefaultServiceName, plugin.ServiceName())
 	require.Equal(t, PluginName, plugin.Name())
 	require.Equal(t, 60*time.Second, defaultMetricExportInterval)
 }
 
-func TestOpenTelemetryPluginResolutionPrecedence(t *testing.T) {
+func TestPluginResolutionPrecedence(t *testing.T) {
 	clearEnvironment(t)
 	t.Setenv(CloudRunServiceEnvVar, "cloud-run-service")
-	require.Equal(t, "cloud-run-service", newTestPlugin(t, OpenTelemetryPluginOptions{}).ServiceName())
+	require.Equal(t, "cloud-run-service", newTestPlugin(t, PluginOptions{}).ServiceName())
 
 	t.Setenv(CloudRunWorkerPoolEnvVar, "worker-pool")
-	require.Equal(t, "worker-pool", newTestPlugin(t, OpenTelemetryPluginOptions{}).ServiceName())
+	require.Equal(t, "worker-pool", newTestPlugin(t, PluginOptions{}).ServiceName())
 
 	t.Setenv(OTELServiceNameEnvVar, "otel-service")
 	t.Setenv(OTLPExporterEndpointEnvVar, "http://collector:4317")
-	plugin := newTestPlugin(t, OpenTelemetryPluginOptions{})
+	plugin := newTestPlugin(t, PluginOptions{})
 	require.Equal(t, "otel-service", plugin.ServiceName())
 	require.Equal(t, "http://collector:4317", plugin.Endpoint())
 
-	plugin = newTestPlugin(t, OpenTelemetryPluginOptions{
+	plugin = newTestPlugin(t, PluginOptions{
 		Endpoint:    "https://explicit-collector:4317",
 		ServiceName: "explicit-service",
 	})
@@ -50,17 +50,17 @@ func TestOpenTelemetryPluginResolutionPrecedence(t *testing.T) {
 	require.Equal(t, "https://explicit-collector:4317", plugin.Endpoint())
 }
 
-func TestOpenTelemetryPluginIgnoresEmptyEnvironmentValues(t *testing.T) {
+func TestPluginIgnoresEmptyEnvironmentValues(t *testing.T) {
 	clearEnvironment(t)
 	t.Setenv(OTELServiceNameEnvVar, "")
 	t.Setenv(CloudRunWorkerPoolEnvVar, "")
 	t.Setenv(CloudRunServiceEnvVar, "cloud-run-service")
 
-	require.Equal(t, "cloud-run-service", newTestPlugin(t, OpenTelemetryPluginOptions{}).ServiceName())
+	require.Equal(t, "cloud-run-service", newTestPlugin(t, PluginOptions{}).ServiceName())
 }
 
-func TestOpenTelemetryPluginConfiguresClient(t *testing.T) {
-	plugin := newTestPlugin(t, OpenTelemetryPluginOptions{})
+func TestPluginConfiguresClient(t *testing.T) {
+	plugin := newTestPlugin(t, PluginOptions{})
 	existingInterceptor := &interceptor.InterceptorBase{}
 	clientOptions := client.Options{
 		Interceptors: []interceptor.ClientInterceptor{existingInterceptor},
@@ -77,10 +77,10 @@ func TestOpenTelemetryPluginConfiguresClient(t *testing.T) {
 	require.True(t, isWorkerInterceptor)
 }
 
-func TestOpenTelemetryPluginForceFlushesProviders(t *testing.T) {
+func TestPluginForceFlushesProviders(t *testing.T) {
 	meterProvider := &forceFlushingMeterProvider{MeterProvider: metricnoop.NewMeterProvider()}
 	tracerProvider := &forceFlushingTracerProvider{TracerProvider: tracenoop.NewTracerProvider()}
-	plugin, err := NewOpenTelemetryPlugin(context.Background(), OpenTelemetryPluginOptions{
+	plugin, err := NewPlugin(context.Background(), PluginOptions{
 		MeterProvider:  meterProvider,
 		TracerProvider: tracerProvider,
 	})
@@ -93,9 +93,9 @@ func TestOpenTelemetryPluginForceFlushesProviders(t *testing.T) {
 	require.Same(t, tracerProvider, plugin.TracerProvider())
 }
 
-func TestOpenTelemetryPluginDefersWorkerStopFlushByDefault(t *testing.T) {
+func TestPluginDefersWorkerStopFlushByDefault(t *testing.T) {
 	var calls []string
-	plugin := newTestPlugin(t, OpenTelemetryPluginOptions{
+	plugin := newTestPlugin(t, PluginOptions{
 		FlushHook: func(context.Context) error {
 			calls = append(calls, "flush")
 			return nil
@@ -113,9 +113,9 @@ func TestOpenTelemetryPluginDefersWorkerStopFlushByDefault(t *testing.T) {
 	require.Equal(t, []string{"stop", "flush"}, calls)
 }
 
-func TestOpenTelemetryPluginCanFlushOnWorkerStop(t *testing.T) {
+func TestPluginCanFlushOnWorkerStop(t *testing.T) {
 	var calls []string
-	plugin := newTestPlugin(t, OpenTelemetryPluginOptions{
+	plugin := newTestPlugin(t, PluginOptions{
 		FlushOnWorkerStop: true,
 		FlushTimeout:      time.Second,
 		FlushHook: func(ctx context.Context) error {
@@ -134,20 +134,20 @@ func TestOpenTelemetryPluginCanFlushOnWorkerStop(t *testing.T) {
 	require.Equal(t, []string{"stop", "flush"}, calls)
 }
 
-func TestOpenTelemetryPluginValidatesOptions(t *testing.T) {
-	_, err := NewOpenTelemetryPlugin(context.Background(), OpenTelemetryPluginOptions{
+func TestPluginValidatesOptions(t *testing.T) {
+	_, err := NewPlugin(context.Background(), PluginOptions{
 		MeterProvider: metricnoop.NewMeterProvider(),
 	})
 	require.EqualError(t, err, "meter provider and tracer provider must be set together")
 
-	_, err = NewOpenTelemetryPlugin(context.Background(), OpenTelemetryPluginOptions{
+	_, err = NewPlugin(context.Background(), PluginOptions{
 		MeterProvider:        metricnoop.NewMeterProvider(),
 		TracerProvider:       tracenoop.NewTracerProvider(),
 		MetricExportInterval: -time.Second,
 	})
 	require.EqualError(t, err, "metric export interval must not be negative")
 
-	_, err = NewOpenTelemetryPlugin(context.Background(), OpenTelemetryPluginOptions{
+	_, err = NewPlugin(context.Background(), PluginOptions{
 		MeterProvider:  metricnoop.NewMeterProvider(),
 		TracerProvider: tracenoop.NewTracerProvider(),
 		FlushTimeout:   -time.Second,
@@ -155,13 +155,13 @@ func TestOpenTelemetryPluginValidatesOptions(t *testing.T) {
 	require.EqualError(t, err, "flush timeout must not be negative")
 
 	//lint:ignore SA1012 Verify that the constructor rejects a nil context.
-	_, err = NewOpenTelemetryPlugin(nil, OpenTelemetryPluginOptions{})
+	_, err = NewPlugin(nil, PluginOptions{})
 	require.EqualError(t, err, "context is required")
 }
 
-func TestOpenTelemetryPluginFlushHookError(t *testing.T) {
+func TestPluginFlushHookError(t *testing.T) {
 	expectedErr := errors.New("flush failed")
-	plugin := newTestPlugin(t, OpenTelemetryPluginOptions{
+	plugin := newTestPlugin(t, PluginOptions{
 		FlushHook: func(context.Context) error { return expectedErr },
 	})
 
@@ -169,13 +169,13 @@ func TestOpenTelemetryPluginFlushHookError(t *testing.T) {
 	require.ErrorIs(t, plugin.Shutdown(context.Background()), expectedErr)
 }
 
-func newTestPlugin(t *testing.T, options OpenTelemetryPluginOptions) *OpenTelemetryPlugin {
+func newTestPlugin(t *testing.T, options PluginOptions) *Plugin {
 	t.Helper()
 	if options.MeterProvider == nil && options.TracerProvider == nil {
 		options.MeterProvider = metricnoop.NewMeterProvider()
 		options.TracerProvider = tracenoop.NewTracerProvider()
 	}
-	plugin, err := NewOpenTelemetryPlugin(context.Background(), options)
+	plugin, err := NewPlugin(context.Background(), options)
 	require.NoError(t, err)
 	return plugin
 }

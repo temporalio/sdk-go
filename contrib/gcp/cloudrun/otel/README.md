@@ -1,6 +1,6 @@
 # Temporal Google Cloud Run OpenTelemetry module
 
-Package `go.temporal.io/sdk/contrib/gcp/cloudrun` provides an OpenTelemetry plugin with defaults for Temporal Go SDK workers running on Google Cloud Run. Cloud Run worker pools are the recommended deployment because Temporal workers are continuous, pull-based background workloads.
+Package `go.temporal.io/sdk/contrib/gcp/cloudrun/otel` provides an OpenTelemetry plugin with defaults for Temporal Go SDK workers running on Google Cloud Run. Cloud Run worker pools are the recommended deployment because Temporal workers are continuous, pull-based background workloads.
 
 > **Collector required by default:** The plugin exports metrics and traces to an OTLP collector at `http://localhost:4317`. It does not export directly to Google Cloud. Deploy the Google-Built OpenTelemetry Collector as a sidecar, configure another collector endpoint, or provide application-owned OpenTelemetry providers. Without a collector at the configured endpoint, telemetry is not delivered to Google Cloud.
 
@@ -11,7 +11,7 @@ A Cloud Run service can also host a Temporal worker, but it must use instance-ba
 ## Add to your project
 
 ```bash
-go get go.temporal.io/sdk/contrib/gcp/cloudrun@latest
+go get go.temporal.io/sdk/contrib/gcp/cloudrun/otel@latest
 ```
 
 ## Usage
@@ -19,9 +19,9 @@ go get go.temporal.io/sdk/contrib/gcp/cloudrun@latest
 Create the plugin and install it on the Temporal client. Client plugins that also implement `worker.Plugin` are automatically applied to workers created from that client.
 
 ```go
-otelPlugin, err := cloudrun.NewOpenTelemetryPlugin(
+otelPlugin, err := otel.NewPlugin(
 	context.Background(),
-	cloudrun.OpenTelemetryPluginOptions{},
+	otel.PluginOptions{},
 )
 if err != nil {
 	return err
@@ -55,11 +55,11 @@ if err := otelPlugin.Shutdown(flushCtx); err != nil {
 
 `Shutdown` flushes and closes metric and trace providers created by the plugin. Application-owned providers remain the application's responsibility and are force-flushed when they implement `ForceFlush(context.Context) error`; use `FlushHook` when they do not. Use `ForceFlush` instead of `Shutdown` when plugin-owned providers must remain usable.
 
-`OpenTelemetryPluginOptions.FlushOnWorkerStop` enables immediate, best-effort flushing after an individual worker stops. It is disabled by default because one client can own multiple workers and the remaining workers can emit telemetry after the first worker stops.
+`PluginOptions.FlushOnWorkerStop` enables immediate, best-effort flushing after an individual worker stops. It is disabled by default because one client can own multiple workers and the remaining workers can emit telemetry after the first worker stops.
 
 The OTLP endpoint is resolved in this order:
 
-1. `OpenTelemetryPluginOptions.Endpoint`.
+1. `PluginOptions.Endpoint`.
 2. `OTEL_EXPORTER_OTLP_ENDPOINT`.
 3. `http://localhost:4317`.
 
@@ -71,13 +71,13 @@ Batching can remain enabled independently in the traces pipeline.
 
 The OpenTelemetry service name is resolved in this order:
 
-1. `OpenTelemetryPluginOptions.ServiceName`.
+1. `PluginOptions.ServiceName`.
 2. `OTEL_SERVICE_NAME`.
 3. `CLOUD_RUN_WORKER_POOL` for a Cloud Run worker pool.
 4. `K_SERVICE` for a Cloud Run service.
 5. `temporal-worker`.
 
-To use application-owned providers, set both `OpenTelemetryPluginOptions.MeterProvider` and `OpenTelemetryPluginOptions.TracerProvider`. In that path, the plugin does not create exporters or shut down either provider. `FlushHook` can override provider force-flushing.
+To use application-owned providers, set both `PluginOptions.MeterProvider` and `PluginOptions.TracerProvider`. In that path, the plugin does not create exporters or shut down either provider. `FlushHook` can override provider force-flushing.
 
 The collector should use its GCP resource detector to add the Google Cloud attributes it recognizes. Do not rely on the detector to infer Cloud Run worker-pool-specific location or revision attributes; configure those explicitly with a collector resource processor if they are required. This module does not call the Google Cloud metadata server and adds no Google Cloud client libraries or exporters to the worker process.
 
@@ -92,7 +92,7 @@ still-open metrics batch.
 
 Cloud Run worker pools support sidecar containers over localhost and are intended for continuous background work. The deployment should start the collector before the Temporal worker and use the collector health extension as its startup probe.
 
-To use an external collector instead, set `OTEL_EXPORTER_OTLP_ENDPOINT` or `OpenTelemetryPluginOptions.Endpoint`.
+To use an external collector instead, set `OTEL_EXPORTER_OTLP_ENDPOINT` or `PluginOptions.Endpoint`.
 
 ## Module versioning
 

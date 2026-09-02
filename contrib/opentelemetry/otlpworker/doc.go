@@ -6,7 +6,7 @@
 // as X-Ray trace IDs, AWS Lambda function-name resolution, or Cloud Run service
 // resolution. Higher-level packages such as
 // go.temporal.io/sdk/contrib/aws/lambdaworker/otel and
-// go.temporal.io/sdk/contrib/gcp/cloudrun layer that policy on top of the
+// go.temporal.io/sdk/contrib/gcp/cloudrun/otel layer that policy on top of the
 // helpers here.
 //
 // The building blocks are:

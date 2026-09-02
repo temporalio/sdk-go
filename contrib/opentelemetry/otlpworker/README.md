@@ -4,7 +4,7 @@ Package `go.temporal.io/sdk/contrib/opentelemetry/otlpworker` contains the
 provider-neutral OpenTelemetry building blocks shared by Temporal
 serverless-worker integrations that export OTLP telemetry to a local collector,
 such as AWS Lambda (`go.temporal.io/sdk/contrib/aws/lambdaworker/otel`) and
-Google Cloud Run (`go.temporal.io/sdk/contrib/gcp/cloudrun`).
+Google Cloud Run (`go.temporal.io/sdk/contrib/gcp/cloudrun/otel`).
 
 It is deliberately cloud-agnostic. It carries no cloud-provider policy (no X-Ray
 trace IDs, no Lambda function-name resolution, no Cloud Run service resolution)
@@ -23,8 +23,8 @@ of the cloud-specific packages above rather than this one directly.
   `go.temporal.io/sdk/contrib/opentelemetry` metrics handler and tracing
   interceptor on client options.
 - `FirstNonEmptyEnv` resolves a value from an explicit setting, an ordered list
-  of environment variables (whitespace-only values are ignored), then a
-  fallback.
+  of environment variables (only empty values are ignored; values are not
+  trimmed), then a fallback.
 - `ForceFlush` and `Shutdown` fan out to providers concurrently and join errors.
   Providers that do not implement the relevant method are ignored.
 

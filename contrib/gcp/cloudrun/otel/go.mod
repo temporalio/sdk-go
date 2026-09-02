@@ -1,4 +1,4 @@
-module go.temporal.io/sdk/contrib/gcp/cloudrun
+module go.temporal.io/sdk/contrib/gcp/cloudrun/otel
 
 go 1.26.0
 
@@ -50,7 +50,7 @@ require (
 )
 
 replace (
-	go.temporal.io/sdk => ../../../
-	go.temporal.io/sdk/contrib/opentelemetry => ../../opentelemetry
-	go.temporal.io/sdk/contrib/opentelemetry/otlpworker => ../../opentelemetry/otlpworker
+	go.temporal.io/sdk => ../../../../
+	go.temporal.io/sdk/contrib/opentelemetry => ../../../opentelemetry
+	go.temporal.io/sdk/contrib/opentelemetry/otlpworker => ../../../opentelemetry/otlpworker
 )

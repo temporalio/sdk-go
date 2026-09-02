@@ -1,4 +1,4 @@
-package cloudrun
+package otel
 
 import (
 	"context"
@@ -42,8 +42,8 @@ const (
 	defaultFlushTimeout         = 10 * time.Second
 )
 
-// OpenTelemetryPluginOptions configures [NewOpenTelemetryPlugin].
-type OpenTelemetryPluginOptions struct {
+// PluginOptions configures [NewPlugin].
+type PluginOptions struct {
 	// Endpoint is the OTLP gRPC endpoint used when the plugin creates providers. It must be a URL.
 	// If empty, OTEL_EXPORTER_OTLP_ENDPOINT is used, followed by [DefaultOTLPEndpoint].
 	Endpoint string
@@ -75,13 +75,13 @@ type OpenTelemetryPluginOptions struct {
 	FlushTimeout time.Duration
 }
 
-// OpenTelemetryPlugin configures OpenTelemetry metrics and tracing for Temporal clients and
+// Plugin configures OpenTelemetry metrics and tracing for Temporal clients and
 // workers running on Google Cloud Run. The default configuration exports OTLP gRPC telemetry to a
 // collector on localhost; it does not export directly to Google Cloud.
 //
-// The same plugin may be used by multiple clients and workers. Call [OpenTelemetryPlugin.Shutdown]
+// The same plugin may be used by multiple clients and workers. Call [Plugin.Shutdown]
 // after all workers and clients are stopped to flush telemetry and release plugin-owned providers.
-type OpenTelemetryPlugin struct {
+type Plugin struct {
 	clientPluginBase
 	workerPluginBase
 
@@ -98,18 +98,18 @@ type OpenTelemetryPlugin struct {
 type clientPluginBase struct{ client.PluginBase }
 type workerPluginBase struct{ worker.PluginBase }
 
-var _ client.Plugin = (*OpenTelemetryPlugin)(nil)
-var _ worker.Plugin = (*OpenTelemetryPlugin)(nil)
+var _ client.Plugin = (*Plugin)(nil)
+var _ worker.Plugin = (*Plugin)(nil)
 
-// NewOpenTelemetryPlugin creates an OpenTelemetry plugin with Google Cloud Run defaults.
+// NewPlugin creates an OpenTelemetry plugin with Google Cloud Run defaults.
 //
 // If MeterProvider and TracerProvider are not supplied, this creates OTLP gRPC metric and trace
 // exporters and providers owned by the plugin. The collector should perform GCP resource detection
 // and export telemetry to Google Cloud.
-func NewOpenTelemetryPlugin(
+func NewPlugin(
 	ctx context.Context,
-	options OpenTelemetryPluginOptions,
-) (*OpenTelemetryPlugin, error) {
+	options PluginOptions,
+) (*Plugin, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("context is required")
 	}
@@ -176,7 +176,7 @@ func NewOpenTelemetryPlugin(
 		}
 	}
 
-	return &OpenTelemetryPlugin{
+	return &Plugin{
 		endpoint:          endpoint,
 		serviceName:       serviceName,
 		meterProvider:     meterProvider,
@@ -189,22 +189,22 @@ func NewOpenTelemetryPlugin(
 }
 
 // Name returns the plugin name.
-func (*OpenTelemetryPlugin) Name() string { return PluginName }
+func (*Plugin) Name() string { return PluginName }
 
 // Endpoint returns the resolved OTLP endpoint.
-func (p *OpenTelemetryPlugin) Endpoint() string { return p.endpoint }
+func (p *Plugin) Endpoint() string { return p.endpoint }
 
 // ServiceName returns the resolved OpenTelemetry service name.
-func (p *OpenTelemetryPlugin) ServiceName() string { return p.serviceName }
+func (p *Plugin) ServiceName() string { return p.serviceName }
 
 // MeterProvider returns the provider used for Temporal metrics.
-func (p *OpenTelemetryPlugin) MeterProvider() metric.MeterProvider { return p.meterProvider }
+func (p *Plugin) MeterProvider() metric.MeterProvider { return p.meterProvider }
 
 // TracerProvider returns the provider used for Temporal traces.
-func (p *OpenTelemetryPlugin) TracerProvider() trace.TracerProvider { return p.tracerProvider }
+func (p *Plugin) TracerProvider() trace.TracerProvider { return p.tracerProvider }
 
 // ForceFlush exports buffered metrics and traces without shutting down the providers.
-func (p *OpenTelemetryPlugin) ForceFlush(ctx context.Context) error {
+func (p *Plugin) ForceFlush(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("context is required")
 	}
@@ -214,7 +214,7 @@ func (p *OpenTelemetryPlugin) ForceFlush(ctx context.Context) error {
 // Shutdown flushes telemetry and shuts down providers created by the plugin. Application-owned
 // providers are not shut down; for them, Shutdown only runs FlushHook or ForceFlush on providers
 // that support it. Call this after every worker and client using the plugin has stopped.
-func (p *OpenTelemetryPlugin) Shutdown(ctx context.Context) error {
+func (p *Plugin) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("context is required")
 	}
@@ -222,7 +222,7 @@ func (p *OpenTelemetryPlugin) Shutdown(ctx context.Context) error {
 }
 
 // ConfigureClient installs the OpenTelemetry metrics handler and tracing interceptor.
-func (p *OpenTelemetryPlugin) ConfigureClient(
+func (p *Plugin) ConfigureClient(
 	_ context.Context,
 	options client.PluginConfigureClientOptions,
 ) error {
@@ -237,7 +237,7 @@ func (p *OpenTelemetryPlugin) ConfigureClient(
 
 // StopWorker optionally force-flushes after the worker has stopped. Automatic flushing is disabled
 // by default; applications should normally call Shutdown after stopping every worker.
-func (p *OpenTelemetryPlugin) StopWorker(
+func (p *Plugin) StopWorker(
 	ctx context.Context,
 	options worker.PluginStopWorkerOptions,
 	next func(context.Context, worker.PluginStopWorkerOptions),
