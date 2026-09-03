@@ -248,6 +248,9 @@ type (
 		// Set to true during start() when the namespace has the poller_autoscaling capability.
 		serverSupportsAutoscaling *atomic.Bool
 
+		// Resolved during start() from the namespace's pagination capability and size limit.
+		workflowTaskCompletionPagination *workflowTaskCompletionPaginationConfig
+
 		inboundPayloadVisitor PayloadVisitor
 
 		outboundPayloadVisitor PayloadVisitor
@@ -1291,6 +1294,9 @@ type AggregatedWorker struct {
 	heartbeatMetrics             *heartbeatMetricsHandler
 	heartbeatCallback            func() *workerpb.WorkerHeartbeat
 	workerPollCompleteOnShutdown *atomic.Bool
+	// pendingEnvironment is attached to every heartbeat (periodic and shutdown) until the server
+	// accepts one, at which point heartbeatSuccess clears it.
+	pendingEnvironment atomic.Pointer[workerpb.EnvironmentInfo]
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1422,6 +1428,11 @@ func (aw *AggregatedWorker) start() error {
 
 	if nsData.capabilities.GetWorkerPollCompleteOnShutdown() {
 		aw.workerPollCompleteOnShutdown.Store(true)
+	}
+
+	if nsData.capabilities.GetWorkflowTaskCompletionPagination() {
+		aw.executionParams.workflowTaskCompletionPagination.enabled.Store(true)
+		aw.executionParams.workflowTaskCompletionPagination.sizeLimit.Store(nsData.limits.GetWorkflowTaskCompletionSizeLimitError())
 	}
 
 	if nsData.capabilities.GetPollerAutoscaling() {
@@ -1687,6 +1698,12 @@ func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
 		return
 	}
 	aw.client.heartbeatManager.unregisterWorker(aw)
+}
+
+// heartbeatSuccess is invoked by the shared namespace heartbeat worker once the server has
+// accepted a heartbeat from this worker.
+func (aw *AggregatedWorker) heartbeatSuccess() {
+	aw.pendingEnvironment.Store(nil)
 }
 
 // sendShutdownWorkerRPC sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
@@ -2432,14 +2449,15 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
-		capabilities:                  &capabilities,
-		pollTimeTracker:               &pollTimeTracker{},
-		workerInstanceKey:             workerInstanceKey,
-		workerControlTaskQueue:        workerControlTaskQueue(client.namespace, client.workerGroupingKey),
-		activityCancellationCallbacks: activityCancellationCallbacks,
-		workerPollCompleteOnShutdown:  workerPollCompleteOnShutdown,
-		serverSupportsAutoscaling:     &atomic.Bool{},
-		inboundPayloadVisitor:         extstore.NewExternalRetrievalVisitor(client.storageParams),
+		capabilities:                     &capabilities,
+		pollTimeTracker:                  &pollTimeTracker{},
+		workerInstanceKey:                workerInstanceKey,
+		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		activityCancellationCallbacks:    activityCancellationCallbacks,
+		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
+		serverSupportsAutoscaling:        &atomic.Bool{},
+		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
+		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(client.storageParams),
 		outboundPayloadVisitor: newCompositePayloadVisitor(
 			extstore.NewExternalStorageVisitor(client.storageParams),
 			payloadLimitVisitor,
@@ -2632,6 +2650,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				HeartbeatTime:     timestamppb.New(heartbeatTime),
 				Plugins:           pluginInfos,
 				Drivers:           driverInfos,
+				Environment:       aw.pendingEnvironment.Load(),
 			}
 			if !previousHeartbeatTime.IsZero() {
 				hb.ElapsedSinceLastHeartbeat = durationpb.New(heartbeatTime.Sub(previousHeartbeatTime))
@@ -2659,6 +2678,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		heartbeatMetrics:             heartbeatMetrics,
 		heartbeatCallback:            heartbeatCallback,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	}
+	if client.heartbeatManager != nil {
+		aw.pendingEnvironment.Store(client.heartbeatManager.environmentInfo)
 	}
 
 	// Set memoized start as a once-value that invokes plugins first
@@ -2753,7 +2775,7 @@ func getActivityFunctionName(r *registry, i any) string {
 	return result
 }
 
-func getWorkflowFunctionName(r *registry, workflowFunc any) (string, error) {
+func GetWorkflowFunctionName(r *registry, workflowFunc any) (string, error) {
 	fnName := ""
 	fType := reflect.TypeOf(workflowFunc)
 	switch getKind(fType) {

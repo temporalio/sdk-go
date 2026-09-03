@@ -176,7 +176,7 @@ func TestExternalStorageToParams_PointerAndValueReceiverDrivers(t *testing.T) {
 	//valDriver := valueReceiverDriver{name: "val-driver"}
 	valDriver := newValDriver("val-driver")
 
-	selector := &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 		return ptrDriver, nil
 	}}
 	params, err := ExternalStorageToParams(ExternalStorage{
@@ -202,7 +202,7 @@ func TestExternalStorageToParams_SingleDriverSynthesizesSelector(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, params.driverSelector)
-	selected, err := params.driverSelector.SelectDriver(StorageDriverStoreContext{Context: t.Context()}, nil)
+	selected, err := params.driverSelector.SelectDriver(StorageDriverSelectContext{Context: t.Context()}, nil)
 	require.NoError(t, err)
 	require.Equal(t, driver, selected)
 }
@@ -420,7 +420,7 @@ func TestStoreVisitor_MultiplePayloads_Batched(t *testing.T) {
 
 func TestStoreVisitor_SelectorNil_PayloadInline(t *testing.T) {
 	driver := newTestDriver("d")
-	selector := &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 		return nil, nil
 	}}
 	params, err := ExternalStorageToParams(ExternalStorage{
@@ -437,10 +437,38 @@ func TestStoreVisitor_SelectorNil_PayloadInline(t *testing.T) {
 	require.Equal(t, 0, driver.storeCount)
 }
 
+func TestStoreVisitor_SelectorReceivesSelectContextWithTarget(t *testing.T) {
+	driver := newTestDriver("d")
+	target := StorageDriverWorkflowInfo{
+		Namespace:    "ns",
+		WorkflowType: "MyWorkflow",
+		WorkflowID:   "wf-id",
+		RunID:        "run-id",
+	}
+	var selectCtx StorageDriverSelectContext
+	selector := &funcDriverSelector{fn: func(ctx StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
+		selectCtx = ctx
+		return driver, nil
+	}}
+	params, err := ExternalStorageToParams(ExternalStorage{
+		Drivers:        []StorageDriver{driver},
+		DriverSelector: selector,
+	})
+	require.NoError(t, err)
+	visitor := NewExternalStorageVisitor(params)
+
+	ctx := WithStorageTarget(t.Context(), target)
+	p := makeOversizedPayload(t, defaultPayloadSizeThreshold+1)
+	_, err = visitPayloads(ctx, visitor, []*commonpb.Payload{p})
+	require.NoError(t, err)
+	require.Equal(t, target, selectCtx.Target)
+	require.NotNil(t, selectCtx.Context)
+}
+
 func TestStoreVisitor_SelectorBelowThreshold_NotCalled(t *testing.T) {
 	driver := newTestDriver("d")
 	selectorCalled := false
-	selector := &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 		selectorCalled = true
 		return driver, nil
 	}}
@@ -464,7 +492,7 @@ func TestStoreVisitor_SelectorRoutes_TwoDrivers(t *testing.T) {
 	d1 := newTestDriver("d1")
 	d2 := newTestDriver("d2")
 	i := 0
-	selector := &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 		defer func() { i++ }()
 		if i%2 == 0 {
 			return d1, nil
@@ -489,7 +517,7 @@ func TestStoreVisitor_SelectorRoutes_TwoDrivers(t *testing.T) {
 
 func TestStoreVisitor_SelectorUnregisteredDriver(t *testing.T) {
 	unregistered := newTestDriver("my-unregistered-driver")
-	selector := &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 		return unregistered, nil
 	}}
 	params, err := ExternalStorageToParams(ExternalStorage{
@@ -506,7 +534,7 @@ func TestStoreVisitor_SelectorUnregisteredDriver(t *testing.T) {
 }
 
 func TestStoreVisitor_SelectorError(t *testing.T) {
-	selector := &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 		return nil, errors.New("selector error")
 	}}
 	params, err := ExternalStorageToParams(ExternalStorage{
@@ -574,7 +602,7 @@ func TestStoreVisitor_CancelOnError(t *testing.T) {
 	errD.storeGate = blockD.startedCh
 
 	i := 0
-	selector := &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 		defer func() { i++ }()
 		if i%2 == 0 {
 			return errD, nil
@@ -711,7 +739,7 @@ func TestRetrievalVisitor_MultiDriver(t *testing.T) {
 	d1 := newTestDriver("d1")
 	d2 := newTestDriver("d2")
 	i := 0
-	selector := &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 		defer func() { i++ }()
 		if i == 0 {
 			return d1, nil
@@ -823,7 +851,7 @@ func TestRetrievalVisitor_CancelOnError(t *testing.T) {
 
 	retrieveParams, err := ExternalStorageToParams(ExternalStorage{
 		Drivers: []StorageDriver{errD, blockD},
-		DriverSelector: &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+		DriverSelector: &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 			return errD, nil
 		}},
 	})
@@ -1072,7 +1100,7 @@ func TestStoreRetrieveRoundTrip_PointerAndValueReceiverDrivers(t *testing.T) {
 
 	// Route the first payload to ptrDriver and the second to valDriver.
 	i := 0
-	selector := &funcDriverSelector{fn: func(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+	selector := &funcDriverSelector{fn: func(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 		defer func() { i++ }()
 		if i == 0 {
 			return ptrDriver, nil
@@ -1165,10 +1193,10 @@ func (d *blockingDriver) Retrieve(ctx StorageDriverRetrieveContext, _ []StorageD
 }
 
 type funcDriverSelector struct {
-	fn func(StorageDriverStoreContext, *commonpb.Payload) (StorageDriver, error)
+	fn func(StorageDriverSelectContext, *commonpb.Payload) (StorageDriver, error)
 }
 
-func (s *funcDriverSelector) SelectDriver(ctx StorageDriverStoreContext, p *commonpb.Payload) (StorageDriver, error) {
+func (s *funcDriverSelector) SelectDriver(ctx StorageDriverSelectContext, p *commonpb.Payload) (StorageDriver, error) {
 	return s.fn(ctx, p)
 }
 

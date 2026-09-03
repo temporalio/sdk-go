@@ -113,9 +113,6 @@ type (
 		// StartDelay - Time to wait before dispatching the activity. This delay is not applied to retry attempts.
 		StartDelay time.Duration
 
-		// requestID is the request ID used to dedup retried starts.
-		// Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
-		requestID string
 		// callbacks is the set of completion callbacks the server should invoke when the activity
 		// reaches a terminal state. Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
 		callbacks []*commonpb.Callback
@@ -587,6 +584,11 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		RequestId:    uuid.NewString(),
 		ActivityType: &commonpb.ActivityType{Name: in.ActivityType},
 	}
+	// Activity starts from a Nexus handler inherit its normalized request ID. Other
+	// Activity starts keep the fresh request ID initialized above.
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok && nctx.RequestID != "" {
+		request.RequestId = nctx.RequestID
+	}
 	var err error
 	if err = in.Options.validateAndSetInRequest(request, dataConverter); err != nil {
 		return nil, err
@@ -666,7 +668,7 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	if err != nil {
 		return err
 	}
-	userMetadata, err := buildUserMetadata(options.Summary, options.Details, dataConverter)
+	userMetadata, err := BuildUserMetadata(options.Summary, options.Details, dataConverter)
 	if err != nil {
 		return err
 	}
@@ -677,24 +679,15 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	request.ScheduleToStartTimeout = durationpb.New(options.ScheduleToStartTimeout)
 	request.StartToCloseTimeout = durationpb.New(options.StartToCloseTimeout)
 	request.HeartbeatTimeout = durationpb.New(options.HeartbeatTimeout)
-	request.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
+	request.RetryPolicy = ConvertToPBRetryPolicy(options.RetryPolicy)
 	request.IdReusePolicy = options.ActivityIDReusePolicy
 	request.IdConflictPolicy = options.ActivityIDConflictPolicy
 	request.SearchAttributes = searchAttrs
 	request.UserMetadata = userMetadata
-	request.Priority = convertToPBPriority(options.Priority)
+	request.Priority = ConvertToPBPriority(options.Priority)
 	request.StartDelay = durationpb.New(options.StartDelay)
-	if options.requestID != "" {
-		request.RequestId = options.requestID
-	}
 	request.CompletionCallbacks = options.callbacks
 	return nil
-}
-
-// SetRequestIDOnStartActivityOptions is an internal-only method for setting the request ID on
-// ClientStartActivityOptions. Used by [temporalnexus.temporalOperation] for retry idempotency.
-func SetRequestIDOnStartActivityOptions(opts *ClientStartActivityOptions, requestID string) {
-	opts.requestID = requestID
 }
 
 // SetCallbacksOnStartActivityOptions is an internal-only method for setting completion callbacks on

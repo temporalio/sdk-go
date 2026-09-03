@@ -44,6 +44,15 @@ or Security.
   `workflow.GetRandomStream`, so a span re-created on replay keeps its
   first-execution trace and span IDs and the generator can never be omitted
   (aligned with `contrib/opentelemetry-v2`).
+- Bumped `google.golang.org/adk/v2` to v2.2.0 (google/adk-go#1169). `ConfirmationResponse`
+  may now batch any number of decisions per Run pass: ADK resumes approved calls in request
+  order, keeping Activity-dispatching tools replay-stable. See its godoc for the contract.
+- Minimum `google.golang.org/genai` is v1.66.0 (raised by adk/v2 v2.2.0, previously v1.57.0;
+  its types appear in this module's API, e.g. `*genai.Content`).
+
+### Breaking Changes
+
+- The module requires Go 1.26.5+ (adk/v2 v2.2.0's `go` directive; previously 1.25.0).
 
 ## [0.2.0] - 2026-07-22
 

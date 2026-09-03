@@ -517,7 +517,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 		childEnv.workflowInfo.RootWorkflowExecution = env.workflowInfo.RootWorkflowExecution
 	}
 
-	searchAttrs, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
+	searchAttrs, err := SerializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -849,7 +849,8 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	env.addNewActivityHandle(task, func(result *commonpb.Payloads, err error) {}, env.GetDataConverter(), env.GetFailureConverter())
 	activityID := ActivityID{id: task.ActivityId}
 
-	result, err := taskHandler.Execute(defaultTestTaskQueue, task)
+	taskResult, err := taskHandler.Execute(defaultTestTaskQueue, task)
+	result := taskResult.response
 	if err != nil {
 		if err == context.DeadlineExceeded {
 			env.logger.Debug(fmt.Sprintf("Activity %v timed out", task.ActivityType.Name))
@@ -1245,7 +1246,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 	if errors.As(env.testError, &continueAsNewErr) {
 		params.Input = continueAsNewErr.Input
 		params.Header = continueAsNewErr.Header
-		params.RetryPolicy = convertToPBRetryPolicy(continueAsNewErr.RetryPolicy)
+		params.RetryPolicy = ConvertToPBRetryPolicy(continueAsNewErr.RetryPolicy)
 		params.WorkflowType = continueAsNewErr.WorkflowType
 		params.TaskQueueName = continueAsNewErr.TaskQueueName
 		params.VersioningIntent = continueAsNewErr.VersioningIntent
@@ -1754,7 +1755,9 @@ func (env *testWorkflowEnvironmentImpl) executeActivityWithRetryForTest(
 
 	for {
 		var err error
-		result, err = taskHandler.Execute(parameters.TaskQueueName, task)
+		var taskResult activityTaskResult
+		taskResult, err = taskHandler.Execute(parameters.TaskQueueName, task)
+		result = taskResult.response
 		if err != nil {
 			if err == context.DeadlineExceeded {
 				return err
