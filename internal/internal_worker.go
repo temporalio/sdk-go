@@ -1294,6 +1294,9 @@ type AggregatedWorker struct {
 	heartbeatMetrics             *heartbeatMetricsHandler
 	heartbeatCallback            func() *workerpb.WorkerHeartbeat
 	workerPollCompleteOnShutdown *atomic.Bool
+	// pendingEnvironment is attached to every heartbeat (periodic and shutdown) until the server
+	// accepts one, at which point heartbeatSuccess clears it.
+	pendingEnvironment atomic.Pointer[workerpb.EnvironmentInfo]
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1695,6 +1698,12 @@ func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
 		return
 	}
 	aw.client.heartbeatManager.unregisterWorker(aw)
+}
+
+// heartbeatSuccess is invoked by the shared namespace heartbeat worker once the server has
+// accepted a heartbeat from this worker.
+func (aw *AggregatedWorker) heartbeatSuccess() {
+	aw.pendingEnvironment.Store(nil)
 }
 
 // sendShutdownWorkerRPC sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
@@ -2641,6 +2650,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				HeartbeatTime:     timestamppb.New(heartbeatTime),
 				Plugins:           pluginInfos,
 				Drivers:           driverInfos,
+				Environment:       aw.pendingEnvironment.Load(),
 			}
 			if !previousHeartbeatTime.IsZero() {
 				hb.ElapsedSinceLastHeartbeat = durationpb.New(heartbeatTime.Sub(previousHeartbeatTime))
@@ -2668,6 +2678,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		heartbeatMetrics:             heartbeatMetrics,
 		heartbeatCallback:            heartbeatCallback,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	}
+	if client.heartbeatManager != nil {
+		aw.pendingEnvironment.Store(client.heartbeatManager.environmentInfo)
 	}
 
 	// Set memoized start as a once-value that invokes plugins first

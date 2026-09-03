@@ -23,6 +23,11 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
+  a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
+  platforms), and the operating system and architecture. This is sent
+  once per worker with the first heartbeat accepted by the server and can be turned off with
+  `client.Options.DisableWorkerEnvironmentInfo`.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
@@ -58,6 +63,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
+  request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
 - `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
   `serviceerror.WorkflowExecutionAlreadyStarted` errors.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
