@@ -1325,6 +1325,10 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_I
 		var marker *converter.WorkflowTaskFailureError
 		t.True(errors.As(err, &marker), "policy %v", policy)
 		t.True(errors.Is(err, cause), "policy %v", policy)
+		// errors.As/Is above pass without the diagnostic wrapper; assert the
+		// input-decode context and workflow type survive too.
+		t.ErrorContains(err, "unable to decode the workflow function input payload", "policy %v", policy)
+		t.ErrorContains(err, "HelloWorld_Workflow", "policy %v", policy)
 	}
 }
 
@@ -1539,6 +1543,74 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowTaskFailureErrorReturne
 	t.True(ok)
 	t.Equal(1, len(r.Commands))
 	t.Equal(enumspb.COMMAND_TYPE_FAIL_WORKFLOW_EXECUTION, r.Commands[0].GetCommandType())
+}
+
+func (t *TaskHandlersTestSuite) processLocalActivityMarkerEncodeFailure(policy WorkflowPanicPolicy, cause error) (*workflowTaskCompletion, error) {
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			WorkflowTaskTimeout: durationpb.New(time.Minute),
+			TaskQueue:           &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+
+	task := createWorkflowTask(testEvents, 0, "LocalActivityMarkerEncodeFail_Workflow")
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	params := t.getTestWorkerExecutionParams()
+	params.WorkflowPanicPolicy = policy
+	params.WorkerStopChannel = stopCh
+	params.DataConverter = converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&wftFailureCodec{encodeErr: converter.NewWorkflowTaskFailureError(cause)},
+	)
+
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	laTunnel := newLocalActivityTunnel(params.WorkerStopChannel)
+	taskHandlerImpl, ok := taskHandler.(*workflowTaskHandlerImpl)
+	t.True(ok)
+	taskHandlerImpl.laTunnel = laTunnel
+
+	laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil, stopCh)
+	go func() {
+		task, err := laTaskPoller.PollTask()
+		if err != nil {
+			return
+		}
+		_ = laTaskPoller.ProcessTask(task)
+	}()
+
+	laResultCh := make(chan *localActivityResult)
+	laRetryCh := make(chan *localActivityTask)
+	wftask := workflowTask{task: task, laResultCh: laResultCh, laRetryCh: laRetryCh}
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+	wfctx.Unlock(err)
+	return request, err
+}
+
+// A marker returned while encoding a local activity's result marker data reaches
+// applyWorkflowPanicPolicy as workflowError, not w.err, but must still fail only
+// the Workflow Task (not the Execution) under both policies.
+func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_LocalActivityMarkerEncode() {
+	t.registry.RegisterWorkflowWithOptions(
+		func(ctx Context, input []byte) error {
+			ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{ScheduleToCloseTimeout: time.Minute})
+			return ExecuteLocalActivity(ctx, func() error { return nil }).Get(ctx, nil)
+		},
+		RegisterWorkflowOptions{Name: "LocalActivityMarkerEncodeFail_Workflow"},
+	)
+	for _, policy := range []WorkflowPanicPolicy{BlockWorkflow, FailWorkflow} {
+		cause := errors.New("transient codec failure on local activity marker: 503")
+		request, err := t.processLocalActivityMarkerEncodeFailure(policy, cause)
+
+		t.Error(err, "policy %v", policy)
+		t.Nil(request, "policy %v", policy)
+		var marker *converter.WorkflowTaskFailureError
+		t.True(errors.As(err, &marker), "policy %v", policy)
+		t.True(errors.Is(err, cause), "policy %v", policy)
+	}
 }
 
 func (t *TaskHandlersTestSuite) TestGetWorkflowInfo() {
