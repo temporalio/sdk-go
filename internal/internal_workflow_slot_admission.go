@@ -15,17 +15,20 @@ const (
 	inconsistentWorkflowAdmissionMessage       = "workflow pollers must share one slot admission coordinator"
 )
 
+type pollerTarget func() int64
+
 // workflowSlotAdmission arbitrates normal and sticky polls before slot reservation.
 type workflowSlotAdmission struct {
 	maxSlots      int
 	normalActive  int
 	stickyActive  int
 	stickyBacklog int64
+	stickyTarget  pollerTarget
 	wakeCh        chan struct{}
 	mu            sync.Mutex
 }
 
-func newWorkflowSlotAdmission(maxSlots int) *workflowSlotAdmission {
+func newWorkflowSlotAdmission(maxSlots int, stickyTarget pollerTarget) *workflowSlotAdmission {
 	// Zero means the supplier does not expose a finite upper bound, as permitted
 	// for suppliers with dynamic capacity. Negative values are invalid.
 	if maxSlots <= 0 {
@@ -33,8 +36,9 @@ func newWorkflowSlotAdmission(maxSlots int) *workflowSlotAdmission {
 	}
 
 	return &workflowSlotAdmission{
-		maxSlots: maxSlots,
-		wakeCh:   make(chan struct{}),
+		maxSlots:     maxSlots,
+		stickyTarget: stickyTarget,
+		wakeCh:       make(chan struct{}),
 	}
 }
 
@@ -98,7 +102,10 @@ func (a *workflowSlotAdmission) canAdmit(kind enumspb.TaskQueueKind) bool {
 }
 
 func (a *workflowSlotAdmission) needsMoreStickyPolls() bool {
-	return a.stickyBacklog >= minMeaningfulStickyBacklog && a.stickyBacklog > int64(a.stickyActive)
+	// Sticky priority only helps while the scaler can start another sticky poll.
+	return a.stickyBacklog >= minMeaningfulStickyBacklog &&
+		a.stickyBacklog > int64(a.stickyActive) &&
+		int64(a.stickyActive) < a.stickyTarget()
 }
 
 func (a *workflowSlotAdmission) start(kind enumspb.TaskQueueKind) {

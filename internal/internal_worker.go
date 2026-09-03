@@ -502,7 +502,7 @@ func buildWorkflowScalableTaskPollers(
 			metrics.PollerTypeWorkflowStickyTask,
 			params.serverSupportsAutoscaling,
 		)
-		admission := newWorkflowSlotAdmission(maxSlots)
+		admission := newWorkflowSlotAdmission(maxSlots, sticky.pollerAutoscaler.target.Load)
 		if admission != nil {
 			normal.workflowAdmission = admission
 			normal.admissionKind = enumspb.TASK_QUEUE_KIND_NORMAL
