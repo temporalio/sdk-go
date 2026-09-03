@@ -517,6 +517,11 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionPreservesBothQueueKinds()
 			newScalableTaskPoller(normal, ilog.NewNopLogger(), behavior, metrics.PollerTypeWorkflowTask, &atomic.Bool{}),
 			newScalableTaskPoller(sticky, ilog.NewNopLogger(), behavior, metrics.PollerTypeWorkflowStickyTask, &atomic.Bool{}),
 		}
+		admission := newWorkflowSlotAdmission(2)
+		pollers[0].workflowAdmission = admission
+		pollers[0].admissionKind = enumspb.TASK_QUEUE_KIND_NORMAL
+		pollers[1].workflowAdmission = admission
+		pollers[1].admissionKind = enumspb.TASK_QUEUE_KIND_STICKY
 
 		bw := newBaseWorker(baseWorkerOptions{
 			slotSupplier:     supplier,
@@ -529,7 +534,6 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionPreservesBothQueueKinds()
 			metricsHandler:   metrics.NopHandler,
 		})
 
-		require.NotNil(t, bw.workflowAdmission)
 		require.Nil(t, bw.pollerBalancer)
 
 		bw.Start()
@@ -550,35 +554,6 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionPreservesBothQueueKinds()
 		require.True(t, kinds[enumspb.TASK_QUEUE_KIND_NORMAL])
 		require.True(t, kinds[enumspb.TASK_QUEUE_KIND_STICKY])
 	})
-}
-
-func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionErrorLogged() {
-	logger := ilog.NewMemoryLogger()
-	behavior := &pollerBehaviorAutoscaling{
-		initialNumberOfPollers: 1,
-		maximumNumberOfPollers: 1,
-		minimumNumberOfPollers: 1,
-	}
-	poller := newScalableTaskPoller(
-		newBlockingProbeTaskPoller(),
-		logger,
-		behavior,
-		"invalid",
-		&atomic.Bool{},
-	)
-	bw := &baseWorker{
-		workflowAdmission: newWorkflowSlotAdmission(1),
-		limiterContext:    s.T().Context(),
-		logger:            logger,
-	}
-	bw.stopWG.Add(1)
-	bw.pollerWG.Add(1)
-
-	bw.runAutoscalingPoller(poller)
-
-	require.Equal(s.T(), []string{
-		"ERROR Workflow slot admission failed. Error " + invalidAdmissionKindMessage + "\n",
-	}, logger.Lines())
 }
 
 type blockingProbeTaskPoller struct {
@@ -619,8 +594,6 @@ func (p *blockingProbeTaskPoller) Close() {
 		close(p.done)
 	}
 }
-
-func (*blockingProbeTaskPoller) setAutoscalingAdmission(*workflowSlotAdmission) {}
 
 func eventuallyAutoscalingPollerState(t *testing.T, runner *autoscalingTaskPollerRunner, expectedActive int, msg string) {
 	require.Eventually(t, func() bool {
@@ -1530,29 +1503,64 @@ func (s *ScalableTaskPollerSuite) TestWorkflowSlotAdmissionConfiguration() {
 		maximumNumberOfPollers: 2,
 		minimumNumberOfPollers: 1,
 	}
-	normal := &workflowTaskPoller{stickyCacheSize: 1}
-	sticky := &workflowTaskPoller{stickyCacheSize: 1}
+	supplier := newLimitedSlotSupplier(2)
+	params := workerExecutionParameters{
+		Logger:                    ilog.NewNopLogger(),
+		serverSupportsAutoscaling: &atomic.Bool{},
+	}
+	pollers := buildWorkflowScalableTaskPollers(
+		&workflowTaskProcessor{stickyCacheSize: 1},
+		behavior,
+		params,
+		supplier.MaxSlots(),
+	)
+	normal := pollers[0].taskPoller.(*workflowTaskPoller)
+	sticky := pollers[1].taskPoller.(*workflowTaskPoller)
 
 	bw := newBaseWorker(baseWorkerOptions{
-		slotSupplier:     newLimitedSlotSupplier(2),
+		slotSupplier:     supplier,
 		taskProcessor:    noopTaskProcessor{},
 		workerType:       "WorkflowWorker",
 		logger:           ilog.NewNopLogger(),
 		metricsHandler:   metrics.NopHandler,
 		maxTaskPerSecond: 1,
-		taskPollers: []scalableTaskPoller{
-			newScalableTaskPoller(normal, ilog.NewNopLogger(), behavior, metrics.PollerTypeWorkflowTask, &atomic.Bool{}),
-			newScalableTaskPoller(sticky, ilog.NewNopLogger(), behavior, metrics.PollerTypeWorkflowStickyTask, &atomic.Bool{}),
-		},
+		taskPollers:      pollers,
 	})
 
-	require.NotNil(s.T(), bw.workflowAdmission)
+	require.NotNil(s.T(), pollers[0].workflowAdmission)
+	require.Same(s.T(), pollers[0].workflowAdmission, pollers[1].workflowAdmission)
+	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_NORMAL, pollers[0].admissionKind)
+	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_STICKY, pollers[1].admissionKind)
 	require.Nil(s.T(), bw.pollerBalancer)
 	require.Nil(s.T(), normal.autoscalingAdmission)
-	require.Same(s.T(), bw.workflowAdmission, sticky.autoscalingAdmission)
+	require.Same(s.T(), pollers[0].workflowAdmission, sticky.autoscalingAdmission)
 
 	sticky.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, 3)
-	require.Equal(s.T(), int64(3), bw.workflowAdmission.stickyBacklog)
+	require.Equal(s.T(), int64(3), pollers[0].workflowAdmission.stickyBacklog)
+}
+
+func TestConfigurePollersRejectsInconsistentAdmission(t *testing.T) {
+	admission := newWorkflowSlotAdmission(2)
+	testCases := map[string][]scalableTaskPoller{
+		"partial": {
+			{workflowAdmission: admission},
+			{},
+		},
+		"different": {
+			{workflowAdmission: admission},
+			{workflowAdmission: newWorkflowSlotAdmission(2)},
+		},
+	}
+
+	for name, pollers := range testCases {
+		t.Run(name, func(t *testing.T) {
+			worker := &baseWorker{}
+
+			require.PanicsWithValue(t, inconsistentWorkflowAdmissionMessage, func() {
+				worker.configurePollers(pollers)
+			})
+		})
+	}
 }
 
 func (s *ScalableTaskPollerSuite) TestNewScalableTaskPollerAllTypes() {

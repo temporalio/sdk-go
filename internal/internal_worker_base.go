@@ -188,7 +188,9 @@ type (
 	}
 
 	scalableTaskPoller struct {
-		taskPollerType string
+		taskPollerType    string
+		workflowAdmission *workflowSlotAdmission
+		admissionKind     enumspb.TaskQueueKind
 		// pollerCount is the number of pollers tasks to start. There may be less than this
 		// due to limited slots, rate limiting, or poller autoscaling.
 		pollerCount       int
@@ -247,7 +249,6 @@ type (
 		fatalErrCb         func(error)
 		sessionTokenBucket *sessionTokenBucket
 		pollerBalancer     *pollerBalancer
-		workflowAdmission  *workflowSlotAdmission
 
 		lastPollTaskErrMessage string
 		lastPollTaskErrStarted time.Time
@@ -425,12 +426,15 @@ func (bw *baseWorker) configurePollers(taskPollers []scalableTaskPoller) {
 		return
 	}
 
-	if bw.slotSupplier != nil {
-		admission := newWorkflowSlotAdmission(bw.slotSupplier.inner.MaxSlots())
-		if admission != nil && admission.attachPollers(taskPollers) {
-			bw.workflowAdmission = admission
-			return
+	// Workflow admission replaces the generic balancer only when every poller shares it.
+	admission := taskPollers[0].workflowAdmission
+	for _, taskWorker := range taskPollers[1:] {
+		if taskWorker.workflowAdmission != admission {
+			panic(inconsistentWorkflowAdmissionMessage)
 		}
+	}
+	if admission != nil {
+		return
 	}
 
 	bw.pollerBalancer = &pollerBalancer{
@@ -567,7 +571,7 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 	ctx, cancelfn := context.WithCancel(context.Background())
 	reserveChan := make(chan *SlotPermit)
 	var pollWG sync.WaitGroup
-	queueKind, _ := taskQueueKindForPoller(taskWorker)
+	admission := taskWorker.workflowAdmission
 
 	defer pollWG.Wait()
 	defer cancelfn()
@@ -587,12 +591,9 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			return
 		}
 		// Balance normal and sticky polls. Waiting here avoids holding a slot.
-		if bw.workflowAdmission != nil {
-			if err := bw.workflowAdmission.waitForAdmission(bw.limiterContext, queueKind); err != nil {
+		if admission != nil {
+			if err := admission.waitForAdmission(bw.limiterContext, taskWorker.admissionKind); err != nil {
 				releaseActive()
-				if !errors.Is(err, context.Canceled) {
-					bw.logger.Error("Workflow slot admission failed.", tagError, err)
-				}
 				return
 			}
 		}
@@ -620,8 +621,8 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			releaseActive()
 			return
 		}
-		if bw.workflowAdmission != nil {
-			bw.workflowAdmission.start(queueKind)
+		if admission != nil {
+			admission.start(taskWorker.admissionKind)
 		} else if bw.pollerBalancer != nil {
 			bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
 		}
@@ -632,8 +633,8 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			defer bw.stopWG.Done()
 			defer pollWG.Done()
 			defer releaseActive()
-			if bw.workflowAdmission != nil {
-				defer bw.workflowAdmission.finish(queueKind)
+			if admission != nil {
+				defer admission.finish(taskWorker.admissionKind)
 			} else if bw.pollerBalancer != nil {
 				defer bw.pollerBalancer.decrementPoller(taskWorker.taskPollerType)
 			}
