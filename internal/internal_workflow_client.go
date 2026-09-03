@@ -2115,7 +2115,6 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 	workflowTaskTimeout := in.Options.WorkflowTaskTimeout
 
 	dataConverter := WithContext(ctx, w.client.dataConverter)
-	dataConverter = effectiveDataConverter(dataConverter)
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: workflowID,
@@ -2979,7 +2978,6 @@ func (w *workflowClientInterceptor) createUpdateWorkflowRequest(
 	in *ClientUpdateWorkflowInput,
 ) (*workflowservice.UpdateWorkflowExecutionRequest, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
-	dataConverter = effectiveDataConverter(dataConverter)
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,

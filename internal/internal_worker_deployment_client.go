@@ -443,9 +443,7 @@ func workerDeploymentUpsertEntriesMetadataToProto(dc converter.DataConverter, up
 		if enc, ok := v.(*common.Payload); ok {
 			upsertEntries[k] = enc
 		} else {
-			dataConverter := dc
-			dataConverter = effectiveDataConverter(dataConverter)
-			metadataBytes, err := dataConverter.ToPayload(v)
+			metadataBytes, err := dc.ToPayload(v)
 			if err != nil {
 				panic(fmt.Sprintf("encode deployment metadata error: %v", err.Error()))
 			}

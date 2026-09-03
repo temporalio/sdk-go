@@ -7,19 +7,24 @@ import (
 // effectiveDataConverter resolves the data converter that SDK code should use,
 // given a caller-supplied converter that may be nil.
 //
-// Every code path that needs a data converter must obtain it here instead of
-// reading a caller-supplied field directly or falling back to
-// converter.GetDefaultDataConverter on its own. Resolution applies two rules
-// that have to stay together:
+// Call this where a converter enters the SDK, not where one is read back out.
+// Entry points are the public options structs, the workflow and activity
+// contexts, and the paths that deliberately fall back to the process-wide
+// default. Resolution applies two rules that have to stay together:
 //
 //   - A nil converter falls back to the process-wide default.
 //   - The result is wrapped so that transfer type conversion runs before the
 //     configured converter. See transferTypeDataConverter.
 //
-// Wrapping is idempotent, so calling this on an already-resolved converter is
-// safe and cheap. Applying only the first rule at a call site is how a code
-// path silently loses transfer type conversion, which is why the two rules do
-// not appear separately anywhere else.
+// Once a resolved converter is stored on a WorkflowClient, worker parameters, a
+// WorkflowReplayer, a test environment, or workflow context options, it stays
+// resolved. Code that reads one of those fields must use it as is. Resolving
+// again is harmless because wrapping is idempotent, but it obscures where the
+// converter actually entered.
+//
+// Applying only the first rule at an entry point is how a code path silently
+// loses transfer type conversion, which is why the two rules do not appear
+// separately anywhere else.
 //
 // A small number of call sites intentionally bypass this helper because their
 // payloads are not application values, most notably search attributes, which

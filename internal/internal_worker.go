@@ -1249,7 +1249,8 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	if env := getActivityEnvironmentFromCtx(ctx); env != nil {
 		dataConverter = env.dataConverter
 	}
-	return WithContext(ctx, effectiveDataConverter(dataConverter))
+	dataConverter = effectiveDataConverter(dataConverter)
+	return WithContext(ctx, dataConverter)
 }
 
 func getActivityEnvironmentFromCtx(ctx context.Context) *activityEnvironment {
@@ -2024,7 +2025,6 @@ func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr any) e
 		return errors.New("workflow result not found")
 	}
 	dc := aw.dataConverter
-	dc = effectiveDataConverter(dc)
 	return dc.FromPayloads(payloads, valuePtr)
 }
 
