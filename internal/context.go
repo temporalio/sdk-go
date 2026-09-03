@@ -2,7 +2,6 @@ package internal
 
 import (
 	"fmt"
-	"slices"
 	"sync"
 	"time"
 
@@ -220,10 +219,18 @@ func propagateCancel(parent Context, child canceler) {
 		} else {
 			p.childrenLock.Lock()
 			if p.children == nil {
-				p.children = make(map[canceler]bool)
+				p.children = make(map[canceler]*childNode)
 			}
-			p.children[child] = true
-			p.orderedChildren = append(p.orderedChildren, child)
+			if _, ok := p.children[child]; !ok {
+				node := &childNode{child: child, prev: p.lastChild}
+				if p.lastChild == nil {
+					p.firstChild = node
+				} else {
+					p.lastChild.next = node
+				}
+				p.lastChild = node
+				p.children[child] = node
+			}
 			p.childrenLock.Unlock()
 		}
 	} else {
@@ -254,9 +261,21 @@ func removeChild(parent Context, child canceler) {
 		return
 	}
 	p.childrenLock.Lock()
+	node, ok := p.children[child]
+	if !ok {
+		p.childrenLock.Unlock()
+		return
+	}
 	delete(p.children, child)
-	if i := slices.Index(p.orderedChildren, child); i != -1 {
-		p.orderedChildren = slices.Delete(p.orderedChildren, i, i+1)
+	if node.prev == nil {
+		p.firstChild = node.next
+	} else {
+		node.prev.next = node.next
+	}
+	if node.next == nil {
+		p.lastChild = node.prev
+	} else {
+		node.next.prev = node.prev
 	}
 	p.childrenLock.Unlock()
 }
@@ -268,6 +287,14 @@ type canceler interface {
 	Done() Channel
 }
 
+// childNode preserves creation order while allowing the children map to find
+// and unlink a child in constant time.
+type childNode struct {
+	child canceler
+	prev  *childNode
+	next  *childNode
+}
+
 // A cancelCtx can be canceled.  When canceled, it also cancels any children
 // that implement canceler.
 type cancelCtx struct {
@@ -275,12 +302,13 @@ type cancelCtx struct {
 
 	done Channel // closed by the first cancel call.
 
-	// Keep both orders because unflagged histories require map traversal.
-	children        map[canceler]bool
-	orderedChildren []canceler
-	childrenLock    sync.Mutex
-	err             error // set to non-nil by the first cancel call
-	errLock         sync.RWMutex
+	// Keep the map for unflagged replay and the list for ordered cancellation.
+	children     map[canceler]*childNode
+	firstChild   *childNode
+	lastChild    *childNode
+	childrenLock sync.Mutex
+	err          error // set to non-nil by the first cancel call
+	errLock      sync.RWMutex
 }
 
 func (c *cancelCtx) Done() Channel {
@@ -317,13 +345,15 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	c.done.Close()
 	c.childrenLock.Lock()
 	children := c.children
-	orderedChildren := c.orderedChildren
+	firstChild := c.firstChild
 	c.children = nil
-	c.orderedChildren = nil
+	c.firstChild = nil
+	c.lastChild = nil
 	c.childrenLock.Unlock()
-	if len(orderedChildren) > 1 && getWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
-		for _, child := range orderedChildren {
-			child.cancel(false, err)
+	// Avoid recording the SDK flag when cancellation order cannot affect behavior.
+	if len(children) > 1 && getWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
+		for node := firstChild; node != nil; node = node.next {
+			node.child.cancel(false, err)
 		}
 	} else {
 		for child := range children {

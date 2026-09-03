@@ -61,6 +61,8 @@ to docs, or any other relevant information.
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
 - Added disabled-by-default SDK flag 9 for deterministic workflow child-context cancellation.
+  Currently no behavior is changed by default, a future PR will flip this flag on by 
+  default.
 
 ### Security
 

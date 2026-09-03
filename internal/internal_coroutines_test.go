@@ -1987,6 +1987,38 @@ func TestContextCancelOrderWithFlag(t *testing.T) {
 	}
 }
 
+func TestContextCancelOrderAfterRemoval(t *testing.T) {
+	const childCount = 3
+
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	env.impl.sdkFlags.set(SDKFlagOrderedChildCancel)
+
+	var linkedOrder []int
+	var cancelOrder []int
+	wf := func(ctx Context) error {
+		ctx, cancel := WithCancel(ctx)
+		children := make([]*orderCanceler, childCount)
+		for i := range children {
+			children[i] = &orderCanceler{index: i, order: &cancelOrder}
+			propagateCancel(ctx, children[i])
+		}
+
+		removeChild(ctx, children[1])
+		for node := ctx.(*cancelCtx).firstChild; node != nil; node = node.next {
+			linkedOrder = append(linkedOrder, node.child.(*orderCanceler).index)
+		}
+		cancel()
+
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []int{0, 2}, linkedOrder)
+	require.Equal(t, []int{0, 2}, cancelOrder)
+}
+
 func TestDeadlockDetectorStackTrace(t *testing.T) {
 	d := createNewDispatcher(func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")

@@ -3,14 +3,15 @@ package replaytests
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"testing"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"google.golang.org/protobuf/proto"
-	"reflect"
-	"testing"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -435,7 +436,7 @@ func (s *replayTestSuite) TestCancelOrder() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(CancelOrderSelectWorkflow)
 
-	// These histories predate ordered child cancellation.
+	// These histories predate [internal.SDKFlagOrderedChildCancel].
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replay-tests-cancel-order.json")
 	s.NoError(err)
 
