@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -1958,6 +1959,113 @@ func (c *orderCanceler) Done() Channel {
 	return nil
 }
 
+func assertChildList(t *testing.T, list *childList, expected []*orderCanceler) {
+	t.Helper()
+	require.Len(t, list.nodes, len(expected))
+
+	if len(expected) == 0 {
+		require.Nil(t, list.first)
+		require.Nil(t, list.last)
+		return
+	}
+
+	require.Same(t, expected[0], list.first.child)
+	require.Same(t, expected[len(expected)-1], list.last.child)
+
+	var forward []*orderCanceler
+	var prev *childNode
+	for node := list.first; node != nil; node = node.next {
+		require.Less(t, len(forward), len(expected), "cycle in next links")
+		require.Same(t, prev, node.prev)
+		require.Same(t, node, list.nodes[node.child])
+		forward = append(forward, node.child.(*orderCanceler))
+		prev = node
+	}
+	require.Equal(t, expected, forward)
+	require.Same(t, list.last, prev)
+
+	var backward []*orderCanceler
+	var next *childNode
+	for node := list.last; node != nil; node = node.prev {
+		require.Less(t, len(backward), len(expected), "cycle in previous links")
+		require.Same(t, next, node.next)
+		backward = append(backward, node.child.(*orderCanceler))
+		next = node
+	}
+	slices.Reverse(backward)
+	require.Equal(t, expected, backward)
+	require.Same(t, list.first, next)
+}
+
+func TestChildListAdd(t *testing.T) {
+	children := []*orderCanceler{{index: 0}, {index: 1}, {index: 2}}
+	var list childList
+
+	assertChildList(t, &list, nil)
+	for i, child := range children {
+		list.add(child)
+		assertChildList(t, &list, children[:i+1])
+	}
+
+	list.add(children[1])
+	assertChildList(t, &list, children)
+}
+
+func TestChildListRemove(t *testing.T) {
+	tests := []struct {
+		name   string
+		remove int
+		remain []int
+	}{
+		{name: "head", remove: 0, remain: []int{1, 2}},
+		{name: "middle", remove: 1, remain: []int{0, 2}},
+		{name: "tail", remove: 2, remain: []int{0, 1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			children := []*orderCanceler{{index: 0}, {index: 1}, {index: 2}}
+			var list childList
+			for _, child := range children {
+				list.add(child)
+			}
+
+			removed := list.nodes[children[tt.remove]]
+			list.remove(children[tt.remove])
+			expected := make([]*orderCanceler, len(tt.remain))
+			for i, index := range tt.remain {
+				expected[i] = children[index]
+			}
+			assertChildList(t, &list, expected)
+			require.Nil(t, removed.prev)
+			require.Nil(t, removed.next)
+		})
+	}
+}
+
+func TestChildListRemoveRepeatedly(t *testing.T) {
+	children := []*orderCanceler{{index: 0}, {index: 1}, {index: 2}}
+	missing := &orderCanceler{index: 3}
+	var list childList
+	for _, child := range children {
+		list.add(child)
+	}
+
+	list.remove(missing)
+	list.remove(children[1])
+	list.remove(children[1])
+	assertChildList(t, &list, []*orderCanceler{children[0], children[2]})
+
+	list.remove(children[0])
+	assertChildList(t, &list, children[2:])
+
+	list.remove(children[2])
+	assertChildList(t, &list, nil)
+
+	list.add(children[1])
+	assertChildList(t, &list, children[1:2])
+}
+
 func TestContextCancelOrderWithFlag(t *testing.T) {
 	const childCount = 10
 
@@ -1994,7 +2102,6 @@ func TestContextCancelOrderAfterRemoval(t *testing.T) {
 	env := suite.NewTestWorkflowEnvironment()
 	env.impl.sdkFlags.set(SDKFlagOrderedChildCancel)
 
-	var linkedOrder []int
 	var cancelOrder []int
 	wf := func(ctx Context) error {
 		ctx, cancel := WithCancel(ctx)
@@ -2005,9 +2112,6 @@ func TestContextCancelOrderAfterRemoval(t *testing.T) {
 		}
 
 		removeChild(ctx, children[1])
-		for node := ctx.(*cancelCtx).firstChild; node != nil; node = node.next {
-			linkedOrder = append(linkedOrder, node.child.(*orderCanceler).index)
-		}
 		cancel()
 
 		return nil
@@ -2015,7 +2119,6 @@ func TestContextCancelOrderAfterRemoval(t *testing.T) {
 	env.RegisterWorkflow(wf)
 	env.ExecuteWorkflow(wf)
 	require.NoError(t, env.GetWorkflowError())
-	require.Equal(t, []int{0, 2}, linkedOrder)
 	require.Equal(t, []int{0, 2}, cancelOrder)
 }
 

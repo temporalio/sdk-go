@@ -218,19 +218,7 @@ func propagateCancel(parent Context, child canceler) {
 			child.cancel(false, parentErr)
 		} else {
 			p.childrenLock.Lock()
-			if p.children == nil {
-				p.children = make(map[canceler]*childNode)
-			}
-			if _, ok := p.children[child]; !ok {
-				node := &childNode{child: child, prev: p.lastChild}
-				if p.lastChild == nil {
-					p.firstChild = node
-				} else {
-					p.lastChild.next = node
-				}
-				p.lastChild = node
-				p.children[child] = node
-			}
+			p.children.add(child)
 			p.childrenLock.Unlock()
 		}
 	} else {
@@ -261,22 +249,7 @@ func removeChild(parent Context, child canceler) {
 		return
 	}
 	p.childrenLock.Lock()
-	node, ok := p.children[child]
-	if !ok {
-		p.childrenLock.Unlock()
-		return
-	}
-	delete(p.children, child)
-	if node.prev == nil {
-		p.firstChild = node.next
-	} else {
-		node.prev.next = node.next
-	}
-	if node.next == nil {
-		p.lastChild = node.prev
-	} else {
-		node.next.prev = node.prev
-	}
+	p.children.remove(child)
 	p.childrenLock.Unlock()
 }
 
@@ -295,6 +268,52 @@ type childNode struct {
 	next  *childNode
 }
 
+type childList struct {
+	nodes map[canceler]*childNode
+	first *childNode
+	last  *childNode
+}
+
+func (l *childList) add(child canceler) {
+	if l.nodes == nil {
+		l.nodes = make(map[canceler]*childNode)
+	}
+	if _, ok := l.nodes[child]; ok {
+		return
+	}
+
+	node := &childNode{child: child, prev: l.last}
+	if l.last == nil {
+		l.first = node
+	} else {
+		l.last.next = node
+	}
+	l.last = node
+	l.nodes[child] = node
+}
+
+func (l *childList) remove(child canceler) {
+	node, ok := l.nodes[child]
+	if !ok {
+		return
+	}
+
+	delete(l.nodes, child)
+	if node.prev == nil {
+		l.first = node.next
+	} else {
+		node.prev.next = node.next
+	}
+	if node.next == nil {
+		l.last = node.prev
+	} else {
+		node.next.prev = node.prev
+	}
+
+	node.prev = nil
+	node.next = nil
+}
+
 // A cancelCtx can be canceled.  When canceled, it also cancels any children
 // that implement canceler.
 type cancelCtx struct {
@@ -302,10 +321,10 @@ type cancelCtx struct {
 
 	done Channel // closed by the first cancel call.
 
-	// Keep the map for unflagged replay and the list for ordered cancellation.
-	children     map[canceler]*childNode
-	firstChild   *childNode
-	lastChild    *childNode
+	// children stores cancelable child contexts by identity and creation order.
+	// Legacy histories traverse the map; histories with [SDKFlagOrderedChildCancel]
+	// traverse the list.
+	children     childList
 	childrenLock sync.Mutex
 	err          error // set to non-nil by the first cancel call
 	errLock      sync.RWMutex
@@ -345,18 +364,15 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	c.done.Close()
 	c.childrenLock.Lock()
 	children := c.children
-	firstChild := c.firstChild
-	c.children = nil
-	c.firstChild = nil
-	c.lastChild = nil
+	c.children = childList{}
 	c.childrenLock.Unlock()
 	// Avoid recording the SDK flag when cancellation order cannot affect behavior.
-	if len(children) > 1 && GetWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
-		for node := firstChild; node != nil; node = node.next {
+	if len(children.nodes) > 1 && GetWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
+		for node := children.first; node != nil; node = node.next {
 			node.child.cancel(false, err)
 		}
 	} else {
-		for child := range children {
+		for child := range children.nodes {
 			child.cancel(false, err)
 		}
 	}
