@@ -6,13 +6,13 @@ import (
 	"sync"
 
 	enumspb "go.temporal.io/api/enums/v1"
-	"go.temporal.io/sdk/internal/common/metrics"
 )
 
 const (
 	// One queued sticky task does not justify suppressing normal polls.
-	minMeaningfulStickyBacklog  int64 = 2
-	invalidAdmissionKindMessage       = "workflow slot admission requires a normal or sticky queue kind"
+	minMeaningfulStickyBacklog           int64 = 2
+	invalidAdmissionKindMessage                = "workflow slot admission requires a normal or sticky queue kind"
+	inconsistentWorkflowAdmissionMessage       = "workflow pollers must share one slot admission coordinator"
 )
 
 // workflowSlotAdmission arbitrates normal and sticky polls before slot reservation.
@@ -23,10 +23,6 @@ type workflowSlotAdmission struct {
 	stickyBacklog int64
 	wakeCh        chan struct{}
 	mu            sync.Mutex
-}
-
-type autoscalingAdmissionPoller interface {
-	setAutoscalingAdmission(*workflowSlotAdmission)
 }
 
 func newWorkflowSlotAdmission(maxSlots int) *workflowSlotAdmission {
@@ -40,50 +36,6 @@ func newWorkflowSlotAdmission(maxSlots int) *workflowSlotAdmission {
 		maxSlots: maxSlots,
 		wakeCh:   make(chan struct{}),
 	}
-}
-
-// attachPollers configures exactly one autoscaling normal poller and one autoscaling sticky poller.
-// It reports whether the input contained that pair.
-func (a *workflowSlotAdmission) attachPollers(taskPollers []scalableTaskPoller) bool {
-	if len(taskPollers) != 2 {
-		return false
-	}
-
-	var normalWorker, stickyWorker *scalableTaskPoller
-	var stickyPoller autoscalingAdmissionPoller
-	for i := range taskPollers {
-		candidate := &taskPollers[i]
-		if candidate.autoscalingRunner == nil {
-			return false
-		}
-
-		switch candidate.taskPollerType {
-		case metrics.PollerTypeWorkflowTask:
-			if normalWorker != nil {
-				return false
-			}
-			normalWorker = candidate
-		case metrics.PollerTypeWorkflowStickyTask:
-			if stickyWorker != nil {
-				return false
-			}
-			poller, ok := candidate.taskPoller.(autoscalingAdmissionPoller)
-			if !ok {
-				return false
-			}
-			stickyWorker = candidate
-			stickyPoller = poller
-		default:
-			return false
-		}
-	}
-	if normalWorker == nil || stickyWorker == nil {
-		return false
-	}
-
-	// Only sticky poll responses update the backlog used for admission.
-	stickyPoller.setAutoscalingAdmission(a)
-	return true
 }
 
 // waitForAdmission blocks until kind may compete for a slot or ctx ends.

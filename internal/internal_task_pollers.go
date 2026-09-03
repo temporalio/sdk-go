@@ -411,7 +411,7 @@ func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
 	return workflowTask, nil
 }
 
-func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) taskPoller {
+func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		basePoller:                   wtp.basePoller,
 		mode:                         mode,
@@ -1247,10 +1247,6 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 	if wtp.autoscalingAdmission != nil {
 		wtp.autoscalingAdmission.setStickyBacklog(backlogCountHint)
 	}
-}
-
-func (wtp *workflowTaskPoller) setAutoscalingAdmission(admission *workflowSlotAdmission) {
-	wtp.autoscalingAdmission = admission
 }
 
 // getNextPollRequest returns appropriate next poll request based on poller configuration and mode.
