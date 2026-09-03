@@ -517,7 +517,7 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionPreservesBothQueueKinds()
 			newScalableTaskPoller(normal, ilog.NewNopLogger(), behavior, metrics.PollerTypeWorkflowTask, &atomic.Bool{}),
 			newScalableTaskPoller(sticky, ilog.NewNopLogger(), behavior, metrics.PollerTypeWorkflowStickyTask, &atomic.Bool{}),
 		}
-		admission := newWorkflowSlotAdmission(2)
+		admission := newTestWorkflowAdmission(2)
 		pollers[0].workflowAdmission = admission
 		pollers[0].admissionKind = enumspb.TASK_QUEUE_KIND_NORMAL
 		pollers[1].workflowAdmission = admission
@@ -1364,9 +1364,13 @@ func TestPollerBalancerBlocksWhenOtherTypeHasNoPollers(t *testing.T) {
 	})
 }
 
+func newTestWorkflowAdmission(maxSlots int) *workflowSlotAdmission {
+	return newWorkflowSlotAdmission(maxSlots, func() int64 { return int64(maxSlots) })
+}
+
 func TestWorkflowSlotAdmissionPreservesQueueKinds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		admission := newWorkflowSlotAdmission(2)
+		admission := newTestWorkflowAdmission(2)
 		admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
 
 		done := make(chan error, 1)
@@ -1392,7 +1396,7 @@ func TestWorkflowSlotAdmissionPreservesQueueKinds(t *testing.T) {
 
 func TestWorkflowSlotAdmissionPrefersStickyBacklog(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		admission := newWorkflowSlotAdmission(3)
+		admission := newTestWorkflowAdmission(3)
 		admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
 		admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
 		admission.setStickyBacklog(1)
@@ -1422,12 +1426,24 @@ func TestWorkflowSlotAdmissionPrefersStickyBacklog(t *testing.T) {
 	})
 }
 
+func TestWorkflowSlotAdmissionAllowsNormalAtStickyTarget(t *testing.T) {
+	admission := newWorkflowSlotAdmission(4, func() int64 { return 2 })
+	admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+	admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	admission.setStickyBacklog(10)
+
+	admission.mu.Lock()
+	defer admission.mu.Unlock()
+	require.True(t, admission.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
+}
+
 func TestWorkflowSlotAdmissionUnknownMaximum(t *testing.T) {
-	require.Nil(t, newWorkflowSlotAdmission(0))
+	require.Nil(t, newTestWorkflowAdmission(0))
 }
 
 func TestWorkflowSlotAdmissionCancellation(t *testing.T) {
-	admission := newWorkflowSlotAdmission(2)
+	admission := newTestWorkflowAdmission(2)
 	admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
 	admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
 	ctx, cancel := context.WithCancel(t.Context())
@@ -1437,7 +1453,7 @@ func TestWorkflowSlotAdmissionCancellation(t *testing.T) {
 }
 
 func TestWorkflowSlotAdmissionRejectsInvalidKind(t *testing.T) {
-	admission := newWorkflowSlotAdmission(2)
+	admission := newTestWorkflowAdmission(2)
 
 	err := admission.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
 
@@ -1445,7 +1461,7 @@ func TestWorkflowSlotAdmissionRejectsInvalidKind(t *testing.T) {
 }
 
 func TestWorkflowSlotAdmissionIgnoresInvalidKind(t *testing.T) {
-	admission := newWorkflowSlotAdmission(2)
+	admission := newTestWorkflowAdmission(2)
 
 	func() {
 		admission.mu.Lock()
@@ -1463,7 +1479,7 @@ func TestWorkflowSlotAdmissionIgnoresInvalidKind(t *testing.T) {
 
 func TestWorkflowSlotAdmissionStickyStartWakesNormal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		admission := newWorkflowSlotAdmission(4)
+		admission := newTestWorkflowAdmission(4)
 		admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
 		admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
 		admission.setStickyBacklog(2)
@@ -1489,7 +1505,7 @@ func TestWorkflowSlotAdmissionStickyStartWakesNormal(t *testing.T) {
 }
 
 func TestWorkflowSlotAdmissionIgnoresUnchangedBacklog(t *testing.T) {
-	admission := newWorkflowSlotAdmission(2)
+	admission := newTestWorkflowAdmission(2)
 	wakeCh := admission.wakeCh
 
 	admission.setStickyBacklog(0)
@@ -1540,7 +1556,7 @@ func (s *ScalableTaskPollerSuite) TestWorkflowSlotAdmissionConfiguration() {
 }
 
 func TestConfigurePollersRejectsInconsistentAdmission(t *testing.T) {
-	admission := newWorkflowSlotAdmission(2)
+	admission := newTestWorkflowAdmission(2)
 	testCases := map[string][]scalableTaskPoller{
 		"partial": {
 			{workflowAdmission: admission},
@@ -1548,7 +1564,7 @@ func TestConfigurePollersRejectsInconsistentAdmission(t *testing.T) {
 		},
 		"different": {
 			{workflowAdmission: admission},
-			{workflowAdmission: newWorkflowSlotAdmission(2)},
+			{workflowAdmission: newTestWorkflowAdmission(2)},
 		},
 	}
 
