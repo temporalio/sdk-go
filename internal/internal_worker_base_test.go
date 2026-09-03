@@ -620,7 +620,7 @@ func (p *blockingProbeTaskPoller) Close() {
 	}
 }
 
-func (*blockingProbeTaskPoller) setSlotAdmission(*workflowSlotAdmission) {}
+func (*blockingProbeTaskPoller) setAutoscalingAdmission(*workflowSlotAdmission) {}
 
 func eventuallyAutoscalingPollerState(t *testing.T, runner *autoscalingTaskPollerRunner, expectedActive int, msg string) {
 	require.Eventually(t, func() bool {
@@ -1548,8 +1548,8 @@ func (s *ScalableTaskPollerSuite) TestWorkflowSlotAdmissionConfiguration() {
 
 	require.NotNil(s.T(), bw.workflowAdmission)
 	require.Nil(s.T(), bw.pollerBalancer)
-	require.Nil(s.T(), normal.slotAdmission)
-	require.Same(s.T(), bw.workflowAdmission, sticky.slotAdmission)
+	require.Nil(s.T(), normal.autoscalingAdmission)
+	require.Same(s.T(), bw.workflowAdmission, sticky.autoscalingAdmission)
 
 	sticky.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, 3)
 	require.Equal(s.T(), int64(3), bw.workflowAdmission.stickyBacklog)
