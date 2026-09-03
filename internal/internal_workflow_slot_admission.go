@@ -25,8 +25,8 @@ type workflowSlotAdmission struct {
 	mu            sync.Mutex
 }
 
-type slotAdmissionPoller interface {
-	setSlotAdmission(*workflowSlotAdmission)
+type autoscalingAdmissionPoller interface {
+	setAutoscalingAdmission(*workflowSlotAdmission)
 }
 
 func newWorkflowSlotAdmission(maxSlots int) *workflowSlotAdmission {
@@ -50,7 +50,7 @@ func (a *workflowSlotAdmission) attachPollers(taskPollers []scalableTaskPoller) 
 	}
 
 	var normalWorker, stickyWorker *scalableTaskPoller
-	var stickyPoller slotAdmissionPoller
+	var stickyPoller autoscalingAdmissionPoller
 	for i := range taskPollers {
 		candidate := &taskPollers[i]
 		if candidate.autoscalingRunner == nil {
@@ -67,7 +67,7 @@ func (a *workflowSlotAdmission) attachPollers(taskPollers []scalableTaskPoller) 
 			if stickyWorker != nil {
 				return false
 			}
-			poller, ok := candidate.taskPoller.(slotAdmissionPoller)
+			poller, ok := candidate.taskPoller.(autoscalingAdmissionPoller)
 			if !ok {
 				return false
 			}
@@ -82,7 +82,7 @@ func (a *workflowSlotAdmission) attachPollers(taskPollers []scalableTaskPoller) 
 	}
 
 	// Only sticky poll responses update the backlog used for admission.
-	stickyPoller.setSlotAdmission(a)
+	stickyPoller.setAutoscalingAdmission(a)
 	return true
 }
 
