@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -477,4 +478,47 @@ func TestTransferTypeDataConverterWithoutDeadlockDetectionComposition(t *testing
 	var got stringTransferValue
 	require.NoError(t, options.DataConverter.FromPayload(payload, &got))
 	require.Equal(t, stringTransferValue{Value: "deadlock composition"}, got)
+}
+
+// TestSetClientDefaultsConcurrentWithClientRead guards against a data race.
+//
+// NewAggregatedWorker calls setClientDefaults on a client that may already be
+// serving other goroutines. An earlier version resolved client.dataConverter
+// unconditionally, so every worker.New wrote to that field while concurrent
+// client calls such as UpdateWorkflow read it, which failed the integration
+// suite under -race.
+//
+// The write stored the same pointer, because wrapping is idempotent, so only
+// the race detector can catch it. Comparing the field before and after cannot.
+func TestSetClientDefaultsConcurrentWithClientRead(t *testing.T) {
+	client := NewServiceClient(nil, nil, ClientOptions{
+		DataConverter: converter.GetDefaultDataConverter(),
+	})
+	requireInstalledTransferTypeDataConverter(
+		t, client.dataConverter, converter.GetDefaultDataConverter())
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			setClientDefaults(client)
+		}()
+		go func() {
+			defer wg.Done()
+			_ = WithContext(context.Background(), client.dataConverter)
+		}()
+	}
+	wg.Wait()
+}
+
+// TestSetClientDefaultsResolvesUnsetConverter covers the case setClientDefaults
+// still exists for: a client assembled directly rather than by NewServiceClient.
+func TestSetClientDefaultsResolvesUnsetConverter(t *testing.T) {
+	client := &WorkflowClient{}
+
+	setClientDefaults(client)
+
+	requireInstalledTransferTypeDataConverter(
+		t, client.dataConverter, converter.GetDefaultDataConverter())
 }

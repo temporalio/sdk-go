@@ -2905,8 +2905,18 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 }
 
 // setClientDefaults should be needed only in unit tests.
+//
+// Do not resolve client.dataConverter unconditionally. NewAggregatedWorker calls
+// this on a client that may already be serving other goroutines, so an
+// unconditional write races with client calls that read the field, such as
+// UpdateWorkflow. A client built by NewServiceClient already holds a resolved
+// converter, which makes the write both unnecessary and unsafe. Only a client
+// assembled directly, which happens in tests, still needs resolving, and that
+// happens before the client is shared.
 func setClientDefaults(client *WorkflowClient) {
-	client.dataConverter = effectiveDataConverter(client.dataConverter)
+	if _, ok := client.dataConverter.(*transferTypeDataConverter); !ok {
+		client.dataConverter = effectiveDataConverter(client.dataConverter)
+	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace
 	}
