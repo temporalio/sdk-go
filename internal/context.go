@@ -351,7 +351,7 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	c.lastChild = nil
 	c.childrenLock.Unlock()
 	// Avoid recording the SDK flag when cancellation order cannot affect behavior.
-	if len(children) > 1 && getWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
+	if len(children) > 1 && GetWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
 		for node := firstChild; node != nil; node = node.next {
 			node.child.cancel(false, err)
 		}
