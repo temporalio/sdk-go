@@ -1322,6 +1322,12 @@ func (w *workflowExecutionContextImpl) applyWorkflowPanicPolicy(workflowTask *wo
 		}
 	}
 
+	// ProcessLocalActivityResult surfaces marker-data encoding errors as
+	// workflowError rather than w.err, so honor the marker here too.
+	if codecErr, ok := codecWorkflowTaskFailureFrom(workflowError); ok {
+		return nil, codecErr
+	}
+
 	if workflowError != nil {
 		if panicErr, ok := w.err.(*workflowPanicError); ok {
 			w.wth.logger.Error("Workflow panic",
