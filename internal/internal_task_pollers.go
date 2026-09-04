@@ -1136,10 +1136,25 @@ func (wtp *workflowTaskPoller) release(kind enumspb.TaskQueueKind) {
 
 func (wtp *workflowTaskPoller) updateBacklog(
 	taskQueueKind enumspb.TaskQueueKind,
+	responseGroupID string,
 	backlogCountHint int64,
 ) {
-	if wtp.mode != Mixed || taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.stickyCacheSize <= 0 {
+	if taskQueueKind == enumspb.TASK_QUEUE_KIND_NORMAL || wtp.stickyCacheSize <= 0 {
 		// we only care about sticky backlog for now.
+		return
+	}
+	if wtp.autoscalingBalancer != nil {
+		if wtp.autoscalingBalancer.groupStore == nil {
+			wtp.autoscalingBalancer.setStickyBacklog(backlogCountHint)
+		} else {
+			wtp.autoscalingBalancer.setStickyGroupBacklog(
+				responseGroupID,
+				backlogCountHint,
+				wtp.autoscalingBalancer.groupStore.snapshot(),
+			)
+		}
+	}
+	if wtp.mode != Mixed {
 		return
 	}
 
@@ -1147,11 +1162,6 @@ func (wtp *workflowTaskPoller) updateBacklog(
 	wtp.requestLock.Lock()
 	wtp.mixedStickyBacklog = backlogCountHint
 	wtp.requestLock.Unlock()
-
-	// Split autoscaling pollers use the balancer to coordinate shared slots.
-	if wtp.autoscalingBalancer != nil {
-		wtp.autoscalingBalancer.setStickyBacklog(backlogCountHint)
-	}
 }
 
 // getNextPollRequest returns appropriate next poll request based on poller configuration and mode.
@@ -1247,10 +1257,16 @@ func (wtp *workflowTaskPoller) poll(
 
 	var request *workflowservice.PollWorkflowTaskQueueRequest
 	var queueKind enumspb.TaskQueueKind
-	if lease.owner != nil && lease.owner != wtp.pollerGroups {
+	var expectedOwner pollerGroupLeaseOwner
+	if wtp.autoscalingBalancer != nil {
+		expectedOwner = wtp.autoscalingBalancer
+	} else if wtp.pollerGroups != nil {
+		expectedOwner = wtp.pollerGroups
+	}
+	if lease.owner != nil && lease.owner != expectedOwner {
 		return nil, errors.New("workflow poller-group lease belongs to a different manager")
 	}
-	if wtp.pollerGroups != nil {
+	if lease.owner != nil || wtp.pollerGroups != nil {
 		queueKind = wtp.preferredQueueKind()
 		request = wtp.getPollRequestForKind(queueKind)
 		request.PollerGroupId = lease.groupIDOrEmpty()
@@ -1262,7 +1278,6 @@ func (wtp *workflowTaskPoller) poll(
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
 	if err != nil {
-		wtp.updateBacklog(queueKind, 0)
 		return nil, err
 	}
 
@@ -1273,7 +1288,7 @@ func (wtp *workflowTaskPoller) poll(
 	if response == nil || len(response.TaskToken) == 0 {
 		// Emit using base scope as no workflow type information is available in the case of empty poll
 		wtp.metricsHandler.Counter(metrics.WorkflowTaskQueuePollEmptyCounter).Inc(1)
-		wtp.updateBacklog(queueKind, response.GetBacklogCountHint())
+		wtp.updateBacklog(queueKind, response.GetPollerGroupId(), response.GetBacklogCountHint())
 		return &workflowTask{}, nil
 	}
 
@@ -1283,7 +1298,7 @@ func (wtp *workflowTaskPoller) poll(
 		wtp.pollTimeTracker.recordPollSuccess(metrics.PollerTypeWorkflowTask)
 	}
 
-	wtp.updateBacklog(queueKind, response.GetBacklogCountHint())
+	wtp.updateBacklog(queueKind, response.GetPollerGroupId(), response.GetBacklogCountHint())
 
 	task := wtp.toWorkflowTask(response)
 	traceLog(func() {

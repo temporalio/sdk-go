@@ -247,22 +247,30 @@ func TestWorkflowPollUsesPreReservedRunnerQueueKind(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
 	const (
-		namespace = "test-ns"
-		taskQueue = "test-task-queue"
-		groupID   = "poller-group"
+		namespace       = "test-ns"
+		taskQueue       = "test-task-queue"
+		requestGroupID  = "request-group"
+		responseGroupID = "response-group"
 	)
-	pollerGroups := newTestPollerGroupManager()
-	pollerGroups.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
-		{Id: groupID, Weight: 1},
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: requestGroupID, Weight: 1},
+		{Id: responseGroupID, Weight: 0},
 	}))
-	lease := pollerGroups.reserve()
+	balancer := newTestWorkflowAutoscalingBalancer(4)
+	balancer.groupStore = groupStore
+	lease, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
 	defer lease.release()
 
 	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
-			require.Equal(t, groupID, req.GetPollerGroupId())
+			require.Equal(t, requestGroupID, req.GetPollerGroupId())
 			require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, req.GetTaskQueue().GetKind())
-			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+			return &workflowservice.PollWorkflowTaskQueueResponse{
+				PollerGroupId:    responseGroupID,
+				BacklogCountHint: 2,
+			}, nil
 		})
 
 	poller := &workflowTaskPoller{
@@ -278,7 +286,7 @@ func TestWorkflowPollUsesPreReservedRunnerQueueKind(t *testing.T) {
 		logger:                ilog.NewDefaultLogger(),
 		stickyUUID:            "sticky-worker",
 		stickyCacheSize:       1,
-		pollerGroups:          pollerGroups,
+		autoscalingBalancer:   balancer,
 		numNormalPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowTask),
 		numStickyPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowStickyTask),
 	}
@@ -286,6 +294,8 @@ func TestWorkflowPollUsesPreReservedRunnerQueueKind(t *testing.T) {
 	task, err := poller.PollTask(lease)
 	require.NoError(t, err)
 	require.True(t, task.isEmpty())
+	require.Zero(t, balancer.groups[requestGroupID].stickyBacklog)
+	require.Equal(t, int64(2), balancer.groups[responseGroupID].stickyBacklog)
 }
 
 func TestWorkflowPollRejectsLeaseFromDifferentManager(t *testing.T) {
@@ -301,6 +311,65 @@ func TestWorkflowPollRejectsLeaseFromDifferentManager(t *testing.T) {
 		owner: newTestPollerGroupManager(),
 	})
 	require.EqualError(t, err, "workflow poller-group lease belongs to a different manager")
+}
+
+func TestWorkflowStickyBacklogTracksPollerGroups(t *testing.T) {
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+		{Id: "group-b", Weight: 1},
+	}))
+	balancer := newTestWorkflowAutoscalingBalancer(3)
+	balancer.groupStore = groupStore
+	poller := &workflowTaskPoller{
+		mode:                Sticky,
+		stickyCacheSize:     1,
+		autoscalingBalancer: balancer,
+	}
+
+	poller.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, "group-a", 1)
+	poller.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, "group-b", 2)
+	require.Equal(t, int64(1), balancer.groups["group-a"].stickyBacklog)
+	require.Equal(t, int64(2), balancer.groups["group-b"].stickyBacklog)
+
+	poller.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, "group-a", 0)
+	require.Zero(t, balancer.groups["group-a"].stickyBacklog)
+	require.Equal(t, int64(2), balancer.groups["group-b"].stickyBacklog)
+}
+
+func TestWorkflowPollErrorRetainsStickyBacklog(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, errors.New("poll failed"))
+
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	}))
+	balancer := newTestWorkflowAutoscalingBalancer(2)
+	balancer.groupStore = groupStore
+	balancer.setStickyGroupBacklog("group-a", 3, groupStore.snapshot())
+	poller := &workflowTaskPoller{
+		basePoller: basePoller{
+			metricsHandler:  metrics.NopHandler,
+			workerBuildID:   "test-build-id",
+			pollTimeTracker: &pollTimeTracker{},
+		},
+		mode:                  Sticky,
+		taskQueueName:         "task-queue",
+		service:               service,
+		stickyCacheSize:       1,
+		autoscalingBalancer:   balancer,
+		numStickyPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowStickyTask),
+	}
+	lease, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer lease.release()
+
+	_, err = poller.poll(t.Context(), lease)
+	require.EqualError(t, err, "poll failed")
+	require.Equal(t, int64(3), balancer.groups["group-a"].stickyBacklog)
 }
 
 // This test simulates a namespace going from non-MCN to MCN
