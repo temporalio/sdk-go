@@ -35,16 +35,100 @@ type countingTaskHandler struct {
 
 func TestLocalActivityTaskPollerReturnsNilWhenTunnelStops(t *testing.T) {
 	stopCh := make(chan struct{})
+	tunnel := newLocalActivityTunnel(stopCh)
+	queuedTasks := []*localActivityTask{{}, {}}
+	require.True(t, tunnel.sendTask(queuedTasks[0]))
+	require.True(t, tunnel.sendTask(queuedTasks[1]))
 	close(stopCh)
 	poller := &localActivityTaskPoller{
-		laTunnel: newLocalActivityTunnel(stopCh),
+		laTunnel: tunnel,
 	}
 
+	require.False(t, tunnel.sendTask(&localActivityTask{}))
 	task, err := poller.PollTask()
 	require.NoError(t, err)
 	if task != nil {
 		t.Fatalf("PollTask() returned a non-nil task of type %T", task)
 	}
+	require.Nil(t, tunnel.taskQueueHead)
+	require.Nil(t, tunnel.taskQueueTail)
+	for _, task := range queuedTasks {
+		require.Nil(t, task.nextQueuedTask)
+	}
+}
+
+func TestLocalActivityTunnelTaskQueueGrowsWithDemand(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer func() {
+		select {
+		case <-stopCh:
+		default:
+			close(stopCh)
+		}
+	}()
+	tunnel := newLocalActivityTunnel(stopCh)
+	const taskCount = 100001
+	tasks := make([]localActivityTask, taskCount)
+
+	enqueueDone := make(chan bool, 1)
+	go func() {
+		for i := range tasks {
+			if !tunnel.sendTask(&tasks[i]) {
+				enqueueDone <- false
+				return
+			}
+		}
+		enqueueDone <- true
+	}()
+
+	timer := time.NewTimer(10 * time.Second)
+	defer timer.Stop()
+	select {
+	case completed := <-enqueueDone:
+		require.True(t, completed)
+	case <-timer.C:
+		close(stopCh)
+		t.Fatal("local activity task submission blocked without a consumer")
+	}
+
+	for i := range tasks {
+		if received := tunnel.getTask(); received != &tasks[i] {
+			t.Fatalf("getTask() returned task %p, want %p", received, &tasks[i])
+		}
+		require.Nil(t, tasks[i].nextQueuedTask)
+	}
+	require.Nil(t, tunnel.taskQueueHead)
+	require.Nil(t, tunnel.taskQueueTail)
+}
+
+func TestLocalActivityTunnelTaskQueuePreservesOrder(t *testing.T) {
+	stopCh := make(chan struct{})
+	defer close(stopCh)
+	tunnel := newLocalActivityTunnel(stopCh)
+	tasks := make([]*localActivityTask, 32)
+	for i := range tasks {
+		tasks[i] = &localActivityTask{}
+	}
+
+	for _, task := range tasks[:16] {
+		require.True(t, tunnel.sendTask(task))
+	}
+	for _, task := range tasks[:10] {
+		require.Same(t, task, tunnel.getTask())
+	}
+	for _, task := range tasks[16:] {
+		require.True(t, tunnel.sendTask(task))
+	}
+	for _, task := range tasks[10:] {
+		require.Same(t, task, tunnel.getTask())
+		require.Nil(t, task.nextQueuedTask)
+	}
+	require.Nil(t, tunnel.taskQueueHead)
+	require.Nil(t, tunnel.taskQueueTail)
+
+	require.True(t, tunnel.sendTask(tasks[0]))
+	require.Same(t, tasks[0], tunnel.getTask())
+	require.Nil(t, tasks[0].nextQueuedTask)
 }
 
 func (wth *countingTaskHandler) ProcessWorkflowTask(

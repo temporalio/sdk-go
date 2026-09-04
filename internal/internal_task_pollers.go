@@ -228,8 +228,13 @@ type (
 	}
 
 	localActivityTunnel struct {
-		taskCh   chan *localActivityTask
-		resultCh chan eagerOrPolledTask
+		// Task submission cannot wait for execution capacity because the submitting
+		// workflow task is also responsible for receiving local activity results.
+		taskQueueMu   sync.Mutex
+		taskQueueHead *localActivityTask
+		taskQueueTail *localActivityTask
+		taskReadyCh   chan struct{}
+		resultCh      chan eagerOrPolledTask
 		// stopCh is a read-only view of workflowWorker.localActivityStopC.
 		// It is closed by workflowWorker.Stop() after the workflow worker stops,
 		// causing tunnel sends/receives to stop accepting local activity work.
@@ -262,28 +267,89 @@ func (npm *numPollerMetric) decrement() {
 
 func newLocalActivityTunnel(stopCh <-chan struct{}) *localActivityTunnel {
 	return &localActivityTunnel{
-		taskCh:   make(chan *localActivityTask, 100000),
-		resultCh: make(chan eagerOrPolledTask),
-		stopCh:   stopCh,
+		taskReadyCh: make(chan struct{}, 1),
+		resultCh:    make(chan eagerOrPolledTask),
+		stopCh:      stopCh,
 	}
 }
 
 func (lat *localActivityTunnel) getTask() *localActivityTask {
-	select {
-	case task := <-lat.taskCh:
-		return task
-	case <-lat.stopCh:
-		return nil
+	for {
+		select {
+		case <-lat.stopCh:
+			lat.clearTasks()
+			return nil
+		default:
+		}
+
+		lat.taskQueueMu.Lock()
+		if lat.taskQueueHead != nil {
+			task := lat.taskQueueHead
+			lat.taskQueueHead = task.nextQueuedTask
+			task.nextQueuedTask = nil
+			hasMore := lat.taskQueueHead != nil
+			if !hasMore {
+				lat.taskQueueTail = nil
+			}
+			lat.taskQueueMu.Unlock()
+			if hasMore {
+				lat.notifyTaskReady()
+			}
+			return task
+		}
+		lat.taskQueueMu.Unlock()
+
+		select {
+		case <-lat.taskReadyCh:
+		case <-lat.stopCh:
+			lat.clearTasks()
+			return nil
+		}
 	}
 }
 
 func (lat *localActivityTunnel) sendTask(task *localActivityTask) bool {
 	select {
-	case lat.taskCh <- task:
-		return true
 	case <-lat.stopCh:
 		return false
+	default:
 	}
+
+	lat.taskQueueMu.Lock()
+	select {
+	case <-lat.stopCh:
+		lat.taskQueueMu.Unlock()
+		return false
+	default:
+	}
+	if lat.taskQueueTail == nil {
+		lat.taskQueueHead = task
+	} else {
+		lat.taskQueueTail.nextQueuedTask = task
+	}
+	lat.taskQueueTail = task
+	lat.taskQueueMu.Unlock()
+
+	lat.notifyTaskReady()
+	return true
+}
+
+func (lat *localActivityTunnel) notifyTaskReady() {
+	select {
+	case lat.taskReadyCh <- struct{}{}:
+	default:
+	}
+}
+
+func (lat *localActivityTunnel) clearTasks() {
+	lat.taskQueueMu.Lock()
+	for lat.taskQueueHead != nil {
+		task := lat.taskQueueHead
+		lat.taskQueueHead = task.nextQueuedTask
+		task.nextQueuedTask = nil
+	}
+	lat.taskQueueTail = nil
+	lat.taskQueueMu.Unlock()
 }
 
 func isClientSideError(err error) bool {
