@@ -586,14 +586,6 @@ func (p *proxyClientOutbound) UnpauseActivity(
 	return
 }
 
-func (p *proxyClientOutbound) ResetActivity(
-	ctx context.Context,
-	in *interceptor.ClientResetActivityInput,
-) (err error) {
-	err, _ = p.invoke(ctx, in)[0].Interface().(error)
-	return
-}
-
 func (p *proxyClientOutbound) UpdateActivityOptions(
 	ctx context.Context,
 	in *interceptor.ClientUpdateActivityOptionsInput,

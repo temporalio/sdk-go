@@ -1041,11 +1041,6 @@ type (
 	// NOTE: Experimental
 	UnpauseActivityOptions = internal.ClientUnpauseActivityOptions
 
-	// ResetActivityOptions contains options for ClientActivityHandle.Reset call.
-	//
-	// NOTE: Experimental
-	ResetActivityOptions = internal.ClientResetActivityOptions
-
 	// ActivityOptions describes the options an activity is currently running with, as returned
 	// by ActivityHandle.UpdateOptions and ActivityHandle.RestoreOriginalOptions.
 	//

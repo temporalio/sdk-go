@@ -232,12 +232,6 @@ type ClientPauseActivityInput = internal.ClientPauseActivityInput
 // NOTE: Experimental
 type ClientUnpauseActivityInput = internal.ClientUnpauseActivityInput
 
-// ClientResetActivityInput is the input to
-// ClientOutboundInterceptor.ResetActivity.
-//
-// NOTE: Experimental
-type ClientResetActivityInput = internal.ClientResetActivityInput
-
 // ClientUpdateActivityOptionsInput is the input to
 // ClientOutboundInterceptor.UpdateActivityOptions.
 //

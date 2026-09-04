@@ -37,7 +37,7 @@ to docs, or any other relevant information.
 #### Standalone Activity operator commands
 
 - `client.ActivityHandle` now supports operator commands for standalone activities: `Pause`,
-  `Unpause`, `Reset`, `UpdateOptions` and `RestoreOriginalOptions`.
+  `Unpause`, `UpdateOptions` and `RestoreOriginalOptions`.
 - Added opt-in payload fields to `client.DescribeActivityOptions`: `IncludeInput`,
   `IncludeOutcome`, `IncludeHeartbeatDetails` and `IncludeLastFailure`.
 - Added missing description fields: `ExecutionTime` and `TotalHeartbeatCount`.

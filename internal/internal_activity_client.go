@@ -215,10 +215,6 @@ type (
 		Pause(ctx context.Context, options ClientPauseActivityOptions) error
 		// Unpause resumes a paused activity. Unpausing an activity that is not paused is a no-op.
 		Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error
-		// Reset returns the activity to its first attempt, discarding retry state. If an attempt
-		// is currently running, that attempt is asked to yield and the reset is applied once it
-		// does.
-		Reset(ctx context.Context, options ClientResetActivityOptions) error
 		// UpdateOptions changes some of the activity's options, leaving the rest untouched, and
 		// returns the options as they stand after the update. At least one change must be set.
 		UpdateOptions(ctx context.Context, updates ...ClientActivityOptionsUpdate) (*ClientActivityOptions, error)
@@ -282,25 +278,6 @@ type (
 		// Jitter, if non-zero, delays the next attempt by a random duration in [0, Jitter). Use it
 		// to spread the load of unpausing many activities at once.
 		Jitter time.Duration
-	}
-
-	// ClientResetActivityOptions contains options for ClientActivityHandle.Reset call.
-	//
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/client.ResetActivityOptions]
-	ClientResetActivityOptions struct {
-		// KeepPaused leaves a paused activity paused after the reset. By default a reset also
-		// unpauses.
-		KeepPaused bool
-		// Jitter, if non-zero, delays the next attempt by a random duration in [0, Jitter).
-		Jitter time.Duration
-		// RestoreOriginalOptions reverts any options changed by UpdateOptions back to the values
-		// the activity was scheduled with.
-		RestoreOriginalOptions bool
-		// ResetHeartbeat discards the persisted heartbeat details instead of carrying them into
-		// the new attempt. Off by default.
-		ResetHeartbeat bool
 	}
 
 	// ClientActivityOptions describes the options an activity is currently running with. It is
@@ -771,20 +748,6 @@ func (h *clientActivityHandleImpl) Unpause(ctx context.Context, options ClientUn
 	})
 }
 
-func (h *clientActivityHandleImpl) Reset(ctx context.Context, options ClientResetActivityOptions) error {
-	if err := h.client.ensureInitialized(ctx); err != nil {
-		return err
-	}
-	return h.client.interceptor.ResetActivity(ctx, &ClientResetActivityInput{
-		ActivityID:             h.id,
-		RunID:                  h.runID,
-		KeepPaused:             options.KeepPaused,
-		Jitter:                 options.Jitter,
-		RestoreOriginalOptions: options.RestoreOriginalOptions,
-		ResetHeartbeat:         options.ResetHeartbeat,
-	})
-}
-
 func (h *clientActivityHandleImpl) UpdateOptions(
 	ctx context.Context,
 	updates ...ClientActivityOptionsUpdate,
@@ -1242,30 +1205,6 @@ func (w *workflowClientInterceptor) UnpauseActivity(
 		request.Jitter = durationpb.New(in.Jitter)
 	}
 	_, err := w.client.WorkflowService().UnpauseActivityExecution(grpcCtx, request)
-	return err
-}
-
-func (w *workflowClientInterceptor) ResetActivity(
-	ctx context.Context,
-	in *ClientResetActivityInput,
-) error {
-	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
-	defer cancel()
-
-	request := &workflowservice.ResetActivityExecutionRequest{
-		Namespace:              w.client.namespace,
-		ActivityId:             in.ActivityID,
-		RunId:                  in.RunID,
-		Identity:               w.client.identity,
-		RequestId:              uuid.NewString(),
-		KeepPaused:             in.KeepPaused,
-		RestoreOriginalOptions: in.RestoreOriginalOptions,
-		ResetHeartbeat:         in.ResetHeartbeat,
-	}
-	if in.Jitter != 0 {
-		request.Jitter = durationpb.New(in.Jitter)
-	}
-	_, err := w.client.WorkflowService().ResetActivityExecution(grpcCtx, request)
 	return err
 }
 

@@ -3337,10 +3337,9 @@ func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
 	ts.NoError(err)
 	_, err = handle4.RestoreOriginalOptions(ctx)
 	ts.NoError(err)
-	ts.NoError(handle4.Reset(ctx, client.ResetActivityOptions{}))
 	ts.NoError(handle4.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 
-	// Verify all 10 interceptor methods were called
+	// Verify all 9 interceptor methods were called
 	expectedCalls := []string{
 		"ClientOutboundInterceptor.ExecuteActivity",
 		"ClientOutboundInterceptor.GetActivityHandle",
@@ -3350,7 +3349,6 @@ func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
 		"ClientOutboundInterceptor.PollActivityResult",
 		"ClientOutboundInterceptor.PauseActivity",
 		"ClientOutboundInterceptor.UnpauseActivity",
-		"ClientOutboundInterceptor.ResetActivity",
 		"ClientOutboundInterceptor.UpdateActivityOptions",
 	}
 

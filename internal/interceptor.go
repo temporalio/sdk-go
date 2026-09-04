@@ -458,11 +458,6 @@ type ClientOutboundInterceptor interface {
 	// NOTE: Experimental
 	UnpauseActivity(context.Context, *ClientUnpauseActivityInput) error
 
-	// ResetActivity intercepts client.ActivityHandle.Reset.
-	//
-	// NOTE: Experimental
-	ResetActivity(context.Context, *ClientResetActivityInput) error
-
 	// UpdateActivityOptions intercepts client.ActivityHandle.UpdateOptions and
 	// client.ActivityHandle.RestoreOriginalOptions.
 	//
@@ -782,27 +777,6 @@ type ClientUnpauseActivityInput struct {
 	Reason string
 	// Jitter, if non-zero, delays the next attempt by a random duration in [0, Jitter).
 	Jitter time.Duration
-}
-
-// ClientResetActivityInput is the input to
-// ClientOutboundInterceptor.ResetActivity.
-//
-// NOTE: Experimental
-//
-// Exposed as: [go.temporal.io/sdk/interceptor.ClientResetActivityInput]
-type ClientResetActivityInput struct {
-	// ActivityID is the ID of the activity.
-	ActivityID string
-	// RunID is the run ID of the activity to reset.
-	RunID string
-	// KeepPaused leaves a paused activity paused after the reset.
-	KeepPaused bool
-	// Jitter, if non-zero, delays the next attempt by a random duration in [0, Jitter).
-	Jitter time.Duration
-	// RestoreOriginalOptions reverts options changed by UpdateOptions.
-	RestoreOriginalOptions bool
-	// ResetHeartbeat discards the persisted heartbeat details.
-	ResetHeartbeat bool
 }
 
 // ClientUpdateActivityOptionsInput is the input to

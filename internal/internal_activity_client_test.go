@@ -212,7 +212,6 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 
 	var pause *workflowservice.PauseActivityExecutionRequest
 	var unpause *workflowservice.UnpauseActivityExecutionRequest
-	var reset *workflowservice.ResetActivityExecutionRequest
 
 	service.EXPECT().PauseActivityExecution(gomock.Any(), gomock.Any()).
 		DoAndReturn(func(_ context.Context, req *workflowservice.PauseActivityExecutionRequest, _ ...any) (*workflowservice.PauseActivityExecutionResponse, error) {
@@ -223,11 +222,6 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 		DoAndReturn(func(_ context.Context, req *workflowservice.UnpauseActivityExecutionRequest, _ ...any) (*workflowservice.UnpauseActivityExecutionResponse, error) {
 			unpause = req
 			return &workflowservice.UnpauseActivityExecutionResponse{}, nil
-		}).AnyTimes()
-	service.EXPECT().ResetActivityExecution(gomock.Any(), gomock.Any()).
-		DoAndReturn(func(_ context.Context, req *workflowservice.ResetActivityExecutionRequest, _ ...any) (*workflowservice.ResetActivityExecutionResponse, error) {
-			reset = req
-			return &workflowservice.ResetActivityExecutionResponse{}, nil
 		}).AnyTimes()
 
 	handle := client.GetActivityHandle(ClientGetActivityHandleOptions{
@@ -240,18 +234,14 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 		Reason: "unpause-reason",
 		Jitter: 5 * time.Second,
 	}))
-	require.NoError(t, handle.Reset(ctx, ClientResetActivityOptions{Jitter: 7 * time.Second}))
 	require.Equal(t, "pause-reason", pause.GetReason())
 	require.Equal(t, "unpause-reason", unpause.GetReason())
 	require.Equal(t, 5*time.Second, unpause.GetJitter().AsDuration())
-	require.Equal(t, 7*time.Second, reset.GetJitter().AsDuration())
 
 	// A zero jitter is left off the wire rather than sent as an explicit zero duration, so the
 	// server applies its own default instead of "no jitter".
 	require.NoError(t, handle.Unpause(ctx, ClientUnpauseActivityOptions{}))
 	require.Nil(t, unpause.GetJitter())
-	require.NoError(t, handle.Reset(ctx, ClientResetActivityOptions{}))
-	require.Nil(t, reset.GetJitter())
 }
 
 // TestInterceptorReceivesCommandArguments asserts the values a caller passes reach the
@@ -263,8 +253,6 @@ func TestInterceptorReceivesCommandArguments(t *testing.T) {
 		Return(&workflowservice.PauseActivityExecutionResponse{}, nil).AnyTimes()
 	service.EXPECT().UnpauseActivityExecution(gomock.Any(), gomock.Any()).
 		Return(&workflowservice.UnpauseActivityExecutionResponse{}, nil).AnyTimes()
-	service.EXPECT().ResetActivityExecution(gomock.Any(), gomock.Any()).
-		Return(&workflowservice.ResetActivityExecutionResponse{}, nil).AnyTimes()
 
 	client := NewServiceClient(service, nil, ClientOptions{})
 	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
@@ -278,17 +266,10 @@ func TestInterceptorReceivesCommandArguments(t *testing.T) {
 		Reason: "unpause-reason",
 		Jitter: 5 * time.Second,
 	}))
-	require.NoError(t, handle.Reset(ctx, ClientResetActivityOptions{
-		KeepPaused:     true,
-		ResetHeartbeat: true,
-	}))
 
 	require.Equal(t, "pause-reason", recorder.pauseIn.Reason)
 	require.Equal(t, "unpause-reason", recorder.unpauseIn.Reason)
 	require.Equal(t, 5*time.Second, recorder.unpauseIn.Jitter)
-	require.True(t, recorder.resetIn.KeepPaused)
-	require.True(t, recorder.resetIn.ResetHeartbeat)
-	require.False(t, recorder.resetIn.RestoreOriginalOptions)
 }
 
 // TestUpdateActivityOptionsRestoreIsExclusive asserts the guard the handle cannot reach: the
@@ -310,51 +291,10 @@ func TestUpdateActivityOptionsRestoreIsExclusive(t *testing.T) {
 	require.ErrorContains(t, err, "cannot be combined")
 }
 
-func TestResetActivityFlagsReachRequest(t *testing.T) {
-	resetWith := func(t *testing.T, options ClientResetActivityOptions) *workflowservice.ResetActivityExecutionRequest {
-		t.Helper()
-		service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
-		client := NewServiceClient(service, nil, ClientOptions{})
-		client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
-
-		var request *workflowservice.ResetActivityExecutionRequest
-		service.EXPECT().
-			ResetActivityExecution(gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, req *workflowservice.ResetActivityExecutionRequest, _ ...any) (*workflowservice.ResetActivityExecutionResponse, error) {
-				request = req
-				return &workflowservice.ResetActivityExecutionResponse{}, nil
-			})
-
-		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
-		require.NoError(t, handle.Reset(t.Context(), options))
-		return request
-	}
-
-	t.Run("all flags default off", func(t *testing.T) {
-		request := resetWith(t, ClientResetActivityOptions{})
-		require.False(t, request.GetKeepPaused())
-		require.False(t, request.GetRestoreOriginalOptions())
-		require.False(t, request.GetResetHeartbeat())
-	})
-
-	t.Run("each flag is forwarded", func(t *testing.T) {
-		request := resetWith(t, ClientResetActivityOptions{
-			KeepPaused:             true,
-			RestoreOriginalOptions: true,
-			ResetHeartbeat:         true,
-		})
-		require.True(t, request.GetKeepPaused())
-		require.True(t, request.GetRestoreOriginalOptions())
-		require.True(t, request.GetResetHeartbeat())
-	})
-}
-
-// counts UpdateActivityOptions calls
 type recordingOutboundInterceptor struct {
 	updateCalls int
 	pauseIn     *ClientPauseActivityInput
 	unpauseIn   *ClientUnpauseActivityInput
-	resetIn     *ClientResetActivityInput
 	updateIn    *ClientUpdateActivityOptionsInput
 }
 
@@ -384,11 +324,6 @@ func (r *recordingOutbound) PauseActivity(ctx context.Context, in *ClientPauseAc
 func (r *recordingOutbound) UnpauseActivity(ctx context.Context, in *ClientUnpauseActivityInput) error {
 	r.parent.unpauseIn = in
 	return r.ClientOutboundInterceptorBase.UnpauseActivity(ctx, in)
-}
-
-func (r *recordingOutbound) ResetActivity(ctx context.Context, in *ClientResetActivityInput) error {
-	r.parent.resetIn = in
-	return r.ClientOutboundInterceptorBase.ResetActivity(ctx, in)
 }
 
 func TestExecuteActivityFromNexusRequestUsesStableRequestID(t *testing.T) {

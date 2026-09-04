@@ -112,37 +112,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 	})
 
-	ts.Run("Reset returns to the first attempt", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-		defer cancel()
-
-		handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
-			ID:                  newID(),
-			TaskQueue:           ts.taskQueueName,
-			StartToCloseTimeout: 60 * time.Second,
-			RetryPolicy: &temporal.RetryPolicy{
-				InitialInterval:    200 * time.Millisecond,
-				BackoffCoefficient: 1.0,
-				MaximumInterval:    200 * time.Millisecond,
-				MaximumAttempts:    50,
-			},
-		}, opFailThenSucceedActivity)
-		ts.NoError(err)
-
-		ts.Eventually(func() bool {
-			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
-			return err == nil && description.Attempt > 1
-		}, 20*time.Second, 200*time.Millisecond)
-
-		ts.NoError(handle.Reset(ctx, client.ResetActivityOptions{}))
-
-		ts.Eventually(func() bool {
-			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
-			return err == nil && description.Attempt == 1
-		}, 20*time.Second, 200*time.Millisecond)
-		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
-	})
-
 	ts.Run("Describe reports a paused activity as paused", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
@@ -281,48 +250,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.True(isPaused(description.RunState))
 		// The new value is visible on a fresh describe, not just in the update's return value.
 		ts.Equal(99*time.Second, description.StartToCloseTimeout)
-		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
-	})
-
-	ts.Run("Reset keeps the activity paused", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-		defer cancel()
-
-		handle := startRunningSlowActivity(ctx, nil)
-		ts.NoError(handle.Pause(ctx, client.PauseActivityOptions{Reason: "hold"}))
-		awaitPaused(ctx, handle)
-
-		ts.NoError(handle.Reset(ctx, client.ResetActivityOptions{KeepPaused: true}))
-
-		description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
-		ts.NoError(err)
-		ts.True(isPaused(description.RunState))
-		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
-	})
-
-	ts.Run("Reset restores the original options", func() {
-		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
-		defer cancel()
-
-		// Start delayed so the restore is applied immediately.
-		handle, err := ts.client.ExecuteActivity(ctx, client.StartActivityOptions{
-			ID:                  newID(),
-			TaskQueue:           ts.taskQueueName,
-			StartToCloseTimeout: 45 * time.Second,
-			StartDelay:          300 * time.Second,
-		}, opQuickActivity)
-		ts.NoError(err)
-
-		_, err = handle.UpdateOptions(ctx,
-			client.ActivityOptionsKeys.StartToCloseTimeout.ValueSet(90*time.Second))
-		ts.NoError(err)
-
-		ts.NoError(handle.Reset(ctx, client.ResetActivityOptions{RestoreOriginalOptions: true}))
-
-		ts.Eventually(func() bool {
-			description, err := handle.Describe(ctx, client.DescribeActivityOptions{})
-			return err == nil && description.StartToCloseTimeout == 45*time.Second
-		}, 20*time.Second, 200*time.Millisecond)
 		ts.NoError(handle.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
 	})
 
