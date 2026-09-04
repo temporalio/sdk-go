@@ -486,7 +486,7 @@ func buildWorkflowScalableTaskPollers(
 ) []scalableTaskPoller {
 	switch behavior.(type) {
 	case *pollerBehaviorAutoscaling:
-		normal := newScalableTaskPoller(
+		normalScalablePoller := newScalableTaskPoller(
 			taskProcessor.createPoller(NonSticky),
 			params.Logger,
 			behavior,
@@ -494,27 +494,26 @@ func buildWorkflowScalableTaskPollers(
 			params.serverSupportsAutoscaling,
 		)
 		if taskProcessor.stickyCacheSize <= 0 {
-			return []scalableTaskPoller{normal}
+			return []scalableTaskPoller{normalScalablePoller}
 		}
 
-		stickyPoller := taskProcessor.createPoller(Sticky)
-		sticky := newScalableTaskPoller(
-			stickyPoller,
+		stickyTaskPoller := taskProcessor.createPoller(Sticky)
+		stickyScalablePoller := newScalableTaskPoller(
+			stickyTaskPoller,
 			params.Logger,
 			behavior,
 			metrics.PollerTypeWorkflowStickyTask,
 			params.serverSupportsAutoscaling,
 		)
-		admission := newWorkflowSlotAdmission(maxSlots, sticky.pollerAutoscaler.target.Load)
-		if admission != nil {
-			normal.workflowAdmission = admission
-			normal.admissionKind = enumspb.TASK_QUEUE_KIND_NORMAL
-			sticky.workflowAdmission = admission
-			sticky.admissionKind = enumspb.TASK_QUEUE_KIND_STICKY
-			stickyPoller.autoscalingAdmission = admission
-		}
+		balancer := newWorkflowAutoscalingBalancer(maxSlots, stickyScalablePoller.pollerAutoscaler.target.Load)
+		normalScalablePoller.autoscalingBalancer = balancer
+		normalScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_NORMAL
+		stickyScalablePoller.autoscalingBalancer = balancer
+		stickyScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_STICKY
+		// Sticky poll responses send backlog hints to the shared balancer.
+		stickyTaskPoller.autoscalingBalancer = balancer
 
-		return []scalableTaskPoller{normal, sticky}
+		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
 	default: // *pollerBehaviorSimpleMaximum
 		return []scalableTaskPoller{
 			newScalableTaskPoller(
