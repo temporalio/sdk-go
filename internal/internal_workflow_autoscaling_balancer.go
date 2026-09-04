@@ -10,15 +10,16 @@ import (
 
 const (
 	// One queued sticky task does not justify suppressing normal polls.
-	minMeaningfulStickyBacklog           int64 = 2
-	invalidAdmissionKindMessage                = "workflow slot admission requires a normal or sticky queue kind"
-	inconsistentWorkflowAdmissionMessage       = "workflow pollers must share one slot admission coordinator"
+	minMeaningfulStickyBacklog          int64 = 2
+	invalidAdmissionKindMessage               = "workflow slot admission requires a normal or sticky queue kind"
+	inconsistentWorkflowBalancerMessage       = "workflow pollers must share one poll balancer"
 )
 
 type pollerTarget func() int64
 
-// workflowSlotAdmission arbitrates normal and sticky polls before slot reservation.
-type workflowSlotAdmission struct {
+// workflowAutoscalingBalancer preserves both queue kinds and prioritizes sticky backlog
+// when split autoscaling workflow pollers share finite capacity.
+type workflowAutoscalingBalancer struct {
 	maxSlots      int
 	normalActive  int
 	stickyActive  int
@@ -28,22 +29,20 @@ type workflowSlotAdmission struct {
 	mu            sync.Mutex
 }
 
-func newWorkflowSlotAdmission(maxSlots int, stickyTarget pollerTarget) *workflowSlotAdmission {
-	// Zero means the supplier does not expose a finite upper bound, as permitted
-	// for suppliers with dynamic capacity. Negative values are invalid.
-	if maxSlots <= 0 {
-		return nil
-	}
-
-	return &workflowSlotAdmission{
+func newWorkflowAutoscalingBalancer(maxSlots int, stickyTarget pollerTarget) *workflowAutoscalingBalancer {
+	return &workflowAutoscalingBalancer{
 		maxSlots:     maxSlots,
 		stickyTarget: stickyTarget,
 		wakeCh:       make(chan struct{}),
 	}
 }
 
+func (a *workflowAutoscalingBalancer) hasFiniteCapacity() bool {
+	return a.maxSlots > 0
+}
+
 // waitForAdmission blocks until kind may compete for a slot or ctx ends.
-func (a *workflowSlotAdmission) waitForAdmission(ctx context.Context, kind enumspb.TaskQueueKind) error {
+func (a *workflowAutoscalingBalancer) waitForAdmission(ctx context.Context, kind enumspb.TaskQueueKind) error {
 	if kind != enumspb.TASK_QUEUE_KIND_NORMAL && kind != enumspb.TASK_QUEUE_KIND_STICKY {
 		return errors.New(invalidAdmissionKindMessage)
 	}
@@ -66,7 +65,20 @@ func (a *workflowSlotAdmission) waitForAdmission(ctx context.Context, kind enums
 }
 
 // canAdmit applies the queue-kind policy. The caller must hold mu.
-func (a *workflowSlotAdmission) canAdmit(kind enumspb.TaskQueueKind) bool {
+func (a *workflowAutoscalingBalancer) canAdmit(kind enumspb.TaskQueueKind) bool {
+	// Without a finite limit, only prevent either kind from starting a second
+	// poll before the other kind starts its first.
+	if a.maxSlots <= 0 {
+		switch kind {
+		case enumspb.TASK_QUEUE_KIND_NORMAL:
+			return a.normalActive == 0 || a.stickyActive > 0
+		case enumspb.TASK_QUEUE_KIND_STICKY:
+			return a.stickyActive == 0 || a.normalActive > 0
+		default:
+			return false
+		}
+	}
+
 	switch kind {
 	case enumspb.TASK_QUEUE_KIND_NORMAL:
 		// Always allow a first normal poll.
@@ -101,22 +113,22 @@ func (a *workflowSlotAdmission) canAdmit(kind enumspb.TaskQueueKind) bool {
 	return a.normalActive+a.stickyActive < a.maxSlots
 }
 
-func (a *workflowSlotAdmission) needsMoreStickyPolls() bool {
+func (a *workflowAutoscalingBalancer) needsMoreStickyPolls() bool {
 	// Sticky priority only helps while the scaler can start another sticky poll.
 	return a.stickyBacklog >= minMeaningfulStickyBacklog &&
 		a.stickyBacklog > int64(a.stickyActive) &&
 		int64(a.stickyActive) < a.stickyTarget()
 }
 
-func (a *workflowSlotAdmission) start(kind enumspb.TaskQueueKind) {
+func (a *workflowAutoscalingBalancer) start(kind enumspb.TaskQueueKind) {
 	a.changeActive(kind, 1)
 }
 
-func (a *workflowSlotAdmission) finish(kind enumspb.TaskQueueKind) {
+func (a *workflowAutoscalingBalancer) finish(kind enumspb.TaskQueueKind) {
 	a.changeActive(kind, -1)
 }
 
-func (a *workflowSlotAdmission) changeActive(kind enumspb.TaskQueueKind, change int) {
+func (a *workflowAutoscalingBalancer) changeActive(kind enumspb.TaskQueueKind, change int) {
 	a.mu.Lock()
 	switch kind {
 	case enumspb.TASK_QUEUE_KIND_NORMAL:
@@ -131,7 +143,7 @@ func (a *workflowSlotAdmission) changeActive(kind enumspb.TaskQueueKind, change 
 	a.mu.Unlock()
 }
 
-func (a *workflowSlotAdmission) setStickyBacklog(backlog int64) {
+func (a *workflowAutoscalingBalancer) setStickyBacklog(backlog int64) {
 	a.mu.Lock()
 	if backlog == a.stickyBacklog {
 		a.mu.Unlock()
@@ -143,7 +155,7 @@ func (a *workflowSlotAdmission) setStickyBacklog(backlog int64) {
 	a.mu.Unlock()
 }
 
-func (a *workflowSlotAdmission) wakeWaiters() {
+func (a *workflowAutoscalingBalancer) wakeWaiters() {
 	close(a.wakeCh)
 	a.wakeCh = make(chan struct{})
 }

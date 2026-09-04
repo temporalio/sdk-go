@@ -122,7 +122,7 @@ type (
 		pendingStickyPollCount  int
 		mixedStickyBacklog      int64
 		requestLock             sync.Mutex
-		autoscalingAdmission    *workflowSlotAdmission
+		autoscalingBalancer     *workflowAutoscalingBalancer
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
 
@@ -1120,9 +1120,9 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 	wtp.mixedStickyBacklog = backlogCountHint
 	wtp.requestLock.Unlock()
 
-	// Split autoscaling pollers use admission to coordinate shared slots.
-	if wtp.autoscalingAdmission != nil {
-		wtp.autoscalingAdmission.setStickyBacklog(backlogCountHint)
+	// Split autoscaling pollers use the balancer to coordinate shared slots.
+	if wtp.autoscalingBalancer != nil {
+		wtp.autoscalingBalancer.setStickyBacklog(backlogCountHint)
 	}
 }
 

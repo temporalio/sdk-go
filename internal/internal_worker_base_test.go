@@ -139,7 +139,7 @@ func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesTaskQueueKind() 
 	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, supplier.taskQueueKind)
 }
 
-func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersCreatesBalancerForMultiplePollers() {
+func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersRequiresSharedBalancer() {
 	newPoller := func(pollerType string) scalableTaskPoller {
 		return newScalableTaskPoller(
 			newBlockingProbeTaskPoller(),
@@ -153,18 +153,16 @@ func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersCreatesBalancerForMul
 	singlePollerWorker := &baseWorker{}
 	singlePollerWorker.initializeTaskPollers([]scalableTaskPoller{newPoller(metrics.PollerTypeWorkflowTask)})
 	s.Len(singlePollerWorker.options.taskPollers, 1)
-	s.Nil(singlePollerWorker.pollerBalancer)
+	s.Panics(func() {
+		singlePollerWorker.initializeTaskPollers([]scalableTaskPoller{newPoller(metrics.PollerTypeWorkflowTask)})
+	})
 
 	bw := &baseWorker{}
-	bw.initializeTaskPollers([]scalableTaskPoller{
-		newPoller(metrics.PollerTypeWorkflowTask),
-		newPoller(metrics.PollerTypeWorkflowStickyTask),
-	})
-	s.Len(bw.options.taskPollers, 2)
-	s.NotNil(bw.pollerBalancer)
-	// Panic if task pollers are initialized more than once
-	s.Panics(func() {
-		bw.initializeTaskPollers([]scalableTaskPoller{newPoller(metrics.PollerTypeWorkflowTask)})
+	s.PanicsWithValue(inconsistentWorkflowBalancerMessage, func() {
+		bw.initializeTaskPollers([]scalableTaskPoller{
+			newPoller(metrics.PollerTypeWorkflowTask),
+			newPoller(metrics.PollerTypeWorkflowStickyTask),
+		})
 	})
 }
 
@@ -464,7 +462,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingDoesNotHoldSlotWhileWaitingForP
 	})
 }
 
-func (s *ScalableTaskPollerSuite) TestAutoscalingBalancerDoesNotHoldSlotsWhileBlocked() {
+func (s *ScalableTaskPollerSuite) TestUnknownCapacityBalancerWaitsBeforePollCapacity() {
 	synctest.Test(s.T(), func(t *testing.T) {
 		behavior := &pollerBehaviorAutoscaling{
 			initialNumberOfPollers: 2,
@@ -475,13 +473,20 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingBalancerDoesNotHoldSlotsWhileBl
 		blockingPoller := newBlockingProbeTaskPoller()
 		poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "a", nil)
 		slotSupplier := newLimitedSlotSupplier(2)
+		balancer := newTestWorkflowAutoscalingBalancer(0)
+		poller.autoscalingBalancer = balancer
+		poller.pollKind = enumspb.TASK_QUEUE_KIND_NORMAL
 
 		bw := newBaseWorker(baseWorkerOptions{
 			slotSupplier:     slotSupplier,
 			maxTaskPerSecond: 1000,
 			taskPollers: []scalableTaskPoller{
 				poller,
-				{taskPollerType: "b"},
+				{
+					taskPollerType:      "b",
+					autoscalingBalancer: balancer,
+					pollKind:            enumspb.TASK_QUEUE_KIND_STICKY,
+				},
 			},
 			taskProcessor:  noopTaskProcessor{},
 			workerType:     "AutoscalingBalancerTest",
@@ -497,13 +502,14 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingBalancerDoesNotHoldSlotsWhileBl
 			bw.Stop()
 		}()
 
-		assertAutoscalingPollerState(t, poller.autoscalingRunner, 1, "expected first poller to start")
+		assertAutoscalingPollerState(t, poller.autoscalingRunner, 1,
+			"balancer wait should not consume poll capacity")
 		require.Equal(t, int32(1), slotSupplier.reserves.Load(),
-			"autoscaling poller should not reserve another slot while blocked by poller balancer")
+			"autoscaling poller should not reserve another slot while blocked by the balancer")
 	})
 }
 
-func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionPreservesBothQueueKinds() {
+func (s *ScalableTaskPollerSuite) TestWorkflowAutoscalingBalancerPreservesBothQueueKinds() {
 	synctest.Test(s.T(), func(t *testing.T) {
 		behavior := &pollerBehaviorAutoscaling{
 			initialNumberOfPollers: 2,
@@ -517,11 +523,11 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionPreservesBothQueueKinds()
 			newScalableTaskPoller(normal, ilog.NewNopLogger(), behavior, metrics.PollerTypeWorkflowTask, &atomic.Bool{}),
 			newScalableTaskPoller(sticky, ilog.NewNopLogger(), behavior, metrics.PollerTypeWorkflowStickyTask, &atomic.Bool{}),
 		}
-		admission := newTestWorkflowAdmission(2)
-		pollers[0].workflowAdmission = admission
-		pollers[0].admissionKind = enumspb.TASK_QUEUE_KIND_NORMAL
-		pollers[1].workflowAdmission = admission
-		pollers[1].admissionKind = enumspb.TASK_QUEUE_KIND_STICKY
+		balancer := newTestWorkflowAutoscalingBalancer(2)
+		pollers[0].autoscalingBalancer = balancer
+		pollers[0].pollKind = enumspb.TASK_QUEUE_KIND_NORMAL
+		pollers[1].autoscalingBalancer = balancer
+		pollers[1].pollKind = enumspb.TASK_QUEUE_KIND_STICKY
 
 		bw := newBaseWorker(baseWorkerOptions{
 			slotSupplier:     supplier,
@@ -533,8 +539,6 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAdmissionPreservesBothQueueKinds()
 			stopTimeout:      time.Second,
 			metricsHandler:   metrics.NopHandler,
 		})
-
-		require.Nil(t, bw.pollerBalancer)
 
 		bw.Start()
 		defer func() {
@@ -1295,87 +1299,18 @@ func (s *PollerAutoscalerSuite) TestErrorScaleDownWithCapability() {
 	assert.Equal(s.T(), int64(3), ps.target.Load())
 }
 
-// TestPollerBalancerReturnsNilWhenOwnCountZero is a regression test for
-// https://github.com/temporalio/sdk-go/issues/2236
-// It verifies that balance() returns nil immediately when the calling poller
-// type's count has dropped to <= 0, even if another type has count == 0.
-func TestPollerBalancerReturnsNilWhenOwnCountZero(t *testing.T) {
-	pb := &pollerBalancer{
-		pollerCount:   make(map[string]int),
-		pollerBarrier: make(map[string]barrier),
-	}
-	pb.registerPollerType("sticky")
-	pb.registerPollerType("non-sticky")
-
-	ctx := t.Context()
-
-	// Both types have count 0 — balance should return nil immediately for either type.
-	err := pb.balance(ctx, "sticky")
-	require.NoError(t, err, "balance should return nil when own count is 0")
-
-	err = pb.balance(ctx, "non-sticky")
-	require.NoError(t, err, "balance should return nil when own count is 0")
-
-	// Simulate: sticky has 1 poller, non-sticky has 0.
-	// balance("sticky") should block waiting for non-sticky. But if sticky's count
-	// drops to 0 before non-sticky starts, balance should return nil.
-	pb.incrementPoller("sticky")
-	pb.decrementPoller("sticky") // sticky count is back to 0
-
-	// Even though non-sticky count is 0, we should NOT block because our own count is 0.
-	// Run with a timeout to catch the bug where it would block indefinitely.
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-	err = pb.balance(ctx, "sticky")
-	require.NoError(t, err, "balance should return nil when own count is 0, not block on other type's barrier")
+func newTestWorkflowAutoscalingBalancer(maxSlots int) *workflowAutoscalingBalancer {
+	return newWorkflowAutoscalingBalancer(maxSlots, func() int64 { return int64(maxSlots) })
 }
 
-// TestPollerBalancerBlocksWhenOtherTypeHasNoPollers verifies the normal blocking
-// behavior: balance() blocks when another poller type has no active pollers, and
-// unblocks once that type starts a poller.
-func TestPollerBalancerBlocksWhenOtherTypeHasNoPollers(t *testing.T) {
+func TestWorkflowAutoscalingBalancerPreservesQueueKinds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		pb := &pollerBalancer{
-			pollerCount:   make(map[string]int),
-			pollerBarrier: make(map[string]barrier),
-		}
-		pb.registerPollerType("sticky")
-		pb.registerPollerType("non-sticky")
-
-		// sticky has 1 poller, non-sticky has 0 — balance("sticky") should block.
-		pb.incrementPoller("sticky")
+		balancer := newTestWorkflowAutoscalingBalancer(2)
+		balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
 
 		done := make(chan error, 1)
 		go func() {
-			done <- pb.balance(t.Context(), "sticky")
-		}()
-
-		synctest.Wait()
-		select {
-		case <-done:
-			t.Fatal("balance should be blocking")
-		default:
-		}
-
-		// Start a non-sticky poller — this should unblock balance.
-		pb.incrementPoller("non-sticky")
-		synctest.Wait()
-		require.NoError(t, <-done)
-	})
-}
-
-func newTestWorkflowAdmission(maxSlots int) *workflowSlotAdmission {
-	return newWorkflowSlotAdmission(maxSlots, func() int64 { return int64(maxSlots) })
-}
-
-func TestWorkflowSlotAdmissionPreservesQueueKinds(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		admission := newTestWorkflowAdmission(2)
-		admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-
-		done := make(chan error, 1)
-		go func() {
-			done <- admission.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			done <- balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
 		}()
 
 		synctest.Wait()
@@ -1385,29 +1320,29 @@ func TestWorkflowSlotAdmissionPreservesQueueKinds(t *testing.T) {
 		default:
 		}
 
-		require.NoError(t, admission.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY))
-		admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
-		admission.finish(enumspb.TASK_QUEUE_KIND_NORMAL)
+		require.NoError(t, balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY))
+		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+		balancer.finish(enumspb.TASK_QUEUE_KIND_NORMAL)
 
 		synctest.Wait()
 		require.NoError(t, <-done)
 	})
 }
 
-func TestWorkflowSlotAdmissionPrefersStickyBacklog(t *testing.T) {
+func TestWorkflowAutoscalingBalancerPrefersStickyBacklog(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		admission := newTestWorkflowAdmission(3)
-		admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-		admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
-		admission.setStickyBacklog(1)
+		balancer := newTestWorkflowAutoscalingBalancer(3)
+		balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+		balancer.setStickyBacklog(1)
 
-		require.NoError(t, admission.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL))
+		require.NoError(t, balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL))
 
-		admission.setStickyBacklog(3)
+		balancer.setStickyBacklog(3)
 
 		done := make(chan error, 1)
 		go func() {
-			done <- admission.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			done <- balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
 		}()
 
 		synctest.Wait()
@@ -1417,76 +1352,172 @@ func TestWorkflowSlotAdmissionPrefersStickyBacklog(t *testing.T) {
 		default:
 		}
 
-		require.NoError(t, admission.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY))
+		require.NoError(t, balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY))
 
-		admission.setStickyBacklog(0)
+		balancer.setStickyBacklog(0)
 
 		synctest.Wait()
 		require.NoError(t, <-done)
 	})
 }
 
-func TestWorkflowSlotAdmissionAllowsNormalAtStickyTarget(t *testing.T) {
-	admission := newWorkflowSlotAdmission(4, func() int64 { return 2 })
-	admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-	admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
-	admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
-	admission.setStickyBacklog(10)
+func TestWorkflowAutoscalingBalancerAllowsNormalAtStickyTarget(t *testing.T) {
+	balancer := newWorkflowAutoscalingBalancer(4, func() int64 { return 2 })
+	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	balancer.setStickyBacklog(10)
 
-	admission.mu.Lock()
-	defer admission.mu.Unlock()
-	require.True(t, admission.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
+	balancer.mu.Lock()
+	defer balancer.mu.Unlock()
+	require.True(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
 }
 
-func TestWorkflowSlotAdmissionUnknownMaximum(t *testing.T) {
-	require.Nil(t, newTestWorkflowAdmission(0))
+func TestWorkflowAutoscalingBalancerUnknownMaximum(t *testing.T) {
+	tests := []struct {
+		name        string
+		blockedKind enumspb.TaskQueueKind
+		otherKind   enumspb.TaskQueueKind
+	}{
+		{
+			name:        "normal waits for sticky",
+			blockedKind: enumspb.TASK_QUEUE_KIND_NORMAL,
+			otherKind:   enumspb.TASK_QUEUE_KIND_STICKY,
+		},
+		{
+			name:        "sticky waits for normal",
+			blockedKind: enumspb.TASK_QUEUE_KIND_STICKY,
+			otherKind:   enumspb.TASK_QUEUE_KIND_NORMAL,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				balancer := newTestWorkflowAutoscalingBalancer(0)
+				balancer.start(test.blockedKind)
+
+				done := make(chan error, 1)
+				go func() {
+					done <- balancer.waitForAdmission(t.Context(), test.blockedKind)
+				}()
+
+				synctest.Wait()
+				select {
+				case <-done:
+					t.Fatal("second poll should wait for the other queue kind")
+				default:
+				}
+
+				require.NoError(t, balancer.waitForAdmission(t.Context(), test.otherKind))
+				balancer.start(test.otherKind)
+
+				synctest.Wait()
+				require.NoError(t, <-done)
+
+				balancer.finish(test.blockedKind)
+				balancer.finish(test.otherKind)
+				require.NoError(t, balancer.waitForAdmission(t.Context(), test.blockedKind))
+				require.NoError(t, balancer.waitForAdmission(t.Context(), test.otherKind))
+			})
+		})
+	}
 }
 
-func TestWorkflowSlotAdmissionCancellation(t *testing.T) {
-	admission := newTestWorkflowAdmission(2)
-	admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-	admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
+func TestWorkflowAutoscalingBalancerUnknownMaximumMatchesGenericFairness(t *testing.T) {
+	tests := []struct {
+		name          string
+		normalActive  int
+		stickyActive  int
+		normalAllowed bool
+		stickyAllowed bool
+	}{
+		{name: "neither active", normalAllowed: true, stickyAllowed: true},
+		{name: "only normal active", normalActive: 1, stickyAllowed: true},
+		{name: "only sticky active", stickyActive: 1, normalAllowed: true},
+		{name: "both active", normalActive: 1, stickyActive: 1, normalAllowed: true, stickyAllowed: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			balancer := newTestWorkflowAutoscalingBalancer(0)
+			balancer.normalActive = test.normalActive
+			balancer.stickyActive = test.stickyActive
+
+			balancer.mu.Lock()
+			defer balancer.mu.Unlock()
+			require.Equal(t, test.normalAllowed, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
+			require.Equal(t, test.stickyAllowed, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_STICKY))
+		})
+	}
+}
+
+func TestWorkflowAutoscalingBalancerUnknownMaximumIgnoresBacklog(t *testing.T) {
+	balancer := newWorkflowAutoscalingBalancer(0, func() int64 { return 10 })
+	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	balancer.setStickyBacklog(10)
+
+	balancer.mu.Lock()
+	defer balancer.mu.Unlock()
+	require.True(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
+	require.True(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_STICKY))
+}
+
+func TestWorkflowAutoscalingBalancerUnknownMaximumCancellation(t *testing.T) {
+	balancer := newTestWorkflowAutoscalingBalancer(0)
+	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	require.ErrorIs(t, admission.waitForAdmission(ctx, enumspb.TASK_QUEUE_KIND_NORMAL), context.Canceled)
+	require.ErrorIs(t, balancer.waitForAdmission(ctx, enumspb.TASK_QUEUE_KIND_NORMAL), context.Canceled)
 }
 
-func TestWorkflowSlotAdmissionRejectsInvalidKind(t *testing.T) {
-	admission := newTestWorkflowAdmission(2)
+func TestWorkflowAutoscalingBalancerCancellation(t *testing.T) {
+	balancer := newTestWorkflowAutoscalingBalancer(2)
+	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
 
-	err := admission.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
+	require.ErrorIs(t, balancer.waitForAdmission(ctx, enumspb.TASK_QUEUE_KIND_NORMAL), context.Canceled)
+}
+
+func TestWorkflowAutoscalingBalancerRejectsInvalidKind(t *testing.T) {
+	balancer := newTestWorkflowAutoscalingBalancer(2)
+
+	err := balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
 
 	require.EqualError(t, err, invalidAdmissionKindMessage)
 }
 
-func TestWorkflowSlotAdmissionIgnoresInvalidKind(t *testing.T) {
-	admission := newTestWorkflowAdmission(2)
+func TestWorkflowAutoscalingBalancerIgnoresInvalidKind(t *testing.T) {
+	balancer := newTestWorkflowAutoscalingBalancer(2)
 
 	func() {
-		admission.mu.Lock()
-		defer admission.mu.Unlock()
+		balancer.mu.Lock()
+		defer balancer.mu.Unlock()
 
-		require.False(t, admission.canAdmit(enumspb.TASK_QUEUE_KIND_UNSPECIFIED))
+		require.False(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_UNSPECIFIED))
 	}()
 
-	admission.start(enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
-	admission.finish(enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
+	balancer.start(enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
+	balancer.finish(enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
 
-	require.Zero(t, admission.normalActive)
-	require.Zero(t, admission.stickyActive)
+	require.Zero(t, balancer.normalActive)
+	require.Zero(t, balancer.stickyActive)
 }
 
-func TestWorkflowSlotAdmissionStickyStartWakesNormal(t *testing.T) {
+func TestWorkflowAutoscalingBalancerStickyStartWakesNormal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		admission := newTestWorkflowAdmission(4)
-		admission.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-		admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
-		admission.setStickyBacklog(2)
+		balancer := newTestWorkflowAutoscalingBalancer(4)
+		balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+		balancer.setStickyBacklog(2)
 
 		done := make(chan error, 1)
 		go func() {
-			done <- admission.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			done <- balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
 		}()
 
 		synctest.Wait()
@@ -1496,24 +1527,24 @@ func TestWorkflowSlotAdmissionStickyStartWakesNormal(t *testing.T) {
 		default:
 		}
 
-		require.NoError(t, admission.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY))
-		admission.start(enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY))
+		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
 
 		synctest.Wait()
 		require.NoError(t, <-done)
 	})
 }
 
-func TestWorkflowSlotAdmissionIgnoresUnchangedBacklog(t *testing.T) {
-	admission := newTestWorkflowAdmission(2)
-	wakeCh := admission.wakeCh
+func TestWorkflowAutoscalingBalancerIgnoresUnchangedBacklog(t *testing.T) {
+	balancer := newTestWorkflowAutoscalingBalancer(2)
+	wakeCh := balancer.wakeCh
 
-	admission.setStickyBacklog(0)
+	balancer.setStickyBacklog(0)
 
-	require.Equal(t, wakeCh, admission.wakeCh)
+	require.Equal(t, wakeCh, balancer.wakeCh)
 }
 
-func (s *ScalableTaskPollerSuite) TestWorkflowSlotAdmissionConfiguration() {
+func (s *ScalableTaskPollerSuite) TestWorkflowAutoscalingBalancerConfiguration() {
 	behavior := &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: 1,
 		maximumNumberOfPollers: 2,
@@ -1530,10 +1561,10 @@ func (s *ScalableTaskPollerSuite) TestWorkflowSlotAdmissionConfiguration() {
 		params,
 		supplier.MaxSlots(),
 	)
-	normal := pollers[0].taskPoller.(*workflowTaskPoller)
-	sticky := pollers[1].taskPoller.(*workflowTaskPoller)
+	normalTaskPoller := pollers[0].taskPoller.(*workflowTaskPoller)
+	stickyTaskPoller := pollers[1].taskPoller.(*workflowTaskPoller)
 
-	bw := newBaseWorker(baseWorkerOptions{
+	newBaseWorker(baseWorkerOptions{
 		slotSupplier:     supplier,
 		taskProcessor:    noopTaskProcessor{},
 		workerType:       "WorkflowWorker",
@@ -1543,28 +1574,65 @@ func (s *ScalableTaskPollerSuite) TestWorkflowSlotAdmissionConfiguration() {
 		taskPollers:      pollers,
 	})
 
-	require.NotNil(s.T(), pollers[0].workflowAdmission)
-	require.Same(s.T(), pollers[0].workflowAdmission, pollers[1].workflowAdmission)
-	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_NORMAL, pollers[0].admissionKind)
-	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_STICKY, pollers[1].admissionKind)
-	require.Nil(s.T(), bw.pollerBalancer)
-	require.Nil(s.T(), normal.autoscalingAdmission)
-	require.Same(s.T(), pollers[0].workflowAdmission, sticky.autoscalingAdmission)
+	require.NotNil(s.T(), pollers[0].autoscalingBalancer)
+	require.Same(s.T(), pollers[0].autoscalingBalancer, pollers[1].autoscalingBalancer)
+	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_NORMAL, pollers[0].pollKind)
+	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_STICKY, pollers[1].pollKind)
+	require.Nil(s.T(), normalTaskPoller.autoscalingBalancer)
+	require.Same(s.T(), pollers[0].autoscalingBalancer, stickyTaskPoller.autoscalingBalancer)
 
-	sticky.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, 3)
-	require.Equal(s.T(), int64(3), pollers[0].workflowAdmission.stickyBacklog)
+	stickyTaskPoller.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, 3)
+	require.Equal(s.T(), int64(3), pollers[0].autoscalingBalancer.stickyBacklog)
+
+	unknownCapacityPollers := buildWorkflowScalableTaskPollers(
+		&workflowTaskProcessor{stickyCacheSize: 1},
+		behavior,
+		params,
+		0,
+	)
+	newBaseWorker(baseWorkerOptions{
+		slotSupplier:     &testSlotSupplier{},
+		taskProcessor:    noopTaskProcessor{},
+		workerType:       "WorkflowWorker",
+		logger:           ilog.NewNopLogger(),
+		metricsHandler:   metrics.NopHandler,
+		maxTaskPerSecond: 1,
+		taskPollers:      unknownCapacityPollers,
+	})
+	require.Same(s.T(), unknownCapacityPollers[0].autoscalingBalancer,
+		unknownCapacityPollers[1].autoscalingBalancer)
+	require.False(s.T(), unknownCapacityPollers[0].autoscalingBalancer.hasFiniteCapacity())
+
+	normalOnlyPollers := buildWorkflowScalableTaskPollers(
+		&workflowTaskProcessor{},
+		behavior,
+		params,
+		supplier.MaxSlots(),
+	)
+	require.Len(s.T(), normalOnlyPollers, 1)
+	require.Nil(s.T(), normalOnlyPollers[0].autoscalingBalancer)
+
+	simplePollers := buildWorkflowScalableTaskPollers(
+		&workflowTaskProcessor{stickyCacheSize: 1},
+		NewPollerBehaviorSimpleMaximum(PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 2}),
+		params,
+		supplier.MaxSlots(),
+	)
+	require.Len(s.T(), simplePollers, 1)
+	require.Nil(s.T(), simplePollers[0].autoscalingBalancer)
+	require.Equal(s.T(), Mixed, simplePollers[0].taskPoller.(*workflowTaskPoller).mode)
 }
 
-func TestConfigurePollersRejectsInconsistentAdmission(t *testing.T) {
-	admission := newTestWorkflowAdmission(2)
+func TestConfigurePollersRejectsInconsistentBalancer(t *testing.T) {
+	balancer := newTestWorkflowAutoscalingBalancer(2)
 	testCases := map[string][]scalableTaskPoller{
 		"partial": {
-			{workflowAdmission: admission},
+			{autoscalingBalancer: balancer},
 			{},
 		},
 		"different": {
-			{workflowAdmission: admission},
-			{workflowAdmission: newTestWorkflowAdmission(2)},
+			{autoscalingBalancer: balancer},
+			{autoscalingBalancer: newTestWorkflowAutoscalingBalancer(2)},
 		},
 	}
 
@@ -1572,8 +1640,8 @@ func TestConfigurePollersRejectsInconsistentAdmission(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			worker := &baseWorker{}
 
-			require.PanicsWithValue(t, inconsistentWorkflowAdmissionMessage, func() {
-				worker.configurePollers(pollers)
+			require.PanicsWithValue(t, inconsistentWorkflowBalancerMessage, func() {
+				worker.validatePollers(pollers)
 			})
 		})
 	}
