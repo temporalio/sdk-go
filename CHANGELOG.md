@@ -70,6 +70,7 @@ to docs, or any other relevant information.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
 - Legacy query task processing failures are now reported through `RespondQueryTaskCompleted` instead of
   `RespondWorkflowTaskFailed`, allowing query callers to receive the failure instead of timing out.
+- Legacy query task failures now include the applicable workflow task failure cause in their response.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
   but decoded through the workflow serialization context, so a context-aware `DataConverter` or

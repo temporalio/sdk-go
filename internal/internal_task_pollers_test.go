@@ -530,6 +530,7 @@ func TestLegacyQueryProcessingFailureReportedAsQueryFailure(t *testing.T) {
 			require.Equal(t, taskErr.Error(), req.ErrorMessage)
 			require.Equal(t, "test-namespace", req.Namespace)
 			require.NotNil(t, req.Failure)
+			require.Equal(t, enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE, req.Cause)
 			return &workflowservice.RespondQueryTaskCompletedResponse{}, nil
 		})
 
@@ -607,6 +608,7 @@ func TestLegacyQueryOutboundVisitorFailureReportedAsQueryFailure(t *testing.T) {
 			require.Equal(t, visitorErr.Error(), req.ErrorMessage)
 			require.Equal(t, "test-namespace", req.Namespace)
 			require.NotNil(t, req.Failure)
+			require.Equal(t, enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE, req.Cause)
 			return &workflowservice.RespondQueryTaskCompletedResponse{}, nil
 		})
 
@@ -664,10 +666,63 @@ func TestLegacyQueryInboundVisitorFailureReportedAsQueryFailure(t *testing.T) {
 			require.Equal(t, visitorErr.Error(), req.ErrorMessage)
 			require.Equal(t, "test-namespace", req.Namespace)
 			require.NotNil(t, req.Failure)
+			require.Equal(t, enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE, req.Cause)
 			return &workflowservice.RespondQueryTaskCompletedResponse{}, nil
 		})
 
 	poller.handleInboundVisitorError(task, visitorErr)
+}
+
+func TestLegacyQueryFailureCauseClassification(t *testing.T) {
+	params := workerExecutionParameters{cache: NewWorkerCache()}
+	ensureRequiredParams(&params)
+	poller := newWorkflowTaskProcessor(
+		newWorkflowTaskHandler(params, nil, newRegistry()),
+		nil,
+		nil,
+		params,
+		"",
+	)
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
+		TaskToken: []byte("legacy-query-token"),
+		Query:     &querypb.WorkflowQuery{QueryType: "status"},
+	}
+
+	tests := []struct {
+		name  string
+		err   error
+		cause enumspb.WorkflowTaskFailedCause
+	}{
+		{
+			name:  "generic error",
+			err:   errors.New("query handler failed"),
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
+		},
+		{
+			name:  "history mismatch",
+			err:   historyMismatchError{},
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
+		},
+		{
+			name:  "unknown sdk flag",
+			err:   unknownSdkFlagError{},
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
+		},
+		{
+			name:  "payload size error",
+			err:   payloadSizeError{message: "too large", size: 100, limit: 50},
+			cause: enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			completion := poller.taskFailureCompletion(task, tc.err)
+			resp, ok := completion.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
+			require.True(t, ok)
+			require.Equal(t, tc.cause, resp.Cause)
+		})
+	}
 }
 
 func TestErrorToFailWorkflowTaskCause(t *testing.T) {
