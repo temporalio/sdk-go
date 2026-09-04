@@ -1300,7 +1300,7 @@ func (s *PollerAutoscalerSuite) TestErrorScaleDownWithCapability() {
 }
 
 func newTestWorkflowAutoscalingBalancer(maxSlots int) *workflowAutoscalingBalancer {
-	return newWorkflowAutoscalingBalancer(maxSlots, func() int64 { return int64(maxSlots) })
+	return newWorkflowAutoscalingBalancer(maxSlots, int64(maxSlots))
 }
 
 func TestWorkflowAutoscalingBalancerPreservesQueueKinds(t *testing.T) {
@@ -1362,7 +1362,7 @@ func TestWorkflowAutoscalingBalancerPrefersStickyBacklog(t *testing.T) {
 }
 
 func TestWorkflowAutoscalingBalancerAllowsNormalAtStickyTarget(t *testing.T) {
-	balancer := newWorkflowAutoscalingBalancer(4, func() int64 { return 2 })
+	balancer := newWorkflowAutoscalingBalancer(4, 2)
 	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
 	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
 	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
@@ -1371,6 +1371,43 @@ func TestWorkflowAutoscalingBalancerAllowsNormalAtStickyTarget(t *testing.T) {
 	balancer.mu.Lock()
 	defer balancer.mu.Unlock()
 	require.True(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
+}
+
+func TestBalancerTargetWakesNormal(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		behavior := &pollerBehaviorAutoscaling{
+			initialNumberOfPollers: 2,
+			maximumNumberOfPollers: 2,
+			minimumNumberOfPollers: 1,
+		}
+		pollers := buildWorkflowScalableTaskPollers(
+			&workflowTaskProcessor{stickyCacheSize: 1},
+			behavior,
+			workerExecutionParameters{serverSupportsAutoscaling: &atomic.Bool{}},
+			4,
+		)
+		balancer := pollers[0].autoscalingBalancer
+		balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+		balancer.setStickyBacklog(2)
+
+		done := make(chan error, 1)
+		go func() {
+			done <- balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+		}()
+
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("normal poll should wait while sticky can scale up")
+		default:
+		}
+
+		pollers[1].pollerAutoscaler.updateTarget(func(int64) int64 { return 1 })
+
+		synctest.Wait()
+		require.NoError(t, <-done)
+	})
 }
 
 func TestWorkflowAutoscalingBalancerUnknownMaximum(t *testing.T) {
@@ -1453,7 +1490,7 @@ func TestWorkflowAutoscalingBalancerUnknownMaximumMatchesGenericFairness(t *test
 }
 
 func TestWorkflowAutoscalingBalancerUnknownMaximumIgnoresBacklog(t *testing.T) {
-	balancer := newWorkflowAutoscalingBalancer(0, func() int64 { return 10 })
+	balancer := newWorkflowAutoscalingBalancer(0, 10)
 	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
 	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
 	balancer.setStickyBacklog(10)

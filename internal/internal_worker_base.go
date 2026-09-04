@@ -278,7 +278,7 @@ type (
 		maxPollerCount            int
 		minPollerCount            int
 		logger                    log.Logger
-		targetChangedCallback     func()
+		targetChangedCallback     func(int64)
 		serverSupportsAutoscaling *atomic.Bool
 	}
 
@@ -287,7 +287,8 @@ type (
 		maxPollerCount            int
 		logger                    log.Logger
 		target                    atomic.Int64
-		targetChangedCallback     func()
+		targetChangedCallback     func(int64)
+		targetChangedMu           sync.Mutex
 		everSawScalingDecision    atomic.Bool
 		serverSupportsAutoscaling *atomic.Bool
 		ingestedThisPeriod        atomic.Int64
@@ -987,7 +988,9 @@ func (prh *pollerAutoscaler) updateTarget(f func(int64) int64) {
 		traceLog(func() {
 			prh.logger.Debug("Updating poller autoscaler target", "target", int(newTarget))
 		})
-		prh.targetChangedCallback()
+		prh.targetChangedMu.Lock()
+		prh.targetChangedCallback(prh.target.Load())
+		prh.targetChangedMu.Unlock()
 	}
 }
 
@@ -1086,6 +1089,24 @@ func newScalableTaskPoller(
 	taskPollerType string,
 	serverSupportsAutoscaling *atomic.Bool,
 ) scalableTaskPoller {
+	return newScalablePollerWithTarget(
+		poller,
+		logger,
+		pollerBehavior,
+		taskPollerType,
+		serverSupportsAutoscaling,
+		nil,
+	)
+}
+
+func newScalablePollerWithTarget(
+	poller taskPoller,
+	logger log.Logger,
+	pollerBehavior PollerBehavior,
+	taskPollerType string,
+	serverSupportsAutoscaling *atomic.Bool,
+	targetChanged func(int64),
+) scalableTaskPoller {
 	tw := scalableTaskPoller{
 		taskPoller:     poller,
 		taskPollerType: taskPollerType,
@@ -1100,8 +1121,11 @@ func newScalableTaskPoller(
 			serverSupportsAutoscaling: serverSupportsAutoscaling,
 		})
 		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler)
-		tw.pollerAutoscaler.targetChangedCallback = func() {
+		tw.pollerAutoscaler.targetChangedCallback = func(target int64) {
 			tw.autoscalingRunner.signal()
+			if targetChanged != nil {
+				targetChanged(target)
+			}
 		}
 	case *pollerBehaviorSimpleMaximum:
 		tw.pollerCount = p.maximumNumberOfPollers

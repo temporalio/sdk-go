@@ -484,7 +484,7 @@ func buildWorkflowScalableTaskPollers(
 	params workerExecutionParameters,
 	maxSlots int,
 ) []scalableTaskPoller {
-	switch behavior.(type) {
+	switch behavior := behavior.(type) {
 	case *pollerBehaviorAutoscaling:
 		normalScalablePoller := newScalableTaskPoller(
 			taskProcessor.createPoller(NonSticky),
@@ -497,15 +497,16 @@ func buildWorkflowScalableTaskPollers(
 			return []scalableTaskPoller{normalScalablePoller}
 		}
 
+		balancer := newWorkflowAutoscalingBalancer(maxSlots, int64(behavior.initialNumberOfPollers))
 		stickyTaskPoller := taskProcessor.createPoller(Sticky)
-		stickyScalablePoller := newScalableTaskPoller(
+		stickyScalablePoller := newScalablePollerWithTarget(
 			stickyTaskPoller,
 			params.Logger,
 			behavior,
 			metrics.PollerTypeWorkflowStickyTask,
 			params.serverSupportsAutoscaling,
+			balancer.setStickyTarget,
 		)
-		balancer := newWorkflowAutoscalingBalancer(maxSlots, stickyScalablePoller.pollerAutoscaler.target.Load)
 		normalScalablePoller.autoscalingBalancer = balancer
 		normalScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_NORMAL
 		stickyScalablePoller.autoscalingBalancer = balancer

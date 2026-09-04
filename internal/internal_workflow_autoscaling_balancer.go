@@ -15,8 +15,6 @@ const (
 	inconsistentWorkflowBalancerMessage       = "workflow pollers must share one poll balancer"
 )
 
-type pollerTarget func() int64
-
 // workflowAutoscalingBalancer preserves both queue kinds and prioritizes sticky backlog
 // when split autoscaling workflow pollers share finite capacity.
 type workflowAutoscalingBalancer struct {
@@ -24,12 +22,12 @@ type workflowAutoscalingBalancer struct {
 	normalActive  int
 	stickyActive  int
 	stickyBacklog int64
-	stickyTarget  pollerTarget
+	stickyTarget  int64
 	wakeCh        chan struct{}
 	mu            sync.Mutex
 }
 
-func newWorkflowAutoscalingBalancer(maxSlots int, stickyTarget pollerTarget) *workflowAutoscalingBalancer {
+func newWorkflowAutoscalingBalancer(maxSlots int, stickyTarget int64) *workflowAutoscalingBalancer {
 	return &workflowAutoscalingBalancer{
 		maxSlots:     maxSlots,
 		stickyTarget: stickyTarget,
@@ -117,7 +115,7 @@ func (a *workflowAutoscalingBalancer) needsMoreStickyPolls() bool {
 	// Sticky priority only helps while the scaler can start another sticky poll.
 	return a.stickyBacklog >= minMeaningfulStickyBacklog &&
 		a.stickyBacklog > int64(a.stickyActive) &&
-		int64(a.stickyActive) < a.stickyTarget()
+		int64(a.stickyActive) < a.stickyTarget
 }
 
 func (a *workflowAutoscalingBalancer) start(kind enumspb.TaskQueueKind) {
@@ -153,6 +151,17 @@ func (a *workflowAutoscalingBalancer) setStickyBacklog(backlog int64) {
 	a.stickyBacklog = backlog
 	a.wakeWaiters()
 	a.mu.Unlock()
+}
+
+func (a *workflowAutoscalingBalancer) setStickyTarget(target int64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if target == a.stickyTarget {
+		return
+	}
+
+	a.stickyTarget = target
+	a.wakeWaiters()
 }
 
 func (a *workflowAutoscalingBalancer) wakeWaiters() {
