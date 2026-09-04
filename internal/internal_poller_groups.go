@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"sync"
 
+	enumspb "go.temporal.io/api/enums/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 )
 
@@ -42,9 +43,14 @@ type (
 
 	// pollerGroupLease reserves one request-selected group.
 	pollerGroupLease struct {
-		owner      *pollerGroupManager
+		owner      pollerGroupLeaseOwner
 		groupID    string
 		generation int64
+		kind       enumspb.TaskQueueKind
+	}
+
+	pollerGroupLeaseOwner interface {
+		releaseLease(pollerGroupLease)
 	}
 
 	pollerGroupState struct {

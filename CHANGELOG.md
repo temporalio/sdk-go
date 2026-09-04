@@ -68,6 +68,8 @@ to docs, or any other relevant information.
 - The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
   now report the wall-clock time external storage was in flight. Previously each batch's duration was
   summed, over-reporting the time whenever storage operations ran concurrently.
+- Workflow autoscaling now directs extra sticky polls to backlogged poller groups while preserving
+  normal and sticky coverage and allowing normal polls once sticky reaches its autoscaling target.
 - Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
   request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
 - `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped

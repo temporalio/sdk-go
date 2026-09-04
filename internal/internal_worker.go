@@ -489,36 +489,39 @@ func buildWorkflowScalableTaskPollers(
 ) []scalableTaskPoller {
 	switch behavior := behavior.(type) {
 	case *pollerBehaviorAutoscaling:
-		normalGroups := newPollerGroupManager(params.pollerGroupSnapshotStore)
+		normalTaskPoller := taskProcessor.createPoller(NonSticky, nil)
 		normalScalablePoller := newScalableTaskPoller(
-			taskProcessor.createPoller(NonSticky, normalGroups),
+			normalTaskPoller,
 			params.Logger,
 			behavior,
 			metrics.PollerTypeWorkflowTask,
 			params.serverSupportsAutoscaling,
-			normalGroups,
+			nil,
 		)
 		if taskProcessor.stickyCacheSize <= 0 {
 			return []scalableTaskPoller{normalScalablePoller}
 		}
 
-		balancer := newWorkflowAutoscalingBalancer(maxSlots, int64(behavior.initialNumberOfPollers))
-		stickyGroups := newPollerGroupManager(params.pollerGroupSnapshotStore)
-		stickyTaskPoller := taskProcessor.createPoller(Sticky, stickyGroups)
+		balancer := newWorkflowAutoscalingBalancer(
+			maxSlots,
+			int64(behavior.initialNumberOfPollers),
+			params.pollerGroupSnapshotStore,
+		)
+		stickyTaskPoller := taskProcessor.createPoller(Sticky, nil)
 		stickyScalablePoller := newScalablePollerWithTarget(
 			stickyTaskPoller,
 			params.Logger,
 			behavior,
 			metrics.PollerTypeWorkflowStickyTask,
 			params.serverSupportsAutoscaling,
-			stickyGroups,
+			nil,
 			balancer.setStickyTarget,
 		)
 		normalScalablePoller.autoscalingBalancer = balancer
 		normalScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_NORMAL
 		stickyScalablePoller.autoscalingBalancer = balancer
 		stickyScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_STICKY
-		// Sticky poll responses send backlog hints to the shared balancer.
+		normalTaskPoller.autoscalingBalancer = balancer
 		stickyTaskPoller.autoscalingBalancer = balancer
 
 		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
