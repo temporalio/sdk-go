@@ -23,6 +23,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added poller-group-aware autoscaling for multi-cell namespaces. Workers maintain coverage for each
+  server-provided group and distribute additional polls by weight. Workflow workers maintain normal
+  and sticky coverage independently; extra sticky polls target backlogged groups until their backlog
+  is covered or the sticky target is reached.
 - Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
   a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
   platforms), and the operating system and architecture. This is sent
@@ -147,8 +151,6 @@ to docs, or any other relevant information.
 
 ### Changed
 
-- Workflow poller autoscaling now uses each selected poller group's sticky backlog to allocate
-  floating polling capacity between normal and sticky task queues after required group coverage.
 - Improved the performance of yield-heavy workloads by eliminating unnecessary computation and heap allocations.
 - Replaced the internal `OnceCell` implementation with `sync.OnceValue` for lazy workflow run ID lookup.
 
@@ -218,10 +220,6 @@ to docs, or any other relevant information.
   environment. This lets host processes that register a single shared factory (e.g.
   `roadrunner-temporal` / the PHP SDK) use dynamic workflows.
 - Merged link-converter class in the server and sdk-go and moved it to api-go
-- Added poller-group-aware autoscaling for multi-cell namespaces. Autoscaling workers maintain poll
-  coverage for every server-provided group and distribute additional polls according to the provided weights. 
-  Required group coverage may exceed the configured maximum poller count; workflow normal and sticky pollers
-  maintain coverage independently.
 - Nexus operations with `NexusOperationCancellationTypeAbandon` no longer panic the workflow task when
   the operation later starts or completes after the caller is canceled.
 - Session worker: stopping a worker while it is at its maximum concurrent session count no longer blocks

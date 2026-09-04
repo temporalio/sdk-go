@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"sync"
 
+	enumspb "go.temporal.io/api/enums/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 )
 
@@ -24,32 +25,45 @@ type (
 
 	// pollerGroupSnapshot is immutable after publication.
 	pollerGroupSnapshot struct {
-		weights map[string]float32
-		// generations identifies the current incarnation of each group ID. A
-		// group keeps its generation across weight updates, but receives a new one
-		// when removed and re-added.
-		generations map[string]int64 // todo: don't re-use cell names
-		version     int64
-		versionSet  bool
+		groups     map[string]pollerGroupSnapshotEntry
+		version    int64
+		versionSet bool
 	}
 
-	// pollerGroupManager owns one poller kind's in-flight group coverage.
+	// pollerGroupKey identifies one observed lifetime of a group. Incarnation is
+	// the snapshot version where the ID first appeared after being absent.
+	pollerGroupKey struct {
+		id          string
+		incarnation int64
+	}
+
+	// pollerGroupSnapshotEntry binds a group's identity to its current weight.
+	pollerGroupSnapshotEntry struct {
+		key    pollerGroupKey
+		weight float32
+	}
+
+	// pollerGroupManager assigns groups for autoscaling Activity and Nexus polls
+	// and worker-command polls. Workflow polls use workflowAutoscalingBalancer.
 	pollerGroupManager struct {
 		groupStore *pollerGroupSnapshotStore
 		mu         sync.Mutex
 		groups     map[string]*pollerGroupState
 	}
 
-	// pollerGroupLease reserves one request-selected group.
+	// pollerGroupLease tracks one poll attempt's group reservation until release.
 	pollerGroupLease struct {
-		owner      *pollerGroupManager
-		groupID    string
-		generation int64
+		owner pollerGroupLeaseOwner
+		group pollerGroupKey
+		kind  enumspb.TaskQueueKind
+	}
+
+	pollerGroupLeaseOwner interface {
+		releaseReservation(pollerGroupLease)
 	}
 
 	pollerGroupState struct {
-		groupID          string
-		generation       int64
+		key              pollerGroupKey
 		pendingPollCount int
 	}
 )
@@ -57,8 +71,7 @@ type (
 func newPollerGroupSnapshotStore() *pollerGroupSnapshotStore {
 	return &pollerGroupSnapshotStore{
 		current: pollerGroupSnapshot{
-			weights:     make(map[string]float32),
-			generations: make(map[string]int64),
+			groups: make(map[string]pollerGroupSnapshotEntry),
 		},
 		changedCh: make(chan struct{}),
 	}
@@ -81,11 +94,16 @@ func (m *pollerGroupManager) reserve() pollerGroupLease {
 	return m.lease(group)
 }
 
-// tryReserveRequired restores coverage above the autoscaling target while
-// polls for stale groups drain.
+// tryReserveRequired reserves an uncovered current group when existing polls
+// consume the autoscaling target, ensuring every group has minimum coverage.
+// The bool reports whether a group was reserved.
 func (m *pollerGroupManager) tryReserveRequired() (pollerGroupLease, bool) {
 	snapshot := m.groupStore.snapshot()
-	group := m.reserveRequired(snapshot)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.syncGroups(snapshot)
+
+	group := m.reserveCandidate(m.coverageCandidates(snapshot.groups))
 	if group == nil {
 		return pollerGroupLease{}, false
 	}
@@ -97,20 +115,21 @@ func (m *pollerGroupManager) updateGroups(info *taskqueuepb.PollerGroupsInfo) {
 }
 
 func (l pollerGroupLease) groupIDOrEmpty() string {
-	return l.groupID
+	return l.group.id
 }
 
 func (l pollerGroupLease) release() {
 	if l.owner != nil {
-		l.owner.releaseLease(l)
+		l.owner.releaseReservation(l)
 	}
 }
 
 func (m *pollerGroupManager) lease(group *pollerGroupState) pollerGroupLease {
+	// Poll ungrouped until the server advertises at least one group.
 	if group == nil {
 		return pollerGroupLease{owner: m}
 	}
-	return pollerGroupLease{owner: m, groupID: group.groupID, generation: group.generation}
+	return pollerGroupLease{owner: m, group: group.key}
 }
 
 func (m *pollerGroupManager) reserveGroup(snapshot pollerGroupSnapshot) *pollerGroupState {
@@ -118,33 +137,29 @@ func (m *pollerGroupManager) reserveGroup(snapshot pollerGroupSnapshot) *pollerG
 	defer m.mu.Unlock()
 	m.syncGroups(snapshot)
 
-	candidates := m.coverageCandidates(snapshot.weights)
+	candidates := m.coverageCandidates(snapshot.groups)
 	if len(candidates) == 0 {
-		candidates = snapshot.weights
+		candidates = snapshot.groups
 	}
 	return m.reserveCandidate(candidates)
 }
 
-func (m *pollerGroupManager) reserveRequired(snapshot pollerGroupSnapshot) *pollerGroupState {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.syncGroups(snapshot)
-
-	return m.reserveCandidate(m.coverageCandidates(snapshot.weights))
-}
-
-// coverageCandidates returns groups without an in-flight poll.
-func (m *pollerGroupManager) coverageCandidates(weights map[string]float32) map[string]float32 {
-	candidates := make(map[string]float32)
+// coverageCandidates returns groups without an in-flight poll from this manager.
+func (m *pollerGroupManager) coverageCandidates(
+	groups map[string]pollerGroupSnapshotEntry,
+) map[string]pollerGroupSnapshotEntry {
+	candidates := make(map[string]pollerGroupSnapshotEntry)
 	for groupID, group := range m.groups {
 		if group.pendingPollCount == 0 {
-			candidates[groupID] = weights[groupID]
+			candidates[groupID] = groups[groupID]
 		}
 	}
 	return candidates
 }
 
-func (m *pollerGroupManager) reserveCandidate(candidates map[string]float32) *pollerGroupState {
+func (m *pollerGroupManager) reserveCandidate(
+	candidates map[string]pollerGroupSnapshotEntry,
+) *pollerGroupState {
 	groupID := choosePollerGroup(candidates)
 	if groupID == "" {
 		return nil
@@ -154,30 +169,27 @@ func (m *pollerGroupManager) reserveCandidate(candidates map[string]float32) *po
 	return group
 }
 
-func (m *pollerGroupManager) releaseLease(lease pollerGroupLease) {
-	if lease.groupID == "" {
+func (m *pollerGroupManager) releaseReservation(lease pollerGroupLease) {
+	if lease.group.id == "" {
 		return
 	}
 	m.mu.Lock()
-	group := m.groups[lease.groupID]
-	if group != nil && group.generation == lease.generation && group.pendingPollCount > 0 {
+	group := m.groups[lease.group.id]
+	if group != nil && group.key == lease.group && group.pendingPollCount > 0 {
 		group.pendingPollCount--
 	}
 	m.mu.Unlock()
 }
 
 func (m *pollerGroupManager) syncGroups(snapshot pollerGroupSnapshot) {
-	for groupID := range snapshot.weights {
+	for groupID, entry := range snapshot.groups {
 		group := m.groups[groupID]
-		if group == nil || group.generation != snapshot.generations[groupID] {
-			m.groups[groupID] = &pollerGroupState{
-				groupID:    groupID,
-				generation: snapshot.generations[groupID],
-			}
+		if group == nil || group.key != entry.key {
+			m.groups[groupID] = &pollerGroupState{key: entry.key}
 		}
 	}
 	for groupID := range m.groups {
-		if _, ok := snapshot.weights[groupID]; !ok {
+		if _, ok := snapshot.groups[groupID]; !ok {
 			delete(m.groups, groupID)
 		}
 	}
@@ -187,15 +199,15 @@ func (m *pollerGroupManager) syncGroups(snapshot pollerGroupSnapshot) {
 // If all weights are zero or negative, it picks uniformly from all groups.
 // If floating-point rounding prevents the weighted walk from selecting a group,
 // it falls back to the last positive-weight candidate encountered.
-func choosePollerGroup(groups map[string]float32) string {
+func choosePollerGroup(groups map[string]pollerGroupSnapshotEntry) string {
 	if len(groups) == 0 {
 		return ""
 	}
 
 	totalWeight := float32(0)
-	for _, weight := range groups {
-		if weight > 0 {
-			totalWeight += weight
+	for _, group := range groups {
+		if group.weight > 0 {
+			totalWeight += group.weight
 		}
 	}
 
@@ -211,17 +223,19 @@ func choosePollerGroup(groups map[string]float32) string {
 		return ""
 	}
 
+	// Pick a random point in [0, totalWeight). Subtract each group's weight
+	// until the point is less than the current group's weight.
 	point := rand.Float32() * totalWeight
 	var lastCandidate string
-	for groupID, weight := range groups {
-		if weight <= 0 {
+	for groupID, group := range groups {
+		if group.weight <= 0 {
 			continue
 		}
 		lastCandidate = groupID
-		if point < weight {
+		if point < group.weight {
 			return groupID
 		}
-		point -= weight
+		point -= group.weight
 	}
 
 	// Floating-point rounding fallback.
@@ -231,7 +245,7 @@ func choosePollerGroup(groups map[string]float32) string {
 func (s *pollerGroupSnapshotStore) len() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return len(s.current.weights)
+	return len(s.current.groups)
 }
 
 func (s *pollerGroupSnapshotStore) snapshot() pollerGroupSnapshot {
@@ -240,10 +254,11 @@ func (s *pollerGroupSnapshotStore) snapshot() pollerGroupSnapshot {
 	return s.current
 }
 
-func (s *pollerGroupSnapshotStore) changed() <-chan struct{} {
+// observe returns a snapshot and the notification for its replacement.
+func (s *pollerGroupSnapshotStore) observe() (pollerGroupSnapshot, <-chan struct{}) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.changedCh
+	return s.current, s.changedCh
 }
 
 func (s *pollerGroupSnapshotStore) updateGroups(info *taskqueuepb.PollerGroupsInfo) {
@@ -257,24 +272,22 @@ func (s *pollerGroupSnapshotStore) updateGroups(info *taskqueuepb.PollerGroupsIn
 		return
 	}
 
-	weights := make(map[string]float32, len(info.GetPollerGroups()))
-	generations := make(map[string]int64, len(info.GetPollerGroups()))
+	groups := make(map[string]pollerGroupSnapshotEntry, len(info.GetPollerGroups()))
 	for _, group := range info.GetPollerGroups() {
 		if groupID := group.GetId(); groupID != "" {
-			weights[groupID] = group.GetWeight()
-			generation, ok := s.current.generations[groupID]
+			entry, ok := s.current.groups[groupID]
 			if !ok {
-				generation = info.GetVersion()
+				entry.key = pollerGroupKey{id: groupID, incarnation: info.GetVersion()}
 			}
-			generations[groupID] = generation
+			entry.weight = group.GetWeight()
+			groups[groupID] = entry
 		}
 	}
 
 	s.current = pollerGroupSnapshot{
-		weights:     weights,
-		generations: generations,
-		version:     info.GetVersion(),
-		versionSet:  true,
+		groups:     groups,
+		version:    info.GetVersion(),
+		versionSet: true,
 	}
 	close(s.changedCh)
 	s.changedCh = make(chan struct{})

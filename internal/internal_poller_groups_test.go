@@ -59,7 +59,7 @@ func TestPollerGroupSnapshotStoreOnlyAppliesNewerVersions(t *testing.T) {
 	groupStore.updateGroups(testPollerGroupsInfo(10, []*taskqueuepb.PollerGroupInfo{
 		{Id: "current", Weight: 1},
 	}))
-	changed := groupStore.changed()
+	_, changed := groupStore.observe()
 
 	groupStore.updateGroups(testPollerGroupsInfo(9, []*taskqueuepb.PollerGroupInfo{
 		{Id: "stale", Weight: 1},
@@ -68,7 +68,9 @@ func TestPollerGroupSnapshotStoreOnlyAppliesNewerVersions(t *testing.T) {
 		{Id: "duplicate", Weight: 1},
 	}))
 	groupStore.updateGroups(nil)
-	require.Equal(t, map[string]float32{"current": 1}, groupStore.snapshot().weights)
+	require.Equal(t, map[string]pollerGroupSnapshotEntry{
+		"current": {key: pollerGroupKey{id: "current", incarnation: 10}, weight: 1},
+	}, groupStore.snapshot().groups)
 	select {
 	case <-changed:
 		t.Fatal("stale or empty update notified store observers")
@@ -78,7 +80,9 @@ func TestPollerGroupSnapshotStoreOnlyAppliesNewerVersions(t *testing.T) {
 	groupStore.updateGroups(testPollerGroupsInfo(11, []*taskqueuepb.PollerGroupInfo{
 		{Id: "new", Weight: 1},
 	}))
-	require.Equal(t, map[string]float32{"new": 1}, groupStore.snapshot().weights)
+	require.Equal(t, map[string]pollerGroupSnapshotEntry{
+		"new": {key: pollerGroupKey{id: "new", incarnation: 11}, weight: 1},
+	}, groupStore.snapshot().groups)
 	select {
 	case <-changed:
 	default:
@@ -92,7 +96,9 @@ func TestPollerGroupSnapshotStoreAppliesFirstZeroVersion(t *testing.T) {
 		{Id: "group-a", Weight: 1},
 	}))
 
-	require.Equal(t, map[string]float32{"group-a": 1}, groupStore.snapshot().weights)
+	require.Equal(t, map[string]pollerGroupSnapshotEntry{
+		"group-a": {key: pollerGroupKey{id: "group-a"}, weight: 1},
+	}, groupStore.snapshot().groups)
 }
 
 func TestPollerGroupManagersShareWeightsAndKeepCoverageSeparate(t *testing.T) {

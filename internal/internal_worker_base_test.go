@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -449,7 +448,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupAddRaisesRequiredMin
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, release, err := runner.acquire(ctx)
+	admission, err := runner.acquire(ctx)
 	require.NoError(s.T(), err)
 	assert.Equal(s.T(), 1, runner.activePolls(), "expected one active poll for one group")
 
@@ -460,14 +459,14 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupAddRaisesRequiredMin
 	}))
 
 	assert.Equal(s.T(), 2, runner.effectiveTarget(), "expected group add to raise required minimum")
-	release()
+	admission.release()
 
-	_, firstRelease, err := runner.acquire(ctx)
+	firstAdmission, err := runner.acquire(ctx)
 	require.NoError(s.T(), err)
-	defer firstRelease()
-	_, secondRelease, err := runner.acquire(ctx)
+	defer firstAdmission.release()
+	secondAdmission, err := runner.acquire(ctx)
 	require.NoError(s.T(), err)
-	defer secondRelease()
+	defer secondAdmission.release()
 	assert.Equal(s.T(), 2, runner.activePolls(), "expected group add to raise required minimum")
 	assert.Equal(s.T(), int64(1), autoscaler.target.Load(), "group add should not mutate autoscaler target")
 }
@@ -490,28 +489,25 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupUpdateWakesRunnerSha
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	firstLease, firstRelease, err := runner.acquire(ctx)
+	firstAdmission, err := runner.acquire(ctx)
 	require.NoError(s.T(), err)
-	defer firstRelease()
-	defer firstLease.release()
+	defer firstAdmission.release()
 
 	type acquireResult struct {
-		lease   pollerGroupLease
-		release func()
-		err     error
+		admission autoscalingPollAdmission
+		err       error
 	}
 	resultCh := make(chan acquireResult, 1)
 	go func() {
-		lease, release, err := runner.acquire(ctx)
-		resultCh <- acquireResult{lease: lease, release: release, err: err}
+		admission, err := runner.acquire(ctx)
+		resultCh <- acquireResult{admission: admission, err: err}
 	}()
 
 	select {
 	case result := <-resultCh:
-		if result.release != nil {
-			result.release()
+		if result.err == nil {
+			result.admission.release()
 		}
-		result.lease.release()
 		s.T().Fatal("second poll acquired before another group was added")
 	case <-time.After(20 * time.Millisecond):
 	}
@@ -524,9 +520,8 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingPollerGroupUpdateWakesRunnerSha
 	select {
 	case result := <-resultCh:
 		require.NoError(s.T(), result.err)
-		defer result.release()
-		defer result.lease.release()
-		require.Equal(s.T(), "group-b", result.lease.groupIDOrEmpty())
+		defer result.admission.release()
+		require.Equal(s.T(), "group-b", result.admission.groupLease.groupIDOrEmpty())
 	case <-time.After(time.Second):
 		s.T().Fatal("shared store update did not wake runner")
 	}
@@ -558,22 +553,17 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingCurrentGroupCoverageDoesNotWait
 				pollerGroups,
 			)
 
-			type admission struct {
-				lease   pollerGroupLease
-				release func()
-			}
-			acquire := func() []admission {
-				admissions := make([]admission, 0, 2)
+			acquire := func() []autoscalingPollAdmission {
+				admissions := make([]autoscalingPollAdmission, 0, 2)
 				for range 2 {
-					lease, release, err := runner.acquire(s.T().Context())
+					admission, err := runner.acquire(s.T().Context())
 					require.NoError(s.T(), err)
-					admissions = append(admissions, admission{lease: lease, release: release})
+					admissions = append(admissions, admission)
 				}
 				return admissions
 			}
-			release := func(admissions []admission) {
+			release := func(admissions []autoscalingPollAdmission) {
 				for _, admission := range admissions {
-					admission.lease.release()
 					admission.release()
 				}
 			}
@@ -588,7 +578,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingCurrentGroupCoverageDoesNotWait
 			newAdmissions := acquire()
 			newGroups := make(map[string]struct{}, len(newAdmissions))
 			for _, admission := range newAdmissions {
-				newGroups[admission.lease.groupIDOrEmpty()] = struct{}{}
+				newGroups[admission.groupLease.groupIDOrEmpty()] = struct{}{}
 			}
 			require.Equal(s.T(), map[string]struct{}{"new-a": {}, "new-b": {}}, newGroups)
 			require.Equal(s.T(), 4, runner.activePolls(), "current coverage may temporarily exceed the target while stale polls drain")
@@ -628,30 +618,25 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingWorkflowAdmissionUsesIndependen
 	)
 
 	ctx := s.T().Context()
-	type heldPoll struct {
-		lease   pollerGroupLease
-		release func()
-	}
-	acquire := func(runner *autoscalingTaskPollerRunner) heldPoll {
-		lease, release, err := runner.acquire(ctx)
+	acquire := func(runner *autoscalingTaskPollerRunner) autoscalingPollAdmission {
+		admission, err := runner.acquire(ctx)
 		require.NoError(s.T(), err)
-		return heldPoll{lease: lease, release: release}
+		return admission
 	}
-	release := func(polls []heldPoll) {
+	release := func(polls []autoscalingPollAdmission) {
 		for _, poll := range polls {
-			poll.lease.release()
 			poll.release()
 		}
 	}
 
-	stickyPolls := []heldPoll{acquire(stickyRunner), acquire(stickyRunner)}
+	stickyPolls := []autoscalingPollAdmission{acquire(stickyRunner), acquire(stickyRunner)}
 	defer release(stickyPolls)
 	stickyCtx, cancelSticky := context.WithCancel(ctx)
 	cancelSticky()
-	_, _, err := stickyRunner.acquire(stickyCtx)
+	_, err := stickyRunner.acquire(stickyCtx)
 	require.ErrorIs(s.T(), err, context.Canceled, "sticky must not borrow normal capacity")
 
-	normalPolls := []heldPoll{acquire(normalRunner), acquire(normalRunner), acquire(normalRunner)}
+	normalPolls := []autoscalingPollAdmission{acquire(normalRunner), acquire(normalRunner), acquire(normalRunner)}
 	defer release(normalPolls)
 	require.Equal(s.T(), 3, normalRunner.activePolls())
 }
@@ -992,25 +977,6 @@ func (s *testSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo) {}
 func (s *testSlotSupplier) ReleaseSlot(SlotReleaseInfo) {}
 
 func (s *testSlotSupplier) MaxSlots() int { return 0 }
-
-type failThenBlockSlotSupplier struct {
-	failed chan struct{}
-	calls  atomic.Int32
-}
-
-func (s *failThenBlockSlotSupplier) ReserveSlot(ctx context.Context, _ SlotReservationInfo) (*SlotPermit, error) {
-	if s.calls.Add(1) == 1 {
-		close(s.failed)
-		return nil, errors.New("test slot reservation failure")
-	}
-	<-ctx.Done()
-	return nil, ctx.Err()
-}
-
-func (s *failThenBlockSlotSupplier) TryReserveSlot(SlotReservationInfo) *SlotPermit { return nil }
-func (s *failThenBlockSlotSupplier) MarkSlotUsed(SlotMarkUsedInfo)                  {}
-func (s *failThenBlockSlotSupplier) ReleaseSlot(SlotReleaseInfo)                    {}
-func (s *failThenBlockSlotSupplier) MaxSlots() int                                  { return 0 }
 
 type captureReservationInfoSlotSupplier struct {
 	taskQueue     string
@@ -1675,17 +1641,218 @@ func (s *PollerAutoscalerSuite) TestErrorScaleDownWithCapability() {
 }
 
 func newTestWorkflowAutoscalingBalancer(maxSlots int) *workflowAutoscalingBalancer {
-	return newWorkflowAutoscalingBalancer(maxSlots, int64(maxSlots))
+	stickyTarget := int64(maxSlots)
+	if stickyTarget <= 0 {
+		stickyTarget = 2
+	}
+
+	return newWorkflowAutoscalingBalancer(maxSlots, stickyTarget, nil)
+}
+
+func TestWorkflowAutoscalingBalancerRoutesStickyGroup(t *testing.T) {
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 0},
+		{Id: "group-b", Weight: 1},
+	}))
+	balancer := newTestWorkflowAutoscalingBalancer(8)
+	balancer.groupStore = groupStore
+
+	var coverage []pollerGroupLease
+	for range 2 {
+		lease, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+		require.NoError(t, err)
+		coverage = append(coverage, lease)
+
+		lease, err = balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, err)
+		coverage = append(coverage, lease)
+	}
+	defer func() {
+		for _, lease := range coverage {
+			lease.release()
+		}
+	}()
+
+	balancer.setStickyGroupBacklog("group-a", 1)
+	lease, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	require.Equal(t, "group-b", lease.groupIDOrEmpty())
+	lease.release()
+
+	balancer.setStickyGroupBacklog("group-a", 2)
+	lease, err = balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer lease.release()
+	require.Equal(t, "group-a", lease.groupIDOrEmpty())
+
+	lease, err = balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	defer lease.release()
+	require.Equal(t, "group-b", lease.groupIDOrEmpty())
+}
+
+func TestWorkflowAutoscalingRequiredCoveragePrecedesSlotLimit(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		groupStore := newPollerGroupSnapshotStore()
+		groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+			{Id: "group-a", Weight: 1},
+		}))
+		balancer := newWorkflowAutoscalingBalancer(2, 2, groupStore)
+
+		normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+		require.NoError(t, err)
+		defer normal.release()
+		sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, err)
+		defer sticky.release()
+
+		groupStore.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
+			{Id: "group-a", Weight: 1},
+			{Id: "group-b", Weight: 1},
+		}))
+
+		acquire := func(kind enumspb.TaskQueueKind) pollerGroupLease {
+			type result struct {
+				lease pollerGroupLease
+				err   error
+			}
+			resultCh := make(chan result, 1)
+			go func() {
+				lease, err := balancer.acquire(t.Context(), kind)
+				resultCh <- result{lease: lease, err: err}
+			}()
+
+			synctest.Wait()
+			select {
+			case result := <-resultCh:
+				require.NoError(t, result.err)
+				return result.lease
+			default:
+				t.Fatal("required group coverage waited for a slot")
+				return pollerGroupLease{}
+			}
+		}
+
+		normal = acquire(enumspb.TASK_QUEUE_KIND_NORMAL)
+		defer normal.release()
+		require.Equal(t, "group-b", normal.groupIDOrEmpty())
+		sticky = acquire(enumspb.TASK_QUEUE_KIND_STICKY)
+		defer sticky.release()
+		require.Equal(t, "group-b", sticky.groupIDOrEmpty())
+	})
+}
+
+func TestWorkflowAutoscalingBalancerPrefersStickyGroup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		groupStore := newPollerGroupSnapshotStore()
+		groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+			{Id: "group-a", Weight: 1},
+		}))
+		balancer := newTestWorkflowAutoscalingBalancer(4)
+		balancer.groupStore = groupStore
+
+		normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+		require.NoError(t, err)
+		defer normal.release()
+		sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, err)
+		defer sticky.release()
+		balancer.setStickyGroupBacklog("group-a", 3)
+
+		normalResult := make(chan pollerGroupLease, 1)
+		go func() {
+			lease, _ := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			normalResult <- lease
+		}()
+		synctest.Wait()
+		select {
+		case <-normalResult:
+			t.Fatal("normal poll should wait for actionable sticky backlog")
+		default:
+		}
+
+		extraSticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, err)
+		defer extraSticky.release()
+		balancer.setStickyGroupBacklog("group-a", 2)
+
+		synctest.Wait()
+		extraNormal := <-normalResult
+		extraNormal.release()
+	})
+}
+
+func TestWorkflowAutoscalingBalancerHonorsStickyTarget(t *testing.T) {
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	}))
+	balancer := newWorkflowAutoscalingBalancer(3, 1, groupStore)
+
+	normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	defer normal.release()
+	sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer sticky.release()
+	balancer.setStickyGroupBacklog("group-a", 10)
+
+	extraNormal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	extraNormal.release()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err = balancer.acquire(ctx, enumspb.TASK_QUEUE_KIND_STICKY)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
+func TestWorkflowAutoscalingBalancerDropsStaleGroup(t *testing.T) {
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+		{Id: "group-b", Weight: 1},
+	}))
+	balancer := newTestWorkflowAutoscalingBalancer(3)
+	balancer.groupStore = groupStore
+	balancer.setStickyGroupBacklog("group-a", 3)
+
+	groupStore.updateGroups(testPollerGroupsInfo(2, nil))
+	groupStore.updateGroups(testPollerGroupsInfo(3, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	}))
+	balancer.setStickyGroupBacklog("", 0)
+
+	require.Zero(t, balancer.groups["group-a"].stickyBacklog)
+	require.Len(t, balancer.groups, 1)
+}
+
+func TestWorkflowAutoscalingBalancerDropsUngroupedBacklog(t *testing.T) {
+	groupStore := newPollerGroupSnapshotStore()
+	balancer := newTestWorkflowAutoscalingBalancer(3)
+	balancer.groupStore = groupStore
+	balancer.setStickyBacklog(3)
+
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	}))
+	lease, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	lease.release()
+	require.Zero(t, balancer.ungroupedStickyBacklog)
 }
 
 func TestWorkflowAutoscalingBalancerPreservesQueueKinds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		balancer := newTestWorkflowAutoscalingBalancer(2)
-		balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+		normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+		require.NoError(t, err)
 
-		done := make(chan error, 1)
+		done := make(chan pollerGroupLease, 1)
 		go func() {
-			done <- balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			lease, _ := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			done <- lease
 		}()
 
 		synctest.Wait()
@@ -1695,29 +1862,38 @@ func TestWorkflowAutoscalingBalancerPreservesQueueKinds(t *testing.T) {
 		default:
 		}
 
-		require.NoError(t, balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY))
-		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
-		balancer.finish(enumspb.TASK_QUEUE_KIND_NORMAL)
+		sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, err)
+		defer sticky.release()
+		normal.release()
 
 		synctest.Wait()
-		require.NoError(t, <-done)
+		secondNormal := <-done
+		secondNormal.release()
 	})
 }
 
 func TestWorkflowAutoscalingBalancerPrefersStickyBacklog(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		balancer := newTestWorkflowAutoscalingBalancer(3)
-		balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+		normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+		require.NoError(t, err)
+		defer normal.release()
+		sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, err)
+		defer sticky.release()
 		balancer.setStickyBacklog(1)
 
-		require.NoError(t, balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL))
+		extraNormal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+		require.NoError(t, err)
+		extraNormal.release()
 
 		balancer.setStickyBacklog(3)
 
-		done := make(chan error, 1)
+		done := make(chan pollerGroupLease, 1)
 		go func() {
-			done <- balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			lease, _ := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			done <- lease
 		}()
 
 		synctest.Wait()
@@ -1727,25 +1903,35 @@ func TestWorkflowAutoscalingBalancerPrefersStickyBacklog(t *testing.T) {
 		default:
 		}
 
-		require.NoError(t, balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY))
-
 		balancer.setStickyBacklog(0)
 
 		synctest.Wait()
-		require.NoError(t, <-done)
+		extraNormal = <-done
+		extraNormal.release()
 	})
 }
 
 func TestWorkflowAutoscalingBalancerAllowsNormalAtStickyTarget(t *testing.T) {
-	balancer := newWorkflowAutoscalingBalancer(4, 2)
-	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
-	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	balancer := newWorkflowAutoscalingBalancer(4, 2, nil)
+	normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	defer normal.release()
+	sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer sticky.release()
+	extraSticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer extraSticky.release()
 	balancer.setStickyBacklog(10)
 
-	balancer.mu.Lock()
-	defer balancer.mu.Unlock()
-	require.True(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
+	extraNormal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	extraNormal.release()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err = balancer.acquire(ctx, enumspb.TASK_QUEUE_KIND_STICKY)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestBalancerTargetWakesNormal(t *testing.T) {
@@ -1762,13 +1948,17 @@ func TestBalancerTargetWakesNormal(t *testing.T) {
 			4,
 		)
 		balancer := pollers[0].autoscalingBalancer
-		balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+		normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+		require.NoError(t, err)
+		defer normal.release()
+		sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, err)
+		defer sticky.release()
 		balancer.setStickyBacklog(2)
 
 		done := make(chan error, 1)
 		go func() {
-			done <- balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			done <- balancer.waitForKind(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
 		}()
 
 		synctest.Wait()
@@ -1807,11 +1997,13 @@ func TestWorkflowAutoscalingBalancerUnknownMaximum(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				balancer := newTestWorkflowAutoscalingBalancer(0)
-				balancer.start(test.blockedKind)
+				first, err := balancer.acquire(t.Context(), test.blockedKind)
+				require.NoError(t, err)
 
-				done := make(chan error, 1)
+				done := make(chan pollerGroupLease, 1)
 				go func() {
-					done <- balancer.waitForAdmission(t.Context(), test.blockedKind)
+					lease, _ := balancer.acquire(t.Context(), test.blockedKind)
+					done <- lease
 				}()
 
 				synctest.Wait()
@@ -1821,16 +2013,14 @@ func TestWorkflowAutoscalingBalancerUnknownMaximum(t *testing.T) {
 				default:
 				}
 
-				require.NoError(t, balancer.waitForAdmission(t.Context(), test.otherKind))
-				balancer.start(test.otherKind)
+				other, err := balancer.acquire(t.Context(), test.otherKind)
+				require.NoError(t, err)
 
 				synctest.Wait()
-				require.NoError(t, <-done)
-
-				balancer.finish(test.blockedKind)
-				balancer.finish(test.otherKind)
-				require.NoError(t, balancer.waitForAdmission(t.Context(), test.blockedKind))
-				require.NoError(t, balancer.waitForAdmission(t.Context(), test.otherKind))
+				second := <-done
+				first.release()
+				other.release()
+				second.release()
 			})
 		})
 	}
@@ -1853,52 +2043,64 @@ func TestWorkflowAutoscalingBalancerUnknownMaximumMatchesGenericFairness(t *test
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			balancer := newTestWorkflowAutoscalingBalancer(0)
-			balancer.normalActive = test.normalActive
-			balancer.stickyActive = test.stickyActive
+			balancer.reservations.normal = test.normalActive
+			balancer.reservations.sticky = test.stickyActive
 
 			balancer.mu.Lock()
 			defer balancer.mu.Unlock()
-			require.Equal(t, test.normalAllowed, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
-			require.Equal(t, test.stickyAllowed, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_STICKY))
+			require.Equal(t, test.normalAllowed, balancer.canAdmitUngrouped(enumspb.TASK_QUEUE_KIND_NORMAL))
+			require.Equal(t, test.stickyAllowed, balancer.canAdmitUngrouped(enumspb.TASK_QUEUE_KIND_STICKY))
 		})
 	}
 }
 
 func TestUnknownCapacityPrefersSticky(t *testing.T) {
-	balancer := newWorkflowAutoscalingBalancer(0, 10)
-	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	balancer := newWorkflowAutoscalingBalancer(0, 10, nil)
+	normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	defer normal.release()
+	sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer sticky.release()
 	balancer.setStickyBacklog(10)
 
 	balancer.mu.Lock()
 	defer balancer.mu.Unlock()
-	require.False(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
-	require.True(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_STICKY))
+	require.False(t, balancer.canAdmitUngrouped(enumspb.TASK_QUEUE_KIND_NORMAL))
+	require.True(t, balancer.canAdmitUngrouped(enumspb.TASK_QUEUE_KIND_STICKY))
 }
 
 func TestWorkflowAutoscalingBalancerUnknownMaximumCancellation(t *testing.T) {
 	balancer := newTestWorkflowAutoscalingBalancer(0)
-	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+	normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	defer normal.release()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	require.ErrorIs(t, balancer.waitForAdmission(ctx, enumspb.TASK_QUEUE_KIND_NORMAL), context.Canceled)
+	_, err = balancer.acquire(ctx, enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestWorkflowAutoscalingBalancerCancellation(t *testing.T) {
 	balancer := newTestWorkflowAutoscalingBalancer(2)
-	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	defer normal.release()
+	sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer sticky.release()
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	require.ErrorIs(t, balancer.waitForAdmission(ctx, enumspb.TASK_QUEUE_KIND_NORMAL), context.Canceled)
+	_, err = balancer.acquire(ctx, enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 func TestWorkflowAutoscalingBalancerRejectsInvalidKind(t *testing.T) {
 	balancer := newTestWorkflowAutoscalingBalancer(2)
 
-	err := balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
+	_, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
 
 	require.EqualError(t, err, invalidAdmissionKindMessage)
 }
@@ -1910,26 +2112,25 @@ func TestWorkflowAutoscalingBalancerIgnoresInvalidKind(t *testing.T) {
 		balancer.mu.Lock()
 		defer balancer.mu.Unlock()
 
-		require.False(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_UNSPECIFIED))
+		require.False(t, balancer.canAdmitUngrouped(enumspb.TASK_QUEUE_KIND_UNSPECIFIED))
 	}()
-
-	balancer.start(enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
-	balancer.finish(enumspb.TASK_QUEUE_KIND_UNSPECIFIED)
-
-	require.Zero(t, balancer.normalActive)
-	require.Zero(t, balancer.stickyActive)
 }
 
 func TestWorkflowAutoscalingBalancerStickyStartWakesNormal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		balancer := newTestWorkflowAutoscalingBalancer(4)
-		balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+		normal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+		require.NoError(t, err)
+		defer normal.release()
+		sticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, err)
+		defer sticky.release()
 		balancer.setStickyBacklog(2)
 
-		done := make(chan error, 1)
+		done := make(chan pollerGroupLease, 1)
 		go func() {
-			done <- balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			lease, _ := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+			done <- lease
 		}()
 
 		synctest.Wait()
@@ -1939,11 +2140,13 @@ func TestWorkflowAutoscalingBalancerStickyStartWakesNormal(t *testing.T) {
 		default:
 		}
 
-		require.NoError(t, balancer.waitForAdmission(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY))
-		balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+		extraSticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+		require.NoError(t, err)
+		defer extraSticky.release()
 
 		synctest.Wait()
-		require.NoError(t, <-done)
+		extraNormal := <-done
+		extraNormal.release()
 	})
 }
 
@@ -1963,9 +2166,14 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAutoscalingBalancerConfiguration()
 		minimumNumberOfPollers: 1,
 	}
 	supplier := newLimitedSlotSupplier(2)
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	}))
 	params := workerExecutionParameters{
 		Logger:                    ilog.NewNopLogger(),
 		serverSupportsAutoscaling: &atomic.Bool{},
+		pollerGroupSnapshotStore:  groupStore,
 	}
 	pollers := buildWorkflowScalableTaskPollers(
 		&workflowTaskProcessor{stickyCacheSize: 1},
@@ -1990,11 +2198,16 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAutoscalingBalancerConfiguration()
 	require.Same(s.T(), pollers[0].autoscalingBalancer, pollers[1].autoscalingBalancer)
 	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_NORMAL, pollers[0].pollKind)
 	require.Equal(s.T(), enumspb.TASK_QUEUE_KIND_STICKY, pollers[1].pollKind)
-	require.Nil(s.T(), normalTaskPoller.autoscalingBalancer)
+	require.Same(s.T(), pollers[0].autoscalingBalancer, normalTaskPoller.autoscalingBalancer)
 	require.Same(s.T(), pollers[0].autoscalingBalancer, stickyTaskPoller.autoscalingBalancer)
+	require.Same(s.T(), groupStore, pollers[0].autoscalingBalancer.groupStore)
+	require.Nil(s.T(), pollers[0].autoscalingRunner.pollerGroups)
+	require.Nil(s.T(), pollers[1].autoscalingRunner.pollerGroups)
+	require.Same(s.T(), pollers[0].autoscalingBalancer, pollers[0].autoscalingRunner.workflowBalancer)
+	require.Same(s.T(), pollers[0].autoscalingBalancer, pollers[1].autoscalingRunner.workflowBalancer)
 
-	stickyTaskPoller.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, 3)
-	require.Equal(s.T(), int64(3), pollers[0].autoscalingBalancer.stickyBacklog)
+	stickyTaskPoller.updateBacklog(enumspb.TASK_QUEUE_KIND_STICKY, "group-a", 3)
+	require.Equal(s.T(), int64(3), pollers[0].autoscalingBalancer.groups["group-a"].stickyBacklog)
 
 	unknownCapacityPollers := buildWorkflowScalableTaskPollers(
 		&workflowTaskProcessor{stickyCacheSize: 1},

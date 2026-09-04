@@ -279,7 +279,7 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 	defer pollWG.Wait()
 
 	for {
-		lease, releaseActive, err := pollerRunner.acquire(hw.workerCtx)
+		admission, err := pollerRunner.acquire(hw.workerCtx)
 		if err != nil {
 			return
 		}
@@ -288,8 +288,8 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 		go func() {
 			defer pollWG.Done()
 
-			task, err := hw.pollWorkerCommand(lease)
-			lease.release()
+			task, err := hw.pollWorkerCommand(admission.groupLease)
+			admission.release()
 			if err != nil {
 				if hw.workerCtx.Err() == nil {
 					hw.logger.Warn("Failed polling worker command task", "Error", err)
@@ -300,10 +300,8 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 				case <-timer.C:
 				case <-hw.workerCtx.Done():
 				}
-				releaseActive()
 				return
 			}
-			releaseActive()
 			if task == nil {
 				return
 			}
