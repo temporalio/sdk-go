@@ -63,6 +63,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
+  with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
+  and all local activity execution slots were full.
 - The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
   now report the wall-clock time external storage was in flight. Previously each batch's duration was
   summed, over-reporting the time whenever storage operations ran concurrently.
