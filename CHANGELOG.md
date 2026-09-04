@@ -76,6 +76,9 @@ to docs, or any other relevant information.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
+- Added disabled-by-default SDK flag 9 for deterministic workflow child-context cancellation.
+  Currently no behavior is changed by default, a future PR will flip this flag on by 
+  default.
 - `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
   so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
