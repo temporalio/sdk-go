@@ -685,7 +685,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
 			tagPayloadDownloadCount, downloadPayloadMetrics.payloadCount,
 			tagPayloadDownloadSize, downloadPayloadMetrics.totalSize,
-			tagPayloadDownloadDuration, downloadPayloadMetrics.totalDuration,
+			tagPayloadDownloadDuration, downloadPayloadMetrics.TotalDuration(),
 			tagPayloadDownloadDrivers, downloadPayloadMetrics.GetDriverNames(),
 		)
 	}
@@ -693,7 +693,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
 			tagPayloadUploadCount, uploadPayloadMetrics.payloadCount,
 			tagPayloadUploadSize, uploadPayloadMetrics.totalSize,
-			tagPayloadUploadDuration, uploadPayloadMetrics.totalDuration,
+			tagPayloadUploadDuration, uploadPayloadMetrics.TotalDuration(),
 			tagPayloadUploadDrivers, uploadPayloadMetrics.GetDriverNames(),
 		)
 	}
@@ -1000,26 +1000,53 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 	return builtRequest
 }
 
+// workflowTaskStorageMetrics implements extstore.StorageOperationCallback for a single workflow
+// task. Batches may complete concurrently, so mu guards every field.
 type workflowTaskStorageMetrics struct {
-	mu            sync.Mutex
-	payloadCount  int
-	totalSize     int64
-	totalDuration time.Duration
-	driverNames   map[string]struct{}
+	mu           sync.Mutex
+	payloadCount int
+	totalSize    int64
+	// Start and end of each completed batch.
+	spans       [][2]time.Time
+	driverNames map[string]struct{}
 }
 
-func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string) {
+func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, start, end time.Time, driverNames []string) {
 	callback.mu.Lock()
 	defer callback.mu.Unlock()
 	callback.payloadCount += count
 	callback.totalSize += size
-	callback.totalDuration += duration
+	callback.spans = append(callback.spans, [2]time.Time{start, end})
 	for _, name := range driverNames {
 		if callback.driverNames == nil {
 			callback.driverNames = make(map[string]struct{})
 		}
 		callback.driverNames[name] = struct{}{}
 	}
+}
+
+// TotalDuration reports the wall-clock time storage was in flight. Batches may run
+// concurrently, so overlapping spans are counted once rather than summed.
+func (callback *workflowTaskStorageMetrics) TotalDuration() time.Duration {
+	callback.mu.Lock()
+	defer callback.mu.Unlock()
+	if len(callback.spans) == 0 {
+		return 0
+	}
+	ordered := make([][2]time.Time, len(callback.spans))
+	copy(ordered, callback.spans)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i][0].Before(ordered[j][0]) })
+	var total time.Duration
+	spanStart, spanEnd := ordered[0][0], ordered[0][1]
+	for _, span := range ordered[1:] {
+		if span[0].After(spanEnd) {
+			total += spanEnd.Sub(spanStart)
+			spanStart, spanEnd = span[0], span[1]
+		} else if span[1].After(spanEnd) {
+			spanEnd = span[1]
+		}
+	}
+	return total + spanEnd.Sub(spanStart)
 }
 
 func (callback *workflowTaskStorageMetrics) GetDriverNames() []string {
