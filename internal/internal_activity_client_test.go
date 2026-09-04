@@ -254,6 +254,62 @@ func TestActivityOperatorCommandRequestFields(t *testing.T) {
 	require.Nil(t, reset.GetJitter())
 }
 
+// TestInterceptorReceivesCommandArguments asserts the values a caller passes reach the
+// interceptor chain, not merely that the hook fired. A dropped argument between the handle and
+// the chain is invisible to a test that only counts calls.
+func TestInterceptorReceivesCommandArguments(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	service.EXPECT().PauseActivityExecution(gomock.Any(), gomock.Any()).
+		Return(&workflowservice.PauseActivityExecutionResponse{}, nil).AnyTimes()
+	service.EXPECT().UnpauseActivityExecution(gomock.Any(), gomock.Any()).
+		Return(&workflowservice.UnpauseActivityExecutionResponse{}, nil).AnyTimes()
+	service.EXPECT().ResetActivityExecution(gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ResetActivityExecutionResponse{}, nil).AnyTimes()
+
+	client := NewServiceClient(service, nil, ClientOptions{})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+	recorder := &recordingOutboundInterceptor{}
+	client.interceptor = recorder.intercept(client.interceptor)
+	handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
+
+	ctx := t.Context()
+	require.NoError(t, handle.Pause(ctx, ClientPauseActivityOptions{Reason: "pause-reason"}))
+	require.NoError(t, handle.Unpause(ctx, ClientUnpauseActivityOptions{
+		Reason: "unpause-reason",
+		Jitter: 5 * time.Second,
+	}))
+	require.NoError(t, handle.Reset(ctx, ClientResetActivityOptions{
+		KeepPaused:     true,
+		ResetHeartbeat: true,
+	}))
+
+	require.Equal(t, "pause-reason", recorder.pauseIn.Reason)
+	require.Equal(t, "unpause-reason", recorder.unpauseIn.Reason)
+	require.Equal(t, 5*time.Second, recorder.unpauseIn.Jitter)
+	require.True(t, recorder.resetIn.KeepPaused)
+	require.True(t, recorder.resetIn.ResetHeartbeat)
+	require.False(t, recorder.resetIn.RestoreOriginalOptions)
+}
+
+// TestUpdateActivityOptionsRestoreIsExclusive asserts the guard the handle cannot reach: the
+// server rejects restore-original combined with individual changes, and only a hand-built
+// interceptor input can produce that combination.
+func TestUpdateActivityOptionsRestoreIsExclusive(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	client := NewServiceClient(service, nil, ClientOptions{})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	// No RPC expectation is registered, so reaching the service would fail the mock.
+	_, err := client.interceptor.UpdateActivityOptions(t.Context(), &ClientUpdateActivityOptionsInput{
+		ActivityID:      "activity-id",
+		RestoreOriginal: true,
+		Updates: []ClientActivityOptionsUpdate{
+			ClientActivityOptionsKeys.HeartbeatTimeout.ValueSet(25 * time.Second),
+		},
+	})
+	require.ErrorContains(t, err, "cannot be combined")
+}
+
 func TestResetActivityFlagsReachRequest(t *testing.T) {
 	resetWith := func(t *testing.T, options ClientResetActivityOptions) *workflowservice.ResetActivityExecutionRequest {
 		t.Helper()
@@ -296,6 +352,10 @@ func TestResetActivityFlagsReachRequest(t *testing.T) {
 // counts UpdateActivityOptions calls
 type recordingOutboundInterceptor struct {
 	updateCalls int
+	pauseIn     *ClientPauseActivityInput
+	unpauseIn   *ClientUnpauseActivityInput
+	resetIn     *ClientResetActivityInput
+	updateIn    *ClientUpdateActivityOptionsInput
 }
 
 func (r *recordingOutboundInterceptor) intercept(next ClientOutboundInterceptor) ClientOutboundInterceptor {
@@ -312,7 +372,23 @@ func (r *recordingOutbound) UpdateActivityOptions(
 	in *ClientUpdateActivityOptionsInput,
 ) (*ClientUpdateActivityOptionsOutput, error) {
 	r.parent.updateCalls++
+	r.parent.updateIn = in
 	return r.ClientOutboundInterceptorBase.UpdateActivityOptions(ctx, in)
+}
+
+func (r *recordingOutbound) PauseActivity(ctx context.Context, in *ClientPauseActivityInput) error {
+	r.parent.pauseIn = in
+	return r.ClientOutboundInterceptorBase.PauseActivity(ctx, in)
+}
+
+func (r *recordingOutbound) UnpauseActivity(ctx context.Context, in *ClientUnpauseActivityInput) error {
+	r.parent.unpauseIn = in
+	return r.ClientOutboundInterceptorBase.UnpauseActivity(ctx, in)
+}
+
+func (r *recordingOutbound) ResetActivity(ctx context.Context, in *ClientResetActivityInput) error {
+	r.parent.resetIn = in
+	return r.ClientOutboundInterceptorBase.ResetActivity(ctx, in)
 }
 
 func TestExecuteActivityFromNexusRequestUsesStableRequestID(t *testing.T) {
