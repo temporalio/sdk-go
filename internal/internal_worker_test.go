@@ -3550,6 +3550,34 @@ func TestHistoryFromJSON(t *testing.T) {
 func aliasNameClash1(context.Context) (string, error) { return "func1", nil }
 func aliasNameClash2(context.Context) (string, error) { return "func2", nil }
 
+func TestFunctionLiteralDuplicateRegistrationHint(t *testing.T) {
+	t.Run("workflow", func(t *testing.T) {
+		registry := newRegistry()
+		workflowFn := func(Context) error { return nil }
+		registry.RegisterWorkflow(workflowFn)
+
+		err := runAndCatchPanic(func() { registry.RegisterWorkflow(workflowFn) })
+		require.ErrorContains(t, err, functionLiteralRegistrationHint)
+	})
+
+	t.Run("activity", func(t *testing.T) {
+		registry := newRegistry()
+		activityFn := func(context.Context) error { return nil }
+		registry.RegisterActivity(activityFn)
+
+		err := runAndCatchPanic(func() { registry.RegisterActivity(activityFn) })
+		require.ErrorContains(t, err, functionLiteralRegistrationHint)
+	})
+
+	t.Run("declared function", func(t *testing.T) {
+		registry := newRegistry()
+		registry.RegisterActivity(aliasNameClash1)
+
+		err := runAndCatchPanic(func() { registry.RegisterActivity(aliasNameClash1) })
+		require.NotContains(t, err.Error(), functionLiteralRegistrationHint)
+	})
+}
+
 type aliasNameClashStruct struct{}
 
 func (aliasNameClashStruct) aliasNameClash1(context.Context) (string, error) { return "func3", nil }

@@ -83,6 +83,8 @@ to docs, or any other relevant information.
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
   so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
   decoding it.
+- Added documentation that function literals (closures) shouldn't be registered as
+  workflow functions or activity functions.
 
 ### Security
 

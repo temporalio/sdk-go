@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -75,6 +76,8 @@ const (
 	unlimitedDeadlockDetectionTimeout = math.MaxInt64
 
 	testTagsContextKey = "temporal-testTags"
+
+	functionLiteralRegistrationHint = "It looks like you might have registered a function literal (closure), which is not supported."
 )
 
 type (
@@ -753,7 +756,11 @@ func (r *registry) RegisterWorkflowWithOptions(
 
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.workflowFuncMap[registerName]; ok {
-			panic(fmt.Sprintf("workflow name \"%v\" is already registered", registerName))
+			message := fmt.Sprintf("workflow name \"%v\" is already registered", registerName)
+			if mightBeFunctionLiteral(wf) {
+				message += ". " + functionLiteralRegistrationHint
+			}
+			panic(message)
 		}
 	}
 	r.workflowFuncMap[registerName] = wf
@@ -835,7 +842,11 @@ func (r *registry) RegisterActivityWithOptions(
 
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.activityFuncMap[registerName]; ok {
-			panic(fmt.Sprintf("activity type \"%v\" is already registered", registerName))
+			message := fmt.Sprintf("activity type \"%v\" is already registered", registerName)
+			if mightBeFunctionLiteral(af) {
+				message += ". " + functionLiteralRegistrationHint
+			}
+			panic(message)
 		}
 	}
 	r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: af}
@@ -2744,6 +2755,18 @@ func isValidResultType(inType reflect.Type) bool {
 func isError(inType reflect.Type) bool {
 	errorElem := reflect.TypeFor[error]()
 	return inType != nil && inType.Implements(errorElem)
+}
+
+// isFunctionLiteral matches strings that look like they could be the names
+// of function literals in Go 1.27+. Specifically, suffixes of the form funcN or
+// funcN.M for some numbers N and M.
+var functionLiteralNamePattern = regexp.MustCompile(`func\d+(?:\.\d+)?$`)
+
+// mightBeFunctionLiteral returns true if the given function looks like a function literal.
+// False positives are possible.
+func mightBeFunctionLiteral(fn any) bool {
+	fullName := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name()
+	return functionLiteralNamePattern.MatchString(fullName)
 }
 
 func getFunctionName(i any) (name string, isMethod bool) {
