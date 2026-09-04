@@ -590,12 +590,11 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
 		emitFailMetric = true
-		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
 		failureReason = metrics.FailureReasonWorkflowError
-		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
+		if workflowTaskFailureCause(taskErr) == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
 			failureReason = metrics.FailureReasonNonDeterminismError
 		}
-		taskCompletion = &workflowTaskCompletion{rawRequest: failWorkflowTask}
+		taskCompletion = wtp.taskFailureCompletion(task, taskErr)
 	}
 
 	uploadPayloadMetrics := &workflowTaskStorageMetrics{}
@@ -612,7 +611,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	}
 	if taskErr = visitProtoPayloads(ctx, outboundPayloadVisitor, taskCompletion.rawRequest, wtp.payloadVisitorConcurrency); taskErr != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
-		// cannot send the original response, so fall back to an explicit WFT
+		// cannot send the original response, so fall back to an explicit
 		// failure so the server records the error immediately.
 		keyvals := []any{
 			tagWorkflowType, task.WorkflowType.GetName(),
@@ -632,7 +631,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		if errors.As(taskErr, new(payloadSizeError)) {
 			failureReason = metrics.FailureReasonPayloadsTooLarge
 		}
-		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
+		taskCompletion = wtp.taskFailureCompletion(task, taskErr)
 	}
 
 	// The namespace limit governs the server's recombined page buffer, so it only applies to a
@@ -940,18 +939,43 @@ func (wtp *workflowTaskProcessor) handleInboundVisitorError(task *workflowservic
 			tagPayloadSizeLimit, errPayloadSize.limit)
 	}
 	wtp.logger.Warn("Workflow task preprocess error: "+visitErr.Error(), keyvals...)
-	// Submit an explicit WFT failure so the server records the error immediately
+	// Submit an explicit failure so the server records the error immediately
 	// rather than waiting for the task to time out.
-	failReq := wtp.errorToFailWorkflowTask(task.TaskToken, visitErr)
-	if _, submitErr := wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failReq}, task); submitErr != nil {
-		wtp.logger.Warn("Failed to submit WFT failure after inbound visitor error.", tagError, submitErr)
+	failCompletion := wtp.taskFailureCompletion(task, visitErr)
+	if _, submitErr := wtp.sendTaskCompletedRequest(failCompletion, task); submitErr != nil {
+		wtp.logger.Warn("Failed to submit failure after inbound visitor error.", tagError, submitErr)
+	}
+}
+
+func (wtp *workflowTaskProcessor) taskFailureCompletion(
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+	err error,
+) *workflowTaskCompletion {
+	if task.Query != nil {
+		return &workflowTaskCompletion{
+			rawRequest: &workflowservice.RespondQueryTaskCompletedRequest{
+				TaskToken:     task.TaskToken,
+				CompletedType: enumspb.QUERY_RESULT_TYPE_FAILED,
+				ErrorMessage:  err.Error(),
+				Namespace:     wtp.namespace,
+				Failure:       wtp.failureConverter.ErrorToFailure(err),
+			},
+		}
+	}
+
+	return &workflowTaskCompletion{
+		rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, err),
 	}
 }
 
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
+	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, workflowTaskFailureCause(err))
+}
+
+func workflowTaskFailureCause(err error) enumspb.WorkflowTaskFailedCause {
 	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
 	// If it was a panic due to a bad state machine or if it was a history
-	// mismatch error, mark as non-deterministic
+	// mismatch error, mark as non-deterministic.
 	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
 		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
 			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
@@ -963,8 +987,7 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 	} else if errors.As(err, new(payloadSizeError)) {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
 	}
-
-	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, cause)
+	return cause
 }
 
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []byte, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondWorkflowTaskFailedRequest {
