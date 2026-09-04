@@ -63,6 +63,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
+  now report the wall-clock time external storage was in flight. Previously each batch's duration was
+  summed, over-reporting the time whenever storage operations ran concurrently.
 - Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
   request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
 - `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped

@@ -916,3 +916,39 @@ func TestDoPollGracefulShutdown(t *testing.T) {
 		})
 	}
 }
+
+func TestWorkflowTaskStorageMetricsTotalDuration(t *testing.T) {
+	base := time.Now()
+
+	t.Run("no batches", func(t *testing.T) {
+		metrics := &workflowTaskStorageMetrics{}
+		require.Equal(t, time.Duration(0), metrics.TotalDuration())
+	})
+
+	t.Run("concurrent batches counted once", func(t *testing.T) {
+		metrics := &workflowTaskStorageMetrics{}
+		metrics.PayloadBatchCompleted(2, 1024, base, base.Add(10*time.Second), []string{"s3"})
+		metrics.PayloadBatchCompleted(3, 2048, base.Add(5*time.Second), base.Add(15*time.Second), []string{"gcs"})
+
+		// Summing each batch's duration would report 20s.
+		require.Equal(t, 15*time.Second, metrics.TotalDuration())
+		require.Equal(t, 5, metrics.payloadCount)
+		require.Equal(t, int64(3072), metrics.totalSize)
+		require.Equal(t, []string{"gcs", "s3"}, metrics.GetDriverNames())
+	})
+
+	t.Run("disjoint batches summed", func(t *testing.T) {
+		metrics := &workflowTaskStorageMetrics{}
+		metrics.PayloadBatchCompleted(1, 1, base, base.Add(10*time.Second), nil)
+		metrics.PayloadBatchCompleted(1, 1, base.Add(20*time.Second), base.Add(30*time.Second), nil)
+		require.Equal(t, 20*time.Second, metrics.TotalDuration())
+	})
+
+	t.Run("adjacent and nested batches merged", func(t *testing.T) {
+		metrics := &workflowTaskStorageMetrics{}
+		metrics.PayloadBatchCompleted(1, 1, base, base.Add(10*time.Second), nil)
+		metrics.PayloadBatchCompleted(1, 1, base.Add(10*time.Second), base.Add(20*time.Second), nil)
+		metrics.PayloadBatchCompleted(1, 1, base.Add(12*time.Second), base.Add(18*time.Second), nil)
+		require.Equal(t, 20*time.Second, metrics.TotalDuration())
+	})
+}
