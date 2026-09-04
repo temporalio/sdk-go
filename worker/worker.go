@@ -61,12 +61,15 @@ type (
 	// WorkflowRegistry exposes workflow registration functions to consumers.
 	WorkflowRegistry interface {
 		// RegisterWorkflow - registers a workflow function with the worker.
+		// Function literals (closures) are not supported.
 		// A workflow takes a [workflow.Context] and input and returns a (result, error) or just error.
+		//
 		// Examples:
 		//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
+		//
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 		// For global registration consider workflow.Register
 		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
@@ -88,9 +91,10 @@ type (
 	// ActivityRegistry exposes activity registration functions to consumers.
 	ActivityRegistry interface {
 		// RegisterActivity - register an activity function or a pointer to a structure with the worker.
+		// Function literals (closures) are not supported.
 		// An activity function takes a context and input and returns a (result, error) or just error.
 		//
-		// And activity struct is a structure with all its exported methods treated as activities. The default
+		// An activity struct is a structure with all its exported methods treated as activities. The default
 		// name of each activity is the method name.
 		//
 		// Examples:
