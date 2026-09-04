@@ -94,8 +94,11 @@ func driversEqual(a, b StorageDriver) (equal bool) {
 	return a == b
 }
 
+// StorageOperationCallback is notified as each batch of storage operations completes. Batches
+// may run concurrently, so a batch reports the start and end of its span rather than a duration,
+// leaving the caller to decide how overlapping spans combine.
 type StorageOperationCallback interface {
-	PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string)
+	PayloadBatchCompleted(count int, size int64, start, end time.Time, driverNames []string)
 }
 
 type contextKey string
@@ -290,7 +293,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
 		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, startTime, time.Now(), driverOrder)
 		}
 	}
 	return result, nil
@@ -406,7 +409,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
 		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, startTime, time.Now(), driverOrder)
 		}
 	}
 	return result, nil

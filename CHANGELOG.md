@@ -65,11 +65,16 @@ to docs, or any other relevant information.
 
 - Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
   normal polls to use spare slots once sticky reaches its autoscaling target.
+- The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
+  now report the wall-clock time external storage was in flight. Previously each batch's duration was
+  summed, over-reporting the time whenever storage operations ran concurrently.
 - Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
   request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
 - `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
   `serviceerror.WorkflowExecutionAlreadyStarted` errors.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
+- Legacy query task processing failures are now reported through `RespondQueryTaskCompleted` instead of
+  `RespondWorkflowTaskFailed`, allowing query callers to receive the failure instead of timing out.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
   but decoded through the workflow serialization context, so a context-aware `DataConverter` or
@@ -78,6 +83,9 @@ to docs, or any other relevant information.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
+- Added disabled-by-default SDK flag 9 for deterministic workflow child-context cancellation.
+  Currently no behavior is changed by default, a future PR will flip this flag on by 
+  default.
 - `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
   so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of

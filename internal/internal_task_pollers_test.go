@@ -15,6 +15,8 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
 	protocolpb "go.temporal.io/api/protocol/v1"
+	"go.temporal.io/api/proxy"
+	querypb "go.temporal.io/api/query/v1"
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 	"go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
@@ -485,6 +487,189 @@ func TestWFTPanicInTaskHandler(t *testing.T) {
 	require.Nil(t, cache.getWorkflowContext(runID))
 }
 
+func TestLegacyQueryProcessingFailureReportedAsQueryFailure(t *testing.T) {
+	params := workerExecutionParameters{
+		cache:     NewWorkerCache(),
+		Namespace: "test-namespace",
+	}
+	ensureRequiredParams(&params)
+
+	ctrl := gomock.NewController(t)
+	client := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+	taskHandler := newWorkflowTaskHandler(params, nil, newRegistry())
+	poller := newWorkflowTaskProcessor(taskHandler, taskHandler, client, params, "")
+
+	taskToken := []byte("legacy-query-token")
+	taskErr := errors.New("failure while replaying history to serve a query")
+
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
+		TaskToken: taskToken,
+		Attempt:   1,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "workflow-id",
+			RunId:      "run-id",
+		},
+		WorkflowType: &commonpb.WorkflowType{
+			Name: "workflow-type",
+		},
+		Query: &querypb.WorkflowQuery{
+			QueryType: "status",
+		},
+	}
+
+	client.EXPECT().
+		RespondQueryTaskCompleted(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			req *workflowservice.RespondQueryTaskCompletedRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.RespondQueryTaskCompletedResponse, error) {
+			require.Equal(t, taskToken, req.TaskToken)
+			require.Equal(t, enumspb.QUERY_RESULT_TYPE_FAILED, req.CompletedType)
+			require.Equal(t, taskErr.Error(), req.ErrorMessage)
+			require.Equal(t, "test-namespace", req.Namespace)
+			require.NotNil(t, req.Failure)
+			return &workflowservice.RespondQueryTaskCompletedResponse{}, nil
+		})
+
+	_, err := poller.RespondTaskCompletedWithMetrics(
+		nil,
+		taskErr,
+		task,
+		time.Now(),
+		&workflowTaskStorageMetrics{},
+		nil,
+	)
+	require.NoError(t, err)
+}
+
+func TestLegacyQueryOutboundVisitorFailureReportedAsQueryFailure(t *testing.T) {
+	params := workerExecutionParameters{
+		cache:     NewWorkerCache(),
+		Namespace: "test-namespace",
+	}
+	ensureRequiredParams(&params)
+
+	visitorErr := errors.New("outbound payload visitor failure")
+	params.outboundPayloadVisitor = visitorFunc(
+		func(
+			_ *proxy.VisitPayloadsContext,
+			_ []*commonpb.Payload,
+		) ([]*commonpb.Payload, error) {
+			return nil, visitorErr
+		},
+	)
+
+	ctrl := gomock.NewController(t)
+	client := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+	taskHandler := newWorkflowTaskHandler(params, nil, newRegistry())
+	poller := newWorkflowTaskProcessor(taskHandler, taskHandler, client, params, "")
+
+	taskToken := []byte("legacy-query-outbound-token")
+
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
+		TaskToken: taskToken,
+		Attempt:   1,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "workflow-id",
+			RunId:      "run-id",
+		},
+		WorkflowType: &commonpb.WorkflowType{
+			Name: "workflow-type",
+		},
+		Query: &querypb.WorkflowQuery{
+			QueryType: "status",
+		},
+	}
+
+	taskCompletion := &workflowTaskCompletion{
+		rawRequest: &workflowservice.RespondQueryTaskCompletedRequest{
+			TaskToken: taskToken,
+			QueryResult: &commonpb.Payloads{
+				Payloads: []*commonpb.Payload{
+					{Data: []byte("query-result")},
+				},
+			},
+		},
+	}
+
+	client.EXPECT().
+		RespondQueryTaskCompleted(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			req *workflowservice.RespondQueryTaskCompletedRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.RespondQueryTaskCompletedResponse, error) {
+			require.Equal(t, taskToken, req.TaskToken)
+			require.Equal(t, enumspb.QUERY_RESULT_TYPE_FAILED, req.CompletedType)
+			require.Equal(t, visitorErr.Error(), req.ErrorMessage)
+			require.Equal(t, "test-namespace", req.Namespace)
+			require.NotNil(t, req.Failure)
+			return &workflowservice.RespondQueryTaskCompletedResponse{}, nil
+		})
+
+	_, err := poller.RespondTaskCompletedWithMetrics(
+		taskCompletion,
+		nil,
+		task,
+		time.Now(),
+		&workflowTaskStorageMetrics{},
+		nil,
+	)
+	require.NoError(t, err)
+}
+
+func TestLegacyQueryInboundVisitorFailureReportedAsQueryFailure(t *testing.T) {
+	params := workerExecutionParameters{
+		cache:     NewWorkerCache(),
+		Namespace: "test-namespace",
+	}
+	ensureRequiredParams(&params)
+
+	ctrl := gomock.NewController(t)
+	client := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+	taskHandler := newWorkflowTaskHandler(params, nil, newRegistry())
+	poller := newWorkflowTaskProcessor(taskHandler, taskHandler, client, params, "")
+
+	taskToken := []byte("legacy-query-inbound-token")
+	visitorErr := errors.New("inbound payload visitor failure")
+
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
+		TaskToken: taskToken,
+		Attempt:   1,
+		WorkflowExecution: &commonpb.WorkflowExecution{
+			WorkflowId: "workflow-id",
+			RunId:      "run-id",
+		},
+		WorkflowType: &commonpb.WorkflowType{
+			Name: "workflow-type",
+		},
+		Query: &querypb.WorkflowQuery{
+			QueryType: "status",
+		},
+	}
+
+	client.EXPECT().
+		RespondQueryTaskCompleted(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			req *workflowservice.RespondQueryTaskCompletedRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.RespondQueryTaskCompletedResponse, error) {
+			require.Equal(t, taskToken, req.TaskToken)
+			require.Equal(t, enumspb.QUERY_RESULT_TYPE_FAILED, req.CompletedType)
+			require.Equal(t, visitorErr.Error(), req.ErrorMessage)
+			require.Equal(t, "test-namespace", req.Namespace)
+			require.NotNil(t, req.Failure)
+			return &workflowservice.RespondQueryTaskCompletedResponse{}, nil
+		})
+
+	poller.handleInboundVisitorError(task, visitorErr)
+}
+
 func TestErrorToFailWorkflowTaskCause(t *testing.T) {
 	params := workerExecutionParameters{cache: NewWorkerCache()}
 	ensureRequiredParams(&params)
@@ -730,4 +915,40 @@ func TestDoPollGracefulShutdown(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestWorkflowTaskStorageMetricsTotalDuration(t *testing.T) {
+	base := time.Now()
+
+	t.Run("no batches", func(t *testing.T) {
+		metrics := &workflowTaskStorageMetrics{}
+		require.Equal(t, time.Duration(0), metrics.TotalDuration())
+	})
+
+	t.Run("concurrent batches counted once", func(t *testing.T) {
+		metrics := &workflowTaskStorageMetrics{}
+		metrics.PayloadBatchCompleted(2, 1024, base, base.Add(10*time.Second), []string{"s3"})
+		metrics.PayloadBatchCompleted(3, 2048, base.Add(5*time.Second), base.Add(15*time.Second), []string{"gcs"})
+
+		// Summing each batch's duration would report 20s.
+		require.Equal(t, 15*time.Second, metrics.TotalDuration())
+		require.Equal(t, 5, metrics.payloadCount)
+		require.Equal(t, int64(3072), metrics.totalSize)
+		require.Equal(t, []string{"gcs", "s3"}, metrics.GetDriverNames())
+	})
+
+	t.Run("disjoint batches summed", func(t *testing.T) {
+		metrics := &workflowTaskStorageMetrics{}
+		metrics.PayloadBatchCompleted(1, 1, base, base.Add(10*time.Second), nil)
+		metrics.PayloadBatchCompleted(1, 1, base.Add(20*time.Second), base.Add(30*time.Second), nil)
+		require.Equal(t, 20*time.Second, metrics.TotalDuration())
+	})
+
+	t.Run("adjacent and nested batches merged", func(t *testing.T) {
+		metrics := &workflowTaskStorageMetrics{}
+		metrics.PayloadBatchCompleted(1, 1, base, base.Add(10*time.Second), nil)
+		metrics.PayloadBatchCompleted(1, 1, base.Add(10*time.Second), base.Add(20*time.Second), nil)
+		metrics.PayloadBatchCompleted(1, 1, base.Add(12*time.Second), base.Add(18*time.Second), nil)
+		require.Equal(t, 20*time.Second, metrics.TotalDuration())
+	})
 }

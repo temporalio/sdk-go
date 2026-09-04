@@ -591,12 +591,11 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
 		emitFailMetric = true
-		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
 		failureReason = metrics.FailureReasonWorkflowError
-		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
+		if workflowTaskFailureCause(taskErr) == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
 			failureReason = metrics.FailureReasonNonDeterminismError
 		}
-		taskCompletion = &workflowTaskCompletion{rawRequest: failWorkflowTask}
+		taskCompletion = wtp.taskFailureCompletion(task, taskErr)
 	}
 
 	uploadPayloadMetrics := &workflowTaskStorageMetrics{}
@@ -613,7 +612,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	}
 	if taskErr = visitProtoPayloads(ctx, outboundPayloadVisitor, taskCompletion.rawRequest, wtp.payloadVisitorConcurrency); taskErr != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
-		// cannot send the original response, so fall back to an explicit WFT
+		// cannot send the original response, so fall back to an explicit
 		// failure so the server records the error immediately.
 		keyvals := []any{
 			tagWorkflowType, task.WorkflowType.GetName(),
@@ -633,7 +632,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		if errors.As(taskErr, new(payloadSizeError)) {
 			failureReason = metrics.FailureReasonPayloadsTooLarge
 		}
-		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
+		taskCompletion = wtp.taskFailureCompletion(task, taskErr)
 	}
 
 	// The namespace limit governs the server's recombined page buffer, so it only applies to a
@@ -686,7 +685,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
 			tagPayloadDownloadCount, downloadPayloadMetrics.payloadCount,
 			tagPayloadDownloadSize, downloadPayloadMetrics.totalSize,
-			tagPayloadDownloadDuration, downloadPayloadMetrics.totalDuration,
+			tagPayloadDownloadDuration, downloadPayloadMetrics.TotalDuration(),
 			tagPayloadDownloadDrivers, downloadPayloadMetrics.GetDriverNames(),
 		)
 	}
@@ -694,7 +693,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
 			tagPayloadUploadCount, uploadPayloadMetrics.payloadCount,
 			tagPayloadUploadSize, uploadPayloadMetrics.totalSize,
-			tagPayloadUploadDuration, uploadPayloadMetrics.totalDuration,
+			tagPayloadUploadDuration, uploadPayloadMetrics.TotalDuration(),
 			tagPayloadUploadDrivers, uploadPayloadMetrics.GetDriverNames(),
 		)
 	}
@@ -941,18 +940,43 @@ func (wtp *workflowTaskProcessor) handleInboundVisitorError(task *workflowservic
 			tagPayloadSizeLimit, errPayloadSize.limit)
 	}
 	wtp.logger.Warn("Workflow task preprocess error: "+visitErr.Error(), keyvals...)
-	// Submit an explicit WFT failure so the server records the error immediately
+	// Submit an explicit failure so the server records the error immediately
 	// rather than waiting for the task to time out.
-	failReq := wtp.errorToFailWorkflowTask(task.TaskToken, visitErr)
-	if _, submitErr := wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failReq}, task); submitErr != nil {
-		wtp.logger.Warn("Failed to submit WFT failure after inbound visitor error.", tagError, submitErr)
+	failCompletion := wtp.taskFailureCompletion(task, visitErr)
+	if _, submitErr := wtp.sendTaskCompletedRequest(failCompletion, task); submitErr != nil {
+		wtp.logger.Warn("Failed to submit failure after inbound visitor error.", tagError, submitErr)
+	}
+}
+
+func (wtp *workflowTaskProcessor) taskFailureCompletion(
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+	err error,
+) *workflowTaskCompletion {
+	if task.Query != nil {
+		return &workflowTaskCompletion{
+			rawRequest: &workflowservice.RespondQueryTaskCompletedRequest{
+				TaskToken:     task.TaskToken,
+				CompletedType: enumspb.QUERY_RESULT_TYPE_FAILED,
+				ErrorMessage:  err.Error(),
+				Namespace:     wtp.namespace,
+				Failure:       wtp.failureConverter.ErrorToFailure(err),
+			},
+		}
+	}
+
+	return &workflowTaskCompletion{
+		rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, err),
 	}
 }
 
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
+	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, workflowTaskFailureCause(err))
+}
+
+func workflowTaskFailureCause(err error) enumspb.WorkflowTaskFailedCause {
 	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
 	// If it was a panic due to a bad state machine or if it was a history
-	// mismatch error, mark as non-deterministic
+	// mismatch error, mark as non-deterministic.
 	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
 		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
 			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
@@ -964,8 +988,7 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 	} else if errors.As(err, new(payloadSizeError)) {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
 	}
-
-	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, cause)
+	return cause
 }
 
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []byte, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondWorkflowTaskFailedRequest {
@@ -1001,26 +1024,53 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 	return builtRequest
 }
 
+// workflowTaskStorageMetrics implements extstore.StorageOperationCallback for a single workflow
+// task. Batches may complete concurrently, so mu guards every field.
 type workflowTaskStorageMetrics struct {
-	mu            sync.Mutex
-	payloadCount  int
-	totalSize     int64
-	totalDuration time.Duration
-	driverNames   map[string]struct{}
+	mu           sync.Mutex
+	payloadCount int
+	totalSize    int64
+	// Start and end of each completed batch.
+	spans       [][2]time.Time
+	driverNames map[string]struct{}
 }
 
-func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string) {
+func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, start, end time.Time, driverNames []string) {
 	callback.mu.Lock()
 	defer callback.mu.Unlock()
 	callback.payloadCount += count
 	callback.totalSize += size
-	callback.totalDuration += duration
+	callback.spans = append(callback.spans, [2]time.Time{start, end})
 	for _, name := range driverNames {
 		if callback.driverNames == nil {
 			callback.driverNames = make(map[string]struct{})
 		}
 		callback.driverNames[name] = struct{}{}
 	}
+}
+
+// TotalDuration reports the wall-clock time storage was in flight. Batches may run
+// concurrently, so overlapping spans are counted once rather than summed.
+func (callback *workflowTaskStorageMetrics) TotalDuration() time.Duration {
+	callback.mu.Lock()
+	defer callback.mu.Unlock()
+	if len(callback.spans) == 0 {
+		return 0
+	}
+	ordered := make([][2]time.Time, len(callback.spans))
+	copy(ordered, callback.spans)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i][0].Before(ordered[j][0]) })
+	var total time.Duration
+	spanStart, spanEnd := ordered[0][0], ordered[0][1]
+	for _, span := range ordered[1:] {
+		if span[0].After(spanEnd) {
+			total += spanEnd.Sub(spanStart)
+			spanStart, spanEnd = span[0], span[1]
+		} else if span[1].After(spanEnd) {
+			spanEnd = span[1]
+		}
+	}
+	return total + spanEnd.Sub(spanStart)
 }
 
 func (callback *workflowTaskStorageMetrics) GetDriverNames() []string {
