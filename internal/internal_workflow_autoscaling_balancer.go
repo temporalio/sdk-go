@@ -16,7 +16,7 @@ const (
 )
 
 // workflowAutoscalingBalancer preserves both queue kinds and prioritizes sticky backlog
-// when split autoscaling workflow pollers share finite capacity.
+// when split autoscaling workflow pollers share task slots.
 type workflowAutoscalingBalancer struct {
 	maxSlots      int
 	normalActive  int

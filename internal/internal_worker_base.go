@@ -547,9 +547,9 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		if bw.noRepoll.Load() {
 			return
 		}
-		// Unknown capacity only enforces queue-kind fairness. Waiting before
-		// acquire keeps blocked queue kinds out of the poller target.
-		if balancer != nil && !balancer.hasFiniteCapacity() {
+		// Check before acquire so blocked queue kinds neither consume the poller
+		// target nor hold task slots.
+		if balancer != nil {
 			if err := balancer.waitForAdmission(bw.limiterContext, taskWorker.pollKind); err != nil {
 				return
 			}
@@ -558,15 +558,6 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		if err != nil {
 			return
 		}
-		// Finite capacity balances queue kinds after this kind obtains poll capacity.
-		// Waiting here does not hold a slot.
-		if balancer != nil && balancer.hasFiniteCapacity() {
-			if err := balancer.waitForAdmission(bw.limiterContext, taskWorker.pollKind); err != nil {
-				releaseActive()
-				return
-			}
-		}
-
 		bw.reserveSlotAsync(ctx, reserveChan, taskWorker)
 
 		var permit *SlotPermit
