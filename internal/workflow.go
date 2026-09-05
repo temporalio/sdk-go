@@ -3066,6 +3066,8 @@ type NexusClient interface {
 	ExecuteOperation(ctx Context, operation any, input any, options NexusOperationOptions) NexusOperationFuture
 }
 
+var systemNexusDataConverter = converter.NewCompositeDataConverter(converter.NewProtoPayloadConverter())
+
 type nexusClient struct {
 	endpoint, service string
 }
@@ -3136,7 +3138,18 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
-	payload, err := dc.ToPayload(input.Input)
+	var payload *commonpb.Payload
+	var err error
+	if input.Client.Endpoint() == systemNexusEndpoint {
+		// System Nexus envelopes are encoded as proto-binary because they're
+		// consumed by Temporal, not by user code.
+		payload, err = converter.NewProtoPayloadConverter().ToPayload(input.Input)
+		if payload == nil {
+			return ExecuteNexusOperationParams{}, fmt.Errorf("cannot encode system Nexus input of type %T: input must be a protobuf message", input.Input)
+		}
+	} else {
+		payload, err = dc.ToPayload(input.Input)
+	}
 	if err != nil {
 		return ExecuteNexusOperationParams{}, err
 	}
@@ -3160,6 +3173,9 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 	result := &nexusOperationFutureImpl{
 		decodeFutureImpl: mainFuture.(*decodeFutureImpl),
 		executionFuture:  executionFuture.(*futureImpl),
+	}
+	if input.Client.Endpoint() == systemNexusEndpoint {
+		result.decodeFutureImpl.dataConverter = systemNexusDataConverter
 	}
 
 	// Immediately return if the context has an error without spawning the Nexus operation.
