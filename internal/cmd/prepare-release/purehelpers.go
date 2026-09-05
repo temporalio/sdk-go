@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"slices"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -11,48 +11,104 @@ import (
 
 // validateVersion accepts release versions with a semantic version core.
 func validateVersion(version string) (string, error) {
-	if !versionRE.MatchString(version) {
-		return "", fmt.Errorf("invalid version %q; expected a version like '1.48.0'", version)
+	_, err := parseVersion(version)
+	if err != nil {
+		return "", err
 	}
 	return version, nil
 }
 
-// validateVersionIncrease checks that the next version is a valid increment of the current version.
-func validateVersionIncrease(currentVersion, nextVersion string) error {
-	currentVersion, err := validateVersion(currentVersion)
-	if err != nil {
-		return err
+// parseVersion splits a release version into its major, minor, and patch components.
+func parseVersion(version string) ([3]int, error) {
+	if !versionRE.MatchString(version) {
+		return [3]int{}, fmt.Errorf("invalid version %q; expected a version like '1.48.0'", version)
 	}
-	nextVersion, err = validateVersion(nextVersion)
-	if err != nil {
-		return err
-	}
-
-	parse := func(version string) ([3]int, error) {
-		var parsed [3]int
-		for i, part := range strings.Split(version, ".") {
-			parsed[i], err = strconv.Atoi(part)
-			if err != nil {
-				return [3]int{}, fmt.Errorf("invalid numeric version %q: %w", version, err)
-			}
+	var parsed [3]int
+	for i, part := range strings.Split(version, ".") {
+		number, err := strconv.Atoi(part)
+		if err != nil {
+			return [3]int{}, fmt.Errorf("invalid numeric version %q: %w", version, err)
 		}
-		return parsed, nil
+		parsed[i] = number
 	}
-	current, err := parse(currentVersion)
+	return parsed, nil
+}
+
+func formatVersion(version [3]int) string {
+	return fmt.Sprintf("%d.%d.%d", version[0], version[1], version[2])
+}
+
+// validateVersionIncrease checks that the next version is a valid increment of the
+// current version. An empty current version means the module has never been released,
+// which is treated as a 0.0.0 baseline.
+func validateVersionIncrease(currentVersion, nextVersion string) error {
+	firstRelease := currentVersion == ""
+	if firstRelease {
+		currentVersion = "0.0.0"
+	}
+	current, err := parseVersion(currentVersion)
 	if err != nil {
 		return err
 	}
-	next, err := parse(nextVersion)
+	next, err := parseVersion(nextVersion)
 	if err != nil {
 		return err
 	}
 
-	nextPatch := [3]int{current[0], current[1], current[2] + 1}
-	nextMinor := [3]int{current[0], current[1] + 1, 0}
-	if next == nextPatch || next == nextMinor {
-		return nil
+	allowed := [][3]int{
+		{current[0], current[1], current[2] + 1},
+		{current[0], current[1] + 1, 0},
 	}
-	return fmt.Errorf("version %s must increment the minor or patch version of %s by one", nextVersion, currentVersion)
+	// A module still on a 0.x version may graduate to its first stable release.
+	if current[0] == 0 {
+		allowed = append(allowed, [3]int{1, 0, 0})
+	}
+	options := make([]string, len(allowed))
+	for i, candidate := range allowed {
+		if next == candidate {
+			return nil
+		}
+		options[i] = formatVersion(candidate)
+	}
+
+	if firstRelease {
+		return fmt.Errorf("version %s cannot be a first release; expected one of: %s",
+			nextVersion, strings.Join(options, ", "))
+	}
+	return fmt.Errorf("version %s does not follow the current version %s; expected one of: %s",
+		nextVersion, currentVersion, strings.Join(options, ", "))
+}
+
+// latestReleasedVersion returns the highest release version among the tags carrying the
+// given prefix, or "" if none of them name a release.
+func latestReleasedVersion(tags []string, tagPrefix string) string {
+	var latest [3]int
+	var latestVersion string
+	for _, tag := range tags {
+		version, ok := strings.CutPrefix(tag, tagPrefix+"v")
+		if !ok {
+			continue
+		}
+		// Tags for nested modules and for prereleases share the prefix but are not
+		// releases of this module.
+		parsed, err := parseVersion(version)
+		if err != nil {
+			continue
+		}
+		if latestVersion == "" || compareVersions(parsed, latest) > 0 {
+			latest, latestVersion = parsed, version
+		}
+	}
+	return latestVersion
+}
+
+func compareVersions(a, b [3]int) int {
+	for i := range a {
+		if a[i] != b[i] {
+			return a[i] - b[i]
+		}
+	}
+	return 0
 }
 
 // extractSDKVersion returns the current SDK version, given the contents of internal/version.go.
@@ -65,30 +121,52 @@ func extractSDKVersion(versionGo string) (string, error) {
 	return validateVersion(currentVersion)
 }
 
-// validateGoMod requires go.temporal.io/api to use a tagged version (1.XX.YY format)
-// instead of a git snapshot (1.XX.YY-0.YYYYMMDDHHMMSS-abcdef123456 format).
-func validateGoMod(data string) error {
-	match := apiVersionRE.FindStringSubmatch(data)
+// validateModulePath requires go.mod to declare the module the release tag will version.
+// A mismatch means the module directory is not the one the caller named.
+func validateModulePath(goMod, modulePath string) error {
+	match := moduleDeclarationRE.FindStringSubmatch(goMod)
 	if match == nil {
-		return errors.New("could not find go.temporal.io/api in go.mod")
+		return errors.New("could not find a module declaration in go.mod")
 	}
-	if !taggedGoVersionRE.MatchString(match[1]) {
-		return fmt.Errorf("go.temporal.io/api must use an official release, found %q", match[1])
+	if match[1] != modulePath {
+		return fmt.Errorf("go.mod declares module %q, expected %q", match[1], modulePath)
 	}
 	return nil
 }
 
-// validateChangelog requires one Unreleased section, one section for the
-// current SDK version, and no duplicate release sections.
+// validateTemporalDependencies requires every Temporal module dependency to use a
+// tagged stable release instead of a prerelease or git snapshot.
+func validateTemporalDependencies(goMod string) error {
+	matches := temporalModuleRequirementRE.FindAllStringSubmatch(goMod, -1)
+	for _, match := range matches {
+		if !goVersionRE.MatchString(match[2]) {
+			return fmt.Errorf("%s must use an official release, found %q; use --allow-unofficial-dependencies to override", match[1], match[2])
+		}
+	}
+	return nil
+}
+
+// moduleRequirementRE matches the go.mod requirement line for the given module path.
+func moduleRequirementRE(modulePath string) *regexp.Regexp {
+	return regexp.MustCompile(`(?m)^\s*(?:require\s+)?` + regexp.QuoteMeta(modulePath) + `\s+(v\S+)\s*(?://.*)?$`)
+}
+
+// validateChangelog requires one Unreleased section, one section for the module's
+// current version, and no duplicate release sections. An empty current version means
+// the module has never been released, so it has no release sections yet.
 func validateChangelog(text, currentVersion string) error {
-	if _, err := validateVersion(currentVersion); err != nil {
-		return err
+	required := []string{"Unreleased"}
+	if currentVersion != "" {
+		if _, err := validateVersion(currentVersion); err != nil {
+			return err
+		}
+		required = append(required, currentVersion)
 	}
 
 	// Count the number of sections for each version.
 	counts := make(map[string]int)
 	var versions []string
-	for line := range strings.SplitSeq(text, "\n") {
+	for _, line := range strings.Split(text, "\n") {
 		match := changelogHeadingRE.FindStringSubmatch(line)
 		if match == nil {
 			continue
@@ -101,13 +179,13 @@ func validateChangelog(text, currentVersion string) error {
 
 	// Report missing and duplicate sections
 	var problems []string
-	for _, version := range []string{"Unreleased", currentVersion} {
+	for _, version := range required {
 		if count := counts[version]; count != 1 {
 			problems = append(problems, fmt.Sprintf("expected exactly one section for %q, found %d", version, count))
 		}
 	}
 	for _, version := range versions {
-		if version != "Unreleased" && version != currentVersion && counts[version] > 1 {
+		if !contains(required, version) && counts[version] > 1 {
 			problems = append(problems, fmt.Sprintf("found %d sections for %q", counts[version], version))
 		}
 	}
@@ -129,7 +207,8 @@ func replaceSDKVersion(text, version string) (string, error) {
 	return sdkVersionRE.ReplaceAllString(text, "${1}"+version+"${2}"), nil
 }
 
-// updateChangelog moves Unreleased entries into a dated version section.
+// updateChangelog moves Unreleased entries into a dated version section and reseeds
+// the Unreleased section.
 func updateChangelog(text, version string, releaseDate time.Time) (string, error) {
 	_, err := validateVersion(version)
 	if err != nil {
@@ -143,12 +222,12 @@ func updateChangelog(text, version string, releaseDate time.Time) (string, error
 	if !ok {
 		return "", errors.New("could not find changelog section for 'Unreleased'")
 	}
-	unreleased := stripEmptyChangelogHeaders(stripOuterBlankLines(lines[start:end]))
+	unreleased := stripEmptyLevelThreeHeaders(stripOuterBlankLines(lines[start:end]))
 	if len(unreleased) == 0 {
 		return "", errors.New("changelog section for 'Unreleased' appears to be empty")
 	}
 	next := append([]string{}, lines[:heading]...)
-	next = append(next, seededUnreleasedLines()...)
+	next = append(next, seededUnreleasedLines(changelogHeaders)...)
 	next = append(next, "## ["+version+"] - "+releaseDate.Format(time.DateOnly), "")
 	next = append(next, unreleased...)
 	next = append(next, "")
@@ -167,7 +246,7 @@ func prepareReleaseNotes(text, version string) (string, error) {
 	if len(sections) == 0 {
 		return "", fmt.Errorf("changelog section for %q appears to be empty", version)
 	}
-	return "## Highlights\n\n" + strings.Join(sections, "\n") + "\n", nil
+	return "# Highlights\n\n" + strings.Join(sections, "\n") + "\n", nil
 }
 
 // findVersionSection returns the heading and content bounds for a changelog version.
@@ -189,20 +268,19 @@ func findVersionSection(lines []string, version string) (heading, start, end int
 	return 0, 0, 0, false
 }
 
-func seededUnreleasedLines() []string {
+func seededUnreleasedLines(headers []string) []string {
 	lines := []string{"## [Unreleased]", ""}
-	for _, header := range changelogHeaders {
+	for _, header := range headers {
 		lines = append(lines, "### "+header, "")
 	}
 	return lines
 }
 
-// stripEmptyChangelogHeaders removes recognized sections that contain no content.
-func stripEmptyChangelogHeaders(lines []string) []string {
+// stripEmptyLevelThreeHeaders removes level-three sections that contain no content.
+func stripEmptyLevelThreeHeaders(lines []string) []string {
 	var filtered []string
 	for i := 0; i < len(lines); {
-		match := changelogHeaderRE.FindStringSubmatch(lines[i])
-		if match == nil || !contains(changelogHeaders, match[1]) {
+		if !changelogHeaderRE.MatchString(lines[i]) {
 			filtered = append(filtered, lines[i])
 			i++
 			continue
@@ -232,7 +310,12 @@ func stripOuterBlankLines(lines []string) []string {
 }
 
 func contains(values []string, value string) bool {
-	return slices.Contains(values, value)
+	for _, candidate := range values {
+		if candidate == value {
+			return true
+		}
+	}
+	return false
 }
 
 func hasNonblank(lines []string) bool {
