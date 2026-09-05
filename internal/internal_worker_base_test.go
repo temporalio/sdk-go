@@ -1489,7 +1489,7 @@ func TestWorkflowAutoscalingBalancerUnknownMaximumMatchesGenericFairness(t *test
 	}
 }
 
-func TestWorkflowAutoscalingBalancerUnknownMaximumIgnoresBacklog(t *testing.T) {
+func TestUnknownCapacityPrefersSticky(t *testing.T) {
 	balancer := newWorkflowAutoscalingBalancer(0, 10)
 	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
 	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
@@ -1497,7 +1497,7 @@ func TestWorkflowAutoscalingBalancerUnknownMaximumIgnoresBacklog(t *testing.T) {
 
 	balancer.mu.Lock()
 	defer balancer.mu.Unlock()
-	require.True(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
+	require.False(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
 	require.True(t, balancer.canAdmit(enumspb.TASK_QUEUE_KIND_STICKY))
 }
 

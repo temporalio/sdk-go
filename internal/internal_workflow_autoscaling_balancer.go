@@ -12,7 +12,7 @@ const (
 	// One queued sticky task does not justify suppressing normal polls.
 	minMeaningfulStickyBacklog          int64 = 2
 	invalidAdmissionKindMessage               = "workflow slot admission requires a normal or sticky queue kind"
-	inconsistentWorkflowBalancerMessage       = "workflow pollers must share one poll balancer"
+	inconsistentWorkflowBalancerMessage       = "workers with multiple task pollers must share one poll balancer"
 )
 
 // workflowAutoscalingBalancer preserves both queue kinds and prioritizes sticky backlog
@@ -64,30 +64,17 @@ func (a *workflowAutoscalingBalancer) waitForAdmission(ctx context.Context, kind
 
 // canAdmit applies the queue-kind policy. The caller must hold mu.
 func (a *workflowAutoscalingBalancer) canAdmit(kind enumspb.TaskQueueKind) bool {
-	// Without a finite limit, only prevent either kind from starting a second
-	// poll before the other kind starts its first.
-	if a.maxSlots <= 0 {
-		switch kind {
-		case enumspb.TASK_QUEUE_KIND_NORMAL:
-			return a.normalActive == 0 || a.stickyActive > 0
-		case enumspb.TASK_QUEUE_KIND_STICKY:
-			return a.stickyActive == 0 || a.normalActive > 0
-		default:
-			return false
-		}
-	}
-
 	switch kind {
 	case enumspb.TASK_QUEUE_KIND_NORMAL:
 		// Always allow a first normal poll.
 		if a.normalActive == 0 {
 			return true
 		}
-		// Preserve capacity for the first sticky poll.
-		if a.stickyActive == 0 && a.normalActive+1 >= a.maxSlots {
+		// Ensure a sticky poll can start.
+		if a.stickyActive == 0 && (!a.hasFiniteCapacity() || a.normalActive+1 >= a.maxSlots) {
 			return false
 		}
-		// Prefer sticky if there is a sticky backlog
+		// Prefer sticky when it can help drain the backlog.
 		if a.needsMoreStickyPolls() {
 			return false
 		}
@@ -96,8 +83,8 @@ func (a *workflowAutoscalingBalancer) canAdmit(kind enumspb.TaskQueueKind) bool 
 		if a.stickyActive == 0 {
 			return true
 		}
-		// Preserve capacity for the first normal poll.
-		if a.normalActive == 0 && a.stickyActive+1 >= a.maxSlots {
+		// Ensure a normal poll can start.
+		if a.normalActive == 0 && (!a.hasFiniteCapacity() || a.stickyActive+1 >= a.maxSlots) {
 			return false
 		}
 		// Let sticky polls catch up with their backlog.
@@ -108,7 +95,7 @@ func (a *workflowAutoscalingBalancer) canAdmit(kind enumspb.TaskQueueKind) bool 
 		return false
 	}
 
-	return a.normalActive+a.stickyActive < a.maxSlots
+	return !a.hasFiniteCapacity() || a.normalActive+a.stickyActive < a.maxSlots
 }
 
 func (a *workflowAutoscalingBalancer) needsMoreStickyPolls() bool {
