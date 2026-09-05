@@ -1,8 +1,11 @@
 package internal
 
 import (
+	"errors"
+	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,6 +19,7 @@ import (
 	schedulepb "go.temporal.io/api/schedule/v1"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	workflowservice "go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/sdk/internal/extstore"
 	ilog "go.temporal.io/sdk/internal/log"
 	"google.golang.org/protobuf/proto"
 )
@@ -396,7 +400,7 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, hasWarningLine(logger))
 		})
-		t.Run(tc.name+" child payloads skip error and warning", func(t *testing.T) {
+		t.Run(tc.name+" degraded result emits no warning", func(t *testing.T) {
 			logger := ilog.NewMemoryLogger()
 			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
 			setErrorLimits(&payloadLimits{payloadSize: 10})
@@ -475,6 +479,380 @@ func TestPayloadLimitsVisitorSpecializations(t *testing.T) {
 		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
 		require.NoError(t, err)
 		require.Empty(t, logger.Lines())
+	})
+}
+
+// countingStorageDriver is a minimal in-memory extstore.StorageDriver used to
+// confirm that oversized query results are actually offloaded (Store called,
+// result payload becomes an external storage reference) rather than merely not
+// erroring. Store is called concurrently by
+// TestPayloadLimitsVisitorQueryResultConcurrentVisit's offload subtest, so
+// storeCount and data are guarded by mu rather than left as plain fields.
+type countingStorageDriver struct {
+	mu         sync.Mutex
+	storeCount int
+	data       map[string]*commonpb.Payload
+}
+
+func newCountingStorageDriver() *countingStorageDriver {
+	return &countingStorageDriver{data: map[string]*commonpb.Payload{}}
+}
+
+func (d *countingStorageDriver) Name() string { return "counting" }
+func (d *countingStorageDriver) Type() string { return "counting" }
+
+func (d *countingStorageDriver) Store(_ extstore.StorageDriverStoreContext, payloads []*commonpb.Payload) ([]extstore.StorageDriverClaim, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.storeCount++
+	claims := make([]extstore.StorageDriverClaim, len(payloads))
+	for i, p := range payloads {
+		key := fmt.Sprintf("k%d", len(d.data))
+		d.data[key] = proto.Clone(p).(*commonpb.Payload)
+		claims[i] = extstore.StorageDriverClaim{ClaimData: map[string]string{"key": key}}
+	}
+	return claims, nil
+}
+
+func (d *countingStorageDriver) Retrieve(_ extstore.StorageDriverRetrieveContext, claims []extstore.StorageDriverClaim) ([]*commonpb.Payload, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	out := make([]*commonpb.Payload, len(claims))
+	for i, c := range claims {
+		out[i] = d.data[c.ClaimData["key"]]
+	}
+	return out, nil
+}
+
+func (d *countingStorageDriver) storeCalls() int {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.storeCount
+}
+
+// decliningSelector is an extstore.StorageDriverSelector that always leaves the
+// payload inline, simulating a driver selector that declines to store it.
+type decliningSelector struct{}
+
+func (decliningSelector) SelectDriver(extstore.StorageDriverSelectContext, *commonpb.Payload) (extstore.StorageDriver, error) {
+	return nil, nil
+}
+
+// erroringStorageDriver is an extstore.StorageDriver whose Store always fails,
+// used to confirm that a driver failure while offloading an oversized query
+// result surfaces as an error from visitProtoPayloads instead of being
+// silently absorbed into a degraded query result.
+type erroringStorageDriver struct{}
+
+func (erroringStorageDriver) Name() string { return "erroring" }
+func (erroringStorageDriver) Type() string { return "erroring" }
+
+func (erroringStorageDriver) Store(extstore.StorageDriverStoreContext, []*commonpb.Payload) ([]extstore.StorageDriverClaim, error) {
+	return nil, errors.New("store failed")
+}
+
+func (erroringStorageDriver) Retrieve(extstore.StorageDriverRetrieveContext, []extstore.StorageDriverClaim) ([]*commonpb.Payload, error) {
+	return nil, errors.New("retrieve failed")
+}
+
+// newTestOutboundVisitor builds the same [extstore visitor, payload limits visitor]
+// composite chain the worker and client wire up in internal_worker.go and
+// internal_workflow_client.go, so these tests exercise the real interaction
+// between external storage and the size-limit visitor rather than the limits
+// visitor in isolation.
+func newTestOutboundVisitor(t *testing.T, storage extstore.ExternalStorage, errorLimit int64) PayloadVisitor {
+	t.Helper()
+	params, err := extstore.ExternalStorageToParams(storage)
+	require.NoError(t, err)
+	limitsVisitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 1_000_000}, nil)
+	setErrorLimits(&payloadLimits{payloadSize: errorLimit})
+	return newCompositePayloadVisitor(extstore.NewExternalStorageVisitor(params), limitsVisitor)
+}
+
+// TestPayloadLimitsVisitorQueryResultExternalStorage exercises the interaction
+// between external storage and the size-limit visitor for query results. See
+// the *querypb.WorkflowQueryResult and
+// *workflowservice.RespondQueryTaskCompletedRequest cases in ContextHook and the
+// ctx.Parent switch in Visit.
+func TestPayloadLimitsVisitorQueryResultExternalStorage(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		makeMsg       func(p *commonpb.Payload) proto.Message
+		makeFailed    func(f *failurepb.Failure) proto.Message
+		resultPayload func(msg proto.Message) *commonpb.Payload
+		isFailed      func(msg proto.Message) bool
+		errMessage    func(msg proto.Message) string
+	}{
+		{
+			name: "WorkflowQueryResult",
+			makeMsg: func(p *commonpb.Payload) proto.Message {
+				return &querypb.WorkflowQueryResult{Answer: &commonpb.Payloads{Payloads: []*commonpb.Payload{p}}}
+			},
+			makeFailed: func(f *failurepb.Failure) proto.Message {
+				return &querypb.WorkflowQueryResult{Failure: f}
+			},
+			resultPayload: func(msg proto.Message) *commonpb.Payload {
+				answer := msg.(*querypb.WorkflowQueryResult).GetAnswer().GetPayloads()
+				if len(answer) == 0 {
+					return nil
+				}
+				return answer[0]
+			},
+			isFailed: func(msg proto.Message) bool {
+				return msg.(*querypb.WorkflowQueryResult).GetResultType() == enumspb.QUERY_RESULT_TYPE_FAILED
+			},
+			errMessage: func(msg proto.Message) string {
+				return msg.(*querypb.WorkflowQueryResult).GetErrorMessage()
+			},
+		},
+		{
+			name: "RespondQueryTaskCompletedRequest",
+			makeMsg: func(p *commonpb.Payload) proto.Message {
+				return &workflowservice.RespondQueryTaskCompletedRequest{QueryResult: &commonpb.Payloads{Payloads: []*commonpb.Payload{p}}}
+			},
+			makeFailed: func(f *failurepb.Failure) proto.Message {
+				return &workflowservice.RespondQueryTaskCompletedRequest{Failure: f}
+			},
+			resultPayload: func(msg proto.Message) *commonpb.Payload {
+				result := msg.(*workflowservice.RespondQueryTaskCompletedRequest).GetQueryResult().GetPayloads()
+				if len(result) == 0 {
+					return nil
+				}
+				return result[0]
+			},
+			isFailed: func(msg proto.Message) bool {
+				return msg.(*workflowservice.RespondQueryTaskCompletedRequest).GetCompletedType() == enumspb.QUERY_RESULT_TYPE_FAILED
+			},
+			errMessage: func(msg proto.Message) string {
+				return msg.(*workflowservice.RespondQueryTaskCompletedRequest).GetErrorMessage()
+			},
+		},
+	} {
+		// bigPayloadSize wraps to ~2006 bytes as a *commonpb.Payloads, comfortably
+		// above midErrorLimit; an offloaded storage reference for it is ~150 bytes,
+		// comfortably below midErrorLimit. This margin is what lets these tests
+		// distinguish the raw payload size (trips the error limit) from the
+		// offloaded reference size (does not).
+		const bigPayloadSize = 2000
+		const midErrorLimit = int64(500)
+
+		t.Run(tc.name+" offloads to external storage instead of failing when over the error limit", func(t *testing.T) {
+			driver := newCountingStorageDriver()
+			visitor := newTestOutboundVisitor(t, extstore.ExternalStorage{
+				Drivers:              []extstore.StorageDriver{driver},
+				PayloadSizeThreshold: 10,
+			}, midErrorLimit)
+
+			msg := tc.makeMsg(makeTestPayload(bigPayloadSize))
+			err := visitProtoPayloads(t.Context(), visitor, msg, 0)
+			require.NoError(t, err)
+
+			require.False(t, tc.isFailed(msg), "query result should not degrade once external storage has offloaded it")
+			require.Empty(t, tc.errMessage(msg))
+			require.Equal(t, 1, driver.storeCalls(), "driver.Store should be called for the oversized result")
+			p := tc.resultPayload(msg)
+			require.NotNil(t, p)
+			require.True(t, extstore.IsStorageReference(p), "result payload should be replaced with a storage reference")
+		})
+
+		t.Run(tc.name+" degrades to a failed result when the driver selector declines the payload", func(t *testing.T) {
+			driver := newCountingStorageDriver()
+			visitor := newTestOutboundVisitor(t, extstore.ExternalStorage{
+				Drivers:              []extstore.StorageDriver{driver},
+				DriverSelector:       decliningSelector{},
+				PayloadSizeThreshold: 10,
+			}, midErrorLimit)
+
+			msg := tc.makeMsg(makeTestPayload(bigPayloadSize))
+			err := visitProtoPayloads(t.Context(), visitor, msg, 0)
+			require.NoError(t, err)
+
+			require.True(t, tc.isFailed(msg))
+			require.NotEmpty(t, tc.errMessage(msg))
+			require.Equal(t, 0, driver.storeCalls())
+			require.Nil(t, tc.resultPayload(msg))
+		})
+
+		t.Run(tc.name+" no driver configured still degrades to a failed result", func(t *testing.T) {
+			// No StorageDriver at all: extstore.NewExternalStorageVisitor is a
+			// pass-through (this is what client.Options.ExternalStorage's zero
+			// value produces), so the raw size is checked directly.
+			visitor := newTestOutboundVisitor(t, extstore.ExternalStorage{}, midErrorLimit)
+
+			msg := tc.makeMsg(makeTestPayload(bigPayloadSize))
+			err := visitProtoPayloads(t.Context(), visitor, msg, 0)
+			require.NoError(t, err)
+
+			require.True(t, tc.isFailed(msg))
+			require.NotEmpty(t, tc.errMessage(msg))
+			require.Nil(t, tc.resultPayload(msg))
+		})
+
+		t.Run(tc.name+" storage driver failure surfaces as an error instead of degrading the result", func(t *testing.T) {
+			// The storage driver failure happens inside the external storage
+			// visitor, which runs before the limits visitor in the composite
+			// chain (see newTestOutboundVisitor); the limits visitor's
+			// query-result branch never runs, so the message is left as-is
+			// rather than degraded to a failed query result.
+			visitor := newTestOutboundVisitor(t, extstore.ExternalStorage{
+				Drivers:              []extstore.StorageDriver{erroringStorageDriver{}},
+				PayloadSizeThreshold: 10,
+			}, midErrorLimit)
+
+			msg := tc.makeMsg(makeTestPayload(bigPayloadSize))
+			err := visitProtoPayloads(t.Context(), visitor, msg, 0)
+			require.Error(t, err)
+			require.Contains(t, err.Error(), "store failed")
+
+			require.False(t, tc.isFailed(msg))
+			require.Empty(t, tc.errMessage(msg))
+			p := tc.resultPayload(msg)
+			require.NotNil(t, p)
+			require.False(t, extstore.IsStorageReference(p))
+		})
+
+		t.Run(tc.name+" oversized Failure details are not size-checked", func(t *testing.T) {
+			// The Failure field is a sibling of Answer/QueryResult on the same
+			// message; it must keep today's limitCheckNone exemption and not be
+			// picked up by the query-result branch in Visit.
+			logger := ilog.NewMemoryLogger()
+			visitor, setErrorLimits := newPayloadLimitsVisitor(payloadLimits{payloadSize: 10}, logger)
+			setErrorLimits(&payloadLimits{payloadSize: 10})
+			msg := tc.makeFailed(&failurepb.Failure{
+				FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
+					ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+						Details: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(200)}},
+					},
+				},
+			})
+			err := visitProtoPayloads(t.Context(), visitor, msg, 0)
+			require.NoError(t, err)
+			require.False(t, tc.isFailed(msg))
+			require.Empty(t, logger.Lines())
+		})
+	}
+
+	t.Run("RespondWorkflowTaskCompletedRequest.QueryResults offloads nested query results", func(t *testing.T) {
+		driver := newCountingStorageDriver()
+		visitor := newTestOutboundVisitor(t, extstore.ExternalStorage{
+			Drivers:              []extstore.StorageDriver{driver},
+			PayloadSizeThreshold: 10,
+		}, 500)
+
+		msg := &workflowservice.RespondWorkflowTaskCompletedRequest{
+			QueryResults: map[string]*querypb.WorkflowQueryResult{
+				"q1": {Answer: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(2000)}}},
+			},
+		}
+		err := visitProtoPayloads(t.Context(), visitor, msg, 0)
+		require.NoError(t, err)
+
+		result := msg.QueryResults["q1"]
+		require.Equal(t, enumspb.QUERY_RESULT_TYPE_UNSPECIFIED, result.GetResultType())
+		require.Empty(t, result.GetErrorMessage())
+		require.Equal(t, 1, driver.storeCalls())
+		require.True(t, extstore.IsStorageReference(result.GetAnswer().GetPayloads()[0]))
+	})
+}
+
+// TestPayloadLimitsVisitorQueryResultConcurrentVisit exercises failQueryResult
+// under proxy.VisitPayloadsOptions.ConcurrencyLimit > 1, where the mutation of
+// the query result and the visiting of the sibling Failure subtree can run in
+// separate goroutines at the same time (see internal_task_pollers.go, which
+// passes WorkerOptions.MaxConcurrentWorkflowTaskExternalStorageVisits as the
+// concurrency limit for these same message types). Each case below sets both
+// the result field and a Failure with payload-bearing details, so a run under
+// -race would catch a data race between the two mutations.
+func TestPayloadLimitsVisitorQueryResultConcurrentVisit(t *testing.T) {
+	const errorLimit = int64(500)
+	const concurrencyLimit = 8
+
+	failureWithDetails := func() *failurepb.Failure {
+		return &failurepb.Failure{
+			FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
+				ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{
+					Details: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(200)}},
+				},
+			},
+		}
+	}
+
+	t.Run("WorkflowQueryResult", func(t *testing.T) {
+		visitor := newTestOutboundVisitor(t, extstore.ExternalStorage{}, errorLimit)
+		msg := &querypb.WorkflowQueryResult{
+			Answer:  &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(2000)}},
+			Failure: failureWithDetails(),
+		}
+		err := visitProtoPayloads(t.Context(), visitor, msg, concurrencyLimit)
+		require.NoError(t, err)
+
+		require.Equal(t, enumspb.QUERY_RESULT_TYPE_FAILED, msg.GetResultType())
+		require.NotEmpty(t, msg.GetErrorMessage())
+		require.Nil(t, msg.GetAnswer())
+		require.Equal(t, int64(200), int64(len(msg.GetFailure().GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())))
+	})
+
+	t.Run("RespondQueryTaskCompletedRequest", func(t *testing.T) {
+		visitor := newTestOutboundVisitor(t, extstore.ExternalStorage{}, errorLimit)
+		msg := &workflowservice.RespondQueryTaskCompletedRequest{
+			QueryResult: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(2000)}},
+			Failure:     failureWithDetails(),
+		}
+		err := visitProtoPayloads(t.Context(), visitor, msg, concurrencyLimit)
+		require.NoError(t, err)
+
+		require.Equal(t, enumspb.QUERY_RESULT_TYPE_FAILED, msg.GetCompletedType())
+		require.NotEmpty(t, msg.GetErrorMessage())
+		require.Nil(t, msg.GetQueryResult())
+		require.Equal(t, int64(200), int64(len(msg.GetFailure().GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())))
+	})
+
+	t.Run("RespondWorkflowTaskCompletedRequest.QueryResults, multiple results in flight", func(t *testing.T) {
+		visitor := newTestOutboundVisitor(t, extstore.ExternalStorage{}, errorLimit)
+		msg := &workflowservice.RespondWorkflowTaskCompletedRequest{
+			QueryResults: map[string]*querypb.WorkflowQueryResult{
+				"q1": {Answer: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(2000)}}, Failure: failureWithDetails()},
+				"q2": {Answer: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(2000)}}, Failure: failureWithDetails()},
+				"q3": {Answer: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(2000)}}, Failure: failureWithDetails()},
+			},
+		}
+		err := visitProtoPayloads(t.Context(), visitor, msg, concurrencyLimit)
+		require.NoError(t, err)
+
+		for name, result := range msg.QueryResults {
+			require.Equal(t, enumspb.QUERY_RESULT_TYPE_FAILED, result.GetResultType(), name)
+			require.NotEmpty(t, result.GetErrorMessage(), name)
+			require.Nil(t, result.GetAnswer(), name)
+			require.Equal(t, int64(200), int64(len(result.GetFailure().GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())), name)
+		}
+	})
+
+	t.Run("RespondWorkflowTaskCompletedRequest.QueryResults, concurrent offload to external storage", func(t *testing.T) {
+		driver := newCountingStorageDriver()
+		// Threshold sits between the 200-byte Failure details and the 2000-byte
+		// Answer payloads, so only the oversized answers offload; storeCalls()
+		// below would otherwise also count the three Failure details payloads.
+		visitor := newTestOutboundVisitor(t, extstore.ExternalStorage{
+			Drivers:              []extstore.StorageDriver{driver},
+			PayloadSizeThreshold: 1000,
+		}, errorLimit)
+		msg := &workflowservice.RespondWorkflowTaskCompletedRequest{
+			QueryResults: map[string]*querypb.WorkflowQueryResult{
+				"q1": {Answer: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(2000)}}, Failure: failureWithDetails()},
+				"q2": {Answer: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(2000)}}, Failure: failureWithDetails()},
+				"q3": {Answer: &commonpb.Payloads{Payloads: []*commonpb.Payload{makeTestPayload(2000)}}, Failure: failureWithDetails()},
+			},
+		}
+		err := visitProtoPayloads(t.Context(), visitor, msg, concurrencyLimit)
+		require.NoError(t, err)
+
+		require.Equal(t, 3, driver.storeCalls(), "each oversized answer should be offloaded rather than degraded")
+		for name, result := range msg.QueryResults {
+			require.Equal(t, enumspb.QUERY_RESULT_TYPE_UNSPECIFIED, result.GetResultType(), name)
+			require.Empty(t, result.GetErrorMessage(), name)
+			require.True(t, extstore.IsStorageReference(result.GetAnswer().GetPayloads()[0]), name)
+			require.Equal(t, int64(200), int64(len(result.GetFailure().GetApplicationFailureInfo().GetDetails().GetPayloads()[0].GetData())), name)
+		}
 	})
 }
 
