@@ -291,6 +291,7 @@ func TestUpdateActivityOptionsRestoreIsExclusive(t *testing.T) {
 	require.ErrorContains(t, err, "cannot be combined")
 }
 
+// counts UpdateActivityOptions calls
 type recordingOutboundInterceptor struct {
 	updateCalls int
 	pauseIn     *ClientPauseActivityInput

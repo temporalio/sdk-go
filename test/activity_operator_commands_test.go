@@ -28,7 +28,6 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 
 	ts.worker.RegisterActivity(opSlowActivity)
 	ts.worker.RegisterActivity(opQuickActivity)
-	ts.worker.RegisterActivity(opFailThenSucceedActivity)
 	ts.worker.RegisterActivity(opEchoActivity)
 	ts.worker.RegisterActivity(opAlwaysFailActivity)
 	ts.worker.RegisterActivity(opHeartbeatingActivity)
@@ -440,14 +439,6 @@ func opSlowActivity(ctx context.Context) error {
 
 func opQuickActivity(ctx context.Context) (string, error) {
 	return "resumed", nil
-}
-
-// opFailThenSucceedActivity fails the first two attempts so retries are forced, then succeeds.
-func opFailThenSucceedActivity(ctx context.Context) (string, error) {
-	if activity.GetInfo(ctx).Attempt < 3 {
-		return "", errors.New("retryable failure")
-	}
-	return "done", nil
 }
 
 func opEchoActivity(ctx context.Context, word string) (string, error) {
