@@ -3118,8 +3118,6 @@ func (c nexusClient) ExecuteOperation(ctx Context, operation any, input any, opt
 }
 
 func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Context, input ExecuteNexusOperationInput) (ExecuteNexusOperationParams, error) {
-	dc := WithWorkflowContext(ctx, wc.env.GetDataConverter())
-
 	var ok bool
 	var operationName string
 	if operationName, ok = input.Operation.(string); ok {
@@ -3136,6 +3134,15 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		return ExecuteNexusOperationParams{}, fmt.Errorf("invalid 'operation' parameter, must be an OperationReference or a string")
 	}
 
+	// Nexus context and data converters.
+	nsc := converter.NexusSerializationContext{
+		Endpoint:  input.Client.Endpoint(),
+		Service:   input.Client.Service(),
+		Operation: operationName,
+	}
+	dc := withRootDataConverterSerializationContext(ctx, nsc)
+	fc := converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
+
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {
 		return ExecuteNexusOperationParams{}, err
@@ -3146,11 +3153,13 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	}
 
 	return ExecuteNexusOperationParams{
-		client:      input.Client,
-		operation:   operationName,
-		input:       payload,
-		options:     input.Options,
-		nexusHeader: input.NexusHeader,
+		client:           input.Client,
+		operation:        operationName,
+		input:            payload,
+		options:          input.Options,
+		nexusHeader:      input.NexusHeader,
+		dataConverter:    dc,
+		failureConverter: fc,
 	}, nil
 }
 
@@ -3178,6 +3187,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		mainSettable.Set(nil, err)
 		return result
 	}
+	result.dataConverter = params.dataConverter
 
 	var operationToken string
 	seq := wc.env.ExecuteNexusOperation(params, func(r *commonpb.Payload, e error) {
