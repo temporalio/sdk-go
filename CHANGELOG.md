@@ -63,6 +63,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
+  normal polls to use spare slots once sticky reaches its autoscaling target.
 - The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
   now report the wall-clock time external storage was in flight. Previously each batch's duration was
   summed, over-reporting the time whenever storage operations ran concurrently.

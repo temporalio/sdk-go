@@ -121,8 +121,9 @@ type (
 
 		pendingRegularPollCount int
 		pendingStickyPollCount  int
-		stickyBacklog           int64
+		mixedStickyBacklog      int64
 		requestLock             sync.Mutex
+		autoscalingBalancer     *workflowAutoscalingBalancer
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
 
@@ -152,7 +153,7 @@ type (
 
 		pendingRegularPollCount int
 		pendingStickyPollCount  int
-		stickyBacklog           int64
+		mixedStickyBacklog      int64
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
 
@@ -410,7 +411,7 @@ func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
 	return workflowTask, nil
 }
 
-func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) taskPoller {
+func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		basePoller:                   wtp.basePoller,
 		mode:                         mode,
@@ -427,7 +428,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 		StickyScheduleToStartTimeout: wtp.StickyScheduleToStartTimeout,
 		pendingRegularPollCount:      wtp.pendingRegularPollCount,
 		pendingStickyPollCount:       wtp.pendingStickyPollCount,
-		stickyBacklog:                wtp.stickyBacklog,
+		mixedStickyBacklog:           wtp.mixedStickyBacklog,
 		stickyCacheSize:              wtp.stickyCacheSize,
 		eagerActivityExecutor:        wtp.eagerActivityExecutor,
 		numNormalPollerMetric:        wtp.numNormalPollerMetric,
@@ -1286,9 +1287,16 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 		// we only care about sticky backlog for now.
 		return
 	}
+
+	// Mixed pollers use this copy to choose their next queue.
 	wtp.requestLock.Lock()
-	wtp.stickyBacklog = backlogCountHint
+	wtp.mixedStickyBacklog = backlogCountHint
 	wtp.requestLock.Unlock()
+
+	// Split autoscaling pollers use the balancer to coordinate shared slots.
+	if wtp.autoscalingBalancer != nil {
+		wtp.autoscalingBalancer.setStickyBacklog(backlogCountHint)
+	}
 }
 
 // getNextPollRequest returns appropriate next poll request based on poller configuration and mode.
@@ -1314,7 +1322,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		taskQueue.NormalName = wtp.taskQueueName
 	} else if wtp.mode == Mixed {
 		wtp.requestLock.Lock()
-		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
+		if wtp.mixedStickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
 			taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
 			taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY
