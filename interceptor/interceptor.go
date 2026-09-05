@@ -220,6 +220,30 @@ type ClientCancelActivityInput = internal.ClientCancelActivityInput
 // NOTE: Experimental
 type ClientTerminateActivityInput = internal.ClientTerminateActivityInput
 
+// ClientPauseActivityInput is the input to
+// ClientOutboundInterceptor.PauseActivity.
+//
+// NOTE: Experimental
+type ClientPauseActivityInput = internal.ClientPauseActivityInput
+
+// ClientUnpauseActivityInput is the input to
+// ClientOutboundInterceptor.UnpauseActivity.
+//
+// NOTE: Experimental
+type ClientUnpauseActivityInput = internal.ClientUnpauseActivityInput
+
+// ClientUpdateActivityOptionsInput is the input to
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+type ClientUpdateActivityOptionsInput = internal.ClientUpdateActivityOptionsInput
+
+// ClientUpdateActivityOptionsOutput is the output of
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+type ClientUpdateActivityOptionsOutput = internal.ClientUpdateActivityOptionsOutput
+
 // ClientDescribeActivityInput is the input to
 // ClientOutboundInterceptor.DescribeActivity.
 //

@@ -1022,7 +1022,6 @@ type (
 	ActivityExecutionDescription = internal.ClientActivityExecutionDescription
 
 	// DescribeActivityOptions contains options for ClientActivityHandle.Describe call.
-	// For future compatibility, currently unused.
 	//
 	// NOTE: Experimental
 	DescribeActivityOptions = internal.ClientDescribeActivityOptions
@@ -1031,6 +1030,35 @@ type (
 	//
 	// NOTE: Experimental
 	CancelActivityOptions = internal.ClientCancelActivityOptions
+
+	// PauseActivityOptions contains options for ClientActivityHandle.Pause call.
+	//
+	// NOTE: Experimental
+	PauseActivityOptions = internal.ClientPauseActivityOptions
+
+	// UnpauseActivityOptions contains options for ClientActivityHandle.Unpause call.
+	//
+	// NOTE: Experimental
+	UnpauseActivityOptions = internal.ClientUnpauseActivityOptions
+
+	// ActivityOptions describes the options an activity is currently running with, as returned
+	// by ActivityHandle.UpdateOptions and ActivityHandle.RestoreOriginalOptions.
+	//
+	// NOTE: Experimental
+	ActivityOptions = internal.ClientActivityOptions
+
+	// ActivityOptionsKey is a typed key for one updatable activity option. Use the keys on
+	// ActivityOptionsKeys rather than constructing these directly.
+	//
+	// NOTE: Experimental
+	ActivityOptionsKey[T any] = internal.ClientActivityOptionsKey[T]
+
+	// ActivityOptionsUpdate is a single change to an activity's options, created via
+	// ActivityOptionsKey.ValueSet or ActivityOptionsKey.ValueUnset. An option with no update
+	// is left untouched.
+	//
+	// NOTE: Experimental
+	ActivityOptionsUpdate = internal.ClientActivityOptionsUpdate
 
 	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
 	//
@@ -1738,6 +1766,11 @@ type (
 		Close()
 	}
 )
+
+// ActivityOptionsKeys holds the activity options that ActivityHandle.UpdateOptions can change.
+//
+// NOTE: Experimental
+var ActivityOptionsKeys = internal.ClientActivityOptionsKeys
 
 // MetricsHandler is a handler for metrics emitted by the SDK. This interface is
 // intentionally limited to only what the SDK needs to emit metrics and is not
