@@ -2764,6 +2764,9 @@ func getFunctionName(i any) (name string, isMethod bool) {
 	// var a *Activities
 	// ExecuteActivity(ctx, a.Foo)
 	// will call this function which is going to return "Foo"
+	if s, ok := i.(fmt.Stringer); ok {
+		return s.String(), false
+	}
 	return strings.TrimSuffix(shortName, "-fm"), isMethod
 }
 
