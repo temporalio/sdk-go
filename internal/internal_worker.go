@@ -297,9 +297,9 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger.Info("No metrics handler configured for temporal worker. Use NopHandler as default.")
 	}
 	if params.DataConverter == nil {
-		params.DataConverter = converter.GetDefaultDataConverter()
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
+	params.DataConverter = effectiveDataConverter(params.DataConverter)
 	if params.FailureConverter == nil {
 		params.FailureConverter = GetDefaultFailureConverter()
 	}
@@ -1246,12 +1246,10 @@ func (ae *activityExecutor) ExecuteWithActualArgs(ctx context.Context, args []an
 func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverter {
 	var dataConverter converter.DataConverter
 
-	env := getActivityEnvironmentFromCtx(ctx)
-	if env != nil && env.dataConverter != nil {
+	if env := getActivityEnvironmentFromCtx(ctx); env != nil {
 		dataConverter = env.dataConverter
-	} else {
-		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = effectiveDataConverter(dataConverter)
 	return WithContext(ctx, dataConverter)
 }
 
@@ -1880,6 +1878,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 			return nil, err
 		}
 	}
+	options.DataConverter = effectiveDataConverter(options.DataConverter)
 
 	storageParams, err := extstore.ExternalStorageToParams(options.ExternalStorage)
 	if err != nil {
@@ -2026,9 +2025,6 @@ func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr any) e
 		return errors.New("workflow result not found")
 	}
 	dc := aw.dataConverter
-	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
-	}
 	return dc.FromPayloads(payloads, valuePtr)
 }
 
@@ -2909,9 +2905,17 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 }
 
 // setClientDefaults should be needed only in unit tests.
+//
+// Do not resolve client.dataConverter unconditionally. NewAggregatedWorker calls
+// this on a client that may already be serving other goroutines, so an
+// unconditional write races with client calls that read the field, such as
+// UpdateWorkflow. A client built by NewServiceClient already holds a resolved
+// converter, which makes the write both unnecessary and unsafe. Only a client
+// assembled directly, which happens in tests, still needs resolving, and that
+// happens before the client is shared.
 func setClientDefaults(client *WorkflowClient) {
-	if client.dataConverter == nil {
-		client.dataConverter = converter.GetDefaultDataConverter()
+	if _, ok := client.dataConverter.(*transferTypeDataConverter); !ok {
+		client.dataConverter = effectiveDataConverter(client.dataConverter)
 	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace

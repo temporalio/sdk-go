@@ -1587,9 +1587,7 @@ func getValidatedWorkflowFunction(workflowFunc any, args []any, dataConverter co
 		return nil, nil, err
 	}
 
-	if dataConverter == nil {
-		dataConverter = converter.GetDefaultDataConverter()
-	}
+	dataConverter = effectiveDataConverter(dataConverter)
 	input, err := encodeArgs(dataConverter, args)
 	if err != nil {
 		return nil, nil, err
@@ -1617,9 +1615,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 		newOptions.updateHandlers = make(map[string]*updateHandler)
 		newOptions.runningUpdatesHandles = make(map[string]UpdateInfo)
 	}
-	if newOptions.DataConverter == nil {
-		newOptions.DataConverter = converter.GetDefaultDataConverter()
-	}
+	newOptions.DataConverter = effectiveDataConverter(newOptions.DataConverter)
 
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
@@ -1628,13 +1624,11 @@ func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	var dataConverter converter.DataConverter
 
-	if options != nil && options.DataConverter != nil {
+	if options != nil {
 		dataConverter = options.DataConverter
-	} else {
-		dataConverter = converter.GetDefaultDataConverter()
 	}
 
-	return WithWorkflowContext(ctx, dataConverter)
+	return WithWorkflowContext(ctx, effectiveDataConverter(dataConverter))
 }
 
 // withRootDataConverterSerializationContext applies sc to the worker-configured

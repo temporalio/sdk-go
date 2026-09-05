@@ -386,6 +386,14 @@ func (a *Activities) ConsumeString(ctx context.Context, message string) error {
 	return nil
 }
 
+func (a *Activities) TransferTypeConversionActivity(
+	_ context.Context,
+	input transferTypeIntegrationValue,
+) (transferTypeIntegrationValue, error) {
+	input.Value += "-activity"
+	return input, nil
+}
+
 func (a *Activities) WaitForWorkerStop(ctx context.Context, timeout time.Duration) (string, error) {
 	stopCh := activity.GetWorkerStopChannel(ctx)
 	// Mark activity as invoked then wait for it to be stopped

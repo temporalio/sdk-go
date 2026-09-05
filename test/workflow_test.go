@@ -60,6 +60,16 @@ func (w *Workflows) Echo(ctx workflow.Context, message string) (string, error) {
 	return ans1, activityFut.Get(ctx, &ans1)
 }
 
+func (w *Workflows) TransferTypeConversion(
+	ctx workflow.Context,
+	input transferTypeIntegrationValue,
+) (transferTypeIntegrationValue, error) {
+	ctx = workflow.WithActivityOptions(ctx, w.defaultActivityOptions())
+	var result transferTypeIntegrationValue
+	err := workflow.ExecuteActivity(ctx, "TransferTypeConversionActivity", input).Get(ctx, &result)
+	return result, err
+}
+
 func (w *Workflows) Deadlocked(ctx workflow.Context) ([]string, error) {
 	// Simulates deadlock. Never call time.Sleep in production code!
 	time.Sleep(2 * time.Second)
@@ -4523,6 +4533,7 @@ func (w *Workflows) register(worker worker.Worker) {
 	worker.RegisterWorkflow(w.ActivityHeartbeatUntilSignal)
 	worker.RegisterWorkflow(w.ShutdownDuringActiveTimerActivityWorkflow)
 	worker.RegisterWorkflow(w.Basic)
+	worker.RegisterWorkflow(w.TransferTypeConversion)
 	worker.RegisterWorkflow(w.Deadlocked)
 	worker.RegisterWorkflow(w.DeadlockedWithLocalActivity)
 	worker.RegisterWorkflow(w.Panicked)

@@ -3,14 +3,14 @@ package replaytests
 import (
 	"context"
 	"fmt"
-	"go.temporal.io/sdk/converter"
-	iconverter "go.temporal.io/sdk/internal/converter"
 	"math/rand"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
+	iconverter "go.temporal.io/sdk/internal/converter"
 	"go.temporal.io/sdk/temporalnexus"
 
 	"go.temporal.io/api/enums/v1"
@@ -19,6 +19,29 @@ import (
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 )
+
+type replayTransferTypeValue struct {
+	Value       string
+	Unsupported func()
+}
+
+var replayTransferTypeConverter = converter.NewTypedTransferTypeConverter[replayTransferTypeValue, string](
+	func(value replayTransferTypeValue) (string, error) {
+		return value.Value, nil
+	},
+	func(value string) (replayTransferTypeValue, error) {
+		return replayTransferTypeValue{Value: value}, nil
+	},
+)
+
+func (replayTransferTypeValue) TransferTypeConverter() converter.TransferTypeConverter {
+	return replayTransferTypeConverter
+}
+
+func TransferTypeWorkflow(_ workflow.Context, input replayTransferTypeValue) (replayTransferTypeValue, error) {
+	input.Value += "-result"
+	return input, nil
+}
 
 // Workflow1 test workflow
 func Workflow1(ctx workflow.Context, name string) error {

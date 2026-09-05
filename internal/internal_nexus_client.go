@@ -664,9 +664,6 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 	in *ClientExecuteNexusOperationInput,
 ) (ClientNexusOperationHandle, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
-	if dataConverter == nil {
-		dataConverter = converter.GetDefaultDataConverter()
-	}
 
 	if in.Options.ID == "" {
 		return nil, errors.New("operation ID is required")

@@ -2172,8 +2172,9 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 		panic("data converter is nil for WithDataConverter")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).DataConverter = dc
-	getWorkflowEnvOptions(ctx1).RootDataConverter = dc
+	wrapped := effectiveDataConverter(dc)
+	getWorkflowEnvOptions(ctx1).DataConverter = wrapped
+	getWorkflowEnvOptions(ctx1).RootDataConverter = wrapped
 	return ctx1
 }
 
@@ -2246,9 +2247,7 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannelWithOptions(
 }
 
 func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) converter.EncodedValue {
-	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
-	}
+	dc = effectiveDataConverter(dc)
 	return &EncodedValue{value, dc}
 }
 
