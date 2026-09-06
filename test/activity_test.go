@@ -510,9 +510,14 @@ func (a *Activities) InterceptorCalls(ctx context.Context, someVal string) (stri
 }
 
 func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
+	info := activity.GetInfo(ctx)
+
+	// SignalWithStart reuses a running workflow, so isolate concurrent activities.
+	workflowID := fmt.Sprintf("test-external-signals-and-queries-%s-%s", info.WorkflowExecution.RunID, info.ActivityID)
+
 	// Signal with start
-	workflowOpts := client.StartWorkflowOptions{TaskQueue: activity.GetInfo(ctx).TaskQueue}
-	run, err := a.client.SignalWithStartWorkflow(ctx, "test-external-signals-and-queries", "start-signal",
+	workflowOpts := client.StartWorkflowOptions{TaskQueue: info.TaskQueue}
+	run, err := a.client.SignalWithStartWorkflow(ctx, workflowID, "start-signal",
 		"signal-value", workflowOpts, new(Workflows).SignalsQueriesAndUpdate, false, false)
 	if err != nil {
 		return err
@@ -536,7 +541,6 @@ func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
 	}
 	return run.Get(ctx, nil)
 }
-
 func (a *Activities) CheckBaggage(ctx context.Context, key string) (string, error) {
 	return baggage.FromContext(ctx).Member(key).Value(), nil
 }
