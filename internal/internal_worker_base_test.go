@@ -139,7 +139,7 @@ func (s *ScalableTaskPollerSuite) TestTrackingSlotSupplierPassesTaskQueueKind() 
 	s.Equal(enumspb.TASK_QUEUE_KIND_STICKY, supplier.taskQueueKind)
 }
 
-func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersRequiresSharedBalancer() {
+func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersRequiresBalancer() {
 	newPoller := func(pollerType string) scalableTaskPoller {
 		return newScalableTaskPoller(
 			newBlockingProbeTaskPoller(),
@@ -158,7 +158,7 @@ func (s *ScalableTaskPollerSuite) TestInitializeTaskPollersRequiresSharedBalance
 	})
 
 	bw := &baseWorker{}
-	s.PanicsWithValue(inconsistentWorkflowBalancerMessage, func() {
+	s.PanicsWithValue(missingPollerBalancerMessage, func() {
 		bw.initializeTaskPollers([]scalableTaskPoller{
 			newPoller(metrics.PollerTypeWorkflowTask),
 			newPoller(metrics.PollerTypeWorkflowStickyTask),
@@ -1677,7 +1677,7 @@ func TestConfigurePollersRejectsInconsistentBalancer(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			worker := &baseWorker{}
 
-			require.PanicsWithValue(t, inconsistentWorkflowBalancerMessage, func() {
+			require.PanicsWithValue(t, inconsistentPollerBalancerMessage, func() {
 				worker.validatePollers(pollers)
 			})
 		})

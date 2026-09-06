@@ -10,9 +10,10 @@ import (
 
 const (
 	// One queued sticky task does not justify suppressing normal polls.
-	minMeaningfulStickyBacklog          int64 = 2
-	invalidAdmissionKindMessage               = "workflow slot admission requires a normal or sticky queue kind"
-	inconsistentWorkflowBalancerMessage       = "workers with multiple task pollers must share one poll balancer"
+	minMeaningfulStickyBacklog        int64 = 2
+	invalidAdmissionKindMessage             = "workflow slot admission requires a normal or sticky queue kind"
+	missingPollerBalancerMessage            = "workers with multiple task pollers require a poll balancer"
+	inconsistentPollerBalancerMessage       = "task pollers must share the same poll balancer"
 )
 
 // workflowAutoscalingBalancer preserves both queue kinds and prioritizes sticky backlog

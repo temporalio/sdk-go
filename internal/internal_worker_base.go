@@ -421,11 +421,11 @@ func (bw *baseWorker) validatePollers(taskPollers []scalableTaskPoller) {
 	balancer := taskPollers[0].autoscalingBalancer
 	for _, taskWorker := range taskPollers[1:] {
 		if taskWorker.autoscalingBalancer != balancer {
-			panic(inconsistentWorkflowBalancerMessage)
+			panic(inconsistentPollerBalancerMessage)
 		}
 	}
 	if balancer == nil {
-		panic(inconsistentWorkflowBalancerMessage)
+		panic(missingPollerBalancerMessage)
 	}
 }
 
