@@ -26,7 +26,9 @@ type (
 )
 
 // Sample Workflow task handler
-type sampleWorkflowTaskHandler struct{}
+type sampleWorkflowTaskHandler struct {
+	cache *WorkerCache
+}
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
@@ -46,7 +48,7 @@ func (wth sampleWorkflowTaskHandler) GetOrCreateWorkflowContext(
 	retme := &workflowExecutionContextImpl{
 		mutex: sync.Mutex{},
 		wth: &workflowTaskHandlerImpl{
-			cache: NewWorkerCache(),
+			cache: wth.cache,
 		},
 	}
 	// The mutex is expected to already be locked in situations where unlock on the execution
@@ -55,8 +57,8 @@ func (wth sampleWorkflowTaskHandler) GetOrCreateWorkflowContext(
 	return retme, nil
 }
 
-func newSampleWorkflowTaskHandler() *sampleWorkflowTaskHandler {
-	return &sampleWorkflowTaskHandler{}
+func newSampleWorkflowTaskHandler(t testing.TB) *sampleWorkflowTaskHandler {
+	return &sampleWorkflowTaskHandler{cache: newTestWorkerCache(t)}
 }
 
 // Sample ActivityTaskHandler
@@ -109,7 +111,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	s.NoError(err)
 
 	// Process task and respond to the service.
-	taskHandler := newSampleWorkflowTaskHandler()
+	taskHandler := newSampleWorkflowTaskHandler(s.T())
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response}, nil, nil)
 	completionRequest := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	s.NoError(err)

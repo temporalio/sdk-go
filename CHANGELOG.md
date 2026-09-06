@@ -96,6 +96,8 @@ to docs, or any other relevant information.
   to `client.Options.ExternalStorage` is now stored instead of failing locally with
   `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
   query result now fails the workflow task instead of returning a failed query result.
+- Stopped workers now release sticky workflow cache ownership immediately. When the final worker
+  stops, cached workflow state is cleared without waiting for garbage collection.
 
 ### Security
 

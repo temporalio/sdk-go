@@ -1314,6 +1314,7 @@ type AggregatedWorker struct {
 	// pendingEnvironment is attached to every heartbeat (periodic and shutdown) until the server
 	// accepts one, at which point heartbeatSuccess clears it.
 	pendingEnvironment atomic.Pointer[workerpb.EnvironmentInfo]
+	cacheLease         *workerCacheLease
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1699,6 +1700,9 @@ func (aw *AggregatedWorker) Stop() {
 	})
 
 	aw.unregisterHeartbeatWorker()
+	if aw.cacheLease != nil {
+		aw.cacheLease.release()
+	}
 
 	aw.logger.Info("Stopped Worker")
 }
@@ -2145,7 +2149,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
 	}
-	cache := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
+	cache, cacheLease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
+	defer cacheLease.release()
 	params := workerExecutionParameters{
 		Namespace:             namespace,
 		TaskQueue:             taskQueue,
@@ -2430,7 +2435,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
 
-	cache := NewWorkerCache()
+	cache, cacheLease := NewWorkerCache()
+	constructionComplete := false
+	defer func() {
+		if !constructionComplete {
+			cacheLease.release()
+		}
+	}()
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
@@ -2695,6 +2706,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		heartbeatMetrics:             heartbeatMetrics,
 		heartbeatCallback:            heartbeatCallback,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		cacheLease:                   cacheLease,
 	}
 	if client.heartbeatManager != nil {
 		aw.pendingEnvironment.Store(client.heartbeatManager.environmentInfo)
@@ -2715,6 +2727,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			WorkerRegistry:    aw,
 		})
 	})
+	constructionComplete = true
 	return aw
 }
 
