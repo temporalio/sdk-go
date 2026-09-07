@@ -23,6 +23,7 @@ to docs, or any other relevant information.
 ### Added
 
 - Added `client.Options.SdkName` and `client.Options.SdkVersion` to override the SDK name and version reported in worker heartbeats.
+- Worker heartbeats now report the poller autoscaler's target poller count per poller type, so the server can surface how many pollers a worker is aiming for alongside how many it currently has.
 - Added `client.Client.CancelWorkflowWithOptions` and `client.Client.TerminateWorkflowWithOptions` to target a workflow execution chain by its first execution run ID. Cancellation options can also specify a reason.
 - Added experimental `workflow.GetRandomStream` for named deterministic pseudorandom values in workflows.
 - Added experimental `workflow.IsReadOnly` to report whether the workflow context is in a read-only
