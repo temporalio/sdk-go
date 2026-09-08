@@ -28,6 +28,9 @@ to docs, or any other relevant information.
   platforms), and the operating system and architecture. This is sent
   once per worker with the first heartbeat accepted by the server and can be turned off with
   `client.Options.DisableWorkerEnvironmentInfo`.
+- Added `workflow.NewLocalVar[T](ctx)` for type-safe values bound to a workflow run that can be
+  accessed from workflow code and workflow interceptors. Copies of a `workflow.LocalVar[T]` share
+  identity.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting

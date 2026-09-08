@@ -499,6 +499,7 @@ func newWorkflowContext(
 ) (*workflowEnvironmentInterceptor, Context, error) {
 	// Create context with default values
 	ctx := WithValue(background, workflowEnvironmentContextKey, env)
+	ctx = workflowContextWithLocalStore(ctx)
 	var resultPtr *workflowResult
 	ctx = WithValue(ctx, workflowResultContextKey, &resultPtr)
 	info := env.WorkflowInfo()

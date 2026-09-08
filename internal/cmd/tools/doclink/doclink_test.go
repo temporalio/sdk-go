@@ -1,6 +1,8 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
 	"os"
 	"path/filepath"
 	"strings"
@@ -149,5 +151,38 @@ type (
 	unwanted := "// Exposed as: [go.temporal.io/sdk/workflow.SendChannel]"
 	if strings.Contains(updated, unwanted) {
 		t.Fatalf("did not expect generated doc link %q in:\n%s", unwanted, updated)
+	}
+}
+
+func TestExtractTypeValueGeneric(t *testing.T) {
+	tests := []struct {
+		expression string
+		want       string
+	}{
+		{expression: "internal.LocalVar[T]", want: "LocalVar"},
+		{expression: "internal.Pair[K, V]", want: "Pair"},
+	}
+	for _, test := range tests {
+		expr, err := parser.ParseExpr(test.expression)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value := extractTypeValue(expr); value != test.want {
+			t.Fatalf("extractTypeValue(%q) = %q, want %q", test.expression, value, test.want)
+		}
+	}
+}
+
+func TestIsInternalFunctionCallGeneric(t *testing.T) {
+	expr, err := parser.ParseExpr("internal.NewLocalVar[T](ctx)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	call, ok := expr.(*ast.CallExpr)
+	if !ok {
+		t.Fatalf("parsed expression is %T, want *ast.CallExpr", expr)
+	}
+	if value := isInternalFunctionCall(call); value != "NewLocalVar" {
+		t.Fatalf("isInternalFunctionCall() = %q, want NewLocalVar", value)
 	}
 }
