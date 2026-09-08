@@ -346,7 +346,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 		doneChannel:                 make(chan struct{}),
 		workerStopChannel:           make(chan struct{}),
-		dataConverter:               converter.GetDefaultDataConverter(),
+		dataConverter:               effectiveDataConverter(nil),
 		failureConverter:            GetDefaultFailureConverter(),
 		runTimeout:                  maxWorkflowTimeout,
 		bufferedUpdateRequests:      make(map[string][]func()),
@@ -573,8 +573,17 @@ func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
 	env.identity = identity
 }
 
+// setDataConverter resolves and stores the environment's data converter.
+//
+// It deliberately leaves rootDataConverter alone. An earlier version of the
+// transfer type change also reassigned rootDataConverter whenever it was
+// non-nil, but that branch was unreachable in any supported flow:
+// rootDataConverter is populated when execution starts (see executeWorkflow) or
+// by direct field assignment for child environments, while this method is only
+// reachable from the public SetDataConverter, which callers use beforehand. The
+// branch only ran for a test that called SetDataConverter after ExecuteWorkflow.
 func (env *testWorkflowEnvironmentImpl) setDataConverter(dataConverter converter.DataConverter) {
-	env.dataConverter = dataConverter
+	env.dataConverter = effectiveDataConverter(dataConverter)
 }
 
 func (env *testWorkflowEnvironmentImpl) setFailureConverter(failureConverter converter.FailureConverter) {

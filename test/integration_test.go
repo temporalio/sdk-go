@@ -76,6 +76,24 @@ const (
 	testContextKey3               = "test-context-key3"
 )
 
+type transferTypeIntegrationValue struct {
+	Value       string
+	Unsupported func()
+}
+
+var transferTypeIntegrationConverter = converter.NewTypedTransferTypeConverter[transferTypeIntegrationValue, string](
+	func(value transferTypeIntegrationValue) (string, error) {
+		return value.Value, nil
+	},
+	func(value string) (transferTypeIntegrationValue, error) {
+		return transferTypeIntegrationValue{Value: value}, nil
+	},
+)
+
+func (transferTypeIntegrationValue) TransferTypeConverter() converter.TransferTypeConverter {
+	return transferTypeIntegrationConverter
+}
+
 type IntegrationTestSuite struct {
 	*require.Assertions
 	suite.Suite
@@ -187,6 +205,12 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.Interceptors = clientInterceptors
 		options.PayloadLimits = client.PayloadLimitOptions{
 			PayloadSizeWarning: 128,
+		}
+		if strings.HasPrefix(ts.T().Name(), "TestIntegrationSuite/TestTransferTypeConversion") {
+			options.DataConverter = converter.NewCodecDataConverter(
+				converter.GetDefaultDataConverter(),
+				&intTestSigningCodec{},
+			)
 		}
 	})
 	ts.NoError(err)
@@ -337,6 +361,52 @@ func (ts *IntegrationTestSuite) TestBasic() {
 	// We cannot check PollActivityTaskQueue metric because eager activities
 	// affect poll count
 	ts.assertMetricCountAtLeast("temporal_long_request", 3, "operation", "PollWorkflowTaskQueue")
+}
+
+func (ts *IntegrationTestSuite) TestTransferTypeConversion() {
+	const workflowID = "test-transfer-type-conversion"
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		ts.startWorkflowOptions(workflowID),
+		ts.workflows.TransferTypeConversion,
+		transferTypeIntegrationValue{Value: "input"},
+	)
+	ts.NoError(err)
+
+	var result transferTypeIntegrationValue
+	ts.NoError(run.Get(ctx, &result))
+	ts.Equal("input-activity", result.Value)
+
+	history, err := ts.getHistory(run.GetID(), run.GetRunID())
+	ts.NoError(err)
+
+	var workflowInput, activityInput *commonpb.Payload
+	for _, event := range history.Events {
+		if attrs := event.GetWorkflowExecutionStartedEventAttributes(); attrs != nil {
+			ts.Len(attrs.GetInput().GetPayloads(), 1)
+			workflowInput = attrs.GetInput().GetPayloads()[0]
+		}
+		if attrs := event.GetActivityTaskScheduledEventAttributes(); attrs != nil &&
+			attrs.GetActivityType().GetName() == "TransferTypeConversionActivity" {
+			ts.Len(attrs.GetInput().GetPayloads(), 1)
+			activityInput = attrs.GetInput().GetPayloads()[0]
+		}
+	}
+
+	assertTransferPayload := func(payload *commonpb.Payload, wantData, wantSignature string) {
+		ts.NotNil(payload)
+		metadata := payload.GetMetadata()
+		ts.Len(metadata, 2)
+		ts.Equal(converter.MetadataEncodingJSON, string(metadata[converter.MetadataEncoding]))
+		ts.Equal(wantSignature, string(metadata["ctx-signature"]))
+		ts.Equal(wantData, string(payload.GetData()))
+	}
+	assertTransferPayload(workflowInput, `"input"`, workflowID)
+	assertTransferPayload(activityInput, `"input"`, workflowID+":TransferTypeConversionActivity")
 }
 
 func (ts *IntegrationTestSuite) TestPreferredVersionProvider() {

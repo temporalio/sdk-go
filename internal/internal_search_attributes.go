@@ -387,6 +387,9 @@ func serializeUntypedSearchAttributes(input map[string]any) (*commonpb.SearchAtt
 			continue
 		}
 		var err error
+		// Search attribute values are indexed by the server and must keep the
+		// representation the server understands, so they deliberately bypass
+		// effectiveDataConverter and its transfer type conversion.
 		attr[k], err = converter.GetDefaultDataConverter().ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)
@@ -402,6 +405,7 @@ func serializeTypedSearchAttributes(searchAttributes map[SearchAttributeKey]any)
 
 	serializedAttr := make(map[string]*commonpb.Payload)
 	for k, v := range searchAttributes {
+		// Deliberately not effectiveDataConverter: see serializeUntypedSearchAttributes.
 		payload, err := converter.GetDefaultDataConverter().ToPayload(v)
 		if err != nil {
 			return nil, fmt.Errorf("encode search attribute [%s] error: %v", k, err)

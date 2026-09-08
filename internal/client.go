@@ -1643,9 +1643,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		options.Identity = getWorkerIdentity("")
 	}
 
-	if options.DataConverter == nil {
-		options.DataConverter = converter.GetDefaultDataConverter()
-	}
+	options.DataConverter = effectiveDataConverter(options.DataConverter)
 
 	if options.FailureConverter == nil {
 		options.FailureConverter = GetDefaultFailureConverter()

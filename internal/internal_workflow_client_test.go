@@ -1680,6 +1680,32 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowValidation() {
 	s.ErrorContains(err, "workflow ID from options not used")
 }
 
+// requireWrappedDataConverter asserts that dc is the transfer type wrapper
+// installed around parent.
+//
+// Installing the wrapper changes the dynamic type of client.dataConverter,
+// which breaks every assertion in this file that compares it against a bare
+// converter. Two things went wrong the first time those assertions were
+// updated, and this helper exists to prevent both:
+//
+//   - TestExecuteWorkflowWithDataConverter was missed and left failing. Nothing
+//     connects these five call sites, so updating four of them looked complete.
+//   - The four that were updated became s.IsType checks, which assert only that
+//     something is wrapped. They no longer verified which converter the client
+//     actually ended up with, so a client that silently dropped the caller's
+//     converter would still have passed.
+//
+// Asserting through this helper keeps both the wrapper and the wrapped
+// converter covered.
+func (s *workflowClientTestSuite) requireWrappedDataConverter(
+	dc converter.DataConverter,
+	parent converter.DataConverter,
+) {
+	wrapped, ok := dc.(*transferTypeDataConverter)
+	s.Require().Truef(ok, "data converter has type %T, want *transferTypeDataConverter", dc)
+	s.Equal(parent, wrapped.parent)
+}
+
 func (s *workflowClientTestSuite) TestStartWorkflow() {
 	client, ok := s.client.(*WorkflowClient)
 	s.True(ok)
@@ -1699,7 +1725,7 @@ func (s *workflowClientTestSuite) TestStartWorkflow() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.requireWrappedDataConverter(client.dataConverter, converter.GetDefaultDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
@@ -1739,7 +1765,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNotSupported() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.requireWrappedDataConverter(client.dataConverter, converter.GetDefaultDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.False(processTask)
@@ -1778,7 +1804,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflowNoWorker() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.requireWrappedDataConverter(client.dataConverter, converter.GetDefaultDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.False(processTask)
@@ -1816,7 +1842,7 @@ func (s *workflowClientTestSuite) TestEagerStartWorkflow() {
 	s.service.EXPECT().StartWorkflowExecution(gomock.Any(), gomock.Any(), gomock.Any()).Return(createResponse, nil)
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, []byte("test"))
-	s.Equal(converter.GetDefaultDataConverter(), client.dataConverter)
+	s.requireWrappedDataConverter(client.dataConverter, converter.GetDefaultDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 	s.True(processTask)
@@ -1888,7 +1914,10 @@ func (s *workflowClientTestSuite) TestExecuteWorkflowWithDataConverter() {
 		})
 
 	resp, err := client.ExecuteWorkflow(context.Background(), options, f1, input)
-	s.Equal(iconverter.NewTestDataConverter(), client.dataConverter)
+	// This is the assertion that was missed when the wrapper was introduced. It
+	// compared client.dataConverter against a bare TestDataConverter and failed
+	// once the client started handing back the wrapper.
+	s.requireWrappedDataConverter(client.dataConverter, iconverter.NewTestDataConverter())
 	s.Nil(err)
 	s.Equal(createResponse.GetRunId(), resp.GetRunID())
 }
