@@ -541,7 +541,6 @@ func (a *Activities) ExternalSignalsAndQueries(ctx context.Context) error {
 	}
 	return run.Get(ctx, nil)
 }
-
 func (a *Activities) CheckBaggage(ctx context.Context, key string) (string, error) {
 	return baggage.FromContext(ctx).Member(key).Value(), nil
 }
