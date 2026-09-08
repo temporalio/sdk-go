@@ -5649,6 +5649,106 @@ func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseCommandNotFound() 
 		"[TMPRL1100] During replay, a matching Timer command was expected in history event position 8. However, the replayed code did not produce that.")
 }
 
+func legacyQueryTaskFailureWorkflow(ctx workflow.Context) error {
+	if err := workflow.SetQueryHandler(ctx, "status", func() (string, error) {
+		return "never reached", nil
+	}); err != nil {
+		return err
+	}
+
+	if workflow.IsReplaying(ctx) {
+		panic("failure while replaying history to serve a query")
+	}
+
+	return workflow.Await(ctx, func() bool { return false })
+}
+
+func (ts *IntegrationTestSuite) TestLegacyQueryTaskFailureReportedToCaller() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	options := ts.startWorkflowOptions(
+		"test-legacy-query-task-failure-" + uuid.NewString(),
+	)
+	options.EnableEagerStart = false
+	options.WorkflowExecutionTimeout = 5 * time.Minute
+
+	run, err := ts.client.ExecuteWorkflow(
+		ctx,
+		options,
+		legacyQueryTaskFailureWorkflow,
+	)
+	ts.NoError(err)
+
+	defer func() {
+		_ = ts.client.TerminateWorkflow(
+			context.Background(),
+			run.GetID(),
+			run.GetRunID(),
+			"",
+			nil,
+		)
+	}()
+
+	// Make sure the initial workflow task has completed. Otherwise the query
+	// may be attached to a real workflow task instead of arriving as a
+	// legacy query task.
+	ts.waitForHistoryEvent(
+		run.GetID(),
+		run.GetRunID(),
+		enumspb.EVENT_TYPE_WORKFLOW_TASK_COMPLETED,
+		10*time.Second,
+	)
+
+	ts.Eventually(func() bool {
+		desc, err := ts.client.DescribeWorkflowExecution(
+			ctx,
+			run.GetID(),
+			run.GetRunID(),
+		)
+		return err == nil && desc.GetPendingWorkflowTask() == nil
+	}, 10*time.Second, 100*time.Millisecond)
+
+	// Stop the worker and clear the workflow's sticky task queue so the query
+	// is handled by a fresh worker and must replay the workflow history.
+	ts.worker.Stop()
+	ts.workerStopped = true
+
+	_, err = ts.client.WorkflowService().ResetStickyTaskQueue(
+		ctx,
+		&workflowservice.ResetStickyTaskQueueRequest{
+			Namespace: ts.config.Namespace,
+			Execution: &commonpb.WorkflowExecution{
+				WorkflowId: run.GetID(),
+				RunId:      run.GetRunID(),
+			},
+		},
+	)
+	ts.NoError(err)
+
+	nextWorker := worker.New(ts.client, ts.taskQueueName, worker.Options{
+		WorkflowPanicPolicy:              worker.BlockWorkflow,
+		MaxConcurrentWorkflowTaskPollers: 12,
+	})
+	ts.registerWorkflowsAndActivities(nextWorker)
+	ts.NoError(nextWorker.Start())
+	defer nextWorker.Stop()
+
+	queryCtx, queryCancel := context.WithTimeout(ctx, 10*time.Second)
+	defer queryCancel()
+
+	_, err = ts.client.QueryWorkflow(
+		queryCtx,
+		run.GetID(),
+		run.GetRunID(),
+		"status",
+	)
+
+	ts.Error(err)
+	ts.Contains(err.Error(), "failure while replaying history to serve a query")
+	ts.NotErrorIs(err, context.DeadlineExceeded)
+}
+
 func (ts *IntegrationTestSuite) TestNonDeterminismFailureCauseReplay() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -7733,6 +7833,9 @@ type synchronousActivityRetryState struct {
 func (ts *IntegrationTestSuite) registerWorkflowsAndActivities(w worker.Worker) {
 	ts.workflows.register(w)
 	ts.activities.register(w)
+	if strings.Contains(ts.T().Name(), "TestLegacyQueryTaskFailure") {
+		w.RegisterWorkflow(legacyQueryTaskFailureWorkflow)
+	}
 	w.RegisterNexusService(temporalOpService)
 }
 
