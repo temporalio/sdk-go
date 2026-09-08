@@ -244,13 +244,18 @@ func (b *builder) integrationTest() error {
 	packagesFlag := flagSet.String("packages", "./...", "Packages passed to go test")
 	devServerFlag := flagSet.Bool("dev-server", false, "Use an embedded dev server")
 	envConfigFlag := flagSet.Bool("envconfig", false, "Load test server client options from envconfig")
+	cloudFlag := flagSet.Bool("cloud", false, "Run tests in Temporal Cloud mode")
 	coverageFileFlag := flagSet.String("coverage-file", "", "If set, enables coverage output to this filename")
 	testOutputFlags := addTestOutputFlags(flagSet)
+	timeoutFlag := flagSet.String("timeout", "15m", "Passed to go test as -timeout")
 	if err := flagSet.Parse(os.Args[2:]); err != nil {
 		return fmt.Errorf("failed parsing flags: %w", err)
 	}
 	if *devServerFlag && *envConfigFlag {
 		return fmt.Errorf("-dev-server and -envconfig cannot be used together")
+	}
+	if *cloudFlag && !*envConfigFlag {
+		return fmt.Errorf("-cloud requires -envconfig")
 	}
 	testOutput, err := b.prepareTestOutput(*testOutputFlags, "go-test.log")
 	if err != nil {
@@ -278,11 +283,17 @@ func (b *builder) integrationTest() error {
 	if *envConfigFlag {
 		rerunArgs = append(rerunArgs, "-envconfig")
 	}
+	if *cloudFlag {
+		rerunArgs = append(rerunArgs, "-cloud")
+	}
 	if *pFlag != "" {
 		rerunArgs = append(rerunArgs, "-p", *pFlag)
 	}
 	if *packagesFlag != "./..." {
 		rerunArgs = append(rerunArgs, "-packages", *packagesFlag)
+	}
+	if *timeoutFlag != "15m" {
+		rerunArgs = append(rerunArgs, "-timeout", *timeoutFlag)
 	}
 	testOutput.rerunCommand = formatShellCommand(rerunArgs)
 
@@ -394,7 +405,7 @@ func (b *builder) integrationTest() error {
 	}
 
 	// Run integration test
-	args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", "15m"}
+	args := []string{"go", "test", "-json", "-count", "1", "-race", "-v", "-timeout", *timeoutFlag}
 	env := append(os.Environ(), "DISABLE_SERVER_1_25_TESTS=1")
 	if *runFlag != "" {
 		args = append(args, "-run", *runFlag)
@@ -412,6 +423,9 @@ func (b *builder) integrationTest() error {
 	}
 	if *envConfigFlag {
 		env = append(env, "TEMPORAL_TEST_ENV_CONFIG_SERVER=true")
+	}
+	if *cloudFlag {
+		env = append(env, "TEMPORAL_IS_CLOUD_TESTS=true")
 	}
 	// Must run in test dir
 	cmd := b.cmdFromRoot(args...)

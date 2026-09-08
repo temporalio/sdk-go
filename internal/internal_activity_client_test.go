@@ -91,3 +91,109 @@ func TestExecuteActivityFromLinklessNexusRequestOmitsOnConflictOptions(t *testin
 	require.Empty(t, request.GetCompletionCallbacks())
 	require.Nil(t, request.GetOnConflictOptions())
 }
+
+func TestExecuteActivityFromNexusRequestUsesStableRequestID(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	client := NewServiceClient(service, nil, ClientOptions{})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	var request *workflowservice.StartActivityExecutionRequest
+	service.EXPECT().
+		StartActivityExecution(gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.StartActivityExecutionRequest, _ ...any) (*workflowservice.StartActivityExecutionResponse, error) {
+			request = req
+			return &workflowservice.StartActivityExecutionResponse{RunId: "run-id"}, nil
+		})
+
+	ctx := context.WithValue(t.Context(), nexusOperationContextKey, &NexusOperationContext{RequestID: "nexus-request-id"})
+	_, err := client.ExecuteActivity(ctx, ClientStartActivityOptions{
+		ID:                     "activity-id",
+		TaskQueue:              "task-queue",
+		ScheduleToCloseTimeout: time.Minute,
+	}, "activity")
+	require.NoError(t, err)
+	require.Equal(t, "nexus-request-id", request.GetRequestId())
+	require.Nil(t, request.GetOnConflictOptions())
+}
+
+func TestExecuteActivityValidationFailsBeforeStartRPC(t *testing.T) {
+	dummyActivity := func(context.Context, any) error { return nil }
+
+	for _, tc := range []struct {
+		name         string
+		options      ClientStartActivityOptions
+		args         []any
+		errorContain string
+	}{
+		{
+			name: "missing activity ID",
+			options: ClientStartActivityOptions{
+				TaskQueue:           "test-task-queue",
+				StartToCloseTimeout: time.Minute,
+			},
+			args:         []any{"value"},
+			errorContain: "activity ID is required",
+		},
+		{
+			name: "missing task queue",
+			options: ClientStartActivityOptions{
+				ID:                  "test-activity-id",
+				StartToCloseTimeout: time.Minute,
+			},
+			args:         []any{"value"},
+			errorContain: "task queue is required",
+		},
+		{
+			name: "negative schedule to close timeout",
+			options: ClientStartActivityOptions{
+				ID:                     "test-activity-id",
+				TaskQueue:              "test-task-queue",
+				ScheduleToCloseTimeout: -time.Second,
+				StartToCloseTimeout:    time.Minute,
+			},
+			args:         []any{"value"},
+			errorContain: "negative ScheduleToCloseTimeout",
+		},
+		{
+			name: "missing both close timeouts",
+			options: ClientStartActivityOptions{
+				ID:        "test-activity-id",
+				TaskQueue: "test-task-queue",
+			},
+			args:         []any{"value"},
+			errorContain: "at least one of ScheduleToCloseTimeout and StartToCloseTimeout is required",
+		},
+		{
+			name: "invalid activity args",
+			options: ClientStartActivityOptions{
+				ID:                  "test-activity-id",
+				TaskQueue:           "test-task-queue",
+				StartToCloseTimeout: time.Minute,
+			},
+			args:         []any{make(chan int)},
+			errorContain: "unsupported type: chan int",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+			client := NewServiceClient(service, nil, ClientOptions{})
+			client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+			client.registry.RegisterActivityWithOptions(dummyActivity, RegisterActivityOptions{})
+
+			service.EXPECT().
+				StartActivityExecution(gomock.Any(), gomock.Any()).
+				Return(&workflowservice.StartActivityExecutionResponse{RunId: "run-id"}, nil).
+				Times(1)
+
+			_, err := client.ExecuteActivity(t.Context(), tc.options, dummyActivity, tc.args...)
+			require.ErrorContains(t, err, tc.errorContain)
+
+			_, err = client.ExecuteActivity(t.Context(), ClientStartActivityOptions{
+				ID:                  "valid-activity-id",
+				TaskQueue:           "test-task-queue",
+				StartToCloseTimeout: time.Minute,
+			}, dummyActivity, "value")
+			require.NoError(t, err)
+		})
+	}
+}

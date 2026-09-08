@@ -218,10 +218,7 @@ func propagateCancel(parent Context, child canceler) {
 			child.cancel(false, parentErr)
 		} else {
 			p.childrenLock.Lock()
-			if p.children == nil {
-				p.children = make(map[canceler]bool)
-			}
-			p.children[child] = true
+			p.children.add(child)
 			p.childrenLock.Unlock()
 		}
 	} else {
@@ -252,9 +249,7 @@ func removeChild(parent Context, child canceler) {
 		return
 	}
 	p.childrenLock.Lock()
-	if p.children != nil {
-		delete(p.children, child)
-	}
+	p.children.remove(child)
 	p.childrenLock.Unlock()
 }
 
@@ -265,6 +260,60 @@ type canceler interface {
 	Done() Channel
 }
 
+// childNode preserves creation order while allowing the children map to find
+// and unlink a child in constant time.
+type childNode struct {
+	child canceler
+	prev  *childNode
+	next  *childNode
+}
+
+type childList struct {
+	nodes map[canceler]*childNode
+	first *childNode
+	last  *childNode
+}
+
+func (l *childList) add(child canceler) {
+	if l.nodes == nil {
+		l.nodes = make(map[canceler]*childNode)
+	}
+	if _, ok := l.nodes[child]; ok {
+		return
+	}
+
+	node := &childNode{child: child, prev: l.last}
+	if l.last == nil {
+		l.first = node
+	} else {
+		l.last.next = node
+	}
+	l.last = node
+	l.nodes[child] = node
+}
+
+func (l *childList) remove(child canceler) {
+	node, ok := l.nodes[child]
+	if !ok {
+		return
+	}
+
+	delete(l.nodes, child)
+	if node.prev == nil {
+		l.first = node.next
+	} else {
+		node.prev.next = node.next
+	}
+	if node.next == nil {
+		l.last = node.prev
+	} else {
+		node.next.prev = node.prev
+	}
+
+	node.prev = nil
+	node.next = nil
+}
+
 // A cancelCtx can be canceled.  When canceled, it also cancels any children
 // that implement canceler.
 type cancelCtx struct {
@@ -272,7 +321,10 @@ type cancelCtx struct {
 
 	done Channel // closed by the first cancel call.
 
-	children     map[canceler]bool // set to nil by the first cancel call
+	// children stores cancelable child contexts by identity and creation order.
+	// Legacy histories traverse the map; histories with [SDKFlagOrderedChildCancel]
+	// traverse the list.
+	children     childList
 	childrenLock sync.Mutex
 	err          error // set to non-nil by the first cancel call
 	errLock      sync.RWMutex
@@ -312,11 +364,17 @@ func (c *cancelCtx) cancel(removeFromParent bool, err error) {
 	c.done.Close()
 	c.childrenLock.Lock()
 	children := c.children
-	c.children = nil
+	c.children = childList{}
 	c.childrenLock.Unlock()
-	for child := range children {
-		// NOTE: acquiring the child's lock while holding parent's lock.
-		child.cancel(false, err)
+	// Avoid recording the SDK flag when cancellation order cannot affect behavior.
+	if len(children.nodes) > 1 && GetWorkflowEnvironment(c).TryUse(SDKFlagOrderedChildCancel) {
+		for node := children.first; node != nil; node = node.next {
+			node.child.cancel(false, err)
+		}
+	} else {
+		for child := range children.nodes {
+			child.cancel(false, err)
+		}
 	}
 
 	if removeFromParent {
