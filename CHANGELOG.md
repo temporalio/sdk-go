@@ -63,6 +63,11 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- `workflow.WorkflowRandomStream`'s `Uint64` now derives its value through `Read` instead of calling
+  the underlying generator's `Uint64` directly, giving interleaved `Uint64`/`Read` calls a stable,
+  well-defined ordering. This changes the sequence `Uint64` returns for a given seed; since
+  `workflow.GetRandomStream` and `WorkflowRandomStream` remain experimental, this is not considered
+  a breaking change.
 - Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
   normal polls to use spare slots once sticky reaches its autoscaling target.
 - The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
