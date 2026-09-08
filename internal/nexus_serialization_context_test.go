@@ -1,11 +1,13 @@
 package internal
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"sync"
 	"testing"
 
+	"github.com/golang/mock/gomock"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -13,8 +15,12 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
+	nexuspb "go.temporal.io/api/nexus/v1"
+	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
 	ilog "go.temporal.io/sdk/internal/log"
+	"google.golang.org/grpc"
 )
 
 type capturedNexusSerializationCall struct {
@@ -193,6 +199,275 @@ func TestNexusSerializationContextFailureConverterInTestEnvironment(t *testing.T
 		}
 	}
 	require.True(t, found, "Nexus failure should be decoded with its operation context")
+}
+
+func TestStandaloneNexusSerializationContextInputAndResult(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	dataConverter := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&serCtxSigningCodec{},
+	)
+	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	expectedContext := converter.NexusSerializationContext{
+		Endpoint:  "standalone-endpoint",
+		Service:   "standalone-service",
+		Operation: "standalone-operation",
+	}
+	resultPayload, err := converter.WithDataConverterSerializationContext(
+		dataConverter,
+		expectedContext,
+	).ToPayload("standalone-result")
+	require.NoError(t, err)
+
+	service.EXPECT().
+		StartNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.StartNexusOperationExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.StartNexusOperationExecutionResponse, error) {
+			require.Equal(t, "standalone-endpoint:standalone-service:standalone-operation", string(request.Input.Metadata["ctx-signature"]))
+			require.Empty(t, request.UserMetadata.GetSummary().Metadata["ctx-signature"])
+			return &workflowservice.StartNexusOperationExecutionResponse{RunId: "standalone-run-id"}, nil
+		})
+	service.EXPECT().
+		PollNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.PollNexusOperationExecutionResponse{
+			Outcome: &workflowservice.PollNexusOperationExecutionResponse_Result{
+				Result: resultPayload,
+			},
+		}, nil)
+
+	nexusClient, err := client.NewNexusClient(ClientNexusClientOptions{
+		Endpoint: expectedContext.Endpoint,
+		Service:  expectedContext.Service,
+	})
+	require.NoError(t, err)
+	handle, err := nexusClient.ExecuteOperation(
+		t.Context(),
+		expectedContext.Operation,
+		"standalone-input",
+		ClientStartNexusOperationOptions{
+			ID:      "standalone-operation-id",
+			Summary: "standalone-summary",
+		},
+	)
+	require.NoError(t, err)
+
+	var result string
+	require.NoError(t, handle.Get(t.Context(), &result))
+	require.Equal(t, "standalone-result", result)
+}
+
+func TestStandaloneNexusSerializationContextFailure(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	failureConverter := newNexusCapturingFailureConverter()
+	client := NewServiceClient(service, nil, ClientOptions{FailureConverter: failureConverter})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	expectedContext := converter.NexusSerializationContext{
+		Endpoint:  "failure-endpoint",
+		Service:   "failure-service",
+		Operation: "failure-operation",
+	}
+	failure := GetDefaultFailureConverter().ErrorToFailure(
+		NewApplicationError("operation failed", "FailureType", true, nil),
+	)
+	service.EXPECT().
+		StartNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.StartNexusOperationExecutionResponse{RunId: "failure-run-id"}, nil)
+	service.EXPECT().
+		PollNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.PollNexusOperationExecutionResponse{
+			Outcome: &workflowservice.PollNexusOperationExecutionResponse_Failure{
+				Failure: failure,
+			},
+		}, nil)
+
+	nexusClient, err := client.NewNexusClient(ClientNexusClientOptions{
+		Endpoint: expectedContext.Endpoint,
+		Service:  expectedContext.Service,
+	})
+	require.NoError(t, err)
+	handle, err := nexusClient.ExecuteOperation(
+		t.Context(),
+		expectedContext.Operation,
+		"input",
+		ClientStartNexusOperationOptions{ID: "failure-operation-id"},
+	)
+	require.NoError(t, err)
+	require.Error(t, handle.Get(t.Context(), nil))
+	require.Equal(t, []nexusFailureConversion{{
+		context:   expectedContext,
+		direction: "decode",
+	}}, failureConverter.captured())
+}
+
+func TestStandaloneNexusSerializationContextDetachedHandle(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	dataConverter := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&serCtxSigningCodec{},
+	)
+	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	expectedContext := converter.NexusSerializationContext{
+		Endpoint:  "detached-endpoint",
+		Service:   "detached-service",
+		Operation: "detached-operation",
+	}
+	resultPayload, err := converter.WithDataConverterSerializationContext(
+		dataConverter,
+		expectedContext,
+	).ToPayload("detached-result")
+	require.NoError(t, err)
+
+	service.EXPECT().
+		DescribeNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.DescribeNexusOperationExecutionResponse{
+			Info: &nexuspb.NexusOperationExecutionInfo{
+				OperationId: "detached-operation-id",
+				RunId:       "resolved-run-id",
+				Endpoint:    expectedContext.Endpoint,
+				Service:     expectedContext.Service,
+				Operation:   expectedContext.Operation,
+			},
+		}, nil)
+	service.EXPECT().
+		PollNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(
+			_ context.Context,
+			request *workflowservice.PollNexusOperationExecutionRequest,
+			_ ...grpc.CallOption,
+		) (*workflowservice.PollNexusOperationExecutionResponse, error) {
+			require.Equal(t, "resolved-run-id", request.RunId)
+			return &workflowservice.PollNexusOperationExecutionResponse{
+				Outcome: &workflowservice.PollNexusOperationExecutionResponse_Result{
+					Result: resultPayload,
+				},
+			}, nil
+		})
+
+	handle := client.GetNexusOperationHandle(ClientGetNexusOperationHandleOptions{
+		OperationID: "detached-operation-id",
+	})
+	var result string
+	require.NoError(t, handle.Get(t.Context(), &result))
+	require.Equal(t, "detached-result", result)
+	require.Empty(t, handle.GetRunID())
+}
+
+func TestStandaloneNexusSerializationContextUseExisting(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	dataConverter := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&serCtxSigningCodec{},
+	)
+	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	existingContext := converter.NexusSerializationContext{
+		Endpoint:  "existing-endpoint",
+		Service:   "existing-service",
+		Operation: "existing-operation",
+	}
+	resultPayload, err := converter.WithDataConverterSerializationContext(
+		dataConverter,
+		existingContext,
+	).ToPayload("existing-result")
+	require.NoError(t, err)
+
+	service.EXPECT().
+		StartNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.StartNexusOperationExecutionResponse{
+			RunId:   "existing-run-id",
+			Started: false,
+		}, nil)
+	service.EXPECT().
+		DescribeNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.DescribeNexusOperationExecutionResponse{
+			Info: &nexuspb.NexusOperationExecutionInfo{
+				OperationId: "existing-operation-id",
+				RunId:       "existing-run-id",
+				Endpoint:    existingContext.Endpoint,
+				Service:     existingContext.Service,
+				Operation:   existingContext.Operation,
+			},
+		}, nil)
+	service.EXPECT().
+		PollNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.PollNexusOperationExecutionResponse{
+			Outcome: &workflowservice.PollNexusOperationExecutionResponse_Result{
+				Result: resultPayload,
+			},
+		}, nil)
+
+	nexusClient, err := client.NewNexusClient(ClientNexusClientOptions{
+		Endpoint: "requested-endpoint",
+		Service:  "requested-service",
+	})
+	require.NoError(t, err)
+	handle, err := nexusClient.ExecuteOperation(
+		t.Context(),
+		"requested-operation",
+		"input",
+		ClientStartNexusOperationOptions{
+			ID:               "existing-operation-id",
+			IDConflictPolicy: enumspb.NEXUS_OPERATION_ID_CONFLICT_POLICY_USE_EXISTING,
+		},
+	)
+	require.NoError(t, err)
+
+	var result string
+	require.NoError(t, handle.Get(t.Context(), &result))
+	require.Equal(t, "existing-result", result)
+}
+
+func TestStandaloneNexusSerializationContextDescribeFailures(t *testing.T) {
+	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+	failureConverter := newNexusCapturingFailureConverter()
+	client := NewServiceClient(service, nil, ClientOptions{FailureConverter: failureConverter})
+	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+	expectedContext := converter.NexusSerializationContext{
+		Endpoint:  "describe-endpoint",
+		Service:   "describe-service",
+		Operation: "describe-operation",
+	}
+	failure := GetDefaultFailureConverter().ErrorToFailure(
+		NewApplicationError("attempt failed", "AttemptFailureType", true, nil),
+	)
+	service.EXPECT().
+		DescribeNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.DescribeNexusOperationExecutionResponse{
+			Info: &nexuspb.NexusOperationExecutionInfo{
+				OperationId:        "describe-operation-id",
+				RunId:              "describe-run-id",
+				Endpoint:           expectedContext.Endpoint,
+				Service:            expectedContext.Service,
+				Operation:          expectedContext.Operation,
+				LastAttemptFailure: failure,
+				CancellationInfo: &nexuspb.NexusOperationExecutionCancellationInfo{
+					LastAttemptFailure: failure,
+				},
+			},
+		}, nil)
+
+	handle := client.GetNexusOperationHandle(ClientGetNexusOperationHandleOptions{
+		OperationID: "describe-operation-id",
+		RunID:       "describe-run-id",
+	})
+	description, err := handle.Describe(t.Context(), ClientDescribeNexusOperationOptions{})
+	require.NoError(t, err)
+	require.Error(t, description.GetLastAttemptFailure())
+	require.Error(t, description.CancellationInfo.GetLastAttemptFailure())
+	require.Equal(t, []nexusFailureConversion{
+		{context: expectedContext, direction: "decode"},
+		{context: expectedContext, direction: "decode"},
+	}, failureConverter.captured())
 }
 
 type nexusEventFailureConverter struct {

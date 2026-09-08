@@ -6,11 +6,13 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
+	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
@@ -404,4 +406,136 @@ func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsol
 	ts.Equal("binary/zlib", string(zlibEncodedResult.Metadata[converter.MetadataEncoding]))
 	// HMAC and zlib must produce different bytes for the same input.
 	ts.NotEqual(hmacEncodedResult.Data, zlibEncodedResult.Data)
+}
+
+func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneNexusCallerEndpointIsolation() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "standalone Nexus tests create namespace endpoints through Operator Service")
+	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
+		ts.T().SkipNow()
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	hmacEndpointName := "nexus-ser-ctx-standalone-hmac-" + uuid.NewString()
+	zlibEndpointName := "nexus-ser-ctx-standalone-zlib-" + uuid.NewString()
+	hmacCodec := &intTestNexusHMACCodec{key: []byte("nexus-hmac-key")}
+	zlibCodec := converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true})
+	codecSelector := &intTestNexusCodecSelector{codecs: map[string]converter.PayloadCodec{
+		intTestNexusCodecKey(hmacEndpointName, intTestNexusService, intTestNexusOperation.Name()): hmacCodec,
+		intTestNexusCodecKey(zlibEndpointName, intTestNexusService, intTestNexusOperation.Name()): zlibCodec,
+	}}
+
+	callerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codecSelector)
+	callerClient, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = callerDC
+	})
+	ts.Require().NoError(err)
+	ts.T().Cleanup(callerClient.Close)
+
+	// Each handler uses the codec selected for its endpoint. Inputs and results
+	// round trip only if the caller selects and retains that same codec.
+	startHandler := func(endpointName string, codec converter.PayloadCodec) {
+		handlerTaskQueue := "nexus-ser-ctx-standalone-handler-" + uuid.NewString()
+		endpointResponse, err := callerClient.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
+			Spec: &nexuspb.EndpointSpec{
+				Name: endpointName,
+				Target: &nexuspb.EndpointTarget{Variant: &nexuspb.EndpointTarget_Worker_{
+					Worker: &nexuspb.EndpointTarget_Worker{
+						Namespace: ts.config.Namespace,
+						TaskQueue: handlerTaskQueue,
+					},
+				}},
+			},
+		})
+		ts.Require().NoError(err)
+		ts.T().Cleanup(func() {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), ctxTimeout)
+			defer cleanupCancel()
+			_, _ = callerClient.OperatorService().DeleteNexusEndpoint(cleanupCtx, &operatorservice.DeleteNexusEndpointRequest{
+				Id: endpointResponse.Endpoint.Id, Version: endpointResponse.Endpoint.Version,
+			})
+		})
+
+		handlerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec)
+		handlerClient, err := ts.newDefaultClient(func(options *client.Options) {
+			options.DataConverter = handlerDC
+		})
+		ts.Require().NoError(err)
+		ts.T().Cleanup(handlerClient.Close)
+
+		handlerWorker := worker.New(handlerClient, handlerTaskQueue, worker.Options{DisableWorkflowWorker: true})
+		service := nexus.NewService(intTestNexusService)
+		ts.Require().NoError(service.Register(intTestNexusOperation))
+		handlerWorker.RegisterNexusService(service)
+		ts.Require().NoError(handlerWorker.Start())
+		ts.T().Cleanup(handlerWorker.Stop)
+	}
+	startHandler(hmacEndpointName, hmacCodec)
+	startHandler(zlibEndpointName, zlibCodec)
+
+	hmacStandaloneClient, err := callerClient.NewNexusClient(client.NexusClientOptions{
+		Endpoint: hmacEndpointName,
+		Service:  intTestNexusService,
+	})
+	ts.Require().NoError(err)
+	zlibStandaloneClient, err := callerClient.NewNexusClient(client.NexusClientOptions{
+		Endpoint: zlibEndpointName,
+		Service:  intTestNexusService,
+	})
+	ts.Require().NoError(err)
+
+	// Standalone starts fail immediately while the eventually consistent endpoint
+	// registry propagates, so retry the direct RPC as the other standalone tests do.
+	executeOperation := func(
+		nexusClient client.NexusClient,
+		operation any,
+		input any,
+		options client.StartNexusOperationOptions,
+	) client.NexusOperationHandle {
+		ts.T().Helper()
+		var handle client.NexusOperationHandle
+		require.Eventually(ts.T(), func() bool {
+			var executeErr error
+			handle, executeErr = nexusClient.ExecuteOperation(ctx, operation, input, options)
+			return executeErr == nil
+		}, 10*time.Second, 100*time.Millisecond, "timed out waiting for endpoint to propagate")
+		return handle
+	}
+
+	// Exercise both a typed operation reference and a resolved operation name.
+	hmacHandle := executeOperation(
+		hmacStandaloneClient,
+		intTestNexusOperation,
+		intTestNexusInput{Value: "standalone-hmac"},
+		client.StartNexusOperationOptions{
+			ID:                     "nexus-ser-ctx-standalone-hmac-" + uuid.NewString(),
+			ScheduleToCloseTimeout: 10 * time.Second,
+		},
+	)
+	zlibHandle := executeOperation(
+		zlibStandaloneClient,
+		intTestNexusOperation.Name(),
+		intTestNexusInput{Value: "standalone-zlib"},
+		client.StartNexusOperationOptions{
+			ID:                     "nexus-ser-ctx-standalone-zlib-" + uuid.NewString(),
+			ScheduleToCloseTimeout: 10 * time.Second,
+		},
+	)
+
+	var hmacStandaloneResult, zlibStandaloneResult string
+	ts.NoError(hmacHandle.Get(ctx, &hmacStandaloneResult))
+	ts.NoError(zlibHandle.Get(ctx, &zlibStandaloneResult))
+	// Both endpoint-specific codecs must decode their logical results.
+	ts.Equal("standalone-hmac", hmacStandaloneResult)
+	ts.Equal("standalone-zlib", zlibStandaloneResult)
+
+	// A reconstructed handle must recover the operation context before decoding.
+	detachedHandle := callerClient.GetNexusOperationHandle(client.GetNexusOperationHandleOptions{
+		OperationID: hmacHandle.GetID(),
+		RunID:       hmacHandle.GetRunID(),
+	})
+	var detachedResult string
+	ts.NoError(detachedHandle.Get(ctx, &detachedResult))
+	ts.Equal("standalone-hmac", detachedResult)
 }

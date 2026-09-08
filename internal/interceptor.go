@@ -881,6 +881,8 @@ type ClientPollNexusOperationResultInput struct {
 	OperationID string
 	// RunID is the run ID of the Nexus operation to poll results for.
 	RunID string
+	// nexusSerializationContext is set by SDK-created operation handles.
+	nexusSerializationContext converter.NexusSerializationContext
 }
 
 // ClientPollNexusOperationResultOutput is the output of
