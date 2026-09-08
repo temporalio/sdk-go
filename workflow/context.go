@@ -12,6 +12,37 @@ import (
 // Context's methods may be called by multiple goroutines simultaneously.
 type Context = internal.Context
 
+// LocalVar is a handle to a value local to a single workflow run. The handle can
+// be passed by value between workflow code and workflow interceptors while
+// retaining access to the same run-local value.
+//
+// Create a LocalVar with NewLocalVar from within a workflow or workflow
+// interceptor. Get returns the zero value of T until Set is called. LocalVar
+// values are in-memory workflow state: they are rebuilt by replay and are not
+// propagated to activities, child workflows, or continue-as-new runs. The zero
+// LocalVar is invalid.
+//
+// LocalVar is a handle. Copies of a LocalVar share the same identity and access
+// the same per-run value. Calls to Set must follow the same determinism
+// requirements as other workflow state mutations and are not allowed in
+// read-only workflow code such as queries, update validators, or side-effect
+// callbacks.
+//
+// Example:
+//
+//	func MyWorkflow(ctx workflow.Context) error {
+//		currentUser := workflow.NewLocalVar[string](ctx)
+//		currentUser.Set(ctx, "alice")
+//		return useCurrentUser(currentUser.Get(ctx))
+//	}
+type LocalVar[T any] = internal.LocalVar[T]
+
+// NewLocalVar creates a LocalVar bound to the workflow run for ctx. Copies of
+// the returned handle access the same value in that run.
+func NewLocalVar[T any](ctx Context) LocalVar[T] {
+	return internal.NewLocalVar[T](ctx)
+}
+
 // ContextAware is an optional interface that can be implemented alongside
 // DataConverter. This interface allows Temporal to pass Workflow/Activity
 // contexts to the DataConverter so that it may tailor its behavior.
