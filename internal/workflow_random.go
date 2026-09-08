@@ -2,6 +2,7 @@ package internal
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"io"
 	"math/rand/v2"
 )
@@ -37,8 +38,10 @@ type WorkflowRandomStream interface {
 // workflowRandomStream wraps ChaCha8 instead of embedding it so callers cannot
 // mutate a shared named stream through Seed or UnmarshalBinary.
 //
-// TODO(https://github.com/temporalio/sdk-go/issues/2547): Define stable
-// interleaving semantics. See [ChaCha8.Read].
+// Uint64 and Read must produce a stable, well-defined interleaving on their
+// own: ChaCha8.Read and ChaCha8.Uint64 leave the interleaving of the two
+// undefined (see [ChaCha8.Read]), so only ChaCha8.Read is ever called
+// directly; Uint64 is implemented on top of it.
 //
 // [ChaCha8.Read]: https://go.dev/src/math/rand/v2/chacha8.go#L48
 type workflowRandomStream struct {
@@ -46,7 +49,9 @@ type workflowRandomStream struct {
 }
 
 func (r *workflowRandomStream) Uint64() uint64 {
-	return r.source.Uint64()
+	var buf [8]byte
+	_, _ = r.source.Read(buf[:]) // ChaCha8.Read always returns len(p), nil
+	return binary.LittleEndian.Uint64(buf[:])
 }
 
 func (r *workflowRandomStream) Read(p []byte) (int, error) {

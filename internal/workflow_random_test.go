@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"encoding/binary"
 	"encoding/hex"
 	"math/rand/v2"
 	"testing"
@@ -50,6 +51,47 @@ func (s *workflowRandomTestSuite) TestGetRandomStreamGolden() {
 	s.Require().NoError(err)
 	s.Require().Equal(len(randomBytes), n)
 	s.Require().Equal("10861bf410d33891bef9b1f2ebddc1af2f5bceffe86c13fdcb8534a08805b1a7", hex.EncodeToString(randomBytes))
+}
+
+// TestUint64Golden pins Uint64's value for a known seed. Changing the
+// Uint64/Read derivation would break replay for existing workflows.
+func (s *workflowRandomTestSuite) TestUint64Golden() {
+	randoms := make(map[string]*workflowRandomStream)
+	v := getRandomStream(randoms, workflowRandomTestRunID, workflowRandomTestName).Uint64()
+	s.Require().Equal(uint64(0x9138d310f41b8610), v)
+}
+
+// TestInterleavedReadUint64StableOrdering verifies that interleaving Read and
+// Uint64 calls consumes the underlying byte stream in the same order, and
+// with the same byte boundaries, as a single equivalent-length Read: Uint64
+// must be equivalent to reading 8 bytes and decoding them as little-endian,
+// not a separate, independently-buffered draw from the source. This is the
+// stability guarantee tracked by
+// https://github.com/temporalio/sdk-go/issues/2547.
+func (s *workflowRandomTestSuite) TestInterleavedReadUint64StableOrdering() {
+	randomsInterleaved := make(map[string]*workflowRandomStream)
+	c := getRandomStream(randomsInterleaved, workflowRandomTestRunID, workflowRandomTestName)
+
+	read1 := make([]byte, 8)
+	_, err := c.Read(read1)
+	s.Require().NoError(err)
+
+	u := c.Uint64()
+	uBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(uBytes, u)
+
+	read2 := make([]byte, 8)
+	_, err = c.Read(read2)
+	s.Require().NoError(err)
+
+	reconstructed := append(append(append([]byte{}, read1...), uBytes...), read2...)
+
+	randomsFull := make(map[string]*workflowRandomStream)
+	full := make([]byte, 24)
+	_, err = getRandomStream(randomsFull, workflowRandomTestRunID, workflowRandomTestName).Read(full)
+	s.Require().NoError(err)
+
+	s.Require().Equal(full, reconstructed)
 }
 
 func (s *workflowRandomTestSuite) TestDeriveSeedSeparators() {
