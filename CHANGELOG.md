@@ -23,6 +23,11 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
+  a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
+  platforms), and the operating system and architecture. This is sent
+  once per worker with the first heartbeat accepted by the server and can be turned off with
+  `client.Options.DisableWorkerEnvironmentInfo`.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
@@ -72,11 +77,21 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
+  with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
+  and all local activity execution slots were full.
+- Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
+  normal polls to use spare slots once sticky reaches its autoscaling target.
+- The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
+  now report the wall-clock time external storage was in flight. Previously each batch's duration was
+  summed, over-reporting the time whenever storage operations ran concurrently.
 - Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
   request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
 - `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
   `serviceerror.WorkflowExecutionAlreadyStarted` errors.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
+- Legacy query task processing failures are now reported through `RespondQueryTaskCompleted` instead of
+  `RespondWorkflowTaskFailed`, allowing query callers to receive the failure instead of timing out.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
   but decoded through the workflow serialization context, so a context-aware `DataConverter` or
@@ -85,10 +100,19 @@ to docs, or any other relevant information.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
+- Added disabled-by-default SDK flag 9 for deterministic workflow child-context cancellation.
+  Currently no behavior is changed by default, a future PR will flip this flag on by 
+  default.
 - `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
   so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
   decoding it.
+- Query results are now checked against the server's blob-size error limit after
+  external storage has had a chance to offload them, matching how update and activity
+  results of the same size already behaved. A query result large enough to be offloaded
+  to `client.Options.ExternalStorage` is now stored instead of failing locally with
+  `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
+  query result now fails the workflow task instead of returning a failed query result.
 
 ### Security
 

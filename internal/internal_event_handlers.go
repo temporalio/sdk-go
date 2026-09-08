@@ -181,6 +181,8 @@ type (
 
 	localActivityTask struct {
 		sync.Mutex
+		// Owned by localActivityTunnel while the task is queued.
+		nextQueuedTask  *localActivityTask
 		workflowTask    *workflowTask
 		activityID      string
 		params          *ExecuteLocalActivityParams

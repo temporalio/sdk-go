@@ -40,6 +40,10 @@ func TestLoadFlagOverridesFromEnv(t *testing.T) {
 	}
 }
 
+func TestOrderedChildCancelFlagDisabled(t *testing.T) {
+	require.False(t, sdkFlagsAllowed[SDKFlagOrderedChildCancel])
+}
+
 func TestSet(t *testing.T) {
 	t.Run("metadata disabled keeps flags from history", func(t *testing.T) {
 		flags := newSDKFlagSet(&metadataDisabled)

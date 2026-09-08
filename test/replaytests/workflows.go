@@ -461,6 +461,23 @@ func CancelOrderSelectWorkflow(ctx workflow.Context) error {
 	return err
 }
 
+func OrderedChildCancelWorkflow(ctx workflow.Context, childCount int) (int, error) {
+	ctx, cancel := workflow.WithCancel(ctx)
+	selector := workflow.NewSelector(ctx)
+	first := -1
+	for i := range childCount {
+		childCtx, _ := workflow.WithCancel(ctx)
+		selector.AddFuture(workflow.NewTimer(childCtx, time.Hour), func(workflow.Future) {
+			first = i
+		})
+	}
+
+	cancel()
+	selector.Select(ctx)
+
+	return first, nil
+}
+
 func CancelActivityCompletionBeforeWorkflowTaskStarted(ctx workflow.Context) error {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		ActivityID:             "custom-activity-id",
