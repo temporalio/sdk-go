@@ -188,7 +188,10 @@ type (
 	}
 
 	scalableTaskPoller struct {
-		taskPollerType string
+		taskPollerType      string
+		autoscalingBalancer *workflowAutoscalingBalancer
+		pollKind            enumspb.TaskQueueKind
+
 		// pollerCount is the number of pollers tasks to start. There may be less than this
 		// due to limited slots, rate limiting, or poller autoscaling.
 		pollerCount       int
@@ -241,13 +244,11 @@ type (
 		logger                   log.Logger
 		metricsHandler           metrics.Handler
 
-		slotSupplier       *trackingSlotSupplier
-		taskQueueCh        chan eagerOrPolledTask
-		eagerTaskQueueCh   chan eagerTask
-		fatalErrCb         func(error)
-		sessionTokenBucket *sessionTokenBucket
-		pollerBalancer     *pollerBalancer
-
+		slotSupplier           *trackingSlotSupplier
+		taskQueueCh            chan eagerOrPolledTask
+		eagerTaskQueueCh       chan eagerTask
+		fatalErrCb             func(error)
+		sessionTokenBucket     *sessionTokenBucket
 		lastPollTaskErrMessage string
 		lastPollTaskErrStarted time.Time
 		lastPollTaskErrLock    sync.Mutex
@@ -277,7 +278,7 @@ type (
 		maxPollerCount            int
 		minPollerCount            int
 		logger                    log.Logger
-		targetChangedCallback     func()
+		targetChangedCallback     func(int64)
 		serverSupportsAutoscaling *atomic.Bool
 	}
 
@@ -286,7 +287,8 @@ type (
 		maxPollerCount            int
 		logger                    log.Logger
 		target                    atomic.Int64
-		targetChangedCallback     func()
+		targetChangedCallback     func(int64)
+		targetChangedMu           sync.Mutex
 		everSawScalingDecision    atomic.Bool
 		serverSupportsAutoscaling *atomic.Bool
 		ingestedThisPeriod        atomic.Int64
@@ -294,20 +296,11 @@ type (
 		scaleUpAllowed            atomic.Bool
 	}
 
-	barrier chan struct{}
-
 	autoscalingTaskPollerRunner struct {
 		autoscaler *pollerAutoscaler
 		wakeCh     chan struct{}
 		activeMu   sync.Mutex
 		active     int
-	}
-
-	// pollerBalancer is used to balance the number of poll requests from different poller types
-	pollerBalancer struct {
-		pollerCount   map[string]int
-		pollerBarrier map[string]barrier
-		mu            sync.Mutex
 	}
 )
 
@@ -405,13 +398,7 @@ func newBaseWorker(
 	if options.pollerRate > 0 {
 		bw.pollLimiter = rate.NewLimiter(rate.Limit(options.pollerRate), 1)
 	}
-	// If we have multiple task workers, we need to balance the pollers
-	if len(options.taskPollers) > 1 {
-		bw.pollerBalancer = &pollerBalancer{
-			pollerCount:   make(map[string]int),
-			pollerBarrier: make(map[string]barrier),
-		}
-	}
+	bw.validatePollers(options.taskPollers)
 
 	return bw
 }
@@ -422,11 +409,23 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 		panic("task pollers already initialized")
 	}
 	bw.options.taskPollers = taskPollers
-	if len(taskPollers) > 1 {
-		bw.pollerBalancer = &pollerBalancer{
-			pollerCount:   make(map[string]int),
-			pollerBarrier: make(map[string]barrier),
+	bw.validatePollers(taskPollers)
+}
+
+func (bw *baseWorker) validatePollers(taskPollers []scalableTaskPoller) {
+	if len(taskPollers) <= 1 {
+		return
+	}
+
+	// Split workflow pollers must use one balancer so queue kinds cannot starve each other.
+	balancer := taskPollers[0].autoscalingBalancer
+	for _, taskWorker := range taskPollers[1:] {
+		if taskWorker.autoscalingBalancer != balancer {
+			panic(inconsistentPollerBalancerMessage)
 		}
+	}
+	if balancer == nil {
+		panic(missingPollerBalancerMessage)
 	}
 }
 
@@ -437,12 +436,6 @@ func (bw *baseWorker) Start() {
 	}
 
 	bw.metricsHandler.Counter(metrics.WorkerStartCounter).Inc(1)
-
-	if bw.pollerBalancer != nil {
-		for _, taskWorker := range bw.options.taskPollers {
-			bw.pollerBalancer.registerPollerType(taskWorker.taskPollerType)
-		}
-	}
 
 	for _, taskWorker := range bw.options.taskPollers {
 		if taskWorker.autoscalingRunner != nil {
@@ -511,13 +504,6 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 		if bw.noRepoll.Load() {
 			return
 		}
-		// Call the balancer to make sure one poller type doesn't starve the others of slots.
-		if bw.pollerBalancer != nil {
-			if bw.pollerBalancer.balance(bw.limiterContext, taskWorker.taskPollerType) != nil {
-				return
-			}
-		}
-
 		bw.reserveSlotAsync(ctx, reserveChan, taskWorker)
 
 		select {
@@ -535,13 +521,7 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				bw.releaseSlot(permit, SlotReleaseReasonUnused)
 				return
 			}
-			if bw.pollerBalancer != nil {
-				bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
-			}
 			bw.pollTask(taskWorker, permit)
-			if bw.pollerBalancer != nil {
-				bw.pollerBalancer.decrementPoller(taskWorker.taskPollerType)
-			}
 		}
 	}
 }
@@ -549,8 +529,8 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 // runAutoscalingPoller is the autoscaling counterpart to runPoller. runPoller is
 // itself the long-lived poller: it reserves a slot, opens one poll RPC
 // synchronously, and loops. The autoscaling path instead uses this goroutine as
-// a manager: it reserves a slot, waits for active polls to be below the current
-// autoscaler target, then spawns a short-lived goroutine for that poll RPC.
+// a manager: it waits for poll and queue-kind admission, reserves a slot, then
+// spawns a short-lived goroutine for that poll RPC.
 func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 	defer bw.stopWG.Done()
 	defer bw.pollerWG.Done()
@@ -558,6 +538,7 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 	ctx, cancelfn := context.WithCancel(context.Background())
 	reserveChan := make(chan *SlotPermit)
 	var pollWG sync.WaitGroup
+	balancer := taskWorker.autoscalingBalancer
 
 	defer pollWG.Wait()
 	defer cancelfn()
@@ -566,19 +547,17 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		if bw.noRepoll.Load() {
 			return
 		}
-		// Call the balancer before reserving a slot so one poller type cannot
-		// hold slots while waiting for another type to start polling.
-		if bw.pollerBalancer != nil {
-			if bw.pollerBalancer.balance(bw.limiterContext, taskWorker.taskPollerType) != nil {
+		// Check before acquire so blocked queue kinds neither consume the poller
+		// target nor hold task slots.
+		if balancer != nil {
+			if err := balancer.waitForAdmission(bw.limiterContext, taskWorker.pollKind); err != nil {
 				return
 			}
 		}
-
 		releaseActive, err := taskWorker.autoscalingRunner.acquire(bw.limiterContext)
 		if err != nil {
 			return
 		}
-
 		bw.reserveSlotAsync(ctx, reserveChan, taskWorker)
 
 		var permit *SlotPermit
@@ -602,8 +581,8 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			releaseActive()
 			return
 		}
-		if bw.pollerBalancer != nil {
-			bw.pollerBalancer.incrementPoller(taskWorker.taskPollerType)
+		if balancer != nil {
+			balancer.start(taskWorker.pollKind)
 		}
 
 		pollWG.Add(1)
@@ -612,8 +591,8 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			defer bw.stopWG.Done()
 			defer pollWG.Done()
 			defer releaseActive()
-			if bw.pollerBalancer != nil {
-				defer bw.pollerBalancer.decrementPoller(taskWorker.taskPollerType)
+			if balancer != nil {
+				defer balancer.finish(taskWorker.pollKind)
 			}
 			bw.pollTask(taskWorker, slotPermit)
 		}(permit)
@@ -1000,7 +979,9 @@ func (prh *pollerAutoscaler) updateTarget(f func(int64) int64) {
 		traceLog(func() {
 			prh.logger.Debug("Updating poller autoscaler target", "target", int(newTarget))
 		})
-		prh.targetChangedCallback()
+		prh.targetChangedMu.Lock()
+		prh.targetChangedCallback(prh.target.Load())
+		prh.targetChangedMu.Unlock()
 	}
 }
 
@@ -1099,6 +1080,24 @@ func newScalableTaskPoller(
 	taskPollerType string,
 	serverSupportsAutoscaling *atomic.Bool,
 ) scalableTaskPoller {
+	return newScalablePollerWithTarget(
+		poller,
+		logger,
+		pollerBehavior,
+		taskPollerType,
+		serverSupportsAutoscaling,
+		nil,
+	)
+}
+
+func newScalablePollerWithTarget(
+	poller taskPoller,
+	logger log.Logger,
+	pollerBehavior PollerBehavior,
+	taskPollerType string,
+	serverSupportsAutoscaling *atomic.Bool,
+	targetChanged func(int64),
+) scalableTaskPoller {
 	tw := scalableTaskPoller{
 		taskPoller:     poller,
 		taskPollerType: taskPollerType,
@@ -1113,77 +1112,14 @@ func newScalableTaskPoller(
 			serverSupportsAutoscaling: serverSupportsAutoscaling,
 		})
 		tw.autoscalingRunner = newAutoscalingTaskPollerRunner(tw.pollerAutoscaler)
-		tw.pollerAutoscaler.targetChangedCallback = func() {
+		tw.pollerAutoscaler.targetChangedCallback = func(target int64) {
 			tw.autoscalingRunner.signal()
+			if targetChanged != nil {
+				targetChanged(target)
+			}
 		}
 	case *pollerBehaviorSimpleMaximum:
 		tw.pollerCount = p.maximumNumberOfPollers
 	}
 	return tw
-}
-
-// balance checks if the poller type is balanced with other poller types. The goal is to ensure that
-// at least one poller of each type is running before allowing any poller of the given type to increase.
-func (pb *pollerBalancer) balance(ctx context.Context, pollerType string) error {
-	pb.mu.Lock()
-	for {
-		// If there are no pollers of this type, we can skip balancing.
-		// This check must happen before iterating the map to avoid
-		// non-deterministic map iteration visiting another type first
-		// and unnecessarily blocking on its barrier.
-		if pb.pollerCount[pollerType] <= 0 {
-			pb.mu.Unlock()
-			return nil
-		}
-		var b barrier
-		// Check if all other poller types have at least one poller running.
-		for pt, count := range pb.pollerCount {
-			if pt == pollerType {
-				continue
-			}
-			if count == 0 {
-				b = pb.pollerBarrier[pt]
-				break
-			}
-		}
-		pb.mu.Unlock()
-		// If all other poller types have at least one poller running, we are balanced
-		if b == nil {
-			return nil
-		}
-		// If we have a barrier that means that at least one other poller type has no pollers running.
-		// We need to wait for that poller type to start a poller before we can continue.
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-b:
-			pb.mu.Lock()
-			continue
-		}
-	}
-}
-
-func (pb *pollerBalancer) registerPollerType(pollerType string) {
-	pb.mu.Lock()
-	defer pb.mu.Unlock()
-	if _, ok := pb.pollerCount[pollerType]; !ok {
-		pb.pollerCount[pollerType] = 0
-		pb.pollerBarrier[pollerType] = make(barrier)
-	}
-}
-
-func (pb *pollerBalancer) incrementPoller(pollerType string) {
-	pb.mu.Lock()
-	defer pb.mu.Unlock()
-	if pb.pollerCount[pollerType] == 0 {
-		close(pb.pollerBarrier[pollerType])
-		pb.pollerBarrier[pollerType] = make(barrier)
-	}
-	pb.pollerCount[pollerType]++
-}
-
-func (pb *pollerBalancer) decrementPoller(pollerType string) {
-	pb.mu.Lock()
-	defer pb.mu.Unlock()
-	pb.pollerCount[pollerType]--
 }

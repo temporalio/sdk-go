@@ -66,6 +66,8 @@ to docs, or any other relevant information.
 - Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
   with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
   and all local activity execution slots were full.
+- Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
+  normal polls to use spare slots once sticky reaches its autoscaling target.
 - The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
   now report the wall-clock time external storage was in flight. Previously each batch's duration was
   summed, over-reporting the time whenever storage operations ran concurrently.
@@ -91,6 +93,12 @@ to docs, or any other relevant information.
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
   so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
   decoding it.
+- Query results are now checked against the server's blob-size error limit after
+  external storage has had a chance to offload them, matching how update and activity
+  results of the same size already behaved. A query result large enough to be offloaded
+  to `client.Options.ExternalStorage` is now stored instead of failing locally with
+  `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
+  query result now fails the workflow task instead of returning a failed query result.
 
 ### Security
 
