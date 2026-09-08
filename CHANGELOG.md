@@ -19,6 +19,21 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [1.49.0] - 2026-09-08
+
 - Add support for Workflow Queries as Nexus Operations.
 
 ### Added
@@ -38,10 +53,6 @@ to docs, or any other relevant information.
 - The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
   metrics now carry a `failure_reason` attribute. Each is now split into one time series per
   reason, which may affect existing dashboards.
-
-### Changed
-
-### Deprecated
 
 ### :boom: Breaking Changes
 
@@ -99,8 +110,6 @@ to docs, or any other relevant information.
   to `client.Options.ExternalStorage` is now stored instead of failing locally with
   `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
   query result now fails the workflow task instead of returning a failed query result.
-
-### Security
 
 ## [1.48.0] - 2026-08-18
 
