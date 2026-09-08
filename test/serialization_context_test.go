@@ -529,13 +529,4 @@ func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneNexusCallerEn
 	// Both endpoint-specific codecs must decode their logical results.
 	ts.Equal("standalone-hmac", hmacStandaloneResult)
 	ts.Equal("standalone-zlib", zlibStandaloneResult)
-
-	// A reconstructed handle must recover the operation context before decoding.
-	detachedHandle := callerClient.GetNexusOperationHandle(client.GetNexusOperationHandleOptions{
-		OperationID: hmacHandle.GetID(),
-		RunID:       hmacHandle.GetRunID(),
-	})
-	var detachedResult string
-	ts.NoError(detachedHandle.Get(ctx, &detachedResult))
-	ts.Equal("standalone-hmac", detachedResult)
 }

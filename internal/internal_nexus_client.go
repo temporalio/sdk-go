@@ -353,7 +353,6 @@ type (
 		client                    *WorkflowClient
 		id                        string
 		runID                     string
-		resolvedRunID             string
 		nexusSerializationContext *converter.NexusSerializationContext
 		result                    *ClientPollNexusOperationResultOutput
 	}
@@ -486,18 +485,13 @@ func (h *clientNexusOperationHandleImpl) Get(ctx context.Context, valuePtr any) 
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return err
 	}
-	if h.nexusSerializationContext == nil {
-		if _, err := h.Describe(ctx, ClientDescribeNexusOperationOptions{}); err != nil {
-			return err
-		}
-	}
 
 	// repeatedly poll, the loop repeats until there's an outcome
 	for {
 		resp, err := h.client.interceptor.PollNexusOperationResult(ctx, &ClientPollNexusOperationResultInput{
 			OperationID:               h.id,
-			RunID:                     h.resolvedRunID,
-			nexusSerializationContext: *h.nexusSerializationContext,
+			RunID:                     h.runID,
+			nexusSerializationContext: h.nexusSerializationContext,
 		})
 		if err != nil {
 			return err
@@ -526,12 +520,6 @@ func (h *clientNexusOperationHandleImpl) Describe(ctx context.Context, options C
 	})
 	if err != nil {
 		return nil, err
-	}
-	h.resolvedRunID = out.Description.OperationRunID
-	h.nexusSerializationContext = &converter.NexusSerializationContext{
-		Endpoint:  out.Description.Endpoint,
-		Service:   out.Description.Service,
-		Operation: out.Description.Operation,
 	}
 	return out.Description, nil
 }
@@ -746,18 +734,12 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 	if err != nil {
 		return nil, err
 	}
-	var nsc *converter.NexusSerializationContext
-	// USE_EXISTING may return an operation with different nexus context; Describe resolves its actual context.
-	if resp.Started || in.Options.IDConflictPolicy != enumspb.NEXUS_OPERATION_ID_CONFLICT_POLICY_USE_EXISTING {
-		nsc = &nexusContext
-	}
 
 	return &clientNexusOperationHandleImpl{
 		client:                    w.client,
 		id:                        in.Options.ID,
 		runID:                     resp.RunId,
-		resolvedRunID:             resp.RunId,
-		nexusSerializationContext: nsc,
+		nexusSerializationContext: &nexusContext,
 	}, nil
 }
 
@@ -779,8 +761,11 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
-	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, in.nexusSerializationContext)
-	failureConverter := converter.WithFailureConverterSerializationContext(w.client.failureConverter, in.nexusSerializationContext)
+	failureConverter := w.client.failureConverter
+	if in.nexusSerializationContext != nil {
+		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, *in.nexusSerializationContext)
+		failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, *in.nexusSerializationContext)
+	}
 
 	request := &workflowservice.PollNexusOperationExecutionRequest{
 		Namespace:   w.client.namespace,

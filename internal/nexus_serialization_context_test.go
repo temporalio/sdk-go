@@ -458,37 +458,15 @@ func TestStandaloneNexusSerializationContextFailure(t *testing.T) {
 	}}, failureConverter.captured())
 }
 
-func TestStandaloneNexusSerializationContextDetachedHandle(t *testing.T) {
+func TestStandaloneNexusDetachedHandleDoesNotDescribe(t *testing.T) {
 	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
-	dataConverter := converter.NewCodecDataConverter(
-		converter.GetDefaultDataConverter(),
-		&serCtxSigningCodec{},
-	)
+	dataConverter := converter.GetDefaultDataConverter()
 	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
 	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
 
-	expectedContext := converter.NexusSerializationContext{
-		Endpoint:  "detached-endpoint",
-		Service:   "detached-service",
-		Operation: "detached-operation",
-	}
-	resultPayload, err := converter.WithDataConverterSerializationContext(
-		dataConverter,
-		expectedContext,
-	).ToPayload("detached-result")
+	resultPayload, err := dataConverter.ToPayload("detached-result")
 	require.NoError(t, err)
 
-	service.EXPECT().
-		DescribeNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.DescribeNexusOperationExecutionResponse{
-			Info: &nexuspb.NexusOperationExecutionInfo{
-				OperationId: "detached-operation-id",
-				RunId:       "resolved-run-id",
-				Endpoint:    expectedContext.Endpoint,
-				Service:     expectedContext.Service,
-				Operation:   expectedContext.Operation,
-			},
-		}, nil)
 	service.EXPECT().
 		PollNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(
@@ -496,7 +474,7 @@ func TestStandaloneNexusSerializationContextDetachedHandle(t *testing.T) {
 			request *workflowservice.PollNexusOperationExecutionRequest,
 			_ ...grpc.CallOption,
 		) (*workflowservice.PollNexusOperationExecutionResponse, error) {
-			require.Equal(t, "resolved-run-id", request.RunId)
+			require.Empty(t, request.RunId)
 			return &workflowservice.PollNexusOperationExecutionResponse{
 				Outcome: &workflowservice.PollNexusOperationExecutionResponse_Result{
 					Result: resultPayload,
@@ -522,14 +500,14 @@ func TestStandaloneNexusSerializationContextUseExisting(t *testing.T) {
 	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
 	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
 
-	existingContext := converter.NexusSerializationContext{
-		Endpoint:  "existing-endpoint",
-		Service:   "existing-service",
-		Operation: "existing-operation",
+	requestContext := converter.NexusSerializationContext{
+		Endpoint:  "requested-endpoint",
+		Service:   "requested-service",
+		Operation: "requested-operation",
 	}
 	resultPayload, err := converter.WithDataConverterSerializationContext(
 		dataConverter,
-		existingContext,
+		requestContext,
 	).ToPayload("existing-result")
 	require.NoError(t, err)
 
@@ -540,17 +518,6 @@ func TestStandaloneNexusSerializationContextUseExisting(t *testing.T) {
 			Started: false,
 		}, nil)
 	service.EXPECT().
-		DescribeNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
-		Return(&workflowservice.DescribeNexusOperationExecutionResponse{
-			Info: &nexuspb.NexusOperationExecutionInfo{
-				OperationId: "existing-operation-id",
-				RunId:       "existing-run-id",
-				Endpoint:    existingContext.Endpoint,
-				Service:     existingContext.Service,
-				Operation:   existingContext.Operation,
-			},
-		}, nil)
-	service.EXPECT().
 		PollNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.PollNexusOperationExecutionResponse{
 			Outcome: &workflowservice.PollNexusOperationExecutionResponse_Result{
@@ -559,13 +526,13 @@ func TestStandaloneNexusSerializationContextUseExisting(t *testing.T) {
 		}, nil)
 
 	nexusClient, err := client.NewNexusClient(ClientNexusClientOptions{
-		Endpoint: "requested-endpoint",
-		Service:  "requested-service",
+		Endpoint: requestContext.Endpoint,
+		Service:  requestContext.Service,
 	})
 	require.NoError(t, err)
 	handle, err := nexusClient.ExecuteOperation(
 		t.Context(),
-		"requested-operation",
+		requestContext.Operation,
 		"input",
 		ClientStartNexusOperationOptions{
 			ID:               "existing-operation-id",
