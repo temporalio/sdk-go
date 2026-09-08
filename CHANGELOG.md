@@ -63,6 +63,9 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
+  with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
+  and all local activity execution slots were full.
 - Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
   normal polls to use spare slots once sticky reaches its autoscaling target.
 - The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
