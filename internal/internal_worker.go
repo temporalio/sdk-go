@@ -77,7 +77,7 @@ const (
 
 	testTagsContextKey = "temporal-testTags"
 
-	functionLiteralRegistrationHint = "It looks like you might have registered a function literal (closure), which is not supported."
+	functionLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias."
 )
 
 type (
@@ -758,7 +758,7 @@ func (r *registry) RegisterWorkflowWithOptions(
 		if _, ok := r.workflowFuncMap[registerName]; ok {
 			message := fmt.Sprintf("workflow name \"%v\" is already registered", registerName)
 			if mightBeFunctionLiteral(wf) {
-				message += ". " + functionLiteralRegistrationHint
+				message += ". " + functionLiteralRegistrationHint + " Try RegisterWorkflowWithOptions instead."
 			}
 			panic(message)
 		}
@@ -844,7 +844,7 @@ func (r *registry) RegisterActivityWithOptions(
 		if _, ok := r.activityFuncMap[registerName]; ok {
 			message := fmt.Sprintf("activity type \"%v\" is already registered", registerName)
 			if mightBeFunctionLiteral(af) {
-				message += ". " + functionLiteralRegistrationHint
+				message += ". " + functionLiteralRegistrationHint + " Try RegisterActivityWithOptions instead."
 			}
 			panic(message)
 		}

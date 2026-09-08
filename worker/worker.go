@@ -61,7 +61,6 @@ type (
 	// WorkflowRegistry exposes workflow registration functions to consumers.
 	WorkflowRegistry interface {
 		// RegisterWorkflow - registers a workflow function with the worker.
-		// Function literals (closures) are not supported.
 		// A workflow takes a [workflow.Context] and input and returns a (result, error) or just error.
 		//
 		// Examples:
@@ -71,8 +70,9 @@ type (
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
 		//
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-		// For global registration consider workflow.Register
-		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
+		// For global registration consider workflow.Register.
+		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow.
+		// To register function literals (closures), use [RegisterWorkflowWithOptions] to assign a type name explicitly.
 		RegisterWorkflow(w any)
 
 		// RegisterWorkflowWithOptions registers the workflow function with options.
@@ -119,6 +119,7 @@ type (
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 		// This method panics if activityFunc doesn't comply with the expected format or an activity with the same
 		// type name is registered more than once.
+		// To register function literals (closures), use RegisterActivityWithOptions to assign a type name explicitly.
 		RegisterActivity(a any)
 
 		// RegisterActivityWithOptions registers the activity function or struct pointer with options.
