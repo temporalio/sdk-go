@@ -747,6 +747,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		return nil, err
 	}
 	var nsc *converter.NexusSerializationContext
+	// USE_EXISTING may return an operation with different nexus context; Describe resolves its actual context.
 	if resp.Started || in.Options.IDConflictPolicy != enumspb.NEXUS_OPERATION_ID_CONFLICT_POLICY_USE_EXISTING {
 		nsc = &nexusContext
 	}

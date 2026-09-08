@@ -19,6 +19,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"google.golang.org/grpc"
 )
@@ -168,6 +169,158 @@ func (c *nexusCapturingFailureConverter) captured() []nexusFailureConversion {
 	result := make([]nexusFailureConversion, len(*c.conversions))
 	copy(result, *c.conversions)
 	return result
+}
+
+func TestNexusTaskHandlerSerializationContextInputAndSyncResult(t *testing.T) {
+	expectedContext := converter.NexusSerializationContext{
+		Endpoint:  "handler-endpoint",
+		Service:   "handler-service",
+		Operation: "handler-operation",
+	}
+	dataConverter := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&serCtxSigningCodec{},
+	)
+	contextualDataConverter := converter.WithDataConverterSerializationContext(dataConverter, expectedContext)
+	inputPayload, err := contextualDataConverter.ToPayload("handler-input")
+	require.NoError(t, err)
+
+	operation := nexus.NewSyncOperation(
+		expectedContext.Operation,
+		func(_ context.Context, input string, _ nexus.StartOperationOptions) (string, error) {
+			require.Equal(t, "handler-input", input)
+			return "handler-result", nil
+		},
+	)
+	service := nexus.NewService(expectedContext.Service)
+	require.NoError(t, service.Register(operation))
+	registry := nexus.NewServiceRegistry()
+	require.NoError(t, registry.Register(service))
+	registry.Use(nexusMiddleware(nil))
+	handler, err := registry.NewHandler()
+	require.NoError(t, err)
+
+	taskHandler := newNexusTaskHandler(
+		handler,
+		"identity",
+		"namespace",
+		"task-queue",
+		nil,
+		dataConverter,
+		GetDefaultFailureConverter(),
+		ilog.NewNopLogger(),
+		metrics.NopHandler,
+		newRegistry(),
+	)
+	completed, failed, err := taskHandler.Execute(&workflowservice.PollNexusTaskQueueResponse{
+		TaskToken: []byte("task-token"),
+		Request: &nexuspb.Request{
+			Endpoint: expectedContext.Endpoint,
+			Variant: &nexuspb.Request_StartOperation{
+				StartOperation: &nexuspb.StartOperationRequest{
+					Service:   expectedContext.Service,
+					Operation: expectedContext.Operation,
+					Payload:   inputPayload,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+	require.Nil(t, failed)
+
+	resultPayload := completed.GetResponse().GetStartOperation().GetSyncSuccess().GetPayload()
+	require.Equal(t, "handler-endpoint:handler-service:handler-operation", string(resultPayload.Metadata["ctx-signature"]))
+	var result string
+	require.NoError(t, contextualDataConverter.FromPayload(resultPayload, &result))
+	require.Equal(t, "handler-result", result)
+}
+
+func TestNexusTaskHandlerFailureSerializationContext(t *testing.T) {
+	expectedContext := converter.NexusSerializationContext{
+		Endpoint:  "handler-endpoint",
+		Service:   "handler-service",
+		Operation: "handler-operation",
+	}
+	inputPayload, err := converter.GetDefaultDataConverter().ToPayload("handler-input")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name             string
+		err              error
+		expectCompletion bool
+	}{
+		{
+			name:             "operation failure",
+			err:              nexus.NewOperationFailedErrorf("operation failed"),
+			expectCompletion: true,
+		},
+		{
+			name: "handler failure",
+			err: &nexus.HandlerError{
+				Type:  nexus.HandlerErrorTypeBadRequest,
+				Cause: errors.New("handler failed"),
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			failureConverter := newNexusCapturingFailureConverter()
+			operation := nexus.NewSyncOperation(
+				expectedContext.Operation,
+				func(context.Context, string, nexus.StartOperationOptions) (string, error) {
+					return "", test.err
+				},
+			)
+			service := nexus.NewService(expectedContext.Service)
+			require.NoError(t, service.Register(operation))
+			registry := nexus.NewServiceRegistry()
+			require.NoError(t, registry.Register(service))
+			registry.Use(nexusMiddleware(nil))
+			handler, err := registry.NewHandler()
+			require.NoError(t, err)
+
+			taskHandler := newNexusTaskHandler(
+				handler,
+				"identity",
+				"namespace",
+				"task-queue",
+				nil,
+				converter.GetDefaultDataConverter(),
+				failureConverter,
+				ilog.NewNopLogger(),
+				metrics.NopHandler,
+				newRegistry(),
+			)
+			completed, failed, err := taskHandler.Execute(&workflowservice.PollNexusTaskQueueResponse{
+				TaskToken: []byte("task-token"),
+				Request: &nexuspb.Request{
+					Endpoint: expectedContext.Endpoint,
+					Capabilities: &nexuspb.Request_Capabilities{
+						TemporalFailureResponses: true,
+					},
+					Variant: &nexuspb.Request_StartOperation{
+						StartOperation: &nexuspb.StartOperationRequest{
+							Service:   expectedContext.Service,
+							Operation: expectedContext.Operation,
+							Payload:   inputPayload,
+						},
+					},
+				},
+			})
+			require.NoError(t, err)
+			if test.expectCompletion {
+				require.NotNil(t, completed)
+				require.Nil(t, failed)
+			} else {
+				require.Nil(t, completed)
+				require.NotNil(t, failed)
+			}
+			require.Equal(t, []nexusFailureConversion{{
+				context:   expectedContext,
+				direction: "encode",
+			}}, failureConverter.captured())
+		})
+	}
 }
 
 func TestNexusSerializationContextFailureConverterInTestEnvironment(t *testing.T) {

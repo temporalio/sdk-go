@@ -37,16 +37,18 @@ type ActivitySerializationContext struct {
 
 func (ActivitySerializationContext) isSerializationContext() {}
 
-// NexusSerializationContext is used by callers of Nexus operations when encoding
-// operation inputs and decoding successful results or failures.
+// NexusSerializationContext is used when serializing Nexus operation payloads.
+// Callers receive it when encoding inputs and decoding results or failures.
+// Handlers receive it when decoding inputs, encoding synchronous results, and
+// encoding failures produced while handling a Nexus task.
 //
-// Operation is the resolved operation name. This context is not propagated to
-// Nexus handlers, which must use compatible converter configuration.
+// Operation is the resolved operation name. The context is not propagated to
+// the eventual result of an asynchronous operation.
 //
-// For failures, this context is provided only to the caller's
-// [FailureConverter.FailureToError], not [FailureConverter.ErrorToFailure].
-// Implementations must not assume symmetric failure conversion. Context-dependent
-// encodings should be self-describing and support legacy payloads without context.
+// For failures, callers receive this context in [FailureConverter.FailureToError],
+// while handlers receive it in [FailureConverter.ErrorToFailure]. Implementations
+// must not assume symmetric failure conversion. Context-dependent encodings should
+// be self-describing and support legacy payloads without context.
 //
 // NOTE: Experimental
 type NexusSerializationContext struct {

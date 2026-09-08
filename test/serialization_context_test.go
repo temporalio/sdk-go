@@ -337,7 +337,7 @@ func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsol
 
 	// Each handler uses the codec selected for its endpoint. Inputs and results
 	// round trip only if the caller selects and retains that same codec.
-	hmacHandlerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), hmacCodec)
+	hmacHandlerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codecSelector)
 	hmacHandlerClient, err := ts.newDefaultClient(func(options *client.Options) {
 		options.DataConverter = hmacHandlerDC
 	})
@@ -350,7 +350,7 @@ func (ts *IntegrationTestSuite) TestSerializationContext_NexusCallerEndpointIsol
 	ts.NoError(hmacHandlerWorker.Start())
 	defer hmacHandlerWorker.Stop()
 
-	zlibHandlerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), zlibCodec)
+	zlibHandlerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codecSelector)
 	zlibHandlerClient, err := ts.newDefaultClient(func(options *client.Options) {
 		options.DataConverter = zlibHandlerDC
 	})
@@ -435,7 +435,7 @@ func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneNexusCallerEn
 
 	// Each handler uses the codec selected for its endpoint. Inputs and results
 	// round trip only if the caller selects and retains that same codec.
-	startHandler := func(endpointName string, codec converter.PayloadCodec) {
+	startHandler := func(endpointName string) {
 		handlerTaskQueue := "nexus-ser-ctx-standalone-handler-" + uuid.NewString()
 		endpointResponse, err := callerClient.OperatorService().CreateNexusEndpoint(ctx, &operatorservice.CreateNexusEndpointRequest{
 			Spec: &nexuspb.EndpointSpec{
@@ -457,7 +457,7 @@ func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneNexusCallerEn
 			})
 		})
 
-		handlerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codec)
+		handlerDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), codecSelector)
 		handlerClient, err := ts.newDefaultClient(func(options *client.Options) {
 			options.DataConverter = handlerDC
 		})
@@ -471,8 +471,8 @@ func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneNexusCallerEn
 		ts.Require().NoError(handlerWorker.Start())
 		ts.T().Cleanup(handlerWorker.Stop)
 	}
-	startHandler(hmacEndpointName, hmacCodec)
-	startHandler(zlibEndpointName, zlibCodec)
+	startHandler(hmacEndpointName)
+	startHandler(zlibEndpointName)
 
 	hmacStandaloneClient, err := callerClient.NewNexusClient(client.NexusClientOptions{
 		Endpoint: hmacEndpointName,
