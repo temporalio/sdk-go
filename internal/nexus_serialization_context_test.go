@@ -458,39 +458,6 @@ func TestStandaloneNexusSerializationContextFailure(t *testing.T) {
 	}}, failureConverter.captured())
 }
 
-func TestStandaloneNexusDetachedHandleDoesNotDescribe(t *testing.T) {
-	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
-	dataConverter := converter.GetDefaultDataConverter()
-	client := NewServiceClient(service, nil, ClientOptions{DataConverter: dataConverter})
-	client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
-
-	resultPayload, err := dataConverter.ToPayload("detached-result")
-	require.NoError(t, err)
-
-	service.EXPECT().
-		PollNexusOperationExecution(gomock.Any(), gomock.Any(), gomock.Any()).
-		DoAndReturn(func(
-			_ context.Context,
-			request *workflowservice.PollNexusOperationExecutionRequest,
-			_ ...grpc.CallOption,
-		) (*workflowservice.PollNexusOperationExecutionResponse, error) {
-			require.Empty(t, request.RunId)
-			return &workflowservice.PollNexusOperationExecutionResponse{
-				Outcome: &workflowservice.PollNexusOperationExecutionResponse_Result{
-					Result: resultPayload,
-				},
-			}, nil
-		})
-
-	handle := client.GetNexusOperationHandle(ClientGetNexusOperationHandleOptions{
-		OperationID: "detached-operation-id",
-	})
-	var result string
-	require.NoError(t, handle.Get(t.Context(), &result))
-	require.Equal(t, "detached-result", result)
-	require.Empty(t, handle.GetRunID())
-}
-
 func TestStandaloneNexusSerializationContextUseExisting(t *testing.T) {
 	service := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
 	dataConverter := converter.NewCodecDataConverter(

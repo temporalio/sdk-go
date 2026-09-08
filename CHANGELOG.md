@@ -28,14 +28,10 @@ to docs, or any other relevant information.
   platforms), and the operating system and architecture. This is sent
   once per worker with the first heartbeat accepted by the server and can be turned off with
   `client.Options.DisableWorkerEnvironmentInfo`.
-- Added `converter.NexusSerializationContext` support for Nexus operation inputs, results, and
-  failures. Workflow-scheduled and standalone callers retain isolated contextual data and failure
-  converters keyed by endpoint, service, and resolved operation name, including across workflow
-  replay and standalone operation handles returned by `ExecuteOperation`. Nexus handlers receive
-  the same context when decoding inputs, encoding synchronous results, and encoding failures
-  produced while handling a Nexus task. The context is not propagated to asynchronous operation
-  results. Standalone handles use the context of their start request, including when an existing
-  operation is returned, while handles created without starting an operation do not receive it.
+- Added `converter.NexusSerializationContext` support for Nexus callers and handlers. Callers use
+  it for inputs, results, and failures; handlers use it for inputs, synchronous results, and
+  failures. Asynchronous handler results and detached standalone handles are not yet supported.
+  Standalone `USE_EXISTING` handles use their start request's context.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
