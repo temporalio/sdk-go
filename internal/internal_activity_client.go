@@ -697,12 +697,9 @@ func (h *clientActivityHandleImpl) Describe(ctx context.Context, options ClientD
 		return nil, err
 	}
 	out, err := h.client.interceptor.DescribeActivity(ctx, &ClientDescribeActivityInput{
-		ActivityID:              h.id,
-		RunID:                   h.runID,
-		IncludeInput:            options.IncludeInput,
-		IncludeOutcome:          options.IncludeOutcome,
-		IncludeHeartbeatDetails: options.IncludeHeartbeatDetails,
-		IncludeLastFailure:      options.IncludeLastFailure,
+		ActivityID: h.id,
+		RunID:      h.runID,
+		Options:    &options,
 	})
 	if err != nil {
 		return nil, err
@@ -739,7 +736,7 @@ func (h *clientActivityHandleImpl) Pause(ctx context.Context, options ClientPaus
 	return h.client.interceptor.PauseActivity(ctx, &ClientPauseActivityInput{
 		ActivityID: h.id,
 		RunID:      h.runID,
-		Reason:     options.Reason,
+		Options:    &options,
 	})
 }
 
@@ -750,8 +747,7 @@ func (h *clientActivityHandleImpl) Unpause(ctx context.Context, options ClientUn
 	return h.client.interceptor.UnpauseActivity(ctx, &ClientUnpauseActivityInput{
 		ActivityID: h.id,
 		RunID:      h.runID,
-		Reason:     options.Reason,
-		Jitter:     options.Jitter,
+		Options:    &options,
 	})
 }
 
@@ -1092,10 +1088,10 @@ func (w *workflowClientInterceptor) DescribeActivity(
 		Namespace:               w.client.namespace,
 		ActivityId:              in.ActivityID,
 		RunId:                   in.RunID,
-		IncludeInput:            in.IncludeInput,
-		IncludeOutcome:          in.IncludeOutcome,
-		IncludeHeartbeatDetails: in.IncludeHeartbeatDetails,
-		IncludeLastFailure:      in.IncludeLastFailure,
+		IncludeInput:            in.Options.IncludeInput,
+		IncludeOutcome:          in.Options.IncludeOutcome,
+		IncludeHeartbeatDetails: in.Options.IncludeHeartbeatDetails,
+		IncludeLastFailure:      in.Options.IncludeLastFailure,
 	}
 	resp, err := w.client.WorkflowService().DescribeActivityExecution(grpcCtx, request)
 	if err != nil {
@@ -1186,7 +1182,7 @@ func (w *workflowClientInterceptor) PauseActivity(
 		RunId:      in.RunID,
 		Identity:   w.client.identity,
 		RequestId:  uuid.NewString(),
-		Reason:     in.Reason,
+		Reason:     in.Options.Reason,
 	}
 	_, err := w.client.WorkflowService().PauseActivityExecution(grpcCtx, request)
 	return err
@@ -1205,10 +1201,10 @@ func (w *workflowClientInterceptor) UnpauseActivity(
 		RunId:      in.RunID,
 		Identity:   w.client.identity,
 		RequestId:  uuid.NewString(),
-		Reason:     in.Reason,
+		Reason:     in.Options.Reason,
 	}
-	if in.Jitter != 0 {
-		request.Jitter = durationpb.New(in.Jitter)
+	if in.Options.Jitter != 0 {
+		request.Jitter = durationpb.New(in.Options.Jitter)
 	}
 	_, err := w.client.WorkflowService().UnpauseActivityExecution(grpcCtx, request)
 	return err

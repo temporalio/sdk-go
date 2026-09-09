@@ -758,8 +758,8 @@ type ClientPauseActivityInput struct {
 	ActivityID string
 	// RunID is the run ID of the activity to pause.
 	RunID string
-	// Reason is the reason for pausing.
-	Reason string
+	// Options are the options for pausing the activity.
+	Options *ClientPauseActivityOptions
 }
 
 // ClientUnpauseActivityInput is the input to
@@ -773,10 +773,8 @@ type ClientUnpauseActivityInput struct {
 	ActivityID string
 	// RunID is the run ID of the activity to unpause.
 	RunID string
-	// Reason is the reason for unpausing.
-	Reason string
-	// Jitter, if non-zero, delays the next attempt by a random duration in [0, Jitter).
-	Jitter time.Duration
+	// Options are the options for unpausing the activity.
+	Options *ClientUnpauseActivityOptions
 }
 
 // ClientUpdateActivityOptionsInput is the input to
@@ -819,14 +817,8 @@ type ClientDescribeActivityInput struct {
 	ActivityID string
 	// RunID is the run ID of the activity to describe.
 	RunID string
-	// IncludeInput requests the arguments the activity was scheduled with.
-	IncludeInput bool
-	// IncludeOutcome requests the activity's result or failure, if it has closed.
-	IncludeOutcome bool
-	// IncludeHeartbeatDetails requests the most recent heartbeat details.
-	IncludeHeartbeatDetails bool
-	// IncludeLastFailure requests the failure of the most recent failed attempt.
-	IncludeLastFailure bool
+	// Options are the options for describing the activity.
+	Options *ClientDescribeActivityOptions
 }
 
 // ClientDescribeActivityOutput is the output of

@@ -267,9 +267,9 @@ func TestInterceptorReceivesCommandArguments(t *testing.T) {
 		Jitter: 5 * time.Second,
 	}))
 
-	require.Equal(t, "pause-reason", recorder.pauseIn.Reason)
-	require.Equal(t, "unpause-reason", recorder.unpauseIn.Reason)
-	require.Equal(t, 5*time.Second, recorder.unpauseIn.Jitter)
+	require.Equal(t, "pause-reason", recorder.pauseIn.Options.Reason)
+	require.Equal(t, "unpause-reason", recorder.unpauseIn.Options.Reason)
+	require.Equal(t, 5*time.Second, recorder.unpauseIn.Options.Jitter)
 }
 
 // TestUpdateActivityOptionsRestoreIsExclusive asserts the guard the handle cannot reach: the
