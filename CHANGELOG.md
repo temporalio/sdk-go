@@ -28,6 +28,10 @@ to docs, or any other relevant information.
   platforms), and the operating system and architecture. This is sent
   once per worker with the first heartbeat accepted by the server and can be turned off with
   `client.Options.DisableWorkerEnvironmentInfo`.
+- Added `converter.NexusSerializationContext` support for Nexus callers and handlers. Callers use
+  it for inputs, results, and failures; handlers use it for inputs, synchronous results, and
+  failures. Asynchronous handler results and detached standalone handles are not yet supported.
+  Standalone `USE_EXISTING` handles use their start request's context.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
@@ -63,11 +67,21 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
+  with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
+  and all local activity execution slots were full.
+- Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
+  normal polls to use spare slots once sticky reaches its autoscaling target.
+- The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
+  now report the wall-clock time external storage was in flight. Previously each batch's duration was
+  summed, over-reporting the time whenever storage operations ran concurrently.
 - Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
   request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
 - `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
   `serviceerror.WorkflowExecutionAlreadyStarted` errors.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
+- Legacy query task processing failures are now reported through `RespondQueryTaskCompleted` instead of
+  `RespondWorkflowTaskFailed`, allowing query callers to receive the failure instead of timing out.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
   but decoded through the workflow serialization context, so a context-aware `DataConverter` or
@@ -85,6 +99,12 @@ to docs, or any other relevant information.
   decoding it.
 - Added documentation that function literals (closures) shouldn't be registered as
   workflow functions or activity functions without an alias.
+- Query results are now checked against the server's blob-size error limit after
+  external storage has had a chance to offload them, matching how update and activity
+  results of the same size already behaved. A query result large enough to be offloaded
+  to `client.Options.ExternalStorage` is now stored instead of failing locally with
+  `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
+  query result now fails the workflow task instead of returning a failed query result.
 
 ### Security
 

@@ -1269,10 +1269,10 @@ type testCallback struct {
 	duration time.Duration
 }
 
-func (c *testCallback) PayloadBatchCompleted(count int, size int64, duration time.Duration, _ []string) {
+func (c *testCallback) PayloadBatchCompleted(count int, size int64, start, end time.Time, _ []string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.count = count
 	c.size = size
-	c.duration = duration
+	c.duration = end.Sub(start)
 }
