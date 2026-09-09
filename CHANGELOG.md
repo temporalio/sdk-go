@@ -28,6 +28,10 @@ to docs, or any other relevant information.
   platforms), and the operating system and architecture. This is sent
   once per worker with the first heartbeat accepted by the server and can be turned off with
   `client.Options.DisableWorkerEnvironmentInfo`.
+- Added `converter.NexusSerializationContext` support for Nexus callers and handlers. Callers use
+  it for inputs, results, and failures; handlers use it for inputs, synchronous results, and
+  failures. Asynchronous handler results and detached standalone handles are not yet supported.
+  Standalone `USE_EXISTING` handles use their start request's context.
 - Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
   optional structured details for payload validation failures. Passing `nil` omits details.
 - Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting

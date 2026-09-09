@@ -37,14 +37,15 @@ type NexusOperationInfo struct {
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
-	client         Client
-	RequestID      string
-	Namespace      string
-	TaskQueue      string
-	Endpoint       string
-	metricsHandler metrics.Handler
-	log            log.Logger
-	registry       *registry
+	client                    Client
+	RequestID                 string
+	Namespace                 string
+	TaskQueue                 string
+	Endpoint                  string
+	nexusSerializationContext converter.NexusSerializationContext
+	metricsHandler            metrics.Handler
+	log                       log.Logger
+	registry                  *registry
 
 	// responseLinksMu guards responseLinks. A Nexus operation handler is invoked from a single
 	// goroutine, but handlers are free to issue RPCs from other goroutines they spawn, so the

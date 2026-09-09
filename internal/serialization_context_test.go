@@ -29,6 +29,8 @@ func (c *serCtxSigningCodec) WithSerializationContext(ctx converter.Serializatio
 		return &serCtxSigningCodec{signature: sc.WorkflowID}
 	case converter.ActivitySerializationContext:
 		return &serCtxSigningCodec{signature: sc.WorkflowID + ":" + sc.ActivityType}
+	case converter.NexusSerializationContext:
+		return &serCtxSigningCodec{signature: sc.Endpoint + ":" + sc.Service + ":" + sc.Operation}
 	}
 	return c
 }
