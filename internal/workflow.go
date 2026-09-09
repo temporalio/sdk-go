@@ -981,6 +981,10 @@ func (wc *workflowEnvironmentInterceptor) HandleQuery(ctx Context, in *HandleQue
 }
 
 func (wc *workflowEnvironmentInterceptor) ExecuteWorkflow(ctx Context, in *ExecuteWorkflowInput) (any, error) {
+	// Mark that the user workflow function is about to run. All inbound
+	// interceptors have finished any pre-Next.ExecuteWorkflow work.
+	wc.dispatcher.SetWorkflowFunctionStarted()
+
 	// Remove header from the context
 	ctx = workflowContextWithoutHeader(ctx)
 

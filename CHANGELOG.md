@@ -67,6 +67,14 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Update-with-start no longer rejects the buffered update with
+  `unknown update ... KnownUpdates=[]` when a workflow inbound interceptor awaits a
+  local activity before `Next.ExecuteWorkflow`. `DrainUnhandledUpdates` is now gated
+  on the user workflow function having started (all inbound interceptors'
+  pre-`Next.ExecuteWorkflow` work complete), so buffered updates survive the
+  interceptor's initial local activity and are dispatched once the workflow registers
+  its handlers. Genuinely unknown updates are still rejected promptly once the workflow
+  function has started.
 - Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
   with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
   and all local activity execution slots were full.
