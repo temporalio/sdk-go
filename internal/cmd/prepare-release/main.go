@@ -56,7 +56,7 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 	flags := flag.NewFlagSet("prepare-release", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	flags.Usage = func() {
-		fmt.Fprintln(flags.Output(), usage)
+		printLine(flags.Output(), "%s", usage)
 		flags.PrintDefaults()
 	}
 	releaseDate := flags.String(
@@ -114,15 +114,15 @@ func newApp(out, errOut io.Writer, args []string) (*app, error) {
 // CORE LOGIC
 
 func (app *app) prepareRelease() (retErr error) {
-	fmt.Fprintf(app.out, "Preparing %s %s\n\n", app.target.modulePath(), app.version)
+	printLine(app.out, "Preparing %s %s\n", app.target.modulePath(), app.version)
 
-	fmt.Fprintln(app.out, "[1/5] Fetch main")
+	printLine(app.out, "[1/5] Fetch main")
 	err := app.fetchMain()
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintln(app.out, "[2/5] Create release worktree")
+	printLine(app.out, "[2/5] Create release worktree")
 	branchName := app.target.releaseBranchName(app.version)
 	worktree, err := app.createWorktree(branchName)
 	if err != nil {
@@ -146,7 +146,7 @@ func (app *app) prepareRelease() (retErr error) {
 		return err
 	}
 
-	fmt.Fprintln(app.out, "[3/5] Commit release files")
+	printLine(app.out, "[3/5] Commit release files")
 	releaseNotes, err := worktree.updateReleaseFiles()
 	if err != nil {
 		return err
@@ -159,7 +159,7 @@ func (app *app) prepareRelease() (retErr error) {
 		return errors.New("stopped before pushing release branch (--stop-before-push)")
 	}
 
-	fmt.Fprintln(app.out, "[4/5] Publish draft PR and draft release")
+	printLine(app.out, "[4/5] Publish draft PR and draft release")
 	err = worktree.pushBranch()
 	if err != nil {
 		return err
@@ -173,16 +173,16 @@ func (app *app) prepareRelease() (retErr error) {
 		return err
 	}
 
-	fmt.Fprintln(app.out, "[5/5] Clean up release worktree")
+	printLine(app.out, "[5/5] Clean up release worktree")
 	err = worktree.cleanup()
 	if err != nil {
 		return err
 	}
 	printDetail(app.out, "Done.")
 
-	fmt.Fprint(app.out, "\nTo roll back this release, close the PR and delete the draft release:\n")
-	fmt.Fprintf(app.out, "  %s\n", formatCommand("gh", "pr", "close", prURL, "--delete-branch"))
-	fmt.Fprintf(app.out, "  %s\n", formatCommand("gh", "release", "delete", app.target.tag(app.version), "--yes"))
+	printLine(app.out, "\nTo roll back this release, close the PR and delete the draft release:")
+	printLine(app.out, "  %s", formatCommand("gh", "pr", "close", prURL, "--delete-branch"))
+	printLine(app.out, "  %s", formatCommand("gh", "release", "delete", app.target.tag(app.version), "--yes"))
 
 	return nil
 }
@@ -226,8 +226,14 @@ func (app *app) worktreeAt(root, branch string) *worktree {
 	}
 }
 
+// printLine writes a line of progress.
+func printLine(out io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(out, format+"\n", args...)
+}
+
+// printDetail writes an indented line of progress output.
 func printDetail(out io.Writer, format string, args ...any) {
-	fmt.Fprintf(out, "      "+format+"\n", args...)
+	_, _ = fmt.Fprintf(out, "      "+format+"\n", args...)
 }
 
 // repoRoot locates the git repo that contains this script.
