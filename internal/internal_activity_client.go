@@ -217,12 +217,12 @@ type (
 		Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error
 		// UpdateOptions changes some of the activity's options, leaving the rest untouched, and
 		// returns the options as they stand after the update. At least one change must be set.
-		UpdateOptions(ctx context.Context, updates ...ClientActivityOptionsUpdate) (*ClientActivityOptions, error)
+		UpdateOptions(ctx context.Context, updates ...ClientActivityOptionsUpdate) (*ClientActivityExecutionOptions, error)
 		// RestoreOriginalOptions reverts every option changed by UpdateOptions back to the value
 		// the activity was scheduled with, and returns the restored options. It is a separate
 		// call because the server does not allow the restore flag to be combined with any
 		// individual option change.
-		RestoreOriginalOptions(ctx context.Context) (*ClientActivityOptions, error)
+		RestoreOriginalOptions(ctx context.Context) (*ClientActivityExecutionOptions, error)
 	}
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
@@ -280,13 +280,13 @@ type (
 		Jitter time.Duration
 	}
 
-	// ClientActivityOptions describes the options an activity is currently running with. It is
-	// returned by ClientActivityHandle.UpdateOptions and RestoreOriginalOptions.
+	// ClientActivityExecutionOptions describes the options an activity is currently running
+	// with. It is returned by ClientActivityHandle.UpdateOptions and RestoreOriginalOptions.
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as: [go.temporal.io/sdk/client.ActivityOptions]
-	ClientActivityOptions struct {
+	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionOptions]
+	ClientActivityExecutionOptions struct {
 		TaskQueue              string
 		ScheduleToCloseTimeout time.Duration
 		ScheduleToStartTimeout time.Duration
@@ -751,7 +751,7 @@ func (h *clientActivityHandleImpl) Unpause(ctx context.Context, options ClientUn
 func (h *clientActivityHandleImpl) UpdateOptions(
 	ctx context.Context,
 	updates ...ClientActivityOptionsUpdate,
-) (*ClientActivityOptions, error) {
+) (*ClientActivityExecutionOptions, error) {
 	if len(updates) == 0 {
 		return nil, errors.New("UpdateOptions requires at least one option update")
 	}
@@ -776,7 +776,7 @@ func (h *clientActivityHandleImpl) UpdateOptions(
 	return out.Options, nil
 }
 
-func (h *clientActivityHandleImpl) RestoreOriginalOptions(ctx context.Context) (*ClientActivityOptions, error) {
+func (h *clientActivityHandleImpl) RestoreOriginalOptions(ctx context.Context) (*ClientActivityExecutionOptions, error) {
 	if err := h.client.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -1225,8 +1225,8 @@ func activityOptionsUpdatesToProto(updates []ClientActivityOptionsUpdate) (*acti
 	return options, paths
 }
 
-func activityOptionsFromProto(options *activitypb.ActivityOptions) *ClientActivityOptions {
-	return &ClientActivityOptions{
+func activityOptionsFromProto(options *activitypb.ActivityOptions) *ClientActivityExecutionOptions {
+	return &ClientActivityExecutionOptions{
 		TaskQueue:              options.GetTaskQueue().GetName(),
 		ScheduleToCloseTimeout: options.GetScheduleToCloseTimeout().AsDuration(),
 		ScheduleToStartTimeout: options.GetScheduleToStartTimeout().AsDuration(),

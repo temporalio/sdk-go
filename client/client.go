@@ -1041,11 +1041,11 @@ type (
 	// NOTE: Experimental
 	UnpauseActivityOptions = internal.ClientUnpauseActivityOptions
 
-	// ActivityOptions describes the options an activity is currently running with, as returned
-	// by ActivityHandle.UpdateOptions and ActivityHandle.RestoreOriginalOptions.
+	// ActivityExecutionOptions describes the options an activity is currently running with, as
+	// returned by ActivityHandle.UpdateOptions and ActivityHandle.RestoreOriginalOptions.
 	//
 	// NOTE: Experimental
-	ActivityOptions = internal.ClientActivityOptions
+	ActivityExecutionOptions = internal.ClientActivityExecutionOptions
 
 	// ActivityOptionsKey is a typed key for one updatable activity option. Use the keys on
 	// ActivityOptionsKeys rather than constructing these directly.

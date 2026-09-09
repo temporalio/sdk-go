@@ -805,7 +805,7 @@ type ClientUpdateActivityOptionsInput struct {
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateActivityOptionsOutput]
 type ClientUpdateActivityOptionsOutput struct {
 	// Options are the activity's options after the update.
-	Options *ClientActivityOptions
+	Options *ClientActivityExecutionOptions
 }
 
 // ClientDescribeActivityInput is the input to
