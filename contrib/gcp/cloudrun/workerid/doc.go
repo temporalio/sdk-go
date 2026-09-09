@@ -42,9 +42,9 @@
 //
 // # Metadata source
 //
-// The deployment name and revision come from environment variables that Cloud Run injects into
-// every container instance: CLOUD_RUN_WORKER_POOL and CLOUD_RUN_REVISION on worker pools, or
-// K_SERVICE and K_REVISION on services. The unique instance ID is only available from the GCP
+// The worker pool (or service) name and revision come from environment variables that Cloud Run
+// injects into every container instance: CLOUD_RUN_WORKER_POOL and CLOUD_RUN_REVISION on worker
+// pools, or K_SERVICE and K_REVISION on services. The unique instance ID is only available from the GCP
 // metadata server, which [FetchMetadata] queries over HTTP; the metadata server is available on
 // both worker pools and services.
 //

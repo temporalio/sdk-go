@@ -13,8 +13,8 @@ import (
 const pluginName = "temporal-cloudrun-worker-id"
 
 // PluginOptions configures [NewPlugin]. The zero value is valid and is the normal choice on Cloud
-// Run: the plugin then reads the deployment name and revision from the environment and fetches the
-// instance ID from the GCP metadata server. The remaining fields are dependency-injection knobs for
+// Run: the plugin then reads the worker pool (or service) name and revision from the environment
+// and fetches the instance ID from the GCP metadata server. The remaining fields are dependency-injection knobs for
 // tests and advanced use.
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future release.

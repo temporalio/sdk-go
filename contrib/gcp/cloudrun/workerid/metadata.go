@@ -50,13 +50,12 @@ type Metadata struct {
 	// metadata server. It is empty only if the metadata request could not be made.
 	InstanceID string
 
-	// Name is the Temporal deployment name for this worker: the Cloud Run worker pool name (from
-	// CLOUD_RUN_WORKER_POOL) or, on a Cloud Run service, the service name (from K_SERVICE).
+	// Name is the Cloud Run worker pool name (from CLOUD_RUN_WORKER_POOL) or, on a Cloud Run
+	// service, the service name (from K_SERVICE).
 	Name string
 
 	// Revision is the name of the Cloud Run revision, read from CLOUD_RUN_REVISION (worker pools)
-	// or K_REVISION (services). Cloud Run creates a new revision for each deployment, and it forms
-	// part of the worker identity.
+	// or K_REVISION (services). It forms the main part of the worker identity.
 	Revision string
 }
 
@@ -86,10 +85,10 @@ func WithMetadataURL(url string) Option {
 	}
 }
 
-// FetchMetadata reads the current Cloud Run instance's metadata. It reads the deployment name and
-// revision from environment variables — CLOUD_RUN_WORKER_POOL and CLOUD_RUN_REVISION on Cloud Run
-// worker pools, or K_SERVICE and K_REVISION on Cloud Run services — and fetches the unique instance
-// ID from the GCP metadata server.
+// FetchMetadata reads the current Cloud Run instance's metadata. It reads the worker pool (or
+// service) name and revision from environment variables — CLOUD_RUN_WORKER_POOL and
+// CLOUD_RUN_REVISION on Cloud Run worker pools, or K_SERVICE and K_REVISION on Cloud Run services —
+// and fetches the unique instance ID from the GCP metadata server.
 //
 // FetchMetadata performs a network request and must be called at worker startup, never from
 // workflow code: the SDK's workflowcheck analyzer flags net/http usage inside workflows because it
