@@ -970,7 +970,8 @@ type (
 	StartActivityOptions = internal.ClientStartActivityOptions
 
 	// GetActivityHandleOptions contains input for GetActivityHandle call.
-	// ActivityID and RunID are required.
+	// ActivityID is required. RunID is optional; if empty, the handle targets the latest Activity Execution with the given ID.
+	// To target a specific run when ActivityIDReusePolicy allows reuse of an activity ID, set RunID.
 	//
 	// NOTE: Experimental
 	GetActivityHandleOptions = internal.ClientGetActivityHandleOptions

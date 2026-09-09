@@ -45,7 +45,7 @@ func TestIsRawOTelSDKProvider(t *testing.T) {
 		{"raw SDK tracer provider", sdktrace.NewTracerProvider(), true},
 		{"raw SDK logger provider", sdklog.NewLoggerProvider(), true},
 		{"raw SDK meter provider", sdkmetric.NewMeterProvider(), true},
-		{"replay-safe tracer wrapper", NewReplaySafeTracerProvider(sdktrace.NewTracerProvider()), false},
+		{"replay-safe tracer wrapper", NewReplaySafeTracerProvider(), false},
 		{"replay-safe logger wrapper", NewReplaySafeLoggerProvider(sdklog.NewLoggerProvider()), false},
 		{"replay-safe meter wrapper", NewReplaySafeMeterProvider(sdkmetric.NewMeterProvider()), false},
 		{"noop tracer provider", tracenoop.NewTracerProvider(), false},
@@ -91,7 +91,7 @@ func TestWarnOnNonReplaySafeTelemetryProviders(t *testing.T) {
 	t.Run("WrappedAndUnsetProvidersStaySilent", func(t *testing.T) {
 		logger := &warnCapturingLogger{}
 		warnOnNonReplaySafeTelemetryProviders(logger,
-			NewReplaySafeTracerProvider(sdktrace.NewTracerProvider()),
+			NewReplaySafeTracerProvider(),
 			unboundProxyLoggerProvider,
 			NewReplaySafeMeterProvider(sdkmetric.NewMeterProvider()))
 		require.Empty(t, logger.warnings)
@@ -100,7 +100,7 @@ func TestWarnOnNonReplaySafeTelemetryProviders(t *testing.T) {
 	t.Run("OnlyTheUnsafeProviderWarns", func(t *testing.T) {
 		logger := &warnCapturingLogger{}
 		warnOnNonReplaySafeTelemetryProviders(logger,
-			NewReplaySafeTracerProvider(sdktrace.NewTracerProvider()),
+			NewReplaySafeTracerProvider(),
 			sdklog.NewLoggerProvider(),
 			unboundProxyMeterProvider)
 		require.Len(t, logger.warnings, 1)

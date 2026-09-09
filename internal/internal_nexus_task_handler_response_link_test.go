@@ -1,9 +1,14 @@
 package internal
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"log/slog"
 	"testing"
+	"time"
 
+	"github.com/golang/mock/gomock"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"github.com/stretchr/testify/require"
 
@@ -11,10 +16,12 @@ import (
 	enumspb "go.temporal.io/api/enums/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	"go.temporal.io/api/workflowservicemock/v1"
 
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
+	"go.temporal.io/sdk/log"
 )
 
 // newResponseLinkTestTaskHandler builds a nexusTaskHandler whose registered operation stashes a
@@ -149,4 +156,100 @@ func TestResponseOmitsResponseLinksWhenNoneStashed(t *testing.T) {
 	completed, _, err := h.ExecuteContext(nctx, responseLinkTestTask(t, "input"))
 	require.NoError(t, err)
 	require.Empty(t, completed.GetResponse().GetStartOperation().GetSyncSuccess().GetLinks())
+}
+
+func TestNexusStartRequestIDPropagatesToActivityStart(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		requestID string
+	}{
+		{name: "provided", requestID: "nexus-request-id"},
+		{name: "generated when omitted"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			workflowService := workflowservicemock.NewMockWorkflowServiceClient(gomock.NewController(t))
+			client := NewServiceClient(workflowService, nil, ClientOptions{})
+			client.capabilities = &workflowservice.GetSystemInfoResponse_Capabilities{}
+
+			var activityRequest *workflowservice.StartActivityExecutionRequest
+			workflowService.EXPECT().
+				StartActivityExecution(gomock.Any(), gomock.Any()).
+				DoAndReturn(func(_ context.Context, request *workflowservice.StartActivityExecutionRequest, _ ...any) (*workflowservice.StartActivityExecutionResponse, error) {
+					activityRequest = request
+					return &workflowservice.StartActivityExecutionResponse{RunId: "activity-run-id"}, nil
+				})
+
+			var handlerRequestID string
+			op := nexus.NewSyncOperation("operation", func(ctx context.Context, input string, opts nexus.StartOperationOptions) (string, error) {
+				handlerRequestID = opts.RequestID
+				handle, err := GetNexusOperationClient(ctx).ExecuteActivity(ctx, ClientStartActivityOptions{
+					ID:                  "activity-id",
+					TaskQueue:           "tq",
+					StartToCloseTimeout: time.Minute,
+				}, "activity")
+				if err != nil {
+					return "", err
+				}
+				return handle.GetRunID(), nil
+			})
+			service := nexus.NewService("TestService")
+			require.NoError(t, service.Register(op))
+			registry := nexus.NewServiceRegistry()
+			require.NoError(t, registry.Register(service))
+			registry.Use(nexusMiddleware(nil))
+			handler, err := registry.NewHandler()
+			require.NoError(t, err)
+
+			task := responseLinkTestTask(t, "input")
+			task.GetRequest().GetStartOperation().RequestId = tc.requestID
+			taskHandler := newNexusTaskHandler(
+				handler,
+				"identity",
+				signalLinkTestNamespace,
+				"tq",
+				client,
+				converter.GetDefaultDataConverter(),
+				GetDefaultFailureConverter(),
+				ilog.NewDefaultLogger(),
+				metrics.NopHandler,
+				newRegistry(),
+			)
+			nctx, handlerErr := taskHandler.newNexusOperationContext(task)
+			require.Nil(t, handlerErr)
+			completed, failed, err := taskHandler.ExecuteContext(nctx, task)
+			require.NoError(t, err)
+			require.Nil(t, failed)
+			require.NotNil(t, completed)
+			if tc.requestID == "" {
+				require.NotEmpty(t, handlerRequestID)
+			} else {
+				require.Equal(t, tc.requestID, handlerRequestID)
+			}
+			require.Equal(t, handlerRequestID, activityRequest.GetRequestId())
+		})
+	}
+}
+
+func TestMalformedRequestLinkLogsStructuredFields(t *testing.T) {
+	var output bytes.Buffer
+	logger := log.NewStructuredLogger(slog.New(slog.NewJSONHandler(&output, nil)))
+	handler := newResponseLinkTestTaskHandler(t, false)
+	handler.logger = logger
+
+	const malformedURL = "https://example.com/%zz"
+	task := responseLinkTestTask(t, "input")
+	task.GetRequest().GetStartOperation().Links = []*nexuspb.Link{{Url: malformedURL}}
+
+	completed, failed, err := handler.Execute(task)
+	require.NoError(t, err)
+	require.Nil(t, completed)
+	require.NotNil(t, failed)
+
+	var entry map[string]any
+	require.NoError(t, json.Unmarshal(bytes.TrimSpace(output.Bytes()), &entry))
+	require.Equal(t, "Failed to parse link url", entry["msg"])
+	require.Equal(t, malformedURL, entry[tagLinkURL])
+	require.Equal(t, `parse "https://example.com/%zz": invalid URL escape "%zz"`, entry[tagError])
+	require.NotContains(t, entry, "!BADKEY")
+	require.NotContains(t, entry, malformedURL)
 }

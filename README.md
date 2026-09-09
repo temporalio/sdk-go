@@ -116,7 +116,7 @@ If you omit `-dev-server`, integration tests connect to a server already running
 By default, the internal build tool only reports test failures. Full test output is written to `.build/test-logs` at 
 the repository root.
 
-To stream full test and dev-server output to the console while still saving the log files, use `-console-output full`:
+To show full test and dev-server output in the console while still saving the log files, use `-console-output full`:
 
 ```bash
 go run . unit-test -console-output full

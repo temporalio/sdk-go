@@ -11,14 +11,15 @@ package googleadk_test
 // gate's edge cases without a server.
 //
 // The README's eviction-path span semantics (a span open at sticky-cache
-// eviction is force-ended by ADK and exported once, truncated) are untested
-// here: exercising them needs worker.SetStickyWorkflowCacheSize(0), which is
-// process-global and must precede every worker start, so it cannot be flipped
-// inside this suite — other tests in the package start workers on the default
-// cache.
+// eviction is exported once, complete, by the catch-up replay's live End) are
+// covered by the straddle probes in telemetry_otelv2_probe_test.go, which
+// force an eviction with a worker restart and a sticky-cache purge instead of
+// worker.SetStickyWorkflowCacheSize(0) (process-global, so it cannot be
+// flipped inside this suite).
 
 import (
 	"context"
+	"fmt"
 	"iter"
 	"strings"
 	"sync"
@@ -250,6 +251,15 @@ func (c telemetryCapture) providers() (trace.TracerProvider, otellog.LoggerProvi
 		sdkmetric.NewMeterProvider(sdkmetric.WithReader(c.reader))
 }
 
+// replaySafeTracerProvider builds the owned replay-safe tracer provider around
+// the capture's span recorder. Unlike the raw logger and meter providers from
+// providers(), the tracer provider must be built by NewReplaySafeTracerProvider
+// (it owns the sdktrace provider and force-installs the span-ID generator), so
+// it cannot be produced by wrapping an existing provider.
+func (c telemetryCapture) replaySafeTracerProvider() *googleadk.ReplaySafeTracerProvider {
+	return googleadk.NewReplaySafeTracerProvider(sdktrace.WithSpanProcessor(c.spans))
+}
+
 type telemetrySnapshot struct {
 	spansByName     map[string]int
 	tokenUsageSpans int
@@ -407,10 +417,9 @@ func (m countingMeter) Float64Gauge(string, ...metric.Float64GaugeOption) (metri
 }
 
 // The counter/up-down-counter and histogram/gauge interface pairs share their
-// Add/Record signatures, so one double per signature covers two kinds, told
-// apart by the kind label. Enabled is implemented (always true) rather than
-// counted: the replay-safe wrappers delegate it untouched, so inner calls
-// legitimately recur on replay.
+// Add/Record and Enabled signatures, so one double per signature covers two
+// kinds, told apart by the kind label. Enabled is counted like the recording
+// methods: the wrappers gate it during replay, so no inner call may recur.
 
 type countingInt64Adder struct {
 	metricembedded.Int64Counter
@@ -420,7 +429,10 @@ type countingInt64Adder struct {
 }
 
 func (i countingInt64Adder) Add(context.Context, int64, ...metric.AddOption) { i.counts.inc(i.kind) }
-func (i countingInt64Adder) Enabled(context.Context) bool                    { return true }
+func (i countingInt64Adder) Enabled(context.Context) bool {
+	i.counts.inc(i.kind + ".Enabled")
+	return true
+}
 
 type countingFloat64Adder struct {
 	metricembedded.Float64Counter
@@ -432,7 +444,10 @@ type countingFloat64Adder struct {
 func (i countingFloat64Adder) Add(context.Context, float64, ...metric.AddOption) {
 	i.counts.inc(i.kind)
 }
-func (i countingFloat64Adder) Enabled(context.Context) bool { return true }
+func (i countingFloat64Adder) Enabled(context.Context) bool {
+	i.counts.inc(i.kind + ".Enabled")
+	return true
+}
 
 type countingInt64Recorder struct {
 	metricembedded.Int64Histogram
@@ -444,7 +459,10 @@ type countingInt64Recorder struct {
 func (i countingInt64Recorder) Record(context.Context, int64, ...metric.RecordOption) {
 	i.counts.inc(i.kind)
 }
-func (i countingInt64Recorder) Enabled(context.Context) bool { return true }
+func (i countingInt64Recorder) Enabled(context.Context) bool {
+	i.counts.inc(i.kind + ".Enabled")
+	return true
+}
 
 type countingFloat64Recorder struct {
 	metricembedded.Float64Histogram
@@ -456,7 +474,10 @@ type countingFloat64Recorder struct {
 func (i countingFloat64Recorder) Record(context.Context, float64, ...metric.RecordOption) {
 	i.counts.inc(i.kind)
 }
-func (i countingFloat64Recorder) Enabled(context.Context) bool { return true }
+func (i countingFloat64Recorder) Enabled(context.Context) bool {
+	i.counts.inc(i.kind + ".Enabled")
+	return true
+}
 
 // ----------------------------------------------------------------------------
 // Workflow under test: one ADK agent with one in-workflow function tool driven
@@ -535,24 +556,39 @@ func telemetryAgentWorkflow(ctx workflow.Context, in telemetryRunInput) (telemet
 	return res, nil
 }
 
-// gateProbeCalls are the gated operations instrumentGateWorkflow drives: one
-// per synchronous instrument kind plus both gated Logger methods.
+// gateProbeCalls are the gated operations instrumentGateWorkflow drives: the
+// recording and Enabled methods of every synchronous instrument kind plus both
+// gated Logger methods.
 var gateProbeCalls = []string{
 	"Int64Counter", "Int64UpDownCounter", "Int64Histogram", "Int64Gauge",
 	"Float64Counter", "Float64UpDownCounter", "Float64Histogram", "Float64Gauge",
+	"Int64Counter.Enabled", "Int64UpDownCounter.Enabled", "Int64Histogram.Enabled", "Int64Gauge.Enabled",
+	"Float64Counter.Enabled", "Float64UpDownCounter.Enabled", "Float64Histogram.Enabled", "Float64Gauge.Enabled",
 	"Logger.Emit", "Logger.Enabled",
 }
 
 // instrumentGateWorkflow exercises every gated operation once through the
 // process-global providers, then sleeps so the recording workflow task is not
 // the history's final one — replayer passes replay it with IsReplaying true
-// regardless of how the replayer treats the last task.
+// regardless of how the replayer treats the last task. The inner doubles
+// return Enabled true, so every wrapper's Enabled must report exactly
+// !IsReplaying: a wrong value fails the live run or breaks replay.
 func instrumentGateWorkflow(ctx workflow.Context) error {
 	adkCtx := googleadk.NewContext(ctx)
 	meter := otel.Meter("gate-probe")
 
+	enabled := func(name string, got bool) error {
+		if want := !workflow.IsReplaying(ctx); got != want {
+			return fmt.Errorf("%s.Enabled = %v, want %v while IsReplaying = %v", name, got, want, !want)
+		}
+		return nil
+	}
+
 	ic, err := meter.Int64Counter("gate_int64_counter")
 	if err != nil {
+		return err
+	}
+	if err := enabled("Int64Counter", ic.Enabled(adkCtx)); err != nil {
 		return err
 	}
 	ic.Add(adkCtx, 1)
@@ -560,9 +596,15 @@ func instrumentGateWorkflow(ctx workflow.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := enabled("Int64UpDownCounter", iud.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	iud.Add(adkCtx, 2)
 	ih, err := meter.Int64Histogram("gate_int64_histogram")
 	if err != nil {
+		return err
+	}
+	if err := enabled("Int64Histogram", ih.Enabled(adkCtx)); err != nil {
 		return err
 	}
 	ih.Record(adkCtx, 3)
@@ -570,9 +612,15 @@ func instrumentGateWorkflow(ctx workflow.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := enabled("Int64Gauge", ig.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	ig.Record(adkCtx, 4)
 	fc, err := meter.Float64Counter("gate_float64_counter")
 	if err != nil {
+		return err
+	}
+	if err := enabled("Float64Counter", fc.Enabled(adkCtx)); err != nil {
 		return err
 	}
 	fc.Add(adkCtx, 5)
@@ -580,9 +628,15 @@ func instrumentGateWorkflow(ctx workflow.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := enabled("Float64UpDownCounter", fud.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	fud.Add(adkCtx, 6)
 	fh, err := meter.Float64Histogram("gate_float64_histogram")
 	if err != nil {
+		return err
+	}
+	if err := enabled("Float64Histogram", fh.Enabled(adkCtx)); err != nil {
 		return err
 	}
 	fh.Record(adkCtx, 7)
@@ -590,10 +644,15 @@ func instrumentGateWorkflow(ctx workflow.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := enabled("Float64Gauge", fg.Enabled(adkCtx)); err != nil {
+		return err
+	}
 	fg.Record(adkCtx, 8)
 
 	logger := otelloglobal.GetLoggerProvider().Logger("gate-probe")
-	_ = logger.Enabled(adkCtx, otellog.EnabledParameters{})
+	if err := enabled("Logger", logger.Enabled(adkCtx, otellog.EnabledParameters{})); err != nil {
+		return err
+	}
 	var rec otellog.Record
 	rec.SetEventName("gate-event")
 	logger.Emit(adkCtx, rec)
@@ -680,9 +739,9 @@ func TestReplayTelemetry(t *testing.T) {
 
 	t.Run("WrappersSuppressReplayDuplicates", func(t *testing.T) {
 		capture := newTelemetryCapture()
-		tp, lp, mp := capture.providers()
+		_, lp, mp := capture.providers()
 		pointGlobalsAt(t,
-			googleadk.NewReplaySafeTracerProvider(tp),
+			capture.replaySafeTracerProvider(),
 			googleadk.NewReplaySafeLoggerProvider(lp),
 			googleadk.NewReplaySafeMeterProvider(mp),
 		)
@@ -761,12 +820,13 @@ func TestReplayTelemetry(t *testing.T) {
 	})
 
 	// The subtests above exercise only the operations the agent scenario emits
-	// (spans, log Emit, Int64Counter.Add), but each of the eight sync instrument
-	// gates and Logger.Enabled's replay branch is an independent code path. This
-	// subtest drives all of them through the gated globals — live once, so every
-	// operation reaches the inner provider, then replayed, when none may reach
-	// it again — observed with call-counting doubles because SDK aggregation
-	// cannot see every suppressed recording.
+	// (spans, log Emit, Int64Counter.Add), but each sync instrument's recording
+	// and Enabled gate and Logger.Enabled's replay branch is an independent code
+	// path. This subtest drives all of them through the gated globals — live
+	// once, so every operation reaches the inner provider, then replayed, when
+	// none may reach it again — observed with call-counting doubles because SDK
+	// aggregation cannot see every suppressed recording. The workflow itself
+	// asserts each Enabled's return value is !IsReplaying.
 	t.Run("GateCoversEveryInstrumentKindAndEnabled", func(t *testing.T) {
 		counts := newCallCounts()
 		pointGlobalsAt(t,
@@ -816,9 +876,9 @@ func TestReplayTelemetry(t *testing.T) {
 func TestReplaySafeProvidersPassThroughNonWorkflowContext(t *testing.T) {
 	ctx := context.Background()
 	capture := newTelemetryCapture()
-	tp, lp, mp := capture.providers()
+	_, lp, mp := capture.providers()
 
-	sctx, span := googleadk.NewReplaySafeTracerProvider(tp).Tracer("t").Start(ctx, "plain-span")
+	sctx, span := capture.replaySafeTracerProvider().Tracer("t").Start(ctx, "plain-span")
 	require.True(t, span.IsRecording(), "non-workflow spans must be real recording spans")
 	require.Equal(t, span, trace.SpanFromContext(sctx))
 	span.End()
@@ -959,8 +1019,8 @@ func TestReplaySafeMeterObservablePassthrough(t *testing.T) {
 // live (IsReplaying false) — the gate is replay-only, not workflow-only.
 func TestReplaySafeProvidersRecordDuringLiveWorkflow(t *testing.T) {
 	capture := newTelemetryCapture()
-	tp, lp, mp := capture.providers()
-	tracer := googleadk.NewReplaySafeTracerProvider(tp).Tracer("t")
+	_, lp, mp := capture.providers()
+	tracer := capture.replaySafeTracerProvider().Tracer("t")
 	logger := googleadk.NewReplaySafeLoggerProvider(lp).Logger("t")
 	counter, err := googleadk.NewReplaySafeMeterProvider(mp).Meter("t").Int64Counter("live_counter")
 	require.NoError(t, err)

@@ -2,13 +2,16 @@ package replaytests
 
 import (
 	"context"
+	"fmt"
+	"reflect"
+	"testing"
+
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
-	"reflect"
-	"testing"
+	"google.golang.org/protobuf/proto"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -16,6 +19,104 @@ import (
 	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 )
+
+type replayTestSigningCodec struct {
+	signature string
+}
+
+type replayNexusLegacyFallbackCodecState struct {
+	legacyDecodedContexts []converter.NexusSerializationContext
+}
+
+type replayNexusLegacyFallbackCodec struct {
+	state   *replayNexusLegacyFallbackCodecState
+	context *converter.NexusSerializationContext
+}
+
+func (c *replayNexusLegacyFallbackCodec) WithSerializationContext(
+	ctx converter.SerializationContext,
+) converter.PayloadCodec {
+	nexusCtx, ok := ctx.(converter.NexusSerializationContext)
+	if !ok {
+		return c
+	}
+	return &replayNexusLegacyFallbackCodec{state: c.state, context: &nexusCtx}
+}
+
+func (c *replayNexusLegacyFallbackCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if c.context == nil {
+		return payloads, nil
+	}
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, payload := range payloads {
+		result[i] = proto.Clone(payload).(*commonpb.Payload)
+		if result[i].Metadata == nil {
+			result[i].Metadata = make(map[string][]byte)
+		}
+		result[i].Metadata["nexus-context"] = []byte(
+			c.context.Endpoint + ":" + c.context.Service + ":" + c.context.Operation,
+		)
+	}
+	return result, nil
+}
+
+func (c *replayNexusLegacyFallbackCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	if c.context == nil {
+		return payloads, nil
+	}
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, payload := range payloads {
+		result[i] = proto.Clone(payload).(*commonpb.Payload)
+		signature, ok := result[i].Metadata["nexus-context"]
+		if !ok {
+			c.state.legacyDecodedContexts = append(c.state.legacyDecodedContexts, *c.context)
+			continue
+		}
+		expected := c.context.Endpoint + ":" + c.context.Service + ":" + c.context.Operation
+		if string(signature) != expected {
+			return nil, fmt.Errorf("Nexus context mismatch: got %q, want %q", signature, expected)
+		}
+		delete(result[i].Metadata, "nexus-context")
+	}
+	return result, nil
+}
+
+func (c *replayTestSigningCodec) WithSerializationContext(ctx converter.SerializationContext) converter.PayloadCodec {
+	switch sc := ctx.(type) {
+	case converter.WorkflowSerializationContext:
+		return &replayTestSigningCodec{signature: sc.WorkflowID}
+	case converter.ActivitySerializationContext:
+		return &replayTestSigningCodec{signature: fmt.Sprintf("%s:%s:local=%t", sc.WorkflowID, sc.ActivityType, sc.IsLocal)}
+	}
+	return c
+}
+
+func (c *replayTestSigningCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		clone := proto.Clone(p).(*commonpb.Payload)
+		if clone.Metadata == nil {
+			clone.Metadata = map[string][]byte{}
+		}
+		clone.Metadata["ctx-signature"] = []byte(c.signature)
+		result[i] = clone
+	}
+	return result, nil
+}
+
+func (c *replayTestSigningCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		sig := string(p.Metadata["ctx-signature"])
+		if sig != c.signature {
+			return nil, fmt.Errorf("signature mismatch: got %q, want %q", sig, c.signature)
+		}
+		clone := proto.Clone(p).(*commonpb.Payload)
+		delete(clone.Metadata, "ctx-signature")
+		result[i] = clone
+	}
+	return result, nil
+}
 
 type replayTestSuite struct {
 	suite.Suite
@@ -148,6 +249,18 @@ func (s *replayTestSuite) TestBadReplayLocalActivity() {
 	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "bad-local-activity-2.json")
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "nondeterministic workflow: missing replay command for MarkerRecorded")
+}
+
+func (s *replayTestSuite) TestReplayLocalActivitySerializationContext() {
+	codecDC := converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &replayTestSigningCodec{})
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		DataConverter: codecDC,
+	})
+	require.NoError(s.T(), err)
+	replayer.RegisterWorkflow(LocalActivityWorkflow)
+
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "local-activity-serialization-context.json")
+	require.NoError(s.T(), err)
 }
 
 func (s *replayTestSuite) TestContinueAsNewWorkflow() {
@@ -380,10 +493,36 @@ func (s *replayTestSuite) TestCancelOrder() {
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(CancelOrderSelectWorkflow)
 
+	// These histories predate [internal.SDKFlagOrderedChildCancel].
 	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replay-tests-cancel-order.json")
 	s.NoError(err)
 
 	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "replay-tests-cancel-order-timer-resolved.json")
+	s.NoError(err)
+}
+
+func (s *replayTestSuite) TestOrderedChildCancel() {
+	replayer := worker.NewWorkflowReplayer()
+	replayer.RegisterWorkflow(OrderedChildCancelWorkflow)
+
+	err := replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "ordered-child-cancel.json")
+	s.NoError(err)
+}
+
+func (s *replayTestSuite) TestLegacyChildCancel() {
+	const replayAttempts = 100
+
+	// Legacy map traversal can reproduce this reversed cancellation order only
+	// on some attempts. An ordered replay never can.
+	var err error
+	for range replayAttempts {
+		replayer := worker.NewWorkflowReplayer()
+		replayer.RegisterWorkflow(OrderedChildCancelWorkflow)
+		err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewNopLogger(), "legacy-child-cancel.json")
+		if err == nil {
+			return
+		}
+	}
 	s.NoError(err)
 }
 
@@ -525,6 +664,30 @@ func (s *replayTestSuite) TestCancelNexusOperation() {
 	replayer.RegisterWorkflow(CancelNexusOperationAfterCompleteWorkflow)
 	err = replayer.ReplayWorkflowHistoryFromJSONFile(ilog.NewDefaultLogger(), "nexus-cancel-after-complete.json")
 	s.NoErrorf(err, "Encountered error replaying cancel after Nexus operation is completed")
+}
+
+func (s *replayTestSuite) TestNexusSerializationContextReplayWithLegacyFallback() {
+	state := &replayNexusLegacyFallbackCodecState{}
+	codecDC := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(),
+		&replayNexusLegacyFallbackCodec{state: state},
+	)
+	replayer, err := worker.NewWorkflowReplayerWithOptions(worker.WorkflowReplayerOptions{
+		DataConverter: codecDC,
+	})
+	s.Require().NoError(err)
+	replayer.RegisterWorkflow(CancelNexusOperationAfterCompleteWorkflow)
+
+	err = replayer.ReplayWorkflowHistoryFromJSONFile(
+		ilog.NewDefaultLogger(),
+		"nexus-cancel-after-complete.json",
+	)
+	s.Require().NoError(err)
+	s.Contains(state.legacyDecodedContexts, converter.NexusSerializationContext{
+		Endpoint:  "replay-endpoint",
+		Service:   "replay-service",
+		Operation: CancelOp.Name(),
+	})
 }
 
 func (s *replayTestSuite) TestAwaitWithTimeoutNoTimerCancel() {

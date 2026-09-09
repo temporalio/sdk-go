@@ -72,6 +72,7 @@ type (
 		endpoint          string
 		service           string
 		operation         string
+		failureConverter  converter.FailureConverter
 	}
 
 	scheduledChildWorkflow struct {
@@ -161,6 +162,8 @@ type (
 		registry                 *registry
 		dataConverter            converter.DataConverter
 		failureConverter         converter.FailureConverter
+		rootDataConverter        converter.DataConverter
+		rootFailureConverter     converter.FailureConverter
 		contextPropagators       []ContextPropagator
 		deadlockDetectionTimeout time.Duration
 		preferredVersionProvider PreferredVersionProvider
@@ -179,6 +182,8 @@ type (
 
 	localActivityTask struct {
 		sync.Mutex
+		// Owned by localActivityTunnel while the task is queued.
+		nextQueuedTask  *localActivityTask
 		workflowTask    *workflowTask
 		activityID      string
 		params          *ExecuteLocalActivityParams
@@ -233,10 +238,14 @@ func newWorkflowExecutionEventHandler(
 		Namespace:  workflowInfo.Namespace,
 		WorkflowID: workflowInfo.WorkflowExecution.ID,
 	}
+	rootDataConverter := dataConverter
+	rootFailureConverter := failureConverter
 	dataConverter = converter.WithDataConverterSerializationContext(dataConverter, wfCtx)
 	failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, wfCtx)
 
 	context := &workflowEnvironmentImpl{
+		rootDataConverter:            rootDataConverter,
+		rootFailureConverter:         rootFailureConverter,
 		workflowInfo:                 workflowInfo,
 		commandsHelper:               newCommandsHelper(),
 		sideEffectResult:             make(map[int64]*commonpb.Payloads),
@@ -546,7 +555,7 @@ func validateAndSerializeMemo(memoMap map[string]any, dc converter.DataConverter
 	if len(memoMap) == 0 {
 		return nil, errMemoNotSet
 	}
-	return getWorkflowMemo(memoMap, dc, useUserDC)
+	return GetWorkflowMemo(memoMap, dc, useUserDC)
 }
 
 func (wc *workflowEnvironmentImpl) RegisterCancelHandler(handler func()) {
@@ -565,7 +574,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	if params.WorkflowID == "" {
 		params.WorkflowID = wc.workflowInfo.currentRunID + "_" + wc.GenerateSequenceID()
 	}
-	memo, err := getWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
+	memo, err := GetWorkflowMemo(params.Memo, wc.dataConverter, wc.TryUse(SDKFlagMemoUserDCEncode))
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -573,7 +582,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 		callback(nil, err)
 		return
 	}
-	searchAttr, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
+	searchAttr, err := SerializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
 	if err != nil {
 		if wc.sdkFlags.tryUse(SDKFlagChildWorkflowErrorExecution, !wc.isReplay) {
 			startedHandler(WorkflowExecution{}, &ChildWorkflowExecutionAlreadyStartedError{})
@@ -606,7 +615,7 @@ func (wc *workflowEnvironmentImpl) ExecuteChildWorkflow(
 	attributes.InheritBuildId = determineInheritBuildIdFlagForCommand(
 		params.VersioningIntent, wc.workflowInfo.TaskQueueName, params.TaskQueueName)
 
-	startMetadata, err := buildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
+	startMetadata, err := BuildUserMetadata(params.StaticSummary, params.StaticDetails, wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return
@@ -654,13 +663,17 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params ExecuteNexusOper
 		NexusHeader:            params.nexusHeader,
 	}
 
-	startMetadata, err := buildUserMetadata(params.options.Summary, "", wc.dataConverter)
+	startMetadata, err := BuildUserMetadata(params.options.Summary, "", wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return 0
 	}
 
 	command := wc.commandsHelper.scheduleNexusOperation(seq, scheduleTaskAttr, startMetadata)
+	failureConverter := params.failureConverter
+	if failureConverter == nil {
+		failureConverter = wc.failureConverter
+	}
 	command.setData(&scheduledNexusOperation{
 		startedCallback:   startedHandler,
 		completedCallback: callback,
@@ -668,6 +681,7 @@ func (wc *workflowEnvironmentImpl) ExecuteNexusOperation(params ExecuteNexusOper
 		endpoint:          params.client.Endpoint(),
 		service:           params.client.Service(),
 		operation:         params.operation,
+		failureConverter:  failureConverter,
 	})
 
 	wc.logger.Debug("ScheduleNexusOperation",
@@ -749,6 +763,14 @@ func (wc *workflowEnvironmentImpl) GetFailureConverter() converter.FailureConver
 	return wc.failureConverter
 }
 
+func (wc *workflowEnvironmentImpl) GetRootDataConverter() converter.DataConverter {
+	return wc.rootDataConverter
+}
+
+func (wc *workflowEnvironmentImpl) GetRootFailureConverter() converter.FailureConverter {
+	return wc.rootFailureConverter
+}
+
 func (wc *workflowEnvironmentImpl) GetContextPropagators() []ContextPropagator {
 	return wc.contextPropagators
 }
@@ -804,7 +826,7 @@ func (wc *workflowEnvironmentImpl) ExecuteActivity(parameters ExecuteActivityPar
 		parameters.VersioningIntent, wc.workflowInfo.TaskQueueName, parameters.TaskQueueName)
 	scheduleTaskAttr.Priority = parameters.Priority
 
-	startMetadata, err := buildUserMetadata(parameters.Summary, "", wc.dataConverter)
+	startMetadata, err := BuildUserMetadata(parameters.Summary, "", wc.dataConverter)
 	if err != nil {
 		callback(nil, err)
 		return ActivityID{}
@@ -1066,7 +1088,7 @@ func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, erro
 		}
 	}
 
-	userMetadata, err := buildUserMetadata(summary, "", wc.dataConverter)
+	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
 		panic(fmt.Sprintf("failed to build user metadata for side effect: %v", err))
 	}
@@ -1219,7 +1241,7 @@ func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountH
 	if err != nil {
 		panic(err)
 	}
-	userMetadata, err := buildUserMetadata(summary, "", wc.dataConverter)
+	userMetadata, err := BuildUserMetadata(summary, "", wc.dataConverter)
 	if err != nil {
 		panic(fmt.Sprintf("failed to build user metadata for mutable side effect: %v", err))
 	}
@@ -1287,7 +1309,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessEvent(
 	}
 	defer func() {
 		if p := recover(); p != nil {
-			incrementWorkflowTaskFailureCounter(weh.metricsHandler, "NonDeterminismError")
+			incrementWorkflowTaskFailureCounter(weh.metricsHandler, metrics.FailureReasonNonDeterminismError)
 			topLine := fmt.Sprintf("process event for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.Complete(nil, newWorkflowPanicError(p, st))
@@ -1503,7 +1525,7 @@ func (weh *workflowExecutionEventHandlerImpl) ProcessMessage(
 ) error {
 	defer func() {
 		if p := recover(); p != nil {
-			incrementWorkflowTaskFailureCounter(weh.metricsHandler, "NonDeterminismError")
+			incrementWorkflowTaskFailureCounter(weh.metricsHandler, metrics.FailureReasonNonDeterminismError)
 			topLine := fmt.Sprintf("process message for %s [panic]:", weh.workflowInfo.TaskQueueName)
 			st := getStackTraceRaw(topLine, 7, 0)
 			weh.Complete(nil, newWorkflowPanicError(p, st))
@@ -1797,7 +1819,7 @@ func (weh *workflowExecutionEventHandlerImpl) handleLocalActivityMarker(details 
 			panicMsg := fmt.Sprintf("[TMPRL1100] code executed local activity %v, but history event found %v, markerData: %v", la.params.ActivityType, lamd.ActivityType, markerData)
 			panicIllegalState(panicMsg)
 		}
-		startMetadata, err := buildUserMetadata(la.params.Summary, "", weh.dataConverter)
+		startMetadata, err := BuildUserMetadata(la.params.Summary, "", weh.dataConverter)
 		if err != nil {
 			return err
 		}
@@ -2032,14 +2054,14 @@ func (weh *workflowExecutionEventHandlerImpl) handleChildWorkflowExecutionTermin
 func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationStarted(event *historypb.HistoryEvent) error {
 	attributes := event.GetNexusOperationStartedEventAttributes()
 	command := weh.commandsHelper.handleNexusOperationStarted(attributes.ScheduledEventId)
-	state := command.getData().(*scheduledNexusOperation)
-	if state.startedCallback != nil {
+	scheduledOperation := command.getData().(*scheduledNexusOperation)
+	if scheduledOperation.startedCallback != nil {
 		token := attributes.OperationToken
 		if token == "" {
 			token = attributes.OperationId //lint:ignore SA1019 this field is sent by servers older than 1.27.0.
 		}
-		state.startedCallback(token, nil)
-		state.startedCallback = nil
+		scheduledOperation.startedCallback(token, nil)
+		scheduledOperation.startedCallback = nil
 	}
 	return nil
 }
@@ -2071,19 +2093,19 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCompleted(even
 		panic(fmt.Errorf("invalid event type, not a Nexus Operation resolution: %v", event.EventType))
 	}
 	command := weh.commandsHelper.handleNexusOperationCompleted(scheduledEventId)
-	state := command.getData().(*scheduledNexusOperation)
+	scheduledOperation := command.getData().(*scheduledNexusOperation)
 	var err error
 	if failure != nil {
-		err = weh.failureConverter.FailureToError(failure)
+		err = scheduledOperation.failureConverter.FailureToError(failure)
 	}
 	// Also unblock the start future
-	if state.startedCallback != nil {
-		state.startedCallback("", err) // We didn't get a started event, the operation completed synchronously.
-		state.startedCallback = nil
+	if scheduledOperation.startedCallback != nil {
+		scheduledOperation.startedCallback("", err) // We didn't get a started event, the operation completed synchronously.
+		scheduledOperation.startedCallback = nil
 	}
-	if state.completedCallback != nil {
-		state.completedCallback(result, err)
-		state.completedCallback = nil
+	if scheduledOperation.completedCallback != nil {
+		scheduledOperation.completedCallback(result, err)
+		scheduledOperation.completedCallback = nil
 	}
 	return nil
 }
@@ -2093,16 +2115,16 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequeste
 	scheduledEventId := attrs.GetScheduledEventId()
 
 	command := weh.commandsHelper.handleNexusOperationCancelRequested(scheduledEventId)
-	state := command.getData().(*scheduledNexusOperation)
+	scheduledOperation := command.getData().(*scheduledNexusOperation)
 	err := ErrCanceled
-	if state.cancellationType == NexusOperationCancellationTypeTryCancel {
-		if state.startedCallback != nil {
-			state.startedCallback("", err)
-			state.startedCallback = nil
+	if scheduledOperation.cancellationType == NexusOperationCancellationTypeTryCancel {
+		if scheduledOperation.startedCallback != nil {
+			scheduledOperation.startedCallback("", err)
+			scheduledOperation.startedCallback = nil
 		}
-		if state.completedCallback != nil {
-			state.completedCallback(nil, err)
-			state.completedCallback = nil
+		if scheduledOperation.completedCallback != nil {
+			scheduledOperation.completedCallback(nil, err)
+			scheduledOperation.completedCallback = nil
 		}
 	}
 	return nil
@@ -2132,20 +2154,20 @@ func (weh *workflowExecutionEventHandlerImpl) handleNexusOperationCancelRequestD
 	}
 
 	command := weh.commandsHelper.handleNexusOperationCancelRequestDelivered(scheduledEventID)
-	state := command.getData().(*scheduledNexusOperation)
+	scheduledOperation := command.getData().(*scheduledNexusOperation)
 	err := ErrCanceled
 	if failure != nil {
-		err = weh.failureConverter.FailureToError(failure)
+		err = scheduledOperation.failureConverter.FailureToError(failure)
 	}
 
-	if state.cancellationType == NexusOperationCancellationTypeWaitRequested {
-		if state.startedCallback != nil {
-			state.startedCallback("", err)
-			state.startedCallback = nil
+	if scheduledOperation.cancellationType == NexusOperationCancellationTypeWaitRequested {
+		if scheduledOperation.startedCallback != nil {
+			scheduledOperation.startedCallback("", err)
+			scheduledOperation.startedCallback = nil
 		}
-		if state.completedCallback != nil {
-			state.completedCallback(nil, err)
-			state.completedCallback = nil
+		if scheduledOperation.completedCallback != nil {
+			scheduledOperation.completedCallback(nil, err)
+			scheduledOperation.completedCallback = nil
 		}
 	}
 

@@ -1457,9 +1457,11 @@ func (h *commandsHelper) requestCancelExternalWorkflowExecution(namespace, workf
 		panic("cancellation on external workflow should use cancellation ID")
 	}
 	attributes := &commandpb.RequestCancelExternalWorkflowExecutionCommandAttributes{
-		Namespace:         namespace,
-		WorkflowId:        workflowID,
-		RunId:             runID,
+		//lint:ignore SA1019 preserve cross-namespace command compatibility
+		Namespace:  namespace,
+		WorkflowId: workflowID,
+		RunId:      runID,
+		//lint:ignore SA1019 control correlates command state with initiated history
 		Control:           cancellationID,
 		ChildWorkflowOnly: false,
 	}
@@ -1523,13 +1525,15 @@ func (h *commandsHelper) signalExternalWorkflowExecution(
 	childWorkflowOnly bool,
 ) commandStateMachine {
 	attributes := &commandpb.SignalExternalWorkflowExecutionCommandAttributes{
+		//lint:ignore SA1019 preserve cross-namespace command compatibility
 		Namespace: namespace,
 		Execution: &commonpb.WorkflowExecution{
 			WorkflowId: workflowID,
 			RunId:      runID,
 		},
-		SignalName:        signalName,
-		Input:             input,
+		SignalName: signalName,
+		Input:      input,
+		//lint:ignore SA1019 control correlates command state with initiated history
 		Control:           signalID,
 		ChildWorkflowOnly: childWorkflowOnly,
 		Header:            header,
@@ -1600,7 +1604,7 @@ func (h *commandsHelper) startTimer(
 	options TimerOptions,
 	dc converter.DataConverter,
 ) commandStateMachine {
-	startMetadata, err := buildUserMetadata(options.Summary, "", dc)
+	startMetadata, err := BuildUserMetadata(options.Summary, "", dc)
 	if err != nil {
 		panic(err)
 	}

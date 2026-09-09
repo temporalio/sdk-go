@@ -80,14 +80,23 @@ type (
 		) (*workflowExecutionContextImpl, error)
 	}
 
-	// ActivityTaskHandler represents activity task handlers.
-	ActivityTaskHandler interface {
-		// Executes the activity task
-		// The response is one of the types:
+	// activityTaskResult is the outcome of handling an activity task, as opposed to a failure to
+	// handle it at all, which Execute reports through its error return.
+	activityTaskResult struct {
+		// response is one of the types:
 		//  - RespondActivityTaskCompletedRequest
 		//  - RespondActivityTaskFailedRequest
 		//  - RespondActivityTaskCanceledRequest
-		Execute(taskQueue string, task *workflowservice.PollActivityTaskQueueResponse) (any, error)
+		response any
+		// failureErr is the error behind a failed response when the worker produced the failure
+		// itself, so callers can classify it. Nil when the activity reported the failure.
+		failureErr error
+	}
+
+	// ActivityTaskHandler represents activity task handlers.
+	ActivityTaskHandler interface {
+		// Executes the activity task
+		Execute(taskQueue string, task *workflowservice.PollActivityTaskQueueResponse) (activityTaskResult, error)
 	}
 )
 

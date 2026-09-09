@@ -93,7 +93,7 @@ func TestConvertRetryPolicy(t *testing.T) {
 
 	assertNonZero(t, &pbRetryPolicy)
 	// Check that converting from/to commonpb.RetryPolicy is transparent
-	assert.Equal(t, &pbRetryPolicy, convertToPBRetryPolicy(convertFromPBRetryPolicy(&pbRetryPolicy)))
+	assert.Equal(t, &pbRetryPolicy, ConvertToPBRetryPolicy(convertFromPBRetryPolicy(&pbRetryPolicy)))
 }
 
 func newTestWorkflowContext() Context {

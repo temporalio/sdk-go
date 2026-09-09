@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/google/uuid"
@@ -186,6 +187,55 @@ func getDebug() string {
 
 func envConfigEnabled() bool {
 	return strings.EqualFold(strings.TrimSpace(os.Getenv("TEMPORAL_TEST_ENV_CONFIG_SERVER")), "true")
+}
+
+type cloudTestSkipReason string
+
+const (
+	cloudRequiresLocalServer  cloudTestSkipReason = "requires_local_server"
+	cloudRequiresProvisioning cloudTestSkipReason = "requires_cloud_provisioning"
+	cloudNeedsAdaptation      cloudTestSkipReason = "needs_cloud_adaptation"
+)
+
+func skipOnCloud(t testing.TB, reason cloudTestSkipReason, rationale string) {
+	t.Helper()
+	if cloudTestEnabled() {
+		t.Skipf("skipped on Cloud (%s): %s", reason, rationale)
+	}
+}
+
+func cloudTestEnabled() bool {
+	value := strings.TrimSpace(os.Getenv("TEMPORAL_IS_CLOUD_TESTS"))
+	if value == "" {
+		return false
+	}
+	enabled, err := strconv.ParseBool(value)
+	if err != nil {
+		panic(fmt.Sprintf("TEMPORAL_IS_CLOUD_TESTS must be a boolean, was %q", value))
+	}
+	return enabled
+}
+
+func TestCloudTestEnabled(t *testing.T) {
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "")
+	if cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be disabled by default")
+	}
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "true")
+	if !cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be enabled")
+	}
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "false")
+	if cloudTestEnabled() {
+		t.Fatal("expected Cloud test mode to be disabled")
+	}
+	t.Setenv("TEMPORAL_IS_CLOUD_TESTS", "sometimes")
+	defer func() {
+		if recovered := recover(); recovered == nil {
+			t.Fatal("expected invalid TEMPORAL_IS_CLOUD_TESTS to panic")
+		}
+	}()
+	cloudTestEnabled()
 }
 
 // WaitForTCP waits until target tcp address is available.

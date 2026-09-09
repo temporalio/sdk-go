@@ -307,6 +307,11 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory() {
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowExecution() {
+	liveWorkerCache := NewWorkerCache()
+	runtime.SetFinalizer(liveWorkerCache, nil)
+	defer liveWorkerCache.close(&sharedWorkerCacheLock)
+	cacheSizeBeforeReplay := liveWorkerCache.getWorkflowCache().Size()
+
 	taskQueue := "taskQueue1"
 	testEvents := []*historypb.HistoryEvent{
 		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
@@ -325,6 +330,7 @@ func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_IncompleteWorkflowEx
 	replayer.RegisterWorkflow(testReplayWorkflow)
 	err = replayer.ReplayWorkflowHistory(logger, history)
 	require.NoError(s.T(), err)
+	require.Equal(s.T(), cacheSizeBeforeReplay, liveWorkerCache.getWorkflowCache().Size())
 }
 
 func (s *internalWorkerTestSuite) TestReplayWorkflowHistory_LocalActivity() {

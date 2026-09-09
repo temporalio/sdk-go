@@ -42,9 +42,9 @@ c, err := client.Dial(client.Options{
 
 Credentials are resolved automatically from Application Default Credentials (ADC) — environment variables, `gcloud auth application-default login`, workload identity, and so on.
 
-## Key Structure
+## Object Name Structure
 
-Payloads are stored under content-addressable keys derived from a SHA-256 hash of the serialized payload bytes, segmented by Namespace and Workflow/Standalone Activity identifiers when the target is available:
+Payloads are stored under content-addressable object names derived from a SHA-256 hash of the serialized payload bytes, segmented by Namespace and Workflow/Standalone Activity identifiers when the target is available:
 
 ```
 # Workflow payload
@@ -62,8 +62,8 @@ Characters outside GCS's safe set are percent-encoded per byte of their UTF-8 re
 ## Notes
 
 - Any driver used to store payloads must also be configured on the component that retrieves them. If the client stores Workflow inputs using this driver, the worker must include it in its `ExternalStorage.Drivers` list to retrieve them.
-- The target GCS bucket must already exist; the driver will not create it.
-- Identical serialized bytes within the same Namespace and Workflow (or Standalone Activity) share the same GCS object — the key is content-addressable within that scope. The same bytes used across different Workflows or Namespaces produce distinct GCS objects because the key includes the Namespace and Workflow/Standalone Activity identifiers.
+- The target GCS bucket must already exist.
+- Identical serialized bytes within the same Namespace and Workflow (or Standalone Activity) share the same GCS object and the object name is content-addressable within that scope. The same bytes used across different Workflows or Namespaces produce distinct GCS objects because the object name includes the Namespace and Workflow/Standalone Activity identifiers.
 - Only payloads at or above `ExternalStorage.PayloadSizeThreshold` (default: 256 KiB) are offloaded; smaller payloads are stored inline. Set `ExternalStorage.PayloadSizeThreshold` to `0` or leave unset to use the default threshold. To store all payloads in external storage, set `ExternalStorage.PayloadSizeThreshold` to `1`.
 - `Options.MaxPayloadSize` (default: 50 MiB) sets a hard upper limit on the serialized size of any single payload. An error is returned at store time if a payload exceeds this limit.
 - Override `Options.DriverName` only when registering multiple `gcsdriver` instances with distinct configurations under the same `ExternalStorage.Drivers` list.

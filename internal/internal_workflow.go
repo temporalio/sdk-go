@@ -195,6 +195,7 @@ type (
 		WorkflowIDConflictPolicy enumspb.WorkflowIdConflictPolicy
 		OnConflictOptions        *OnConflictOptions
 		DataConverter            converter.DataConverter
+		RootDataConverter        converter.DataConverter
 		RetryPolicy              *commonpb.RetryPolicy
 		Priority                 *commonpb.Priority
 		CronSchedule             string
@@ -319,7 +320,7 @@ func getWorkflowResultPointerPointer(ctx Context) **workflowResult {
 	return rpp.(**workflowResult)
 }
 
-func getWorkflowEnvironment(ctx Context) WorkflowEnvironment {
+func GetWorkflowEnvironment(ctx Context) WorkflowEnvironment {
 	wc := ctx.Value(workflowEnvironmentContextKey)
 	if wc == nil {
 		panic("getWorkflowContext: Not a workflow context")
@@ -374,7 +375,7 @@ func (f *futureImpl) Get(ctx Context, valuePtr any) error {
 
 	if payload, ok := f.value.(*commonpb.Payloads); ok {
 		if _, ok2 := valuePtr.(**commonpb.Payloads); !ok2 {
-			if err := decodeArg(getDataConverterFromWorkflowContext(ctx), payload, valuePtr); err != nil {
+			if err := decodeArg(GetDataConverterFromWorkflowContext(ctx), payload, valuePtr); err != nil {
 				return err
 			}
 			return f.err
@@ -508,6 +509,7 @@ func newWorkflowContext(
 	ctx = WithWorkflowTaskTimeout(ctx, info.WorkflowTaskTimeout)
 	ctx = WithTaskQueue(ctx, info.TaskQueueName)
 	ctx = WithDataConverter(ctx, env.GetDataConverter())
+	getWorkflowEnvOptions(ctx).RootDataConverter = rootDataConverterFromEnvironment(env)
 	ctx = withContextPropagators(ctx, env.GetContextPropagators())
 	getActivityOptions(ctx).OriginalTaskQueueName = info.TaskQueueName
 
@@ -553,7 +555,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 			r.workflowResult, r.error = d.workflow.Execute(d.rootCtx, input)
 			rpp := getWorkflowResultPointerPointer(ctx)
 			*rpp = r
-		}, getWorkflowEnvironment(rootCtx).DrainUnhandledUpdates)
+		}, GetWorkflowEnvironment(rootCtx).DrainUnhandledUpdates)
 
 	// set the information from the headers that is to be propagated in the workflow context
 	rootCtx, err = workflowContextWithHeaderPropagated(rootCtx, header, env.GetContextPropagators())
@@ -565,13 +567,13 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 	d.dispatcher = dispatcher
 	envInterceptor.dispatcher = dispatcher
 
-	getWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
+	GetWorkflowEnvironment(d.rootCtx).RegisterCancelHandler(func() {
 		// It is ok to call this method multiple times.
 		// it doesn't do anything new, the context remains canceled.
 		d.cancel()
 	})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(
+	GetWorkflowEnvironment(d.rootCtx).RegisterSignalHandler(
 		func(name string, input *commonpb.Payloads, header *commonpb.Header) error {
 			// Put the header on context
 			rootCtx, err := workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
@@ -582,12 +584,12 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 		},
 	)
 
-	getWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
+	GetWorkflowEnvironment(d.rootCtx).RegisterUpdateHandler(
 		func(name string, id string, serializedArgs *commonpb.Payloads, header *commonpb.Header, callbacks UpdateCallbacks) {
 			defaultUpdateHandler(d.rootCtx, name, id, serializedArgs, header, callbacks, updateSchedulerImpl{d.dispatcher})
 		})
 
-	getWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
+	GetWorkflowEnvironment(d.rootCtx).RegisterQueryHandler(
 		func(queryType string, queryArgs *commonpb.Payloads, header *commonpb.Header) (*commonpb.Payloads, error) {
 			// Put the header on context if server supports it
 			rootCtx, err := workflowContextWithHeaderPropagated(d.rootCtx, header, env.GetContextPropagators())
@@ -608,7 +610,7 @@ func (d *syncWorkflowDefinition) Execute(env WorkflowEnvironment, header *common
 					if err != nil {
 						return nil, err
 					}
-					return encodeArg(getDataConverterFromWorkflowContext(rootCtx), converter.NewRawValue(resultPayload))
+					return encodeArg(GetDataConverterFromWorkflowContext(rootCtx), converter.NewRawValue(resultPayload))
 				}
 			}
 
@@ -672,7 +674,7 @@ func (d *syncWorkflowDefinition) Close() {
 // Context passed to the root function is child of the passed rootCtx.
 // This way rootCtx can be used to pass values to the coroutine code.
 func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor, root func(ctx Context), allBlockedCallback func() bool) (*dispatcherImpl, Context) {
-	env := getWorkflowEnvironment(rootCtx)
+	env := GetWorkflowEnvironment(rootCtx)
 
 	result := &dispatcherImpl{
 		interceptor:        interceptor.outboundInterceptor,
@@ -688,7 +690,7 @@ func newDispatcher(rootCtx Context, interceptor *workflowEnvironmentInterceptor,
 // executeDispatcher executed coroutines in the calling thread and calls workflow completion callbacks
 // if root workflow function returned
 func executeDispatcher(ctx Context, dispatcher dispatcher, timeout time.Duration) {
-	env := getWorkflowEnvironment(ctx)
+	env := GetWorkflowEnvironment(ctx)
 	panicErr := dispatcher.ExecuteUntilAllBlocked(timeout)
 	if panicErr != nil {
 		env.Complete(nil, panicErr)
@@ -1449,7 +1451,7 @@ func (s *selectorImpl) Select(ctx Context) {
 					if readyBranch != nil {
 						return false
 					}
-					env := getWorkflowEnvironment(ctx)
+					env := GetWorkflowEnvironment(ctx)
 					dropSignalFlag := env.TryUse(SDKFlagBlockedSelectorSignalReceive)
 					channelLostMsgFlag := env.TryUse(SDKFlagWorkflowNewChannelLostMessages)
 
@@ -1580,7 +1582,7 @@ func getValidatedWorkflowFunction(workflowFunc any, args []any, dataConverter co
 		return nil, nil, err
 	}
 
-	fnName, err := getWorkflowFunctionName(r, workflowFunc)
+	fnName, err := GetWorkflowFunctionName(r, workflowFunc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1622,7 +1624,7 @@ func setWorkflowEnvOptionsIfNotExist(ctx Context) Context {
 	return WithValue(ctx, workflowEnvOptionsContextKey, &newOptions)
 }
 
-func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
+func GetDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	options := getWorkflowEnvOptions(ctx)
 	var dataConverter converter.DataConverter
 
@@ -1635,8 +1637,39 @@ func getDataConverterFromWorkflowContext(ctx Context) converter.DataConverter {
 	return WithWorkflowContext(ctx, dataConverter)
 }
 
+// withRootDataConverterSerializationContext applies sc to the worker-configured
+// data converter, before any other serialization context, and only then binds it
+// to the workflow context. Binding first would hand sc to a converter that is no
+// longer serialization context aware, silently dropping it.
+func withRootDataConverterSerializationContext(ctx Context, sc converter.SerializationContext) converter.DataConverter {
+	options := getWorkflowEnvOptions(ctx)
+	if options == nil || options.RootDataConverter == nil {
+		return converter.WithDataConverterSerializationContext(GetDataConverterFromWorkflowContext(ctx), sc)
+	}
+	return WithWorkflowContext(ctx, converter.WithDataConverterSerializationContext(options.RootDataConverter, sc))
+}
+
+func rootDataConverterFromEnvironment(env WorkflowEnvironment) converter.DataConverter {
+	if root, ok := env.(interface {
+		GetRootDataConverter() converter.DataConverter
+	}); ok {
+		return root.GetRootDataConverter()
+	}
+	return env.GetDataConverter()
+}
+
+func getRootFailureConverterFromWorkflowContext(ctx Context) converter.FailureConverter {
+	env := GetWorkflowEnvironment(ctx)
+	if root, ok := env.(interface {
+		GetRootFailureConverter() converter.FailureConverter
+	}); ok {
+		return root.GetRootFailureConverter()
+	}
+	return env.GetFailureConverter()
+}
+
 func getRegistryFromWorkflowContext(ctx Context) *registry {
-	env := getWorkflowEnvironment(ctx)
+	env := GetWorkflowEnvironment(ctx)
 	return env.GetRegistry()
 }
 
@@ -1759,7 +1792,7 @@ func (d *decodeFutureImpl) Get(ctx Context, valuePtr any) error {
 	}
 	dataConverter := d.dataConverter
 	if dataConverter == nil {
-		dataConverter = getDataConverterFromWorkflowContext(ctx)
+		dataConverter = GetDataConverterFromWorkflowContext(ctx)
 	}
 	err := dataConverter.FromPayloads(d.futureImpl.value.(*commonpb.Payloads), valuePtr)
 	if err != nil {
@@ -1779,7 +1812,7 @@ func newDecodeFuture(ctx Context, fn any) (Future, Settable) {
 // setQueryHandler sets query handler for given queryType.
 func setQueryHandler(ctx Context, queryType string, handler any, options QueryHandlerOptions) error {
 	eo := getWorkflowEnvOptions(ctx)
-	dataConverter := getDataConverterFromWorkflowContext(ctx)
+	dataConverter := GetDataConverterFromWorkflowContext(ctx)
 	qh := &queryHandler{
 		fn:            handler,
 		queryType:     queryType,
@@ -1803,11 +1836,11 @@ func setUpdateHandler(ctx Context, updateName string, handler any, opts UpdateHa
 	}
 	eo := getWorkflowEnvOptions(ctx)
 	// Data and Failure converter wrapped with WorkflowSerializationContext in newWorkflowExecutionEventHandler.
-	uh.dataConverter = getWorkflowEnvironment(ctx).GetDataConverter()
-	uh.failureConverter = getWorkflowEnvironment(ctx).GetFailureConverter()
+	uh.dataConverter = GetWorkflowEnvironment(ctx).GetDataConverter()
+	uh.failureConverter = GetWorkflowEnvironment(ctx).GetFailureConverter()
 	eo.updateHandlers[updateName] = uh
-	if getWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
-		getWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
+	if GetWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
+		GetWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
 		state := getState(ctx)
 		defer state.unblocked()
 		state.yield("letting any updates waiting on a handler run")

@@ -26,11 +26,8 @@ func TestPayloadSerializerDeserializeErrors(t *testing.T) {
 	payload, err := converter.GetDefaultDataConverter().ToPayload("input")
 	require.NoError(t, err)
 
-	nonRetryableValidationErr := NewApplicationErrorWithOptions(
-		"invalid payload",
-		payloadValidationErrorType,
-		ApplicationErrorOptions{NonRetryable: true},
-	)
+	violations := []map[string]string{{"path": "field", "reason": "must be an integer"}}
+	nonRetryableValidationErr := NewPayloadValidationError(violations)
 	retryableValidationErr := NewApplicationErrorWithOptions(
 		"transient validation failure",
 		payloadValidationErrorType,
@@ -66,7 +63,10 @@ func TestPayloadSerializerDeserializeErrors(t *testing.T) {
 				require.ErrorAs(t, handlerErr.Cause, &appErr)
 				require.Equal(t, payloadValidationErrorType, appErr.Type())
 				require.True(t, appErr.NonRetryable())
-				require.ErrorContains(t, appErr, "invalid payload")
+				require.Equal(t, "Payload validation failed", appErr.Message())
+				var gotViolations []map[string]string
+				require.NoError(t, appErr.Details(&gotViolations))
+				require.Equal(t, violations, gotViolations)
 			},
 		},
 		{

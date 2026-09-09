@@ -20,14 +20,19 @@ const (
 	driverType            = "gcp.gcsdriver"
 	defaultDriverName     = "gcp.gcsdriver"
 	hashAlgorithm         = "sha256"
-	keyVersion            = "v0"
+	objectNameVersion     = "v0"
 	nullSegment           = "null"
 	maxGCSObjectNameBytes = 1024
 
 	claimKeyBucket        = "bucket"
-	claimKeyKey           = "key"
+	claimKeyObjectName    = "object_name"
 	claimKeyHashAlgorithm = "hash_algorithm"
 	claimKeyHashValue     = "hash_value"
+
+	// TODO: v0.1.0 stored the object name under "key". Store still writes it and
+	// Retrieve still accepts it, so claims stay readable in both directions while
+	// a deployment runs mixed driver versions. Remove once the driver reaches GA.
+	claimKeyObjectNameLegacy = "key"
 )
 
 // BucketFunc resolves the target GCS bucket for a given payload. Use
@@ -64,7 +69,8 @@ type Options struct {
 }
 
 // gcsStorageDriver implements converter.StorageDriver by storing payloads in
-// Google Cloud Storage using content-addressable keys based on SHA-256 hashes.
+// Google Cloud Storage using content-addressable object names based on SHA-256
+// hashes.
 type gcsStorageDriver struct {
 	client         Client
 	bucketFunc     BucketFunc
@@ -150,22 +156,23 @@ func (d *gcsStorageDriver) Store(
 	g.SetLimit(10)
 	for i, pp := range prepared {
 		g.Go(func() error {
-			key := objectKey(ctx.Target, pp.hexDigest)
-			exists, err := d.client.ObjectExists(gctx, pp.bucket, key)
+			name := objectName(ctx.Target, pp.hexDigest)
+			exists, err := d.client.ObjectExists(gctx, pp.bucket, name)
 			if err != nil {
-				return fmt.Errorf("existence check failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
+				return fmt.Errorf("existence check failed [bucket=%s, object_name=%s%s]: %w", pp.bucket, name, describeClient(d.client), err)
 			}
 			if !exists {
-				if err := d.client.PutObject(gctx, pp.bucket, key, pp.data); err != nil {
-					return fmt.Errorf("upload failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
+				if err := d.client.PutObject(gctx, pp.bucket, name, pp.data); err != nil {
+					return fmt.Errorf("upload failed [bucket=%s, object_name=%s%s]: %w", pp.bucket, name, describeClient(d.client), err)
 				}
 			}
 			claims[i] = converter.StorageDriverClaim{
 				ClaimData: map[string]string{
-					claimKeyBucket:        pp.bucket,
-					claimKeyKey:           key,
-					claimKeyHashAlgorithm: hashAlgorithm,
-					claimKeyHashValue:     pp.hexDigest,
+					claimKeyBucket:           pp.bucket,
+					claimKeyObjectName:       name,
+					claimKeyObjectNameLegacy: name,
+					claimKeyHashAlgorithm:    hashAlgorithm,
+					claimKeyHashValue:        pp.hexDigest,
 				},
 			}
 			return nil
@@ -194,14 +201,16 @@ func (d *gcsStorageDriver) Retrieve(
 			if !ok {
 				return fmt.Errorf("claim missing field %q", claimKeyBucket)
 			}
-			key, ok := c.ClaimData[claimKeyKey]
+			name, ok := c.ClaimData[claimKeyObjectName]
 			if !ok {
-				return fmt.Errorf("claim missing field %q", claimKeyKey)
+				if name, ok = c.ClaimData[claimKeyObjectNameLegacy]; !ok {
+					return fmt.Errorf("claim missing field %q", claimKeyObjectName)
+				}
 			}
 
-			data, err := d.client.GetObject(gctx, bucket, key)
+			data, err := d.client.GetObject(gctx, bucket, name)
 			if err != nil {
-				return fmt.Errorf("download failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
+				return fmt.Errorf("download failed [bucket=%s, object_name=%s%s]: %w", bucket, name, describeClient(d.client), err)
 			}
 
 			algo, ok := c.ClaimData[claimKeyHashAlgorithm]
@@ -218,14 +227,14 @@ func (d *gcsStorageDriver) Retrieve(
 			}
 			if actualHash := sha256Hex(data); actualHash != expectedHash {
 				return fmt.Errorf(
-					"integrity check failed [bucket=%s, key=%s]: expected hash %s, got %s",
-					bucket, key, expectedHash, actualHash,
+					"integrity check failed [bucket=%s, object_name=%s]: expected hash %s, got %s",
+					bucket, name, expectedHash, actualHash,
 				)
 			}
 
 			var payload commonpb.Payload
 			if err := proto.Unmarshal(data, &payload); err != nil {
-				return fmt.Errorf("failed to unmarshal payload [bucket=%s, key=%s]: %w", bucket, key, err)
+				return fmt.Errorf("failed to unmarshal payload [bucket=%s, object_name=%s]: %w", bucket, name, err)
 			}
 			payloads[i] = &payload
 			return nil
@@ -238,28 +247,28 @@ func (d *gcsStorageDriver) Retrieve(
 	return payloads, nil
 }
 
-func objectKey(target converter.StorageDriverTargetInfo, hexDigest string) string {
+func objectName(target converter.StorageDriverTargetInfo, hexDigest string) string {
 	digestSegment := "/d/" + hashAlgorithm + "/" + hexDigest
-	var key string
+	var name string
 	switch t := target.(type) {
 	case converter.StorageDriverWorkflowInfo:
-		key = keyVersion +
+		name = objectNameVersion +
 			"/ns/" + encodeObjectNameSegment(t.Namespace) +
 			"/wt/" + encodeObjectNameSegment(t.WorkflowType) +
 			"/wi/" + encodeObjectNameSegment(t.WorkflowID) +
 			"/ri/" + encodeObjectNameSegment(t.RunID) +
 			digestSegment
 	case converter.StorageDriverActivityInfo:
-		key = keyVersion +
+		name = objectNameVersion +
 			"/ns/" + encodeObjectNameSegment(t.Namespace) +
 			"/at/" + encodeObjectNameSegment(t.ActivityType) +
 			"/ai/" + encodeObjectNameSegment(t.ActivityID) +
 			"/ri/" + encodeObjectNameSegment(t.RunID) +
 			digestSegment
 	default:
-		return keyVersion + digestSegment
+		return objectNameVersion + digestSegment
 	}
-	if len(key) > maxGCSObjectNameBytes {
+	if len(name) > maxGCSObjectNameBytes {
 		// Preserve namespace scope for authorization policies.
 		var ns string
 		switch t := target.(type) {
@@ -268,9 +277,9 @@ func objectKey(target converter.StorageDriverTargetInfo, hexDigest string) strin
 		case converter.StorageDriverActivityInfo:
 			ns = t.Namespace
 		}
-		return keyVersion + "/ns/" + encodeObjectNameSegment(ns) + digestSegment
+		return objectNameVersion + "/ns/" + encodeObjectNameSegment(ns) + digestSegment
 	}
-	return key
+	return name
 }
 
 // describeClient returns ", k=v, k=v" diagnostic info from the client's

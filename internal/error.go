@@ -407,6 +407,8 @@ var (
 // Exposed as: [go.temporal.io/sdk/temporal.ApplicationErrorCategory]
 type ApplicationErrorCategory int
 
+const payloadValidationErrorType = "PayloadValidationError"
+
 const (
 	// ApplicationErrorCategoryUnspecified represents an error with an unspecified category.
 	//
@@ -425,6 +427,16 @@ func NewApplicationError(msg string, errType string, nonRetryable bool, cause er
 		errType,
 		ApplicationErrorOptions{NonRetryable: nonRetryable, Cause: cause, Details: details},
 	)
+}
+
+// NewPayloadValidationError creates an ApplicationError for payloads that fail validation.
+//
+// Exposed as: [go.temporal.io/sdk/temporal.NewPayloadValidationError]
+func NewPayloadValidationError(details any) error {
+	if details == nil {
+		return NewApplicationError("Payload validation failed", payloadValidationErrorType, true, nil)
+	}
+	return NewApplicationError("Payload validation failed", payloadValidationErrorType, true, nil, details)
 }
 
 // Exposed as: [go.temporal.io/sdk/temporal.NewApplicationError], [go.temporal.io/sdk/temporal.NewApplicationErrorWithOptions], [go.temporal.io/sdk/temporal.NewApplicationErrorWithCause], [go.temporal.io/sdk/temporal.NewNonRetryableApplicationError]
@@ -660,8 +672,8 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 	if options == nil {
 		panic("context is missing required options for continue as new")
 	}
-	env := getWorkflowEnvironment(ctx)
-	dc := getDataConverterFromWorkflowContext(ctx)
+	env := GetWorkflowEnvironment(ctx)
+	dc := GetDataConverterFromWorkflowContext(ctx)
 	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, dc, env.GetRegistry())
 	if err != nil {
 		panic(err)

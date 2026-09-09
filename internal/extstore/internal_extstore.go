@@ -77,7 +77,7 @@ type singleDriverSelector struct {
 	driver StorageDriver
 }
 
-func (s singleDriverSelector) SelectDriver(_ StorageDriverStoreContext, _ *commonpb.Payload) (StorageDriver, error) {
+func (s singleDriverSelector) SelectDriver(_ StorageDriverSelectContext, _ *commonpb.Payload) (StorageDriver, error) {
 	return s.driver, nil
 }
 
@@ -94,8 +94,11 @@ func driversEqual(a, b StorageDriver) (equal bool) {
 	return a == b
 }
 
+// StorageOperationCallback is notified as each batch of storage operations completes. Batches
+// may run concurrently, so a batch reports the start and end of its span rather than a duration,
+// leaving the caller to decide how overlapping spans combine.
 type StorageOperationCallback interface {
-	PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string)
+	PayloadBatchCompleted(count int, size int64, start, end time.Time, driverNames []string)
 }
 
 type contextKey string
@@ -290,7 +293,7 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
 		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, startTime, time.Now(), driverOrder)
 		}
 	}
 	return result, nil
@@ -322,7 +325,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 
 	result := make([]*commonpb.Payload, len(payloads))
 	target := StorageTargetFromContext(ctx.Context)
-	driverCtx := StorageDriverStoreContext{Context: ctx.Context, Target: target}
+	selectCtx := StorageDriverSelectContext{Context: ctx.Context, Target: target}
 
 	for i, p := range payloads {
 		if proto.Size(p) < v.params.payloadSizeThreshold {
@@ -330,7 +333,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 			continue
 		}
 
-		selected, err := callDriverSelector(v.params.driverSelector, driverCtx, p)
+		selected, err := callDriverSelector(v.params.driverSelector, selectCtx, p)
 		if err != nil {
 			return nil, fmt.Errorf("storage driver selector failed: %w", err)
 		}
@@ -406,7 +409,7 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 
 	if callbackValue := ctx.Value(storageOperationCallbackContextKey); callbackValue != nil {
 		if callback, isCallback := callbackValue.(StorageOperationCallback); isCallback {
-			callback.PayloadBatchCompleted(externalCount, externalTotalSize, time.Since(startTime), driverOrder)
+			callback.PayloadBatchCompleted(externalCount, externalTotalSize, startTime, time.Now(), driverOrder)
 		}
 	}
 	return result, nil
@@ -416,7 +419,7 @@ func NewExternalStorageVisitor(params StorageParameters) PayloadVisitor {
 	return &externalStorageVisitor{params: params}
 }
 
-func callDriverSelector(s StorageDriverSelector, ctx StorageDriverStoreContext, p *commonpb.Payload) (driver StorageDriver, err error) {
+func callDriverSelector(s StorageDriverSelector, ctx StorageDriverSelectContext, p *commonpb.Payload) (driver StorageDriver, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("panicked: %v", r)

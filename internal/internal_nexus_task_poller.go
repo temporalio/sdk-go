@@ -84,6 +84,7 @@ func (ntp *nexusTaskPoller) poll(ctx context.Context) (taskForWorker, error) {
 		Namespace: ntp.namespace,
 		TaskQueue: &taskqueuepb.TaskQueue{Name: ntp.taskQueueName, Kind: enumspb.TASK_QUEUE_KIND_NORMAL},
 		Identity:  ntp.identity,
+		//lint:ignore SA1019 retain legacy Build ID versioning metadata for older servers
 		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
 			BuildId:              ntp.workerBuildID,
 			UseVersioning:        ntp.useBuildIDVersioning,
@@ -142,7 +143,12 @@ func (ntp *nexusTaskPoller) ProcessTask(task any) error {
 	nctx, handlerErr := ntp.taskHandler.newNexusOperationContext(response)
 	if handlerErr != nil {
 		// context wasn't propagated to us, use a background context.
-		failedRequest, err := ntp.taskHandler.fillInFailure(response.TaskToken, handlerErr, getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()))
+		failedRequest, err := ntp.taskHandler.fillInFailure(
+			response.TaskToken,
+			handlerErr,
+			getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()),
+			ntp.taskHandler.failureConverter,
+		)
 		if err != nil {
 			return err
 		}
@@ -279,6 +285,7 @@ func (ntp *nexusTaskPoller) reportExternalStorageFailure(
 		response.TaskToken,
 		handlerErr,
 		getEffectiveTemporalFailureResponses(response.GetRequest().GetCapabilities().GetTemporalFailureResponses()),
+		ntp.taskHandler.failureConverter,
 	)
 	if err != nil {
 		return err

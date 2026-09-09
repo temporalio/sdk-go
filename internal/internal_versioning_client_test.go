@@ -21,6 +21,7 @@ func Test_DetectEnhancedNotSupported_fromProtoResponse(t *testing.T) {
 		{
 			name: "enhanced task queue info",
 			response: &workflowservice.DescribeTaskQueueResponse{
+				//lint:ignore SA1019 exercise enhanced-mode response detection
 				VersionsInfo: map[string]*taskqueuepb.TaskQueueVersionInfo{
 					"one": {
 						TypesInfo:        map[int32]*taskqueuepb.TaskQueueTypeInfo{},
@@ -33,6 +34,7 @@ func Test_DetectEnhancedNotSupported_fromProtoResponse(t *testing.T) {
 		{
 			name: "legacy task queue info",
 			response: &workflowservice.DescribeTaskQueueResponse{
+				//lint:ignore SA1019 exercise detection of pre-enhanced server responses
 				TaskQueueStatus: &taskqueuepb.TaskQueueStatus{},
 			},
 			want: errors.New("server does not support `DescribeTaskQueueEnhanced`"),
@@ -67,6 +69,7 @@ func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 		{
 			name: "normal task queue info",
 			response: &workflowservice.DescribeTaskQueueResponse{
+				//lint:ignore SA1019 exercise enhanced-mode response conversion
 				VersionsInfo: map[string]*taskqueuepb.TaskQueueVersionInfo{
 					"one": {
 						TypesInfo: map[int32]*taskqueuepb.TaskQueueTypeInfo{
@@ -80,7 +83,9 @@ func Test_TaskQueueDescription_fromProtoResponse(t *testing.T) {
 					},
 				},
 				VersioningInfo: &taskqueuepb.TaskQueueVersioningInfo{
-					CurrentVersion:           "foo.build1",
+					//lint:ignore SA1019 exercise fallback conversion of legacy string versions
+					CurrentVersion: "foo.build1",
+					//lint:ignore SA1019 exercise fallback conversion of legacy string versions
 					RampingVersion:           "foo.build2",
 					RampingVersionPercentage: 3.0,
 					UpdateTime:               nowProto,
