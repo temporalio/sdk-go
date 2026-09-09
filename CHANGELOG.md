@@ -23,6 +23,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Worker heartbeats now report the poller autoscaler's target poller count per poller type, so the
+  server can surface how many pollers a worker is aiming for alongside how many it currently has.
 - Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
   a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
   platforms), and the operating system and architecture. This is sent

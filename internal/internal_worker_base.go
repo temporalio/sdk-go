@@ -414,6 +414,21 @@ func (bw *baseWorker) initializeTaskPollers(taskPollers []scalableTaskPoller) {
 	bw.validatePollers(taskPollers)
 }
 
+// collectPollerTargets records this worker's current autoscaler target for each poller type
+// it runs, keyed by poller type. Poller types with a fixed poller count have no autoscaler
+// and are left absent rather than reported as zero.
+//
+// Safe to call from the heartbeat goroutine: taskPollers is written once by
+// initializeTaskPollers before Start, and each target is an atomic.
+func (bw *baseWorker) collectPollerTargets(targets map[string]int32) {
+	for _, taskPoller := range bw.options.taskPollers {
+		if taskPoller.pollerAutoscaler == nil {
+			continue
+		}
+		targets[taskPoller.taskPollerType] = int32(taskPoller.pollerAutoscaler.target.Load())
+	}
+}
+
 func (bw *baseWorker) validatePollers(taskPollers []scalableTaskPoller) {
 	if len(taskPollers) <= 1 {
 		return

@@ -161,6 +161,10 @@ type populateHeartbeatOptions struct {
 	prevNexusFailed            *int64
 
 	pollTimeTracker *pollTimeTracker
+
+	// pollerTargets holds the autoscaler target per poller type. Types without an
+	// autoscaler are absent, and report a target of zero.
+	pollerTargets map[string]int32
 }
 
 // PopulateHeartbeat fills in the metrics-related fields of the WorkerHeartbeat proto.
@@ -219,21 +223,25 @@ func (h *heartbeatMetricsHandler) PopulateHeartbeat(hb *workerpb.WorkerHeartbeat
 
 	hb.WorkflowPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeWorkflowTask)),
+		opts.pollerTargets[metrics.PollerTypeWorkflowTask],
 		opts.pollTimeTracker.getLastPollTime(metrics.PollerTypeWorkflowTask),
 		opts.workflowPollerBehavior,
 	)
 	hb.WorkflowStickyPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeWorkflowStickyTask)),
+		opts.pollerTargets[metrics.PollerTypeWorkflowStickyTask],
 		opts.pollTimeTracker.getLastPollTime(metrics.PollerTypeWorkflowStickyTask),
 		opts.workflowPollerBehavior,
 	)
 	hb.ActivityPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeActivityTask)),
+		opts.pollerTargets[metrics.PollerTypeActivityTask],
 		opts.pollTimeTracker.getLastPollTime(metrics.PollerTypeActivityTask),
 		opts.activityPollerBehavior,
 	)
 	hb.NexusPollerInfo = buildPollerInfo(
 		int32(h.get(metrics.NumPoller+":"+metrics.PollerTypeNexusTask)),
+		opts.pollerTargets[metrics.PollerTypeNexusTask],
 		opts.pollTimeTracker.getLastPollTime(metrics.PollerTypeNexusTask),
 		opts.nexusPollerBehavior,
 	)
@@ -269,7 +277,12 @@ func buildSlotsInfo(
 	}
 }
 
-func buildPollerInfo(currentPollers int32, lastSuccessfulPollTime time.Time, pollerBehavior PollerBehavior) *workerpb.WorkerPollerInfo {
+func buildPollerInfo(
+	currentPollers int32,
+	targetPollers int32,
+	lastSuccessfulPollTime time.Time,
+	pollerBehavior PollerBehavior,
+) *workerpb.WorkerPollerInfo {
 	var isAutoscaling bool
 	switch pollerBehavior.(type) {
 	case *pollerBehaviorAutoscaling:
@@ -282,6 +295,7 @@ func buildPollerInfo(currentPollers int32, lastSuccessfulPollTime time.Time, pol
 
 	return &workerpb.WorkerPollerInfo{
 		CurrentPollers:         currentPollers,
+		TargetPollers:          targetPollers,
 		LastSuccessfulPollTime: pollTime,
 		IsAutoscaling:          isAutoscaling,
 	}
