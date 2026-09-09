@@ -788,8 +788,8 @@ type ClientUpdateActivityOptionsInput struct {
 	ActivityID string
 	// RunID is the run ID of the activity to update.
 	RunID string
-	// Updates are the individual option updates to apply. Empty when RestoreOriginal is set.
-	Updates []ClientActivityOptionsUpdate
+	// Update describes the option changes to apply. Nil when RestoreOriginal is set.
+	Update *ClientActivityOptionsUpdate
 	// RestoreOriginal reverts every option to the value the activity was scheduled with. The
 	// server does not allow it to be combined with any entry in Updates.
 	RestoreOriginal bool

@@ -1047,18 +1047,31 @@ type (
 	// NOTE: Experimental
 	ActivityExecutionOptions = internal.ClientActivityExecutionOptions
 
-	// ActivityOptionsKey is a typed key for one updatable activity option. Use the keys on
-	// ActivityOptionsKeys rather than constructing these directly.
-	//
-	// NOTE: Experimental
-	ActivityOptionsKey[T any] = internal.ClientActivityOptionsKey[T]
-
-	// ActivityOptionsUpdate is a single change to an activity's options, created via
-	// ActivityOptionsKey.ValueSet or ActivityOptionsKey.ValueUnset. An option with no update
-	// is left untouched.
+	// ActivityOptionsUpdate describes changes to an activity's options in
+	// ActivityHandle.UpdateOptions. An entry with a nil pointer means do not change that option.
 	//
 	// NOTE: Experimental
 	ActivityOptionsUpdate = internal.ClientActivityOptionsUpdate
+
+	// StringChange sets or clears a string option when used with ActivityOptionsUpdate.
+	//
+	// NOTE: Experimental
+	StringChange = internal.ClientStringChange
+
+	// DurationChange sets or clears a duration option when used with ActivityOptionsUpdate.
+	//
+	// NOTE: Experimental
+	DurationChange = internal.ClientDurationChange
+
+	// RetryPolicyChange sets or clears the retry policy when used with ActivityOptionsUpdate.
+	//
+	// NOTE: Experimental
+	RetryPolicyChange = internal.ClientRetryPolicyChange
+
+	// PriorityChange sets or clears the priority when used with ActivityOptionsUpdate.
+	//
+	// NOTE: Experimental
+	PriorityChange = internal.ClientPriorityChange
 
 	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
 	//
@@ -1766,11 +1779,6 @@ type (
 		Close()
 	}
 )
-
-// ActivityOptionsKeys holds the activity options that ActivityHandle.UpdateOptions can change.
-//
-// NOTE: Experimental
-var ActivityOptionsKeys = internal.ClientActivityOptionsKeys
 
 // MetricsHandler is a handler for metrics emitted by the SDK. This interface is
 // intentionally limited to only what the SDK needs to emit metrics and is not
