@@ -7,8 +7,6 @@ import (
 	"sync"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/worker"
-	"go.temporal.io/sdk/workflow"
 )
 
 // pluginName is the name reported by [Plugin.Name].
@@ -36,19 +34,14 @@ type PluginOptions struct {
 	HTTPClient *http.Client
 }
 
-// Plugin configures a Temporal client and its workers from Google Cloud Run instance metadata,
-// covering both Cloud Run worker pools and Cloud Run services. It implements both
-// [go.temporal.io/sdk/client.Plugin] and [go.temporal.io/sdk/worker.Plugin]: register it once on
-// [go.temporal.io/sdk/client.Options.Plugins] and it automatically propagates to every worker
-// created from the client.
+// Plugin sets a Temporal client's identity from Google Cloud Run instance metadata, covering both
+// Cloud Run worker pools and Cloud Run services. It implements [go.temporal.io/sdk/client.Plugin]:
+// register it once on [go.temporal.io/sdk/client.Options.Plugins] and every worker created from the
+// client inherits the identity.
 //
 // When the client connects, the plugin fetches the Cloud Run metadata once (see [FetchMetadata]),
 // caches it, and sets the client [go.temporal.io/sdk/client.Options.Identity] to the derived worker
-// identity unless the caller already set one — a user-provided identity always wins. For each worker
-// it sets [go.temporal.io/sdk/worker.Options.DeploymentOptions] to opt into Worker Deployment
-// Versioning with the Cloud Run deployment version, pinning workflows to this version by default
-// ([go.temporal.io/sdk/workflow.VersioningBehaviorPinned]; a per-workflow versioning behavior takes
-// precedence).
+// identity unless the caller already set one — a user-provided identity always wins.
 //
 // If the metadata fetch fails — typically because the process is not running on a Cloud Run worker
 // pool or service — client creation fails with a clear error rather than silently doing nothing. Set
@@ -58,8 +51,7 @@ type PluginOptions struct {
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future release.
 type Plugin struct {
-	pluginClientBase
-	pluginWorkerBase
+	client.PluginBase
 
 	metadataURL string
 	httpClient  *http.Client
@@ -68,20 +60,11 @@ type Plugin struct {
 	metadata *Metadata
 }
 
-// pluginClientBase and pluginWorkerBase let [Plugin] embed both SDK plugin bases at once. Embedding
-// client.PluginBase and worker.PluginBase directly is not possible because both fields would be
-// named PluginBase; wrapping each in a distinct named type avoids the collision.
-type pluginClientBase struct{ client.PluginBase }
-type pluginWorkerBase struct{ worker.PluginBase }
-
-var (
-	_ client.Plugin = (*Plugin)(nil)
-	_ worker.Plugin = (*Plugin)(nil)
-)
+var _ client.Plugin = (*Plugin)(nil)
 
 // NewPlugin creates a [Plugin] that reads Google Cloud Run instance metadata and applies the derived
-// worker identity and Worker Deployment Version to a Temporal client and its workers. See [Plugin]
-// for the behavior and [PluginOptions] for the dependency-injection knobs.
+// worker identity to a Temporal client. See [Plugin] for the behavior and [PluginOptions] for the
+// dependency-injection knobs.
 //
 // The metadata is fetched lazily when the client connects, using the client's dial context — not
 // here — so construction never performs a network request or returns an error.
@@ -101,7 +84,7 @@ func (*Plugin) Name() string { return pluginName }
 // Metadata returns the Cloud Run instance metadata the plugin resolved, or nil if it has not been
 // fetched yet (that is, before the client connects, unless it was injected via
 // [PluginOptions.Metadata]). It is safe to call after connecting the client, for example to log the
-// resolved identity and deployment version.
+// resolved identity.
 func (p *Plugin) Metadata() *Metadata {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -122,33 +105,6 @@ func (p *Plugin) ConfigureClient(ctx context.Context, options client.PluginConfi
 	}
 	if options.ClientOptions.Identity == "" {
 		options.ClientOptions.Identity = md.WorkerIdentity()
-	}
-	return nil
-}
-
-// ConfigureWorker opts the worker into Worker Deployment Versioning using the Cloud Run deployment
-// version, pinning workflows to this version by default ([workflow.VersioningBehaviorPinned]).
-//
-// It never returns an error: worker.New turns a ConfigureWorker error into a panic, and the metadata
-// was already fetched — and any failure surfaced — in ConfigureClient. In the unexpected case that
-// the metadata is unavailable or incomplete (for example the deployment name or revision is empty),
-// the worker options are left unchanged rather than panicking.
-func (p *Plugin) ConfigureWorker(_ context.Context, options worker.PluginConfigureWorkerOptions) error {
-	if options.WorkerOptions == nil {
-		return nil
-	}
-	md := p.Metadata()
-	if md == nil {
-		return nil
-	}
-	version, err := md.DeploymentVersion()
-	if err != nil {
-		return nil
-	}
-	options.WorkerOptions.DeploymentOptions = worker.DeploymentOptions{
-		UseVersioning:             true,
-		Version:                   version,
-		DefaultVersioningBehavior: workflow.VersioningBehaviorPinned,
 	}
 	return nil
 }

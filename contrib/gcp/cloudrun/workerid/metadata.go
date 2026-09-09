@@ -8,8 +8,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"go.temporal.io/sdk/worker"
 )
 
 const (
@@ -43,7 +41,7 @@ const (
 // Metadata describes the Google Cloud Run instance that a worker process is running on, covering
 // both Cloud Run worker pools and Cloud Run services. Register [Plugin] to fetch and apply it
 // automatically, or use [FetchMetadata] to populate it at worker startup and read
-// [Metadata.WorkerIdentity] and [Metadata.DeploymentVersion] directly.
+// [Metadata.WorkerIdentity] directly.
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future
 // release.
@@ -57,8 +55,8 @@ type Metadata struct {
 	Name string
 
 	// Revision is the name of the Cloud Run revision, read from CLOUD_RUN_REVISION (worker pools)
-	// or K_REVISION (services). Cloud Run creates a new revision for each deployment, which makes
-	// it a natural worker build ID.
+	// or K_REVISION (services). Cloud Run creates a new revision for each deployment, and it forms
+	// part of the worker identity.
 	Revision string
 }
 
@@ -174,24 +172,4 @@ func (m *Metadata) WorkerIdentity() string {
 	default:
 		return m.InstanceID
 	}
-}
-
-// DeploymentVersion returns the [worker.WorkerDeploymentVersion] for the Cloud Run instance, using
-// the name as the deployment name and the revision as the build ID. [Plugin] sets it on
-// [go.temporal.io/sdk/worker.DeploymentOptions] (with UseVersioning enabled) automatically; set it
-// there yourself if you are not using the plugin.
-//
-// It returns an error if either the name or the revision is unknown, which typically means the
-// process is not running on a Cloud Run worker pool or service.
-func (m *Metadata) DeploymentVersion() (worker.WorkerDeploymentVersion, error) {
-	if m.Name == "" || m.Revision == "" {
-		return worker.WorkerDeploymentVersion{}, fmt.Errorf("cloudrun: cannot build a worker "+
-			"deployment version: both the Cloud Run deployment name (%q, from CLOUD_RUN_WORKER_POOL "+
-			"or K_SERVICE) and revision (%q, from CLOUD_RUN_REVISION or K_REVISION) must be set "+
-			"(is this process running on a Cloud Run worker pool or service?)", m.Name, m.Revision)
-	}
-	return worker.WorkerDeploymentVersion{
-		DeploymentName: m.Name,
-		BuildID:        m.Revision,
-	}, nil
 }

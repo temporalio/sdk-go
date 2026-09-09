@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/contrib/gcp/cloudrun/workerid"
-	"go.temporal.io/sdk/worker"
 )
 
 // testInstanceID is a representative Cloud Run instance ID as returned by the GCP metadata server.
@@ -165,34 +164,6 @@ func TestMetadata_WorkerIdentity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			assert.Equal(t, tt.want, tt.md.WorkerIdentity())
-		})
-	}
-}
-
-// TestMetadata_DeploymentVersion covers spec item 3: the version is (deploymentName=name,
-// buildID=revision), and it is a clear error when either the name or the revision is empty.
-func TestMetadata_DeploymentVersion(t *testing.T) {
-	t.Run("name and revision set", func(t *testing.T) {
-		md := workerid.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"}
-		v, err := md.DeploymentVersion()
-		require.NoError(t, err)
-		assert.Equal(t, worker.WorkerDeploymentVersion{DeploymentName: "my-pool", BuildID: "rev-1"}, v)
-	})
-
-	errorCases := []struct {
-		name string
-		md   workerid.Metadata
-	}{
-		{"name empty", workerid.Metadata{InstanceID: "i-1", Revision: "rev-1"}},
-		{"revision empty", workerid.Metadata{InstanceID: "i-1", Name: "my-pool"}},
-		{"both empty", workerid.Metadata{InstanceID: "i-1"}},
-	}
-	for _, tt := range errorCases {
-		t.Run("error when "+tt.name, func(t *testing.T) {
-			v, err := tt.md.DeploymentVersion()
-			require.Error(t, err)
-			assert.Equal(t, worker.WorkerDeploymentVersion{}, v)
-			assert.Contains(t, err.Error(), "cloudrun:")
 		})
 	}
 }

@@ -2,23 +2,19 @@
 // Run worker pools and Cloud Run services.
 //
 // Unlike AWS Lambda, Cloud Run runs a long-lived container: there is no per-invocation handler to
-// wrap. The primary API is [Plugin], a client-and-worker plugin. Register it once on
-// [go.temporal.io/sdk/client.Options.Plugins] and it automatically propagates to every worker
-// created from the client, where it:
-//
-//   - sets the client [go.temporal.io/sdk/client.Options.Identity] to the Cloud Run-derived worker
-//     identity, unless a user-set identity is already present (a user-set identity always wins), and
-//   - opts each worker into Worker Deployment Versioning via
-//     [go.temporal.io/sdk/worker.Options.DeploymentOptions], using the Cloud Run deployment version
-//     and pinning workflows to it by default.
+// wrap. The primary API is [Plugin], a client plugin. Register it once on
+// [go.temporal.io/sdk/client.Options.Plugins] and it sets the client
+// [go.temporal.io/sdk/client.Options.Identity] to the Cloud Run-derived worker identity, unless a
+// user-set identity is already present (a user-set identity always wins). Every worker created from
+// the client inherits that identity.
 //
 // The plugin fetches the instance metadata once, when the client connects. If the fetch fails —
 // typically because the process is not running on a Cloud Run worker pool or service — client
 // creation fails with a clear error.
 //
-// The lower-level [FetchMetadata] reader and the [Metadata.WorkerIdentity] and
-// [Metadata.DeploymentVersion] accessors remain available if you prefer to wire the values in
-// yourself (or to inject metadata into the plugin via [PluginOptions.Metadata]).
+// The lower-level [FetchMetadata] reader and the [Metadata.WorkerIdentity] accessor remain available
+// if you prefer to wire the value in yourself (or to inject metadata into the plugin via
+// [PluginOptions.Metadata]).
 //
 // # Experimental
 //
@@ -28,7 +24,7 @@
 //
 //	func main() {
 //	    // Register the Cloud Run plugin on the client. It fetches the instance metadata when the
-//	    // client connects, sets the worker identity, and pins each worker's deployment version.
+//	    // client connects and sets the worker identity.
 //	    c, err := client.Dial(client.Options{
 //	        Plugins: []client.Plugin{workerid.NewPlugin(workerid.PluginOptions{})},
 //	    })
@@ -65,12 +61,12 @@ import (
 )
 
 // Example shows how to configure a normal, long-lived Temporal worker on Cloud Run with the plugin.
-// Registering [Plugin] on the client sets the derived worker identity and pins each worker to the
-// Cloud Run deployment version, all read from the instance metadata when the client connects.
+// Registering [Plugin] on the client sets the derived worker identity, read from the instance
+// metadata when the client connects.
 func Example() {
 	// Register the Cloud Run plugin on the client. It fetches the instance metadata when the client
-	// connects (never from workflow code), sets the derived worker identity unless one is already
-	// set, and opts each worker created from the client into PINNED Worker Deployment Versioning.
+	// connects (never from workflow code) and sets the derived worker identity unless one is already
+	// set.
 	plugin := NewPlugin(PluginOptions{})
 
 	c, err := client.Dial(client.Options{
