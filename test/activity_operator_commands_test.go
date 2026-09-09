@@ -285,18 +285,17 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		})
 		ts.NoError(err)
 
-		ts.Equal(handle.GetID(), description.RawDescription.GetInfo().GetActivityId())
-		ts.Same(description.RawExecutionInfo, description.RawDescription.GetInfo())
+		ts.Equal(handle.GetID(), description.RawResponse.GetInfo().GetActivityId())
 
 		var word string
 		ts.NoError(description.GetInput(&word))
 		ts.Equal("ping", word)
-		ts.Len(description.RawDescription.GetInput().GetPayloads(), 1)
+		ts.Len(description.RawResponse.GetInput().GetPayloads(), 1)
 
 		var echoed string
 		ts.NoError(description.GetResult(&echoed))
 		ts.Equal("ping-echoed", echoed)
-		_, rawHasResult := description.RawDescription.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
+		_, rawHasResult := description.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
 		ts.True(rawHasResult)
 		ts.Equal(description.HasResult(), rawHasResult)
 	})

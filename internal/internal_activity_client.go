@@ -426,7 +426,7 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionInfo]
 	ClientActivityExecutionInfo struct {
 		// Raw PB message this struct was built from. This field is nil in the result of ClientActivityHandle.Describe call - use
-		// ClientActivityExecutionDescription.RawExecutionInfo instead.
+		// ClientActivityExecutionDescription.RawResponse instead.
 		RawExecutionListInfo  *activitypb.ActivityExecutionListInfo
 		ActivityID            string
 		ActivityRunID         string
@@ -448,9 +448,8 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionDescription]
 	ClientActivityExecutionDescription struct {
 		ClientActivityExecutionInfo
-		// Raw PB message this struct was built from.
-		RawExecutionInfo        *activitypb.ActivityExecutionInfo
-		RawDescription          *workflowservice.DescribeActivityExecutionResponse
+		// Raw server response this struct was built from.
+		RawResponse             *workflowservice.DescribeActivityExecutionResponse
 		ScheduleToCloseTimeout  time.Duration
 		ScheduleToStartTimeout  time.Duration
 		StartToCloseTimeout     time.Duration
@@ -489,7 +488,7 @@ type (
 // HasHeartbeatDetails returns whether heartbeat details are present. Use GetHeartbeatDetails to retrieve them.
 // The details are only returned when ClientDescribeActivityOptions.IncludeHeartbeatDetails was set.
 func (d *ClientActivityExecutionDescription) HasHeartbeatDetails() bool {
-	return len(d.RawExecutionInfo.GetHeartbeatDetails().GetPayloads()) > 0
+	return len(d.RawResponse.GetInfo().GetHeartbeatDetails().GetPayloads()) > 0
 }
 
 // GetHeartbeatDetails retrieves heartbeat details. Returns ErrNoData if heartbeat details are not
@@ -497,7 +496,7 @@ func (d *ClientActivityExecutionDescription) HasHeartbeatDetails() bool {
 // The details are deserialized into provided pointers using the data converter of the client used to make the Describe call.
 // Returns error if data conversion fails.
 func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...any) error {
-	details := d.RawExecutionInfo.GetHeartbeatDetails()
+	details := d.RawResponse.GetInfo().GetHeartbeatDetails()
 	if details == nil {
 		return ErrNoData
 	}
@@ -510,7 +509,7 @@ func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...an
 // HasInput returns whether the activity's input is present. Use GetInput to retrieve it.
 // The input is only returned when ClientDescribeActivityOptions.IncludeInput was set.
 func (d *ClientActivityExecutionDescription) HasInput() bool {
-	return len(d.RawDescription.GetInput().GetPayloads()) > 0
+	return len(d.RawResponse.GetInput().GetPayloads()) > 0
 }
 
 // GetInput retrieves the arguments the activity was scheduled with. Returns ErrNoData if the
@@ -518,7 +517,7 @@ func (d *ClientActivityExecutionDescription) HasInput() bool {
 // The arguments are deserialized into the provided pointers, one per argument, using the data
 // converter of the client used to make the Describe call. Returns error if data conversion fails.
 func (d *ClientActivityExecutionDescription) GetInput(valuePtrs ...any) error {
-	input := d.RawDescription.GetInput()
+	input := d.RawResponse.GetInput()
 	if input == nil {
 		return ErrNoData
 	}
@@ -532,7 +531,7 @@ func (d *ClientActivityExecutionDescription) GetInput(valuePtrs ...any) error {
 // GetResult to retrieve it. The outcome is only returned when
 // ClientDescribeActivityOptions.IncludeOutcome was set.
 func (d *ClientActivityExecutionDescription) HasResult() bool {
-	_, ok := d.RawDescription.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
+	_, ok := d.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
 	return ok
 }
 
@@ -542,7 +541,7 @@ func (d *ClientActivityExecutionDescription) HasResult() bool {
 // The result is deserialized into valuePtr using the data converter of the client used to make
 // the Describe call. Returns error if data conversion fails.
 func (d *ClientActivityExecutionDescription) GetResult(valuePtr any) error {
-	outcome, ok := d.RawDescription.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
+	outcome, ok := d.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
 	if !ok {
 		return ErrNoData
 	}
@@ -559,7 +558,7 @@ func (d *ClientActivityExecutionDescription) GetResult(valuePtr any) error {
 // This is the terminal failure of the execution. It differs from GetLastFailure, which reports
 // the failure of the most recent attempt of an activity that may still be retrying.
 func (d *ClientActivityExecutionDescription) GetFailure() error {
-	outcome, ok := d.RawDescription.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Failure)
+	outcome, ok := d.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Failure)
 	if !ok {
 		return nil
 	}
@@ -573,7 +572,7 @@ func (d *ClientActivityExecutionDescription) GetFailure() error {
 // GetLastFailure to retrieve it. The last failure is only returned when
 // ClientDescribeActivityOptions.IncludeLastFailure was set.
 func (d *ClientActivityExecutionDescription) HasLastFailure() bool {
-	return d.RawExecutionInfo.GetLastFailure() != nil
+	return d.RawResponse.GetInfo().GetLastFailure() != nil
 }
 
 // GetLastFailure returns the failure of the most recent failed attempt, using the failure converter
@@ -582,7 +581,7 @@ func (d *ClientActivityExecutionDescription) HasLastFailure() bool {
 //
 // For the terminal failure of a closed execution, see GetFailure.
 func (d *ClientActivityExecutionDescription) GetLastFailure() error {
-	failure := d.RawExecutionInfo.GetLastFailure()
+	failure := d.RawResponse.GetInfo().GetLastFailure()
 	if failure == nil {
 		return nil
 	}
@@ -598,7 +597,7 @@ func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 	if d.summary != "" {
 		return d.summary, nil
 	}
-	payload := d.RawExecutionInfo.GetUserMetadata().GetSummary()
+	payload := d.RawResponse.GetInfo().GetUserMetadata().GetSummary()
 	if payload == nil {
 		return "", nil
 	}
@@ -621,7 +620,7 @@ func (d *ClientActivityExecutionDescription) GetDetails() (string, error) {
 	if d.details != "" {
 		return d.details, nil
 	}
-	payload := d.RawExecutionInfo.GetUserMetadata().GetDetails()
+	payload := d.RawResponse.GetInfo().GetUserMetadata().GetDetails()
 	if payload == nil {
 		return "", nil
 	}
@@ -1120,8 +1119,7 @@ func (w *workflowClientInterceptor) DescribeActivity(
 				ExecutionDuration:     info.ExecutionDuration.AsDuration(),
 				ExecutionTime:         info.ExecutionTime.AsTime(),
 			},
-			RawExecutionInfo:        info,
-			RawDescription:          resp,
+			RawResponse:             resp,
 			ScheduleToCloseTimeout:  info.ScheduleToCloseTimeout.AsDuration(),
 			ScheduleToStartTimeout:  info.ScheduleToStartTimeout.AsDuration(),
 			StartToCloseTimeout:     info.StartToCloseTimeout.AsDuration(),

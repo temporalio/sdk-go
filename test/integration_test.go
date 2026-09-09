@@ -9676,7 +9676,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		ts.NoError(err)
 		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_RUNNING, description.Status)
 		ts.Nil(description.RawExecutionListInfo)
-		ts.NotNil(description.RawExecutionInfo)
+		ts.NotNil(description.RawResponse)
 		ts.Equal(options.ID, description.ActivityID)
 		ts.Equal(handle.GetRunID(), description.ActivityRunID)
 		ts.Equal("readFromChannelActivity", description.ActivityType)
