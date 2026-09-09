@@ -31,6 +31,9 @@ type mockEffects struct {
 	output         strings.Builder
 	tempDir        string
 	files          map[string]string
+	// moduleLookupHandler answers checkModulePublished.
+	// A nil handler treats every version as published.
+	moduleLookupHandler func(modulePath, version string) (bool, error)
 }
 
 var _ effects = &mockEffects{}
@@ -60,6 +63,13 @@ func (eff *mockEffects) readFile(path string) (string, error) {
 func (eff *mockEffects) writeFile(path, contents string) error {
 	eff.files[path] = contents
 	return nil
+}
+
+func (eff *mockEffects) checkModulePublished(modulePath, version string) (bool, error) {
+	if eff.moduleLookupHandler == nil {
+		return true, nil
+	}
+	return eff.moduleLookupHandler(modulePath, version)
 }
 
 // contribEnvconfig is the module used by the contrib tests.

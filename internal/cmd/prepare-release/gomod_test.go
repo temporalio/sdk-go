@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -152,7 +153,7 @@ func TestValidateGoMod(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateGoMod(test.goMod, modulePath)
+			_, err := validateGoMod(test.goMod, modulePath)
 			if test.wantErr == "" {
 				if err != nil {
 					t.Fatalf("expected go.mod to be valid, got %v", err)
@@ -164,4 +165,29 @@ func TestValidateGoMod(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestValidateGoModReturnsTemporalRequirements(t *testing.T) {
+	goMod := stripIndentation(`
+		module go.temporal.io/sdk/contrib/tally
+
+		require (
+			go.temporal.io/api v1.63.4
+			go.temporal.io/sdk v1.48.0
+			example.com/dependency v1.0.0
+		)
+	`)
+
+	requirements, err := validateGoMod(goMod, "go.temporal.io/sdk/contrib/tally")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got strings.Builder
+	for _, requirement := range requirements {
+		fmt.Fprintf(&got, "%s %s\n", requirement.modulePath, requirement.version)
+	}
+	testEqual(t, got.String(), `
+		go.temporal.io/api v1.63.4
+		go.temporal.io/sdk v1.48.0
+	`)
 }

@@ -30,7 +30,7 @@ type worktree struct {
 // validateEverything validates everything about the release worktree before
 // anything gets written:
 // - check that go.mod exists and has the correct module path;
-// - check that all Temporal dependencies in go.mod point to official releases;
+// - check that all Temporal dependencies in go.mod point to published releases;
 // - check that the version constant, if the module has one, agrees with the tags;
 // - check that the new version is "one greater" than the current release;
 // - check that the changelog exists and is ready to cut.
@@ -42,7 +42,11 @@ func (w *worktree) validateEverything() error {
 	if err != nil {
 		return fmt.Errorf("%s: %w", modulePath, err)
 	}
-	err = validateGoMod(goMod, modulePath)
+	requirements, err := validateGoMod(goMod, modulePath)
+	if err != nil {
+		return fmt.Errorf("%s: %w", modulePath, err)
+	}
+	err = w.validateRequirementsPublished(requirements)
 	if err != nil {
 		return fmt.Errorf("%s: %w", modulePath, err)
 	}
@@ -74,6 +78,20 @@ func (w *worktree) validateEverything() error {
 		return fmt.Errorf("%s: %w", modulePath, err)
 	}
 
+	return nil
+}
+
+func (w *worktree) validateRequirementsPublished(requirements []moduleRequirement) error {
+	for _, requirement := range requirements {
+		published, err := w.eff.checkModulePublished(requirement.modulePath, requirement.version)
+		if err != nil {
+			return err
+		}
+		if !published {
+			return fmt.Errorf("%s %s is not published on the Go module proxy",
+				requirement.modulePath, requirement.version)
+		}
+	}
 	return nil
 }
 

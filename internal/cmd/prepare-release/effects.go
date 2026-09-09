@@ -2,13 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// goModuleProxy answers whether a module version was ever published.
+const goModuleProxy = "https://proxy.golang.org"
 
 // effects is a dependency injection object for operations that touch the
 // network and filesystem.
@@ -17,6 +23,8 @@ type effects interface {
 	mkdirTemp(dir, pattern string) (string, error)
 	readFile(path string) (string, error)
 	writeFile(path, contents string) error
+	// checkModulePublished checks proxy.golang.org to decide if modulePath@version is published
+	checkModulePublished(modulePath, version string) (bool, error)
 }
 
 type realWorld struct {
@@ -57,6 +65,51 @@ func (realWorld) readFile(path string) (string, error) {
 
 func (realWorld) writeFile(path, contents string) error {
 	return os.WriteFile(path, []byte(contents), 0o644)
+}
+
+func (eff realWorld) checkModulePublished(modulePath, version string) (bool, error) {
+	url := goModuleProxy + "/" + escapeModulePath(modulePath) + "/@v/" + version + ".info"
+	printDetail(eff.out, "HTTP GET: %s...", url)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, fmt.Errorf("query %s: %w", url, err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("query %s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound, http.StatusGone:
+		return false, nil
+	default:
+		return false, fmt.Errorf("query %s: unexpected response %s", url, resp.Status)
+	}
+}
+
+// escapeModulePath encodes a module path for the module proxy, which requires
+// every uppercase letter to be replaced by an exclamation mark and its lowercase
+// form. See https://go.dev/ref/mod#goproxy-protocol.
+func escapeModulePath(modulePath string) string {
+	if !strings.ContainsFunc(modulePath, func(r rune) bool { return r >= 'A' && r <= 'Z' }) {
+		return modulePath
+	}
+	var escaped strings.Builder
+	for _, r := range modulePath {
+		if r >= 'A' && r <= 'Z' {
+			escaped.WriteByte('!')
+			r += 'a' - 'A'
+		}
+		escaped.WriteRune(r)
+	}
+	return escaped.String()
 }
 
 // formatCommand renders a command with quoting suitable for logs.

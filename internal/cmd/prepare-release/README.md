@@ -11,7 +11,7 @@ The package is organized as follows:
 
 - `main.go` the entry point and the main workflow.
 - `worktree.go` implements specific operations performed on a temporary worktree, like validation.
-- `effects.go` dependency injection object for working with the filesystem.
+- `effects.go` dependency injection object for working with the filesystem and the network.
 - Pure helper functions and definitions:
   - `target.go` defines a release target, like the Go SDK or `contrib/envconfig`.
   - `changelog.go` pure functions that validate and update changelog contents.

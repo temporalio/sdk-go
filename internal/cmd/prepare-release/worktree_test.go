@@ -57,6 +57,51 @@ func TestValidateReleaseRejectsUnreleasedSDKDependency(t *testing.T) {
 	}
 }
 
+func TestValidateReleaseRejectsUnpublishedSiblingRequirement(t *testing.T) {
+	target, err := contribTarget("contrib/aws/s3driver/awssdkv2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, eff := newMockApp(app{target: target, version: semver{0, 2, 2}}, nil)
+	eff.moduleLookupHandler = func(modulePath, version string) (bool, error) {
+		return version != "v0.0.0", nil
+	}
+	eff.files[filepath.Join(eff.tempDir, "contrib", "aws", "s3driver", "awssdkv2", "go.mod")] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/aws/s3driver/awssdkv2
+
+		require (
+			go.temporal.io/sdk v1.43.1
+			go.temporal.io/sdk/contrib/aws/s3driver v0.0.0
+		)
+
+		replace go.temporal.io/sdk/contrib/aws/s3driver => ../
+	`)
+
+	err = a.worktreeAt(eff.tempDir, "").validateEverything()
+	if err == nil || !strings.Contains(err.Error(), "go.temporal.io/sdk/contrib/aws/s3driver v0.0.0 is not published") {
+		t.Fatalf("expected unpublished sibling error, got %v", err)
+	}
+	if strings.Contains(eff.commands.String(), "git tag") {
+		t.Fatalf("validation continued past the bad go.mod:\n%s", eff.commands.String())
+	}
+}
+
+func TestValidateReleasePropagatesProxyFailure(t *testing.T) {
+	a, eff := newMockApp(app{target: contribEnvconfig(t), version: semver{1, 0, 3}}, nil)
+	eff.moduleLookupHandler = func(string, string) (bool, error) {
+		return false, errors.New("proxy unreachable")
+	}
+	eff.files[filepath.Join(eff.tempDir, "contrib", "envconfig", "go.mod")] = stripIndentation(`
+		module go.temporal.io/sdk/contrib/envconfig
+		require go.temporal.io/sdk v1.48.0
+	`)
+
+	err := a.worktreeAt(eff.tempDir, "").validateEverything()
+	if err == nil || !strings.Contains(err.Error(), "proxy unreachable") {
+		t.Fatalf("expected the proxy error to be propagated, got %v", err)
+	}
+}
+
 func TestValidateReleaseRejectsNonIncreasingVersion(t *testing.T) {
 	goMod := stripIndentation(`
 		module go.temporal.io/sdk
