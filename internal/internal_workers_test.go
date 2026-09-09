@@ -748,6 +748,45 @@ func (s *WorkersTestSuite) TestWorkerMultipleStop() {
 	worker.Stop()
 }
 
+// workerPluginRegistryCallbacksForTest sets only some registry callbacks so the
+// worker's Register* methods must tolerate the unset ones.
+type workerPluginRegistryCallbacksForTest struct {
+	WorkerPluginBase
+	activities       int
+	dynamicWorkflows []DynamicRegisterWorkflowOptions
+}
+
+func (*workerPluginRegistryCallbacksForTest) Name() string { return "worker-plugin-registry-callbacks" }
+
+func (p *workerPluginRegistryCallbacksForTest) ConfigureWorker(_ context.Context, options WorkerPluginConfigureWorkerOptions) error {
+	options.WorkerRegistryOptions.OnRegisterActivity = func(any, RegisterActivityOptions) { p.activities++ }
+	options.WorkerRegistryOptions.OnRegisterDynamicWorkflow = func(_ any, o DynamicRegisterWorkflowOptions) {
+		p.dynamicWorkflows = append(p.dynamicWorkflows, o)
+	}
+	return nil
+}
+
+func (s *WorkersTestSuite) TestWorkerPluginRegistryCallbacks() {
+	plugin := &workerPluginRegistryCallbacksForTest{}
+	client := NewServiceClient(s.service, nil, ClientOptions{Identity: "plugin-registry-callbacks"})
+	worker := NewAggregatedWorker(client, "plugin-registry-callbacks-tq", WorkerOptions{
+		Plugins: []WorkerPlugin{plugin},
+	})
+
+	// Registering a dynamic activity must not require OnRegisterDynamicActivity
+	// just because OnRegisterActivity is set.
+	worker.RegisterDynamicActivity(envPluginDynamicActivity, DynamicRegisterActivityOptions{})
+	s.Equal(0, plugin.activities)
+
+	// The dynamic workflow callback receives the caller's options.
+	loadOptions := func(LoadDynamicRuntimeOptionsDetails) (DynamicRuntimeWorkflowOptions, error) {
+		return DynamicRuntimeWorkflowOptions{}, nil
+	}
+	worker.RegisterDynamicWorkflow(envPluginDynamicWorkflow, DynamicRegisterWorkflowOptions{LoadDynamicRuntimeOptions: loadOptions})
+	s.Len(plugin.dynamicWorkflows, 1)
+	s.NotNil(plugin.dynamicWorkflows[0].LoadDynamicRuntimeOptions)
+}
+
 func (s *WorkersTestSuite) TestWorkerTaskQueueLimitDisableEager() {
 	client := NewServiceClient(s.service, nil, ClientOptions{Identity: "task-queue-limit-disable-eager"})
 	worker := NewAggregatedWorker(client, "task-queue-limit-disable-eager", WorkerOptions{

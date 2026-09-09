@@ -212,9 +212,23 @@ func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn any, args ...a
 	return t.impl.executeLocalActivity(activityFn, args...)
 }
 
-// SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
-// use options of BackgroundActivityContext, MaxConcurrentSessionExecutionSize, and WorkflowInterceptorChainFactories on the WorkerOptions.
-// Other options are ignored.
+// SetWorkerOptions sets the WorkerOptions used by TestActivityEnvironment. Only
+// BackgroundActivityContext, MaxConcurrentSessionExecutionSize,
+// EnableSessionWorker, DeadlockDetectionTimeout, PreferredVersionProvider,
+// Interceptors, and Plugins are used. Other options are ignored.
+//
+// Plugins run the way they do on a real worker, with the environment standing
+// in for one worker: ConfigureWorker runs immediately and panics on error, as
+// it does in worker.New; once plugins are set, SetWorkerOptions may not be
+// called again on that environment. StartWorker
+// runs before and StopWorker after every ExecuteActivity or
+// ExecuteLocalActivity call, so each execution is one worker run under the
+// same WorkerInstanceKey, and StopWorker also runs if the execution panics or
+// returns ErrActivityResultPending. A plugin whose StopWorker is terminal
+// therefore needs a fresh environment per execution. A StartWorker error is
+// returned from the execute call. Registry callbacks set in ConfigureWorker fire for RegisterActivity
+// calls made after SetWorkerOptions. The environment has no client, so
+// plugins set on client.Options do not apply here; set them on WorkerOptions.
 //
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestActivityEnvironment {
@@ -694,13 +708,13 @@ func (e *TestWorkflowEnvironment) OnNexusOperation(
 	case *nexus.Service:
 		s = stp
 		if e.impl.registry.getNexusService(s.Name) == nil {
-			e.impl.RegisterNexusService(s)
+			e.impl.registry.RegisterNexusService(s)
 		}
 	case string:
 		s = e.impl.registry.getNexusService(stp)
 		if s == nil {
 			s = nexus.NewService(stp)
-			e.impl.RegisterNexusService(s)
+			e.impl.registry.RegisterNexusService(s)
 		}
 	default:
 		panic("service must be *nexus.Service or string")
@@ -896,9 +910,24 @@ func (e *TestWorkflowEnvironment) Now() time.Time {
 	return e.impl.Now()
 }
 
-// SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
-// use options of BackgroundActivityContext, MaxConcurrentSessionExecutionSize, and WorkflowInterceptorChainFactories on the WorkerOptions.
-// Other options are ignored.
+// SetWorkerOptions sets the WorkerOptions used by TestWorkflowEnvironment. Only
+// BackgroundActivityContext, MaxConcurrentSessionExecutionSize,
+// EnableSessionWorker, DeadlockDetectionTimeout, PreferredVersionProvider,
+// Interceptors, and Plugins are used. Other options are ignored.
+//
+// Plugins run the way they do on a real worker, with the environment standing
+// in for one worker: ConfigureWorker runs immediately and panics on error, as
+// it does in worker.New; once plugins are set, SetWorkerOptions may not be
+// called again on that environment. StartWorker
+// runs before and StopWorker after ExecuteWorkflow, and StopWorker also runs
+// if the execution panics. A StartWorker error panics from ExecuteWorkflow.
+// The environment does not wait for in-flight activity goroutines before
+// StopWorker. Registry callbacks set in ConfigureWorker fire for Register*
+// calls made after SetWorkerOptions, not for OnActivity/OnWorkflow mocks or
+// the workflow passed to ExecuteWorkflow. Call SetWorkerOptions after
+// SetStartWorkflowOptions if a plugin reads the task queue. The environment
+// has no client, so plugins set on client.Options do not apply here; set them
+// on WorkerOptions.
 //
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (e *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestWorkflowEnvironment {

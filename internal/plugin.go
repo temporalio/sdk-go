@@ -116,7 +116,10 @@ type WorkerPlugin interface {
 	ConfigureWorker(context.Context, WorkerPluginConfigureWorkerOptions) error
 
 	// StartWorker is called to start a worker. This is called on Worker.Start
-	// or Worker.Run. Implementers should return an error or invoke next.
+	// or Worker.Run. The test environments in the testsuite package also call
+	// it before each ExecuteWorkflow, ExecuteActivity, or ExecuteLocalActivity
+	// when plugins are set via SetWorkerOptions. Implementers should return an
+	// error or invoke next.
 	StartWorker(
 		ctx context.Context,
 		options WorkerPluginStartWorkerOptions,
@@ -127,7 +130,9 @@ type WorkerPlugin interface {
 	// if Worker.Run is interrupted via its interrupt channel. However, if a
 	// fatal worker error occurs during Worker.Run, this may not be called.
 	// Implementers can account for this situation by setting OnFatalError in
-	// the worker options. Implementers should invoke next.
+	// the worker options. The test environments in the testsuite package call
+	// this after each execution call, including when the execution panics.
+	// Implementers should invoke next.
 	StopWorker(
 		ctx context.Context,
 		options WorkerPluginStopWorkerOptions,
@@ -304,13 +309,13 @@ type WorkerPluginReplayWorkflowOptions struct {
 
 	// All fields below are coalesced from overloads. No guarantees are made
 	// about their values.
-	Logger                log.Logger
+	Logger log.Logger
 	// WorkflowServiceClient is the client used to communicate with the Temporal Server.
 	WorkflowServiceClient workflowservice.WorkflowServiceClient
 	// Namespace is the namespace for the replay.
-	Namespace             string
+	Namespace string
 	// OriginalExecution is the original workflow execution being replayed.
-	OriginalExecution     WorkflowExecution
+	OriginalExecution WorkflowExecution
 }
 
 type pluginNamePanicForTypeChecking struct{}
