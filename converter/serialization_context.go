@@ -1,8 +1,11 @@
 package converter
 
-// SerializationContext provides metadata about where serialization is occurring.
-// Implementations include [WorkflowSerializationContext] for workflow-level
-// payloads, and [ActivitySerializationContext] for activity-level payloads.
+// SerializationContext provides metadata about where serialization is occurring,
+// with the concrete type depending on the context:
+//
+//   - [WorkflowSerializationContext] for workflow-level payloads.
+//   - [ActivitySerializationContext] for activity-level payloads.
+//   - [NexusSerializationContext] for Nexus-level payloads.
 type SerializationContext interface {
 	isSerializationContext()
 }
@@ -33,6 +36,33 @@ type ActivitySerializationContext struct {
 }
 
 func (ActivitySerializationContext) isSerializationContext() {}
+
+// NexusSerializationContext is used when serializing Nexus operation payloads.
+// Callers receive it when encoding inputs and decoding results or failures.
+// Handlers receive it when decoding inputs, encoding synchronous results, and
+// encoding failures produced while handling a Nexus task.
+//
+// Operation is the resolved operation name. The context is not propagated to
+// the eventual result of an asynchronous operation. Standalone operation handles
+// use the context of their start request, including when an existing operation is
+// returned, while handles created without starting an operation do not receive it.
+//
+// For failures, callers receive this context in [FailureConverter.FailureToError],
+// while handlers receive it in [FailureConverter.ErrorToFailure]. Implementations
+// must not assume symmetric failure conversion. Context-dependent encodings should
+// be self-describing and support legacy payloads without context.
+//
+// NOTE: Experimental
+type NexusSerializationContext struct {
+	// Endpoint is the Nexus endpoint name.
+	Endpoint string
+	// Service is the Nexus service name.
+	Service string
+	// Operation is the resolved Nexus operation name.
+	Operation string
+}
+
+func (NexusSerializationContext) isSerializationContext() {}
 
 // DataConverterWithSerializationContext is an optional interface that [DataConverter]
 // implementations can implement to receive serialization context.
