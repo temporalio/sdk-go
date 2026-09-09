@@ -3,48 +3,32 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
+	"strconv"
 	"strings"
 )
 
-type Effects interface {
-	// printf prints to stdout.
-	printf(format string, args ...any)
-	// repoRoot locates the SDK repository relative to this command's source file.
-	repoRoot() (string, error)
-	// runCommand executes a command with the given arguments and returns its stdout.
-	runCommand(root, name string, args ...string) (string, error)
-	// mkdirTemp creates a temporary directory and returns its path.
+// effects is a dependency injection object for operations that touch the
+// network and filesystem.
+type effects interface {
+	runCommand(dir, name string, args ...string) (string, error)
 	mkdirTemp(dir, pattern string) (string, error)
-	// readFile reads a file as text.
 	readFile(path string) (string, error)
-	// writeFile writes text to a file.
 	writeFile(path, contents string) error
 }
 
-type RealWorld struct{}
-
-var _ Effects = RealWorld{}
-
-func (RealWorld) printf(format string, args ...any) {
-	fmt.Printf(format, args...)
+type realWorld struct {
+	out io.Writer
 }
 
-func (RealWorld) repoRoot() (string, error) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("could not locate prepare-release source file")
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "../../..")), nil
-}
+var _ effects = realWorld{}
 
-func (eff RealWorld) runCommand(root, name string, args ...string) (string, error) {
-	printDetail(eff, "$ %s", formatCommand(name, args...))
+func (eff realWorld) runCommand(dir, name string, args ...string) (string, error) {
+	printDetail(eff.out, "$ %s", formatCommand(name, args...))
 	cmd := exec.Command(name, args...)
-	cmd.Dir = root
+	cmd.Dir = dir
 	cmd.Stdin = os.Stdin
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -59,11 +43,11 @@ func (eff RealWorld) runCommand(root, name string, args ...string) (string, erro
 	return stdout.String(), nil
 }
 
-func (RealWorld) mkdirTemp(dir, pattern string) (string, error) {
+func (realWorld) mkdirTemp(dir, pattern string) (string, error) {
 	return os.MkdirTemp(dir, pattern)
 }
 
-func (RealWorld) readFile(path string) (string, error) {
+func (realWorld) readFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", path, err)
@@ -71,6 +55,18 @@ func (RealWorld) readFile(path string) (string, error) {
 	return string(data), nil
 }
 
-func (RealWorld) writeFile(path, contents string) error {
+func (realWorld) writeFile(path, contents string) error {
 	return os.WriteFile(path, []byte(contents), 0o644)
+}
+
+// formatCommand renders a command with quoting suitable for logs.
+func formatCommand(name string, args ...string) string {
+	parts := []string{name}
+	for _, arg := range args {
+		if strings.ContainsAny(arg, " \t\n\"'") {
+			arg = strconv.Quote(arg)
+		}
+		parts = append(parts, arg)
+	}
+	return strings.Join(parts, " ")
 }

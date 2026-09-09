@@ -4,55 +4,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
 
-// TEST HARNESS
+const (
+	mockTempDir  = "/tmp/prepare-go-release-123456"
+	mockRepoRoot = "/repo"
+)
 
-type command struct {
-	root string
-	name string
-	args []string
+func newMockApp(a app, handler func(cmd string) (string, error)) (*app, *mockEffects) {
+	eff := &mockEffects{
+		commandHandler: handler,
+		tempDir:        mockTempDir,
+		files:          make(map[string]string),
+	}
+	a.out, a.eff, a.repoRoot = &eff.output, eff, mockRepoRoot
+	return &a, eff
 }
 
-func (cmd command) String() string {
-	return filepath.ToSlash(formatCommand(cmd.name, cmd.args...))
-}
-
-// mockTempDir is the worktree path newMockEffects hands out. Tests that build file
-// paths before creating their mock use it directly.
-const mockTempDir = "/tmp/prepare-go-release-123456"
-
+// mockEffects is a mock implementation of [effects] for testing.
 type mockEffects struct {
-	commandHandler func(command) (string, error)
+	commandHandler func(cmd string) (string, error)
 	commands       strings.Builder
 	output         strings.Builder
-	repoRootPath   string
 	tempDir        string
 	files          map[string]string
 }
 
-func newMockEffects(handler func(command) (string, error)) *mockEffects {
-	return &mockEffects{
-		commandHandler: handler,
-		repoRootPath:   "/repo",
-		tempDir:        mockTempDir,
-		files:          make(map[string]string),
-	}
-}
-
-func (eff *mockEffects) printf(format string, args ...any) {
-	fmt.Fprintf(&eff.output, format, args...)
-}
-
-func (eff *mockEffects) repoRoot() (string, error) {
-	return eff.repoRootPath, nil
-}
+var _ effects = &mockEffects{}
 
 func (eff *mockEffects) runCommand(root, name string, args ...string) (string, error) {
-	cmd := command{root: root, name: name, args: append([]string(nil), args...)}
-	fmt.Fprintf(&eff.commands, "%s: %s\n", root, cmd.String())
+	cmd := filepath.ToSlash(formatCommand(name, args...))
+	fmt.Fprintf(&eff.commands, "%s: %s\n", root, cmd)
+	printDetail(&eff.output, "$ %s", cmd)
 	if eff.commandHandler == nil {
 		return "", nil
 	}
@@ -66,7 +52,7 @@ func (eff *mockEffects) mkdirTemp(string, string) (string, error) {
 func (eff *mockEffects) readFile(path string) (string, error) {
 	contents, ok := eff.files[path]
 	if !ok {
-		return "", os.ErrNotExist
+		return "", fmt.Errorf("read %s: %w", path, os.ErrNotExist)
 	}
 	return contents, nil
 }
@@ -74,6 +60,41 @@ func (eff *mockEffects) readFile(path string) (string, error) {
 func (eff *mockEffects) writeFile(path, contents string) error {
 	eff.files[path] = contents
 	return nil
+}
+
+// contribEnvconfig is the module used by the contrib tests.
+func contribEnvconfig(t *testing.T) releaseTarget {
+	t.Helper()
+	target, err := contribTarget("contrib/envconfig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return target
+}
+
+// mustVersion parses a release version or fails the test.
+func mustVersion(t *testing.T, s string) semver {
+	t.Helper()
+	v, err := parseVersion(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// testRegexp checks that expression matches every input in matches and none in rejects.
+func testRegexp(t *testing.T, expression *regexp.Regexp, matches, rejects []string) {
+	t.Helper()
+	for _, input := range matches {
+		if !expression.MatchString(input) {
+			t.Errorf("expected %q to match %s", input, expression)
+		}
+	}
+	for _, input := range rejects {
+		if expression.MatchString(input) {
+			t.Errorf("expected %q not to match %s", input, expression)
+		}
+	}
 }
 
 // stripIndentation removes surrounding blank lines and indentation shared by every nonblank line.
