@@ -77,7 +77,13 @@ const (
 
 	testTagsContextKey = "temporal-testTags"
 
-	functionLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias."
+	workflowLiteralRegistrationHint =
+		"It looks like you registered a function literal (closure) without giving it an alias. " +
+		"Register it with RegisterWorkflowWithOptions and set Name to a stable, unique name."
+
+	activityLiteralRegistrationHint =
+		"It looks like you registered a function literal (closure) without giving it an alias. " +
+		"Register it with RegisterActivityWithOptions and set Name to a stable, unique name."
 )
 
 type (
@@ -757,8 +763,8 @@ func (r *registry) RegisterWorkflowWithOptions(
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.workflowFuncMap[registerName]; ok {
 			message := fmt.Sprintf("workflow name \"%v\" is already registered", registerName)
-			if mightBeFunctionLiteral(wf) {
-				message += ". " + functionLiteralRegistrationHint + " Try RegisterWorkflowWithOptions instead."
+			if mightBeFunctionLiteral(wf) && len(alias) == 0 {
+				message += ". " + workflowLiteralRegistrationHint
 			}
 			panic(message)
 		}
@@ -843,8 +849,8 @@ func (r *registry) RegisterActivityWithOptions(
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.activityFuncMap[registerName]; ok {
 			message := fmt.Sprintf("activity type \"%v\" is already registered", registerName)
-			if mightBeFunctionLiteral(af) {
-				message += ". " + functionLiteralRegistrationHint + " Try RegisterActivityWithOptions instead."
+			if mightBeFunctionLiteral(af) && len(alias) == 0 {
+				message += ". " + activityLiteralRegistrationHint
 			}
 			panic(message)
 		}
@@ -2757,14 +2763,13 @@ func isError(inType reflect.Type) bool {
 	return inType != nil && inType.Implements(errorElem)
 }
 
-// isFunctionLiteral matches strings that look like they could be the names
-// of function literals in Go 1.27+. Specifically, suffixes of the form funcN or
-// funcN.M for some numbers N and M.
-var functionLiteralNamePattern = regexp.MustCompile(`func\d+(?:\.\d+)?$`)
 
 // mightBeFunctionLiteral returns true if the given function looks like a function literal.
-// False positives are possible.
+// BEWARE: False positives are possible! Normal function declarations might look like literals.
+// BEWARE: False negatives are possible! Future versions of Go may change the naming scheme.
 func mightBeFunctionLiteral(fn any) bool {
+	// Matches suffixes of the form funcN or funcN.M for some numbers N and M.
+	var functionLiteralNamePattern = regexp.MustCompile(`func\d+(?:\.\d+)?$`)
 	fullName := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name()
 	return functionLiteralNamePattern.MatchString(fullName)
 }

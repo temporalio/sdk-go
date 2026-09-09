@@ -3550,6 +3550,8 @@ func TestHistoryFromJSON(t *testing.T) {
 func aliasNameClash1(context.Context) (string, error) { return "func1", nil }
 func aliasNameClash2(context.Context) (string, error) { return "func2", nil }
 
+// Two distinct closures might have the same FuncForPC name, causing a registry
+// collision. This can be confusing, so we try to hint at what went wrong.
 func TestFunctionLiteralDuplicateRegistrationHint(t *testing.T) {
 	t.Run("workflow", func(t *testing.T) {
 		registry := newRegistry()
@@ -3557,7 +3559,7 @@ func TestFunctionLiteralDuplicateRegistrationHint(t *testing.T) {
 		registry.RegisterWorkflow(workflowFn)
 
 		err := runAndCatchPanic(func() { registry.RegisterWorkflow(workflowFn) })
-		require.ErrorContains(t, err, functionLiteralRegistrationHint)
+		require.ErrorContains(t, err, workflowLiteralRegistrationHint)
 	})
 
 	t.Run("activity", func(t *testing.T) {
@@ -3566,15 +3568,17 @@ func TestFunctionLiteralDuplicateRegistrationHint(t *testing.T) {
 		registry.RegisterActivity(activityFn)
 
 		err := runAndCatchPanic(func() { registry.RegisterActivity(activityFn) })
-		require.ErrorContains(t, err, functionLiteralRegistrationHint)
+		require.ErrorContains(t, err, activityLiteralRegistrationHint)
 	})
 
+	// We do expect some false positives and false negatives, but most declared
+	// functions (like the one below) shouldn't print the hint.
 	t.Run("declared function", func(t *testing.T) {
 		registry := newRegistry()
 		registry.RegisterActivity(aliasNameClash1)
 
 		err := runAndCatchPanic(func() { registry.RegisterActivity(aliasNameClash1) })
-		require.NotContains(t, err.Error(), functionLiteralRegistrationHint)
+		require.NotContains(t, err.Error(), activityLiteralRegistrationHint)
 	})
 }
 
