@@ -328,9 +328,10 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.False(bare.HasResult())
 		ts.False(bare.HasHeartbeatDetails())
 		ts.False(bare.HasLastFailure())
+		ts.False(bare.HasOutcomeFailure())
 		ts.ErrorIs(bare.GetInput(nil), temporal.ErrNoData)
 		ts.ErrorIs(bare.GetResult(nil), temporal.ErrNoData)
-		ts.NoError(bare.GetFailure())
+		ts.NoError(bare.GetOutcomeFailure())
 		ts.NoError(bare.GetLastFailure())
 
 		// All four requested. The activity succeeded on its second attempt, so it has a result
@@ -349,7 +350,8 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		var got int
 		ts.NoError(full.GetResult(&got))
 		ts.Equal(2, got)
-		ts.NoError(full.GetFailure())
+		ts.False(full.HasOutcomeFailure())
+		ts.NoError(full.GetOutcomeFailure())
 		ts.True(full.HasHeartbeatDetails())
 		var details string
 		ts.NoError(full.GetHeartbeatDetails(&details))
@@ -373,8 +375,9 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		ts.NoError(err)
 		ts.False(desc.HasResult())
 		ts.ErrorIs(desc.GetResult(nil), temporal.ErrNoData)
+		ts.True(desc.HasOutcomeFailure())
 		var applicationErr *temporal.ApplicationError
-		ts.True(errors.As(desc.GetFailure(), &applicationErr))
+		ts.True(errors.As(desc.GetOutcomeFailure(), &applicationErr))
 		ts.Contains(applicationErr.Error(), "deliberate failure")
 	})
 

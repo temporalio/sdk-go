@@ -237,7 +237,7 @@ type (
 		// See ClientActivityExecutionDescription.GetInput.
 		IncludeInput bool
 		// IncludeOutcome requests the activity's result or failure, if it has closed.
-		// See ClientActivityExecutionDescription.GetResult and GetFailure.
+		// See ClientActivityExecutionDescription.GetResult and GetOutcomeFailure.
 		IncludeOutcome bool
 		// IncludeHeartbeatDetails requests the most recent heartbeat details.
 		// See ClientActivityExecutionDescription.GetHeartbeatDetails.
@@ -551,13 +551,21 @@ func (d *ClientActivityExecutionDescription) GetResult(valuePtr any) error {
 	return d.dataConverter.FromPayloads(outcome.Result, valuePtr)
 }
 
-// GetFailure returns the failure the activity closed with, using the failure converter of the
-// client used to make the Describe call. Returns nil if the activity did not fail, or if the
+// HasOutcomeFailure returns whether the activity closed with a failure and that failure is
+// present. Use GetOutcomeFailure to retrieve it. The outcome is only returned when
+// ClientDescribeActivityOptions.IncludeOutcome was set.
+func (d *ClientActivityExecutionDescription) HasOutcomeFailure() bool {
+	_, ok := d.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Failure)
+	return ok
+}
+
+// GetOutcomeFailure returns the failure the activity closed with, using the failure converter of
+// the client used to make the Describe call. Returns nil if the activity did not fail, or if the
 // outcome was not requested via ClientDescribeActivityOptions.IncludeOutcome.
 //
 // This is the terminal failure of the execution. It differs from GetLastFailure, which reports
 // the failure of the most recent attempt of an activity that may still be retrying.
-func (d *ClientActivityExecutionDescription) GetFailure() error {
+func (d *ClientActivityExecutionDescription) GetOutcomeFailure() error {
 	outcome, ok := d.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Failure)
 	if !ok {
 		return nil
@@ -579,7 +587,7 @@ func (d *ClientActivityExecutionDescription) HasLastFailure() bool {
 // of the client used to make the Describe call. Returns nil if there was no failure, or if it was
 // not requested via ClientDescribeActivityOptions.IncludeLastFailure.
 //
-// For the terminal failure of a closed execution, see GetFailure.
+// For the terminal failure of a closed execution, see GetOutcomeFailure.
 func (d *ClientActivityExecutionDescription) GetLastFailure() error {
 	failure := d.RawResponse.GetInfo().GetLastFailure()
 	if failure == nil {
