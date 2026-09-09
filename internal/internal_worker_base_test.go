@@ -1208,6 +1208,45 @@ func (p *stopAwareShutdownPoller) PollTask() (taskForWorker, error) {
 	return nil, errStop
 }
 
+func (s *PollerAutoscalerSuite) TestScaleUpIsRateLimitedPerPeriod() {
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
+		initialPollerCount: 8,
+		maxPollerCount:     100,
+		minPollerCount:     2,
+	})
+	// Open the throughput gate so it is not what is under test here.
+	ps.newPeriod()
+	ps.scaleUpAllowed.Store(true)
+
+	// Many scale-up hints in one period move the target once. Without the cap, a worker
+	// receiving 20x the tasks of its peers would grow 20x faster and never give the lead back.
+	for range 20 {
+		ps.handleTask(newTestTask(1))
+	}
+	assert.Equal(s.T(), int64(9), ps.target.Load())
+
+	// The budget refills, so sustained load still ramps -- just at a bounded rate.
+	ps.newPeriod()
+	ps.scaleUpAllowed.Store(true)
+	for range 20 {
+		ps.handleTask(newTestTask(1))
+	}
+	assert.Equal(s.T(), int64(10), ps.target.Load())
+}
+
+func (s *PollerAutoscalerSuite) TestScaleDownIsNotRateLimited() {
+	ps := newPollerAutoscaler(pollerAutoscalerOptions{
+		initialPollerCount: 20,
+		maxPollerCount:     100,
+		minPollerCount:     2,
+	})
+	// The cap applies only to scale-ups; shedding pollers must stay responsive.
+	for range 5 {
+		ps.handleTask(newTestTask(-1))
+	}
+	assert.Equal(s.T(), int64(15), ps.target.Load())
+}
+
 func (s *PollerAutoscalerSuite) TestAutoscaleDownOnTimeoutWithCapability() {
 	ps := newPollerAutoscaler(pollerAutoscalerOptions{
 		initialPollerCount:        10,

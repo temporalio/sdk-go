@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -36,6 +38,34 @@ const (
 	lastPollTaskErrSuppressTime     = 1 * time.Minute
 	pollerAutoscalingReportInterval = 100 * time.Millisecond
 )
+
+// pollerScaleUpsPerPeriod bounds how many server-driven scale-up decisions the autoscaler
+// will act on per pollerAutoscalingReportInterval. Scaling hints ride on polled tasks, so a
+// worker holding a large share of a task queue's pollers receives them at a proportionally
+// higher rate; acting on all of them makes the growth rate proportional to the current poller
+// count, which preserves and amplifies any imbalance across a fleet of identical workers.
+// Capping the rate makes growth additive instead, so no worker can outrun its peers purely by
+// virtue of already being larger. Var rather than const so experiments can retune it.
+var pollerScaleUpsPerPeriod int64 = 1
+
+// pollerScaleUpPeriodsPerToken spreads one token across N report periods, expressing
+// cap rates below one-per-period (10/sec). Needed to validate the cap at reduced scale:
+// it only bites when its rate sits below the rate hints actually arrive at, and a
+// single-node bench delivers far fewer hints than a real fleet. Both are overridable by
+// env var so one binary can sweep the ratio without a rebuild.
+var pollerScaleUpPeriodsPerToken int64 = 1
+
+func init() {
+	envInt := func(name string, dst *int64) {
+		if v := os.Getenv(name); v != "" {
+			if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+				*dst = n
+			}
+		}
+	}
+	envInt("TEMPORAL_POLLER_SCALE_UPS_PER_PERIOD", &pollerScaleUpsPerPeriod)
+	envInt("TEMPORAL_POLLER_SCALE_UP_PERIODS_PER_TOKEN", &pollerScaleUpPeriodsPerToken)
+}
 
 var (
 	pollOperationRetryPolicy         = createPollRetryPolicy()
@@ -297,6 +327,10 @@ type (
 		ingestedThisPeriod        atomic.Int64
 		ingestedLastPeriod        atomic.Int64
 		scaleUpAllowed            atomic.Bool
+		// upBudgetThisPeriod is the number of server-driven scale-ups still permitted in the
+		// current report period. Refilled by newPeriod.
+		upBudgetThisPeriod atomic.Int64
+		periodCount        atomic.Int64
 	}
 
 	barrier chan struct{}
@@ -979,6 +1013,7 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 		scaleUpAllowedGauge:       base.Gauge(metrics.PollerScaleUpAllowed),
 		serverSupportsAutoscaling: serverSupportsAutoscaling,
 	}
+	psr.upBudgetThisPeriod.Store(pollerScaleUpsPerPeriod)
 	psr.target.Store(int64(options.initialPollerCount))
 	psr.targetGauge.Update(float64(options.initialPollerCount))
 	return psr
@@ -988,6 +1023,7 @@ func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {
 var pollerScaleReasons = []string{
 	pollerScaleServerUp,
 	pollerScaleServerUpSuppressed,
+	pollerScaleServerUpRateLimited,
 	pollerScaleServerDown,
 	pollerScaleEmptyPollDown,
 	pollerScaleReHalve,
@@ -997,14 +1033,15 @@ var pollerScaleReasons = []string{
 }
 
 const (
-	pollerScaleServerUp           = "server_up"
-	pollerScaleServerUpSuppressed = "server_up_suppressed"
-	pollerScaleServerDown         = "server_down"
-	pollerScaleEmptyPollDown      = "empty_poll_down"
-	pollerScaleReHalve            = "re_halve"
-	pollerScaleErrorDown          = "error_down"
-	pollerScaleClampMin           = "clamp_min"
-	pollerScaleClampMax           = "clamp_max"
+	pollerScaleServerUp            = "server_up"
+	pollerScaleServerUpSuppressed  = "server_up_suppressed"
+	pollerScaleServerUpRateLimited = "server_up_rate_limited"
+	pollerScaleServerDown          = "server_down"
+	pollerScaleEmptyPollDown       = "empty_poll_down"
+	pollerScaleReHalve             = "re_halve"
+	pollerScaleErrorDown           = "error_down"
+	pollerScaleClampMin            = "clamp_min"
+	pollerScaleClampMax            = "clamp_max"
 )
 
 // recordDecision increments the scale-decision counter for the given reason. Nil-safe
@@ -1027,15 +1064,19 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 		prh.everSawScalingDecision.Store(true)
 		ds := sd.pollRequestDeltaSuggestion
 		if ds > 0 {
-			if prh.scaleUpAllowed.Load() {
+			if !prh.scaleUpAllowed.Load() {
+				// Server asked to scale up but the throughput gate is closed, so the
+				// +1 is dropped. No target change — recorded for attribution.
+				prh.recordDecision(pollerScaleServerUpSuppressed)
+			} else if !prh.claimUpBudget() {
+				// Already scaled up as much as this period allows. Dropping the hint keeps
+				// our growth rate independent of how many tasks we happen to receive.
+				prh.recordDecision(pollerScaleServerUpRateLimited)
+			} else {
 				prh.recordDecision(pollerScaleServerUp)
 				prh.updateTarget(func(target int64) int64 {
 					return target + int64(ds)
 				})
-			} else {
-				// Server asked to scale up but the throughput gate is closed, so the
-				// +1 is dropped. No target change — recorded for attribution.
-				prh.recordDecision(pollerScaleServerUpSuppressed)
 			}
 		} else if ds < 0 {
 			prh.recordDecision(pollerScaleServerDown)
@@ -1053,6 +1094,13 @@ func (prh *pollerAutoscaler) handleTask(task taskForWorker) {
 			return target - 1
 		})
 	}
+}
+
+// claimUpBudget consumes one scale-up token for the current period, reporting whether one
+// was available. Concurrent callers can drive the counter below zero, which is harmless: it is
+// overwritten on the next refill, and every caller that sees a negative result is denied.
+func (prh *pollerAutoscaler) claimUpBudget() bool {
+	return prh.upBudgetThisPeriod.Add(-1) >= 0
 }
 
 func (prh *pollerAutoscaler) updateTarget(f func(int64) int64) {
@@ -1124,6 +1172,11 @@ func (prh *pollerAutoscaler) run(stopCh <-chan struct{}) {
 }
 
 func (prh *pollerAutoscaler) newPeriod() {
+	// At the default of one period per token this refills every tick; larger values
+	// leave the budget empty in between, giving a cap rate below one per period.
+	if prh.periodCount.Add(1)%pollerScaleUpPeriodsPerToken == 0 {
+		prh.upBudgetThisPeriod.Store(pollerScaleUpsPerPeriod)
+	}
 	ingestedThisPeriod := prh.ingestedThisPeriod.Swap(0)
 	ingestedLastPeriod := prh.ingestedLastPeriod.Swap(ingestedThisPeriod)
 	allowed := float64(ingestedThisPeriod) >= float64(ingestedLastPeriod)*1.1
