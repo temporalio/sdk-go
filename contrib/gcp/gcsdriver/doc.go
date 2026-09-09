@@ -1,7 +1,7 @@
 // Package gcsdriver provides a GCS-backed [go.temporal.io/sdk/converter.StorageDriver]
 // for the Temporal Go SDK's external payload storage system. Large payloads are
-// offloaded to Google Cloud Storage using content-addressable keys derived from their
-// SHA-256 hash.
+// offloaded to Google Cloud Storage using content-addressable object names derived
+// from their SHA-256 hash.
 //
 // # Usage
 //

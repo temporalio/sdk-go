@@ -1922,7 +1922,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Header:               contErr.Header,
 			Memo:                 workflowContext.workflowInfo.Memo,
 			SearchAttributes:     sanitizeSearchAttributesForStart(workflowContext.workflowInfo.SearchAttributes),
-			RetryPolicy:          convertToPBRetryPolicy(retryPolicy),
+			RetryPolicy:          ConvertToPBRetryPolicy(retryPolicy),
 			//lint:ignore SA1019 preserve deprecated build-ID versioning behavior
 			InheritBuildId:            useCompat,
 			InitialVersioningBehavior: continueAsNewVersioningBehaviorToProto(contErr.InitialVersioningBehavior),

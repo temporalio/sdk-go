@@ -248,7 +248,7 @@ func defaultUpdateHandler(
 	callbacks UpdateCallbacks,
 	scheduler UpdateScheduler,
 ) {
-	env := getWorkflowEnvironment(rootCtx)
+	env := GetWorkflowEnvironment(rootCtx)
 	ctx, err := workflowContextWithHeaderPropagated(rootCtx, header, env.GetContextPropagators())
 	if err != nil {
 		callbacks.Reject(err)

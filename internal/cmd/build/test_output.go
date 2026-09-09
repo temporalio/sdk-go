@@ -316,8 +316,16 @@ func writeTestRerunCommands(sb *strings.Builder, rows []testFailureSummaryRow, r
 
 func writeCompleteTestLogLocations(sb *strings.Builder, output testOutput) {
 	startTestReportSection(sb, "Complete logs")
-	fmt.Fprintf(sb, "- Go test: %s\n", output.logPath)
-	fmt.Fprintf(sb, "- Go test JSON: %s\n", output.jsonLogPath)
+	logPath := output.finalLogPath
+	if logPath == "" {
+		logPath = output.logPath
+	}
+	jsonLogPath := output.finalJSONPath
+	if jsonLogPath == "" {
+		jsonLogPath = output.jsonLogPath
+	}
+	fmt.Fprintf(sb, "- Go test: %s\n", logPath)
+	fmt.Fprintf(sb, "- Go test JSON: %s\n", jsonLogPath)
 	if output.combinedLogPath != "" {
 		fmt.Fprintf(sb, "- Combined Go and dev server: %s\n", output.combinedLogPath)
 	}

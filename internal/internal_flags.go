@@ -38,7 +38,10 @@ const (
 	// we will fallback onto the default data converter. If the default DC fails, the user DC error will be returned.
 	SDKFlagMemoUserDCEncode               = 7
 	SDKFlagWorkflowNewChannelLostMessages = 8
-	SDKFlagUnknown                        = math.MaxUint32
+	// SDKFlagOrderedChildCancel preserves child-context creation order when
+	// propagating cancellation.
+	SDKFlagOrderedChildCancel = 9
+	SDKFlagUnknown            = math.MaxUint32
 )
 
 // sdkFlagsAllowed holds the enabled state for each flag.
@@ -55,6 +58,7 @@ var sdkFlagsAllowed = map[sdkFlag]bool{
 	SDKFlagCancelAwaitTimerOnCondition:    false,
 	SDKFlagMemoUserDCEncode:               true,
 	SDKFlagWorkflowNewChannelLostMessages: true,
+	SDKFlagOrderedChildCancel:             false,
 }
 
 func init() {

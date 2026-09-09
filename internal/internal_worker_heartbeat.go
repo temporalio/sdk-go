@@ -30,21 +30,28 @@ type heartbeatManager struct {
 	client   *WorkflowClient
 	interval time.Duration
 	logger   log.Logger
+	// environmentInfo is reported once per worker, or nil when reporting is disabled.
+	environmentInfo *workerpb.EnvironmentInfo
 
 	workersMutex sync.Mutex
 	workers      map[string]*sharedNamespaceWorker // namespace -> worker
 }
 
 // newHeartbeatManager creates a new heartbeatManager.
-func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger) *heartbeatManager {
+func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger, disableEnvironmentInfo bool) *heartbeatManager {
 	if logger == nil {
 		logger = ilog.NewDefaultLogger()
 	}
+	var environmentInfo *workerpb.EnvironmentInfo
+	if !disableEnvironmentInfo {
+		environmentInfo = detectEnvironmentInfo()
+	}
 	return &heartbeatManager{
-		client:   client,
-		interval: interval,
-		logger:   logger,
-		workers:  make(map[string]*sharedNamespaceWorker),
+		client:          client,
+		interval:        interval,
+		logger:          logger,
+		environmentInfo: environmentInfo,
+		workers:         make(map[string]*sharedNamespaceWorker),
 	}
 }
 
@@ -73,6 +80,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		workerCtx:                     heartbeatCtx,
 		heartbeatCancel:               heartbeatCancel,
 		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
+		heartbeatSuccessCallbacks:     make(map[string]func()),
 		activityCancellationCallbacks: newActivityCancellationCallbacks(),
 		workerControlTaskQueue:        controlTaskQueue,
 		workerInstanceKey:             uuid.NewString(),
@@ -108,6 +116,7 @@ func (m *heartbeatManager) registerWorker(
 
 	hw.callbacksMutex.Lock()
 	hw.callbacks[worker.workerInstanceKey] = worker.heartbeatCallback
+	hw.heartbeatSuccessCallbacks[worker.workerInstanceKey] = worker.heartbeatSuccess
 	hw.callbacksMutex.Unlock()
 
 	if hw.started.CompareAndSwap(false, true) {
@@ -132,6 +141,7 @@ func (m *heartbeatManager) unregisterWorker(worker *AggregatedWorker) {
 
 	hw.callbacksMutex.Lock()
 	delete(hw.callbacks, worker.workerInstanceKey)
+	delete(hw.heartbeatSuccessCallbacks, worker.workerInstanceKey)
 	remaining := len(hw.callbacks)
 	hw.callbacksMutex.Unlock()
 
@@ -154,6 +164,9 @@ type sharedNamespaceWorker struct {
 	// callbacksMutex should only be unlocked under
 	callbacksMutex sync.RWMutex
 	callbacks      map[string]func() *workerpb.WorkerHeartbeat // workerInstanceKey -> callback
+	// heartbeatSuccessCallbacks are invoked after the server accepts a heartbeat batch that
+	// included the corresponding worker. Guarded by callbacksMutex.
+	heartbeatSuccessCallbacks map[string]func() // workerInstanceKey -> callback
 
 	activityCancellationCallbacks *activityCancellationCallbacks
 	workerCommandsSupported       bool
@@ -209,9 +222,13 @@ func (hw *sharedNamespaceWorker) run() {
 func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 	hw.callbacksMutex.RLock()
 	callbacks := make([]func() *workerpb.WorkerHeartbeat, 0, len(hw.callbacks))
-	for _, cb := range hw.callbacks {
+	successCallbacks := make([]func(), 0, len(hw.callbacks))
+	for key, cb := range hw.callbacks {
 		if cb != nil {
 			callbacks = append(callbacks, cb)
+			if onSuccess := hw.heartbeatSuccessCallbacks[key]; onSuccess != nil {
+				successCallbacks = append(successCallbacks, onSuccess)
+			}
 		}
 	}
 	hw.callbacksMutex.RUnlock()
@@ -222,8 +239,7 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 
 	heartbeats := make([]*workerpb.WorkerHeartbeat, 0, len(callbacks))
 	for _, cb := range callbacks {
-		hb := cb()
-		heartbeats = append(heartbeats, hb)
+		heartbeats = append(heartbeats, cb())
 	}
 
 	_, err := hw.client.recordWorkerHeartbeat(hw.workerCtx, &workflowservice.RecordWorkerHeartbeatRequest{
@@ -239,6 +255,11 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 		}
 		// For other errors, log and continue heartbeating
 		hw.logger.Warn("Failed to send heartbeat", "Error", err)
+		return nil
+	}
+
+	for _, onSuccess := range successCallbacks {
+		onSuccess()
 	}
 	return nil
 }

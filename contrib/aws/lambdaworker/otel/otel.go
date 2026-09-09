@@ -6,12 +6,15 @@
 // generator, suitable for use with the AWS Distro for OpenTelemetry (ADOT) Lambda layer.
 //
 // Use [ApplyDefaultsWithProviders] if you need to supply your own MeterProvider and TracerProvider.
+//
+// The provider-neutral OpenTelemetry glue used here lives in
+// go.temporal.io/sdk/contrib/opentelemetry/otlpworker; this package layers the
+// AWS Lambda specific policy (X-Ray trace IDs, AWS_LAMBDA_FUNCTION_NAME service
+// resolution, host:port insecure OTLP endpoint, per-invocation flushing) on top.
 package otel
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"time"
 
@@ -19,12 +22,10 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	otelsdkmetric "go.opentelemetry.io/otel/sdk/metric"
-	"go.opentelemetry.io/otel/sdk/resource"
 	otelsdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 
 	"go.temporal.io/sdk/client"
-	temporalotel "go.temporal.io/sdk/contrib/opentelemetry"
+	"go.temporal.io/sdk/contrib/opentelemetry/otlpworker"
 )
 
 // ShutdownRegistrar accepts a function to be called at the end of each Lambda invocation.
@@ -77,76 +78,38 @@ type Options struct {
 func ApplyDefaults(
 	ctx ShutdownRegistrar, opts *client.Options, options Options,
 ) error {
-	if options.MetricExportInterval == 0 {
-		options.MetricExportInterval = 10 * time.Second
+	metricExportInterval := options.MetricExportInterval
+	if metricExportInterval == 0 {
+		metricExportInterval = 10 * time.Second
 	}
-	if options.ServiceName == "" {
-		options.ServiceName = os.Getenv("OTEL_SERVICE_NAME")
-	}
-	if options.ServiceName == "" {
-		options.ServiceName = os.Getenv("AWS_LAMBDA_FUNCTION_NAME")
-	}
-	if options.ServiceName == "" {
-		options.ServiceName = "temporal-lambda-worker"
-	}
-	if options.CollectorEndpoint == "" {
-		options.CollectorEndpoint = os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-	}
+	serviceName := resolveServiceName(options)
+	endpoint := resolveEndpoint(options)
 
-	grpcOpts := append(
-		[]otlpmetricgrpc.Option{otlpmetricgrpc.WithInsecure()}, options.MetricExporterOptions...,
-	)
-	traceGrpcOpts := append(
-		[]otlptracegrpc.Option{otlptracegrpc.WithInsecure()}, options.TraceExporterOptions...,
-	)
-	if options.CollectorEndpoint != "" {
-		grpcOpts = append(grpcOpts, otlpmetricgrpc.WithEndpoint(options.CollectorEndpoint))
-		traceGrpcOpts = append(traceGrpcOpts, otlptracegrpc.WithEndpoint(options.CollectorEndpoint))
-	}
-
-	// Build a shared resource for both providers so that metrics and traces
-	// carry the same service.name, enabling correlation in backends.
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(semconv.SchemaURL,
-			semconv.ServiceName(options.ServiceName)),
-	)
+	// Build plugin-owned providers. otlpworker builds a shared resource so metrics and traces
+	// carry the same service.name, uses an insecure host:port OTLP endpoint, an X-Ray compatible
+	// trace ID generator, a metrics PeriodicReader (no batch), and a trace batch processor. If
+	// trace-exporter creation fails, it shuts the meter provider down before returning.
+	meterProvider, tracerProvider, err := otlpworker.NewProviders(context.Background(), otlpworker.Config{
+		ServiceName:           serviceName,
+		Endpoint:              endpoint,
+		EndpointMode:          otlpworker.EndpointHostPort,
+		Insecure:              true,
+		MetricExportInterval:  metricExportInterval,
+		MetricExporterOptions: options.MetricExporterOptions,
+		TraceExporterOptions:  options.TraceExporterOptions,
+		TraceIDGenerator:      xray.NewIDGenerator(),
+	})
 	if err != nil {
-		return fmt.Errorf("creating OTel resource: %w", err)
+		return err
 	}
 
-	metricExporter, err := otlpmetricgrpc.New(context.Background(), grpcOpts...)
-	if err != nil {
-		return fmt.Errorf("creating OTLP metric exporter: %w", err)
-	}
-	meterProvider := otelsdkmetric.NewMeterProvider(
-		otelsdkmetric.WithReader(otelsdkmetric.NewPeriodicReader(metricExporter,
-			otelsdkmetric.WithInterval(options.MetricExportInterval))),
-		otelsdkmetric.WithResource(res))
-
-	// If anything below fails, shut down the meterProvider to stop its
-	// periodic reader goroutine and release the underlying gRPC connection.
+	// If ApplyDefaultsWithProviders fails, shut down both providers to stop the periodic reader
+	// goroutine and release the underlying gRPC connections. Use Background — the invocation
+	// context may already be cancelled.
 	success := false
 	defer func() {
 		if !success {
-			// Use Background — the invocation context may already be cancelled.
-			_ = meterProvider.Shutdown(context.Background())
-		}
-	}()
-
-	traceExporter, err := otlptracegrpc.New(context.Background(), traceGrpcOpts...)
-	if err != nil {
-		return fmt.Errorf("creating OTLP trace exporter: %w", err)
-	}
-	tracerProvider := otelsdktrace.NewTracerProvider(
-		otelsdktrace.WithBatcher(traceExporter),
-		otelsdktrace.WithIDGenerator(xray.NewIDGenerator()),
-		otelsdktrace.WithResource(res))
-
-	// If ApplyDefaultsWithProviders fails, shut down the tracerProvider too.
-	defer func() {
-		if !success {
-			_ = tracerProvider.Shutdown(context.Background())
+			_ = otlpworker.Shutdown(context.Background(), meterProvider, tracerProvider)
 		}
 	}()
 
@@ -176,10 +139,7 @@ func ApplyDefaultsWithProviders(
 		return err
 	}
 	ctx.OnShutdown(func(flushCtx context.Context) error {
-		return errors.Join(
-			meterProvider.ForceFlush(flushCtx),
-			tracerProvider.ForceFlush(flushCtx),
-		)
+		return otlpworker.ForceFlush(flushCtx, meterProvider, tracerProvider)
 	})
 	return nil
 }
@@ -187,20 +147,34 @@ func ApplyDefaultsWithProviders(
 // ApplyMetrics configures only OTel metrics (no tracing) on the given client
 // options.
 func ApplyMetrics(opts *client.Options, meterProvider *otelsdkmetric.MeterProvider) {
-	opts.MetricsHandler = temporalotel.NewMetricsHandler(temporalotel.MetricsHandlerOptions{
-		Meter: meterProvider.Meter("temporal-sdk"),
-	})
+	otlpworker.ApplyMetrics(opts, meterProvider)
 }
 
 // ApplyTracing configures only OTel tracing (no metrics) on the given client
 // options.
 func ApplyTracing(opts *client.Options, tracerProvider *otelsdktrace.TracerProvider) error {
-	tracingInterceptor, err := temporalotel.NewTracingInterceptor(temporalotel.TracerOptions{
-		Tracer: tracerProvider.Tracer("temporal-sdk"),
-	})
-	if err != nil {
-		return err
-	}
-	opts.Interceptors = append(opts.Interceptors, tracingInterceptor)
-	return nil
+	return otlpworker.ApplyTracing(opts, tracerProvider)
+}
+
+// resolveServiceName resolves the OTel service name from Options and the
+// environment: explicit Options.ServiceName, then OTEL_SERVICE_NAME, then
+// AWS_LAMBDA_FUNCTION_NAME, then "temporal-lambda-worker".
+func resolveServiceName(options Options) string {
+	return otlpworker.FirstNonEmptyEnv(
+		options.ServiceName, os.Getenv,
+		[]string{"OTEL_SERVICE_NAME", "AWS_LAMBDA_FUNCTION_NAME"},
+		"temporal-lambda-worker",
+	)
+}
+
+// resolveEndpoint resolves the OTLP collector endpoint from Options and the
+// environment: explicit Options.CollectorEndpoint, then OTEL_EXPORTER_OTLP_ENDPOINT,
+// then "" — an empty endpoint leaves the OTLP exporter default (localhost:4317)
+// in place.
+func resolveEndpoint(options Options) string {
+	return otlpworker.FirstNonEmptyEnv(
+		options.CollectorEndpoint, os.Getenv,
+		[]string{"OTEL_EXPORTER_OTLP_ENDPOINT"},
+		"",
+	)
 }

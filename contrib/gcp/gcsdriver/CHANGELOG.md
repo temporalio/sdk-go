@@ -15,6 +15,14 @@ or Security.
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
 
+### Changed
+
+- Claim metadata now identifies the stored object with `object_name`. The legacy
+  `key` field is still written and still read, so claims resolve in both
+  directions while a deployment runs mixed driver versions. Support for `key`
+  will be removed when the driver reaches GA.
+- Store and retrieve error messages now report `object_name=` instead of `key=`.
+
 ## [0.1.0] - 2026-08-13
 
 ### Added

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/internal/common/retry"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/wrapperspb"
@@ -120,8 +121,9 @@ type (
 
 		pendingRegularPollCount int
 		pendingStickyPollCount  int
-		stickyBacklog           int64
+		mixedStickyBacklog      int64
 		requestLock             sync.Mutex
+		autoscalingBalancer     *workflowAutoscalingBalancer
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
 
@@ -151,7 +153,7 @@ type (
 
 		pendingRegularPollCount int
 		pendingStickyPollCount  int
-		stickyBacklog           int64
+		mixedStickyBacklog      int64
 		stickyCacheSize         int
 		eagerActivityExecutor   *eagerActivityExecutor
 
@@ -161,6 +163,8 @@ type (
 		inboundPayloadVisitor     PayloadVisitor
 		outboundPayloadVisitor    PayloadVisitor
 		payloadVisitorConcurrency int
+
+		workflowTaskCompletionPagination *workflowTaskCompletionPaginationConfig
 	}
 
 	// activityTaskPoller implements polling/processing a workflow task
@@ -225,8 +229,13 @@ type (
 	}
 
 	localActivityTunnel struct {
-		taskCh   chan *localActivityTask
-		resultCh chan eagerOrPolledTask
+		// Task submission cannot wait for execution capacity because the submitting
+		// workflow task is also responsible for receiving local activity results.
+		taskQueueMu   sync.Mutex
+		taskQueueHead *localActivityTask
+		taskQueueTail *localActivityTask
+		taskReadyCh   chan struct{}
+		resultCh      chan eagerOrPolledTask
 		// stopCh is a read-only view of workflowWorker.localActivityStopC.
 		// It is closed by workflowWorker.Stop() after the workflow worker stops,
 		// causing tunnel sends/receives to stop accepting local activity work.
@@ -259,28 +268,89 @@ func (npm *numPollerMetric) decrement() {
 
 func newLocalActivityTunnel(stopCh <-chan struct{}) *localActivityTunnel {
 	return &localActivityTunnel{
-		taskCh:   make(chan *localActivityTask, 100000),
-		resultCh: make(chan eagerOrPolledTask),
-		stopCh:   stopCh,
+		taskReadyCh: make(chan struct{}, 1),
+		resultCh:    make(chan eagerOrPolledTask),
+		stopCh:      stopCh,
 	}
 }
 
 func (lat *localActivityTunnel) getTask() *localActivityTask {
-	select {
-	case task := <-lat.taskCh:
-		return task
-	case <-lat.stopCh:
-		return nil
+	for {
+		select {
+		case <-lat.stopCh:
+			lat.clearTasks()
+			return nil
+		default:
+		}
+
+		lat.taskQueueMu.Lock()
+		if lat.taskQueueHead != nil {
+			task := lat.taskQueueHead
+			lat.taskQueueHead = task.nextQueuedTask
+			task.nextQueuedTask = nil
+			hasMore := lat.taskQueueHead != nil
+			if !hasMore {
+				lat.taskQueueTail = nil
+			}
+			lat.taskQueueMu.Unlock()
+			if hasMore {
+				lat.notifyTaskReady()
+			}
+			return task
+		}
+		lat.taskQueueMu.Unlock()
+
+		select {
+		case <-lat.taskReadyCh:
+		case <-lat.stopCh:
+			lat.clearTasks()
+			return nil
+		}
 	}
 }
 
 func (lat *localActivityTunnel) sendTask(task *localActivityTask) bool {
 	select {
-	case lat.taskCh <- task:
-		return true
 	case <-lat.stopCh:
 		return false
+	default:
 	}
+
+	lat.taskQueueMu.Lock()
+	select {
+	case <-lat.stopCh:
+		lat.taskQueueMu.Unlock()
+		return false
+	default:
+	}
+	if lat.taskQueueTail == nil {
+		lat.taskQueueHead = task
+	} else {
+		lat.taskQueueTail.nextQueuedTask = task
+	}
+	lat.taskQueueTail = task
+	lat.taskQueueMu.Unlock()
+
+	lat.notifyTaskReady()
+	return true
+}
+
+func (lat *localActivityTunnel) notifyTaskReady() {
+	select {
+	case lat.taskReadyCh <- struct{}{}:
+	default:
+	}
+}
+
+func (lat *localActivityTunnel) clearTasks() {
+	lat.taskQueueMu.Lock()
+	for lat.taskQueueHead != nil {
+		task := lat.taskQueueHead
+		lat.taskQueueHead = task.nextQueuedTask
+		task.nextQueuedTask = nil
+	}
+	lat.taskQueueTail = nil
+	lat.taskQueueMu.Unlock()
 }
 
 func isClientSideError(err error) bool {
@@ -374,24 +444,25 @@ func newWorkflowTaskProcessor(
 			workerControlTaskQueue:       params.workerControlTaskQueue,
 			workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		},
-		service:                      service,
-		namespace:                    params.Namespace,
-		taskQueueName:                params.TaskQueue,
-		identity:                     params.Identity,
-		taskHandler:                  taskHandler,
-		contextManager:               contextManager,
-		logger:                       params.Logger,
-		dataConverter:                params.DataConverter,
-		failureConverter:             params.FailureConverter,
-		stickyUUID:                   stickyUUID,
-		StickyScheduleToStartTimeout: params.StickyScheduleToStartTimeout,
-		stickyCacheSize:              params.cache.MaxWorkflowCacheSize(),
-		eagerActivityExecutor:        params.eagerActivityExecutor,
-		numNormalPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
-		numStickyPollerMetric:        newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
-		inboundPayloadVisitor:        params.inboundPayloadVisitor,
-		outboundPayloadVisitor:       params.outboundPayloadVisitor,
-		payloadVisitorConcurrency:    params.payloadVisitorConcurrency,
+		service:                          service,
+		namespace:                        params.Namespace,
+		taskQueueName:                    params.TaskQueue,
+		identity:                         params.Identity,
+		taskHandler:                      taskHandler,
+		contextManager:                   contextManager,
+		logger:                           params.Logger,
+		dataConverter:                    params.DataConverter,
+		failureConverter:                 params.FailureConverter,
+		stickyUUID:                       stickyUUID,
+		StickyScheduleToStartTimeout:     params.StickyScheduleToStartTimeout,
+		stickyCacheSize:                  params.cache.MaxWorkflowCacheSize(),
+		eagerActivityExecutor:            params.eagerActivityExecutor,
+		numNormalPollerMetric:            newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowTask),
+		numStickyPollerMetric:            newNumPollerMetric(params.MetricsHandler, metrics.PollerTypeWorkflowStickyTask),
+		inboundPayloadVisitor:            params.inboundPayloadVisitor,
+		outboundPayloadVisitor:           params.outboundPayloadVisitor,
+		payloadVisitorConcurrency:        params.payloadVisitorConcurrency,
+		workflowTaskCompletionPagination: params.workflowTaskCompletionPagination,
 	}
 }
 
@@ -406,7 +477,7 @@ func (wtp *workflowTaskPoller) PollTask() (taskForWorker, error) {
 	return workflowTask, nil
 }
 
-func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) taskPoller {
+func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) *workflowTaskPoller {
 	return &workflowTaskPoller{
 		basePoller:                   wtp.basePoller,
 		mode:                         mode,
@@ -423,7 +494,7 @@ func (wtp *workflowTaskProcessor) createPoller(mode workflowTaskPollerMode) task
 		StickyScheduleToStartTimeout: wtp.StickyScheduleToStartTimeout,
 		pendingRegularPollCount:      wtp.pendingRegularPollCount,
 		pendingStickyPollCount:       wtp.pendingStickyPollCount,
-		stickyBacklog:                wtp.stickyBacklog,
+		mixedStickyBacklog:           wtp.mixedStickyBacklog,
 		stickyCacheSize:              wtp.stickyCacheSize,
 		eagerActivityExecutor:        wtp.eagerActivityExecutor,
 		numNormalPollerMetric:        wtp.numNormalPollerMetric,
@@ -586,12 +657,11 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 			tagAttempt, task.Attempt,
 			tagError, taskErr)
 		emitFailMetric = true
-		failWorkflowTask := wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)
 		failureReason = metrics.FailureReasonWorkflowError
-		if failWorkflowTask.Cause == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
+		if workflowTaskFailureCause(taskErr) == enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR {
 			failureReason = metrics.FailureReasonNonDeterminismError
 		}
-		taskCompletion = &workflowTaskCompletion{rawRequest: failWorkflowTask}
+		taskCompletion = wtp.taskFailureCompletion(task, taskErr)
 	}
 
 	uploadPayloadMetrics := &workflowTaskStorageMetrics{}
@@ -608,7 +678,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 	}
 	if taskErr = visitProtoPayloads(ctx, outboundPayloadVisitor, taskCompletion.rawRequest, wtp.payloadVisitorConcurrency); taskErr != nil {
 		// The outbound visitor failed (e.g. storage driver error or panic). We
-		// cannot send the original response, so fall back to an explicit WFT
+		// cannot send the original response, so fall back to an explicit
 		// failure so the server records the error immediately.
 		keyvals := []any{
 			tagWorkflowType, task.WorkflowType.GetName(),
@@ -628,7 +698,39 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		if errors.As(taskErr, new(payloadSizeError)) {
 			failureReason = metrics.FailureReasonPayloadsTooLarge
 		}
-		taskCompletion = &workflowTaskCompletion{rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, taskErr)}
+		taskCompletion = wtp.taskFailureCompletion(task, taskErr)
+	}
+
+	// The namespace limit governs the server's recombined page buffer, so it only applies to a
+	// completion large enough to be paginated; a completion that fits in a single request is never
+	// buffered and is left for the server to accept. A paginated completion whose buffered command
+	// bytes would exceed the limit is rejected and the workflow terminated by the server, so fail it
+	// proactively rather than sending doomed pages. Only buffered command bytes count toward the
+	// limit, not messages or metadata.
+	if req, ok := taskCompletion.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest); ok &&
+		wtp.workflowTaskCompletionPagination != nil &&
+		wtp.workflowTaskCompletionPagination.enabled.Load() &&
+		proto.Size(req) > maxWorkflowTaskCompletionPageBytes {
+		if limit := wtp.workflowTaskCompletionPagination.sizeLimit.Load(); limit > 0 {
+			var commandBytes int64
+			for _, command := range req.Commands {
+				commandBytes += int64(proto.Size(command))
+			}
+			if commandBytes > limit {
+				taskErr := fmt.Errorf("workflow task completion command size %d exceeds the namespace limit of %d bytes", commandBytes, limit)
+				wtp.logger.Warn("Workflow task completion exceeds namespace size limit.",
+					tagWorkflowType, task.WorkflowType.GetName(),
+					tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+					tagRunID, task.WorkflowExecution.GetRunId(),
+					tagAttempt, task.Attempt,
+					tagError, taskErr)
+				emitFailMetric = true
+				failureReason = metrics.FailureReasonRequestTooLarge
+				taskCompletion = &workflowTaskCompletion{
+					rawRequest: wtp.errorToFailWorkflowTaskWithCause(task.TaskToken, taskErr, enumspb.WORKFLOW_TASK_FAILED_CAUSE_REQUEST_TOO_LARGE),
+				}
+			}
+		}
 	}
 
 	taskDuration := time.Since(startTime)
@@ -649,7 +751,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
 			tagPayloadDownloadCount, downloadPayloadMetrics.payloadCount,
 			tagPayloadDownloadSize, downloadPayloadMetrics.totalSize,
-			tagPayloadDownloadDuration, downloadPayloadMetrics.totalDuration,
+			tagPayloadDownloadDuration, downloadPayloadMetrics.TotalDuration(),
 			tagPayloadDownloadDrivers, downloadPayloadMetrics.GetDriverNames(),
 		)
 	}
@@ -657,7 +759,7 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 		loggerDurationKeyVals = append(loggerDurationKeyVals,
 			tagPayloadUploadCount, uploadPayloadMetrics.payloadCount,
 			tagPayloadUploadSize, uploadPayloadMetrics.totalSize,
-			tagPayloadUploadDuration, uploadPayloadMetrics.totalDuration,
+			tagPayloadUploadDuration, uploadPayloadMetrics.TotalDuration(),
 			tagPayloadUploadDrivers, uploadPayloadMetrics.GetDriverNames(),
 		)
 	}
@@ -701,10 +803,7 @@ func (wtp *workflowTaskProcessor) sendTaskCompletedRequest(
 ) (response *workflowservice.RespondWorkflowTaskCompletedResponse, err error) {
 	ctx := context.Background()
 	// Respond task completion.
-	grpcCtx, cancel := newGRPCContext(ctx, grpcMetricsHandler(
-		wtp.metricsHandler.WithTags(metrics.RPCTags(task.GetWorkflowType().GetName(),
-			metrics.NoneTagValue, metrics.NoneTagValue))),
-		defaultGrpcRetryParameters(ctx))
+	grpcCtx, cancel := wtp.newWorkflowTaskReportGRPCContext(ctx, task)
 	defer cancel()
 	if taskCompletion == nil {
 		// should not happen
@@ -736,7 +835,7 @@ func (wtp *workflowTaskProcessor) sendTaskCompletedRequest(
 			}
 		}
 		eagerReserved := wtp.eagerActivityExecutor.applyToRequest(request)
-		response, err = wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
+		response, err = wtp.respondWorkflowTaskCompleted(ctx, grpcCtx, request, task)
 		if err != nil {
 			traceLog(func() {
 				wtp.logger.Debug("RespondWorkflowTaskCompleted failed.", tagError, err)
@@ -759,6 +858,97 @@ func (wtp *workflowTaskProcessor) sendTaskCompletedRequest(
 		panic("unknown request type from ProcessWorkflowTask()")
 	}
 	return
+}
+
+// respondWorkflowTaskCompleted sends a workflow task completion, paginating it across multiple
+// requests sharing one task token when the namespace supports it and the completion would otherwise
+// exceed the gRPC request size limit.
+func (wtp *workflowTaskProcessor) respondWorkflowTaskCompleted(
+	ctx context.Context,
+	grpcCtx context.Context,
+	request *workflowservice.RespondWorkflowTaskCompletedRequest,
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+) (*workflowservice.RespondWorkflowTaskCompletedResponse, error) {
+	if wtp.workflowTaskCompletionPagination == nil || !wtp.workflowTaskCompletionPagination.enabled.Load() {
+		return wtp.service.RespondWorkflowTaskCompleted(grpcCtx, request)
+	}
+	intermediatePages, finalPage := paginateWorkflowTaskCompletion(request, maxWorkflowTaskCompletionPageBytes)
+	if len(intermediatePages) == 0 {
+		return wtp.service.RespondWorkflowTaskCompleted(grpcCtx, finalPage)
+	}
+	return wtp.sendPaginatedWorkflowTaskCompletion(ctx, intermediatePages, finalPage, task)
+}
+
+// sendPaginatedWorkflowTaskCompletion sends a paginated completion, resending every page from page 0
+// on buffer loss. Buffer loss — the server dropping the pages it had buffered for this token — is
+// transient, so it backs off exponentially and retries. The server bounds the loop by eventually
+// timing the task out, after which the stale token fails with a different, non-buffer-lost error;
+// worker shutdown ends it sooner. The gRPC retry layer does not retry buffer loss
+// (see retry.IsWorkflowTaskCompletionBufferLost), so this loop is its sole handler.
+func (wtp *workflowTaskProcessor) sendPaginatedWorkflowTaskCompletion(
+	ctx context.Context,
+	intermediatePages []*workflowservice.RespondWorkflowTaskCompletedRequest,
+	finalPage *workflowservice.RespondWorkflowTaskCompletedRequest,
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+) (*workflowservice.RespondWorkflowTaskCompletedResponse, error) {
+	backoff := workflowTaskCompletionPageResendInitialBackoff
+	for {
+		response, err := wtp.sendWorkflowTaskCompletionPages(ctx, intermediatePages, finalPage, task)
+		if err == nil {
+			return response, nil
+		}
+		if !retry.IsWorkflowTaskCompletionBufferLost(err) {
+			return nil, err
+		}
+		timer := time.NewTimer(backoff)
+		select {
+		case <-wtp.stopC:
+			timer.Stop()
+			return nil, err
+		case <-timer.C:
+		}
+		if backoff *= 2; backoff > workflowTaskCompletionPageResendMaxBackoff {
+			backoff = workflowTaskCompletionPageResendMaxBackoff
+		}
+	}
+}
+
+// sendWorkflowTaskCompletionPages sends the intermediate pages concurrently, then the final page; a
+// failed page cancels the rest, since any failure resends the whole set or fails the task.
+func (wtp *workflowTaskProcessor) sendWorkflowTaskCompletionPages(
+	ctx context.Context,
+	intermediatePages []*workflowservice.RespondWorkflowTaskCompletedRequest,
+	finalPage *workflowservice.RespondWorkflowTaskCompletedRequest,
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+) (*workflowservice.RespondWorkflowTaskCompletedResponse, error) {
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(maxConcurrentWorkflowTaskCompletionPages)
+	for _, page := range intermediatePages {
+		group.Go(func() error {
+			grpcCtx, cancel := wtp.newWorkflowTaskReportGRPCContext(groupCtx, task)
+			defer cancel()
+			_, err := wtp.service.RespondWorkflowTaskCompleted(grpcCtx, page)
+			return err
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
+	}
+	grpcCtx, cancel := wtp.newWorkflowTaskReportGRPCContext(ctx, task)
+	defer cancel()
+	return wtp.service.RespondWorkflowTaskCompleted(grpcCtx, finalPage)
+}
+
+// newWorkflowTaskReportGRPCContext builds the gRPC context for reporting a workflow task
+// (completion, failure, or query result), shared by the single-request and per-page send paths.
+func (wtp *workflowTaskProcessor) newWorkflowTaskReportGRPCContext(
+	ctx context.Context,
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+) (context.Context, context.CancelFunc) {
+	return newGRPCContext(ctx, grpcMetricsHandler(
+		wtp.metricsHandler.WithTags(metrics.RPCTags(task.GetWorkflowType().GetName(),
+			metrics.NoneTagValue, metrics.NoneTagValue))),
+		defaultGrpcRetryParameters(ctx))
 }
 
 func (wtp *workflowTaskProcessor) reportGrpcMessageTooLarge(
@@ -816,18 +1006,43 @@ func (wtp *workflowTaskProcessor) handleInboundVisitorError(task *workflowservic
 			tagPayloadSizeLimit, errPayloadSize.limit)
 	}
 	wtp.logger.Warn("Workflow task preprocess error: "+visitErr.Error(), keyvals...)
-	// Submit an explicit WFT failure so the server records the error immediately
+	// Submit an explicit failure so the server records the error immediately
 	// rather than waiting for the task to time out.
-	failReq := wtp.errorToFailWorkflowTask(task.TaskToken, visitErr)
-	if _, submitErr := wtp.sendTaskCompletedRequest(&workflowTaskCompletion{rawRequest: failReq}, task); submitErr != nil {
-		wtp.logger.Warn("Failed to submit WFT failure after inbound visitor error.", tagError, submitErr)
+	failCompletion := wtp.taskFailureCompletion(task, visitErr)
+	if _, submitErr := wtp.sendTaskCompletedRequest(failCompletion, task); submitErr != nil {
+		wtp.logger.Warn("Failed to submit failure after inbound visitor error.", tagError, submitErr)
+	}
+}
+
+func (wtp *workflowTaskProcessor) taskFailureCompletion(
+	task *workflowservice.PollWorkflowTaskQueueResponse,
+	err error,
+) *workflowTaskCompletion {
+	if task.Query != nil {
+		return &workflowTaskCompletion{
+			rawRequest: &workflowservice.RespondQueryTaskCompletedRequest{
+				TaskToken:     task.TaskToken,
+				CompletedType: enumspb.QUERY_RESULT_TYPE_FAILED,
+				ErrorMessage:  err.Error(),
+				Namespace:     wtp.namespace,
+				Failure:       wtp.failureConverter.ErrorToFailure(err),
+			},
+		}
+	}
+
+	return &workflowTaskCompletion{
+		rawRequest: wtp.errorToFailWorkflowTask(task.TaskToken, err),
 	}
 }
 
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err error) *workflowservice.RespondWorkflowTaskFailedRequest {
+	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, workflowTaskFailureCause(err))
+}
+
+func workflowTaskFailureCause(err error) enumspb.WorkflowTaskFailedCause {
 	cause := enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
 	// If it was a panic due to a bad state machine or if it was a history
-	// mismatch error, mark as non-deterministic
+	// mismatch error, mark as non-deterministic.
 	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
 		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
 			cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
@@ -839,8 +1054,7 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(taskToken []byte, err 
 	} else if errors.As(err, new(payloadSizeError)) {
 		cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
 	}
-
-	return wtp.errorToFailWorkflowTaskWithCause(taskToken, err, cause)
+	return cause
 }
 
 func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []byte, err error, cause enumspb.WorkflowTaskFailedCause) *workflowservice.RespondWorkflowTaskFailedRequest {
@@ -876,26 +1090,53 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 	return builtRequest
 }
 
+// workflowTaskStorageMetrics implements extstore.StorageOperationCallback for a single workflow
+// task. Batches may complete concurrently, so mu guards every field.
 type workflowTaskStorageMetrics struct {
-	mu            sync.Mutex
-	payloadCount  int
-	totalSize     int64
-	totalDuration time.Duration
-	driverNames   map[string]struct{}
+	mu           sync.Mutex
+	payloadCount int
+	totalSize    int64
+	// Start and end of each completed batch.
+	spans       [][2]time.Time
+	driverNames map[string]struct{}
 }
 
-func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, duration time.Duration, driverNames []string) {
+func (callback *workflowTaskStorageMetrics) PayloadBatchCompleted(count int, size int64, start, end time.Time, driverNames []string) {
 	callback.mu.Lock()
 	defer callback.mu.Unlock()
 	callback.payloadCount += count
 	callback.totalSize += size
-	callback.totalDuration += duration
+	callback.spans = append(callback.spans, [2]time.Time{start, end})
 	for _, name := range driverNames {
 		if callback.driverNames == nil {
 			callback.driverNames = make(map[string]struct{})
 		}
 		callback.driverNames[name] = struct{}{}
 	}
+}
+
+// TotalDuration reports the wall-clock time storage was in flight. Batches may run
+// concurrently, so overlapping spans are counted once rather than summed.
+func (callback *workflowTaskStorageMetrics) TotalDuration() time.Duration {
+	callback.mu.Lock()
+	defer callback.mu.Unlock()
+	if len(callback.spans) == 0 {
+		return 0
+	}
+	ordered := make([][2]time.Time, len(callback.spans))
+	copy(ordered, callback.spans)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i][0].Before(ordered[j][0]) })
+	var total time.Duration
+	spanStart, spanEnd := ordered[0][0], ordered[0][1]
+	for _, span := range ordered[1:] {
+		if span[0].After(spanEnd) {
+			total += spanEnd.Sub(spanStart)
+			spanStart, spanEnd = span[0], span[1]
+		} else if span[1].After(spanEnd) {
+			spanEnd = span[1]
+		}
+	}
+	return total + spanEnd.Sub(spanStart)
 }
 
 func (callback *workflowTaskStorageMetrics) GetDriverNames() []string {
@@ -1112,9 +1353,16 @@ func (wtp *workflowTaskPoller) updateBacklog(taskQueueKind enumspb.TaskQueueKind
 		// we only care about sticky backlog for now.
 		return
 	}
+
+	// Mixed pollers use this copy to choose their next queue.
 	wtp.requestLock.Lock()
-	wtp.stickyBacklog = backlogCountHint
+	wtp.mixedStickyBacklog = backlogCountHint
 	wtp.requestLock.Unlock()
+
+	// Split autoscaling pollers use the balancer to coordinate shared slots.
+	if wtp.autoscalingBalancer != nil {
+		wtp.autoscalingBalancer.setStickyBacklog(backlogCountHint)
+	}
 }
 
 // getNextPollRequest returns appropriate next poll request based on poller configuration and mode.
@@ -1140,7 +1388,7 @@ func (wtp *workflowTaskPoller) getNextPollRequest() (request *workflowservice.Po
 		taskQueue.NormalName = wtp.taskQueueName
 	} else if wtp.mode == Mixed {
 		wtp.requestLock.Lock()
-		if wtp.stickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
+		if wtp.mixedStickyBacklog > 0 || wtp.pendingStickyPollCount <= wtp.pendingRegularPollCount {
 			wtp.pendingStickyPollCount++
 			taskQueue.Name = getWorkerTaskQueue(wtp.stickyUUID)
 			taskQueue.Kind = enumspb.TASK_QUEUE_KIND_STICKY

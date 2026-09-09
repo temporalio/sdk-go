@@ -350,10 +350,11 @@ type (
 
 	// clientNexusOperationHandleImpl is the default implementation of ClientNexusOperationHandle.
 	clientNexusOperationHandleImpl struct {
-		client *WorkflowClient
-		id     string
-		runID  string
-		result *ClientPollNexusOperationResultOutput
+		client                    *WorkflowClient
+		id                        string
+		runID                     string
+		nexusSerializationContext *converter.NexusSerializationContext
+		result                    *ClientPollNexusOperationResultOutput
 	}
 )
 
@@ -488,8 +489,9 @@ func (h *clientNexusOperationHandleImpl) Get(ctx context.Context, valuePtr any) 
 	// repeatedly poll, the loop repeats until there's an outcome
 	for {
 		resp, err := h.client.interceptor.PollNexusOperationResult(ctx, &ClientPollNexusOperationResultInput{
-			OperationID: h.id,
-			RunID:       h.runID,
+			OperationID:               h.id,
+			RunID:                     h.runID,
+			nexusSerializationContext: h.nexusSerializationContext,
 		})
 		if err != nil {
 			return err
@@ -667,6 +669,12 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
+	nexusContext := converter.NexusSerializationContext{
+		Endpoint:  in.Endpoint,
+		Service:   in.Service,
+		Operation: in.OperationType,
+	}
+	inputDataConverter := converter.WithDataConverterSerializationContext(dataConverter, nexusContext)
 
 	if in.Options.ID == "" {
 		return nil, errors.New("operation ID is required")
@@ -676,7 +684,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 	}
 
 	// Encode input as a single Payload (not Payloads)
-	inputPayload, err := dataConverter.ToPayload(in.Input)
+	inputPayload, err := inputDataConverter.ToPayload(in.Input)
 	if err != nil {
 		return nil, err
 	}
@@ -686,7 +694,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 		return nil, err
 	}
 
-	userMetadata, err := buildUserMetadata(in.Options.Summary, "", dataConverter)
+	userMetadata, err := BuildUserMetadata(in.Options.Summary, "", dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -728,9 +736,10 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 	}
 
 	return &clientNexusOperationHandleImpl{
-		client: w.client,
-		id:     in.Options.ID,
-		runID:  resp.RunId,
+		client:                    w.client,
+		id:                        in.Options.ID,
+		runID:                     resp.RunId,
+		nexusSerializationContext: &nexusContext,
 	}, nil
 }
 
@@ -748,6 +757,16 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 	ctx context.Context,
 	in *ClientPollNexusOperationResultInput,
 ) (*ClientPollNexusOperationResultOutput, error) {
+	dataConverter := WithContext(ctx, w.client.dataConverter)
+	if dataConverter == nil {
+		dataConverter = converter.GetDefaultDataConverter()
+	}
+	failureConverter := w.client.failureConverter
+	if in.nexusSerializationContext != nil {
+		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, *in.nexusSerializationContext)
+		failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, *in.nexusSerializationContext)
+	}
+
 	request := &workflowservice.PollNexusOperationExecutionRequest{
 		Namespace:   w.client.namespace,
 		OperationId: in.OperationID,
@@ -774,9 +793,9 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 	case *workflowservice.PollNexusOperationExecutionResponse_Result:
 		// Wrap single Payload in Payloads for EncodedValue compatibility
 		payloads := &commonpb.Payloads{Payloads: []*commonpb.Payload{v.Result}}
-		return &ClientPollNexusOperationResultOutput{Result: newEncodedValue(payloads, w.client.dataConverter)}, nil
+		return &ClientPollNexusOperationResultOutput{Result: newEncodedValue(payloads, dataConverter)}, nil
 	case *workflowservice.PollNexusOperationExecutionResponse_Failure:
-		return &ClientPollNexusOperationResultOutput{Error: w.client.failureConverter.FailureToError(v.Failure)}, nil
+		return &ClientPollNexusOperationResultOutput{Error: failureConverter.FailureToError(v.Failure)}, nil
 	default:
 		return nil, fmt.Errorf("unexpected nexus operation outcome type: %T", v)
 	}
@@ -802,6 +821,12 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 	if info == nil {
 		return nil, errors.New("DescribeNexusOperationExecution response doesn't contain info")
 	}
+	nexusContext := converter.NexusSerializationContext{
+		Endpoint:  info.Endpoint,
+		Service:   info.Service,
+		Operation: info.Operation,
+	}
+	failureConverter := converter.WithFailureConverterSerializationContext(w.client.failureConverter, nexusContext)
 
 	var cancellationInfo *ClientNexusOperationCancellationInfo
 	if info.CancellationInfo != nil {
@@ -815,7 +840,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 			BlockedReason:           info.CancellationInfo.BlockedReason,
 			Reason:                  info.CancellationInfo.Reason,
 			lastAttemptFailure:      info.CancellationInfo.LastAttemptFailure,
-			failureConverter:        w.client.failureConverter,
+			failureConverter:        failureConverter,
 			inboundPayloadVisitor:   w.inboundPayloadVisitor,
 		}
 	}
@@ -851,7 +876,7 @@ func (w *workflowClientInterceptor) DescribeNexusOperation(
 			Identity:                info.Identity,
 			CancellationInfo:        cancellationInfo,
 			dc:                      WithContext(ctx, w.client.dataConverter),
-			failureConverter:        w.client.failureConverter,
+			failureConverter:        failureConverter,
 			inboundPayloadVisitor:   w.inboundPayloadVisitor,
 		},
 	}, nil

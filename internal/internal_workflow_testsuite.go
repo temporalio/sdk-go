@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -517,7 +518,7 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 		childEnv.workflowInfo.RootWorkflowExecution = env.workflowInfo.RootWorkflowExecution
 	}
 
-	searchAttrs, err := serializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
+	searchAttrs, err := SerializeSearchAttributes(params.SearchAttributes, params.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -1246,7 +1247,7 @@ func (h *testWorkflowHandle) rerunAsChild() bool {
 	if errors.As(env.testError, &continueAsNewErr) {
 		params.Input = continueAsNewErr.Input
 		params.Header = continueAsNewErr.Header
-		params.RetryPolicy = convertToPBRetryPolicy(continueAsNewErr.RetryPolicy)
+		params.RetryPolicy = ConvertToPBRetryPolicy(continueAsNewErr.RetryPolicy)
 		params.WorkflowType = continueAsNewErr.WorkflowType
 		params.TaskQueueName = continueAsNewErr.TaskQueueName
 		params.VersioningIntent = continueAsNewErr.VersioningIntent
@@ -2780,6 +2781,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 	callback func(*commonpb.Payload, error),
 	startedHandler func(opID string, e error),
 ) int64 {
+	failureConverter := cmp.Or(params.failureConverter, env.failureConverter)
 	seq := env.nextID()
 	// Use lower case header values to simulate how the Nexus SDK (used internally by the "real" server) would transmit
 	// these headers over the wire.
@@ -2812,7 +2814,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 			params.options.ScheduleToCloseTimeout,
 			TimerOptions{},
 			func(result *commonpb.Payloads, err error) {
-				timeoutErr := env.failureConverter.FailureToError(nexusOperationFailure(
+				timeoutErr := failureConverter.FailureToError(nexusOperationFailure(
 					params,
 					token,
 					&failurepb.Failure{
@@ -2845,7 +2847,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				env.postCallback(func() {
 					// Only timeout if operation hasn't started yet
 					if !handle.started {
-						timeoutErr := env.failureConverter.FailureToError(nexusOperationFailure(
+						timeoutErr := failureConverter.FailureToError(nexusOperationFailure(
 							params,
 							"",
 							&failurepb.Failure{
@@ -2872,7 +2874,12 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 		if err != nil {
 			// No retries for operations, fail the operation immediately.
 			//lint:ignore SA4006 fillInFailure cannot fail for a handler error without a cause.
-			failure, err = taskHandler.fillInFailure(task.TaskToken, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "%s", err.Error()), false)
+			failure, err = taskHandler.fillInFailure(
+				task.TaskToken,
+				nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "%s", err.Error()),
+				false,
+				taskHandler.failureConverter,
+			)
 		}
 		if failure != nil {
 			// Convert to a nexus HandlerError first to simulate the flow in the server.
@@ -2889,7 +2896,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 
 			// To simulate the server flow, convert to failure and then back to a Go error.
 			// This ensures that the error's `Failure` is set, the same way as it would outside of the test env.
-			err = env.failureConverter.FailureToError(
+			err = failureConverter.FailureToError(
 				nexusOperationFailure(params, "", env.failureConverter.ErrorToFailure(handlerErr)),
 			)
 
@@ -2917,7 +2924,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				}
 			}, true)
 		case *nexuspb.StartOperationResponse_Failure:
-			err := env.failureConverter.FailureToError(
+			err := failureConverter.FailureToError(
 				nexusOperationFailure(params, "", v.Failure),
 			)
 			env.postCallback(func() {
@@ -2935,7 +2942,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				}, true)
 				return
 			}
-			err = env.failureConverter.FailureToError(
+			err = failureConverter.FailureToError(
 				nexusOperationFailure(params, "", failure),
 			)
 			env.postCallback(func() {
@@ -3073,7 +3080,11 @@ func (env *testWorkflowEnvironmentImpl) scheduleNexusAsyncOperationCompletion(
 	)
 	var nexusErr error
 	if completionHandle.err != nil {
-		nexusErr = env.failureConverter.FailureToError(nexusOperationFailure(
+		failureConverter := handle.params.failureConverter
+		if failureConverter == nil {
+			failureConverter = env.failureConverter
+		}
+		nexusErr = failureConverter.FailureToError(nexusOperationFailure(
 			handle.params,
 			handle.operationToken,
 			&failurepb.Failure{
@@ -3100,8 +3111,13 @@ func (env *testWorkflowEnvironmentImpl) resolveNexusOperation(seq int64, token s
 			panic(fmt.Errorf("no running operation found for sequence: %d", seq))
 		}
 		if err != nil {
+			// Encode as the handler, then decode with the caller's operation converter.
 			failure := env.failureConverter.ErrorToFailure(err)
-			err = env.failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure))
+			failureConverter := handle.params.failureConverter
+			if failureConverter == nil {
+				failureConverter = env.failureConverter
+			}
+			err = failureConverter.FailureToError(nexusOperationFailure(handle.params, handle.operationToken, failure))
 		}
 		// Populate the token in case the operation completes before it marked as started.
 		// startedCallback is idempotent and will be a noop in case the operation has already been marked as started.
@@ -3784,7 +3800,11 @@ func (h *testNexusOperationHandle) startedCallback(token string, e error) {
 				h.env.postCallback(func() {
 					// Only timeout if operation hasn't completed yet
 					if !h.done {
-						timeoutErr := h.env.failureConverter.FailureToError(nexusOperationFailure(
+						failureConverter := h.params.failureConverter
+						if failureConverter == nil {
+							failureConverter = h.env.failureConverter
+						}
+						timeoutErr := failureConverter.FailureToError(nexusOperationFailure(
 							h.params,
 							h.operationToken,
 							&failurepb.Failure{
