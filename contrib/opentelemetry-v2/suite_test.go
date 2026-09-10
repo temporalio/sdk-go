@@ -14,7 +14,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/interceptor"
 	"go.temporal.io/sdk/interceptor/tracing"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/testsuite"
@@ -47,16 +46,19 @@ func (s *otelTestSuite) newTestWorkflowEnvironment(
 ) (*tracetest.SpanRecorder, *testsuite.TestWorkflowEnvironment) {
 	s.T().Helper()
 	recorder := s.newSpanRecorder()
-	_, workerInterceptor := newTracingInterceptors(PluginOptions{
+	plugin, err := NewPlugin(PluginOptions{
 		TracerOptions: tracing.TracerOptions{AddTemporalSpans: true},
 	})
+	s.Require().NoError(err)
 
 	var testEnv testsuite.WorkflowTestSuite
 	if len(logger) > 0 {
 		testEnv.SetLogger(logger[0])
 	}
 	env := testEnv.NewTestWorkflowEnvironment()
-	env.SetWorkerOptions(worker.Options{Interceptors: []interceptor.WorkerInterceptor{workerInterceptor}})
+	// The test environment runs worker plugins, so the same plugin wiring
+	// production uses covers these tests.
+	env.SetWorkerOptions(worker.Options{Plugins: []worker.Plugin{plugin}})
 	return recorder, env
 }
 

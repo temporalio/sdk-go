@@ -217,18 +217,14 @@ func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn any, args ...a
 // EnableSessionWorker, DeadlockDetectionTimeout, PreferredVersionProvider,
 // Interceptors, and Plugins are used. Other options are ignored.
 //
-// Plugins run the way they do on a real worker, with the environment standing
-// in for one worker: ConfigureWorker runs immediately and panics on error, as
-// it does in worker.New; once plugins are set, SetWorkerOptions may not be
-// called again on that environment. StartWorker
-// runs before and StopWorker after every ExecuteActivity or
-// ExecuteLocalActivity call, so each execution is one worker run under the
-// same WorkerInstanceKey, and StopWorker also runs if the execution panics or
-// returns ErrActivityResultPending. A plugin whose StopWorker is terminal
-// therefore needs a fresh environment per execution. A StartWorker error is
-// returned from the execute call. Registry callbacks set in ConfigureWorker fire for RegisterActivity
-// calls made after SetWorkerOptions. The environment has no client, so
-// plugins set on client.Options do not apply here; set them on WorkerOptions.
+// Plugins run as on a real worker, with the environment standing in for one
+// worker. ConfigureWorker runs here and panics on error, and once plugins are
+// set this method may not be called again. Every ExecuteActivity and
+// ExecuteLocalActivity call is one worker run under the same
+// WorkerInstanceKey: StartWorker before, StopWorker after (also on panic or
+// ErrActivityResultPending), so a plugin whose stop is terminal needs a fresh
+// environment per call. A StartWorker error is returned from the execute call.
+// The environment has no client, so client.Options plugins do not apply.
 //
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestActivityEnvironment {
@@ -915,19 +911,15 @@ func (e *TestWorkflowEnvironment) Now() time.Time {
 // EnableSessionWorker, DeadlockDetectionTimeout, PreferredVersionProvider,
 // Interceptors, and Plugins are used. Other options are ignored.
 //
-// Plugins run the way they do on a real worker, with the environment standing
-// in for one worker: ConfigureWorker runs immediately and panics on error, as
-// it does in worker.New; once plugins are set, SetWorkerOptions may not be
-// called again on that environment. StartWorker
-// runs before and StopWorker after ExecuteWorkflow, and StopWorker also runs
-// if the execution panics. A StartWorker error panics from ExecuteWorkflow.
-// The environment does not wait for in-flight activity goroutines before
-// StopWorker. Registry callbacks set in ConfigureWorker fire for Register*
-// calls made after SetWorkerOptions, not for OnActivity/OnWorkflow mocks or
-// the workflow passed to ExecuteWorkflow. Call SetWorkerOptions after
-// SetStartWorkflowOptions if a plugin reads the task queue. The environment
-// has no client, so plugins set on client.Options do not apply here; set them
-// on WorkerOptions.
+// Plugins run as on a real worker, with the environment standing in for one
+// worker. ConfigureWorker runs here and panics on error, and once plugins are
+// set this method may not be called again. ExecuteWorkflow is the worker run:
+// StartWorker before, StopWorker after (also on panic, without waiting for
+// in-flight activity goroutines); a StartWorker error panics. Registry
+// callbacks fire for Register* calls made after this method, not for
+// OnActivity/OnWorkflow mocks or the workflow passed to ExecuteWorkflow. Call
+// this after SetStartWorkflowOptions if a plugin reads the task queue. The
+// environment has no client, so client.Options plugins do not apply.
 //
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (e *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestWorkflowEnvironment {

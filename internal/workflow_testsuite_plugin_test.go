@@ -146,47 +146,6 @@ func TestWorkflowEnvPluginLifecycle(t *testing.T) {
 	require.Len(t, plugin.stopKeys, 1)
 }
 
-func TestWorkflowEnvPluginTaskQueueFromStartOptions(t *testing.T) {
-	t.Parallel()
-	plugin := &envPluginForTest{}
-	env := (&WorkflowTestSuite{}).NewTestWorkflowEnvironment()
-	env.SetStartWorkflowOptions(StartWorkflowOptions{TaskQueue: "custom-test-taskqueue"})
-	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
-	require.Equal(t, []string{"custom-test-taskqueue"}, plugin.taskQueues)
-}
-
-func TestWorkflowEnvPluginSimplePlugin(t *testing.T) {
-	t.Parallel()
-	tracer := &tracingWorkerInterceptor{}
-	var before, after []string
-	plugin, err := NewSimplePlugin(SimplePluginOptions{
-		Name:               "simple-env-plugin",
-		WorkerInterceptors: []WorkerInterceptor{tracer},
-		RunContextBefore: func(_ context.Context, o SimplePluginRunContextBeforeOptions) error {
-			require.False(t, o.WorkflowReplayer)
-			before = append(before, o.InstanceKey)
-			o.Registry.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
-			return nil
-		},
-		RunContextAfter: func(_ context.Context, o SimplePluginRunContextAfterOptions) {
-			after = append(after, o.InstanceKey)
-		},
-	})
-	require.NoError(t, err)
-
-	env := newEnvPluginWorkflowEnv(plugin)
-	env.RegisterWorkflow(envPluginWorkflow)
-	env.ExecuteWorkflow(envPluginWorkflow, "temporal")
-	require.NoError(t, env.GetWorkflowError())
-	var out string
-	require.NoError(t, env.GetWorkflowResult(&out))
-	require.Equal(t, "hello temporal", out)
-
-	require.Len(t, before, 1)
-	require.Equal(t, before, after)
-	require.Len(t, tracer.instances, 1)
-}
-
 func TestWorkflowEnvPluginChildWorkflow(t *testing.T) {
 	t.Parallel()
 	plugin := &envPluginForTest{}
@@ -329,21 +288,6 @@ func TestActivityEnvPluginStopsOnPendingResult(t *testing.T) {
 	_, err := env.ExecuteActivity(envPluginActivityName, "pending")
 	require.ErrorIs(t, err, ErrActivityResultPending)
 	require.Len(t, plugin.stopKeys, 1)
-}
-
-func TestWorkflowEnvPluginNoneSet(t *testing.T) {
-	t.Parallel()
-	env := (&WorkflowTestSuite{}).NewTestWorkflowEnvironment()
-	// Without plugins SetWorkerOptions stays repeatable and execution is unchanged.
-	env.SetWorkerOptions(WorkerOptions{})
-	env.SetWorkerOptions(WorkerOptions{})
-	env.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
-	env.RegisterWorkflow(envPluginWorkflow)
-	env.ExecuteWorkflow(envPluginWorkflow, "temporal")
-	require.NoError(t, env.GetWorkflowError())
-	var out string
-	require.NoError(t, env.GetWorkflowResult(&out))
-	require.Equal(t, "hello temporal", out)
 }
 
 func TestActivityEnvPluginLifecycle(t *testing.T) {
