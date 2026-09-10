@@ -99,6 +99,8 @@ to docs, or any other relevant information.
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
   so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
   decoding it.
+- Added documentation that function literals (closures) shouldn't be registered as
+  workflow functions or activity functions without an alias.
 - Query results are now checked against the server's blob-size error limit after
   external storage has had a chance to offload them, matching how update and activity
   results of the same size already behaved. A query result large enough to be offloaded

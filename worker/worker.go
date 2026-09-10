@@ -62,14 +62,17 @@ type (
 	WorkflowRegistry interface {
 		// RegisterWorkflow - registers a workflow function with the worker.
 		// A workflow takes a [workflow.Context] and input and returns a (result, error) or just error.
+		//
 		// Examples:
 		//	func sampleWorkflow(ctx workflow.Context, input []byte) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int, arg2 string) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context) (result []byte, err error)
 		//	func sampleWorkflow(ctx workflow.Context, arg1 int) (result string, err error)
+		//
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
-		// For global registration consider workflow.Register
-		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow
+		// For global registration consider workflow.Register.
+		// This method panics if workflowFunc doesn't comply with the expected format or tries to register the same workflow.
+		// To register function literals (closures), use [WorkflowRegistry.RegisterWorkflowWithOptions] to assign a type name explicitly.
 		RegisterWorkflow(w any)
 
 		// RegisterWorkflowWithOptions registers the workflow function with options.
@@ -90,7 +93,7 @@ type (
 		// RegisterActivity - register an activity function or a pointer to a structure with the worker.
 		// An activity function takes a context and input and returns a (result, error) or just error.
 		//
-		// And activity struct is a structure with all its exported methods treated as activities. The default
+		// An activity struct is a structure with all its exported methods treated as activities. The default
 		// name of each activity is the method name.
 		//
 		// Examples:
@@ -115,6 +118,7 @@ type (
 		// Serialization of all primitive types, structures is supported ... except channels, functions, variadic, unsafe pointer.
 		// This method panics if activityFunc doesn't comply with the expected format or an activity with the same
 		// type name is registered more than once.
+		// To register function literals (closures), use [ActivityRegistry.RegisterActivityWithOptions] to assign a type name explicitly.
 		RegisterActivity(a any)
 
 		// RegisterActivityWithOptions registers the activity function or struct pointer with options.
