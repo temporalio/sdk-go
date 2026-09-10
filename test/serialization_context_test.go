@@ -530,3 +530,73 @@ func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneNexusCallerEn
 	ts.Equal("standalone-hmac", hmacStandaloneResult)
 	ts.Equal("standalone-zlib", zlibStandaloneResult)
 }
+
+// intTestStandaloneActivityCodec signs standalone activity payloads with the namespace from the
+// ActivitySerializationContext, and verifies the signature on Decode.
+// TODO: this should include activity type and task queue when those are plubmed through.
+type intTestStandaloneActivityCodec struct {
+	signature string
+}
+
+func (c *intTestStandaloneActivityCodec) WithSerializationContext(ctx converter.SerializationContext) converter.PayloadCodec {
+	if sc, ok := ctx.(converter.ActivitySerializationContext); ok {
+		return &intTestStandaloneActivityCodec{signature: sc.Namespace}
+	}
+	return c
+}
+
+func (c *intTestStandaloneActivityCodec) Encode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		clone := proto.Clone(p).(*commonpb.Payload)
+		if clone.Metadata == nil {
+			clone.Metadata = map[string][]byte{}
+		}
+		clone.Metadata["ctx-signature"] = []byte(c.signature)
+		result[i] = clone
+	}
+	return result, nil
+}
+
+func (c *intTestStandaloneActivityCodec) Decode(payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
+	result := make([]*commonpb.Payload, len(payloads))
+	for i, p := range payloads {
+		if sig := string(p.Metadata["ctx-signature"]); sig != c.signature {
+			return nil, fmt.Errorf("signature mismatch: got %q, want %q", sig, c.signature)
+		}
+		clone := proto.Clone(p).(*commonpb.Payload)
+		delete(clone.Metadata, "ctx-signature")
+		result[i] = clone
+	}
+	return result, nil
+}
+
+func (ts *IntegrationTestSuite) TestSerializationContext_StandaloneActivityEndToEnd() {
+	taskQueue := "test-ser-ctx-standalone-" + ts.T().Name()
+	codecDC := converter.NewCodecDataConverter(
+		converter.GetDefaultDataConverter(), &intTestStandaloneActivityCodec{})
+	c, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = codecDC
+	})
+	ts.NoError(err)
+	defer c.Close()
+
+	w := worker.New(c, taskQueue, worker.Options{})
+	w.RegisterActivity(intTestToUpperActivity)
+	ts.NoError(w.Start())
+	defer w.Stop()
+
+	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	defer cancel()
+
+	handle, err := c.ExecuteActivity(ctx, client.StartActivityOptions{
+		ID:                  "ser-ctx-standalone-" + uuid.NewString(),
+		TaskQueue:           taskQueue,
+		StartToCloseTimeout: 10 * time.Second,
+	}, intTestToUpperActivity, "hello")
+	ts.NoError(err)
+
+	var result string
+	ts.NoError(handle.Get(ctx, &result))
+	ts.Equal("HELLO", result)
+}
