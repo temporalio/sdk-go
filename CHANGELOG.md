@@ -63,6 +63,8 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- Renamed the standalone activity `client.StartActivityOptions.Details` option to `StaticDetails`,
+  and `client.ActivityExecutionDescription.GetDetails` to `GetStaticDetails`.
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
 - Experimental external storage: `converter.StorageDriverSelector.SelectDriver` now receives a
   `converter.StorageDriverSelectContext` instead of a `converter.StorageDriverStoreContext`.
@@ -111,6 +113,8 @@ to docs, or any other relevant information.
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
   so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
   decoding it.
+- Added documentation that function literals (closures) shouldn't be registered as
+  workflow functions or activity functions without an alias.
 - Query results are now checked against the server's blob-size error limit after
   external storage has had a chance to offload them, matching how update and activity
   results of the same size already behaved. A query result large enough to be offloaded
