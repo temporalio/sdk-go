@@ -49,6 +49,8 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- Renamed the standalone activity `client.StartActivityOptions.Details` option to `StaticDetails`,
+  and `client.ActivityExecutionDescription.GetDetails` to `GetStaticDetails`.
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
 - Experimental external storage: `converter.StorageDriverSelector.SelectDriver` now receives a
   `converter.StorageDriverSelectContext` instead of a `converter.StorageDriverStoreContext`.
