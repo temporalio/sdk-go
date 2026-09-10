@@ -737,7 +737,6 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		return nil, err
 	}
 
-	// TODO: add `activity_type` and `task_queue` to the `ActivitySerializationContext`
 	actCtx := converter.ActivitySerializationContext{Namespace: w.client.namespace}
 	dataConverter := converter.WithDataConverterSerializationContext(
 		WithContext(ctx, w.client.dataConverter), actCtx)
