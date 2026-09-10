@@ -98,13 +98,13 @@ type (
 		//
 		// NOTE: Experimental
 		Summary string
-		// Details - General fixed details for this Activity Execution that will appear in UI/CLI. This can be in
+		// StaticDetails - General fixed details for this Activity Execution that will appear in UI/CLI. This can be in
 		// Temporal Markdown format and can span multiple lines. This value cannot be updated after the Activity Execution starts.
 		//
 		// Optional: defaults to none/empty.
 		//
 		// NOTE: Experimental
-		Details string
+		StaticDetails string
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
 		//
@@ -286,7 +286,7 @@ type (
 		failureConverter        converter.FailureConverter
 		inboundPayloadVisitor   PayloadVisitor
 		summary                 string
-		details                 string
+		staticDetails           string
 	}
 
 	// clientActivityHandleImpl is the default implementation of ClientActivityHandle.
@@ -353,11 +353,11 @@ func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 	return summary, nil
 }
 
-// GetDetails returns details of the activity. See ClientStartActivityOptions.Details. Returns empty string if there are no details.
+// GetStaticDetails returns details of the activity. See ClientStartActivityOptions.StaticDetails. Returns empty string if there are no details.
 // Uses the data converter of the client used to make the Describe call. Returns error if data conversion fails.
-func (d *ClientActivityExecutionDescription) GetDetails() (string, error) {
-	if d.details != "" {
-		return d.details, nil
+func (d *ClientActivityExecutionDescription) GetStaticDetails() (string, error) {
+	if d.staticDetails != "" {
+		return d.staticDetails, nil
 	}
 	payload := d.RawExecutionInfo.GetUserMetadata().GetDetails()
 	if payload == nil {
@@ -367,13 +367,13 @@ func (d *ClientActivityExecutionDescription) GetDetails() (string, error) {
 	if payload, err = visitPayload(context.Background(), d.inboundPayloadVisitor, payload); err != nil {
 		return "", err
 	}
-	var details string
-	err = d.dataConverter.FromPayload(payload, &details)
+	var staticDetails string
+	err = d.dataConverter.FromPayload(payload, &staticDetails)
 	if err != nil {
 		return "", err
 	}
-	d.details = details
-	return details, nil
+	d.staticDetails = staticDetails
+	return staticDetails, nil
 }
 
 func (h *clientActivityHandleImpl) GetID() string {
@@ -674,7 +674,7 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	if err != nil {
 		return err
 	}
-	userMetadata, err := BuildUserMetadata(options.Summary, options.Details, dataConverter)
+	userMetadata, err := BuildUserMetadata(options.Summary, options.StaticDetails, dataConverter)
 	if err != nil {
 		return err
 	}
