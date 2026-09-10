@@ -18,6 +18,7 @@ type envPluginForTest struct {
 	interceptor          *tracingWorkerInterceptor
 	configureErr         error
 	startErr             error
+	registerEverything   bool
 	configureKeys        []string
 	startKeys            []string
 	stopKeys             []string
@@ -56,6 +57,12 @@ func (p *envPluginForTest) StartWorker(
 		return p.startErr
 	}
 	options.WorkerRegistry.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
+	if p.registerEverything {
+		options.WorkerRegistry.RegisterWorkflowWithOptions(envPluginWorkflow, RegisterWorkflowOptions{})
+		options.WorkerRegistry.RegisterDynamicWorkflow(envPluginDynamicWorkflow, DynamicRegisterWorkflowOptions{})
+		options.WorkerRegistry.RegisterDynamicActivity(envPluginDynamicActivity, DynamicRegisterActivityOptions{})
+		options.WorkerRegistry.RegisterNexusService(nexus.NewService("env-plugin-service"))
+	}
 	return next(ctx, options)
 }
 
@@ -320,6 +327,25 @@ func TestActivityEnvPluginLifecycle(t *testing.T) {
 	// The same instance key is used throughout the environment's life.
 	for _, key := range append(plugin.startKeys, plugin.stopKeys...) {
 		require.Equal(t, plugin.configureKeys[0], key)
+	}
+}
+
+func TestActivityEnvPluginRepeatedRegistrations(t *testing.T) {
+	t.Parallel()
+	plugin := &envPluginForTest{registerEverything: true}
+	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
+	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
+
+	// Every execution re-runs StartWorker against the shared registry. A plugin
+	// registering a workflow, dynamic workflow, dynamic activity, and Nexus
+	// service each time must keep working.
+	for i := 1; i <= 2; i++ {
+		val, err := env.ExecuteActivity(envPluginActivityName, "temporal")
+		require.NoError(t, err)
+		var out string
+		require.NoError(t, val.Get(&out))
+		require.Equal(t, "hello temporal", out)
+		require.Len(t, plugin.stopKeys, i)
 	}
 }
 

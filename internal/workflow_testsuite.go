@@ -214,16 +214,17 @@ func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn any, args ...a
 
 // SetWorkerOptions sets the WorkerOptions used by TestActivityEnvironment. Only
 // BackgroundActivityContext, MaxConcurrentSessionExecutionSize,
-// EnableSessionWorker, DeadlockDetectionTimeout, PreferredVersionProvider,
-// Interceptors, and Plugins are used. Other options are ignored.
+// EnableSessionWorker, Interceptors, and Plugins are used. Other options are
+// ignored.
 //
 // Plugins run as on a real worker, with the environment standing in for one
 // worker. ConfigureWorker runs here and panics on error, and once plugins are
 // set this method may not be called again. Every ExecuteActivity and
 // ExecuteLocalActivity call is one worker run under the same
 // WorkerInstanceKey: StartWorker before, StopWorker after (also on panic or
-// ErrActivityResultPending), so a plugin whose stop is terminal needs a fresh
-// environment per call. A StartWorker error is returned from the execute call.
+// ErrActivityResultPending). Items a plugin registers again on a later start
+// are tolerated, but a plugin whose stop is terminal needs a fresh environment
+// per call. A StartWorker error is returned from the execute call.
 // The environment has no client, so client.Options plugins do not apply.
 //
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.

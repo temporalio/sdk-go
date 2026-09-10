@@ -603,9 +603,8 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 }
 
 // startPluginWorker runs the StartWorker chain of the configured plugins, the
-// way AggregatedWorker.Start does. The environment itself is the registry
-// handed to plugins, so anything they register lands in env.registry. It is a
-// no-op when no plugins are configured.
+// way AggregatedWorker.Start does. Plugins register through testPluginRegistry
+// into env.registry. It is a no-op when no plugins are configured.
 func (env *testWorkflowEnvironmentImpl) startPluginWorker() error {
 	if len(env.plugins) == 0 {
 		return nil
@@ -620,8 +619,64 @@ func (env *testWorkflowEnvironmentImpl) startPluginWorker() error {
 	}
 	return start(context.Background(), WorkerPluginStartWorkerOptions{
 		WorkerInstanceKey: env.workerInstanceKey,
-		WorkerRegistry:    env,
+		WorkerRegistry:    testPluginRegistry{env: env},
 	})
+}
+
+// testPluginRegistry is the registry handed to plugins in StartWorker. The
+// activity environment runs StartWorker for every execution against one shared
+// registry, so a plugin registering the same items again must not panic: the
+// duplicate check is relaxed for workflows (as the environment already does for
+// activities) and a dynamic workflow, dynamic activity, or Nexus service that is
+// already registered is left in place. Plugin registry callbacks still fire
+// with the plugin's original options.
+type testPluginRegistry struct {
+	env *testWorkflowEnvironmentImpl
+}
+
+func (r testPluginRegistry) RegisterWorkflowWithOptions(w any, options RegisterWorkflowOptions) {
+	if r.env.pluginRegistryOptions.OnRegisterWorkflow != nil {
+		r.env.pluginRegistryOptions.OnRegisterWorkflow(w, options)
+	}
+	options.DisableAlreadyRegisteredCheck = true
+	r.env.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+func (r testPluginRegistry) RegisterDynamicWorkflow(w any, options DynamicRegisterWorkflowOptions) {
+	if r.env.pluginRegistryOptions.OnRegisterDynamicWorkflow != nil {
+		r.env.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, options)
+	}
+	r.env.registry.Lock()
+	registered := r.env.registry.dynamicWorkflow != nil
+	r.env.registry.Unlock()
+	if !registered {
+		r.env.registry.RegisterDynamicWorkflow(w, options)
+	}
+}
+
+func (r testPluginRegistry) RegisterActivityWithOptions(a any, options RegisterActivityOptions) {
+	r.env.RegisterActivityWithOptions(a, options)
+}
+
+func (r testPluginRegistry) RegisterDynamicActivity(a any, options DynamicRegisterActivityOptions) {
+	if r.env.pluginRegistryOptions.OnRegisterDynamicActivity != nil {
+		r.env.pluginRegistryOptions.OnRegisterDynamicActivity(a, options)
+	}
+	r.env.registry.Lock()
+	registered := r.env.registry.dynamicActivity != nil
+	r.env.registry.Unlock()
+	if !registered {
+		r.env.registry.RegisterDynamicActivity(a, options)
+	}
+}
+
+func (r testPluginRegistry) RegisterNexusService(s *nexus.Service) {
+	if r.env.pluginRegistryOptions.OnRegisterNexusService != nil {
+		r.env.pluginRegistryOptions.OnRegisterNexusService(s)
+	}
+	if r.env.registry.getNexusService(s.Name) == nil {
+		r.env.registry.RegisterNexusService(s)
+	}
 }
 
 // stopPluginWorker runs the StopWorker chain of the configured plugins, the way
@@ -2653,7 +2708,7 @@ func (env *testWorkflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes
 
 // The Register* methods below fire the plugin registry callbacks configured in
 // ConfigureWorker before delegating to the registry, mirroring
-// AggregatedWorker. They are also what plugins receive as their registry.
+// AggregatedWorker.
 
 func (env *testWorkflowEnvironmentImpl) RegisterWorkflow(w any) {
 	if env.pluginRegistryOptions.OnRegisterWorkflow != nil {
