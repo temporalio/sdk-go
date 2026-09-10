@@ -9646,7 +9646,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		searchAttrValue := "CustomValue"
 		options.TypedSearchAttributes = temporal.NewSearchAttributes(searchAttrKey.ValueSet(searchAttrValue))
 		options.Summary = "activity summary"
-		options.Details = "activity description"
+		options.StaticDetails = "activity description"
 
 		ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 		defer cancel()
@@ -9672,9 +9672,9 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		summary, err := description.GetSummary()
 		ts.NoError(err)
 		ts.Equal(options.Summary, summary)
-		details, err := description.GetDetails()
+		details, err := description.GetStaticDetails()
 		ts.NoError(err)
-		ts.Equal(options.Details, details)
+		ts.Equal(options.StaticDetails, details)
 
 		// ensure measurable amount of time passes, then complete activity
 		time.Sleep(100 * time.Millisecond)
