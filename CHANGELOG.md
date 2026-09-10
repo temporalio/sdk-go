@@ -28,6 +28,10 @@ to docs, or any other relevant information.
   platforms), and the operating system and architecture. This is sent
   once per worker with the first heartbeat accepted by the server and can be turned off with
   `client.Options.DisableWorkerEnvironmentInfo`.
+- Standalone activity client calls now supply `converter.ActivitySerializationContext` when encoding
+  and decoding activity payloads: `ExecuteActivity` (input and static summary/details),
+  `ActivityHandle.Describe` (heartbeat details, last failure, and static summary/details), and
+  `ActivityHandle.Get` (result and failure).
 - Added `converter.NexusSerializationContext` support for Nexus callers and handlers. Callers use
   it for inputs, results, and failures; handlers use it for inputs, synchronous results, and
   failures. Asynchronous handler results and detached standalone handles are not yet supported.

@@ -577,6 +577,12 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter,
+		converter.ActivitySerializationContext{
+			Namespace:    w.client.namespace,
+			ActivityType: in.ActivityType,
+			TaskQueue:    in.Options.TaskQueue,
+		})
 
 	request := &workflowservice.StartActivityExecutionRequest{
 		Namespace:    w.client.namespace,
@@ -731,11 +737,17 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		return nil, err
 	}
 
+	actCtx := converter.ActivitySerializationContext{Namespace: w.client.namespace}
+	dataConverter := converter.WithDataConverterSerializationContext(
+		WithContext(ctx, w.client.dataConverter), actCtx)
+	failureConverter := converter.WithFailureConverterSerializationContext(
+		w.client.failureConverter, actCtx)
+
 	switch v := resp.GetOutcome().GetValue().(type) {
 	case *activitypb.ActivityExecutionOutcome_Result:
-		return &ClientPollActivityResultOutput{Result: newEncodedValue(v.Result, w.client.dataConverter)}, nil
+		return &ClientPollActivityResultOutput{Result: newEncodedValue(v.Result, dataConverter)}, nil
 	case *activitypb.ActivityExecutionOutcome_Failure:
-		return &ClientPollActivityResultOutput{Error: w.client.failureConverter.FailureToError(v.Failure)}, nil
+		return &ClientPollActivityResultOutput{Error: failureConverter.FailureToError(v.Failure)}, nil
 	default:
 		return nil, fmt.Errorf("unexpected activity outcome type: %T", v)
 	}
@@ -768,6 +780,12 @@ func (w *workflowClientInterceptor) DescribeActivity(
 		lastDeploymentVersion = &v
 	}
 
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    w.client.namespace,
+		ActivityType: info.ActivityType.GetName(),
+		TaskQueue:    info.TaskQueue,
+	}
+
 	return &ClientDescribeActivityOutput{
 		Description: &ClientActivityExecutionDescription{
 			ClientActivityExecutionInfo: ClientActivityExecutionInfo{
@@ -796,9 +814,11 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			LastDeploymentVersion:   lastDeploymentVersion,
 			Priority:                convertFromPBPriority(info.Priority),
 			CanceledReason:          info.CanceledReason,
-			dataConverter:           WithContext(ctx, w.client.dataConverter),
-			failureConverter:        w.client.failureConverter,
-			inboundPayloadVisitor:   w.inboundPayloadVisitor,
+			dataConverter: converter.WithDataConverterSerializationContext(
+				WithContext(ctx, w.client.dataConverter), actCtx),
+			failureConverter: converter.WithFailureConverterSerializationContext(
+				w.client.failureConverter, actCtx),
+			inboundPayloadVisitor: w.inboundPayloadVisitor,
 		},
 	}, nil
 }
