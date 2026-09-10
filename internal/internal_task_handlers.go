@@ -860,7 +860,9 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 			return
 		}
 
-		if wth.cache.MaxWorkflowCacheSize() > 0 && task.Query == nil {
+		// The LRU capacity is one less than the configured maximum, so a
+		// maximum of one cannot retain a workflow context.
+		if wth.cache.MaxWorkflowCacheSize() > 1 && task.Query == nil {
 			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
 			workflowContext.Lock()
 			workflowContext.cached = true
