@@ -67,6 +67,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Workers configured with a sticky workflow cache size of one no longer risk leaving an
+  uncached workflow coroutine running after its context is immediately evicted.
 - Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
   with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
   and all local activity execution slots were full.
