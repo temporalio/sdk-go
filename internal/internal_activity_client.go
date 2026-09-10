@@ -286,7 +286,7 @@ type (
 		failureConverter        converter.FailureConverter
 		inboundPayloadVisitor   PayloadVisitor
 		summary                 string
-		details                 string
+		staticDetails           string
 	}
 
 	// clientActivityHandleImpl is the default implementation of ClientActivityHandle.
@@ -356,8 +356,8 @@ func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 // GetStaticDetails returns details of the activity. See ClientStartActivityOptions.StaticDetails. Returns empty string if there are no details.
 // Uses the data converter of the client used to make the Describe call. Returns error if data conversion fails.
 func (d *ClientActivityExecutionDescription) GetStaticDetails() (string, error) {
-	if d.details != "" {
-		return d.details, nil
+	if d.staticDetails != "" {
+		return d.staticDetails, nil
 	}
 	payload := d.RawExecutionInfo.GetUserMetadata().GetDetails()
 	if payload == nil {
@@ -367,13 +367,13 @@ func (d *ClientActivityExecutionDescription) GetStaticDetails() (string, error) 
 	if payload, err = visitPayload(context.Background(), d.inboundPayloadVisitor, payload); err != nil {
 		return "", err
 	}
-	var details string
-	err = d.dataConverter.FromPayload(payload, &details)
+	var staticDetails string
+	err = d.dataConverter.FromPayload(payload, &staticDetails)
 	if err != nil {
 		return "", err
 	}
-	d.details = details
-	return details, nil
+	d.staticDetails = staticDetails
+	return staticDetails, nil
 }
 
 func (h *clientActivityHandleImpl) GetID() string {
