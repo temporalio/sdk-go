@@ -16,7 +16,7 @@ import (
 	"go.temporal.io/sdk/temporal"
 )
 
-// durationPtr returns a pointer to d, for the *DurationChange option updates.
+// durationPtr returns a pointer to d, for the ActivityOptionChange option updates.
 func durationPtr(d time.Duration) *time.Duration { return &d }
 
 func isPaused(state enumspb.PendingActivityState) bool {
@@ -151,7 +151,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		})
 
 		updated, err := handle.UpdateOptions(ctx, client.ActivityOptionsUpdate{
-			StartToCloseTimeout: &client.DurationChange{Value: durationPtr(90 * time.Second)},
+			StartToCloseTimeout: &client.ActivityOptionChange[time.Duration]{Value: durationPtr(90 * time.Second)},
 		})
 		ts.NoError(err)
 
@@ -190,14 +190,14 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		}
 		priority := temporal.Priority{PriorityKey: 3}
 		updated, err := handle.UpdateOptions(ctx, client.ActivityOptionsUpdate{
-			TaskQueue:              &client.StringChange{Value: &tq},
-			ScheduleToCloseTimeout: &client.DurationChange{Value: durationPtr(200 * time.Second)},
-			ScheduleToStartTimeout: &client.DurationChange{Value: durationPtr(15 * time.Second)},
-			StartToCloseTimeout:    &client.DurationChange{Value: durationPtr(90 * time.Second)},
-			HeartbeatTimeout:       &client.DurationChange{Value: durationPtr(25 * time.Second)},
-			StartDelay:             &client.DurationChange{Value: durationPtr(500 * time.Second)},
-			RetryPolicy:            &client.RetryPolicyChange{Value: &retry},
-			Priority:               &client.PriorityChange{Value: &priority},
+			TaskQueue:              &client.ActivityOptionChange[string]{Value: &tq},
+			ScheduleToCloseTimeout: &client.ActivityOptionChange[time.Duration]{Value: durationPtr(200 * time.Second)},
+			ScheduleToStartTimeout: &client.ActivityOptionChange[time.Duration]{Value: durationPtr(15 * time.Second)},
+			StartToCloseTimeout:    &client.ActivityOptionChange[time.Duration]{Value: durationPtr(90 * time.Second)},
+			HeartbeatTimeout:       &client.ActivityOptionChange[time.Duration]{Value: durationPtr(25 * time.Second)},
+			StartDelay:             &client.ActivityOptionChange[time.Duration]{Value: durationPtr(500 * time.Second)},
+			RetryPolicy:            &client.ActivityOptionChange[temporal.RetryPolicy]{Value: &retry},
+			Priority:               &client.ActivityOptionChange[temporal.Priority]{Value: &priority},
 		})
 		ts.NoError(err)
 
@@ -227,7 +227,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 		})
 
 		changed, err := handle.UpdateOptions(ctx, client.ActivityOptionsUpdate{
-			StartToCloseTimeout: &client.DurationChange{Value: durationPtr(90 * time.Second)},
+			StartToCloseTimeout: &client.ActivityOptionChange[time.Duration]{Value: durationPtr(90 * time.Second)},
 		})
 		ts.NoError(err)
 		ts.Equal(90*time.Second, changed.StartToCloseTimeout)
@@ -249,7 +249,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 
 		// Updating options while paused applies, and leaves the activity paused.
 		updated, err := handle.UpdateOptions(ctx, client.ActivityOptionsUpdate{
-			StartToCloseTimeout: &client.DurationChange{Value: durationPtr(99 * time.Second)},
+			StartToCloseTimeout: &client.ActivityOptionChange[time.Duration]{Value: durationPtr(99 * time.Second)},
 		})
 		ts.NoError(err)
 		ts.Equal(99*time.Second, updated.StartToCloseTimeout)
@@ -427,7 +427,7 @@ func (ts *IntegrationTestSuite) TestActivityOperatorCommandsSuite() {
 
 		handle := startHeartbeatReadyActivity(ctx)
 		_, err := handle.UpdateOptions(ctx, client.ActivityOptionsUpdate{
-			StartToCloseTimeout: &client.DurationChange{Value: durationPtr(90 * time.Second)},
+			StartToCloseTimeout: &client.ActivityOptionChange[time.Duration]{Value: durationPtr(90 * time.Second)},
 		})
 		ts.NoError(err)
 

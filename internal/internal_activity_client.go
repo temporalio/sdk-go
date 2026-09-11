@@ -306,69 +306,33 @@ type (
 	// Exposed as: [go.temporal.io/sdk/client.ActivityOptionsUpdate]
 	ClientActivityOptionsUpdate struct {
 		// If non-nil, change the task queue.
-		TaskQueue *ClientStringChange
+		TaskQueue *ClientActivityOptionChange[string]
 		// If non-nil, change the schedule-to-close timeout.
-		ScheduleToCloseTimeout *ClientDurationChange
+		ScheduleToCloseTimeout *ClientActivityOptionChange[time.Duration]
 		// If non-nil, change the schedule-to-start timeout.
-		ScheduleToStartTimeout *ClientDurationChange
+		ScheduleToStartTimeout *ClientActivityOptionChange[time.Duration]
 		// If non-nil, change the start-to-close timeout.
-		StartToCloseTimeout *ClientDurationChange
+		StartToCloseTimeout *ClientActivityOptionChange[time.Duration]
 		// If non-nil, change the heartbeat timeout.
-		HeartbeatTimeout *ClientDurationChange
+		HeartbeatTimeout *ClientActivityOptionChange[time.Duration]
 		// If non-nil, change the start delay.
-		StartDelay *ClientDurationChange
+		StartDelay *ClientActivityOptionChange[time.Duration]
 		// If non-nil, change the retry policy.
-		RetryPolicy *ClientRetryPolicyChange
+		RetryPolicy *ClientActivityOptionChange[RetryPolicy]
 		// If non-nil, change the priority.
-		Priority *ClientPriorityChange
+		Priority *ClientActivityOptionChange[Priority]
 	}
 
-	// ClientStringChange sets or clears a string option when used with
+	// ClientActivityOptionChange sets or clears one activity option when used with
 	// [ClientActivityOptionsUpdate].
 	//
 	// NOTE: Experimental
 	//
-	// Exposed as: [go.temporal.io/sdk/client.StringChange]
-	ClientStringChange struct {
+	// Exposed as: [go.temporal.io/sdk/client.ActivityOptionChange]
+	ClientActivityOptionChange[T any] struct {
 		// Set the option to Value if non-nil. If nil, clear the option so the server applies
 		// its default.
-		Value *string
-	}
-
-	// ClientDurationChange sets or clears a duration option when used with
-	// [ClientActivityOptionsUpdate].
-	//
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/client.DurationChange]
-	ClientDurationChange struct {
-		// Set the option to Value if non-nil. If nil, clear the option so the server applies
-		// its default.
-		Value *time.Duration
-	}
-
-	// ClientRetryPolicyChange sets or clears the retry policy when used with
-	// [ClientActivityOptionsUpdate].
-	//
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/client.RetryPolicyChange]
-	ClientRetryPolicyChange struct {
-		// Set the retry policy to Value if non-nil. If nil, clear it so the server applies its
-		// default.
-		Value *RetryPolicy
-	}
-
-	// ClientPriorityChange sets or clears the priority when used with
-	// [ClientActivityOptionsUpdate].
-	//
-	// NOTE: Experimental
-	//
-	// Exposed as: [go.temporal.io/sdk/client.PriorityChange]
-	ClientPriorityChange struct {
-		// Set the priority to Value if non-nil. If nil, clear it so the server applies its
-		// default.
-		Value *Priority
+		Value *T
 	}
 )
 

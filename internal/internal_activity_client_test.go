@@ -118,8 +118,8 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 
 		tq, stc := "new-tq", 90*time.Second
 		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsUpdate{
-			TaskQueue:           &ClientStringChange{Value: &tq},
-			StartToCloseTimeout: &ClientDurationChange{Value: &stc},
+			TaskQueue:           &ClientActivityOptionChange[string]{Value: &tq},
+			StartToCloseTimeout: &ClientActivityOptionChange[time.Duration]{Value: &stc},
 		})
 		require.NoError(t, err)
 		require.ElementsMatch(t,
@@ -137,7 +137,7 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 
 		var zero time.Duration
 		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsUpdate{
-			HeartbeatTimeout: &ClientDurationChange{Value: &zero},
+			HeartbeatTimeout: &ClientActivityOptionChange[time.Duration]{Value: &zero},
 		})
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"heartbeat_timeout"}, request.GetUpdateMask().GetPaths())
@@ -152,7 +152,7 @@ func TestUpdateActivityOptionsMask(t *testing.T) {
 		handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "activity-id"})
 
 		_, err := handle.UpdateOptions(t.Context(), ClientActivityOptionsUpdate{
-			HeartbeatTimeout: &ClientDurationChange{},
+			HeartbeatTimeout: &ClientActivityOptionChange[time.Duration]{},
 		})
 		require.NoError(t, err)
 		require.ElementsMatch(t, []string{"heartbeat_timeout"}, request.GetUpdateMask().GetPaths())
@@ -277,7 +277,7 @@ func TestUpdateActivityOptionsRestoreIsExclusive(t *testing.T) {
 		ActivityID:      "activity-id",
 		RestoreOriginal: true,
 		Update: &ClientActivityOptionsUpdate{
-			HeartbeatTimeout: &ClientDurationChange{Value: &hb},
+			HeartbeatTimeout: &ClientActivityOptionChange[time.Duration]{Value: &hb},
 		},
 	})
 	require.ErrorContains(t, err, "cannot be combined")

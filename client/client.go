@@ -1053,25 +1053,11 @@ type (
 	// NOTE: Experimental
 	ActivityOptionsUpdate = internal.ClientActivityOptionsUpdate
 
-	// StringChange sets or clears a string option when used with ActivityOptionsUpdate.
+	// ActivityOptionChange sets or clears one activity option when used with
+	// ActivityOptionsUpdate.
 	//
 	// NOTE: Experimental
-	StringChange = internal.ClientStringChange
-
-	// DurationChange sets or clears a duration option when used with ActivityOptionsUpdate.
-	//
-	// NOTE: Experimental
-	DurationChange = internal.ClientDurationChange
-
-	// RetryPolicyChange sets or clears the retry policy when used with ActivityOptionsUpdate.
-	//
-	// NOTE: Experimental
-	RetryPolicyChange = internal.ClientRetryPolicyChange
-
-	// PriorityChange sets or clears the priority when used with ActivityOptionsUpdate.
-	//
-	// NOTE: Experimental
-	PriorityChange = internal.ClientPriorityChange
+	ActivityOptionChange[T any] = internal.ClientActivityOptionChange[T]
 
 	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
 	//
