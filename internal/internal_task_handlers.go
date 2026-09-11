@@ -1861,6 +1861,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		if errors.As(workflowContext.err, &panicErr) {
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
 			queryCompletedRequest.ErrorMessage = "Workflow panic: " + panicErr.Error()
+			queryCompletedRequest.Cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
 			return workflowTaskCompletion{rawRequest: queryCompletedRequest}
 		}
 
