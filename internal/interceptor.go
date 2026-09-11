@@ -448,6 +448,22 @@ type ClientOutboundInterceptor interface {
 	// NOTE: Experimental
 	TerminateActivity(context.Context, *ClientTerminateActivityInput) error
 
+	// PauseActivity intercepts client.ActivityHandle.Pause.
+	//
+	// NOTE: Experimental
+	PauseActivity(context.Context, *ClientPauseActivityInput) error
+
+	// UnpauseActivity intercepts client.ActivityHandle.Unpause.
+	//
+	// NOTE: Experimental
+	UnpauseActivity(context.Context, *ClientUnpauseActivityInput) error
+
+	// UpdateActivityOptions intercepts client.ActivityHandle.UpdateOptions and
+	// client.ActivityHandle.RestoreOriginalOptions.
+	//
+	// NOTE: Experimental
+	UpdateActivityOptions(context.Context, *ClientUpdateActivityOptionsInput) (*ClientUpdateActivityOptionsOutput, error)
+
 	// DescribeActivity intercepts client.ActivityHandle.Describe.
 	//
 	// NOTE: Experimental
@@ -731,6 +747,65 @@ type ClientTerminateActivityInput struct {
 	Reason string
 }
 
+// ClientPauseActivityInput is the input to
+// ClientOutboundInterceptor.PauseActivity.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientPauseActivityInput]
+type ClientPauseActivityInput struct {
+	// ActivityID is the ID of the activity.
+	ActivityID string
+	// RunID is the run ID of the activity to pause.
+	RunID string
+	// Options are the options for pausing the activity.
+	Options *ClientPauseActivityOptions
+}
+
+// ClientUnpauseActivityInput is the input to
+// ClientOutboundInterceptor.UnpauseActivity.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUnpauseActivityInput]
+type ClientUnpauseActivityInput struct {
+	// ActivityID is the ID of the activity.
+	ActivityID string
+	// RunID is the run ID of the activity to unpause.
+	RunID string
+	// Options are the options for unpausing the activity.
+	Options *ClientUnpauseActivityOptions
+}
+
+// ClientUpdateActivityOptionsInput is the input to
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateActivityOptionsInput]
+type ClientUpdateActivityOptionsInput struct {
+	// ActivityID is the ID of the activity.
+	ActivityID string
+	// RunID is the run ID of the activity to update.
+	RunID string
+	// Update describes the option changes to apply. Nil when RestoreOriginal is set.
+	Update *ClientActivityOptionsUpdate
+	// RestoreOriginal reverts every option to the value the activity was scheduled with. The
+	// server does not allow it to be combined with any entry in Updates.
+	RestoreOriginal bool
+}
+
+// ClientUpdateActivityOptionsOutput is the output of
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateActivityOptionsOutput]
+type ClientUpdateActivityOptionsOutput struct {
+	// Options are the activity's options after the update.
+	Options *ClientActivityExecutionOptions
+}
+
 // ClientDescribeActivityInput is the input to
 // ClientOutboundInterceptor.DescribeActivity.
 //
@@ -742,6 +817,8 @@ type ClientDescribeActivityInput struct {
 	ActivityID string
 	// RunID is the run ID of the activity to describe.
 	RunID string
+	// Options are the options for describing the activity.
+	Options *ClientDescribeActivityOptions
 }
 
 // ClientDescribeActivityOutput is the output of
