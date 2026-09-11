@@ -568,7 +568,6 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	plugins := append([]WorkerPlugin(nil), options.Plugins...)
 	var pluginRegistryOptions WorkerPluginConfigureWorkerRegistryOptions
 	for _, plugin := range plugins {
-		// As in NewAggregatedWorker, ConfigureWorker errors are panics.
 		if err := plugin.ConfigureWorker(context.Background(), WorkerPluginConfigureWorkerOptions{
 			WorkerInstanceKey:     env.workerInstanceKey,
 			TaskQueue:             env.workflowInfo.TaskQueueName,
