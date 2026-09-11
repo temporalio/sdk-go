@@ -3325,7 +3325,22 @@ func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
 	err = handle3.Terminate(ctx, client.TerminateActivityOptions{Reason: "test terminate"})
 	ts.NoError(err)
 
-	// Verify all 6 interceptor methods were called
+	// Operator commands. The activity does not heartbeat, so it never yields the attempt; that
+	// is fine here because this test asserts only that each command reaches the interceptor.
+	handle4, err := ts.client.ExecuteActivity(ctx, makeOptions(), "interceptorTestActivityWait")
+	ts.NoError(err)
+	<-activityStarted
+	ts.NoError(handle4.Pause(ctx, client.PauseActivityOptions{Reason: "test pause"}))
+	ts.NoError(handle4.Unpause(ctx, client.UnpauseActivityOptions{Reason: "test unpause"}))
+	_, err = handle4.UpdateOptions(ctx, client.ActivityOptionsUpdate{
+		StartToCloseTimeout: &client.ActivityOptionChange[time.Duration]{Value: durationPtr(90 * time.Second)},
+	})
+	ts.NoError(err)
+	_, err = handle4.RestoreOriginalOptions(ctx)
+	ts.NoError(err)
+	ts.NoError(handle4.Terminate(ctx, client.TerminateActivityOptions{Reason: "cleanup"}))
+
+	// Verify all 9 interceptor methods were called
 	expectedCalls := []string{
 		"ClientOutboundInterceptor.ExecuteActivity",
 		"ClientOutboundInterceptor.GetActivityHandle",
@@ -3333,6 +3348,9 @@ func (ts *IntegrationTestSuite) TestInterceptorStandaloneActivity() {
 		"ClientOutboundInterceptor.CancelActivity",
 		"ClientOutboundInterceptor.TerminateActivity",
 		"ClientOutboundInterceptor.PollActivityResult",
+		"ClientOutboundInterceptor.PauseActivity",
+		"ClientOutboundInterceptor.UnpauseActivity",
+		"ClientOutboundInterceptor.UpdateActivityOptions",
 	}
 
 	recordedCalls := make(map[string]bool)
@@ -9659,7 +9677,7 @@ func (ts *IntegrationTestSuite) TestExecuteActivitySuite() {
 		ts.NoError(err)
 		ts.Equal(enumspb.ACTIVITY_EXECUTION_STATUS_RUNNING, description.Status)
 		ts.Nil(description.RawExecutionListInfo)
-		ts.NotNil(description.RawExecutionInfo)
+		ts.NotNil(description.RawResponse)
 		ts.Equal(options.ID, description.ActivityID)
 		ts.Equal(handle.GetRunID(), description.ActivityRunID)
 		ts.Equal("readFromChannelActivity", description.ActivityType)
