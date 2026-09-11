@@ -27,8 +27,10 @@ func (WorkflowSerializationContext) isSerializationContext() {}
 // ActivitySerializationContext is the serialization context for activity-level payloads.
 // This includes: activity input/result, heartbeat details, and activity failure details.
 type ActivitySerializationContext struct {
-	Namespace    string
-	WorkflowID   string
+	Namespace string
+	// Empty for a standalone activity.
+	WorkflowID string
+	// Empty for a standalone activity.
 	WorkflowType string
 	ActivityType string
 	TaskQueue    string
