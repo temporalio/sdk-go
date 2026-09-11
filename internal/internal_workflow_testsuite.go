@@ -266,8 +266,6 @@ type (
 		workerStopChannel  chan struct{}
 		sessionEnvironment *testSessionEnvironmentImpl
 
-		// workerInstanceKey, plugins and pluginRegistryOptions mirror the same
-		// fields on AggregatedWorker: the environment stands in for one worker.
 		workerInstanceKey     string
 		plugins               []WorkerPlugin
 		pluginRegistryOptions WorkerPluginConfigureWorkerRegistryOptions
@@ -563,19 +561,14 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
-	// Plugins are configured exactly once per environment, the same way a real
-	// worker is configured once by worker.New. Once plugins are configured the
-	// options they adjusted must not be replaced; calls that never set plugins
-	// remain repeatable.
+	// A second call would silently drop the plugins and the options they adjusted.
 	if len(env.plugins) > 0 {
 		panic("SetWorkerOptions may not be called again after Plugins were configured")
 	}
-	// Copy the slice: plugins must never mutate the Plugins option itself.
 	plugins := append([]WorkerPlugin(nil), options.Plugins...)
 	var pluginRegistryOptions WorkerPluginConfigureWorkerRegistryOptions
 	for _, plugin := range plugins {
-		// Mirrors NewAggregatedWorker: there is no meaningful context to pass, and
-		// errors become panics.
+		// As in NewAggregatedWorker, ConfigureWorker errors are panics.
 		if err := plugin.ConfigureWorker(context.Background(), WorkerPluginConfigureWorkerOptions{
 			WorkerInstanceKey:     env.workerInstanceKey,
 			TaskQueue:             env.workflowInfo.TaskQueueName,
@@ -585,7 +578,6 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 			panic(err)
 		}
 	}
-	// Only adopt the plugins once every ConfigureWorker succeeded.
 	env.plugins = plugins
 	env.pluginRegistryOptions = pluginRegistryOptions
 	env.workerOptions = options
@@ -602,9 +594,8 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 	}
 }
 
-// startPluginWorker runs the StartWorker chain of the configured plugins, the
-// way AggregatedWorker.Start does. Plugins register through testPluginRegistry
-// into env.registry. It is a no-op when no plugins are configured.
+// startPluginWorker runs the plugins' StartWorker chain the way
+// AggregatedWorker.Start does.
 func (env *testWorkflowEnvironmentImpl) startPluginWorker() error {
 	if len(env.plugins) == 0 {
 		return nil
@@ -624,12 +615,8 @@ func (env *testWorkflowEnvironmentImpl) startPluginWorker() error {
 }
 
 // testPluginRegistry is the registry handed to plugins in StartWorker. The
-// activity environment runs StartWorker for every execution against one shared
-// registry, so a plugin registering the same items again must not panic: the
-// duplicate check is relaxed for workflows (as the environment already does for
-// activities) and a dynamic workflow, dynamic activity, or Nexus service that is
-// already registered is left in place. Plugin registry callbacks still fire
-// with the plugin's original options.
+// activity environment runs StartWorker on every execution against one shared
+// registry, so repeated registrations from a plugin must not panic.
 type testPluginRegistry struct {
 	env *testWorkflowEnvironmentImpl
 }
@@ -679,8 +666,8 @@ func (r testPluginRegistry) RegisterNexusService(s *nexus.Service) {
 	}
 }
 
-// stopPluginWorker runs the StopWorker chain of the configured plugins, the way
-// AggregatedWorker.Stop does. It is a no-op when no plugins are configured.
+// stopPluginWorker runs the plugins' StopWorker chain the way
+// AggregatedWorker.Stop does.
 func (env *testWorkflowEnvironmentImpl) stopPluginWorker() {
 	if len(env.plugins) == 0 {
 		return
@@ -733,10 +720,8 @@ func (env *testWorkflowEnvironmentImpl) setActivityTaskQueue(taskqueue string, a
 }
 
 func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn any, args ...any) {
-	// Plugins bracket the single workflow execution: StartWorker before,
-	// StopWorker after (including on panic). Skip both if this environment
-	// already executed a workflow so the existing "create a new environment"
-	// panic in executeWorkflowInternal fires without a spurious start/stop pair.
+	// If a workflow already ran here, executeWorkflowInternal panics; do not run
+	// a spurious plugin start/stop pair around that.
 	env.locker.Lock()
 	alreadyExecuted := env.workflowInfo.WorkflowType.Name != workflowTypeNotSpecified
 	env.locker.Unlock()
@@ -749,8 +734,7 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn any, args ...
 
 	fType := reflect.TypeOf(workflowFn)
 	if getKind(fType) == reflect.Func {
-		// Registering the workflow under test is a convenience, not a worker
-		// registration, so it deliberately bypasses plugin registry callbacks.
+		// A convenience, not a worker registration: bypasses plugin registry callbacks.
 		env.registry.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 	}
 	dc := converter.WithDataConverterSerializationContext(env.GetDataConverter(), converter.WorkflowSerializationContext{
@@ -935,8 +919,6 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn any,
 	args ...any,
 ) (converter.EncodedValue, error) {
-	// Each activity execution is one worker run for plugins: StartWorker before,
-	// StopWorker after (including on panic or a pending result).
 	if err := env.startPluginWorker(); err != nil {
 		return nil, err
 	}
@@ -1033,8 +1015,6 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn any,
 	args ...any,
 ) (val converter.EncodedValue, err error) {
-	// Each local activity execution is one worker run for plugins: StartWorker
-	// before, StopWorker after (including on panic).
 	if err = env.startPluginWorker(); err != nil {
 		return nil, err
 	}
@@ -2706,10 +2686,6 @@ func (env *testWorkflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes
 	return convertToTypedSearchAttributes(env.logger, env.workflowInfo.SearchAttributes.GetIndexedFields())
 }
 
-// The Register* methods below fire the plugin registry callbacks configured in
-// ConfigureWorker before delegating to the registry, mirroring
-// AggregatedWorker.
-
 func (env *testWorkflowEnvironmentImpl) RegisterWorkflow(w any) {
 	if env.pluginRegistryOptions.OnRegisterWorkflow != nil {
 		env.pluginRegistryOptions.OnRegisterWorkflow(w, RegisterWorkflowOptions{})
@@ -2736,8 +2712,6 @@ func (env *testWorkflowEnvironmentImpl) RegisterActivity(a any) {
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterActivityWithOptions(a any, options RegisterActivityOptions) {
-	// Plugins observe the caller's options, as on a real worker; the environment
-	// then relaxes the duplicate check, which it has always done.
 	if env.pluginRegistryOptions.OnRegisterActivity != nil {
 		env.pluginRegistryOptions.OnRegisterActivity(a, options)
 	}

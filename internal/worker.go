@@ -495,9 +495,6 @@ type (
 		// worker.Plugin are automatically applied as worker plugins and should
 		// not also be set here.
 		//
-		// The test environments in the testsuite package also run plugins set
-		// here through SetWorkerOptions; see that method for the lifecycle.
-		//
 		// Plugins themselves should never mutate this field, the behavior is
 		// undefined.
 		//

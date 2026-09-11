@@ -11,8 +11,7 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
-// envPluginForTest records every worker-plugin hook the test environments
-// invoke so tests can assert the lifecycle mirrors a real worker.
+// envPluginForTest records the worker-plugin hooks the test environments invoke.
 type envPluginForTest struct {
 	WorkerPluginBase
 	interceptor          *tracingWorkerInterceptor
@@ -117,8 +116,6 @@ func TestWorkflowEnvPluginLifecycle(t *testing.T) {
 	t.Parallel()
 	plugin := &envPluginForTest{interceptor: &tracingWorkerInterceptor{}}
 	env := newEnvPluginWorkflowEnv(plugin)
-	// ConfigureWorker ran at SetWorkerOptions with the default task queue; the
-	// worker has not started yet.
 	require.Equal(t, []string{defaultTestTaskQueue}, plugin.taskQueues)
 	require.Empty(t, plugin.startKeys)
 
@@ -134,20 +131,16 @@ func TestWorkflowEnvPluginLifecycle(t *testing.T) {
 	require.Len(t, plugin.interceptor.instances, 1)
 	require.Contains(t, plugin.interceptor.instances[0].trace, "ExecuteActivity "+envPluginActivityName)
 
-	// Callbacks: the explicit RegisterWorkflow fired once (the workflow passed
-	// to ExecuteWorkflow does not), and the plugin's own activity registration
-	// went through the callback too.
+	// Only the explicit RegisterWorkflow fires the callback, not ExecuteWorkflow.
 	require.Equal(t, 1, plugin.workflowCallbacks)
 	require.Equal(t, []string{envPluginActivityName}, plugin.registeredActivities)
 
-	// One start, one stop, same instance key throughout.
 	require.Len(t, plugin.configureKeys, 1)
 	require.NotEmpty(t, plugin.configureKeys[0])
 	require.Equal(t, plugin.configureKeys, plugin.startKeys)
 	require.Equal(t, plugin.configureKeys, plugin.stopKeys)
 
-	// A second ExecuteWorkflow on the same environment still panics as before
-	// and does not run another start/stop pair.
+	// A second ExecuteWorkflow still panics, without another start/stop pair.
 	require.Panics(t, func() { env.ExecuteWorkflow(envPluginWorkflow, "again") })
 	require.Len(t, plugin.startKeys, 1)
 	require.Len(t, plugin.stopKeys, 1)
@@ -200,7 +193,6 @@ func TestWorkflowEnvPluginConfigureError(t *testing.T) {
 		env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
 	})
 
-	// Plugins may only be configured once per environment, like worker.New.
 	env = newEnvPluginWorkflowEnv(&envPluginForTest{})
 	require.PanicsWithValue(t, "SetWorkerOptions may not be called again after Plugins were configured", func() {
 		env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{&envPluginForTest{}}})
@@ -209,8 +201,7 @@ func TestWorkflowEnvPluginConfigureError(t *testing.T) {
 		env.SetWorkerOptions(WorkerOptions{})
 	})
 
-	// A failed ConfigureWorker does not poison the environment: the plugins are
-	// not adopted, so the environment can still be configured afterwards.
+	// A failed ConfigureWorker leaves the environment configurable.
 	env = (&WorkflowTestSuite{}).NewTestWorkflowEnvironment()
 	require.Panics(t, func() { env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}}) })
 	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{&envPluginForTest{}}})
@@ -220,8 +211,7 @@ func TestWorkflowEnvPluginStopsOnExecutionPanic(t *testing.T) {
 	t.Parallel()
 	plugin := &envPluginForTest{}
 	env := newEnvPluginWorkflowEnv(plugin)
-	// Executing an unregistered workflow type panics inside ExecuteWorkflow;
-	// the worker that was started for it is still stopped.
+	// ExecuteWorkflow panics on the unknown type; the started worker is still stopped.
 	require.Panics(t, func() { env.ExecuteWorkflow("no-such-workflow") })
 	require.Len(t, plugin.startKeys, 1)
 	require.Len(t, plugin.stopKeys, 1)
@@ -276,8 +266,7 @@ func TestWorkflowEnvPluginRegistryCallbacks(t *testing.T) {
 	env.RegisterDynamicWorkflow(envPluginDynamicWorkflow, DynamicRegisterWorkflowOptions{LoadDynamicRuntimeOptions: loadOptions})
 	env.RegisterNexusService(nexus.NewService("env-plugin-service"))
 
-	// Callbacks see the caller's options, as on a real worker: RegisterActivity
-	// reports zero options and the relaxed duplicate check is not visible.
+	// Callbacks see the caller's options, not the relaxed duplicate check.
 	require.Equal(t, []RegisterActivityOptions{{}, {Name: "Named"}}, plugin.activities)
 	require.Equal(t, 1, plugin.dynamicActivities)
 	require.Len(t, plugin.dynamicWorkflows, 1)
@@ -290,8 +279,6 @@ func TestActivityEnvPluginStopsOnPendingResult(t *testing.T) {
 	plugin := &envPluginForTest{}
 	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
 	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
-	// A pending (asynchronously completed) result still ends this execution's
-	// worker run.
 	_, err := env.ExecuteActivity(envPluginActivityName, "pending")
 	require.ErrorIs(t, err, ErrActivityResultPending)
 	require.Len(t, plugin.stopKeys, 1)
@@ -304,8 +291,7 @@ func TestActivityEnvPluginLifecycle(t *testing.T) {
 	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
 	require.Equal(t, []string{defaultTestTaskQueue}, plugin.taskQueues)
 
-	// Each execution is one worker run: the plugin registers the activity in
-	// StartWorker every time and is stopped when the call returns.
+	// Each execution is one worker run.
 	for i := 1; i <= 2; i++ {
 		val, err := env.ExecuteActivity(envPluginActivityName, "temporal")
 		require.NoError(t, err)
@@ -324,7 +310,6 @@ func TestActivityEnvPluginLifecycle(t *testing.T) {
 	require.Len(t, plugin.startKeys, 3)
 	require.Len(t, plugin.stopKeys, 3)
 
-	// The same instance key is used throughout the environment's life.
 	for _, key := range append(plugin.startKeys, plugin.stopKeys...) {
 		require.Equal(t, plugin.configureKeys[0], key)
 	}
@@ -336,9 +321,8 @@ func TestActivityEnvPluginRepeatedRegistrations(t *testing.T) {
 	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
 	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
 
-	// Every execution re-runs StartWorker against the shared registry. A plugin
-	// registering a workflow, dynamic workflow, dynamic activity, and Nexus
-	// service each time must keep working.
+	// StartWorker registers every kind of item again on each execution against
+	// the shared registry; none may fail as a duplicate.
 	for i := 1; i <= 2; i++ {
 		val, err := env.ExecuteActivity(envPluginActivityName, "temporal")
 		require.NoError(t, err)
@@ -355,8 +339,7 @@ func TestActivityEnvPluginStartError(t *testing.T) {
 	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
 	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
 
-	// The activity environment returns the start error instead of panicking,
-	// and does not stop a worker that never started.
+	// The activity environment returns the start error and skips StopWorker.
 	_, err := env.ExecuteActivity(envPluginActivityName, "temporal")
 	require.ErrorIs(t, err, plugin.startErr)
 	_, err = env.ExecuteLocalActivity(envPluginActivity, "temporal")

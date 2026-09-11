@@ -14,8 +14,7 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// testEnvPlugin records the worker-plugin hooks the test environments invoke,
-// exercised here purely through the public API.
+// testEnvPlugin records the worker-plugin hooks the test environments invoke.
 type testEnvPlugin struct {
 	worker.PluginBase
 	startErr             error

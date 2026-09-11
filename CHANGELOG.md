@@ -24,12 +24,8 @@ to docs, or any other relevant information.
 ### Added
 
 - `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
-  `SetWorkerOptions(worker.Options{Plugins: ...})`: `ConfigureWorker` runs at `SetWorkerOptions`, and
-  `StartWorker`/`StopWorker` run around each `ExecuteWorkflow`, `ExecuteActivity`, and
-  `ExecuteLocalActivity`, with the environment acting as the plugin registry. A plugin can now be the
-  single wiring surface for an integration in production and in tests. Previously `Plugins` was
-  silently ignored by the test environments; once plugins are set, `SetWorkerOptions` may not be
-  called again on that environment.
+  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
+  set, `SetWorkerOptions` may not be called again on that environment.
 - Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
   a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
   platforms), and the operating system and architecture. This is sent

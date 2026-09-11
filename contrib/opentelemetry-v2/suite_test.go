@@ -56,8 +56,6 @@ func (s *otelTestSuite) newTestWorkflowEnvironment(
 		testEnv.SetLogger(logger[0])
 	}
 	env := testEnv.NewTestWorkflowEnvironment()
-	// The test environment runs worker plugins, so the same plugin wiring
-	// production uses covers these tests.
 	env.SetWorkerOptions(worker.Options{Plugins: []worker.Plugin{plugin}})
 	return recorder, env
 }
