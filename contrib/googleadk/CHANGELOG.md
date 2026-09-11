@@ -13,6 +13,17 @@ or Security.
 
 ### Added
 
+- `WorkflowContext`: exposes the `workflow.Context` a bridged ADK context
+  dispatches on — during concurrent tool fan-out the calling task's own
+  coroutine context, otherwise the root context stashed by `NewContext`. Lets
+  in-workflow tools issue their own workflow commands (a child workflow, a
+  timer, a signal) on the coroutine they are running on, which a tool cannot do
+  by closing over the enclosing workflow function's Context: that coroutine is
+  already blocked on the fan-out join, so the command's Future never resolves
+  and the workflow task trips deadlock detection.
+  Reports false for a context that did not come from `NewContext`, so a tool can
+  fall back to a non-durable path.
+
 - `NewReplaySafeTracerProvider`, `NewReplaySafeLoggerProvider`, and
   `NewReplaySafeMeterProvider`: wrap the global OpenTelemetry providers so ADK
   telemetry emitted from workflow code is not re-emitted on history replay;
