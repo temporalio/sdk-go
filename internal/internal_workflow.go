@@ -93,6 +93,12 @@ type (
 		// NewCoroutine creates a new coroutine. To be called from within another coroutine.
 		// Used by the interceptors.
 		NewCoroutine(ctx Context, name string, highPriority bool, f func(ctx Context)) Context
+
+		// SetWorkflowFunctionStarted marks that the user workflow function has started
+		// running (all inbound interceptors have finished any pre-Next.ExecuteWorkflow
+		// work). It gates DrainUnhandledUpdates so buffered updates are only rejected
+		// after the workflow has had a chance to register handlers.
+		SetWorkflowFunctionStarted()
 	}
 
 	// Workflow is an interface that any workflow should implement.
@@ -176,6 +182,14 @@ type (
 		// returns true if the callback updated any coroutines state and there may be more work
 		allBlockedCallback func() bool
 		newEagerCoroutines []*coroutineState
+		// workflowFunctionStarted is true once the innermost interceptor has invoked
+		// the user workflow function (so all inbound interceptors have finished any
+		// pre-Next.ExecuteWorkflow work). This variable gates allBlockedCallback
+		// (DrainUnhandledUpdates) so that buffered updates are only drained/rejected
+		// after the workflow function has had a chance to register its handlers,
+		// not merely because all coroutines are temporarily blocked in an interceptor
+		// before the workflow function has run.
+		workflowFunctionStarted bool
 	}
 
 	// WorkflowOptions options passed to the workflow function
@@ -1272,6 +1286,10 @@ func (d *dispatcherImpl) newState(name string, highPriority bool) *coroutineStat
 	return c
 }
 
+func (d *dispatcherImpl) SetWorkflowFunctionStarted() {
+	d.workflowFunctionStarted = true
+}
+
 func (d *dispatcherImpl) IsClosed() bool {
 	d.mutex.Lock()
 	defer d.mutex.Unlock()
@@ -1296,8 +1314,12 @@ func (d *dispatcherImpl) ExecuteUntilAllBlocked(deadlockDetectionTimeout time.Du
 		d.mutex.Unlock()
 	}()
 	allBlocked := false
-	// Keep executing until at least one goroutine made some progress
-	for !allBlocked || d.allBlockedCallback() {
+	// Keep executing until at least one goroutine made some progress.
+	// Only invoke allBlockedCallback (DrainUnhandledUpdates) once the user
+	// workflow function has started (all inbound interceptors have finished).
+	// Draining earlier would reject buffered updates that are still waiting
+	// for the workflow to register their handlers.
+	for !allBlocked || (d.workflowFunctionStarted && d.allBlockedCallback()) {
 		d.coroutines = append(d.newEagerCoroutines, d.coroutines...)
 		d.newEagerCoroutines = nil
 		// Give every coroutine chance to execute removing closed ones
@@ -1839,6 +1861,8 @@ func setUpdateHandler(ctx Context, updateName string, handler any, opts UpdateHa
 	uh.dataConverter = GetWorkflowEnvironment(ctx).GetDataConverter()
 	uh.failureConverter = GetWorkflowEnvironment(ctx).GetFailureConverter()
 	eo.updateHandlers[updateName] = uh
+	// Mark that the workflow function has started registering handlers.
+	getWorkflowEnvironmentInterceptor(ctx).dispatcher.SetWorkflowFunctionStarted()
 	if GetWorkflowEnvironment(ctx).TryUse(SDKPriorityUpdateHandling) {
 		GetWorkflowEnvironment(ctx).HandleQueuedUpdates(updateName)
 		state := getState(ctx)
