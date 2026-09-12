@@ -212,9 +212,16 @@ func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn any, args ...a
 	return t.impl.executeLocalActivity(activityFn, args...)
 }
 
-// SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
-// use options of BackgroundActivityContext, MaxConcurrentSessionExecutionSize, and WorkflowInterceptorChainFactories on the WorkerOptions.
-// Other options are ignored.
+// SetWorkerOptions sets the WorkerOptions used by TestActivityEnvironment. Only
+// BackgroundActivityContext, MaxConcurrentSessionExecutionSize,
+// EnableSessionWorker, Interceptors, and Plugins are used. Other options are
+// ignored.
+//
+// Plugins are configured here, and once set this method may not be called
+// again. Each ExecuteActivity and ExecuteLocalActivity call is a worker run
+// under the same WorkerInstanceKey: StartWorker runs before it and StopWorker
+// after, and a StartWorker error is returned from the call. A plugin that
+// cannot restart after StopWorker needs a fresh environment per call.
 //
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestActivityEnvironment {
@@ -694,13 +701,13 @@ func (e *TestWorkflowEnvironment) OnNexusOperation(
 	case *nexus.Service:
 		s = stp
 		if e.impl.registry.getNexusService(s.Name) == nil {
-			e.impl.RegisterNexusService(s)
+			e.impl.registry.RegisterNexusService(s)
 		}
 	case string:
 		s = e.impl.registry.getNexusService(stp)
 		if s == nil {
 			s = nexus.NewService(stp)
-			e.impl.RegisterNexusService(s)
+			e.impl.registry.RegisterNexusService(s)
 		}
 	default:
 		panic("service must be *nexus.Service or string")
@@ -896,9 +903,17 @@ func (e *TestWorkflowEnvironment) Now() time.Time {
 	return e.impl.Now()
 }
 
-// SetWorkerOptions sets the WorkerOptions that will be use by TestActivityEnvironment. TestActivityEnvironment will
-// use options of BackgroundActivityContext, MaxConcurrentSessionExecutionSize, and WorkflowInterceptorChainFactories on the WorkerOptions.
-// Other options are ignored.
+// SetWorkerOptions sets the WorkerOptions used by TestWorkflowEnvironment. Only
+// BackgroundActivityContext, MaxConcurrentSessionExecutionSize,
+// EnableSessionWorker, DeadlockDetectionTimeout, PreferredVersionProvider,
+// Interceptors, and Plugins are used. Other options are ignored.
+//
+// Plugins are configured here, and once set this method may not be called
+// again. ExecuteWorkflow is the worker run: StartWorker runs before it and
+// StopWorker after, without waiting for in-flight activity goroutines. Plugin
+// registry callbacks fire for Register* calls made after this method, but not
+// for OnActivity/OnWorkflow mocks or the workflow passed to ExecuteWorkflow.
+// Call this after SetStartWorkflowOptions if a plugin reads the task queue.
 //
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.
 func (e *TestWorkflowEnvironment) SetWorkerOptions(options WorkerOptions) *TestWorkflowEnvironment {

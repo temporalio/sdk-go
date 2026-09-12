@@ -266,6 +266,10 @@ type (
 		workerStopChannel  chan struct{}
 		sessionEnvironment *testSessionEnvironmentImpl
 
+		workerInstanceKey     string
+		plugins               []WorkerPlugin
+		pluginRegistryOptions WorkerPluginConfigureWorkerRegistryOptions
+
 		// True if this was created only for testing activities not workflows.
 		activityEnvOnly             bool
 		executeActivitiesInWorkflow bool
@@ -338,7 +342,8 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 			WorkflowTaskTimeout:      1 * time.Second,
 			Attempt:                  1,
 		},
-		registry: r,
+		registry:          r,
+		workerInstanceKey: uuid.NewString(),
 
 		changeVersions:    make(map[string]Version),
 		openSessions:      make(map[string]*SessionInfo),
@@ -556,6 +561,24 @@ func (env *testWorkflowEnvironmentImpl) newTestWorkflowEnvironmentForChild(
 }
 
 func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) {
+	// A second call would silently drop the plugins and the options they adjusted.
+	if len(env.plugins) > 0 {
+		panic("SetWorkerOptions may not be called again after Plugins were configured")
+	}
+	plugins := append([]WorkerPlugin(nil), options.Plugins...)
+	var pluginRegistryOptions WorkerPluginConfigureWorkerRegistryOptions
+	for _, plugin := range plugins {
+		if err := plugin.ConfigureWorker(context.Background(), WorkerPluginConfigureWorkerOptions{
+			WorkerInstanceKey:     env.workerInstanceKey,
+			TaskQueue:             env.workflowInfo.TaskQueueName,
+			WorkerOptions:         &options,
+			WorkerRegistryOptions: &pluginRegistryOptions,
+		}); err != nil {
+			panic(err)
+		}
+	}
+	env.plugins = plugins
+	env.pluginRegistryOptions = pluginRegistryOptions
 	env.workerOptions = options
 	env.registry.interceptors = options.Interceptors
 	if env.workerOptions.EnableSessionWorker && env.sessionEnvironment == nil {
@@ -568,6 +591,95 @@ func (env *testWorkflowEnvironmentImpl) setWorkerOptions(options WorkerOptions) 
 			DisableAlreadyRegisteredCheck: true,
 		})
 	}
+}
+
+// startPluginWorker runs the plugins' StartWorker chain the way
+// AggregatedWorker.Start does.
+func (env *testWorkflowEnvironmentImpl) startPluginWorker() error {
+	if len(env.plugins) == 0 {
+		return nil
+	}
+	start := func(context.Context, WorkerPluginStartWorkerOptions) error { return nil }
+	for i := len(env.plugins) - 1; i >= 0; i-- {
+		plugin := env.plugins[i]
+		next := start
+		start = func(ctx context.Context, options WorkerPluginStartWorkerOptions) error {
+			return plugin.StartWorker(ctx, options, next)
+		}
+	}
+	return start(context.Background(), WorkerPluginStartWorkerOptions{
+		WorkerInstanceKey: env.workerInstanceKey,
+		WorkerRegistry:    testPluginRegistry{env: env},
+	})
+}
+
+// testPluginRegistry is the registry handed to plugins in StartWorker. The
+// activity environment runs StartWorker on every execution against one shared
+// registry, so repeated registrations from a plugin must not panic.
+type testPluginRegistry struct {
+	env *testWorkflowEnvironmentImpl
+}
+
+func (r testPluginRegistry) RegisterWorkflowWithOptions(w any, options RegisterWorkflowOptions) {
+	if r.env.pluginRegistryOptions.OnRegisterWorkflow != nil {
+		r.env.pluginRegistryOptions.OnRegisterWorkflow(w, options)
+	}
+	options.DisableAlreadyRegisteredCheck = true
+	r.env.registry.RegisterWorkflowWithOptions(w, options)
+}
+
+func (r testPluginRegistry) RegisterDynamicWorkflow(w any, options DynamicRegisterWorkflowOptions) {
+	if r.env.pluginRegistryOptions.OnRegisterDynamicWorkflow != nil {
+		r.env.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, options)
+	}
+	r.env.registry.Lock()
+	registered := r.env.registry.dynamicWorkflow != nil
+	r.env.registry.Unlock()
+	if !registered {
+		r.env.registry.RegisterDynamicWorkflow(w, options)
+	}
+}
+
+func (r testPluginRegistry) RegisterActivityWithOptions(a any, options RegisterActivityOptions) {
+	r.env.RegisterActivityWithOptions(a, options)
+}
+
+func (r testPluginRegistry) RegisterDynamicActivity(a any, options DynamicRegisterActivityOptions) {
+	if r.env.pluginRegistryOptions.OnRegisterDynamicActivity != nil {
+		r.env.pluginRegistryOptions.OnRegisterDynamicActivity(a, options)
+	}
+	r.env.registry.Lock()
+	registered := r.env.registry.dynamicActivity != nil
+	r.env.registry.Unlock()
+	if !registered {
+		r.env.registry.RegisterDynamicActivity(a, options)
+	}
+}
+
+func (r testPluginRegistry) RegisterNexusService(s *nexus.Service) {
+	if r.env.pluginRegistryOptions.OnRegisterNexusService != nil {
+		r.env.pluginRegistryOptions.OnRegisterNexusService(s)
+	}
+	if r.env.registry.getNexusService(s.Name) == nil {
+		r.env.registry.RegisterNexusService(s)
+	}
+}
+
+// stopPluginWorker runs the plugins' StopWorker chain the way
+// AggregatedWorker.Stop does.
+func (env *testWorkflowEnvironmentImpl) stopPluginWorker() {
+	if len(env.plugins) == 0 {
+		return
+	}
+	stop := func(context.Context, WorkerPluginStopWorkerOptions) {}
+	for i := len(env.plugins) - 1; i >= 0; i-- {
+		plugin := env.plugins[i]
+		next := stop
+		stop = func(ctx context.Context, options WorkerPluginStopWorkerOptions) {
+			plugin.StopWorker(ctx, options, next)
+		}
+	}
+	stop(context.Background(), WorkerPluginStopWorkerOptions{WorkerInstanceKey: env.workerInstanceKey})
 }
 
 func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
@@ -607,9 +719,22 @@ func (env *testWorkflowEnvironmentImpl) setActivityTaskQueue(taskqueue string, a
 }
 
 func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn any, args ...any) {
+	// If a workflow already ran here, executeWorkflowInternal panics; do not run
+	// a spurious plugin start/stop pair around that.
+	env.locker.Lock()
+	alreadyExecuted := env.workflowInfo.WorkflowType.Name != workflowTypeNotSpecified
+	env.locker.Unlock()
+	if !alreadyExecuted {
+		if err := env.startPluginWorker(); err != nil {
+			panic(err)
+		}
+		defer env.stopPluginWorker()
+	}
+
 	fType := reflect.TypeOf(workflowFn)
 	if getKind(fType) == reflect.Func {
-		env.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
+		// A convenience, not a worker registration: bypasses plugin registry callbacks.
+		env.registry.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
 	}
 	dc := converter.WithDataConverterSerializationContext(env.GetDataConverter(), converter.WorkflowSerializationContext{
 		Namespace:  env.workflowInfo.Namespace,
@@ -793,6 +918,11 @@ func (env *testWorkflowEnvironmentImpl) executeActivity(
 	activityFn any,
 	args ...any,
 ) (converter.EncodedValue, error) {
+	if err := env.startPluginWorker(); err != nil {
+		return nil, err
+	}
+	defer env.stopPluginWorker()
+
 	activityType, err := getValidatedActivityFunction(activityFn, args, env.registry)
 	if err != nil {
 		panic(err)
@@ -884,6 +1014,11 @@ func (env *testWorkflowEnvironmentImpl) executeLocalActivity(
 	activityFn any,
 	args ...any,
 ) (val converter.EncodedValue, err error) {
+	if err = env.startPluginWorker(); err != nil {
+		return nil, err
+	}
+	defer env.stopPluginWorker()
+
 	activityType, err := getValidatedActivityFunction(activityFn, args, env.registry)
 	if err != nil {
 		return nil, err
@@ -2551,31 +2686,49 @@ func (env *testWorkflowEnvironmentImpl) TypedSearchAttributes() SearchAttributes
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterWorkflow(w any) {
+	if env.pluginRegistryOptions.OnRegisterWorkflow != nil {
+		env.pluginRegistryOptions.OnRegisterWorkflow(w, RegisterWorkflowOptions{})
+	}
 	env.registry.RegisterWorkflow(w)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterWorkflowWithOptions(w any, options RegisterWorkflowOptions) {
+	if env.pluginRegistryOptions.OnRegisterWorkflow != nil {
+		env.pluginRegistryOptions.OnRegisterWorkflow(w, options)
+	}
 	env.registry.RegisterWorkflowWithOptions(w, options)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterDynamicWorkflow(w any, options DynamicRegisterWorkflowOptions) {
+	if env.pluginRegistryOptions.OnRegisterDynamicWorkflow != nil {
+		env.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, options)
+	}
 	env.registry.RegisterDynamicWorkflow(w, options)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterActivity(a any) {
-	env.registry.RegisterActivityWithOptions(a, RegisterActivityOptions{DisableAlreadyRegisteredCheck: true})
+	env.RegisterActivityWithOptions(a, RegisterActivityOptions{})
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterActivityWithOptions(a any, options RegisterActivityOptions) {
+	if env.pluginRegistryOptions.OnRegisterActivity != nil {
+		env.pluginRegistryOptions.OnRegisterActivity(a, options)
+	}
 	options.DisableAlreadyRegisteredCheck = true
 	env.registry.RegisterActivityWithOptions(a, options)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterDynamicActivity(w any, options DynamicRegisterActivityOptions) {
+	if env.pluginRegistryOptions.OnRegisterDynamicActivity != nil {
+		env.pluginRegistryOptions.OnRegisterDynamicActivity(w, options)
+	}
 	env.registry.RegisterDynamicActivity(w, options)
 }
 
 func (env *testWorkflowEnvironmentImpl) RegisterNexusService(s *nexus.Service) {
+	if env.pluginRegistryOptions.OnRegisterNexusService != nil {
+		env.pluginRegistryOptions.OnRegisterNexusService(s)
+	}
 	env.registry.RegisterNexusService(s)
 }
 

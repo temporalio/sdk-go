@@ -1377,7 +1377,7 @@ func (aw *AggregatedWorker) RegisterDynamicWorkflow(w any, options DynamicRegist
 		panic("dynamic workflow does not have a versioning behavior")
 	}
 	if aw.pluginRegistryOptions.OnRegisterDynamicWorkflow != nil {
-		aw.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, DynamicRegisterWorkflowOptions{})
+		aw.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, options)
 	}
 	aw.registry.RegisterDynamicWorkflow(w, options)
 }
@@ -1401,7 +1401,7 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a any, options RegisterA
 // RegisterDynamicActivity registers the dynamic activity function with options.
 // Registering activities via a structure is not supported for dynamic activities.
 func (aw *AggregatedWorker) RegisterDynamicActivity(a any, options DynamicRegisterActivityOptions) {
-	if aw.pluginRegistryOptions.OnRegisterActivity != nil {
+	if aw.pluginRegistryOptions.OnRegisterDynamicActivity != nil {
 		aw.pluginRegistryOptions.OnRegisterDynamicActivity(a, options)
 	}
 	aw.registry.RegisterDynamicActivity(a, options)
