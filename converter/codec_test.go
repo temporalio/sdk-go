@@ -3,12 +3,15 @@ package converter
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
@@ -354,4 +357,156 @@ func TestCodecDataConverter_ToPayload_EncodeError(t *testing.T) {
 	require.EqualError(err, "some encode error")
 	// Also assert that the original payload is returned on error.
 	require.True(proto.Equal(originalPayload, payload))
+}
+
+func TestRemotePayloadCodecNoRetry(t *testing.T) {
+	var attempts atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		http.Error(w, "server error", http.StatusInternalServerError)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint: server.URL,
+	})
+
+	defaultConv := GetDefaultDataConverter()
+	payloads, _ := defaultConv.ToPayloads("test")
+
+	_, err := codec.Encode(payloads.Payloads)
+	require.Error(t, err)
+	require.Equal(t, int32(1), attempts.Load())
+}
+
+func TestRemotePayloadCodecRetryOnTransientError(t *testing.T) {
+	var attempts atomic.Int32
+	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := attempts.Add(1)
+		if n < 3 {
+			http.Error(w, "server error", http.StatusInternalServerError)
+			return
+		}
+		NewPayloadCodecHTTPHandler(codec).ServeHTTP(w, r)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	remoteCodec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint: server.URL,
+		RetryPolicy: &RemotePayloadCodecRetryPolicy{
+			InitialInterval: 10 * time.Millisecond,
+			MaxAttempts:     5,
+		},
+	})
+
+	defaultConv := GetDefaultDataConverter()
+	payloads, _ := defaultConv.ToPayloads("test")
+
+	encoded, err := remoteCodec.Encode(payloads.Payloads)
+	require.NoError(t, err)
+	require.Equal(t, int32(3), attempts.Load())
+
+	localEncoded, err := codec.Encode(payloads.Payloads)
+	require.NoError(t, err)
+	require.Len(t, encoded, len(localEncoded))
+}
+
+func TestRemotePayloadCodecRetryExhausted(t *testing.T) {
+	var attempts atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		http.Error(w, "always fails", http.StatusServiceUnavailable)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint: server.URL,
+		RetryPolicy: &RemotePayloadCodecRetryPolicy{
+			InitialInterval: 10 * time.Millisecond,
+			MaxAttempts:     3,
+		},
+	})
+
+	defaultConv := GetDefaultDataConverter()
+	payloads, _ := defaultConv.ToPayloads("test")
+
+	_, err := codec.Encode(payloads.Payloads)
+	require.Error(t, err)
+	var httpErr *RemotePayloadCodecHTTPError
+	require.True(t, errors.As(err, &httpErr))
+	require.Equal(t, http.StatusServiceUnavailable, httpErr.StatusCode)
+	require.Equal(t, int32(3), attempts.Load())
+}
+
+func TestRemotePayloadCodecRetryIsRetryableFilter(t *testing.T) {
+	var attempts atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts.Add(1)
+		http.Error(w, "bad request", http.StatusBadRequest)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	codec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint: server.URL,
+		RetryPolicy: &RemotePayloadCodecRetryPolicy{
+			InitialInterval: 10 * time.Millisecond,
+			MaxAttempts:     5,
+			IsRetryableError: func(err error) bool {
+				var httpErr *RemotePayloadCodecHTTPError
+				if errors.As(err, &httpErr) {
+					return httpErr.StatusCode >= 500
+				}
+				return true
+			},
+		},
+	})
+
+	defaultConv := GetDefaultDataConverter()
+	payloads, _ := defaultConv.ToPayloads("test")
+
+	_, err := codec.Encode(payloads.Payloads)
+	require.Error(t, err)
+	require.Equal(t, int32(1), attempts.Load())
+}
+
+func TestRemotePayloadCodecRetryTransportError(t *testing.T) {
+	var attempts atomic.Int32
+	codec := NewZlibCodec(ZlibCodecOptions{AlwaysEncode: true})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := attempts.Add(1)
+		if n == 1 {
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				http.Error(w, "hijack not supported", http.StatusInternalServerError)
+				return
+			}
+			conn, _, _ := hj.Hijack()
+			conn.Close()
+			return
+		}
+		NewPayloadCodecHTTPHandler(codec).ServeHTTP(w, r)
+	})
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	remoteCodec := NewRemotePayloadCodec(RemotePayloadCodecOptions{
+		Endpoint: server.URL,
+		RetryPolicy: &RemotePayloadCodecRetryPolicy{
+			InitialInterval: 10 * time.Millisecond,
+			MaxAttempts:     3,
+		},
+	})
+
+	defaultConv := GetDefaultDataConverter()
+	payloads, _ := defaultConv.ToPayloads("test")
+
+	encoded, err := remoteCodec.Encode(payloads.Payloads)
+	require.NoError(t, err)
+	require.Equal(t, int32(2), attempts.Load())
+	require.NotNil(t, encoded)
 }
