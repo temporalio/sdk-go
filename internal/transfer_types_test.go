@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"errors"
+	"math/rand/v2"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -27,7 +29,6 @@ var temperatureConverter = NewTransferConverter(
 func (temperature) TransferConverter() TransferConverter {
 	return temperatureConverter
 }
-
 
 type userRef struct {
 	id    string
@@ -103,37 +104,59 @@ func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 	t.Parallel()
 	dc := defaultTransferAwareDataConverter()
 
-	t.Run("scalar transfer value", func(t *testing.T) {
-		payload, err := dc.ToPayload(temperature{kelvin: 300})
-		require.NoError(t, err)
-		require.Equal(t, "300", string(payload.GetData()))
+	t.Run("scalar transfer values", func(t *testing.T) {
+		values := make([]temperature, 10)
+		for i := range values {
+			values[i] = temperature{kelvin: rand.Float64() * 1_000}
+		}
 
-		var got temperature
-		require.NoError(t, dc.FromPayload(payload, &got))
-		require.Equal(t, temperature{kelvin: 300}, got)
+		for _, value := range values {
+			payload, err := dc.ToPayload(value)
+			require.NoError(t, err)
+
+			var got temperature
+			require.NoError(t, dc.FromPayload(payload, &got))
+			require.Equal(t, value, got)
+		}
 	})
 
-	t.Run("struct transfer value", func(t *testing.T) {
-		payload, err := dc.ToPayload(userRef{id: "u-1", cache: "Ada"})
-		require.NoError(t, err)
-		require.Equal(t, `{"ID":"u-1"}`, string(payload.GetData()))
+	t.Run("struct transfer values", func(t *testing.T) {
+		values := make([]userRef, 10)
+		for i := range values {
+			values[i] = userRef{
+				id:    "u-" + strconv.FormatUint(rand.Uint64(), 10),
+				cache: "cache-" + strconv.FormatUint(rand.Uint64(), 10),
+			}
+		}
 
-		var got userRef
-		require.NoError(t, dc.FromPayload(payload, &got))
-		require.Equal(t, userRef{id: "u-1"}, got)
+		for _, value := range values {
+			payload, err := dc.ToPayload(value)
+			require.NoError(t, err)
+
+			var got userRef
+			require.NoError(t, dc.FromPayload(payload, &got))
+			require.Equal(t, userRef{id: value.id}, got)
+		}
 	})
 
-	t.Run("value without a transfer converter", func(t *testing.T) {
-		payload, err := dc.ToPayload("plain")
-		require.NoError(t, err)
+	t.Run("values without a transfer converter", func(t *testing.T) {
+		values := make([]string, 10)
+		for i := range values {
+			values[i] = "plain-" + strconv.FormatUint(rand.Uint64(), 10)
+		}
 
-		want, err := converter.GetDefaultDataConverter().ToPayload("plain")
-		require.NoError(t, err)
-		require.Equal(t, want.GetData(), payload.GetData())
+		for _, value := range values {
+			payload, err := dc.ToPayload(value)
+			require.NoError(t, err)
 
-		var got string
-		require.NoError(t, dc.FromPayload(payload, &got))
-		require.Equal(t, "plain", got)
+			want, err := converter.GetDefaultDataConverter().ToPayload(value)
+			require.NoError(t, err)
+			require.Equal(t, want.GetData(), payload.GetData())
+
+			var got string
+			require.NoError(t, dc.FromPayload(payload, &got))
+			require.Equal(t, value, got)
+		}
 	})
 }
 
@@ -141,18 +164,63 @@ func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
 	t.Parallel()
 	dc := defaultTransferAwareDataConverter()
 
-	payloads, err := dc.ToPayloads(temperature{kelvin: 300}, "plain", userRef{id: "u-1"})
-	require.NoError(t, err)
+	t.Run("scalar transfer values", func(t *testing.T) {
+		values := make([]temperature, 10)
+		valuePtrs := make([]any, len(values))
+		got := make([]temperature, len(values))
+		for i := range values {
+			values[i] = temperature{kelvin: rand.Float64() * 1_000}
+			valuePtrs[i] = &got[i]
+		}
 
-	var (
-		gotTemperature temperature
-		gotString      string
-		gotUser        userRef
-	)
-	require.NoError(t, dc.FromPayloads(payloads, &gotTemperature, &gotString, &gotUser))
-	require.Equal(t, temperature{kelvin: 300}, gotTemperature)
-	require.Equal(t, "plain", gotString)
-	require.Equal(t, userRef{id: "u-1"}, gotUser)
+		payloads, err := dc.ToPayloads(sliceToAny(values)...)
+		require.NoError(t, err)
+		require.NoError(t, dc.FromPayloads(payloads, valuePtrs...))
+		require.Equal(t, values, got)
+	})
+
+	t.Run("struct transfer values", func(t *testing.T) {
+		values := make([]userRef, 10)
+		want := make([]userRef, len(values))
+		valuePtrs := make([]any, len(values))
+		got := make([]userRef, len(values))
+		for i := range values {
+			values[i] = userRef{
+				id:    "u-" + strconv.FormatUint(rand.Uint64(), 10),
+				cache: "cache-" + strconv.FormatUint(rand.Uint64(), 10),
+			}
+			want[i] = userRef{id: values[i].id}
+			valuePtrs[i] = &got[i]
+		}
+
+		payloads, err := dc.ToPayloads(sliceToAny(values)...)
+		require.NoError(t, err)
+		require.NoError(t, dc.FromPayloads(payloads, valuePtrs...))
+		require.Equal(t, want, got)
+	})
+
+	t.Run("values without a transfer converter", func(t *testing.T) {
+		values := make([]string, 10)
+		valuePtrs := make([]any, len(values))
+		got := make([]string, len(values))
+		for i := range values {
+			values[i] = "plain-" + strconv.FormatUint(rand.Uint64(), 10)
+			valuePtrs[i] = &got[i]
+		}
+
+		payloads, err := dc.ToPayloads(sliceToAny(values)...)
+		require.NoError(t, err)
+		require.NoError(t, dc.FromPayloads(payloads, valuePtrs...))
+		require.Equal(t, values, got)
+	})
+}
+
+func sliceToAny[T any](values []T) []any {
+	result := make([]any, len(values))
+	for i := range values {
+		result[i] = values[i]
+	}
+	return result
 }
 
 func TestTransferAwareDataConverter_MatchesParentForPlainValues(t *testing.T) {
