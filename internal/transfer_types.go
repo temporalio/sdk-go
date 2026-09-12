@@ -10,48 +10,48 @@ import (
 
 // -- USER API -----------------------------------------------------------
 
-// TransferTypeConvertible provides a transfer type converter for values of
+// TransferConvertible provides a transfer type converter for values of
 // this type. The SDK calls TransferTypeConverter before serialization and
 // after deserialization.
 //
 // NOTE: Experimental.
-type TransferTypeConvertible interface {
-	TransferTypeConverter() TransferTypeConverter
+type TransferConvertible interface {
+	TransferConverter() TransferConverter
 }
 
-// TransferTypeConverter converts application values to serializable transfer
-// values and back. Implement it using [NewTransferTypeConverter].
+// TransferConverter converts application values to serializable transfer
+// values and back. Implement it using [NewTransferConverter].
 //
 // NOTE: Experimental.
-type TransferTypeConverter interface {
+type TransferConverter interface {
 	NewTransferValuePtr() any
 	ToTransferValue(value any) (any, error)
 	FromTransferValue(transferValue any, valuePtr any) error
-	transferTypeConverter()
+	transferConverter()
 }
 
-// NewTransferTypeConverter builds a [TransferTypeConverter] that can map
+// NewTransferConverter builds a [TransferConverter] that can map
 // something of type Value into a serializable "transfer value", and back.
 //
 // NOTE: Experimental.
-func NewTransferTypeConverter[Value, TransferValue any](
+func NewTransferConverter[Value, TransferValue any](
 	toTransferValue func(Value) (TransferValue, error),
 	fromTransferValue func(TransferValue, *Value) error,
-) TransferTypeConverter {
-	return &transferTypeConverter[Value, TransferValue]{
+) TransferConverter {
+	return &transferConverter[Value, TransferValue]{
 		toTransferValue:   toTransferValue,
 		fromTransferValue: fromTransferValue,
 	}
 }
 
-type transferTypeConverter[Value, TransferValue any] struct {
+type transferConverter[Value, TransferValue any] struct {
 	toTransferValue   func(Value) (TransferValue, error)
 	fromTransferValue func(TransferValue, *Value) error
 }
 
-func (*transferTypeConverter[Value, TransferValue]) transferTypeConverter() {}
+func (*transferConverter[Value, TransferValue]) transferConverter() {}
 
-func (*transferTypeConverter[Value, TransferValue]) NewTransferValuePtr() any {
+func (*transferConverter[Value, TransferValue]) NewTransferValuePtr() any {
 	transferType := reflect.TypeFor[TransferValue]()
 	if transferType.Kind() != reflect.Pointer {
 		return new(TransferValue)
@@ -64,14 +64,14 @@ func (*transferTypeConverter[Value, TransferValue]) NewTransferValuePtr() any {
 	return transferValue.Interface()
 }
 
-func (c *transferTypeConverter[Value, TransferValue]) ToTransferValue(value any) (any, error) {
+func (c *transferConverter[Value, TransferValue]) ToTransferValue(value any) (any, error) {
 	if value, ok := value.(Value); ok {
 		return c.toTransferValue(value)
 	}
 	return value, nil
 }
 
-func (c *transferTypeConverter[Value, TransferValue]) FromTransferValue(transferValue any, valuePtr any) error {
+func (c *transferConverter[Value, TransferValue]) FromTransferValue(transferValue any, valuePtr any) error {
 	v, ok := valuePtr.(*Value)
 	if !ok {
 		var expectedValue *Value
@@ -87,44 +87,44 @@ func (c *transferTypeConverter[Value, TransferValue]) FromTransferValue(transfer
 
 // -- DATA CONVERTERS ----------------------------------------------------------
 
-// transferTypeDataConverter is a context-aware data converter that:
+// transferAwareDataConverter is a context-aware data converter that:
 //
 //  1. Encodes its input by trying to apply transfer conversion and forwarding
 //     the result to the parent data converter; and
 //  2. Decodes its input using the parent data converter and then trying to
 //     transfer-convert the result into a normal value.
-type transferTypeDataConverter struct {
+type transferAwareDataConverter struct {
 	parent converter.DataConverter
 }
 
-var _ converter.DataConverter = (*transferTypeDataConverter)(nil)
+var _ converter.DataConverter = (*transferAwareDataConverter)(nil)
 
 // var _ converter.DataConverterWithSerializationContext = (*transferTypeDataConverter)(nil)
 // var _ ContextAware = (*transferTypeDataConverter)(nil)
 
-// toTransferTypeDataConverter is an idempotent operation that upgrades a
+// makeTransferAware is an idempotent operation that upgrades a
 // normal data converter into a transfer-type-aware data converter.
-func toTransferTypeDataConverter(dc converter.DataConverter) converter.DataConverter {
+func makeTransferAware(dc converter.DataConverter) converter.DataConverter {
 	if dc == nil {
 		panic("nil data converter")
 	}
-	if _, ok := dc.(*transferTypeDataConverter); ok {
+	if _, ok := dc.(*transferAwareDataConverter); ok {
 		return dc
 	}
-	return &transferTypeDataConverter{parent: dc}
+	return &transferAwareDataConverter{parent: dc}
 }
 
-func (dc *transferTypeDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
-	transferValue, err := transferTypeTryEncoding(value)
+func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
+	transferValue, err := toTransferValue(value)
 	if err != nil {
 		return nil, err
 	}
 	return dc.parent.ToPayload(transferValue)
 }
 
-func (dc *transferTypeDataConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
+func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
 	for i, value := range values {
-		transferValue, err := transferTypeTryEncoding(value)
+		transferValue, err := toTransferValue(value)
 		if err != nil {
 			return nil, err
 		}
@@ -133,28 +133,28 @@ func (dc *transferTypeDataConverter) ToPayloads(values ...any) (*commonpb.Payloa
 	return dc.parent.ToPayloads(values...)
 }
 
-func transferTypeTryEncoding(value any) (transferValue any, err error) {
-	convertible, ok := value.(TransferTypeConvertible)
+func toTransferValue(value any) (transferValue any, err error) {
+	convertible, ok := value.(TransferConvertible)
 	if !ok {
 		return value, nil
 	}
-	return convertible.TransferTypeConverter().ToTransferValue(value)
+	return convertible.TransferConverter().ToTransferValue(value)
 }
 
-func (dc *transferTypeDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
-	convertible, ok := valuePtr.(TransferTypeConvertible)
+func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
+	convertible, ok := valuePtr.(TransferConvertible)
 	if !ok {
 		return dc.parent.FromPayload(payload, valuePtr)
 	}
-	transferPtr := convertible.TransferTypeConverter().NewTransferValuePtr()
+	transferPtr := convertible.TransferConverter().NewTransferValuePtr()
 	err := dc.parent.FromPayload(payload, transferPtr)
 	if err != nil {
 		return err
 	}
-	return convertible.TransferTypeConverter().FromTransferValue(transferPtr, valuePtr)
+	return convertible.TransferConverter().FromTransferValue(transferPtr, valuePtr)
 }
 
-func (dc *transferTypeDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
+func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
 	if payloads == nil {
 		return nil
 	}
@@ -172,10 +172,10 @@ func (dc *transferTypeDataConverter) FromPayloads(payloads *commonpb.Payloads, v
 	return nil
 }
 
-func (dc *transferTypeDataConverter) ToString(input *commonpb.Payload) string {
+func (dc *transferAwareDataConverter) ToString(input *commonpb.Payload) string {
 	return dc.parent.ToString(input)
 }
 
-func (dc *transferTypeDataConverter) ToStrings(input *commonpb.Payloads) []string {
+func (dc *transferAwareDataConverter) ToStrings(input *commonpb.Payloads) []string {
 	return dc.parent.ToStrings(input)
 }
