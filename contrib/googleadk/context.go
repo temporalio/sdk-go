@@ -92,6 +92,25 @@ func workflowContext(ctx context.Context) (workflow.Context, bool) {
 	return wfCtx, true
 }
 
+// WorkflowContext returns the workflow.Context that the bridged ADK context
+// dispatches its blocking Temporal calls on: during concurrent tool fan-out the
+// calling task's own coroutine context, otherwise the root context stashed by
+// NewContext. It reports false for a context that did not come from NewContext
+// (a local ADK run, say), so a tool can fall back to a non-durable path.
+//
+// In-workflow tools can use it to issue workflow commands of their own — a
+// child workflow, a timer, a signal. Use the returned Context rather than
+// closing over the enclosing workflow function's: during fan-out the tool runs
+// on its own coroutine while the coroutine owning the root Context is blocked
+// on the fan-out join, so a Future awaited there never resolves and the
+// workflow task trips deadlock detection.
+//
+// The returned Context is valid only for the duration of the call that received
+// ctx; do not retain it past the tool's return.
+func WorkflowContext(ctx context.Context) (workflow.Context, bool) {
+	return workflowContext(ctx)
+}
+
 // uuidRandomStream names the workflow random stream that feeds
 // newDeterministicUUIDProvider.
 const uuidRandomStream = "go.temporal.io/sdk/contrib/googleadk/uuid"

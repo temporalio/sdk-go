@@ -179,6 +179,15 @@ the model SDK's own retries (see below), or override the fallbacks.
   tools run on Temporal's deterministic dispatcher inside the workflow — no
   Activity overhead, and their session-state mutations (`ctx.State().Set`,
   `ctx.Actions()`) propagate normally.
+- **Issue workflow commands from a tool.** `WorkflowContext(ctx)` returns the
+  `workflow.Context` the bridged context dispatches on, so an in-workflow tool
+  can start a child workflow, set a timer, or signal another execution. Use the
+  returned Context rather than closing over the workflow function's own: during
+  concurrent fan-out the tool runs on its own coroutine, and the coroutine that
+  owns the root Context is blocked on the fan-out join, so a Future awaited
+  there never resolves and the workflow task trips deadlock detection. It reports false outside `NewContext` (a local ADK run),
+  so a tool can fall back to a non-durable path.
+
 - **Opt a tool into an Activity when it does I/O.** `ActivityAsTool(myActivity,
   ...)` exposes an existing `func(context.Context, TArgs) (TResults, error)`
   Temporal activity to the agent as a tool (parameter schema inferred from
