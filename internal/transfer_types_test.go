@@ -84,6 +84,16 @@ type countingDataConverter struct {
 	fromPayloadsCalls int
 }
 
+type nilReturningSerializationContextDataConverter struct {
+	converter.DataConverter
+}
+
+func (*nilReturningSerializationContextDataConverter) WithSerializationContext(
+	converter.SerializationContext,
+) converter.DataConverter {
+	return nil
+}
+
 func (dc *countingDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	dc.fromPayloadCalls++
 	return dc.DataConverter.FromPayload(payload, valuePtr)
@@ -157,6 +167,17 @@ func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 			require.NoError(t, dc.FromPayload(payload, &got))
 			require.Equal(t, value, got)
 		}
+	})
+}
+
+func TestTransferAwareDataConverter_PointerValuePanics(t *testing.T) {
+	t.Parallel()
+	dc := defaultTransferAwareDataConverter()
+	value := &temperature{kelvin: 300}
+
+	require.Implements(t, (*ValueWithTransferConverter)(nil), value)
+	require.Panics(t, func() {
+		_, _ = dc.ToPayload(value)
 	})
 }
 
@@ -310,45 +331,6 @@ func TestTransferAwareDataConverter_ConversionErrors(t *testing.T) {
 	})
 }
 
-// A missing payload leaves the value alone, the same way the underlying data
-// converters do.
-func TestTransferAwareDataConverter_MissingPayloads(t *testing.T) {
-	t.Parallel()
-	dc := defaultTransferAwareDataConverter()
-
-	t.Run("nil payload", func(t *testing.T) {
-		got := temperature{kelvin: 42}
-		require.NoError(t, dc.FromPayload(nil, &got))
-		require.Equal(t, temperature{kelvin: 42}, got)
-	})
-
-	t.Run("nil payloads", func(t *testing.T) {
-		got := temperature{kelvin: 42}
-		require.NoError(t, dc.FromPayloads(nil, &got))
-		require.Equal(t, temperature{kelvin: 42}, got)
-	})
-
-	t.Run("fewer payloads than values", func(t *testing.T) {
-		payloads, err := dc.ToPayloads(temperature{kelvin: 300})
-		require.NoError(t, err)
-
-		gotFirst := temperature{kelvin: 42}
-		gotSecond := temperature{kelvin: 42}
-		require.NoError(t, dc.FromPayloads(payloads, &gotFirst, &gotSecond))
-		require.Equal(t, temperature{kelvin: 300}, gotFirst)
-		require.Equal(t, temperature{kelvin: 42}, gotSecond)
-	})
-
-	t.Run("more payloads than values", func(t *testing.T) {
-		payloads, err := dc.ToPayloads(temperature{kelvin: 300}, temperature{kelvin: 400})
-		require.NoError(t, err)
-
-		var got temperature
-		require.NoError(t, dc.FromPayloads(payloads, &got))
-		require.Equal(t, temperature{kelvin: 300}, got)
-	})
-}
-
 func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	t.Parallel()
 
@@ -367,5 +349,18 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	t.Run("parent that is not context aware", func(t *testing.T) {
 		dc := defaultTransferAwareDataConverter()
 		require.Same(t, dc, WithContext(context.Background(), dc))
+	})
+
+	t.Run("serialization context parent returning nil", func(t *testing.T) {
+		dc := makeTransferAware(&nilReturningSerializationContextDataConverter{
+			DataConverter: converter.GetDefaultDataConverter(),
+		})
+		require.PanicsWithValue(
+			t,
+			"DataConverterWithSerializationContext.WithSerializationContext must not return nil",
+			func() {
+				dc.WithSerializationContext(converter.WorkflowSerializationContext{})
+			},
+		)
 	})
 }

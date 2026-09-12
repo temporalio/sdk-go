@@ -138,14 +138,18 @@ func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, e
 }
 
 func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
+	// TODO Would callers be surprised if we mutated their array? See encodeArgs for instance.
+	// Is it worth getting fancy to avoid this allocation in the common case where none of
+	// the values are transfer-convertible?
+	transferValues := make([]any, len(values))
 	for i, value := range values {
 		transferValue, err := encodeAsTransferValueOrReturn(value)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("values[%d]: %w", i, err)
 		}
-		values[i] = transferValue
+		transferValues[i] = transferValue
 	}
-	return dc.parent.ToPayloads(values...)
+	return dc.parent.ToPayloads(transferValues...)
 }
 
 func encodeAsTransferValueOrReturn(value any) (transferValue any, err error) {
@@ -174,6 +178,8 @@ func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, val
 }
 
 func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
+	// TODO Is it worth getting fancy to avoid this allocation in the common case where
+	// none of the values are transfer-convertible?
 	transferValuePtrs := make([]any, len(valuePtrs))
 	for i, valuePtr := range valuePtrs {
 		convertible, ok := valuePtr.(ValueWithTransferConverter)
@@ -212,12 +218,12 @@ func (dc *transferAwareDataConverter) ToStrings(input *commonpb.Payloads) []stri
 }
 
 func (dc *transferAwareDataConverter) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
-	if parent, ok := dc.parent.(converter.DataConverterWithSerializationContext); ok {
-		return &transferAwareDataConverter{
-			parent: parent.WithSerializationContext(ctx),
-		}
+	if _, ok := dc.parent.(converter.DataConverterWithSerializationContext); !ok {
+		return dc
 	}
-	return dc
+	return &transferAwareDataConverter{
+		parent: converter.WithDataConverterSerializationContext(dc.parent, ctx),
+	}
 }
 
 func (dc *transferAwareDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
