@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 
@@ -10,12 +11,18 @@ import (
 
 // -- USER API -----------------------------------------------------------
 
-// TransferConvertible provides a transfer type converter for values of
-// this type. The SDK calls TransferTypeConverter before serialization and
-// after deserialization.
+// ValueWithTransferConverter is an optional interface that values can implement to provide
+// the SDK with a transfer converter.
+//
+// When implemented, the SDK calls [ValueWithTransferConverter.TransferConverter] before
+// serializing the value. The returned TransferConverter will be used to turn the value
+// into a serializable representation, called a transfer value. The converter will also
+// be used to turn the transfer value back into the original value after deserialization.
+//
+// This method should be cheap and fast; the SDK may call this method frequently.
 //
 // NOTE: Experimental.
-type TransferConvertible interface {
+type ValueWithTransferConverter interface {
 	TransferConverter() TransferConverter
 }
 
@@ -98,9 +105,8 @@ type transferAwareDataConverter struct {
 }
 
 var _ converter.DataConverter = (*transferAwareDataConverter)(nil)
-
-// var _ converter.DataConverterWithSerializationContext = (*transferTypeDataConverter)(nil)
-// var _ ContextAware = (*transferTypeDataConverter)(nil)
+var _ converter.DataConverterWithSerializationContext = (*transferAwareDataConverter)(nil)
+var _ ContextAware = (*transferAwareDataConverter)(nil)
 
 // makeTransferAware is an idempotent operation that upgrades a
 // normal data converter into a transfer-type-aware data converter.
@@ -134,7 +140,7 @@ func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Paylo
 }
 
 func toTransferValue(value any) (transferValue any, err error) {
-	convertible, ok := value.(TransferConvertible)
+	convertible, ok := value.(ValueWithTransferConverter)
 	if !ok {
 		return value, nil
 	}
@@ -142,7 +148,7 @@ func toTransferValue(value any) (transferValue any, err error) {
 }
 
 func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
-	convertible, ok := valuePtr.(TransferConvertible)
+	convertible, ok := valuePtr.(ValueWithTransferConverter)
 	if !ok {
 		return dc.parent.FromPayload(payload, valuePtr)
 	}
@@ -178,4 +184,31 @@ func (dc *transferAwareDataConverter) ToString(input *commonpb.Payload) string {
 
 func (dc *transferAwareDataConverter) ToStrings(input *commonpb.Payloads) []string {
 	return dc.parent.ToStrings(input)
+}
+
+func (dc *transferAwareDataConverter) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
+	if parent, ok := dc.parent.(converter.DataConverterWithSerializationContext); ok {
+		return &transferAwareDataConverter{
+			parent: parent.WithSerializationContext(ctx),
+		}
+	}
+	return dc
+}
+
+func (dc *transferAwareDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
+	if parent, ok := dc.parent.(ContextAware); ok {
+		return &transferAwareDataConverter{
+			parent: parent.WithWorkflowContext(ctx),
+		}
+	}
+	return dc
+}
+
+func (dc *transferAwareDataConverter) WithContext(ctx context.Context) converter.DataConverter {
+	if parent, ok := dc.parent.(ContextAware); ok {
+		return &transferAwareDataConverter{
+			parent: parent.WithContext(ctx),
+		}
+	}
+	return dc
 }
