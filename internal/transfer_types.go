@@ -119,12 +119,12 @@ var _ ContextAware = (*transferAwareDataConverter)(nil)
 
 // makeTransferAware is an idempotent operation that upgrades a
 // normal data converter into a transfer-type-aware data converter.
-func makeTransferAware(dc converter.DataConverter) converter.DataConverter {
+func makeTransferAware(dc converter.DataConverter) *transferAwareDataConverter {
 	if dc == nil {
 		panic("nil data converter")
 	}
-	if _, ok := dc.(*transferAwareDataConverter); ok {
-		return dc
+	if tadc, ok := dc.(*transferAwareDataConverter); ok {
+		return tadc
 	}
 	return &transferAwareDataConverter{parent: dc}
 }
