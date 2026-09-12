@@ -29,15 +29,23 @@ type ValueWithTransferConverter interface {
 // values and back. Implement it using [NewTransferConverter].
 //
 // The SDK will only invoke tc.ToTransferValue(v) if v.TransferConverter()
-// equals tc. Likewise, the SDK will only invoke tc.FromTransferValue(tv, v)
-// if v.TransferConverter() equals tc and tv was obtained from
+// equals tc. Likewise, the SDK will only invoke tc.FromTransferValue(tvp, v)
+// if v.TransferConverter() equals tc and tvp was obtained from
 // tc.NewTransferValuePtr().
 //
 // NOTE: Experimental.
 type TransferConverter interface {
+	// NewTransferValuePtr returns a pointer to a zero transfer value.
 	NewTransferValuePtr() any
+
+	// ToTransferValue converts value into its serializable transfer value.
 	ToTransferValue(value any) (any, error)
-	FromTransferValue(transferValue any, valuePtr any) error
+
+	// FromTransferValue converts a deserialized transfer value into valuePtr.
+	// transferValuePtr is a pointer to the transfer value, as returned by
+	// NewTransferValuePtr.
+	FromTransferValue(transferValuePtr any, valuePtr any) error
+
 	transferConverter()
 }
 
@@ -67,31 +75,30 @@ func (*transferConverter[Value, TransferValue]) NewTransferValuePtr() any {
 }
 
 func (tc *transferConverter[Value, TransferValue]) ToTransferValue(value any) (any, error) {
-	if value, ok := value.(Value); ok {
-		return tc.toTransferValue(value)
+	v, ok := value.(Value)
+	if !ok {
+		// The SDK should only call ToTransferValue on v if v.TransferConverter()
+		// equals tc. If we got here, we violated that contract.
+		var zero Value
+		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", zero, value))
 	}
-	// The SDK should only call ToTransferValue on v if v.TransferConverter() equals c.
-	// If we got here, we violated that contract.
-	panic(fmt.Sprintf("Expected type %T, got %T", *new(Value), value))
+	return tc.toTransferValue(v)
 }
 
-func (tc *transferConverter[Value, TransferValue]) FromTransferValue(transferValue any, valuePtr any) error {
+func (tc *transferConverter[Value, TransferValue]) FromTransferValue(transferValuePtr any, valuePtr any) error {
 	v, ok := valuePtr.(*Value)
 	if !ok {
-		// The SDK should only call FromTransferValue on v if v.TransferConverter() equals c.
-		// If we got here, we violated that contract.
-		var expectedValue *Value
-		panic(fmt.Errorf("Expected type %T, got %T", expectedValue, valuePtr))
+		// The SDK should only call FromTransferValue on v if v.TransferConverter()
+		// equals tc. If we got here, we violated that contract.
+		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", (*Value)(nil), valuePtr))
 	}
-	t, ok := transferValue.(TransferValue)
+	tvp, ok := transferValuePtr.(*TransferValue)
 	if !ok {
-		// The SDK should only call FromTransferValue on tv if tv was obtained from
-		// tc.NewTransferValuePtr().
-		// If we got here, we violated that contract.
-		var expectedTransfer TransferValue
-		panic(fmt.Errorf("Expected transfer type %T, got %T", expectedTransfer, transferValue))
+		// The SDK should only call FromTransferValue on tvp if tvp was obtained
+		// from tc.NewTransferValuePtr(). If we got here, we violated that contract.
+		panic(fmt.Sprintf("transfer converter: want transfer value of type %T, got %T", (*TransferValue)(nil), transferValuePtr))
 	}
-	return tc.fromTransferValue(t, v)
+	return tc.fromTransferValue(*tvp, v)
 }
 
 // -- DATA CONVERTERS ----------------------------------------------------------
@@ -150,33 +157,49 @@ func encodeAsTransferValueOrReturn(value any) (transferValue any, err error) {
 }
 
 func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
+	if payload == nil {
+		return nil
+	}
 	convertible, ok := valuePtr.(ValueWithTransferConverter)
 	if !ok {
 		return dc.parent.FromPayload(payload, valuePtr)
 	}
-	transferPtr := convertible.TransferConverter().NewTransferValuePtr()
-	err := dc.parent.FromPayload(payload, transferPtr)
+	tc := convertible.TransferConverter()
+	transferValuePtr := tc.NewTransferValuePtr()
+	err := dc.parent.FromPayload(payload, transferValuePtr)
 	if err != nil {
 		return err
 	}
-	return convertible.TransferConverter().FromTransferValue(transferPtr, valuePtr)
+	return tc.FromTransferValue(transferValuePtr, valuePtr)
 }
 
 func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
-	if payloads == nil {
-		return nil
-	}
-
-	for i, payload := range payloads.GetPayloads() {
-		if i >= len(valuePtrs) {
-			break
-		}
-		err := dc.FromPayload(payload, valuePtrs[i])
-		if err != nil {
-			return fmt.Errorf("payload item %d: %w", i, err)
+	transferValuePtrs := make([]any, len(valuePtrs))
+	for i, valuePtr := range valuePtrs {
+		convertible, ok := valuePtr.(ValueWithTransferConverter)
+		if !ok {
+			transferValuePtrs[i] = valuePtr
+		} else {
+			transferValuePtrs[i] = convertible.TransferConverter().NewTransferValuePtr()
 		}
 	}
 
+	if err := dc.parent.FromPayloads(payloads, transferValuePtrs...); err != nil {
+		return err
+	}
+
+	for i, valuePtr := range valuePtrs {
+		convertible, ok := valuePtr.(ValueWithTransferConverter)
+		if !ok {
+			valuePtrs[i] = transferValuePtrs[i]
+		} else {
+			err := convertible.TransferConverter().
+				FromTransferValue(transferValuePtrs[i], valuePtrs[i])
+			if err != nil {
+				return fmt.Errorf("transfer converter: payload item %d: %w", i, err)
+			}
+		}
+	}
 	return nil
 }
 
