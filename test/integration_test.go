@@ -9218,13 +9218,15 @@ func (ts *IntegrationTestSuite) TestUnhandledCommandAndMetrics() {
 
 	// We only expect a single workflow completed metric. Before this issue, this
 	// would have been reported multiple times.
-	var workflowCompletedCount int
-	for _, cnt := range ts.metricsHandler.Counters() {
-		if cnt.Name == "temporal_workflow_completed" && cnt.Tags["workflow_type"] == "unhandled-command" {
-			workflowCompletedCount += int(cnt.Value())
+	ts.Eventually(func() bool {
+		var workflowCompletedCount int
+		for _, cnt := range ts.metricsHandler.Counters() {
+			if cnt.Name == "temporal_workflow_completed" && cnt.Tags["workflow_type"] == "unhandled-command" {
+				workflowCompletedCount += int(cnt.Value())
+			}
 		}
-	}
-	ts.Equal(1, workflowCompletedCount)
+		return workflowCompletedCount == 1
+	}, 2*time.Second, 50*time.Millisecond, "workflow completion metric not recorded in time")
 }
 
 // Plugin sets client options, can fail dial
