@@ -1026,6 +1026,7 @@ func (wtp *workflowTaskProcessor) taskFailureCompletion(
 				ErrorMessage:  err.Error(),
 				Namespace:     wtp.namespace,
 				Failure:       wtp.failureConverter.ErrorToFailure(err),
+				Cause:         workflowTaskFailureCause(err),
 			},
 		}
 	}
