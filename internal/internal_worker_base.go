@@ -67,11 +67,13 @@ type (
 	}
 
 	ExecuteNexusOperationParams struct {
-		client      NexusClient
-		operation   string
-		input       *commonpb.Payload
-		options     NexusOperationOptions
-		nexusHeader map[string]string
+		client           NexusClient
+		operation        string
+		input            *commonpb.Payload
+		options          NexusOperationOptions
+		nexusHeader      map[string]string
+		dataConverter    converter.DataConverter
+		failureConverter converter.FailureConverter
 	}
 )
 

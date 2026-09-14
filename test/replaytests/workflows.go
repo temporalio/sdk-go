@@ -765,7 +765,10 @@ func CancelNexusOperationAfterCompleteWorkflow(ctx workflow.Context) (string, er
 	nc := workflow.NewNexusClient("replay-endpoint", "replay-service")
 	opCtx, cancel := workflow.WithCancel(ctx)
 	op := nc.ExecuteOperation(opCtx, CancelOp, "succeed", workflow.NexusOperationOptions{})
-	_ = op.Get(opCtx, nil)
+	var result any
+	if err := op.Get(opCtx, &result); err != nil {
+		return "", err
+	}
 	cancel()
 	return generateUUID(ctx, "nxs-cancel-after-complete-id")
 }

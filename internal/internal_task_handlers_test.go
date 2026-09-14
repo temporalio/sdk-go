@@ -125,9 +125,7 @@ func (t *TaskHandlersTestSuite) SetupSuite() {
 }
 
 func (t *TaskHandlersTestSuite) TearDownTest() {
-	if cache := *sharedWorkerCachePtr.workflowCache; cache != nil {
-		cache.Clear()
-	}
+	PurgeStickyWorkflowCache()
 }
 
 func TestTaskHandlersTestSuite(t *testing.T) {

@@ -2,9 +2,11 @@ package internal
 
 import (
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
+	activitypb "go.temporal.io/api/activity/v1"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	updatepb "go.temporal.io/api/update/v1"
@@ -270,4 +272,97 @@ func TestClientUpdateWithStartWorkflow_SerializationContext(t *testing.T) {
 		}
 	}
 	require.True(found, "should have captured WorkflowSerializationContext for update-with-start")
+}
+
+// findActivitySerCtx returns the first captured ActivitySerializationContext, if any.
+func findActivitySerCtx(captured []converter.SerializationContext) (converter.ActivitySerializationContext, bool) {
+	for _, c := range captured {
+		if actCtx, ok := c.(converter.ActivitySerializationContext); ok {
+			return actCtx, true
+		}
+	}
+	return converter.ActivitySerializationContext{}, false
+}
+
+func TestClientStartActivity_SerializationContext(t *testing.T) {
+	require := require.New(t)
+	mockCtrl, service, client, dc := newSerCtxMockClient(t)
+	defer mockCtrl.Finish()
+
+	service.EXPECT().StartActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.StartActivityExecutionResponse{RunId: "run-1"}, nil)
+
+	_, err := client.ExecuteActivity(t.Context(), ClientStartActivityOptions{
+		ID:                  "act-start-test",
+		TaskQueue:           "test-tq",
+		StartToCloseTimeout: time.Minute,
+	}, "myActivity", "arg1")
+	require.NoError(err)
+
+	actCtx, found := findActivitySerCtx(dc.getCapturedContexts())
+	require.True(found, "should have captured an ActivitySerializationContext")
+	require.Equal("test-namespace", actCtx.Namespace)
+	require.Equal("myActivity", actCtx.ActivityType)
+	require.Equal("test-tq", actCtx.TaskQueue)
+	require.Empty(actCtx.WorkflowID)
+	require.Empty(actCtx.WorkflowType)
+	require.False(actCtx.IsLocal)
+}
+
+func TestClientDescribeActivity_SerializationContext(t *testing.T) {
+	require := require.New(t)
+	mockCtrl, service, client, dc := newSerCtxMockClient(t)
+	defer mockCtrl.Finish()
+
+	service.EXPECT().DescribeActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.DescribeActivityExecutionResponse{
+			Info: &activitypb.ActivityExecutionInfo{
+				ActivityId:       "act-describe-test",
+				ActivityType:     &commonpb.ActivityType{Name: "myActivity"},
+				TaskQueue:        "test-tq",
+				SearchAttributes: &commonpb.SearchAttributes{},
+			},
+		}, nil)
+
+	handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "act-describe-test"})
+	_, err := handle.Describe(t.Context(), ClientDescribeActivityOptions{})
+	require.NoError(err)
+
+	actCtx, found := findActivitySerCtx(dc.getCapturedContexts())
+	require.True(found, "should have captured an ActivitySerializationContext")
+	require.Equal("test-namespace", actCtx.Namespace)
+	require.Equal("myActivity", actCtx.ActivityType)
+	require.Equal("test-tq", actCtx.TaskQueue)
+	require.Empty(actCtx.WorkflowID)
+	require.False(actCtx.IsLocal)
+}
+
+func TestClientActivityGet_SerializationContext(t *testing.T) {
+	require := require.New(t)
+	mockCtrl, service, client, dc := newSerCtxMockClient(t)
+	defer mockCtrl.Finish()
+
+	result, err := converter.GetDefaultDataConverter().ToPayloads("the-result")
+	require.NoError(err)
+	service.EXPECT().PollActivityExecution(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.PollActivityExecutionResponse{
+			RunId: "run-1",
+			Outcome: &activitypb.ActivityExecutionOutcome{
+				Value: &activitypb.ActivityExecutionOutcome_Result{Result: result},
+			},
+		}, nil)
+
+	handle := client.GetActivityHandle(ClientGetActivityHandleOptions{ActivityID: "act-get-test"})
+	var got string
+	require.NoError(handle.Get(t.Context(), &got))
+	require.Equal("the-result", got)
+
+	actCtx, found := findActivitySerCtx(dc.getCapturedContexts())
+	require.True(found, "should have captured an ActivitySerializationContext")
+	require.Equal("test-namespace", actCtx.Namespace)
+	// Neither the poll request nor its response carries these, so they are left empty.
+	require.Empty(actCtx.ActivityType)
+	require.Empty(actCtx.TaskQueue)
+	require.Empty(actCtx.WorkflowID)
+	require.False(actCtx.IsLocal)
 }

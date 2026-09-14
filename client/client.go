@@ -1022,7 +1022,6 @@ type (
 	ActivityExecutionDescription = internal.ClientActivityExecutionDescription
 
 	// DescribeActivityOptions contains options for ClientActivityHandle.Describe call.
-	// For future compatibility, currently unused.
 	//
 	// NOTE: Experimental
 	DescribeActivityOptions = internal.ClientDescribeActivityOptions
@@ -1031,6 +1030,34 @@ type (
 	//
 	// NOTE: Experimental
 	CancelActivityOptions = internal.ClientCancelActivityOptions
+
+	// PauseActivityOptions contains options for ClientActivityHandle.Pause call.
+	//
+	// NOTE: Experimental
+	PauseActivityOptions = internal.ClientPauseActivityOptions
+
+	// UnpauseActivityOptions contains options for ClientActivityHandle.Unpause call.
+	//
+	// NOTE: Experimental
+	UnpauseActivityOptions = internal.ClientUnpauseActivityOptions
+
+	// ActivityExecutionOptions describes the options an activity is currently running with, as
+	// returned by ActivityHandle.UpdateOptions and ActivityHandle.RestoreOriginalOptions.
+	//
+	// NOTE: Experimental
+	ActivityExecutionOptions = internal.ClientActivityExecutionOptions
+
+	// ActivityOptionsUpdate describes changes to an activity's options in
+	// ActivityHandle.UpdateOptions. An entry with a nil pointer means do not change that option.
+	//
+	// NOTE: Experimental
+	ActivityOptionsUpdate = internal.ClientActivityOptionsUpdate
+
+	// ActivityOptionChange sets or clears one activity option when used with
+	// ActivityOptionsUpdate.
+	//
+	// NOTE: Experimental
+	ActivityOptionChange[T any] = internal.ClientActivityOptionChange[T]
 
 	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
 	//
