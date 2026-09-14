@@ -46,26 +46,40 @@ type TransferConverter interface {
 	// NewTransferValuePtr.
 	FromTransferValue(ctx context.Context, transferValuePtr any, valuePtr any) error
 
+	// Workflow-local version of [TransferConverter.ToTransferValue].
+	ToTransferValueInWorkflow(ctx Context, value any) (any, error)
+
+	// Workflow-local version of [TransferConverter.FromTransferValue].
+	FromTransferValueInWorkflow(ctx Context, transferValuePtr any, valuePtr any) error
+
 	transferConverter()
 }
 
 // NewTransferConverter builds a [TransferConverter] that can map
 // something of type Value into a serializable "transfer value", and back.
+// The first pair of functions converts payloads outside a workflow,
+// the second pair converts inside one.
 //
 // NOTE: Experimental.
 func NewTransferConverter[Value, TransferValue any](
 	toTransferValue func(context.Context, Value) (TransferValue, error),
 	fromTransferValue func(context.Context, TransferValue, *Value) error,
+	toTransferValueInWorkflow func(Context, Value) (TransferValue, error),
+	fromTransferValueInWorkflow func(Context, TransferValue, *Value) error,
 ) TransferConverter {
 	return &transferConverter[Value, TransferValue]{
-		toTransferValue:   toTransferValue,
-		fromTransferValue: fromTransferValue,
+		toTransferValue:             toTransferValue,
+		fromTransferValue:           fromTransferValue,
+		toTransferValueInWorkflow:   toTransferValueInWorkflow,
+		fromTransferValueInWorkflow: fromTransferValueInWorkflow,
 	}
 }
 
 type transferConverter[Value, TransferValue any] struct {
-	toTransferValue   func(context.Context, Value) (TransferValue, error)
-	fromTransferValue func(context.Context, TransferValue, *Value) error
+	toTransferValue             func(context.Context, Value) (TransferValue, error)
+	fromTransferValue           func(context.Context, TransferValue, *Value) error
+	toTransferValueInWorkflow   func(Context, Value) (TransferValue, error)
+	fromTransferValueInWorkflow func(Context, TransferValue, *Value) error
 }
 
 func (*transferConverter[Value, TransferValue]) transferConverter() {}
@@ -101,6 +115,34 @@ func (tc *transferConverter[Value, TransferValue]) FromTransferValue(ctx context
 	return tc.fromTransferValue(ctx, *tvp, v)
 }
 
+func (tc *transferConverter[Value, TransferValue]) ToTransferValueInWorkflow(ctx Context, value any) (any, error) {
+	v, ok := value.(Value)
+	if !ok {
+		// The SDK should only call ToTransferValueInWorkflow on v if
+		// v.TransferConverter() equals tc. If we got here, we violated that contract.
+		var zero Value
+		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", zero, value))
+	}
+	return tc.toTransferValueInWorkflow(ctx, v)
+}
+
+func (tc *transferConverter[Value, TransferValue]) FromTransferValueInWorkflow(ctx Context, transferValuePtr any, valuePtr any) error {
+	v, ok := valuePtr.(*Value)
+	if !ok {
+		// The SDK should only call FromTransferValueInWorkflow on v if
+		// v.TransferConverter() equals tc. If we got here, we violated that contract.
+		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", (*Value)(nil), valuePtr))
+	}
+	tvp, ok := transferValuePtr.(*TransferValue)
+	if !ok {
+		// The SDK should only call FromTransferValueInWorkflow on tvp if tvp was
+		// obtained from tc.NewTransferValuePtr(). If we got here, we violated that
+		// contract.
+		panic(fmt.Sprintf("transfer converter: want transfer value of type %T, got %T", (*TransferValue)(nil), transferValuePtr))
+	}
+	return tc.fromTransferValueInWorkflow(ctx, *tvp, v)
+}
+
 // -- DATA CONVERTERS ----------------------------------------------------------
 
 // transferAwareDataConverter is a context-aware data converter that:
@@ -110,8 +152,9 @@ func (tc *transferConverter[Value, TransferValue]) FromTransferValue(ctx context
 //  2. Decodes its input using the parent data converter and then trying to
 //     transfer-convert the result into a normal value.
 type transferAwareDataConverter struct {
-	parent  converter.DataConverter
-	context context.Context
+	parent          converter.DataConverter
+	context         context.Context
+	workflowContext Context
 }
 
 var _ converter.DataConverter = (*transferAwareDataConverter)(nil)
@@ -131,7 +174,7 @@ func makeTransferAware(dc converter.DataConverter) *transferAwareDataConverter {
 }
 
 func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
-	transferValue, err := encodeAsTransferValueOrReturn(dc.context, value)
+	transferValue, err := dc.encodeAsTransferValueOrReturn(value)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +187,7 @@ func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Paylo
 	// the values are transfer-convertible?
 	transferValues := make([]any, len(values))
 	for i, value := range values {
-		transferValue, err := encodeAsTransferValueOrReturn(dc.context, value)
+		transferValue, err := dc.encodeAsTransferValueOrReturn(value)
 		if err != nil {
 			return nil, fmt.Errorf("values[%d]: %w", i, err)
 		}
@@ -153,12 +196,38 @@ func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Paylo
 	return dc.parent.ToPayloads(transferValues...)
 }
 
-func encodeAsTransferValueOrReturn(ctx context.Context, value any) (transferValue any, err error) {
+func (dc *transferAwareDataConverter) encodeAsTransferValueOrReturn(value any) (transferValue any, err error) {
 	convertible, ok := value.(ValueWithTransferConverter)
 	if !ok {
 		return value, nil
 	}
-	return convertible.TransferConverter().ToTransferValue(ctx, value)
+	return dc.toTransferValue(convertible.TransferConverter(), value)
+}
+
+// toTransferValue converts value with whichever flavor of conversion suits the context
+// this data converter is running in.
+func (dc *transferAwareDataConverter) toTransferValue(tc TransferConverter, value any) (any, error) {
+	if dc.workflowContext != nil {
+		return tc.ToTransferValueInWorkflow(dc.workflowContext, value)
+	}
+	return tc.ToTransferValue(dc.goContext(), value)
+}
+
+// fromTransferValue is the [transferAwareDataConverter.toTransferValue] counterpart.
+func (dc *transferAwareDataConverter) fromTransferValue(tc TransferConverter, transferValuePtr any, valuePtr any) error {
+	if dc.workflowContext != nil {
+		return tc.FromTransferValueInWorkflow(dc.workflowContext, transferValuePtr, valuePtr)
+	}
+	return tc.FromTransferValue(dc.goContext(), transferValuePtr, valuePtr)
+}
+
+// goContext returns the Go context to convert under. Transfer converters never receive
+// a nil context, so that they can read values from it without checking first.
+func (dc *transferAwareDataConverter) goContext() context.Context {
+	if dc.context == nil {
+		return context.Background()
+	}
+	return dc.context
 }
 
 func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
@@ -175,7 +244,7 @@ func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, val
 	if err != nil {
 		return err
 	}
-	return tc.FromTransferValue(dc.context, transferValuePtr, valuePtr)
+	return dc.fromTransferValue(tc, transferValuePtr, valuePtr)
 }
 
 func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
@@ -200,8 +269,8 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		if !ok {
 			valuePtrs[i] = transferValuePtrs[i]
 		} else {
-			err := convertible.TransferConverter().
-				FromTransferValue(dc.context, transferValuePtrs[i], valuePtrs[i])
+			err := dc.fromTransferValue(
+				convertible.TransferConverter(), transferValuePtrs[i], valuePtrs[i])
 			if err != nil {
 				return fmt.Errorf("transfer converter: payload item %d: %w", i, err)
 			}
@@ -218,33 +287,27 @@ func (dc *transferAwareDataConverter) ToStrings(input *commonpb.Payloads) []stri
 	return dc.parent.ToStrings(input)
 }
 
+// WithSerializationContext forwards the serialization context to the parent data
+// converter. Transfer converters have no use for it.
 func (dc *transferAwareDataConverter) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
 	if _, ok := dc.parent.(converter.DataConverterWithSerializationContext); !ok {
 		return dc
 	}
-	return &transferAwareDataConverter{
-		parent:  converter.WithDataConverterSerializationContext(dc.parent, ctx),
-		context: dc.context,
-	}
+	result := *dc
+	result.parent = converter.WithDataConverterSerializationContext(dc.parent, ctx)
+	return &result
 }
 
 func (dc *transferAwareDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
-	if parent, ok := dc.parent.(ContextAware); ok {
-		return &transferAwareDataConverter{
-			parent:  parent.WithWorkflowContext(ctx),
-			context: dc.context,
-		}
-	}
-	return dc
+	result := *dc
+	result.parent = WithWorkflowContext(ctx, dc.parent)
+	result.workflowContext = ctx
+	return &result
 }
 
 func (dc *transferAwareDataConverter) WithContext(ctx context.Context) converter.DataConverter {
-	parent := dc.parent
-	if contextAwareParent, ok := parent.(ContextAware); ok {
-		parent = contextAwareParent.WithContext(ctx)
-	}
-	return &transferAwareDataConverter{
-		parent:  parent,
-		context: ctx,
-	}
+	result := *dc
+	result.parent = WithContext(ctx, dc.parent)
+	result.context = ctx
+	return &result
 }

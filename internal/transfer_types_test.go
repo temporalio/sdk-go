@@ -3,8 +3,10 @@ package internal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/rand/v2"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -14,13 +16,35 @@ import (
 
 // -- DATA -----------------------------------------------------------
 
+// newContextFreeTransferConverter builds a converter that converts the same way inside
+// and outside of a workflow.
+func newContextFreeTransferConverter[Value, TransferValue any](
+	toTransferValue func(Value) (TransferValue, error),
+	fromTransferValue func(TransferValue, *Value) error,
+) TransferConverter {
+	return NewTransferConverter(
+		func(_ context.Context, value Value) (TransferValue, error) {
+			return toTransferValue(value)
+		},
+		func(_ context.Context, transferValue TransferValue, valuePtr *Value) error {
+			return fromTransferValue(transferValue, valuePtr)
+		},
+		func(_ Context, value Value) (TransferValue, error) {
+			return toTransferValue(value)
+		},
+		func(_ Context, transferValue TransferValue, valuePtr *Value) error {
+			return fromTransferValue(transferValue, valuePtr)
+		},
+	)
+}
+
 type temperature struct{ kelvin float64 }
 
 var _ ValueWithTransferConverter = temperature{}
 
-var temperatureConverter = NewTransferConverter(
-	func(_ context.Context, t temperature) (float64, error) { return t.kelvin, nil },
-	func(_ context.Context, kelvin float64, t *temperature) error {
+var temperatureConverter = newContextFreeTransferConverter(
+	func(t temperature) (float64, error) { return t.kelvin, nil },
+	func(kelvin float64, t *temperature) error {
 		t.kelvin = kelvin
 		return nil
 	},
@@ -39,9 +63,9 @@ var _ ValueWithTransferConverter = userRef{}
 
 type userRefTransfer struct{ ID string }
 
-var userRefConverter = NewTransferConverter(
-	func(_ context.Context, u userRef) (userRefTransfer, error) { return userRefTransfer{ID: u.id}, nil },
-	func(_ context.Context, t userRefTransfer, u *userRef) error {
+var userRefConverter = newContextFreeTransferConverter(
+	func(u userRef) (userRefTransfer, error) { return userRefTransfer{ID: u.id}, nil },
+	func(t userRefTransfer, u *userRef) error {
 		u.id = t.ID
 		return nil
 	},
@@ -57,9 +81,9 @@ var _ ValueWithTransferConverter = unencodable{}
 var errNoEncoding = errors.New("cannot encode")
 
 func (unencodable) TransferConverter() TransferConverter {
-	return NewTransferConverter(
-		func(context.Context, unencodable) (string, error) { return "", errNoEncoding },
-		func(context.Context, string, *unencodable) error { return nil },
+	return newContextFreeTransferConverter(
+		func(unencodable) (string, error) { return "", errNoEncoding },
+		func(string, *unencodable) error { return nil },
 	)
 }
 
@@ -71,28 +95,60 @@ type undecodable struct{}
 var _ ValueWithTransferConverter = undecodable{}
 
 func (undecodable) TransferConverter() TransferConverter {
-	return NewTransferConverter(
-		func(context.Context, undecodable) (string, error) { return "encoded", nil },
-		func(context.Context, string, *undecodable) error { return errNoDecoding },
+	return newContextFreeTransferConverter(
+		func(undecodable) (string, error) { return "encoded", nil },
+		func(string, *undecodable) error { return errNoDecoding },
 	)
 }
 
 type transferContextKey struct{}
 
+// contextualString is encoded with a prefix naming the flavor of conversion that was
+// used, along with whatever label the context carried.
 type contextualString string
 
 var contextualStringConverter = NewTransferConverter(
 	func(ctx context.Context, value contextualString) (string, error) {
-		return ctx.Value(transferContextKey{}).(string) + string(value), nil
+		return goPrefix(ctx) + string(value), nil
 	},
 	func(ctx context.Context, transferValue string, value *contextualString) error {
-		*value = contextualString(transferValue[len(ctx.Value(transferContextKey{}).(string)):])
-		return nil
+		return cutContextPrefix(goPrefix(ctx), transferValue, value)
+	},
+	func(ctx Context, value contextualString) (string, error) {
+		return workflowPrefix(ctx) + string(value), nil
+	},
+	func(ctx Context, transferValue string, value *contextualString) error {
+		return cutContextPrefix(workflowPrefix(ctx), transferValue, value)
 	},
 )
 
 func (contextualString) TransferConverter() TransferConverter {
 	return contextualStringConverter
+}
+
+func goPrefix(ctx context.Context) string {
+	return "go:" + contextLabel(ctx.Value(transferContextKey{}))
+}
+
+func workflowPrefix(ctx Context) string {
+	return "wf:" + contextLabel(ctx.Value(transferContextKey{}))
+}
+
+func contextLabel(value any) string {
+	label, _ := value.(string)
+	if label == "" {
+		return ""
+	}
+	return label + ":"
+}
+
+func cutContextPrefix(prefix, transferValue string, value *contextualString) error {
+	rest, ok := strings.CutPrefix(transferValue, prefix)
+	if !ok {
+		return fmt.Errorf("transfer value %q does not start with %q", transferValue, prefix)
+	}
+	*value = contextualString(rest)
+	return nil
 }
 
 // countingDataConverter records which decode methods its wrapper calls.
@@ -352,25 +408,6 @@ func TestTransferAwareDataConverter_ConversionErrors(t *testing.T) {
 func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	t.Parallel()
 
-	t.Run("transfer converter", func(t *testing.T) {
-		dc := makeTransferAware(converter.GetDefaultDataConverter())
-		ctx := context.WithValue(context.Background(), transferContextKey{}, "context:")
-		contextualDC := dc.WithContext(ctx)
-
-		payload, err := contextualDC.ToPayload(contextualString("value"))
-		require.NoError(t, err)
-		var got contextualString
-		require.NoError(t, contextualDC.FromPayload(payload, &got))
-		require.Equal(t, contextualString("value"), got)
-
-		payloads, err := contextualDC.ToPayloads(contextualString("one"), contextualString("two"))
-		require.NoError(t, err)
-		var gotOne, gotTwo contextualString
-		require.NoError(t, contextualDC.FromPayloads(payloads, &gotOne, &gotTwo))
-		require.Equal(t, contextualString("one"), gotOne)
-		require.Equal(t, contextualString("two"), gotTwo)
-	})
-
 	t.Run("context-aware parent", func(t *testing.T) {
 		dc := makeTransferAware(NewContextAwareDataConverter(converter.GetDefaultDataConverter()))
 
@@ -383,9 +420,14 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 		require.Equal(t, "?", string(payload.GetData()))
 	})
 
+	// Even when the parent has no use for a context, we hold on to it: transfer
+	// converters may still want it.
 	t.Run("parent that is not context aware", func(t *testing.T) {
 		dc := defaultTransferAwareDataConverter()
 		require.NotSame(t, dc, WithContext(context.Background(), dc))
+		require.NotSame(t, dc, WithWorkflowContext(Background(), dc))
+		// Serialization contexts are only forwarded, so there is nothing to keep.
+		require.Same(t, dc, dc.WithSerializationContext(converter.WorkflowSerializationContext{}))
 	})
 
 	t.Run("serialization context parent returning nil", func(t *testing.T) {
@@ -399,5 +441,90 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 				dc.WithSerializationContext(converter.WorkflowSerializationContext{})
 			},
 		)
+	})
+}
+
+func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
+	t.Parallel()
+	parent := converter.GetDefaultDataConverter()
+
+	// requireRoundTrip checks that contextualString values are encoded with wantPrefix
+	// and decoded back to their original form.
+	requireRoundTrip := func(t *testing.T, dc converter.DataConverter, wantPrefix string) {
+		t.Helper()
+
+		payload, err := dc.ToPayload(contextualString("value"))
+		require.NoError(t, err)
+		want, err := parent.ToPayload(wantPrefix + "value")
+		require.NoError(t, err)
+		require.Equal(t, want.GetData(), payload.GetData())
+
+		var got contextualString
+		require.NoError(t, dc.FromPayload(payload, &got))
+		require.Equal(t, contextualString("value"), got)
+
+		payloads, err := dc.ToPayloads(contextualString("one"), contextualString("two"))
+		require.NoError(t, err)
+		var gotOne, gotTwo contextualString
+		require.NoError(t, dc.FromPayloads(payloads, &gotOne, &gotTwo))
+		require.Equal(t, contextualString("one"), gotOne)
+		require.Equal(t, contextualString("two"), gotTwo)
+	}
+
+	// Out-of-workflow conversion is the default, and its context is never nil: the
+	// converter here reads from it without checking.
+	t.Run("no context", func(t *testing.T) {
+		requireRoundTrip(t, defaultTransferAwareDataConverter(), "go:")
+	})
+
+	t.Run("go context", func(t *testing.T) {
+		ctx := context.WithValue(context.Background(), transferContextKey{}, "activity")
+		requireRoundTrip(t, defaultTransferAwareDataConverter().WithContext(ctx), "go:activity:")
+	})
+
+	t.Run("workflow context", func(t *testing.T) {
+		ctx := WithValue(Background(), transferContextKey{}, "workflow")
+		requireRoundTrip(t, defaultTransferAwareDataConverter().WithWorkflowContext(ctx), "wf:workflow:")
+	})
+
+	// A workflow context means conversion runs on the workflow goroutine, whatever
+	// else we were given.
+	t.Run("workflow context wins", func(t *testing.T) {
+		dc := WithContext(
+			context.WithValue(context.Background(), transferContextKey{}, "activity"),
+			defaultTransferAwareDataConverter(),
+		)
+		dc = WithWorkflowContext(WithValue(Background(), transferContextKey{}, "workflow"), dc)
+		requireRoundTrip(t, dc, "wf:workflow:")
+	})
+
+	// A context recorded earlier survives later derivation of the data converter.
+	t.Run("context survives later derivation", func(t *testing.T) {
+		dc := WithContext(
+			context.WithValue(context.Background(), transferContextKey{}, "activity"),
+			defaultTransferAwareDataConverter(),
+		)
+		dc = converter.WithDataConverterSerializationContext(
+			dc, converter.WorkflowSerializationContext{WorkflowID: "wf"},
+		)
+		requireRoundTrip(t, dc, "go:activity:")
+	})
+
+	// Converters that ignore their context convert the same way either side of a
+	// workflow boundary.
+	t.Run("context-free converter", func(t *testing.T) {
+		inWorkflow := defaultTransferAwareDataConverter().WithWorkflowContext(Background())
+		outOfWorkflow := defaultTransferAwareDataConverter().WithContext(context.Background())
+
+		payload, err := inWorkflow.ToPayload(temperature{kelvin: 300})
+		require.NoError(t, err)
+		want, err := outOfWorkflow.ToPayload(temperature{kelvin: 300})
+		require.NoError(t, err)
+		require.Equal(t, want.GetData(), payload.GetData())
+
+		// A workflow's result is encoded in the workflow and decoded by the client.
+		var got temperature
+		require.NoError(t, outOfWorkflow.FromPayload(payload, &got))
+		require.Equal(t, temperature{kelvin: 300}, got)
 	})
 }
