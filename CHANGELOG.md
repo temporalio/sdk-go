@@ -69,12 +69,6 @@ to docs, or any other relevant information.
   `IncludeOutcome`, `IncludeHeartbeatDetails` and `IncludeLastFailure`.
 - Added missing description fields: `ExecutionTime` and `TotalHeartbeatCount`.
 
-### :boom: Breaking Changes
-
-- Description payload fields that previously came back unconditionally are now opt-in and must be
-  requested via `client.DescribeActivityOptions`: `GetHeartbeatDetails` (`IncludeHeartbeatDetails`)
-  and `GetLastFailure` (`IncludeLastFailure`).
-
 ### Changed
 
 - Standalone Activities are now generally available (GA). (Standalone Activities as Nexus operations
@@ -83,6 +77,9 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- Description payload fields that previously came back unconditionally are now opt-in and must be
+  requested via `client.DescribeActivityOptions`: `GetHeartbeatDetails` (`IncludeHeartbeatDetails`)
+  and `GetLastFailure` (`IncludeLastFailure`).
 - Renamed the standalone activity `client.StartActivityOptions.Details` option to `StaticDetails`,
   and `client.ActivityExecutionDescription.GetDetails` to `GetStaticDetails`.
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
