@@ -427,25 +427,17 @@ type ClientOutboundInterceptor interface {
 
 	// ExecuteActivity intercepts client.Client.ExecuteActivity.
 	// interceptor.Header will return a non-nil map for this context.
-	//
-	// NOTE: Experimental
 	ExecuteActivity(context.Context, *ClientExecuteActivityInput) (ClientActivityHandle, error)
 
 	// GetActivityHandle intercepts client.Client.GetActivityHandle.
 	// While the interceptor is allowed to make network calls here, note that the base implementation does not - it only constructs
 	// the handle which is then used to make network calls. There is no context object provided and errors cannot be returned.
-	//
-	// NOTE: Experimental
 	GetActivityHandle(*ClientGetActivityHandleInput) ClientActivityHandle
 
 	// CancelActivity intercepts client.ActivityHandle.Cancel.
-	//
-	// NOTE: Experimental
 	CancelActivity(context.Context, *ClientCancelActivityInput) error
 
 	// TerminateActivity intercepts client.ActivityHandle.Terminate.
-	//
-	// NOTE: Experimental
 	TerminateActivity(context.Context, *ClientTerminateActivityInput) error
 
 	// PauseActivity intercepts client.ActivityHandle.Pause.
@@ -465,13 +457,9 @@ type ClientOutboundInterceptor interface {
 	UpdateActivityOptions(context.Context, *ClientUpdateActivityOptionsInput) (*ClientUpdateActivityOptionsOutput, error)
 
 	// DescribeActivity intercepts client.ActivityHandle.Describe.
-	//
-	// NOTE: Experimental
 	DescribeActivity(context.Context, *ClientDescribeActivityInput) (*ClientDescribeActivityOutput, error)
 
 	// PollActivityResult intercepts client.ActivityHandle.Get.
-	//
-	// NOTE: Experimental
 	PollActivityResult(context.Context, *ClientPollActivityResultInput) (*ClientPollActivityResultOutput, error)
 
 	// ExecuteNexusOperation intercepts NexusClient.ExecuteOperation.
@@ -692,8 +680,6 @@ type ClientDescribeWorkflowOutput struct {
 // ClientExecuteActivityInput is the input to
 // ClientOutboundInterceptor.ExecuteActivity.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientExecuteActivityInput]
 type ClientExecuteActivityInput struct {
 	// Options are the options for starting the activity.
@@ -707,8 +693,6 @@ type ClientExecuteActivityInput struct {
 // ClientGetActivityHandleInput is the input to
 // ClientOutboundInterceptor.GetActivityHandle.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientGetActivityHandleInput]
 type ClientGetActivityHandleInput struct {
 	// ActivityID is the ID of the activity.
@@ -719,8 +703,6 @@ type ClientGetActivityHandleInput struct {
 
 // ClientCancelActivityInput is the input to
 // ClientOutboundInterceptor.CancelActivity.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientCancelActivityInput]
 type ClientCancelActivityInput struct {
@@ -734,8 +716,6 @@ type ClientCancelActivityInput struct {
 
 // ClientTerminateActivityInput is the input to
 // ClientOutboundInterceptor.TerminateActivity.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientTerminateActivityInput]
 type ClientTerminateActivityInput struct {
@@ -809,8 +789,6 @@ type ClientUpdateActivityOptionsOutput struct {
 // ClientDescribeActivityInput is the input to
 // ClientOutboundInterceptor.DescribeActivity.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeActivityInput]
 type ClientDescribeActivityInput struct {
 	// ActivityID is the ID of the activity.
@@ -824,8 +802,6 @@ type ClientDescribeActivityInput struct {
 // ClientDescribeActivityOutput is the output of
 // ClientOutboundInterceptor.DescribeActivity.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeActivityOutput]
 type ClientDescribeActivityOutput struct {
 	// Description is the description of the activity.
@@ -834,8 +810,6 @@ type ClientDescribeActivityOutput struct {
 
 // ClientPollActivityResultInput is the input to
 // ClientOutboundInterceptor.PollActivityResult.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientPollActivityResultInput]
 type ClientPollActivityResultInput struct {
@@ -847,8 +821,6 @@ type ClientPollActivityResultInput struct {
 
 // ClientPollActivityResultOutput is the output of
 // ClientOutboundInterceptor.PollActivityResult.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientPollActivityResultOutput]
 type ClientPollActivityResultOutput struct {
