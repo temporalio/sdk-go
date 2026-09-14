@@ -19,6 +19,21 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [1.49.0] - 2026-09-14
+
 - Add support for Workflow Queries as Nexus Operations.
 
 ### Added
@@ -66,8 +81,6 @@ to docs, or any other relevant information.
 - Standalone Activities are now generally available (GA). (Standalone Activities as Nexus operations
   and Standalone Activities operator commands remain experimental. Operator commands are `pause`,
   `unpause`, `updateOptions`, `restoreOriginal`.)
-
-### Deprecated
 
 ### :boom: Breaking Changes
 
@@ -137,8 +150,6 @@ to docs, or any other relevant information.
   to `client.Options.ExternalStorage` is now stored instead of failing locally with
   `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
   query result now fails the workflow task instead of returning a failed query result.
-
-### Security
 
 ## [1.48.0] - 2026-08-18
 
