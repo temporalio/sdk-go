@@ -2880,6 +2880,7 @@ func (env *testWorkflowEnvironmentImpl) ExecuteNexusOperation(
 				nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "%s", err.Error()),
 				false,
 				taskHandler.failureConverter,
+				task.GetPollerGroupId(),
 			)
 		}
 		if failure != nil {
