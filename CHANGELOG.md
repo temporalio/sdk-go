@@ -22,6 +22,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
+  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
+  set, `SetWorkerOptions` may not be called again on that environment.
+
 ### Changed
 
 ### Deprecated
@@ -30,15 +34,16 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
+  `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
+  `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
+
 ### Security
 
 ## [1.49.0] - 2026-09-14
 
 ### Added
 
-- `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
-  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
-  set, `SetWorkerOptions` may not be called again on that environment.
 - Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
   a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
   platforms), and the operating system and architecture. This is sent
@@ -111,9 +116,6 @@ to docs, or any other relevant information.
 
 ### Fixed
 
-- Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
-  `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
-  `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
   with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
   and all local activity execution slots were full.
