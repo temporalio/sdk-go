@@ -965,70 +965,46 @@ type (
 	// StartActivityOptions contains configuration parameters for starting an activity execution from the client.
 	// ID and TaskQueue are required. At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
 	// Other parameters are optional.
-	//
-	// NOTE: Experimental
 	StartActivityOptions = internal.ClientStartActivityOptions
 
 	// GetActivityHandleOptions contains input for GetActivityHandle call.
 	// ActivityID is required. RunID is optional; if empty, the handle targets the latest Activity Execution with the given ID.
 	// To target a specific run when ActivityIDReusePolicy allows reuse of an activity ID, set RunID.
-	//
-	// NOTE: Experimental
 	GetActivityHandleOptions = internal.ClientGetActivityHandleOptions
 
 	// ListActivitiesOptions contains input for ListActivities call.
-	//
-	// NOTE: Experimental
 	ListActivitiesOptions = internal.ClientListActivitiesOptions
 
 	// ListActivitiesResult contains the result of the ListActivities call.
-	//
-	// NOTE: Experimental
 	ListActivitiesResult = internal.ClientListActivitiesResult
 
 	// CountActivitiesOptions contains input for CountActivities call.
-	//
-	// NOTE: Experimental
 	CountActivitiesOptions = internal.ClientCountActivitiesOptions
 
 	// CountActivitiesResult contains the result of the CountActivities call.
-	//
-	// NOTE: Experimental
 	CountActivitiesResult = internal.ClientCountActivitiesResult
 
 	// CountActivitiesAggregationGroup contains groups of activities if
 	// CountActivityExecutions is grouped by a field.
 	// The list might not be complete, and the counts of each group is approximate.
-	//
-	// NOTE: Experimental
 	CountActivitiesAggregationGroup = internal.ClientCountActivitiesAggregationGroup
 
 	// ActivityHandle represents a running or completed standalone activity execution.
 	// It can be used to get the result, describe, cancel, or terminate the activity.
-	//
-	// NOTE: Experimental
 	ActivityHandle = internal.ClientActivityHandle
 
 	// ActivityExecutionInfo contains information about an activity execution.
 	// This is returned by ListActivities and embedded in ClientActivityExecutionDescription.
-	//
-	// NOTE: Experimental
 	ActivityExecutionInfo = internal.ClientActivityExecutionInfo
 
 	// ActivityExecutionDescription contains detailed information about an activity execution.
 	// This is returned by ClientActivityHandle.Describe.
-	//
-	//	NOTE: Experimental
 	ActivityExecutionDescription = internal.ClientActivityExecutionDescription
 
 	// DescribeActivityOptions contains options for ClientActivityHandle.Describe call.
-	//
-	// NOTE: Experimental
 	DescribeActivityOptions = internal.ClientDescribeActivityOptions
 
 	// CancelActivityOptions contains options for ClientActivityHandle.Cancel call.
-	//
-	// NOTE: Experimental
 	CancelActivityOptions = internal.ClientCancelActivityOptions
 
 	// PauseActivityOptions contains options for ClientActivityHandle.Pause call.
@@ -1060,8 +1036,6 @@ type (
 	ActivityOptionChange[T any] = internal.ClientActivityOptionChange[T]
 
 	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
-	//
-	// NOTE: Experimental
 	TerminateActivityOptions = internal.ClientTerminateActivityOptions
 
 	// StartNexusOperationOptions contains configuration parameters for starting a Nexus operation execution.
@@ -1654,27 +1628,19 @@ type (
 		//
 		// NOTE: Standalone activities are not associated with a workflow execution.
 		// They are scheduled directly on a task queue and executed by a worker.
-		//
-		// NOTE: Experimental
 		ExecuteActivity(ctx context.Context, options StartActivityOptions, activity any, args ...any) (ActivityHandle, error)
 
 		// GetActivityHandle creates a handle to the referenced activity.
-		//
-		// NOTE: Experimental
 		GetActivityHandle(options GetActivityHandleOptions) ActivityHandle
 
 		// ListActivities lists activity executions based on query.
 		//
 		// Currently, all errors are returned in the iterator and not the base level error.
-		//
-		// NOTE: Experimental
 		ListActivities(ctx context.Context, options ListActivitiesOptions) (ListActivitiesResult, error)
 
 		// CountActivities counts activity executions based on query. The result
 		// includes the total count and optionally grouped counts if the query includes
 		// a GROUP BY clause.
-		//
-		// NOTE: Experimental
 		CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error)
 
 		// NewNexusClient creates a new Nexus client bound to the given endpoint and service.
