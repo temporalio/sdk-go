@@ -39,12 +39,12 @@ type TransferConverter interface {
 	NewTransferValuePtr() any
 
 	// ToTransferValue converts value into its serializable transfer value.
-	ToTransferValue(value any) (any, error)
+	ToTransferValue(ctx context.Context, value any) (any, error)
 
 	// FromTransferValue converts a deserialized transfer value into valuePtr.
 	// transferValuePtr is a pointer to the transfer value, as returned by
 	// NewTransferValuePtr.
-	FromTransferValue(transferValuePtr any, valuePtr any) error
+	FromTransferValue(ctx context.Context, transferValuePtr any, valuePtr any) error
 
 	transferConverter()
 }
@@ -54,8 +54,8 @@ type TransferConverter interface {
 //
 // NOTE: Experimental.
 func NewTransferConverter[Value, TransferValue any](
-	toTransferValue func(Value) (TransferValue, error),
-	fromTransferValue func(TransferValue, *Value) error,
+	toTransferValue func(context.Context, Value) (TransferValue, error),
+	fromTransferValue func(context.Context, TransferValue, *Value) error,
 ) TransferConverter {
 	return &transferConverter[Value, TransferValue]{
 		toTransferValue:   toTransferValue,
@@ -64,8 +64,8 @@ func NewTransferConverter[Value, TransferValue any](
 }
 
 type transferConverter[Value, TransferValue any] struct {
-	toTransferValue   func(Value) (TransferValue, error)
-	fromTransferValue func(TransferValue, *Value) error
+	toTransferValue   func(context.Context, Value) (TransferValue, error)
+	fromTransferValue func(context.Context, TransferValue, *Value) error
 }
 
 func (*transferConverter[Value, TransferValue]) transferConverter() {}
@@ -74,7 +74,7 @@ func (*transferConverter[Value, TransferValue]) NewTransferValuePtr() any {
 	return new(TransferValue)
 }
 
-func (tc *transferConverter[Value, TransferValue]) ToTransferValue(value any) (any, error) {
+func (tc *transferConverter[Value, TransferValue]) ToTransferValue(ctx context.Context, value any) (any, error) {
 	v, ok := value.(Value)
 	if !ok {
 		// The SDK should only call ToTransferValue on v if v.TransferConverter()
@@ -82,10 +82,10 @@ func (tc *transferConverter[Value, TransferValue]) ToTransferValue(value any) (a
 		var zero Value
 		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", zero, value))
 	}
-	return tc.toTransferValue(v)
+	return tc.toTransferValue(ctx, v)
 }
 
-func (tc *transferConverter[Value, TransferValue]) FromTransferValue(transferValuePtr any, valuePtr any) error {
+func (tc *transferConverter[Value, TransferValue]) FromTransferValue(ctx context.Context, transferValuePtr any, valuePtr any) error {
 	v, ok := valuePtr.(*Value)
 	if !ok {
 		// The SDK should only call FromTransferValue on v if v.TransferConverter()
@@ -98,7 +98,7 @@ func (tc *transferConverter[Value, TransferValue]) FromTransferValue(transferVal
 		// from tc.NewTransferValuePtr(). If we got here, we violated that contract.
 		panic(fmt.Sprintf("transfer converter: want transfer value of type %T, got %T", (*TransferValue)(nil), transferValuePtr))
 	}
-	return tc.fromTransferValue(*tvp, v)
+	return tc.fromTransferValue(ctx, *tvp, v)
 }
 
 // -- DATA CONVERTERS ----------------------------------------------------------
@@ -110,7 +110,8 @@ func (tc *transferConverter[Value, TransferValue]) FromTransferValue(transferVal
 //  2. Decodes its input using the parent data converter and then trying to
 //     transfer-convert the result into a normal value.
 type transferAwareDataConverter struct {
-	parent converter.DataConverter
+	parent  converter.DataConverter
+	context context.Context
 }
 
 var _ converter.DataConverter = (*transferAwareDataConverter)(nil)
@@ -130,7 +131,7 @@ func makeTransferAware(dc converter.DataConverter) *transferAwareDataConverter {
 }
 
 func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
-	transferValue, err := encodeAsTransferValueOrReturn(value)
+	transferValue, err := encodeAsTransferValueOrReturn(dc.context, value)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +144,7 @@ func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Paylo
 	// the values are transfer-convertible?
 	transferValues := make([]any, len(values))
 	for i, value := range values {
-		transferValue, err := encodeAsTransferValueOrReturn(value)
+		transferValue, err := encodeAsTransferValueOrReturn(dc.context, value)
 		if err != nil {
 			return nil, fmt.Errorf("values[%d]: %w", i, err)
 		}
@@ -152,12 +153,12 @@ func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Paylo
 	return dc.parent.ToPayloads(transferValues...)
 }
 
-func encodeAsTransferValueOrReturn(value any) (transferValue any, err error) {
+func encodeAsTransferValueOrReturn(ctx context.Context, value any) (transferValue any, err error) {
 	convertible, ok := value.(ValueWithTransferConverter)
 	if !ok {
 		return value, nil
 	}
-	return convertible.TransferConverter().ToTransferValue(value)
+	return convertible.TransferConverter().ToTransferValue(ctx, value)
 }
 
 func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
@@ -174,7 +175,7 @@ func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, val
 	if err != nil {
 		return err
 	}
-	return tc.FromTransferValue(transferValuePtr, valuePtr)
+	return tc.FromTransferValue(dc.context, transferValuePtr, valuePtr)
 }
 
 func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
@@ -200,7 +201,7 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 			valuePtrs[i] = transferValuePtrs[i]
 		} else {
 			err := convertible.TransferConverter().
-				FromTransferValue(transferValuePtrs[i], valuePtrs[i])
+				FromTransferValue(dc.context, transferValuePtrs[i], valuePtrs[i])
 			if err != nil {
 				return fmt.Errorf("transfer converter: payload item %d: %w", i, err)
 			}
@@ -222,24 +223,28 @@ func (dc *transferAwareDataConverter) WithSerializationContext(ctx converter.Ser
 		return dc
 	}
 	return &transferAwareDataConverter{
-		parent: converter.WithDataConverterSerializationContext(dc.parent, ctx),
+		parent:  converter.WithDataConverterSerializationContext(dc.parent, ctx),
+		context: dc.context,
 	}
 }
 
 func (dc *transferAwareDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
 	if parent, ok := dc.parent.(ContextAware); ok {
 		return &transferAwareDataConverter{
-			parent: parent.WithWorkflowContext(ctx),
+			parent:  parent.WithWorkflowContext(ctx),
+			context: dc.context,
 		}
 	}
 	return dc
 }
 
 func (dc *transferAwareDataConverter) WithContext(ctx context.Context) converter.DataConverter {
-	if parent, ok := dc.parent.(ContextAware); ok {
-		return &transferAwareDataConverter{
-			parent: parent.WithContext(ctx),
-		}
+	parent := dc.parent
+	if contextAwareParent, ok := parent.(ContextAware); ok {
+		parent = contextAwareParent.WithContext(ctx)
 	}
-	return dc
+	return &transferAwareDataConverter{
+		parent:  parent,
+		context: ctx,
+	}
 }

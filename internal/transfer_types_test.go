@@ -19,8 +19,8 @@ type temperature struct{ kelvin float64 }
 var _ ValueWithTransferConverter = temperature{}
 
 var temperatureConverter = NewTransferConverter(
-	func(t temperature) (float64, error) { return t.kelvin, nil },
-	func(kelvin float64, t *temperature) error {
+	func(_ context.Context, t temperature) (float64, error) { return t.kelvin, nil },
+	func(_ context.Context, kelvin float64, t *temperature) error {
 		t.kelvin = kelvin
 		return nil
 	},
@@ -40,8 +40,8 @@ var _ ValueWithTransferConverter = userRef{}
 type userRefTransfer struct{ ID string }
 
 var userRefConverter = NewTransferConverter(
-	func(u userRef) (userRefTransfer, error) { return userRefTransfer{ID: u.id}, nil },
-	func(t userRefTransfer, u *userRef) error {
+	func(_ context.Context, u userRef) (userRefTransfer, error) { return userRefTransfer{ID: u.id}, nil },
+	func(_ context.Context, t userRefTransfer, u *userRef) error {
 		u.id = t.ID
 		return nil
 	},
@@ -58,8 +58,8 @@ var errNoEncoding = errors.New("cannot encode")
 
 func (unencodable) TransferConverter() TransferConverter {
 	return NewTransferConverter(
-		func(unencodable) (string, error) { return "", errNoEncoding },
-		func(string, *unencodable) error { return nil },
+		func(context.Context, unencodable) (string, error) { return "", errNoEncoding },
+		func(context.Context, string, *unencodable) error { return nil },
 	)
 }
 
@@ -72,9 +72,27 @@ var _ ValueWithTransferConverter = undecodable{}
 
 func (undecodable) TransferConverter() TransferConverter {
 	return NewTransferConverter(
-		func(undecodable) (string, error) { return "encoded", nil },
-		func(string, *undecodable) error { return errNoDecoding },
+		func(context.Context, undecodable) (string, error) { return "encoded", nil },
+		func(context.Context, string, *undecodable) error { return errNoDecoding },
 	)
+}
+
+type transferContextKey struct{}
+
+type contextualString string
+
+var contextualStringConverter = NewTransferConverter(
+	func(ctx context.Context, value contextualString) (string, error) {
+		return ctx.Value(transferContextKey{}).(string) + string(value), nil
+	},
+	func(ctx context.Context, transferValue string, value *contextualString) error {
+		*value = contextualString(transferValue[len(ctx.Value(transferContextKey{}).(string)):])
+		return nil
+	},
+)
+
+func (contextualString) TransferConverter() TransferConverter {
+	return contextualStringConverter
 }
 
 // countingDataConverter records which decode methods its wrapper calls.
@@ -334,6 +352,25 @@ func TestTransferAwareDataConverter_ConversionErrors(t *testing.T) {
 func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	t.Parallel()
 
+	t.Run("transfer converter", func(t *testing.T) {
+		dc := makeTransferAware(converter.GetDefaultDataConverter())
+		ctx := context.WithValue(context.Background(), transferContextKey{}, "context:")
+		contextualDC := dc.WithContext(ctx)
+
+		payload, err := contextualDC.ToPayload(contextualString("value"))
+		require.NoError(t, err)
+		var got contextualString
+		require.NoError(t, contextualDC.FromPayload(payload, &got))
+		require.Equal(t, contextualString("value"), got)
+
+		payloads, err := contextualDC.ToPayloads(contextualString("one"), contextualString("two"))
+		require.NoError(t, err)
+		var gotOne, gotTwo contextualString
+		require.NoError(t, contextualDC.FromPayloads(payloads, &gotOne, &gotTwo))
+		require.Equal(t, contextualString("one"), gotOne)
+		require.Equal(t, contextualString("two"), gotTwo)
+	})
+
 	t.Run("context-aware parent", func(t *testing.T) {
 		dc := makeTransferAware(NewContextAwareDataConverter(converter.GetDefaultDataConverter()))
 
@@ -348,7 +385,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 
 	t.Run("parent that is not context aware", func(t *testing.T) {
 		dc := defaultTransferAwareDataConverter()
-		require.Same(t, dc, WithContext(context.Background(), dc))
+		require.NotSame(t, dc, WithContext(context.Background(), dc))
 	})
 
 	t.Run("serialization context parent returning nil", func(t *testing.T) {
