@@ -88,7 +88,7 @@ func TestPlugin_FetchesAndCachesFromMetadataServer(t *testing.T) {
 
 // TestPlugin_ConfigureClient_FailsFastOffPlatform covers the off-platform behavior: when the
 // metadata server is unreachable (the process is not on a Cloud Run worker pool or service),
-// ConfigureClient fails fast with a clear error and leaves the identity unset.
+// ConfigureClient returns an error and leaves the identity unset.
 func TestPlugin_ConfigureClient_FailsFastOffPlatform(t *testing.T) {
 	// Start a stub server and immediately close it so its URL is unreachable.
 	srv := newStubMetadataServer(http.StatusOK, testInstanceID)

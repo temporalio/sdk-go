@@ -1,16 +1,14 @@
 // Package workerid configures a Temporal worker that runs on Google Cloud Run, covering both Cloud
 // Run worker pools and Cloud Run services.
 //
-// Unlike AWS Lambda, Cloud Run runs a long-lived container: there is no per-invocation handler to
-// wrap. The primary API is [Plugin], a client plugin. Register it once on
+// The primary API is [Plugin], a client plugin. Register it once on
 // [go.temporal.io/sdk/client.Options.Plugins] and it sets the client
 // [go.temporal.io/sdk/client.Options.Identity] to the Cloud Run-derived worker identity, unless a
 // user-set identity is already present (a user-set identity always wins). Every worker created from
 // the client inherits that identity.
 //
-// The plugin fetches the instance metadata once, when the client connects. If the fetch fails —
-// typically because the process is not running on a Cloud Run worker pool or service — client
-// creation fails with a clear error.
+// The plugin fetches the instance metadata once, when the client connects. If the fetch fails
+// (usually because the process is not running on Cloud Run), client creation returns an error.
 //
 // The lower-level [FetchMetadata] reader and the [Metadata.WorkerIdentity] accessor remain available
 // if you prefer to wire the value in yourself (or to inject metadata into the plugin via

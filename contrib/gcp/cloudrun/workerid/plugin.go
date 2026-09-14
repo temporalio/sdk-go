@@ -43,9 +43,9 @@ type PluginOptions struct {
 // caches it, and sets the client [go.temporal.io/sdk/client.Options.Identity] to the derived worker
 // identity unless the caller already set one — a user-provided identity always wins.
 //
-// If the metadata fetch fails — typically because the process is not running on a Cloud Run worker
-// pool or service — client creation fails with a clear error rather than silently doing nothing. Set
-// [PluginOptions.Metadata] to inject metadata and avoid the fetch in tests or advanced use.
+// If the metadata fetch fails (usually because the process is not running on Cloud Run), client
+// creation returns an error. Set [PluginOptions.Metadata] to inject metadata and avoid the fetch in
+// tests or advanced use.
 //
 // A single Plugin may be registered on multiple clients; the metadata is fetched once and shared.
 //

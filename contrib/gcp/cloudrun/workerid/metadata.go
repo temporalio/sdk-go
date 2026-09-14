@@ -19,7 +19,7 @@ const (
 	defaultMetadataURL = "http://metadata.google.internal/computeMetadata/v1/instance/id"
 
 	// metadataFlavorHeader and metadataFlavorValue form the header the GCP metadata server
-	// requires on every request as a guard against DNS-rebinding attacks.
+	// requires on every request.
 	metadataFlavorHeader = "Metadata-Flavor"
 	metadataFlavorValue  = "Google"
 

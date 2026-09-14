@@ -106,7 +106,7 @@ func TestFetchMetadata_SendsHeaderAndTrimsBody(t *testing.T) {
 	assert.Equal(t, testInstanceID, md.InstanceID)
 }
 
-// TestFetchMetadata_ErrorOnNon200 covers spec item 4: a non-200 response is a clear error and the
+// TestFetchMetadata_ErrorOnNon200 covers spec item 4: a non-200 response is an error and the
 // status code is surfaced.
 func TestFetchMetadata_ErrorOnNon200(t *testing.T) {
 	srv := newStubMetadataServer(http.StatusInternalServerError, "boom")
@@ -119,8 +119,8 @@ func TestFetchMetadata_ErrorOnNon200(t *testing.T) {
 	assert.Contains(t, err.Error(), "cloudrun:")
 }
 
-// TestFetchMetadata_ErrorWhenUnreachable covers spec item 4: an unreachable metadata server is a
-// clear error. The custom client (via WithHTTPClient) bounds the failed dial.
+// TestFetchMetadata_ErrorWhenUnreachable covers spec item 4: an unreachable metadata server is an
+// error. The custom client (via WithHTTPClient) bounds the failed dial.
 func TestFetchMetadata_ErrorWhenUnreachable(t *testing.T) {
 	srv := newStubMetadataServer(http.StatusOK, testInstanceID)
 	url := srv.URL

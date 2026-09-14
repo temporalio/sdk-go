@@ -8,10 +8,6 @@ A plugin that configures [Temporal](https://temporal.io) workers that run on
 instance's metadata and sets the client **identity**, which every worker created from the client
 inherits.
 
-Unlike the AWS Lambda worker (`contrib/aws/lambdaworker`), this is **not** a worker wrapper: Cloud
-Run runs a long-lived container, so there is no per-invocation handler to wrap. You own the worker
-lifecycle; the plugin just supplies the identifiers.
-
 ## Add to your project
 
 From your application's Go module, run:
@@ -84,10 +80,9 @@ The plugin then applies the metadata on the **client**: it sets `Identity` to
 you already set an identity — a user-set identity always wins. Every worker created from the client
 inherits this identity.
 
-If the metadata fetch fails — typically because the process is not running on a Cloud Run worker
-pool or service — `client.Dial` returns a clear error rather than silently doing nothing. For tests
-and advanced use, inject a pre-built `Metadata` (or a custom metadata URL / HTTP client) via
-`workerid.PluginOptions`.
+If the metadata fetch fails (usually because the process is not running on Cloud Run), `client.Dial`
+returns an error. For tests and advanced use, inject a pre-built `Metadata` (or a custom metadata
+URL / HTTP client) via `workerid.PluginOptions`.
 
 If you prefer to wire the value in yourself instead of using the plugin, call `FetchMetadata`
 directly: `WorkerIdentity()` returns the identity string. Because `FetchMetadata` makes an HTTP call
