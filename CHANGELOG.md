@@ -34,8 +34,6 @@ to docs, or any other relevant information.
 
 ## [1.49.0] - 2026-09-14
 
-- Add support for Workflow Queries as Nexus Operations.
-
 ### Added
 
 - Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
@@ -61,6 +59,7 @@ to docs, or any other relevant information.
 - The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
   metrics now carry a `failure_reason` attribute. Each is now split into one time series per
   reason, which may affect existing dashboards.
+- Added support for Workflow Queries as Nexus Operations.
 
 #### Standalone Activity operator commands
 
