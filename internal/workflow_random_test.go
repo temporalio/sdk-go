@@ -68,11 +68,16 @@ func (s *workflowRandomTestSuite) TestUint64Golden() {
 // not a separate, independently-buffered draw from the source. This is the
 // stability guarantee tracked by
 // https://github.com/temporalio/sdk-go/issues/2547.
+//
+// The reads are deliberately NOT 8-byte-aligned (3, then 5): an 8-byte Read
+// never leaves anything in ChaCha8's internal leftover-byte buffer, so an
+// aligned interleaving passes even on the unfixed implementation and would
+// not catch a regression here.
 func (s *workflowRandomTestSuite) TestInterleavedReadUint64StableOrdering() {
 	randomsInterleaved := make(map[string]*workflowRandomStream)
 	c := getRandomStream(randomsInterleaved, workflowRandomTestRunID, workflowRandomTestName)
 
-	read1 := make([]byte, 8)
+	read1 := make([]byte, 3)
 	_, err := c.Read(read1)
 	s.Require().NoError(err)
 
@@ -80,14 +85,14 @@ func (s *workflowRandomTestSuite) TestInterleavedReadUint64StableOrdering() {
 	uBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(uBytes, u)
 
-	read2 := make([]byte, 8)
+	read2 := make([]byte, 5)
 	_, err = c.Read(read2)
 	s.Require().NoError(err)
 
 	reconstructed := append(append(append([]byte{}, read1...), uBytes...), read2...)
 
 	randomsFull := make(map[string]*workflowRandomStream)
-	full := make([]byte, 24)
+	full := make([]byte, 16)
 	_, err = getRandomStream(randomsFull, workflowRandomTestRunID, workflowRandomTestName).Read(full)
 	s.Require().NoError(err)
 

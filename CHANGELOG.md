@@ -54,6 +54,14 @@ to docs, or any other relevant information.
   `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
   context-derived encryption keys or AAD) may fail to decode local activity results recorded in
   histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+- Experimental `workflow.WorkflowRandomStream`'s `Uint64` now derives its value by calling `Read`
+  internally instead of the underlying generator's `Uint64` method directly, giving `Read`/`Uint64`
+  interleaving on the same stream a stable, well-defined byte ordering (previously undefined per the
+  standard library `ChaCha8.Read` doc). This only changes output for a `Uint64` call that immediately
+  follows a `Read` call whose length is not a multiple of 8 bytes on the same stream; pure `Uint64`
+  streams and 8-byte-aligned interleaving are unaffected. Open workflows created on SDK v1.48.0+ that
+  hit the affected pattern may compute a different value, and therefore may make a different decision,
+  on replay after upgrading.
 - Activity, local activity and child workflow serialization contexts are now applied to the
   worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
   the current workflow context. A context-aware converter that composed contexts (deriving its state
@@ -63,11 +71,6 @@ to docs, or any other relevant information.
 
 ### Fixed
 
-- `workflow.WorkflowRandomStream`'s `Uint64` now derives its value through `Read` instead of calling
-  the underlying generator's `Uint64` directly, giving interleaved `Uint64`/`Read` calls a stable,
-  well-defined ordering. This changes the sequence `Uint64` returns for a given seed; since
-  `workflow.GetRandomStream` and `WorkflowRandomStream` remain experimental, this is not considered
-  a breaking change.
 - Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
   normal polls to use spare slots once sticky reaches its autoscaling target.
 - The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
