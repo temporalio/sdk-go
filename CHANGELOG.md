@@ -19,7 +19,20 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
-- Add support for Workflow Queries as Nexus Operations.
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+### Security
+
+## [1.49.0] - 2026-09-14
 
 ### Added
 
@@ -46,6 +59,7 @@ to docs, or any other relevant information.
 - The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
   metrics now carry a `failure_reason` attribute. Each is now split into one time series per
   reason, which may affect existing dashboards.
+- Added support for Workflow Queries as Nexus Operations.
 
 #### Standalone Activity operator commands
 
@@ -55,22 +69,17 @@ to docs, or any other relevant information.
   `IncludeOutcome`, `IncludeHeartbeatDetails` and `IncludeLastFailure`.
 - Added missing description fields: `ExecutionTime` and `TotalHeartbeatCount`.
 
-### :boom: Breaking Changes
-
-- Description payload fields that previously came back unconditionally are now opt-in and must be
-  requested via `client.DescribeActivityOptions`: `GetHeartbeatDetails` (`IncludeHeartbeatDetails`)
-  and `GetLastFailure` (`IncludeLastFailure`).
-
 ### Changed
 
 - Standalone Activities are now generally available (GA). (Standalone Activities as Nexus operations
   and Standalone Activities operator commands remain experimental. Operator commands are `pause`,
   `unpause`, `updateOptions`, `restoreOriginal`.)
 
-### Deprecated
-
 ### :boom: Breaking Changes
 
+- Description payload fields that previously came back unconditionally are now opt-in and must be
+  requested via `client.DescribeActivityOptions`: `GetHeartbeatDetails` (`IncludeHeartbeatDetails`)
+  and `GetLastFailure` (`IncludeLastFailure`).
 - Renamed the standalone activity `client.StartActivityOptions.Details` option to `StaticDetails`,
   and `client.ActivityExecutionDescription.GetDetails` to `GetStaticDetails`.
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
@@ -137,8 +146,6 @@ to docs, or any other relevant information.
   to `client.Options.ExternalStorage` is now stored instead of failing locally with
   `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
   query result now fails the workflow task instead of returning a failed query result.
-
-### Security
 
 ## [1.48.0] - 2026-08-18
 
