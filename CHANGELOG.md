@@ -23,6 +23,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added poller-group-aware autoscaling for multi-cell namespaces. Workers maintain coverage for each
+  server-provided group and distribute additional polls by weight. Workflow workers maintain normal
+  and sticky coverage independently; extra sticky polls target backlogged groups until their backlog
+  is covered or the sticky target is reached. Required coverage may exceed the configured maximum.
 - Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
   a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
   platforms), and the operating system and architecture. This is sent

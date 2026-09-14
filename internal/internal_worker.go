@@ -77,12 +77,10 @@ const (
 
 	testTagsContextKey = "temporal-testTags"
 
-	workflowLiteralRegistrationHint =
-		"It looks like you registered a function literal (closure) without giving it an alias. " +
+	workflowLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias. " +
 		"Register it with RegisterWorkflowWithOptions and set Name to a stable, unique name."
 
-	activityLiteralRegistrationHint =
-		"It looks like you registered a function literal (closure) without giving it an alias. " +
+	activityLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias. " +
 		"Register it with RegisterActivityWithOptions and set Name to a stable, unique name."
 )
 
@@ -248,7 +246,8 @@ type (
 
 		workerInstanceKey string
 
-		workerControlTaskQueue string
+		workerControlTaskQueue   string
+		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 
 		activityCancellationCallbacks *activityCancellationCallbacks
 
@@ -429,6 +428,7 @@ func newWorkflowTaskWorkerInternal(
 				),
 				"",
 				nil,
+				nil,
 			),
 		},
 		taskProcessor:  localActivityTaskPoller,
@@ -486,7 +486,8 @@ func (ww *workflowWorker) Stop() {
 // buildWorkflowScalableTaskPollers builds the set of workflow task pollers for
 // the given behavior. A simple-maximum behavior uses a single Mixed poller,
 // while an autoscaling behavior uses a NonSticky poller plus a Sticky poller
-// when the sticky cache is enabled.
+// when the sticky cache is enabled. Each returned poller is a reusable object
+// with independent concurrency control, not one object per poll attempt.
 func buildWorkflowScalableTaskPollers(
 	taskProcessor *workflowTaskProcessor,
 	behavior PollerBehavior,
@@ -495,52 +496,66 @@ func buildWorkflowScalableTaskPollers(
 ) []scalableTaskPoller {
 	switch behavior := behavior.(type) {
 	case *pollerBehaviorAutoscaling:
+		var pollerGroups *pollerGroupManager
+		if taskProcessor.stickyCacheSize <= 0 && params.pollerGroupSnapshotStore != nil {
+			pollerGroups = newPollerGroupManager(params.pollerGroupSnapshotStore)
+		}
+
+		normalTaskPoller := taskProcessor.createPoller(NonSticky, pollerGroups)
 		normalScalablePoller := newScalableTaskPoller(
-			taskProcessor.createPoller(NonSticky),
+			normalTaskPoller,
 			params.Logger,
 			behavior,
 			metrics.PollerTypeWorkflowTask,
 			params.serverSupportsAutoscaling,
+			pollerGroups,
 		)
 		if taskProcessor.stickyCacheSize <= 0 {
 			return []scalableTaskPoller{normalScalablePoller}
 		}
 
-		balancer := newWorkflowAutoscalingBalancer(maxSlots, int64(behavior.initialNumberOfPollers))
-		stickyTaskPoller := taskProcessor.createPoller(Sticky)
+		balancer := newWorkflowAutoscalingBalancer(
+			maxSlots,
+			int64(behavior.initialNumberOfPollers),
+			params.pollerGroupSnapshotStore,
+		)
+		stickyTaskPoller := taskProcessor.createPoller(Sticky, nil)
 		stickyScalablePoller := newScalablePollerWithTarget(
 			stickyTaskPoller,
 			params.Logger,
 			behavior,
 			metrics.PollerTypeWorkflowStickyTask,
 			params.serverSupportsAutoscaling,
+			nil,
 			balancer.setStickyTarget,
 		)
 		normalScalablePoller.autoscalingBalancer = balancer
 		normalScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_NORMAL
 		stickyScalablePoller.autoscalingBalancer = balancer
 		stickyScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_STICKY
-		// Sticky poll responses send backlog hints to the shared balancer.
+		normalTaskPoller.autoscalingBalancer = balancer
 		stickyTaskPoller.autoscalingBalancer = balancer
 
 		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
 	default: // *pollerBehaviorSimpleMaximum
 		return []scalableTaskPoller{
 			newScalableTaskPoller(
-				taskProcessor.createPoller(Mixed),
+				taskProcessor.createPoller(Mixed, nil),
 				params.Logger,
 				behavior,
 				metrics.PollerTypeWorkflowTask,
 				params.serverSupportsAutoscaling,
+				nil,
 			),
 		}
 	}
 }
 
 func (ww *workflowWorker) initializeTaskPollers(behavior PollerBehavior) {
+	taskProcessor := ww.worker.options.taskProcessor.(*workflowTaskProcessor)
 	ww.executionParameters.WorkflowTaskPollerBehavior = behavior
 	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(
-		ww.taskProcessor,
+		taskProcessor,
 		behavior,
 		ww.executionParameters,
 		ww.worker.slotSupplier.inner.MaxSlots(),
@@ -647,7 +662,7 @@ func newActivityWorker(
 		taskHandler = newActivityTaskHandler(client, params, env)
 	}
 
-	poller := newActivityTaskPoller(taskHandler, service, params)
+	poller := newActivityTaskPoller(taskHandler, service, params, nil)
 	var slotSupplier SlotSupplier
 	if overrides != nil && overrides.slotSupplier != nil {
 		slotSupplier = overrides.slotSupplier
@@ -705,6 +720,13 @@ func (aw *activityWorker) Stop() {
 
 func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
 	aw.executionParameters.ActivityTaskPollerBehavior = behavior
+	var pollerGroups *pollerGroupManager
+	if _, ok := behavior.(*pollerBehaviorAutoscaling); ok {
+		pollerGroups = newPollerGroupManager(aw.executionParameters.pollerGroupSnapshotStore)
+	}
+	if poller, ok := aw.poller.(*activityTaskPoller); ok {
+		poller.pollerGroups = pollerGroups
+	}
 	aw.worker.initializeTaskPollers([]scalableTaskPoller{
 		newScalableTaskPoller(
 			aw.poller,
@@ -712,6 +734,7 @@ func (aw *activityWorker) initializeTaskPollers(behavior PollerBehavior) {
 			behavior,
 			metrics.PollerTypeActivityTask,
 			aw.executionParameters.serverSupportsAutoscaling,
+			pollerGroups,
 		),
 	})
 }
@@ -1498,6 +1521,9 @@ func (aw *AggregatedWorker) start() error {
 	// have been resolved.
 	if !util.IsInterfaceNil(aw.workflowWorker) {
 		aw.workflowWorker.initializeTaskPollers(aw.executionParams.WorkflowTaskPollerBehavior)
+	}
+
+	if !util.IsInterfaceNil(aw.workflowWorker) {
 		if err := aw.workflowWorker.Start(); err != nil {
 			return err
 		}
@@ -2487,6 +2513,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
 		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		pollerGroupSnapshotStore:         client.pollerGroupSnapshotStore,
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},
@@ -2779,7 +2806,6 @@ func isError(inType reflect.Type) bool {
 	errorElem := reflect.TypeFor[error]()
 	return inType != nil && inType.Implements(errorElem)
 }
-
 
 // mightBeFunctionLiteral returns true if the given function looks like a function literal.
 // BEWARE: False positives are possible! Normal function declarations might look like literals.
