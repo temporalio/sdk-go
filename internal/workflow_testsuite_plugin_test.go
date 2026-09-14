@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -18,12 +19,14 @@ type envPluginForTest struct {
 	configureErr         error
 	startErr             error
 	registerEverything   bool
+	registerRunScoped    bool
 	configureKeys        []string
 	startKeys            []string
 	stopKeys             []string
 	taskQueues           []string
 	workflowCallbacks    int
 	registeredActivities []string
+	dynamicRuns          []int
 }
 
 func (p *envPluginForTest) Name() string { return "env-plugin-for-test" }
@@ -62,6 +65,17 @@ func (p *envPluginForTest) StartWorker(
 		options.WorkerRegistry.RegisterDynamicActivity(envPluginDynamicActivity, DynamicRegisterActivityOptions{})
 		options.WorkerRegistry.RegisterNexusService(nexus.NewService("env-plugin-service"))
 	}
+	if p.registerRunScoped {
+		// Handlers that capture state of this particular start.
+		run := len(p.startKeys)
+		options.WorkerRegistry.RegisterActivityWithOptions(func(context.Context) (int, error) {
+			return run, nil
+		}, RegisterActivityOptions{Name: envPluginRunActivityName})
+		options.WorkerRegistry.RegisterDynamicActivity(func(context.Context, converter.EncodedValues) (converter.EncodedValues, error) {
+			p.dynamicRuns = append(p.dynamicRuns, run)
+			return nil, nil
+		}, DynamicRegisterActivityOptions{})
+	}
 	return next(ctx, options)
 }
 
@@ -74,7 +88,10 @@ func (p *envPluginForTest) StopWorker(
 	next(ctx, options)
 }
 
-const envPluginActivityName = "EnvPluginActivity"
+const (
+	envPluginActivityName    = "EnvPluginActivity"
+	envPluginRunActivityName = "EnvPluginRun"
+)
 
 func envPluginActivity(_ context.Context, name string) (string, error) {
 	if name == "pending" {
@@ -320,9 +337,11 @@ func TestActivityEnvPluginRepeatedRegistrations(t *testing.T) {
 	plugin := &envPluginForTest{registerEverything: true}
 	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
 	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
+	env.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: "UserActivity"})
 
-	// StartWorker registers every kind of item again on each execution against
-	// the shared registry; none may fail as a duplicate.
+	// StartWorker registers every kind of item on each execution. What it
+	// registered goes away with the stopped worker, so nothing is a duplicate
+	// on the next start.
 	for i := 1; i <= 2; i++ {
 		val, err := env.ExecuteActivity(envPluginActivityName, "temporal")
 		require.NoError(t, err)
@@ -331,6 +350,65 @@ func TestActivityEnvPluginRepeatedRegistrations(t *testing.T) {
 		require.Equal(t, "hello temporal", out)
 		require.Len(t, plugin.stopKeys, i)
 	}
+
+	// Only the user's own registration remains after the run.
+	registry := env.impl.registry
+	_, ok := registry.GetActivity(envPluginActivityName)
+	require.False(t, ok)
+	workflowName, _ := getFunctionName(envPluginWorkflow)
+	_, ok = registry.getWorkflowFn(workflowName)
+	require.False(t, ok)
+	require.Nil(t, registry.getNexusService("env-plugin-service"))
+	_, ok = registry.GetActivity("UserActivity")
+	require.True(t, ok)
+}
+
+func TestActivityEnvPluginRunScopedRegistrations(t *testing.T) {
+	t.Parallel()
+	plugin := &envPluginForTest{registerRunScoped: true}
+	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
+	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
+
+	// Each execution must use the handlers registered by its own start, not
+	// stale ones retained from an earlier run.
+	for run := 1; run <= 2; run++ {
+		val, err := env.ExecuteActivity(envPluginRunActivityName)
+		require.NoError(t, err)
+		var got int
+		require.NoError(t, val.Get(&got))
+		require.Equal(t, run, got)
+	}
+	for run := 3; run <= 4; run++ {
+		_, err := env.ExecuteActivity("not-registered")
+		require.NoError(t, err)
+	}
+	require.Equal(t, []int{3, 4}, plugin.dynamicRuns)
+}
+
+func TestActivityEnvPluginDuplicateRegistration(t *testing.T) {
+	t.Parallel()
+	plugin := &envPluginForTest{}
+	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
+	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
+	env.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
+
+	// The plugin registers the same name in StartWorker, which is a conflict as
+	// on a real worker rather than a tolerated repeat.
+	require.PanicsWithValue(t, `activity type "EnvPluginActivity" is already registered`, func() {
+		_, _ = env.ExecuteActivity(envPluginActivityName, "temporal")
+	})
+}
+
+func TestWorkflowEnvPluginDuplicateRegistration(t *testing.T) {
+	t.Parallel()
+	plugin := &envPluginForTest{registerEverything: true}
+	env := newEnvPluginWorkflowEnv(plugin)
+	env.RegisterWorkflow(envPluginWorkflow)
+
+	workflowName, _ := getFunctionName(envPluginWorkflow)
+	require.PanicsWithValue(t, fmt.Sprintf("workflow name %q is already registered", workflowName), func() {
+		env.ExecuteWorkflow(envPluginWorkflow, "temporal")
+	})
 }
 
 func TestActivityEnvPluginStartError(t *testing.T) {
