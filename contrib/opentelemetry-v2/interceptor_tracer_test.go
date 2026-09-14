@@ -69,8 +69,8 @@ func (s *integrationTestSuite) runScenario(pluginOpts PluginOptions) []sdktrace.
 	c := s.newDevServerClient(client.Options{
 		Plugins: []client.Plugin{plugin},
 	}, testsuite.DevServerOptions{
-		// Client-started Nexus operations require this pre-release server and its standalone feature flag.
-		CachedDownload: testsuite.CachedDownload{Version: "v1.7.2-one-time-versioning-override"},
+		// Client-started Nexus operations require the standalone feature flag.
+		CachedDownload: testsuite.CachedDownload{Version: "v1.9.0-rc.1"},
 		ExtraArgs: []string{
 			"--dynamic-config-value", "nexusoperation.enableStandalone=true",
 		},
