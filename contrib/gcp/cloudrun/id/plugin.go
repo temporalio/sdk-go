@@ -9,10 +9,10 @@ import (
 	"go.temporal.io/sdk/client"
 )
 
-// pluginName is the name reported by [CloudRunIDPlugin.Name].
+// pluginName is the name reported by [CloudRunIdPlugin.Name].
 const pluginName = "temporal-cloudrun-id"
 
-// CloudRunIDPlugin sets a Temporal client's identity from Google Cloud Run instance metadata. It
+// CloudRunIdPlugin sets a Temporal client's identity from Google Cloud Run instance metadata. It
 // implements [go.temporal.io/sdk/client.Plugin]: register it once on
 // [go.temporal.io/sdk/client.Options.Plugins] and every worker created from the client inherits the
 // identity.
@@ -23,7 +23,7 @@ const pluginName = "temporal-cloudrun-id"
 // returns an error.
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future release.
-type CloudRunIDPlugin struct {
+type CloudRunIdPlugin struct {
 	client.PluginBase
 
 	metadataURL string
@@ -33,22 +33,22 @@ type CloudRunIDPlugin struct {
 	metadata *Metadata
 }
 
-var _ client.Plugin = (*CloudRunIDPlugin)(nil)
+var _ client.Plugin = (*CloudRunIdPlugin)(nil)
 
-// NewCloudRunIDPlugin creates a [CloudRunIDPlugin]. See [CloudRunIDPlugin] for the behavior. The
+// NewCloudRunIdPlugin creates a [CloudRunIdPlugin]. See [CloudRunIdPlugin] for the behavior. The
 // metadata is fetched lazily when the client connects, so construction makes no network request.
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future release.
-func NewCloudRunIDPlugin() *CloudRunIDPlugin {
-	return &CloudRunIDPlugin{}
+func NewCloudRunIdPlugin() *CloudRunIdPlugin {
+	return &CloudRunIdPlugin{}
 }
 
 // Name returns the plugin name.
-func (*CloudRunIDPlugin) Name() string { return pluginName }
+func (*CloudRunIdPlugin) Name() string { return pluginName }
 
 // Metadata returns the resolved Cloud Run instance metadata, or nil if it has not been fetched yet
 // (that is, before the client connects).
-func (p *CloudRunIDPlugin) Metadata() *Metadata {
+func (p *CloudRunIdPlugin) Metadata() *Metadata {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.metadata
@@ -56,7 +56,7 @@ func (p *CloudRunIDPlugin) Metadata() *Metadata {
 
 // ConfigureClient fetches the Cloud Run metadata (once) and sets the derived client identity on the
 // client options unless the caller already set one. It returns an error if the fetch fails.
-func (p *CloudRunIDPlugin) ConfigureClient(ctx context.Context, options client.PluginConfigureClientOptions) error {
+func (p *CloudRunIdPlugin) ConfigureClient(ctx context.Context, options client.PluginConfigureClientOptions) error {
 	if options.ClientOptions == nil {
 		return fmt.Errorf("cloudrun: client options are required")
 	}
@@ -72,7 +72,7 @@ func (p *CloudRunIDPlugin) ConfigureClient(ctx context.Context, options client.P
 
 // ensureMetadata returns the injected or cached metadata, fetching and caching it on first use. The
 // lock is not held across the fetch; a rare concurrent first fetch is harmless.
-func (p *CloudRunIDPlugin) ensureMetadata(ctx context.Context) (*Metadata, error) {
+func (p *CloudRunIdPlugin) ensureMetadata(ctx context.Context) (*Metadata, error) {
 	p.mu.Lock()
 	md := p.metadata
 	p.mu.Unlock()
@@ -95,7 +95,7 @@ func (p *CloudRunIDPlugin) ensureMetadata(ctx context.Context) (*Metadata, error
 }
 
 // fetchOptions builds the [FetchMetadata] options from the plugin's fields.
-func (p *CloudRunIDPlugin) fetchOptions() []Option {
+func (p *CloudRunIdPlugin) fetchOptions() []Option {
 	var opts []Option
 	if p.httpClient != nil {
 		opts = append(opts, WithHTTPClient(p.httpClient))

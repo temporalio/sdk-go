@@ -21,7 +21,7 @@ var completeMetadata = &id.Metadata{InstanceID: "i-1", Name: "my-pool", Revision
 // can be registered on client.Options.Plugins; every worker created from the client then inherits
 // the identity it sets.
 func TestPlugin_ImplementsClientPlugin(t *testing.T) {
-	plugin := id.NewCloudRunIDPlugin()
+	plugin := id.NewCloudRunIdPlugin()
 	var _ client.Plugin = plugin
 	// It is usable in the Plugins slice a caller would build.
 	_ = client.Options{Plugins: []client.Plugin{plugin}}

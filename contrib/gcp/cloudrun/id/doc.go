@@ -1,7 +1,7 @@
 // Package id configures a Temporal worker that runs on Google Cloud Run, covering both Cloud
 // Run worker pools and Cloud Run services.
 //
-// The primary API is [CloudRunIDPlugin], a client plugin. Register it once on
+// The primary API is [CloudRunIdPlugin], a client plugin. Register it once on
 // [go.temporal.io/sdk/client.Options.Plugins] and it sets the client
 // [go.temporal.io/sdk/client.Options.Identity] to the Cloud Run-derived worker identity, unless a
 // user-set identity is already present (a user-set identity always wins). Every worker created from
@@ -23,7 +23,7 @@
 //	    // Register the Cloud Run plugin on the client. It fetches the instance metadata when the
 //	    // client connects and sets the client identity.
 //	    c, err := client.Dial(client.Options{
-//	        Plugins: []client.Plugin{id.NewCloudRunIDPlugin()},
+//	        Plugins: []client.Plugin{id.NewCloudRunIdPlugin()},
 //	    })
 //	    if err != nil {
 //	        log.Fatalf("dialing Temporal server: %v", err)
@@ -54,13 +54,13 @@ import (
 )
 
 // Example shows how to configure Temporal worker on Cloud Run with the plugin.
-// Registering [CloudRunIDPlugin] on the client sets the derived client identity, read from the instance
+// Registering [CloudRunIdPlugin] on the client sets the derived client identity, read from the instance
 // metadata when the client connects.
 func Example() {
 	// Register the Cloud Run plugin on the client. It fetches the instance metadata when the client
 	// connects (never from workflow code) and sets the derived client identity unless one is already
 	// set.
-	plugin := NewCloudRunIDPlugin()
+	plugin := NewCloudRunIdPlugin()
 
 	c, err := client.Dial(client.Options{
 		Plugins: []client.Plugin{plugin},
