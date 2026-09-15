@@ -4,7 +4,7 @@
 
 A plugin that configures [Temporal](https://temporal.io) workers that run on
 [Google Cloud Run](https://cloud.google.com/run) — both Cloud Run **worker pools** and Cloud Run
-**services**. Register `id.CloudRunIdPlugin` once on your client and it reads the current Cloud Run
+**services**. Register `id.CloudRunIDPlugin` once on your client and it reads the current Cloud Run
 instance's metadata and sets the client **identity**, which every worker created from the client
 inherits.
 
@@ -39,7 +39,7 @@ func main() {
     // metadata once (never from workflow code) and sets the derived client identity unless one is
     // already set.
     c, err := client.Dial(client.Options{
-        Plugins: []client.Plugin{id.NewCloudRunIdPlugin()},
+        Plugins: []client.Plugin{id.NewCloudRunIDPlugin()},
     })
     if err != nil {
         log.Fatalf("dialing Temporal server: %v", err)
@@ -57,7 +57,7 @@ func main() {
 
 ## How it works
 
-`id.CloudRunIdPlugin` fetches the instance metadata once, when the client connects, using
+`id.CloudRunIDPlugin` fetches the instance metadata once, when the client connects, using
 `FetchMetadata` under the hood. `FetchMetadata` gathers three pieces of information about the current
 Cloud Run instance:
 
