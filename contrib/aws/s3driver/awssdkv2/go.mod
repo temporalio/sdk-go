@@ -10,7 +10,7 @@ require (
 	github.com/stretchr/testify v1.10.0
 	go.temporal.io/api v1.63.5
 	go.temporal.io/sdk v1.43.1
-	go.temporal.io/sdk/contrib/aws/s3driver v0.0.0
+	go.temporal.io/sdk/contrib/aws/s3driver v0.3.0
 )
 
 require (
