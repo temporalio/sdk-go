@@ -1,4 +1,4 @@
-module go.temporal.io/sdk/contrib/gcp/cloudrun/workerid
+module go.temporal.io/sdk/contrib/gcp/cloudrun/id
 
 go 1.26.0
 

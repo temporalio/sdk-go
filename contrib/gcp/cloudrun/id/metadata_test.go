@@ -1,4 +1,4 @@
-package workerid_test
+package id_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"go.temporal.io/sdk/contrib/gcp/cloudrun/workerid"
+	"go.temporal.io/sdk/contrib/gcp/cloudrun/id"
 )
 
 // testInstanceID is a representative Cloud Run instance ID as returned by the GCP metadata server.
@@ -79,7 +79,7 @@ func TestFetchMetadata_EnvPrecedence(t *testing.T) {
 			srv := newStubMetadataServer(http.StatusOK, testInstanceID)
 			defer srv.Close()
 
-			md, err := workerid.FetchMetadata(context.Background(), workerid.WithMetadataURL(srv.URL))
+			md, err := id.FetchMetadata(context.Background(), id.WithMetadataURL(srv.URL))
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantName, md.Name)
 			assert.Equal(t, tt.wantRev, md.Revision)
@@ -100,7 +100,7 @@ func TestFetchMetadata_SendsHeaderAndTrimsBody(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	md, err := workerid.FetchMetadata(context.Background(), workerid.WithMetadataURL(srv.URL))
+	md, err := id.FetchMetadata(context.Background(), id.WithMetadataURL(srv.URL))
 	require.NoError(t, err)
 	assert.Equal(t, "Google", <-gotFlavor)
 	assert.Equal(t, testInstanceID, md.InstanceID)
@@ -112,7 +112,7 @@ func TestFetchMetadata_ErrorOnNon200(t *testing.T) {
 	srv := newStubMetadataServer(http.StatusInternalServerError, "boom")
 	defer srv.Close()
 
-	md, err := workerid.FetchMetadata(context.Background(), workerid.WithMetadataURL(srv.URL))
+	md, err := id.FetchMetadata(context.Background(), id.WithMetadataURL(srv.URL))
 	require.Error(t, err)
 	assert.Nil(t, md)
 	assert.Contains(t, err.Error(), "500")
@@ -126,10 +126,10 @@ func TestFetchMetadata_ErrorWhenUnreachable(t *testing.T) {
 	url := srv.URL
 	srv.Close() // Nothing is listening on url now.
 
-	md, err := workerid.FetchMetadata(
+	md, err := id.FetchMetadata(
 		context.Background(),
-		workerid.WithMetadataURL(url),
-		workerid.WithHTTPClient(&http.Client{Timeout: time.Second}),
+		id.WithMetadataURL(url),
+		id.WithHTTPClient(&http.Client{Timeout: time.Second}),
 	)
 	require.Error(t, err)
 	assert.Nil(t, md)
@@ -141,22 +141,22 @@ func TestFetchMetadata_ErrorWhenUnreachable(t *testing.T) {
 func TestMetadata_WorkerIdentity(t *testing.T) {
 	tests := []struct {
 		name string
-		md   workerid.Metadata
+		md   id.Metadata
 		want string
 	}{
 		{
 			name: "instanceID@revision, revision preferred over name",
-			md:   workerid.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"},
+			md:   id.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"},
 			want: "i-1@rev-1",
 		},
 		{
 			name: "falls back to instanceID@name when revision empty",
-			md:   workerid.Metadata{InstanceID: "i-1", Name: "my-pool"},
+			md:   id.Metadata{InstanceID: "i-1", Name: "my-pool"},
 			want: "i-1@my-pool",
 		},
 		{
 			name: "bare instanceID when name and revision empty",
-			md:   workerid.Metadata{InstanceID: "i-1"},
+			md:   id.Metadata{InstanceID: "i-1"},
 			want: "i-1",
 		},
 	}

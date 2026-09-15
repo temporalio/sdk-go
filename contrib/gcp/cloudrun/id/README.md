@@ -1,10 +1,10 @@
-# workerid
+# id
 
 > ⚠️ **This package is experimental; its API may change in a future release.** ⚠️
 
 A plugin that configures [Temporal](https://temporal.io) workers that run on
 [Google Cloud Run](https://cloud.google.com/run) — both Cloud Run **worker pools** and Cloud Run
-**services**. Register `workerid.Plugin` once on your client and it reads the current Cloud Run
+**services**. Register `id.CloudRunIDPlugin` once on your client and it reads the current Cloud Run
 instance's metadata and sets the client **identity**, which every worker created from the client
 inherits.
 
@@ -13,12 +13,12 @@ inherits.
 From your application's Go module, run:
 
 ```bash
-go get go.temporal.io/sdk/contrib/gcp/cloudrun/workerid@latest
+go get go.temporal.io/sdk/contrib/gcp/cloudrun/id@latest
 ```
 
 ## Module versioning
 
-`workerid` is released as a separate Go module from the core Temporal Go SDK. See
+`id` is released as a separate Go module from the core Temporal Go SDK. See
 [CHANGELOG.md](CHANGELOG.md) for release notes.
 
 ## Quick start
@@ -30,16 +30,16 @@ import (
     "log"
 
     "go.temporal.io/sdk/client"
-    "go.temporal.io/sdk/contrib/gcp/cloudrun/workerid"
+    "go.temporal.io/sdk/contrib/gcp/cloudrun/id"
     "go.temporal.io/sdk/worker"
 )
 
 func main() {
     // Register the Cloud Run plugin on the client. When the client connects, it reads the instance
-    // metadata once (never from workflow code) and sets the derived worker identity unless one is
+    // metadata once (never from workflow code) and sets the derived client identity unless one is
     // already set.
     c, err := client.Dial(client.Options{
-        Plugins: []client.Plugin{workerid.NewPlugin(workerid.PluginOptions{})},
+        Plugins: []client.Plugin{id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{})},
     })
     if err != nil {
         log.Fatalf("dialing Temporal server: %v", err)
@@ -57,7 +57,7 @@ func main() {
 
 ## How it works
 
-`workerid.Plugin` fetches the instance metadata once, when the client connects, using
+`id.CloudRunIDPlugin` fetches the instance metadata once, when the client connects, using
 `FetchMetadata` under the hood. `FetchMetadata` gathers three pieces of information about the current
 Cloud Run instance:
 
@@ -82,7 +82,7 @@ inherits this identity.
 
 If the metadata fetch fails (usually because the process is not running on Cloud Run), `client.Dial`
 returns an error. For tests and advanced use, inject a pre-built `Metadata` (or a custom metadata
-URL / HTTP client) via `workerid.PluginOptions`.
+URL / HTTP client) via `id.CloudRunIDPluginOptions`.
 
 If you prefer to wire the value in yourself instead of using the plugin, call `FetchMetadata`
 directly: `WorkerIdentity()` returns the identity string. Because `FetchMetadata` makes an HTTP call

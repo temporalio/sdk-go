@@ -1,7 +1,7 @@
-// Package workerid configures a Temporal worker that runs on Google Cloud Run, covering both Cloud
+// Package id configures a Temporal worker that runs on Google Cloud Run, covering both Cloud
 // Run worker pools and Cloud Run services.
 //
-// The primary API is [Plugin], a client plugin. Register it once on
+// The primary API is [CloudRunIDPlugin], a client plugin. Register it once on
 // [go.temporal.io/sdk/client.Options.Plugins] and it sets the client
 // [go.temporal.io/sdk/client.Options.Identity] to the Cloud Run-derived worker identity, unless a
 // user-set identity is already present (a user-set identity always wins). Every worker created from
@@ -12,7 +12,7 @@
 //
 // The lower-level [FetchMetadata] reader and the [Metadata.WorkerIdentity] accessor remain available
 // if you prefer to wire the value in yourself (or to inject metadata into the plugin via
-// [PluginOptions.Metadata]).
+// [CloudRunIDPluginOptions.Metadata]).
 //
 // # Experimental
 //
@@ -22,9 +22,9 @@
 //
 //	func main() {
 //	    // Register the Cloud Run plugin on the client. It fetches the instance metadata when the
-//	    // client connects and sets the worker identity.
+//	    // client connects and sets the client identity.
 //	    c, err := client.Dial(client.Options{
-//	        Plugins: []client.Plugin{workerid.NewPlugin(workerid.PluginOptions{})},
+//	        Plugins: []client.Plugin{id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{})},
 //	    })
 //	    if err != nil {
 //	        log.Fatalf("dialing Temporal server: %v", err)
@@ -49,7 +49,7 @@
 // Because [FetchMetadata] performs a network request, call it at worker startup and never from
 // workflow code: the SDK's workflowcheck analyzer flags net/http usage inside workflows because it
 // is non-deterministic.
-package workerid
+package id
 
 import (
 	"log"
@@ -59,13 +59,13 @@ import (
 )
 
 // Example shows how to configure a normal, long-lived Temporal worker on Cloud Run with the plugin.
-// Registering [Plugin] on the client sets the derived worker identity, read from the instance
+// Registering [CloudRunIDPlugin] on the client sets the derived client identity, read from the instance
 // metadata when the client connects.
 func Example() {
 	// Register the Cloud Run plugin on the client. It fetches the instance metadata when the client
-	// connects (never from workflow code) and sets the derived worker identity unless one is already
+	// connects (never from workflow code) and sets the derived client identity unless one is already
 	// set.
-	plugin := NewPlugin(PluginOptions{})
+	plugin := NewCloudRunIDPlugin(CloudRunIDPluginOptions{})
 
 	c, err := client.Dial(client.Options{
 		Plugins: []client.Plugin{plugin},

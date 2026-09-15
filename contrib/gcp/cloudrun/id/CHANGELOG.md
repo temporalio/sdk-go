@@ -2,7 +2,7 @@
 
 ### Added
 
-- Initial (experimental) release of the Cloud Run integration. `Plugin` is a client
+- Initial (experimental) release of the Cloud Run integration. `CloudRunIDPlugin` is a client
   plugin: register it once on `client.Options.Plugins` and, when the client connects, it
   reads the current Cloud Run instance's metadata and sets the client identity (unless one
   is already set), which every worker created from the client inherits. It supports both

@@ -1,4 +1,4 @@
-package workerid_test
+package id_test
 
 import (
 	"context"
@@ -10,28 +10,28 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/client"
-	"go.temporal.io/sdk/contrib/gcp/cloudrun/workerid"
+	"go.temporal.io/sdk/contrib/gcp/cloudrun/id"
 )
 
 // completeMetadata is a fully populated Cloud Run metadata value, as the plugin sees it after a
 // successful fetch on a Cloud Run worker pool.
-var completeMetadata = &workerid.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"}
+var completeMetadata = &id.Metadata{InstanceID: "i-1", Name: "my-pool", Revision: "rev-1"}
 
 // TestPlugin_ImplementsClientPlugin confirms the plugin satisfies the client plugin interface, so it
 // can be registered on client.Options.Plugins; every worker created from the client then inherits
 // the identity it sets.
 func TestPlugin_ImplementsClientPlugin(t *testing.T) {
-	plugin := workerid.NewPlugin(workerid.PluginOptions{Metadata: completeMetadata})
+	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{Metadata: completeMetadata})
 	var _ client.Plugin = plugin
 	// It is usable in the Plugins slice a caller would build.
 	_ = client.Options{Plugins: []client.Plugin{plugin}}
-	assert.Equal(t, "temporal-cloudrun-worker-id", plugin.Name())
+	assert.Equal(t, "temporal-cloudrun-id", plugin.Name())
 }
 
 // TestPlugin_ConfigureClient_SetsIdentityWhenUnset covers the client hook: it sets the derived
 // worker identity only when the caller has not set one, so a user-provided identity always wins.
 func TestPlugin_ConfigureClient_SetsIdentityWhenUnset(t *testing.T) {
-	plugin := workerid.NewPlugin(workerid.PluginOptions{Metadata: completeMetadata})
+	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{Metadata: completeMetadata})
 
 	t.Run("sets identity when unset", func(t *testing.T) {
 		o := client.Options{}
@@ -50,7 +50,7 @@ func TestPlugin_ConfigureClient_SetsIdentityWhenUnset(t *testing.T) {
 
 // TestPlugin_ConfigureClient_NilOptions covers the guard against missing client options.
 func TestPlugin_ConfigureClient_NilOptions(t *testing.T) {
-	plugin := workerid.NewPlugin(workerid.PluginOptions{Metadata: completeMetadata})
+	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{Metadata: completeMetadata})
 	err := plugin.ConfigureClient(context.Background(), client.PluginConfigureClientOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cloudrun:")
@@ -68,7 +68,7 @@ func TestPlugin_FetchesAndCachesFromMetadataServer(t *testing.T) {
 	srv := newStubMetadataServer(http.StatusOK, testInstanceID)
 	defer srv.Close()
 
-	plugin := workerid.NewPlugin(workerid.PluginOptions{MetadataURL: srv.URL})
+	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{MetadataURL: srv.URL})
 
 	// Before connect, nothing is fetched.
 	assert.Nil(t, plugin.Metadata())
@@ -95,7 +95,7 @@ func TestPlugin_ConfigureClient_FailsFastOffPlatform(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 
-	plugin := workerid.NewPlugin(workerid.PluginOptions{
+	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{
 		MetadataURL: url,
 		HTTPClient:  &http.Client{Timeout: time.Second},
 	})
