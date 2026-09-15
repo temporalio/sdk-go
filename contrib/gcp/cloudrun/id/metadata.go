@@ -90,9 +90,7 @@ func WithMetadataURL(url string) Option {
 // CLOUD_RUN_REVISION on Cloud Run worker pools, or K_SERVICE and K_REVISION on Cloud Run services —
 // and fetches the unique instance ID from the GCP metadata server.
 //
-// FetchMetadata performs a network request and must be called at worker startup, never from
-// workflow code: the SDK's workflowcheck analyzer flags net/http usage inside workflows because it
-// is non-deterministic.
+// FetchMetadata performs a network request to retrieve the InstanceID.
 //
 // The provided context bounds the metadata request. Configure the request further with
 // [WithHTTPClient] and [WithMetadataURL].
