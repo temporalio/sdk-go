@@ -10,7 +10,7 @@
 // The plugin fetches the instance metadata once, when the client connects. If the fetch fails
 // (usually because the process is not running on Cloud Run), client creation returns an error.
 //
-// The lower-level [FetchMetadata] reader and the [Metadata.WorkerIdentity] accessor remain available
+// The lower-level [FetchMetadata] reader and the [Metadata.Identity] accessor remain available
 // if you prefer to wire the value in yourself (or to inject metadata into the plugin via
 // [CloudRunIDPluginOptions.Metadata]).
 //

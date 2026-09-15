@@ -136,9 +136,9 @@ func TestFetchMetadata_ErrorWhenUnreachable(t *testing.T) {
 	assert.Contains(t, err.Error(), "cloudrun:")
 }
 
-// TestMetadata_WorkerIdentity covers spec item 2: the identity is instanceID@revision, falling back
+// TestMetadata_Identity covers spec item 2: the identity is instanceID@revision, falling back
 // to instanceID@name and then to a bare instanceID.
-func TestMetadata_WorkerIdentity(t *testing.T) {
+func TestMetadata_Identity(t *testing.T) {
 	tests := []struct {
 		name string
 		md   id.Metadata
@@ -163,7 +163,7 @@ func TestMetadata_WorkerIdentity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, tt.md.WorkerIdentity())
+			assert.Equal(t, tt.want, tt.md.Identity())
 		})
 	}
 }

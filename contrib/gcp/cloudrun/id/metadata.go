@@ -41,7 +41,7 @@ const (
 // Metadata describes the Google Cloud Run instance that a worker process is running on, covering
 // both Cloud Run worker pools and Cloud Run services. Register [CloudRunIDPlugin] to fetch and apply it
 // automatically, or use [FetchMetadata] to populate it at worker startup and read
-// [Metadata.WorkerIdentity] directly.
+// [Metadata.Identity] directly.
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future
 // release.
@@ -157,12 +157,12 @@ func firstNonEmptyEnv(names ...string) string {
 	return ""
 }
 
-// WorkerIdentity returns a client identity string for the Cloud Run instance, in the form
+// Identity returns a client identity string for the Cloud Run instance, in the form
 // "<InstanceID>@<Revision>". If the revision is unknown it falls back to "<InstanceID>@<Name>", and
 // if both are unknown it returns just the instance ID. [CloudRunIDPlugin] applies this to
 // [go.temporal.io/sdk/client.Options.Identity] automatically; pass it there yourself if you are not
 // using the plugin.
-func (m *Metadata) WorkerIdentity() string {
+func (m *Metadata) Identity() string {
 	switch {
 	case m.Revision != "":
 		return fmt.Sprintf("%s@%s", m.InstanceID, m.Revision)

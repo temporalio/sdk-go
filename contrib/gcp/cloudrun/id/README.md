@@ -85,6 +85,6 @@ returns an error. For tests and advanced use, inject a pre-built `Metadata` (or 
 URL / HTTP client) via `id.CloudRunIDPluginOptions`.
 
 If you prefer to wire the value in yourself instead of using the plugin, call `FetchMetadata`
-directly: `WorkerIdentity()` returns the identity string. Because `FetchMetadata` makes an HTTP call
+directly: `Identity()` returns the identity string. Because `FetchMetadata` makes an HTTP call
 to the metadata server, call it once at worker startup — never inside a workflow, where the SDK's
 `workflowcheck` analyzer flags `net/http` usage as non-deterministic.

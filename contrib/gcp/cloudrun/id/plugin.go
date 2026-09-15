@@ -88,7 +88,7 @@ func (p *CloudRunIDPlugin) ConfigureClient(ctx context.Context, options client.P
 		return err
 	}
 	if options.ClientOptions.Identity == "" {
-		options.ClientOptions.Identity = md.WorkerIdentity()
+		options.ClientOptions.Identity = md.Identity()
 	}
 	return nil
 }
