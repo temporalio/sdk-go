@@ -13,41 +13,31 @@ import (
 const pluginName = "temporal-cloudrun-worker-id"
 
 // PluginOptions configures [NewPlugin]. The zero value is valid and is the normal choice on Cloud
-// Run: the plugin then reads the worker pool (or service) name and revision from the environment
-// and fetches the instance ID from the GCP metadata server. The remaining fields are dependency-injection knobs for
-// tests and advanced use.
+// Run. The remaining fields are for tests and advanced use.
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future release.
 type PluginOptions struct {
-	// Metadata, if non-nil, supplies the Cloud Run metadata directly instead of reading the
-	// environment and querying the metadata server. When set, the plugin performs no network
-	// request and never fails at connect time. It is primarily useful for tests and for advanced
-	// callers that fetch the metadata themselves with [FetchMetadata].
+	// Metadata, if non-nil, supplies the Cloud Run metadata directly, so the plugin makes no network
+	// request. Primarily for tests and callers that fetch the metadata themselves with [FetchMetadata].
 	Metadata *Metadata
 
-	// MetadataURL overrides the metadata server URL used to fetch the instance ID. It is primarily
-	// useful for testing. Ignored when Metadata is set. See [WithMetadataURL].
+	// MetadataURL overrides the metadata server URL. Primarily for testing. Ignored when Metadata is
+	// set. See [WithMetadataURL].
 	MetadataURL string
 
-	// HTTPClient overrides the [http.Client] used to query the metadata server, to set a custom
-	// timeout or transport, or for testing. Ignored when Metadata is set. See [WithHTTPClient].
+	// HTTPClient overrides the [http.Client] used for the metadata request. Ignored when Metadata is
+	// set. See [WithHTTPClient].
 	HTTPClient *http.Client
 }
 
-// Plugin sets a Temporal client's identity from Google Cloud Run instance metadata, covering both
-// Cloud Run worker pools and Cloud Run services. It implements [go.temporal.io/sdk/client.Plugin]:
-// register it once on [go.temporal.io/sdk/client.Options.Plugins] and every worker created from the
-// client inherits the identity.
+// Plugin sets a Temporal client's identity from Google Cloud Run instance metadata. It implements
+// [go.temporal.io/sdk/client.Plugin]: register it once on [go.temporal.io/sdk/client.Options.Plugins]
+// and every worker created from the client inherits the identity.
 //
-// When the client connects, the plugin fetches the Cloud Run metadata once (see [FetchMetadata]),
-// caches it, and sets the client [go.temporal.io/sdk/client.Options.Identity] to the derived worker
-// identity unless the caller already set one — a user-provided identity always wins.
-//
-// If the metadata fetch fails (usually because the process is not running on Cloud Run), client
-// creation returns an error. Set [PluginOptions.Metadata] to inject metadata and avoid the fetch in
-// tests or advanced use.
-//
-// A single Plugin may be registered on multiple clients; the metadata is fetched once and shared.
+// When the client connects, the plugin fetches the metadata once (see [FetchMetadata]), caches it,
+// and sets the client [go.temporal.io/sdk/client.Options.Identity] unless the caller already set one.
+// If the fetch fails (usually because the process is not running on Cloud Run), client creation
+// returns an error; set [PluginOptions.Metadata] to inject metadata and skip it.
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future release.
 type Plugin struct {
@@ -62,12 +52,8 @@ type Plugin struct {
 
 var _ client.Plugin = (*Plugin)(nil)
 
-// NewPlugin creates a [Plugin] that reads Google Cloud Run instance metadata and applies the derived
-// worker identity to a Temporal client. See [Plugin] for the behavior and [PluginOptions] for the
-// dependency-injection knobs.
-//
-// The metadata is fetched lazily when the client connects, using the client's dial context — not
-// here — so construction never performs a network request or returns an error.
+// NewPlugin creates a [Plugin]. See [Plugin] for the behavior and [PluginOptions] for the options.
+// The metadata is fetched lazily when the client connects, so construction makes no network request.
 //
 // Experimental: Google Cloud Run support is experimental and its API may change in a future release.
 func NewPlugin(options PluginOptions) *Plugin {
@@ -81,20 +67,16 @@ func NewPlugin(options PluginOptions) *Plugin {
 // Name returns the plugin name.
 func (*Plugin) Name() string { return pluginName }
 
-// Metadata returns the Cloud Run instance metadata the plugin resolved, or nil if it has not been
-// fetched yet (that is, before the client connects, unless it was injected via
-// [PluginOptions.Metadata]). It is safe to call after connecting the client, for example to log the
-// resolved identity.
+// Metadata returns the resolved Cloud Run instance metadata, or nil if it has not been fetched yet
+// (before the client connects, unless injected via [PluginOptions.Metadata]).
 func (p *Plugin) Metadata() *Metadata {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.metadata
 }
 
-// ConfigureClient fetches the Cloud Run instance metadata (once, caching it) and sets the derived
-// worker identity on the client options unless the caller already set one. It returns an error when
-// the metadata cannot be fetched, which typically means the process is not running on a Cloud Run
-// worker pool or service.
+// ConfigureClient fetches the Cloud Run metadata (once) and sets the derived worker identity on the
+// client options unless the caller already set one. It returns an error if the fetch fails.
 func (p *Plugin) ConfigureClient(ctx context.Context, options client.PluginConfigureClientOptions) error {
 	if options.ClientOptions == nil {
 		return fmt.Errorf("cloudrun: client options are required")
@@ -109,9 +91,8 @@ func (p *Plugin) ConfigureClient(ctx context.Context, options client.PluginConfi
 	return nil
 }
 
-// ensureMetadata returns the injected or previously fetched metadata, fetching and caching it on
-// first use. The fetch uses the provided context, which at connect time is the client's dial
-// context. The lock is not held across the fetch; a rare concurrent first fetch is harmless.
+// ensureMetadata returns the injected or cached metadata, fetching and caching it on first use. The
+// lock is not held across the fetch; a rare concurrent first fetch is harmless.
 func (p *Plugin) ensureMetadata(ctx context.Context) (*Metadata, error) {
 	p.mu.Lock()
 	md := p.metadata
@@ -134,7 +115,7 @@ func (p *Plugin) ensureMetadata(ctx context.Context) (*Metadata, error) {
 	return md, nil
 }
 
-// fetchOptions translates the plugin's dependency-injection knobs into [FetchMetadata] options.
+// fetchOptions builds the [FetchMetadata] options from the plugin's fields.
 func (p *Plugin) fetchOptions() []Option {
 	var opts []Option
 	if p.httpClient != nil {
