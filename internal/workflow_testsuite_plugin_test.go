@@ -55,10 +55,10 @@ func (p *envPluginForTest) StartWorker(
 	next func(context.Context, WorkerPluginStartWorkerOptions) error,
 ) error {
 	p.startKeys = append(p.startKeys, options.WorkerInstanceKey)
+	options.WorkerRegistry.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
 	if p.startErr != nil {
 		return p.startErr
 	}
-	options.WorkerRegistry.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
 	if p.registerEverything {
 		options.WorkerRegistry.RegisterWorkflowWithOptions(envPluginWorkflow, RegisterWorkflowOptions{})
 		options.WorkerRegistry.RegisterDynamicWorkflow(envPluginDynamicWorkflow, DynamicRegisterWorkflowOptions{})
@@ -424,4 +424,37 @@ func TestActivityEnvPluginStartError(t *testing.T) {
 	require.ErrorIs(t, err, plugin.startErr)
 	require.Len(t, plugin.startKeys, 2)
 	require.Empty(t, plugin.stopKeys)
+	// A start that failed leaves nothing registered behind.
+	_, ok := env.impl.registry.GetActivity(envPluginActivityName)
+	require.False(t, ok)
+}
+
+func TestActivityEnvPluginRestoresOverwrittenRegistration(t *testing.T) {
+	t.Parallel()
+	starts := 0
+	plugin, err := NewSimplePlugin(SimplePluginOptions{
+		Name: "env-plugin-override",
+		RunContextBefore: func(_ context.Context, o SimplePluginRunContextBeforeOptions) error {
+			starts++
+			if starts == 1 {
+				o.Registry.RegisterActivityWithOptions(func(_ context.Context, name string) (string, error) {
+					return "override " + name, nil
+				}, RegisterActivityOptions{Name: envPluginActivityName, DisableAlreadyRegisteredCheck: true})
+			}
+			return nil
+		},
+	})
+	require.NoError(t, err)
+	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
+	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
+	env.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
+
+	// Only the first run sees the override; StopWorker restores the user's registration.
+	for _, want := range []string{"override temporal", "hello temporal"} {
+		val, err := env.ExecuteActivity(envPluginActivityName, "temporal")
+		require.NoError(t, err)
+		var out string
+		require.NoError(t, val.Get(&out))
+		require.Equal(t, want, out)
+	}
 }

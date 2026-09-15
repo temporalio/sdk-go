@@ -24,7 +24,8 @@ to docs, or any other relevant information.
 
 - `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
-  set, `SetWorkerOptions` may not be called again on that environment.
+  set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
+  in `StartWorker` is undone at `StopWorker`.
 
 ### Changed
 
