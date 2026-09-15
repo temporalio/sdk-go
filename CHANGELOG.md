@@ -32,11 +32,17 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- Final-worker shutdown now clears the sticky workflow cache without incrementing
+  `temporal_sticky_cache_total_forced_eviction`. A later `PurgeStickyWorkflowCache` call finds no
+  cached workflows, so stop-then-purge sequences may report fewer forced evictions.
+
 ### Fixed
 
 - Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
   `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
+- Stopped workers now release sticky workflow cache ownership immediately. When the final worker
+  stops, cached workflow state is cleared without waiting for garbage collection.
 
 ### Security
 
