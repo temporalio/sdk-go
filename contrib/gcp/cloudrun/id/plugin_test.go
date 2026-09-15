@@ -21,7 +21,7 @@ var completeMetadata = &id.Metadata{InstanceID: "i-1", Name: "my-pool", Revision
 // can be registered on client.Options.Plugins; every worker created from the client then inherits
 // the identity it sets.
 func TestPlugin_ImplementsClientPlugin(t *testing.T) {
-	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{Metadata: completeMetadata})
+	plugin := id.NewCloudRunIDPlugin()
 	var _ client.Plugin = plugin
 	// It is usable in the Plugins slice a caller would build.
 	_ = client.Options{Plugins: []client.Plugin{plugin}}
@@ -31,7 +31,7 @@ func TestPlugin_ImplementsClientPlugin(t *testing.T) {
 // TestPlugin_ConfigureClient_SetsIdentityWhenUnset covers the client hook: it sets the derived
 // worker identity only when the caller has not set one, so a user-provided identity always wins.
 func TestPlugin_ConfigureClient_SetsIdentityWhenUnset(t *testing.T) {
-	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{Metadata: completeMetadata})
+	plugin := id.NewTestPlugin(completeMetadata, "", nil)
 
 	t.Run("sets identity when unset", func(t *testing.T) {
 		o := client.Options{}
@@ -50,7 +50,7 @@ func TestPlugin_ConfigureClient_SetsIdentityWhenUnset(t *testing.T) {
 
 // TestPlugin_ConfigureClient_NilOptions covers the guard against missing client options.
 func TestPlugin_ConfigureClient_NilOptions(t *testing.T) {
-	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{Metadata: completeMetadata})
+	plugin := id.NewTestPlugin(completeMetadata, "", nil)
 	err := plugin.ConfigureClient(context.Background(), client.PluginConfigureClientOptions{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "cloudrun:")
@@ -68,7 +68,7 @@ func TestPlugin_FetchesAndCachesFromMetadataServer(t *testing.T) {
 	srv := newStubMetadataServer(http.StatusOK, testInstanceID)
 	defer srv.Close()
 
-	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{MetadataURL: srv.URL})
+	plugin := id.NewTestPlugin(nil, srv.URL, nil)
 
 	// Before connect, nothing is fetched.
 	assert.Nil(t, plugin.Metadata())
@@ -95,10 +95,7 @@ func TestPlugin_ConfigureClient_FailsFastOffPlatform(t *testing.T) {
 	url := srv.URL
 	srv.Close()
 
-	plugin := id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{
-		MetadataURL: url,
-		HTTPClient:  &http.Client{Timeout: time.Second},
-	})
+	plugin := id.NewTestPlugin(nil, url, &http.Client{Timeout: time.Second})
 
 	o := client.Options{}
 	err := plugin.ConfigureClient(context.Background(),

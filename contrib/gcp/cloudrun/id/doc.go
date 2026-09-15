@@ -11,8 +11,7 @@
 // (usually because the process is not running on Cloud Run), client creation returns an error.
 //
 // The lower-level [FetchMetadata] reader and the [Metadata.Identity] accessor remain available
-// if you prefer to wire the value in yourself (or to inject metadata into the plugin via
-// [CloudRunIDPluginOptions.Metadata]).
+// if you prefer to wire the value in yourself.
 //
 // # Experimental
 //
@@ -24,7 +23,7 @@
 //	    // Register the Cloud Run plugin on the client. It fetches the instance metadata when the
 //	    // client connects and sets the client identity.
 //	    c, err := client.Dial(client.Options{
-//	        Plugins: []client.Plugin{id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{})},
+//	        Plugins: []client.Plugin{id.NewCloudRunIDPlugin()},
 //	    })
 //	    if err != nil {
 //	        log.Fatalf("dialing Temporal server: %v", err)
@@ -45,7 +44,6 @@
 // pools, or K_SERVICE and K_REVISION on services. The unique instance ID is only available from the GCP
 // metadata server, which [FetchMetadata] queries over HTTP; the metadata server is available on
 // both worker pools and services.
-//
 package id
 
 import (
@@ -62,7 +60,7 @@ func Example() {
 	// Register the Cloud Run plugin on the client. It fetches the instance metadata when the client
 	// connects (never from workflow code) and sets the derived client identity unless one is already
 	// set.
-	plugin := NewCloudRunIDPlugin(CloudRunIDPluginOptions{})
+	plugin := NewCloudRunIDPlugin()
 
 	c, err := client.Dial(client.Options{
 		Plugins: []client.Plugin{plugin},

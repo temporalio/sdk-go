@@ -39,7 +39,7 @@ func main() {
     // metadata once (never from workflow code) and sets the derived client identity unless one is
     // already set.
     c, err := client.Dial(client.Options{
-        Plugins: []client.Plugin{id.NewCloudRunIDPlugin(id.CloudRunIDPluginOptions{})},
+        Plugins: []client.Plugin{id.NewCloudRunIDPlugin()},
     })
     if err != nil {
         log.Fatalf("dialing Temporal server: %v", err)
@@ -81,8 +81,7 @@ you already set an identity — a user-set identity always wins. Every worker cr
 inherits this identity.
 
 If the metadata fetch fails (usually because the process is not running on Cloud Run), `client.Dial`
-returns an error. For tests and advanced use, inject a pre-built `Metadata` (or a custom metadata
-URL / HTTP client) via `id.CloudRunIDPluginOptions`.
+returns an error.
 
 If you prefer to wire the value in yourself instead of using the plugin, call `FetchMetadata`
 directly: `Identity()` returns the identity string. Because `FetchMetadata` makes an HTTP call
