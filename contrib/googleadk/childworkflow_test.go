@@ -232,7 +232,7 @@ func TestWorkflowContextAbsentOutsideWorkflow(t *testing.T) {
 	_, ok := googleadk.WorkflowContext(t.Context())
 	assert.False(t, ok, "a plain context carries no workflow.Context")
 
-	//nolint:staticcheck // asserting the nil-input contract explicitly
+	//lint:ignore SA1012 asserting the nil-input contract explicitly
 	_, ok = googleadk.WorkflowContext(nil)
 	assert.False(t, ok, "a nil context reports absent rather than panicking")
 }
