@@ -176,11 +176,65 @@ func TestWorkflowContextChildFailureReachesTool(t *testing.T) {
 	assert.Contains(t, toolErr, "child exploded")
 }
 
-// TestWorkflowContextAbsentOutsideWorkflow proves a tool can detect a local ADK
-// run and choose a non-durable path.
+// rootContextWorkflow is the anti-pattern the accessor exists to avoid: each
+// tool ignores its own coroutine's Context and blocks a child-workflow Future
+// on the root Context captured from the enclosing workflow function.
+func rootContextWorkflow(ctx workflow.Context) (runResult, error) {
+	spawnOnRoot := func(name string) (tool.Tool, error) {
+		return funcTool(name, func(agent.Context, map[string]any) (map[string]any, error) {
+			var out string
+			// ctx is the ROOT context, captured by closure — the wrong coroutine.
+			if err := workflow.ExecuteChildWorkflow(ctx, echoChild, name).Get(ctx, &out); err != nil {
+				return nil, err
+			}
+			return map[string]any{"child": out}, nil
+		})
+	}
+	t1, err := spawnOnRoot("t1")
+	if err != nil {
+		return runResult{}, err
+	}
+	t2, err := spawnOnRoot("t2")
+	if err != nil {
+		return runResult{}, err
+	}
+	return runAgent(ctx, agentBuild{
+		modelName:   "fake-model",
+		userMessage: "call both",
+		tools:       []tool.Tool{t1, t2},
+	})
+}
+
+// TestWorkflowContextRootContextFailsOnFanout pins the failure the accessor
+// exists to avoid: blocking on the root Context from a fan-out coroutine must
+// not succeed. The observed failure today is TMPRL1101 deadlock detection (the
+// owning coroutine is already blocked on the fan-out join, so the child Future
+// never resolves); the match below also tolerates the SDK's wrong-coroutine
+// panic in case internals change which surfaces first.
+func TestWorkflowContextRootContextFailsOnFanout(t *testing.T) {
+	var s testsuite.WorkflowTestSuite
+	env := newChildEnv(t, &s, rootContextWorkflow, twoFunctionCalls())
+
+	env.ExecuteWorkflow(rootContextWorkflow)
+
+	require.True(t, env.IsWorkflowCompleted())
+	err := env.GetWorkflowError()
+	require.Error(t, err, "blocking on the root Context from a fan-out coroutine must not succeed")
+	assert.Regexp(t, "deadlock|already blocked", err.Error(),
+		"expected deadlock detection or the blocked-coroutine panic: %v", err)
+}
+
+// TestWorkflowContextAbsentOutsideWorkflow proves the accessor reports absent
+// (rather than panicking, or handing back a nil Context that panics later) for
+// a context that did not come from NewContext — so a tool can fall back to a
+// non-durable path, as the model and tool proxies already do.
 func TestWorkflowContextAbsentOutsideWorkflow(t *testing.T) {
 	_, ok := googleadk.WorkflowContext(t.Context())
 	assert.False(t, ok, "a plain context carries no workflow.Context")
+
+	//nolint:staticcheck // asserting the nil-input contract explicitly
+	_, ok = googleadk.WorkflowContext(nil)
+	assert.False(t, ok, "a nil context reports absent rather than panicking")
 }
 
 // TestWorkflowContextReturnsRootOutsideFanout proves that outside tool fan-out
