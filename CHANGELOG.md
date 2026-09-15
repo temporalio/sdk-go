@@ -22,6 +22,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
+  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
+  set, `SetWorkerOptions` may not be called again on that environment.
+
 ### Changed
 
 ### Deprecated
@@ -29,6 +33,10 @@ to docs, or any other relevant information.
 ### :boom: Breaking Changes
 
 ### Fixed
+
+- Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
+  `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
+  `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 
 ### Security
 
