@@ -1,6 +1,8 @@
 package opentelemetry
 
 import (
+	"errors"
+
 	"go.opentelemetry.io/otel/baggage"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
@@ -24,13 +26,17 @@ func (t *tracerSpan) Finish(opts *tracing.TracerFinishSpanOptions) {
 	}
 
 	if opts.Error != nil {
-		t.RecordError(opts.Error)
+		// Continue-as-new is normal workflow control flow, not a failure.
+		var continueAsNewError *workflow.ContinueAsNewError
+		if !errors.As(opts.Error, &continueAsNewError) {
+			t.RecordError(opts.Error)
 
-		// Benign application errors do not mark spans as failed.
-		appError, _ := opts.Error.(*temporal.ApplicationError)
-		isBenign := appError != nil && appError.Category() == temporal.ApplicationErrorCategoryBenign
-		if !isBenign {
-			t.SetStatus(codes.Error, opts.Error.Error())
+			// Benign application errors do not mark spans as failed.
+			appError, _ := opts.Error.(*temporal.ApplicationError)
+			isBenign := appError != nil && appError.Category() == temporal.ApplicationErrorCategoryBenign
+			if !isBenign {
+				t.SetStatus(codes.Error, opts.Error.Error())
+			}
 		}
 	}
 	t.End()
