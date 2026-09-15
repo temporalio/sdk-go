@@ -46,9 +46,6 @@
 // metadata server, which [FetchMetadata] queries over HTTP; the metadata server is available on
 // both worker pools and services.
 //
-// Because [FetchMetadata] performs a network request, call it at worker startup and never from
-// workflow code: the SDK's workflowcheck analyzer flags net/http usage inside workflows because it
-// is non-deterministic.
 package id
 
 import (
