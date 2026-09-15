@@ -429,37 +429,27 @@ func TestActivityEnvPluginStartError(t *testing.T) {
 	require.False(t, ok)
 }
 
-// envPluginOverride replaces an existing activity registration on its first
-// start only, so a later run shows whether the original came back.
-type envPluginOverride struct {
-	WorkerPluginBase
-	starts int
-}
-
-func (*envPluginOverride) Name() string { return "env-plugin-override" }
-
-func (p *envPluginOverride) StartWorker(
-	ctx context.Context,
-	options WorkerPluginStartWorkerOptions,
-	next func(context.Context, WorkerPluginStartWorkerOptions) error,
-) error {
-	p.starts++
-	if p.starts == 1 {
-		options.WorkerRegistry.RegisterActivityWithOptions(func(_ context.Context, name string) (string, error) {
-			return "override " + name, nil
-		}, RegisterActivityOptions{Name: envPluginActivityName, DisableAlreadyRegisteredCheck: true})
-	}
-	return next(ctx, options)
-}
-
 func TestActivityEnvPluginRestoresOverwrittenRegistration(t *testing.T) {
 	t.Parallel()
+	starts := 0
+	plugin, err := NewSimplePlugin(SimplePluginOptions{
+		Name: "env-plugin-override",
+		RunContextBefore: func(_ context.Context, o SimplePluginRunContextBeforeOptions) error {
+			starts++
+			if starts == 1 {
+				o.Registry.RegisterActivityWithOptions(func(_ context.Context, name string) (string, error) {
+					return "override " + name, nil
+				}, RegisterActivityOptions{Name: envPluginActivityName, DisableAlreadyRegisteredCheck: true})
+			}
+			return nil
+		},
+	})
+	require.NoError(t, err)
 	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
-	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{&envPluginOverride{}}})
+	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{plugin}})
 	env.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
 
-	// The plugin replaces the user's registration during its first run only;
-	// StopWorker puts the user's registration back for the next run.
+	// Only the first run sees the override; StopWorker restores the user's registration.
 	for _, want := range []string{"override temporal", "hello temporal"} {
 		val, err := env.ExecuteActivity(envPluginActivityName, "temporal")
 		require.NoError(t, err)

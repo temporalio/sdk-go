@@ -270,7 +270,7 @@ type (
 		workerInstanceKey     string
 		plugins               []WorkerPlugin
 		pluginRegistryOptions WorkerPluginConfigureWorkerRegistryOptions
-		registryBeforeStart   registrySnapshot
+		restoreRegistry       func()
 
 		// True if this was created only for testing activities not workflows.
 		activityEnvOnly             bool
@@ -609,24 +609,16 @@ func (env *testWorkflowEnvironmentImpl) startPluginWorker() error {
 			return plugin.StartWorker(ctx, options, next)
 		}
 	}
-	// StopWorker puts the registry back to this state, so every start registers
-	// afresh and duplicate checks stay meaningful. A start that fails or panics
-	// leaves nothing behind either.
-	before := env.snapshotRegistry()
-	started := false
-	defer func() {
-		if !started {
-			env.restoreRegistry(before)
-		}
-	}()
+	// Every start registers afresh: StopWorker puts the registry back to this state.
+	restore := env.snapshotRegistry()
 	if err := start(context.Background(), WorkerPluginStartWorkerOptions{
 		WorkerInstanceKey: env.workerInstanceKey,
 		WorkerRegistry:    testPluginRegistry{env: env},
 	}); err != nil {
+		restore()
 		return err
 	}
-	env.registryBeforeStart = before
-	started = true
+	env.restoreRegistry = restore
 	return nil
 }
 
@@ -660,49 +652,30 @@ func (r testPluginRegistry) RegisterNexusService(s *nexus.Service) {
 	r.env.RegisterNexusService(s)
 }
 
-// registrySnapshot is a copy of everything registered in a registry.
-type registrySnapshot struct {
-	nexusServices                 map[string]*nexus.Service
-	workflowFuncMap               map[string]any
-	workflowAliasMap              map[string]string
-	workflowVersioningBehaviorMap map[string]VersioningBehavior
-	activityFuncMap               map[string]activity
-	activityAliasMap              map[string]string
-	dynamicWorkflow               any
-	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
-	dynamicActivity               activity
-}
-
-func (env *testWorkflowEnvironmentImpl) snapshotRegistry() registrySnapshot {
+// snapshotRegistry returns a function that puts the registry back to its
+// current contents.
+func (env *testWorkflowEnvironmentImpl) snapshotRegistry() func() {
 	r := env.registry
 	r.Lock()
 	defer r.Unlock()
-	return registrySnapshot{
-		nexusServices:                 maps.Clone(r.nexusServices),
-		workflowFuncMap:               maps.Clone(r.workflowFuncMap),
-		workflowAliasMap:              maps.Clone(r.workflowAliasMap),
-		workflowVersioningBehaviorMap: maps.Clone(r.workflowVersioningBehaviorMap),
-		activityFuncMap:               maps.Clone(r.activityFuncMap),
-		activityAliasMap:              maps.Clone(r.activityAliasMap),
-		dynamicWorkflow:               r.dynamicWorkflow,
-		dynamicWorkflowOptions:        r.dynamicWorkflowOptions,
-		dynamicActivity:               r.dynamicActivity,
+	nexusServices := maps.Clone(r.nexusServices)
+	workflowFuncMap := maps.Clone(r.workflowFuncMap)
+	workflowAliasMap := maps.Clone(r.workflowAliasMap)
+	workflowVersioningBehaviorMap := maps.Clone(r.workflowVersioningBehaviorMap)
+	activityFuncMap := maps.Clone(r.activityFuncMap)
+	activityAliasMap := maps.Clone(r.activityAliasMap)
+	dynamicWorkflow, dynamicWorkflowOptions, dynamicActivity := r.dynamicWorkflow, r.dynamicWorkflowOptions, r.dynamicActivity
+	return func() {
+		r.Lock()
+		defer r.Unlock()
+		r.nexusServices = nexusServices
+		r.workflowFuncMap = workflowFuncMap
+		r.workflowAliasMap = workflowAliasMap
+		r.workflowVersioningBehaviorMap = workflowVersioningBehaviorMap
+		r.activityFuncMap = activityFuncMap
+		r.activityAliasMap = activityAliasMap
+		r.dynamicWorkflow, r.dynamicWorkflowOptions, r.dynamicActivity = dynamicWorkflow, dynamicWorkflowOptions, dynamicActivity
 	}
-}
-
-func (env *testWorkflowEnvironmentImpl) restoreRegistry(s registrySnapshot) {
-	r := env.registry
-	r.Lock()
-	defer r.Unlock()
-	r.nexusServices = s.nexusServices
-	r.workflowFuncMap = s.workflowFuncMap
-	r.workflowAliasMap = s.workflowAliasMap
-	r.workflowVersioningBehaviorMap = s.workflowVersioningBehaviorMap
-	r.activityFuncMap = s.activityFuncMap
-	r.activityAliasMap = s.activityAliasMap
-	r.dynamicWorkflow = s.dynamicWorkflow
-	r.dynamicWorkflowOptions = s.dynamicWorkflowOptions
-	r.dynamicActivity = s.dynamicActivity
 }
 
 // stopPluginWorker runs the plugins' StopWorker chain the way
@@ -720,7 +693,7 @@ func (env *testWorkflowEnvironmentImpl) stopPluginWorker() {
 		}
 	}
 	stop(context.Background(), WorkerPluginStopWorkerOptions{WorkerInstanceKey: env.workerInstanceKey})
-	env.restoreRegistry(env.registryBeforeStart)
+	env.restoreRegistry()
 }
 
 func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
