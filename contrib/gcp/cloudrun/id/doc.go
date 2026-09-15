@@ -55,7 +55,7 @@ import (
 	"go.temporal.io/sdk/worker"
 )
 
-// Example shows how to configure a normal, long-lived Temporal worker on Cloud Run with the plugin.
+// Example shows how to configure Temporal worker on Cloud Run with the plugin.
 // Registering [CloudRunIDPlugin] on the client sets the derived client identity, read from the instance
 // metadata when the client connects.
 func Example() {
