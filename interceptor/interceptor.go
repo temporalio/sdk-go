@@ -198,26 +198,18 @@ type ClientDescribeWorkflowOutput = internal.ClientDescribeWorkflowOutput
 
 // ClientExecuteActivityInput is the input to
 // ClientOutboundInterceptor.ExecuteActivity.
-//
-// NOTE: Experimental
 type ClientExecuteActivityInput = internal.ClientExecuteActivityInput
 
 // ClientGetActivityHandleInput is the input to
 // ClientOutboundInterceptor.GetActivityHandle.
-//
-// NOTE: Experimental
 type ClientGetActivityHandleInput = internal.ClientGetActivityHandleInput
 
 // ClientCancelActivityInput is the input to
 // ClientOutboundInterceptor.CancelActivity.
-//
-// NOTE: Experimental
 type ClientCancelActivityInput = internal.ClientCancelActivityInput
 
 // ClientTerminateActivityInput is the input to
 // ClientOutboundInterceptor.TerminateActivity.
-//
-// NOTE: Experimental
 type ClientTerminateActivityInput = internal.ClientTerminateActivityInput
 
 // ClientPauseActivityInput is the input to
@@ -246,26 +238,18 @@ type ClientUpdateActivityOptionsOutput = internal.ClientUpdateActivityOptionsOut
 
 // ClientDescribeActivityInput is the input to
 // ClientOutboundInterceptor.DescribeActivity.
-//
-// NOTE: Experimental
 type ClientDescribeActivityInput = internal.ClientDescribeActivityInput
 
 // ClientDescribeActivityOutput is the output of
 // ClientOutboundInterceptor.DescribeActivity.
-//
-// NOTE: Experimental
 type ClientDescribeActivityOutput = internal.ClientDescribeActivityOutput
 
 // ClientPollActivityResultInput is the input to
 // ClientOutboundInterceptor.PollActivityResult.
-//
-// NOTE: Experimental
 type ClientPollActivityResultInput = internal.ClientPollActivityResultInput
 
 // ClientPollActivityResultOutput is the output of
 // ClientOutboundInterceptor.PollActivityResult.
-//
-// NOTE: Experimental
 type ClientPollActivityResultOutput = internal.ClientPollActivityResultOutput
 
 // ClientExecuteNexusOperationInput is the input to
