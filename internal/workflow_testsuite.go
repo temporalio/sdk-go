@@ -220,9 +220,9 @@ func (t *TestActivityEnvironment) ExecuteLocalActivity(activityFn any, args ...a
 // Plugins are configured here, and once set this method may not be called
 // again. Each ExecuteActivity and ExecuteLocalActivity call is a worker run
 // under the same WorkerInstanceKey: StartWorker runs before it and StopWorker
-// after, and a StartWorker error is returned from the call. What plugins
-// register in StartWorker is removed again at StopWorker, so each run registers
-// afresh and a duplicate registration panics as on a real worker. A plugin that
+// after, and a StartWorker error is returned from the call. StopWorker restores
+// the registry to its state before StartWorker, so each run registers afresh
+// and a duplicate registration panics as on a real worker. A plugin that
 // cannot restart after StopWorker needs a fresh environment per call.
 //
 // Note: WorkerOptions is defined in internal package, use public type worker.Options instead.

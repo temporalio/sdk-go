@@ -55,10 +55,10 @@ func (p *envPluginForTest) StartWorker(
 	next func(context.Context, WorkerPluginStartWorkerOptions) error,
 ) error {
 	p.startKeys = append(p.startKeys, options.WorkerInstanceKey)
+	options.WorkerRegistry.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
 	if p.startErr != nil {
 		return p.startErr
 	}
-	options.WorkerRegistry.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
 	if p.registerEverything {
 		options.WorkerRegistry.RegisterWorkflowWithOptions(envPluginWorkflow, RegisterWorkflowOptions{})
 		options.WorkerRegistry.RegisterDynamicWorkflow(envPluginDynamicWorkflow, DynamicRegisterWorkflowOptions{})
@@ -424,4 +424,47 @@ func TestActivityEnvPluginStartError(t *testing.T) {
 	require.ErrorIs(t, err, plugin.startErr)
 	require.Len(t, plugin.startKeys, 2)
 	require.Empty(t, plugin.stopKeys)
+	// A start that failed leaves nothing registered behind.
+	_, ok := env.impl.registry.GetActivity(envPluginActivityName)
+	require.False(t, ok)
+}
+
+// envPluginOverride replaces an existing activity registration on its first
+// start only, so a later run shows whether the original came back.
+type envPluginOverride struct {
+	WorkerPluginBase
+	starts int
+}
+
+func (*envPluginOverride) Name() string { return "env-plugin-override" }
+
+func (p *envPluginOverride) StartWorker(
+	ctx context.Context,
+	options WorkerPluginStartWorkerOptions,
+	next func(context.Context, WorkerPluginStartWorkerOptions) error,
+) error {
+	p.starts++
+	if p.starts == 1 {
+		options.WorkerRegistry.RegisterActivityWithOptions(func(_ context.Context, name string) (string, error) {
+			return "override " + name, nil
+		}, RegisterActivityOptions{Name: envPluginActivityName, DisableAlreadyRegisteredCheck: true})
+	}
+	return next(ctx, options)
+}
+
+func TestActivityEnvPluginRestoresOverwrittenRegistration(t *testing.T) {
+	t.Parallel()
+	env := (&WorkflowTestSuite{}).NewTestActivityEnvironment()
+	env.SetWorkerOptions(WorkerOptions{Plugins: []WorkerPlugin{&envPluginOverride{}}})
+	env.RegisterActivityWithOptions(envPluginActivity, RegisterActivityOptions{Name: envPluginActivityName})
+
+	// The plugin replaces the user's registration during its first run only;
+	// StopWorker puts the user's registration back for the next run.
+	for _, want := range []string{"override temporal", "hello temporal"} {
+		val, err := env.ExecuteActivity(envPluginActivityName, "temporal")
+		require.NoError(t, err)
+		var out string
+		require.NoError(t, val.Get(&out))
+		require.Equal(t, want, out)
+	}
 }

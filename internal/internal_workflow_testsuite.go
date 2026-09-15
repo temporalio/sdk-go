@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"strconv"
 	"strings"
@@ -269,7 +270,7 @@ type (
 		workerInstanceKey     string
 		plugins               []WorkerPlugin
 		pluginRegistryOptions WorkerPluginConfigureWorkerRegistryOptions
-		pluginRegistrations   registryNames
+		registryBeforeStart   registrySnapshot
 
 		// True if this was created only for testing activities not workflows.
 		activityEnvOnly             bool
@@ -608,18 +609,25 @@ func (env *testWorkflowEnvironmentImpl) startPluginWorker() error {
 			return plugin.StartWorker(ctx, options, next)
 		}
 	}
-	// Whatever this start registers is removed again when the worker stops, so
-	// every start registers afresh and duplicate checks stay meaningful.
-	before := env.registeredNames()
-	err := start(context.Background(), WorkerPluginStartWorkerOptions{
+	// StopWorker puts the registry back to this state, so every start registers
+	// afresh and duplicate checks stay meaningful. A start that fails or panics
+	// leaves nothing behind either.
+	before := env.snapshotRegistry()
+	started := false
+	defer func() {
+		if !started {
+			env.restoreRegistry(before)
+		}
+	}()
+	if err := start(context.Background(), WorkerPluginStartWorkerOptions{
 		WorkerInstanceKey: env.workerInstanceKey,
 		WorkerRegistry:    testPluginRegistry{env: env},
-	})
-	env.pluginRegistrations = env.registeredNames().minus(before)
-	if err != nil {
-		env.removePluginRegistrations()
+	}); err != nil {
+		return err
 	}
-	return err
+	env.registryBeforeStart = before
+	started = true
+	return nil
 }
 
 // testPluginRegistry is the registry handed to plugins in StartWorker. Unlike
@@ -652,93 +660,49 @@ func (r testPluginRegistry) RegisterNexusService(s *nexus.Service) {
 	r.env.RegisterNexusService(s)
 }
 
-// registryNames is the set of names registered in a registry.
-type registryNames struct {
-	workflows       map[string]struct{}
-	activities      map[string]struct{}
-	nexusServices   map[string]struct{}
-	dynamicWorkflow bool
-	dynamicActivity bool
+// registrySnapshot is a copy of everything registered in a registry.
+type registrySnapshot struct {
+	nexusServices                 map[string]*nexus.Service
+	workflowFuncMap               map[string]any
+	workflowAliasMap              map[string]string
+	workflowVersioningBehaviorMap map[string]VersioningBehavior
+	activityFuncMap               map[string]activity
+	activityAliasMap              map[string]string
+	dynamicWorkflow               any
+	dynamicWorkflowOptions        DynamicRegisterWorkflowOptions
+	dynamicActivity               activity
 }
 
-func (env *testWorkflowEnvironmentImpl) registeredNames() registryNames {
+func (env *testWorkflowEnvironmentImpl) snapshotRegistry() registrySnapshot {
 	r := env.registry
 	r.Lock()
 	defer r.Unlock()
-	names := registryNames{
-		workflows:       make(map[string]struct{}, len(r.workflowFuncMap)),
-		activities:      make(map[string]struct{}, len(r.activityFuncMap)),
-		nexusServices:   make(map[string]struct{}, len(r.nexusServices)),
-		dynamicWorkflow: r.dynamicWorkflow != nil,
-		dynamicActivity: r.dynamicActivity != nil,
-	}
-	for name := range r.workflowFuncMap {
-		names.workflows[name] = struct{}{}
-	}
-	for name := range r.activityFuncMap {
-		names.activities[name] = struct{}{}
-	}
-	for name := range r.nexusServices {
-		names.nexusServices[name] = struct{}{}
-	}
-	return names
-}
-
-// minus returns the names in n that are not in other.
-func (n registryNames) minus(other registryNames) registryNames {
-	diff := func(a, b map[string]struct{}) map[string]struct{} {
-		out := make(map[string]struct{})
-		for name := range a {
-			if _, ok := b[name]; !ok {
-				out[name] = struct{}{}
-			}
-		}
-		return out
-	}
-	return registryNames{
-		workflows:       diff(n.workflows, other.workflows),
-		activities:      diff(n.activities, other.activities),
-		nexusServices:   diff(n.nexusServices, other.nexusServices),
-		dynamicWorkflow: n.dynamicWorkflow && !other.dynamicWorkflow,
-		dynamicActivity: n.dynamicActivity && !other.dynamicActivity,
+	return registrySnapshot{
+		nexusServices:                 maps.Clone(r.nexusServices),
+		workflowFuncMap:               maps.Clone(r.workflowFuncMap),
+		workflowAliasMap:              maps.Clone(r.workflowAliasMap),
+		workflowVersioningBehaviorMap: maps.Clone(r.workflowVersioningBehaviorMap),
+		activityFuncMap:               maps.Clone(r.activityFuncMap),
+		activityAliasMap:              maps.Clone(r.activityAliasMap),
+		dynamicWorkflow:               r.dynamicWorkflow,
+		dynamicWorkflowOptions:        r.dynamicWorkflowOptions,
+		dynamicActivity:               r.dynamicActivity,
 	}
 }
 
-// removePluginRegistrations removes what the plugins registered in the last
-// StartWorker from the registry.
-func (env *testWorkflowEnvironmentImpl) removePluginRegistrations() {
-	names := env.pluginRegistrations
-	env.pluginRegistrations = registryNames{}
+func (env *testWorkflowEnvironmentImpl) restoreRegistry(s registrySnapshot) {
 	r := env.registry
 	r.Lock()
 	defer r.Unlock()
-	for name := range names.workflows {
-		delete(r.workflowFuncMap, name)
-		delete(r.workflowVersioningBehaviorMap, name)
-	}
-	for fnName, alias := range r.workflowAliasMap {
-		if _, ok := names.workflows[alias]; ok {
-			delete(r.workflowAliasMap, fnName)
-		}
-	}
-	for name := range names.activities {
-		delete(r.activityFuncMap, name)
-	}
-	for fnName, alias := range r.activityAliasMap {
-		if _, ok := names.activities[alias]; ok {
-			delete(r.activityAliasMap, fnName)
-		}
-	}
-	for name := range names.nexusServices {
-		delete(r.nexusServices, name)
-	}
-	if names.dynamicWorkflow {
-		r.dynamicWorkflow = nil
-		r.dynamicWorkflowOptions = DynamicRegisterWorkflowOptions{}
-	}
-	if names.dynamicActivity {
-		r.dynamicActivity = nil
-	}
+	r.nexusServices = s.nexusServices
+	r.workflowFuncMap = s.workflowFuncMap
+	r.workflowAliasMap = s.workflowAliasMap
+	r.workflowVersioningBehaviorMap = s.workflowVersioningBehaviorMap
+	r.activityFuncMap = s.activityFuncMap
+	r.activityAliasMap = s.activityAliasMap
+	r.dynamicWorkflow = s.dynamicWorkflow
+	r.dynamicWorkflowOptions = s.dynamicWorkflowOptions
+	r.dynamicActivity = s.dynamicActivity
 }
 
 // stopPluginWorker runs the plugins' StopWorker chain the way
@@ -756,7 +720,7 @@ func (env *testWorkflowEnvironmentImpl) stopPluginWorker() {
 		}
 	}
 	stop(context.Background(), WorkerPluginStopWorkerOptions{WorkerInstanceKey: env.workerInstanceKey})
-	env.removePluginRegistrations()
+	env.restoreRegistry(env.registryBeforeStart)
 }
 
 func (env *testWorkflowEnvironmentImpl) setIdentity(identity string) {
@@ -796,6 +760,12 @@ func (env *testWorkflowEnvironmentImpl) setActivityTaskQueue(taskqueue string, a
 }
 
 func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn any, args ...any) {
+	fType := reflect.TypeOf(workflowFn)
+	if getKind(fType) == reflect.Func {
+		// A convenience, not a worker registration: bypasses plugin registry callbacks.
+		env.registry.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
+	}
+
 	// If a workflow already ran here, executeWorkflowInternal panics; do not run
 	// a spurious plugin start/stop pair around that.
 	env.locker.Lock()
@@ -808,11 +778,6 @@ func (env *testWorkflowEnvironmentImpl) executeWorkflow(workflowFn any, args ...
 		defer env.stopPluginWorker()
 	}
 
-	fType := reflect.TypeOf(workflowFn)
-	if getKind(fType) == reflect.Func {
-		// A convenience, not a worker registration: bypasses plugin registry callbacks.
-		env.registry.RegisterWorkflowWithOptions(workflowFn, RegisterWorkflowOptions{DisableAlreadyRegisteredCheck: true})
-	}
 	dc := converter.WithDataConverterSerializationContext(env.GetDataConverter(), converter.WorkflowSerializationContext{
 		Namespace:  env.workflowInfo.Namespace,
 		WorkflowID: env.workflowInfo.WorkflowExecution.ID,
