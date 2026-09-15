@@ -19,7 +19,29 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
-- Add support for Workflow Queries as Nexus Operations.
+
+### Added
+
+- `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
+  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
+  set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
+  in `StartWorker` is undone at `StopWorker`.
+
+### Changed
+
+### Deprecated
+
+### :boom: Breaking Changes
+
+### Fixed
+
+- Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
+  `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
+  `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
+
+### Security
+
+## [1.49.0] - 2026-09-14
 
 ### Added
 
@@ -46,6 +68,7 @@ to docs, or any other relevant information.
 - The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
   metrics now carry a `failure_reason` attribute. Each is now split into one time series per
   reason, which may affect existing dashboards.
+- Added support for Workflow Queries as Nexus Operations.
 
 #### Standalone Activity operator commands
 
@@ -55,18 +78,17 @@ to docs, or any other relevant information.
   `IncludeOutcome`, `IncludeHeartbeatDetails` and `IncludeLastFailure`.
 - Added missing description fields: `ExecutionTime` and `TotalHeartbeatCount`.
 
+### Changed
+
+- Standalone Activities are now generally available (GA). (Standalone Activities as Nexus operations
+  and Standalone Activities operator commands remain experimental. Operator commands are `pause`,
+  `unpause`, `updateOptions`, `restoreOriginal`.)
+
 ### :boom: Breaking Changes
 
 - Description payload fields that previously came back unconditionally are now opt-in and must be
   requested via `client.DescribeActivityOptions`: `GetHeartbeatDetails` (`IncludeHeartbeatDetails`)
   and `GetLastFailure` (`IncludeLastFailure`).
-
-### Changed
-
-### Deprecated
-
-### :boom: Breaking Changes
-
 - Renamed the standalone activity `client.StartActivityOptions.Details` option to `StaticDetails`,
   and `client.ActivityExecutionDescription.GetDetails` to `GetStaticDetails`.
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
@@ -78,6 +100,14 @@ to docs, or any other relevant information.
   `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
   context-derived encryption keys or AAD) may fail to decode local activity results recorded in
   histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+- Experimental `workflow.WorkflowRandomStream`'s `Uint64` now derives its value by calling `Read`
+  internally instead of the underlying generator's `Uint64` method directly, giving `Read`/`Uint64`
+  interleaving on the same stream a stable, well-defined byte ordering (previously undefined per the
+  standard library `ChaCha8.Read` doc). This only changes output for a `Uint64` call that immediately
+  follows a `Read` call whose length is not a multiple of 8 bytes on the same stream; pure `Uint64`
+  streams and 8-byte-aligned interleaving are unaffected. Open workflows created on SDK v1.48.0+ that
+  hit the affected pattern may compute a different value, and therefore may make a different decision,
+  on replay after upgrading.
 - Activity, local activity and child workflow serialization contexts are now applied to the
   worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
   the current workflow context. A context-aware converter that composed contexts (deriving its state
@@ -125,8 +155,6 @@ to docs, or any other relevant information.
   to `client.Options.ExternalStorage` is now stored instead of failing locally with
   `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
   query result now fails the workflow task instead of returning a failed query result.
-
-### Security
 
 ## [1.48.0] - 2026-08-18
 
