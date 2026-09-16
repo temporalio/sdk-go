@@ -38,8 +38,10 @@ var (
 // open and a transient codec failure can recover. The honored paths are decoding
 // workflow input, decoding an activity or child-workflow result delivered through
 // a Future, encoding activity or child-workflow arguments, and encoding a side
-// effect's summary. It is honored identically under both WorkflowPanicPolicy
-// values and is not logged as a workflow panic.
+// effect's summary. On the Future decode paths the failure is raised even if the
+// workflow handles the Future.Get error rather than propagating it, so it cannot
+// be suppressed by workflow error handling. It is honored identically under both
+// WorkflowPanicPolicy values and is not logged as a workflow panic.
 //
 // Other codec paths keep their existing behavior: signal decoding drops the
 // signal, update-argument decoding rejects the update, and query decoding fails

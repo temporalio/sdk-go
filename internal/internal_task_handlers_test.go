@@ -105,6 +105,10 @@ func registerWorkflows(r *registry) {
 		RegisterWorkflowOptions{Name: "CodecChildArg_Workflow"},
 	)
 	r.RegisterWorkflowWithOptions(
+		codecSwallowActivityResultWorkflowFunc,
+		RegisterWorkflowOptions{Name: "CodecSwallowActivityResult_Workflow"},
+	)
+	r.RegisterWorkflowWithOptions(
 		codecSideEffectSummaryWorkflowFunc,
 		RegisterWorkflowOptions{Name: "CodecSideEffectSummary_Workflow"},
 	)
@@ -152,6 +156,22 @@ func codecChildWorkflowArgWorkflowFunc(ctx Context, _ []byte) error {
 	}
 	ctx = WithChildWorkflowOptions(ctx, cwo)
 	return ExecuteChildWorkflow(ctx, "CodecEncodeArg_Workflow", []byte("arg")).Get(ctx, nil)
+}
+
+// Reads the activity result (invoking the codec's Decode) but deliberately
+// swallows the Get error, proving a codec-requested Workflow Task failure fails
+// the task even when workflow code handles the error rather than propagating it.
+func codecSwallowActivityResultWorkflowFunc(ctx Context, _ []byte) error {
+	ao := ActivityOptions{
+		TaskQueue:              "taskQueue",
+		ActivityID:             "0",
+		ScheduleToStartTimeout: time.Minute,
+		StartToCloseTimeout:    time.Minute,
+	}
+	ctx = WithActivityOptions(ctx, ao)
+	var result []byte
+	_ = ExecuteActivity(ctx, "Greeter_Activity").Get(ctx, &result)
+	return nil
 }
 
 func returnWorkflowTaskFailureMarkerWorkflowFunc(Context, []byte) error {
@@ -1331,7 +1351,7 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_I
 	}
 }
 
-func (t *TaskHandlersTestSuite) processActivityResultDecodeFailure(policy WorkflowPanicPolicy, cause error) (*workflowTaskCompletion, error) {
+func (t *TaskHandlersTestSuite) processActivityResultDecodeFailure(workflowName string, policy WorkflowPanicPolicy, cause error) (*workflowTaskCompletion, error) {
 	taskQueue := "tq1"
 	// A non-nil activity result so that Future.Get actually invokes the codec's
 	// Decode (CodecDataConverter.FromPayloads skips the codec on nil payloads).
@@ -1363,7 +1383,7 @@ func (t *TaskHandlersTestSuite) processActivityResultDecodeFailure(policy Workfl
 
 	// First task: schedule the activity (encode is a passthrough, so this
 	// succeeds and leaves the workflow waiting on the activity result).
-	task := createWorkflowTask(testEvents[0:3], 0, "HelloWorld_Workflow")
+	task := createWorkflowTask(testEvents[0:3], 0, workflowName)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1374,7 +1394,7 @@ func (t *TaskHandlersTestSuite) processActivityResultDecodeFailure(policy Workfl
 
 	// Second task: the activity completed, so Future.Get decodes its result and
 	// the codec returns the marker.
-	task = createWorkflowTask(testEvents, 3, "HelloWorld_Workflow")
+	task = createWorkflowTask(testEvents, 3, workflowName)
 	wftask = workflowTask{task: task}
 	wfctx = t.mustWorkflowContextImpl(&wftask, taskHandler)
 	request, err = taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
@@ -1390,10 +1410,27 @@ func (t *TaskHandlersTestSuite) processActivityResultDecodeFailure(policy Workfl
 func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_ActivityResultDecode() {
 	for _, policy := range []WorkflowPanicPolicy{BlockWorkflow, FailWorkflow} {
 		cause := errors.New("transient codec failure on activity result: 503")
-		request, err := t.processActivityResultDecodeFailure(policy, cause)
+		request, err := t.processActivityResultDecodeFailure("HelloWorld_Workflow", policy, cause)
 
 		// The Workflow Task fails and no completion request is produced, leaving
 		// the Workflow Execution open.
+		t.Error(err, "policy %v", policy)
+		t.Nil(request, "policy %v", policy)
+		var marker *converter.WorkflowTaskFailureError
+		t.True(errors.As(err, &marker), "policy %v", policy)
+		t.True(errors.Is(err, cause), "policy %v", policy)
+	}
+}
+
+// A codec-requested Workflow Task failure on an activity result decode must fail
+// the task even when workflow code handles (swallows) the Future.Get error rather
+// than propagating it: Get panics the marker instead of returning it, so the
+// failure cannot be suppressed, identically under both policies.
+func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_ActivityResultDecodeHandled() {
+	for _, policy := range []WorkflowPanicPolicy{BlockWorkflow, FailWorkflow} {
+		cause := errors.New("transient codec failure on activity result: 503")
+		request, err := t.processActivityResultDecodeFailure("CodecSwallowActivityResult_Workflow", policy, cause)
+
 		t.Error(err, "policy %v", policy)
 		t.Nil(request, "policy %v", policy)
 		var marker *converter.WorkflowTaskFailureError
