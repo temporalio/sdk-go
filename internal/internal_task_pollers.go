@@ -6,7 +6,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -738,41 +740,37 @@ func (wtp *workflowTaskProcessor) RespondTaskCompletedWithMetrics(
 
 	response, err = wtp.sendTaskCompletedRequest(taskCompletion, task)
 
-	completionEventId := task.GetStartedEventId() + 1
-	loggerDurationKeyVals := []any{
-		tagWorkflowType, task.WorkflowType.GetName(),
-		tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
-		tagRunID, task.WorkflowExecution.GetRunId(),
-		tagAttempt, task.Attempt,
-		tagEventID, completionEventId,
-		tagWorkflowTaskDuration, taskDuration,
-	}
-	if downloadPayloadMetrics.payloadCount > 0 {
-		loggerDurationKeyVals = append(loggerDurationKeyVals,
-			tagPayloadDownloadCount, downloadPayloadMetrics.payloadCount,
-			tagPayloadDownloadSize, downloadPayloadMetrics.totalSize,
-			tagPayloadDownloadDuration, downloadPayloadMetrics.TotalDuration(),
-			tagPayloadDownloadDrivers, downloadPayloadMetrics.GetDriverNames(),
-		)
-	}
-	if uploadPayloadMetrics.payloadCount > 0 {
-		loggerDurationKeyVals = append(loggerDurationKeyVals,
-			tagPayloadUploadCount, uploadPayloadMetrics.payloadCount,
-			tagPayloadUploadSize, uploadPayloadMetrics.totalSize,
-			tagPayloadUploadDuration, uploadPayloadMetrics.TotalDuration(),
-			tagPayloadUploadDrivers, uploadPayloadMetrics.GetDriverNames(),
-		)
-	}
+	if threshold := wftDurationWarnThreshold(); taskDuration > threshold {
+		completionEventId := task.GetStartedEventId() + 1
+		loggerDurationKeyVals := []any{
+			tagWorkflowType, task.WorkflowType.GetName(),
+			tagWorkflowID, task.WorkflowExecution.GetWorkflowId(),
+			tagRunID, task.WorkflowExecution.GetRunId(),
+			tagAttempt, task.Attempt,
+			tagEventID, completionEventId,
+			tagWorkflowTaskDuration, taskDuration,
+		}
+		if downloadPayloadMetrics.payloadCount > 0 {
+			loggerDurationKeyVals = append(loggerDurationKeyVals,
+				tagPayloadDownloadCount, downloadPayloadMetrics.payloadCount,
+				tagPayloadDownloadSize, downloadPayloadMetrics.totalSize,
+				tagPayloadDownloadDuration, downloadPayloadMetrics.TotalDuration(),
+				tagPayloadDownloadDrivers, downloadPayloadMetrics.GetDriverNames(),
+			)
+		}
+		if uploadPayloadMetrics.payloadCount > 0 {
+			loggerDurationKeyVals = append(loggerDurationKeyVals,
+				tagPayloadUploadCount, uploadPayloadMetrics.payloadCount,
+				tagPayloadUploadSize, uploadPayloadMetrics.totalSize,
+				tagPayloadUploadDuration, uploadPayloadMetrics.TotalDuration(),
+				tagPayloadUploadDrivers, uploadPayloadMetrics.GetDriverNames(),
+			)
+		}
 
-	taskID := fmt.Sprintf("%s:%d:%d", task.WorkflowExecution.GetRunId(), completionEventId, task.Attempt)
-	if taskDuration > 10*time.Second {
-		wtp.logger.Warn("[TMPRL1104] "+taskID+" Workflow task exceeded 10 seconds.", loggerDurationKeyVals...)
-	} else if taskDuration > 5*time.Second {
-		wtp.logger.Info("[TMPRL1104] "+taskID+" Workflow task exceeded 5 seconds.", loggerDurationKeyVals...)
-	} else {
-		traceLog(func() {
-			wtp.logger.Debug("Workflow task duration information.", loggerDurationKeyVals...)
-		})
+		taskID := fmt.Sprintf("%s:%d:%d", task.WorkflowExecution.GetRunId(), completionEventId, task.Attempt)
+		wtp.logger.Warn(
+			fmt.Sprintf("[TMPRL1104] %s Workflow task duration exceeded %d seconds.", taskID, int64(threshold/time.Second)),
+			loggerDurationKeyVals...)
 	}
 
 	var grpcMessageTooLargeErr *retry.GrpcMessageTooLargeError
@@ -1088,6 +1086,23 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTaskWithCause(taskToken []b
 	}
 
 	return builtRequest
+}
+
+const defaultWFTDurationWarnThreshold = 5 * time.Second
+
+var wftDurationWarnThreshold = sync.OnceValue(func() time.Duration {
+	return parseWFTDurationWarnThreshold(os.Getenv("TEMPORAL_WORKFLOW_TASK_DURATION_WARN_SECONDS"))
+})
+
+// Separated from the env read so it can be unit-tested without mutating the process environment.
+// An unparsable value, including a negative one, falls back to the default rather than disabling
+// the warning.
+func parseWFTDurationWarnThreshold(value string) time.Duration {
+	seconds, err := strconv.ParseUint(value, 10, 32)
+	if err != nil {
+		return defaultWFTDurationWarnThreshold
+	}
+	return time.Duration(seconds) * time.Second
 }
 
 // workflowTaskStorageMetrics implements extstore.StorageOperationCallback for a single workflow
