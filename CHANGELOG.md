@@ -29,6 +29,11 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- The `[TMPRL1104]` workflow task duration log now uses a single warning threshold, configurable
+  with the `TEMPORAL_WORKFLOW_TASK_DURATION_WARN_SECONDS` environment variable and defaulting to 5
+  seconds. It previously warned above a fixed 10 seconds, logged at info above a fixed 5 seconds,
+  and logged at debug below that when trace logging was enabled.
+
 ### Deprecated
 
 ### :boom: Breaking Changes

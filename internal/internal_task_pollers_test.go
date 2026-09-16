@@ -1001,6 +1001,27 @@ func TestDoPollGracefulShutdown(t *testing.T) {
 	}
 }
 
+func TestParseWFTDurationWarnThreshold(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		value string
+		want  time.Duration
+	}{
+		{"unset falls back to the default", "", defaultWFTDurationWarnThreshold},
+		{"parses seconds", "10", 10 * time.Second},
+		{"zero warns on every task", "0", 0},
+		{"negative falls back to the default", "-5", defaultWFTDurationWarnThreshold},
+		{"unparsable falls back to the default", "abc", defaultWFTDurationWarnThreshold},
+		{"fractional falls back to the default", "1.5", defaultWFTDurationWarnThreshold},
+		// Parsed as 32-bit so seconds cannot overflow time.Duration's int64 nanoseconds.
+		{"absurdly large falls back to the default", "99999999999999999999", defaultWFTDurationWarnThreshold},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, parseWFTDurationWarnThreshold(tt.value))
+		})
+	}
+}
+
 func TestWorkflowTaskStorageMetricsTotalDuration(t *testing.T) {
 	base := time.Now()
 
