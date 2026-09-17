@@ -247,7 +247,8 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.WorkerStopTimeout = 10 * time.Second
 	}
 
-	if strings.Contains(ts.T().Name(), "ReplayerWithInterceptor") {
+	if strings.Contains(ts.T().Name(), "ReplayerWithInterceptor") ||
+		strings.Contains(ts.T().Name(), "UpdateWithStartWorkflowWithInterceptor") {
 		options.Interceptors = append(options.Interceptors, &localActivityInterceptor{})
 	}
 
@@ -5367,6 +5368,73 @@ func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflow() {
 			"child_propagatedValue1", "child_propagatedValue2", "child_activity_propagatedValue1", "child_activity_propagatedValue2",
 		}, propagatedValues)
 	})
+}
+
+func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflowWithInterceptor() {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	opts := ts.startWorkflowOptions("test-update-with-start-interceptor-" + uuid.NewString())
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+
+	startOp := ts.client.NewWithStartWorkflowOperation(opts, ts.workflows.UpdateEntityWorkflow)
+	updHandle, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
+		UpdateOptions: client.UpdateWorkflowOptions{
+			UpdateName:   "update",
+			Args:         []any{1},
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		},
+		StartWorkflowOperation: startOp,
+	})
+	ts.NoError(err)
+
+	var updateResult int
+	ts.NoError(updHandle.Get(ctx, &updateResult))
+	ts.Equal(1, updateResult)
+
+	run, err := startOp.Get(ctx)
+	ts.NoError(err)
+	var workflowResult int
+	ts.NoError(run.Get(ctx, &workflowResult))
+	ts.Equal(1, workflowResult)
+}
+
+func (ts *IntegrationTestSuite) TestUpdateWithStartWorkflowWithInterceptorUnknownUpdate() {
+	// Regression test to verify that actually invalid update requests still fail
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	opts := ts.startWorkflowOptions("test-update-with-start-interceptor-unknown-" + uuid.NewString())
+	opts.WorkflowIDConflictPolicy = enumspb.WORKFLOW_ID_CONFLICT_POLICY_FAIL
+
+	startOp := ts.client.NewWithStartWorkflowOperation(opts, ts.workflows.UpdateEntityWorkflow)
+	handle, err := ts.client.UpdateWithStartWorkflow(ctx, client.UpdateWithStartWorkflowOptions{
+		UpdateOptions: client.UpdateWorkflowOptions{
+			UpdateName:   "bad update", // not registered by UpdateEntityWorkflow
+			Args:         []any{1},
+			WaitForStage: client.WorkflowUpdateStageCompleted,
+		},
+		StartWorkflowOperation: startOp,
+	})
+	ts.NoError(err)
+	ts.ErrorContains(handle.Get(ctx, nil), "unknown update")
+
+	// Clean up: drive the workflow to completion via the registered update.
+	run, err := startOp.Get(ctx)
+	ts.NoError(err)
+	updHandle, err := ts.client.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
+		WorkflowID:   run.GetID(),
+		RunID:        run.GetRunID(),
+		UpdateName:   "update",
+		Args:         []any{1},
+		WaitForStage: client.WorkflowUpdateStageCompleted,
+	})
+	ts.NoError(err)
+	var workflowResult int
+	ts.NoError(updHandle.Get(ctx, &workflowResult))
+	ts.Equal(1, workflowResult)
+	ts.NoError(run.Get(ctx, &workflowResult))
+	ts.Equal(1, workflowResult)
 }
 
 func (ts *IntegrationTestSuite) TestSessionOnWorkerFailure() {
