@@ -1859,15 +1859,12 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	workflowPollers := worker.workflowWorker.worker.options.taskPollers
 	require.NotEmpty(s.T(), workflowPollers)
 	require.NotNil(s.T(), workflowPollers[0].autoscalingRunner)
-	workflowGroups := workflowPollers[0].autoscalingRunner.pollerGroups
-	require.NotNil(s.T(), workflowGroups)
-	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, workflowGroups.groupStore)
+	workflowBalancer := workflowPollers[0].autoscalingRunner.workflowBalancer
+	require.NotNil(s.T(), workflowBalancer)
+	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, workflowBalancer.groupStore)
 	for _, p := range workflowPollers {
 		require.NotNil(s.T(), p.autoscalingRunner)
-		require.Same(s.T(), worker.client.pollerGroupSnapshotStore, p.autoscalingRunner.pollerGroups.groupStore)
-	}
-	if len(workflowPollers) > 1 {
-		require.NotSame(s.T(), workflowGroups, workflowPollers[1].autoscalingRunner.pollerGroups)
+		require.Same(s.T(), workflowBalancer, p.autoscalingRunner.workflowBalancer)
 	}
 	activityPollers := worker.activityWorker.worker.options.taskPollers
 	require.NotEmpty(s.T(), activityPollers)

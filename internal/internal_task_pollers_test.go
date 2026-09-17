@@ -423,6 +423,78 @@ func TestWorkflowStickyBacklogTracksPollerGroups(t *testing.T) {
 	require.Equal(t, int64(2), balancer.groups["group-b"].stickyBacklog)
 }
 
+func TestWorkflowUngroupedPollErrorClearsStickyBacklog(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	pollErr := errors.New("poll failed")
+	firstPoll := service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			// The backlog hint initially selects the sticky queue.
+			require.Equal(t, enumspb.TASK_QUEUE_KIND_STICKY, req.GetTaskQueue().GetKind())
+			return nil, pollErr
+		})
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		After(firstPoll).
+		DoAndReturn(func(_ context.Context, req *workflowservice.PollWorkflowTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollWorkflowTaskQueueResponse, error) {
+			// Clearing the hint lets pending-poll balancing select normal.
+			require.Equal(t, enumspb.TASK_QUEUE_KIND_NORMAL, req.GetTaskQueue().GetKind())
+			return &workflowservice.PollWorkflowTaskQueueResponse{}, nil
+		})
+
+	poller := &workflowTaskPoller{
+		basePoller: basePoller{
+			metricsHandler: metrics.NopHandler,
+			workerBuildID:  "test-build-id",
+		},
+		mode:                   Mixed,
+		taskQueueName:          "task-queue",
+		service:                service,
+		stickyCacheSize:        1,
+		stickyUUID:             "sticky-worker",
+		mixedStickyBacklog:     3,
+		pendingStickyPollCount: 1,
+		numNormalPollerMetric:  newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowTask),
+		numStickyPollerMetric:  newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowStickyTask),
+	}
+
+	_, err := poller.poll(t.Context(), pollerGroupLease{})
+	// The sticky poll returns its service error.
+	require.ErrorIs(t, err, pollErr)
+
+	_, err = poller.poll(t.Context(), pollerGroupLease{})
+	// The following normal poll succeeds.
+	require.NoError(t, err)
+}
+
+func TestWorkflowAutoscalingPollErrorRetainsUngroupedStickyBacklog(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	service.EXPECT().PollWorkflowTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(nil, errors.New("poll failed"))
+
+	balancer := newTestWorkflowAutoscalingBalancer(2)
+	balancer.setStickyBacklog(3)
+	poller := &workflowTaskPoller{
+		basePoller: basePoller{
+			metricsHandler: metrics.NopHandler,
+			workerBuildID:  "test-build-id",
+		},
+		mode:                  Sticky,
+		taskQueueName:         "task-queue",
+		service:               service,
+		stickyCacheSize:       1,
+		autoscalingBalancer:   balancer,
+		numStickyPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeWorkflowStickyTask),
+	}
+	lease, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer lease.release()
+
+	_, err = poller.poll(t.Context(), lease)
+	require.EqualError(t, err, "poll failed")
+	require.Equal(t, int64(3), balancer.ungroupedStickyBacklog)
+}
+
 func TestWorkflowPollErrorRetainsStickyBacklog(t *testing.T) {
 	ctrl := gomock.NewController(t)
 	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)

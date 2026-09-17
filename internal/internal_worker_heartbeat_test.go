@@ -344,6 +344,91 @@ func TestWorkerCommandPollErrorBackoff(t *testing.T) {
 	})
 }
 
+func TestCommandCompletionBound(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		commandPayload, err := proto.Marshal(&workerservicepb.ExecuteCommandsRequest{})
+		require.NoError(t, err)
+		commandTask := &workflowservice.PollNexusTaskQueueResponse{
+			TaskToken: []byte("task-token"),
+			Request: &nexuspb.Request{
+				Variant: &nexuspb.Request_StartOperation{
+					StartOperation: &nexuspb.StartOperationRequest{
+						Payload: &commonpb.Payload{Data: commandPayload},
+					},
+				},
+			},
+		}
+
+		completionStarted := make(chan struct{})
+		completionRelease := make(chan struct{})
+		var releaseCompletion sync.Once
+		defer releaseCompletion.Do(func() { close(completionRelease) })
+		mockService.EXPECT().RespondNexusTaskCompleted(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(context.Context, *workflowservice.RespondNexusTaskCompletedRequest, ...grpc.CallOption) (*workflowservice.RespondNexusTaskCompletedResponse, error) {
+				close(completionStarted)
+				<-completionRelease
+				return &workflowservice.RespondNexusTaskCompletedResponse{}, nil
+			})
+
+		secondPollStarted := make(chan struct{})
+		var pollCount atomic.Int32
+		mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(ctx context.Context, _ *workflowservice.PollNexusTaskQueueRequest, _ ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+				if pollCount.Add(1) == 1 {
+					return commandTask, nil
+				}
+
+				close(secondPollStarted)
+				<-ctx.Done()
+				return nil, ctx.Err()
+			}).AnyTimes()
+
+		hw := &sharedNamespaceWorker{
+			client: &WorkflowClient{
+				workflowService: mockService,
+			},
+			workerCtx:              ctx,
+			workerControlTaskQueue: "worker-commands",
+			metricsHandler:         metrics.NopHandler,
+			logger:                 ilog.NewNopLogger(),
+			pollerGroups:           newTestPollerGroupManager(),
+		}
+		done := make(chan struct{})
+		go func() {
+			hw.runWorkerCommands()
+			close(done)
+		}()
+
+		<-completionStarted
+		synctest.Wait()
+		// Completion must retain admission so another command cannot be polled.
+		select {
+		case <-secondPollStarted:
+			t.Fatal("second poll started before command completion")
+		default:
+		}
+
+		releaseCompletion.Do(func() { close(completionRelease) })
+		synctest.Wait()
+		// Polling resumes after the command is acknowledged.
+		select {
+		case <-secondPollStarted:
+		default:
+			t.Fatal("second poll did not start after command completion")
+		}
+
+		cancel()
+		synctest.Wait()
+		<-done
+	})
+}
+
 func TestWorkerCommandCancelActivity(t *testing.T) {
 	t.Parallel()
 

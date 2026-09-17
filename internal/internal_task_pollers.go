@@ -1531,6 +1531,11 @@ func (wtp *workflowTaskPoller) poll(
 
 	response, err := wtp.pollWorkflowTaskQueue(ctx, request)
 	if err != nil {
+		// SimpleMaximum uses mixed pollers, so a stale hint can move every poll to
+		// sticky. Autoscaling retains hints because its balancer preserves normal coverage.
+		if wtp.mode == Mixed {
+			wtp.updateBacklog(queueKind, "", 0)
+		}
 		return nil, err
 	}
 

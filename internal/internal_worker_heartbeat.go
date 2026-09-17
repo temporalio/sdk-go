@@ -284,9 +284,8 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 			return
 		}
 
-		pollWG.Add(1)
-		go func() {
-			defer pollWG.Done()
+		pollWG.Go(func() {
+			defer admission.release()
 
 			task, err := hw.pollWorkerCommand(admission.groupLease)
 			if err != nil {
@@ -299,10 +298,8 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 				case <-timer.C:
 				case <-hw.workerCtx.Done():
 				}
-				admission.release()
 				return
 			}
-			admission.release()
 
 			if task == nil {
 				return
@@ -311,7 +308,7 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 			if err := hw.handleWorkerCommandTask(task); err != nil {
 				hw.logger.Warn("Failed handling worker command task", "Error", err)
 			}
-		}()
+		})
 	}
 }
 
