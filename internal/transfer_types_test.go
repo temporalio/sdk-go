@@ -306,43 +306,6 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	})
 }
 
-func TestTransferTypes_DataConverterWrapping(t *testing.T) {
-	value := temperature{kelvin: 300}
-	payloads, err := DefaultInternalDataConverter.ToPayloads(value)
-	require.NoError(t, err)
-
-	t.Run("workflow replayer", func(t *testing.T) {
-		replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{
-			DataConverter: converter.GetDefaultDataConverter(),
-		})
-		require.NoError(t, err)
-		replayer.workflowExecutionResults["workflow-1"] = payloads
-
-		var got temperature
-		require.NoError(t, replayer.GetWorkflowResult("workflow-1", &got))
-		require.Equal(t, value, got)
-	})
-
-	t.Run("workflow context", func(t *testing.T) {
-		ctx := WithDataConverter(Background(), converter.GetDefaultDataConverter())
-		dc := GetDataConverterFromWorkflowContext(ctx)
-
-		var got temperature
-		require.NoError(t, dc.FromPayloads(payloads, &got))
-		require.Equal(t, value, got)
-	})
-
-	t.Run("encoded values", func(t *testing.T) {
-		var encodedValue temperature
-		require.NoError(t, newEncodedValue(payloads, converter.GetDefaultDataConverter()).Get(&encodedValue))
-		require.Equal(t, value, encodedValue)
-
-		var encodedValues temperature
-		require.NoError(t, newEncodedValues(payloads, converter.GetDefaultDataConverter()).Get(&encodedValues))
-		require.Equal(t, value, encodedValues)
-	})
-}
-
 func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 	t.Parallel()
 	parent := converter.GetDefaultDataConverter()
@@ -631,5 +594,42 @@ func TestTransferTypesIntegration_ExecutionConversionContext(t *testing.T) {
 		var got string
 		require.NoError(t, env.GetWorkflowResult(&got))
 		require.Equal(t, "value", got)
+	})
+}
+
+func TestTransferTypes_DataConverterWrapping(t *testing.T) {
+	value := temperature{kelvin: 300}
+	payloads, err := DefaultInternalDataConverter.ToPayloads(value)
+	require.NoError(t, err)
+
+	t.Run("workflow replayer", func(t *testing.T) {
+		replayer, err := NewWorkflowReplayer(WorkflowReplayerOptions{
+			DataConverter: converter.GetDefaultDataConverter(),
+		})
+		require.NoError(t, err)
+		replayer.workflowExecutionResults["workflow-1"] = payloads
+
+		var got temperature
+		require.NoError(t, replayer.GetWorkflowResult("workflow-1", &got))
+		require.Equal(t, value, got)
+	})
+
+	t.Run("workflow context", func(t *testing.T) {
+		ctx := WithDataConverter(Background(), converter.GetDefaultDataConverter())
+		dc := GetDataConverterFromWorkflowContext(ctx)
+
+		var got temperature
+		require.NoError(t, dc.FromPayloads(payloads, &got))
+		require.Equal(t, value, got)
+	})
+
+	t.Run("encoded values", func(t *testing.T) {
+		var encodedValue temperature
+		require.NoError(t, newEncodedValue(payloads, converter.GetDefaultDataConverter()).Get(&encodedValue))
+		require.Equal(t, value, encodedValue)
+
+		var encodedValues temperature
+		require.NoError(t, newEncodedValues(payloads, converter.GetDefaultDataConverter()).Get(&encodedValues))
+		require.Equal(t, value, encodedValues)
 	})
 }

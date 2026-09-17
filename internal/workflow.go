@@ -2172,8 +2172,8 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 		panic("data converter is nil for WithDataConverter")
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
-	getWorkflowEnvOptions(ctx1).DataConverter = dc
-	getWorkflowEnvOptions(ctx1).RootDataConverter = dc
+	getWorkflowEnvOptions(ctx1).DataConverter = makeTransferAware(dc)
+	getWorkflowEnvOptions(ctx1).RootDataConverter = dc // TODO Should this be wrapped too?
 	return ctx1
 }
 
@@ -2249,7 +2249,7 @@ func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) conve
 	if dc == nil {
 		dc = DefaultInternalDataConverter
 	}
-	return &EncodedValue{value, dc}
+	return &EncodedValue{value, makeTransferAware(dc)}
 }
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.

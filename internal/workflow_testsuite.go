@@ -90,7 +90,7 @@ func newEncodedValues(values *commonpb.Payloads, dc converter.DataConverter) con
 	if dc == nil {
 		dc = DefaultInternalDataConverter
 	}
-	return &EncodedValues{values, dc}
+	return &EncodedValues{values, makeTransferAware(dc)}
 }
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
