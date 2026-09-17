@@ -3388,6 +3388,7 @@ func TestWorkerOptionDefaults(t *testing.T) {
 	client := &WorkflowClient{}
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
+	t.Cleanup(aggWorker.cacheLease.release)
 
 	workflowWorker := aggWorker.workflowWorker
 	require.Equal(
@@ -3474,6 +3475,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 	}
 
 	aggWorker := NewAggregatedWorker(client, taskQueue, options)
+	t.Cleanup(aggWorker.cacheLease.release)
 
 	workflowWorker := aggWorker.workflowWorker
 	require.Equal(
@@ -3520,6 +3522,7 @@ func TestLocalActivityWorkerOnly(t *testing.T) {
 	client := &WorkflowClient{}
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{LocalActivityWorkerOnly: true})
+	t.Cleanup(aggWorker.cacheLease.release)
 
 	workflowWorker := aggWorker.workflowWorker
 	require.True(t, workflowWorker.executionParameters.Identity != "")
@@ -3634,6 +3637,7 @@ func TestWorkerRegisterDisabledWorkflow(t *testing.T) {
 	func() {
 		defer func() { recovered = recover() }()
 		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{DisableWorkflowWorker: true})
+		t.Cleanup(worker.cacheLease.release)
 		worker.RegisterWorkflow(testReplayWorkflow)
 	}()
 	require.Equal(t, "workflow worker disabled, cannot register workflow", recovered)
@@ -3732,10 +3736,15 @@ func (s *internalWorkerTestSuite) TestSessionWorkerShutdownSetsNoRepollOnSession
 }
 
 func (s *internalWorkerTestSuite) TestSessionWorkerShutdownDrainModeMatchesAggregateWorker() {
+	s.service.EXPECT().ShutdownWorker(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.ShutdownWorkerResponse{}, nil).AnyTimes()
+
 	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
 	worker := NewAggregatedWorker(client, "session-shutdown-task-queue", WorkerOptions{
 		EnableSessionWorker: true,
 	})
+	defer worker.Stop()
+
 	s.NotNil(worker.sessionWorker)
 
 	s.False(worker.sessionWorker.creationWorker.worker.shouldDrainOnShutdown(),

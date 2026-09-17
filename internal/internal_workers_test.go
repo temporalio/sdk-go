@@ -772,6 +772,7 @@ func (s *WorkersTestSuite) TestWorkerPluginRegistryCallbacks() {
 	worker := NewAggregatedWorker(client, "plugin-registry-callbacks-tq", WorkerOptions{
 		Plugins: []WorkerPlugin{plugin},
 	})
+	s.T().Cleanup(worker.cacheLease.release)
 
 	// Registering a dynamic activity must not require OnRegisterDynamicActivity
 	// just because OnRegisterActivity is set.
@@ -792,6 +793,7 @@ func (s *WorkersTestSuite) TestWorkerTaskQueueLimitDisableEager() {
 	worker := NewAggregatedWorker(client, "task-queue-limit-disable-eager", WorkerOptions{
 		TaskQueueActivitiesPerSecond: 1.0,
 	})
+	s.T().Cleanup(worker.cacheLease.release)
 	s.True(worker.activityWorker.executionParameters.eagerActivityExecutor.disabled)
 }
 
