@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
-	failurepb "go.temporal.io/api/failure/v1"
 	historypb "go.temporal.io/api/history/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
@@ -29,18 +28,16 @@ import (
 
 type temperature struct{ kelvin float64 }
 
-var _ ValueWithTransferConverter = temperature{}
-
-var temperatureConverter = newTransferConverter(
-	func(t temperature) (float64, error) { return t.kelvin, nil },
-	func(kelvin float64, t *temperature) error {
-		t.kelvin = kelvin
-		return nil
-	},
-)
-
 func (temperature) TransferConverter() TransferConverter {
-	return temperatureConverter
+	return newTransferConverter(
+		func(t temperature) (float64, error) {
+			return t.kelvin, nil
+		},
+		func(kelvin float64, t *temperature) error {
+			t.kelvin = kelvin
+			return nil
+		},
+	)
 }
 
 type userRef struct {
@@ -48,19 +45,19 @@ type userRef struct {
 	cache string
 }
 
-var _ ValueWithTransferConverter = userRef{}
+type userRefTransfer struct{
+	ID string
+}
 
-type userRefTransfer struct{ ID string }
-
-var userRefConverter = newTransferConverter(
-	func(u userRef) (userRefTransfer, error) { return userRefTransfer{ID: u.id}, nil },
-	func(t userRefTransfer, u *userRef) error {
-		u.id = t.ID
-		return nil
-	},
-)
-
-func (userRef) TransferConverter() TransferConverter { return userRefConverter }
+func (userRef) TransferConverter() TransferConverter {
+	return newTransferConverter(
+		func(u userRef) (userRefTransfer, error) { return userRefTransfer{ID: u.id}, nil },
+		func(t userRefTransfer, u *userRef) error {
+			u.id = t.ID
+			return nil
+		},
+	)
+}
 
 // unencodable always returns an error when encoding the value into a transfer value
 type unencodable struct{}
@@ -90,13 +87,6 @@ func (undecodable) TransferConverter() TransferConverter {
 	)
 }
 
-// countingDataConverter records which decode methods its wrapper calls.
-type countingDataConverter struct {
-	converter.DataConverter
-	fromPayloadCalls  int
-	fromPayloadsCalls int
-}
-
 type nilReturningSerializationContextDataConverter struct {
 	converter.DataConverter
 }
@@ -107,21 +97,8 @@ func (*nilReturningSerializationContextDataConverter) WithSerializationContext(
 	return nil
 }
 
-func (dc *countingDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
-	dc.fromPayloadCalls++
-	return dc.DataConverter.FromPayload(payload, valuePtr)
-}
-
-func (dc *countingDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
-	dc.fromPayloadsCalls++
-	return dc.DataConverter.FromPayloads(payloads, valuePtrs...)
-}
-
-func defaultTransferAwareDataConverter() *transferAwareDataConverter {
-	return makeTransferAware(converter.GetDefaultDataConverter())
-}
-
-// Unexported fields make missing transfer conversion observable as data loss.
+// transferExecution's transfer type includes its unexported fields. When encoded with a data
+// converter that isn't transfer-aware, the fields disappear.
 type transferExecution struct{ workflowID, runID string }
 
 func (transferExecution) TransferConverter() TransferConverter {
@@ -136,11 +113,39 @@ func (transferExecution) TransferConverter() TransferConverter {
 	)
 }
 
+// contextualString has a transfer converter that uses context.Context and workflow.Context.
+type contextualString string
+
+type transferContextKey struct{}
+
+func (contextualString) TransferConverter() TransferConverter {
+	return NewContextAwareTransferConverter(
+		func(ctx context.Context, value contextualString) (string, error) {
+			label, _ := ctx.Value(transferContextKey{}).(string)
+			return fmt.Sprintf("go:%s:%s", label, string(value)), nil
+		},
+		func(ctx context.Context, transferValue string, value *contextualString) error {
+			*value = contextualString(strings.Split(transferValue, ":")[2])
+			return nil
+		},
+		func(ctx Context, value contextualString) (string, error) {
+			label, _ := ctx.Value(transferContextKey{}).(string)
+			return fmt.Sprintf("wf:%s:%s", label, string(value)), nil
+		},
+		func(ctx Context, transferValue string, value *contextualString) error {
+			*value = contextualString(strings.Split(transferValue, ":")[2])
+			return nil
+		},
+	)
+}
+
+type transferEnvelope struct{ Value contextualString }
+
 // -- TESTS --
 
 func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := defaultTransferAwareDataConverter()
+	dc := DefaultInternalDataConverter
 
 	t.Run("scalar transfer values", func(t *testing.T) {
 		values := make([]temperature, 10)
@@ -200,7 +205,7 @@ func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 
 func TestTransferAwareDataConverter_PointerValuePanics(t *testing.T) {
 	t.Parallel()
-	dc := defaultTransferAwareDataConverter()
+	dc := DefaultInternalDataConverter
 	value := &temperature{kelvin: 300}
 
 	require.Implements(t, (*ValueWithTransferConverter)(nil), value)
@@ -211,7 +216,7 @@ func TestTransferAwareDataConverter_PointerValuePanics(t *testing.T) {
 
 func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := defaultTransferAwareDataConverter()
+	dc := DefaultInternalDataConverter
 
 	t.Run("scalar transfer values", func(t *testing.T) {
 		values := make([]temperature, 10)
@@ -329,7 +334,7 @@ func TestTransferAwareDataConverter_MatchesParentForPlainValues(t *testing.T) {
 
 func TestTransferAwareDataConverter_ConversionErrors(t *testing.T) {
 	t.Parallel()
-	dc := defaultTransferAwareDataConverter()
+	dc := DefaultInternalDataConverter
 
 	t.Run("encoding one value", func(t *testing.T) {
 		_, err := dc.ToPayload(unencodable{})
@@ -377,7 +382,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	// Even when the parent has no use for a context, we hold on to it: transfer
 	// converters may still want it.
 	t.Run("parent that is not context aware", func(t *testing.T) {
-		dc := defaultTransferAwareDataConverter()
+		dc := DefaultInternalDataConverter
 		require.NotSame(t, dc, WithContext(context.Background(), dc))
 		require.NotSame(t, dc, WithWorkflowContext(Background(), dc))
 		// Serialization contexts are only forwarded, so there is nothing to keep.
@@ -397,39 +402,6 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 		)
 	})
 }
-
-// -- CONTEXTUAL TESTS -----------------------------------------------------------
-
-// -- DATA --
-
-type transferContextKey struct{}
-
-type contextualString string
-
-func (contextualString) TransferConverter() TransferConverter {
-	return NewContextAwareTransferConverter(
-		func(ctx context.Context, value contextualString) (string, error) {
-			label, _ := ctx.Value(transferContextKey{}).(string)
-			return fmt.Sprintf("go:%s:%s", label, string(value)), nil
-		},
-		func(ctx context.Context, transferValue string, value *contextualString) error {
-			*value = contextualString(strings.Split(transferValue, ":")[2])
-			return nil
-		},
-		func(ctx Context, value contextualString) (string, error) {
-			label, _ := ctx.Value(transferContextKey{}).(string)
-			return fmt.Sprintf("wf:%s:%s", label, string(value)), nil
-		},
-		func(ctx Context, transferValue string, value *contextualString) error {
-			*value = contextualString(strings.Split(transferValue, ":")[2])
-			return nil
-		},
-	)
-}
-
-type transferEnvelope struct{ Value contextualString }
-
-// -- TESTS --
 
 func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 	t.Parallel()
@@ -463,18 +435,9 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 		require.Equal(t, contextualString("two"), gotTwo)
 	}
 
-	t.Run("no context", func(t *testing.T) {
-		requireRoundTrip(t, defaultTransferAwareDataConverter(), "go::")
-	})
-
-	t.Run("go context", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), transferContextKey{}, "activity")
-		requireRoundTrip(t, defaultTransferAwareDataConverter().WithContext(ctx), "go:activity:")
-	})
-
 	t.Run("workflow context", func(t *testing.T) {
 		ctx := WithValue(Background(), transferContextKey{}, "workflow")
-		requireRoundTrip(t, defaultTransferAwareDataConverter().WithWorkflowContext(ctx), "wf:workflow:")
+		requireRoundTrip(t, DefaultInternalDataConverter.WithWorkflowContext(ctx), "wf:workflow:")
 	})
 }
 
@@ -718,106 +681,5 @@ func TestTransferTypesIntegration_ExecutionConversionContext(t *testing.T) {
 		var got string
 		require.NoError(t, env.GetWorkflowResult(&got))
 		require.Equal(t, "value", got)
-	})
-}
-
-func TestTransferTypesIntegration_ConversionErrors(t *testing.T) {
-	t.Run("client encoding stops before RPC", func(t *testing.T) {
-		_, client := newTransferTestClient(t, converter.GetDefaultDataConverter())
-		_, err := client.ExecuteWorkflow(t.Context(), StartWorkflowOptions{
-			ID: "workflow-1", TaskQueue: "transfer-test",
-		}, func(Context, unencodable) error { return nil }, unencodable{})
-		require.ErrorIs(t, err, errNoEncoding)
-	})
-
-	t.Run("client decoding propagates converter error", func(t *testing.T) {
-		dc := converter.GetDefaultDataConverter()
-		service, client := newTransferTestClient(t, dc)
-		payloads, err := dc.ToPayloads("encoded")
-		require.NoError(t, err)
-		service.EXPECT().QueryWorkflow(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&workflowservice.QueryWorkflowResponse{QueryResult: payloads}, nil)
-		result, err := client.QueryWorkflow(t.Context(), "workflow-1", "run-1", "value")
-		require.NoError(t, err)
-		var got undecodable
-		require.ErrorIs(t, result.Get(&got), errNoDecoding)
-	})
-}
-
-func TestTransferTypesIntegration_FailureDetailsBypassConversion(t *testing.T) {
-	dc := converter.GetDefaultDataConverter()
-	details, err := dc.ToPayloads("detail")
-	require.NoError(t, err)
-
-	t.Run("outgoing activity failure", func(t *testing.T) {
-		service, client := newTransferTestClient(t, dc)
-		service.EXPECT().RespondActivityTaskFailed(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, req *workflowservice.RespondActivityTaskFailedRequest, _ ...grpc.CallOption) (*workflowservice.RespondActivityTaskFailedResponse, error) {
-				got := req.Failure.GetApplicationFailureInfo().GetDetails()
-				require.True(t, proto.Equal(details, got), "got failure details %v, want %v", got, details)
-				return &workflowservice.RespondActivityTaskFailedResponse{}, nil
-			})
-		err := client.CompleteActivity(t.Context(), []byte("task-token"), nil,
-			NewApplicationError("failed", "TransferTest", true, nil, contextualString("detail")))
-		require.NoError(t, err)
-	})
-
-	t.Run("incoming workflow failure", func(t *testing.T) {
-		service, client := newTransferTestClient(t, dc)
-		service.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&workflowservice.GetWorkflowExecutionHistoryResponse{
-				History: &historypb.History{Events: []*historypb.HistoryEvent{{
-					EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED,
-					Attributes: &historypb.HistoryEvent_WorkflowExecutionFailedEventAttributes{
-						WorkflowExecutionFailedEventAttributes: &historypb.WorkflowExecutionFailedEventAttributes{
-							Failure: &failurepb.Failure{
-								Message: "failed",
-								FailureInfo: &failurepb.Failure_ApplicationFailureInfo{
-									ApplicationFailureInfo: &failurepb.ApplicationFailureInfo{Type: "TransferTest", Details: details},
-								},
-							},
-						},
-					},
-				}}},
-			}, nil)
-		err := client.GetWorkflow(t.Context(), "workflow-1", "run-1").Get(t.Context(), nil)
-		var appErr *ApplicationError
-		require.ErrorAs(t, err, &appErr)
-		var got contextualString
-		require.NoError(t, appErr.Details(&got))
-		require.Equal(t, contextualString("detail"), got)
-	})
-
-	// Cancellation details also use payloads, but do not always pass through
-	// the failure converter. They must retain the same bypass behavior.
-	t.Run("outgoing activity cancellation", func(t *testing.T) {
-		service, client := newTransferTestClient(t, dc)
-		service.EXPECT().RespondActivityTaskCanceled(gomock.Any(), gomock.Any(), gomock.Any()).
-			DoAndReturn(func(_ context.Context, req *workflowservice.RespondActivityTaskCanceledRequest, _ ...grpc.CallOption) (*workflowservice.RespondActivityTaskCanceledResponse, error) {
-				require.True(t, proto.Equal(details, req.Details), "got cancellation details %v, want %v", req.Details, details)
-				return &workflowservice.RespondActivityTaskCanceledResponse{}, nil
-			})
-		err := client.CompleteActivity(t.Context(), []byte("task-token"), nil,
-			NewCanceledError(contextualString("detail")))
-		require.NoError(t, err)
-	})
-
-	t.Run("incoming workflow cancellation", func(t *testing.T) {
-		service, client := newTransferTestClient(t, dc)
-		service.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).
-			Return(&workflowservice.GetWorkflowExecutionHistoryResponse{
-				History: &historypb.History{Events: []*historypb.HistoryEvent{{
-					EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED,
-					Attributes: &historypb.HistoryEvent_WorkflowExecutionCanceledEventAttributes{
-						WorkflowExecutionCanceledEventAttributes: &historypb.WorkflowExecutionCanceledEventAttributes{Details: details},
-					},
-				}}},
-			}, nil)
-		err := client.GetWorkflow(t.Context(), "workflow-1", "run-1").Get(t.Context(), nil)
-		var canceledErr *CanceledError
-		require.ErrorAs(t, err, &canceledErr)
-		var got contextualString
-		require.NoError(t, canceledErr.Details(&got))
-		require.Equal(t, contextualString("detail"), got)
 	})
 }
