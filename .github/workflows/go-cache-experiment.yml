@@ -8,7 +8,7 @@ permissions:
   actions: read
 
 env:
-  EXPERIMENT_PHASE: warm-1
+  EXPERIMENT_PHASE: warm-2
 
 jobs:
   unit:
