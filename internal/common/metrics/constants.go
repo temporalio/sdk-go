@@ -100,4 +100,5 @@ const (
 	FailureReasonNonDeterminismError = "NonDeterminismError"
 	FailureReasonPayloadsTooLarge    = "PayloadsTooLarge"
 	FailureReasonGrpcMessageTooLarge = "GrpcMessageTooLarge"
+	FailureReasonRequestTooLarge     = "RequestTooLarge"
 )

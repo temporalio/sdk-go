@@ -996,6 +996,13 @@ type (
 		// NOTE: Experimental
 		SdkVersion string
 
+		// DisableWorkerEnvironmentInfo disables reporting the runtime (Go version), detected hosting
+		// environments (Docker, Kubernetes, cloud platforms), and OS platform in worker heartbeats.
+		// This information is sent once per worker, with the first heartbeat accepted by the server.
+		//
+		// NOTE: Experimental
+		DisableWorkerEnvironmentInfo bool
+
 		// ExternalStorage configures external payload storage for this client.
 		// When set, payloads that exceed ExternalStorage.PayloadSizeThreshold
 		// are offloaded to an external store (e.g. S3, GCS) by the configured
@@ -1735,7 +1742,7 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 	}
 
 	if heartbeatInterval > 0 {
-		client.heartbeatManager = newHeartbeatManager(client, heartbeatInterval, client.logger)
+		client.heartbeatManager = newHeartbeatManager(client, heartbeatInterval, client.logger, options.DisableWorkerEnvironmentInfo)
 	}
 
 	// Create outbound interceptor by wrapping backwards through chain

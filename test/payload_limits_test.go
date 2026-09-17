@@ -35,6 +35,7 @@ type PayloadLimitsTestSuite struct {
 }
 
 func TestPayloadLimitsTestSuite(t *testing.T) {
+	skipOnCloud(t, cloudRequiresLocalServer, "the suite starts a private dev server with custom payload-limit dynamic configuration")
 	suite.Run(t, new(PayloadLimitsTestSuite))
 }
 
@@ -481,9 +482,11 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
 		},
 		workflow.RegisterOptions{Name: wfname},
 	)
+	workflowOptions := ts.startWorkflowOptions(ts.T().Name())
+	workflowOptions.WorkflowExecutionTimeout = time.Minute
 	run, err := ts.client.ExecuteWorkflow(
 		ctx,
-		ts.startWorkflowOptions(ts.T().Name()),
+		workflowOptions,
 		wfname,
 	)
 	ts.NoError(err)

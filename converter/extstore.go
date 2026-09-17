@@ -21,11 +21,17 @@ type StorageDriverWorkflowInfo = extstore.StorageDriverWorkflowInfo
 // NOTE: Experimental
 type StorageDriverActivityInfo = extstore.StorageDriverActivityInfo
 
-// StorageDriverStoreContext carries context passed to StorageDriver.Store and
-// StorageDriverSelector.SelectDriver operations.
+// StorageDriverStoreContext carries context passed to StorageDriver.Store
+// operations.
 //
 // NOTE: Experimental
 type StorageDriverStoreContext = extstore.StorageDriverStoreContext
+
+// StorageDriverSelectContext carries context passed to
+// StorageDriverSelector.SelectDriver operations.
+//
+// NOTE: Experimental
+type StorageDriverSelectContext = extstore.StorageDriverSelectContext
 
 // StorageDriverRetrieveContext carries context passed to StorageDriver.Retrieve
 // operations.

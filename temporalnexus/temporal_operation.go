@@ -422,10 +422,6 @@ func startActivity[R any](
 		}
 	}
 
-	if nexusOptions.RequestID != "" {
-		internal.SetRequestIDOnStartActivityOptions(&activityOpts, nexusOptions.RequestID)
-	}
-
 	links, err := convertNexusLinks(nexusOptions.Links, GetLogger(ctx))
 	if err != nil {
 		return TemporalOperationResult[R]{}, &nexus.HandlerError{
@@ -591,13 +587,15 @@ func (o *temporalOperation[I, O]) Start(
 	// Prevent the test env client from panicking.
 	ctx = context.WithValue(ctx, internal.IsWorkflowRunOpContextKey, true)
 
-	if _, ok := internal.NexusOperationContextFromGoContext(ctx); !ok {
+	nctx, ok := internal.NexusOperationContextFromGoContext(ctx)
+	if !ok {
 		return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeInternal, "internal error")
 	}
 
 	if options.RequestID == "" {
 		options.RequestID = uuid.NewString()
 	}
+	nctx.RequestID = options.RequestID
 
 	nc := NexusClient{
 		client:                GetClient(ctx),

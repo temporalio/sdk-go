@@ -19,17 +19,13 @@ to docs, or any other relevant information.
 # Changelog
 
 ## [Unreleased]
-- Add support for Workflow Queries as Nexus Operations.
 
 ### Added
 
-- Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
-  optional structured details for payload validation failures. Passing `nil` omits details.
-- Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
-  workflow-, activity-, and workflow-update-backed Nexus operations.
-- The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
-  metrics now carry a `failure_reason` attribute. Each is now split into one time series per
-  reason, which may affect existing dashboards.
+- `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
+  `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
+  set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
+  in `StartWorker` is undone at `StopWorker`.
 
 ### Changed
 
@@ -37,12 +33,81 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+### Fixed
+
+- Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
+  `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
+  `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
+
+### Security
+
+## [1.49.0] - 2026-09-14
+
+### Added
+
+- Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
+  a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
+  platforms), and the operating system and architecture. This is sent
+  once per worker with the first heartbeat accepted by the server and can be turned off with
+  `client.Options.DisableWorkerEnvironmentInfo`.
+- Standalone activity client calls now supply `converter.ActivitySerializationContext` when encoding
+  and decoding activity payloads: `ExecuteActivity` (input and static summary/details),
+  `ActivityHandle.Describe` (heartbeat details, last failure, and static summary/details), and
+  `ActivityHandle.Get` (result and failure).
+- Added `converter.NexusSerializationContext` support for Nexus callers and handlers. Callers use
+  it for inputs, results, and failures; handlers use it for inputs, synchronous results, and
+  failures. Asynchronous handler results and detached standalone handles are not yet supported.
+  Standalone `USE_EXISTING` handles use their start request's context.
+- Added `temporal.NewPayloadValidationError` to create non-retryable application errors with
+  optional structured details for payload validation failures. Passing `nil` omits details.
+- Added Go 1.27+ generic methods on the experimental `temporalnexus.NexusClient` for starting
+  workflow-, activity-, and workflow-update-backed Nexus operations.
+- Workflow task completions larger than the gRPC request size limit are now paginated automatically
+  when the namespace supports it. Paginated workflow task completions require Temporal Server 1.32.0
+  or later.
+- The `temporal_activity_execution_failed` and `temporal_local_activity_execution_failed` worker
+  metrics now carry a `failure_reason` attribute. Each is now split into one time series per
+  reason, which may affect existing dashboards.
+- Added support for Workflow Queries as Nexus Operations.
+
+#### Standalone Activity operator commands
+
+- `client.ActivityHandle` now supports operator commands for standalone activities: `Pause`,
+  `Unpause`, `UpdateOptions` and `RestoreOriginalOptions`.
+- Added opt-in payload fields to `client.DescribeActivityOptions`: `IncludeInput`,
+  `IncludeOutcome`, `IncludeHeartbeatDetails` and `IncludeLastFailure`.
+- Added missing description fields: `ExecutionTime` and `TotalHeartbeatCount`.
+
+### Changed
+
+- Standalone Activities are now generally available (GA). (Standalone Activities as Nexus operations
+  and Standalone Activities operator commands remain experimental. Operator commands are `pause`,
+  `unpause`, `updateOptions`, `restoreOriginal`.)
+
+### :boom: Breaking Changes
+
+- Description payload fields that previously came back unconditionally are now opt-in and must be
+  requested via `client.DescribeActivityOptions`: `GetHeartbeatDetails` (`IncludeHeartbeatDetails`)
+  and `GetLastFailure` (`IncludeLastFailure`).
+- Renamed the standalone activity `client.StartActivityOptions.Details` option to `StaticDetails`,
+  and `client.ActivityExecutionDescription.GetDetails` to `GetStaticDetails`.
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+- Experimental external storage: `converter.StorageDriverSelector.SelectDriver` now receives a
+  `converter.StorageDriverSelectContext` instead of a `converter.StorageDriverStoreContext`.
+  Update the parameter type; the new type carries the same `Context` and `Target` fields.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) instead of the workflow serialization context. Users of a context-aware
   `DataConverter` or `PayloadCodec` whose encoding depends on the serialization context (for example
   context-derived encryption keys or AAD) may fail to decode local activity results recorded in
   histories written by earlier SDK versions, both on replay and when continuing an open workflow.
+- Experimental `workflow.WorkflowRandomStream`'s `Uint64` now derives its value by calling `Read`
+  internally instead of the underlying generator's `Uint64` method directly, giving `Read`/`Uint64`
+  interleaving on the same stream a stable, well-defined byte ordering (previously undefined per the
+  standard library `ChaCha8.Read` doc). This only changes output for a `Uint64` call that immediately
+  follows a `Read` call whose length is not a multiple of 8 bytes on the same stream; pure `Uint64`
+  streams and 8-byte-aligned interleaving are unaffected. Open workflows created on SDK v1.48.0+ that
+  hit the affected pattern may compute a different value, and therefore may make a different decision,
+  on replay after upgrading.
 - Activity, local activity and child workflow serialization contexts are now applied to the
   worker-configured `DataConverter` and `FailureConverter` instead of the converter already carrying
   the current workflow context. A context-aware converter that composed contexts (deriving its state
@@ -52,9 +117,21 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Local activity scheduling no longer uses a fixed 100,000-entry task queue. The queue now grows
+  with demand, avoiding both the up-front allocation and a possible worker deadlock when the queue
+  and all local activity execution slots were full.
+- Workflow autoscaling now favors sticky polls when sticky work is backlogged, while allowing
+  normal polls to use spare slots once sticky reaches its autoscaling target.
+- The `PayloadDownloadDuration` and `PayloadUploadDuration` fields on the workflow task duration log
+  now report the wall-clock time external storage was in flight. Previously each batch's duration was
+  summed, over-reporting the time whenever storage operations ran concurrently.
+- Stand-alone activities started from a redelivered Nexus operation handler now reuse the Nexus
+  request ID, preventing duplicate Nexus links when an idempotent start resolves to the original run.
 - `temporal.IsWorkflowExecutionAlreadyStartedError` now detects wrapped
   `serviceerror.WorkflowExecutionAlreadyStarted` errors.
 - Malformed Nexus link errors now log the link URL and parse error under stable structured fields.
+- Legacy query task processing failures are now reported through `RespondQueryTaskCompleted` instead of
+  `RespondWorkflowTaskFailed`, allowing query callers to receive the failure instead of timing out.
 - Local activity results are now serialized with the local activity's `ActivitySerializationContext`
   (`IsLocal=true`) on both ends. Previously the result was encoded with the plain worker data converter
   but decoded through the workflow serialization context, so a context-aware `DataConverter` or
@@ -63,12 +140,21 @@ to docs, or any other relevant information.
 - Corrected stand-alone activity API documentation to use activity terminology, document that
   `GetActivityHandleOptions.RunID` may be empty to target the latest run, and describe
   `TerminateActivityOptions.Reason` as a termination reason.
+- Added disabled-by-default SDK flag 9 for deterministic workflow child-context cancellation.
+  Currently no behavior is changed by default, a future PR will flip this flag on by 
+  default.
 - `DefaultFailureConverter.FailureToError` now correctly decodes `LastHeartbeatDetails` for a
   reset-workflow failure. Previously the raw payload proto was treated as a single detail value,
   so calling `Details()` on the resulting `ApplicationError` returned `ErrTooManyArg` instead of
   decoding it.
-
-### Security
+- Added documentation that function literals (closures) shouldn't be registered as
+  workflow functions or activity functions without an alias.
+- Query results are now checked against the server's blob-size error limit after
+  external storage has had a chance to offload them, matching how update and activity
+  results of the same size already behaved. A query result large enough to be offloaded
+  to `client.Options.ExternalStorage` is now stored instead of failing locally with
+  `TMPRL1103`. As a consequence, a `StorageDriver` failure while storing an oversized
+  query result now fails the workflow task instead of returning a failed query result.
 
 ## [1.48.0] - 2026-08-18
 

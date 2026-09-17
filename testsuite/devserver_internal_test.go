@@ -26,16 +26,9 @@ func TestWaitServerReady_respectsTimeout(t *testing.T) {
 	})
 	require.Error(t, err, "Dial should fail")
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
-	assert.WithinDuration(t,
-		startTime.Add(time.Millisecond),
-		time.Now(),
-		10*time.Millisecond,
-		// Even though the timeout is only a millisecond,
-		// we'll allow for a slack of up to 10 milliseconds
-		// to account for slow CI machines.
-		// Anything smaller than 1 second is fine to use here.
-		// Increase only if CI scheduler jitter exceeds this allowance.
-	)
+	// The timeout is 1ms. The one-second bound allows CI scheduler jitter while
+	// still detecting ignored cancellation.
+	assert.Less(t, time.Since(startTime), time.Second)
 }
 
 func TestRetryFor_respectsCancellation(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"regexp"
 	"runtime"
 	"sort"
 	"strconv"
@@ -75,6 +76,14 @@ const (
 	unlimitedDeadlockDetectionTimeout = math.MaxInt64
 
 	testTagsContextKey = "temporal-testTags"
+
+	workflowLiteralRegistrationHint =
+		"It looks like you registered a function literal (closure) without giving it an alias. " +
+		"Register it with RegisterWorkflowWithOptions and set Name to a stable, unique name."
+
+	activityLiteralRegistrationHint =
+		"It looks like you registered a function literal (closure) without giving it an alias. " +
+		"Register it with RegisterActivityWithOptions and set Name to a stable, unique name."
 )
 
 type (
@@ -247,6 +256,9 @@ type (
 
 		// Set to true during start() when the namespace has the poller_autoscaling capability.
 		serverSupportsAutoscaling *atomic.Bool
+
+		// Resolved during start() from the namespace's pagination capability and size limit.
+		workflowTaskCompletionPagination *workflowTaskCompletionPaginationConfig
 
 		inboundPayloadVisitor PayloadVisitor
 
@@ -475,31 +487,43 @@ func (ww *workflowWorker) Stop() {
 // the given behavior. A simple-maximum behavior uses a single Mixed poller,
 // while an autoscaling behavior uses a NonSticky poller plus a Sticky poller
 // when the sticky cache is enabled.
-func buildWorkflowScalableTaskPollers(taskProcessor *workflowTaskProcessor, behavior PollerBehavior, params workerExecutionParameters) []scalableTaskPoller {
-	switch behavior.(type) {
+func buildWorkflowScalableTaskPollers(
+	taskProcessor *workflowTaskProcessor,
+	behavior PollerBehavior,
+	params workerExecutionParameters,
+	maxSlots int,
+) []scalableTaskPoller {
+	switch behavior := behavior.(type) {
 	case *pollerBehaviorAutoscaling:
-		scalableTaskPollers := []scalableTaskPoller{
-			newScalableTaskPoller(
-				taskProcessor.createPoller(NonSticky),
-				params.Logger,
-				behavior,
-				metrics.PollerTypeWorkflowTask,
-				params.serverSupportsAutoscaling,
-			),
+		normalScalablePoller := newScalableTaskPoller(
+			taskProcessor.createPoller(NonSticky),
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowTask,
+			params.serverSupportsAutoscaling,
+		)
+		if taskProcessor.stickyCacheSize <= 0 {
+			return []scalableTaskPoller{normalScalablePoller}
 		}
-		if taskProcessor.stickyCacheSize > 0 {
-			scalableTaskPollers = append(
-				scalableTaskPollers,
-				newScalableTaskPoller(
-					taskProcessor.createPoller(Sticky),
-					params.Logger,
-					behavior,
-					metrics.PollerTypeWorkflowStickyTask,
-					params.serverSupportsAutoscaling,
-				),
-			)
-		}
-		return scalableTaskPollers
+
+		balancer := newWorkflowAutoscalingBalancer(maxSlots, int64(behavior.initialNumberOfPollers))
+		stickyTaskPoller := taskProcessor.createPoller(Sticky)
+		stickyScalablePoller := newScalablePollerWithTarget(
+			stickyTaskPoller,
+			params.Logger,
+			behavior,
+			metrics.PollerTypeWorkflowStickyTask,
+			params.serverSupportsAutoscaling,
+			balancer.setStickyTarget,
+		)
+		normalScalablePoller.autoscalingBalancer = balancer
+		normalScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_NORMAL
+		stickyScalablePoller.autoscalingBalancer = balancer
+		stickyScalablePoller.pollKind = enumspb.TASK_QUEUE_KIND_STICKY
+		// Sticky poll responses send backlog hints to the shared balancer.
+		stickyTaskPoller.autoscalingBalancer = balancer
+
+		return []scalableTaskPoller{normalScalablePoller, stickyScalablePoller}
 	default: // *pollerBehaviorSimpleMaximum
 		return []scalableTaskPoller{
 			newScalableTaskPoller(
@@ -515,7 +539,12 @@ func buildWorkflowScalableTaskPollers(taskProcessor *workflowTaskProcessor, beha
 
 func (ww *workflowWorker) initializeTaskPollers(behavior PollerBehavior) {
 	ww.executionParameters.WorkflowTaskPollerBehavior = behavior
-	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(ww.taskProcessor, behavior, ww.executionParameters))
+	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(
+		ww.taskProcessor,
+		behavior,
+		ww.executionParameters,
+		ww.worker.slotSupplier.inner.MaxSlots(),
+	))
 }
 
 func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, env *registry, maxConcurrentSessionExecutionSize int) *sessionWorker {
@@ -750,7 +779,11 @@ func (r *registry) RegisterWorkflowWithOptions(
 
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.workflowFuncMap[registerName]; ok {
-			panic(fmt.Sprintf("workflow name \"%v\" is already registered", registerName))
+			message := fmt.Sprintf("workflow name \"%v\" is already registered", registerName)
+			if mightBeFunctionLiteral(wf) && len(alias) == 0 {
+				message += ". " + workflowLiteralRegistrationHint
+			}
+			panic(message)
 		}
 	}
 	r.workflowFuncMap[registerName] = wf
@@ -832,7 +865,11 @@ func (r *registry) RegisterActivityWithOptions(
 
 	if !options.DisableAlreadyRegisteredCheck {
 		if _, ok := r.activityFuncMap[registerName]; ok {
-			panic(fmt.Sprintf("activity type \"%v\" is already registered", registerName))
+			message := fmt.Sprintf("activity type \"%v\" is already registered", registerName)
+			if mightBeFunctionLiteral(af) && len(alias) == 0 {
+				message += ". " + activityLiteralRegistrationHint
+			}
+			panic(message)
 		}
 	}
 	r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: af}
@@ -1291,6 +1328,9 @@ type AggregatedWorker struct {
 	heartbeatMetrics             *heartbeatMetricsHandler
 	heartbeatCallback            func() *workerpb.WorkerHeartbeat
 	workerPollCompleteOnShutdown *atomic.Bool
+	// pendingEnvironment is attached to every heartbeat (periodic and shutdown) until the server
+	// accepts one, at which point heartbeatSuccess clears it.
+	pendingEnvironment atomic.Pointer[workerpb.EnvironmentInfo]
 }
 
 // RegisterWorkflow registers workflow implementation with the AggregatedWorker
@@ -1337,7 +1377,7 @@ func (aw *AggregatedWorker) RegisterDynamicWorkflow(w any, options DynamicRegist
 		panic("dynamic workflow does not have a versioning behavior")
 	}
 	if aw.pluginRegistryOptions.OnRegisterDynamicWorkflow != nil {
-		aw.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, DynamicRegisterWorkflowOptions{})
+		aw.pluginRegistryOptions.OnRegisterDynamicWorkflow(w, options)
 	}
 	aw.registry.RegisterDynamicWorkflow(w, options)
 }
@@ -1361,7 +1401,7 @@ func (aw *AggregatedWorker) RegisterActivityWithOptions(a any, options RegisterA
 // RegisterDynamicActivity registers the dynamic activity function with options.
 // Registering activities via a structure is not supported for dynamic activities.
 func (aw *AggregatedWorker) RegisterDynamicActivity(a any, options DynamicRegisterActivityOptions) {
-	if aw.pluginRegistryOptions.OnRegisterActivity != nil {
+	if aw.pluginRegistryOptions.OnRegisterDynamicActivity != nil {
 		aw.pluginRegistryOptions.OnRegisterDynamicActivity(a, options)
 	}
 	aw.registry.RegisterDynamicActivity(a, options)
@@ -1422,6 +1462,11 @@ func (aw *AggregatedWorker) start() error {
 
 	if nsData.capabilities.GetWorkerPollCompleteOnShutdown() {
 		aw.workerPollCompleteOnShutdown.Store(true)
+	}
+
+	if nsData.capabilities.GetWorkflowTaskCompletionPagination() {
+		aw.executionParams.workflowTaskCompletionPagination.enabled.Store(true)
+		aw.executionParams.workflowTaskCompletionPagination.sizeLimit.Store(nsData.limits.GetWorkflowTaskCompletionSizeLimitError())
 	}
 
 	if nsData.capabilities.GetPollerAutoscaling() {
@@ -1687,6 +1732,12 @@ func (aw *AggregatedWorker) unregisterHeartbeatWorker() {
 		return
 	}
 	aw.client.heartbeatManager.unregisterWorker(aw)
+}
+
+// heartbeatSuccess is invoked by the shared namespace heartbeat worker once the server has
+// accepted a heartbeat from this worker.
+func (aw *AggregatedWorker) heartbeatSuccess() {
+	aw.pendingEnvironment.Store(nil)
 }
 
 // sendShutdownWorkerRPC sends a ShutdownWorker RPC to notify the server that this worker is shutting down.
@@ -2432,14 +2483,15 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			maxConcurrent: options.MaxConcurrentEagerActivityExecutionSize,
 			maxPerTask:    *options.MaxEagerActivityReservationsPerWorkflowTask,
 		}),
-		capabilities:                  &capabilities,
-		pollTimeTracker:               &pollTimeTracker{},
-		workerInstanceKey:             workerInstanceKey,
-		workerControlTaskQueue:        workerControlTaskQueue(client.namespace, client.workerGroupingKey),
-		activityCancellationCallbacks: activityCancellationCallbacks,
-		workerPollCompleteOnShutdown:  workerPollCompleteOnShutdown,
-		serverSupportsAutoscaling:     &atomic.Bool{},
-		inboundPayloadVisitor:         extstore.NewExternalRetrievalVisitor(client.storageParams),
+		capabilities:                     &capabilities,
+		pollTimeTracker:                  &pollTimeTracker{},
+		workerInstanceKey:                workerInstanceKey,
+		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
+		activityCancellationCallbacks:    activityCancellationCallbacks,
+		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
+		serverSupportsAutoscaling:        &atomic.Bool{},
+		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
+		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(client.storageParams),
 		outboundPayloadVisitor: newCompositePayloadVisitor(
 			extstore.NewExternalStorageVisitor(client.storageParams),
 			payloadLimitVisitor,
@@ -2632,6 +2684,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 				HeartbeatTime:     timestamppb.New(heartbeatTime),
 				Plugins:           pluginInfos,
 				Drivers:           driverInfos,
+				Environment:       aw.pendingEnvironment.Load(),
 			}
 			if !previousHeartbeatTime.IsZero() {
 				hb.ElapsedSinceLastHeartbeat = durationpb.New(heartbeatTime.Sub(previousHeartbeatTime))
@@ -2659,6 +2712,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		heartbeatMetrics:             heartbeatMetrics,
 		heartbeatCallback:            heartbeatCallback,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+	}
+	if client.heartbeatManager != nil {
+		aw.pendingEnvironment.Store(client.heartbeatManager.environmentInfo)
 	}
 
 	// Set memoized start as a once-value that invokes plugins first
@@ -2722,6 +2778,17 @@ func isValidResultType(inType reflect.Type) bool {
 func isError(inType reflect.Type) bool {
 	errorElem := reflect.TypeFor[error]()
 	return inType != nil && inType.Implements(errorElem)
+}
+
+
+// mightBeFunctionLiteral returns true if the given function looks like a function literal.
+// BEWARE: False positives are possible! Normal function declarations might look like literals.
+// BEWARE: False negatives are possible! Future versions of Go may change the naming scheme.
+func mightBeFunctionLiteral(fn any) bool {
+	// Matches suffixes of the form funcN or funcN.M for some numbers N and M.
+	var functionLiteralNamePattern = regexp.MustCompile(`func\d+(?:\.\d+)?$`)
+	fullName := runtime.FuncForPC(reflect.ValueOf(fn).Pointer()).Name()
+	return functionLiteralNamePattern.MatchString(fullName)
 }
 
 func getFunctionName(i any) (name string, isMethod bool) {

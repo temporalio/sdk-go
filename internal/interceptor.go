@@ -427,35 +427,39 @@ type ClientOutboundInterceptor interface {
 
 	// ExecuteActivity intercepts client.Client.ExecuteActivity.
 	// interceptor.Header will return a non-nil map for this context.
-	//
-	// NOTE: Experimental
 	ExecuteActivity(context.Context, *ClientExecuteActivityInput) (ClientActivityHandle, error)
 
 	// GetActivityHandle intercepts client.Client.GetActivityHandle.
 	// While the interceptor is allowed to make network calls here, note that the base implementation does not - it only constructs
 	// the handle which is then used to make network calls. There is no context object provided and errors cannot be returned.
-	//
-	// NOTE: Experimental
 	GetActivityHandle(*ClientGetActivityHandleInput) ClientActivityHandle
 
 	// CancelActivity intercepts client.ActivityHandle.Cancel.
-	//
-	// NOTE: Experimental
 	CancelActivity(context.Context, *ClientCancelActivityInput) error
 
 	// TerminateActivity intercepts client.ActivityHandle.Terminate.
-	//
-	// NOTE: Experimental
 	TerminateActivity(context.Context, *ClientTerminateActivityInput) error
 
-	// DescribeActivity intercepts client.ActivityHandle.Describe.
+	// PauseActivity intercepts client.ActivityHandle.Pause.
 	//
 	// NOTE: Experimental
+	PauseActivity(context.Context, *ClientPauseActivityInput) error
+
+	// UnpauseActivity intercepts client.ActivityHandle.Unpause.
+	//
+	// NOTE: Experimental
+	UnpauseActivity(context.Context, *ClientUnpauseActivityInput) error
+
+	// UpdateActivityOptions intercepts client.ActivityHandle.UpdateOptions and
+	// client.ActivityHandle.RestoreOriginalOptions.
+	//
+	// NOTE: Experimental
+	UpdateActivityOptions(context.Context, *ClientUpdateActivityOptionsInput) (*ClientUpdateActivityOptionsOutput, error)
+
+	// DescribeActivity intercepts client.ActivityHandle.Describe.
 	DescribeActivity(context.Context, *ClientDescribeActivityInput) (*ClientDescribeActivityOutput, error)
 
 	// PollActivityResult intercepts client.ActivityHandle.Get.
-	//
-	// NOTE: Experimental
 	PollActivityResult(context.Context, *ClientPollActivityResultInput) (*ClientPollActivityResultOutput, error)
 
 	// ExecuteNexusOperation intercepts NexusClient.ExecuteOperation.
@@ -676,8 +680,6 @@ type ClientDescribeWorkflowOutput struct {
 // ClientExecuteActivityInput is the input to
 // ClientOutboundInterceptor.ExecuteActivity.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientExecuteActivityInput]
 type ClientExecuteActivityInput struct {
 	// Options are the options for starting the activity.
@@ -691,8 +693,6 @@ type ClientExecuteActivityInput struct {
 // ClientGetActivityHandleInput is the input to
 // ClientOutboundInterceptor.GetActivityHandle.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientGetActivityHandleInput]
 type ClientGetActivityHandleInput struct {
 	// ActivityID is the ID of the activity.
@@ -703,8 +703,6 @@ type ClientGetActivityHandleInput struct {
 
 // ClientCancelActivityInput is the input to
 // ClientOutboundInterceptor.CancelActivity.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientCancelActivityInput]
 type ClientCancelActivityInput struct {
@@ -719,8 +717,6 @@ type ClientCancelActivityInput struct {
 // ClientTerminateActivityInput is the input to
 // ClientOutboundInterceptor.TerminateActivity.
 //
-// NOTE: Experimental
-//
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientTerminateActivityInput]
 type ClientTerminateActivityInput struct {
 	// ActivityID is the ID of the activity.
@@ -731,10 +727,67 @@ type ClientTerminateActivityInput struct {
 	Reason string
 }
 
-// ClientDescribeActivityInput is the input to
-// ClientOutboundInterceptor.DescribeActivity.
+// ClientPauseActivityInput is the input to
+// ClientOutboundInterceptor.PauseActivity.
 //
 // NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientPauseActivityInput]
+type ClientPauseActivityInput struct {
+	// ActivityID is the ID of the activity.
+	ActivityID string
+	// RunID is the run ID of the activity to pause.
+	RunID string
+	// Options are the options for pausing the activity.
+	Options *ClientPauseActivityOptions
+}
+
+// ClientUnpauseActivityInput is the input to
+// ClientOutboundInterceptor.UnpauseActivity.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUnpauseActivityInput]
+type ClientUnpauseActivityInput struct {
+	// ActivityID is the ID of the activity.
+	ActivityID string
+	// RunID is the run ID of the activity to unpause.
+	RunID string
+	// Options are the options for unpausing the activity.
+	Options *ClientUnpauseActivityOptions
+}
+
+// ClientUpdateActivityOptionsInput is the input to
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateActivityOptionsInput]
+type ClientUpdateActivityOptionsInput struct {
+	// ActivityID is the ID of the activity.
+	ActivityID string
+	// RunID is the run ID of the activity to update.
+	RunID string
+	// Update describes the option changes to apply. Nil when RestoreOriginal is set.
+	Update *ClientActivityOptionsUpdate
+	// RestoreOriginal reverts every option to the value the activity was scheduled with. The
+	// server does not allow it to be combined with any entry in Updates.
+	RestoreOriginal bool
+}
+
+// ClientUpdateActivityOptionsOutput is the output of
+// ClientOutboundInterceptor.UpdateActivityOptions.
+//
+// NOTE: Experimental
+//
+// Exposed as: [go.temporal.io/sdk/interceptor.ClientUpdateActivityOptionsOutput]
+type ClientUpdateActivityOptionsOutput struct {
+	// Options are the activity's options after the update.
+	Options *ClientActivityExecutionOptions
+}
+
+// ClientDescribeActivityInput is the input to
+// ClientOutboundInterceptor.DescribeActivity.
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeActivityInput]
 type ClientDescribeActivityInput struct {
@@ -742,12 +795,12 @@ type ClientDescribeActivityInput struct {
 	ActivityID string
 	// RunID is the run ID of the activity to describe.
 	RunID string
+	// Options are the options for describing the activity.
+	Options *ClientDescribeActivityOptions
 }
 
 // ClientDescribeActivityOutput is the output of
 // ClientOutboundInterceptor.DescribeActivity.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientDescribeActivityOutput]
 type ClientDescribeActivityOutput struct {
@@ -757,8 +810,6 @@ type ClientDescribeActivityOutput struct {
 
 // ClientPollActivityResultInput is the input to
 // ClientOutboundInterceptor.PollActivityResult.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientPollActivityResultInput]
 type ClientPollActivityResultInput struct {
@@ -770,8 +821,6 @@ type ClientPollActivityResultInput struct {
 
 // ClientPollActivityResultOutput is the output of
 // ClientOutboundInterceptor.PollActivityResult.
-//
-// NOTE: Experimental
 //
 // Exposed as: [go.temporal.io/sdk/interceptor.ClientPollActivityResultOutput]
 type ClientPollActivityResultOutput struct {
@@ -881,6 +930,8 @@ type ClientPollNexusOperationResultInput struct {
 	OperationID string
 	// RunID is the run ID of the Nexus operation to poll results for.
 	RunID string
+	// nexusSerializationContext is set by handles returned from ExecuteOperation.
+	nexusSerializationContext *converter.NexusSerializationContext
 }
 
 // ClientPollNexusOperationResultOutput is the output of

@@ -168,15 +168,27 @@ func TestStore_SinglePayload(t *testing.T) {
 
 	assert.Equal(t, "test-bucket", claims[0].ClaimData["bucket"])
 	assert.Equal(t, "sha256", claims[0].ClaimData["hash_algorithm"])
-	assert.NotEmpty(t, claims[0].ClaimData["key"])
+	assert.NotEmpty(t, claims[0].ClaimData["object_name"])
 	assert.NotEmpty(t, claims[0].ClaimData["hash_value"])
 
-	// Verify key format.
+	// Verify object name format.
 	data, _ := proto.Marshal(p)
 	h := sha256.Sum256(data)
 	expectedDigest := hex.EncodeToString(h[:])
-	assert.Equal(t, "v0/d/sha256/"+expectedDigest, claims[0].ClaimData["key"])
+	assert.Equal(t, "v0/d/sha256/"+expectedDigest, claims[0].ClaimData["object_name"])
 	assert.Equal(t, expectedDigest, claims[0].ClaimData["hash_value"])
+}
+
+// Claims must stay readable by v0.1.0, which looks for the object name under
+// "key".
+func TestStore_WritesLegacyObjectNameClaim(t *testing.T) {
+	d := newDriver(t, newMemClient())
+
+	claims, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("hello")})
+	require.NoError(t, err)
+	require.Len(t, claims, 1)
+
+	assert.Equal(t, claims[0].ClaimData[claimKeyObjectName], claims[0].ClaimData[claimKeyObjectNameLegacy])
 }
 
 func TestStore_EmptyPayloads(t *testing.T) {
@@ -217,12 +229,12 @@ func TestStore_MultiplePayloads(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claims, 3)
 
-	// Each should have unique keys.
-	keys := map[string]bool{}
+	// Each should have unique object names.
+	names := map[string]bool{}
 	for _, c := range claims {
-		keys[c.ClaimData["key"]] = true
+		names[c.ClaimData[claimKeyObjectName]] = true
 	}
-	assert.Len(t, keys, 3)
+	assert.Len(t, names, 3)
 }
 
 func TestStore_MaxPayloadSizeExceeded(t *testing.T) {
@@ -305,7 +317,7 @@ func TestStore_PutObjectError(t *testing.T) {
 	d := newDriver(t, ec)
 
 	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
-	assert.ErrorContains(t, err, "upload failed [bucket=test-bucket, key=")
+	assert.ErrorContains(t, err, "upload failed [bucket=test-bucket, object_name=")
 	assert.ErrorContains(t, err, ", client_project_id=my-project]: access denied")
 }
 
@@ -317,7 +329,7 @@ func TestStore_ObjectExistsError(t *testing.T) {
 	d := newDriver(t, ec)
 
 	_, err := d.Store(storeCtx(), []*commonpb.Payload{testPayload("x")})
-	assert.ErrorContains(t, err, "existence check failed [bucket=test-bucket, key=")
+	assert.ErrorContains(t, err, "existence check failed [bucket=test-bucket, object_name=")
 	assert.ErrorContains(t, err, ", client_project_id=my-project]: network timeout")
 }
 
@@ -372,7 +384,7 @@ func TestRetrieve_HashVerificationFailure(t *testing.T) {
 	}
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
-	assert.ErrorContains(t, err, "integrity check failed [bucket=test-bucket, key=")
+	assert.ErrorContains(t, err, "integrity check failed [bucket=test-bucket, object_name=")
 }
 
 func TestRetrieve_UnsupportedHashAlgorithm(t *testing.T) {
@@ -389,39 +401,62 @@ func TestRetrieve_UnsupportedHashAlgorithm(t *testing.T) {
 	assert.EqualError(t, err, `unsupported hash algorithm "md5"`)
 }
 
-func TestRetrieve_MissingKey(t *testing.T) {
+func TestRetrieve_ObjectNotFound(t *testing.T) {
 	mc := newMemClient()
 	d := newDriver(t, mc)
 
 	claims := []converter.StorageDriverClaim{{
 		ClaimData: map[string]string{
 			"bucket":         "test-bucket",
-			"key":            "v0/d/sha256/nonexistent",
+			"object_name":    "v0/d/sha256/nonexistent",
 			"hash_algorithm": "sha256",
 			"hash_value":     "abc",
 		},
 	}}
 
 	_, err := d.Retrieve(retrieveCtx(), claims)
-	assert.EqualError(t, err, "download failed [bucket=test-bucket, key=v0/d/sha256/nonexistent, client_project_id=my-project]: not found: test-bucket/v0/d/sha256/nonexistent")
+	assert.EqualError(t, err, "download failed [bucket=test-bucket, object_name=v0/d/sha256/nonexistent, client_project_id=my-project]: not found: test-bucket/v0/d/sha256/nonexistent")
 }
 
 func TestRetrieve_ClaimMissingBucket(t *testing.T) {
 	d := newDriver(t, newMemClient())
 	claims := []converter.StorageDriverClaim{{
-		ClaimData: map[string]string{claimKeyKey: "v0/d/sha256/abc"},
+		ClaimData: map[string]string{claimKeyObjectName: "v0/d/sha256/abc"},
 	}}
 	_, err := d.Retrieve(retrieveCtx(), claims)
 	assert.EqualError(t, err, `claim missing field "bucket"`)
 }
 
-func TestRetrieve_ClaimMissingKey(t *testing.T) {
+func TestRetrieve_ClaimMissingObjectName(t *testing.T) {
 	d := newDriver(t, newMemClient())
 	claims := []converter.StorageDriverClaim{{
 		ClaimData: map[string]string{claimKeyBucket: "test-bucket"},
 	}}
 	_, err := d.Retrieve(retrieveCtx(), claims)
-	assert.EqualError(t, err, `claim missing field "key"`)
+	assert.EqualError(t, err, `claim missing field "object_name"`)
+}
+
+// Claims written by v0.1.0 carry the object name under "key".
+func TestRetrieve_LegacyObjectNameClaim(t *testing.T) {
+	mc := newMemClient()
+	d := newDriver(t, mc)
+	original := testPayload("stored by v0.1.0")
+
+	claims, err := d.Store(storeCtx(), []*commonpb.Payload{original})
+	require.NoError(t, err)
+	require.Len(t, claims, 1)
+
+	legacy := converter.StorageDriverClaim{ClaimData: map[string]string{
+		claimKeyBucket:           claims[0].ClaimData[claimKeyBucket],
+		claimKeyObjectNameLegacy: claims[0].ClaimData[claimKeyObjectName],
+		claimKeyHashAlgorithm:    claims[0].ClaimData[claimKeyHashAlgorithm],
+		claimKeyHashValue:        claims[0].ClaimData[claimKeyHashValue],
+	}}
+
+	restored, err := d.Retrieve(retrieveCtx(), []converter.StorageDriverClaim{legacy})
+	require.NoError(t, err)
+	require.Len(t, restored, 1)
+	assert.True(t, proto.Equal(original, restored[0]))
 }
 
 func TestRetrieve_NilClaimData(t *testing.T) {
@@ -441,7 +476,7 @@ func TestRetrieve_GetObjectError(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = d.Retrieve(retrieveCtx(), claims)
-	assert.ErrorContains(t, err, "download failed [bucket=test-bucket, key=")
+	assert.ErrorContains(t, err, "download failed [bucket=test-bucket, object_name=")
 	assert.ErrorContains(t, err, ", client_project_id=my-project]: throttled")
 }
 
@@ -469,13 +504,13 @@ func TestRetrieve_ClaimMissingHashValue(t *testing.T) {
 	assert.EqualError(t, err, `claim missing field "hash_value"`)
 }
 
-// --- Key generation tests ---
+// --- Object name generation tests ---
 
-func TestObjectKey_NoTarget(t *testing.T) {
-	assert.Equal(t, "v0/d/sha256/abc123", objectKey(nil, "abc123"))
+func TestObjectName_NoTarget(t *testing.T) {
+	assert.Equal(t, "v0/d/sha256/abc123", objectName(nil, "abc123"))
 }
 
-func TestObjectKey_WorkflowInfo(t *testing.T) {
+func TestObjectName_WorkflowInfo(t *testing.T) {
 	target := converter.StorageDriverWorkflowInfo{
 		Namespace:    "default",
 		WorkflowType: "MyWorkflow",
@@ -484,11 +519,11 @@ func TestObjectKey_WorkflowInfo(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/default/wt/MyWorkflow/wi/wf-123/ri/run-456/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectName(target, "abc123"),
 	)
 }
 
-func TestObjectKey_ActivityInfo(t *testing.T) {
+func TestObjectName_ActivityInfo(t *testing.T) {
 	target := converter.StorageDriverActivityInfo{
 		Namespace:    "default",
 		ActivityType: "MyActivity",
@@ -497,11 +532,11 @@ func TestObjectKey_ActivityInfo(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/default/at/MyActivity/ai/act-789/ri/run-abc/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectName(target, "abc123"),
 	)
 }
 
-func TestObjectKey_WorkflowInfo_EmptyFields(t *testing.T) {
+func TestObjectName_WorkflowInfo_EmptyFields(t *testing.T) {
 	// Empty strings should fall back to "null" in each segment.
 	target := converter.StorageDriverWorkflowInfo{
 		Namespace: "my-ns",
@@ -509,22 +544,22 @@ func TestObjectKey_WorkflowInfo_EmptyFields(t *testing.T) {
 	}
 	assert.Equal(t,
 		"v0/ns/my-ns/wt/null/wi/null/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectName(target, "abc123"),
 	)
 }
 
-func TestObjectKey_ActivityInfo_EmptyFields(t *testing.T) {
+func TestObjectName_ActivityInfo_EmptyFields(t *testing.T) {
 	target := converter.StorageDriverActivityInfo{
 		Namespace: "my-ns",
 		// ActivityType, ActivityID, RunID intentionally empty
 	}
 	assert.Equal(t,
 		"v0/ns/my-ns/at/null/ai/null/ri/null/d/sha256/abc123",
-		objectKey(target, "abc123"),
+		objectName(target, "abc123"),
 	)
 }
 
-func TestObjectKey_WorkflowInfo_SpecialChars(t *testing.T) {
+func TestObjectName_WorkflowInfo_SpecialChars(t *testing.T) {
 	// GCS encoding: / and % are encoded, but spaces, +, = are left intact.
 	target := converter.StorageDriverWorkflowInfo{
 		Namespace:    "my namespace",
@@ -532,16 +567,16 @@ func TestObjectKey_WorkflowInfo_SpecialChars(t *testing.T) {
 		WorkflowID:   "wf id+1",
 		RunID:        "run=abc",
 	}
-	key := objectKey(target, "abc123")
+	name := objectName(target, "abc123")
 	assert.Equal(t,
 		"v0/ns/my namespace/wt/my%2Fworkflow/wi/wf id+1/ri/run=abc/d/sha256/abc123",
-		key,
+		name,
 	)
 }
 
-func TestObjectKey_LongKeyFallback(t *testing.T) {
-	// When the generated key exceeds 1024 bytes, objectKey falls back to the
-	// generic digest-only path.
+func TestObjectName_LongNameFallback(t *testing.T) {
+	// When the generated object name exceeds 1024 bytes, objectName falls back
+	// to the generic digest-only path.
 	longID := strings.Repeat("x", 300)
 	target := converter.StorageDriverWorkflowInfo{
 		Namespace:    longID,
@@ -549,8 +584,8 @@ func TestObjectKey_LongKeyFallback(t *testing.T) {
 		WorkflowID:   longID,
 		RunID:        longID,
 	}
-	key := objectKey(target, "abc123")
-	assert.Equal(t, "v0/ns/"+longID+"/d/sha256/abc123", key)
+	name := objectName(target, "abc123")
+	assert.Equal(t, "v0/ns/"+longID+"/d/sha256/abc123", name)
 }
 
 func TestEncodeObjectNameSegment_Empty(t *testing.T) {
@@ -631,8 +666,8 @@ func TestStore_WithWorkflowTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claims, 1)
 
-	key := claims[0].ClaimData["key"]
-	assert.Contains(t, key, "v0/ns/default/wt/MyWorkflow/wi/wf-123/ri/run-456/d/sha256/")
+	name := claims[0].ClaimData[claimKeyObjectName]
+	assert.Contains(t, name, "v0/ns/default/wt/MyWorkflow/wi/wf-123/ri/run-456/d/sha256/")
 }
 
 func TestStore_WithActivityTarget(t *testing.T) {
@@ -650,8 +685,8 @@ func TestStore_WithActivityTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, claims, 1)
 
-	key := claims[0].ClaimData["key"]
-	assert.Contains(t, key, "v0/ns/default/at/MyActivity/ai/act-789/ri/run-abc/d/sha256/")
+	name := claims[0].ClaimData[claimKeyObjectName]
+	assert.Contains(t, name, "v0/ns/default/at/MyActivity/ai/act-789/ri/run-abc/d/sha256/")
 }
 
 func TestStore_RoundTrip_WithWorkflowTarget(t *testing.T) {
@@ -674,8 +709,9 @@ func TestStore_RoundTrip_WithWorkflowTarget(t *testing.T) {
 	assert.True(t, proto.Equal(original, restored[0]))
 }
 
-func TestStore_DifferentTargets_SamePayload_DifferentKeys(t *testing.T) {
-	// The same payload stored under different targets produces different keys.
+func TestStore_DifferentTargets_SamePayload_DifferentObjectNames(t *testing.T) {
+	// The same payload stored under different targets produces different object
+	// names.
 	mc := newMemClient()
 	d := newDriver(t, mc)
 	p := testPayload("shared payload")
@@ -689,7 +725,7 @@ func TestStore_DifferentTargets_SamePayload_DifferentKeys(t *testing.T) {
 	actClaims, err := d.Store(storeCtxWithTarget(actTarget), []*commonpb.Payload{p})
 	require.NoError(t, err)
 
-	assert.NotEqual(t, wfClaims[0].ClaimData["key"], actClaims[0].ClaimData["key"])
+	assert.NotEqual(t, wfClaims[0].ClaimData[claimKeyObjectName], actClaims[0].ClaimData[claimKeyObjectName])
 }
 
 func TestDescribeClient_EmptyDescribe(t *testing.T) {

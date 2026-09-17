@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	commonpb "go.temporal.io/api/common/v1"
+	failurepb "go.temporal.io/api/failure/v1"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -21,6 +22,8 @@ func (c *signingCodec) WithSerializationContext(ctx SerializationContext) Payloa
 		return &signingCodec{signature: sc.WorkflowID}
 	case ActivitySerializationContext:
 		return &signingCodec{signature: sc.WorkflowID + ":" + sc.ActivityType}
+	case NexusSerializationContext:
+		return &signingCodec{signature: sc.Endpoint + ":" + sc.Service + ":" + sc.Operation}
 	}
 	return c
 }
@@ -203,6 +206,61 @@ func TestCodecDataConverter_SigningMismatchFailsDecode_ActivityContext(t *testin
 	err = wrapped2.FromPayload(payload, &result)
 	require.Error(err)
 	require.Contains(err.Error(), "signature mismatch")
+}
+
+func TestCodecDataConverter_NexusSerializationContext(t *testing.T) {
+	require := require.New(t)
+	codec := &signingCodec{}
+	dc := NewCodecDataConverter(GetDefaultDataConverter(), codec)
+	nexusCtx := NexusSerializationContext{
+		Endpoint:  "payments-endpoint",
+		Service:   "payments-service",
+		Operation: "charge-card",
+	}
+
+	wrapped := WithDataConverterSerializationContext(dc, nexusCtx)
+	payload, err := wrapped.ToPayload("input")
+	require.NoError(err)
+	require.Equal("payments-endpoint:payments-service:charge-card", string(payload.Metadata["ctx-signature"]))
+
+	var result string
+	require.NoError(wrapped.FromPayload(payload, &result))
+	require.Equal("input", result)
+}
+
+type contextCapturingFailureConverter struct {
+	contexts *[]SerializationContext
+}
+
+func (c *contextCapturingFailureConverter) ErrorToFailure(error) *failurepb.Failure {
+	return nil
+}
+
+func (c *contextCapturingFailureConverter) FailureToError(*failurepb.Failure) error {
+	return nil
+}
+
+func (c *contextCapturingFailureConverter) WithSerializationContext(ctx SerializationContext) FailureConverter {
+	*c.contexts = append(*c.contexts, ctx)
+	return &contextCapturingFailureConverter{contexts: c.contexts}
+}
+
+func TestNexusSerializationContextReachesDataAndFailureConverters(t *testing.T) {
+	nexusCtx := NexusSerializationContext{
+		Endpoint:  "endpoint",
+		Service:   "service",
+		Operation: "operation",
+	}
+
+	dc := newCapturingDC()
+	WithDataConverterSerializationContext(dc, nexusCtx)
+	require.Equal(t, []SerializationContext{nexusCtx}, dc.getCapturedContexts())
+
+	contexts := make([]SerializationContext, 0)
+	fc := &contextCapturingFailureConverter{contexts: &contexts}
+	result := WithFailureConverterSerializationContext(fc, nexusCtx)
+	require.NotSame(t, fc, result)
+	require.Equal(t, []SerializationContext{nexusCtx}, contexts)
 }
 
 // nilReturningDC implements DataConverterWithSerializationContext but returns nil.

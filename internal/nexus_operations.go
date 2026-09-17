@@ -37,13 +37,15 @@ type NexusOperationInfo struct {
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
-	client         Client
-	Namespace      string
-	TaskQueue      string
-	Endpoint       string
-	metricsHandler metrics.Handler
-	log            log.Logger
-	registry       *registry
+	client                    Client
+	RequestID                 string
+	Namespace                 string
+	TaskQueue                 string
+	Endpoint                  string
+	nexusSerializationContext converter.NexusSerializationContext
+	metricsHandler            metrics.Handler
+	log                       log.Logger
+	registry                  *registry
 
 	// responseLinksMu guards responseLinks. A Nexus operation handler is invoked from a single
 	// goroutine, but handlers are free to issue RPCs from other goroutines they spawn, so the
@@ -935,6 +937,22 @@ func (h *testEnvActivityHandleForNexusOperations) Describe(ctx context.Context, 
 }
 
 func (h *testEnvActivityHandleForNexusOperations) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Pause(ctx context.Context, options ClientPauseActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) UpdateOptions(ctx context.Context, update ClientActivityOptionsUpdate) (*ClientActivityExecutionOptions, error) {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) RestoreOriginalOptions(ctx context.Context) (*ClientActivityExecutionOptions, error) {
 	panic("not implemented in the test environment")
 }
 
