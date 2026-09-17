@@ -234,7 +234,7 @@ func (dc *transferAwareDataConverter) toTransferValue(tc TransferConverter, valu
 	if dc.workflowContext != nil {
 		return tc.ToTransferValueInWorkflow(dc.workflowContext, value)
 	}
-	return tc.ToTransferValue(dc.goContext(), value)
+	return tc.ToTransferValue(dc.context, value)
 }
 
 // fromTransferValue is the [transferAwareDataConverter.toTransferValue] counterpart.
@@ -242,16 +242,7 @@ func (dc *transferAwareDataConverter) fromTransferValue(tc TransferConverter, tr
 	if dc.workflowContext != nil {
 		return tc.FromTransferValueInWorkflow(dc.workflowContext, transferValuePtr, valuePtr)
 	}
-	return tc.FromTransferValue(dc.goContext(), transferValuePtr, valuePtr)
-}
-
-// goContext returns the Go context to convert under. Transfer converters never receive
-// a nil context, so that they can read values from it without checking first.
-func (dc *transferAwareDataConverter) goContext() context.Context {
-	if dc.context == nil {
-		return context.Background()
-	}
-	return dc.context
+	return tc.FromTransferValue(dc.context, transferValuePtr, valuePtr)
 }
 
 func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
@@ -325,6 +316,7 @@ func (dc *transferAwareDataConverter) WithSerializationContext(ctx converter.Ser
 func (dc *transferAwareDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
 	result := *dc
 	result.parent = WithWorkflowContext(ctx, dc.parent)
+	result.context = nil
 	result.workflowContext = ctx
 	return &result
 }
@@ -333,5 +325,6 @@ func (dc *transferAwareDataConverter) WithContext(ctx context.Context) converter
 	result := *dc
 	result.parent = WithContext(ctx, dc.parent)
 	result.context = ctx
+	result.workflowContext = nil
 	return &result
 }
