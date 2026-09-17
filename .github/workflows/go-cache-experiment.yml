@@ -7,6 +7,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  EXPERIMENT_PHASE: warm-1
+
 jobs:
   unit:
     if: github.head_ref == 'codex/ci-cache-experiment'
