@@ -67,8 +67,6 @@ type (
 		IsLocalActivity bool
 		// Priority settings that control relative ordering of task processing when activity tasks are backed up in a queue.
 		// If no priority is set, the default value is the zero value.
-		//
-		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 		// Retry policy for the activity. Note that the server may have set a different policy than the one provided
 		// when scheduling the activity. If the value is nil, it means the server didn't send information about
@@ -183,8 +181,6 @@ type (
 
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		//
-		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 	}
 
