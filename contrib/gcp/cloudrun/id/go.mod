@@ -3,7 +3,7 @@ module go.temporal.io/sdk/contrib/gcp/cloudrun/id
 go 1.26.0
 
 require (
-	github.com/stretchr/testify v1.11.1
+	github.com/stretchr/testify v1.10.0
 	go.temporal.io/sdk v1.43.1
 )
 
