@@ -3,7 +3,7 @@ module go.temporal.io/sdk/contrib/gcp/gcsdriver
 go 1.26.0
 
 require (
-	github.com/stretchr/testify v1.10.0
+	github.com/stretchr/testify v1.11.1
 	go.temporal.io/api v1.63.5
 	go.temporal.io/sdk v1.43.1
 	golang.org/x/sync v0.22.0
