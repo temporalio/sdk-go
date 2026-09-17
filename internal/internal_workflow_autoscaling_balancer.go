@@ -20,8 +20,11 @@ const (
 // queue kinds and groups. Other grouped polls use pollerGroupManager.
 type workflowAutoscalingBalancer struct {
 	maxSlots int
-	// Aggregate reservations include removed incarnations until their leases end.
-	reservations workflowReservations
+	// Reservations include polls waiting for slots. A poll remains counted until
+	// its lease ends, even if its group disappears from the latest snapshot.
+	reservations workflowKindCounts
+	// Active polls have acquired slots and count toward queue-kind fairness.
+	active workflowKindCounts
 	// ungroupedStickyBacklog holds the backlog hint when no groups are known.
 	ungroupedStickyBacklog int64
 	groupStore             *pollerGroupSnapshotStore
@@ -35,13 +38,21 @@ type workflowAutoscalingBalancer struct {
 
 type workflowGroupState struct {
 	key           pollerGroupKey
-	reservations  workflowReservations
+	reservations  workflowKindCounts
 	stickyBacklog int64
 }
 
-type workflowReservations struct {
+// workflowKindCounts stores separate normal and sticky totals. The balancer
+// uses it both for reservation and active-poll accounting.
+type workflowKindCounts struct {
 	normal int
 	sticky int
+}
+
+type workflowGroupCandidates struct {
+	groups map[string]pollerGroupSnapshotEntry
+	// coverageRequired means this poll kind must restore minimum per-group coverage.
+	coverageRequired bool
 }
 
 func newWorkflowAutoscalingBalancer(
@@ -62,8 +73,9 @@ func (a *workflowAutoscalingBalancer) hasFiniteCapacity() bool {
 	return a.maxSlots > 0
 }
 
-// waitForKind waits without consuming the runner's poll target.
-func (a *workflowAutoscalingBalancer) waitForKind(
+// waitForPollTurn waits until group coverage, sticky backlog, and queue-kind
+// fairness allow this poll kind to proceed.
+func (a *workflowAutoscalingBalancer) waitForPollTurn(
 	ctx context.Context,
 	kind enumspb.TaskQueueKind,
 ) error {
@@ -78,8 +90,7 @@ func (a *workflowAutoscalingBalancer) waitForKind(
 		if a.groupStore != nil {
 			snapshot, groupsChanged = a.syncGroupsLocked()
 		}
-		_, ok := a.eligibleGroups(kind, snapshot.groups)
-		if ok {
+		if a.canTakeTurn(kind, snapshot.groups) {
 			a.mu.Unlock()
 			return nil
 		}
@@ -146,17 +157,36 @@ func (a *workflowAutoscalingBalancer) tryAcquireLocked(
 		return pollerGroupLease{owner: a, kind: kind}, true
 	}
 
-	return a.reserveCandidate(kind, candidates), true
+	return a.reserveCandidate(kind, candidates.groups), true
 }
 
-// eligibleGroups returns the weighted groups kind may poll and whether it may
-// poll now. Required queue-kind coverage precedes sticky backlog and weights.
+// canTakeTurn applies queue-kind fairness before runner capacity is consumed.
+func (a *workflowAutoscalingBalancer) canTakeTurn(
+	kind enumspb.TaskQueueKind,
+	groups map[string]pollerGroupSnapshotEntry,
+) bool {
+	candidates, ok := a.eligibleGroups(kind, groups)
+	if !ok {
+		return false
+	}
+
+	// Required coverage takes precedence over queue-kind fairness.
+	if candidates.coverageRequired {
+		return true
+	}
+
+	return a.canPollKind(kind)
+}
+
+// eligibleGroups returns groups this kind may target under coverage and backlog
+// policy. It returns false when this kind must wait. Queue-kind fairness is
+// outside this function.
 func (a *workflowAutoscalingBalancer) eligibleGroups(
 	kind enumspb.TaskQueueKind,
 	groups map[string]pollerGroupSnapshotEntry,
-) (map[string]pollerGroupSnapshotEntry, bool) {
+) (workflowGroupCandidates, bool) {
 	if len(groups) == 0 {
-		return nil, a.canPollUngrouped(kind)
+		return workflowGroupCandidates{}, true
 	}
 
 	other := otherQueueKind(kind)
@@ -164,43 +194,43 @@ func (a *workflowAutoscalingBalancer) eligibleGroups(
 	otherMissing := a.coverageCandidates(other, groups)
 	if len(missing) > 0 {
 		if len(otherMissing) > 0 && a.reservations.forKind(kind) > a.reservations.forKind(other) {
-			return nil, false
+			return workflowGroupCandidates{}, false
 		}
 
-		return missing, true
+		return workflowGroupCandidates{
+			groups:           missing,
+			coverageRequired: true,
+		}, true
 	}
 	if len(otherMissing) > 0 {
-		return nil, false
-	}
-	if a.hasFiniteCapacity() && a.reservations.total() >= a.maxSlots {
-		return nil, false
+		return workflowGroupCandidates{}, false
 	}
 
 	sticky := a.stickyCandidates(groups)
 	if kind == enumspb.TASK_QUEUE_KIND_STICKY {
 		if len(sticky) == 0 || !a.stickyCanGrow() {
-			return nil, false
+			return workflowGroupCandidates{}, false
 		}
 
-		return sticky, true
+		return workflowGroupCandidates{groups: sticky}, true
 	}
 	if len(sticky) > 0 && a.stickyCanGrow() {
-		return nil, false
+		return workflowGroupCandidates{}, false
 	}
 
-	return groups, true
+	return workflowGroupCandidates{groups: groups}, true
 }
 
-// canPollUngrouped applies the queue-kind policy. The caller holds mu.
-func (a *workflowAutoscalingBalancer) canPollUngrouped(kind enumspb.TaskQueueKind) bool {
+// canPollKind applies slot-backed queue-kind fairness. The caller holds mu.
+func (a *workflowAutoscalingBalancer) canPollKind(kind enumspb.TaskQueueKind) bool {
 	switch kind {
 	case enumspb.TASK_QUEUE_KIND_NORMAL:
 		// Always allow a first normal poll.
-		if a.reservations.normal == 0 {
+		if a.active.normal == 0 {
 			return true
 		}
 		// Preserve capacity for the first sticky poll.
-		if a.reservations.sticky == 0 && (!a.hasFiniteCapacity() || a.reservations.normal+1 >= a.maxSlots) {
+		if a.active.sticky == 0 && (!a.hasFiniteCapacity() || a.active.normal+1 >= a.maxSlots) {
 			return false
 		}
 		// Prefer sticky when it can help drain the backlog.
@@ -209,11 +239,11 @@ func (a *workflowAutoscalingBalancer) canPollUngrouped(kind enumspb.TaskQueueKin
 		}
 	case enumspb.TASK_QUEUE_KIND_STICKY:
 		// Always allow a first sticky poll.
-		if a.reservations.sticky == 0 {
+		if a.active.sticky == 0 {
 			return true
 		}
 		// Preserve capacity for the first normal poll.
-		if a.reservations.normal == 0 && (!a.hasFiniteCapacity() || a.reservations.sticky+1 >= a.maxSlots) {
+		if a.active.normal == 0 && (!a.hasFiniteCapacity() || a.active.sticky+1 >= a.maxSlots) {
 			return false
 		}
 		if int64(a.reservations.sticky) >= a.stickyTarget {
@@ -227,7 +257,7 @@ func (a *workflowAutoscalingBalancer) canPollUngrouped(kind enumspb.TaskQueueKin
 		return false
 	}
 
-	return !a.hasFiniteCapacity() || a.reservations.total() < a.maxSlots
+	return !a.hasFiniteCapacity() || a.active.total() < a.maxSlots
 }
 
 func (a *workflowAutoscalingBalancer) needsMoreStickyPolls() bool {
@@ -341,7 +371,7 @@ func (a *workflowAutoscalingBalancer) syncGroupsLocked() (pollerGroupSnapshot, <
 	return snapshot, changed
 }
 
-func (r *workflowReservations) forKind(kind enumspb.TaskQueueKind) int {
+func (r *workflowKindCounts) forKind(kind enumspb.TaskQueueKind) int {
 	if kind == enumspb.TASK_QUEUE_KIND_STICKY {
 		return r.sticky
 	}
@@ -349,7 +379,7 @@ func (r *workflowReservations) forKind(kind enumspb.TaskQueueKind) int {
 	return r.normal
 }
 
-func (r *workflowReservations) change(kind enumspb.TaskQueueKind, change int) {
+func (r *workflowKindCounts) change(kind enumspb.TaskQueueKind, change int) {
 	if kind == enumspb.TASK_QUEUE_KIND_STICKY {
 		r.sticky += change
 		return
@@ -361,12 +391,35 @@ func (r *workflowReservations) change(kind enumspb.TaskQueueKind, change int) {
 	r.normal += change
 }
 
-func (r *workflowReservations) total() int {
+func (r *workflowKindCounts) total() int {
 	return r.normal + r.sticky
+}
+
+// start marks a reservation active after it acquires a slot.
+func (a *workflowAutoscalingBalancer) start(kind enumspb.TaskQueueKind) {
+	a.mu.Lock()
+	a.active.change(kind, 1)
+	a.wakeWaiters()
+	a.mu.Unlock()
+}
+
+// releaseActivePoll atomically releases an active poll and its reservation.
+func (a *workflowAutoscalingBalancer) releaseActivePoll(lease pollerGroupLease) {
+	a.mu.Lock()
+	a.active.change(lease.kind, -1)
+	a.releaseReservationLocked(lease)
+	a.wakeWaiters()
+	a.mu.Unlock()
 }
 
 func (a *workflowAutoscalingBalancer) releaseReservation(lease pollerGroupLease) {
 	a.mu.Lock()
+	a.releaseReservationLocked(lease)
+	a.wakeWaiters()
+	a.mu.Unlock()
+}
+
+func (a *workflowAutoscalingBalancer) releaseReservationLocked(lease pollerGroupLease) {
 	if lease.group.id != "" {
 		group := a.groups[lease.group.id]
 		if group != nil && group.key == lease.group && group.reservations.forKind(lease.kind) > 0 {
@@ -376,8 +429,6 @@ func (a *workflowAutoscalingBalancer) releaseReservation(lease pollerGroupLease)
 	if a.reservations.forKind(lease.kind) > 0 {
 		a.reservations.change(lease.kind, -1)
 	}
-	a.wakeWaiters()
-	a.mu.Unlock()
 }
 
 func (a *workflowAutoscalingBalancer) setStickyGroupBacklog(

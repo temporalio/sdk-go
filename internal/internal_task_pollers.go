@@ -1546,7 +1546,12 @@ func (wtp *workflowTaskPoller) poll(
 	if response == nil || len(response.TaskToken) == 0 {
 		// Emit using base scope as no workflow type information is available in the case of empty poll
 		wtp.metricsHandler.Counter(metrics.WorkflowTaskQueuePollEmptyCounter).Inc(1)
-		wtp.updateBacklog(queueKind, response.GetPollerGroupId(), response.GetBacklogCountHint())
+		backlog := response.GetBacklogCountHint()
+		if wtp.mode == Mixed {
+			// SimpleMaximum preserves its legacy empty-poll reset.
+			backlog = 0
+		}
+		wtp.updateBacklog(queueKind, response.GetPollerGroupId(), backlog)
 		return &workflowTask{}, nil
 	}
 

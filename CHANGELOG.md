@@ -27,6 +27,9 @@ to docs, or any other relevant information.
   server-provided group and distribute additional polls by weight. Workflow workers maintain normal
   and sticky coverage independently; extra sticky polls target backlogged groups until their backlog
   is covered or the sticky target is reached. Required coverage may exceed the configured maximum.
+  Polls waiting for task slots count toward sticky targets and required group coverage, and are
+  compared against sticky backlog hints. Only polls holding slots count toward normal/sticky
+  fairness.
 - Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
   a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
   platforms), and the operating system and architecture. This is sent
@@ -66,6 +69,9 @@ to docs, or any other relevant information.
   and `GetLastFailure` (`IncludeLastFailure`).
 
 ### Changed
+
+- Workflow autoscaling retains sticky backlog hints after poll errors. `SimpleMaximum` behavior is
+  unchanged and continues clearing the hint to prevent stale sticky-only polling.
 
 ### Deprecated
 

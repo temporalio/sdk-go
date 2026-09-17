@@ -602,12 +602,13 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 			admission.release()
 			return
 		}
+		admission.start()
 		pollWG.Add(1)
 		bw.stopWG.Add(1)
 		go func(slotPermit *SlotPermit) {
 			defer bw.stopWG.Done()
 			defer pollWG.Done()
-			defer admission.release()
+			defer admission.finish()
 			bw.pollTask(taskWorker, slotPermit, admission.groupLease)
 		}(permit)
 	}
@@ -1066,7 +1067,7 @@ func (r *autoscalingTaskPollerRunner) acquire(
 	ctx context.Context,
 ) (autoscalingPollAdmission, error) {
 	if r.workflowBalancer != nil {
-		if err := r.workflowBalancer.waitForKind(ctx, r.pollKind); err != nil {
+		if err := r.workflowBalancer.waitForPollTurn(ctx, r.pollKind); err != nil {
 			return autoscalingPollAdmission{}, err
 		}
 	}
@@ -1123,8 +1124,28 @@ func (r *autoscalingTaskPollerRunner) acquire(
 	}
 }
 
+// start marks a workflow poll active after slot acquisition.
+func (a autoscalingPollAdmission) start() {
+	if a.runner.workflowBalancer == nil {
+		return
+	}
+
+	a.runner.workflowBalancer.start(a.runner.pollKind)
+}
+
+// release frees resources reserved for a poll that never started.
 func (a autoscalingPollAdmission) release() {
 	a.groupLease.release()
+	a.runner.release()
+}
+
+// finish frees resources held by a poll that started.
+func (a autoscalingPollAdmission) finish() {
+	if a.runner.workflowBalancer != nil {
+		a.runner.workflowBalancer.releaseActivePoll(a.groupLease)
+	} else {
+		a.groupLease.release()
+	}
 	a.runner.release()
 }
 
@@ -1163,16 +1184,22 @@ func (r *autoscalingTaskPollerRunner) release() {
 	r.activeMu.Lock()
 	r.active--
 	r.activeMu.Unlock()
-	r.signal()
+	r.wakeCapacityWaiter()
 }
 
+// signal handles target changes, which can unblock both admission layers:
+// runner capacity and shared workflow queue-kind fairness.
 func (r *autoscalingTaskPollerRunner) signal() {
+	r.wakeCapacityWaiter()
+	if r.workflowBalancer != nil {
+		r.workflowBalancer.signal()
+	}
+}
+
+func (r *autoscalingTaskPollerRunner) wakeCapacityWaiter() {
 	select {
 	case r.wakeCh <- struct{}{}:
 	default:
-	}
-	if r.workflowBalancer != nil {
-		r.workflowBalancer.signal()
 	}
 }
 
