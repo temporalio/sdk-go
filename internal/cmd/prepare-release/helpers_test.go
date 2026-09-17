@@ -1,0 +1,148 @@
+package main
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+	"testing"
+)
+
+const (
+	mockTempDir  = "/tmp/prepare-go-release-123456"
+	mockRepoRoot = "/repo"
+)
+
+func newMockApp(a app, handler func(cmd string) (string, error)) (*app, *mockEffects) {
+	eff := &mockEffects{
+		commandHandler: handler,
+		tempDir:        mockTempDir,
+		files:          make(map[string]string),
+	}
+	a.out, a.eff, a.repoRoot = &eff.output, eff, mockRepoRoot
+	return &a, eff
+}
+
+// mockEffects is a mock implementation of [effects] for testing.
+type mockEffects struct {
+	commandHandler func(cmd string) (string, error)
+	commands       strings.Builder
+	output         strings.Builder
+	tempDir        string
+	files          map[string]string
+	// moduleLookupHandler answers checkModulePublished.
+	// A nil handler treats every version as published.
+	moduleLookupHandler func(modulePath, version string) (bool, error)
+}
+
+var _ effects = &mockEffects{}
+
+func (eff *mockEffects) runCommand(root, name string, args ...string) (string, error) {
+	cmd := filepath.ToSlash(formatCommand(name, args...))
+	fmt.Fprintf(&eff.commands, "%s: %s\n", root, cmd)
+	printDetail(&eff.output, "$ %s", cmd)
+	if eff.commandHandler == nil {
+		return "", nil
+	}
+	return eff.commandHandler(cmd)
+}
+
+func (eff *mockEffects) mkdirTemp(string, string) (string, error) {
+	return eff.tempDir, nil
+}
+
+func (eff *mockEffects) readFile(path string) (string, error) {
+	contents, ok := eff.files[path]
+	if !ok {
+		return "", fmt.Errorf("read %s: %w", path, os.ErrNotExist)
+	}
+	return contents, nil
+}
+
+func (eff *mockEffects) writeFile(path, contents string) error {
+	eff.files[path] = contents
+	return nil
+}
+
+func (eff *mockEffects) checkModulePublished(modulePath, version string) (bool, error) {
+	if eff.moduleLookupHandler == nil {
+		return true, nil
+	}
+	return eff.moduleLookupHandler(modulePath, version)
+}
+
+// contribEnvconfig is the module used by the contrib tests.
+func contribEnvconfig(t *testing.T) releaseTarget {
+	t.Helper()
+	target, err := contribTarget("contrib/envconfig")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return target
+}
+
+// mustVersion parses a release version or fails the test.
+func mustVersion(t *testing.T, s string) semver {
+	t.Helper()
+	v, err := parseVersion(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// testRegexp checks that expression matches every input in matches and none in rejects.
+func testRegexp(t *testing.T, expression *regexp.Regexp, matches, rejects []string) {
+	t.Helper()
+	for _, input := range matches {
+		if !expression.MatchString(input) {
+			t.Errorf("expected %q to match %s", input, expression)
+		}
+	}
+	for _, input := range rejects {
+		if expression.MatchString(input) {
+			t.Errorf("expected %q not to match %s", input, expression)
+		}
+	}
+}
+
+// stripIndentation removes surrounding blank lines and indentation shared by every nonblank line.
+func stripIndentation(text string) string {
+	lines := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
+	// Strip blank lines from the top and bottom of the string
+	for len(lines) > 0 && strings.TrimSpace(lines[0]) == "" {
+		lines = lines[1:]
+	}
+	for len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) == "" {
+		lines = lines[:len(lines)-1]
+	}
+	// Set indent to the smallest number of \t characters preceding any nonblank line.
+	indent := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		lineIndent := len(line) - len(strings.TrimLeft(line, "\t"))
+		if indent == -1 || lineIndent < indent {
+			indent = lineIndent
+		}
+	}
+	// Remove indentation
+	if indent > 0 {
+		for i, line := range lines {
+			if len(line) >= indent {
+				lines[i] = line[indent:]
+			}
+		}
+	}
+	return filepath.ToSlash(strings.Join(lines, "\n"))
+}
+
+// testEqual compares two strings, ignoring surrounding whitespace and common indentation.
+func testEqual(t *testing.T, got, want string) {
+	t.Helper()
+	if got, want = stripIndentation(got), stripIndentation(want); got != want {
+		t.Fatalf("unexpected text:\n--- got ---\n%s\n--- want ---\n%s", got, want)
+	}
+}
