@@ -8,7 +8,7 @@ permissions:
   actions: read
 
 env:
-  EXPERIMENT_PHASE: warm-2
+  EXPERIMENT_PHASE: source-change
 
 jobs:
   unit:

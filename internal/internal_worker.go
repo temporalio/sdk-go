@@ -64,7 +64,7 @@ const (
 	defaultMaxConcurrentTaskExecutionSize = 1000   // hardcoded max task execution size.
 	defaultWorkerTaskExecutionRate        = 100000 // Large task execution rate (unlimited)
 
-	defaultPollerRate = 1000
+	defaultPollerRate = 1_000
 
 	defaultMaxConcurrentSessionExecutionSize = 1000 // Large concurrent session execution size (1k)
 
