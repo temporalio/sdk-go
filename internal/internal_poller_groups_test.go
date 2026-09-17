@@ -136,6 +136,34 @@ func TestPollerGroupManagersShareWeightsAndKeepCoverageSeparate(t *testing.T) {
 	require.Equal(t, 2, internal.groups["group-b"].pendingPollCount)
 }
 
+func TestManagerSyncUsesStore(t *testing.T) {
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	}))
+	// Callers could previously carry this snapshot across the manager lock.
+	stale := groupStore.snapshot()
+	require.Equal(t, int64(1), stale.version)
+	groupStore.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 0},
+		{Id: "group-b", Weight: 1},
+	}))
+
+	manager := newPollerGroupManager(groupStore)
+	lease := manager.reserve()
+	defer lease.release()
+	require.Equal(t, "group-b", lease.groupIDOrEmpty())
+
+	manager.mu.Lock()
+	snapshot := manager.syncGroupsLocked()
+	missing := manager.coverageCandidates(snapshot.groups)
+	manager.mu.Unlock()
+
+	require.Contains(t, manager.groups, "group-b")
+	require.Equal(t, 1, manager.groups["group-b"].pendingPollCount)
+	require.NotContains(t, missing, "group-b")
+}
+
 func TestPollerGroupManagerReserveWorkflowPollFallsBackBeforeGroupsKnown(t *testing.T) {
 	manager := newTestPollerGroupManager()
 

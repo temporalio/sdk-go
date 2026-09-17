@@ -279,6 +279,10 @@ func (hw *sharedNamespaceWorker) runWorkerCommands() {
 	defer pollWG.Wait()
 
 	for {
+		if hw.workerCtx.Err() != nil {
+			return
+		}
+
 		admission, err := pollerRunner.acquire(hw.workerCtx)
 		if err != nil {
 			return

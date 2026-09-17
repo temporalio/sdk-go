@@ -72,15 +72,11 @@ func (a *workflowAutoscalingBalancer) waitForKind(
 	}
 
 	for {
+		a.mu.Lock()
 		var snapshot pollerGroupSnapshot
 		var groupsChanged <-chan struct{}
 		if a.groupStore != nil {
-			snapshot, groupsChanged = a.groupStore.observe()
-		}
-
-		a.mu.Lock()
-		if a.groupStore != nil {
-			a.syncGroups(snapshot)
+			snapshot, groupsChanged = a.syncGroupsLocked()
 		}
 		_, ok := a.eligibleGroups(kind, snapshot.groups)
 		if ok {
@@ -109,13 +105,12 @@ func (a *workflowAutoscalingBalancer) acquire(
 	}
 
 	for {
+		a.mu.Lock()
 		var snapshot pollerGroupSnapshot
 		var groupsChanged <-chan struct{}
 		if a.groupStore != nil {
-			snapshot, groupsChanged = a.groupStore.observe()
+			snapshot, groupsChanged = a.syncGroupsLocked()
 		}
-
-		a.mu.Lock()
 		lease, ok := a.tryAcquireLocked(kind, snapshot)
 		if ok {
 			a.mu.Unlock()
@@ -141,9 +136,6 @@ func (a *workflowAutoscalingBalancer) tryAcquireLocked(
 	kind enumspb.TaskQueueKind,
 	snapshot pollerGroupSnapshot,
 ) (pollerGroupLease, bool) {
-	if a.groupStore != nil {
-		a.syncGroups(snapshot)
-	}
 	candidates, ok := a.eligibleGroups(kind, snapshot.groups)
 	if !ok {
 		return pollerGroupLease{}, false
@@ -265,9 +257,8 @@ func (a *workflowAutoscalingBalancer) hasCoverageGap(kind enumspb.TaskQueueKind)
 		return false
 	}
 
-	snapshot := a.groupStore.snapshot()
 	a.mu.Lock()
-	a.syncGroups(snapshot)
+	snapshot, _ := a.syncGroupsLocked()
 	missing := len(a.coverageCandidates(kind, snapshot.groups)) > 0
 	a.mu.Unlock()
 	return missing
@@ -327,7 +318,10 @@ func (a *workflowAutoscalingBalancer) reserveCandidate(
 	}
 }
 
-func (a *workflowAutoscalingBalancer) syncGroups(snapshot pollerGroupSnapshot) {
+// syncGroupsLocked reconciles local groups with the current store snapshot.
+// The caller must hold a.mu so snapshots cannot be applied out of order.
+func (a *workflowAutoscalingBalancer) syncGroupsLocked() (pollerGroupSnapshot, <-chan struct{}) {
+	snapshot, changed := a.groupStore.observe()
 	if len(snapshot.groups) > 0 {
 		a.ungroupedStickyBacklog = 0
 	}
@@ -343,6 +337,8 @@ func (a *workflowAutoscalingBalancer) syncGroups(snapshot pollerGroupSnapshot) {
 			delete(a.groups, groupID)
 		}
 	}
+
+	return snapshot, changed
 }
 
 func (r *workflowReservations) forKind(kind enumspb.TaskQueueKind) int {
@@ -394,8 +390,7 @@ func (a *workflowAutoscalingBalancer) setStickyGroupBacklog(
 		a.mu.Unlock()
 		return
 	}
-	snapshot := a.groupStore.snapshot()
-	a.syncGroups(snapshot)
+	snapshot, _ := a.syncGroupsLocked()
 	if len(snapshot.groups) == 0 {
 		if groupID == "" {
 			a.setStickyBacklogLocked(backlog)

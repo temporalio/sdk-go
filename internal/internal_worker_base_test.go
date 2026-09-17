@@ -1649,6 +1649,36 @@ func newTestWorkflowAutoscalingBalancer(maxSlots int) *workflowAutoscalingBalanc
 	return newWorkflowAutoscalingBalancer(maxSlots, stickyTarget, nil)
 }
 
+func TestBalancerSyncUsesStore(t *testing.T) {
+	groupStore := newPollerGroupSnapshotStore()
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 1},
+	}))
+	// Callers could previously carry this snapshot across the balancer lock.
+	stale := groupStore.snapshot()
+	require.Equal(t, int64(1), stale.version)
+	groupStore.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
+		{Id: "group-a", Weight: 0},
+		{Id: "group-b", Weight: 1},
+	}))
+
+	balancer := newTestWorkflowAutoscalingBalancer(4)
+	balancer.groupStore = groupStore
+	lease, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer lease.release()
+	require.Equal(t, "group-b", lease.groupIDOrEmpty())
+
+	balancer.mu.Lock()
+	snapshot, _ := balancer.syncGroupsLocked()
+	missing := balancer.coverageCandidates(enumspb.TASK_QUEUE_KIND_STICKY, snapshot.groups)
+	balancer.mu.Unlock()
+
+	require.Contains(t, balancer.groups, "group-b")
+	require.Equal(t, 1, balancer.groups["group-b"].reservations.sticky)
+	require.NotContains(t, missing, "group-b")
+}
+
 func TestWorkflowAutoscalingBalancerRoutesStickyGroup(t *testing.T) {
 	groupStore := newPollerGroupSnapshotStore()
 	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{

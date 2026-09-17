@@ -89,8 +89,7 @@ func (m *pollerGroupManager) requiredMin() int {
 }
 
 func (m *pollerGroupManager) reserve() pollerGroupLease {
-	snapshot := m.groupStore.snapshot()
-	group := m.reserveGroup(snapshot)
+	group := m.reserveGroup()
 	return m.lease(group)
 }
 
@@ -98,10 +97,9 @@ func (m *pollerGroupManager) reserve() pollerGroupLease {
 // consume the autoscaling target, ensuring every group has minimum coverage.
 // The bool reports whether a group was reserved.
 func (m *pollerGroupManager) tryReserveRequired() (pollerGroupLease, bool) {
-	snapshot := m.groupStore.snapshot()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.syncGroups(snapshot)
+	snapshot := m.syncGroupsLocked()
 
 	group := m.reserveCandidate(m.coverageCandidates(snapshot.groups))
 	if group == nil {
@@ -132,10 +130,10 @@ func (m *pollerGroupManager) lease(group *pollerGroupState) pollerGroupLease {
 	return pollerGroupLease{owner: m, group: group.key}
 }
 
-func (m *pollerGroupManager) reserveGroup(snapshot pollerGroupSnapshot) *pollerGroupState {
+func (m *pollerGroupManager) reserveGroup() *pollerGroupState {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.syncGroups(snapshot)
+	snapshot := m.syncGroupsLocked()
 
 	candidates := m.coverageCandidates(snapshot.groups)
 	if len(candidates) == 0 {
@@ -181,7 +179,10 @@ func (m *pollerGroupManager) releaseReservation(lease pollerGroupLease) {
 	m.mu.Unlock()
 }
 
-func (m *pollerGroupManager) syncGroups(snapshot pollerGroupSnapshot) {
+// syncGroupsLocked reconciles local groups with the current store snapshot.
+// The caller must hold m.mu so snapshots cannot be applied out of order.
+func (m *pollerGroupManager) syncGroupsLocked() pollerGroupSnapshot {
+	snapshot := m.groupStore.snapshot()
 	for groupID, entry := range snapshot.groups {
 		group := m.groups[groupID]
 		if group == nil || group.key != entry.key {
@@ -193,6 +194,8 @@ func (m *pollerGroupManager) syncGroups(snapshot pollerGroupSnapshot) {
 			delete(m.groups, groupID)
 		}
 	}
+
+	return snapshot
 }
 
 // choosePollerGroup picks a random group using the configured weights.

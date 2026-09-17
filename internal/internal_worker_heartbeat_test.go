@@ -344,6 +344,48 @@ func TestWorkerCommandPollErrorBackoff(t *testing.T) {
 	})
 }
 
+func TestCanceledCommandNoPoll(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		pollRelease := make(chan struct{})
+		defer close(pollRelease)
+		var pollCount atomic.Int32
+		mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(context.Context, *workflowservice.PollNexusTaskQueueRequest, ...grpc.CallOption) (*workflowservice.PollNexusTaskQueueResponse, error) {
+				pollCount.Add(1)
+				<-pollRelease
+				return nil, context.Canceled
+			}).AnyTimes()
+
+		hw := &sharedNamespaceWorker{
+			client: &WorkflowClient{
+				workflowService: mockService,
+			},
+			workerCtx:              ctx,
+			workerControlTaskQueue: "worker-commands",
+			metricsHandler:         metrics.NopHandler,
+			logger:                 ilog.NewNopLogger(),
+			pollerGroups:           newTestPollerGroupManager(),
+		}
+		done := make(chan struct{})
+		go func() {
+			hw.runWorkerCommands()
+			close(done)
+		}()
+
+		synctest.Wait()
+
+		// Cancellation before startup must prevent the first poll.
+		require.Zero(t, pollCount.Load())
+		<-done
+	})
+}
+
 func TestCommandCompletionBound(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
