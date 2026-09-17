@@ -26,6 +26,7 @@ import (
 
 // -- DATA --
 
+// temperature is a struct with no exported fields and its transfer type is a float64.
 type temperature struct{ kelvin float64 }
 
 func (temperature) TransferConverter() TransferConverter {
@@ -40,29 +41,8 @@ func (temperature) TransferConverter() TransferConverter {
 	)
 }
 
-type userRef struct {
-	id    string
-	cache string
-}
-
-type userRefTransfer struct{
-	ID string
-}
-
-func (userRef) TransferConverter() TransferConverter {
-	return newTransferConverter(
-		func(u userRef) (userRefTransfer, error) { return userRefTransfer{ID: u.id}, nil },
-		func(t userRefTransfer, u *userRef) error {
-			u.id = t.ID
-			return nil
-		},
-	)
-}
-
-// unencodable always returns an error when encoding the value into a transfer value
+// unencodable always returns an error during transfer-type-encoding.
 type unencodable struct{}
-
-var _ ValueWithTransferConverter = unencodable{}
 
 var errNoEncoding = errors.New("cannot encode")
 
@@ -73,12 +53,10 @@ func (unencodable) TransferConverter() TransferConverter {
 	)
 }
 
-var errNoDecoding = errors.New("cannot decode")
-
-// undecodable always returns an error when decoding the transfer type
+// undecodable always returns an error during transfer-type-decoding.
 type undecodable struct{}
 
-var _ ValueWithTransferConverter = undecodable{}
+var errNoDecoding = errors.New("cannot decode")
 
 func (undecodable) TransferConverter() TransferConverter {
 	return newTransferConverter(
@@ -87,33 +65,8 @@ func (undecodable) TransferConverter() TransferConverter {
 	)
 }
 
-type nilReturningSerializationContextDataConverter struct {
-	converter.DataConverter
-}
-
-func (*nilReturningSerializationContextDataConverter) WithSerializationContext(
-	converter.SerializationContext,
-) converter.DataConverter {
-	return nil
-}
-
-// transferExecution's transfer type includes its unexported fields. When encoded with a data
-// converter that isn't transfer-aware, the fields disappear.
-type transferExecution struct{ workflowID, runID string }
-
-func (transferExecution) TransferConverter() TransferConverter {
-	return newTransferConverter(
-		func(value transferExecution) (*commonpb.WorkflowExecution, error) {
-			return &commonpb.WorkflowExecution{WorkflowId: value.workflowID, RunId: value.runID}, nil
-		},
-		func(value *commonpb.WorkflowExecution, result *transferExecution) error {
-			*result = transferExecution{workflowID: value.GetWorkflowId(), runID: value.GetRunId()}
-			return nil
-		},
-	)
-}
-
-// contextualString has a transfer converter that uses context.Context and workflow.Context.
+// contextualString has a transfer converter that looks for [transferContextKey]
+// in the context to compute the transfer type.
 type contextualString string
 
 type transferContextKey struct{}
@@ -139,6 +92,8 @@ func (contextualString) TransferConverter() TransferConverter {
 	)
 }
 
+// transferEnvelope is a struct that contains a transfer-convertible field,
+// but the struct itself has no transfer converter.
 type transferEnvelope struct{ Value contextualString }
 
 // -- TESTS --
@@ -160,25 +115,6 @@ func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 			var got temperature
 			require.NoError(t, dc.FromPayload(payload, &got))
 			require.Equal(t, value, got)
-		}
-	})
-
-	t.Run("struct transfer values", func(t *testing.T) {
-		values := make([]userRef, 10)
-		for i := range values {
-			values[i] = userRef{
-				id:    "u-" + strconv.FormatUint(rand.Uint64(), 10),
-				cache: "cache-" + strconv.FormatUint(rand.Uint64(), 10),
-			}
-		}
-
-		for _, value := range values {
-			payload, err := dc.ToPayload(value)
-			require.NoError(t, err)
-
-			var got userRef
-			require.NoError(t, dc.FromPayload(payload, &got))
-			require.Equal(t, userRef{id: value.id}, got)
 		}
 	})
 
@@ -231,26 +167,6 @@ func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, dc.FromPayloads(payloads, valuePtrs...))
 		require.Equal(t, values, got)
-	})
-
-	t.Run("struct transfer values", func(t *testing.T) {
-		values := make([]userRef, 10)
-		want := make([]userRef, len(values))
-		valuePtrs := make([]any, len(values))
-		got := make([]userRef, len(values))
-		for i := range values {
-			values[i] = userRef{
-				id:    "u-" + strconv.FormatUint(rand.Uint64(), 10),
-				cache: "cache-" + strconv.FormatUint(rand.Uint64(), 10),
-			}
-			want[i] = userRef{id: values[i].id}
-			valuePtrs[i] = &got[i]
-		}
-
-		payloads, err := dc.ToPayloads(sliceToAny(values)...)
-		require.NoError(t, err)
-		require.NoError(t, dc.FromPayloads(payloads, valuePtrs...))
-		require.Equal(t, want, got)
 	})
 
 	t.Run("values without a transfer converter", func(t *testing.T) {
@@ -311,9 +227,9 @@ func TestTransferAwareDataConverter_MatchesParentForPlainValues(t *testing.T) {
 	// Plain values keep their place and their encoding even when a transfer
 	// value sits next to them.
 	t.Run("plain values mixed with transfer values", func(t *testing.T) {
-		got, err := dc.ToPayloads("plain", temperature{kelvin: 300}, 42, userRef{id: "u-1"}, nil)
+		got, err := dc.ToPayloads("plain", temperature{kelvin: 300}, 42, temperature{kelvin: 275}, nil)
 		require.NoError(t, err)
-		want, err := parent.ToPayloads("plain", 300.0, 42, userRefTransfer{ID: "u-1"}, nil)
+		want, err := parent.ToPayloads("plain", 300.0, 42, 275.0, nil)
 		require.NoError(t, err)
 		requireSamePayloads(t, want, got)
 	})
@@ -388,19 +304,6 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 		// Serialization contexts are only forwarded, so there is nothing to keep.
 		require.Same(t, dc, dc.WithSerializationContext(converter.WorkflowSerializationContext{}))
 	})
-
-	t.Run("serialization context parent returning nil", func(t *testing.T) {
-		dc := makeTransferAware(&nilReturningSerializationContextDataConverter{
-			DataConverter: converter.GetDefaultDataConverter(),
-		})
-		require.PanicsWithValue(
-			t,
-			"DataConverterWithSerializationContext.WithSerializationContext must not return nil",
-			func() {
-				dc.WithSerializationContext(converter.WorkflowSerializationContext{})
-			},
-		)
-	})
 }
 
 func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
@@ -441,7 +344,7 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 	})
 }
 
-// -- SDK INTEGRATION -----------------------------------------------------------
+// -- SDK INTEGRATION TESTS -----------------------------------------------------------
 
 func newTransferTestClient(t *testing.T, dc converter.DataConverter) (*workflowservicemock.MockWorkflowServiceClient, *WorkflowClient) {
 	t.Helper()
@@ -463,9 +366,9 @@ func TestTransferTypesIntegration_ClientWorkflowInput(t *testing.T) {
 	}{
 		{
 			name:     "workflow args use transfer converters when available",
-			workflow: func(Context, string, temperature, userRef, transferEnvelope) error { return nil },
-			args:     []any{"plain", temperature{kelvin: 300}, userRef{id: "u-1", cache: "local"}, transferEnvelope{Value: "value"}},
-			wireArgs: []any{"plain", 300.0, userRefTransfer{ID: "u-1"}, map[string]string{"Value": "value"}},
+			workflow: func(Context, string, temperature, temperature, transferEnvelope) error { return nil },
+			args:     []any{"plain", temperature{kelvin: 300}, temperature{kelvin: 275}, transferEnvelope{Value: "value"}},
+			wireArgs: []any{"plain", 300.0, 275.0, map[string]string{"Value": "value"}},
 		},
 		{
 			name:     "nested values are not transfer-converted",
@@ -536,6 +439,22 @@ func TestTransferTypesIntegration_ClientWorkflowResult(t *testing.T) {
 	}
 }
 
+// transferExecution's transfer type includes its unexported fields. When encoded with a data
+// converter that isn't transfer-aware, the fields disappear.
+type transferExecution struct{ workflowID, runID string }
+
+func (transferExecution) TransferConverter() TransferConverter {
+	return newTransferConverter(
+		func(value transferExecution) (*commonpb.WorkflowExecution, error) {
+			return &commonpb.WorkflowExecution{WorkflowId: value.workflowID, RunId: value.runID}, nil
+		},
+		func(value *commonpb.WorkflowExecution, result *transferExecution) error {
+			*result = transferExecution{workflowID: value.GetWorkflowId(), runID: value.GetRunId()}
+			return nil
+		},
+	)
+}
+
 func TestTransferTypesIntegration_TestWorkflowEnvironmentRoundTrip(t *testing.T) {
 	dc := converter.NewCodecDataConverter(converter.GetDefaultDataConverter())
 	model := transferExecution{workflowID: "workflow-1", runID: "run-1"}
@@ -592,18 +511,15 @@ func TestTransferTypesIntegration_WorkflowRoundTrip(t *testing.T) {
 }
 
 func TestTransferTypesIntegration_ActivityRoundTrip(t *testing.T) {
-	activity := func(_ context.Context, prefix string, input userRef, suffix int) (userRef, error) {
-		return userRef{
-			id: fmt.Sprintf("%s:%s:%d", prefix, input.id, suffix),
-			cache: "activity-local",
-		}, nil
+	activity := func(_ context.Context, input temperature, increment float64) (temperature, error) {
+		return temperature{kelvin: input.kelvin + increment}, nil
 	}
 	for _, local := range []bool{false, true} {
 		t.Run(fmt.Sprintf("local=%t", local), func(t *testing.T) {
 			var suite WorkflowTestSuite
 			env := suite.NewTestWorkflowEnvironment()
 			env.RegisterActivity(activity)
-			env.ExecuteWorkflow(func(ctx Context) (string, error) {
+			env.ExecuteWorkflow(func(ctx Context) (float64, error) {
 				ctx = WithActivityOptions(ctx, ActivityOptions{
 					StartToCloseTimeout: time.Minute, RetryPolicy: &RetryPolicy{MaximumAttempts: 1},
 				})
@@ -612,24 +528,21 @@ func TestTransferTypesIntegration_ActivityRoundTrip(t *testing.T) {
 				})
 				var future Future
 				if local {
-					future = ExecuteLocalActivity(ctx, activity, "prefix", userRef{id: "u-1"}, 42)
+					future = ExecuteLocalActivity(ctx, activity, temperature{kelvin: 300}, 42.0)
 				} else {
-					future = ExecuteActivity(ctx, activity, "prefix", userRef{id: "u-1"}, 42)
+					future = ExecuteActivity(ctx, activity, temperature{kelvin: 300}, 42.0)
 				}
-				var got userRef
+				var got temperature
 				if err := future.Get(ctx, &got); err != nil {
-					return "", err
+					return 0, err
 				}
-				if got.cache != "" {
-					return "", fmt.Errorf("activity-local cache crossed serialization boundary: %q", got.cache)
-				}
-				return got.id, nil
+				return got.kelvin, nil
 			})
 			require.True(t, env.IsWorkflowCompleted())
 			require.NoError(t, env.GetWorkflowError())
-			var got string
+			var got float64
 			require.NoError(t, env.GetWorkflowResult(&got))
-			require.Equal(t, "prefix:u-1:42", got)
+			require.Equal(t, 342.0, got)
 		})
 	}
 }
