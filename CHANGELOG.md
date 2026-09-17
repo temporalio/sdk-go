@@ -29,6 +29,8 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Task queue priority is no longer marked as experimental.
+
 ### Deprecated
 
 ### :boom: Breaking Changes
