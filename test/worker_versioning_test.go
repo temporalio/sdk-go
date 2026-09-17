@@ -823,20 +823,25 @@ func (ts *WorkerVersioningTestSuite) TestTaskQueueStats() {
 	defer cancel()
 
 	fetchAndValidateStats := func(expectedWorkflowStats *client.TaskQueueStats, expectedActivityStats *client.TaskQueueStats) {
-		taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
-			TaskQueue: ts.taskQueueName,
-			TaskQueueTypes: []client.TaskQueueType{
-				client.TaskQueueTypeWorkflow,
-				client.TaskQueueTypeActivity,
-			},
-			ReportStats: true,
-		})
-		ts.NoError(err)
-		ts.Equal(1, len(taskQueueInfo.VersionsInfo))
-
-		// TODO: Fix to work with newer response format - https://github.com/temporalio/sdk-go/issues/2025
-		// ts.validateTaskQueueStats(expectedWorkflowStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
-		// ts.validateTaskQueueStats(expectedActivityStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
+		// Backlog stats are explicitly approximate and refresh on a periodic server-side
+		// cycle (observed ~4s against the embedded dev server), not on every task state
+		// change. Retry until the reported stats catch up instead of reading a single
+		// snapshot that may still reflect the queue's state from before it drained.
+		ts.EventuallyWithT(func(t *assert.CollectT) {
+			taskQueueInfo, err := ts.client.DescribeTaskQueueEnhanced(ctx, client.DescribeTaskQueueEnhancedOptions{
+				TaskQueue: ts.taskQueueName,
+				TaskQueueTypes: []client.TaskQueueType{
+					client.TaskQueueTypeWorkflow,
+					client.TaskQueueTypeActivity,
+				},
+				ReportStats: true,
+			})
+			if !assert.NoError(t, err) || !assert.Equal(t, 1, len(taskQueueInfo.VersionsInfo)) {
+				return
+			}
+			validateTaskQueueStats(t, expectedWorkflowStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeWorkflow].Stats)
+			validateTaskQueueStats(t, expectedActivityStats, taskQueueInfo.VersionsInfo[""].TypesInfo[client.TaskQueueTypeActivity].Stats)
+		}, 10*time.Second, 200*time.Millisecond)
 	}
 
 	// Basic workflow runs two activities
@@ -1120,33 +1125,37 @@ func (ts *WorkerVersioningTestSuite) TestBuildIDChangesOverWorkflowLifetimeWithR
 // For age and rates, it treats all non-zero values the same.
 // For BacklogIncreaseRate for non-zero expected values we only compare the sign (i.e. backlog grows or shrinks), while
 // zero expected value means "not specified".
-func (ts *WorkerVersioningTestSuite) validateTaskQueueStats(expected *client.TaskQueueStats, actual *internal.TaskQueueStats) {
+// Takes a *assert.CollectT (rather than using the suite's require-based assertions) so it can be
+// called from inside an EventuallyWithT retry loop without aborting on the first stale read.
+func validateTaskQueueStats(t *assert.CollectT, expected *client.TaskQueueStats, actual *internal.TaskQueueStats) {
 	if expected == nil {
-		ts.Nil(actual)
+		assert.Nil(t, actual)
 		return
 	}
-	ts.NotNil(actual)
-	ts.Equal(expected.ApproximateBacklogCount, actual.ApproximateBacklogCount)
+	if !assert.NotNil(t, actual) {
+		return
+	}
+	assert.Equal(t, expected.ApproximateBacklogCount, actual.ApproximateBacklogCount)
 	if expected.ApproximateBacklogAge == 0 {
-		ts.Equal(time.Duration(0), actual.ApproximateBacklogAge)
+		assert.Equal(t, time.Duration(0), actual.ApproximateBacklogAge)
 	} else {
-		ts.Greater(actual.ApproximateBacklogAge, time.Duration(0))
+		assert.Greater(t, actual.ApproximateBacklogAge, time.Duration(0))
 	}
 	if expected.TasksAddRate == 0 {
 		// TODO: do not accept NaN once the server code is fixed: https://github.com/temporalio/temporal/pull/6404
-		ts.True(float32(0) == actual.TasksAddRate || math.IsNaN(float64(actual.TasksAddRate)))
+		assert.True(t, float32(0) == actual.TasksAddRate || math.IsNaN(float64(actual.TasksAddRate)))
 	} else {
-		ts.Greater(actual.TasksAddRate, float32(0))
+		assert.Greater(t, actual.TasksAddRate, float32(0))
 	}
 	if expected.TasksDispatchRate == 0 {
 		// TODO: do not accept NaN once the server code is fixed: https://github.com/temporalio/temporal/pull/6404
-		ts.True(float32(0) == actual.TasksDispatchRate || math.IsNaN(float64(actual.TasksDispatchRate)))
+		assert.True(t, float32(0) == actual.TasksDispatchRate || math.IsNaN(float64(actual.TasksDispatchRate)))
 	} else {
-		ts.Greater(actual.TasksDispatchRate, float32(0))
+		assert.Greater(t, actual.TasksDispatchRate, float32(0))
 	}
 	if expected.BacklogIncreaseRate > 0 {
-		ts.Greater(actual.BacklogIncreaseRate, float32(0))
+		assert.Greater(t, actual.BacklogIncreaseRate, float32(0))
 	} else if expected.BacklogIncreaseRate < 0 {
-		ts.Less(actual.BacklogIncreaseRate, float32(0))
+		assert.Less(t, actual.BacklogIncreaseRate, float32(0))
 	}
 }
