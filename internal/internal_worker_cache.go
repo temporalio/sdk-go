@@ -11,7 +11,7 @@ type workflowCacheRemovalReason int
 
 const (
 	workflowCacheRemovalReasonOther workflowCacheRemovalReason = iota
-	workflowCacheRemovalReasonShutdown
+	workflowCacheRemovalReasonBulk
 )
 
 // A WorkerCache instance is held by each worker to hold cached data. The contents of this struct should always be
@@ -66,8 +66,15 @@ func PurgeStickyWorkflowCache() {
 	defer sharedWorkerCacheLock.Unlock()
 
 	if sharedWorkerCachePtr.workflowCache != nil {
-		sharedWorkerCachePtr.workflowCache.Clear()
+		clearWorkflowCache(sharedWorkerCachePtr.workflowCache)
 	}
+}
+
+func clearWorkflowCache(workflowCache cache.Cache) {
+	workflowCache.ClearWithCallback(func(cachedEntity any) {
+		wc := cachedEntity.(*workflowExecutionContextImpl)
+		wc.onEviction(workflowCacheRemovalReasonBulk)
+	})
 }
 
 // NewWorkerCache creates a cache handle and a lease for its shared generation.
@@ -131,10 +138,7 @@ func (lease *workerCacheLease) release() {
 		lease.lock.Unlock()
 
 		if releasedCache != nil {
-			releasedCache.ClearWithCallback(func(cachedEntity any) {
-				wc := cachedEntity.(*workflowExecutionContextImpl)
-				wc.onEviction(workflowCacheRemovalReasonShutdown)
-			})
+			clearWorkflowCache(releasedCache)
 		}
 	})
 }

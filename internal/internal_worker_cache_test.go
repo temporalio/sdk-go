@@ -88,13 +88,14 @@ func (s *WorkerCacheSuite) TestFinalReleaseClearsWithoutMetric() {
 	s.Empty(metricsHandler.Counters())
 }
 
-func (s *WorkerCacheSuite) TestExplicitClearCountsForcedEviction() {
+func (s *WorkerCacheSuite) TestBulkClearDoesNotCountForcedEviction() {
 	cachePtr := &sharedWorkerCache{}
 	var lock sync.Mutex
 	cache, lease := newWorkerCache(cachePtr, &lock, 10)
 	defer lease.release()
 	metricsHandler := metrics.NewCapturingHandler()
 	workflowContext := &workflowExecutionContextImpl{
+		previousStartedEventID: 1,
 		wth: &workflowTaskHandlerImpl{
 			metricsHandler: metricsHandler,
 		},
@@ -102,7 +103,35 @@ func (s *WorkerCacheSuite) TestExplicitClearCountsForcedEviction() {
 	_, err := cache.putWorkflowContext("run-id", workflowContext)
 	s.NoError(err)
 
-	cache.getWorkflowCache().Clear()
+	clearWorkflowCache(cache.getWorkflowCache())
+
+	s.Eventually(func() bool {
+		workflowContext.mutex.Lock()
+		defer workflowContext.mutex.Unlock()
+
+		return workflowContext.previousStartedEventID == 0
+	}, time.Second, time.Millisecond)
+	s.Empty(metricsHandler.Counters())
+}
+
+func (s *WorkerCacheSuite) TestCapacityEvictionCountsForcedEviction() {
+	cachePtr := &sharedWorkerCache{}
+	var lock sync.Mutex
+	cache, lease := newWorkerCache(cachePtr, &lock, 2)
+	defer lease.release()
+	metricsHandler := metrics.NewCapturingHandler()
+	newWorkflowContext := func() *workflowExecutionContextImpl {
+		return &workflowExecutionContextImpl{
+			wth: &workflowTaskHandlerImpl{
+				metricsHandler: metricsHandler,
+			},
+		}
+	}
+
+	_, err := cache.putWorkflowContext("first-run-id", newWorkflowContext())
+	s.NoError(err)
+	_, err = cache.putWorkflowContext("second-run-id", newWorkflowContext())
+	s.NoError(err)
 
 	s.Eventually(func() bool {
 		counters := metricsHandler.Counters()

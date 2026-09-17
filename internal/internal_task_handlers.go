@@ -660,8 +660,8 @@ func (w *workflowExecutionContextImpl) onEviction(reason workflowCacheRemovalRea
 	// onEviction is run by LRU cache's removeFunc in separate goroutinue
 	w.mutex.Lock()
 
-	// Final-worker cleanup is not an individual forced eviction.
-	if reason != workflowCacheRemovalReasonShutdown && w.err == nil && !w.isWorkflowCompleted {
+	// Bulk cache cleanup is not an individual forced eviction.
+	if reason != workflowCacheRemovalReasonBulk && w.err == nil && !w.isWorkflowCompleted {
 		w.wth.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
 	}
 

@@ -32,9 +32,10 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
-- Final-worker shutdown now clears the sticky workflow cache without incrementing
-  `temporal_sticky_cache_total_forced_eviction`. A later `PurgeStickyWorkflowCache` call finds no
-  cached workflows, so stop-then-purge sequences may report fewer forced evictions.
+- Bulk sticky workflow cache cleanup, including `PurgeStickyWorkflowCache` and final-worker
+  shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
+  cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
+  counted, but dashboards may report fewer forced evictions.
 
 ### Fixed
 
