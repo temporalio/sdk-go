@@ -35,6 +35,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fixed a race between command creation and workflow deadlock handling under
+  `worker.FailWorkflow`.
 - Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
   `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.

@@ -1,6 +1,8 @@
 package internal
 
 import (
+	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -11,6 +13,39 @@ import (
 
 	"go.temporal.io/sdk/converter"
 )
+
+func TestCommandDeadlockRace(t *testing.T) {
+	const commandCount = 1_000
+
+	h := newCommandsHelper()
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		<-start
+
+		for i := range commandCount {
+			id := strconv.Itoa(i)
+			command := createNewCommand(enumspb.COMMAND_TYPE_RECORD_MARKER)
+			h.addCommand(h.newNaiveCommandStateMachine(commandTypeMarker, id, command))
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		<-start
+
+		for range commandCount {
+			h.getCommands(false)
+		}
+	}()
+
+	close(start)
+	wg.Wait()
+	require.Len(t, h.getCommands(false), commandCount)
+}
 
 func Test_TimerStateMachine_CancelBeforeSent(t *testing.T) {
 	t.Parallel()
