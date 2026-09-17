@@ -2247,7 +2247,7 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannelWithOptions(
 
 func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) converter.EncodedValue {
 	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
+		dc = DefaultInternalDataConverter
 	}
 	return &EncodedValue{value, dc}
 }

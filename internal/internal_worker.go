@@ -306,7 +306,7 @@ func ensureRequiredParams(params *workerExecutionParameters) {
 		params.Logger.Info("No metrics handler configured for temporal worker. Use NopHandler as default.")
 	}
 	if params.DataConverter == nil {
-		params.DataConverter = converter.GetDefaultDataConverter()
+		params.DataConverter = DefaultInternalDataConverter
 		params.Logger.Info("No DataConverter configured for temporal worker. Use default one.")
 	}
 	if params.FailureConverter == nil {
@@ -1284,7 +1284,7 @@ func getDataConverterFromActivityCtx(ctx context.Context) converter.DataConverte
 	if env != nil && env.dataConverter != nil {
 		dataConverter = env.dataConverter
 	} else {
-		dataConverter = converter.GetDefaultDataConverter()
+		dataConverter = DefaultInternalDataConverter
 	}
 	return WithContext(ctx, dataConverter)
 }
@@ -2061,7 +2061,7 @@ func (aw *WorkflowReplayer) GetWorkflowResult(workflowID string, valuePtr any) e
 	}
 	dc := aw.dataConverter
 	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
+		dc = DefaultInternalDataConverter
 	}
 	return dc.FromPayloads(payloads, valuePtr)
 }
@@ -2953,10 +2953,9 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 	return eligibility
 }
 
-// setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
-		client.dataConverter = converter.GetDefaultDataConverter()
+		client.dataConverter = DefaultInternalDataConverter
 	}
 	if client.namespace == "" {
 		client.namespace = DefaultNamespace
