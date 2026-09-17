@@ -1304,7 +1304,6 @@ type (
 
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		//
 		Priority Priority
 
 		// responseInfo - Optional pointer to store information of StartWorkflowExecution response.

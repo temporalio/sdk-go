@@ -50,7 +50,6 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 }
 
 // WithWorkflowPriority adds a priority to the context.
-//
 func WithWorkflowPriority(ctx Context, priority internal.Priority) Context {
 	return internal.WithWorkflowPriority(ctx, priority)
 }
