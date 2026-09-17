@@ -8,7 +8,7 @@ permissions:
   actions: read
 
 env:
-  EXPERIMENT_PHASE: dependency-change
+  EXPERIMENT_PHASE: dependency-repeat
 
 jobs:
   unit:
