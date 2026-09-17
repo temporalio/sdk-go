@@ -26,6 +26,12 @@ to docs, or any other relevant information.
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
   in `StartWorker` is undone at `StopWorker`.
+- `converter.WorkflowTaskFailureError`: an opt-in error a `PayloadCodec` can return
+  from `Encode` or `Decode` on a workflow-side payload path to fail the current
+  Workflow Task rather than the Workflow Execution, so the server retries the task and
+  a transient codec failure can recover while the execution stays open. See the
+  `WorkflowTaskFailureError` docs for the honored paths, exclusions, and retry
+  guidance.
 
 ### Changed
 
@@ -33,7 +39,7 @@ to docs, or any other relevant information.
 
 ### Deprecated
 
-### :boom: Breaking Changes
+### Breaking Changes
 
 ### Fixed
 

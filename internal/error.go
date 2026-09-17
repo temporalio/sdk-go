@@ -13,6 +13,7 @@ import (
 	failurepb "go.temporal.io/api/failure/v1"
 
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/internal/codecerror"
 )
 
 /*
@@ -835,6 +836,26 @@ func newPanicError(value any, stackTrace string) error {
 
 func newWorkflowPanicError(value any, stackTrace string) error {
 	return &workflowPanicError{value: value, stackTrace: stackTrace}
+}
+
+// codecWorkflowTaskFailureFrom reports whether err carries a codec-originated
+// WorkflowTaskFailureError (tagged at the codec boundary, see internal/codecerror).
+// On the decode paths the error arrives directly and is returned unchanged so the
+// context the SDK wrapped around the codec cause (the failed operation and workflow
+// type) survives. Encode-side markers are panicked, so they arrive wrapped in a
+// workflowPanicError; that wrapper is dropped so the failure is not logged or
+// classified as a workflow panic, while any context inside it is preserved.
+func codecWorkflowTaskFailureFrom(err error) (error, bool) {
+	if panicErr, ok := err.(*workflowPanicError); ok {
+		if inner, ok := panicErr.value.(error); ok && codecerror.Has(inner) {
+			return inner, true
+		}
+		return nil, false
+	}
+	if codecerror.Has(err) {
+		return err, true
+	}
+	return nil, false
 }
 
 // Error from error interface
