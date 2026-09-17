@@ -8,6 +8,8 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
+var DefaultInternalDataConverter = makeTransferAware(converter.GetDefaultDataConverter())
+
 // -- USER API -----------------------------------------------------------
 
 // ValueWithTransferConverter is an optional interface that values can implement to provide
@@ -26,7 +28,7 @@ type ValueWithTransferConverter interface {
 }
 
 // TransferConverter converts application values to serializable transfer
-// values and back. Implement it using [NewTransferConverter].
+// values and back. Implement it using [NewContextAwareTransferConverter].
 //
 // The SDK will only invoke tc.ToTransferValue(v) if v.TransferConverter()
 // equals tc. Likewise, the SDK will only invoke tc.FromTransferValue(tvp, v)
@@ -55,13 +57,13 @@ type TransferConverter interface {
 	transferConverter()
 }
 
-// NewTransferConverter builds a [TransferConverter] that can map
+// NewContextAwareTransferConverter builds a [TransferConverter] that can map
 // something of type Value into a serializable "transfer value", and back.
 // The first pair of functions converts payloads outside a workflow,
 // the second pair converts inside one.
 //
 // NOTE: Experimental.
-func NewTransferConverter[Value, TransferValue any](
+func NewContextAwareTransferConverter[Value, TransferValue any](
 	toTransferValue func(context.Context, Value) (TransferValue, error),
 	fromTransferValue func(context.Context, TransferValue, *Value) error,
 	toTransferValueInWorkflow func(Context, Value) (TransferValue, error),
@@ -73,6 +75,28 @@ func NewTransferConverter[Value, TransferValue any](
 		toTransferValueInWorkflow:   toTransferValueInWorkflow,
 		fromTransferValueInWorkflow: fromTransferValueInWorkflow,
 	}
+}
+
+// newTransferConverter builds a converter that converts the same way inside
+// and outside of a workflow.
+func newTransferConverter[Value, TransferValue any](
+	toTransferValue func(Value) (TransferValue, error),
+	fromTransferValue func(TransferValue, *Value) error,
+) TransferConverter {
+	return NewContextAwareTransferConverter(
+		func(_ context.Context, value Value) (TransferValue, error) {
+			return toTransferValue(value)
+		},
+		func(_ context.Context, transferValue TransferValue, valuePtr *Value) error {
+			return fromTransferValue(transferValue, valuePtr)
+		},
+		func(_ Context, value Value) (TransferValue, error) {
+			return toTransferValue(value)
+		},
+		func(_ Context, transferValue TransferValue, valuePtr *Value) error {
+			return fromTransferValue(transferValue, valuePtr)
+		},
+	)
 }
 
 type transferConverter[Value, TransferValue any] struct {

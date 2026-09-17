@@ -915,7 +915,7 @@ func (e *TestWorkflowEnvironment) SetStartWorkflowOptions(options StartWorkflowO
 
 // SetDataConverter sets data converter.
 func (e *TestWorkflowEnvironment) SetDataConverter(dataConverter converter.DataConverter) *TestWorkflowEnvironment {
-	e.impl.setDataConverter(dataConverter)
+	e.impl.setDataConverter(makeTransferAware(dataConverter))
 	return e
 }
 
