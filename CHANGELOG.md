@@ -37,6 +37,8 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Autoscaling pollers now honor configured bounds at startup, preventing excess polls and workflow
+  polling delays.
 - Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
   `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.

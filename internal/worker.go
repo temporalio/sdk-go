@@ -641,6 +641,11 @@ func NewPollerBehaviorAutoscaling(
 	if maximumNumberOfPollers <= 0 {
 		maximumNumberOfPollers = defaultAutoscalingMaximumNumberOfPollers // Default maximum number of pollers.
 	}
+	if initialNumberOfPollers < minimumNumberOfPollers {
+		initialNumberOfPollers = minimumNumberOfPollers
+	} else if initialNumberOfPollers > maximumNumberOfPollers {
+		initialNumberOfPollers = maximumNumberOfPollers
+	}
 	return &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: initialNumberOfPollers,
 		minimumNumberOfPollers: minimumNumberOfPollers,

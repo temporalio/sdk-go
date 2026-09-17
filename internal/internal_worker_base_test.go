@@ -378,6 +378,36 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingConcurrencyScalesUpToMaximum() 
 	}, 200*time.Millisecond, 10*time.Millisecond, "should not exceed maximum concurrency")
 }
 
+func (s *ScalableTaskPollerSuite) TestAutoscalingStartupClampsToMaximum() {
+	synctest.Test(s.T(), func(t *testing.T) {
+		behavior := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{
+			MaximumNumberOfPollers: 2,
+		})
+		blockingPoller := newBlockingProbeTaskPoller()
+		poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+		bw := newBaseWorker(baseWorkerOptions{
+			slotSupplier:     &testSlotSupplier{},
+			maxTaskPerSecond: 1000,
+			taskPollers:      []scalableTaskPoller{poller},
+			taskProcessor:    noopTaskProcessor{},
+			workerType:       "AutoscalingStartupTest",
+			logger:           ilog.NewNopLogger(),
+			stopTimeout:      time.Second,
+			metricsHandler:   metrics.NopHandler,
+		})
+
+		bw.Start()
+		defer func() {
+			blockingPoller.Allow(readAutoscalingPollerState(poller.autoscalingRunner))
+			blockingPoller.Close()
+			bw.Stop()
+		}()
+
+		assertAutoscalingPollerState(t, poller.autoscalingRunner, 2,
+			"startup pollers should not exceed the maximum")
+	})
+}
+
 func (s *ScalableTaskPollerSuite) TestAutoscalingScalesDownToMinimum() {
 	synctest.Test(s.T(), func(t *testing.T) {
 		behavior := &pollerBehaviorAutoscaling{
@@ -1658,6 +1688,43 @@ func (s *ScalableTaskPollerSuite) TestWorkflowAutoscalingBalancerConfiguration()
 	require.Len(s.T(), simplePollers, 1)
 	require.Nil(s.T(), simplePollers[0].autoscalingBalancer)
 	require.Equal(s.T(), Mixed, simplePollers[0].taskPoller.(*workflowTaskPoller).mode)
+}
+
+func (s *ScalableTaskPollerSuite) TestWorkflowBalancerUsesClampedInitialTarget() {
+	behavior := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{
+		MaximumNumberOfPollers: 2,
+	})
+	pollers := buildWorkflowScalableTaskPollers(
+		&workflowTaskProcessor{stickyCacheSize: 1},
+		behavior,
+		workerExecutionParameters{serverSupportsAutoscaling: &atomic.Bool{}},
+		4,
+	)
+
+	require.Equal(s.T(), int64(2), pollers[0].pollerAutoscaler.target.Load())
+	require.Equal(s.T(), int64(2), pollers[1].pollerAutoscaler.target.Load())
+	require.Equal(s.T(), int64(2), pollers[0].autoscalingBalancer.stickyTarget)
+}
+
+func (s *ScalableTaskPollerSuite) TestWorkflowBalancerDoesNotWaitPastStickyMaximum() {
+	behavior := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{
+		MaximumNumberOfPollers: 2,
+	})
+	pollers := buildWorkflowScalableTaskPollers(
+		&workflowTaskProcessor{stickyCacheSize: 1},
+		behavior,
+		workerExecutionParameters{serverSupportsAutoscaling: &atomic.Bool{}},
+		4,
+	)
+	balancer := pollers[0].autoscalingBalancer
+	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
+	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	balancer.setStickyBacklog(3)
+
+	balancer.mu.Lock()
+	defer balancer.mu.Unlock()
+	require.True(s.T(), balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
 }
 
 func TestConfigurePollersRejectsInconsistentBalancer(t *testing.T) {
