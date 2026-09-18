@@ -88,9 +88,9 @@ type (
 
 func newEncodedValues(values *commonpb.Payloads, dc converter.DataConverter) converter.EncodedValues {
 	if dc == nil {
-		dc = converter.GetDefaultDataConverter()
+		dc = DefaultInternalDataConverter
 	}
-	return &EncodedValues{values, dc}
+	return &EncodedValues{values, makeTransferAware(dc)}
 }
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.
@@ -932,7 +932,7 @@ func (e *TestWorkflowEnvironment) SetStartWorkflowOptions(options StartWorkflowO
 
 // SetDataConverter sets data converter.
 func (e *TestWorkflowEnvironment) SetDataConverter(dataConverter converter.DataConverter) *TestWorkflowEnvironment {
-	e.impl.setDataConverter(dataConverter)
+	e.impl.setDataConverter(makeTransferAware(dataConverter))
 	return e
 }
 
