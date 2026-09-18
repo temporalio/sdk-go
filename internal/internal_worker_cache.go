@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"runtime"
 	"sync"
 
@@ -14,17 +15,23 @@ const (
 	workflowCacheRemovalReasonBulk
 )
 
+var errWorkerCacheReleased = errors.New("workflow cache handle is released")
+
 // A WorkerCache instance is held by each worker to hold cached data. The contents of this struct should always be
 // pointers for any data shared with other workers, and owned values for any instance-specific caches.
 type WorkerCache struct {
 	workflowCache        cache.Cache
 	maxWorkflowCacheSize int
+	// Serialize puts with release so shutdown cannot leave late cache entries.
+	lifecycleLock sync.Mutex
+	released      bool
 }
 
 // workerCacheLease owns one reference to a shared cache generation. Workflow
 // cache entries must not retain this lease, or they can prevent final release.
 type workerCacheLease struct {
 	sharedCache *sharedWorkerCache
+	workerCache *WorkerCache
 	lock        *sync.Mutex
 	releaseOnce sync.Once
 }
@@ -114,6 +121,7 @@ func newWorkerCache(storeIn *sharedWorkerCache, lock *sync.Mutex, cacheSize int)
 	}
 	lease := &workerCacheLease{
 		sharedCache: storeIn,
+		workerCache: workerCache,
 		lock:        lock,
 	}
 	runtime.SetFinalizer(lease, func(lease *workerCacheLease) {
@@ -128,6 +136,10 @@ func (wc *WorkerCache) getWorkflowCache() cache.Cache {
 
 func (lease *workerCacheLease) release() {
 	lease.releaseOnce.Do(func() {
+		lease.workerCache.lifecycleLock.Lock()
+		defer lease.workerCache.lifecycleLock.Unlock()
+		lease.workerCache.released = true
+
 		lease.lock.Lock()
 		lease.sharedCache.workerRefcount--
 		var releasedCache cache.Cache
@@ -153,6 +165,13 @@ func (wc *WorkerCache) getWorkflowContext(runID string) *workflowExecutionContex
 }
 
 func (wc *WorkerCache) putWorkflowContext(runID string, wec *workflowExecutionContextImpl) (*workflowExecutionContextImpl, error) {
+	wc.lifecycleLock.Lock()
+	defer wc.lifecycleLock.Unlock()
+
+	if wc.released {
+		return wec, errWorkerCacheReleased
+	}
+
 	existing, err := wc.workflowCache.PutIfNotExist(runID, wec)
 	if err != nil {
 		return nil, err

@@ -859,9 +859,15 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 		}
 
 		if wth.cache.MaxWorkflowCacheSize() > 0 && task.Query == nil {
-			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
+			workflowContext, err = wth.cache.putWorkflowContext(runID, workflowContext)
+			cacheReleased := errors.Is(err, errWorkerCacheReleased)
+			if cacheReleased {
+				err = nil
+			} else if err != nil {
+				return
+			}
 			workflowContext.Lock()
-			workflowContext.cached = true
+			workflowContext.cached = !cacheReleased
 		} else {
 			workflowContext.Lock()
 		}

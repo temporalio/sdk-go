@@ -569,6 +569,27 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	t.testWorkflowTaskWorkflowExecutionStartedHelper(params)
 }
 
+func (t *TaskHandlersTestSuite) TestWorkflowTask_ReleasedCacheRunsUncached() {
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+	}
+	cache, lease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 10)
+	lease.release()
+	params := t.getTestWorkerExecutionParams()
+	params.cache = cache
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	wftask := workflowTask{task: createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")}
+
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+
+	t.False(wfctx.cached)
+	t.Zero(cache.getWorkflowCache().Size())
+	wfctx.Unlock(nil)
+	t.True(wfctx.IsDestroyed())
+}
+
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStartedWithDataConverter() {
 	params := t.getTestWorkerExecutionParams()
 	t.testWorkflowTaskWorkflowExecutionStartedHelper(params)

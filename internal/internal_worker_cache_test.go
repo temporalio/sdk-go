@@ -88,6 +88,22 @@ func (s *WorkerCacheSuite) TestFinalReleaseClearsWithoutMetric() {
 	s.Empty(metricsHandler.Counters())
 }
 
+func (s *WorkerCacheSuite) TestReleasedHandleRejectsPut() {
+	cachePtr := &sharedWorkerCache{}
+	var lock sync.Mutex
+	cache, lease := newWorkerCache(cachePtr, &lock, 10)
+	lease.release()
+	workflowContext := &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{metricsHandler: metrics.NopHandler},
+	}
+
+	actual, err := cache.putWorkflowContext("run-id", workflowContext)
+
+	s.Error(err)
+	s.Same(workflowContext, actual)
+	s.Zero(cache.getWorkflowCache().Size())
+}
+
 func (s *WorkerCacheSuite) TestBulkClearDoesNotCountForcedEviction() {
 	cachePtr := &sharedWorkerCache{}
 	var lock sync.Mutex
