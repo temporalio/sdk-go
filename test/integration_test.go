@@ -176,8 +176,7 @@ func (ts *IntegrationTestSuite) SetupTest() {
 
 	var err error
 	trafficController := test.NewSimpleTrafficController()
-	ts.client, err = ts.newDefaultClient(func(options *client.Options) {
-		options.WorkerHeartbeatInterval = -1
+	ts.client, err = ts.newIntegrationTestClient(func(options *client.Options) {
 		options.ContextPropagators = []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),
 			NewKeysPropagator([]string{testContextKey2}),

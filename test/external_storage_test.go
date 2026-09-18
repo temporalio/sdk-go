@@ -174,9 +174,14 @@ func (s *ExternalStorageTestSuite) SetupTest() {
 		}
 	})
 	s.NoError(err)
-	s.worker = worker.New(s.client, s.taskQueueName, worker.Options{
+	workerOptions := worker.Options{
 		WorkflowPanicPolicy: worker.FailWorkflow,
-	})
+	}
+	if strings.Contains(s.T().Name(), "TestUpdateAndQueryOverErrorLimit") {
+		// Race instrumentation makes the 3 MiB result expensive to encode.
+		workerOptions.DeadlockDetectionTimeout = 10 * time.Second
+	}
+	s.worker = worker.New(s.client, s.taskQueueName, workerOptions)
 }
 
 func (s *ExternalStorageTestSuite) TearDownTest() {
