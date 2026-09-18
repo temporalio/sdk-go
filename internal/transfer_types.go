@@ -248,7 +248,7 @@ func (dc *transferAwareDataConverter) fromTransferValue(tc TransferConverter, tr
 
 func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	if payload == nil {
-		return nil
+		return dc.parent.FromPayload(payload, valuePtr)
 	}
 	convertible, ok := valuePtr.(ValueWithTransferConverter)
 	if !ok {
@@ -264,13 +264,19 @@ func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, val
 }
 
 func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
+	if payloads == nil {
+		return dc.parent.FromPayloads(payloads, valuePtrs...)
+	}
 	// TODO Is it worth getting fancy to avoid this allocation in the common case where
 	// none of the values are transfer-convertible?
-	transferValuePtrs := make([]any, len(valuePtrs))
-	for i, valuePtr := range valuePtrs {
-		convertible, ok := valuePtr.(ValueWithTransferConverter)
+	transferValuePtrs := make([]any, len(payloads.Payloads))
+	for i, _ := range payloads.Payloads {
+		if i >= len(valuePtrs) {
+			break
+		}
+		convertible, ok := valuePtrs[i].(ValueWithTransferConverter)
 		if !ok {
-			transferValuePtrs[i] = valuePtr
+			transferValuePtrs[i] = valuePtrs[i]
 		} else {
 			transferValuePtrs[i] = convertible.TransferConverter().NewTransferValuePtr()
 		}
@@ -280,8 +286,8 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		return err
 	}
 
-	for i, valuePtr := range valuePtrs {
-		convertible, ok := valuePtr.(ValueWithTransferConverter)
+	for i, _ := range payloads.Payloads {
+		convertible, ok := valuePtrs[i].(ValueWithTransferConverter)
 		if !ok {
 			valuePtrs[i] = transferValuePtrs[i]
 		} else {
