@@ -187,9 +187,10 @@ var _ ContextAware = (*transferAwareDataConverter)(nil)
 
 // makeTransferAware is an idempotent operation that upgrades a
 // normal data converter into a transfer-type-aware data converter.
+// If dc is nil, it wraps the default data converter.
 func makeTransferAware(dc converter.DataConverter) *transferAwareDataConverter {
 	if dc == nil {
-		panic("nil data converter")
+		dc = converter.GetDefaultDataConverter()
 	}
 	if tadc, ok := dc.(*transferAwareDataConverter); ok {
 		return tadc

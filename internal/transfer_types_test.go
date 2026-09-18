@@ -286,7 +286,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	t.Run("context-aware parent", func(t *testing.T) {
 		dc := makeTransferAware(NewContextAwareDataConverter(converter.GetDefaultDataConverter()))
 
-		ctx := context.WithValue(context.Background(), ContextAwareDataConverterContextKey, "300")
+		ctx := context.WithValue(t.Context(), ContextAwareDataConverterContextKey, "300")
 		masked := WithContext(ctx, dc)
 		require.NotSame(t, dc, masked)
 
@@ -299,7 +299,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	// converters may still want it.
 	t.Run("parent that is not context aware", func(t *testing.T) {
 		dc := DefaultInternalDataConverter
-		require.NotSame(t, dc, WithContext(context.Background(), dc))
+		require.NotSame(t, dc, WithContext(t.Context(), dc))
 		require.NotSame(t, dc, WithWorkflowContext(Background(), dc))
 		// Serialization contexts are only forwarded, so there is nothing to keep.
 		require.Same(t, dc, dc.WithSerializationContext(converter.WorkflowSerializationContext{}))
