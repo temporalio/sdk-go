@@ -3229,7 +3229,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		namespace:          "worker-options-test",
 		registry:           nil,
 		identity:           "143@worker-options-test-1",
-		dataConverter:      &converter.CompositeDataConverter{},
+		dataConverter:      makeTransferAware(&converter.CompositeDataConverter{}),
 		failureConverter:   GetDefaultFailureConverter(),
 		contextPropagators: nil,
 		logger:             ilog.NewNopLogger(),
