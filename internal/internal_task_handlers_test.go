@@ -515,7 +515,7 @@ func createTestEventTimerCanceled(eventID int64, id int) *historypb.HistoryEvent
 var testWorkflowTaskTaskqueue = "tq1"
 
 func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionParameters {
-	cache := NewWorkerCache()
+	cache := newTestWorkerCache(t.T())
 	return workerExecutionParameters{
 		TaskQueue:        testWorkflowTaskTaskqueue,
 		Namespace:        testNamespace,
@@ -567,6 +567,27 @@ func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(p
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	params := t.getTestWorkerExecutionParams()
 	t.testWorkflowTaskWorkflowExecutionStartedHelper(params)
+}
+
+func (t *TaskHandlersTestSuite) TestWorkflowTask_ReleasedCacheRunsUncached() {
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+	}
+	cache, lease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 10)
+	lease.release()
+	params := t.getTestWorkerExecutionParams()
+	params.cache = cache
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	wftask := workflowTask{task: createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")}
+
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+
+	t.False(wfctx.cached)
+	t.Zero(cache.getWorkflowCache().Size())
+	wfctx.Unlock(nil)
+	t.True(wfctx.IsDestroyed())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStartedWithDataConverter() {
@@ -1015,7 +1036,9 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(cacheSize int) {
 	}
 
 	params := t.getTestWorkerExecutionParams()
-	params.cache = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, cacheSize)
+	var cacheLease *workerCacheLease
+	params.cache, cacheLease = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, cacheSize)
+	defer cacheLease.release()
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	task := createWorkflowTask(testEvents, 0, workflowName)
@@ -2689,7 +2712,8 @@ func TestResetIfDestroyedTaskPrep(t *testing.T) {
 			metricsHandler: metrics.NopHandler,
 			logger:         ilog.NewNopLogger(),
 			cache: &WorkerCache{
-				sharedCache: &sharedWorkerCache{workflowCache: &cache},
+				workflowCache:        cache,
+				maxWorkflowCacheSize: 1,
 			},
 		},
 	}

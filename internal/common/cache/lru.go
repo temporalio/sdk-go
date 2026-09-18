@@ -150,14 +150,19 @@ func (c *lru) Size() int {
 
 // Clear clears the cache.
 func (c *lru) Clear() {
+	c.ClearWithCallback(c.rmFunc)
+}
+
+// ClearWithCallback clears the cache using the supplied removal callback.
+func (c *lru) ClearWithCallback(rmFunc RemovedFunc) {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
 	for key, elt := range c.byKey {
 		if elt != nil {
 			entry := c.byAccess.Remove(elt).(*cacheEntry)
-			if c.rmFunc != nil {
-				go c.rmFunc(entry.value)
+			if rmFunc != nil {
+				go rmFunc(entry.value)
 			}
 			delete(c.byKey, key)
 		}

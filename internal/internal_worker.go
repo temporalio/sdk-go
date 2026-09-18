@@ -77,12 +77,10 @@ const (
 
 	testTagsContextKey = "temporal-testTags"
 
-	workflowLiteralRegistrationHint =
-		"It looks like you registered a function literal (closure) without giving it an alias. " +
+	workflowLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias. " +
 		"Register it with RegisterWorkflowWithOptions and set Name to a stable, unique name."
 
-	activityLiteralRegistrationHint =
-		"It looks like you registered a function literal (closure) without giving it an alias. " +
+	activityLiteralRegistrationHint = "It looks like you registered a function literal (closure) without giving it an alias. " +
 		"Register it with RegisterActivityWithOptions and set Name to a stable, unique name."
 )
 
@@ -1328,6 +1326,8 @@ type AggregatedWorker struct {
 	heartbeatMetrics             *heartbeatMetricsHandler
 	heartbeatCallback            func() *workerpb.WorkerHeartbeat
 	workerPollCompleteOnShutdown *atomic.Bool
+	cacheLease                   *workerCacheLease
+
 	// pendingEnvironment is attached to every heartbeat (periodic and shutdown) until the server
 	// accepts one, at which point heartbeatSuccess clears it.
 	pendingEnvironment atomic.Pointer[workerpb.EnvironmentInfo]
@@ -1716,6 +1716,9 @@ func (aw *AggregatedWorker) Stop() {
 	})
 
 	aw.unregisterHeartbeatWorker()
+	if aw.cacheLease != nil {
+		aw.cacheLease.release()
+	}
 
 	aw.logger.Info("Stopped Worker")
 }
@@ -2162,7 +2165,8 @@ func (aw *WorkflowReplayer) replayWorkflowHistoryRoot(
 		},
 		inboundVisitor: aw.inboundPayloadVisitor,
 	}
-	cache := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
+	cache, cacheLease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 0)
+	defer cacheLease.release()
 	params := workerExecutionParameters{
 		Namespace:             namespace,
 		TaskQueue:             taskQueue,
@@ -2447,7 +2451,13 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	payloadLimitVisitor, setErrorLimits := newPayloadLimitsVisitor(client.payloadWarningLimits, logger)
 
-	cache := NewWorkerCache()
+	cache, cacheLease := NewWorkerCache()
+	constructionComplete := false
+	defer func() {
+		if !constructionComplete {
+			cacheLease.release()
+		}
+	}()
 	workerPollCompleteOnShutdown := &atomic.Bool{}
 	workerParams := workerExecutionParameters{
 		Namespace:                        client.namespace,
@@ -2712,6 +2722,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		heartbeatMetrics:             heartbeatMetrics,
 		heartbeatCallback:            heartbeatCallback,
 		workerPollCompleteOnShutdown: workerPollCompleteOnShutdown,
+		cacheLease:                   cacheLease,
 	}
 	if client.heartbeatManager != nil {
 		aw.pendingEnvironment.Store(client.heartbeatManager.environmentInfo)
@@ -2732,6 +2743,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 			WorkerRegistry:    aw,
 		})
 	})
+	constructionComplete = true
 	return aw
 }
 
@@ -2779,7 +2791,6 @@ func isError(inType reflect.Type) bool {
 	errorElem := reflect.TypeFor[error]()
 	return inType != nil && inType.Implements(errorElem)
 }
-
 
 // mightBeFunctionLiteral returns true if the given function looks like a function literal.
 // BEWARE: False positives are possible! Normal function declarations might look like literals.

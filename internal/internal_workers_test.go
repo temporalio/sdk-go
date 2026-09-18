@@ -89,7 +89,7 @@ func (s *WorkersTestSuite) TestWorkflowWorker() {
 		BackgroundContext:       ctx,
 		BackgroundContextCancel: cancel,
 	}
-	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
+	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler(s.T())}
 	client := &WorkflowClient{workflowService: s.service}
 	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 	s.Nil(workflowWorker.worker.options.taskPollers)
@@ -190,7 +190,7 @@ func (s *WorkersTestSuite) TestWorkflowWorkerSlotSupplier() {
 			Tuner:                   tuner,
 			WorkerStopTimeout:       time.Second,
 		}
-		overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
+		overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler(s.T())}
 		client := &WorkflowClient{workflowService: s.service}
 		workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 		_ = workflowWorker.Start()
@@ -450,7 +450,7 @@ func (s *WorkersTestSuite) TestPollWorkflowTaskQueue_InternalServiceError() {
 		),
 		Logger: ilog.NewNopLogger(),
 	}
-	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler()}
+	overrides := &workerOverrides{workflowTaskHandler: newSampleWorkflowTaskHandler(s.T())}
 	client := &WorkflowClient{workflowService: s.service}
 	workflowWorker := newWorkflowWorkerInternal(client, executionParameters, nil, overrides, newRegistry())
 	_ = workflowWorker.Start()
@@ -772,6 +772,7 @@ func (s *WorkersTestSuite) TestWorkerPluginRegistryCallbacks() {
 	worker := NewAggregatedWorker(client, "plugin-registry-callbacks-tq", WorkerOptions{
 		Plugins: []WorkerPlugin{plugin},
 	})
+	s.T().Cleanup(worker.cacheLease.release)
 
 	// Registering a dynamic activity must not require OnRegisterDynamicActivity
 	// just because OnRegisterActivity is set.
@@ -792,6 +793,7 @@ func (s *WorkersTestSuite) TestWorkerTaskQueueLimitDisableEager() {
 	worker := NewAggregatedWorker(client, "task-queue-limit-disable-eager", WorkerOptions{
 		TaskQueueActivitiesPerSecond: 1.0,
 	})
+	s.T().Cleanup(worker.cacheLease.release)
 	s.True(worker.activityWorker.executionParameters.eagerActivityExecutor.disabled)
 }
 

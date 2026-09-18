@@ -32,6 +32,9 @@ type Cache interface {
 
 	// Clear clears the cache.
 	Clear()
+
+	// ClearWithCallback clears the cache using the supplied removal callback.
+	ClearWithCallback(RemovedFunc)
 }
 
 // Options control the behavior of the cache

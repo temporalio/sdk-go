@@ -35,11 +35,18 @@ to docs, or any other relevant information.
 
 ### :boom: Breaking Changes
 
+- Bulk sticky workflow cache cleanup, including `PurgeStickyWorkflowCache` and final-worker
+  shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
+  cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
+  counted, but dashboards may report fewer forced evictions.
+
 ### Fixed
 
 - Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
   `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
+- Stopped workers now release sticky workflow cache ownership immediately. When the final worker
+  stops, cached workflow state is cleared without waiting for garbage collection.
 
 ### Security
 
