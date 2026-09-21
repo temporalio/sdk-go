@@ -140,7 +140,7 @@ func helloWorldWorkflowCancelFunc(ctx Context, _ []byte) error {
 	}
 	ctx = WithActivityOptions(ctx, ao)
 	ExecuteActivity(ctx, activityName)
-	getWorkflowEnvironment(ctx).RequestCancelActivity(ActivityID{"0"})
+	GetWorkflowEnvironment(ctx).RequestCancelActivity(ActivityID{"0"})
 	return nil
 }
 

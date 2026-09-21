@@ -32,6 +32,8 @@ const (
 
 	temporalPrefix      = "__temporal_"
 	temporalPrefixError = "__temporal_ is a reserved prefix"
+
+	systemNexusEndpoint = "__temporal_system"
 )
 
 func isWorkflowStreamReservedName(name string) bool {

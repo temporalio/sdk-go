@@ -339,7 +339,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	if err := validateFunctionArgs(workflowFunc, workflowArgs, true); err != nil {
 		return nil, err
 	}
-	workflowType, err := getWorkflowFunctionName(wc.registry, workflowFunc)
+	workflowType, err := GetWorkflowFunctionName(wc.registry, workflowFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -2049,10 +2049,10 @@ func encodeMemoValue(value any, dc converter.DataConverter, useUserDC bool) (*co
 	return payload, nil
 }
 
-// getWorkflowMemo encodes a memo map into a proto Memo. useUserDC controls whether the user's
+// GetWorkflowMemo encodes a memo map into a proto Memo. useUserDC controls whether the user's
 // data converter is attempted first. Client-side callers should pass sdkFlagsAllowed[SDKFlagMemoUserDCEncode];
 // workflow-side callers should pass the result of TryUse(SDKFlagMemoUserDCEncode) for replay safety.
-func getWorkflowMemo(input map[string]any, dc converter.DataConverter, useUserDC bool) (*commonpb.Memo, error) {
+func GetWorkflowMemo(input map[string]any, dc converter.DataConverter, useUserDC bool) (*commonpb.Memo, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -2090,7 +2090,7 @@ func createStartWorkflowInput(
 	if err := validateFunctionArgs(workflow, args, true); err != nil {
 		return nil, err
 	}
-	workflowType, err := getWorkflowFunctionName(registry, workflow)
+	workflowType, err := GetWorkflowFunctionName(registry, workflow)
 
 	if err != nil {
 		return nil, err
@@ -2131,12 +2131,12 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
+	memo, err := GetWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 	if err != nil {
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
+	searchAttr, err := SerializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -2160,19 +2160,19 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		Identity:                 w.client.identity,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
-		RetryPolicy:              convertToPBRetryPolicy(in.Options.RetryPolicy),
+		RetryPolicy:              ConvertToPBRetryPolicy(in.Options.RetryPolicy),
 		CronSchedule:             in.Options.CronSchedule,
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		Header:                   header,
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
-		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		VersioningOverride:       VersioningOverrideToProto(in.Options.VersioningOverride),
 		OnConflictOptions:        in.Options.onConflictOptions.ToProto(),
-		Priority:                 convertToPBPriority(in.Options.Priority),
+		Priority:                 ConvertToPBPriority(in.Options.Priority),
 	}
 
-	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
+	startRequest.UserMetadata, err = BuildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -2571,12 +2571,12 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
+	memo, err := GetWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 	if err != nil {
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
+	searchAttr, err := SerializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -2600,15 +2600,15 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		SignalName:               in.SignalName,
 		SignalInput:              signalInput,
 		Identity:                 w.client.identity,
-		RetryPolicy:              convertToPBRetryPolicy(in.Options.RetryPolicy),
+		RetryPolicy:              ConvertToPBRetryPolicy(in.Options.RetryPolicy),
 		CronSchedule:             in.Options.CronSchedule,
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
-		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
-		Priority:                 convertToPBPriority(in.Options.Priority),
+		VersioningOverride:       VersioningOverrideToProto(in.Options.VersioningOverride),
+		Priority:                 ConvertToPBPriority(in.Options.Priority),
 	}
 
 	// If this signalWithStart was issued from inside a Nexus operation handler, forward the inbound
@@ -2622,7 +2622,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		signalWithStartRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
 	}
 
-	signalWithStartRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
+	signalWithStartRequest.UserMetadata, err = BuildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -3188,7 +3188,7 @@ func (q *QueryRejectedError) Error() string {
 	return fmt.Sprintf("query rejected: %s", q.queryRejected.Status.String())
 }
 
-func buildUserMetadata(
+func BuildUserMetadata(
 	summary string,
 	details string,
 	dataConverter converter.DataConverter,

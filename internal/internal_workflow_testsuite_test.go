@@ -2695,7 +2695,8 @@ func (s *WorkflowTestSuiteUnitTest) Test_WorkflowLocalActivityWithMockAndListene
 	s.Equal(int32(1), completedCount.Load())
 	s.Equal(int32(1), canceledCount.Load())
 	s.Equal("hello mock", result)
-	s.True(localActivityFnCanceled.Load())
+	// The cancellation future can resolve before the activity goroutine observes ctx.Done.
+	s.Eventually(localActivityFnCanceled.Load, time.Second, time.Millisecond)
 }
 
 func (s *WorkflowTestSuiteUnitTest) Test_LocalActivityWithHeaderContext() {

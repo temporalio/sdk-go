@@ -138,7 +138,7 @@ func workflowExecutionOptionsMaskToProto(mask []string) *fieldmaskpb.FieldMask {
 	return protoMask
 }
 
-func versioningOverrideToProto(versioningOverride VersioningOverride) *workflowpb.VersioningOverride {
+func VersioningOverrideToProto(versioningOverride VersioningOverride) *workflowpb.VersioningOverride {
 	if versioningOverride == nil {
 		return nil
 	}
@@ -228,7 +228,7 @@ func versioningOverrideFromProto(versioningOverride *workflowpb.VersioningOverri
 
 func workflowExecutionOptionsToProto(options WorkflowExecutionOptions) *workflowpb.WorkflowExecutionOptions {
 	return &workflowpb.WorkflowExecutionOptions{
-		VersioningOverride: versioningOverrideToProto(options.VersioningOverride),
+		VersioningOverride: VersioningOverrideToProto(options.VersioningOverride),
 	}
 }
 

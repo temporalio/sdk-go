@@ -83,13 +83,14 @@ func PendingConfirmations(events []*session.Event) []PendingConfirmation {
 // matches each FunctionResponse to its adk_request_confirmation call by ID and
 // then executes or blocks the original tool call.
 //
-// Prefer resuming ONE decision per Run pass when the confirmed tools dispatch
-// Temporal Activities (MCP proxy tools, ActivityAsTool): upstream ADK re-queues
-// a batch of approved calls in Go map iteration order, which is not
-// replay-stable, so a multi-decision resume can schedule the resulting
-// Activities in a different order on replay and fail with a nondeterminism
-// error. A single decision per pass sidesteps the hazard; in-workflow function
-// tools are unaffected.
+// Decisions may be batched freely: a single resume message can carry any number
+// of them. As of the adk/v2 minimum required in go.mod, upstream ADK re-queues
+// the approved calls of each confirmation request in the order the paused calls
+// appeared in (a batch spanning multiple pause events resumes the newest event
+// first) — never in the order of the decisions here — so a multi-decision
+// resume is replay-stable. When the confirmed tools dispatch Temporal
+// Activities (MCP proxy tools, ActivityAsTool), the resulting Activities are
+// scheduled in that same order.
 func ConfirmationResponse(decisions ...ConfirmationDecision) *genai.Content {
 	parts := make([]*genai.Part, 0, len(decisions))
 	for _, d := range decisions {

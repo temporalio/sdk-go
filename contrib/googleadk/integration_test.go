@@ -57,12 +57,15 @@ func devServer(t *testing.T) (client.Client, func()) {
 	return srv.Client(), func() { _ = srv.Stop() }
 }
 
-// startWorker boots a real worker for agentRunWorkflow with the plugin Activities
-// wired from cfg.
+// startWorker boots a real worker for the test workflows with the plugin
+// Activities wired from cfg, plus the guarded-trio activities the
+// multi-decision HITL workflow dispatches.
 func startWorker(t *testing.T, c client.Client, cfg googleadk.Config) worker.Worker {
 	t.Helper()
 	w := worker.New(c, integrationTaskQueue, worker.Options{})
 	w.RegisterWorkflow(agentRunWorkflow)
+	w.RegisterWorkflow(multiConfirmHitlWorkflow)
+	registerGuardedTrio(w)
 	acts, err := googleadk.NewActivities(cfg)
 	require.NoError(t, err)
 	acts.Register(w)
@@ -112,25 +115,27 @@ func TestStreamingIntegration(t *testing.T) {
 	assert.GreaterOrEqual(t, offset, int64(len(cm.chunks)), "every streamed chunk must be published to the topic")
 }
 
-// TestReplaySingleAndMultiAgent runs real single-agent and multi-agent workflows
-// against the dev server, then replays each recorded history with
-// worker.WorkflowReplayer — the canonical determinism guarantee. A replay failure
-// here is exactly the non-determinism the plugin's NewContext (time/uuid/task
-// providers) exists to prevent.
+// TestReplaySingleAndMultiAgent runs real single-agent, multi-agent, and
+// multi-decision HITL workflows against the dev server, then replays each
+// recorded history with worker.WorkflowReplayer — the canonical determinism
+// guarantee. A replay failure here is exactly the non-determinism the plugin's
+// NewContext (time/uuid/task providers) exists to prevent.
 func TestReplaySingleAndMultiAgent(t *testing.T) {
 	c, stop := devServer(t)
 	defer stop()
 
-	w := startWorker(t, c, googleadk.Config{
-		Models: map[string]googleadk.ModelFactory{
-			"root-model": scriptedModelFactory(
-				googleadk.FunctionCallResponse("c1", "transfer_to_agent", map[string]any{"agent_name": "specialist"}),
-				googleadk.TextResponse("(root fallback)"),
-			),
-			"specialist-model": scriptedModelFactory(googleadk.TextResponse("specialist answer")),
-			"solo-model":       scriptedModelFactory(googleadk.TextResponse("hello from solo")),
-		},
-	})
+	models := map[string]googleadk.ModelFactory{
+		"root-model": scriptedModelFactory(
+			googleadk.FunctionCallResponse("c1", "transfer_to_agent", map[string]any{"agent_name": "specialist"}),
+			googleadk.TextResponse("(root fallback)"),
+		),
+		"specialist-model": scriptedModelFactory(googleadk.TextResponse("specialist answer")),
+		"solo-model":       scriptedModelFactory(googleadk.TextResponse("hello from solo")),
+	}
+	for name, factory := range multiConfirmModels() {
+		models[name] = factory
+	}
+	w := startWorker(t, c, googleadk.Config{Models: models})
 	defer w.Stop()
 
 	ctx := context.Background()
@@ -160,8 +165,32 @@ func TestReplaySingleAndMultiAgent(t *testing.T) {
 		executions = append(executions, execution{run.GetID(), run.GetRunID()})
 	}
 
+	// The multi-decision confirmation resume: one turn pauses on three guarded
+	// ActivityAsTool tools and a single batched ConfirmationResponse — with the
+	// decisions deliberately rotated to (gamma, alpha, beta) — approves all of
+	// them: the shape whose re-queue order was Go-map-random (and therefore not
+	// replay-stable) before the adk/v2 minimum required in go.mod. The strict
+	// order assertion pins that the resumed responses follow the confirmations'
+	// request order, not the decisions' position, so a resume that silently did
+	// nothing (or re-dispatched in decision order) fails here rather than
+	// replaying cleanly below. It drives its own two-pass workflow rather than
+	// agentRunWorkflow, so it is started directly and appended to the same
+	// replay set.
+	mcRun, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
+		ID:        "adk-replay-multiconfirm-" + time.Now().Format("150405.000"),
+		TaskQueue: integrationTaskQueue,
+	}, multiConfirmHitlWorkflow)
+	require.NoError(t, err)
+	var mcRes multiConfirmResult
+	require.NoError(t, mcRun.Get(ctx, &mcRes))
+	require.Equal(t, 3, mcRes.PendingCount, "all three guarded tools must pause before the batched resume")
+	require.Equal(t, []string{"guarded_alpha", "guarded_beta", "guarded_gamma"}, mcRes.ResumedToolResponses,
+		"resumed responses must follow the confirmations' request order, not the rotated decision order")
+	executions = append(executions, execution{mcRun.GetID(), mcRun.GetRunID()})
+
 	replayer := worker.NewWorkflowReplayer()
 	replayer.RegisterWorkflow(agentRunWorkflow)
+	replayer.RegisterWorkflow(multiConfirmHitlWorkflow)
 	for _, e := range executions {
 		err := replayer.ReplayWorkflowExecution(ctx, c.WorkflowService(), nil, "default", sdkworkflow.Execution{
 			ID:    e.id,

@@ -37,13 +37,15 @@ type NexusOperationInfo struct {
 
 // NexusOperationContext is an internal only struct that holds fields used by the temporalnexus functions.
 type NexusOperationContext struct {
-	client         Client
-	Namespace      string
-	TaskQueue      string
-	Endpoint       string
-	metricsHandler metrics.Handler
-	log            log.Logger
-	registry       *registry
+	client                    Client
+	RequestID                 string
+	Namespace                 string
+	TaskQueue                 string
+	Endpoint                  string
+	nexusSerializationContext converter.NexusSerializationContext
+	metricsHandler            metrics.Handler
+	log                       log.Logger
+	registry                  *registry
 
 	// responseLinksMu guards responseLinks. A Nexus operation handler is invoked from a single
 	// goroutine, but handlers are free to issue RPCs from other goroutines they spawn, so the
@@ -80,7 +82,7 @@ func (nc *NexusOperationContext) ResponseLinks() []*commonpb.Link {
 }
 
 func (nc *NexusOperationContext) ResolveWorkflowName(wf any) (string, error) {
-	return getWorkflowFunctionName(nc.registry, wf)
+	return GetWorkflowFunctionName(nc.registry, wf)
 }
 
 // ResolveActivityName returns the registered name of the given activity function reference (or
@@ -618,8 +620,8 @@ func (t *testSuiteClientForNexusOperations) ExecuteWorkflow(ctx context.Context,
 				ParentClosePolicy:        enums.PARENT_CLOSE_POLICY_ABANDON,
 				Memo:                     options.Memo,
 				CronSchedule:             options.CronSchedule,
-				RetryPolicy:              convertToPBRetryPolicy(options.RetryPolicy),
-				Priority:                 convertToPBPriority(options.Priority),
+				RetryPolicy:              ConvertToPBRetryPolicy(options.RetryPolicy),
+				Priority:                 ConvertToPBPriority(options.Priority),
 			},
 		}, func(result *commonpb.Payloads, wfErr error) {
 			// This callback handles async completion of Nexus operations. If there was an error when
@@ -864,7 +866,7 @@ func (t *testSuiteClientForNexusOperations) ExecuteActivity(ctx context.Context,
 			ScheduleToStartTimeout: options.ScheduleToStartTimeout,
 			StartToCloseTimeout:    options.StartToCloseTimeout,
 			HeartbeatTimeout:       options.HeartbeatTimeout,
-			RetryPolicy:            convertToPBRetryPolicy(options.RetryPolicy),
+			RetryPolicy:            ConvertToPBRetryPolicy(options.RetryPolicy),
 		},
 		ActivityType:  *activityType,
 		Input:         input,
@@ -935,6 +937,22 @@ func (h *testEnvActivityHandleForNexusOperations) Describe(ctx context.Context, 
 }
 
 func (h *testEnvActivityHandleForNexusOperations) Terminate(ctx context.Context, options ClientTerminateActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Pause(ctx context.Context, options ClientPauseActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) UpdateOptions(ctx context.Context, update ClientActivityOptionsUpdate) (*ClientActivityExecutionOptions, error) {
+	panic("not implemented in the test environment")
+}
+
+func (h *testEnvActivityHandleForNexusOperations) RestoreOriginalOptions(ctx context.Context) (*ClientActivityExecutionOptions, error) {
 	panic("not implemented in the test environment")
 }
 

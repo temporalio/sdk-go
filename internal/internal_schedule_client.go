@@ -73,12 +73,12 @@ func (w *workflowClientInterceptor) CreateSchedule(ctx context.Context, in *Sche
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
+	memo, err := GetWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 	if err != nil {
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
+	searchAttr, err := SerializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -535,6 +535,7 @@ func scheduleDescriptionFromPB(
 			NextActionTimes:               nextActionTimes,
 			CreatedAt:                     describeResponse.Info.GetCreateTime().AsTime(),
 			LastUpdateAt:                  describeResponse.Info.GetUpdateTime().AsTime(),
+			TimeSkippingInfo:              describeResponse.Info.GetTimeSkippingInfo(),
 		},
 		Memo:                  describeResponse.Memo,
 		SearchAttributes:      searchAttributes,
@@ -624,7 +625,7 @@ func convertToPBScheduleAction(
 		if err := validateFunctionArgs(action.Workflow, action.Args, true); err != nil {
 			return nil, err
 		}
-		workflowType, err := getWorkflowFunctionName(client.registry, action.Workflow)
+		workflowType, err := GetWorkflowFunctionName(client.registry, action.Workflow)
 		if err != nil {
 			return nil, err
 		}
@@ -639,7 +640,7 @@ func convertToPBScheduleAction(
 			return nil, err
 		}
 
-		searchAttrs, err := serializeSearchAttributes(nil, action.TypedSearchAttributes)
+		searchAttrs, err := SerializeSearchAttributes(nil, action.TypedSearchAttributes)
 		if err != nil {
 			return nil, err
 		}
@@ -659,7 +660,7 @@ func convertToPBScheduleAction(
 			return nil, err
 		}
 
-		userMetadata, err := buildUserMetadata(action.StaticSummary, action.StaticDetails, dataConverter)
+		userMetadata, err := BuildUserMetadata(action.StaticSummary, action.StaticDetails, dataConverter)
 		if err != nil {
 			return nil, err
 		}
@@ -674,13 +675,13 @@ func convertToPBScheduleAction(
 					WorkflowExecutionTimeout: durationpb.New(action.WorkflowExecutionTimeout),
 					WorkflowRunTimeout:       durationpb.New(action.WorkflowRunTimeout),
 					WorkflowTaskTimeout:      durationpb.New(action.WorkflowTaskTimeout),
-					RetryPolicy:              convertToPBRetryPolicy(action.RetryPolicy),
+					RetryPolicy:              ConvertToPBRetryPolicy(action.RetryPolicy),
 					Memo:                     memo,
 					SearchAttributes:         searchAttrs,
 					Header:                   header,
 					UserMetadata:             userMetadata,
-					VersioningOverride:       versioningOverrideToProto(action.VersioningOverride),
-					Priority:                 convertToPBPriority(action.Priority),
+					VersioningOverride:       VersioningOverrideToProto(action.VersioningOverride),
+					Priority:                 ConvertToPBPriority(action.Priority),
 				},
 			},
 		}, nil

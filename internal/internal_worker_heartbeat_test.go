@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"context"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -19,6 +20,8 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	ilog "go.temporal.io/sdk/internal/log"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -313,5 +316,131 @@ func TestWorkerHeartbeatElapsedSinceLastHeartbeatUnsetOnInitialHeartbeat(t *test
 	secondHeartbeat := worker.heartbeatCallback()
 	if secondHeartbeat.GetElapsedSinceLastHeartbeat() == nil {
 		t.Fatal("second elapsed since last heartbeat is nil, want set")
+	}
+}
+
+func TestWorkerHeartbeatEnvironmentSentUntilAccepted(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+		mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+		var requestsMu sync.Mutex
+		var requests []*workflowservice.RecordWorkerHeartbeatRequest
+		requestCount := func() int {
+			requestsMu.Lock()
+			defer requestsMu.Unlock()
+			return len(requests)
+		}
+		mockService.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, req *workflowservice.RecordWorkerHeartbeatRequest, _ ...grpc.CallOption) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
+				requestsMu.Lock()
+				defer requestsMu.Unlock()
+				requests = append(requests, req)
+				// Fail the first delivery so the environment must be retried.
+				if len(requests) == 1 {
+					return nil, status.Error(codes.Unavailable, "heartbeat retry")
+				}
+				return &workflowservice.RecordWorkerHeartbeatResponse{}, nil
+			}).AnyTimes()
+
+		wfClient := NewServiceClient(mockService, nil, ClientOptions{
+			Namespace:               "test-ns",
+			Identity:                "test-client-identity",
+			WorkerHeartbeatInterval: time.Second,
+		})
+		wfClient.namespaceData = &namespaceData{
+			capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
+		}
+		worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+		if err := worker.registerHeartbeatWorker(); err != nil {
+			t.Fatal(err)
+		}
+		defer worker.unregisterHeartbeatWorker()
+
+		for requestCount() < 3 {
+			synctest.Wait()
+			time.Sleep(time.Second)
+		}
+
+		requestsMu.Lock()
+		defer requestsMu.Unlock()
+		for i, want := range []bool{true, true, false} {
+			hb := requests[i].GetWorkerHeartbeat()[0]
+			if got := hb.GetEnvironment() != nil; got != want {
+				t.Fatalf("heartbeat %d environment present = %v, want %v", i, got, want)
+			}
+		}
+		env := requests[0].GetWorkerHeartbeat()[0].GetEnvironment()
+		if len(env.GetRuntimes()) != 1 || env.GetRuntimes()[0].GetType() != workerpb.EnvironmentInfo_Runtime_RUNTIME_TYPE_GO {
+			t.Fatalf("environment runtimes = %v, want a single GO runtime", env.GetRuntimes())
+		}
+	})
+}
+
+func TestWorkerHeartbeatEnvironmentDisabled(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctrl := gomock.NewController(t)
+		mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+
+		mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+			Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+		var request *workflowservice.RecordWorkerHeartbeatRequest
+		mockService.EXPECT().RecordWorkerHeartbeat(gomock.Any(), gomock.Any(), gomock.Any()).
+			DoAndReturn(func(_ context.Context, req *workflowservice.RecordWorkerHeartbeatRequest, _ ...grpc.CallOption) (*workflowservice.RecordWorkerHeartbeatResponse, error) {
+				request = req
+				return &workflowservice.RecordWorkerHeartbeatResponse{}, nil
+			}).AnyTimes()
+
+		wfClient := NewServiceClient(mockService, nil, ClientOptions{
+			Namespace:                    "test-ns",
+			WorkerHeartbeatInterval:      time.Minute,
+			DisableWorkerEnvironmentInfo: true,
+		})
+		wfClient.namespaceData = &namespaceData{
+			capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
+		}
+		worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+		if err := worker.registerHeartbeatWorker(); err != nil {
+			t.Fatal(err)
+		}
+		defer worker.unregisterHeartbeatWorker()
+
+		synctest.Wait()
+		if request == nil {
+			t.Fatal("initial worker heartbeat was not sent")
+		}
+		if env := request.GetWorkerHeartbeat()[0].GetEnvironment(); env != nil {
+			t.Fatalf("environment = %v, want nil when disabled", env)
+		}
+	})
+}
+
+func TestWorkerHeartbeatEnvironmentIncludedInShutdownHeartbeat(t *testing.T) {
+	t.Parallel()
+	ctrl := gomock.NewController(t)
+	mockService := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	mockService.EXPECT().GetSystemInfo(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.GetSystemInfoResponse{}, nil).AnyTimes()
+
+	wfClient := NewServiceClient(mockService, nil, ClientOptions{
+		Namespace:               "test-ns",
+		WorkerHeartbeatInterval: time.Minute,
+	})
+	worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+
+	// Without any accepted periodic heartbeat, the heartbeat built for ShutdownWorker must
+	// still carry the environment.
+	if worker.heartbeatCallback().GetEnvironment() == nil {
+		t.Fatal("heartbeat before any success has no environment, want environment")
+	}
+	worker.heartbeatSuccess()
+	if env := worker.heartbeatCallback().GetEnvironment(); env != nil {
+		t.Fatalf("heartbeat after success has environment %v, want nil", env)
 	}
 }

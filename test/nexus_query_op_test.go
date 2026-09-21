@@ -43,6 +43,7 @@ type queryInput struct {
 }
 
 func (ts *IntegrationTestSuite) TestNexusQueryWorkflowOperation() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "creates a Nexus endpoint through Operator Service")
 	if os.Getenv("DISABLE_NEXUS_SDK_ERGONOMICS_TESTS") != "" {
 		ts.T().SkipNow()
 	}

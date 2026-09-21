@@ -447,7 +447,7 @@ func sanitizeSearchAttributesForStart(attributes *commonpb.SearchAttributes) *co
 	return &commonpb.SearchAttributes{IndexedFields: filteredAttributes}
 }
 
-func serializeSearchAttributes(
+func SerializeSearchAttributes(
 	untypedAttributes map[string]any,
 	typedAttributes SearchAttributes,
 ) (*commonpb.SearchAttributes, error) {

@@ -66,6 +66,25 @@ func TestFindModuleDirs(t *testing.T) {
 	}
 }
 
+func TestFindUnitModuleDirs(t *testing.T) {
+	moduleDirs, err := findUnitModuleDirs(fstest.MapFS{
+		"go.mod":                    {},
+		"contrib/example/go.mod":    {},
+		"internal/cmd/build/go.mod": {},
+		"test/go.mod":               {},
+		"test/nested/go.mod":        {},
+		"testdata/fixture/go.mod":   {},
+		"vendor/dependency/go.mod":  {},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{".", "contrib/example", "internal/cmd/build"}
+	if !slices.Equal(want, moduleDirs) {
+		t.Fatalf("expected unit module directories %v, got %v", want, moduleDirs)
+	}
+}
+
 func TestTestOutputFlagsDefaultToFailures(t *testing.T) {
 	flags := addTestOutputFlags(flag.NewFlagSet("test", flag.ContinueOnError))
 	if flags.consoleOutput != testConsoleOutputFailures {

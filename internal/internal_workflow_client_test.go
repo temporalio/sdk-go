@@ -2151,18 +2151,18 @@ func (s *workflowClientTestSuite) TestSignalWithStartWorkflowWithOneTimeVersioni
 
 func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	var input1 map[string]any
-	result1, err := getWorkflowMemo(input1, s.dataConverter, false)
+	result1, err := GetWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.Nil(result1)
 
 	input1 = make(map[string]any)
-	result2, err := getWorkflowMemo(input1, s.dataConverter, false)
+	result2, err := GetWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.NotNil(result2)
 	s.Equal(0, len(result2.Fields))
 
 	input1["t1"] = "v1"
-	result3, err := getWorkflowMemo(input1, s.dataConverter, false)
+	result3, err := GetWorkflowMemo(input1, s.dataConverter, false)
 	s.NoError(err)
 	s.NotNil(result3)
 	s.Equal(1, len(result3.Fields))
@@ -2171,7 +2171,7 @@ func (s *workflowClientTestSuite) TestGetWorkflowMemo() {
 	s.Equal("v1", resultString)
 
 	input1["non-serializable"] = make(chan int)
-	_, err = getWorkflowMemo(input1, s.dataConverter, false)
+	_, err = GetWorkflowMemo(input1, s.dataConverter, false)
 	s.Error(err)
 }
 
@@ -2352,7 +2352,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributesOmitsNilValuesOnS
 	nilBytesPayload, err := converter.GetDefaultDataConverter().ToPayload(nilBytes)
 	s.NoError(err)
 
-	result, err := serializeSearchAttributes(map[string]any{
+	result, err := SerializeSearchAttributes(map[string]any{
 		"realAttr":          payload,
 		"nilAttr":           nil,
 		"nilPayloadAttr":    nilPayload,
@@ -2376,7 +2376,7 @@ func (s *workflowClientTestSuite) TestSerializeSearchAttributesOmitsNilValuesOnS
 	s.NoError(err)
 	s.Equal("value", resultString)
 
-	result, err = serializeSearchAttributes(map[string]any{"nilAttr": nil}, SearchAttributes{})
+	result, err = SerializeSearchAttributes(map[string]any{"nilAttr": nil}, SearchAttributes{})
 	s.NoError(err)
 	s.Nil(result)
 }

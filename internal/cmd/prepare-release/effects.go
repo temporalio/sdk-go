@@ -2,49 +2,41 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
-	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
-type Effects interface {
-	// printf prints to stdout.
-	printf(format string, args ...any)
-	// repoRoot locates the SDK repository relative to this command's source file.
-	repoRoot() (string, error)
-	// runCommand executes a command with the given arguments and returns its stdout.
-	runCommand(root, name string, args ...string) (string, error)
-	// mkdirTemp creates a temporary directory and returns its path.
+// goModuleProxy answers whether a module version was ever published.
+const goModuleProxy = "https://proxy.golang.org"
+
+// effects is a dependency injection object for operations that touch the
+// network and filesystem.
+type effects interface {
+	runCommand(dir, name string, args ...string) (string, error)
 	mkdirTemp(dir, pattern string) (string, error)
-	// readFile reads a file as text.
 	readFile(path string) (string, error)
-	// writeFile writes text to a file.
 	writeFile(path, contents string) error
+	// checkModulePublished checks proxy.golang.org to decide if modulePath@version is published
+	checkModulePublished(modulePath, version string) (bool, error)
 }
 
-type RealWorld struct{}
-
-var _ Effects = RealWorld{}
-
-func (RealWorld) printf(format string, args ...any) {
-	fmt.Printf(format, args...)
+type realWorld struct {
+	out io.Writer
 }
 
-func (RealWorld) repoRoot() (string, error) {
-	_, file, _, ok := runtime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("could not locate prepare-release source file")
-	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "../../..")), nil
-}
+var _ effects = realWorld{}
 
-func (eff RealWorld) runCommand(root, name string, args ...string) (string, error) {
-	printDetail(eff, "$ %s", formatCommand(name, args...))
+func (eff realWorld) runCommand(dir, name string, args ...string) (string, error) {
+	printDetail(eff.out, "$ %s", formatCommand(name, args...))
 	cmd := exec.Command(name, args...)
-	cmd.Dir = root
+	cmd.Dir = dir
 	cmd.Stdin = os.Stdin
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -59,11 +51,11 @@ func (eff RealWorld) runCommand(root, name string, args ...string) (string, erro
 	return stdout.String(), nil
 }
 
-func (RealWorld) mkdirTemp(dir, pattern string) (string, error) {
+func (realWorld) mkdirTemp(dir, pattern string) (string, error) {
 	return os.MkdirTemp(dir, pattern)
 }
 
-func (RealWorld) readFile(path string) (string, error) {
+func (realWorld) readFile(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", path, err)
@@ -71,6 +63,63 @@ func (RealWorld) readFile(path string) (string, error) {
 	return string(data), nil
 }
 
-func (RealWorld) writeFile(path, contents string) error {
+func (realWorld) writeFile(path, contents string) error {
 	return os.WriteFile(path, []byte(contents), 0o644)
+}
+
+func (eff realWorld) checkModulePublished(modulePath, version string) (bool, error) {
+	url := goModuleProxy + "/" + escapeModulePath(modulePath) + "/@v/" + version + ".info"
+	printDetail(eff.out, "HTTP GET: %s...", url)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false, fmt.Errorf("query %s: %w", url, err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("query %s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound, http.StatusGone:
+		return false, nil
+	default:
+		return false, fmt.Errorf("query %s: unexpected response %s", url, resp.Status)
+	}
+}
+
+// escapeModulePath encodes a module path for the module proxy, which requires
+// every uppercase letter to be replaced by an exclamation mark and its lowercase
+// form. See https://go.dev/ref/mod#goproxy-protocol.
+func escapeModulePath(modulePath string) string {
+	if !strings.ContainsFunc(modulePath, func(r rune) bool { return r >= 'A' && r <= 'Z' }) {
+		return modulePath
+	}
+	var escaped strings.Builder
+	for _, r := range modulePath {
+		if r >= 'A' && r <= 'Z' {
+			escaped.WriteByte('!')
+			r += 'a' - 'A'
+		}
+		escaped.WriteRune(r)
+	}
+	return escaped.String()
+}
+
+// formatCommand renders a command with quoting suitable for logs.
+func formatCommand(name string, args ...string) string {
+	parts := []string{name}
+	for _, arg := range args {
+		if strings.ContainsAny(arg, " \t\n\"'") {
+			arg = strconv.Quote(arg)
+		}
+		parts = append(parts, arg)
+	}
+	return strings.Join(parts, " ")
 }

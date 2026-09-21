@@ -1,10 +1,19 @@
 package temporal
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.temporal.io/api/serviceerror"
 )
+
+func TestIsWorkflowExecutionAlreadyStartedError(t *testing.T) {
+	err := serviceerror.NewWorkflowExecutionAlreadyStarted("already started", "workflow-id", "run-id")
+	err = fmt.Errorf("start workflow: %w", err)
+
+	require.True(t, IsWorkflowExecutionAlreadyStartedError(err))
+}
 
 func TestNewPayloadValidationError(t *testing.T) {
 	t.Run("with details", func(t *testing.T) {

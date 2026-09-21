@@ -35,6 +35,7 @@ type updateAddInput struct {
 	WorkflowID         string
 	Amount             int
 	SleepDuration      time.Duration
+	WaitForSignal      string
 	ExpectSyncResponse bool // hint to the caller workflow that the async token will not be set (a retried completed update is sync)
 }
 
@@ -67,7 +68,7 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
 				WorkflowID:   input.WorkflowID,
 				UpdateID:     input.UpdateID,
 				UpdateName:   addUpdate,
-				Args:         []any{input.Amount, input.SleepDuration},
+				Args:         []any{input.Amount, input.SleepDuration, input.WaitForSignal},
 				WaitForStage: client.WorkflowUpdateStageAccepted,
 			})
 		},
@@ -260,6 +261,7 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowOperation() {
 
 // separate from [IntegrationTestSuite.TestNexusUpdateWorkflowOperation] as this is a more complicated scenario
 func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
+	skipOnCloud(ts.T(), cloudRequiresProvisioning, "Nexus update tests create namespace endpoints through Operator Service")
 	if os.Getenv("DISABLE_STANDALONE_NEXUS_TESTS") != "" {
 		ts.T().SkipNow()
 	}
@@ -275,7 +277,7 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 				WorkflowID:   input.WorkflowID,
 				UpdateID:     input.UpdateID,
 				UpdateName:   addUpdate,
-				Args:         []any{input.Amount, input.SleepDuration},
+				Args:         []any{input.Amount, input.SleepDuration, input.WaitForSignal},
 				WaitForStage: client.WorkflowUpdateStageAccepted,
 			})
 		},
@@ -320,11 +322,16 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 	}
 
 	// start the update, it will get admitted
+	releaseSignal := "release-" + uuid.NewString()
 	callerWorkflowRun, err := ts.client.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:                  "delayed-" + uuid.NewString(),
 		TaskQueue:           callerTaskQueue,
 		WorkflowTaskTimeout: time.Second,
-	}, callerWorkflow, updateAddInput{WorkflowID: handlerWorkflowID, Amount: 5})
+	}, callerWorkflow, updateAddInput{
+		WorkflowID:    handlerWorkflowID,
+		Amount:        5,
+		WaitForSignal: releaseSignal,
+	})
 	ts.NoError(err)
 
 	// now, start the worker so that counter workflow can actually handle the update
@@ -336,6 +343,14 @@ func (ts *IntegrationTestSuite) TestNexusUpdateWorkflowDelayedOperation() {
 	ts.NoError(handlerWorker.Start())
 	defer handlerWorker.Stop()
 	defer stopCounterWf()
+
+	ts.waitForHistoryEvent(
+		callerWorkflowRun.GetID(),
+		callerWorkflowRun.GetRunID(),
+		enums.EVENT_TYPE_NEXUS_OPERATION_STARTED,
+		10*time.Second,
+	)
+	ts.NoError(ts.client.SignalWorkflow(ctx, handlerWorkflowID, "", releaseSignal, nil))
 
 	// verify count, no errors
 	var out updateAddOutput

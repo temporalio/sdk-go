@@ -321,6 +321,8 @@ type (
 
 		// TimeSkippingConfig - Configures time skipping for Workflow Executions
 		// started by this Schedule.
+		// The current effective state is returned by [ScheduleHandle.Describe] in
+		// [ScheduleInfo.TimeSkippingInfo].
 		//
 		// NOTE: Experimental
 		TimeSkippingConfig *commonpb.TimeSkippingConfig
@@ -445,6 +447,13 @@ type (
 
 		// LastUpdateAt - When a schedule was last updated
 		LastUpdateAt time.Time
+
+		// TimeSkippingInfo - Describes the current effective time-skipping state of
+		// this Schedule. See [Schedule.TimeSkippingConfig] for the modifiable
+		// configuration.
+		//
+		// NOTE: Experimental
+		TimeSkippingInfo *commonpb.TimeSkippingInfo
 	}
 
 	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.
@@ -524,6 +533,8 @@ type (
 
 		// TimeSkippingConfig - Configures time skipping for Workflow Executions
 		// started by this Schedule.
+		// The current effective state is returned by [ScheduleHandle.Describe] in
+		// [ScheduleInfo.TimeSkippingInfo].
 		//
 		// NOTE: Experimental
 		TimeSkippingConfig *commonpb.TimeSkippingConfig

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/nexus-rpc/sdk-go/nexus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.temporal.io/sdk/client"
@@ -134,8 +135,7 @@ func RunTestWorkflowWithError(t *testing.T, tracer interceptor.Tracer) {
 }
 
 func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
-
-	require.Equal(t, []*SpanInfo{
+	expected := []*SpanInfo{
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "ValidateUpdate", Name: "testUpdate"})),
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleUpdate", Name: "testUpdate"}),
 			Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "StartActivity", Name: "testActivity"}),
@@ -162,7 +162,10 @@ func AssertSpanPropagation(t *testing.T, tracer TestTracer) {
 				Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "RunCancelNexusOperationHandler", Name: "test/op"})),
 			)),
 		Span(tracer.SpanName(&interceptor.TracerStartSpanOptions{Operation: "HandleQuery", Name: "my-query"})),
-	}, tracer.FinishedSpans())
+	}
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		assert.Equal(c, expected, tracer.FinishedSpans())
+	}, time.Second, 10*time.Millisecond)
 }
 
 func testWorkflowWithError(_ workflow.Context) error {

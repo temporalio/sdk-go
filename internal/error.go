@@ -672,8 +672,8 @@ func (wc *workflowEnvironmentInterceptor) NewContinueAsNewError(
 	if options == nil {
 		panic("context is missing required options for continue as new")
 	}
-	env := getWorkflowEnvironment(ctx)
-	dc := getDataConverterFromWorkflowContext(ctx)
+	env := GetWorkflowEnvironment(ctx)
+	dc := GetDataConverterFromWorkflowContext(ctx)
 	workflowType, input, err := getValidatedWorkflowFunction(wfn, args, dc, env.GetRegistry())
 	if err != nil {
 		panic(err)

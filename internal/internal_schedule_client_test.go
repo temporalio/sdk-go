@@ -418,3 +418,32 @@ func (s *scheduleClientTestSuite) TestDescribeSchedulePopulatesPriority() {
 	s.Equal("fairness-key", action.Priority.FairnessKey)
 	s.Equal(float32(2.5), action.Priority.FairnessWeight)
 }
+
+func (s *scheduleClientTestSuite) TestDescribeSchedulePopulatesTimeSkipping() {
+	timeSkippingConfig := &commonpb.TimeSkippingConfig{Enabled: true}
+	timeSkippingInfo := &commonpb.TimeSkippingInfo{
+		EffectiveConfig:         &commonpb.TimeSkippingConfig{Enabled: false},
+		CurrentSessionSkipCount: 3,
+	}
+	describeResponse := &workflowservice.DescribeScheduleResponse{
+		Schedule: &schedulepb.Schedule{
+			Action: &schedulepb.ScheduleAction{
+				Action: &schedulepb.ScheduleAction_StartWorkflow{
+					StartWorkflow: &workflowpb.NewWorkflowExecutionInfo{
+						WorkflowId:   workflowID,
+						WorkflowType: &commonpb.WorkflowType{Name: "wf-type"},
+						TaskQueue:    &taskqueuepb.TaskQueue{Name: taskqueue},
+					},
+				},
+			},
+			TimeSkippingConfig: timeSkippingConfig,
+		},
+		Info: &schedulepb.ScheduleInfo{TimeSkippingInfo: timeSkippingInfo},
+	}
+	s.service.EXPECT().DescribeSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResponse, nil).Times(1)
+
+	description, err := s.client.ScheduleClient().GetHandle(context.Background(), scheduleID).Describe(context.Background())
+	s.Require().NoError(err)
+	s.Same(timeSkippingConfig, description.Schedule.TimeSkippingConfig)
+	s.Same(timeSkippingInfo, description.Info.TimeSkippingInfo)
+}

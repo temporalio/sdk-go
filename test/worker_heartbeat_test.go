@@ -1015,9 +1015,9 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 	taskQueue := taskQueuePrefix + "-worker-poll-complete-on-shutdown-" + ts.T().Name()
 
 	var (
-		mu          sync.Mutex
-		shutdownReq *workflowservice.ShutdownWorkerRequest
-		pollErrors  []error
+		mu                sync.Mutex
+		shutdownReq       *workflowservice.ShutdownWorkerRequest
+		pollContextErrors []error
 	)
 
 	c, err := ts.newDefaultClient(func(options *client.Options) {
@@ -1044,9 +1044,9 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 				isPoll := strings.HasSuffix(method, "/PollWorkflowTaskQueue") ||
 					strings.HasSuffix(method, "/PollActivityTaskQueue") ||
 					strings.HasSuffix(method, "/PollNexusTaskQueue")
-				if isPoll && err != nil {
+				if isPoll && ctx.Err() != nil {
 					mu.Lock()
-					pollErrors = append(pollErrors, err)
+					pollContextErrors = append(pollContextErrors, ctx.Err())
 					mu.Unlock()
 				}
 
@@ -1084,15 +1084,11 @@ func (ts *WorkerHeartbeatTestSuite) TestWorkerPollCompleteOnShutdown() {
 	ts.Contains(shutdownReq.TaskQueueTypes, enumspb.TASK_QUEUE_TYPE_WORKFLOW,
 		"ShutdownWorker should include WORKFLOW task queue type")
 
-	// With graceful shutdown, the SDK must not cancel poll contexts. Poll
-	// errors from connection closure during stop are expected, but
-	// context.Canceled would indicate the SDK cancelled a poll client-side.
-	for _, err := range pollErrors {
-		// We use string matching because gRPC wraps context cancellation into
-		// its own error types that don't preserve context.Canceled in the
-		// Unwrap() chain, so errors.Is(err, context.Canceled) won't detect it.
-		ts.False(strings.Contains(err.Error(), "context canceled"),
-			"Poll should not receive context canceled with graceful shutdown; got: %v", err)
+	// Inspect the context rather than the RPC error, which may report a
+	// server-side cancellation without the SDK cancelling the poll context.
+	for _, err := range pollContextErrors {
+		ts.NotErrorIs(err, context.Canceled,
+			"Poll context should not be canceled during graceful shutdown")
 	}
 }
 

@@ -116,6 +116,9 @@ var _ PayloadVisitorWithContextHook = (*payloadLimitsVisitorImpl)(nil)
 func (v *payloadLimitsVisitorImpl) Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error) {
 	size := int64(0)
 	if ctx.SinglePayloadRequired {
+		// Neither WorkflowQueryResult.Answer nor RespondQueryTaskCompletedRequest.QueryResult
+		// is a single-Payload field today, so the query-result case below is never reached
+		// through this branch.
 		if _, ok := ctx.Parent.(*commandpb.ScheduleNexusOperationCommandAttributes); !ok {
 			return payloads, nil
 		}
@@ -125,6 +128,30 @@ func (v *payloadLimitsVisitorImpl) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	} else {
 		// Rewrap into Payloads to get the measured size that the server would also observe.
 		size = int64((&commonpb.Payloads{Payloads: payloads}).Size())
+	}
+
+	// ctx.Parent is the WorkflowQueryResult/RespondQueryTaskCompletedRequest itself only
+	// when visiting its Answer/QueryResult field; a payload nested in the sibling Failure
+	// field has that Failure (not the query result) as ctx.Parent. The mutation below is
+	// safe under ConcurrencyLimit > 1 (see visitProtoPayloads) only because the fields it
+	// writes (Answer/QueryResult, ErrorMessage, ResultType/CompletedType) are disjoint from
+	// the sibling Failure subtree, which a concurrent Visit call may be mutating at the
+	// same time.
+	switch m := ctx.Parent.(type) {
+	case *querypb.WorkflowQueryResult:
+		if err := v.checkPayloadSize(size, limitCheckAll); err != nil {
+			m.Answer = nil
+			m.ErrorMessage = err.Error()
+			m.ResultType = enumspb.QUERY_RESULT_TYPE_FAILED
+		}
+		return payloads, nil
+	case *workflowservice.RespondQueryTaskCompletedRequest:
+		if err := v.checkPayloadSize(size, limitCheckAll); err != nil {
+			m.QueryResult = nil
+			m.ErrorMessage = err.Error()
+			m.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
+		}
+		return payloads, nil
 	}
 
 	err := v.checkPayloadSize(size, getPayloadLimitChecks(ctx.Context))
@@ -168,23 +195,9 @@ func (v *payloadLimitsVisitorImpl) ContextHook(ctx context.Context, msg proto.Me
 			return nil, err
 		}
 		ctx = withPayloadLimitChecks(ctx, limitCheckNone)
-	case *querypb.WorkflowQueryResult:
-		err := v.checkPayloadSize(int64(msg.GetAnswer().Size()), limitCheckAll)
-		// Server translates too large results into failed query results
-		if err != nil {
-			msg.Answer = nil
-			msg.ErrorMessage = err.Error()
-			msg.ResultType = enumspb.QUERY_RESULT_TYPE_FAILED
-		}
-		ctx = withPayloadLimitChecks(ctx, limitCheckNone)
-	case *workflowservice.RespondQueryTaskCompletedRequest:
-		err := v.checkPayloadSize(int64(msg.GetQueryResult().Size()), limitCheckAll)
-		// Server translates too large results into failed query results
-		if err != nil {
-			msg.ErrorMessage = err.Error()
-			msg.QueryResult = nil
-			msg.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
-		}
+	// Oversized results degrade to a failed query result instead of erroring. The size
+	// check runs in Visit, after external storage has had a chance to offload the answer.
+	case *querypb.WorkflowQueryResult, *workflowservice.RespondQueryTaskCompletedRequest:
 		ctx = withPayloadLimitChecks(ctx, limitCheckNone)
 	// CreateScheduleRequest has a custom size checking algorithm checked against the payload size limit.
 	case *workflowservice.CreateScheduleRequest:

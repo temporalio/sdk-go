@@ -168,7 +168,7 @@ func encoding(p *commonpb.Payload) string {
 // fixedDriverSelector always routes to the provided driver.
 type fixedDriverSelector struct{ driver converter.StorageDriver }
 
-func (s fixedDriverSelector) SelectDriver(_ converter.StorageDriverStoreContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
+func (s fixedDriverSelector) SelectDriver(_ converter.StorageDriverSelectContext, _ *commonpb.Payload) (converter.StorageDriver, error) {
 	return s.driver, nil
 }
 

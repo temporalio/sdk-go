@@ -39,10 +39,11 @@ This package depends on the deterministic ADK `platform` seams
 (`WithTimeProvider`, `WithUUIDProvider`, `WithTaskRunner`), `tool/toolutils.PackTool`,
 and the `model.NewLLM` registry lookup from upstream `google.golang.org/adk/v2`
 (the registry itself stays application-owned; this package never registers into it).
-These merged after the latest tagged ADK release (v2.0.0), so `go.mod` pins
-`adk/v2` to a `main`-branch pseudo-version for now; it reverts to an ordinary
-tagged version once a release ships that includes them. The replay-safe
-telemetry gate composes `workflow.IsReadOnly`.
+Those seams have been in tagged ADK releases since v2.1.0; `go.mod` requires
+v2.2.0, the first release with the request-order confirmation resume
+(google/adk-go#1169) that makes multi-decision confirmation resumes
+replay-stable. The adk/v2 requirement also sets the Go floor: 1.26.5+. The
+replay-safe telemetry gate composes `workflow.IsReadOnly`.
 
 ## Module versioning
 
@@ -178,6 +179,14 @@ the model SDK's own retries (see below), or override the fallbacks.
   tools run on Temporal's deterministic dispatcher inside the workflow — no
   Activity overhead, and their session-state mutations (`ctx.State().Set`,
   `ctx.Actions()`) propagate normally.
+- **Issue workflow commands from a tool.** `WorkflowContext(ctx)` returns the
+  `workflow.Context` the bridged context dispatches on, so an in-workflow tool
+  can start a child workflow, set a timer, or signal another execution. Use the
+  returned Context rather than closing over the workflow function's own: during
+  concurrent fan-out the tool runs on a different coroutine, and blocking with
+  another coroutine's Context can panic or stall workflow execution. The
+  accessor reports false outside `NewContext` (a local ADK run), so a tool can
+  fall back to a non-durable path.
 - **Opt a tool into an Activity when it does I/O.** `ActivityAsTool(myActivity,
   ...)` exposes an existing `func(context.Context, TArgs) (TResults, error)`
   Temporal activity to the agent as a tool (parameter schema inferred from
