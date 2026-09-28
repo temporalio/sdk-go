@@ -16,18 +16,11 @@ type intTestTransferValue struct {
 }
 
 func (intTestTransferValue) TransferConverter() workflow.TransferConverter {
-	return workflow.NewContextAwareTransferConverter(
-		func(_ context.Context, value intTestTransferValue) (int, error) {
+	return workflow.NewTransferConverter(
+		func(value intTestTransferValue) (int, error) {
 			return value.value, nil
 		},
-		func(_ context.Context, transferValue int, value *intTestTransferValue) error {
-			value.value = transferValue
-			return nil
-		},
-		func(_ workflow.Context, value intTestTransferValue) (int, error) {
-			return value.value, nil
-		},
-		func(_ workflow.Context, transferValue int, value *intTestTransferValue) error {
+		func(transferValue int, value *intTestTransferValue) error {
 			value.value = transferValue
 			return nil
 		},

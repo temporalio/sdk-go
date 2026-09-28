@@ -30,7 +30,7 @@ import (
 type temperature struct{ kelvin float64 }
 
 func (temperature) TransferConverter() TransferConverter {
-	return newTransferConverter(
+	return NewTransferConverter(
 		func(t temperature) (float64, error) {
 			return t.kelvin, nil
 		},
@@ -47,7 +47,7 @@ type unencodable struct{}
 var errNoEncoding = errors.New("cannot encode")
 
 func (unencodable) TransferConverter() TransferConverter {
-	return newTransferConverter(
+	return NewTransferConverter(
 		func(unencodable) (string, error) { return "", errNoEncoding },
 		func(string, *unencodable) error { return nil },
 	)
@@ -59,7 +59,7 @@ type undecodable struct{}
 var errNoDecoding = errors.New("cannot decode")
 
 func (undecodable) TransferConverter() TransferConverter {
-	return newTransferConverter(
+	return NewTransferConverter(
 		func(undecodable) (string, error) { return "encoded", nil },
 		func(string, *undecodable) error { return errNoDecoding },
 	)
@@ -73,6 +73,13 @@ type transferContextKey struct{}
 
 func (contextualString) TransferConverter() TransferConverter {
 	return NewContextAwareTransferConverter(
+		func(value contextualString) (string, error) {
+			return fmt.Sprintf("go::%s", string(value)), nil
+		},
+		func(transferValue string, value *contextualString) error {
+			*value = contextualString(strings.Split(transferValue, ":")[2])
+			return nil
+		},
 		func(ctx context.Context, value contextualString) (string, error) {
 			label, _ := ctx.Value(transferContextKey{}).(string)
 			return fmt.Sprintf("go:%s:%s", label, string(value)), nil
@@ -444,7 +451,7 @@ func TestTransferTypesMockClientWorkflowResult(t *testing.T) {
 type transferExecution struct{ workflowID, runID string }
 
 func (transferExecution) TransferConverter() TransferConverter {
-	return newTransferConverter(
+	return NewTransferConverter(
 		func(value transferExecution) (*commonpb.WorkflowExecution, error) {
 			return &commonpb.WorkflowExecution{WorkflowId: value.workflowID, RunId: value.runID}, nil
 		},

@@ -22,6 +22,7 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental `workflow.NewTransferConverter` for transfer conversions that do not depend on a context.
 - `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers

@@ -82,32 +82,41 @@ func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 type ValueWithTransferConverter = internal.ValueWithTransferConverter
 
 // TransferConverter converts application values to serializable transfer
-// values and back. Implement it using [NewContextAwareTransferConverter].
-//
-// The SDK will only invoke tc.ToTransferValue(v) if v.TransferConverter()
-// equals tc. Likewise, the SDK will only invoke tc.FromTransferValue(tvp, v)
-// if v.TransferConverter() equals tc and tvp was obtained from
-// tc.NewTransferValuePtr().
+// values and back. Create one using [NewTransferConverter] or
+// [NewContextAwareTransferConverter].
 //
 // NOTE: Experimental.
 type TransferConverter = internal.TransferConverter
 
+// NewTransferConverter builds a [TransferConverter] that can map
+// something of type Value into a serializable "transfer value", and back.
+//
+// NOTE: Experimental.
+func NewTransferConverter[Value, TransferValue any](
+	toTransferValue func(Value) (TransferValue, error),
+	fromTransferValue func(TransferValue, *Value) error,
+) TransferConverter {
+	return internal.NewTransferConverter(toTransferValue, fromTransferValue)
+}
+
 // NewContextAwareTransferConverter builds a [TransferConverter] that can map
 // something of type Value into a serializable "transfer value", and back.
-// The first pair of functions converts payloads outside a workflow,
-// the second pair converts inside one.
 //
 // NOTE: Experimental.
 func NewContextAwareTransferConverter[Value, TransferValue any](
-	toTransferValue func(context.Context, Value) (TransferValue, error),
-	fromTransferValue func(context.Context, TransferValue, *Value) error,
-	toTransferValueInWorkflow func(Context, Value) (TransferValue, error),
-	fromTransferValueInWorkflow func(Context, TransferValue, *Value) error,
+	toTransferValue func(Value) (TransferValue, error),
+	fromTransferValue func(TransferValue, *Value) error,
+	toTransferValueWithContext func(context.Context, Value) (TransferValue, error),
+	fromTransferValueWithContext func(context.Context, TransferValue, *Value) error,
+	toTransferValueWithWorkflowContext func(Context, Value) (TransferValue, error),
+	fromTransferValueWithWorkflowContext func(Context, TransferValue, *Value) error,
 ) TransferConverter {
 	return internal.NewContextAwareTransferConverter(
 		toTransferValue,
 		fromTransferValue,
-		toTransferValueInWorkflow,
-		fromTransferValueInWorkflow,
+		toTransferValueWithContext,
+		fromTransferValueWithContext,
+		toTransferValueWithWorkflowContext,
+		fromTransferValueWithWorkflowContext,
 	)
 }
