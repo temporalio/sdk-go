@@ -31,11 +31,11 @@ type temperature struct{ kelvin float64 }
 
 func (temperature) TransferTypeConverter() TransferTypeConverter {
 	return NewTransferTypeConverter(
-		func(t temperature) (float64, error) {
-			return t.kelvin, nil
+		func(t *temperature) (*float64, error) {
+			return &t.kelvin, nil
 		},
-		func(kelvin float64, t *temperature) error {
-			t.kelvin = kelvin
+		func(kelvin *float64, t *temperature) error {
+			t.kelvin = *kelvin
 			return nil
 		},
 	)
@@ -48,8 +48,8 @@ var errNoEncoding = errors.New("cannot encode")
 
 func (unencodable) TransferTypeConverter() TransferTypeConverter {
 	return NewTransferTypeConverter(
-		func(unencodable) (string, error) { return "", errNoEncoding },
-		func(string, *unencodable) error { return nil },
+		func(*unencodable) (*string, error) { return nil, errNoEncoding },
+		func(*string, *unencodable) error { return nil },
 	)
 }
 
@@ -60,8 +60,11 @@ var errNoDecoding = errors.New("cannot decode")
 
 func (undecodable) TransferTypeConverter() TransferTypeConverter {
 	return NewTransferTypeConverter(
-		func(undecodable) (string, error) { return "encoded", nil },
-		func(string, *undecodable) error { return errNoDecoding },
+		func(*undecodable) (*string, error) {
+			encoded := "encoded"
+			return &encoded, nil
+		},
+		func(*string, *undecodable) error { return errNoDecoding },
 	)
 }
 
@@ -73,27 +76,30 @@ type transferContextKey struct{}
 
 func (contextualString) TransferTypeConverter() TransferTypeConverter {
 	return NewContextAwareTransferTypeConverter(
-		func(value contextualString) (string, error) {
-			return fmt.Sprintf("go::%s", string(value)), nil
+		func(value *contextualString) (*string, error) {
+			transferType := fmt.Sprintf("go::%s", string(*value))
+			return &transferType, nil
 		},
-		func(transferType string, value *contextualString) error {
-			*value = contextualString(strings.Split(transferType, ":")[2])
+		func(transferType *string, value *contextualString) error {
+			*value = contextualString(strings.Split(*transferType, ":")[2])
 			return nil
 		},
-		func(ctx context.Context, value contextualString) (string, error) {
+		func(ctx context.Context, value *contextualString) (*string, error) {
 			label, _ := ctx.Value(transferContextKey{}).(string)
-			return fmt.Sprintf("go:%s:%s", label, string(value)), nil
+			transferType := fmt.Sprintf("go:%s:%s", label, string(*value))
+			return &transferType, nil
 		},
-		func(ctx context.Context, transferType string, value *contextualString) error {
-			*value = contextualString(strings.Split(transferType, ":")[2])
+		func(ctx context.Context, transferType *string, value *contextualString) error {
+			*value = contextualString(strings.Split(*transferType, ":")[2])
 			return nil
 		},
-		func(ctx Context, value contextualString) (string, error) {
+		func(ctx Context, value *contextualString) (*string, error) {
 			label, _ := ctx.Value(transferContextKey{}).(string)
-			return fmt.Sprintf("wf:%s:%s", label, string(value)), nil
+			transferType := fmt.Sprintf("wf:%s:%s", label, string(*value))
+			return &transferType, nil
 		},
-		func(ctx Context, transferType string, value *contextualString) error {
-			*value = contextualString(strings.Split(transferType, ":")[2])
+		func(ctx Context, transferType *string, value *contextualString) error {
+			*value = contextualString(strings.Split(*transferType, ":")[2])
 			return nil
 		},
 	)
@@ -146,15 +152,18 @@ func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 	})
 }
 
-func TestTransferAwareDataConverter_PointerValuePanics(t *testing.T) {
+func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 	t.Parallel()
 	dc := DefaultInternalDataConverter
-	value := &temperature{kelvin: 300}
+	want := &temperature{kelvin: 300}
 
-	require.Implements(t, (*ValueWithTransferTypeConverter)(nil), value)
-	require.Panics(t, func() {
-		_, _ = dc.ToPayload(value)
-	})
+	require.Implements(t, (*ValueWithTransferTypeConverter)(nil), want)
+	payload, err := dc.ToPayload(want)
+	require.NoError(t, err)
+
+	var got temperature
+	require.NoError(t, dc.FromPayload(payload, &got))
+	require.Equal(t, *want, got)
 }
 
 func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
@@ -452,7 +461,7 @@ type transferExecution struct{ workflowID, runID string }
 
 func (transferExecution) TransferTypeConverter() TransferTypeConverter {
 	return NewTransferTypeConverter(
-		func(value transferExecution) (*commonpb.WorkflowExecution, error) {
+		func(value *transferExecution) (*commonpb.WorkflowExecution, error) {
 			return &commonpb.WorkflowExecution{WorkflowId: value.workflowID, RunId: value.runID}, nil
 		},
 		func(value *commonpb.WorkflowExecution, result *transferExecution) error {

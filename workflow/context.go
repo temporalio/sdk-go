@@ -93,8 +93,8 @@ type TransferTypeConverter = internal.TransferTypeConverter
 //
 // NOTE: Experimental.
 func NewTransferTypeConverter[ModelType, TransferType any](
-	toTransferType func(ModelType) (TransferType, error),
-	fromTransferType func(TransferType, *ModelType) error,
+	toTransferType func(*ModelType) (*TransferType, error),
+	fromTransferType func(*TransferType, *ModelType) error,
 ) TransferTypeConverter {
 	return internal.NewTransferTypeConverter(toTransferType, fromTransferType)
 }
@@ -104,12 +104,12 @@ func NewTransferTypeConverter[ModelType, TransferType any](
 //
 // NOTE: Experimental.
 func NewContextAwareTransferTypeConverter[ModelType, TransferType any](
-	toTransferType func(ModelType) (TransferType, error),
-	fromTransferType func(TransferType, *ModelType) error,
-	toTransferTypeWithContext func(context.Context, ModelType) (TransferType, error),
-	fromTransferTypeWithContext func(context.Context, TransferType, *ModelType) error,
-	toTransferTypeWithWorkflowContext func(Context, ModelType) (TransferType, error),
-	fromTransferTypeWithWorkflowContext func(Context, TransferType, *ModelType) error,
+	toTransferType func(*ModelType) (*TransferType, error),
+	fromTransferType func(*TransferType, *ModelType) error,
+	toTransferTypeWithContext func(context.Context, *ModelType) (*TransferType, error),
+	fromTransferTypeWithContext func(context.Context, *TransferType, *ModelType) error,
+	toTransferTypeWithWorkflowContext func(Context, *ModelType) (*TransferType, error),
+	fromTransferTypeWithWorkflowContext func(Context, *TransferType, *ModelType) error,
 ) TransferTypeConverter {
 	return internal.NewContextAwareTransferTypeConverter(
 		toTransferType,
