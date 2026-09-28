@@ -14,11 +14,11 @@ var DefaultInternalDataConverter = makeTransferAware(converter.GetDefaultDataCon
 
 // -- USER API -----------------------------------------------------------
 
-// ValueWithTransferConverter is an optional interface that values can implement to provide
-// the SDK with a transfer converter.
+// ValueWithTransferTypeConverter is an optional interface that values can implement to provide
+// the SDK with a transfer type converter.
 //
-// When implemented, the SDK calls [ValueWithTransferConverter.TransferConverter] before
-// serializing the value. The returned TransferConverter will be used to turn the value
+// When implemented, the SDK calls [ValueWithTransferTypeConverter.TransferTypeConverter] before
+// serializing the value. The returned TransferTypeConverter will be used to turn the value
 // into a serializable representation, called a transfer value. The converter will also
 // be used to turn the transfer value back into the original value after deserialization.
 //
@@ -26,161 +26,161 @@ var DefaultInternalDataConverter = makeTransferAware(converter.GetDefaultDataCon
 //
 // NOTE: Experimental.
 //
-// Exposed as: [go.temporal.io/sdk/workflow.ValueWithTransferConverter]
-type ValueWithTransferConverter interface {
-	TransferConverter() TransferConverter
+// Exposed as: [go.temporal.io/sdk/workflow.ValueWithTransferTypeConverter]
+type ValueWithTransferTypeConverter interface {
+	TransferTypeConverter() TransferTypeConverter
 }
 
-// TransferConverter converts application values to serializable transfer
-// values and back. Create one using [NewTransferConverter] or
-// [NewContextAwareTransferConverter].
+// TransferTypeConverter converts application values to serializable transfer
+// values and back. Create one using [NewTransferTypeConverter] or
+// [NewContextAwareTransferTypeConverter].
 //
 // NOTE: Experimental.
 //
-// Exposed as: [go.temporal.io/sdk/workflow.TransferConverter]
-type TransferConverter interface {
-	// newTransferValuePtr returns a pointer to a zero transfer value.
-	newTransferValuePtr() any
+// Exposed as: [go.temporal.io/sdk/workflow.TransferTypeConverter]
+type TransferTypeConverter interface {
+	// newTransferTypePtr returns a pointer to a zero transfer value.
+	newTransferTypePtr() any
 
-	// toTransferValue converts value into its serializable transfer value.
-	toTransferValue(value any) (any, error)
+	// toTransferType converts value into its serializable transfer value.
+	toTransferType(value any) (any, error)
 
-	// fromTransferValue converts a deserialized transfer value into valuePtr.
-	// transferValuePtr is a pointer to the transfer value, as returned by
-	// NewTransferValuePtr.
-	fromTransferValue(transferValuePtr any, valuePtr any) error
+	// fromTransferType converts a deserialized transfer value into valuePtr.
+	// transferTypePtr is a pointer to the transfer value, as returned by
+	// newTransferTypePtr.
+	fromTransferType(transferTypePtr any, valuePtr any) error
 
-	toTransferValueWithContext(ctx context.Context, value any) (any, error)
-	fromTransferValueWithContext(ctx context.Context, transferValuePtr any, valuePtr any) error
+	toTransferTypeWithContext(ctx context.Context, value any) (any, error)
+	fromTransferTypeWithContext(ctx context.Context, transferTypePtr any, valuePtr any) error
 
-	toTransferValueWithWorkflowContext(ctx Context, value any) (any, error)
-	fromTransferValueWithWorkflowContext(ctx Context, transferValuePtr any, valuePtr any) error
+	toTransferTypeWithWorkflowContext(ctx Context, value any) (any, error)
+	fromTransferTypeWithWorkflowContext(ctx Context, transferTypePtr any, valuePtr any) error
 }
 
-// NewContextAwareTransferConverter builds a [TransferConverter] that can map
-// something of type Value into a serializable "transfer value", and back.
+// NewContextAwareTransferTypeConverter builds a [TransferTypeConverter] that can map
+// something of type ModelType into a serializable "transfer value", and back.
 //
 // NOTE: Experimental.
 //
-// Exposed as: [go.temporal.io/sdk/workflow.NewContextAwareTransferConverter]
-func NewContextAwareTransferConverter[Value, TransferValue any](
-	toTransferValue func(Value) (TransferValue, error),
-	fromTransferValue func(TransferValue, *Value) error,
-	toTransferValueWithContext func(context.Context, Value) (TransferValue, error),
-	fromTransferValueWithContext func(context.Context, TransferValue, *Value) error,
-	toTransferValueWithWorkflowContext func(Context, Value) (TransferValue, error),
-	fromTransferValueWithWorkflowContext func(Context, TransferValue, *Value) error,
-) TransferConverter {
-	return &transferConverter[Value, TransferValue]{
-		toTransferValueFn:                      toTransferValue,
-		fromTransferValueFn:                    fromTransferValue,
-		toTransferValueWithContextFn:           toTransferValueWithContext,
-		fromTransferValueWithContextFn:         fromTransferValueWithContext,
-		toTransferValueWithWorkflowContextFn:   toTransferValueWithWorkflowContext,
-		fromTransferValueWithWorkflowContextFn: fromTransferValueWithWorkflowContext,
+// Exposed as: [go.temporal.io/sdk/workflow.NewContextAwareTransferTypeConverter]
+func NewContextAwareTransferTypeConverter[ModelType, TransferType any](
+	toTransferType func(ModelType) (TransferType, error),
+	fromTransferType func(TransferType, *ModelType) error,
+	toTransferTypeWithContext func(context.Context, ModelType) (TransferType, error),
+	fromTransferTypeWithContext func(context.Context, TransferType, *ModelType) error,
+	toTransferTypeWithWorkflowContext func(Context, ModelType) (TransferType, error),
+	fromTransferTypeWithWorkflowContext func(Context, TransferType, *ModelType) error,
+) TransferTypeConverter {
+	return &transferTypeConverter[ModelType, TransferType]{
+		toTransferTypeFn:                      toTransferType,
+		fromTransferTypeFn:                    fromTransferType,
+		toTransferTypeWithContextFn:           toTransferTypeWithContext,
+		fromTransferTypeWithContextFn:         fromTransferTypeWithContext,
+		toTransferTypeWithWorkflowContextFn:   toTransferTypeWithWorkflowContext,
+		fromTransferTypeWithWorkflowContextFn: fromTransferTypeWithWorkflowContext,
 	}
 }
 
-// NewTransferConverter builds a [TransferConverter] that can map
-// something of type Value into a serializable "transfer value", and back.
+// NewTransferTypeConverter builds a [TransferTypeConverter] that can map
+// something of type ModelType into a serializable "transfer value", and back.
 //
-// Exposed as: [go.temporal.io/sdk/workflow.NewTransferConverter]
-func NewTransferConverter[Value, TransferValue any](
-	toTransferValue func(Value) (TransferValue, error),
-	fromTransferValue func(TransferValue, *Value) error,
-) TransferConverter {
-	return NewContextAwareTransferConverter(
-		toTransferValue,
-		fromTransferValue,
-		func(_ context.Context, value Value) (TransferValue, error) {
-			return toTransferValue(value)
+// Exposed as: [go.temporal.io/sdk/workflow.NewTransferTypeConverter]
+func NewTransferTypeConverter[ModelType, TransferType any](
+	toTransferType func(ModelType) (TransferType, error),
+	fromTransferType func(TransferType, *ModelType) error,
+) TransferTypeConverter {
+	return NewContextAwareTransferTypeConverter(
+		toTransferType,
+		fromTransferType,
+		func(_ context.Context, value ModelType) (TransferType, error) {
+			return toTransferType(value)
 		},
-		func(_ context.Context, transferValue TransferValue, valuePtr *Value) error {
-			return fromTransferValue(transferValue, valuePtr)
+		func(_ context.Context, transferType TransferType, valuePtr *ModelType) error {
+			return fromTransferType(transferType, valuePtr)
 		},
-		func(_ Context, value Value) (TransferValue, error) {
-			return toTransferValue(value)
+		func(_ Context, value ModelType) (TransferType, error) {
+			return toTransferType(value)
 		},
-		func(_ Context, transferValue TransferValue, valuePtr *Value) error {
-			return fromTransferValue(transferValue, valuePtr)
+		func(_ Context, transferType TransferType, valuePtr *ModelType) error {
+			return fromTransferType(transferType, valuePtr)
 		},
 	)
 }
 
-type transferConverter[Value, TransferValue any] struct {
-	toTransferValueFn                      func(Value) (TransferValue, error)
-	fromTransferValueFn                    func(TransferValue, *Value) error
-	toTransferValueWithContextFn           func(context.Context, Value) (TransferValue, error)
-	fromTransferValueWithContextFn         func(context.Context, TransferValue, *Value) error
-	toTransferValueWithWorkflowContextFn   func(Context, Value) (TransferValue, error)
-	fromTransferValueWithWorkflowContextFn func(Context, TransferValue, *Value) error
+type transferTypeConverter[ModelType, TransferType any] struct {
+	toTransferTypeFn                      func(ModelType) (TransferType, error)
+	fromTransferTypeFn                    func(TransferType, *ModelType) error
+	toTransferTypeWithContextFn           func(context.Context, ModelType) (TransferType, error)
+	fromTransferTypeWithContextFn         func(context.Context, TransferType, *ModelType) error
+	toTransferTypeWithWorkflowContextFn   func(Context, ModelType) (TransferType, error)
+	fromTransferTypeWithWorkflowContextFn func(Context, TransferType, *ModelType) error
 }
 
-func (*transferConverter[Value, TransferValue]) newTransferValuePtr() any {
-	return new(TransferValue)
+func (*transferTypeConverter[ModelType, TransferType]) newTransferTypePtr() any {
+	return new(TransferType)
 }
 
-func (tc *transferConverter[Value, TransferValue]) toTransferValue(value any) (any, error) {
-	v, ok := value.(Value)
+func (tc *transferTypeConverter[ModelType, TransferType]) toTransferType(value any) (any, error) {
+	v, ok := value.(ModelType)
 	if !ok {
-		var zero Value
-		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", zero, value))
+		var zero ModelType
+		panic(fmt.Sprintf("transfer type converter: want value of type %T, got %T", zero, value))
 	}
-	return tc.toTransferValueFn(v)
+	return tc.toTransferTypeFn(v)
 }
 
-func (tc *transferConverter[Value, TransferValue]) fromTransferValue(transferValuePtr any, valuePtr any) error {
-	v, ok := valuePtr.(*Value)
+func (tc *transferTypeConverter[ModelType, TransferType]) fromTransferType(transferTypePtr any, valuePtr any) error {
+	v, ok := valuePtr.(*ModelType)
 	if !ok {
-		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", (*Value)(nil), valuePtr))
+		panic(fmt.Sprintf("transfer type converter: want value of type %T, got %T", (*ModelType)(nil), valuePtr))
 	}
-	tvp, ok := transferValuePtr.(*TransferValue)
+	tvp, ok := transferTypePtr.(*TransferType)
 	if !ok {
-		panic(fmt.Sprintf("transfer converter: want transfer value of type %T, got %T", (*TransferValue)(nil), transferValuePtr))
+		panic(fmt.Sprintf("transfer type converter: want transfer value of type %T, got %T", (*TransferType)(nil), transferTypePtr))
 	}
-	return tc.fromTransferValueFn(*tvp, v)
+	return tc.fromTransferTypeFn(*tvp, v)
 }
 
-func (tc *transferConverter[Value, TransferValue]) toTransferValueWithContext(ctx context.Context, value any) (any, error) {
-	v, ok := value.(Value)
+func (tc *transferTypeConverter[ModelType, TransferType]) toTransferTypeWithContext(ctx context.Context, value any) (any, error) {
+	v, ok := value.(ModelType)
 	if !ok {
-		var zero Value
-		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", zero, value))
+		var zero ModelType
+		panic(fmt.Sprintf("transfer type converter: want value of type %T, got %T", zero, value))
 	}
-	return tc.toTransferValueWithContextFn(ctx, v)
+	return tc.toTransferTypeWithContextFn(ctx, v)
 }
 
-func (tc *transferConverter[Value, TransferValue]) fromTransferValueWithContext(ctx context.Context, transferValuePtr any, valuePtr any) error {
-	v, ok := valuePtr.(*Value)
+func (tc *transferTypeConverter[ModelType, TransferType]) fromTransferTypeWithContext(ctx context.Context, transferTypePtr any, valuePtr any) error {
+	v, ok := valuePtr.(*ModelType)
 	if !ok {
-		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", (*Value)(nil), valuePtr))
+		panic(fmt.Sprintf("transfer type converter: want value of type %T, got %T", (*ModelType)(nil), valuePtr))
 	}
-	tvp, ok := transferValuePtr.(*TransferValue)
+	tvp, ok := transferTypePtr.(*TransferType)
 	if !ok {
-		panic(fmt.Sprintf("transfer converter: want transfer value of type %T, got %T", (*TransferValue)(nil), transferValuePtr))
+		panic(fmt.Sprintf("transfer type converter: want transfer value of type %T, got %T", (*TransferType)(nil), transferTypePtr))
 	}
-	return tc.fromTransferValueWithContextFn(ctx, *tvp, v)
+	return tc.fromTransferTypeWithContextFn(ctx, *tvp, v)
 }
 
-func (tc *transferConverter[Value, TransferValue]) toTransferValueWithWorkflowContext(ctx Context, value any) (any, error) {
-	v, ok := value.(Value)
+func (tc *transferTypeConverter[ModelType, TransferType]) toTransferTypeWithWorkflowContext(ctx Context, value any) (any, error) {
+	v, ok := value.(ModelType)
 	if !ok {
-		var zero Value
-		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", zero, value))
+		var zero ModelType
+		panic(fmt.Sprintf("transfer type converter: want value of type %T, got %T", zero, value))
 	}
-	return tc.toTransferValueWithWorkflowContextFn(ctx, v)
+	return tc.toTransferTypeWithWorkflowContextFn(ctx, v)
 }
 
-func (tc *transferConverter[Value, TransferValue]) fromTransferValueWithWorkflowContext(ctx Context, transferValuePtr any, valuePtr any) error {
-	v, ok := valuePtr.(*Value)
+func (tc *transferTypeConverter[ModelType, TransferType]) fromTransferTypeWithWorkflowContext(ctx Context, transferTypePtr any, valuePtr any) error {
+	v, ok := valuePtr.(*ModelType)
 	if !ok {
-		panic(fmt.Sprintf("transfer converter: want value of type %T, got %T", (*Value)(nil), valuePtr))
+		panic(fmt.Sprintf("transfer type converter: want value of type %T, got %T", (*ModelType)(nil), valuePtr))
 	}
-	tvp, ok := transferValuePtr.(*TransferValue)
+	tvp, ok := transferTypePtr.(*TransferType)
 	if !ok {
-		panic(fmt.Sprintf("transfer converter: want transfer value of type %T, got %T", (*TransferValue)(nil), transferValuePtr))
+		panic(fmt.Sprintf("transfer type converter: want transfer value of type %T, got %T", (*TransferType)(nil), transferTypePtr))
 	}
-	return tc.fromTransferValueWithWorkflowContextFn(ctx, *tvp, v)
+	return tc.fromTransferTypeWithWorkflowContextFn(ctx, *tvp, v)
 }
 
 // -- DATA CONVERTERS ----------------------------------------------------------
@@ -192,10 +192,10 @@ func (tc *transferConverter[Value, TransferValue]) fromTransferValueWithWorkflow
 //  2. Decodes its input using the parent data converter and then trying to
 //     transfer-convert the result into a normal value.
 type transferAwareDataConverter struct {
-	parent             converter.DataConverter
-	context            context.Context
-	workflowContext    Context
-	transferConverters *sync.Map
+	parent                 converter.DataConverter
+	context                context.Context
+	workflowContext        Context
+	transferTypeConverters *sync.Map
 }
 
 var _ converter.DataConverter = (*transferAwareDataConverter)(nil)
@@ -213,93 +213,93 @@ func makeTransferAware(dc converter.DataConverter) *transferAwareDataConverter {
 		return tadc
 	}
 	return &transferAwareDataConverter{
-		parent:             dc,
-		transferConverters: new(sync.Map),
+		parent:                 dc,
+		transferTypeConverters: new(sync.Map),
 	}
 }
 
-func (dc *transferAwareDataConverter) transferConverter(value ValueWithTransferConverter) TransferConverter {
+func (dc *transferAwareDataConverter) transferTypeConverter(value ValueWithTransferTypeConverter) TransferTypeConverter {
 	valueType := reflect.TypeOf(value)
 	if valueType.Kind() == reflect.Pointer {
 		valueType = valueType.Elem()
 	}
-	if tc, ok := dc.transferConverters.Load(valueType); ok {
-		return tc.(TransferConverter)
+	if tc, ok := dc.transferTypeConverters.Load(valueType); ok {
+		return tc.(TransferTypeConverter)
 	}
-	tc := value.TransferConverter()
-	cached, _ := dc.transferConverters.LoadOrStore(valueType, tc)
-	return cached.(TransferConverter)
+	tc := value.TransferTypeConverter()
+	cached, _ := dc.transferTypeConverters.LoadOrStore(valueType, tc)
+	return cached.(TransferTypeConverter)
 }
 
 func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
-	transferValue, err := dc.encodeAsTransferValueOrReturn(value)
+	transferType, err := dc.encodeAsTransferTypeOrReturn(value)
 	if err != nil {
 		return nil, err
 	}
-	return dc.parent.ToPayload(transferValue)
+	return dc.parent.ToPayload(transferType)
 }
 
 func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
 	// TODO Would callers be surprised if we mutated their array? See encodeArgs for instance.
 	// Is it worth getting fancy to avoid this allocation in the common case where none of
 	// the values are transfer-convertible?
-	transferValues := make([]any, len(values))
+	transferTypes := make([]any, len(values))
 	for i, value := range values {
-		transferValue, err := dc.encodeAsTransferValueOrReturn(value)
+		transferType, err := dc.encodeAsTransferTypeOrReturn(value)
 		if err != nil {
 			return nil, fmt.Errorf("values[%d]: %w", i, err)
 		}
-		transferValues[i] = transferValue
+		transferTypes[i] = transferType
 	}
-	return dc.parent.ToPayloads(transferValues...)
+	return dc.parent.ToPayloads(transferTypes...)
 }
 
-func (dc *transferAwareDataConverter) encodeAsTransferValueOrReturn(value any) (transferValue any, err error) {
-	convertible, ok := value.(ValueWithTransferConverter)
+func (dc *transferAwareDataConverter) encodeAsTransferTypeOrReturn(value any) (transferType any, err error) {
+	convertible, ok := value.(ValueWithTransferTypeConverter)
 	if !ok {
 		return value, nil
 	}
-	return dc.toTransferValue(dc.transferConverter(convertible), value)
+	return dc.toTransferType(dc.transferTypeConverter(convertible), value)
 }
 
-// toTransferValue converts value with whichever flavor of conversion suits the context
+// toTransferType converts value with whichever flavor of conversion suits the context
 // this data converter is running in.
-func (dc *transferAwareDataConverter) toTransferValue(tc TransferConverter, value any) (any, error) {
+func (dc *transferAwareDataConverter) toTransferType(tc TransferTypeConverter, value any) (any, error) {
 	if dc.workflowContext != nil {
-		return tc.toTransferValueWithWorkflowContext(dc.workflowContext, value)
+		return tc.toTransferTypeWithWorkflowContext(dc.workflowContext, value)
 	}
 	if dc.context != nil {
-		return tc.toTransferValueWithContext(dc.context, value)
+		return tc.toTransferTypeWithContext(dc.context, value)
 	}
-	return tc.toTransferValue(value)
+	return tc.toTransferType(value)
 }
 
-// fromTransferValue is the [transferAwareDataConverter.toTransferValue] counterpart.
-func (dc *transferAwareDataConverter) fromTransferValue(tc TransferConverter, transferValuePtr any, valuePtr any) error {
+// fromTransferType is the [transferAwareDataConverter.toTransferType] counterpart.
+func (dc *transferAwareDataConverter) fromTransferType(tc TransferTypeConverter, transferTypePtr any, valuePtr any) error {
 	if dc.workflowContext != nil {
-		return tc.fromTransferValueWithWorkflowContext(dc.workflowContext, transferValuePtr, valuePtr)
+		return tc.fromTransferTypeWithWorkflowContext(dc.workflowContext, transferTypePtr, valuePtr)
 	}
 	if dc.context != nil {
-		return tc.fromTransferValueWithContext(dc.context, transferValuePtr, valuePtr)
+		return tc.fromTransferTypeWithContext(dc.context, transferTypePtr, valuePtr)
 	}
-	return tc.fromTransferValue(transferValuePtr, valuePtr)
+	return tc.fromTransferType(transferTypePtr, valuePtr)
 }
 
 func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	if payload == nil {
 		return dc.parent.FromPayload(payload, valuePtr)
 	}
-	convertible, ok := valuePtr.(ValueWithTransferConverter)
+	convertible, ok := valuePtr.(ValueWithTransferTypeConverter)
 	if !ok {
 		return dc.parent.FromPayload(payload, valuePtr)
 	}
-	tc := dc.transferConverter(convertible)
-	transferValuePtr := tc.newTransferValuePtr()
-	err := dc.parent.FromPayload(payload, transferValuePtr)
+	tc := dc.transferTypeConverter(convertible)
+	transferTypePtr := tc.newTransferTypePtr()
+	err := dc.parent.FromPayload(payload, transferTypePtr)
 	if err != nil {
 		return err
 	}
-	return dc.fromTransferValue(tc, transferValuePtr, valuePtr)
+	return dc.fromTransferType(tc, transferTypePtr, valuePtr)
 }
 
 func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error {
@@ -308,20 +308,20 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 	}
 	// TODO Is it worth getting fancy to avoid this allocation in the common case where
 	// none of the values are transfer-convertible?
-	transferValuePtrs := make([]any, len(valuePtrs))
+	transferTypePtrs := make([]any, len(valuePtrs))
 	for i := range payloads.GetPayloads() {
 		if i >= len(valuePtrs) {
 			break
 		}
-		convertible, ok := valuePtrs[i].(ValueWithTransferConverter)
+		convertible, ok := valuePtrs[i].(ValueWithTransferTypeConverter)
 		if !ok {
-			transferValuePtrs[i] = valuePtrs[i]
+			transferTypePtrs[i] = valuePtrs[i]
 		} else {
-			transferValuePtrs[i] = dc.transferConverter(convertible).newTransferValuePtr()
+			transferTypePtrs[i] = dc.transferTypeConverter(convertible).newTransferTypePtr()
 		}
 	}
 
-	if err := dc.parent.FromPayloads(payloads, transferValuePtrs...); err != nil {
+	if err := dc.parent.FromPayloads(payloads, transferTypePtrs...); err != nil {
 		return err
 	}
 
@@ -329,14 +329,14 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		if i >= len(valuePtrs) {
 			break
 		}
-		convertible, ok := valuePtrs[i].(ValueWithTransferConverter)
+		convertible, ok := valuePtrs[i].(ValueWithTransferTypeConverter)
 		if !ok {
-			valuePtrs[i] = transferValuePtrs[i]
+			valuePtrs[i] = transferTypePtrs[i]
 		} else {
-			err := dc.fromTransferValue(
-				dc.transferConverter(convertible), transferValuePtrs[i], valuePtrs[i])
+			err := dc.fromTransferType(
+				dc.transferTypeConverter(convertible), transferTypePtrs[i], valuePtrs[i])
 			if err != nil {
-				return fmt.Errorf("transfer converter: payload item %d: %w", i, err)
+				return fmt.Errorf("transfer type converter: payload item %d: %w", i, err)
 			}
 		}
 	}

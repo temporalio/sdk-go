@@ -68,55 +68,55 @@ func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 	return internal.NewDisconnectedContext(parent)
 }
 
-// ValueWithTransferConverter is an optional interface that values can implement to provide
-// the SDK with a transfer converter.
+// ValueWithTransferTypeConverter is an optional interface that values can implement to provide
+// the SDK with a transfer type converter.
 //
-// When implemented, the SDK calls [ValueWithTransferConverter.TransferConverter] before
-// serializing the value. The returned TransferConverter will be used to turn the value
+// When implemented, the SDK calls [ValueWithTransferTypeConverter.TransferTypeConverter] before
+// serializing the value. The returned TransferTypeConverter will be used to turn the value
 // into a serializable representation, called a transfer value. The converter will also
 // be used to turn the transfer value back into the original value after deserialization.
 //
 // This method should be cheap and fast; the SDK may call this method frequently.
 //
 // NOTE: Experimental.
-type ValueWithTransferConverter = internal.ValueWithTransferConverter
+type ValueWithTransferTypeConverter = internal.ValueWithTransferTypeConverter
 
-// TransferConverter converts application values to serializable transfer
-// values and back. Create one using [NewTransferConverter] or
-// [NewContextAwareTransferConverter].
+// TransferTypeConverter converts application values to serializable transfer
+// values and back. Create one using [NewTransferTypeConverter] or
+// [NewContextAwareTransferTypeConverter].
 //
 // NOTE: Experimental.
-type TransferConverter = internal.TransferConverter
+type TransferTypeConverter = internal.TransferTypeConverter
 
-// NewTransferConverter builds a [TransferConverter] that can map
-// something of type Value into a serializable "transfer value", and back.
+// NewTransferTypeConverter builds a [TransferTypeConverter] that can map
+// something of type ModelType into a serializable "transfer value", and back.
 //
 // NOTE: Experimental.
-func NewTransferConverter[Value, TransferValue any](
-	toTransferValue func(Value) (TransferValue, error),
-	fromTransferValue func(TransferValue, *Value) error,
-) TransferConverter {
-	return internal.NewTransferConverter(toTransferValue, fromTransferValue)
+func NewTransferTypeConverter[ModelType, TransferType any](
+	toTransferType func(ModelType) (TransferType, error),
+	fromTransferType func(TransferType, *ModelType) error,
+) TransferTypeConverter {
+	return internal.NewTransferTypeConverter(toTransferType, fromTransferType)
 }
 
-// NewContextAwareTransferConverter builds a [TransferConverter] that can map
-// something of type Value into a serializable "transfer value", and back.
+// NewContextAwareTransferTypeConverter builds a [TransferTypeConverter] that can map
+// something of type ModelType into a serializable "transfer value", and back.
 //
 // NOTE: Experimental.
-func NewContextAwareTransferConverter[Value, TransferValue any](
-	toTransferValue func(Value) (TransferValue, error),
-	fromTransferValue func(TransferValue, *Value) error,
-	toTransferValueWithContext func(context.Context, Value) (TransferValue, error),
-	fromTransferValueWithContext func(context.Context, TransferValue, *Value) error,
-	toTransferValueWithWorkflowContext func(Context, Value) (TransferValue, error),
-	fromTransferValueWithWorkflowContext func(Context, TransferValue, *Value) error,
-) TransferConverter {
-	return internal.NewContextAwareTransferConverter(
-		toTransferValue,
-		fromTransferValue,
-		toTransferValueWithContext,
-		fromTransferValueWithContext,
-		toTransferValueWithWorkflowContext,
-		fromTransferValueWithWorkflowContext,
+func NewContextAwareTransferTypeConverter[ModelType, TransferType any](
+	toTransferType func(ModelType) (TransferType, error),
+	fromTransferType func(TransferType, *ModelType) error,
+	toTransferTypeWithContext func(context.Context, ModelType) (TransferType, error),
+	fromTransferTypeWithContext func(context.Context, TransferType, *ModelType) error,
+	toTransferTypeWithWorkflowContext func(Context, ModelType) (TransferType, error),
+	fromTransferTypeWithWorkflowContext func(Context, TransferType, *ModelType) error,
+) TransferTypeConverter {
+	return internal.NewContextAwareTransferTypeConverter(
+		toTransferType,
+		fromTransferType,
+		toTransferTypeWithContext,
+		fromTransferTypeWithContext,
+		toTransferTypeWithWorkflowContext,
+		fromTransferTypeWithWorkflowContext,
 	)
 }

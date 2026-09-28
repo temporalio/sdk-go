@@ -29,8 +29,8 @@ import (
 // temperature is a struct with no exported fields and its transfer type is a float64.
 type temperature struct{ kelvin float64 }
 
-func (temperature) TransferConverter() TransferConverter {
-	return NewTransferConverter(
+func (temperature) TransferTypeConverter() TransferTypeConverter {
+	return NewTransferTypeConverter(
 		func(t temperature) (float64, error) {
 			return t.kelvin, nil
 		},
@@ -46,8 +46,8 @@ type unencodable struct{}
 
 var errNoEncoding = errors.New("cannot encode")
 
-func (unencodable) TransferConverter() TransferConverter {
-	return NewTransferConverter(
+func (unencodable) TransferTypeConverter() TransferTypeConverter {
+	return NewTransferTypeConverter(
 		func(unencodable) (string, error) { return "", errNoEncoding },
 		func(string, *unencodable) error { return nil },
 	)
@@ -58,49 +58,49 @@ type undecodable struct{}
 
 var errNoDecoding = errors.New("cannot decode")
 
-func (undecodable) TransferConverter() TransferConverter {
-	return NewTransferConverter(
+func (undecodable) TransferTypeConverter() TransferTypeConverter {
+	return NewTransferTypeConverter(
 		func(undecodable) (string, error) { return "encoded", nil },
 		func(string, *undecodable) error { return errNoDecoding },
 	)
 }
 
-// contextualString has a transfer converter that looks for [transferContextKey]
+// contextualString has a transfer type converter that looks for [transferContextKey]
 // in the context to compute the transfer type.
 type contextualString string
 
 type transferContextKey struct{}
 
-func (contextualString) TransferConverter() TransferConverter {
-	return NewContextAwareTransferConverter(
+func (contextualString) TransferTypeConverter() TransferTypeConverter {
+	return NewContextAwareTransferTypeConverter(
 		func(value contextualString) (string, error) {
 			return fmt.Sprintf("go::%s", string(value)), nil
 		},
-		func(transferValue string, value *contextualString) error {
-			*value = contextualString(strings.Split(transferValue, ":")[2])
+		func(transferType string, value *contextualString) error {
+			*value = contextualString(strings.Split(transferType, ":")[2])
 			return nil
 		},
 		func(ctx context.Context, value contextualString) (string, error) {
 			label, _ := ctx.Value(transferContextKey{}).(string)
 			return fmt.Sprintf("go:%s:%s", label, string(value)), nil
 		},
-		func(ctx context.Context, transferValue string, value *contextualString) error {
-			*value = contextualString(strings.Split(transferValue, ":")[2])
+		func(ctx context.Context, transferType string, value *contextualString) error {
+			*value = contextualString(strings.Split(transferType, ":")[2])
 			return nil
 		},
 		func(ctx Context, value contextualString) (string, error) {
 			label, _ := ctx.Value(transferContextKey{}).(string)
 			return fmt.Sprintf("wf:%s:%s", label, string(value)), nil
 		},
-		func(ctx Context, transferValue string, value *contextualString) error {
-			*value = contextualString(strings.Split(transferValue, ":")[2])
+		func(ctx Context, transferType string, value *contextualString) error {
+			*value = contextualString(strings.Split(transferType, ":")[2])
 			return nil
 		},
 	)
 }
 
 // transferEnvelope is a struct that contains a transfer-convertible field,
-// but the struct itself has no transfer converter.
+// but the struct itself has no transfer type converter.
 type transferEnvelope struct{ Value contextualString }
 
 // -- TESTS --
@@ -125,7 +125,7 @@ func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 		}
 	})
 
-	t.Run("values without a transfer converter", func(t *testing.T) {
+	t.Run("values without a transfer type converter", func(t *testing.T) {
 		values := make([]string, 10)
 		for i := range values {
 			values[i] = "plain-" + strconv.FormatUint(rand.Uint64(), 10)
@@ -151,7 +151,7 @@ func TestTransferAwareDataConverter_PointerValuePanics(t *testing.T) {
 	dc := DefaultInternalDataConverter
 	value := &temperature{kelvin: 300}
 
-	require.Implements(t, (*ValueWithTransferConverter)(nil), value)
+	require.Implements(t, (*ValueWithTransferTypeConverter)(nil), value)
 	require.Panics(t, func() {
 		_, _ = dc.ToPayload(value)
 	})
@@ -176,7 +176,7 @@ func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
 		require.Equal(t, values, got)
 	})
 
-	t.Run("values without a transfer converter", func(t *testing.T) {
+	t.Run("values without a transfer type converter", func(t *testing.T) {
 		values := make([]string, 10)
 		valuePtrs := make([]any, len(values))
 		got := make([]string, len(values))
@@ -372,7 +372,7 @@ func TestTransferTypesMockClientWorkflowInput(t *testing.T) {
 		wireArgs []any
 	}{
 		{
-			name:     "workflow args use transfer converters when available",
+			name:     "workflow args use transfer type converters when available",
 			workflow: func(Context, string, temperature, temperature, transferEnvelope) error { return nil },
 			args:     []any{"plain", temperature{kelvin: 300}, temperature{kelvin: 275}, transferEnvelope{Value: "value"}},
 			wireArgs: []any{"plain", 300.0, 275.0, map[string]string{"Value": "value"}},
@@ -384,7 +384,7 @@ func TestTransferTypesMockClientWorkflowInput(t *testing.T) {
 			wireArgs: []any{map[string]string{"Value": "value"}, []string{"value"}, map[string]string{"key": "value"}},
 		},
 		{
-			name:     "client context reaches transfer converter",
+			name:     "client context reaches transfer type converter",
 			workflow: func(Context, contextualString) error { return nil },
 			args:     []any{contextualString("value")},
 			wireArgs: []any{"go:client:value"},
@@ -450,8 +450,8 @@ func TestTransferTypesMockClientWorkflowResult(t *testing.T) {
 // converter that isn't transfer-aware, the fields disappear.
 type transferExecution struct{ workflowID, runID string }
 
-func (transferExecution) TransferConverter() TransferConverter {
-	return NewTransferConverter(
+func (transferExecution) TransferTypeConverter() TransferTypeConverter {
+	return NewTransferTypeConverter(
 		func(value transferExecution) (*commonpb.WorkflowExecution, error) {
 			return &commonpb.WorkflowExecution{WorkflowId: value.workflowID, RunId: value.runID}, nil
 		},

@@ -9,40 +9,40 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// intTestTransferValue has no serializable fields. Without its transfer
+// intTestTransferType has no serializable fields. Without its transfer
 // converter, the default data converter will replace it with an empty struct.
-type intTestTransferValue struct {
+type intTestTransferType struct {
 	value int
 }
 
-func (intTestTransferValue) TransferConverter() workflow.TransferConverter {
-	return workflow.NewTransferConverter(
-		func(value intTestTransferValue) (int, error) {
+func (intTestTransferType) TransferTypeConverter() workflow.TransferTypeConverter {
+	return workflow.NewTransferTypeConverter(
+		func(value intTestTransferType) (int, error) {
 			return value.value, nil
 		},
-		func(transferValue int, value *intTestTransferValue) error {
-			value.value = transferValue
+		func(transferType int, value *intTestTransferType) error {
+			value.value = transferType
 			return nil
 		},
 	)
 }
 
-func intTestTransferWorkflow(_ workflow.Context, input intTestTransferValue) (intTestTransferValue, error) {
+func intTestTransferWorkflow(_ workflow.Context, input intTestTransferType) (intTestTransferType, error) {
 	input.value++
 	return input, nil
 }
 
-func intTestTransferActivity(_ context.Context, input intTestTransferValue) (intTestTransferValue, error) {
+func intTestTransferActivity(_ context.Context, input intTestTransferType) (intTestTransferType, error) {
 	input.value++
 	return input, nil
 }
 
-func intTestTransferActivityWorkflow(ctx workflow.Context, input intTestTransferValue) (intTestTransferValue, error) {
+func intTestTransferActivityWorkflow(ctx workflow.Context, input intTestTransferType) (intTestTransferType, error) {
 	ctx = workflow.WithActivityOptions(ctx, workflow.ActivityOptions{
 		StartToCloseTimeout: time.Minute,
 	})
 
-	var result intTestTransferValue
+	var result intTestTransferType
 	err := workflow.ExecuteActivity(ctx, intTestTransferActivity, input).Get(ctx, &result)
 	if err != nil {
 		return result, err
@@ -70,13 +70,13 @@ func (ts *IntegrationTestSuite) TestTransferTypes_WorkflowRoundTrip() {
 	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:        "transfer-types-workflow-" + ts.T().Name(),
 		TaskQueue: taskQueue,
-	}, intTestTransferWorkflow, intTestTransferValue{value: 41})
+	}, intTestTransferWorkflow, intTestTransferType{value: 41})
 	ts.NoError(err)
 
-	var result intTestTransferValue
+	var result intTestTransferType
 	ts.NoError(run.Get(ctx, &result))
 	// Without transfer conversion, the struct's private field gets mapped to zero.
-	ts.Equal(intTestTransferValue{value: 42}, result)
+	ts.Equal(intTestTransferType{value: 42}, result)
 }
 
 func (ts *IntegrationTestSuite) TestTransferTypes_RemoteActivityRoundTrip() {
@@ -94,11 +94,11 @@ func (ts *IntegrationTestSuite) TestTransferTypes_RemoteActivityRoundTrip() {
 	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
 		ID:        "transfer-types-activity-" + ts.T().Name(),
 		TaskQueue: taskQueue,
-	}, intTestTransferActivityWorkflow, intTestTransferValue{value: 41})
+	}, intTestTransferActivityWorkflow, intTestTransferType{value: 41})
 	ts.NoError(err)
 
-	var result intTestTransferValue
+	var result intTestTransferType
 	ts.NoError(run.Get(ctx, &result))
 	// Without transfer conversion, the struct's private field gets mapped to zero.
-	ts.Equal(intTestTransferValue{value: 42}, result)
+	ts.Equal(intTestTransferType{value: 42}, result)
 }
