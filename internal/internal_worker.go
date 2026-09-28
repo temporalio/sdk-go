@@ -2513,7 +2513,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
 		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
-		pollerGroupSnapshotStore:         client.pollerGroupSnapshotStore,
+		pollerGroupSnapshotStore:         client.pollerGroupStores.getOrCreate(taskQueue),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},

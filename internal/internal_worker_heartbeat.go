@@ -88,7 +88,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		stopC:                         make(chan struct{}),
 		stoppedC:                      make(chan struct{}),
 		logger:                        m.logger,
-		pollerGroups:                  newPollerGroupManager(m.client.pollerGroupSnapshotStore),
+		pollerGroups:                  newPollerGroupManager(m.client.pollerGroupStores.getOrCreate(controlTaskQueue)),
 	}
 	m.workers[namespace] = hw
 	return hw

@@ -97,7 +97,7 @@ type (
 		workerInstanceKey string
 		// Per-client queue used by the server to send worker commands.
 		workerControlTaskQueue string
-		// Per-client poller-group snapshots received from poll responses.
+		// Shared snapshot for this worker's task queue.
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 		// Server cancels polls on shutdown
 		workerPollCompleteOnShutdown *atomic.Bool
@@ -430,8 +430,8 @@ func (bp *basePoller) getCapabilities() *workflowservice.GetSystemInfoResponse_C
 }
 
 func (bp *basePoller) updatePollerGroups(info *taskqueuepb.PollerGroupsInfo) {
-	// Fixed pollers also publish discoveries so autoscaling pollers sharing this
-	// client can use them.
+	// Fixed pollers also publish discoveries for autoscaling pollers on the
+	// same task queue.
 	// TODO: Use discoveries for runtime SimpleMaximum-to-autoscaling transitions.
 	bp.pollerGroupSnapshotStore.updateGroups(info)
 }

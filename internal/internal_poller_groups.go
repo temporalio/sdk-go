@@ -8,12 +8,19 @@ import (
 	taskqueuepb "go.temporal.io/api/taskqueue/v1"
 )
 
-// The client owns pollerGroupSnapshotStore. Each poller kind uses an independent
-// manager so its autoscaling target and in-flight coverage remain independent.
+// The client shares one group snapshot per task queue. Each poller kind uses an
+// independent manager so its in-flight coverage remains independent.
 type (
-	// pollerGroupSnapshotStore holds client-wide group membership, weights, and
-	// versions learned from poll responses. Managers and schedulers share this
-	// routing snapshot but keep their in-flight poll state local.
+	// pollerGroupStoreRegistry seeds task queues from DescribeNamespace, then
+	// keeps poll response updates scoped to their task queue.
+	pollerGroupStoreRegistry struct {
+		mu          sync.Mutex
+		seed        *taskqueuepb.PollerGroupsInfo
+		byTaskQueue map[string]*pollerGroupSnapshotStore
+	}
+
+	// pollerGroupSnapshotStore holds one task queue's membership, weights, and
+	// version. Poller kinds share it but keep their in-flight state local.
 	pollerGroupSnapshotStore struct {
 		mu      sync.RWMutex
 		current pollerGroupSnapshot
@@ -67,6 +74,46 @@ type (
 		pendingPollCount int
 	}
 )
+
+func newPollerGroupStoreRegistry() *pollerGroupStoreRegistry {
+	return &pollerGroupStoreRegistry{byTaskQueue: make(map[string]*pollerGroupSnapshotStore)}
+}
+
+func (r *pollerGroupStoreRegistry) getOrCreate(taskQueue string) *pollerGroupSnapshotStore {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if store := r.byTaskQueue[taskQueue]; store != nil {
+		return store
+	}
+
+	store := newPollerGroupSnapshotStore()
+	store.updateGroups(r.seed)
+	r.byTaskQueue[taskQueue] = store
+	return store
+}
+
+func (r *pollerGroupStoreRegistry) applySeed(info *taskqueuepb.PollerGroupsInfo) {
+	if info == nil {
+		return
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// A failover or replica change can give concurrent DescribeNamespace calls
+	// different versions. Keep an older response from regressing the seed.
+	if r.seed != nil && info.GetVersion() <= r.seed.GetVersion() {
+		return
+	}
+	r.seed = info
+	// Worker startup loads namespace data. Seed all uninitialized stores here,
+	// including those for workers not yet started, instead of passing each
+	// worker's store through the namespace-loading path.
+	for _, store := range r.byTaskQueue {
+		if !store.snapshot().versionSet {
+			store.updateGroups(info)
+		}
+	}
+}
 
 func newPollerGroupSnapshotStore() *pollerGroupSnapshotStore {
 	return &pollerGroupSnapshotStore{

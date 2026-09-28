@@ -1861,7 +1861,7 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	require.NotNil(s.T(), workflowPollers[0].autoscalingRunner)
 	workflowBalancer := workflowPollers[0].autoscalingRunner.workflowBalancer
 	require.NotNil(s.T(), workflowBalancer)
-	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, workflowBalancer.groupStore)
+	require.Same(s.T(), worker.executionParams.pollerGroupSnapshotStore, workflowBalancer.groupStore)
 	for _, p := range workflowPollers {
 		require.NotNil(s.T(), p.autoscalingRunner)
 		require.Same(s.T(), workflowBalancer, p.autoscalingRunner.workflowBalancer)
@@ -1871,7 +1871,7 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	require.NotNil(s.T(), activityPollers[0].autoscalingRunner)
 	activityGroups := activityPollers[0].autoscalingRunner.pollerGroups
 	require.NotNil(s.T(), activityGroups)
-	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, activityGroups.groupStore)
+	require.Same(s.T(), worker.executionParams.pollerGroupSnapshotStore, activityGroups.groupStore)
 	for _, p := range activityPollers {
 		require.NotNil(s.T(), p.autoscalingRunner)
 		require.Same(s.T(), activityGroups, p.autoscalingRunner.pollerGroups)
@@ -1882,7 +1882,7 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	require.NotNil(s.T(), nexusPollers[0].autoscalingRunner)
 	nexusGroups := nexusPollers[0].autoscalingRunner.pollerGroups
 	require.NotNil(s.T(), nexusGroups)
-	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, nexusGroups.groupStore)
+	require.Same(s.T(), worker.executionParams.pollerGroupSnapshotStore, nexusGroups.groupStore)
 	for _, p := range nexusPollers {
 		require.NotNil(s.T(), p.autoscalingRunner)
 		require.Same(s.T(), nexusGroups, p.autoscalingRunner.pollerGroups)
@@ -1890,6 +1890,40 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 
 	// Auto-enroll implies full autoscaling support, including scale-down.
 	s.True(worker.executionParams.serverSupportsAutoscaling.Load())
+}
+
+func (s *internalWorkerTestSuite) TestPollerGroupsScopedToTaskQueue() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
+	first := NewAggregatedWorker(client, "queue-a", WorkerOptions{})
+	second := NewAggregatedWorker(client, "queue-a", WorkerOptions{})
+	other := NewAggregatedWorker(client, "queue-b", WorkerOptions{})
+	firstStore := first.executionParams.pollerGroupSnapshotStore
+	otherStore := other.executionParams.pollerGroupSnapshotStore
+
+	require.Same(s.T(), firstStore, second.executionParams.pollerGroupSnapshotStore)
+	require.NotSame(s.T(), firstStore, otherStore)
+
+	firstStore.updateGroups(testPollerGroupsInfo(10, []*taskqueuepb.PollerGroupInfo{
+		{Id: "cell-a", Weight: 1},
+	}))
+	otherStore.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
+		{Id: "cell-b", Weight: 3},
+	}))
+
+	require.Equal(s.T(), int64(10), firstStore.snapshot().version)
+	require.Equal(s.T(), int64(2), otherStore.snapshot().version)
+	require.Contains(s.T(), firstStore.snapshot().groups, "cell-a")
+	require.NotContains(s.T(), firstStore.snapshot().groups, "cell-b")
+	require.Contains(s.T(), otherStore.snapshot().groups, "cell-b")
+	require.NotContains(s.T(), otherStore.snapshot().groups, "cell-a")
+
+	controlStore := client.pollerGroupStores.getOrCreate(first.executionParams.workerControlTaskQueue)
+	require.NotSame(s.T(), firstStore, controlStore)
+	controlStore.updateGroups(testPollerGroupsInfo(20, []*taskqueuepb.PollerGroupInfo{
+		{Id: "control-cell", Weight: 1},
+	}))
+	require.Equal(s.T(), int64(10), firstStore.snapshot().version)
+	require.NotContains(s.T(), firstStore.snapshot().groups, "control-cell")
 }
 
 func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollDisabled() {
@@ -2002,7 +2036,7 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollSessionWorker()
 	require.NotNil(s.T(), activityPollers[0].autoscalingRunner)
 	activityGroups := activityPollers[0].autoscalingRunner.pollerGroups
 	require.NotNil(s.T(), activityGroups)
-	require.Same(s.T(), worker.client.pollerGroupSnapshotStore, activityGroups.groupStore)
+	require.Same(s.T(), worker.sessionWorker.activityWorker.executionParameters.pollerGroupSnapshotStore, activityGroups.groupStore)
 	for _, p := range activityPollers {
 		require.NotNil(s.T(), p.autoscalingRunner)
 		require.Same(s.T(), activityGroups, p.autoscalingRunner.pollerGroups)
@@ -3285,7 +3319,7 @@ func TestWorkerOptionInvalid(t *testing.T) {
 }
 
 func TestWorkerOptionDefaults(t *testing.T) {
-	client := &WorkflowClient{}
+	client := &WorkflowClient{pollerGroupStores: newPollerGroupStoreRegistry()}
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 
@@ -3355,6 +3389,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		failureConverter:   GetDefaultFailureConverter(),
 		contextPropagators: nil,
 		logger:             ilog.NewNopLogger(),
+		pollerGroupStores:  newPollerGroupStoreRegistry(),
 	}
 
 	options := WorkerOptions{
@@ -3417,7 +3452,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 }
 
 func TestLocalActivityWorkerOnly(t *testing.T) {
-	client := &WorkflowClient{}
+	client := &WorkflowClient{pollerGroupStores: newPollerGroupStoreRegistry()}
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{LocalActivityWorkerOnly: true})
 
@@ -3531,9 +3566,10 @@ func TestIsNonRetriableError(t *testing.T) {
 func TestWorkerRegisterDisabledWorkflow(t *testing.T) {
 	// Expect panic
 	var recovered any
+	client := &WorkflowClient{pollerGroupStores: newPollerGroupStoreRegistry()}
 	func() {
 		defer func() { recovered = recover() }()
-		worker := NewAggregatedWorker(&WorkflowClient{}, "some-task-queue", WorkerOptions{DisableWorkflowWorker: true})
+		worker := NewAggregatedWorker(client, "some-task-queue", WorkerOptions{DisableWorkflowWorker: true})
 		worker.RegisterWorkflow(testReplayWorkflow)
 	}()
 	require.Equal(t, "workflow worker disabled, cannot register workflow", recovered)
