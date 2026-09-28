@@ -2169,7 +2169,7 @@ func WithDataConverter(ctx Context, dc converter.DataConverter) Context {
 	}
 	ctx1 := setWorkflowEnvOptionsIfNotExist(ctx)
 	getWorkflowEnvOptions(ctx1).DataConverter = makeTransferAware(dc)
-	getWorkflowEnvOptions(ctx1).RootDataConverter = dc // TODO Should this be wrapped too?
+	getWorkflowEnvOptions(ctx1).RootDataConverter = makeTransferAware(dc)
 	return ctx1
 }
 

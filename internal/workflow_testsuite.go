@@ -233,7 +233,7 @@ func (t *TestActivityEnvironment) SetWorkerOptions(options WorkerOptions) *TestA
 
 // SetDataConverter sets data converter.
 func (t *TestActivityEnvironment) SetDataConverter(dataConverter converter.DataConverter) *TestActivityEnvironment {
-	t.impl.setDataConverter(dataConverter)
+	t.impl.setDataConverter(makeTransferAware(dataConverter))
 	return t
 }
 
