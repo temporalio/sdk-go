@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"sync"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/sdk/converter"
@@ -182,9 +184,10 @@ func (tc *transferConverter[Value, TransferValue]) FromTransferValueInWorkflow(c
 //  2. Decodes its input using the parent data converter and then trying to
 //     transfer-convert the result into a normal value.
 type transferAwareDataConverter struct {
-	parent          converter.DataConverter
-	context         context.Context
-	workflowContext Context
+	parent             converter.DataConverter
+	context            context.Context
+	workflowContext    Context
+	transferConverters *sync.Map
 }
 
 var _ converter.DataConverter = (*transferAwareDataConverter)(nil)
@@ -201,7 +204,23 @@ func makeTransferAware(dc converter.DataConverter) *transferAwareDataConverter {
 	if tadc, ok := dc.(*transferAwareDataConverter); ok {
 		return tadc
 	}
-	return &transferAwareDataConverter{parent: dc}
+	return &transferAwareDataConverter{
+		parent:             dc,
+		transferConverters: new(sync.Map),
+	}
+}
+
+func (dc *transferAwareDataConverter) transferConverter(value ValueWithTransferConverter) TransferConverter {
+	valueType := reflect.TypeOf(value)
+	if valueType.Kind() == reflect.Pointer {
+		valueType = valueType.Elem()
+	}
+	if tc, ok := dc.transferConverters.Load(valueType); ok {
+		return tc.(TransferConverter)
+	}
+	tc := value.TransferConverter()
+	cached, _ := dc.transferConverters.LoadOrStore(valueType, tc)
+	return cached.(TransferConverter)
 }
 
 func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
@@ -232,7 +251,7 @@ func (dc *transferAwareDataConverter) encodeAsTransferValueOrReturn(value any) (
 	if !ok {
 		return value, nil
 	}
-	return dc.toTransferValue(convertible.TransferConverter(), value)
+	return dc.toTransferValue(dc.transferConverter(convertible), value)
 }
 
 // toTransferValue converts value with whichever flavor of conversion suits the context
@@ -260,7 +279,7 @@ func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, val
 	if !ok {
 		return dc.parent.FromPayload(payload, valuePtr)
 	}
-	tc := convertible.TransferConverter()
+	tc := dc.transferConverter(convertible)
 	transferValuePtr := tc.NewTransferValuePtr()
 	err := dc.parent.FromPayload(payload, transferValuePtr)
 	if err != nil {
@@ -284,7 +303,7 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		if !ok {
 			transferValuePtrs[i] = valuePtrs[i]
 		} else {
-			transferValuePtrs[i] = convertible.TransferConverter().NewTransferValuePtr()
+			transferValuePtrs[i] = dc.transferConverter(convertible).NewTransferValuePtr()
 		}
 	}
 
@@ -301,7 +320,7 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 			valuePtrs[i] = transferValuePtrs[i]
 		} else {
 			err := dc.fromTransferValue(
-				convertible.TransferConverter(), transferValuePtrs[i], valuePtrs[i])
+				dc.transferConverter(convertible), transferValuePtrs[i], valuePtrs[i])
 			if err != nil {
 				return fmt.Errorf("transfer converter: payload item %d: %w", i, err)
 			}
