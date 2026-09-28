@@ -1926,6 +1926,28 @@ func (s *internalWorkerTestSuite) TestPollerGroupsScopedToTaskQueue() {
 	require.NotContains(s.T(), firstStore.snapshot().groups, "control-cell")
 }
 
+func (s *internalWorkerTestSuite) TestSessionPollerGroupsScopedToTaskQueue() {
+	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
+	worker := NewAggregatedWorker(client, "parent-queue", WorkerOptions{EnableSessionWorker: true})
+	parentStore := worker.executionParams.pollerGroupSnapshotStore
+	activityParams := worker.sessionWorker.activityWorker.executionParameters
+	creationParams := worker.sessionWorker.creationWorker.executionParameters
+	activityStore := activityParams.pollerGroupSnapshotStore
+	creationStore := creationParams.pollerGroupSnapshotStore
+
+	require.NotSame(s.T(), parentStore, activityStore)
+	require.NotSame(s.T(), parentStore, creationStore)
+	require.NotSame(s.T(), activityStore, creationStore)
+	require.Same(s.T(), client.pollerGroupStores.getOrCreate(activityParams.TaskQueue), activityStore)
+	require.Same(s.T(), client.pollerGroupStores.getOrCreate(creationParams.TaskQueue), creationStore)
+
+	activityStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: "session-cell", Weight: 1},
+	}))
+	require.NotContains(s.T(), parentStore.snapshot().groups, "session-cell")
+	require.NotContains(s.T(), creationStore.snapshot().groups, "session-cell")
+}
+
 func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollDisabled() {
 	worker := s.newWorkerWithNamespaceCapabilities(
 		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: false},

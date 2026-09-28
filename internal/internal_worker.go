@@ -575,6 +575,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.BackgroundContext = context.WithValue(params.BackgroundContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
+	params.pollerGroupSnapshotStore = client.pollerGroupStores.getOrCreate(params.TaskQueue)
 	// For the resource specific task queue, we don't need to include deployment options
 	// Save them to restore later
 	deployments := params.DeploymentOptions
@@ -593,6 +594,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 		},
 	)
 	params.TaskQueue = creationTaskqueue
+	params.pollerGroupSnapshotStore = client.pollerGroupStores.getOrCreate(params.TaskQueue)
 	params.DeploymentOptions = deployments
 	params.UseBuildIDForVersioning = useBuildIDForVersioning
 	// Although we have session token bucket to limit session size across creation
