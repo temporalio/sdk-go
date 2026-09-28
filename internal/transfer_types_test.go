@@ -357,7 +357,7 @@ func newTransferTestClient(t *testing.T, dc converter.DataConverter) (*workflows
 	return service, client
 }
 
-func TestTransferTypesIntegration_ClientWorkflowInput(t *testing.T) {
+func TestTransferTypesMockClientWorkflowInput(t *testing.T) {
 	for _, tt := range []struct {
 		name     string
 		workflow any
@@ -403,7 +403,7 @@ func TestTransferTypesIntegration_ClientWorkflowInput(t *testing.T) {
 	}
 }
 
-func TestTransferTypesIntegration_ClientWorkflowResult(t *testing.T) {
+func TestTransferTypesMockClientWorkflowResult(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
 		wireValue any
@@ -455,7 +455,7 @@ func (transferExecution) TransferConverter() TransferConverter {
 	)
 }
 
-func TestTransferTypesIntegration_TestWorkflowEnvironmentRoundTrip(t *testing.T) {
+func TestTransferTypesWorkflowTestEnvironmentRoundTrip(t *testing.T) {
 	dc := converter.GetDefaultDataConverter()
 	model := transferExecution{workflowID: "workflow-1", runID: "run-1"}
 
@@ -475,7 +475,7 @@ func TestTransferTypesIntegration_TestWorkflowEnvironmentRoundTrip(t *testing.T)
 	})
 }
 
-func TestTransferTypesIntegration_WorkflowRoundTrip(t *testing.T) {
+func TestTransferTypesWorkflowTestEnvironmentWorkflowRoundTrip(t *testing.T) {
 	for _, tt := range []struct {
 		name      string
 		workflow  any
@@ -510,7 +510,7 @@ func TestTransferTypesIntegration_WorkflowRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTransferTypesIntegration_ActivityRoundTrip(t *testing.T) {
+func TestTransferTypesWorkflowTestEnvironmentActivityRoundTrip(t *testing.T) {
 	activity := func(_ context.Context, input temperature, increment float64) (temperature, error) {
 		return temperature{kelvin: input.kelvin + increment}, nil
 	}
@@ -547,7 +547,7 @@ func TestTransferTypesIntegration_ActivityRoundTrip(t *testing.T) {
 	}
 }
 
-func TestTransferTypesIntegration_ExecutionConversionContext(t *testing.T) {
+func TestTransferTypesWorkflowTestEnvironmentExecutionConversionContext(t *testing.T) {
 	t.Run("activity callback", func(t *testing.T) {
 		var suite WorkflowTestSuite
 		env := suite.NewTestWorkflowEnvironment()
