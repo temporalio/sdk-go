@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"context"
+
 	"go.temporal.io/sdk/internal"
 )
 
@@ -64,4 +66,48 @@ func WithValue(parent Context, key any, val any) Context {
 //	}
 func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 	return internal.NewDisconnectedContext(parent)
+}
+
+// ValueWithTransferConverter is an optional interface that values can implement to provide
+// the SDK with a transfer converter.
+//
+// When implemented, the SDK calls [ValueWithTransferConverter.TransferConverter] before
+// serializing the value. The returned TransferConverter will be used to turn the value
+// into a serializable representation, called a transfer value. The converter will also
+// be used to turn the transfer value back into the original value after deserialization.
+//
+// This method should be cheap and fast; the SDK may call this method frequently.
+//
+// NOTE: Experimental.
+type ValueWithTransferConverter = internal.ValueWithTransferConverter
+
+// TransferConverter converts application values to serializable transfer
+// values and back. Implement it using [NewContextAwareTransferConverter].
+//
+// The SDK will only invoke tc.ToTransferValue(v) if v.TransferConverter()
+// equals tc. Likewise, the SDK will only invoke tc.FromTransferValue(tvp, v)
+// if v.TransferConverter() equals tc and tvp was obtained from
+// tc.NewTransferValuePtr().
+//
+// NOTE: Experimental.
+type TransferConverter = internal.TransferConverter
+
+// NewContextAwareTransferConverter builds a [TransferConverter] that can map
+// something of type Value into a serializable "transfer value", and back.
+// The first pair of functions converts payloads outside a workflow,
+// the second pair converts inside one.
+//
+// NOTE: Experimental.
+func NewContextAwareTransferConverter[Value, TransferValue any](
+	toTransferValue func(context.Context, Value) (TransferValue, error),
+	fromTransferValue func(context.Context, TransferValue, *Value) error,
+	toTransferValueInWorkflow func(Context, Value) (TransferValue, error),
+	fromTransferValueInWorkflow func(Context, TransferValue, *Value) error,
+) TransferConverter {
+	return internal.NewContextAwareTransferConverter(
+		toTransferValue,
+		fromTransferValue,
+		toTransferValueInWorkflow,
+		fromTransferValueInWorkflow,
+	)
 }

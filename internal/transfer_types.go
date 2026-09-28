@@ -23,6 +23,8 @@ var DefaultInternalDataConverter = makeTransferAware(converter.GetDefaultDataCon
 // This method should be cheap and fast; the SDK may call this method frequently.
 //
 // NOTE: Experimental.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.ValueWithTransferConverter]
 type ValueWithTransferConverter interface {
 	TransferConverter() TransferConverter
 }
@@ -36,6 +38,8 @@ type ValueWithTransferConverter interface {
 // tc.NewTransferValuePtr().
 //
 // NOTE: Experimental.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.TransferConverter]
 type TransferConverter interface {
 	// NewTransferValuePtr returns a pointer to a zero transfer value.
 	NewTransferValuePtr() any
@@ -63,6 +67,8 @@ type TransferConverter interface {
 // the second pair converts inside one.
 //
 // NOTE: Experimental.
+//
+// Exposed as: [go.temporal.io/sdk/workflow.NewContextAwareTransferConverter]
 func NewContextAwareTransferConverter[Value, TransferValue any](
 	toTransferValue func(context.Context, Value) (TransferValue, error),
 	fromTransferValue func(context.Context, TransferValue, *Value) error,
