@@ -90,6 +90,7 @@ type TransferTypeConverter = internal.TransferTypeConverter
 
 // NewTransferTypeConverter builds a [TransferTypeConverter] that can map
 // something of type ModelType into a serializable "transfer value", and back.
+// ModelType must not be a pointer type.
 //
 // NOTE: Experimental.
 func NewTransferTypeConverter[ModelType, TransferType any](
@@ -101,6 +102,7 @@ func NewTransferTypeConverter[ModelType, TransferType any](
 
 // NewContextAwareTransferTypeConverter builds a [TransferTypeConverter] that can map
 // something of type ModelType into a serializable "transfer value", and back.
+// ModelType must not be a pointer type.
 //
 // NOTE: Experimental.
 func NewContextAwareTransferTypeConverter[ModelType, TransferType any](

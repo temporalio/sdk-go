@@ -59,6 +59,7 @@ type TransferTypeConverter interface {
 
 // NewContextAwareTransferTypeConverter builds a [TransferTypeConverter] that can map
 // something of type ModelType into a serializable "transfer value", and back.
+// ModelType must not be a pointer type.
 //
 // NOTE: Experimental.
 //
@@ -71,6 +72,10 @@ func NewContextAwareTransferTypeConverter[ModelType, TransferType any](
 	toTransferTypeWithWorkflowContext func(Context, *ModelType) (*TransferType, error),
 	fromTransferTypeWithWorkflowContext func(Context, *TransferType, *ModelType) error,
 ) TransferTypeConverter {
+	modelType := reflect.TypeFor[ModelType]()
+	if modelType.Kind() == reflect.Pointer {
+		panic(fmt.Sprintf("transfer type converter: ModelType must not be a pointer, got %v", modelType))
+	}
 	return &transferTypeConverter[ModelType, TransferType]{
 		toTransferTypeFn:                      toTransferType,
 		fromTransferTypeFn:                    fromTransferType,
@@ -83,6 +88,7 @@ func NewContextAwareTransferTypeConverter[ModelType, TransferType any](
 
 // NewTransferTypeConverter builds a [TransferTypeConverter] that can map
 // something of type ModelType into a serializable "transfer value", and back.
+// ModelType must not be a pointer type.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewTransferTypeConverter]
 func NewTransferTypeConverter[ModelType, TransferType any](

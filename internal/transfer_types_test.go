@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand/v2"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -164,6 +165,19 @@ func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 	var got temperature
 	require.NoError(t, dc.FromPayload(payload, &got))
 	require.Equal(t, *want, got)
+}
+
+func TestNewTransferTypeConverter_RejectsPointerModelType(t *testing.T) {
+	modelType := reflect.TypeFor[*temperature]()
+	require.PanicsWithValue(t,
+		fmt.Sprintf("transfer type converter: ModelType must not be a pointer, got %v", modelType),
+		func() {
+			NewTransferTypeConverter(
+				func(**temperature) (*float64, error) { return nil, nil },
+				func(*float64, **temperature) error { return nil },
+			)
+		},
+	)
 }
 
 func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
