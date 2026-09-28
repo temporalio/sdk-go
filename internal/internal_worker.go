@@ -575,7 +575,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 	creationTaskqueue := getCreationTaskqueue(params.TaskQueue)
 	params.BackgroundContext = context.WithValue(params.BackgroundContext, sessionEnvironmentContextKey, sessionEnvironment)
 	params.TaskQueue = sessionEnvironment.GetResourceSpecificTaskqueue()
-	params.pollerGroupSnapshotStore = client.pollerGroupStores.getOrCreate(params.TaskQueue)
+	params.pollerGroupSnapshotStore = newPollerGroupSnapshotStore()
 	// For the resource specific task queue, we don't need to include deployment options
 	// Save them to restore later
 	deployments := params.DeploymentOptions
@@ -594,7 +594,7 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 		},
 	)
 	params.TaskQueue = creationTaskqueue
-	params.pollerGroupSnapshotStore = client.pollerGroupStores.getOrCreate(params.TaskQueue)
+	params.pollerGroupSnapshotStore = nil
 	params.DeploymentOptions = deployments
 	params.UseBuildIDForVersioning = useBuildIDForVersioning
 	// Although we have session token bucket to limit session size across creation
@@ -1468,6 +1468,11 @@ func (aw *AggregatedWorker) start() error {
 	nsData, err := aw.client.loadNamespaceData(aw.executionParams.MetricsHandler)
 	if err != nil {
 		return err
+	}
+	// Seed poller groups before the first poll.
+	aw.executionParams.pollerGroupSnapshotStore.updateGroups(nsData.pollerGroupsInfo)
+	if aw.sessionWorker != nil {
+		aw.sessionWorker.activityWorker.executionParameters.pollerGroupSnapshotStore.updateGroups(nsData.pollerGroupsInfo)
 	}
 
 	if aw.executionParams.setErrorLimits != nil {
@@ -2515,7 +2520,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		pollTimeTracker:                  &pollTimeTracker{},
 		workerInstanceKey:                workerInstanceKey,
 		workerControlTaskQueue:           workerControlTaskQueue(client.namespace, client.workerGroupingKey),
-		pollerGroupSnapshotStore:         client.pollerGroupStores.getOrCreate(taskQueue),
+		pollerGroupSnapshotStore:         newPollerGroupSnapshotStore(),
 		activityCancellationCallbacks:    activityCancellationCallbacks,
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},

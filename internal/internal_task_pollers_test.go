@@ -270,6 +270,25 @@ func TestFixedActivityPollerPublishesPollerGroupsToSharedStore(t *testing.T) {
 	require.Equal(t, groupID, lease.groupIDOrEmpty())
 }
 
+func TestPollWithoutGroupStore(t *testing.T) {
+	t.Parallel()
+
+	ctrl := gomock.NewController(t)
+	service := workflowservicemock.NewMockWorkflowServiceClient(ctrl)
+	service.EXPECT().PollActivityTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.PollActivityTaskQueueResponse{
+			PollerGroupsInfo: testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: "group", Weight: 1}}),
+		}, nil)
+
+	poller := &activityTaskPoller{
+		basePoller:      basePoller{metricsHandler: metrics.NopHandler},
+		service:         service,
+		numPollerMetric: newNumPollerMetric(metrics.NopHandler, metrics.PollerTypeActivityTask),
+	}
+	_, err := poller.poll(t.Context(), pollerGroupLease{})
+	require.NoError(t, err)
+}
+
 func TestFixedNexusPollerUsesEmptyLease(t *testing.T) {
 	t.Parallel()
 

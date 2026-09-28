@@ -1892,62 +1892,6 @@ func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollWithDefaults() 
 	s.True(worker.executionParams.serverSupportsAutoscaling.Load())
 }
 
-func (s *internalWorkerTestSuite) TestPollerGroupsScopedToTaskQueue() {
-	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
-	first := NewAggregatedWorker(client, "queue-a", WorkerOptions{})
-	second := NewAggregatedWorker(client, "queue-a", WorkerOptions{})
-	other := NewAggregatedWorker(client, "queue-b", WorkerOptions{})
-	firstStore := first.executionParams.pollerGroupSnapshotStore
-	otherStore := other.executionParams.pollerGroupSnapshotStore
-
-	require.Same(s.T(), firstStore, second.executionParams.pollerGroupSnapshotStore)
-	require.NotSame(s.T(), firstStore, otherStore)
-
-	firstStore.updateGroups(testPollerGroupsInfo(10, []*taskqueuepb.PollerGroupInfo{
-		{Id: "cell-a", Weight: 1},
-	}))
-	otherStore.updateGroups(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
-		{Id: "cell-b", Weight: 3},
-	}))
-
-	require.Equal(s.T(), int64(10), firstStore.snapshot().version)
-	require.Equal(s.T(), int64(2), otherStore.snapshot().version)
-	require.Contains(s.T(), firstStore.snapshot().groups, "cell-a")
-	require.NotContains(s.T(), firstStore.snapshot().groups, "cell-b")
-	require.Contains(s.T(), otherStore.snapshot().groups, "cell-b")
-	require.NotContains(s.T(), otherStore.snapshot().groups, "cell-a")
-
-	controlStore := client.pollerGroupStores.getOrCreate(first.executionParams.workerControlTaskQueue)
-	require.NotSame(s.T(), firstStore, controlStore)
-	controlStore.updateGroups(testPollerGroupsInfo(20, []*taskqueuepb.PollerGroupInfo{
-		{Id: "control-cell", Weight: 1},
-	}))
-	require.Equal(s.T(), int64(10), firstStore.snapshot().version)
-	require.NotContains(s.T(), firstStore.snapshot().groups, "control-cell")
-}
-
-func (s *internalWorkerTestSuite) TestSessionPollerGroupsScopedToTaskQueue() {
-	client := NewServiceClient(s.service, nil, ClientOptions{Namespace: "testNamespace"})
-	worker := NewAggregatedWorker(client, "parent-queue", WorkerOptions{EnableSessionWorker: true})
-	parentStore := worker.executionParams.pollerGroupSnapshotStore
-	activityParams := worker.sessionWorker.activityWorker.executionParameters
-	creationParams := worker.sessionWorker.creationWorker.executionParameters
-	activityStore := activityParams.pollerGroupSnapshotStore
-	creationStore := creationParams.pollerGroupSnapshotStore
-
-	require.NotSame(s.T(), parentStore, activityStore)
-	require.NotSame(s.T(), parentStore, creationStore)
-	require.NotSame(s.T(), activityStore, creationStore)
-	require.Same(s.T(), client.pollerGroupStores.getOrCreate(activityParams.TaskQueue), activityStore)
-	require.Same(s.T(), client.pollerGroupStores.getOrCreate(creationParams.TaskQueue), creationStore)
-
-	activityStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
-		{Id: "session-cell", Weight: 1},
-	}))
-	require.NotContains(s.T(), parentStore.snapshot().groups, "session-cell")
-	require.NotContains(s.T(), creationStore.snapshot().groups, "session-cell")
-}
-
 func (s *internalWorkerTestSuite) TestPollerAutoscalingAutoEnrollDisabled() {
 	worker := s.newWorkerWithNamespaceCapabilities(
 		&namespacepb.NamespaceInfo_Capabilities{PollerAutoscalingAutoEnroll: false},
@@ -3341,7 +3285,7 @@ func TestWorkerOptionInvalid(t *testing.T) {
 }
 
 func TestWorkerOptionDefaults(t *testing.T) {
-	client := &WorkflowClient{pollerGroupStores: newPollerGroupStoreRegistry()}
+	client := &WorkflowClient{}
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{})
 
@@ -3411,7 +3355,6 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 		failureConverter:   GetDefaultFailureConverter(),
 		contextPropagators: nil,
 		logger:             ilog.NewNopLogger(),
-		pollerGroupStores:  newPollerGroupStoreRegistry(),
 	}
 
 	options := WorkerOptions{
@@ -3474,7 +3417,7 @@ func TestWorkerOptionNonDefaults(t *testing.T) {
 }
 
 func TestLocalActivityWorkerOnly(t *testing.T) {
-	client := &WorkflowClient{pollerGroupStores: newPollerGroupStoreRegistry()}
+	client := &WorkflowClient{}
 	taskQueue := "worker-options-tq"
 	aggWorker := NewAggregatedWorker(client, taskQueue, WorkerOptions{LocalActivityWorkerOnly: true})
 
@@ -3588,7 +3531,7 @@ func TestIsNonRetriableError(t *testing.T) {
 func TestWorkerRegisterDisabledWorkflow(t *testing.T) {
 	// Expect panic
 	var recovered any
-	client := &WorkflowClient{pollerGroupStores: newPollerGroupStoreRegistry()}
+	client := &WorkflowClient{}
 	func() {
 		defer func() { recovered = recover() }()
 		worker := NewAggregatedWorker(client, "some-task-queue", WorkerOptions{DisableWorkflowWorker: true})

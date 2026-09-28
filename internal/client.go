@@ -1734,7 +1734,6 @@ func NewServiceClient(workflowServiceClient workflowservice.WorkflowServiceClien
 		getSystemInfoTimeout:    options.ConnectionOptions.GetSystemInfoTimeout,
 		workerHeartbeatInterval: heartbeatInterval,
 		workerGroupingKey:       uuid.NewString(),
-		pollerGroupStores:       newPollerGroupStoreRegistry(),
 		sdkName:                 sdkName,
 		sdkVersion:              sdkVersion,
 		storageParams:           storageParams,

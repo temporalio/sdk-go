@@ -150,7 +150,9 @@ func TestWorkerCommandFirstPollUsesDescribeNamespacePollerGroups(t *testing.T) {
 
 	mockService.EXPECT().DescribeNamespace(gomock.Any(), gomock.Any(), gomock.Any()).
 		Return(&workflowservice.DescribeNamespaceResponse{
-			NamespaceInfo:    &namespacepb.NamespaceInfo{},
+			NamespaceInfo: &namespacepb.NamespaceInfo{Capabilities: &namespacepb.NamespaceInfo_Capabilities{
+				WorkerHeartbeats: true,
+			}},
 			PollerGroupsInfo: testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{{Id: groupID, Weight: 1}}),
 		}, nil)
 	mockService.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
@@ -160,14 +162,15 @@ func TestWorkerCommandFirstPollUsesDescribeNamespacePollerGroups(t *testing.T) {
 		})
 
 	client := NewServiceClient(mockService, nil, ClientOptions{Namespace: namespace})
-	_, err := client.loadNamespaceData(metrics.NopHandler)
-	require.NoError(t, err)
-
 	hw := client.heartbeatManager.sharedNamespaceWorkerFor(namespace)
 	defer hw.heartbeatCancel()
+	hw.started.Store(true)
+	worker := NewAggregatedWorker(client, "worker-queue", WorkerOptions{})
+	require.NoError(t, client.heartbeatManager.registerWorker(worker))
+
 	lease := hw.pollerGroups.reserve()
 	defer lease.release()
-	_, err = hw.pollWorkerCommand(lease)
+	_, err := hw.pollWorkerCommand(lease)
 	require.NoError(t, err)
 }
 

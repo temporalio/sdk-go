@@ -430,6 +430,10 @@ func (bp *basePoller) getCapabilities() *workflowservice.GetSystemInfoResponse_C
 }
 
 func (bp *basePoller) updatePollerGroups(info *taskqueuepb.PollerGroupsInfo) {
+	if bp.pollerGroupSnapshotStore == nil {
+		return
+	}
+
 	// Fixed pollers also publish discoveries for autoscaling pollers on the
 	// same task queue.
 	// TODO: Use discoveries for runtime SimpleMaximum-to-autoscaling transitions.

@@ -88,7 +88,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		stopC:                         make(chan struct{}),
 		stoppedC:                      make(chan struct{}),
 		logger:                        m.logger,
-		pollerGroups:                  newPollerGroupManager(m.client.pollerGroupStores.getOrCreate(controlTaskQueue)),
+		pollerGroups:                  newPollerGroupManager(newPollerGroupSnapshotStore()),
 	}
 	m.workers[namespace] = hw
 	return hw
@@ -114,6 +114,7 @@ func (m *heartbeatManager) registerWorker(
 	defer m.workersMutex.Unlock()
 
 	hw := m.sharedNamespaceWorkerForLocked(namespace)
+	hw.pollerGroups.updateGroups(nsData.pollerGroupsInfo)
 
 	hw.callbacksMutex.Lock()
 	hw.callbacks[worker.workerInstanceKey] = worker.heartbeatCallback

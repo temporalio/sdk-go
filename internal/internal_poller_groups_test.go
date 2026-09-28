@@ -17,47 +17,6 @@ func newTestPollerGroupManager() *pollerGroupManager {
 	return newPollerGroupManager(newPollerGroupSnapshotStore())
 }
 
-func TestPollerGroupStoreRegistrySeedsTaskQueues(t *testing.T) {
-	registry := newPollerGroupStoreRegistry()
-	first := registry.getOrCreate("queue-a")
-	registry.applySeed(testPollerGroupsInfo(2, []*taskqueuepb.PollerGroupInfo{
-		{Id: "seed-cell", Weight: 1},
-	}))
-	second := registry.getOrCreate("queue-b")
-	seedOnly := registry.getOrCreate("queue-unpolled")
-
-	require.NotSame(t, first, second)
-	require.Contains(t, first.snapshot().groups, "seed-cell")
-	require.Contains(t, second.snapshot().groups, "seed-cell")
-
-	first.updateGroups(testPollerGroupsInfo(4, []*taskqueuepb.PollerGroupInfo{
-		{Id: "queue-a-cell", Weight: 2},
-	}))
-	second.updateGroups(testPollerGroupsInfo(3, []*taskqueuepb.PollerGroupInfo{
-		{Id: "queue-b-cell", Weight: 3},
-	}))
-	require.Contains(t, first.snapshot().groups, "queue-a-cell")
-	require.Contains(t, second.snapshot().groups, "queue-b-cell")
-
-	registry.applySeed(testPollerGroupsInfo(5, []*taskqueuepb.PollerGroupInfo{
-		{Id: "new-seed-cell", Weight: 1},
-	}))
-	require.Equal(t, int64(4), first.snapshot().version)
-	require.Equal(t, int64(3), second.snapshot().version)
-	require.Equal(t, int64(2), seedOnly.snapshot().version)
-	third := registry.getOrCreate("queue-c")
-	require.Equal(t, int64(5), third.snapshot().version)
-	require.Contains(t, third.snapshot().groups, "new-seed-cell")
-
-	registry.applySeed(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
-		{Id: "stale-cell", Weight: 1},
-	}))
-	fourth := registry.getOrCreate("queue-d")
-	require.Equal(t, int64(5), fourth.snapshot().version)
-	require.Contains(t, fourth.snapshot().groups, "new-seed-cell")
-	require.NotContains(t, fourth.snapshot().groups, "stale-cell")
-}
-
 func TestPollerGroupManagerReserveActivityNexusPollFillsCoverageBeforeWeights(t *testing.T) {
 	manager := newTestPollerGroupManager()
 	manager.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
