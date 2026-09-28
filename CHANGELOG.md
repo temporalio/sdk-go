@@ -22,6 +22,10 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added `workflow.ChildWorkflowOptions.VersioningOverride` for explicitly pinning,
+  auto-upgrading, or one-time routing a child workflow independently of its parent.
+  This requires Temporal Server 1.32.0 or later.
+
 - `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
