@@ -23,6 +23,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added poller-group-aware autoscaling with per-group coverage and sticky-backlog prioritization.
+  `SimpleMaximum` polling behavior is unchanged.
 - Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
   a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
   platforms), and the operating system and architecture. This is sent
