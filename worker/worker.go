@@ -341,7 +341,9 @@ func NewPollerBehaviorSimpleMaximum(
 }
 
 // NewPollerBehaviorAutoscaling scales pollers within the configured range using
-// server feedback. Poller-group coverage may exceed the configured maximum.
+// server feedback. The worker may exceed the configured maximum when the server
+// requires a poll open against more locations than the maximum allows. See
+// [PollerBehaviorAutoscalingOptions.MaximumNumberOfPollers].
 func NewPollerBehaviorAutoscaling(
 	options PollerBehaviorAutoscalingOptions,
 ) PollerBehavior {
