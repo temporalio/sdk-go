@@ -2015,6 +2015,43 @@ func TestWorkflowAutoscalingBalancerDropsUngroupedBacklog(t *testing.T) {
 	require.Zero(t, balancer.ungroupedStickyBacklog)
 }
 
+func TestBacklogOnGroupModeChange(t *testing.T) {
+	const (
+		groupID       = "group-a"
+		maxSlots      = 4
+		stickyBacklog = 3
+	)
+
+	groupStore := newPollerGroupSnapshotStore()
+	balancer := newWorkflowAutoscalingBalancer(maxSlots, maxSlots, groupStore)
+	normal := startTestWorkflowPoll(t, balancer, enumspb.TASK_QUEUE_KIND_NORMAL)
+	defer finishTestWorkflowPoll(balancer, normal)
+	sticky := startTestWorkflowPoll(t, balancer, enumspb.TASK_QUEUE_KIND_STICKY)
+	defer finishTestWorkflowPoll(balancer, sticky)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	balancer.setStickyGroupBacklog("", stickyBacklog)
+	require.ErrorIs(t, balancer.waitForPollTurn(ctx, enumspb.TASK_QUEUE_KIND_NORMAL), context.Canceled)
+
+	groupStore.updateGroups(testPollerGroupsInfo(1, []*taskqueuepb.PollerGroupInfo{
+		{Id: groupID, Weight: 1},
+	}))
+	groupNormal, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_NORMAL)
+	require.NoError(t, err)
+	defer groupNormal.release()
+	groupSticky, err := balancer.acquire(t.Context(), enumspb.TASK_QUEUE_KIND_STICKY)
+	require.NoError(t, err)
+	defer groupSticky.release()
+	require.NoError(t, balancer.waitForPollTurn(ctx, enumspb.TASK_QUEUE_KIND_NORMAL))
+
+	balancer.setStickyGroupBacklog(groupID, stickyBacklog)
+	require.ErrorIs(t, balancer.waitForPollTurn(ctx, enumspb.TASK_QUEUE_KIND_NORMAL), context.Canceled)
+
+	groupStore.updateGroups(testPollerGroupsInfo(2, nil))
+	require.NoError(t, balancer.waitForPollTurn(ctx, enumspb.TASK_QUEUE_KIND_NORMAL))
+}
+
 func TestWorkflowAutoscalingBalancerPreservesQueueKinds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		balancer := newTestWorkflowAutoscalingBalancer(2)

@@ -24,16 +24,18 @@ type workflowAutoscalingBalancer struct {
 	// its lease ends, even if its group disappears from the latest snapshot.
 	reservations workflowKindCounts
 	// Active polls have acquired slots and count toward queue-kind fairness.
-	active workflowKindCounts
-	// ungroupedStickyBacklog holds the backlog hint when no groups are known.
-	ungroupedStickyBacklog int64
-	groupStore             *pollerGroupSnapshotStore
-	// groups holds reservations and backlog hints for known poller groups.
-	// When groups is non-empty, ungroupedStickyBacklog is zero.
-	groups       map[string]*workflowGroupState
+	active       workflowKindCounts
 	stickyTarget int64
 	wakeCh       chan struct{}
 	mu           sync.Mutex
+
+	groupStore *pollerGroupSnapshotStore
+
+	// ungroupedStickyBacklog holds the backlog hint when no groups are known.
+	ungroupedStickyBacklog int64
+	// groups holds reservations and backlog hints for known poller groups.
+	// When groups is non-empty, ungroupedStickyBacklog is zero.
+	groups map[string]*workflowGroupState
 }
 
 type workflowGroupState struct {
