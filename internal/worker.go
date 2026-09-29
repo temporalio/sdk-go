@@ -50,9 +50,11 @@ type (
 		MinimumNumberOfPollers int
 
 		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed to scale up to.
-		// Poller-group coverage takes precedence: the worker may exceed this value to
-		// maintain at least one poll per server-provided group. For workflow tasks,
-		// this coverage minimum applies independently to normal and sticky pollers.
+		// The server may route a task queue's tasks through several locations and require
+		// the worker to keep at least one poll open against each so no tasks are left
+		// unpolled. If the server reports more locations than this value, the worker
+		// exceeds it to cover all of them. For workflow tasks, this applies separately
+		// to normal and sticky pollers.
 		//
 		// Default: 100
 		MaximumNumberOfPollers int
@@ -626,7 +628,9 @@ func NewPollerBehaviorSimpleMaximum(
 }
 
 // NewPollerBehaviorAutoscaling scales pollers within the configured range using
-// server feedback. Poller-group coverage may exceed the configured maximum.
+// server feedback. The worker may exceed the configured maximum when the server
+// requires a poll open against more locations than the maximum allows. See
+// [PollerBehaviorAutoscalingOptions.MaximumNumberOfPollers].
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorAutoscaling]
 func NewPollerBehaviorAutoscaling(
