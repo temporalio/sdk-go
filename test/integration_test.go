@@ -185,9 +185,6 @@ func (ts *IntegrationTestSuite) SetupTest() {
 		options.MetricsHandler = metricsHandler
 		options.TrafficController = trafficController
 		options.Interceptors = clientInterceptors
-		options.PayloadLimits = client.PayloadLimitOptions{
-			PayloadSizeWarning: 128,
-		}
 	})
 	ts.NoError(err)
 
