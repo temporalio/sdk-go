@@ -354,7 +354,7 @@ func newTestWorkflowEnvironmentImpl(s *WorkflowTestSuite, parentRegistry *regist
 
 		doneChannel:                 make(chan struct{}),
 		workerStopChannel:           make(chan struct{}),
-		dataConverter:               DefaultInternalDataConverter,
+		dataConverter:               defaultTransferAwareDataConverter,
 		failureConverter:            GetDefaultFailureConverter(),
 		runTimeout:                  maxWorkflowTimeout,
 		bufferedUpdateRequests:      make(map[string][]func()),

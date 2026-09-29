@@ -114,7 +114,7 @@ type transferEnvelope struct{ Value contextualString }
 
 func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := DefaultInternalDataConverter
+	dc := defaultTransferAwareDataConverter
 
 	t.Run("scalar transfer values", func(t *testing.T) {
 		values := make([]temperature, 10)
@@ -155,7 +155,7 @@ func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 
 func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := DefaultInternalDataConverter
+	dc := defaultTransferAwareDataConverter
 	want := &temperature{kelvin: 300}
 
 	require.Implements(t, (*ValueWithTransferTypeConverter)(nil), want)
@@ -182,7 +182,7 @@ func TestNewTransferTypeConverter_RejectsPointerModelType(t *testing.T) {
 
 func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := DefaultInternalDataConverter
+	dc := defaultTransferAwareDataConverter
 
 	t.Run("scalar transfer values", func(t *testing.T) {
 		values := make([]temperature, 10)
@@ -280,7 +280,7 @@ func TestTransferAwareDataConverter_MatchesParentForPlainValues(t *testing.T) {
 
 func TestTransferAwareDataConverter_ConversionErrors(t *testing.T) {
 	t.Parallel()
-	dc := DefaultInternalDataConverter
+	dc := defaultTransferAwareDataConverter
 
 	t.Run("encoding one value", func(t *testing.T) {
 		_, err := dc.ToPayload(unencodable{})
@@ -328,7 +328,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	// Even when the parent has no use for a context, we hold on to it: transfer
 	// converters may still want it.
 	t.Run("parent that is not context aware", func(t *testing.T) {
-		dc := DefaultInternalDataConverter
+		dc := defaultTransferAwareDataConverter
 		require.NotSame(t, dc, WithContext(t.Context(), dc))
 		require.NotSame(t, dc, WithWorkflowContext(Background(), dc))
 		// Serialization contexts are only forwarded, so there is nothing to keep.
@@ -370,7 +370,7 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 
 	t.Run("workflow context", func(t *testing.T) {
 		ctx := WithValue(Background(), transferContextKey{}, "workflow")
-		requireRoundTrip(t, DefaultInternalDataConverter.WithWorkflowContext(ctx), "wf:workflow:")
+		requireRoundTrip(t, defaultTransferAwareDataConverter.WithWorkflowContext(ctx), "wf:workflow:")
 	})
 }
 
@@ -629,7 +629,7 @@ func TestTransferTypesWorkflowTestEnvironmentExecutionConversionContext(t *testi
 
 func TestTransferTypes_DataConverterWrapping(t *testing.T) {
 	value := temperature{kelvin: 300}
-	payloads, err := DefaultInternalDataConverter.ToPayloads(value)
+	payloads, err := defaultTransferAwareDataConverter.ToPayloads(value)
 	require.NoError(t, err)
 
 	t.Run("workflow replayer", func(t *testing.T) {

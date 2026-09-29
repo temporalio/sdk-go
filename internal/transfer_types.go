@@ -10,7 +10,8 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
-var DefaultInternalDataConverter = makeTransferAware(converter.GetDefaultDataConverter())
+// The default data converter, wrapped so it also supports transfer-type conversion.
+var defaultTransferAwareDataConverter = makeTransferAware(converter.GetDefaultDataConverter())
 
 // -- USER API -----------------------------------------------------------
 
@@ -22,7 +23,10 @@ var DefaultInternalDataConverter = makeTransferAware(converter.GetDefaultDataCon
 // into a serializable representation, called a transfer value. The converter will also
 // be used to turn the transfer value back into the original value after deserialization.
 //
-// This method should be cheap and fast; the SDK may call this method frequently.
+// When the SDK first encounters a value of type T that implements this interface, the SDK
+// will cache the returned transfer type converter. The SDK will try to use the cached
+// converter for all subsequent values of type T. Hence values of the same type should
+// also have the same transfer type converter.
 //
 // NOTE: Experimental.
 //
