@@ -2,6 +2,7 @@ package internal
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -30,6 +31,11 @@ func TestWorkflowQueryFailureCause(t *testing.T) {
 			name: "workflow panic",
 			err:  newWorkflowPanicError("boom", "stack"),
 			want: enums.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
+		},
+		{
+			name: "returned PanicError stays unspecified",
+			err:  newPanicError("boom", "stack"),
+			want: enums.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED,
 		},
 		{
 			name: "illegal state machine panic",
@@ -81,5 +87,57 @@ func TestTaskFailureCompletionQuerySetsCause(t *testing.T) {
 	request = completion.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
 	if request.Cause != enums.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE {
 		t.Fatalf("payload size failure cause = %v, want PAYLOADS_TOO_LARGE", request.Cause)
+	}
+}
+
+func TestCompleteWorkflowQueryPanicCause(t *testing.T) {
+	wth := &workflowTaskHandlerImpl{namespace: "test-namespace"}
+	task := &workflowservice.PollWorkflowTaskQueueResponse{
+		Query: &querypb.WorkflowQuery{},
+	}
+
+	tests := []struct {
+		name         string
+		err          error
+		wantCause    enums.WorkflowTaskFailedCause
+		wantFailed   bool
+		wantPanicMsg bool
+	}{
+		{
+			name:         "workflow panic reports unhandled failure",
+			err:          newWorkflowPanicError("boom", "stack"),
+			wantCause:    enums.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
+			wantFailed:   true,
+			wantPanicMsg: true,
+		},
+		{
+			name:         "returned PanicError stays unspecified",
+			err:          newPanicError("boom", "stack"),
+			wantCause:    enums.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED,
+			wantFailed:   true,
+			wantPanicMsg: true,
+		},
+		{
+			name:       "returned PanicError wrapped in activity error stays unspecified",
+			err:        fmt.Errorf("activity failed: %w", newPanicError("boom", "stack")),
+			wantCause:  enums.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED,
+			wantFailed: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			workflowContext := &workflowExecutionContextImpl{err: tt.err}
+			completion := wth.completeWorkflow(nil, task, workflowContext, nil, nil, false)
+			request, ok := completion.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
+			if !ok {
+				t.Fatalf("expected RespondQueryTaskCompletedRequest, got %T", completion.rawRequest)
+			}
+			if request.Cause != tt.wantCause {
+				t.Fatalf("cause = %v, want %v", request.Cause, tt.wantCause)
+			}
+			if tt.wantPanicMsg && request.CompletedType != enums.QUERY_RESULT_TYPE_FAILED {
+				t.Fatalf("completed type = %v, want FAILED", request.CompletedType)
+			}
+		})
 	}
 }
