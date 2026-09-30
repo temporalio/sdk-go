@@ -179,8 +179,11 @@ func (wc *WorkerCache) putWorkflowContext(runID string, wec *workflowExecutionCo
 	return existing.(*workflowExecutionContextImpl), nil
 }
 
-func (wc *WorkerCache) removeWorkflowContext(runID string) {
-	wc.workflowCache.Delete(runID)
+func (wc *WorkerCache) removeWorkflowContext(runID string, expected *workflowExecutionContextImpl) {
+	// A stale context must not remove its replacement under the same run ID.
+	wc.workflowCache.DeleteIf(runID, func(cached any) bool {
+		return cached == expected
+	})
 }
 
 // MaxWorkflowCacheSize returns the maximum allowed size of the sticky cache

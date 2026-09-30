@@ -1044,6 +1044,7 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(cacheSize int) {
 	task := createWorkflowTask(testEvents, 0, workflowName)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+	t.False(wfctx.cached)
 	_, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
 	t.Nil(err)

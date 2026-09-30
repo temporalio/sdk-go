@@ -23,6 +23,10 @@ type Cache interface {
 	// Delete deletes an element in the cache
 	Delete(key string)
 
+	// DeleteIf deletes an element when the predicate accepts its current value.
+	// The predicate runs under the cache lock and must not call cache methods.
+	DeleteIf(key string, predicate func(any) bool) bool
+
 	// Release decrements the ref count of a pinned element. If the ref count
 	// drops to 0, the element can be evicted from the cache.
 	Release(key string)

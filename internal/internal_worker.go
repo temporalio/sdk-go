@@ -2382,7 +2382,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("MaxConcurrentWorkflowTaskExternalStorageVisits must not be negative")
 	}
 
-	// Need reference to result for fatal error handler
+	// Pollers retain this callback, keeping the worker and cache lease live until they stop.
 	var aw *AggregatedWorker
 	fatalErrorCallback := func(err error) {
 		// Set the fatal error if not already set

@@ -117,17 +117,30 @@ func (c *lru) PutIfNotExist(key string, value any) (any, error) {
 
 // Delete deletes a key, value pair associated with a key
 func (c *lru) Delete(key string) {
+	c.DeleteIf(key, func(any) bool { return true })
+}
+
+// DeleteIf deletes a key when the predicate accepts its current value.
+func (c *lru) DeleteIf(key string, predicate func(any) bool) bool {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
 	elt := c.byKey[key]
-	if elt != nil {
-		entry := c.byAccess.Remove(elt).(*cacheEntry)
-		if c.rmFunc != nil {
-			go c.rmFunc(entry.value)
-		}
-		delete(c.byKey, key)
+	if elt == nil {
+		return false
 	}
+
+	entry := elt.Value.(*cacheEntry)
+	if !predicate(entry.value) {
+		return false
+	}
+
+	c.byAccess.Remove(elt)
+	if c.rmFunc != nil {
+		go c.rmFunc(entry.value)
+	}
+	delete(c.byKey, key)
+	return true
 }
 
 // Release decrements the ref count of a pinned element.

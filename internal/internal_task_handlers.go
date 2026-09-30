@@ -630,10 +630,8 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// TODO: in case of closed, it assumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be a rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
-		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
-			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
-			w.cached = false
-		}
+		w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID, w)
+		w.cached = false
 		// Clear the state so other tasks waiting on the context know it should be discarded.
 		w.clearState()
 	} else if !w.cached {
@@ -836,7 +834,7 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 				} else {
 					wth.logger.Debug("Cached state started on different worker, creating new context")
 				}
-				wth.cache.removeWorkflowContext(runID)
+				wth.cache.removeWorkflowContext(runID, workflowContext)
 				workflowContext.clearState()
 			}
 			workflowContext.Unlock(err)
@@ -867,7 +865,9 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 				return
 			}
 			workflowContext.Lock()
-			workflowContext.cached = !cacheReleased
+			// A size-1 cache has zero LRU capacity and may evict the new context immediately.
+			workflowContext.cached = !cacheReleased &&
+				wth.cache.getWorkflowContext(runID) == workflowContext
 		} else {
 			workflowContext.Lock()
 		}

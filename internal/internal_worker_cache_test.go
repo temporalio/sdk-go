@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -156,6 +157,34 @@ func (s *WorkerCacheSuite) TestCapacityEvictionCountsForcedEviction() {
 	s.Equal(metrics.StickyCacheTotalForcedEviction, metricsHandler.Counters()[0].Name)
 }
 
+func (s *WorkerCacheSuite) TestStaleContextCannotRemoveReplacement() {
+	cachePtr := &sharedWorkerCache{}
+	var lock sync.Mutex
+	workerCache, lease := newWorkerCache(cachePtr, &lock, 10)
+	defer lease.release()
+
+	const runID = "run-id"
+	replacement := &workflowExecutionContextImpl{
+		wth: &workflowTaskHandlerImpl{metricsHandler: metrics.NopHandler},
+	}
+	_, err := workerCache.putWorkflowContext(runID, replacement)
+	s.NoError(err)
+
+	stale := &workflowExecutionContextImpl{
+		workflowInfo: &WorkflowInfo{
+			WorkflowExecution: WorkflowExecution{RunID: runID},
+		},
+		wth: &workflowTaskHandlerImpl{
+			cache:          workerCache,
+			metricsHandler: metrics.NopHandler,
+		},
+	}
+	stale.Lock()
+	stale.Unlock(errors.New("workflow task failed"))
+
+	s.Same(replacement, workerCache.getWorkflowContext(runID))
+}
+
 func (s *WorkerCacheSuite) TestOldHandleCannotAffectLaterGeneration() {
 	cachePtr := &sharedWorkerCache{}
 	var lock sync.Mutex
@@ -171,7 +200,7 @@ func (s *WorkerCacheSuite) TestOldHandleCannotAffectLaterGeneration() {
 	_, err := newCache.putWorkflowContext("run-id", workflowContext)
 	s.NoError(err)
 
-	oldCache.removeWorkflowContext("run-id")
+	oldCache.removeWorkflowContext("run-id", workflowContext)
 	s.Same(workflowContext, newCache.getWorkflowContext("run-id"))
 	s.NotSame(oldCache.getWorkflowCache(), newCache.getWorkflowCache())
 }
