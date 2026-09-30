@@ -1061,6 +1061,7 @@ func (wtp *workflowTaskProcessor) taskFailureCompletion(
 				Namespace:     wtp.namespace,
 				Failure:       wtp.failureConverter.ErrorToFailure(err),
 				PollerGroupId: task.GetPollerGroupId(),
+				Cause:         workflowQueryFailureCause(err),
 			},
 		}
 	}
@@ -1080,6 +1081,28 @@ func (wtp *workflowTaskProcessor) errorToFailWorkflowTask(
 	err error,
 ) *workflowservice.RespondWorkflowTaskFailedRequest {
 	return wtp.errorToFailWorkflowTaskWithCause(taskToken, workflowID, err, workflowTaskFailureCause(err))
+}
+
+// workflowQueryFailureCause maps a task failure to a WorkflowTaskFailedCause
+// for legacy query failure responses. Unlike workflowTaskFailureCause it keeps
+// UNSPECIFIED when no cause maps cleanly.
+func workflowQueryFailureCause(err error) enumspb.WorkflowTaskFailedCause {
+	if errors.As(err, new(payloadSizeError)) {
+		return enumspb.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE
+	}
+	if panicErr, _ := err.(*workflowPanicError); panicErr != nil {
+		if _, badStateMachine := panicErr.value.(stateMachineIllegalStatePanic); badStateMachine {
+			return enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+		}
+		return enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
+	}
+	if _, mismatch := err.(historyMismatchError); mismatch {
+		return enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	}
+	if _, unknown := err.(unknownSdkFlagError); unknown {
+		return enumspb.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR
+	}
+	return enumspb.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED
 }
 
 func workflowTaskFailureCause(err error) enumspb.WorkflowTaskFailedCause {

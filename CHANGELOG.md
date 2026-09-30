@@ -45,6 +45,10 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
+  `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
+  `NON_DETERMINISTIC_ERROR` for illegal state machine panics, and
+  `WORKFLOW_WORKER_UNHANDLED_FAILURE` when the workflow panicked.
 - Autoscaling pollers now honor configured bounds at startup, preventing excess polls and workflow
   polling delays.
 - Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
