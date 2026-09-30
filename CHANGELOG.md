@@ -22,6 +22,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added poller-group-aware autoscaling with per-group coverage and sticky-backlog prioritization.
+  `SimpleMaximum` polling behavior is unchanged.
 - `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
@@ -49,8 +51,6 @@ to docs, or any other relevant information.
 
 ### Added
 
-- Added poller-group-aware autoscaling with per-group coverage and sticky-backlog prioritization.
-  `SimpleMaximum` polling behavior is unchanged.
 - Worker heartbeats now report the Go runtime version (plus RoadRunner, when the SDK is embedded in
   a RoadRunner binary), detected hosting environments (Docker, Kubernetes, and common cloud
   platforms), and the operating system and architecture. This is sent
