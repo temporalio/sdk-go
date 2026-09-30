@@ -2,7 +2,6 @@ package internal
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -74,69 +73,55 @@ func TestTaskFailureCompletionQuerySetsCause(t *testing.T) {
 		TaskToken:         []byte("token"),
 	}
 
-	completion := wtp.taskFailureCompletion(task, errors.New("visit failure"))
-	request, ok := completion.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
-	if !ok {
-		t.Fatalf("expected RespondQueryTaskCompletedRequest, got %T", completion.rawRequest)
-	}
-	if request.Cause != enums.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED {
-		t.Fatalf("generic failure cause = %v, want UNSPECIFIED", request.Cause)
-	}
-
-	completion = wtp.taskFailureCompletion(task, payloadSizeError{message: "too large", size: 100, limit: 50})
-	request = completion.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
-	if request.Cause != enums.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE {
-		t.Fatalf("payload size failure cause = %v, want PAYLOADS_TOO_LARGE", request.Cause)
-	}
-}
-
-func TestCompleteWorkflowQueryPanicCause(t *testing.T) {
-	wth := &workflowTaskHandlerImpl{namespace: "test-namespace"}
-	task := &workflowservice.PollWorkflowTaskQueueResponse{
-		Query: &querypb.WorkflowQuery{},
-	}
-
 	tests := []struct {
-		name         string
-		err          error
-		wantCause    enums.WorkflowTaskFailedCause
-		wantFailed   bool
-		wantPanicMsg bool
+		name      string
+		err       error
+		wantCause enums.WorkflowTaskFailedCause
 	}{
 		{
-			name:         "workflow panic reports unhandled failure",
-			err:          newWorkflowPanicError("boom", "stack"),
-			wantCause:    enums.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
-			wantFailed:   true,
-			wantPanicMsg: true,
+			name:      "generic error stays unspecified",
+			err:       errors.New("visit failure"),
+			wantCause: enums.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED,
 		},
 		{
-			name:         "returned PanicError stays unspecified",
-			err:          newPanicError("boom", "stack"),
-			wantCause:    enums.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED,
-			wantFailed:   true,
-			wantPanicMsg: true,
+			name:      "payload size error",
+			err:       payloadSizeError{message: "too large", size: 100, limit: 50},
+			wantCause: enums.WORKFLOW_TASK_FAILED_CAUSE_PAYLOADS_TOO_LARGE,
 		},
 		{
-			name:       "returned PanicError wrapped in activity error stays unspecified",
-			err:        fmt.Errorf("activity failed: %w", newPanicError("boom", "stack")),
-			wantCause:  enums.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED,
-			wantFailed: true,
+			name:      "workflow panic",
+			err:       newWorkflowPanicError("boom", "stack"),
+			wantCause: enums.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE,
+		},
+		{
+			name:      "returned PanicError stays unspecified",
+			err:       newPanicError("boom", "stack"),
+			wantCause: enums.WORKFLOW_TASK_FAILED_CAUSE_UNSPECIFIED,
+		},
+		{
+			name:      "illegal state machine panic",
+			err:       newWorkflowPanicError(stateMachineIllegalStatePanic{message: "bad state"}, "stack"),
+			wantCause: enums.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
+		},
+		{
+			name:      "unknown sdk flag",
+			err:       unknownSdkFlagError{},
+			wantCause: enums.WORKFLOW_TASK_FAILED_CAUSE_NON_DETERMINISTIC_ERROR,
 		},
 	}
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			workflowContext := &workflowExecutionContextImpl{err: tt.err}
-			completion := wth.completeWorkflow(nil, task, workflowContext, nil, nil, false)
+			completion := wtp.taskFailureCompletion(task, tt.err)
 			request, ok := completion.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
 			if !ok {
 				t.Fatalf("expected RespondQueryTaskCompletedRequest, got %T", completion.rawRequest)
 			}
+			if request.CompletedType != enums.QUERY_RESULT_TYPE_FAILED {
+				t.Fatalf("completed type = %v, want FAILED", request.CompletedType)
+			}
 			if request.Cause != tt.wantCause {
 				t.Fatalf("cause = %v, want %v", request.Cause, tt.wantCause)
-			}
-			if tt.wantPanicMsg && request.CompletedType != enums.QUERY_RESULT_TYPE_FAILED {
-				t.Fatalf("completed type = %v, want FAILED", request.CompletedType)
 			}
 		})
 	}

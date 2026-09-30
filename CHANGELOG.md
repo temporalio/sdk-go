@@ -39,10 +39,8 @@ to docs, or any other relevant information.
 
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
-  `NON_DETERMINISTIC_ERROR` for history mismatches and illegal state machine panics, and
-  `WORKFLOW_WORKER_UNHANDLED_FAILURE` when the workflow panicked. A `PanicError` returned by workflow
-  code or propagated from an activity keeps an `UNSPECIFIED` cause, since it is not an unhandled
-  worker failure.
+  `NON_DETERMINISTIC_ERROR` for illegal state machine panics, and
+  `WORKFLOW_WORKER_UNHANDLED_FAILURE` when the workflow panicked.
 - Autoscaling pollers now honor configured bounds at startup, preventing excess polls and workflow
   polling delays.
 - Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to

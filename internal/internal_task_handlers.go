@@ -1857,18 +1857,8 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			TaskToken: task.TaskToken,
 			Namespace: wth.namespace,
 		}
-		if panicErr, ok := workflowContext.err.(*workflowPanicError); ok {
-			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
-			queryCompletedRequest.ErrorMessage = "Workflow panic: " + panicErr.Error()
-			queryCompletedRequest.Cause = enumspb.WORKFLOW_TASK_FAILED_CAUSE_WORKFLOW_WORKER_UNHANDLED_FAILURE
-			return workflowTaskCompletion{rawRequest: queryCompletedRequest}
-		}
 		var panicErr *PanicError
 		if errors.As(workflowContext.err, &panicErr) {
-			// A PanicError returned by workflow code or propagated from an
-			// activity is not an unhandled worker failure, so the cause stays
-			// unspecified. Only an actual workflow panic above reports
-			// WORKFLOW_WORKER_UNHANDLED_FAILURE.
 			queryCompletedRequest.CompletedType = enumspb.QUERY_RESULT_TYPE_FAILED
 			queryCompletedRequest.ErrorMessage = "Workflow panic: " + panicErr.Error()
 			return workflowTaskCompletion{rawRequest: queryCompletedRequest}
