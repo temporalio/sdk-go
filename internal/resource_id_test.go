@@ -173,10 +173,12 @@ func testWorkflowTaskCompletedResourceID(t *testing.T) {
 			task := createTestWorkflowTask(tc.workflowID, tc.runID)
 
 			// Create workflow task handler
+			cache, cacheLease := NewWorkerCache()
+			t.Cleanup(cacheLease.release)
 			params := workerExecutionParameters{
 				Namespace: "test-namespace",
 				Identity:  "test-identity",
-				cache:     NewWorkerCache(),
+				cache:     cache,
 			}
 			ensureRequiredParams(&params)
 			registry := newRegistry()
@@ -224,10 +226,12 @@ func testWorkflowTaskFailedResourceID(t *testing.T) {
 	task := createTestWorkflowTaskWithType("test-workflow-failed-123", "test-run-failed-456", "UnregisteredWorkflow")
 
 	// Create workflow task handler without registering the workflow
+	cache, cacheLease := NewWorkerCache()
+	t.Cleanup(cacheLease.release)
 	params := workerExecutionParameters{
 		Namespace: "test-namespace",
 		Identity:  "test-identity",
-		cache:     NewWorkerCache(),
+		cache:     cache,
 	}
 	ensureRequiredParams(&params)
 	registry := newRegistry() // Empty registry to cause failure

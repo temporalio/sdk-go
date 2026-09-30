@@ -610,7 +610,7 @@ func TestWorkerHeartbeatSendsImmediatelyWithIdentity(t *testing.T) {
 		wfClient.namespaceData = &namespaceData{
 			capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
 		}
-		worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+		worker := newHeartbeatTestWorker(t, wfClient)
 		if err := worker.registerHeartbeatWorker(); err != nil {
 			t.Fatal(err)
 		}
@@ -642,7 +642,7 @@ func TestWorkerHeartbeatElapsedSinceLastHeartbeatUnsetOnInitialHeartbeat(t *test
 		WorkerHeartbeatInterval: time.Second,
 	})
 
-	worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+	worker := newHeartbeatTestWorker(t, wfClient)
 	if worker.heartbeatCallback == nil {
 		t.Fatal("heartbeat callback is nil")
 	}
@@ -694,7 +694,7 @@ func TestWorkerHeartbeatEnvironmentSentUntilAccepted(t *testing.T) {
 		wfClient.namespaceData = &namespaceData{
 			capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
 		}
-		worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+		worker := newHeartbeatTestWorker(t, wfClient)
 		if err := worker.registerHeartbeatWorker(); err != nil {
 			t.Fatal(err)
 		}
@@ -744,7 +744,7 @@ func TestWorkerHeartbeatEnvironmentDisabled(t *testing.T) {
 		wfClient.namespaceData = &namespaceData{
 			capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
 		}
-		worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+		worker := newHeartbeatTestWorker(t, wfClient)
 		if err := worker.registerHeartbeatWorker(); err != nil {
 			t.Fatal(err)
 		}
@@ -771,7 +771,7 @@ func TestWorkerHeartbeatEnvironmentIncludedInShutdownHeartbeat(t *testing.T) {
 		Namespace:               "test-ns",
 		WorkerHeartbeatInterval: time.Minute,
 	})
-	worker := NewAggregatedWorker(wfClient, "test-task-queue", WorkerOptions{})
+	worker := newHeartbeatTestWorker(t, wfClient)
 
 	// Without any accepted periodic heartbeat, the heartbeat built for ShutdownWorker must
 	// still carry the environment.
@@ -782,4 +782,14 @@ func TestWorkerHeartbeatEnvironmentIncludedInShutdownHeartbeat(t *testing.T) {
 	if env := worker.heartbeatCallback().GetEnvironment(); env != nil {
 		t.Fatalf("heartbeat after success has environment %v, want nil", env)
 	}
+}
+
+func newHeartbeatTestWorker(t *testing.T, client *WorkflowClient) *AggregatedWorker {
+	t.Helper()
+
+	worker := NewAggregatedWorker(client, "test-task-queue", WorkerOptions{})
+	// Heartbeat tests bypass the worker lifecycle.
+	t.Cleanup(worker.cacheLease.release)
+
+	return worker
 }
