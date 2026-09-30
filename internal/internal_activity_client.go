@@ -26,8 +26,6 @@ type (
 	// ID and TaskQueue are required. At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
 	// Other parameters are optional.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.StartActivityOptions]
 	ClientStartActivityOptions struct {
 		// ID - The business identifier of the activity.
@@ -96,20 +94,14 @@ type (
 		// in single-line Temporal Markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		Summary string
 		// StaticDetails - General fixed details for this Activity Execution that will appear in UI/CLI. This can be in
 		// Temporal Markdown format and can span multiple lines. This value cannot be updated after the Activity Execution starts.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		StaticDetails string
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		//
-		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 		// StartDelay - Time to wait before dispatching the activity. This delay is not applied to retry attempts.
 		StartDelay time.Duration
@@ -123,8 +115,6 @@ type (
 	// ActivityID is required. RunID is optional; if empty, the handle targets the latest Activity Execution with the given ID.
 	// To target a specific run when ActivityIDReusePolicy allows reuse of an activity ID, set RunID.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.GetActivityHandleOptions]
 	ClientGetActivityHandleOptions struct {
 		ActivityID string
@@ -133,16 +123,12 @@ type (
 
 	// ClientListActivitiesOptions contains input for ListActivities call.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.ListActivitiesOptions]
 	ClientListActivitiesOptions struct {
 		Query string
 	}
 
 	// ClientListActivitiesResult contains the result of the ListActivities call.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ListActivitiesResult]
 	ClientListActivitiesResult struct {
@@ -151,16 +137,12 @@ type (
 
 	// ClientCountActivitiesOptions contains input for CountActivities call.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.CountActivitiesOptions]
 	ClientCountActivitiesOptions struct {
 		Query string
 	}
 
 	// ClientCountActivitiesResult contains the result of the CountActivities call.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.CountActivitiesResult]
 	ClientCountActivitiesResult struct {
@@ -172,8 +154,6 @@ type (
 	// CountActivityExecutions is grouped by a field.
 	// The list might not be complete, and the counts of each group is approximate.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.CountActivitiesAggregationGroup]
 	ClientCountActivitiesAggregationGroup struct {
 		GroupValues []any
@@ -184,8 +164,6 @@ type (
 	// It can be used to get the result, describe, cancel, or terminate the activity.
 	//
 	// Methods may be added to this interface; implementing it directly is discouraged.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ActivityHandle]
 	ClientActivityHandle interface {
@@ -212,24 +190,30 @@ type (
 		// Pause pauses the activity. A paused activity stops being retried and, if an attempt is
 		// currently running, that attempt is asked to yield. Pausing an already-paused activity
 		// is a no-op.
+		//
+		// NOTE: Experimental
 		Pause(ctx context.Context, options ClientPauseActivityOptions) error
 		// Unpause resumes a paused activity. Unpausing an activity that is not paused is a no-op.
+		//
+		// NOTE: Experimental
 		Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error
 		// UpdateOptions changes some of the activity's options, leaving the rest untouched, and
 		// returns the options as they stand after the update. At least one change must be set.
+		//
+		// NOTE: Experimental
 		UpdateOptions(ctx context.Context, update ClientActivityOptionsUpdate) (*ClientActivityExecutionOptions, error)
 		// RestoreOriginalOptions reverts every option changed by UpdateOptions back to the value
 		// the activity was scheduled with, and returns the restored options. It is a separate
 		// call because the server does not allow the restore flag to be combined with any
 		// individual option change.
+		//
+		// NOTE: Experimental
 		RestoreOriginalOptions(ctx context.Context) (*ClientActivityExecutionOptions, error)
 	}
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
 	//
 	// The payload-bearing fields of the description are opt-in, since payloads are large.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.DescribeActivityOptions]
 	ClientDescribeActivityOptions struct {
@@ -248,8 +232,6 @@ type (
 	}
 
 	// ClientCancelActivityOptions contains options for ClientActivityHandle.Cancel call.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.CancelActivityOptions]
 	ClientCancelActivityOptions struct {
@@ -350,8 +332,6 @@ func (u ClientActivityOptionsUpdate) isEmpty() bool {
 type (
 	// ClientTerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.TerminateActivityOptions]
 	ClientTerminateActivityOptions struct {
 		// Reason is optional description of the reason for termination.
@@ -360,8 +340,6 @@ type (
 
 	// ClientActivityExecutionInfo contains information about an activity execution.
 	// This is returned by ListActivities and embedded in ClientActivityExecutionDescription.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionInfo]
 	ClientActivityExecutionInfo struct {
@@ -382,8 +360,6 @@ type (
 
 	// ClientActivityExecutionDescription contains detailed information about an activity execution.
 	// This is returned by ClientActivityHandle.Describe.
-	//
-	//	NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionDescription]
 	ClientActivityExecutionDescription struct {

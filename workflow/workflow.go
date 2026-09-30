@@ -467,8 +467,9 @@ func SideEffectWithOptions(ctx Context, options SideEffectOptions, f func(ctx Co
 
 // WorkflowRandomStream is a deterministic pseudorandom source.
 //
-// Caution: interleaving Read and Uint64 on the same source does not have a stable
-// bit ordering. Use distinct names for each.
+// Read and Uint64 may be interleaved freely on the same source: Uint64 is defined as reading the
+// next 8 bytes off the stream and decoding them as a little-endian integer, so both methods always
+// draw from a single, well-defined byte sequence regardless of call order.
 //
 // NOTE: Experimental
 type WorkflowRandomStream = internal.WorkflowRandomStream

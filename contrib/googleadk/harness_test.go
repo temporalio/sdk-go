@@ -59,10 +59,11 @@ type runInput struct {
 
 // runResult is the serializable output of agentRunWorkflow.
 type runResult struct {
-	Texts         []string
-	FunctionCalls []string
-	ToolResponses []string
-	Authors       []string
+	Texts                []string
+	FunctionCalls        []string
+	ToolResponses        []string
+	ToolResponsePayloads map[string]map[string]any
+	Authors              []string
 	// StateFlag carries a session-state value a test workflow read back after the
 	// run (used by the in-workflow state-mutation regression test). Empty when
 	// unused.
@@ -191,6 +192,10 @@ func collectEvent(res *runResult, ev *session.Event) {
 		}
 		if p.FunctionResponse != nil {
 			res.ToolResponses = append(res.ToolResponses, p.FunctionResponse.Name)
+			if res.ToolResponsePayloads == nil {
+				res.ToolResponsePayloads = make(map[string]map[string]any)
+			}
+			res.ToolResponsePayloads[p.FunctionResponse.Name] = p.FunctionResponse.Response
 		}
 	}
 }
