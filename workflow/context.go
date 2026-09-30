@@ -1,6 +1,8 @@
 package workflow
 
 import (
+	"context"
+
 	"go.temporal.io/sdk/internal"
 )
 
@@ -64,4 +66,59 @@ func WithValue(parent Context, key any, val any) Context {
 //	}
 func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 	return internal.NewDisconnectedContext(parent)
+}
+
+// ValueWithTransferTypeConverter is an optional interface that values can implement to provide
+// the SDK with a transfer type converter.
+//
+// When implemented, the SDK calls [ValueWithTransferTypeConverter.TransferTypeConverter] before
+// serializing the value. The returned TransferTypeConverter will be used to turn the value
+// into a serializable representation, called a transfer value. The converter will also
+// be used to turn the transfer value back into the original value after deserialization.
+//
+// This method should be cheap and fast; the SDK may call this method frequently.
+//
+// NOTE: Experimental.
+type ValueWithTransferTypeConverter = internal.ValueWithTransferTypeConverter
+
+// TransferTypeConverter converts application values to serializable transfer
+// values and back. Create one using [NewTransferTypeConverter] or
+// [NewContextAwareTransferTypeConverter].
+//
+// NOTE: Experimental.
+type TransferTypeConverter = internal.TransferTypeConverter
+
+// NewTransferTypeConverter builds a [TransferTypeConverter] that can map
+// something of type ModelType into a serializable "transfer value", and back.
+// ModelType must not be a pointer type.
+//
+// NOTE: Experimental.
+func NewTransferTypeConverter[ModelType, TransferType any](
+	toTransferType func(*ModelType) (*TransferType, error),
+	fromTransferType func(*TransferType, *ModelType) error,
+) TransferTypeConverter {
+	return internal.NewTransferTypeConverter(toTransferType, fromTransferType)
+}
+
+// NewContextAwareTransferTypeConverter builds a [TransferTypeConverter] that can map
+// something of type ModelType into a serializable "transfer value", and back.
+// ModelType must not be a pointer type.
+//
+// NOTE: Experimental.
+func NewContextAwareTransferTypeConverter[ModelType, TransferType any](
+	toTransferType func(*ModelType) (*TransferType, error),
+	fromTransferType func(*TransferType, *ModelType) error,
+	toTransferTypeWithContext func(context.Context, *ModelType) (*TransferType, error),
+	fromTransferTypeWithContext func(context.Context, *TransferType, *ModelType) error,
+	toTransferTypeWithWorkflowContext func(Context, *ModelType) (*TransferType, error),
+	fromTransferTypeWithWorkflowContext func(Context, *TransferType, *ModelType) error,
+) TransferTypeConverter {
+	return internal.NewContextAwareTransferTypeConverter(
+		toTransferType,
+		fromTransferType,
+		toTransferTypeWithContext,
+		fromTransferTypeWithContext,
+		toTransferTypeWithWorkflowContext,
+		fromTransferTypeWithWorkflowContext,
+	)
 }

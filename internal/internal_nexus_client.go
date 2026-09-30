@@ -667,7 +667,7 @@ func (w *workflowClientInterceptor) ExecuteNexusOperation(
 ) (ClientNexusOperationHandle, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = converter.GetDefaultDataConverter()
+		dataConverter = DefaultInternalDataConverter
 	}
 	nexusContext := converter.NexusSerializationContext{
 		Endpoint:  in.Endpoint,
@@ -759,7 +759,7 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 ) (*ClientPollNexusOperationResultOutput, error) {
 	dataConverter := WithContext(ctx, w.client.dataConverter)
 	if dataConverter == nil {
-		dataConverter = converter.GetDefaultDataConverter()
+		dataConverter = DefaultInternalDataConverter
 	}
 	failureConverter := w.client.failureConverter
 	if in.nexusSerializationContext != nil {

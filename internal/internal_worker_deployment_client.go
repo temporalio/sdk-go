@@ -445,7 +445,7 @@ func workerDeploymentUpsertEntriesMetadataToProto(dc converter.DataConverter, up
 		} else {
 			dataConverter := dc
 			if dataConverter == nil {
-				dataConverter = converter.GetDefaultDataConverter()
+				dataConverter = DefaultInternalDataConverter
 			}
 			metadataBytes, err := dataConverter.ToPayload(v)
 			if err != nil {
