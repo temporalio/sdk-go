@@ -630,10 +630,8 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// TODO: in case of closed, it assumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be a rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
-		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
-			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
-			w.cached = false
-		}
+		w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID, w)
+		w.cached = false
 		// Clear the state so other tasks waiting on the context know it should be discarded.
 		w.clearState()
 	} else if !w.cached {
@@ -656,14 +654,12 @@ func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payload
 	w.err = err
 }
 
-func (w *workflowExecutionContextImpl) onEviction() {
+func (w *workflowExecutionContextImpl) onEviction(reason workflowCacheRemovalReason) {
 	// onEviction is run by LRU cache's removeFunc in separate goroutinue
 	w.mutex.Lock()
 
-	// Emit force eviction metrics.
-	// This metrics indicates too many concurrent running workflows to fit in sticky cache.
-	// Eviction on error or on workflow complete is normal and expected.
-	if w.err == nil && !w.isWorkflowCompleted {
+	// Bulk cache cleanup is not an individual forced eviction.
+	if reason != workflowCacheRemovalReasonBulk && w.err == nil && !w.isWorkflowCompleted {
 		w.wth.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
 	}
 
@@ -838,7 +834,7 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 				} else {
 					wth.logger.Debug("Cached state started on different worker, creating new context")
 				}
-				wth.cache.removeWorkflowContext(runID)
+				wth.cache.removeWorkflowContext(runID, workflowContext)
 				workflowContext.clearState()
 			}
 			workflowContext.Unlock(err)
@@ -861,9 +857,17 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 		}
 
 		if wth.cache.MaxWorkflowCacheSize() > 0 && task.Query == nil {
-			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
+			workflowContext, err = wth.cache.putWorkflowContext(runID, workflowContext)
+			cacheReleased := errors.Is(err, errWorkerCacheReleased)
+			if cacheReleased {
+				err = nil
+			} else if err != nil {
+				return
+			}
 			workflowContext.Lock()
-			workflowContext.cached = true
+			// A size-1 cache has zero LRU capacity and may evict the new context immediately.
+			workflowContext.cached = !cacheReleased &&
+				wth.cache.getWorkflowContext(runID) == workflowContext
 		} else {
 			workflowContext.Lock()
 		}
