@@ -392,7 +392,7 @@ func (s *ScalableTaskPollerSuite) TestAutoscalingStartupClampsToMaximum() {
 			MaximumNumberOfPollers: 2,
 		})
 		blockingPoller := newBlockingProbeTaskPoller()
-		poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil)
+		poller := newScalableTaskPoller(blockingPoller, ilog.NewNopLogger(), behavior, "", nil, nil)
 		bw := newBaseWorker(baseWorkerOptions{
 			slotSupplier:     &testSlotSupplier{},
 			maxTaskPerSecond: 1000,
@@ -2539,14 +2539,17 @@ func (s *ScalableTaskPollerSuite) TestWorkflowBalancerDoesNotWaitPastStickyMaxim
 		4,
 	)
 	balancer := pollers[0].autoscalingBalancer
-	balancer.start(enumspb.TASK_QUEUE_KIND_NORMAL)
-	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
-	balancer.start(enumspb.TASK_QUEUE_KIND_STICKY)
+	normal := startTestWorkflowPoll(s.T(), balancer, enumspb.TASK_QUEUE_KIND_NORMAL)
+	defer finishTestWorkflowPoll(balancer, normal)
+	sticky := startTestWorkflowPoll(s.T(), balancer, enumspb.TASK_QUEUE_KIND_STICKY)
+	defer finishTestWorkflowPoll(balancer, sticky)
+	sticky = startTestWorkflowPoll(s.T(), balancer, enumspb.TASK_QUEUE_KIND_STICKY)
+	defer finishTestWorkflowPoll(balancer, sticky)
 	balancer.setStickyBacklog(3)
 
 	balancer.mu.Lock()
 	defer balancer.mu.Unlock()
-	require.True(s.T(), balancer.canAdmit(enumspb.TASK_QUEUE_KIND_NORMAL))
+	require.True(s.T(), balancer.canTakeTurn(enumspb.TASK_QUEUE_KIND_NORMAL, nil))
 }
 
 func TestConfigurePollersRejectsInconsistentBalancer(t *testing.T) {
