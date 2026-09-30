@@ -74,6 +74,7 @@ type (
 		nexusHeader      map[string]string
 		dataConverter    converter.DataConverter
 		failureConverter converter.FailureConverter
+		payloadContext   Context
 	}
 )
 

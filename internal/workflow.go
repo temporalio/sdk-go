@@ -3139,6 +3139,36 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 	dc := WithRootDataConverterSerializationContext(ctx, nsc)
 	fc := converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
 
+	var payloadContext Context
+	info := lookupNexusOperationRegistryEntry(nsc.Endpoint, nsc.Service, nsc.Operation)
+	if info.InputType != nil {
+		inputType := reflect.TypeOf(input.Input)
+		if inputType == nil || !inputType.AssignableTo(info.InputType) {
+			info = NexusOperationRegistryEntry{}
+		}
+	}
+	if info.SerializationContext != nil {
+		if sc := info.SerializationContext(input.Input); sc != nil {
+			targetDC := WithRootDataConverterSerializationContext(ctx, sc)
+			payloadContext = WithDataConverter(ctx, targetDC)
+			// Only transfer callbacks get the target context. The parent converter
+			// must retain the outer Nexus envelope's existing bindings.
+			dc = makeTransferAware(dc).withTransferWorkflowContext(payloadContext)
+			fc = converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), sc)
+		}
+	}
+	if info.InputToTransfer != nil {
+		transferContext := payloadContext
+		if transferContext == nil {
+			transferContext = ctx
+		}
+		var err error
+		input.Input, err = info.InputToTransfer(transferContext, input.Input)
+		if err != nil {
+			return ExecuteNexusOperationParams{}, err
+		}
+	}
+
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {
 		return ExecuteNexusOperationParams{}, err
@@ -3156,6 +3186,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		nexusHeader:      input.NexusHeader,
 		dataConverter:    dc,
 		failureConverter: fc,
+		payloadContext:   payloadContext,
 	}, nil
 }
 
@@ -3184,6 +3215,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		return result
 	}
 	result.dataConverter = params.dataConverter
+	result.payloadContext = params.payloadContext
 
 	var operationToken string
 	seq := wc.env.ExecuteNexusOperation(params, func(r *commonpb.Payload, e error) {

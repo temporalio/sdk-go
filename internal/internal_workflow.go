@@ -247,6 +247,7 @@ type (
 	nexusOperationFutureImpl struct {
 		*decodeFutureImpl             // for the result
 		executionFuture   *futureImpl // for the NexusOperationExecution
+		payloadContext    Context     // captured inner scope for eager result adapters
 	}
 
 	asyncFuture interface {
