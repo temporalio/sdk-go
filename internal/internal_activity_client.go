@@ -102,8 +102,6 @@ type (
 		StaticDetails string
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		//
-		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 		// StartDelay - Time to wait before dispatching the activity. This delay is not applied to retry attempts.
 		StartDelay time.Duration
