@@ -319,6 +319,14 @@ type (
 		// Schedule - Describes when Actions should be taken.
 		Spec ScheduleSpec
 
+		// TimeSkippingConfig - Configures time skipping for Workflow Executions
+		// started by this Schedule.
+		// The current effective state is returned by [ScheduleHandle.Describe] in
+		// [ScheduleInfo.TimeSkippingInfo].
+		//
+		// NOTE: Experimental
+		TimeSkippingConfig *commonpb.TimeSkippingConfig
+
 		// Action - Which Action to take.
 		Action ScheduleAction
 
@@ -439,6 +447,13 @@ type (
 
 		// LastUpdateAt - When a schedule was last updated
 		LastUpdateAt time.Time
+
+		// TimeSkippingInfo - Describes the current effective time-skipping state of
+		// this Schedule. See [Schedule.TimeSkippingConfig] for the modifiable
+		// configuration.
+		//
+		// NOTE: Experimental
+		TimeSkippingInfo *commonpb.TimeSkippingInfo
 	}
 
 	// ScheduleDescription describes the current Schedule details from ScheduleHandle.Describe.
@@ -515,6 +530,14 @@ type (
 
 		// Schedule - Describes when Actions should be taken.
 		Spec *ScheduleSpec
+
+		// TimeSkippingConfig - Configures time skipping for Workflow Executions
+		// started by this Schedule.
+		// The current effective state is returned by [ScheduleHandle.Describe] in
+		// [ScheduleInfo.TimeSkippingInfo].
+		//
+		// NOTE: Experimental
+		TimeSkippingConfig *commonpb.TimeSkippingConfig
 
 		// SchedulePolicies - this schedules policies
 		Policy *SchedulePolicies

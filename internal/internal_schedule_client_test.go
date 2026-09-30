@@ -4,6 +4,7 @@ import (
 	"context"
 	iconverter "go.temporal.io/sdk/internal/converter"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
@@ -15,6 +16,7 @@ import (
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
+	"google.golang.org/protobuf/types/known/durationpb"
 )
 
 const (
@@ -76,6 +78,61 @@ func (s *scheduleClientTestSuite) TestCreateScheduleClient() {
 	scheduleHandle, err := s.client.ScheduleClient().Create(context.Background(), options)
 	s.Nil(err)
 	s.Equal(scheduleHandle.GetID(), scheduleID)
+}
+
+func (s *scheduleClientTestSuite) TestCreateScheduleWithTimeSkippingConfig() {
+	timeSkippingConfig := &commonpb.TimeSkippingConfig{
+		Enabled: true,
+		FastForwardConfig: &commonpb.FastForwardConfig{
+			Id:       "fast-forward-id",
+			Duration: durationpb.New(5 * time.Hour),
+		},
+	}
+	options := ScheduleOptions{
+		ID: scheduleID,
+		Spec: ScheduleSpec{
+			CronExpressions: []string{"*"},
+		},
+		Action: &ScheduleWorkflowAction{
+			Workflow:  "workflow-type",
+			ID:        workflowID,
+			TaskQueue: taskqueue,
+		},
+		TimeSkippingConfig: timeSkippingConfig,
+	}
+
+	s.service.EXPECT().CreateSchedule(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.CreateScheduleResponse{}, nil).
+		Do(func(_ interface{}, req *workflowservice.CreateScheduleRequest, _ ...interface{}) {
+			s.Equal(timeSkippingConfig, req.Schedule.TimeSkippingConfig)
+		})
+
+	_, err := s.client.ScheduleClient().Create(context.Background(), options)
+	s.NoError(err)
+}
+
+func (s *scheduleClientTestSuite) TestConvertScheduleWithTimeSkippingConfig() {
+	timeSkippingConfig := &commonpb.TimeSkippingConfig{
+		Enabled: true,
+		FastForwardConfig: &commonpb.FastForwardConfig{
+			Id:       "fast-forward-id",
+			Duration: durationpb.New(5 * time.Hour),
+		},
+	}
+
+	schedule, err := convertToPBSchedule(contextWithNewHeader(context.Background()), s.client.(*WorkflowClient), &Schedule{
+		Spec: &ScheduleSpec{},
+		Action: &ScheduleWorkflowAction{
+			Workflow:  "workflow-type",
+			ID:        workflowID,
+			TaskQueue: taskqueue,
+		},
+		Policy:             &SchedulePolicies{},
+		State:              &ScheduleState{},
+		TimeSkippingConfig: timeSkippingConfig,
+	})
+	s.Require().NoError(err)
+	s.Equal(timeSkippingConfig, schedule.TimeSkippingConfig)
 }
 
 func (s *scheduleClientTestSuite) TestCreateScheduleNoID() {
@@ -360,4 +417,33 @@ func (s *scheduleClientTestSuite) TestDescribeSchedulePopulatesPriority() {
 	s.Equal(3, action.Priority.PriorityKey)
 	s.Equal("fairness-key", action.Priority.FairnessKey)
 	s.Equal(float32(2.5), action.Priority.FairnessWeight)
+}
+
+func (s *scheduleClientTestSuite) TestDescribeSchedulePopulatesTimeSkipping() {
+	timeSkippingConfig := &commonpb.TimeSkippingConfig{Enabled: true}
+	timeSkippingInfo := &commonpb.TimeSkippingInfo{
+		EffectiveConfig:         &commonpb.TimeSkippingConfig{Enabled: false},
+		CurrentSessionSkipCount: 3,
+	}
+	describeResponse := &workflowservice.DescribeScheduleResponse{
+		Schedule: &schedulepb.Schedule{
+			Action: &schedulepb.ScheduleAction{
+				Action: &schedulepb.ScheduleAction_StartWorkflow{
+					StartWorkflow: &workflowpb.NewWorkflowExecutionInfo{
+						WorkflowId:   workflowID,
+						WorkflowType: &commonpb.WorkflowType{Name: "wf-type"},
+						TaskQueue:    &taskqueuepb.TaskQueue{Name: taskqueue},
+					},
+				},
+			},
+			TimeSkippingConfig: timeSkippingConfig,
+		},
+		Info: &schedulepb.ScheduleInfo{TimeSkippingInfo: timeSkippingInfo},
+	}
+	s.service.EXPECT().DescribeSchedule(gomock.Any(), gomock.Any(), gomock.Any()).Return(describeResponse, nil).Times(1)
+
+	description, err := s.client.ScheduleClient().GetHandle(context.Background(), scheduleID).Describe(context.Background())
+	s.Require().NoError(err)
+	s.Same(timeSkippingConfig, description.Schedule.TimeSkippingConfig)
+	s.Same(timeSkippingInfo, description.Info.TimeSkippingInfo)
 }

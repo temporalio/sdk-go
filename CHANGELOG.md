@@ -22,6 +22,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added experimental Schedule time-skipping configuration for create and update, and effective
+  time-skipping information to Schedule descriptions.
 - `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
