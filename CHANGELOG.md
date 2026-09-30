@@ -22,6 +22,8 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added an internal experimental system Nexus operation registry for SDK-owned inner payload serialization. Policies run against native input after interceptors for `__temporal_system` and legacy `temporal-system` endpoints. The SDK captures each selection once for input, result, and failure conversion (unlike Python policy reevaluation), while preserving the existing outer Nexus envelope context. Registry entries use `NexusOperationRegistryEntry`, with an optional `InputType` guard that preserves ordinary Nexus conversion for raw wire requests and other nonmatching inputs. Their optional `InputToTransfer` callback runs even without a selected serialization context, using the caller context and converter in that case. Generated eager adapters can retrieve the captured context with `NexusOperationPayloadContext`. Future-wrapping interceptors must forward the optional `NexusOperationPayloadContext() Context` carrier method; the public future interface is unchanged. No model-provider API or generator context values are required.
+
 - Added experimental `workflow.NewTransferTypeConverter` for transfer conversions that do not depend on a context.
 - `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are

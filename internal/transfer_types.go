@@ -364,6 +364,15 @@ func (dc *transferAwareDataConverter) WithSerializationContext(ctx converter.Ser
 	return &result
 }
 
+// withTransferWorkflowContext binds only transfer callbacks, leaving the outer
+// envelope converter's workflow and serialization bindings unchanged.
+func (dc *transferAwareDataConverter) withTransferWorkflowContext(ctx Context) *transferAwareDataConverter {
+	result := *dc
+	result.context = nil
+	result.workflowContext = ctx
+	return &result
+}
+
 func (dc *transferAwareDataConverter) WithWorkflowContext(ctx Context) converter.DataConverter {
 	result := *dc
 	result.parent = WithWorkflowContext(ctx, dc.parent)

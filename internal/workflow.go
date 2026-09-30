@@ -1089,7 +1089,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteActivity(ctx Context, typeName 
 		TaskQueue:    cmp.Or(options.TaskQueueName, wfInfo.TaskQueueName),
 		IsLocal:      false,
 	}
-	dataConverter := withRootDataConverterSerializationContext(ctx, actCtx)
+	dataConverter := WithRootDataConverterSerializationContext(ctx, actCtx)
 	future.(*decodeFutureImpl).dataConverter = dataConverter
 
 	input, err := encodeArgs(dataConverter, args)
@@ -1276,7 +1276,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteLocalActivity(ctx Context, type
 		ActivityType:                typeName,
 		InputArgs:                   args,
 		WorkflowInfo:                wfInfo,
-		DataConverter:               withRootDataConverterSerializationContext(ctx, actCtx),
+		DataConverter:               WithRootDataConverterSerializationContext(ctx, actCtx),
 		FailureConverter:            converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), actCtx),
 		ScheduledTime:               Now(ctx), // initial scheduled time
 		Header:                      header,
@@ -1425,7 +1425,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteChildWorkflow(ctx Context, chil
 		Namespace:  cmp.Or(workflowOptionsFromCtx.Namespace, wfInfo.Namespace),
 		WorkflowID: childWorkflowID,
 	}
-	dc := withRootDataConverterSerializationContext(ctx, childWfCtx)
+	dc := WithRootDataConverterSerializationContext(ctx, childWfCtx)
 	result.decodeFutureImpl.dataConverter = dc
 
 	wfType, input, err := getValidatedWorkflowFunction(childWorkflowType, args, dc, env.GetRegistry())
@@ -1896,7 +1896,7 @@ func signalExternalWorkflow(ctx Context, workflowID, runID, signalName string, a
 	}
 
 	wfInfo := env.WorkflowInfo()
-	dataConverter := withRootDataConverterSerializationContext(ctx, converter.WorkflowSerializationContext{
+	dataConverter := WithRootDataConverterSerializationContext(ctx, converter.WorkflowSerializationContext{
 		// Use target namespace for cross-namespace signals, otherwise default to current workflow's.
 		Namespace:  cmp.Or(options.Namespace, wfInfo.Namespace),
 		WorkflowID: workflowID,
@@ -3136,8 +3136,38 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		Service:   input.Client.Service(),
 		Operation: operationName,
 	}
-	dc := withRootDataConverterSerializationContext(ctx, nsc)
+	dc := WithRootDataConverterSerializationContext(ctx, nsc)
 	fc := converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), nsc)
+
+	var payloadContext Context
+	info := lookupNexusOperationRegistryEntry(nsc.Endpoint, nsc.Service, nsc.Operation)
+	if info.InputType != nil {
+		inputType := reflect.TypeOf(input.Input)
+		if inputType == nil || !inputType.AssignableTo(info.InputType) {
+			info = NexusOperationRegistryEntry{}
+		}
+	}
+	if info.SerializationContext != nil {
+		if sc := info.SerializationContext(input.Input); sc != nil {
+			targetDC := WithRootDataConverterSerializationContext(ctx, sc)
+			payloadContext = WithDataConverter(ctx, targetDC)
+			// Only transfer callbacks get the target context. The parent converter
+			// must retain the outer Nexus envelope's existing bindings.
+			dc = makeTransferAware(dc).withTransferWorkflowContext(payloadContext)
+			fc = converter.WithFailureConverterSerializationContext(getRootFailureConverterFromWorkflowContext(ctx), sc)
+		}
+	}
+	if info.InputToTransfer != nil {
+		transferContext := payloadContext
+		if transferContext == nil {
+			transferContext = ctx
+		}
+		var err error
+		input.Input, err = info.InputToTransfer(transferContext, input.Input)
+		if err != nil {
+			return ExecuteNexusOperationParams{}, err
+		}
+	}
 
 	payload, err := dc.ToPayload(input.Input)
 	if err != nil {
@@ -3156,6 +3186,7 @@ func (wc *workflowEnvironmentInterceptor) prepareNexusOperationParams(ctx Contex
 		nexusHeader:      input.NexusHeader,
 		dataConverter:    dc,
 		failureConverter: fc,
+		payloadContext:   payloadContext,
 	}, nil
 }
 
@@ -3184,6 +3215,7 @@ func (wc *workflowEnvironmentInterceptor) ExecuteNexusOperation(ctx Context, inp
 		return result
 	}
 	result.dataConverter = params.dataConverter
+	result.payloadContext = params.payloadContext
 
 	var operationToken string
 	seq := wc.env.ExecuteNexusOperation(params, func(r *commonpb.Payload, e error) {
