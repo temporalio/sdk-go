@@ -10,9 +10,6 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
-// The default data converter, wrapped so it also supports transfer-type conversion.
-var defaultTransferAwareDataConverter = makeTransferAware(converter.GetDefaultDataConverter())
-
 // -- USER API -----------------------------------------------------------
 
 // ValueWithTransferTypeConverter is an optional interface that values can implement to provide
@@ -191,6 +188,9 @@ func (tc *transferTypeConverter[ModelType, TransferType]) fromTransferTypeWithWo
 
 // -- DATA CONVERTERS ----------------------------------------------------------
 
+// The default data converter, wrapped so it supports transfer type conversion.
+var defaultTransferAwareDataConverter = makeTransferAware(converter.GetDefaultDataConverter())
+
 // transferAwareDataConverter is a context-aware data converter that:
 //
 //  1. Encodes its input by trying to apply transfer conversion and forwarding
@@ -291,10 +291,29 @@ func (dc *transferAwareDataConverter) fromTransferType(tc TransferTypeConverter,
 	return tc.fromTransferType(transferTypePtr, valuePtr)
 }
 
+// transferDecodeDestination adapts **T to *T only when *T provides a converter.
+// Allocate the actual destination before discovery, preserving existing instances.
+func transferDecodeDestination(valuePtr any) any {
+	value := reflect.ValueOf(valuePtr)
+	if value.Kind() != reflect.Pointer || value.IsNil() {
+		return valuePtr
+	}
+	destination := value.Elem()
+	if destination.Kind() != reflect.Pointer ||
+		!destination.Type().Implements(reflect.TypeFor[ValueWithTransferTypeConverter]()) {
+		return valuePtr
+	}
+	if destination.IsNil() {
+		destination.Set(reflect.New(destination.Type().Elem()))
+	}
+	return destination.Interface()
+}
+
 func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	if payload == nil {
 		return dc.parent.FromPayload(payload, valuePtr)
 	}
+	valuePtr = transferDecodeDestination(valuePtr)
 	convertible, ok := valuePtr.(ValueWithTransferTypeConverter)
 	if !ok {
 		return dc.parent.FromPayload(payload, valuePtr)
@@ -315,15 +334,23 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 	// TODO Is it worth getting fancy to avoid this allocation in the common case where
 	// none of the values are transfer-convertible?
 	transferTypePtrs := make([]any, len(valuePtrs))
+	destinations := make([]struct {
+		valuePtr  any
+		converter TransferTypeConverter
+	}, len(valuePtrs))
 	for i := range payloads.GetPayloads() {
 		if i >= len(valuePtrs) {
 			break
 		}
-		convertible, ok := valuePtrs[i].(ValueWithTransferTypeConverter)
+		valuePtr := transferDecodeDestination(valuePtrs[i])
+		convertible, ok := valuePtr.(ValueWithTransferTypeConverter)
 		if !ok {
 			transferTypePtrs[i] = valuePtrs[i]
 		} else {
-			transferTypePtrs[i] = dc.transferTypeConverter(convertible).newTransferTypePtr()
+			tc := dc.transferTypeConverter(convertible)
+			destinations[i].valuePtr = valuePtr
+			destinations[i].converter = tc
+			transferTypePtrs[i] = tc.newTransferTypePtr()
 		}
 	}
 
@@ -335,12 +362,12 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		if i >= len(valuePtrs) {
 			break
 		}
-		convertible, ok := valuePtrs[i].(ValueWithTransferTypeConverter)
-		if !ok {
+		destination := destinations[i]
+		if destination.converter == nil {
 			valuePtrs[i] = transferTypePtrs[i]
 		} else {
 			err := dc.fromTransferType(
-				dc.transferTypeConverter(convertible), transferTypePtrs[i], valuePtrs[i])
+				destination.converter, transferTypePtrs[i], destination.valuePtr)
 			if err != nil {
 				return fmt.Errorf("transfer type converter: payload item %d: %w", i, err)
 			}

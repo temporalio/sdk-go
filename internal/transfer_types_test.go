@@ -167,6 +167,71 @@ func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 	require.Equal(t, *want, got)
 }
 
+func TestTransferAwareDataConverter_DoublePointerRoundTrip(t *testing.T) {
+	dc := makeTransferAware(converter.GetDefaultDataConverter())
+	in := &temperature{kelvin: 300}
+	payloads, err := dc.ToPayloads(in)
+	require.NoError(t, err)
+
+	var out *temperature
+	require.NoError(t, dc.FromPayloads(payloads, &out))
+	require.Equal(t, in, out)
+}
+
+func TestTransferAwareDataConverter_DoublePointerDecoding(t *testing.T) {
+	t.Parallel()
+	for _, batch := range []bool{false, true} {
+		t.Run(fmt.Sprintf("batch=%v", batch), func(t *testing.T) {
+			decode := func(dc *transferAwareDataConverter, payload *commonpb.Payload, destination any) error {
+				if batch {
+					return dc.FromPayloads(&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}, destination)
+				}
+				return dc.FromPayload(payload, destination)
+			}
+			for _, populated := range []bool{false, true} {
+				t.Run(fmt.Sprintf("populated=%v", populated), func(t *testing.T) {
+					parent := converter.GetDefaultDataConverter()
+					payload, err := parent.ToPayload(300.0)
+					require.NoError(t, err)
+					var out *temperature
+					if populated {
+						out = &temperature{kelvin: 99}
+					}
+					original := out
+					require.NoError(t, decode(makeTransferAware(parent), payload, &out))
+					require.Equal(t, &temperature{kelvin: 300}, out)
+					if populated {
+						require.Same(t, original, out)
+					}
+				})
+			}
+			t.Run("plain pointer", func(t *testing.T) {
+				parent := converter.GetDefaultDataConverter()
+				payload, err := parent.ToPayload("plain")
+				require.NoError(t, err)
+				var out *string
+				require.NoError(t, decode(makeTransferAware(parent), payload, &out))
+				require.Equal(t, new("plain"), out)
+			})
+			t.Run("nil transfer value", func(t *testing.T) {
+				parent := converter.GetDefaultDataConverter()
+				payload, err := parent.ToPayload(nil)
+				require.NoError(t, err)
+				var out *temperature
+				require.NoError(t, decode(makeTransferAware(parent), payload, &out))
+				require.Equal(t, &temperature{}, out)
+			})
+			t.Run("invalid transfer value", func(t *testing.T) {
+				parent := converter.GetDefaultDataConverter()
+				payload, err := parent.ToPayload("not a temperature")
+				require.NoError(t, err)
+				var out *temperature
+				require.Error(t, decode(makeTransferAware(parent), payload, &out))
+			})
+		})
+	}
+}
+
 func TestNewTransferTypeConverter_RejectsPointerModelType(t *testing.T) {
 	modelType := reflect.TypeFor[*temperature]()
 	require.PanicsWithValue(t,
