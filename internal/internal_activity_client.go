@@ -102,8 +102,6 @@ type (
 		StaticDetails string
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		//
-		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 		// StartDelay - Time to wait before dispatching the activity. This delay is not applied to retry attempts.
 		StartDelay time.Duration
@@ -1116,6 +1114,7 @@ func (w *workflowClientInterceptor) PauseActivity(
 		Identity:   w.client.identity,
 		RequestId:  uuid.NewString(),
 		Reason:     in.Options.Reason,
+		ResourceId: getActivityResourceId("", in.ActivityID),
 	}
 	_, err := w.client.WorkflowService().PauseActivityExecution(grpcCtx, request)
 	return err
@@ -1135,6 +1134,7 @@ func (w *workflowClientInterceptor) UnpauseActivity(
 		Identity:   w.client.identity,
 		RequestId:  uuid.NewString(),
 		Reason:     in.Options.Reason,
+		ResourceId: getActivityResourceId("", in.ActivityID),
 	}
 	if in.Options.Jitter != 0 {
 		request.Jitter = durationpb.New(in.Options.Jitter)
@@ -1243,6 +1243,7 @@ func (w *workflowClientInterceptor) UpdateActivityOptions(
 		ActivityOptions: options,
 		UpdateMask:      mask,
 		RestoreOriginal: in.RestoreOriginal,
+		ResourceId:      getActivityResourceId("", in.ActivityID),
 	}
 	resp, err := w.client.WorkflowService().UpdateActivityExecutionOptions(grpcCtx, request)
 	if err != nil {

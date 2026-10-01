@@ -11,14 +11,9 @@ import (
 	"google.golang.org/adk/v2/platform"
 )
 
-// wfCtxKey is the private context key under which the workflow.Context for
-// blocking Activity dispatch is stashed. NewContext stores the root
-// workflow.Context here; during concurrent tool fan-out the task runner stores
-// each coroutine's own workflow.Context on that task's context. The TemporalModel
-// and the activity/MCP tools recover it (via workflowContext) so their blocking
-// calls (Future.Get / Channel.Receive) run on the coroutine they belong to —
-// blocking on another coroutine's context triggers "trying to block on coroutine
-// which is already blocked ... wrong Context".
+// wfCtxKey is the private context key for the active workflow.Context.
+// NewContext stores the root context; during concurrent tool fan-out the task
+// runner replaces it with each task coroutine's context.
 type wfCtxKey struct{}
 
 // ContextOption customizes the bridged context produced by NewContext.
@@ -57,9 +52,9 @@ func WithSequentialToolFanout() ContextOption {
 //     sequential execution when WithSequentialToolFanout is set), so ADK's tool
 //     fan-out never spawns real goroutines inside the workflow.
 //
-// The workflow.Context itself is also stashed on the returned context so the
-// TemporalModel and the activity/MCP tools can dispatch Activities. Pass the
-// result straight to Run:
+// The workflow.Context itself is also stashed on the returned context so
+// adapter components can inspect workflow state and dispatch commands. Pass
+// the result straight to Run:
 //
 //	for ev, err := range r.Run(googleadk.NewContext(ctx), userID, sessionID, msg, cfg) {
 //	    // ...
@@ -77,10 +72,9 @@ func NewContext(ctx workflow.Context, opts ...ContextOption) context.Context {
 	return base
 }
 
-// workflowContext recovers the currently active workflow.Context from an ADK
-// agent context (which embeds context.Context). During
-// concurrent tool fan-out this is the per-coroutine context the task runner put
-// on each task; otherwise it is the root context stashed by NewContext.
+// workflowContext recovers the active workflow.Context from a context derived
+// from NewContext. During concurrent tool fan-out this is the per-coroutine
+// context the task runner put on each task; otherwise it is the root context.
 func workflowContext(ctx context.Context) (workflow.Context, bool) {
 	if ctx == nil {
 		return nil, false
@@ -90,6 +84,25 @@ func workflowContext(ctx context.Context) (workflow.Context, bool) {
 		return nil, false
 	}
 	return wfCtx, true
+}
+
+// WorkflowContext returns the workflow.Context that the bridged ADK context
+// dispatches its blocking Temporal calls on: during concurrent tool fan-out the
+// calling task's own coroutine context, otherwise the root context stashed by
+// NewContext. It reports false for a context that did not come from NewContext
+// (a local ADK run, say), so a tool can fall back to a non-durable path.
+//
+// In-workflow tools can use it to issue workflow commands of their own — a
+// child workflow, a timer, a signal. Use the returned Context rather than
+// one captured from the enclosing workflow function: workflow.Context values
+// are coroutine-specific, and blocking with another coroutine's Context can
+// panic or stall workflow execution.
+//
+// The returned Context is valid only for the duration of the call that received
+// ctx. Do not retain it or use it from another coroutine; a workflow.Go callback
+// must use the Context passed to that callback.
+func WorkflowContext(ctx context.Context) (workflow.Context, bool) {
+	return workflowContext(ctx)
 }
 
 // uuidRandomStream names the workflow random stream that feeds

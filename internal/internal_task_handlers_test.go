@@ -515,7 +515,7 @@ func createTestEventTimerCanceled(eventID int64, id int) *historypb.HistoryEvent
 var testWorkflowTaskTaskqueue = "tq1"
 
 func (t *TaskHandlersTestSuite) getTestWorkerExecutionParams() workerExecutionParameters {
-	cache := NewWorkerCache()
+	cache := newTestWorkerCache(t.T())
 	return workerExecutionParameters{
 		TaskQueue:        testWorkflowTaskTaskqueue,
 		Namespace:        testNamespace,
@@ -567,6 +567,27 @@ func (t *TaskHandlersTestSuite) testWorkflowTaskWorkflowExecutionStartedHelper(p
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStarted() {
 	params := t.getTestWorkerExecutionParams()
 	t.testWorkflowTaskWorkflowExecutionStartedHelper(params)
+}
+
+func (t *TaskHandlersTestSuite) TestWorkflowTask_ReleasedCacheRunsUncached() {
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+	}
+	cache, lease := newWorkerCache(&sharedWorkerCache{}, &sync.Mutex{}, 10)
+	lease.release()
+	params := t.getTestWorkerExecutionParams()
+	params.cache = cache
+	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+	wftask := workflowTask{task: createWorkflowTask(testEvents, 0, "HelloWorld_Workflow")}
+
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+
+	t.False(wfctx.cached)
+	t.Zero(cache.getWorkflowCache().Size())
+	wfctx.Unlock(nil)
+	t.True(wfctx.IsDestroyed())
 }
 
 func (t *TaskHandlersTestSuite) TestWorkflowTask_WorkflowExecutionStartedWithDataConverter() {
@@ -834,6 +855,32 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryWorkflow_NonSticky() {
 	t.Contains(queryResp.ErrorMessage, "unknown queryType")
 }
 
+func (t *TaskHandlersTestSuite) TestWorkflowTask_QueryResponseForwardsPollerGroupID() {
+	testEvents := []*historypb.HistoryEvent{
+		createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+		createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{
+			TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue},
+		}),
+		createTestEventWorkflowTaskStarted(3),
+	}
+	task := createQueryTask(testEvents, 3, "HelloWorld_Workflow", queryType)
+	task.PollerGroupId = "test-poller-group-42"
+
+	taskHandler := newWorkflowTaskHandler(t.getTestWorkerExecutionParams(), nil, t.registry)
+	wftask := workflowTask{task: task}
+	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+	response, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+	wfctx.Unlock(err)
+	t.NoError(err)
+	t.NotNil(response)
+
+	queryResp, ok := response.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
+	t.True(ok)
+	t.Equal("test-poller-group-42", queryResp.PollerGroupId)
+}
+
 func (t *TaskHandlersTestSuite) verifyQueryResult(response *workflowTaskCompletion, expectedResult string) {
 	t.NotNil(response)
 	queryResp, ok := response.rawRequest.(*workflowservice.RespondQueryTaskCompletedRequest)
@@ -1015,12 +1062,15 @@ func (t *TaskHandlersTestSuite) testSideEffectDeferHelper(cacheSize int) {
 	}
 
 	params := t.getTestWorkerExecutionParams()
-	params.cache = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, cacheSize)
+	var cacheLease *workerCacheLease
+	params.cache, cacheLease = newWorkerCache(myWorkerCachePtr, &myWorkerCacheLock, cacheSize)
+	defer cacheLease.release()
 
 	taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
 	task := createWorkflowTask(testEvents, 0, workflowName)
 	wftask := workflowTask{task: task}
 	wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+	t.False(wfctx.cached)
 	_, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
 	wfctx.Unlock(err)
 	t.Nil(err)
@@ -1844,7 +1894,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_Workflow() {
 		laTaskPoller := newLocalActivityPoller(params, laTunnel, nil, nil, stopCh)
 		go func() {
 			for {
-				task, _ := laTaskPoller.PollTask()
+				task, _ := laTaskPoller.PollTask(pollerGroupLease{})
 				if task == nil {
 					return
 				}
@@ -1926,7 +1976,7 @@ func (t *TaskHandlersTestSuite) TestLocalActivityRetry_WorkflowTaskHeartbeatFail
 	doneCh := make(chan struct{})
 	go func() {
 		// laTaskPoller needs to poll the local activity and process it
-		task, err := laTaskPoller.PollTask()
+		task, err := laTaskPoller.PollTask(pollerGroupLease{})
 		t.NoError(err)
 		err = laTaskPoller.ProcessTask(task)
 		t.NoError(err)
@@ -2689,7 +2739,8 @@ func TestResetIfDestroyedTaskPrep(t *testing.T) {
 			metricsHandler: metrics.NopHandler,
 			logger:         ilog.NewNopLogger(),
 			cache: &WorkerCache{
-				sharedCache: &sharedWorkerCache{workflowCache: &cache},
+				workflowCache:        cache,
+				maxWorkflowCacheSize: 1,
 			},
 		},
 	}

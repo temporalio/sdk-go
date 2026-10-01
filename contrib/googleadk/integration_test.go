@@ -3,15 +3,18 @@ package googleadk_test
 // End-to-end integration tests that need a real Temporal server: the streaming
 // side channel (workflowstreams publishes chunks via a signal to the parent
 // workflow, which a unit-test mock client cannot service) and history replay.
-// They boot a local dev server via testsuite.StartDevServer and SKIP — a genuine
-// capability skip, not an operator env gate — when the dev-server binary or
-// network is unavailable (e.g. a sandboxed CI). The default unit suite already
+// They boot a local dev server via testsuite.StartDevServer, downloading the CLI
+// on first use, and FAIL when it cannot be started (no binary, no network), so a
+// run that never exercised them cannot pass. The default unit suite already
 // covers the durable agent loop, aggregation, determinism providers, and failure
 // classification without a server.
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,13 +34,29 @@ import (
 
 const integrationTaskQueue = "google-adk-integration"
 
-// devServer starts a local Temporal dev server, or skips the test if one cannot
-// be started (no binary, no network). The returned client and cleanup are valid
-// only when the test was not skipped.
+// devServerState remembers the first StartDevServer outcome. The first start
+// also downloads the CLI, which can take over 30s on slow runners and is not
+// cached when it fails, so it gets a longer deadline and one retry; if both
+// fail, every dev-server test fails fast instead of re-downloading.
+var devServerState struct {
+	sync.Mutex
+	attempted bool
+	err       error
+}
+
+// devServer starts a local Temporal dev server and fails the test if one cannot
+// be started (no binary, no network).
 func devServer(t *testing.T) (client.Client, func()) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	devServerState.Lock()
+	defer devServerState.Unlock()
+	if devServerState.err != nil {
+		t.Fatalf("dev server unavailable, see the first dev-server test failure: %v", devServerState.err)
+	}
+	attempts, timeout := 1, 30*time.Second
+	if !devServerState.attempted {
+		attempts, timeout = 2, 90*time.Second
+	}
 	// Redirect the dev-server process's stdio to io.Discard rather than letting it
 	// inherit the test binary's os.Stdout/os.Stderr (testsuite's default on every
 	// platform). On Windows, DevServer.Stop() shuts the server down with a console
@@ -47,12 +66,25 @@ func devServer(t *testing.T) (client.Client, func()) {
 	// `go test` reads, tripping its "test I/O incomplete after exiting" WaitDelay
 	// check and failing the package even though every test passed. Detaching its
 	// stdio makes that harmless (and the CI runner reaps the orphan on job exit).
-	srv, err := testsuite.StartDevServer(ctx, testsuite.DevServerOptions{
-		Stdout: io.Discard,
-		Stderr: io.Discard,
-	})
+	opts := testsuite.DevServerOptions{Stdout: io.Discard, Stderr: io.Discard}
+	var srv *testsuite.DevServer
+	var err error
+	for attempt := 1; attempt <= attempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		var startErr error
+		srv, startErr = testsuite.StartDevServer(ctx, opts)
+		cancel()
+		if startErr == nil {
+			err = nil
+			break
+		}
+		err = errors.Join(err, fmt.Errorf("attempt %d: %w", attempt, startErr))
+	}
+	if !devServerState.attempted {
+		devServerState.attempted, devServerState.err = true, err
+	}
 	if err != nil {
-		t.Skipf("dev server unavailable (capability skip): %v", err)
+		t.Fatalf("dev server unavailable (first use downloads the Temporal CLI, which needs network): %v", err)
 	}
 	return srv.Client(), func() { _ = srv.Stop() }
 }
