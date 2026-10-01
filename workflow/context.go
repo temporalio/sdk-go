@@ -79,7 +79,7 @@ func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 // This method should be cheap and fast; the SDK may call this method frequently.
 //
 // NOTE: Experimental.
-type ValueWithTransferTypeConverter = internal.ValueWithTransferTypeConverter
+type ValueWithTransferTypeConverter = internal.TransferTypeConvertible
 
 // TransferTypeConverter converts application values to serializable transfer
 // values and back. Create one using [NewTransferTypeConverter].

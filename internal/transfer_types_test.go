@@ -136,10 +136,10 @@ func TestTransferAwareDataConverter_DefaultContext(t *testing.T) {
 			nil, nil,
 		)
 		require.NoError(t, err)
-		transferType, err := dc.toTransferType(tc, "value")
+		transferType, err := dc.toTransferType(tc.transferTypeConverter(), "value")
 		require.NoError(t, err)
 		var value string
-		require.NoError(t, dc.fromTransferType(tc, transferType, &value))
+		require.NoError(t, dc.fromTransferType(tc.transferTypeConverter(), transferType, &value))
 		require.Equal(t, "value", value)
 		require.Equal(t, context.Background(), encodeContext)
 		require.Equal(t, context.Background(), decodeContext)
@@ -192,7 +192,7 @@ func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 	dc := defaultTransferAwareDataConverter
 	want := &temperature{kelvin: 300}
 
-	require.Implements(t, (*ValueWithTransferTypeConverter)(nil), want)
+	require.Implements(t, (*TransferTypeConvertible)(nil), want)
 	payload, err := dc.ToPayload(want)
 	require.NoError(t, err)
 
@@ -276,8 +276,9 @@ func TestNewTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
 }
 
 func TestTransferTypeConverter_InvalidTypes(t *testing.T) {
-	tc, err := (temperature{}).TransferTypeConverter()
+	handle, err := (temperature{}).TransferTypeConverter()
 	require.NoError(t, err)
+	tc := handle.transferTypeConverter()
 	ctx := context.Background()
 	_, err = tc.toTransferType(ctx, "wrong")
 	require.ErrorContains(t, err, "want value of type internal.temperature or *internal.temperature, got string")
