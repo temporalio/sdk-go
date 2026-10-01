@@ -12,6 +12,7 @@ package googleadk_test
 import (
 	"context"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -31,12 +32,33 @@ import (
 
 const integrationTaskQueue = "google-adk-integration"
 
+// devServerState remembers the outcome of the test binary's first
+// StartDevServer. That first start also downloads the CLI, which on the
+// macos-intel CI runner alone takes longer than 30s, and a failed download is
+// not cached: under a flat per-test deadline every dev-server test downloaded
+// for 30s and skipped, and nine such skips overran the 5m package timeout. The
+// first start therefore gets a deadline that covers the download, and if it
+// still fails the remaining tests skip immediately instead of retrying.
+var devServerState struct {
+	sync.Mutex
+	attempted bool
+	err       error
+}
+
 // devServer starts a local Temporal dev server, or skips the test if one cannot
 // be started (no binary, no network). The returned client and cleanup are valid
 // only when the test was not skipped.
 func devServer(t *testing.T) (client.Client, func()) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	devServerState.Lock()
+	defer devServerState.Unlock()
+	timeout := 30 * time.Second
+	if !devServerState.attempted {
+		timeout = 2 * time.Minute
+	} else if devServerState.err != nil {
+		t.Skipf("dev server unavailable (capability skip): %v", devServerState.err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	// Redirect the dev-server process's stdio to io.Discard rather than letting it
 	// inherit the test binary's os.Stdout/os.Stderr (testsuite's default on every
@@ -51,6 +73,9 @@ func devServer(t *testing.T) (client.Client, func()) {
 		Stdout: io.Discard,
 		Stderr: io.Discard,
 	})
+	if !devServerState.attempted {
+		devServerState.attempted, devServerState.err = true, err
+	}
 	if err != nil {
 		t.Skipf("dev server unavailable (capability skip): %v", err)
 	}
