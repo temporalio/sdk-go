@@ -463,7 +463,12 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityResult() {
 }
 
 func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	const (
+		workflowTimeout  = time.Minute
+		closeGracePeriod = 15 * time.Second
+	)
+
+	startCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
 	logger := ilog.NewMemoryLogger()
@@ -483,21 +488,24 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorDisabledWorkflowResult() {
 		workflow.RegisterOptions{Name: wfname},
 	)
 	workflowOptions := ts.startWorkflowOptions(ts.T().Name())
-	workflowOptions.WorkflowExecutionTimeout = time.Minute
+	workflowOptions.WorkflowExecutionTimeout = workflowTimeout
 	run, err := ts.client.ExecuteWorkflow(
-		ctx,
+		startCtx,
 		workflowOptions,
 		wfname,
 	)
 	ts.NoError(err)
 
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), workflowTimeout+closeGracePeriod)
+	defer waitCancel()
+
 	var res string
 	var workflowExecutionErr *temporal.WorkflowExecutionError
-	ts.ErrorAs(run.Get(ctx, &res), &workflowExecutionErr)
+	ts.ErrorAs(run.Get(waitCtx, &res), &workflowExecutionErr)
 	var terminatedErr *temporal.TerminatedError
 	ts.ErrorAs(workflowExecutionErr.Unwrap(), &terminatedErr)
 
-	eventIterator := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+	eventIterator := ts.client.GetWorkflowHistory(waitCtx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 	var workflowExecutionTerminatedEvent *historypb.HistoryEvent
 	for eventIterator.HasNext() {
 		event, err := eventIterator.Next()
@@ -538,6 +546,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityHeartbeat() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	heartbeatDone := make(chan struct{})
 	logger := ilog.NewMemoryLogger()
 	ts.ResetClientAndWorker(func(opts *client.Options) {
 		opts.Logger = logger
@@ -561,6 +570,7 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityHeartbeat() {
 	ts.worker.RegisterActivityWithOptions(
 		func(ctx context.Context) error {
 			activity.RecordHeartbeat(ctx, strings.Repeat("h", payloadSizeErrorLimit+1000))
+			close(heartbeatDone)
 			return nil // ignores ctx.Done()
 		},
 		activity.RegisterOptions{Name: actName},
@@ -570,6 +580,12 @@ func (ts *PayloadLimitsTestSuite) TestPayloadSizeErrorActivityHeartbeat() {
 	ts.NoError(err)
 
 	ts.assertActivityTaskFailed(ctx, run)
+	// The task failure can reach history before RecordHeartbeat logs the error.
+	select {
+	case <-heartbeatDone:
+	case <-ctx.Done():
+		ts.FailNow("timed out waiting for heartbeat to finish", ctx.Err())
+	}
 	ts.assertLogContains(logger, payloadErrorMessage)
 }
 

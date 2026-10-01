@@ -2916,16 +2916,25 @@ func (ts *IntegrationTestSuite) TestGracefulActivityCompletion() {
 
 func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	// FYI, setup of this test allows the worker to wait to stop for 10 seconds
+	const (
+		workflowTaskTimeout   = 5 * time.Second
+		minWorkflowTaskStarts = 2
+	)
+
 	ctx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 
 	localActivityStarted := make(chan struct{})
+	releaseLocalActivity := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(releaseLocalActivity) }) }
+	defer release()
 	var localActivityStartedOnce sync.Once
 	localActivityFn := func(ctx context.Context) error {
 		localActivityStartedOnce.Do(func() { close(localActivityStarted) })
-		// wait for worker shutdown to be started and WorkflowTaskTimeout to be hit
+		// Keep the activity running through a workflow task heartbeat during shutdown.
 		<-activity.GetWorkerStopChannel(ctx)
-		time.Sleep(1500 * time.Millisecond) // 1.5 seconds
+		<-releaseLocalActivity
 		return ctx.Err()
 	}
 
@@ -2948,7 +2957,7 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 	startOptions := client.StartWorkflowOptions{
 		ID:                  workflowID,
 		TaskQueue:           ts.taskQueueName,
-		WorkflowTaskTimeout: 1 * time.Second,
+		WorkflowTaskTimeout: workflowTaskTimeout,
 	}
 
 	// Start workflow
@@ -2961,13 +2970,39 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 		ts.FailNow("timed out waiting for local activity to start", ctx.Err().Error())
 	}
 
-	// Stop the worker after the local activity is blocked on worker shutdown so
-	// shutdown reliably overlaps the workflow task timeout.
-	ts.worker.Stop()
+	// Stop the worker while the local activity remains active.
+	stopDone := make(chan struct{})
+	go func() {
+		ts.worker.Stop()
+		close(stopDone)
+	}()
 	ts.workerStopped = true
+	defer func() {
+		release()
+		<-stopDone
+	}()
+
+	// A second task start confirms the heartbeat reached the server.
+	ts.Eventually(func() bool {
+		started := 0
+		iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
+			false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
+		for iter.HasNext() {
+			event, err := iter.Next()
+			if err != nil {
+				return false
+			}
+			if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
+				started++
+			}
+		}
+		return started >= minWorkflowTaskStarts
+	}, ctxTimeout, 100*time.Millisecond)
+	release()
+	<-stopDone
 
 	// Look for activity completed from the history
-	var laCompleted, started int
+	var laCompleted, started, timedOut int
 	var wfeCompleted bool
 	iter := ts.client.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(),
 		false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
@@ -2979,6 +3014,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 			laCompleted++
 		} else if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_STARTED {
 			started++
+		} else if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_TASK_TIMED_OUT {
+			timedOut++
 		} else if event.EventType == enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_COMPLETED {
 			wfeCompleted = true
 		}
@@ -2986,7 +3023,8 @@ func (ts *IntegrationTestSuite) TestLocalActivityTaskTimeoutHeartbeat() {
 
 	// Confirm local activity and WFE completed
 	ts.Equal(1, laCompleted)
-	ts.GreaterOrEqual(started, 2)
+	ts.GreaterOrEqual(started, minWorkflowTaskStarts)
+	ts.Zero(timedOut)
 	ts.True(wfeCompleted)
 }
 
