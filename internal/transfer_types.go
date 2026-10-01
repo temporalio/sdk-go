@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"sync"
 
 	commonpb "go.temporal.io/api/common/v1"
@@ -178,10 +179,11 @@ var _ converter.DataConverter = (*transferAwareDataConverter)(nil)
 var _ converter.DataConverterWithSerializationContext = (*transferAwareDataConverter)(nil)
 var _ ContextAware = (*transferAwareDataConverter)(nil)
 
+// transferTypeConverter fetches a converter from cache using the value's
+// underlying type as a key, populating the cache if necessary.
 func (dc *transferAwareDataConverter) transferTypeConverter(value TransferTypeConvertible) (*transferTypeConverterImpl, error) {
 	// The value's type is either T or *T for some underlying non-pointer type T.
 	// A more deeply nested pointer type like **T couldn't implement the interface.
-	// Fetch the converter from cache using T as a key, creating the converter if need be.
 	underlyingType := reflect.TypeOf(value)
 	if underlyingType.Kind() == reflect.Pointer {
 		underlyingType = underlyingType.Elem()
@@ -201,7 +203,15 @@ func (dc *transferAwareDataConverter) transferTypeConverter(value TransferTypeCo
 }
 
 func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
-	transferType, err := dc.encodeAsTransferTypeOrReturn(value)
+	convertible, ok := value.(TransferTypeConvertible)
+	if !ok {
+		return dc.parent.ToPayload(value)
+	}
+	tc, err := dc.transferTypeConverter(convertible)
+	if err != nil {
+		return nil, err
+	}
+	transferType, err := dc.toTransferType(tc, value)
 	if err != nil {
 		return nil, err
 	}
@@ -209,34 +219,30 @@ func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, e
 }
 
 func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
-	// TODO Would callers be surprised if we mutated their array? See encodeArgs for instance.
-	// Is it worth getting fancy to avoid this allocation in the common case where none of
-	// the values are transfer-convertible?
-	transferTypes := make([]any, len(values))
+	transferTypes := values
+	copied := false
 	for i, value := range values {
-		transferType, err := dc.encodeAsTransferTypeOrReturn(value)
+		convertible, ok := value.(TransferTypeConvertible)
+		if !ok {
+			continue
+		}
+		tc, err := dc.transferTypeConverter(convertible)
 		if err != nil {
 			return nil, fmt.Errorf("values[%d]: %w", i, err)
+		}
+		transferType, err := dc.toTransferType(tc, value)
+		if err != nil {
+			return nil, fmt.Errorf("values[%d]: %w", i, err)
+		}
+		if !copied {
+			transferTypes = slices.Clone(values)
+			copied = true
 		}
 		transferTypes[i] = transferType
 	}
 	return dc.parent.ToPayloads(transferTypes...)
 }
 
-func (dc *transferAwareDataConverter) encodeAsTransferTypeOrReturn(value any) (transferType any, err error) {
-	convertible, ok := value.(TransferTypeConvertible)
-	if !ok {
-		return value, nil
-	}
-	tc, err := dc.transferTypeConverter(convertible)
-	if err != nil {
-		return nil, err
-	}
-	return dc.toTransferType(tc, value)
-}
-
-// toTransferType converts value with whichever flavor of conversion suits the context
-// this data converter is running in.
 func (dc *transferAwareDataConverter) toTransferType(tc *transferTypeConverterImpl, value any) (any, error) {
 	if dc.workflowContext != nil {
 		return tc.toTransferTypeWithWorkflowContext(dc.workflowContext, value)
@@ -247,7 +253,6 @@ func (dc *transferAwareDataConverter) toTransferType(tc *transferTypeConverterIm
 	return tc.toTransferType(context.Background(), value)
 }
 
-// fromTransferType is the [transferAwareDataConverter.toTransferType] counterpart.
 func (dc *transferAwareDataConverter) fromTransferType(tc *transferTypeConverterImpl, transferTypePtr any, valuePtr any) error {
 	if dc.workflowContext != nil {
 		return tc.fromTransferTypeWithWorkflowContext(dc.workflowContext, transferTypePtr, valuePtr)
@@ -301,25 +306,26 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 	if payloads == nil {
 		return dc.parent.FromPayloads(payloads, valuePtrs...)
 	}
-	// TODO Is it worth getting fancy to avoid this allocation in the common case where
-	// none of the values are transfer-convertible?
-	transferTypePtrs := make([]any, len(valuePtrs))
-	destinations := make([]struct {
+	transferTypePtrs := valuePtrs
+	type transferDestination struct {
 		valuePtr  any
 		converter *transferTypeConverterImpl
-	}, len(valuePtrs))
+	}
+	var destinations []transferDestination
 	for i := range payloads.GetPayloads() {
 		if i >= len(valuePtrs) {
 			break
 		}
 		valuePtr := transferDecodeDestination(valuePtrs[i])
 		convertible, ok := valuePtr.(TransferTypeConvertible)
-		if !ok {
-			transferTypePtrs[i] = valuePtrs[i]
-		} else {
+		if ok {
 			tc, err := dc.transferTypeConverter(convertible)
 			if err != nil {
 				return fmt.Errorf("transfer type converter: payload item %d: %w", i, err)
+			}
+			if destinations == nil {
+				transferTypePtrs = slices.Clone(valuePtrs)
+				destinations = make([]transferDestination, len(valuePtrs))
 			}
 			destinations[i].valuePtr = valuePtr
 			destinations[i].converter = tc
@@ -331,19 +337,12 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		return err
 	}
 
-	for i := range payloads.GetPayloads() {
-		if i >= len(valuePtrs) {
-			break
-		}
-		destination := destinations[i]
+	for i, destination := range destinations {
 		if destination.converter == nil {
-			valuePtrs[i] = transferTypePtrs[i]
-		} else {
-			err := dc.fromTransferType(
-				destination.converter, transferTypePtrs[i], destination.valuePtr)
-			if err != nil {
-				return fmt.Errorf("transfer type converter: payload item %d: %w", i, err)
-			}
+			continue
+		}
+		if err := dc.fromTransferType(destination.converter, transferTypePtrs[i], destination.valuePtr); err != nil {
+			return fmt.Errorf("transfer type converter: payload item %d: %w", i, err)
 		}
 	}
 	return nil
@@ -357,8 +356,6 @@ func (dc *transferAwareDataConverter) ToStrings(input *commonpb.Payloads) []stri
 	return dc.parent.ToStrings(input)
 }
 
-// WithSerializationContext forwards the serialization context to the parent data
-// converter. Transfer converters have no use for it.
 func (dc *transferAwareDataConverter) WithSerializationContext(ctx converter.SerializationContext) converter.DataConverter {
 	if _, ok := dc.parent.(converter.DataConverterWithSerializationContext); !ok {
 		return dc
