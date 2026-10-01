@@ -22,6 +22,9 @@ to docs, or any other relevant information.
 
 ### Added
 
+- Added autoscaling support for server poller groups, with per-group coverage and
+  sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
+  behaves as before when no poller groups are configured.
 - `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers

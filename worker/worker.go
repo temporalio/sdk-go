@@ -340,8 +340,10 @@ func NewPollerBehaviorSimpleMaximum(
 	return internal.NewPollerBehaviorSimpleMaximum(options)
 }
 
-// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
-// based on the workflow and feedback from the server.
+// NewPollerBehaviorAutoscaling scales pollers within the configured range using
+// server feedback. The worker may exceed the configured maximum when the server
+// requires a poll open against more locations than the maximum allows. See
+// [PollerBehaviorAutoscalingOptions.MaximumNumberOfPollers].
 func NewPollerBehaviorAutoscaling(
 	options PollerBehaviorAutoscalingOptions,
 ) PollerBehavior {

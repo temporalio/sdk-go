@@ -11,6 +11,8 @@ or Security.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-30
+
 ### Added
 
 - `WorkflowContext`: exposes the `workflow.Context` a bridged ADK context
