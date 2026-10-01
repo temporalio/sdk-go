@@ -45,6 +45,7 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Child context cancellation now follows creation order by default.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
   `NON_DETERMINISTIC_ERROR` for illegal state machine panics, and
