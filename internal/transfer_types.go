@@ -263,29 +263,38 @@ func (dc *transferAwareDataConverter) fromTransferType(tc *transferTypeConverter
 	return tc.fromTransferType(context.Background(), transferTypePtr, valuePtr)
 }
 
-// transferDecodeDestination adapts **T to *T only when *T provides a converter.
-// Allocate the actual destination before discovery, preserving existing instances.
-func transferDecodeDestination(valuePtr any) any {
-	value := reflect.ValueOf(valuePtr)
-	if value.Kind() != reflect.Pointer || value.IsNil() {
+// adaptTransferDecodePointer checks whether valuePtr is a non-nil **T,
+// where *T implements TransferTypeConvertible. If so it returns the
+// inner *T, allocating new(T) and updating *valuePtr if that pointer is nil.
+// All other inputs are returned unchanged.
+//
+// This is useful when decoding into a pointer, e.g.
+//
+//   var x *MyModel
+//   dc.FromPayload(payload, &x)
+//
+// If x is nil, we want to allocate a new MyModel and decode into it.
+func adaptTransferDecodePointer(valuePtr any) any {
+	argument := reflect.ValueOf(valuePtr)
+	if argument.Kind() != reflect.Pointer || argument.IsNil() {
 		return valuePtr
 	}
-	destination := value.Elem()
-	if destination.Kind() != reflect.Pointer ||
-		!destination.Type().Implements(reflect.TypeFor[TransferTypeConvertible]()) {
+	modelPtr := argument.Elem()
+	if modelPtr.Kind() != reflect.Pointer ||
+		!modelPtr.Type().Implements(reflect.TypeFor[TransferTypeConvertible]()) {
 		return valuePtr
 	}
-	if destination.IsNil() {
-		destination.Set(reflect.New(destination.Type().Elem()))
+	if modelPtr.IsNil() {
+		modelPtr.Set(reflect.New(modelPtr.Type().Elem()))
 	}
-	return destination.Interface()
+	return modelPtr.Interface()
 }
 
 func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	if payload == nil {
 		return dc.parent.FromPayload(payload, valuePtr)
 	}
-	valuePtr = transferDecodeDestination(valuePtr)
+	valuePtr = adaptTransferDecodePointer(valuePtr)
 	convertible, ok := valuePtr.(TransferTypeConvertible)
 	if !ok {
 		return dc.parent.FromPayload(payload, valuePtr)
@@ -316,7 +325,7 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		if i >= len(valuePtrs) {
 			break
 		}
-		valuePtr := transferDecodeDestination(valuePtrs[i])
+		valuePtr := adaptTransferDecodePointer(valuePtrs[i])
 		convertible, ok := valuePtr.(TransferTypeConvertible)
 		if ok {
 			tc, err := dc.transferTypeConverter(convertible)
