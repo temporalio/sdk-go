@@ -90,52 +90,52 @@ type transferTypeConverterImpl[Model, Transfer any] struct {
 	fromTransferTypeWithWorkflowContextFn func(Context, *Transfer, *Model) error
 }
 
-func (*transferTypeConverterImpl[ModelType, TransferType]) newTransferTypePtr() any {
-	return new(TransferType)
+func (*transferTypeConverterImpl[Model, Transfer]) newTransferTypePtr() any {
+	return new(Transfer)
 }
 
-func (tc *transferTypeConverterImpl[ModelType, TransferType]) toTransferType(ctx context.Context, value any) (any, error) {
-	if valuePtr, ok := value.(*ModelType); ok {
+func (tc *transferTypeConverterImpl[Model, Transfer]) toTransferType(ctx context.Context, value any) (any, error) {
+	if valuePtr, ok := value.(*Model); ok {
 		return tc.toTransferTypeFn(ctx, valuePtr)
 	}
-	if value, ok := value.(ModelType); ok {
+	if value, ok := value.(Model); ok {
 		return tc.toTransferTypeFn(ctx, &value)
 	}
-	var zero ModelType
-	return nil, fmt.Errorf("transfer type converter: want value of type %T or %T, got %T", zero, (*ModelType)(nil), value)
+	var zero Model
+	return nil, fmt.Errorf("transfer type converter: want value of type %T or %T, got %T", zero, (*Model)(nil), value)
 }
 
-func (tc *transferTypeConverterImpl[ModelType, TransferType]) toTransferTypeWithWorkflowContext(ctx Context, value any) (any, error) {
-	if valuePtr, ok := value.(*ModelType); ok {
+func (tc *transferTypeConverterImpl[Model, Transfer]) toTransferTypeWithWorkflowContext(ctx Context, value any) (any, error) {
+	if valuePtr, ok := value.(*Model); ok {
 		return tc.toTransferTypeWithWorkflowContextFn(ctx, valuePtr)
 	}
-	if value, ok := value.(ModelType); ok {
+	if value, ok := value.(Model); ok {
 		return tc.toTransferTypeWithWorkflowContextFn(ctx, &value)
 	}
-	var zero ModelType
-	return nil, fmt.Errorf("transfer type converter: want value of type %T or %T, got %T", zero, (*ModelType)(nil), value)
+	var zero Model
+	return nil, fmt.Errorf("transfer type converter: want value of type %T or %T, got %T", zero, (*Model)(nil), value)
 }
 
-func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferType(ctx context.Context, transferTypePtr any, valuePtr any) error {
-	v, ok := valuePtr.(*ModelType)
+func (tc *transferTypeConverterImpl[Model, Transfer]) fromTransferType(ctx context.Context, transferTypePtr any, valuePtr any) error {
+	v, ok := valuePtr.(*Model)
 	if !ok {
-		return fmt.Errorf("transfer type converter: want value of type %T, got %T", (*ModelType)(nil), valuePtr)
+		return fmt.Errorf("transfer type converter: want value of type %T, got %T", (*Model)(nil), valuePtr)
 	}
-	tvp, ok := transferTypePtr.(*TransferType)
+	tvp, ok := transferTypePtr.(*Transfer)
 	if !ok {
-		return fmt.Errorf("transfer type converter: want transfer value of type %T, got %T", (*TransferType)(nil), transferTypePtr)
+		return fmt.Errorf("transfer type converter: want transfer value of type %T, got %T", (*Transfer)(nil), transferTypePtr)
 	}
 	return tc.fromTransferTypeFn(ctx, tvp, v)
 }
 
-func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferTypeWithWorkflowContext(ctx Context, transferTypePtr any, valuePtr any) error {
-	v, ok := valuePtr.(*ModelType)
+func (tc *transferTypeConverterImpl[Model, Transfer]) fromTransferTypeWithWorkflowContext(ctx Context, transferTypePtr any, valuePtr any) error {
+	v, ok := valuePtr.(*Model)
 	if !ok {
-		return fmt.Errorf("transfer type converter: want value of type %T, got %T", (*ModelType)(nil), valuePtr)
+		return fmt.Errorf("transfer type converter: want value of type %T, got %T", (*Model)(nil), valuePtr)
 	}
-	tvp, ok := transferTypePtr.(*TransferType)
+	tvp, ok := transferTypePtr.(*Transfer)
 	if !ok {
-		return fmt.Errorf("transfer type converter: want transfer value of type %T, got %T", (*TransferType)(nil), transferTypePtr)
+		return fmt.Errorf("transfer type converter: want transfer value of type %T, got %T", (*Transfer)(nil), transferTypePtr)
 	}
 	return tc.fromTransferTypeWithWorkflowContextFn(ctx, tvp, v)
 }
@@ -143,18 +143,26 @@ func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferTypeWi
 // -- DATA CONVERTERS ----------------------------------------------------------
 
 // The default data converter, wrapped so it supports transfer type conversion.
-var defaultTransferAwareDataConverter = makeTransferAware(converter.GetDefaultDataConverter())
+// For values that don't implement [ValueWithTransferTypeConverter], this data
+// converter behaves the same as [converter.GetDefaultDataConverter].
+var defaultTransferAwareDataConverter *transferAwareDataConverter =
+	makeTransferAware(converter.GetDefaultDataConverter())
 
-// transferAwareDataConverter is a context-aware data converter that:
-//
-//  1. Encodes its input by trying to apply transfer conversion and forwarding
-//     the result to the parent data converter; and
-//  2. Decodes its input using the parent data converter and then trying to
-//     transfer-convert the result into a normal value.
+// transferAwareDataConverter wraps a parent data converter and applies
+// transfer type conversion to values that implement
+// [ValueWithTransferTypeConverter].
 type transferAwareDataConverter struct {
 	parent                 converter.DataConverter
+	// context is only set if this data converter was created by
+	// [ContextAware.WithContext]. We store it so we can pass it to the
+	// transfer type converter.
 	context                context.Context
+	// workflowContext is only set if this data converter was created by
+	// [ContextAware.WithWorkflowContext]. We store it so we can pass it to the
+	// transfer type converter.
 	workflowContext        Context
+	// transferTypeConverters is a cache that maps transfer-convertible types
+	// to their transfer type converters.
 	transferTypeConverters *sync.Map
 }
 
