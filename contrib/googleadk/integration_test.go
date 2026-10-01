@@ -34,14 +34,10 @@ import (
 
 const integrationTaskQueue = "google-adk-integration"
 
-// devServerState remembers how the test binary's first StartDevServer went.
-// That first start also downloads the CLI, which on the macos-intel CI runner
-// alone takes longer than 30s, and a failed download is not cached: under a
-// flat per-test deadline every dev-server test downloaded for 30s and skipped,
-// and nine such skips overran the 5m package timeout. The first start therefore
-// gets a longer deadline and one retry, and if both attempts fail this and
-// every later dev-server test fail instead of skipping, so a job cannot go
-// green without exercising them.
+// devServerState remembers the first StartDevServer outcome. The first start
+// also downloads the CLI, which can take over 30s on slow runners and is not
+// cached when it fails, so it gets a longer deadline and one retry; if both
+// fail, every dev-server test fails fast instead of re-downloading.
 var devServerState struct {
 	sync.Mutex
 	attempted bool
