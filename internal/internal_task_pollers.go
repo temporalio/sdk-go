@@ -101,6 +101,19 @@ type (
 		pollerGroupSnapshotStore *pollerGroupSnapshotStore
 		// Server cancels polls on shutdown
 		workerPollCompleteOnShutdown *atomic.Bool
+		// Supplies the poller pool state reported to the server on each poll, so it can
+		// spread scaling suggestions across a fleet by share rather than by whoever
+		// happens to receive the most tasks. Nil unless the pool is autoscaling;
+		// installed by baseWorker, the only place holding both the autoscaler (the
+		// target) and the slot supplier (the capacity).
+		pollerScalingInfo func() *taskqueuepb.PollerScalingInfo
+	}
+
+	// pollerScalingInfoReporter is implemented by pollers that can report their pool state
+	// to the server. Kept off the taskPoller interface so pollers with no pool to report
+	// (local activity, eager) need not implement it.
+	pollerScalingInfoReporter interface {
+		setPollerScalingInfo(func() *taskqueuepb.PollerScalingInfo)
 	}
 
 	// numPollerMetric tracks the number of active pollers and publishes a metric on it.
@@ -252,6 +265,20 @@ type (
 		stopCh <-chan struct{}
 	}
 )
+
+func (bp *basePoller) setPollerScalingInfo(f func() *taskqueuepb.PollerScalingInfo) {
+	bp.pollerScalingInfo = f
+}
+
+// getPollerScalingInfo returns the pool state to attach to a poll request, or nil when this
+// poller is not autoscaling. A nil result leaves the field unset, which the server reads as
+// "no report" and excludes the worker from share-based fairness.
+func (bp *basePoller) getPollerScalingInfo() *taskqueuepb.PollerScalingInfo {
+	if bp.pollerScalingInfo == nil {
+		return nil
+	}
+	return bp.pollerScalingInfo()
+}
 
 func newNumPollerMetric(metricsHandler metrics.Handler, pollerType string) *numPollerMetric {
 	if heartbeatHandler, isHeartbeat := metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
@@ -1505,6 +1532,7 @@ func (wtp *workflowTaskPoller) getPollRequestForKind(queueKind enumspb.TaskQueue
 		),
 		WorkerInstanceKey:      wtp.workerInstanceKey,
 		WorkerControlTaskQueue: wtp.workerControlTaskQueue,
+		PollerScalingInfo:      wtp.getPollerScalingInfo(),
 	}
 	if wtp.getCapabilities().BuildIdBasedVersioning {
 		//lint:ignore SA1019 ignore deprecated versioning APIs
@@ -1821,6 +1849,7 @@ func (atp *activityTaskPoller) poll(
 		),
 		WorkerInstanceKey:      atp.workerInstanceKey,
 		WorkerControlTaskQueue: atp.workerControlTaskQueue,
+		PollerScalingInfo:      atp.getPollerScalingInfo(),
 	}
 
 	request.PollerGroupId = lease.groupIDOrEmpty()

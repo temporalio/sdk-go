@@ -249,6 +249,37 @@ func (r *ResourceBasedSlotSupplier) SysInfoProvider() SysInfoProvider {
 	return r.controller.infoSupplier
 }
 
+// EstimatedCapacity approximates how many slots this worker could hold at its resource
+// targets, extrapolating from the load the currently-issued slots are producing: if
+// `issued` slots drive CPU to `cpu`, then reaching `cpuTarget` allows roughly
+// issued * (cpuTarget/cpu) slots. Memory is treated the same way and whichever resource
+// binds first wins. The result is capped at the configured MaxSlots, which TryReserveSlot
+// enforces as a hard ceiling regardless of how much headroom the extrapolation finds.
+//
+// MaxSlots() returns 0 for this supplier because "available slots" is not a count it can
+// answer -- it decides one slot at a time against live resource readings. But poller
+// fairness needs *some* comparable capacity figure, so this provides a rough one.
+//
+// Rough is the operative word:
+//   - CPU and memory are system-wide, so a noisy co-tenant deflates the estimate
+//   - it extrapolates from the current operating point, so a worker holding few slots
+//     estimates from a small base and under-reports itself
+//   - it assumes usage is linear in slot count and attributes all of it to slots
+func (r *ResourceBasedSlotSupplier) EstimatedCapacity(issued int, logger log.Logger) int {
+	sysInfo := &SysInfoContext{Logger: logger}
+	cpu, cpuErr := r.controller.infoSupplier.CpuUsage(sysInfo)
+	mem, memErr := r.controller.infoSupplier.MemoryUsage(sysInfo)
+	if cpuErr != nil || memErr != nil {
+		return 0
+	}
+	headroom := min(
+		r.controller.options.CpuTargetPercent/max(cpu, 0.01),
+		r.controller.options.MemTargetPercent/max(mem, 0.01),
+	)
+	est := float64(issued) * headroom
+	return int(min(est, float64(r.options.MaxSlots)))
+}
+
 // ResourceControllerOptions contains configurable parameters for a ResourceController.
 // It is recommended to use DefaultResourceControllerOptions to create a ResourceControllerOptions
 // and only modify the mem/CPU target percent fields.
