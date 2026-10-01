@@ -82,8 +82,7 @@ func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 type ValueWithTransferTypeConverter = internal.ValueWithTransferTypeConverter
 
 // TransferTypeConverter converts application values to serializable transfer
-// values and back. Create one using [NewTransferTypeConverter] or
-// [NewContextAwareTransferTypeConverter].
+// values and back. Create one using [NewTransferTypeConverter].
 //
 // NOTE: Experimental.
 type TransferTypeConverter = internal.TransferTypeConverter
@@ -94,30 +93,14 @@ type TransferTypeConverter = internal.TransferTypeConverter
 //
 // NOTE: Experimental.
 func NewTransferTypeConverter[ModelType, TransferType any](
-	toTransferType func(*ModelType) (*TransferType, error),
-	fromTransferType func(*TransferType, *ModelType) error,
-) TransferTypeConverter {
-	return internal.NewTransferTypeConverter(toTransferType, fromTransferType)
-}
-
-// NewContextAwareTransferTypeConverter builds a [TransferTypeConverter] that can map
-// something of type ModelType into a serializable "transfer value", and back.
-// ModelType must not be a pointer type.
-//
-// NOTE: Experimental.
-func NewContextAwareTransferTypeConverter[ModelType, TransferType any](
-	toTransferType func(*ModelType) (*TransferType, error),
-	fromTransferType func(*TransferType, *ModelType) error,
-	toTransferTypeWithContext func(context.Context, *ModelType) (*TransferType, error),
-	fromTransferTypeWithContext func(context.Context, *TransferType, *ModelType) error,
+	toTransferType func(context.Context, *ModelType) (*TransferType, error),
+	fromTransferType func(context.Context, *TransferType, *ModelType) error,
 	toTransferTypeWithWorkflowContext func(Context, *ModelType) (*TransferType, error),
 	fromTransferTypeWithWorkflowContext func(Context, *TransferType, *ModelType) error,
 ) TransferTypeConverter {
-	return internal.NewContextAwareTransferTypeConverter(
+	return internal.NewTransferTypeConverter(
 		toTransferType,
 		fromTransferType,
-		toTransferTypeWithContext,
-		fromTransferTypeWithContext,
 		toTransferTypeWithWorkflowContext,
 		fromTransferTypeWithWorkflowContext,
 	)

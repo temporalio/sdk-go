@@ -32,10 +32,17 @@ type temperature struct{ kelvin float64 }
 
 func (temperature) TransferTypeConverter() TransferTypeConverter {
 	return NewTransferTypeConverter(
-		func(t *temperature) (*float64, error) {
+		func(_ context.Context, t *temperature) (*float64, error) {
 			return &t.kelvin, nil
 		},
-		func(kelvin *float64, t *temperature) error {
+		func(_ context.Context, kelvin *float64, t *temperature) error {
+			t.kelvin = *kelvin
+			return nil
+		},
+		func(_ Context, t *temperature) (*float64, error) {
+			return &t.kelvin, nil
+		},
+		func(_ Context, kelvin *float64, t *temperature) error {
 			t.kelvin = *kelvin
 			return nil
 		},
@@ -49,8 +56,10 @@ var errNoEncoding = errors.New("cannot encode")
 
 func (unencodable) TransferTypeConverter() TransferTypeConverter {
 	return NewTransferTypeConverter(
-		func(*unencodable) (*string, error) { return nil, errNoEncoding },
-		func(*string, *unencodable) error { return nil },
+		func(context.Context, *unencodable) (*string, error) { return nil, errNoEncoding },
+		func(context.Context, *string, *unencodable) error { return nil },
+		func(Context, *unencodable) (*string, error) { return nil, errNoEncoding },
+		func(Context, *string, *unencodable) error { return nil },
 	)
 }
 
@@ -61,11 +70,16 @@ var errNoDecoding = errors.New("cannot decode")
 
 func (undecodable) TransferTypeConverter() TransferTypeConverter {
 	return NewTransferTypeConverter(
-		func(*undecodable) (*string, error) {
+		func(context.Context, *undecodable) (*string, error) {
 			encoded := "encoded"
 			return &encoded, nil
 		},
-		func(*string, *undecodable) error { return errNoDecoding },
+		func(context.Context, *string, *undecodable) error { return errNoDecoding },
+		func(Context, *undecodable) (*string, error) {
+			encoded := "encoded"
+			return &encoded, nil
+		},
+		func(Context, *string, *undecodable) error { return errNoDecoding },
 	)
 }
 
@@ -76,15 +90,7 @@ type contextualString string
 type transferContextKey struct{}
 
 func (contextualString) TransferTypeConverter() TransferTypeConverter {
-	return NewContextAwareTransferTypeConverter(
-		func(value *contextualString) (*string, error) {
-			transferType := fmt.Sprintf("go::%s", string(*value))
-			return &transferType, nil
-		},
-		func(transferType *string, value *contextualString) error {
-			*value = contextualString(strings.Split(*transferType, ":")[2])
-			return nil
-		},
+	return NewTransferTypeConverter(
 		func(ctx context.Context, value *contextualString) (*string, error) {
 			label, _ := ctx.Value(transferContextKey{}).(string)
 			transferType := fmt.Sprintf("go:%s:%s", label, string(*value))
@@ -111,6 +117,34 @@ func (contextualString) TransferTypeConverter() TransferTypeConverter {
 type transferEnvelope struct{ Value contextualString }
 
 // -- TESTS --
+
+func TestTransferAwareDataConverter_DefaultContext(t *testing.T) {
+	for _, dc := range []*transferAwareDataConverter{
+		makeTransferAware(nil),
+		makeTransferAware(nil).WithContext(nil).(*transferAwareDataConverter),
+	} {
+		var encodeContext, decodeContext context.Context
+		tc := NewTransferTypeConverter(
+			func(ctx context.Context, value *string) (*string, error) {
+				encodeContext = ctx
+				return value, nil
+			},
+			func(ctx context.Context, transferType *string, value *string) error {
+				decodeContext = ctx
+				*value = *transferType
+				return nil
+			},
+			nil, nil,
+		)
+		transferType, err := dc.toTransferType(tc, "value")
+		require.NoError(t, err)
+		var value string
+		require.NoError(t, dc.fromTransferType(tc, transferType, &value))
+		require.Equal(t, "value", value)
+		require.Equal(t, context.Background(), encodeContext)
+		require.Equal(t, context.Background(), decodeContext)
+	}
+}
 
 func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 	t.Parallel()
@@ -238,8 +272,10 @@ func TestNewTransferTypeConverter_RejectsPointerModelType(t *testing.T) {
 		fmt.Sprintf("transfer type converter: ModelType must not be a pointer, got %v", modelType),
 		func() {
 			NewTransferTypeConverter(
-				func(**temperature) (*float64, error) { return nil, nil },
-				func(*float64, **temperature) error { return nil },
+				func(context.Context, **temperature) (*float64, error) { return nil, nil },
+				func(context.Context, *float64, **temperature) error { return nil },
+				func(Context, **temperature) (*float64, error) { return nil, nil },
+				func(Context, *float64, **temperature) error { return nil },
 			)
 		},
 	)
@@ -540,10 +576,17 @@ type transferExecution struct{ workflowID, runID string }
 
 func (transferExecution) TransferTypeConverter() TransferTypeConverter {
 	return NewTransferTypeConverter(
-		func(value *transferExecution) (*commonpb.WorkflowExecution, error) {
+		func(_ context.Context, value *transferExecution) (*commonpb.WorkflowExecution, error) {
 			return &commonpb.WorkflowExecution{WorkflowId: value.workflowID, RunId: value.runID}, nil
 		},
-		func(value *commonpb.WorkflowExecution, result *transferExecution) error {
+		func(_ context.Context, value *commonpb.WorkflowExecution, result *transferExecution) error {
+			*result = transferExecution{workflowID: value.GetWorkflowId(), runID: value.GetRunId()}
+			return nil
+		},
+		func(_ Context, value *transferExecution) (*commonpb.WorkflowExecution, error) {
+			return &commonpb.WorkflowExecution{WorkflowId: value.workflowID, RunId: value.runID}, nil
+		},
+		func(_ Context, value *commonpb.WorkflowExecution, result *transferExecution) error {
 			*result = transferExecution{workflowID: value.GetWorkflowId(), runID: value.GetRunId()}
 			return nil
 		},
