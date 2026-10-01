@@ -15,7 +15,7 @@ type intTestTransferType struct {
 	value int
 }
 
-func (intTestTransferType) TransferTypeConverter() workflow.TransferTypeConverter {
+func (intTestTransferType) TransferTypeConverter() (workflow.TransferTypeConverter, error) {
 	return workflow.NewTransferTypeConverter(
 		func(_ context.Context, value *intTestTransferType) (*int, error) {
 			return &value.value, nil
