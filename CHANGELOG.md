@@ -29,10 +29,15 @@ to docs, or any other relevant information.
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
   in `StartWorker` is undone at `StopWorker`.
+- `temporalnexus.ConvertNexusLinkToLinkWorkflow`, the decoding counterpart of
+  `ConvertWorkflowLinkToNexusLink`.
 
 ### Changed
 
 - Task queue priority is no longer marked as experimental.
+- Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus
+  request are converted rather than dropped, and `temporalnexus.ConvertCommonLinkToNexusLink`
+  converts NexusOperation and Activity links rather than returning an empty `nexus.Link`.
 
 ### Deprecated
 
