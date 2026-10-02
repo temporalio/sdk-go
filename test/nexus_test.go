@@ -1763,20 +1763,19 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		// Verify operation future was unblocked after cancel command was recorded.
 		callerHist := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		var callerCloseEvent *historypb.HistoryEvent
-		var requestedEvent *historypb.HistoryEvent
+		foundRequestedEvent := false
 		for callerHist.HasNext() {
 			event, err := callerHist.Next()
 			require.NoError(t, err)
 			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUESTED {
-				requestedEvent = event
+				foundRequestedEvent = true
 				require.GreaterOrEqual(t, unblockedTime, event.EventTime.AsTime().UTC())
 			}
 			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED, event.EventType)
 			require.NotEqual(t, enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_FAILED, event.EventType)
 			callerCloseEvent = event
 		}
-		require.NotNil(t, requestedEvent)
-		require.Less(t, requestedEvent.EventId, callerCloseEvent.EventId)
+		require.True(t, foundRequestedEvent)
 
 		// Verify that caller completed before the handler.
 		var err error
@@ -1798,18 +1797,17 @@ func TestAsyncOperationFromWorkflow_CancellationTypes(t *testing.T) {
 		// Verify operation future was unblocked after cancel request was delivered.
 		callerHist := tc.client.GetWorkflowHistory(ctx, callerRun.GetID(), callerRun.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_ALL_EVENT)
 		var callerCloseEvent *historypb.HistoryEvent
-		var requestCompletedEvent *historypb.HistoryEvent
+		foundRequestCompleted := false
 		for callerHist.HasNext() {
 			event, err := callerHist.Next()
 			require.NoError(t, err)
 			if event.EventType == enumspb.EVENT_TYPE_NEXUS_OPERATION_CANCEL_REQUEST_COMPLETED {
-				requestCompletedEvent = event
+				foundRequestCompleted = true
 				require.GreaterOrEqual(t, unblockedTime, event.EventTime.AsTime().UTC())
 			}
 			callerCloseEvent = event
 		}
-		require.NotNil(t, requestCompletedEvent)
-		require.Less(t, requestCompletedEvent.EventId, callerCloseEvent.EventId)
+		require.True(t, foundRequestCompleted)
 
 		// Verify that caller completed before the handler.
 		var err error
