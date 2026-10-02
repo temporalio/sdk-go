@@ -153,10 +153,10 @@ func TestTransferAwareDataConverter_DefaultContext(t *testing.T) {
 			nil, nil,
 		)
 		require.NoError(t, err)
-		transferType, err := dc.toTransferType(tc.transferTypeConverter(), temperature{kelvin: 300})
+		transferType, err := dc.toTransferType(tc, temperature{kelvin: 300})
 		require.NoError(t, err)
 		var value temperature
-		require.NoError(t, dc.fromTransferType(tc.transferTypeConverter(), transferType, &value))
+		require.NoError(t, dc.fromTransferType(tc, transferType, &value))
 		require.Equal(t, temperature{kelvin: 300}, value)
 		require.Equal(t, context.Background(), encodeContext)
 		require.Equal(t, context.Background(), decodeContext)
@@ -165,7 +165,7 @@ func TestTransferAwareDataConverter_DefaultContext(t *testing.T) {
 
 func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := defaultTransferAwareDataConverter
+	dc := DefaultInternalDataConverter
 
 	t.Run("scalar transfer values", func(t *testing.T) {
 		values := make([]temperature, 10)
@@ -206,10 +206,10 @@ func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 
 func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := defaultTransferAwareDataConverter
+	dc := DefaultInternalDataConverter
 	want := &temperature{kelvin: 300}
 
-	require.Implements(t, (*TransferTypeConvertible)(nil), want)
+	require.Implements(t, (*ValueWithTransferTypeConverter)(nil), want)
 	payload, err := dc.ToPayload(want)
 	require.NoError(t, err)
 
@@ -293,9 +293,8 @@ func TestNewTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
 }
 
 func TestTransferTypeConverter_InvalidTypes(t *testing.T) {
-	handle, err := (temperature{}).TransferTypeConverter()
+	tc, err := (temperature{}).TransferTypeConverter()
 	require.NoError(t, err)
-	tc := handle.transferTypeConverter()
 	ctx := context.Background()
 	_, err = tc.toTransferType(ctx, "wrong")
 	require.ErrorContains(t, err, "want value of type internal.temperature or *internal.temperature, got string")
@@ -331,7 +330,7 @@ func TestTransferAwareDataConverter_DiscoveryError(t *testing.T) {
 
 func TestTransferAwareDataConverter_PayloadsRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := defaultTransferAwareDataConverter
+	dc := DefaultInternalDataConverter
 
 	t.Run("scalar transfer values", func(t *testing.T) {
 		values := make([]temperature, 10)
@@ -429,7 +428,7 @@ func TestTransferAwareDataConverter_MatchesParentForPlainValues(t *testing.T) {
 
 func TestTransferAwareDataConverter_ConversionErrors(t *testing.T) {
 	t.Parallel()
-	dc := defaultTransferAwareDataConverter
+	dc := DefaultInternalDataConverter
 
 	t.Run("encoding one value", func(t *testing.T) {
 		_, err := dc.ToPayload(unencodable{})
@@ -477,7 +476,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 	// Even when the parent has no use for a context, we hold on to it: transfer
 	// converters may still want it.
 	t.Run("parent that is not context aware", func(t *testing.T) {
-		dc := defaultTransferAwareDataConverter
+		dc := DefaultInternalDataConverter
 		require.NotSame(t, dc, WithContext(t.Context(), dc))
 		require.NotSame(t, dc, WithWorkflowContext(Background(), dc))
 		// Serialization contexts are only forwarded, so there is nothing to keep.
@@ -519,7 +518,7 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 
 	t.Run("workflow context", func(t *testing.T) {
 		ctx := WithValue(Background(), transferContextKey{}, "workflow")
-		requireRoundTrip(t, defaultTransferAwareDataConverter.WithWorkflowContext(ctx), "wf:workflow:")
+		requireRoundTrip(t, DefaultInternalDataConverter.WithWorkflowContext(ctx), "wf:workflow:")
 	})
 }
 
@@ -785,7 +784,7 @@ func TestTransferTypesWorkflowTestEnvironmentExecutionConversionContext(t *testi
 
 func TestTransferTypes_DataConverterWrapping(t *testing.T) {
 	value := temperature{kelvin: 300}
-	payloads, err := defaultTransferAwareDataConverter.ToPayloads(value)
+	payloads, err := DefaultInternalDataConverter.ToPayloads(value)
 	require.NoError(t, err)
 
 	t.Run("workflow replayer", func(t *testing.T) {
