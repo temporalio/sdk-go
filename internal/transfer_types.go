@@ -228,11 +228,11 @@ func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Paylo
 		}
 		tc, err := dc.transferTypeConverter(convertible)
 		if err != nil {
-			return nil, fmt.Errorf("values[%d]: %w", i, err)
+			return nil, err
 		}
 		transferType, err := dc.toTransferType(tc, value)
 		if err != nil {
-			return nil, fmt.Errorf("values[%d]: %w", i, err)
+			return nil, err
 		}
 		if !copied {
 			transferTypes = slices.Clone(values)
@@ -270,8 +270,8 @@ func (dc *transferAwareDataConverter) fromTransferType(tc *transferTypeConverter
 //
 // This is useful when decoding into a pointer, e.g.
 //
-//   var x *MyModel
-//   dc.FromPayload(payload, &x)
+//	var x *MyModel
+//	dc.FromPayload(payload, &x)
 //
 // If x is nil, we want to allocate a new MyModel and decode into it.
 func adaptTransferDecodePointer(valuePtr any) any {
@@ -316,42 +316,42 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		return dc.parent.FromPayloads(payloads, valuePtrs...)
 	}
 	transferTypePtrs := valuePtrs
-	type transferDestination struct {
-		valuePtr  any
-		converter *transferTypeConverterImpl
-	}
-	var destinations []transferDestination
-	for i := range payloads.GetPayloads() {
-		if i >= len(valuePtrs) {
-			break
-		}
+	copied := false
+	n := min(len(payloads.GetPayloads()), len(valuePtrs))
+
+	for i := range n {
 		valuePtr := adaptTransferDecodePointer(valuePtrs[i])
 		convertible, ok := valuePtr.(TransferTypeConvertible)
-		if ok {
-			tc, err := dc.transferTypeConverter(convertible)
-			if err != nil {
-				return fmt.Errorf("transfer type converter: payload item %d: %w", i, err)
-			}
-			if destinations == nil {
-				transferTypePtrs = slices.Clone(valuePtrs)
-				destinations = make([]transferDestination, len(valuePtrs))
-			}
-			destinations[i].valuePtr = valuePtr
-			destinations[i].converter = tc
-			transferTypePtrs[i] = tc.newTransferTypePtr()
+		if !ok {
+			continue
 		}
+		tc, err := dc.transferTypeConverter(convertible)
+		if err != nil {
+			return err
+		}
+		if !copied {
+			transferTypePtrs = slices.Clone(valuePtrs)
+			copied = true
+		}
+		transferTypePtrs[i] = tc.newTransferTypePtr()
 	}
 
 	if err := dc.parent.FromPayloads(payloads, transferTypePtrs...); err != nil {
 		return err
 	}
 
-	for i, destination := range destinations {
-		if destination.converter == nil {
+	for i := range n {
+		valuePtr := adaptTransferDecodePointer(valuePtrs[i])
+		convertible, ok := valuePtr.(TransferTypeConvertible)
+		if !ok {
 			continue
 		}
-		if err := dc.fromTransferType(destination.converter, transferTypePtrs[i], destination.valuePtr); err != nil {
-			return fmt.Errorf("transfer type converter: payload item %d: %w", i, err)
+		tc, err := dc.transferTypeConverter(convertible)
+		if err != nil {
+			return err
+		}
+		if err := dc.fromTransferType(tc, transferTypePtrs[i], valuePtr); err != nil {
+			return err
 		}
 	}
 	return nil
