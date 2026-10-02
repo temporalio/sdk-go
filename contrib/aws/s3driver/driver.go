@@ -146,25 +146,27 @@ func (d *s3StorageDriver) Store(
 	g, gctx := errgroup.WithContext(ctx.Context)
 	for i, pp := range prepared {
 		g.Go(func() error {
-			key := objectKey(ctx.Target, pp.hexDigest)
-			exists, err := d.client.ObjectExists(gctx, pp.bucket, key)
-			if err != nil {
-				return fmt.Errorf("existence check failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
-			}
-			if !exists {
-				if err := d.client.PutObject(gctx, pp.bucket, key, pp.data); err != nil {
-					return fmt.Errorf("upload failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
+			return ctx.GetLimiter().Permit(gctx, payloads[i], func() error {
+				key := objectKey(ctx.Target, pp.hexDigest)
+				exists, err := d.client.ObjectExists(gctx, pp.bucket, key)
+				if err != nil {
+					return fmt.Errorf("existence check failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
 				}
-			}
-			claims[i] = converter.StorageDriverClaim{
-				ClaimData: map[string]string{
-					claimKeyBucket:        pp.bucket,
-					claimKeyKey:           key,
-					claimKeyHashAlgorithm: hashAlgorithm,
-					claimKeyHashValue:     pp.hexDigest,
-				},
-			}
-			return nil
+				if !exists {
+					if err := d.client.PutObject(gctx, pp.bucket, key, pp.data); err != nil {
+						return fmt.Errorf("upload failed [bucket=%s, key=%s%s]: %w", pp.bucket, key, describeClient(d.client), err)
+					}
+				}
+				claims[i] = converter.StorageDriverClaim{
+					ClaimData: map[string]string{
+						claimKeyBucket:        pp.bucket,
+						claimKeyKey:           key,
+						claimKeyHashAlgorithm: hashAlgorithm,
+						claimKeyHashValue:     pp.hexDigest,
+					},
+				}
+				return nil
+			})
 		})
 	}
 	if err := g.Wait(); err != nil {
@@ -185,45 +187,47 @@ func (d *s3StorageDriver) Retrieve(
 
 	for i, c := range claims {
 		g.Go(func() error {
-			bucket, ok := c.ClaimData[claimKeyBucket]
-			if !ok {
-				return fmt.Errorf("claim missing field %q", claimKeyBucket)
-			}
-			key, ok := c.ClaimData[claimKeyKey]
-			if !ok {
-				return fmt.Errorf("claim missing field %q", claimKeyKey)
-			}
+			return ctx.GetLimiter().Permit(gctx, c, func() error {
+				bucket, ok := c.ClaimData[claimKeyBucket]
+				if !ok {
+					return fmt.Errorf("claim missing field %q", claimKeyBucket)
+				}
+				key, ok := c.ClaimData[claimKeyKey]
+				if !ok {
+					return fmt.Errorf("claim missing field %q", claimKeyKey)
+				}
 
-			data, err := d.client.GetObject(gctx, bucket, key)
-			if err != nil {
-				return fmt.Errorf("download failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
-			}
+				data, err := d.client.GetObject(gctx, bucket, key)
+				if err != nil {
+					return fmt.Errorf("download failed [bucket=%s, key=%s%s]: %w", bucket, key, describeClient(d.client), err)
+				}
 
-			algo, ok := c.ClaimData[claimKeyHashAlgorithm]
-			if !ok {
-				return fmt.Errorf("claim missing field %q", claimKeyHashAlgorithm)
-			}
-			if algo != hashAlgorithm {
-				return fmt.Errorf("unsupported hash algorithm %q", algo)
-			}
+				algo, ok := c.ClaimData[claimKeyHashAlgorithm]
+				if !ok {
+					return fmt.Errorf("claim missing field %q", claimKeyHashAlgorithm)
+				}
+				if algo != hashAlgorithm {
+					return fmt.Errorf("unsupported hash algorithm %q", algo)
+				}
 
-			expectedHash, ok := c.ClaimData[claimKeyHashValue]
-			if !ok {
-				return fmt.Errorf("claim missing field %q", claimKeyHashValue)
-			}
-			if actualHash := sha256Hex(data); actualHash != expectedHash {
-				return fmt.Errorf(
-					"integrity check failed [bucket=%s, key=%s]: expected hash %s, got %s",
-					bucket, key, expectedHash, actualHash,
-				)
-			}
+				expectedHash, ok := c.ClaimData[claimKeyHashValue]
+				if !ok {
+					return fmt.Errorf("claim missing field %q", claimKeyHashValue)
+				}
+				if actualHash := sha256Hex(data); actualHash != expectedHash {
+					return fmt.Errorf(
+						"integrity check failed [bucket=%s, key=%s]: expected hash %s, got %s",
+						bucket, key, expectedHash, actualHash,
+					)
+				}
 
-			var payload commonpb.Payload
-			if err := proto.Unmarshal(data, &payload); err != nil {
-				return fmt.Errorf("failed to unmarshal payload [bucket=%s, key=%s]: %w", bucket, key, err)
-			}
-			payloads[i] = &payload
-			return nil
+				var payload commonpb.Payload
+				if err := proto.Unmarshal(data, &payload); err != nil {
+					return fmt.Errorf("failed to unmarshal payload [bucket=%s, key=%s]: %w", bucket, key, err)
+				}
+				payloads[i] = &payload
+				return nil
+			})
 		})
 	}
 

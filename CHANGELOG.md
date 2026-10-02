@@ -29,6 +29,9 @@ to docs, or any other relevant information.
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
   in `StartWorker` is undone at `StopWorker`.
+- **Experimental**: New external storage concurrency controls. `ExternalStorage.Concurrency` sets
+  `MaxDriverOperations` (across all drivers on that instance) and `MaxOperationsPerMessage` (for one
+  message). Drivers must use `ctx.GetLimiter()` for store and retrieve operations.
 
 ### Changed
 
@@ -42,6 +45,8 @@ to docs, or any other relevant information.
   shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
   cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
   counted, but dashboards may report fewer forced evictions.
+- **Experimental**: Removed `WorkerOptions.MaxConcurrentWorkflowTaskExternalStorageVisits`. Use
+  `ExternalStorage.Concurrency`.
 
 ### Fixed
 

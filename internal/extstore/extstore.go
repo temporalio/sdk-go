@@ -57,6 +57,29 @@ func (StorageDriverActivityInfo) isStorageDriverTargetInfo() {}
 
 var _ StorageDriverTargetInfo = StorageDriverActivityInfo{}
 
+// StorageDriverLimiter limits the concurrent external storage operations a
+// driver performs. Drivers must wrap each operation in Permit. Operations
+// performed outside a permit are not limited. Do not take a permit inside
+// another permit.
+//
+// NOTE: Experimental
+type StorageDriverLimiter[T any] interface {
+	// Permit runs fn once a permit is available, or returns ctx.Err() if ctx is
+	// cancelled while waiting. item is the payload being stored or the claim
+	// being retrieved.
+	Permit(ctx context.Context, item T, fn func() error) error
+}
+
+// noopLimiter grants every permit immediately.
+type noopLimiter[T any] struct{}
+
+func (noopLimiter[T]) Permit(ctx context.Context, item T, fn func() error) error { return fn() }
+
+// NoopStorageDriverLimiter returns a limiter that never blocks.
+//
+// NOTE: Experimental
+func NoopStorageDriverLimiter[T any]() StorageDriverLimiter[T] { return noopLimiter[T]{} }
+
 // StorageDriverStoreContext carries context passed to StorageDriver.Store
 // operations.
 //
@@ -70,6 +93,20 @@ type StorageDriverStoreContext struct {
 	// being stored. Use a type switch on [StorageDriverWorkflowInfo] and
 	// [StorageDriverActivityInfo] to access the concrete values.
 	Target StorageDriverTargetInfo
+	// Limiter limits the concurrent operations this driver performs. Read it
+	// through GetLimiter, which supplies a non-blocking limiter when unset.
+	Limiter StorageDriverLimiter[*commonpb.Payload]
+}
+
+// GetLimiter returns the limiter to wrap each operation in. It returns a
+// limiter that never blocks when Limiter is unset.
+//
+// NOTE: Experimental
+func (c StorageDriverStoreContext) GetLimiter() StorageDriverLimiter[*commonpb.Payload] {
+	if c.Limiter == nil {
+		return NoopStorageDriverLimiter[*commonpb.Payload]()
+	}
+	return c.Limiter
 }
 
 // StorageDriverSelectContext carries context passed to
@@ -96,6 +133,20 @@ type StorageDriverRetrieveContext struct {
 	// Drivers should use it to respect cancellation and to propagate deadlines
 	// and trace information to downstream calls (e.g. cloud storage SDKs).
 	Context context.Context
+	// Limiter limits the concurrent operations this driver performs. Read it
+	// through GetLimiter, which supplies a non-blocking limiter when unset.
+	Limiter StorageDriverLimiter[StorageDriverClaim]
+}
+
+// GetLimiter returns the limiter to wrap each operation in. It returns a
+// limiter that never blocks when Limiter is unset.
+//
+// NOTE: Experimental
+func (c StorageDriverRetrieveContext) GetLimiter() StorageDriverLimiter[StorageDriverClaim] {
+	if c.Limiter == nil {
+		return NoopStorageDriverLimiter[StorageDriverClaim]()
+	}
+	return c.Limiter
 }
 
 // StorageDriverClaim is an opaque token returned by StorageDriver.Store that
@@ -157,6 +208,27 @@ type StorageDriverSelector interface {
 	SelectDriver(ctx StorageDriverSelectContext, payload *commonpb.Payload) (StorageDriver, error)
 }
 
+// ExternalStorageConcurrency configures concurrency limits for external storage
+// operations.
+//
+// NOTE: Experimental
+type ExternalStorageConcurrency struct {
+	// MaxDriverOperations is the maximum number of concurrent external storage
+	// operations that drivers can execute for a single [ExternalStorage]. All
+	// drivers on that instance share this limit.
+	//
+	// 0 uses the default of 64.
+	MaxDriverOperations int
+
+	// MaxOperationsPerMessage is the maximum number of concurrent external storage
+	// operations that drivers can execute for a single message (a message is input
+	// or output such as a workflow activation, completion, or client request). This
+	// prevents one message from monopolizing resources.
+	//
+	// 0 uses the default of 8.
+	MaxOperationsPerMessage int
+}
+
 // ExternalStorage configures external payload storage for a Temporal client or
 // worker. When set, the SDK intercepts payloads on the way to and from the
 // Temporal server: payloads that exceed PayloadSizeThreshold are offloaded to
@@ -186,6 +258,10 @@ type ExternalStorage struct {
 	// threshold of 256 KiB. Negative values are rejected at client/worker
 	// construction time.
 	PayloadSizeThreshold int
+	// Concurrency configures concurrency limits for external storage operations.
+	//
+	// NOTE: Experimental
+	Concurrency ExternalStorageConcurrency
 }
 
 // PayloadVisitor is implemented by types that can transform a slice of payloads
@@ -193,4 +269,3 @@ type ExternalStorage struct {
 type PayloadVisitor interface {
 	Visit(ctx *proxy.VisitPayloadsContext, payloads []*commonpb.Payload) ([]*commonpb.Payload, error)
 }
-

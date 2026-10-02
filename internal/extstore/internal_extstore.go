@@ -4,17 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
 	sdkpb "go.temporal.io/api/sdk/v1"
+	"go.temporal.io/sdk/log"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
-const defaultPayloadSizeThreshold = 256 * 1024
+const (
+	defaultPayloadSizeThreshold    = 256 * 1024
+	defaultMaxDriverOperations     = 64
+	defaultMaxOperationsPerMessage = 8
+)
 
 // StorageParameters holds the validated, ready-to-use storage configuration
 // built from a [ExternalStorage] value via [ExternalStorageToParams].
@@ -22,6 +29,68 @@ type StorageParameters struct {
 	driverMap            map[string]StorageDriver
 	driverSelector       StorageDriverSelector
 	payloadSizeThreshold int
+
+	maxOperationsPerMessage int
+	perInstanceSemaphore    *semaphore.Weighted
+
+	logger log.Logger
+}
+
+// WithLogger returns a copy of p that reports drivers which do not use the
+// limiter. The instance-wide limit is shared, not rebuilt.
+func (p StorageParameters) WithLogger(logger log.Logger) StorageParameters {
+	p.logger = logger
+	return p
+}
+
+// semaphoreLimiter applies the storage limits to a single driver call.
+type semaphoreLimiter[T any] struct {
+	perMessageSemaphore  *semaphore.Weighted
+	perInstanceSemaphore *semaphore.Weighted
+	permitTaken          atomic.Bool
+}
+
+func (l *semaphoreLimiter[T]) Permit(ctx context.Context, item T, fn func() error) error {
+	l.permitTaken.Store(true)
+	if err := l.perMessageSemaphore.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer l.perMessageSemaphore.Release(1)
+	if err := l.perInstanceSemaphore.Acquire(ctx, 1); err != nil {
+		return err
+	}
+	defer l.perInstanceSemaphore.Release(1)
+	return fn()
+}
+
+func newLimiter[T any](p StorageParameters) *semaphoreLimiter[T] {
+	// A zero-value StorageParameters has no limits set and would never grant a permit.
+	maxPerMessage := p.maxOperationsPerMessage
+	if maxPerMessage <= 0 {
+		maxPerMessage = defaultMaxOperationsPerMessage
+	}
+	perInstanceSemaphore := p.perInstanceSemaphore
+	if perInstanceSemaphore == nil {
+		perInstanceSemaphore = semaphore.NewWeighted(defaultMaxDriverOperations)
+	}
+	return &semaphoreLimiter[T]{
+		perMessageSemaphore:  semaphore.NewWeighted(int64(maxPerMessage)),
+		perInstanceSemaphore: perInstanceSemaphore,
+	}
+}
+
+// warnIfLimiterUnused warns when a driver did not use the limiter.
+type permitUsage interface{ tookPermit() bool }
+
+func (l *semaphoreLimiter[T]) tookPermit() bool { return l.permitTaken.Load() }
+
+func warnIfLimiterUnused(logger log.Logger, l permitUsage, driverName, operation string) {
+	if logger == nil || l.tookPermit() {
+		return
+	}
+	logger.Warn("Storage driver performed an operation without using Limiter. "+
+		"Its operations are not limited.",
+		"DriverName", driverName, "Operation", operation)
 }
 
 // IsStorageReference reports whether p is an external-storage reference payload.
@@ -65,10 +134,27 @@ func ExternalStorageToParams(options ExternalStorage) (StorageParameters, error)
 		sizeThreshold = defaultPayloadSizeThreshold
 	}
 
+	maxDriverOperations := options.Concurrency.MaxDriverOperations
+	if maxDriverOperations == 0 {
+		maxDriverOperations = defaultMaxDriverOperations
+	}
+	if maxDriverOperations < 0 {
+		return StorageParameters{}, fmt.Errorf("Concurrency.MaxDriverOperations must not be negative")
+	}
+	maxOperationsPerMessage := options.Concurrency.MaxOperationsPerMessage
+	if maxOperationsPerMessage == 0 {
+		maxOperationsPerMessage = defaultMaxOperationsPerMessage
+	}
+	if maxOperationsPerMessage < 0 {
+		return StorageParameters{}, fmt.Errorf("Concurrency.MaxOperationsPerMessage must not be negative")
+	}
+
 	return StorageParameters{
-		driverMap:            driverMap,
-		driverSelector:       selector,
-		payloadSizeThreshold: sizeThreshold,
+		driverMap:               driverMap,
+		driverSelector:          selector,
+		payloadSizeThreshold:    sizeThreshold,
+		maxOperationsPerMessage: maxOperationsPerMessage,
+		perInstanceSemaphore:    semaphore.NewWeighted(int64(maxDriverOperations)),
 	}, nil
 }
 
@@ -258,18 +344,22 @@ func (v *externalRetrievalVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloa
 	// information for determing how to retrieve payloads. Drivers should only use information
 	// from the StorageDriverClaim to retrieve payloads.
 	eg, egCtx := errgroup.WithContext(context.Background())
-	driverCtx := StorageDriverRetrieveContext{Context: egCtx}
+	limiters := make([]*semaphoreLimiter[StorageDriverClaim], len(driverOrder))
 	sizes := make([]int64, len(driverOrder))
 
 	externalCount := 0
 	for i, name := range driverOrder {
 		batch := driverBatches[name]
 		externalCount += len(batch.claims)
+		limiter := newLimiter[StorageDriverClaim](v.params)
+		limiters[i] = limiter
+		driverCtx := StorageDriverRetrieveContext{Context: egCtx, Limiter: limiter}
 		eg.Go(func() error {
 			retrieved, err := callDriverRetrieve(batch.driver, driverCtx, batch.claims)
 			if err != nil {
 				return fmt.Errorf("storage driver %q retrieve failed: %w", name, err)
 			}
+			warnIfLimiterUnused(v.params.logger, limiter, name, "retrieve")
 			if len(retrieved) != len(batch.claims) {
 				return fmt.Errorf("storage driver %q returned %d payloads for %d claims", name, len(retrieved), len(batch.claims))
 			}
@@ -365,18 +455,22 @@ func (v *externalStorageVisitor) Visit(ctx *proxy.VisitPayloadsContext, payloads
 	// Fan out to each driver concurrently. The errgroup context is used as the
 	// StorageDriverStoreContext so a failing driver cancels in-flight siblings.
 	eg, egCtx := errgroup.WithContext(ctx.Context)
-	storeDrCtx := StorageDriverStoreContext{Context: egCtx, Target: target}
+	limiters := make([]*semaphoreLimiter[*commonpb.Payload], len(driverOrder))
 	sizes := make([]int64, len(driverOrder))
 
 	externalCount := 0
 	for i, name := range driverOrder {
 		batch := driverBatches[name]
 		externalCount += len(batch.payloads)
+		limiter := newLimiter[*commonpb.Payload](v.params)
+		limiters[i] = limiter
+		storeDrCtx := StorageDriverStoreContext{Context: egCtx, Target: target, Limiter: limiter}
 		eg.Go(func() error {
 			claims, err := callDriverStore(batch.driver, storeDrCtx, batch.payloads)
 			if err != nil {
 				return fmt.Errorf("storage driver %q store failed: %w", name, err)
 			}
+			warnIfLimiterUnused(v.params.logger, limiter, name, "store")
 			if len(claims) != len(batch.payloads) {
 				return fmt.Errorf("storage driver %q returned %d claims for %d payloads", name, len(claims), len(batch.payloads))
 			}
