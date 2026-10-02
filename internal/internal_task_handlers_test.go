@@ -105,6 +105,14 @@ func registerWorkflows(r *registry) {
 		RegisterWorkflowOptions{Name: "CodecChildArg_Workflow"},
 	)
 	r.RegisterWorkflowWithOptions(
+		codecIgnoreChildWorkflowArgWorkflowFunc,
+		RegisterWorkflowOptions{Name: "CodecIgnoreChildArg_Workflow"},
+	)
+	r.RegisterWorkflowWithOptions(
+		codecHandleChildWorkflowArgWorkflowFunc,
+		RegisterWorkflowOptions{Name: "CodecHandleChildArg_Workflow"},
+	)
+	r.RegisterWorkflowWithOptions(
 		codecSwallowActivityResultWorkflowFunc,
 		RegisterWorkflowOptions{Name: "CodecSwallowActivityResult_Workflow"},
 	)
@@ -156,6 +164,32 @@ func codecChildWorkflowArgWorkflowFunc(ctx Context, _ []byte) error {
 	}
 	ctx = WithChildWorkflowOptions(ctx, cwo)
 	return ExecuteChildWorkflow(ctx, "CodecEncodeArg_Workflow", []byte("arg")).Get(ctx, nil)
+}
+
+// Starts a child workflow but never reads its future, proving a codec-requested
+// Workflow Task failure raised while encoding the child's arguments still fails
+// the task instead of being dropped with the unread future.
+func codecIgnoreChildWorkflowArgWorkflowFunc(ctx Context, _ []byte) error {
+	cwo := ChildWorkflowOptions{
+		WorkflowID:               "codec-child-1",
+		WorkflowExecutionTimeout: time.Minute,
+	}
+	ctx = WithChildWorkflowOptions(ctx, cwo)
+	ExecuteChildWorkflow(ctx, "CodecEncodeArg_Workflow", []byte("arg"))
+	return nil
+}
+
+// Reads the child workflow future but swallows the Get error, proving the
+// Workflow Task still fails even when the parent handles the error rather than
+// propagating it.
+func codecHandleChildWorkflowArgWorkflowFunc(ctx Context, _ []byte) error {
+	cwo := ChildWorkflowOptions{
+		WorkflowID:               "codec-child-1",
+		WorkflowExecutionTimeout: time.Minute,
+	}
+	ctx = WithChildWorkflowOptions(ctx, cwo)
+	_ = ExecuteChildWorkflow(ctx, "CodecEncodeArg_Workflow", []byte("arg")).Get(ctx, nil)
+	return nil
 }
 
 // Reads the activity result (invoking the codec's Decode) but deliberately
@@ -1475,8 +1509,8 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_A
 
 // A PayloadCodec that returns a WorkflowTaskFailureError while encoding a child
 // workflow's arguments fails the current Workflow Task rather than the Workflow
-// Execution. The codec-boundary tag reaches w.err through the child workflow
-// future (a path a per-call-site approach misses), under both policies.
+// Execution when the parent reads the child future, under both policies. The
+// unread-future case is covered by the sibling test below.
 func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_ChildWorkflowArgEncode() {
 	for _, policy := range []WorkflowPanicPolicy{BlockWorkflow, FailWorkflow} {
 		testEvents := []*historypb.HistoryEvent{
@@ -1503,6 +1537,40 @@ func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_C
 		var marker *converter.WorkflowTaskFailureError
 		t.True(errors.As(err, &marker), "policy %v", policy)
 		t.True(errors.Is(err, cause), "policy %v", policy)
+	}
+}
+
+// The child workflow arg encode marker is raised at the encode site, so it fails
+// the Workflow Task whether the parent ignores the child future or handles its
+// Get error rather than propagating it, under both policies.
+func (t *TaskHandlersTestSuite) TestWorkflowTask_CodecWorkflowTaskFailureError_ChildWorkflowArgEncodeUnpropagated() {
+	for _, workflowName := range []string{"CodecIgnoreChildArg_Workflow", "CodecHandleChildArg_Workflow"} {
+		for _, policy := range []WorkflowPanicPolicy{BlockWorkflow, FailWorkflow} {
+			testEvents := []*historypb.HistoryEvent{
+				createTestEventWorkflowExecutionStarted(1, &historypb.WorkflowExecutionStartedEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+				createTestEventWorkflowTaskScheduled(2, &historypb.WorkflowTaskScheduledEventAttributes{TaskQueue: &taskqueuepb.TaskQueue{Name: testWorkflowTaskTaskqueue}}),
+				createTestEventWorkflowTaskStarted(3),
+			}
+			task := createWorkflowTask(testEvents, 0, workflowName)
+			params := t.getTestWorkerExecutionParams()
+			params.WorkflowPanicPolicy = policy
+			cause := errors.New("transient codec failure on unpropagated child workflow args: 503")
+			params.DataConverter = converter.NewCodecDataConverter(
+				converter.GetDefaultDataConverter(),
+				&wftFailureCodec{encodeErr: converter.NewWorkflowTaskFailureError(cause)},
+			)
+			taskHandler := newWorkflowTaskHandler(params, nil, t.registry)
+			wftask := workflowTask{task: task}
+			wfctx := t.mustWorkflowContextImpl(&wftask, taskHandler)
+			request, err := taskHandler.ProcessWorkflowTask(&wftask, wfctx, nil)
+			wfctx.Unlock(err)
+
+			t.Error(err, "%s policy %v", workflowName, policy)
+			t.Nil(request, "%s policy %v", workflowName, policy)
+			var marker *converter.WorkflowTaskFailureError
+			t.True(errors.As(err, &marker), "%s policy %v", workflowName, policy)
+			t.True(errors.Is(err, cause), "%s policy %v", workflowName, policy)
+		}
 	}
 }
 
