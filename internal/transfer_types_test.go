@@ -124,23 +124,23 @@ func TestTransferAwareDataConverter_DefaultContext(t *testing.T) {
 	} {
 		var encodeContext, decodeContext context.Context
 		tc, err := NewTransferTypeConverter(
-			func(ctx context.Context, value *string) (*string, error) {
+			func(ctx context.Context, value *temperature) (*float64, error) {
 				encodeContext = ctx
-				return value, nil
+				return &value.kelvin, nil
 			},
-			func(ctx context.Context, transferType *string, value *string) error {
+			func(ctx context.Context, transferType *float64, value *temperature) error {
 				decodeContext = ctx
-				*value = *transferType
+				value.kelvin = *transferType
 				return nil
 			},
 			nil, nil,
 		)
 		require.NoError(t, err)
-		transferType, err := dc.toTransferType(tc.transferTypeConverter(), "value")
+		transferType, err := dc.toTransferType(tc.transferTypeConverter(), temperature{kelvin: 300})
 		require.NoError(t, err)
-		var value string
+		var value temperature
 		require.NoError(t, dc.fromTransferType(tc.transferTypeConverter(), transferType, &value))
-		require.Equal(t, "value", value)
+		require.Equal(t, temperature{kelvin: 300}, value)
 		require.Equal(t, context.Background(), encodeContext)
 		require.Equal(t, context.Background(), decodeContext)
 	}

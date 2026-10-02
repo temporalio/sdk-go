@@ -92,7 +92,7 @@ type TransferTypeConverter = internal.TransferTypeConverter
 // Returns an error if ModelType or TransferType is a pointer type.
 //
 // NOTE: Experimental.
-func NewTransferTypeConverter[ModelType, TransferType any](
+func NewTransferTypeConverter[ModelType ValueWithTransferTypeConverter, TransferType any](
 	toTransferType func(context.Context, *ModelType) (*TransferType, error),
 	fromTransferType func(context.Context, *TransferType, *ModelType) error,
 	toTransferTypeWithWorkflowContext func(Context, *ModelType) (*TransferType, error),

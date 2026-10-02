@@ -25,7 +25,8 @@ import (
 // safe to call concurrently. The converter will be cached and reused for other
 // values with the same concrete type, so the method should not depend on any
 // state in the value itself. The method must be implemented with a value
-// receiver, not a pointer receiver.
+// receiver, not a pointer receiver. Inheriting this method via embedding
+// is not supported.
 //
 // NOTE: Experimental.
 //
@@ -34,6 +35,9 @@ type TransferTypeConvertible interface {
 	TransferTypeConverter() (TransferTypeConverter, error)
 }
 
+// TransferTypeConverter is an opaque handle created by
+// [NewTransferTypeConverter]. Do not embed this interface.
+//
 // NOTE: Experimental.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.TransferTypeConverter]
@@ -50,7 +54,7 @@ type TransferTypeConverter interface {
 // NOTE: Experimental.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.NewTransferTypeConverter]
-func NewTransferTypeConverter[Model, Transfer any](
+func NewTransferTypeConverter[Model TransferTypeConvertible, Transfer any](
 	toTransferType func(context.Context, *Model) (*Transfer, error),
 	fromTransferType func(context.Context, *Transfer, *Model) error,
 	toTransferTypeWithWorkflowContext func(Context, *Model) (*Transfer, error),
@@ -198,10 +202,11 @@ func (dc *transferAwareDataConverter) transferTypeConverter(value TransferTypeCo
 	if err != nil {
 		return nil, fmt.Errorf("transfer type converter for %v: %w", underlyingType, err)
 	}
-	if tc == nil {
+	impl := tc.transferTypeConverter()
+	if impl == nil {
 		return nil, fmt.Errorf("transfer type converter for %v is nil", underlyingType)
 	}
-	cached, _ := dc.transferTypeConverters.LoadOrStore(underlyingType, tc.transferTypeConverter())
+	cached, _ := dc.transferTypeConverters.LoadOrStore(underlyingType, impl)
 	return cached.(*transferTypeConverterImpl), nil
 }
 
