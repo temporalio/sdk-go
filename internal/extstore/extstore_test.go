@@ -1331,7 +1331,7 @@ func (d *permittingDriver) Store(
 	g, gctx := errgroup.WithContext(ctx.Context)
 	for i := range payloads {
 		g.Go(func() error {
-			return ctx.Limiter.Permit(gctx, payloads[i], func() error {
+			return ctx.GetLimiter().Permit(gctx, payloads[i], func() error {
 				if err := d.hold(gctx); err != nil {
 					return err
 				}
@@ -1350,7 +1350,7 @@ func (d *permittingDriver) Retrieve(
 	g, gctx := errgroup.WithContext(ctx.Context)
 	for i := range claims {
 		g.Go(func() error {
-			return ctx.Limiter.Permit(gctx, claims[i], func() error {
+			return ctx.GetLimiter().Permit(gctx, claims[i], func() error {
 				if err := d.hold(gctx); err != nil {
 					return err
 				}
@@ -1402,7 +1402,7 @@ func TestConcurrency_MaxOperationsPerMessage(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := visitPayloads(context.Background(), visitor, payloads)
+		_, err := visitPayloads(t.Context(), visitor, payloads)
 		done <- err
 	}()
 
@@ -1439,7 +1439,7 @@ func TestConcurrency_MaxDriverOperationsSharedAcrossMessages(t *testing.T) {
 	done := make(chan error, 2)
 	for i := 0; i < 2; i++ {
 		go func() {
-			_, err := visitPayloads(context.Background(), visitor, message())
+			_, err := visitPayloads(t.Context(), visitor, message())
 			done <- err
 		}()
 	}
@@ -1452,4 +1452,32 @@ func TestConcurrency_MaxDriverOperationsSharedAcrossMessages(t *testing.T) {
 	require.NoError(t, <-done)
 	require.NoError(t, <-done)
 	require.Equal(t, 3, driver.peakValue())
+}
+
+func TestGetLimiter_UnsetYieldsNonBlockingLimiter(t *testing.T) {
+	storeCtx := StorageDriverStoreContext{Context: t.Context()}
+	require.Nil(t, storeCtx.Limiter)
+
+	stored := false
+	require.NoError(t, storeCtx.GetLimiter().Permit(t.Context(), nil, func() error {
+		stored = true
+		return nil
+	}))
+	require.True(t, stored)
+
+	retrieveCtx := StorageDriverRetrieveContext{Context: t.Context()}
+	require.Nil(t, retrieveCtx.Limiter)
+
+	retrieved := false
+	require.NoError(t, retrieveCtx.GetLimiter().Permit(t.Context(), StorageDriverClaim{}, func() error {
+		retrieved = true
+		return nil
+	}))
+	require.True(t, retrieved)
+}
+
+func TestGetLimiter_SetIsReturnedUnchanged(t *testing.T) {
+	limiter := NoopStorageDriverLimiter[*commonpb.Payload]()
+	ctx := StorageDriverStoreContext{Context: t.Context(), Limiter: limiter}
+	require.Equal(t, limiter, ctx.GetLimiter())
 }

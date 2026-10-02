@@ -155,7 +155,7 @@ func (d *gcsStorageDriver) Store(
 	g, gctx := errgroup.WithContext(ctx.Context)
 	for i, pp := range prepared {
 		g.Go(func() error {
-			return ctx.Limiter.Permit(gctx, payloads[i], func() error {
+			return ctx.GetLimiter().Permit(gctx, payloads[i], func() error {
 				name := objectName(ctx.Target, pp.hexDigest)
 				exists, err := d.client.ObjectExists(gctx, pp.bucket, name)
 				if err != nil {
@@ -197,7 +197,7 @@ func (d *gcsStorageDriver) Retrieve(
 
 	for i, c := range claims {
 		g.Go(func() error {
-			return ctx.Limiter.Permit(gctx, c, func() error {
+			return ctx.GetLimiter().Permit(gctx, c, func() error {
 				bucket, ok := c.ClaimData[claimKeyBucket]
 				if !ok {
 					return fmt.Errorf("claim missing field %q", claimKeyBucket)
