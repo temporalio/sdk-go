@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"math"
 
 	commonpb "go.temporal.io/api/common/v1"
 	"go.temporal.io/api/proxy"
@@ -53,6 +54,10 @@ func newCompositePayloadVisitor(visitors ...PayloadVisitor) PayloadVisitor {
 		visitors: visitors,
 	}
 }
+
+// unboundedPayloadVisitorConcurrency visits every payload in a message at once.
+// ExternalStorage.Concurrency does the limiting.
+const unboundedPayloadVisitorConcurrency = math.MaxInt32
 
 // visitProtoPayloads runs visitor over all payloads in msg, skipping search
 // attributes. If visitor is nil, msg is unchanged.

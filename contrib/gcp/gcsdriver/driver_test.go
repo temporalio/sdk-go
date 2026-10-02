@@ -86,15 +86,15 @@ func newDriver(t *testing.T, client Client) converter.StorageDriver {
 }
 
 func storeCtx() converter.StorageDriverStoreContext {
-	return converter.StorageDriverStoreContext{Context: context.Background()}
+	return converter.StorageDriverStoreContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}
 }
 
 func storeCtxWithTarget(target converter.StorageDriverTargetInfo) converter.StorageDriverStoreContext {
-	return converter.StorageDriverStoreContext{Context: context.Background(), Target: target}
+	return converter.StorageDriverStoreContext{Context: context.Background(), Target: target, Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}
 }
 
 func retrieveCtx() converter.StorageDriverRetrieveContext {
-	return converter.StorageDriverRetrieveContext{Context: context.Background()}
+	return converter.StorageDriverRetrieveContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[converter.StorageDriverClaim]()}
 }
 
 // --- Constructor tests ---
@@ -151,8 +151,8 @@ func TestNewGCSStorageDriver_NegativeMaxPayloadSize(t *testing.T) {
 
 func TestStaticBucket(t *testing.T) {
 	fn := StaticBucket("my-bucket")
-	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background()}, nil))
-	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background()}, testPayload("x")))
+	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}, nil))
+	assert.Equal(t, "my-bucket", fn(converter.StorageDriverStoreContext{Context: context.Background(), Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}, testPayload("x")))
 }
 
 // --- Store tests ---
@@ -824,8 +824,9 @@ func (b *blockingClient) GetObject(ctx context.Context, bucket, key string) ([]b
 	}
 }
 
-func TestStore_ConcurrencyLimitedTo10(t *testing.T) {
-	// Create 20 payloads — more than the concurrency limit of 10.
+// The driver no longer caps itself; the configured limiter decides. A driver
+// handed a no-op limiter runs every request at once.
+func TestStore_ConcurrencyGovernedByLimiter(t *testing.T) {
 	bc := newBlockingClient(false)
 	d, err := NewDriver(Options{
 		Client: bc,
@@ -844,21 +845,16 @@ func TestStore_ConcurrencyLimitedTo10(t *testing.T) {
 		done <- err
 	}()
 
-	// Give goroutines time to start and block.
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if bc.peakInflight.Load() >= 10 {
+		if bc.peakInflight.Load() >= 20 {
 			break
 		}
 		time.Sleep(time.Millisecond)
 	}
+	require.Equal(t, int64(20), bc.peakInflight.Load(),
+		"a no-op limiter must not bound the driver")
 
-	// Peak should be exactly 10 (the errgroup limit).
-	peak := bc.peakInflight.Load()
-	assert.LessOrEqual(t, peak, int64(10), "peak inflight should not exceed errgroup limit of 10")
-	assert.GreaterOrEqual(t, peak, int64(1), "at least one goroutine should have started")
-
-	// Release all goroutines and let Store complete.
 	close(bc.gate)
 	require.NoError(t, <-done)
 }
@@ -874,7 +870,7 @@ func TestStore_ContextCancellation(t *testing.T) {
 	payloads := []*commonpb.Payload{testPayload("cancel-me")}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	storeContext := converter.StorageDriverStoreContext{Context: ctx}
+	storeContext := converter.StorageDriverStoreContext{Context: ctx, Limiter: converter.NoopStorageDriverLimiter[*commonpb.Payload]()}
 
 	done := make(chan error, 1)
 	go func() {
@@ -924,7 +920,7 @@ func TestRetrieve_ContextCancellation(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	retrieveContext := converter.StorageDriverRetrieveContext{Context: ctx}
+	retrieveContext := converter.StorageDriverRetrieveContext{Context: ctx, Limiter: converter.NoopStorageDriverLimiter[converter.StorageDriverClaim]()}
 
 	done := make(chan error, 1)
 	go func() {

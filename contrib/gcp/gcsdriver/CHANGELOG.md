@@ -11,6 +11,11 @@ or Security.
 
 ## [Unreleased]
 
+### Changed
+
+- **Experimental**: Concurrency is now set by `ExternalStorage.Concurrency` instead of a fixed
+  limit of 10.
+
 ### Breaking Changes
 
 - Raised the minimum supported Go version from 1.25.4 to 1.26.0.
