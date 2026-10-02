@@ -29,6 +29,8 @@ to docs, or any other relevant information.
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
   in `StartWorker` is undone at `StopWorker`.
+- `TestActivityEnvironment` now has `RegisterDynamicActivity` and implements `worker.ActivityRegistry`
+  again.
 
 ### Changed
 

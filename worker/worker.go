@@ -254,6 +254,7 @@ type (
 )
 
 var _ WorkflowRegistry = (WorkflowReplayer)(nil)
+var _ ActivityRegistry = (*internal.TestActivityEnvironment)(nil)
 
 const (
 	// BlockWorkflow is the default WorkflowPanicPolicy policy for handling workflow panics and detected non-determinism.
