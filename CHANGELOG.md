@@ -35,6 +35,9 @@ to docs, or any other relevant information.
 ### Changed
 
 - Task queue priority is no longer marked as experimental.
+- Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus
+  request are converted rather than dropped, and `temporalnexus.ConvertCommonLinkToNexusLink`
+  converts NexusOperation and Activity links rather than returning an empty `nexus.Link`.
 
 ### Deprecated
 
@@ -59,9 +62,6 @@ to docs, or any other relevant information.
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker
   stops, cached workflow state is cleared without waiting for garbage collection.
-- Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus
-  request are converted rather than dropped, and `temporalnexus.ConvertCommonLinkToNexusLink`
-  converts NexusOperation and Activity links rather than returning an empty `nexus.Link`.
 
 ### Security
 
