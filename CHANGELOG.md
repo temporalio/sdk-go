@@ -45,6 +45,12 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Fatal worker notification and automatic stopping now run outside polling
+  goroutines, allowing pollers to retire without waiting for their own stop.
+  Concurrent `Worker.Stop` calls join one complete SDK cleanup operation, and
+  `Worker.Run` joins that cleanup and returns the first fatal cause even when
+  interruption races with it. `OnFatalError` may call `Stop`; an independent stop
+  can finish before that asynchronous callback finishes.
 - Child context cancellation now follows creation order by default.
 - Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
   `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,

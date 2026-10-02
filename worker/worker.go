@@ -37,7 +37,8 @@ type (
 		// Pass nil to stop the worker with external Stop() call.
 		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 		// Returns error if the worker fails to start or there is a fatal error
-		// during execution.
+		// during execution, including when interruption races with that error.
+		// After a successful start, Run waits for SDK stop cleanup before returning.
 		//
 		// Users are encouraged to use Start() instead of this call if they plan to
 		// manually Stop(). Otherwise a race can occur if shutdown occurs before the
@@ -45,9 +46,10 @@ type (
 		// via the interrupt channel.
 		Run(interruptCh <-chan any) error
 
-		// Stop the worker.
+		// Stop the worker and wait for SDK stop cleanup to return.
 		//
-		// This may panic if called a second time.
+		// Concurrent calls wait for the same cleanup operation. Stop does not
+		// wait for Options.OnFatalError; that callback may itself call Stop.
 		Stop()
 	}
 
