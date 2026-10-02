@@ -93,9 +93,20 @@ type StorageDriverStoreContext struct {
 	// being stored. Use a type switch on [StorageDriverWorkflowInfo] and
 	// [StorageDriverActivityInfo] to access the concrete values.
 	Target StorageDriverTargetInfo
-	// Limiter limits the concurrent operations this driver performs. Wrap each
-	// operation in Limiter.Permit.
+	// Limiter limits the concurrent operations this driver performs. Read it
+	// through GetLimiter, which supplies a non-blocking limiter when unset.
 	Limiter StorageDriverLimiter[*commonpb.Payload]
+}
+
+// GetLimiter returns the limiter to wrap each operation in. It returns a
+// limiter that never blocks when Limiter is unset.
+//
+// NOTE: Experimental
+func (c StorageDriverStoreContext) GetLimiter() StorageDriverLimiter[*commonpb.Payload] {
+	if c.Limiter == nil {
+		return NoopStorageDriverLimiter[*commonpb.Payload]()
+	}
+	return c.Limiter
 }
 
 // StorageDriverSelectContext carries context passed to
@@ -122,9 +133,20 @@ type StorageDriverRetrieveContext struct {
 	// Drivers should use it to respect cancellation and to propagate deadlines
 	// and trace information to downstream calls (e.g. cloud storage SDKs).
 	Context context.Context
-	// Limiter limits the concurrent operations this driver performs. Wrap each
-	// operation in Limiter.Permit.
+	// Limiter limits the concurrent operations this driver performs. Read it
+	// through GetLimiter, which supplies a non-blocking limiter when unset.
 	Limiter StorageDriverLimiter[StorageDriverClaim]
+}
+
+// GetLimiter returns the limiter to wrap each operation in. It returns a
+// limiter that never blocks when Limiter is unset.
+//
+// NOTE: Experimental
+func (c StorageDriverRetrieveContext) GetLimiter() StorageDriverLimiter[StorageDriverClaim] {
+	if c.Limiter == nil {
+		return NoopStorageDriverLimiter[StorageDriverClaim]()
+	}
+	return c.Limiter
 }
 
 // StorageDriverClaim is an opaque token returned by StorageDriver.Store that

@@ -46,6 +46,11 @@ type StorageDriverRetrieveContext = extstore.StorageDriverRetrieveContext
 // object key) into the ClaimData map.
 //
 // NOTE: Experimental
+type StorageDriverClaim = extstore.StorageDriverClaim
+
+// StorageDriverLimiter limits the concurrent operations a driver performs.
+//
+// NOTE: Experimental
 type StorageDriverLimiter[T any] = extstore.StorageDriverLimiter[T]
 
 // NoopStorageDriverLimiter returns a StorageDriverLimiter that grants every
@@ -61,8 +66,6 @@ func NoopStorageDriverLimiter[T any]() StorageDriverLimiter[T] {
 //
 // NOTE: Experimental
 type ExternalStorageConcurrency = extstore.ExternalStorageConcurrency
-
-type StorageDriverClaim = extstore.StorageDriverClaim
 
 // StorageDriver is the interface that must be implemented to back external
 // payload storage. When a payload exceeds the configured size threshold the SDK

@@ -31,7 +31,7 @@ to docs, or any other relevant information.
   in `StartWorker` is undone at `StopWorker`.
 - **Experimental**: New external storage concurrency controls. `ExternalStorage.Concurrency` sets
   `MaxDriverOperations` (across all drivers on that instance) and `MaxOperationsPerMessage` (for one
-  message). Drivers must use `ctx.Limiter` for store and retrieve operations.
+  message). Drivers must use `ctx.GetLimiter()` for store and retrieve operations.
 
 ### Changed
 
