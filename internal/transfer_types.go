@@ -14,15 +14,18 @@ import (
 // -- USER API -----------------------------------------------------------
 
 // TransferTypeConvertible is a type that opts-in to transfer type conversion.
-// The first time the SDK encounters a value of type M that implements
-// TransferTypeConvertible, the SDK will invoke the TransferTypeConverter
-// method and cache the result. The cached transfer type converter will
-// be used to encode all values of type M as their transfer type T before
-// being forwarded to the data converter. Decoding a value of type M means
-// getting a value of type T from the data converter and using the transfer
-// type converter to convert it into a value of type M.
+// To encode a TransferTypeConvertible value as a payload, the SDK encodes
+// the value using its transfer type converter first and then passes the
+// resulting "transfer value" to the data converter. To decode a
+// TransferTypeConvertible, the SDK reads a transfer value from the data
+// converter and decodes it with the transfer type converter.
 //
-// Use [NewTransferTypeConverter] to create a new transfer type converter.
+// TransferTypeConverter returns a value's transfer type converter.
+// Create one with [NewTransferTypeConverter]. The method must be pure and
+// safe to call concurrently. The converter will be cached and reused for other
+// values with the same concrete type, so the method should not depend on any
+// state in the value itself. The method must be implemented with a value
+// receiver, not a pointer receiver.
 //
 // NOTE: Experimental.
 //
@@ -40,7 +43,7 @@ type TransferTypeConverter interface {
 
 // NewTransferTypeConverter builds a transfer type converter that can map
 // Model values into Transfer values and back. The callbacks should be
-// pure and produce replay-stable output.
+// pure, threadsafe, and produce replay-stable output.
 //
 // Returns an error if Model or Transfer is a pointer type.
 //
