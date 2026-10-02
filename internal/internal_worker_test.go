@@ -2269,6 +2269,7 @@ func (s *internalWorkerTestSuite) TestWorkerFatalErrorReleasesCacheOwnership() {
 	worker := createWorker(s.service)
 	s.NoError(worker.Start())
 	worker.executionParams.WorkerFatalErrorCallback(errors.New("fatal worker error"))
+	worker.Stop()
 
 	select {
 	case <-worker.stopC:

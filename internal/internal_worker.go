@@ -1338,10 +1338,14 @@ type AggregatedWorker struct {
 	// Stores a boolean indicating whether the worker has already been started.
 	started      atomic.Bool
 	shuttingDown atomic.Bool
-	// stopC is created in NewAggregatedWorker and closed by AggregatedWorker.Stop()
-	// to mark the aggregated worker stopped, unblock Run(), and prevent restart.
+	// stopC is created in NewAggregatedWorker and closed when stopping begins,
+	// to notify Run() and prevent restart. Stop() joins the entire cleanup.
 	// Child worker stop channels are closed later by their own Stop methods.
-	stopC        chan struct{}
+	stopC    chan struct{}
+	stopOnce sync.Once
+	// stopDone closes after the selected Stop caller finishes all SDK cleanup.
+	// Other Stop callers wait here without holding the owner selection lock.
+	stopDone     chan struct{}
 	fatalErr     error
 	fatalErrLock sync.Mutex
 	capabilities *workflowservice.GetSystemInfoResponse_Capabilities
@@ -1671,8 +1675,9 @@ func getBinaryChecksum() string {
 // Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
 // Pass nil to stop the worker with external Stop() call.
 // Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
-// Returns error if the worker fails to start or there is a fatal error
-// during execution.
+// Returns the startup error if Start fails. After a successful start, joins SDK
+// stop cleanup and returns the first fatal error, even if interruption races
+// with that error. Returns nil when the worker stops without a fatal error.
 func (aw *AggregatedWorker) Run(interruptCh <-chan any) error {
 	if err := aw.Start(); err != nil {
 		return err
@@ -1680,25 +1685,30 @@ func (aw *AggregatedWorker) Run(interruptCh <-chan any) error {
 	select {
 	case s := <-interruptCh:
 		aw.logger.Info("Worker has been stopped.", "Signal", s)
-		aw.Stop()
 	case <-aw.stopC:
-		aw.fatalErrLock.Lock()
-		defer aw.fatalErrLock.Unlock()
-		// This may be nil if this wasn't stopped due to fatal error
-		return aw.fatalErr
 	}
-	return nil
+	// Both stop requests join cleanup before reading the first fatal cause,
+	// so an interrupt cannot turn a recorded worker failure into success.
+	aw.Stop()
+	aw.fatalErrLock.Lock()
+	defer aw.fatalErrLock.Unlock()
+	return aw.fatalErr
 }
 
-// Stop the worker.
+// Stop prevents new polling and waits for the worker's SDK cleanup to return.
+// Concurrent calls wait for the same cleanup operation.
 func (aw *AggregatedWorker) Stop() {
-	// Only attempt stop if we haven't attempted before
-	select {
-	case <-aw.stopC:
+	ownsStop := false
+	aw.stopOnce.Do(func() { ownsStop = true })
+	if ownsStop {
+		aw.stop()
+		close(aw.stopDone)
 		return
-	default:
 	}
+	<-aw.stopDone
+}
 
+func (aw *AggregatedWorker) stop() {
 	// Prevent pollers from re-polling before closing stopC. There is a race
 	// between stopC being closed and the ShutdownWorker RPC: a poll can
 	// complete naturally (e.g. long-poll timeout) right after stopC fires
@@ -1756,6 +1766,15 @@ func (aw *AggregatedWorker) Stop() {
 	}
 
 	aw.logger.Info("Stopped Worker")
+}
+
+// handleFatalError runs outside the polling goroutines that Stop waits for.
+// It delivers the recorded cause to the caller's hook, then joins cleanup.
+func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
+	if hook != nil {
+		hook(err)
+	}
+	aw.Stop()
 }
 
 func (aw *AggregatedWorker) registerHeartbeatWorker() error {
@@ -2429,16 +2448,9 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		aw.fatalErrLock.Unlock()
 		// Only do the rest if not already set
 		if !alreadySet {
-			// Invoke the callback if present
-			if options.OnFatalError != nil {
-				options.OnFatalError(err)
-			}
-			// Stop the worker if not already stopped
-			select {
-			case <-aw.stopC:
-			default:
-				aw.Stop()
-			}
+			// The poller must return before Stop can join it. Record its cause
+			// above, then deliver the hook and stop on a separate goroutine.
+			go aw.handleFatalError(err, options.OnFatalError)
 		}
 	}
 	// Because of lazy clients we need to wait till the worker runs to fetch the capabilities.
@@ -2750,6 +2762,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		logger:                       workerParams.Logger,
 		registry:                     registry,
 		stopC:                        make(chan struct{}),
+		stopDone:                     make(chan struct{}),
 		capabilities:                 &capabilities,
 		executionParams:              workerParams,
 		workerInstanceKey:            workerInstanceKey,
