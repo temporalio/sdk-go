@@ -267,8 +267,6 @@ type (
 
 		outboundPayloadVisitor PayloadVisitor
 
-		payloadVisitorConcurrency int
-
 		setErrorLimits func(*payloadLimits)
 	}
 
@@ -2421,10 +2419,6 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		panic("cannot set both DeploymentOptions.DefaultVersioningBehavior if DeploymentOptions.UseBuildIDForVersioning is false")
 	}
 
-	if options.MaxConcurrentWorkflowTaskExternalStorageVisits < 0 {
-		panic("MaxConcurrentWorkflowTaskExternalStorageVisits must not be negative")
-	}
-
 	// Pollers retain this callback, keeping the worker and cache lease live until they stop.
 	var aw *AggregatedWorker
 	noRepoll := &atomic.Bool{}
@@ -2543,12 +2537,11 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		workerPollCompleteOnShutdown:     workerPollCompleteOnShutdown,
 		serverSupportsAutoscaling:        &atomic.Bool{},
 		workflowTaskCompletionPagination: &workflowTaskCompletionPaginationConfig{},
-		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(client.storageParams),
+		inboundPayloadVisitor:            extstore.NewExternalRetrievalVisitor(client.storageParams.WithLogger(logger)),
 		outboundPayloadVisitor: newCompositePayloadVisitor(
-			extstore.NewExternalStorageVisitor(client.storageParams),
+			extstore.NewExternalStorageVisitor(client.storageParams.WithLogger(logger)),
 			payloadLimitVisitor,
 		),
-		payloadVisitorConcurrency: options.MaxConcurrentWorkflowTaskExternalStorageVisits,
 		setErrorLimits: func(limits *payloadLimits) {
 			if !options.DisablePayloadErrorLimit {
 				setErrorLimits(limits)
@@ -2991,9 +2984,6 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 	}
 	if options.MaxHeartbeatThrottleInterval == 0 {
 		options.MaxHeartbeatThrottleInterval = defaultMaxHeartbeatThrottleInterval
-	}
-	if options.MaxConcurrentWorkflowTaskExternalStorageVisits == 0 {
-		options.MaxConcurrentWorkflowTaskExternalStorageVisits = defaultMaxConcurrentWorkflowTaskExternalStorageVisits
 	}
 	if options.Tuner == nil {
 		// Err cannot happen since these slot numbers are guaranteed valid
