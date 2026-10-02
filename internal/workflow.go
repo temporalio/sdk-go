@@ -1176,7 +1176,11 @@ func ExecuteLocalActivity(ctx Context, activity any, args ...any) Future {
 	i := getWorkflowOutboundInterceptor(ctx)
 	env := GetWorkflowEnvironment(ctx)
 	activityType, isMethod := getFunctionName(activity)
-	if alias, ok := env.GetRegistry().getActivityAlias(activityType); ok {
+	if _, ok := activity.(string); !ok && mightBeFunctionLiteral(activity) {
+		if alias, ok := env.GetRegistry().getActivityAlias(getFunctionFullName(activity)); ok {
+			activityType = alias
+		}
+	} else if alias, ok := env.GetRegistry().getActivityAlias(activityType); ok {
 		activityType = alias
 	}
 	var fn any

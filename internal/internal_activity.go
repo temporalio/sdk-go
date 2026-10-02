@@ -274,7 +274,11 @@ func getValidatedActivityFunction(f any, args []any, registry *registry) (*Activ
 			return nil, err
 		}
 		fnName, _ = getFunctionName(f)
-		if alias, ok := registry.getActivityAlias(fnName); ok {
+		if mightBeFunctionLiteral(f) {
+			if alias, ok := registry.getActivityAlias(getFunctionFullName(f)); ok {
+				fnName = alias
+			}
+		} else if alias, ok := registry.getActivityAlias(fnName); ok {
 			fnName = alias
 		}
 

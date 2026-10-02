@@ -899,7 +899,11 @@ func (r *registry) RegisterActivityWithOptions(
 	}
 	r.activityFuncMap[registerName] = &activityExecutor{name: registerName, fn: af}
 	if len(alias) > 0 && r.activityAliasMap != nil {
-		r.activityAliasMap[fnName] = alias
+		if mightBeFunctionLiteral(af) {
+			r.activityAliasMap[getFunctionFullName(af)] = alias
+		} else {
+			r.activityAliasMap[fnName] = alias
+		}
 	}
 }
 
@@ -2859,7 +2863,22 @@ func getFunctionName(i any) (name string, isMethod bool) {
 	return strings.TrimSuffix(shortName, "-fm"), isMethod
 }
 
+func getFunctionFullName(i any) string {
+	if i == nil {
+		return ""
+	}
+	if str, ok := i.(string); ok {
+		return str
+	}
+	return runtime.FuncForPC(reflect.ValueOf(i).Pointer()).Name()
+}
+
 func getActivityFunctionName(r *registry, i any) string {
+	if _, ok := i.(string); !ok && mightBeFunctionLiteral(i) {
+		if alias, ok := r.getActivityAlias(getFunctionFullName(i)); ok {
+			return alias
+		}
+	}
 	result, _ := getFunctionName(i)
 	if alias, ok := r.getActivityAlias(result); ok {
 		result = alias

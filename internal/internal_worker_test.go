@@ -3991,6 +3991,42 @@ func TestAliasUnqualifiedNameClash(t *testing.T) {
 	require.Equal(t, "func1", executeWorkflow(true))
 }
 
+func TestAnonymousFunctionAliasNoCollision(t *testing.T) {
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+
+	// Register an anonymous function with an explicit alias name.
+	env.RegisterActivityWithOptions(
+		func(ctx context.Context, input string) (string, error) {
+			return "from registered: " + input, nil
+		},
+		RegisterActivityOptions{Name: "SomeActivity"},
+	)
+
+	// An inline anonymous local activity in a workflow has a different signature.
+	// It should NOT collide with the registered anonymous function's alias.
+	testWorkflow := func(ctx Context) (string, error) {
+		ctx = WithLocalActivityOptions(ctx, LocalActivityOptions{
+			ScheduleToCloseTimeout: 10 * time.Second,
+		})
+
+		var result string
+		err := ExecuteLocalActivity(ctx, func(ctx context.Context) (string, error) {
+			return "from inline local activity", nil
+		}).Get(ctx, &result)
+
+		return result, err
+	}
+
+	env.ExecuteWorkflow(testWorkflow)
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+
+	var result string
+	require.NoError(t, env.GetWorkflowResult(&result))
+	require.Equal(t, "from inline local activity", result)
+}
+
 func (s *internalWorkerTestSuite) TestReservedTemporalName() {
 	// workflow
 	worker := createWorker(s.service)
