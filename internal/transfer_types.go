@@ -211,6 +211,10 @@ func (dc *transferAwareDataConverter) transferTypeConverter(value TransferTypeCo
 }
 
 func (dc *transferAwareDataConverter) ToPayload(value any) (*commonpb.Payload, error) {
+	v := reflect.ValueOf(value)
+	if v.Kind() == reflect.Pointer && v.IsNil() {
+		return dc.parent.ToPayload(value)
+	}
 	convertible, ok := value.(TransferTypeConvertible)
 	if !ok {
 		return dc.parent.ToPayload(value)
@@ -230,6 +234,10 @@ func (dc *transferAwareDataConverter) ToPayloads(values ...any) (*commonpb.Paylo
 	transferTypes := values
 	copied := false
 	for i, value := range values {
+		v := reflect.ValueOf(value)
+		if v.Kind() == reflect.Pointer && v.IsNil() {
+			continue
+		}
 		convertible, ok := value.(TransferTypeConvertible)
 		if !ok {
 			continue

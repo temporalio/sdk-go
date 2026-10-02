@@ -22,6 +22,23 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+func TestTransferAwareDataConverter_NilPointerInput(t *testing.T) {
+	parent := converter.GetDefaultDataConverter()
+	var input *temperature
+	want, err := parent.ToPayload(input)
+	require.NoError(t, err)
+
+	got, err := makeTransferAware(parent).ToPayload(input)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(want, got))
+
+	wantBatch, err := parent.ToPayloads(input, 300.0, input)
+	require.NoError(t, err)
+	gotBatch, err := makeTransferAware(parent).ToPayloads(input, temperature{kelvin: 300}, input)
+	require.NoError(t, err)
+	require.True(t, proto.Equal(wantBatch, gotBatch))
+}
+
 // -- BASIC TESTS ----------------------------------------------------
 
 // -- DATA --
