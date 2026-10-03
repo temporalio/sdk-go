@@ -1939,6 +1939,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 	valuePtr any,
 	options WorkflowRunGetOptions,
 ) error {
+	dataConverter := WithContext(ctx, workflowRun.dataConverter)
 	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID())
 	if !iter.HasNext() {
 		panic("could not get last history event for workflow")
@@ -1965,7 +1966,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		if rf.Type().Kind() != reflect.Pointer {
 			return errors.New("value parameter is not a pointer")
 		}
-		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
+		return dataConverter.FromPayloads(attributes.Result, valuePtr)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_FAILED:
 		attributes := closeEvent.GetWorkflowExecutionFailedEventAttributes()
 		if !options.DisableFollowingRuns && attributes.NewExecutionRunId != "" {
@@ -1974,7 +1975,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		err = workflowRun.failureConverter.FailureToError(attributes.GetFailure())
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
-		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
+		details := newEncodedValues(attributes.Details, dataConverter)
 		err = NewCanceledError(details)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		err = newTerminatedError()
@@ -2829,7 +2830,7 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 	ctx context.Context,
 	in *ClientQueryWorkflowInput,
 ) (converter.EncodedValue, error) {
-	dc := converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+	dc := converter.WithDataConverterSerializationContext(WithContext(ctx, w.client.dataConverter), converter.WorkflowSerializationContext{
 		Namespace:  w.client.namespace,
 		WorkflowID: in.WorkflowID,
 	})

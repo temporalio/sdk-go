@@ -62,6 +62,8 @@ to docs, or any other relevant information.
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
 - Stopped workers now release sticky workflow cache ownership immediately. When the final worker
   stops, cached workflow state is cleared without waiting for garbage collection.
+- `WorkflowRun.Get`, `WorkflowRun.GetWithOptions`, and `QueryWorkflow` now pass the caller's context to
+  a data converter that implements `ContextAware`, as other client calls already do.
 
 ### Security
 
