@@ -262,8 +262,8 @@ jobs:
       matrix:
         go-version: ["oldstable", "stable"]
         fips: [true, false]
-    # Only supported in non-fork runs, since secrets are not available in forks.
-    if: ${{ github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go' }}
+    # Cloud credentials are unavailable to forks and Dependabot pull requests.
+    if: ${{ (github.event.pull_request.head.repo.full_name == '' || github.event.pull_request.head.repo.full_name == 'temporalio/sdk-go') && github.event.pull_request.user.login != 'dependabot[bot]' }}
     runs-on: ubuntu-latest
     env:
       GODEBUG: ${{ matrix.fips && 'fips140=on' || '' }}
