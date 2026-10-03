@@ -8,7 +8,7 @@ require (
 	github.com/stretchr/testify v1.11.1
 	go.temporal.io/api v1.63.5
 	go.temporal.io/sdk v1.43.1
-	go.temporal.io/sdk/contrib/gcp/gcsdriver v0.0.0-00010101000000-000000000000
+	go.temporal.io/sdk/contrib/gcp/gcsdriver v0.2.0
 )
 
 require (
