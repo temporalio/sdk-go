@@ -1,6 +1,9 @@
 package internal
 
-// All code in this file is private to the package.
+// Worker constructors and callers use this file to register handlers, save one
+// synchronous Start result, and clean up SDK resources. Start orders resource
+// changes against Stop in internal_worker_startup.go. Stop returns only after
+// its RPC, children, stop plugins, heartbeat removal, and cache release finish.
 
 import (
 	"context"
@@ -467,7 +470,10 @@ func (ww *workflowWorker) Start() error {
 	// AggregatedWorker initializes pollers after resolving namespace capabilities.
 	// Fall back to the configured behavior for direct internal starts.
 	if ww.worker.options.taskPollers == nil {
-		ww.initializeTaskPollers(ww.executionParameters.WorkflowTaskPollerBehavior)
+		ww.initializeTaskPollers(
+			ww.executionParameters.WorkflowTaskPollerBehavior,
+			ww.worker.slotSupplier.inner.MaxSlots(),
+		)
 	}
 	ww.localActivityWorker.Start()
 	ww.worker.Start()
@@ -551,14 +557,14 @@ func buildWorkflowScalableTaskPollers(
 	}
 }
 
-func (ww *workflowWorker) initializeTaskPollers(behavior PollerBehavior) {
+func (ww *workflowWorker) initializeTaskPollers(behavior PollerBehavior, maxSlots int) {
 	taskProcessor := ww.worker.options.taskProcessor.(*workflowTaskProcessor)
 	ww.executionParameters.WorkflowTaskPollerBehavior = behavior
 	ww.worker.initializeTaskPollers(buildWorkflowScalableTaskPollers(
 		taskProcessor,
 		behavior,
 		ww.executionParameters,
-		ww.worker.slotSupplier.inner.MaxSlots(),
+		maxSlots,
 	))
 }
 
@@ -607,20 +613,6 @@ func newSessionWorker(client *WorkflowClient, params workerExecutionParameters, 
 		creationWorker: creationWorker,
 		activityWorker: activityWorker,
 	}
-}
-
-func (sw *sessionWorker) Start() error {
-	err := sw.creationWorker.Start()
-	if err != nil {
-		return err
-	}
-
-	err = sw.activityWorker.Start()
-	if err != nil {
-		sw.creationWorker.Stop()
-		return err
-	}
-	return nil
 }
 
 func (sw *sessionWorker) Stop() {
@@ -1327,6 +1319,11 @@ type AggregatedWorker struct {
 	executionParams workerExecutionParameters
 	// Memoized start function. Ensures start runs once and returns the same error when called multiple times.
 	memoizedStart func() error
+	// lifecycleMu orders SDK resource changes against Stop without holding
+	// synchronous caller hooks. startAttempted records that Start or Run accepted
+	// the complete startup call, even if a plugin fails before SDK initialization.
+	lifecycleMu    sync.Mutex
+	startAttempted bool
 
 	client         *WorkflowClient
 	workflowWorker *workflowWorker
@@ -1448,176 +1445,11 @@ func (aw *AggregatedWorker) RegisterNexusService(service *nexus.Service) {
 	aw.registry.RegisterNexusService(service)
 }
 
-// Start the worker in a non-blocking fashion.
-// The actual work is done in the memoized "start" function to ensure duplicate calls are returned a consistent error.
+// Start accepts startup and runs the complete plugin chain synchronously.
+// Repeated calls receive the saved result without starting the children again.
 func (aw *AggregatedWorker) Start() error {
-	aw.assertNotStopped()
+	aw.admitStart()
 	return aw.memoizedStart()
-}
-
-// start the worker. This method is memoized using sync.OnceValue in memoizedStart.
-func (aw *AggregatedWorker) start() error {
-	aw.started.Store(true)
-
-	if err := initBinaryChecksum(); err != nil {
-		return fmt.Errorf("failed to get executable checksum: %v", err)
-	} else if err = aw.client.ensureInitialized(context.Background()); err != nil {
-		return err
-	}
-	// Populate the capabilities. This should be the only time it is written too.
-	capabilities, err := aw.client.loadCapabilities(context.Background())
-	if err != nil {
-		return err
-	}
-	proto.Merge(aw.capabilities, capabilities)
-
-	nsData, err := aw.client.loadNamespaceData(aw.executionParams.MetricsHandler)
-	if err != nil {
-		return err
-	}
-	// Seed poller groups before the first poll.
-	aw.executionParams.pollerGroupSnapshotStore.updateGroups(nsData.pollerGroupsInfo)
-	if aw.sessionWorker != nil {
-		aw.sessionWorker.activityWorker.executionParameters.pollerGroupSnapshotStore.updateGroups(nsData.pollerGroupsInfo)
-	}
-
-	if aw.executionParams.setErrorLimits != nil {
-		payloadSizeError := int64(0)
-		if nsData.limits.BlobSizeLimitError > 0 {
-			payloadSizeError = nsData.limits.BlobSizeLimitError
-		}
-		memoSizeError := int64(0)
-		if nsData.limits.MemoSizeLimitError > 0 {
-			memoSizeError = nsData.limits.MemoSizeLimitError
-		}
-		aw.executionParams.setErrorLimits(&payloadLimits{
-			payloadSize: payloadSizeError,
-			memoSize:    memoSizeError,
-		})
-	}
-
-	if nsData.capabilities.GetWorkerPollCompleteOnShutdown() {
-		aw.workerPollCompleteOnShutdown.Store(true)
-	}
-
-	if nsData.capabilities.GetWorkflowTaskCompletionPagination() {
-		aw.executionParams.workflowTaskCompletionPagination.enabled.Store(true)
-		aw.executionParams.workflowTaskCompletionPagination.sizeLimit.Store(nsData.limits.GetWorkflowTaskCompletionSizeLimitError())
-	}
-
-	if nsData.capabilities.GetPollerAutoscaling() {
-		aw.executionParams.serverSupportsAutoscaling.Store(true)
-	}
-
-	// If the namespace opts workers into poller autoscaling, auto-enroll any
-	// poller type that was left at its default (the user set neither a fixed
-	// poller count nor a poller behavior). Auto-enroll implies full autoscaling
-	// support, including scaling down, so it also enables serverSupportsAutoscaling.
-	if nsData.capabilities.GetPollerAutoscalingAutoEnroll() {
-		aw.executionParams.serverSupportsAutoscaling.Store(true)
-		autoscaling := NewPollerBehaviorAutoscaling(PollerBehaviorAutoscalingOptions{})
-		if aw.executionParams.pollerAutoEnrollEligibility.nexusTask {
-			aw.executionParams.NexusTaskPollerBehavior = autoscaling
-		}
-		if aw.executionParams.pollerAutoEnrollEligibility.workflowTask && !util.IsInterfaceNil(aw.workflowWorker) {
-			aw.executionParams.WorkflowTaskPollerBehavior = autoscaling
-		}
-		if aw.executionParams.pollerAutoEnrollEligibility.activityTask {
-			if !util.IsInterfaceNil(aw.activityWorker) {
-				aw.executionParams.ActivityTaskPollerBehavior = autoscaling
-			}
-		}
-	}
-
-	// Poller behavior can depend on namespace capabilities, so workflow and
-	// activity scalable task pollers are initialized only after those capabilities
-	// have been resolved.
-	if !util.IsInterfaceNil(aw.workflowWorker) {
-		aw.workflowWorker.initializeTaskPollers(aw.executionParams.WorkflowTaskPollerBehavior)
-	}
-
-	if !util.IsInterfaceNil(aw.workflowWorker) {
-		if err := aw.workflowWorker.Start(); err != nil {
-			return err
-		}
-		if aw.client.eagerDispatcher != nil {
-			aw.client.eagerDispatcher.registerWorker(aw.workflowWorker)
-		}
-	}
-	if !util.IsInterfaceNil(aw.activityWorker) {
-		aw.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
-		if err := aw.activityWorker.Start(); err != nil {
-			// stop workflow worker.
-			if !util.IsInterfaceNil(aw.workflowWorker) {
-				if aw.workflowWorker.worker.isWorkerStarted {
-					if aw.client.eagerDispatcher != nil {
-						aw.client.eagerDispatcher.deregisterWorker(aw.workflowWorker)
-					}
-					aw.workflowWorker.Stop()
-				}
-			}
-			return err
-		}
-	}
-
-	if !util.IsInterfaceNil(aw.sessionWorker) && len(aw.registry.getRegisteredActivities()) > 0 {
-		aw.logger.Info("Starting session worker")
-		// The session activity worker uses the effective activity poller behavior.
-		// The session creation worker retains its fixed single-poller behavior.
-		aw.sessionWorker.activityWorker.initializeTaskPollers(aw.executionParams.ActivityTaskPollerBehavior)
-		aw.sessionWorker.creationWorker.initializeTaskPollers(
-			aw.sessionWorker.creationWorker.executionParameters.ActivityTaskPollerBehavior,
-		)
-		if err := aw.sessionWorker.Start(); err != nil {
-			// stop workflow worker and activity worker.
-			if !util.IsInterfaceNil(aw.workflowWorker) {
-				if aw.workflowWorker.worker.isWorkerStarted {
-					aw.workflowWorker.Stop()
-				}
-			}
-			if !util.IsInterfaceNil(aw.activityWorker) {
-				if aw.activityWorker.worker.isWorkerStarted {
-					aw.activityWorker.Stop()
-				}
-			}
-			return err
-		}
-	}
-	nexusServices := aw.registry.getRegisteredNexusServices()
-	if len(nexusServices) > 0 {
-		reg := nexus.NewServiceRegistry()
-		for _, service := range nexusServices {
-			if err := reg.Register(service); err != nil {
-				return fmt.Errorf("failed to create a nexus worker: %w", err)
-			}
-		}
-		reg.Use(nexusMiddleware(aw.registry.interceptors))
-		handler, err := reg.NewHandler()
-		if err != nil {
-			return fmt.Errorf("failed to create a nexus worker: %w", err)
-		}
-		aw.nexusWorker, err = newNexusWorker(nexusWorkerOptions{
-			executionParameters: aw.executionParams,
-			client:              aw.client,
-			workflowService:     aw.client.workflowService,
-			handler:             handler,
-			registry:            aw.registry,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create a nexus worker: %w", err)
-		}
-		if err := aw.nexusWorker.Start(); err != nil {
-			return fmt.Errorf("failed to start a nexus worker: %w", err)
-		}
-	}
-
-	if aw.client.workerHeartbeatInterval > 0 {
-		if err := aw.registerHeartbeatWorker(); err != nil {
-			return fmt.Errorf("failed to register heartbeat worker: %w", err)
-		}
-	}
-	aw.logger.Info("Started Worker")
-	return nil
 }
 
 func (aw *AggregatedWorker) assertNotStopped() {
@@ -1675,24 +1507,33 @@ func getBinaryChecksum() string {
 // Pass worker.InterruptCh() to stop the worker with SIGINT or SIGTERM.
 // Pass nil to stop the worker with external Stop() call.
 // Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
-// Returns the startup error if Start fails. After a successful start, joins SDK
-// stop cleanup and returns the first fatal error, even if interruption races
-// with that error. Returns nil when the worker stops without a fatal error.
+// Before returning an error or nil, Run waits for SDK cleanup and retains both
+// the startup error and first fatal error. If Start was already accepted, Run
+// waits for that saved startup result, even after Stop.
 func (aw *AggregatedWorker) Run(interruptCh <-chan any) error {
-	if err := aw.Start(); err != nil {
-		return err
+	startErr := aw.admitRun()
+	if startErr == nil {
+		startErr = aw.memoizedStart()
 	}
-	select {
-	case s := <-interruptCh:
-		aw.logger.Info("Worker has been stopped.", "Signal", s)
-	case <-aw.stopC:
+	if startErr == nil {
+		select {
+		case s := <-interruptCh:
+			aw.logger.Info("Worker has been stopped.", "Signal", s)
+		case <-aw.stopC:
+		}
 	}
 	// Both stop requests join cleanup before reading the first fatal cause,
 	// so an interrupt cannot turn a recorded worker failure into success.
 	aw.Stop()
 	aw.fatalErrLock.Lock()
 	defer aw.fatalErrLock.Unlock()
-	return aw.fatalErr
+	if startErr == nil {
+		return aw.fatalErr
+	}
+	if aw.fatalErr == nil {
+		return startErr
+	}
+	return errors.Join(startErr, aw.fatalErr)
 }
 
 // Stop prevents new polling and waits for the worker's SDK cleanup to return.
@@ -1709,26 +1550,7 @@ func (aw *AggregatedWorker) Stop() {
 }
 
 func (aw *AggregatedWorker) stop() {
-	// Prevent pollers from re-polling before closing stopC. There is a race
-	// between stopC being closed and the ShutdownWorker RPC: a poll can
-	// complete naturally (e.g. long-poll timeout) right after stopC fires
-	// but before ShutdownWorker is sent, causing the poller to loop and
-	// re-poll.
-	if !util.IsInterfaceNil(aw.activityWorker) {
-		aw.activityWorker.worker.stopPolling()
-	}
-	if !util.IsInterfaceNil(aw.workflowWorker) {
-		aw.workflowWorker.worker.stopPolling()
-	}
-	if !util.IsInterfaceNil(aw.nexusWorker) {
-		aw.nexusWorker.worker.stopPolling()
-	}
-	if !util.IsInterfaceNil(aw.sessionWorker) {
-		aw.sessionWorker.stopPolling()
-	}
-
-	close(aw.stopC)
-
+	aw.sealResourceAdmission()
 	aw.sendShutdownWorkerRPC()
 
 	// Issue stop through plugins
@@ -1748,6 +1570,9 @@ func (aw *AggregatedWorker) stop() {
 		if !util.IsInterfaceNil(aw.nexusWorker) {
 			aw.nexusWorker.Stop()
 		}
+		// This worker owns the parent context even when activity workers
+		// are disabled. Cancel it only after launched children finish draining.
+		aw.executionParams.BackgroundContextCancel(ErrWorkerShutdown)
 	}
 	for i := len(aw.plugins) - 1; i >= 0; i-- {
 		plugin := aw.plugins[i]
@@ -1768,6 +1593,33 @@ func (aw *AggregatedWorker) stop() {
 	aw.logger.Info("Stopped Worker")
 }
 
+// When Stop begins, sealResourceAdmission waits for an SDK resource change to
+// finish, prevents another poll, and rejects later startup changes. Stop releases
+// this mutex before invoking cleanup callbacks or waiting for children.
+func (aw *AggregatedWorker) sealResourceAdmission() {
+	aw.lifecycleMu.Lock()
+	defer aw.lifecycleMu.Unlock()
+	// Prevent pollers from re-polling before closing stopC. There is a race
+	// between stopC being closed and the ShutdownWorker RPC: a poll can
+	// complete naturally (e.g. long-poll timeout) right after stopC fires
+	// but before ShutdownWorker is sent, causing the poller to loop and
+	// re-poll.
+	if !util.IsInterfaceNil(aw.activityWorker) {
+		aw.activityWorker.worker.stopPolling()
+	}
+	if !util.IsInterfaceNil(aw.workflowWorker) {
+		aw.workflowWorker.worker.stopPolling()
+	}
+	if !util.IsInterfaceNil(aw.nexusWorker) {
+		aw.nexusWorker.worker.stopPolling()
+	}
+	if !util.IsInterfaceNil(aw.sessionWorker) {
+		aw.sessionWorker.stopPolling()
+	}
+
+	close(aw.stopC)
+}
+
 // handleFatalError runs outside the polling goroutines that Stop waits for.
 // It delivers the recorded cause to the caller's hook, then joins cleanup.
 func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
@@ -1777,11 +1629,17 @@ func (aw *AggregatedWorker) handleFatalError(err error, hook func(error)) {
 	aw.Stop()
 }
 
-func (aw *AggregatedWorker) registerHeartbeatWorker() error {
+func (aw *AggregatedWorker) registerHeartbeatWorker(nsData namespaceData) error {
 	if aw.client.heartbeatManager == nil {
 		return nil
 	}
-	return aw.client.heartbeatManager.registerWorker(aw)
+	if !nsData.capabilities.GetWorkerHeartbeats() {
+		if aw.client.heartbeatManager.logger != nil {
+			aw.client.heartbeatManager.logger.Debug("Worker heartbeating configured, but server version does not support it.")
+		}
+		return nil
+	}
+	return aw.client.heartbeatManager.registerWorker(aw, nsData)
 }
 
 func (aw *AggregatedWorker) unregisterHeartbeatWorker() {

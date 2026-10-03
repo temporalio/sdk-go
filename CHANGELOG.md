@@ -45,6 +45,14 @@ to docs, or any other relevant information.
 
 ### Fixed
 
+- Worker shutdown now prevents late child launch, Nexus publication, eager
+  registration, and heartbeat membership while preserving synchronous startup
+  callbacks. `Run` joins SDK cleanup on startup failure and retains startup and
+  first fatal causes. It can consume an earlier admitted `Start` after `Stop`
+  without replay; a stopped worker with no attempt returns `ErrWorkerShutdown`.
+  Shutdown during an admitted startup returns that existing error when a
+  required step cannot proceed. Constructed but unlaunched workers cancel their
+  SDK contexts during cleanup. Public `Start` called after `Stop` still panics.
 - Fatal worker notification and automatic stopping now run outside polling
   goroutines, allowing pollers to retire without waiting for their own stop.
   Concurrent `Worker.Stop` calls join one complete SDK cleanup operation, and

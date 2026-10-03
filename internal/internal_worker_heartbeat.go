@@ -1,3 +1,6 @@
+// Each client shares one heartbeat loop across its workers in a namespace.
+// Registration inserts a worker before Stop prevents further startup, or returns
+// ErrWorkerShutdown. Removing the last member cancels and waits for that loop.
 package internal
 
 import (
@@ -94,24 +97,23 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 	return hw
 }
 
-// registerWorker registers a worker's heartbeat callback with the shared heartbeat worker for the namespace.
+// With namespace data already loaded by startup, registerWorker locks the manager
+// before the worker's startup mutex and inserts membership without caller hooks.
+// If Stop won, it returns ErrWorkerShutdown without inserting the worker.
 func (m *heartbeatManager) registerWorker(
 	worker *AggregatedWorker,
+	nsData namespaceData,
 ) error {
-	nsData, err := m.client.loadNamespaceData(worker.heartbeatMetrics)
-	if err != nil {
-		return fmt.Errorf("failed to get namespace capabilities: %w", err)
-	}
-	if !nsData.capabilities.GetWorkerHeartbeats() {
-		if m.logger != nil {
-			m.logger.Debug("Worker heartbeating configured, but server version does not support it.")
-		}
-		return nil
-	}
-
 	namespace := worker.executionParams.Namespace
 	m.workersMutex.Lock()
 	defer m.workersMutex.Unlock()
+	worker.lifecycleMu.Lock()
+	defer worker.lifecycleMu.Unlock()
+	select {
+	case <-worker.stopC:
+		return ErrWorkerShutdown
+	default:
+	}
 
 	hw := m.sharedNamespaceWorkerForLocked(namespace)
 	hw.pollerGroups.updateGroups(nsData.pollerGroupsInfo)
@@ -434,11 +436,9 @@ func (hw *sharedNamespaceWorker) handleWorkerCommandTask(task *workflowservice.P
 }
 
 func (hw *sharedNamespaceWorker) stop() {
+	hw.heartbeatCancel()
 	if !hw.started.CompareAndSwap(true, false) {
 		return
-	}
-	if hw.heartbeatCancel != nil {
-		hw.heartbeatCancel()
 	}
 
 	close(hw.stopC)

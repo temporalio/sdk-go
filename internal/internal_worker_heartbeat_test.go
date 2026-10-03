@@ -1,3 +1,6 @@
+// These tests call worker heartbeat and command methods with typed service
+// mocks. They check request data and cancellation of real heartbeat loops;
+// startup supplies the namespace snapshot used for membership registration.
 package internal
 
 import (
@@ -166,11 +169,13 @@ func TestWorkerCommandFirstPollUsesDescribeNamespacePollerGroups(t *testing.T) {
 	defer hw.heartbeatCancel()
 	hw.started.Store(true)
 	worker := NewAggregatedWorker(client, "worker-queue", WorkerOptions{})
-	require.NoError(t, client.heartbeatManager.registerWorker(worker))
+	nsData, err := client.loadNamespaceData(worker.heartbeatMetrics)
+	require.NoError(t, err)
+	require.NoError(t, client.heartbeatManager.registerWorker(worker, nsData))
 
 	lease := hw.pollerGroups.reserve()
 	defer lease.release()
-	_, err := hw.pollWorkerCommand(lease)
+	_, err = hw.pollWorkerCommand(lease)
 	require.NoError(t, err)
 }
 
@@ -611,7 +616,7 @@ func TestWorkerHeartbeatSendsImmediatelyWithIdentity(t *testing.T) {
 			capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
 		}
 		worker := newHeartbeatTestWorker(t, wfClient)
-		if err := worker.registerHeartbeatWorker(); err != nil {
+		if err := worker.registerHeartbeatWorker(*wfClient.namespaceData); err != nil {
 			t.Fatal(err)
 		}
 		defer worker.unregisterHeartbeatWorker()
@@ -695,7 +700,7 @@ func TestWorkerHeartbeatEnvironmentSentUntilAccepted(t *testing.T) {
 			capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
 		}
 		worker := newHeartbeatTestWorker(t, wfClient)
-		if err := worker.registerHeartbeatWorker(); err != nil {
+		if err := worker.registerHeartbeatWorker(*wfClient.namespaceData); err != nil {
 			t.Fatal(err)
 		}
 		defer worker.unregisterHeartbeatWorker()
@@ -745,7 +750,7 @@ func TestWorkerHeartbeatEnvironmentDisabled(t *testing.T) {
 			capabilities: &namespacepb.NamespaceInfo_Capabilities{WorkerHeartbeats: true},
 		}
 		worker := newHeartbeatTestWorker(t, wfClient)
-		if err := worker.registerHeartbeatWorker(); err != nil {
+		if err := worker.registerHeartbeatWorker(*wfClient.namespaceData); err != nil {
 			t.Fatal(err)
 		}
 		defer worker.unregisterHeartbeatWorker()

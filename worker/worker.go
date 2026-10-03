@@ -30,6 +30,11 @@ type (
 		//
 		// Note, this will only return errors on start. To catch errors during run,
 		// use Run() instead or set Options.OnFatalError.
+		// If Stop prevents a required startup step after this call was accepted,
+		// Start returns an error containing ErrWorkerShutdown. Calling Start
+		// after Stop has prevented further startup retains the stopped-worker
+		// panic. A startup error does not automatically clean up; the Start
+		// caller must still Stop.
 		Start() error
 
 		// Run the worker in a blocking fashion. Stop the worker when interruptCh receives signal.
@@ -38,18 +43,26 @@ type (
 		// Pass any other `<-chan interface{}` and Run will wait for signal from that channel.
 		// Returns error if the worker fails to start or there is a fatal error
 		// during execution, including when interruption races with that error.
-		// After a successful start, Run waits for SDK stop cleanup before returning.
+		// Every normal return waits for SDK cleanup, including startup failure.
+		// Startup and first fatal errors are both retained through errors.Is/As.
+		// If Start was already accepted, Run waits for its saved result without
+		// starting again, even after Stop.
+		// A stopped worker with no startup attempt returns ErrWorkerShutdown.
 		//
-		// Users are encouraged to use Start() instead of this call if they plan to
-		// manually Stop(). Otherwise a race can occur if shutdown occurs before the
-		// worker is started. This Run() call is only best if shutdown is initiated
-		// via the interrupt channel.
+		// Stop may be called concurrently with Run. If it prevents startup from
+		// completing, Run returns ErrWorkerShutdown and any first fatal error
+		// after SDK cleanup finishes.
 		Run(interruptCh <-chan any) error
 
 		// Stop the worker and wait for SDK stop cleanup to return.
 		//
 		// Concurrent calls wait for the same cleanup operation. Stop does not
 		// wait for Options.OnFatalError; that callback may itself call Stop.
+		// Stop prevents later SDK resource changes and cleans every child it
+		// owns, including a constructed child that never launched. It does not
+		// wait for synchronous startup hooks or StartWorker plugins; callers
+		// must wait for their actual Start or Run call to return before closing
+		// clients those hooks use.
 		Stop()
 	}
 

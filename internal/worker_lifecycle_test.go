@@ -432,13 +432,36 @@ func TestWorkerLifecycleStartFailureRetainsOriginalCause(t *testing.T) {
 		cause := serviceerror.NewNamespaceNotFound("startup-namespace")
 		opts := lifecycleOptions(false, "activity")
 		plugin := &startFailWorkerPlugin{startErr: cause}
-		opts.Plugins = []WorkerPlugin{plugin}
+		stopPlugin := &lifecycleStopPlugin{
+			afterNext: make(chan struct{}),
+			release:   make(chan struct{}),
+		}
+		releasePlugin := sync.OnceFunc(func() { close(stopPlugin.release) })
+		defer releasePlugin()
+		opts.Plugins = []WorkerPlugin{plugin, stopPlugin}
 		f := newLifecycleWorker(t, opts, nil)
-		assert.Same(t, cause, f.worker.Run(nil))
-		assert.EqualValues(t, 0, f.shutdownCalls.Load())
+		result := lifecycleRunAsync(f.worker, nil)
+		<-f.shutdownEntered
+		synctest.Wait()
+		select {
+		case err := <-result:
+			t.Fatalf("Run returned its startup error before shutdown RPC finished: %v", err)
+		default:
+		}
 		f.releaseShutdown()
+		<-stopPlugin.afterNext
+		synctest.Wait()
+		select {
+		case err := <-result:
+			t.Fatalf("Run returned its startup error before stop plugin finished: %v", err)
+		default:
+		}
+		releasePlugin()
+		assert.Same(t, cause, <-result)
 		f.worker.Stop()
+		assert.EqualValues(t, 1, f.shutdownCalls.Load())
 		assert.EqualValues(t, 1, plugin.stopCalls.Load())
+		assert.EqualValues(t, 1, stopPlugin.calls.Load())
 	})
 }
 
