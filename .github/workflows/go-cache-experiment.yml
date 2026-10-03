@@ -1,0 +1,311 @@
+name: Go cache experiment
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  unit:
+    if: github.head_ref == 'codex/ci-cache-experiment'
+    name: unit (${{ matrix.runner }}, ${{ matrix.cache }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, macos-15-intel, windows-latest]
+        cache: [current, cloudx, split]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Record job start
+        shell: bash
+        run: echo "CACHE_JOB_START_MS=$(node -e 'process.stdout.write(String(Date.now()))')" >> "$GITHUB_ENV"
+
+      - name: Setup current cache
+        if: matrix.cache == 'current'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache-dependency-path: '**/go.sum'
+
+      - name: Setup CloudX cache
+        if: matrix.cache == 'cloudx'
+        uses: cloudx-io/setup-go@87999fd1dd2296a747db09d0ff1eb294ee05758a
+        with:
+          go-version: stable
+          cache-key-prefix: experiment-unit
+
+      - name: Setup split cache
+        if: matrix.cache == 'split'
+        id: split-go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Resolve split cache paths
+        if: matrix.cache == 'split'
+        id: split-paths
+        shell: bash
+        run: |
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore split module cache
+        if: matrix.cache == 'split'
+        id: split-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.split-paths.outputs.gomodcache }}
+          key: experiment-mod-${{ runner.os }}-${{ runner.arch }}-${{ steps.split-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+
+      - name: Restore split build cache
+        if: matrix.cache == 'split'
+        id: split-build
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.split-paths.outputs.gocache }}
+          key: experiment-build-${{ runner.os }}-${{ runner.arch }}-unit-${{ steps.split-go.outputs.go-version }}-${{ github.head_ref }}-${{ hashFiles('**/go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            experiment-build-${{ runner.os }}-${{ runner.arch }}-unit-${{ steps.split-go.outputs.go-version }}-${{ github.head_ref }}-${{ hashFiles('**/go.sum') }}-
+            experiment-build-${{ runner.os }}-${{ runner.arch }}-unit-${{ steps.split-go.outputs.go-version }}-${{ github.event.repository.default_branch }}-${{ hashFiles('**/go.sum') }}-
+
+      - name: Compile unit tests
+        run: go run . unit-test -run '^$'
+        working-directory: ./internal/cmd/build
+        env:
+          TEST_LOG_ARTIFACT_NAME: experiment-unit-${{ matrix.cache }}-${{ runner.os }}
+
+      - name: Run unit tests
+        run: go run . unit-test
+        working-directory: ./internal/cmd/build
+        env:
+          TEST_LOG_ARTIFACT_NAME: experiment-unit-${{ matrix.cache }}-${{ runner.os }}
+
+      - name: Measure Go caches
+        if: always()
+        shell: bash
+        run: node .github/scripts/go-cache-stats.js "$(go env GOCACHE)" "$(go env GOMODCACHE)"
+
+      - name: Trim split build cache
+        if: success() && matrix.cache == 'split'
+        shell: bash
+        run: node .github/scripts/trim-go-cache.js "$(go env GOCACHE)"
+
+      - name: Save split module cache
+        if: success() && matrix.cache == 'split' && steps.split-modules.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.split-paths.outputs.gomodcache }}
+          key: ${{ steps.split-modules.outputs.cache-primary-key }}
+
+      - name: Save split build cache
+        if: success() && matrix.cache == 'split'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.split-paths.outputs.gocache }}
+          key: experiment-build-${{ runner.os }}-${{ runner.arch }}-unit-${{ steps.split-go.outputs.go-version }}-${{ github.head_ref }}-${{ hashFiles('**/go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  integration:
+    if: github.head_ref == 'codex/ci-cache-experiment'
+    name: integration (ubuntu-latest, ${{ matrix.cache }})
+    strategy:
+      fail-fast: false
+      matrix:
+        cache: [current, cloudx, split]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Record job start
+        shell: bash
+        run: echo "CACHE_JOB_START_MS=$(node -e 'process.stdout.write(String(Date.now()))')" >> "$GITHUB_ENV"
+
+      - name: Setup current cache
+        if: matrix.cache == 'current'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+
+      - name: Setup CloudX cache
+        if: matrix.cache == 'cloudx'
+        uses: cloudx-io/setup-go@87999fd1dd2296a747db09d0ff1eb294ee05758a
+        with:
+          go-version: stable
+          cache-key-prefix: experiment-integration
+
+      - name: Setup split cache
+        if: matrix.cache == 'split'
+        id: split-go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Resolve split cache paths
+        if: matrix.cache == 'split'
+        id: split-paths
+        shell: bash
+        run: |
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore split module cache
+        if: matrix.cache == 'split'
+        id: split-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.split-paths.outputs.gomodcache }}
+          key: experiment-mod-${{ runner.os }}-${{ runner.arch }}-${{ steps.split-go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+
+      - name: Restore split build cache
+        if: matrix.cache == 'split'
+        id: split-build
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.split-paths.outputs.gocache }}
+          key: experiment-build-${{ runner.os }}-${{ runner.arch }}-integration-${{ steps.split-go.outputs.go-version }}-${{ github.head_ref }}-${{ hashFiles('**/go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            experiment-build-${{ runner.os }}-${{ runner.arch }}-integration-${{ steps.split-go.outputs.go-version }}-${{ github.head_ref }}-${{ hashFiles('**/go.sum') }}-
+            experiment-build-${{ runner.os }}-${{ runner.arch }}-integration-${{ steps.split-go.outputs.go-version }}-${{ github.event.repository.default_branch }}-${{ hashFiles('**/go.sum') }}-
+
+      - name: Compile integration tests
+        run: go test -json -count 1 -race -run '^$' ./...
+        working-directory: ./test
+
+      - name: Run integration tests
+        run: go run . integration-test -dev-server
+        working-directory: ./internal/cmd/build
+        env:
+          TEST_LOG_ARTIFACT_NAME: experiment-integration-${{ matrix.cache }}
+
+      - name: Measure Go caches
+        if: always()
+        shell: bash
+        run: node .github/scripts/go-cache-stats.js "$(go env GOCACHE)" "$(go env GOMODCACHE)"
+
+      - name: Trim split build cache
+        if: success() && matrix.cache == 'split'
+        shell: bash
+        run: node .github/scripts/trim-go-cache.js "$(go env GOCACHE)"
+
+      - name: Save split module cache
+        if: success() && matrix.cache == 'split' && steps.split-modules.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.split-paths.outputs.gomodcache }}
+          key: ${{ steps.split-modules.outputs.cache-primary-key }}
+
+      - name: Save split build cache
+        if: success() && matrix.cache == 'split'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.split-paths.outputs.gocache }}
+          key: experiment-build-${{ runner.os }}-${{ runner.arch }}-integration-${{ steps.split-go.outputs.go-version }}-${{ github.head_ref }}-${{ hashFiles('**/go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  prebuild:
+    if: github.head_ref == 'codex/ci-cache-experiment'
+    name: prebuild (ubuntu-latest)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Resolve cache paths
+        id: paths
+        shell: bash
+        run: |
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore module cache
+        id: modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.paths.outputs.gomodcache }}
+          key: experiment-mod-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+
+      - name: Compile unit tests
+        run: go run . unit-test -run '^$'
+        working-directory: ./internal/cmd/build
+        env:
+          TEST_LOG_ARTIFACT_NAME: experiment-prebuild
+
+      - name: Save module cache
+        if: success() && steps.modules.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.paths.outputs.gomodcache }}
+          key: ${{ steps.modules.outputs.cache-primary-key }}
+
+      - name: Save commit build cache
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.paths.outputs.gocache }}
+          key: experiment-prebuild-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.sha }}
+
+  prebuild-unit:
+    if: github.head_ref == 'codex/ci-cache-experiment'
+    name: prebuild consumer (ubuntu-latest)
+    needs: prebuild
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          submodules: recursive
+
+      - name: Setup Go
+        id: go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+          cache: false
+
+      - name: Resolve cache paths
+        id: paths
+        shell: bash
+        run: |
+          echo "gocache=$(go env GOCACHE)" >> "$GITHUB_OUTPUT"
+          echo "gomodcache=$(go env GOMODCACHE)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore module cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.paths.outputs.gomodcache }}
+          key: experiment-mod-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ hashFiles('**/go.sum') }}
+
+      - name: Restore commit build cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.0.3
+        with:
+          path: ${{ steps.paths.outputs.gocache }}
+          key: experiment-prebuild-${{ runner.os }}-${{ runner.arch }}-${{ steps.go.outputs.go-version }}-${{ github.sha }}
+
+      - name: Run unit tests
+        run: go run . unit-test
+        working-directory: ./internal/cmd/build
+        env:
+          TEST_LOG_ARTIFACT_NAME: experiment-prebuild-consumer
+
+      - name: Measure Go caches
+        if: always()
+        shell: bash
+        run: node .github/scripts/go-cache-stats.js "$(go env GOCACHE)" "$(go env GOMODCACHE)"
