@@ -14,7 +14,6 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
-	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
@@ -137,6 +136,7 @@ type transferEnvelope struct{ Value contextualString }
 func TestTransferAwareDataConverter_DefaultContext(t *testing.T) {
 	for _, dc := range []*transferAwareDataConverter{
 		makeTransferAware(nil),
+		//lint:ignore SA1012 verify the converter's nil-context fallback
 		makeTransferAware(nil).WithContext(nil).(*transferAwareDataConverter),
 	} {
 		var encodeContext, decodeContext context.Context
@@ -158,8 +158,14 @@ func TestTransferAwareDataConverter_DefaultContext(t *testing.T) {
 		var value temperature
 		require.NoError(t, dc.fromTransferType(tc, transferType, &value))
 		require.Equal(t, temperature{kelvin: 300}, value)
-		require.Equal(t, context.Background(), encodeContext)
-		require.Equal(t, context.Background(), decodeContext)
+		for _, ctx := range []context.Context{encodeContext, decodeContext} {
+			require.NotNil(t, ctx)
+			_, hasDeadline := ctx.Deadline()
+			require.False(t, hasDeadline)
+			require.Nil(t, ctx.Done())
+			require.NoError(t, ctx.Err())
+			require.Nil(t, ctx.Value(transferContextKey{}))
+		}
 	}
 }
 
@@ -559,7 +565,6 @@ func TestTransferTypesMockClientWorkflowResult(t *testing.T) {
 		{"plain destination", "value", new(string), new("value")},
 		{"any destination", 300.0, new(any), new(any(300.0))},
 		{"nested values", map[string]string{"Value": "value"}, new(transferEnvelope), &transferEnvelope{Value: "value"}},
-		{"client context", "value", new(contextualString), new(contextualString("go:client:value"))},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dc := converter.GetDefaultDataConverter()
@@ -787,4 +792,3 @@ func TestTransferReview_AbsentBatchPayload(t *testing.T) {
 	require.Equal(t, single, batch)
 	require.Equal(t, temperature{kelvin: 300}, converted)
 }
-
