@@ -23,24 +23,46 @@ to docs, or any other relevant information.
 ### Added
 
 - Added experimental `workflow.NewTransferTypeConverter` for transfer conversions that do not depend on a context.
+- Added autoscaling support for server poller groups, with per-group coverage and
+  sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
+  behaves as before when no poller groups are configured.
 - `TestWorkflowEnvironment` and `TestActivityEnvironment` now run worker plugins set through
   `SetWorkerOptions(worker.Options{Plugins: ...})`, which were previously ignored. Once plugins are
   set, `SetWorkerOptions` may not be called again on that environment, and what a plugin registers
   in `StartWorker` is undone at `StopWorker`.
+- `temporalnexus.ConvertNexusLinkToLinkWorkflow`, the decoding counterpart of
+  `ConvertWorkflowLinkToNexusLink`.
 
 ### Changed
 
 - Task queue priority is no longer marked as experimental.
+- Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus
+  request are converted rather than dropped, and `temporalnexus.ConvertCommonLinkToNexusLink`
+  converts NexusOperation and Activity links rather than returning an empty `nexus.Link`.
 
 ### Deprecated
 
 ### :boom: Breaking Changes
 
+- Bulk sticky workflow cache cleanup, including `PurgeStickyWorkflowCache` and final-worker
+  shutdown, no longer increments `temporal_sticky_cache_total_forced_eviction`. This aligns bulk
+  cleanup with Java and Core-based SDKs. Qualifying capacity and other per-workflow removals remain
+  counted, but dashboards may report fewer forced evictions.
+
 ### Fixed
 
+- Child context cancellation now follows creation order by default.
+- Legacy query failure responses (`RespondQueryTaskCompletedRequest`) now set
+  `WorkflowTaskFailedCause` for workflow task failures: `PAYLOADS_TOO_LARGE` for oversized payloads,
+  `NON_DETERMINISTIC_ERROR` for illegal state machine panics, and
+  `WORKFLOW_WORKER_UNHANDLED_FAILURE` when the workflow panicked.
+- Autoscaling pollers now honor configured bounds at startup, preventing excess polls and workflow
+  polling delays.
 - Worker plugin registry callbacks: `RegisterDynamicWorkflow` now passes the real options to
   `OnRegisterDynamicWorkflow`, and `RegisterDynamicActivity` no longer panics when a plugin set
   `OnRegisterActivity` but not `OnRegisterDynamicActivity`.
+- Stopped workers now release sticky workflow cache ownership immediately. When the final worker
+  stops, cached workflow state is cleared without waiting for garbage collection.
 
 ### Security
 

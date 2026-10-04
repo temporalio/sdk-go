@@ -72,6 +72,7 @@ func (ts *WorkerHeartbeatTestSuite) TearDownTest() {
 		ts.worker.Stop()
 		ts.worker = nil
 	}
+	worker.SetStickyWorkflowCacheSize(ts.config.maxWorkflowCacheSize)
 }
 
 // assertRecentTimestamp asserts the timestamp is within maxAge of now

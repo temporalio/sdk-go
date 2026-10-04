@@ -630,10 +630,8 @@ func (w *workflowExecutionContextImpl) Unlock(err error) {
 		// TODO: in case of closed, it assumes the close command always succeed. need server side change to return
 		// error to indicate the close failure case. This should be a rare case. For now, always remove the cache, and
 		// if the close command failed, the next command will have to rebuild the state.
-		if w.wth.cache.getWorkflowCache().Exist(w.workflowInfo.WorkflowExecution.RunID) {
-			w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID)
-			w.cached = false
-		}
+		w.wth.cache.removeWorkflowContext(w.workflowInfo.WorkflowExecution.RunID, w)
+		w.cached = false
 		// Clear the state so other tasks waiting on the context know it should be discarded.
 		w.clearState()
 	} else if !w.cached {
@@ -656,14 +654,12 @@ func (w *workflowExecutionContextImpl) completeWorkflow(result *commonpb.Payload
 	w.err = err
 }
 
-func (w *workflowExecutionContextImpl) onEviction() {
+func (w *workflowExecutionContextImpl) onEviction(reason workflowCacheRemovalReason) {
 	// onEviction is run by LRU cache's removeFunc in separate goroutinue
 	w.mutex.Lock()
 
-	// Emit force eviction metrics.
-	// This metrics indicates too many concurrent running workflows to fit in sticky cache.
-	// Eviction on error or on workflow complete is normal and expected.
-	if w.err == nil && !w.isWorkflowCompleted {
+	// Bulk cache cleanup is not an individual forced eviction.
+	if reason != workflowCacheRemovalReasonBulk && w.err == nil && !w.isWorkflowCompleted {
 		w.wth.metricsHandler.Counter(metrics.StickyCacheTotalForcedEviction).Inc(1)
 	}
 
@@ -838,7 +834,7 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 				} else {
 					wth.logger.Debug("Cached state started on different worker, creating new context")
 				}
-				wth.cache.removeWorkflowContext(runID)
+				wth.cache.removeWorkflowContext(runID, workflowContext)
 				workflowContext.clearState()
 			}
 			workflowContext.Unlock(err)
@@ -861,9 +857,17 @@ func (wth *workflowTaskHandlerImpl) GetOrCreateWorkflowContext(
 		}
 
 		if wth.cache.MaxWorkflowCacheSize() > 0 && task.Query == nil {
-			workflowContext, _ = wth.cache.putWorkflowContext(runID, workflowContext)
+			workflowContext, err = wth.cache.putWorkflowContext(runID, workflowContext)
+			cacheReleased := errors.Is(err, errWorkerCacheReleased)
+			if cacheReleased {
+				err = nil
+			} else if err != nil {
+				return
+			}
 			workflowContext.Lock()
-			workflowContext.cached = true
+			// A size-1 cache has zero LRU capacity and may evict the new context immediately.
+			workflowContext.cached = !cacheReleased &&
+				wth.cache.getWorkflowContext(runID) == workflowContext
 		} else {
 			workflowContext.Lock()
 		}
@@ -1854,8 +1858,9 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 	// for query task
 	if task.Query != nil {
 		queryCompletedRequest := &workflowservice.RespondQueryTaskCompletedRequest{
-			TaskToken: task.TaskToken,
-			Namespace: wth.namespace,
+			TaskToken:     task.TaskToken,
+			Namespace:     wth.namespace,
+			PollerGroupId: task.GetPollerGroupId(),
 		}
 		var panicErr *PanicError
 		if errors.As(workflowContext.err, &panicErr) {
@@ -1999,6 +2004,7 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 		BinaryChecksum:   wth.workerBuildID,
 		QueryResults:     queryResults,
 		Namespace:        wth.namespace,
+		ResourceId:       getWorkflowResourceId(task.WorkflowExecution.GetWorkflowId()),
 		MeteringMetadata: &commonpb.MeteringMetadata{NonfirstLocalActivityExecutionAttempts: nonfirstLAAttempts},
 		SdkMetadata: &sdk.WorkflowTaskCompletedMetadata{
 			LangUsedFlags: langUsedFlags,
@@ -2249,10 +2255,11 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 	defer cancel()
 
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
-		TaskToken: i.taskToken,
-		Details:   details,
-		Identity:  i.identity,
-		Namespace: i.namespace,
+		TaskToken:  i.taskToken,
+		Details:    details,
+		Identity:   i.identity,
+		Namespace:  i.namespace,
+		ResourceId: getActivityResourceIdFromCtx(ctx),
 	}
 	var err error
 	if visitErr := visitProtoPayloads(ctx, i.outboundPayloadVisitor, request, 0); visitErr != nil {
@@ -2260,10 +2267,11 @@ func (i *temporalInvoker) internalHeartBeat(ctx context.Context, details *common
 		// waiting for the heartbeat timeout. Errors are ignored — if the RPC fails the
 		// activity will still be timed out by the server.
 		failReq := &workflowservice.RespondActivityTaskFailedRequest{
-			TaskToken: i.taskToken,
-			Failure:   i.failureConverter.ErrorToFailure(visitErr),
-			Identity:  i.identity,
-			Namespace: i.namespace,
+			TaskToken:  i.taskToken,
+			Failure:    i.failureConverter.ErrorToFailure(visitErr),
+			Identity:   i.identity,
+			Namespace:  i.namespace,
+			ResourceId: getActivityResourceIdFromCtx(ctx),
 		}
 		failCtx, failCancel := context.WithTimeout(context.Background(), recordTimeout)
 		defer failCancel()
@@ -2433,7 +2441,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 		metricsHandler.Counter(metrics.UnregisteredActivityInvocationCounter).Inc(1)
 		return activityTaskResult{response: convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil,
 			NewActivityNotRegisteredError(activityType, ath.getRegisteredActivityNames()),
-			dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)}, nil
+			dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+			t.WorkflowExecution.GetWorkflowId(), t.ActivityId)}, nil
 	}
 
 	// panic handler
@@ -2452,7 +2461,8 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			panicErr := newPanicError(p, st)
 			result = activityTaskResult{
 				response: convertActivityResultToRespondRequest(ath.identity, t.TaskToken, nil, panicErr,
-					dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions),
+					dataConverter, failureConverter, ath.namespace, false, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+					t.WorkflowExecution.GetWorkflowId(), t.ActivityId),
 			}
 		}
 	}()
@@ -2506,9 +2516,9 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			tagError, err,
 		)
 	}
-
 	response := convertActivityResultToRespondRequest(ath.identity, t.TaskToken, output, err,
-		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions)
+		dataConverter, failureConverter, ath.namespace, isActivityCanceled, ath.versionStamp, ath.deployment, ath.workerDeploymentOptions,
+		t.WorkflowExecution.GetWorkflowId(), t.ActivityId)
 
 	if msg, ok := response.(proto.Message); ok {
 		var storageTarget converter.StorageDriverTargetInfo
@@ -2572,6 +2582,7 @@ func (ath *activityTaskHandlerImpl) visitorErrorToActivityFailure(msgPrefix stri
 		//lint:ignore SA1019 support legacy worker deployment APIs
 		Deployment:        ath.deployment,
 		DeploymentOptions: ath.workerDeploymentOptions,
+		ResourceId:        getActivityResourceId(t.WorkflowExecution.GetWorkflowId(), t.ActivityId),
 	}
 }
 
@@ -2630,6 +2641,14 @@ func createNewCommandWithMetadata(commandType enumspb.CommandType, metadata *sdk
 		CommandType:  commandType,
 		UserMetadata: metadata,
 	}
+}
+
+func getActivityResourceIdFromCtx(ctx context.Context) string {
+	env := getActivityEnvironmentFromCtx(ctx)
+	if env == nil {
+		return ""
+	}
+	return getActivityResourceId(env.workflowExecution.ID, env.activityID)
 }
 
 func recordActivityHeartbeat(ctx context.Context, service workflowservice.WorkflowServiceClient, metricsHandler metrics.Handler,
