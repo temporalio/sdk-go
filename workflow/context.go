@@ -76,7 +76,16 @@ func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 // into a serializable representation, called a transfer value. The converter will also
 // be used to turn the transfer value back into the original value after deserialization.
 //
-// This method should be cheap and fast; the SDK may call this method frequently.
+// TransferTypeConverter must be implemented with a value receiver, without
+// inheriting it through embedding. The method must be pure and safe to call
+// concurrently. Its result is cached by concrete model type, so it must not
+// depend on state in the value.
+//
+// Transfer conversion applies only to top-level payload values. For a
+// non-pointer model type T, encode T or a non-nil *T and decode into a non-nil
+// *T. Workflow and activity parameters must use T rather than *T. Nil model
+// pointers and decoding into **T are unsupported; represent optional values
+// explicitly in the model or transfer type instead.
 //
 // NOTE: Experimental.
 type ValueWithTransferTypeConverter = internal.ValueWithTransferTypeConverter
@@ -89,6 +98,9 @@ type TransferTypeConverter = internal.TransferTypeConverter
 
 // NewTransferTypeConverter builds a [TransferTypeConverter] that can map
 // something of type ModelType into a serializable "transfer value", and back.
+// Callbacks must be pure, safe to call concurrently, and produce replay-stable
+// output. They receive non-nil pointers to values. Encoding callbacks must
+// return a non-nil transfer pointer on success.
 // Returns an error if ModelType or TransferType is a pointer type.
 //
 // NOTE: Experimental.

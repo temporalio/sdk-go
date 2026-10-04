@@ -33,6 +33,11 @@ var DefaultInternalDataConverter *transferAwareDataConverter = makeTransferAware
 // receiver, not a pointer receiver. Inheriting this method via embedding
 // is not supported.
 //
+// Transfer conversion applies only to top-level payload values. For a
+// non-pointer model type T, encode T or a non-nil *T and decode into a non-nil
+// *T. Workflow and activity parameters must use T rather than *T. Nil model
+// pointers and decoding into **T are unsupported.
+//
 // NOTE: Experimental.
 //
 // Exposed as: [go.temporal.io/sdk/workflow.ValueWithTransferTypeConverter]
@@ -69,6 +74,8 @@ type TransferTypeConverter interface {
 // NewTransferTypeConverter builds a transfer type converter that can map
 // Model values into Transfer values and back. The callbacks should be
 // pure, threadsafe, and produce replay-stable output.
+// The callbacks receive non-nil pointers to values. Encoding callbacks must
+// return a non-nil transfer pointer on success.
 //
 // Returns an error if Model or Transfer is a pointer type.
 //
@@ -291,7 +298,6 @@ func (dc *transferAwareDataConverter) FromPayload(payload *commonpb.Payload, val
 	if payload == nil {
 		return dc.parent.FromPayload(payload, valuePtr)
 	}
-	valuePtr = adaptTransferDecodePointer(valuePtr)
 	convertible, ok := valuePtr.(ValueWithTransferTypeConverter)
 	if !ok {
 		return dc.parent.FromPayload(payload, valuePtr)
@@ -315,11 +321,14 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 	transferTypePtrs := valuePtrs
 	copied := false
 
-	for i := range payloads.GetPayloads() {
+	for i, payload := range payloads.GetPayloads() {
 		if i >= len(valuePtrs) {
 			break
 		}
-		valuePtr := adaptTransferDecodePointer(valuePtrs[i])
+		if payload == nil {
+			continue
+		}
+		valuePtr := valuePtrs[i]
 		convertible, ok := valuePtr.(ValueWithTransferTypeConverter)
 		if !ok {
 			continue
@@ -342,11 +351,14 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 	if !copied {
 		return nil
 	}
-	for i := range payloads.GetPayloads() {
+	for i, payload := range payloads.GetPayloads() {
 		if i >= len(valuePtrs) {
 			break
 		}
-		valuePtr := adaptTransferDecodePointer(valuePtrs[i])
+		if payload == nil {
+			continue
+		}
+		valuePtr := valuePtrs[i]
 		convertible, ok := valuePtr.(ValueWithTransferTypeConverter)
 		if !ok {
 			continue
@@ -360,33 +372,6 @@ func (dc *transferAwareDataConverter) FromPayloads(payloads *commonpb.Payloads, 
 		}
 	}
 	return nil
-}
-
-// adaptTransferDecodePointer checks whether valuePtr is a non-nil **T,
-// where *T implements TransferTypeConvertible. If so it returns the
-// inner *T, allocating new(T) and updating *valuePtr if that pointer is nil.
-// All other inputs are returned unchanged.
-//
-// This is useful when decoding into a pointer, e.g.
-//
-//	var x *MyModel
-//	dc.FromPayload(payload, &x)
-//
-// If x is nil, we want to allocate a new MyModel and decode into it.
-func adaptTransferDecodePointer(valuePtr any) any {
-	argument := reflect.ValueOf(valuePtr)
-	if argument.Kind() != reflect.Pointer || argument.IsNil() {
-		return valuePtr
-	}
-	modelPtr := argument.Elem()
-	if modelPtr.Kind() != reflect.Pointer ||
-		!modelPtr.Type().Implements(reflect.TypeFor[ValueWithTransferTypeConverter]()) {
-		return valuePtr
-	}
-	if modelPtr.IsNil() {
-		modelPtr.Set(reflect.New(modelPtr.Type().Elem()))
-	}
-	return modelPtr.Interface()
 }
 
 func (dc *transferAwareDataConverter) ToString(input *commonpb.Payload) string {

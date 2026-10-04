@@ -15,6 +15,7 @@ import (
 	commonpb "go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	historypb "go.temporal.io/api/history/v1"
+	updatepb "go.temporal.io/api/update/v1"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/api/workflowservicemock/v1"
 	"go.temporal.io/sdk/converter"
@@ -22,9 +23,9 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-func TestTransferAwareDataConverter_NilPointerInput(t *testing.T) {
+func TestTransferAwareDataConverter_PlainNilPointerInput(t *testing.T) {
 	parent := converter.GetDefaultDataConverter()
-	var input *temperature
+	var input *string
 	want, err := parent.ToPayload(input)
 	require.NoError(t, err)
 
@@ -206,79 +207,44 @@ func TestTransferAwareDataConverter_PayloadRoundTrip(t *testing.T) {
 
 func TestTransferAwareDataConverter_PointerValueRoundTrip(t *testing.T) {
 	t.Parallel()
-	dc := DefaultInternalDataConverter
-	want := &temperature{kelvin: 300}
-
-	require.Implements(t, (*ValueWithTransferTypeConverter)(nil), want)
-	payload, err := dc.ToPayload(want)
-	require.NoError(t, err)
-
-	var got temperature
-	require.NoError(t, dc.FromPayload(payload, &got))
-	require.Equal(t, *want, got)
+	for _, compressed := range []bool{false, true} {
+		parent := converter.GetDefaultDataConverter()
+		if compressed {
+			parent = converter.NewCodecDataConverter(parent, converter.NewZlibCodec(converter.ZlibCodecOptions{AlwaysEncode: true}))
+		}
+		for _, batch := range []bool{false, true} {
+			t.Run(fmt.Sprintf("compressed=%v/batch=%v", compressed, batch), func(t *testing.T) {
+				dc := makeTransferAware(parent)
+				want := &temperature{kelvin: 300}
+				got := temperature{kelvin: 99}
+				if batch {
+					payloads, err := dc.ToPayloads(want)
+					require.NoError(t, err)
+					require.NoError(t, dc.FromPayloads(payloads, &got))
+				} else {
+					payload, err := dc.ToPayload(want)
+					require.NoError(t, err)
+					require.NoError(t, dc.FromPayload(payload, &got))
+				}
+				require.Equal(t, *want, got)
+			})
+		}
+	}
 }
 
-func TestTransferAwareDataConverter_DoublePointerRoundTrip(t *testing.T) {
-	dc := makeTransferAware(converter.GetDefaultDataConverter())
-	in := &temperature{kelvin: 300}
-	payloads, err := dc.ToPayloads(in)
-	require.NoError(t, err)
-
-	var out *temperature
-	require.NoError(t, dc.FromPayloads(payloads, &out))
-	require.Equal(t, in, out)
-}
-
-func TestTransferAwareDataConverter_DoublePointerDecoding(t *testing.T) {
-	t.Parallel()
+func TestTransferAwareDataConverter_PlainPointerDecoding(t *testing.T) {
 	for _, batch := range []bool{false, true} {
 		t.Run(fmt.Sprintf("batch=%v", batch), func(t *testing.T) {
-			decode := func(dc *transferAwareDataConverter, payload *commonpb.Payload, destination any) error {
-				if batch {
-					return dc.FromPayloads(&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}, destination)
-				}
-				return dc.FromPayload(payload, destination)
+			dc := makeTransferAware(nil)
+			payload, err := dc.ToPayload("plain")
+			require.NoError(t, err)
+			var out *string
+			if batch {
+				require.NoError(t, dc.FromPayloads(&commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}, &out))
+			} else {
+				require.NoError(t, dc.FromPayload(payload, &out))
 			}
-			for _, populated := range []bool{false, true} {
-				t.Run(fmt.Sprintf("populated=%v", populated), func(t *testing.T) {
-					parent := converter.GetDefaultDataConverter()
-					payload, err := parent.ToPayload(300.0)
-					require.NoError(t, err)
-					var out *temperature
-					if populated {
-						out = &temperature{kelvin: 99}
-					}
-					original := out
-					require.NoError(t, decode(makeTransferAware(parent), payload, &out))
-					require.Equal(t, &temperature{kelvin: 300}, out)
-					if populated {
-						require.Same(t, original, out)
-					}
-				})
-			}
-			t.Run("plain pointer", func(t *testing.T) {
-				parent := converter.GetDefaultDataConverter()
-				payload, err := parent.ToPayload("plain")
-				require.NoError(t, err)
-				var out *string
-				require.NoError(t, decode(makeTransferAware(parent), payload, &out))
-				require.Equal(t, new("plain"), out)
-			})
-			t.Run("nil transfer value", func(t *testing.T) {
-				parent := converter.GetDefaultDataConverter()
-				payload, err := parent.ToPayload(nil)
-				require.NoError(t, err)
-				var out *temperature
-				require.NoError(t, decode(makeTransferAware(parent), payload, &out))
-				require.Equal(t, &temperature{}, out)
-			})
-			t.Run("invalid transfer value", func(t *testing.T) {
-				parent := converter.GetDefaultDataConverter()
-				payload, err := parent.ToPayload("not a temperature")
-				require.NoError(t, err)
-				var out *temperature
-				require.Error(t, decode(makeTransferAware(parent), payload, &out))
-			})
+			require.Equal(t, new("plain"), out)
 		})
 	}
 }
@@ -295,7 +261,7 @@ func TestNewTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
 func TestTransferTypeConverter_InvalidTypes(t *testing.T) {
 	tc, err := (temperature{}).TransferTypeConverter()
 	require.NoError(t, err)
-	ctx := context.Background()
+	ctx := t.Context()
 	_, err = tc.toTransferType(ctx, "wrong")
 	require.ErrorContains(t, err, "want value of type internal.temperature or *internal.temperature, got string")
 	_, err = tc.toTransferTypeWithWorkflowContext(nil, "wrong")
