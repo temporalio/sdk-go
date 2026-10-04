@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -101,7 +100,7 @@ func (undecodable) TransferTypeConverter() (TransferTypeConverter, error) {
 }
 
 // contextualString has a transfer type converter that looks for [transferContextKey]
-// in the context to compute the transfer type.
+// in the context to compute the model and transfer type.
 type contextualString string
 
 type transferContextKey struct{}
@@ -114,7 +113,7 @@ func (contextualString) TransferTypeConverter() (TransferTypeConverter, error) {
 			return &transferType, nil
 		},
 		func(ctx context.Context, transferType *string, value *contextualString) error {
-			*value = contextualString(strings.Split(*transferType, ":")[2])
+			*value = contextualString(fmt.Sprintf("go:%v:%s", ctx.Value(transferContextKey{}), *transferType))
 			return nil
 		},
 		func(ctx Context, value *contextualString) (*string, error) {
@@ -123,7 +122,7 @@ func (contextualString) TransferTypeConverter() (TransferTypeConverter, error) {
 			return &transferType, nil
 		},
 		func(ctx Context, transferType *string, value *contextualString) error {
-			*value = contextualString(strings.Split(*transferType, ":")[2])
+			*value = contextualString(fmt.Sprintf("wf:%v:%s", ctx.Value(transferContextKey{}), *transferType))
 			return nil
 		},
 	)
@@ -454,9 +453,7 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 	t.Parallel()
 	parent := converter.GetDefaultDataConverter()
 
-	// requireRoundTrip checks that contextualString values are encoded with wantPrefix
-	// and decoded back to their original form.
-	requireRoundTrip := func(t *testing.T, dc converter.DataConverter, wantPrefix string) {
+	requireConversions := func(t *testing.T, dc converter.DataConverter, wantPrefix string) {
 		t.Helper()
 
 		payload, err := dc.ToPayload(contextualString("value"))
@@ -465,9 +462,11 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, want.GetData(), payload.GetData())
 
+		payload, err = parent.ToPayload("value")
+		require.NoError(t, err)
 		var got contextualString
 		require.NoError(t, dc.FromPayload(payload, &got))
-		require.Equal(t, contextualString("value"), got)
+		require.Equal(t, contextualString(wantPrefix+"value"), got)
 
 		payloads, err := dc.ToPayloads(contextualString("one"), contextualString("two"))
 		require.NoError(t, err)
@@ -476,15 +475,17 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 		require.Equal(t, wants.GetPayloads()[0].GetData(), payloads.GetPayloads()[0].GetData())
 		require.Equal(t, wants.GetPayloads()[1].GetData(), payloads.GetPayloads()[1].GetData())
 
+		payloads, err = parent.ToPayloads("one", "two")
+		require.NoError(t, err)
 		var gotOne, gotTwo contextualString
 		require.NoError(t, dc.FromPayloads(payloads, &gotOne, &gotTwo))
-		require.Equal(t, contextualString("one"), gotOne)
-		require.Equal(t, contextualString("two"), gotTwo)
+		require.Equal(t, contextualString(wantPrefix+"one"), gotOne)
+		require.Equal(t, contextualString(wantPrefix+"two"), gotTwo)
 	}
 
 	t.Run("workflow context", func(t *testing.T) {
 		ctx := WithValue(Background(), transferContextKey{}, "workflow")
-		requireRoundTrip(t, DefaultInternalDataConverter.WithWorkflowContext(ctx), "wf:workflow:")
+		requireConversions(t, DefaultInternalDataConverter.WithWorkflowContext(ctx), "wf:workflow:")
 	})
 }
 
@@ -558,7 +559,7 @@ func TestTransferTypesMockClientWorkflowResult(t *testing.T) {
 		{"plain destination", "value", new(string), new("value")},
 		{"any destination", 300.0, new(any), new(any(300.0))},
 		{"nested values", map[string]string{"Value": "value"}, new(transferEnvelope), &transferEnvelope{Value: "value"}},
-		{"client context", "go:client:value", new(contextualString), new(contextualString("value"))},
+		{"client context", "value", new(contextualString), new(contextualString("go:client:value"))},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dc := converter.GetDefaultDataConverter()
@@ -728,7 +729,7 @@ func TestTransferTypesWorkflowTestEnvironmentExecutionConversionContext(t *testi
 		var suite WorkflowTestSuite
 		env := suite.NewTestWorkflowEnvironment()
 		activity := func(context.Context) (string, error) {
-			return "wf:workflow:value", nil
+			return "value", nil
 		}
 		env.RegisterActivity(activity)
 		env.ExecuteWorkflow(func(ctx Context) (string, error) {
@@ -744,7 +745,7 @@ func TestTransferTypesWorkflowTestEnvironmentExecutionConversionContext(t *testi
 		require.NoError(t, env.GetWorkflowError())
 		var got string
 		require.NoError(t, env.GetWorkflowResult(&got))
-		require.Equal(t, "value", got)
+		require.Equal(t, "wf:workflow:value", got)
 	})
 }
 
