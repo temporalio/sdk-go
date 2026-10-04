@@ -2404,7 +2404,7 @@ func (wc *workflowEnvironmentInterceptor) MutableSideEffectWithOptions(ctx Conte
 		coroutineState.dispatcher.setIsReadOnly(true)
 		return f(ctx)
 	}
-	return wc.env.MutableSideEffect(id, wrapperFunc, equals, options.Summary)
+	return wc.env.MutableSideEffect(id, wrapperFunc, equals, options.Summary, GetDataConverterFromWorkflowContext(ctx))
 }
 
 // DefaultVersion is a version returned by GetVersion for code that wasn't versioned before

@@ -142,7 +142,7 @@ type (
 			handler func(string, string, *commonpb.Payloads, *commonpb.Header, UpdateCallbacks),
 		)
 		IsReplaying() bool
-		MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string) converter.EncodedValue
+		MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string, dc converter.DataConverter) converter.EncodedValue
 		GetDataConverter() converter.DataConverter
 		GetFailureConverter() converter.FailureConverter
 		AddSession(sessionInfo *SessionInfo)

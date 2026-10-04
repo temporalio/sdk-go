@@ -1160,28 +1160,35 @@ func (wc *workflowEnvironmentImpl) lookupMutableSideEffect(id string) *commonpb.
 	return payloads
 }
 
-func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string) converter.EncodedValue {
+func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() any, equals func(a, b any) bool, summary string, dc converter.DataConverter) converter.EncodedValue {
+	encode := func(value any) *commonpb.Payloads {
+		payloads, err := dc.ToPayloads(value)
+		if err != nil {
+			panic(err)
+		}
+		return payloads
+	}
 	wc.mutableSideEffectCallCounter[id]++
 	callCount := wc.mutableSideEffectCallCounter[id]
 
 	if result := wc.lookupMutableSideEffect(id); result != nil {
-		encodedResult := newEncodedValue(result, wc.GetDataConverter())
+		encodedResult := newEncodedValue(result, dc)
 		if wc.isReplay {
 			// During replay, we only generate a command if there was a known marker
 			// recorded on the next task. We have to append the current command
 			// counter to the user-provided ID to avoid duplicates.
 			if wc.mutableSideEffectsRecorded[fmt.Sprintf("%v_%v", id, wc.commandsHelper.getNextID())] {
-				return wc.recordMutableSideEffect(id, callCount, result, summary)
+				return wc.recordMutableSideEffect(id, callCount, result, summary, dc)
 			}
 			return encodedResult
 		}
 
 		newValue := f()
-		if wc.isEqualValue(newValue, result, equals) {
+		if isEqualMutableSideEffectValue(dc, newValue, result, equals) {
 			return encodedResult
 		}
 
-		return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(newValue), summary)
+		return wc.recordMutableSideEffect(id, callCount, encode(newValue), summary, dc)
 	}
 
 	if wc.isReplay {
@@ -1189,7 +1196,7 @@ func (wc *workflowEnvironmentImpl) MutableSideEffect(id string, f func() any, eq
 		panicIllegalState(fmt.Sprintf("[TMPRL1100] Non deterministic workflow code change detected. MutableSideEffect API call doesn't have a correspondent event in the workflow history. MutableSideEffect ID: %s", id))
 	}
 
-	return wc.recordMutableSideEffect(id, callCount, wc.encodeValue(f()), summary)
+	return wc.recordMutableSideEffect(id, callCount, encode(f()), summary, dc)
 }
 
 func (wc *workflowEnvironmentImpl) isEqualValue(newValue any, encodedOldValue *commonpb.Payloads, equals func(a, b any) bool) bool {
@@ -1236,7 +1243,9 @@ func (wc *workflowEnvironmentImpl) encodeArg(arg any) (*commonpb.Payloads, error
 	return wc.GetDataConverter().ToPayloads(arg)
 }
 
-func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountHint int, data *commonpb.Payloads, summary string) converter.EncodedValue {
+func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountHint int, data *commonpb.Payloads, summary string, dc converter.DataConverter) converter.EncodedValue {
+	// Keep marker protocol fields on the environment converter. The bound
+	// converter applies only to the application value inside the marker.
 	details, err := encodeArgs(wc.GetDataConverter(), []any{id, data})
 	if err != nil {
 		panic(err)
@@ -1250,7 +1259,7 @@ func (wc *workflowEnvironmentImpl) recordMutableSideEffect(id string, callCountH
 		wc.mutableSideEffect[id] = make(map[int]*commonpb.Payloads)
 	}
 	wc.mutableSideEffect[id][callCountHint] = data
-	return newEncodedValue(data, wc.GetDataConverter())
+	return newEncodedValue(data, dc)
 }
 
 func (wc *workflowEnvironmentImpl) AddSession(sessionInfo *SessionInfo) {

@@ -3490,7 +3490,14 @@ func (env *testWorkflowEnvironmentImpl) UpsertMemo(memoMap map[string]any) error
 	return err
 }
 
-func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() any, equals func(a, b any) bool, _ string) converter.EncodedValue {
+func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() any, equals func(a, b any) bool, _ string, dc converter.DataConverter) converter.EncodedValue {
+	encode := func(value any) *commonpb.Payloads {
+		payloads, err := dc.ToPayloads(value)
+		if err != nil {
+			panic(err)
+		}
+		return payloads
+	}
 	mockMethod := mockMethodForMutableSideEffect
 	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
 		// Mirror the real worker's semantics: only record a new value when the
@@ -3498,27 +3505,27 @@ func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() an
 		// return the previously recorded value.
 		if oldValue, ok := env.mutableSideEffect[id]; ok {
 			newValue := f()
-			if isEqualMutableSideEffectValue(env.GetDataConverter(), newValue, oldValue, equals) {
-				return newEncodedValue(oldValue, env.GetDataConverter())
+			if isEqualMutableSideEffectValue(dc, newValue, oldValue, equals) {
+				return newEncodedValue(oldValue, dc)
 			}
-			encoded := env.encodeValue(newValue)
+			encoded := encode(newValue)
 			env.mutableSideEffect[id] = encoded
-			return newEncodedValue(encoded, env.GetDataConverter())
+			return newEncodedValue(encoded, dc)
 		}
-		encoded := env.encodeValue(f())
+		encoded := encode(f())
 		env.mutableSideEffect[id] = encoded
-		return newEncodedValue(encoded, env.GetDataConverter())
+		return newEncodedValue(encoded, dc)
 	}
 
 	mockRet := env.workflowMock.MethodCalled(mockMethod, id)
-	m := &mockWrapper{env: env, name: mockMethod, fn: mockFnMutableSideEffect}
+	m := &mockWrapper{env: env, name: mockMethod, fn: mockFnMutableSideEffect, dataConverter: dc}
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
 		result := mockFn.(func(string) any)(id)
-		encoded, encodeErr := encodeArg(env.GetDataConverter(), result)
+		encoded, encodeErr := encodeArg(dc, result)
 		if encodeErr != nil {
 			panic(fmt.Sprintf("encode result from mock of %v failed: %v", mockMethod, encodeErr))
 		}
-		return newEncodedValue(encoded, env.GetDataConverter())
+		return newEncodedValue(encoded, dc)
 	}
 
 	// MutableSideEffect returns a single value, not (value, error)
@@ -3526,11 +3533,11 @@ func (env *testWorkflowEnvironmentImpl) MutableSideEffect(id string, f func() an
 		panic(fmt.Sprintf("mock of %v has incorrect number of returns, expected 1, but got %d",
 			mockMethod, len(mockRet)))
 	}
-	encoded, encodeErr := encodeArg(env.GetDataConverter(), mockRet[0])
+	encoded, encodeErr := encodeArg(dc, mockRet[0])
 	if encodeErr != nil {
 		panic(fmt.Sprintf("encode result from mock of %v failed: %v", mockMethod, encodeErr))
 	}
-	return newEncodedValue(encoded, env.GetDataConverter())
+	return newEncodedValue(encoded, dc)
 }
 
 func (env *testWorkflowEnvironmentImpl) AddSession(sessionInfo *SessionInfo) {
@@ -3539,14 +3546,6 @@ func (env *testWorkflowEnvironmentImpl) AddSession(sessionInfo *SessionInfo) {
 
 func (env *testWorkflowEnvironmentImpl) RemoveSession(sessionID string) {
 	delete(env.openSessions, sessionID)
-}
-
-func (env *testWorkflowEnvironmentImpl) encodeValue(value any) *commonpb.Payloads {
-	blob, err := env.GetDataConverter().ToPayloads(value)
-	if err != nil {
-		panic(err)
-	}
-	return blob
 }
 
 func (env *testWorkflowEnvironmentImpl) nextID() int64 {
