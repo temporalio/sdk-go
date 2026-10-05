@@ -179,6 +179,9 @@ func (ts *IntegrationTestSuite) SetupTest() {
 	var err error
 	trafficController := test.NewSimpleTrafficController()
 	ts.client, err = ts.newDefaultClient(func(options *client.Options) {
+		if strings.Contains(ts.T().Name(), "TestNexusSerializationContextPropagation") {
+			options.DataConverter = converter.NewCodecDataConverter(converter.GetDefaultDataConverter(), &nexusContextSigningCodec{})
+		}
 		options.WorkerHeartbeatInterval = -1
 		options.ContextPropagators = []workflow.ContextPropagator{
 			NewKeysPropagator([]string{testContextKey1}),

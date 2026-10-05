@@ -734,6 +734,11 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 
 	runID := task.WorkflowExecution.GetRunId()
 	workflowID := task.WorkflowExecution.GetWorkflowId()
+	var propagatedNexusSerializationContext *converter.NexusSerializationContext
+	if propagated := attributes.GetPropagatedNexusSerializationContext(); propagated != nil {
+		context := nexusSerializationContextFromProto(propagated)
+		propagatedNexusSerializationContext = &context
+	}
 
 	// Setup workflow Info
 	var parentWorkflowExecution *WorkflowExecution
@@ -780,8 +785,9 @@ func (wth *workflowTaskHandlerImpl) createWorkflowContext(task *workflowservice.
 		// Use the original execution run ID from the start event as the initial seed.
 		// Original execution run ID stays the same for the entire chain of workflow resets.
 		// This helps us keep child workflow IDs consistent up until a reset-point is encountered.
-		currentRunID: attributes.GetOriginalExecutionRunId(),
-		Priority:     convertFromPBPriority(attributes.Priority),
+		currentRunID:                        attributes.GetOriginalExecutionRunId(),
+		Priority:                            convertFromPBPriority(attributes.Priority),
+		propagatedNexusSerializationContext: propagatedNexusSerializationContext,
 	}
 
 	return newWorkflowExecutionContext(workflowInfo, wth), nil
@@ -1943,7 +1949,11 @@ func (wth *workflowTaskHandlerImpl) completeWorkflow(
 			Namespace:  wfInfo.Namespace,
 			WorkflowID: wfInfo.WorkflowExecution.ID,
 		}
-		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, wfCtx)
+		serializationContext := converter.SerializationContext(wfCtx)
+		if wfInfo.propagatedNexusSerializationContext != nil {
+			serializationContext = *wfInfo.propagatedNexusSerializationContext
+		}
+		fc := converter.WithFailureConverterSerializationContext(wth.failureConverter, serializationContext)
 		failure := fc.ErrorToFailure(workflowContext.err)
 		closeCommand.Attributes = &commandpb.Command_FailWorkflowExecutionCommandAttributes{FailWorkflowExecutionCommandAttributes: &commandpb.FailWorkflowExecutionCommandAttributes{
 			Failure: failure,
@@ -2384,15 +2394,18 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 			)
 		}
 	})
-	actCtx := converter.ActivitySerializationContext{
+	serializationContext := converter.SerializationContext(converter.ActivitySerializationContext{
 		Namespace:    ath.namespace,
 		WorkflowID:   t.WorkflowExecution.GetWorkflowId(),
 		WorkflowType: t.WorkflowType.GetName(),
 		ActivityType: t.ActivityType.GetName(),
 		TaskQueue:    taskQueue,
+	})
+	if propagated := t.GetPropagatedNexusSerializationContext(); propagated != nil {
+		serializationContext = nexusSerializationContextFromProto(propagated)
 	}
-	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, actCtx)
-	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, actCtx)
+	dataConverter := converter.WithDataConverterSerializationContext(ath.dataConverter, serializationContext)
+	failureConverter := converter.WithFailureConverterSerializationContext(ath.failureConverter, serializationContext)
 
 	// The root context is only cancelled when the worker is finished shutting down.
 	rootCtx := ath.backgroundContext

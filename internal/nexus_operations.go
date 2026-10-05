@@ -59,6 +59,29 @@ type NexusOperationContext struct {
 	responseLinks []*commonpb.Link
 }
 
+func nexusSerializationContextToProto(ctx converter.NexusSerializationContext) *nexuspb.PropagatedSerializationContext {
+	return &nexuspb.PropagatedSerializationContext{
+		Endpoint:  ctx.Endpoint,
+		Service:   ctx.Service,
+		Operation: ctx.Operation,
+	}
+}
+
+func nexusSerializationContextFromProto(ctx *nexuspb.PropagatedSerializationContext) converter.NexusSerializationContext {
+	return converter.NexusSerializationContext{
+		Endpoint:  ctx.GetEndpoint(),
+		Service:   ctx.GetService(),
+		Operation: ctx.GetOperation(),
+	}
+}
+
+func propagatedNexusSerializationContextFromGoContext(ctx context.Context) *nexuspb.PropagatedSerializationContext {
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		return nexusSerializationContextToProto(nctx.nexusSerializationContext)
+	}
+	return nil
+}
+
 // AddResponseLink appends a response link returned by an outbound RPC the operation handler issued
 // (e.g. signal, signalWithStart). nil links are ignored. The task handler drains the accumulated
 // response links when building the operation's StartOperationResponse.
