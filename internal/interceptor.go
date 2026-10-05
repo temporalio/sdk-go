@@ -796,7 +796,8 @@ type ClientDescribeActivityInput struct {
 	// RunID is the run ID of the activity to describe.
 	RunID string
 	// Options are the options for describing the activity.
-	Options *ClientDescribeActivityOptions
+	Options                   *ClientDescribeActivityOptions
+	nexusSerializationContext *converter.NexusSerializationContext
 }
 
 // ClientDescribeActivityOutput is the output of
@@ -816,7 +817,8 @@ type ClientPollActivityResultInput struct {
 	// ActivityID is the ID of the activity.
 	ActivityID string
 	// RunID is the run ID of the activity to poll results for.
-	RunID string
+	RunID                     string
+	nexusSerializationContext *converter.NexusSerializationContext
 }
 
 // ClientPollActivityResultOutput is the output of
