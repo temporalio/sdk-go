@@ -34,6 +34,7 @@ to docs, or any other relevant information.
 
 ### Changed
 
+- Removed experimental labels from the core plugin APIs.
 - Task queue priority is no longer marked as experimental.
 - Nexus link conversion now handles all four link types. Workflow links on an inbound Nexus
   request are converted rather than dropped, and `temporalnexus.ConvertCommonLinkToNexusLink`
