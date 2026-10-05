@@ -10,11 +10,19 @@ developers should still scrutinize Workflow code for other non-determinisms.**
 
 ## Installing
 
-To install with [Go](https://golang.org/) installed and on the `PATH`, run:
+To use the checker from a Go 1.26 or later module, add it as a tool dependency
+from the root of the module you want to check:
 
-    go install go.temporal.io/sdk/contrib/tools/workflowcheck@latest
+    go get -tool go.temporal.io/sdk/contrib/tools/workflowcheck@latest
 
-Or you can simply build by running `go build` inside of this directory.
+Then run it with the toolchain selected by that module:
+
+    go tool workflowcheck ./...
+
+Using `go tool` keeps the analyzer's Go version aligned with the module being
+checked; that toolchain must be at least as new as the code it analyzes. To
+build a standalone executable from source, run `go build` in this directory
+with a toolchain at least as new as the code you plan to check.
 
 ## Module versioning
 
@@ -27,10 +35,10 @@ The executable has arguments in the form:
 
     workflowcheck [-flag] [package]
 
-To simply check all source, navigate to the root of the repository/module to check and, with `workflowcheck` on
-the `PATH`, run:
+To check all source, run the following from the root of the module after adding
+the tool dependency above:
 
-    workflowcheck ./...
+    go tool workflowcheck ./...
 
 For each Workflow Definition registered with `RegisterWorkflow` that is considered non-deterministic, this will output
 the reasons why. There is no output if all Workflow Definitions are properly deterministic.
