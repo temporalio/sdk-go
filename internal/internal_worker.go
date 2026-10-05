@@ -1211,6 +1211,9 @@ type workflowExecutor struct {
 
 func (we *workflowExecutor) Execute(ctx Context, input *commonpb.Payloads) (*commonpb.Payloads, error) {
 	dataConverter := WithWorkflowContext(ctx, getWorkflowEnvOptions(ctx).DataConverter)
+	if nexusContext := GetWorkflowEnvironment(ctx).WorkflowInfo().propagatedNexusSerializationContext; nexusContext != nil {
+		dataConverter = withRootDataConverterSerializationContext(ctx, *nexusContext)
+	}
 	fnType := reflect.TypeOf(we.fn)
 
 	var args []any

@@ -44,10 +44,10 @@ func (ActivitySerializationContext) isSerializationContext() {}
 // Handlers receive it when decoding inputs, encoding synchronous results, and
 // encoding failures produced while handling a Nexus task.
 //
-// Operation is the resolved operation name. The context is not propagated to
-// the eventual result of an asynchronous operation. Standalone operation handles
-// use the context of their start request, including when an existing operation is
-// returned, while handles created without starting an operation do not receive it.
+// Operation is the resolved operation name. For Nexus-backed workflows and standalone
+// activities, this context is propagated to the backing execution. Standalone
+// operation handles use the context returned by the server when polling a result;
+// older servers fall back to the handle's start request context.
 //
 // For failures, callers receive this context in [FailureConverter.FailureToError],
 // while handlers receive it in [FailureConverter.ErrorToFailure]. Implementations
