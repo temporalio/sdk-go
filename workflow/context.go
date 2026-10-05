@@ -90,8 +90,9 @@ func NewDisconnectedContext(parent Context) (ctx Context, cancel CancelFunc) {
 // NOTE: Experimental.
 type ValueWithTransferTypeConverter = internal.ValueWithTransferTypeConverter
 
-// TransferTypeConverter converts application values to serializable transfer
-// values and back. Create one using [NewTransferTypeConverter].
+// TransferTypeConverter is an opaque handle that converts application values to
+// serializable transfer values and back. Create one using [NewTransferTypeConverter].
+// Do not embed this interface.
 //
 // NOTE: Experimental.
 type TransferTypeConverter = internal.TransferTypeConverter
