@@ -360,9 +360,11 @@ type (
 		Interceptors []WorkerInterceptor
 
 		// Optional: Callback invoked once for the first fatal error. The SDK
-		// records that error before scheduling the callback on a goroutine
-		// outside the worker's polling and task shutdown waits. After the
-		// callback returns, Worker.Stop() is called.
+		// records that error and signals remote-task polling to stop before
+		// scheduling the callback on a goroutine outside the worker's polling
+		// and task shutdown waits. Attempts already past their final stop check
+		// may still start or complete. After the callback returns, Worker.Stop()
+		// is called.
 		//
 		// The callback may call Worker.Stop(). An independently requested Stop
 		// or Run may finish before this callback finishes; stop completion does
