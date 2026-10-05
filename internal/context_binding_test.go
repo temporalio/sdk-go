@@ -17,8 +17,6 @@ import (
 	"go.temporal.io/sdk/converter"
 )
 
-// Only the designated value requires context, so unrelated workflow/protocol
-// serialization can still use the unbound converter.
 type contextCheckedValue string
 type converterBindingKey struct{}
 
