@@ -29,6 +29,7 @@ import (
 	"go.temporal.io/sdk/internal/common/metrics"
 	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/workflow"
+	"google.golang.org/protobuf/proto"
 )
 
 // OperationInfo contains information about a currently executing Nexus operation.
@@ -369,43 +370,61 @@ func ExecuteUntypedWorkflow[R any](
 	}, nil
 }
 
+// nexusLinkDecoders maps a Nexus link type onto the conversion that produces the matching
+// common.v1.Link variant. Keyed by type so that handling another variant is one entry here rather
+// than another branch repeating the same convert-check-wrap shape.
+var nexusLinkDecoders = map[string]func(nexus.Link) (*common.Link, error){
+	linkTypeName(&common.Link_WorkflowEvent{}): func(link nexus.Link) (*common.Link, error) {
+		converted, err := ConvertNexusLinkToLinkWorkflowEvent(link)
+		if err != nil {
+			return nil, err
+		}
+		return &common.Link{Variant: &common.Link_WorkflowEvent_{WorkflowEvent: converted}}, nil
+	},
+	linkTypeName(&common.Link_Activity{}): func(link nexus.Link) (*common.Link, error) {
+		converted, err := ConvertNexusLinkToLinkActivity(link)
+		if err != nil {
+			return nil, err
+		}
+		return &common.Link{Variant: &common.Link_Activity_{Activity: converted}}, nil
+	},
+	linkTypeName(&common.Link_Workflow{}): func(link nexus.Link) (*common.Link, error) {
+		converted, err := ConvertNexusLinkToLinkWorkflow(link)
+		if err != nil {
+			return nil, err
+		}
+		return &common.Link{Variant: &common.Link_Workflow_{Workflow: converted}}, nil
+	},
+	linkTypeName(&common.Link_NexusOperation{}): func(link nexus.Link) (*common.Link, error) {
+		converted, err := ConvertNexusLinkToLinkNexusOperation(link)
+		if err != nil {
+			return nil, err
+		}
+		return &common.Link{Variant: &common.Link_NexusOperation_{NexusOperation: converted}}, nil
+	},
+}
+
+func linkTypeName(m proto.Message) string {
+	return string(m.ProtoReflect().Descriptor().FullName())
+}
+
+// convertNexusLinks converts the links a caller attached to a Nexus request into common.v1.Link so
+// the RPCs the handler issues can carry them onto the callee's history. A link whose type is not
+// handled is skipped, since links are not essential to the operation, but a link that fails to
+// convert fails the call.
 func convertNexusLinks(nexusLinks []nexus.Link, log log.Logger) ([]*common.Link, error) {
 	var links []*common.Link
 	for _, nexusLink := range nexusLinks {
-		switch nexusLink.Type {
-		case string((&common.Link_WorkflowEvent{}).ProtoReflect().Descriptor().FullName()):
-			link, err := ConvertNexusLinkToLinkWorkflowEvent(nexusLink)
-			if err != nil {
-				return nil, err
-			}
-			links = append(links, &common.Link{
-				Variant: &common.Link_WorkflowEvent_{
-					WorkflowEvent: link,
-				},
-			})
-		case string((&common.Link_Activity{}).ProtoReflect().Descriptor().FullName()):
-			link, err := ConvertNexusLinkToLinkActivity(nexusLink)
-			if err != nil {
-				return nil, err
-			}
-			links = append(links, &common.Link{
-				Variant: &common.Link_Activity_{
-					Activity: link,
-				},
-			})
-		case string((&common.Link_NexusOperation{}).ProtoReflect().Descriptor().FullName()):
-			link, err := ConvertNexusLinkToLinkNexusOperation(nexusLink)
-			if err != nil {
-				return nil, err
-			}
-			links = append(links, &common.Link{
-				Variant: &common.Link_NexusOperation_{
-					NexusOperation: link,
-				},
-			})
-		default:
+		decode, ok := nexusLinkDecoders[nexusLink.Type]
+		if !ok {
 			log.Warn("ignoring unsupported link data type", "LinkType", nexusLink.Type)
+			continue
 		}
+		link, err := decode(nexusLink)
+		if err != nil {
+			return nil, err
+		}
+		links = append(links, link)
 	}
 	return links, nil
 }
