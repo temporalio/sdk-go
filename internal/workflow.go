@@ -1516,7 +1516,8 @@ type WorkflowInfo struct {
 	currentHistorySize   int
 	currentHistoryLength int
 	// currentRunID is the current run ID of the workflow task, deterministic over reset
-	currentRunID string
+	currentRunID                        string
+	propagatedNexusSerializationContext *converter.NexusSerializationContext
 }
 
 // UpdateInfo information about a currently running update

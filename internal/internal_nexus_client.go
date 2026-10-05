@@ -762,10 +762,6 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 		dataConverter = converter.GetDefaultDataConverter()
 	}
 	failureConverter := w.client.failureConverter
-	if in.nexusSerializationContext != nil {
-		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, *in.nexusSerializationContext)
-		failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, *in.nexusSerializationContext)
-	}
 
 	request := &workflowservice.PollNexusOperationExecutionRequest{
 		Namespace:   w.client.namespace,
@@ -783,6 +779,15 @@ func (w *workflowClientInterceptor) PollNexusOperationResult(
 		if err != nil {
 			return nil, err
 		}
+	}
+	nexusSerializationContext := in.nexusSerializationContext
+	if propagated := resp.GetPropagatedNexusSerializationContext(); propagated != nil {
+		context := nexusSerializationContextFromProto(propagated)
+		nexusSerializationContext = &context
+	}
+	if nexusSerializationContext != nil {
+		dataConverter = converter.WithDataConverterSerializationContext(dataConverter, *nexusSerializationContext)
+		failureConverter = converter.WithFailureConverterSerializationContext(failureConverter, *nexusSerializationContext)
 	}
 
 	if err := visitProtoPayloads(ctx, w.inboundPayloadVisitor, resp, 0); err != nil {
