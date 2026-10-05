@@ -41,6 +41,7 @@ to docs, or any other relevant information.
   This requires Temporal Server 1.32.0 or later.
 - Added experimental `converter.NewTransferTypeConverter` API that implements transfer type conversion.
   `converter.GetDefaultDataConverter()` now supports transfer type conversion.
+- Propagate Nexus serialization context to workflows and standalone activities started by Nexus handlers, including asynchronous results and failures. Workflow-backed Nexus operations use Nexus context for workflow input and completion, while ordinary signals, queries, and updates retain workflow context. Standalone Nexus operation polling and detached workflow and activity handles now use the execution context returned by the server.
 - Added autoscaling support for server poller groups, with per-group coverage and
   sticky-backlog prioritization. `SimpleMaximum` is unchanged, and autoscaling
   behaves as before when no poller groups are configured.
