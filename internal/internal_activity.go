@@ -421,7 +421,7 @@ func (a *activityEnvironmentInterceptor) GetHeartbeatDetails(ctx context.Context
 	if a.env.heartbeatDetails == nil {
 		return ErrNoData
 	}
-	encoded := newEncodedValues(a.env.heartbeatDetails, a.env.dataConverter)
+	encoded := newEncodedValues(a.env.heartbeatDetails, getDataConverterFromActivityCtx(ctx))
 	return encoded.Get(d...)
 }
 

@@ -209,17 +209,6 @@ func (h *nexusTaskHandler) handleStartOperation(
 		h.failureConverter,
 		nctx.nexusSerializationContext,
 	)
-	serializer := &payloadSerializer{
-		converter: dataConverter,
-		payload:   req.GetPayload(),
-	}
-	// Create a fake lazy value, Temporal server already converts Nexus content into payloads.
-	input := nexus.NewLazyValue(
-		serializer,
-		&nexus.Reader{
-			ReadCloser: emptyReaderNopCloser,
-		},
-	)
 	// Ensure we don't pass nil values to handlers.
 	callbackHeader := req.GetCallbackHeader()
 	if callbackHeader == nil {
@@ -268,6 +257,18 @@ func (h *nexusTaskHandler) handleStartOperation(
 		Operation: req.GetOperation(),
 		Header:    header,
 	})
+	dataConverter = WithContext(ctx, dataConverter)
+	serializer := &payloadSerializer{
+		converter: dataConverter,
+		payload:   req.GetPayload(),
+	}
+	// Create a fake lazy value, Temporal server already converts Nexus content into payloads.
+	input := nexus.NewLazyValue(
+		serializer,
+		&nexus.Reader{
+			ReadCloser: emptyReaderNopCloser,
+		},
+	)
 	var opres nexus.HandlerStartOperationResult[any]
 	var err error
 	var panic bool

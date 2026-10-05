@@ -2346,7 +2346,7 @@ func (wc *workflowEnvironmentInterceptor) SideEffectWithOptions(ctx Context, opt
 	resultCallback := func(result *commonpb.Payloads, err error) {
 		settable.Set(EncodedValue{result, dc}, err)
 	}
-	wc.env.SideEffect(wrapperFunc, resultCallback, options.Summary)
+	wc.env.SideEffect(wrapperFunc, resultCallback, options.Summary, dc)
 	var encoded EncodedValue
 	if err := future.Get(ctx, &encoded); err != nil {
 		panic(err)

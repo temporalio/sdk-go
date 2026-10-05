@@ -3322,7 +3322,7 @@ func (env *testWorkflowEnvironmentImpl) makeUniqueNexusOperationToken(
 	return fmt.Sprintf("%s_%s_%s", service, operation, token)
 }
 
-func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, _ string) {
+func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, _ string, dc converter.DataConverter) {
 	mockMethod := mockMethodForSideEffect
 	if _, ok := env.expectedWorkflowMockCalls[mockMethod]; !ok {
 		callback(f())
@@ -3330,10 +3330,10 @@ func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads,
 	}
 
 	mockRet := env.workflowMock.MethodCalled(mockMethod)
-	m := &mockWrapper{env: env, name: mockMethod, fn: mockFnSideEffect}
+	m := &mockWrapper{env: env, name: mockMethod, fn: mockFnSideEffect, dataConverter: dc}
 	if mockFn := m.getMockFn(mockRet); mockFn != nil {
 		result := mockFn.(func() any)()
-		encoded, encodeErr := encodeArg(env.GetDataConverter(), result)
+		encoded, encodeErr := encodeArg(dc, result)
 		if encodeErr != nil {
 			panic(fmt.Sprintf("encode result from mock of %v failed: %v", mockMethod, encodeErr))
 		}
@@ -3346,7 +3346,7 @@ func (env *testWorkflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads,
 		panic(fmt.Sprintf("mock of %v has incorrect number of returns, expected 1, but got %d",
 			mockMethod, len(mockRet)))
 	}
-	encoded, encodeErr := encodeArg(env.GetDataConverter(), mockRet[0])
+	encoded, encodeErr := encodeArg(dc, mockRet[0])
 	if encodeErr != nil {
 		panic(fmt.Sprintf("encode result from mock of %v failed: %v", mockMethod, encodeErr))
 	}

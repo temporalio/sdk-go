@@ -1974,7 +1974,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 		err = workflowRun.failureConverter.FailureToError(attributes.GetFailure())
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED:
 		attributes := closeEvent.GetWorkflowExecutionCanceledEventAttributes()
-		details := newEncodedValues(attributes.Details, workflowRun.dataConverter)
+		details := newEncodedValues(attributes.Details, WithContext(ctx, workflowRun.dataConverter))
 		err = NewCanceledError(details)
 	case enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_TERMINATED:
 		err = newTerminatedError()
@@ -2811,7 +2811,7 @@ func (w *workflowClientInterceptor) DescribeWorkflow(
 	}
 	o := &WorkflowExecutionDescription{
 		WorkflowExecutionMetadata: m,
-		dc: converter.WithDataConverterSerializationContext(w.client.dataConverter, converter.WorkflowSerializationContext{
+		dc: converter.WithDataConverterSerializationContext(WithContext(ctx, w.client.dataConverter), converter.WorkflowSerializationContext{
 			Namespace:  w.client.namespace,
 			WorkflowID: in.WorkflowID,
 		}),

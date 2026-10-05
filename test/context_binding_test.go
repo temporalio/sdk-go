@@ -9,6 +9,7 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -87,6 +88,22 @@ func (ts *IntegrationTestSuite) TestConverterContext_WorkflowResult() {
 	ts.NoError(err)
 	var result testEncryptedString
 	ts.NoError(run.Get(context.WithValue(ctx, testContextKey{}, "key"), &result))
+}
+
+func contextCancellationWorkflow(workflow.Context) error {
+	return temporal.NewCanceledError("details")
+}
+
+func (ts *IntegrationTestSuite) TestConverterContext_CancellationDetails() {
+	c, taskQueue := ts.startContextWorker(contextCancellationWorkflow)
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
+	defer cancel()
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: taskQueue}, contextCancellationWorkflow)
+	ts.NoError(err)
+	var canceled *temporal.CanceledError
+	ts.ErrorAs(run.Get(context.WithValue(ctx, testContextKey{}, "key"), nil), &canceled)
+	var details testEncryptedString
+	ts.NoError(canceled.Details(&details))
 }
 
 // Queries.

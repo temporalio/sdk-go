@@ -35,6 +35,13 @@ func (dc contextCheckedConverter) WithWorkflowContext(ctx Context) converter.Dat
 	return dc
 }
 
+func (dc contextCheckedConverter) ToPayload(value any) (*commonpb.Payload, error) {
+	if _, ok := value.(contextCheckedValue); ok && !dc.bound {
+		return nil, fmt.Errorf("encoding without converter context")
+	}
+	return dc.DataConverter.ToPayload(value)
+}
+
 func (dc contextCheckedConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
 	for _, value := range values {
 		if _, ok := value.(contextCheckedValue); ok && !dc.bound {
@@ -81,6 +88,53 @@ func TestConverterContext_WorkflowResult(t *testing.T) {
 	var got contextCheckedValue
 	require.NoError(t, client.GetWorkflow(t.Context(), "workflow", "run").Get(ctx, &got))
 	require.Equal(t, contextCheckedValue("value"), got)
+}
+
+func TestConverterContext_CancellationDetails(t *testing.T) {
+	service, client := newContextBindingTestClient(t)
+	payloads, err := converter.GetDefaultDataConverter().ToPayloads("details")
+	require.NoError(t, err)
+	service.EXPECT().GetWorkflowExecutionHistory(gomock.Any(), gomock.Any(), gomock.Any()).Return(
+		&workflowservice.GetWorkflowExecutionHistoryResponse{History: &historypb.History{Events: []*historypb.HistoryEvent{{
+			EventType: enumspb.EVENT_TYPE_WORKFLOW_EXECUTION_CANCELED,
+			Attributes: &historypb.HistoryEvent_WorkflowExecutionCanceledEventAttributes{
+				WorkflowExecutionCanceledEventAttributes: &historypb.WorkflowExecutionCanceledEventAttributes{Details: payloads},
+			},
+		}}}}, nil)
+	ctx := context.WithValue(t.Context(), converterBindingKey{}, "bound")
+	err = client.GetWorkflow(t.Context(), "workflow", "run").Get(ctx, nil)
+	var canceled *CanceledError
+	require.ErrorAs(t, err, &canceled)
+	var details contextCheckedValue
+	require.NoError(t, canceled.Details(&details))
+}
+
+func TestConverterContext_DeploymentMetadata(t *testing.T) {
+	service, client := newContextBindingTestClient(t)
+	service.EXPECT().SetCurrentDeployment(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.SetCurrentDeploymentResponse{}, nil)
+	ctx := context.WithValue(t.Context(), converterBindingKey{}, "bound")
+	require.NotPanics(t, func() {
+		_, err := client.DeploymentClient().SetCurrent(ctx, DeploymentSetCurrentOptions{
+			Deployment:     Deployment{SeriesName: "deployment", BuildID: "build"},
+			MetadataUpdate: DeploymentMetadataUpdate{UpsertEntries: map[string]any{"value": contextCheckedValue("metadata")}},
+		})
+		require.NoError(t, err)
+	})
+}
+
+func TestConverterContext_WorkerDeploymentMetadata(t *testing.T) {
+	service, client := newContextBindingTestClient(t)
+	service.EXPECT().UpdateWorkerDeploymentVersionMetadata(gomock.Any(), gomock.Any(), gomock.Any()).
+		Return(&workflowservice.UpdateWorkerDeploymentVersionMetadataResponse{}, nil)
+	ctx := context.WithValue(t.Context(), converterBindingKey{}, "bound")
+	require.NotPanics(t, func() {
+		_, err := client.WorkerDeploymentClient().GetHandle("deployment").UpdateVersionMetadata(ctx, WorkerDeploymentUpdateVersionMetadataOptions{
+			Version:        WorkerDeploymentVersion{DeploymentName: "deployment", BuildID: "build"},
+			MetadataUpdate: WorkerDeploymentMetadataUpdate{UpsertEntries: map[string]any{"value": contextCheckedValue("metadata")}},
+		})
+		require.NoError(t, err)
+	})
 }
 
 func TestConverterContext_Query(t *testing.T) {
@@ -163,6 +217,28 @@ func TestConverterContext_UpdateHandler(t *testing.T) {
 		return dc.FromPayloads(payloads, &got)
 	})
 	require.NoError(t, env.GetWorkflowError())
+}
+
+func TestConverterContext_SideEffectMock(t *testing.T) {
+	for _, mockResult := range []string{"value", "function"} {
+		t.Run(mockResult, func(t *testing.T) {
+			var suite WorkflowTestSuite
+			env := suite.NewTestWorkflowEnvironment()
+			env.SetDataConverter(contextCheckedConverter{DataConverter: converter.GetDefaultDataConverter()})
+			if mockResult == "value" {
+				env.OnSideEffect().Return(contextCheckedValue("value")).Once()
+			} else {
+				env.OnSideEffect().Return(func() any { return contextCheckedValue("value") }).Once()
+			}
+			env.ExecuteWorkflow(func(ctx Context) error {
+				ctx = WithValue(ctx, converterBindingKey{}, "bound")
+				var result contextCheckedValue
+				return SideEffect(ctx, func(Context) any { return contextCheckedValue("value") }).Get(&result)
+			})
+			require.NoError(t, env.GetWorkflowError())
+			env.AssertExpectations(t)
+		})
+	}
 }
 
 func TestConverterContext_MutableSideEffect(t *testing.T) {

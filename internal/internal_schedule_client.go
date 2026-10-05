@@ -258,6 +258,7 @@ func (scheduleHandle *scheduleHandleImpl) Backfill(ctx context.Context, options 
 func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options ScheduleUpdateOptions) error {
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()
+	dataConverter := WithContext(ctx, scheduleHandle.client.dataConverter)
 	ctx = contextWithNewHeader(ctx)
 
 	describeRequest := &workflowservice.DescribeScheduleRequest{
@@ -269,7 +270,7 @@ func (scheduleHandle *scheduleHandleImpl) Update(ctx context.Context, options Sc
 		return err
 	}
 	scheduleDescription, err := scheduleDescriptionFromPB(
-		scheduleHandle.client.logger, scheduleHandle.client.namespace, scheduleHandle.client.dataConverter, describeResponse)
+		scheduleHandle.client.logger, scheduleHandle.client.namespace, dataConverter, describeResponse)
 	if err != nil {
 		return err
 	}
@@ -332,7 +333,7 @@ func (scheduleHandle *scheduleHandleImpl) Describe(ctx context.Context) (*Schedu
 		return nil, err
 	}
 	return scheduleDescriptionFromPB(
-		scheduleHandle.client.logger, scheduleHandle.client.namespace, scheduleHandle.client.dataConverter, describeResponse)
+		scheduleHandle.client.logger, scheduleHandle.client.namespace, WithContext(ctx, scheduleHandle.client.dataConverter), describeResponse)
 }
 
 func (scheduleHandle *scheduleHandleImpl) Trigger(ctx context.Context, options ScheduleTriggerOptions) error {

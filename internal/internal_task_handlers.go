@@ -2476,6 +2476,7 @@ func (ath *activityTaskHandlerImpl) Execute(taskQueue string, t *workflowservice
 	info := getActivityEnv(ctx)
 	ctx, dlCancelFunc := context.WithDeadline(ctx, info.deadline)
 	defer dlCancelFunc()
+	dataConverter = WithContext(ctx, dataConverter)
 
 	output, err := activityImplementation.Execute(ctx, t.Input)
 	// Check if context canceled at a higher level before we cancel it ourselves

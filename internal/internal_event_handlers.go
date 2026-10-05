@@ -1059,7 +1059,7 @@ func getChangeVersion(changeID string, version Version) string {
 	return fmt.Sprintf("%s-%v", changeID, version)
 }
 
-func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string) {
+func (wc *workflowEnvironmentImpl) SideEffect(f func() (*commonpb.Payloads, error), callback ResultHandler, summary string, _ converter.DataConverter) {
 	sideEffectID := wc.getNextSideEffectID()
 	var result *commonpb.Payloads
 	if wc.isReplay {
