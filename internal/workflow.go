@@ -2243,9 +2243,9 @@ func (wc *workflowEnvironmentInterceptor) GetSignalChannelWithOptions(
 
 func newEncodedValue(value *commonpb.Payloads, dc converter.DataConverter) converter.EncodedValue {
 	if dc == nil {
-		dc = DefaultInternalDataConverter
+		dc = converter.GetDefaultDataConverter()
 	}
-	return &EncodedValue{value, makeTransferAware(dc)}
+	return &EncodedValue{value, dc}
 }
 
 // Get extract data from encoded data to desired value type. valuePtr is pointer to the actual value type.

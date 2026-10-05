@@ -58,7 +58,7 @@ var sdkFlagsAllowed = map[sdkFlag]bool{
 	SDKFlagCancelAwaitTimerOnCondition:    false,
 	SDKFlagMemoUserDCEncode:               true,
 	SDKFlagWorkflowNewChannelLostMessages: true,
-	SDKFlagOrderedChildCancel:             false,
+	SDKFlagOrderedChildCancel:             true,
 }
 
 func init() {

@@ -49,7 +49,12 @@ type (
 		// Default: 1
 		MinimumNumberOfPollers int
 
-		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed scale up to.
+		// MaximumNumberOfPollers is the maximum number of pollers the worker is allowed to scale up to.
+		// The server may route a task queue's tasks through several locations and require
+		// the worker to keep at least one poll open against each so no tasks are left
+		// unpolled. If the server reports more locations than this value, the worker
+		// exceeds it to cover all of them. For workflow tasks, this applies separately
+		// to normal and sticky pollers.
 		//
 		// Default: 100
 		MaximumNumberOfPollers int
@@ -622,8 +627,10 @@ func NewPollerBehaviorSimpleMaximum(
 	}
 }
 
-// NewPollerBehaviorAutoscaling creates a PollerBehavior that allows the worker to scale the number of pollers within a given range.
-// based on the workflow and feedback from the server.
+// NewPollerBehaviorAutoscaling scales pollers within the configured range using
+// server feedback. The worker may exceed the configured maximum when the server
+// requires a poll open against more locations than the maximum allows. See
+// [PollerBehaviorAutoscalingOptions.MaximumNumberOfPollers].
 //
 // Exposed as: [go.temporal.io/sdk/worker.NewPollerBehaviorAutoscaling]
 func NewPollerBehaviorAutoscaling(
@@ -640,6 +647,11 @@ func NewPollerBehaviorAutoscaling(
 	maximumNumberOfPollers := options.MaximumNumberOfPollers
 	if maximumNumberOfPollers <= 0 {
 		maximumNumberOfPollers = defaultAutoscalingMaximumNumberOfPollers // Default maximum number of pollers.
+	}
+	if initialNumberOfPollers < minimumNumberOfPollers {
+		initialNumberOfPollers = minimumNumberOfPollers
+	} else if initialNumberOfPollers > maximumNumberOfPollers {
+		initialNumberOfPollers = maximumNumberOfPollers
 	}
 	return &pollerBehaviorAutoscaling{
 		initialNumberOfPollers: initialNumberOfPollers,

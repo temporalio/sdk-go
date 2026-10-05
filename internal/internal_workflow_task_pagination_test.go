@@ -28,10 +28,11 @@ func paginationTestCommand(payloadSize int) *commandpb.Command {
 
 func paginationTestRequest(commands []*commandpb.Command) *workflowservice.RespondWorkflowTaskCompletedRequest {
 	return &workflowservice.RespondWorkflowTaskCompletedRequest{
-		TaskToken: []byte("task-token"),
-		Namespace: "namespace",
-		Identity:  "identity",
-		Commands:  commands,
+		TaskToken:  []byte("task-token"),
+		Namespace:  "namespace",
+		Identity:   "identity",
+		ResourceId: "workflow:workflow-id",
+		Commands:   commands,
 	}
 }
 
@@ -68,6 +69,7 @@ func TestPaginateWorkflowTaskCompletion_SplitsCommandsAcrossPages(t *testing.T) 
 		require.True(t, page.IntermediatePage)
 		require.EqualValues(t, i, page.PageNumber)
 		require.Equal(t, []byte("task-token"), page.TaskToken)
+		require.Equal(t, request.ResourceId, page.ResourceId)
 		require.LessOrEqual(t, proto.Size(page), maxPageBytes, "intermediate page %d over limit", i)
 		totalCommands += len(page.Commands)
 	}
