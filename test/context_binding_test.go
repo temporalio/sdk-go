@@ -14,28 +14,43 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
+// These tests exercise delivery of application context to a converter, not
+// encryption or authorization. The caller supplies an account ID, as it might
+// when selecting an account-specific schema. Namespace and workflow ID alone
+// cannot supply this business value.
+//
+// WithContext and WithWorkflowContext receive the Go or workflow context,
+// including application values. WithSerializationContext instead receives SDK
+// metadata about the serialization location: for workflow payloads, only the
+// namespace and workflow ID.
 type testUserIDContextKey struct{}
+
+// testUserPayload identifies the application input or result whose conversion
+// requires an account ID. The update handler's wait flag and the mutable side
+// effect marker's string ID and integer counter do not require application context.
 type testUserPayload string
 
-// testContextEncryptionConverter models per-user encryption key selection using
-// metadata, not actual encryption or authentication. Application payloads require
-// a user ID in context; SDK protocol values use the default converter unchanged.
-type testContextEncryptionConverter struct {
+// testContextRequiredConverter checks context delivery, then uses ordinary JSON
+// conversion. It deliberately does not implement account-specific schemas.
+type testContextRequiredConverter struct {
+	// DataConverter handles the actual encoding and decoding of all values.
 	converter.DataConverter
+	// userID is the caller's account ID copied when the SDK binds the converter.
+	// Each binding returns a copy so concurrent requests do not share this value.
 	userID string
 }
 
-func (dc testContextEncryptionConverter) WithContext(ctx context.Context) converter.DataConverter {
+func (dc testContextRequiredConverter) WithContext(ctx context.Context) converter.DataConverter {
 	dc.userID, _ = ctx.Value(testUserIDContextKey{}).(string)
 	return dc
 }
 
-func (dc testContextEncryptionConverter) WithWorkflowContext(ctx workflow.Context) converter.DataConverter {
+func (dc testContextRequiredConverter) WithWorkflowContext(ctx workflow.Context) converter.DataConverter {
 	dc.userID, _ = ctx.Value(testUserIDContextKey{}).(string)
 	return dc
 }
 
-func (dc testContextEncryptionConverter) ToPayload(value any) (*commonpb.Payload, error) {
+func (dc testContextRequiredConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	_, applicationValue := value.(testUserPayload)
 	if applicationValue && dc.userID == "" {
 		return nil, fmt.Errorf("encode application payload %T: expected nonempty user ID under context key %T, got user ID %q", value, testUserIDContextKey{}, dc.userID)
@@ -44,30 +59,21 @@ func (dc testContextEncryptionConverter) ToPayload(value any) (*commonpb.Payload
 	if err != nil {
 		return nil, fmt.Errorf("encode payload %T for user ID %q using default converter: %w", value, dc.userID, err)
 	}
-	if applicationValue {
-		payload.Metadata["user-key"] = []byte(dc.userID + "/key-v1")
-	}
 	return payload, nil
 }
 
-func (dc testContextEncryptionConverter) FromPayload(payload *commonpb.Payload, value any) error {
+func (dc testContextRequiredConverter) FromPayload(payload *commonpb.Payload, value any) error {
 	_, applicationValue := value.(*testUserPayload)
-	key := string(payload.GetMetadata()["user-key"])
-	if applicationValue || key != "" {
-		if dc.userID == "" {
-			return fmt.Errorf("decode application payload into %T with metadata key %q: expected nonempty user ID under context key %T, got user ID %q", value, key, testUserIDContextKey{}, dc.userID)
-		}
-		if expected := dc.userID + "/key-v1"; key != expected {
-			return fmt.Errorf("decode application payload into %T for context user ID %q: expected metadata key %q, got %q", value, dc.userID, expected, key)
-		}
+	if applicationValue && dc.userID == "" {
+		return fmt.Errorf("decode application payload into %T: expected nonempty user ID under context key %T", value, testUserIDContextKey{})
 	}
 	if err := dc.DataConverter.FromPayload(payload, value); err != nil {
-		return fmt.Errorf("decode payload into %T for context user ID %q with metadata key %q using default converter: %w", value, dc.userID, key, err)
+		return fmt.Errorf("decode payload into %T for context user ID %q using default converter: %w", value, dc.userID, err)
 	}
 	return nil
 }
 
-func (dc testContextEncryptionConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
+func (dc testContextRequiredConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
 	payloads := &commonpb.Payloads{}
 	for i, value := range values {
 		payload, err := dc.ToPayload(value)
@@ -79,7 +85,7 @@ func (dc testContextEncryptionConverter) ToPayloads(values ...any) (*commonpb.Pa
 	return payloads, nil
 }
 
-func (dc testContextEncryptionConverter) FromPayloads(payloads *commonpb.Payloads, values ...any) error {
+func (dc testContextRequiredConverter) FromPayloads(payloads *commonpb.Payloads, values ...any) error {
 	for i, value := range values {
 		if i >= len(payloads.GetPayloads()) {
 			break
@@ -91,7 +97,10 @@ func (dc testContextEncryptionConverter) FromPayloads(payloads *commonpb.Payload
 	return nil
 }
 
-// The serialized header name is independent of the private context key.
+// testUserIDHeader carries the caller's account ID to the workflow context.
+// Result, query, update, and mutable side effect workflows need it to convert
+// application values. The termination test converts details only on the client;
+// its workflow does not need the account ID.
 const testUserIDHeader = "converter-binding-user-id"
 
 type testUserIDPropagator struct{}
@@ -151,7 +160,7 @@ func extractTestUserID(reader workflow.HeaderReader) (string, error) {
 func (ts *IntegrationTestSuite) startUserContextWorker(workflowFunc any) (client.Client, string) {
 	ts.T().Helper()
 	c, err := ts.newDefaultClient(func(options *client.Options) {
-		options.DataConverter = testContextEncryptionConverter{DataConverter: converter.GetDefaultDataConverter()}
+		options.DataConverter = testContextRequiredConverter{DataConverter: converter.GetDefaultDataConverter()}
 		options.ContextPropagators = []workflow.ContextPropagator{testUserIDPropagator{}}
 	})
 	ts.NoError(err)
@@ -170,8 +179,39 @@ func userContextResultWorkflow(ctx workflow.Context) (testUserPayload, error) {
 	return testUserPayload(ctx.Value(testUserIDContextKey{}).(string)), nil
 }
 
+// testAccountResultConverter adds a result-specific business rule: this workflow
+// returns the account ID, which must match the account requesting the result.
+// This is a decoding check, not encryption or an authorization mechanism.
+type testAccountResultConverter struct {
+	testContextRequiredConverter
+}
+
+func (dc testAccountResultConverter) WithContext(ctx context.Context) converter.DataConverter {
+	dc.userID, _ = ctx.Value(testUserIDContextKey{}).(string)
+	return dc
+}
+
+func (dc testAccountResultConverter) FromPayloads(payloads *commonpb.Payloads, values ...any) error {
+	if err := dc.testContextRequiredConverter.FromPayloads(payloads, values...); err != nil {
+		return err
+	}
+	for _, value := range values {
+		if result, ok := value.(*testUserPayload); ok && string(*result) != dc.userID {
+			return fmt.Errorf("decode account result: context account ID %q does not match result account ID %q", dc.userID, *result)
+		}
+	}
+	return nil
+}
+
 func (ts *IntegrationTestSuite) TestConverterContext_WorkflowResult() {
 	c, taskQueue := ts.startUserContextWorker(userContextResultWorkflow)
+	resultClient, err := ts.newDefaultClient(func(options *client.Options) {
+		options.DataConverter = testAccountResultConverter{
+			testContextRequiredConverter{DataConverter: converter.GetDefaultDataConverter()},
+		}
+	})
+	ts.NoError(err)
+	ts.T().Cleanup(resultClient.Close)
 	baseCtx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
 	defer cancel()
 	for _, userID := range []string{"user-alice", "user-bob"} {
@@ -180,12 +220,12 @@ func (ts *IntegrationTestSuite) TestConverterContext_WorkflowResult() {
 			ID: "user-result-" + uuid.NewString(), TaskQueue: taskQueue,
 		}, userContextResultWorkflow)
 		ts.NoError(err)
-		// GetWorkflow does not select the key; the context passed to Get does.
-		result := c.GetWorkflow(baseCtx, run.GetID(), run.GetRunID())
+		// GetWorkflow does not bind application context; Get does.
+		result := resultClient.GetWorkflow(baseCtx, run.GetID(), run.GetRunID())
 		var got testUserPayload
 		ts.Error(result.Get(baseCtx, &got))
 		wrongCtx := context.WithValue(baseCtx, testUserIDContextKey{}, "wrong-user")
-		ts.Error(result.Get(wrongCtx, &got))
+		ts.ErrorContains(result.Get(wrongCtx, &got), "does not match result account ID")
 		ts.NoError(result.Get(ctx, &got))
 		ts.Equal(testUserPayload(userID), got)
 	}
@@ -217,10 +257,9 @@ func (ts *IntegrationTestSuite) TestConverterContext_Query() {
 	var got testUserPayload
 	ts.NoError(query.Get(&got))
 	ts.Equal(testUserPayload("query:input"), got)
-	wrongCtx := context.WithValue(baseCtx, testUserIDContextKey{}, "wrong-user")
-	wrongQuery, err := c.QueryWorkflow(wrongCtx, run.GetID(), run.GetRunID(), "query", testUserPayload("input"))
+	missingContextQuery, err := c.QueryWorkflow(baseCtx, run.GetID(), run.GetRunID(), "query", testUserPayload("input"))
 	ts.Error(err)
-	ts.Nil(wrongQuery)
+	ts.Nil(missingContextQuery)
 	ts.NoError(c.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", nil))
 	ts.NoError(run.Get(ctx, nil))
 }
@@ -348,7 +387,7 @@ func (ts *IntegrationTestSuite) TestConverterContext_Termination() {
 	ts.NoError(err)
 	details := event.GetWorkflowExecutionTerminatedEventAttributes().GetDetails()
 	ts.Len(details.GetPayloads(), 1)
-	dc := testContextEncryptionConverter{DataConverter: converter.GetDefaultDataConverter()}
+	dc := testContextRequiredConverter{DataConverter: converter.GetDefaultDataConverter()}
 	var got testUserPayload
 	ts.Error(dc.FromPayloads(details, &got))
 	ts.NoError(dc.WithContext(ctx).FromPayloads(details, &got))
