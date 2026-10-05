@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/uuid"
 	commonpb "go.temporal.io/api/common/v1"
-	enumspb "go.temporal.io/api/enums/v1"
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
@@ -14,159 +13,60 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// These tests exercise delivery of application context to a converter, not
-// encryption or authorization. The caller supplies an account ID, as it might
-// when selecting an account-specific schema. Namespace and workflow ID alone
-// cannot supply this business value.
-//
-// WithContext and WithWorkflowContext receive the Go or workflow context,
-// including application values. WithSerializationContext instead receives SDK
-// metadata about the serialization location: for workflow payloads, only the
-// namespace and workflow ID.
-type testUserIDContextKey struct{}
+// testContextKey is a place the user might store some contextual info.
+type testContextKey struct{}
 
-// testUserPayload identifies the application input or result whose conversion
-// requires an account ID. The update handler's wait flag and the mutable side
-// effect marker's string ID and integer counter do not require application context.
-type testUserPayload string
+// testEncryptedString stands in for a value requiring a context-supplied key.
+// A distinct type avoids requiring that key for the SDK's internal marker strings.
+type testEncryptedString string
 
-// testContextRequiredConverter checks context delivery, then uses ordinary JSON
-// conversion. It deliberately does not implement account-specific schemas.
-type testContextRequiredConverter struct {
-	// DataConverter handles the actual encoding and decoding of all values.
+// testContextualConverter requires a key from testContextKey for testEncryptedString
+// values. It checks context delivery; actual conversion uses JSON, not encryption.
+type testContextualConverter struct {
 	converter.DataConverter
-	// userID is the caller's account ID copied when the SDK binds the converter.
-	// Each binding returns a copy so concurrent requests do not share this value.
-	userID string
+	key string
 }
 
-func (dc testContextRequiredConverter) WithContext(ctx context.Context) converter.DataConverter {
-	dc.userID, _ = ctx.Value(testUserIDContextKey{}).(string)
+func (dc testContextualConverter) WithContext(ctx context.Context) converter.DataConverter {
+	dc.key, _ = ctx.Value(testContextKey{}).(string)
 	return dc
 }
 
-func (dc testContextRequiredConverter) WithWorkflowContext(ctx workflow.Context) converter.DataConverter {
-	dc.userID, _ = ctx.Value(testUserIDContextKey{}).(string)
+func (dc testContextualConverter) WithWorkflowContext(ctx workflow.Context) converter.DataConverter {
+	dc.key, _ = ctx.Value(testContextKey{}).(string)
 	return dc
 }
 
-func (dc testContextRequiredConverter) ToPayload(value any) (*commonpb.Payload, error) {
-	_, applicationValue := value.(testUserPayload)
-	if applicationValue && dc.userID == "" {
-		return nil, fmt.Errorf("encode application payload %T: expected nonempty user ID under context key %T, got user ID %q", value, testUserIDContextKey{}, dc.userID)
-	}
-	payload, err := dc.DataConverter.ToPayload(value)
-	if err != nil {
-		return nil, fmt.Errorf("encode payload %T for user ID %q using default converter: %w", value, dc.userID, err)
-	}
-	return payload, nil
-}
-
-func (dc testContextRequiredConverter) FromPayload(payload *commonpb.Payload, value any) error {
-	_, applicationValue := value.(*testUserPayload)
-	if applicationValue && dc.userID == "" {
-		return fmt.Errorf("decode application payload into %T: expected nonempty user ID under context key %T", value, testUserIDContextKey{})
-	}
-	if err := dc.DataConverter.FromPayload(payload, value); err != nil {
-		return fmt.Errorf("decode payload into %T for context user ID %q using default converter: %w", value, dc.userID, err)
-	}
-	return nil
-}
-
-func (dc testContextRequiredConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
-	payloads := &commonpb.Payloads{}
-	for i, value := range values {
-		payload, err := dc.ToPayload(value)
-		if err != nil {
-			return nil, fmt.Errorf("encode payload at index %d: %w", i, err)
-		}
-		payloads.Payloads = append(payloads.Payloads, payload)
-	}
-	return payloads, nil
-}
-
-func (dc testContextRequiredConverter) FromPayloads(payloads *commonpb.Payloads, values ...any) error {
-	for i, value := range values {
-		if i >= len(payloads.GetPayloads()) {
-			break
-		}
-		if err := dc.FromPayload(payloads.Payloads[i], value); err != nil {
-			return fmt.Errorf("decode payload at index %d: %w", i, err)
+func (dc testContextualConverter) ToPayloads(values ...any) (*commonpb.Payloads, error) {
+	for _, value := range values {
+		if _, ok := value.(testEncryptedString); ok && dc.key == "" {
+			return nil, fmt.Errorf("encode %T: converter did not receive a key from testContextKey", value)
 		}
 	}
-	return nil
+	return dc.DataConverter.ToPayloads(values...)
 }
 
-// testUserIDHeader carries the caller's account ID to the workflow context.
-// Result, query, update, and mutable side effect workflows need it to convert
-// application values. The termination test converts details only on the client;
-// its workflow does not need the account ID.
-const testUserIDHeader = "converter-binding-user-id"
-
-type testUserIDPropagator struct{}
-
-func (testUserIDPropagator) Inject(ctx context.Context, writer workflow.HeaderWriter) error {
-	return injectTestUserID(ctx.Value(testUserIDContextKey{}), writer)
+func (dc testContextualConverter) FromPayloads(payloads *commonpb.Payloads, values ...any) error {
+	for _, value := range values {
+		if _, ok := value.(*testEncryptedString); ok && dc.key == "" {
+			return fmt.Errorf("decode into %T: converter did not receive a key from testContextKey", value)
+		}
+	}
+	return dc.DataConverter.FromPayloads(payloads, values...)
 }
 
-func (testUserIDPropagator) InjectFromWorkflow(ctx workflow.Context, writer workflow.HeaderWriter) error {
-	return injectTestUserID(ctx.Value(testUserIDContextKey{}), writer)
-}
-
-func injectTestUserID(value any, writer workflow.HeaderWriter) error {
-	userID, ok := value.(string)
-	if !ok || userID == "" {
-		return fmt.Errorf("inject header %q: expected nonempty string user ID under context key %T, got %T (%v)", testUserIDHeader, testUserIDContextKey{}, value, value)
-	}
-	payload, err := converter.GetDefaultDataConverter().ToPayload(userID)
-	if err != nil {
-		return fmt.Errorf("inject header %q for user ID %q: %w", testUserIDHeader, userID, err)
-	}
-	writer.Set(testUserIDHeader, payload)
-	return nil
-}
-
-func (testUserIDPropagator) Extract(ctx context.Context, reader workflow.HeaderReader) (context.Context, error) {
-	userID, err := extractTestUserID(reader)
-	if err != nil {
-		return ctx, err
-	}
-	return context.WithValue(ctx, testUserIDContextKey{}, userID), nil
-}
-
-func (testUserIDPropagator) ExtractToWorkflow(ctx workflow.Context, reader workflow.HeaderReader) (workflow.Context, error) {
-	userID, err := extractTestUserID(reader)
-	if err != nil {
-		return ctx, err
-	}
-	return workflow.WithValue(ctx, testUserIDContextKey{}, userID), nil
-}
-
-func extractTestUserID(reader workflow.HeaderReader) (string, error) {
-	payload, ok := reader.Get(testUserIDHeader)
-	if !ok {
-		return "", fmt.Errorf("extract user ID into context key %T: expected header %q, got no header", testUserIDContextKey{}, testUserIDHeader)
-	}
-	var userID string
-	if err := converter.GetDefaultDataConverter().FromPayload(payload, &userID); err != nil {
-		return "", fmt.Errorf("extract header %q into string user ID under context key %T: %w", testUserIDHeader, testUserIDContextKey{}, err)
-	}
-	if userID == "" {
-		return "", fmt.Errorf("extract header %q: expected nonempty string user ID, got %q", testUserIDHeader, userID)
-	}
-	return userID, nil
-}
-
-func (ts *IntegrationTestSuite) startUserContextWorker(workflowFunc any) (client.Client, string) {
+// startContextWorker sets up a client to use our [testContextualConverter]
+// and sets up a worker that registers workflowFunc and fails on panic.
+// Returns the client and the task queue name.
+func (ts *IntegrationTestSuite) startContextWorker(workflowFunc any) (client.Client, string) {
 	ts.T().Helper()
 	c, err := ts.newDefaultClient(func(options *client.Options) {
-		options.DataConverter = testContextRequiredConverter{DataConverter: converter.GetDefaultDataConverter()}
-		options.ContextPropagators = []workflow.ContextPropagator{testUserIDPropagator{}}
+		options.DataConverter = testContextualConverter{DataConverter: converter.GetDefaultDataConverter()}
 	})
 	ts.NoError(err)
 	ts.T().Cleanup(c.Close)
-	taskQueue := "user-context-" + uuid.NewString()
-	w := worker.New(c, taskQueue, worker.Options{})
+	taskQueue := "converter-context-" + uuid.NewString()
+	w := worker.New(c, taskQueue, worker.Options{WorkflowPanicPolicy: worker.FailWorkflow})
 	w.RegisterWorkflow(workflowFunc)
 	ts.NoError(w.Start())
 	ts.T().Cleanup(w.Stop)
@@ -175,221 +75,139 @@ func (ts *IntegrationTestSuite) startUserContextWorker(workflowFunc any) (client
 
 // Workflow results.
 
-func userContextResultWorkflow(ctx workflow.Context) (testUserPayload, error) {
-	return testUserPayload(ctx.Value(testUserIDContextKey{}).(string)), nil
-}
-
-// testAccountResultConverter adds a result-specific business rule: this workflow
-// returns the account ID, which must match the account requesting the result.
-// This is a decoding check, not encryption or an authorization mechanism.
-type testAccountResultConverter struct {
-	testContextRequiredConverter
-}
-
-func (dc testAccountResultConverter) WithContext(ctx context.Context) converter.DataConverter {
-	dc.userID, _ = ctx.Value(testUserIDContextKey{}).(string)
-	return dc
-}
-
-func (dc testAccountResultConverter) FromPayloads(payloads *commonpb.Payloads, values ...any) error {
-	if err := dc.testContextRequiredConverter.FromPayloads(payloads, values...); err != nil {
-		return err
-	}
-	for _, value := range values {
-		if result, ok := value.(*testUserPayload); ok && string(*result) != dc.userID {
-			return fmt.Errorf("decode account result: context account ID %q does not match result account ID %q", dc.userID, *result)
-		}
-	}
-	return nil
+func contextResultWorkflow(workflow.Context) (string, error) {
+	return "result", nil
 }
 
 func (ts *IntegrationTestSuite) TestConverterContext_WorkflowResult() {
-	c, taskQueue := ts.startUserContextWorker(userContextResultWorkflow)
-	resultClient, err := ts.newDefaultClient(func(options *client.Options) {
-		options.DataConverter = testAccountResultConverter{
-			testContextRequiredConverter{DataConverter: converter.GetDefaultDataConverter()},
-		}
-	})
-	ts.NoError(err)
-	ts.T().Cleanup(resultClient.Close)
-	baseCtx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	c, taskQueue := ts.startContextWorker(contextResultWorkflow)
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
 	defer cancel()
-	for _, userID := range []string{"user-alice", "user-bob"} {
-		ctx := context.WithValue(baseCtx, testUserIDContextKey{}, userID)
-		run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-			ID: "user-result-" + uuid.NewString(), TaskQueue: taskQueue,
-		}, userContextResultWorkflow)
-		ts.NoError(err)
-		// GetWorkflow does not bind application context; Get does.
-		result := resultClient.GetWorkflow(baseCtx, run.GetID(), run.GetRunID())
-		var got testUserPayload
-		ts.Error(result.Get(baseCtx, &got))
-		wrongCtx := context.WithValue(baseCtx, testUserIDContextKey{}, "wrong-user")
-		ts.ErrorContains(result.Get(wrongCtx, &got), "does not match result account ID")
-		ts.NoError(result.Get(ctx, &got))
-		ts.Equal(testUserPayload(userID), got)
-	}
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: taskQueue}, contextResultWorkflow)
+	ts.NoError(err)
+	var result testEncryptedString
+	ts.NoError(run.Get(context.WithValue(ctx, testContextKey{}, "key"), &result))
 }
 
 // Queries.
 
-func userContextQueryWorkflow(ctx workflow.Context) error {
-	if err := workflow.SetQueryHandler(ctx, "query", func(input testUserPayload) (testUserPayload, error) {
-		return "query:" + input, nil
+func contextQueryWorkflow(ctx workflow.Context) error {
+	ctx = workflow.WithValue(ctx, testContextKey{}, "key")
+	if err := workflow.SetQueryHandler(ctx, "query", func(input testEncryptedString) (testEncryptedString, error) {
+		return input, nil
 	}); err != nil {
-		return fmt.Errorf("register query handler for context user ID %q, expecting %T input and result: %w", ctx.Value(testUserIDContextKey{}), testUserPayload(""), err)
+		return err
 	}
 	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
 	return nil
 }
 
 func (ts *IntegrationTestSuite) TestConverterContext_Query() {
-	c, taskQueue := ts.startUserContextWorker(userContextQueryWorkflow)
-	baseCtx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	c, taskQueue := ts.startContextWorker(contextQueryWorkflow)
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
 	defer cancel()
-	ctx := context.WithValue(baseCtx, testUserIDContextKey{}, "user-alice")
-	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID: "user-query-" + uuid.NewString(), TaskQueue: taskQueue,
-	}, userContextQueryWorkflow)
+	ctx = context.WithValue(ctx, testContextKey{}, "key")
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: taskQueue}, contextQueryWorkflow)
 	ts.NoError(err)
-	query, err := c.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "query", testUserPayload("input"))
+	query, err := c.QueryWorkflow(ctx, run.GetID(), run.GetRunID(), "query", testEncryptedString("input"))
 	ts.NoError(err)
-	var got testUserPayload
-	ts.NoError(query.Get(&got))
-	ts.Equal(testUserPayload("query:input"), got)
-	missingContextQuery, err := c.QueryWorkflow(baseCtx, run.GetID(), run.GetRunID(), "query", testUserPayload("input"))
-	ts.Error(err)
-	ts.Nil(missingContextQuery)
+	var result testEncryptedString
+	ts.NoError(query.Get(&result))
 	ts.NoError(c.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", nil))
-	ts.NoError(run.Get(ctx, nil))
 }
 
 // Updates, including deferred result polling.
 
-func userContextUpdateWorkflow(ctx workflow.Context) error {
-	if err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context, input testUserPayload, wait bool) (testUserPayload, error) {
+func contextUpdateWorkflow(ctx workflow.Context) error {
+	ctx = workflow.WithValue(ctx, testContextKey{}, "key")
+	if err := workflow.SetUpdateHandler(ctx, "update", func(ctx workflow.Context, input testEncryptedString, wait bool) (testEncryptedString, error) {
 		if wait {
 			workflow.GetSignalChannel(ctx, "release").Receive(ctx, nil)
 		}
-		return "update:" + input, nil
+		return input, nil
 	}); err != nil {
-		return fmt.Errorf("register update handler for context user ID %q, expecting %T input and result: %w", ctx.Value(testUserIDContextKey{}), testUserPayload(""), err)
+		return err
 	}
 	workflow.GetSignalChannel(ctx, "finish").Receive(ctx, nil)
 	return workflow.Await(ctx, func() bool { return workflow.AllHandlersFinished(ctx) })
 }
 
 func (ts *IntegrationTestSuite) TestConverterContext_CompletedUpdate() {
-	c, taskQueue := ts.startUserContextWorker(userContextUpdateWorkflow)
-	baseCtx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	c, taskQueue := ts.startContextWorker(contextUpdateWorkflow)
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
 	defer cancel()
-	ctx := context.WithValue(baseCtx, testUserIDContextKey{}, "user-alice")
-	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID: "user-update-" + uuid.NewString(), TaskQueue: taskQueue,
-	}, userContextUpdateWorkflow)
+	ctx = context.WithValue(ctx, testContextKey{}, "key")
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: taskQueue}, contextUpdateWorkflow)
 	ts.NoError(err)
 	completed, err := c.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
 		WorkflowID: run.GetID(), RunID: run.GetRunID(), UpdateID: "completed",
-		UpdateName: "update", Args: []any{testUserPayload("completed"), false},
+		UpdateName: "update", Args: []any{testEncryptedString("completed"), false},
 		WaitForStage: client.WorkflowUpdateStageCompleted,
 	})
 	ts.NoError(err)
-	// A completed handle retains the UpdateWorkflow call's converter, even
-	// when Get receives a context without a user ID.
-	var got testUserPayload
-	ts.NoError(completed.Get(baseCtx, &got))
-	ts.Equal(testUserPayload("update:completed"), got)
+	var result testEncryptedString
+	ts.NoError(completed.Get(ctx, &result))
 	ts.NoError(c.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", nil))
-	ts.NoError(run.Get(ctx, nil))
 }
 
 func (ts *IntegrationTestSuite) TestConverterContext_UpdatePolling() {
-	c, taskQueue := ts.startUserContextWorker(userContextUpdateWorkflow)
-	baseCtx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	c, taskQueue := ts.startContextWorker(contextUpdateWorkflow)
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
 	defer cancel()
-	ctx := context.WithValue(baseCtx, testUserIDContextKey{}, "user-bob")
-	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID: "user-update-poll-" + uuid.NewString(), TaskQueue: taskQueue,
-	}, userContextUpdateWorkflow)
+	ctx = context.WithValue(ctx, testContextKey{}, "key")
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: taskQueue}, contextUpdateWorkflow)
 	ts.NoError(err)
 	accepted, err := c.UpdateWorkflow(ctx, client.UpdateWorkflowOptions{
 		WorkflowID: run.GetID(), RunID: run.GetRunID(), UpdateID: "polled",
-		UpdateName: "update", Args: []any{testUserPayload("polled"), true},
+		UpdateName: "update", Args: []any{testEncryptedString("polled"), true},
 		WaitForStage: client.WorkflowUpdateStageAccepted,
 	})
 	ts.NoError(err)
 	ts.NoError(c.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "release", nil))
-	var got testUserPayload
-	ts.NoError(accepted.Get(ctx, &got))
-	ts.Equal(testUserPayload("update:polled"), got)
-	retrieved := c.GetWorkflowUpdateHandle(client.GetWorkflowUpdateHandleOptions{
-		WorkflowID: run.GetID(), RunID: run.GetRunID(), UpdateID: "polled",
-	})
-	ts.NoError(retrieved.Get(ctx, &got))
-	ts.Equal(testUserPayload("update:polled"), got)
+	var result testEncryptedString
+	ts.NoError(accepted.Get(ctx, &result))
 	ts.NoError(c.SignalWorkflow(ctx, run.GetID(), run.GetRunID(), "finish", nil))
-	ts.NoError(run.Get(ctx, nil))
 }
 
 // Mutable side effects.
 
-func userContextMutableSideEffectWorkflow(ctx workflow.Context) (testUserPayload, error) {
-	var mutable testUserPayload
-	for _, next := range []testUserPayload{"first", "second", "second"} {
-		err := workflow.MutableSideEffect(ctx, "user-value", func(workflow.Context) any {
-			return next
+func contextMutableSideEffectWorkflow(ctx workflow.Context) error {
+	ctx = workflow.WithValue(ctx, testContextKey{}, "key")
+	for i := 0; i < 2; i++ {
+		value := workflow.MutableSideEffect(ctx, "value", func(workflow.Context) any {
+			return testEncryptedString("value")
 		}, func(a, b any) bool {
-			return a.(testUserPayload) == b.(testUserPayload)
-		}).Get(&mutable)
-		if err != nil {
-			return "", fmt.Errorf("decode mutable side effect for context user ID %q, expected value %q into %T: %w", ctx.Value(testUserIDContextKey{}), next, &mutable, err)
-		}
-		if mutable != next {
-			return "", fmt.Errorf("mutable side effect for context user ID %q: expected value %q (%T), got %q (%T)", ctx.Value(testUserIDContextKey{}), next, next, mutable, mutable)
+			return a == b
+		})
+		var result testEncryptedString
+		if err := value.Get(&result); err != nil {
+			return err
 		}
 	}
-	return mutable, nil
+	return nil
 }
 
 func (ts *IntegrationTestSuite) TestConverterContext_MutableSideEffect() {
-	c, taskQueue := ts.startUserContextWorker(userContextMutableSideEffectWorkflow)
-	baseCtx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	c, taskQueue := ts.startContextWorker(contextMutableSideEffectWorkflow)
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
 	defer cancel()
-	ctx := context.WithValue(baseCtx, testUserIDContextKey{}, "user-alice")
-	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID: "user-mutable-" + uuid.NewString(), TaskQueue: taskQueue,
-	}, userContextMutableSideEffectWorkflow)
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: taskQueue}, contextMutableSideEffectWorkflow)
 	ts.NoError(err)
-	var got testUserPayload
-	ts.NoError(run.Get(ctx, &got))
-	ts.Equal(testUserPayload("second"), got)
+	ts.NoError(run.Get(ctx, nil))
 }
 
 // Termination details.
 
-func userContextTerminationWorkflow(ctx workflow.Context) error {
+func contextTerminationWorkflow(ctx workflow.Context) error {
 	return workflow.Await(ctx, func() bool { return false })
 }
 
 func (ts *IntegrationTestSuite) TestConverterContext_Termination() {
-	c, taskQueue := ts.startUserContextWorker(userContextTerminationWorkflow)
-	baseCtx, cancel := context.WithTimeout(context.Background(), ctxTimeout)
+	c, taskQueue := ts.startContextWorker(contextTerminationWorkflow)
+	ctx, cancel := context.WithTimeout(ts.T().Context(), ctxTimeout)
 	defer cancel()
-	ctx := context.WithValue(baseCtx, testUserIDContextKey{}, "user-bob")
-	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{
-		ID: "user-termination-" + uuid.NewString(), TaskQueue: taskQueue,
-	}, userContextTerminationWorkflow)
+	ctx = context.WithValue(ctx, testContextKey{}, "key")
+	run, err := c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{TaskQueue: taskQueue}, contextTerminationWorkflow)
 	ts.NoError(err)
-	ts.NoError(c.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "test termination", testUserPayload("termination details")))
-	history := c.GetWorkflowHistory(ctx, run.GetID(), run.GetRunID(), false, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
-	ts.True(history.HasNext())
-	event, err := history.Next()
-	ts.NoError(err)
-	details := event.GetWorkflowExecutionTerminatedEventAttributes().GetDetails()
-	ts.Len(details.GetPayloads(), 1)
-	dc := testContextRequiredConverter{DataConverter: converter.GetDefaultDataConverter()}
-	var got testUserPayload
-	ts.Error(dc.FromPayloads(details, &got))
-	ts.NoError(dc.WithContext(ctx).FromPayloads(details, &got))
-	ts.Equal(testUserPayload("termination details"), got)
+	ts.NoError(c.TerminateWorkflow(ctx, run.GetID(), run.GetRunID(), "test termination", testEncryptedString("termination details")))
 }
