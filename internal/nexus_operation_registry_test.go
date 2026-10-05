@@ -13,8 +13,8 @@ import (
 
 type registryModel struct{ Value string }
 
-func (registryModel) TransferTypeConverter() TransferTypeConverter {
-	return NewContextAwareTransferTypeConverter[registryModel, commonpb.Payload](nil, nil, nil, nil,
+func (registryModel) TransferTypeConverter() (TransferTypeConverter, error) {
+	return NewTransferTypeConverter[registryModel, commonpb.Payload](nil, nil,
 		func(ctx Context, value *registryModel) (*commonpb.Payload, error) {
 			return GetDataConverterFromWorkflowContext(ctx).ToPayload(value.Value)
 		},
