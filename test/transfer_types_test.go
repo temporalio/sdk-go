@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go.temporal.io/sdk/client"
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -15,8 +16,8 @@ type intTestTransferType struct {
 	value int
 }
 
-func (intTestTransferType) TransferTypeConverter() (workflow.TransferTypeConverter, error) {
-	return workflow.NewTransferTypeConverter(
+func (intTestTransferType) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
 		func(value *intTestTransferType) (*int, error) {
 			return &value.value, nil
 		},

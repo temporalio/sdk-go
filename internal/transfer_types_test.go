@@ -28,8 +28,8 @@ import (
 // temperature is a struct with no exported fields and its transfer type is a float64.
 type temperature struct{ kelvin float64 }
 
-func (temperature) TransferTypeConverter() (TransferTypeConverter, error) {
-	return NewTransferTypeConverter(
+func (temperature) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
 		func(t *temperature) (*float64, error) {
 			return &t.kelvin, nil
 		},
@@ -45,8 +45,8 @@ type unencodable struct{}
 
 var errNoEncoding = errors.New("cannot encode")
 
-func (unencodable) TransferTypeConverter() (TransferTypeConverter, error) {
-	return NewTransferTypeConverter(
+func (unencodable) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
 		func(*unencodable) (*string, error) { return nil, errNoEncoding },
 		func(*string, *unencodable) error { return nil },
 	)
@@ -57,8 +57,8 @@ type undecodable struct{}
 
 var errNoDecoding = errors.New("cannot decode")
 
-func (undecodable) TransferTypeConverter() (TransferTypeConverter, error) {
-	return NewTransferTypeConverter(
+func (undecodable) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
 		func(*undecodable) (*string, error) {
 			encoded := "encoded"
 			return &encoded, nil
@@ -70,8 +70,15 @@ func (undecodable) TransferTypeConverter() (TransferTypeConverter, error) {
 // invalidTransferConverter returns an error when creating the converter.
 type invalidTransferConverter struct{}
 
-func (invalidTransferConverter) TransferTypeConverter() (TransferTypeConverter, error) {
+func (invalidTransferConverter) TransferTypeConverter() (converter.TransferTypeConverter, error) {
 	return nil, errNoEncoding
+}
+
+// mismatchedTransferModel returns a converter for a different model type.
+type mismatchedTransferModel struct{}
+
+func (mismatchedTransferModel) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return (temperature{}).TransferTypeConverter()
 }
 
 // contextualString has a transfer type converter that looks for [transferContextKey]
@@ -80,8 +87,8 @@ type contextualString string
 
 type transferContextKey struct{}
 
-func (contextualString) TransferTypeConverter() (TransferTypeConverter, error) {
-	return NewContextualTransferTypeConverter(
+func (contextualString) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewContextualTransferTypeConverter(
 		func(ctx context.Context, value *contextualString) (*string, error) {
 			label, _ := ctx.Value(transferContextKey{}).(string)
 			transferType := fmt.Sprintf("go:%s:%s", label, string(*value))
@@ -358,7 +365,7 @@ func TestTransferAwareDataConverter_ContextDelegation(t *testing.T) {
 		require.NotSame(t, dc, WithContext(t.Context(), dc))
 		require.NotSame(t, dc, WithWorkflowContext(Background(), dc))
 		// Serialization contexts are only forwarded, so there is nothing to keep.
-		require.Same(t, dc, dc.WithSerializationContext(converter.WorkflowSerializationContext{}))
+		require.Same(t, dc, converter.WithDataConverterSerializationContext(dc, converter.WorkflowSerializationContext{}))
 	})
 }
 
@@ -366,7 +373,7 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 	t.Parallel()
 	parent := converter.GetDefaultDataConverter()
 	ctx := WithValue(Background(), transferContextKey{}, "workflow")
-	dc := DefaultInternalDataConverter.WithWorkflowContext(ctx)
+	dc := WithWorkflowContext(ctx, DefaultInternalDataConverter)
 
 	payload, err := dc.ToPayload(contextualString("value"))
 	require.NoError(t, err)
@@ -393,43 +400,6 @@ func TestTransferAwareDataConverter_ConversionContext(t *testing.T) {
 	require.NoError(t, dc.FromPayloads(payloads, &gotOne, &gotTwo))
 	require.Equal(t, contextualString("wf:workflow:one"), gotOne)
 	require.Equal(t, contextualString("wf:workflow:two"), gotTwo)
-}
-
-func TestTransferAwareDataConverter_DefaultContext(t *testing.T) {
-	t.Parallel()
-	for _, dc := range []*transferAwareDataConverter{
-		makeTransferAware(nil),
-		//lint:ignore SA1012 verify the converter's nil-context fallback
-		makeTransferAware(nil).WithContext(nil).(*transferAwareDataConverter),
-	} {
-		var encodeContext, decodeContext context.Context
-		tc, err := NewContextualTransferTypeConverter(
-			func(ctx context.Context, value *temperature) (*float64, error) {
-				encodeContext = ctx
-				return &value.kelvin, nil
-			},
-			func(ctx context.Context, transferType *float64, value *temperature) error {
-				decodeContext = ctx
-				value.kelvin = *transferType
-				return nil
-			},
-			nil, nil,
-		)
-		require.NoError(t, err)
-		transferType, err := dc.toTransferType(tc, temperature{kelvin: 300})
-		require.NoError(t, err)
-		var value temperature
-		require.NoError(t, dc.fromTransferType(tc, transferType, &value))
-		require.Equal(t, temperature{kelvin: 300}, value)
-		for _, ctx := range []context.Context{encodeContext, decodeContext} {
-			require.NotNil(t, ctx)
-			_, hasDeadline := ctx.Deadline()
-			require.False(t, hasDeadline)
-			require.Nil(t, ctx.Done())
-			require.NoError(t, ctx.Err())
-			require.Nil(t, ctx.Value(transferContextKey{}))
-		}
-	}
 }
 
 // -- SDK INTEGRATION TESTS -----------------------------------------------------------
@@ -532,8 +502,8 @@ func TestTransferTypesMockClientWorkflowResult(t *testing.T) {
 // converter that isn't transfer-aware, the fields disappear.
 type transferExecution struct{ workflowID, runID string }
 
-func (transferExecution) TransferTypeConverter() (TransferTypeConverter, error) {
-	return NewTransferTypeConverter(
+func (transferExecution) TransferTypeConverter() (converter.TransferTypeConverter, error) {
+	return converter.NewTransferTypeConverter(
 		func(value *transferExecution) (*commonpb.WorkflowExecution, error) {
 			return &commonpb.WorkflowExecution{WorkflowId: value.workflowID, RunId: value.runID}, nil
 		},
@@ -722,27 +692,38 @@ func TestTransferTypes_DataConverterWrapping(t *testing.T) {
 
 func TestNewContextualTransferTypeConverter_RejectsPointerTypes(t *testing.T) {
 	t.Parallel()
-	tc, err := NewContextualTransferTypeConverter[*temperature, float64](nil, nil, nil, nil)
+	tc, err := converter.NewContextualTransferTypeConverter[*temperature, float64](nil, nil, nil, nil)
 	require.Nil(t, tc)
 	require.EqualError(t, err, "transfer type converter: model type must not be a pointer, got *internal.temperature")
-	tc, err = NewContextualTransferTypeConverter[temperature, *float64](nil, nil, nil, nil)
+	tc, err = converter.NewContextualTransferTypeConverter[temperature, *float64](nil, nil, nil, nil)
 	require.Nil(t, tc)
 	require.EqualError(t, err, "transfer type converter: transfer type must not be a pointer, got *float64")
 }
 
 func TestTransferTypeConverter_InvalidTypes(t *testing.T) {
 	t.Parallel()
-	tc, err := (temperature{}).TransferTypeConverter()
+	dc := converter.NewTransferAwareDataConverter(nil)
+	payload, err := converter.GetDefaultDataConverter().ToPayload(300.0)
 	require.NoError(t, err)
-	ctx := t.Context()
-	_, err = tc.toTransferType(ctx, "wrong")
-	require.ErrorContains(t, err, "want value of type internal.temperature or *internal.temperature, got string")
-	_, err = tc.toTransferTypeWithWorkflowContext(nil, "wrong")
-	require.ErrorContains(t, err, "want value of type internal.temperature or *internal.temperature, got string")
-	require.ErrorContains(t, tc.fromTransferType(ctx, new(float64), "wrong"), "want value of type *internal.temperature, got string")
-	require.ErrorContains(t, tc.fromTransferType(ctx, "wrong", new(temperature)), "want transfer value of type *float64, got string")
-	require.ErrorContains(t, tc.fromTransferTypeWithWorkflowContext(nil, new(float64), "wrong"), "want value of type *internal.temperature, got string")
-	require.ErrorContains(t, tc.fromTransferTypeWithWorkflowContext(nil, "wrong", new(temperature)), "want transfer value of type *float64, got string")
+	payloads := &commonpb.Payloads{Payloads: []*commonpb.Payload{payload}}
+
+	for _, tt := range []struct {
+		name string
+		dc   converter.DataConverter
+	}{
+		{name: "Go context", dc: WithContext(t.Context(), dc)},
+		{name: "workflow context", dc: WithWorkflowContext(Background(), dc)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			value := mismatchedTransferModel{}
+			_, err := tt.dc.ToPayload(value)
+			require.ErrorContains(t, err, "want value of type internal.temperature or *internal.temperature, got internal.mismatchedTransferModel")
+			_, err = tt.dc.ToPayloads(value)
+			require.ErrorContains(t, err, "want value of type internal.temperature or *internal.temperature, got internal.mismatchedTransferModel")
+			require.ErrorContains(t, tt.dc.FromPayload(payload, &value), "want value of type *internal.temperature, got *internal.mismatchedTransferModel")
+			require.ErrorContains(t, tt.dc.FromPayloads(payloads, &value), "want value of type *internal.temperature, got *internal.mismatchedTransferModel")
+		})
+	}
 }
 
 func TestTransferAwareDataConverter_DiscoveryError(t *testing.T) {
