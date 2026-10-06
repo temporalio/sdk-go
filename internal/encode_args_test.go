@@ -20,7 +20,7 @@ func TestDecodeArg(t *testing.T) {
 	require.Equal(t, testErrorDetails3, r)
 
 	// test mismatch of multi arguments
-	b, err = encodeArgs(dc, []interface{}{testErrorDetails1, testErrorDetails2})
+	b, err = encodeArgs(dc, []any{testErrorDetails1, testErrorDetails2})
 	require.NoError(t, err)
 	require.Error(t, decodeArg(dc, b, &r))
 }

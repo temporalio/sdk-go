@@ -1,7 +1,6 @@
 package testsuite_test
 
 import (
-	"context"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/workflowservice/v1"
 	"go.temporal.io/sdk/client"
@@ -13,40 +12,40 @@ import (
 )
 
 func TestStartDevServer_Defaults(t *testing.T) {
-	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{})
+	server, err := testsuite.StartDevServer(t.Context(), testsuite.DevServerOptions{})
 	require.NoError(t, err)
 	defer func() { _ = server.Stop() }()
-	info, err := server.Client().WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
+	info, err := server.Client().WorkflowService().GetSystemInfo(t.Context(), &workflowservice.GetSystemInfoRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, info.Capabilities)
 }
 
 func TestStartDevServer_SpecificVersion(t *testing.T) {
-	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{CachedDownload: testsuite.CachedDownload{Version: "v1.6.1"}})
+	server, err := testsuite.StartDevServer(t.Context(), testsuite.DevServerOptions{CachedDownload: testsuite.CachedDownload{Version: "v1.6.1"}})
 	require.NoError(t, err)
 	defer func() { _ = server.Stop() }()
-	info, err := server.Client().WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
+	info, err := server.Client().WorkflowService().GetSystemInfo(t.Context(), &workflowservice.GetSystemInfoRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, info.Capabilities)
 }
 
 func TestStartDevServer_CustomNamespace(t *testing.T) {
-	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{ClientOptions: &client.Options{Namespace: "testing"}})
+	server, err := testsuite.StartDevServer(t.Context(), testsuite.DevServerOptions{ClientOptions: &client.Options{Namespace: "testing"}})
 	require.NoError(t, err)
 	defer func() { _ = server.Stop() }()
-	info, err := server.Client().WorkflowService().DescribeNamespace(context.Background(), &workflowservice.DescribeNamespaceRequest{Namespace: "testing"})
+	info, err := server.Client().WorkflowService().DescribeNamespace(t.Context(), &workflowservice.DescribeNamespaceRequest{Namespace: "testing"})
 	require.NoError(t, err)
 	require.Equal(t, "testing", info.NamespaceInfo.Name)
 }
 
 func TestStartDevServer_FrontendHostPort(t *testing.T) {
-	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{})
+	server, err := testsuite.StartDevServer(t.Context(), testsuite.DevServerOptions{})
 	require.NoError(t, err)
 	defer func() { _ = server.Stop() }()
 	hostPort := server.FrontendHostPort()
 	client, err := client.Dial(client.Options{HostPort: hostPort})
 	require.NoError(t, err)
-	info, err := client.WorkflowService().GetSystemInfo(context.Background(), &workflowservice.GetSystemInfoRequest{})
+	info, err := client.WorkflowService().GetSystemInfo(t.Context(), &workflowservice.GetSystemInfoRequest{})
 	require.NoError(t, err)
 	require.NotNil(t, info.Capabilities)
 }
@@ -75,29 +74,29 @@ func TestStartDevServer_SearchAttributes(t *testing.T) {
 	}
 
 	// Confirm that when used in env without SAs it fails
-	server, err := testsuite.StartDevServer(context.Background(), testsuite.DevServerOptions{})
+	server, err := testsuite.StartDevServer(t.Context(), testsuite.DevServerOptions{})
 	require.NoError(t, err)
 	defer func() { _ = server.Stop() }()
 
-	_, err = server.Client().ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{
+	_, err = server.Client().ExecuteWorkflow(t.Context(), client.StartWorkflowOptions{
 		TypedSearchAttributes: sa,
 	}, func(ctx workflow.Context) error { return nil })
 	require.Error(t, err)
 
 	// Confirm that when used in env with SAs it succeeds
-	server1, err := testsuite.StartDevServer(context.Background(), opts)
+	server1, err := testsuite.StartDevServer(t.Context(), opts)
 	require.NoError(t, err)
 	defer func() { _ = server1.Stop() }()
 
 	c := server1.Client()
 
-	run, err := c.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{
+	run, err := c.ExecuteWorkflow(t.Context(), client.StartWorkflowOptions{
 		TypedSearchAttributes: sa,
 		TaskQueue:             "dev-server-search-attributes-test",
 	}, func(ctx workflow.Context) error { return nil })
 	require.NoError(t, err)
 
-	describe, err := c.DescribeWorkflow(context.Background(), run.GetID(), run.GetRunID())
+	describe, err := c.DescribeWorkflow(t.Context(), run.GetID(), run.GetRunID())
 	require.NoError(t, err)
 	saTime, found := sa.GetTime(attrTime)
 	require.True(t, found)

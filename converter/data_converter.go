@@ -18,7 +18,7 @@ type (
 		// ToPayload converts single value to payload.
 		//
 		// Note: When value is of RawValue type, encoding should occur, but data conversion must be skipped.
-		ToPayload(value interface{}) (*commonpb.Payload, error)
+		ToPayload(value any) (*commonpb.Payload, error)
 		// FromPayload converts single value from payload.
 		//
 		// Note, values should not be reused for extraction here because merging on
@@ -26,17 +26,17 @@ type (
 		// json.Unmarshal.
 		//
 		// Note: When valuePtr is of RawValue type, decryption should occur but data conversion must be skipped.
-		FromPayload(payload *commonpb.Payload, valuePtr interface{}) error
+		FromPayload(payload *commonpb.Payload, valuePtr any) error
 
 		// ToPayloads converts a list of values.
-		ToPayloads(value ...interface{}) (*commonpb.Payloads, error)
+		ToPayloads(value ...any) (*commonpb.Payloads, error)
 		// FromPayloads converts to a list of values of different types.
 		// Useful for deserializing arguments of function invocations.
 		//
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		FromPayloads(payloads *commonpb.Payloads, valuePtrs ...interface{}) error
+		FromPayloads(payloads *commonpb.Payloads, valuePtrs ...any) error
 
 		// ToString converts payload object into human readable string.
 		ToString(input *commonpb.Payload) string

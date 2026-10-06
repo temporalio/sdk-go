@@ -57,12 +57,27 @@ func (StorageDriverActivityInfo) isStorageDriverTargetInfo() {}
 
 var _ StorageDriverTargetInfo = StorageDriverActivityInfo{}
 
-// StorageDriverStoreContext carries context passed to StorageDriver.Store and
-// StorageDriverSelector.SelectDriver operations.
+// StorageDriverStoreContext carries context passed to StorageDriver.Store
+// operations.
 //
 // NOTE: Experimental
 type StorageDriverStoreContext struct {
 	// Context is the context of the operation that triggered the driver call.
+	// Drivers should use it to respect cancellation and to propagate deadlines
+	// and trace information to downstream calls (e.g. cloud storage SDKs).
+	Context context.Context
+	// Target identifies the workflow or activity on whose behalf payloads are
+	// being stored. Use a type switch on [StorageDriverWorkflowInfo] and
+	// [StorageDriverActivityInfo] to access the concrete values.
+	Target StorageDriverTargetInfo
+}
+
+// StorageDriverSelectContext carries context passed to
+// StorageDriverSelector.SelectDriver operations.
+//
+// NOTE: Experimental
+type StorageDriverSelectContext struct {
+	// Context is the context of the operation that triggered the selector call.
 	// Drivers should use it to respect cancellation and to propagate deadlines
 	// and trace information to downstream calls (e.g. cloud storage SDKs).
 	Context context.Context
@@ -139,7 +154,7 @@ type StorageDriver interface {
 //
 // NOTE: Experimental
 type StorageDriverSelector interface {
-	SelectDriver(ctx StorageDriverStoreContext, payload *commonpb.Payload) (StorageDriver, error)
+	SelectDriver(ctx StorageDriverSelectContext, payload *commonpb.Payload) (StorageDriver, error)
 }
 
 // ExternalStorage configures external payload storage for a Temporal client or

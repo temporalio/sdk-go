@@ -95,7 +95,7 @@ func (_m *Client) Close() {
 }
 
 // CompleteActivity provides a mock function with given fields: ctx, taskToken, result, err
-func (_m *Client) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
+func (_m *Client) CompleteActivity(ctx context.Context, taskToken []byte, result any, err error) error {
 	ret := _m.Called(ctx, taskToken, result, err)
 
 	if len(ret) == 0 {
@@ -103,7 +103,7 @@ func (_m *Client) CompleteActivity(ctx context.Context, taskToken []byte, result
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, []byte, interface{}, error) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, []byte, any, error) error); ok {
 		r0 = rf(ctx, taskToken, result, err)
 	} else {
 		r0 = ret.Error(0)
@@ -131,7 +131,7 @@ func (_m *Client) CompleteActivityWithOptions(ctx context.Context, opts client.C
 }
 
 // CompleteActivityByID provides a mock function with given fields: ctx, namespace, workflowID, runID, activityID, result, err
-func (_m *Client) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result interface{}, err error) error {
+func (_m *Client) CompleteActivityByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, result any, err error) error {
 	ret := _m.Called(ctx, namespace, workflowID, runID, activityID, result, err)
 
 	if len(ret) == 0 {
@@ -139,7 +139,7 @@ func (_m *Client) CompleteActivityByID(ctx context.Context, namespace string, wo
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, interface{}, error) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, any, error) error); ok {
 		r0 = rf(ctx, namespace, workflowID, runID, activityID, result, err)
 	} else {
 		r0 = ret.Error(0)
@@ -167,7 +167,7 @@ func (_m *Client) CompleteActivityByIDWithOptions(ctx context.Context, opts clie
 }
 
 // CompleteActivityByActivityID provides a mock function with given fields: ctx, namespace, activityID, activityRunID, result, err
-func (_m *Client) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result interface{}, err error) error {
+func (_m *Client) CompleteActivityByActivityID(ctx context.Context, namespace string, activityID string, activityRunID string, result any, err error) error {
 	ret := _m.Called(ctx, namespace, activityID, activityRunID, result, err)
 
 	if len(ret) == 0 {
@@ -175,7 +175,7 @@ func (_m *Client) CompleteActivityByActivityID(ctx context.Context, namespace st
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, interface{}, error) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, any, error) error); ok {
 		r0 = rf(ctx, namespace, activityID, activityRunID, result, err)
 	} else {
 		r0 = ret.Error(0)
@@ -348,8 +348,8 @@ func (_m *Client) DescribeWorkflowExecution(ctx context.Context, workflowID stri
 }
 
 // ExecuteWorkflow provides a mock function with given fields: ctx, options, workflow, args
-func (_m *Client) ExecuteWorkflow(ctx context.Context, options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) (client.WorkflowRun, error) {
-	var _ca []interface{}
+func (_m *Client) ExecuteWorkflow(ctx context.Context, options client.StartWorkflowOptions, workflow any, args ...any) (client.WorkflowRun, error) {
+	var _ca []any
 	_ca = append(_ca, ctx, options, workflow)
 	_ca = append(_ca, args...)
 	ret := _m.Called(_ca...)
@@ -360,10 +360,10 @@ func (_m *Client) ExecuteWorkflow(ctx context.Context, options client.StartWorkf
 
 	var r0 client.WorkflowRun
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) (client.WorkflowRun, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.StartWorkflowOptions, any, ...any) (client.WorkflowRun, error)); ok {
 		return rf(ctx, options, workflow, args...)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) client.WorkflowRun); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.StartWorkflowOptions, any, ...any) client.WorkflowRun); ok {
 		r0 = rf(ctx, options, workflow, args...)
 	} else {
 		if ret.Get(0) != nil {
@@ -371,7 +371,7 @@ func (_m *Client) ExecuteWorkflow(ctx context.Context, options client.StartWorkf
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, client.StartWorkflowOptions, any, ...any) error); ok {
 		r1 = rf(ctx, options, workflow, args...)
 	} else {
 		r1 = ret.Error(1)
@@ -699,8 +699,8 @@ func (_m *Client) ListWorkflow(ctx context.Context, request *workflowservice.Lis
 }
 
 // NewWithStartWorkflowOperation provides a mock function with given fields: options, workflow, args
-func (_m *Client) NewWithStartWorkflowOperation(options client.StartWorkflowOptions, workflow interface{}, args ...interface{}) client.WithStartWorkflowOperation {
-	var _ca []interface{}
+func (_m *Client) NewWithStartWorkflowOperation(options client.StartWorkflowOptions, workflow any, args ...any) client.WithStartWorkflowOperation {
+	var _ca []any
 	_ca = append(_ca, options, workflow)
 	_ca = append(_ca, args...)
 	ret := _m.Called(_ca...)
@@ -710,7 +710,7 @@ func (_m *Client) NewWithStartWorkflowOperation(options client.StartWorkflowOpti
 	}
 
 	var r0 client.WithStartWorkflowOperation
-	if rf, ok := ret.Get(0).(func(client.StartWorkflowOptions, interface{}, ...interface{}) client.WithStartWorkflowOperation); ok {
+	if rf, ok := ret.Get(0).(func(client.StartWorkflowOptions, any, ...any) client.WithStartWorkflowOperation); ok {
 		r0 = rf(options, workflow, args...)
 	} else {
 		if ret.Get(0) != nil {
@@ -742,8 +742,8 @@ func (_m *Client) OperatorService() operatorservice.OperatorServiceClient {
 }
 
 // QueryWorkflow provides a mock function with given fields: ctx, workflowID, runID, queryType, args
-func (_m *Client) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
-	var _ca []interface{}
+func (_m *Client) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...any) (converter.EncodedValue, error) {
+	var _ca []any
 	_ca = append(_ca, ctx, workflowID, runID, queryType)
 	_ca = append(_ca, args...)
 	ret := _m.Called(_ca...)
@@ -754,10 +754,10 @@ func (_m *Client) QueryWorkflow(ctx context.Context, workflowID string, runID st
 
 	var r0 converter.EncodedValue
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...interface{}) (converter.EncodedValue, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...any) (converter.EncodedValue, error)); ok {
 		return rf(ctx, workflowID, runID, queryType, args...)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...interface{}) converter.EncodedValue); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...any) converter.EncodedValue); ok {
 		r0 = rf(ctx, workflowID, runID, queryType, args...)
 	} else {
 		if ret.Get(0) != nil {
@@ -765,7 +765,7 @@ func (_m *Client) QueryWorkflow(ctx context.Context, workflowID string, runID st
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string, string, string, ...interface{}) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, string, ...any) error); ok {
 		r1 = rf(ctx, workflowID, runID, queryType, args...)
 	} else {
 		r1 = ret.Error(1)
@@ -805,8 +805,8 @@ func (_m *Client) QueryWorkflowWithOptions(ctx context.Context, request *client.
 }
 
 // RecordActivityHeartbeat provides a mock function with given fields: ctx, taskToken, details
-func (_m *Client) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
-	var _ca []interface{}
+func (_m *Client) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...any) error {
+	var _ca []any
 	_ca = append(_ca, ctx, taskToken)
 	_ca = append(_ca, details...)
 	ret := _m.Called(_ca...)
@@ -816,7 +816,7 @@ func (_m *Client) RecordActivityHeartbeat(ctx context.Context, taskToken []byte,
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, []byte, ...interface{}) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, []byte, ...any) error); ok {
 		r0 = rf(ctx, taskToken, details...)
 	} else {
 		r0 = ret.Error(0)
@@ -844,8 +844,8 @@ func (_m *Client) RecordActivityHeartbeatWithOptions(ctx context.Context, opts c
 }
 
 // RecordActivityHeartbeatByID provides a mock function with given fields: ctx, namespace, workflowID, runID, activityID, details
-func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...interface{}) error {
-	var _ca []interface{}
+func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, namespace string, workflowID string, runID string, activityID string, details ...any) error {
+	var _ca []any
 	_ca = append(_ca, ctx, namespace, workflowID, runID, activityID)
 	_ca = append(_ca, details...)
 	ret := _m.Called(_ca...)
@@ -855,7 +855,7 @@ func (_m *Client) RecordActivityHeartbeatByID(ctx context.Context, namespace str
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, ...interface{}) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, string, ...any) error); ok {
 		r0 = rf(ctx, namespace, workflowID, runID, activityID, details...)
 	} else {
 		r0 = ret.Error(0)
@@ -970,8 +970,8 @@ func (_m *Client) ScheduleClient() client.ScheduleClient {
 }
 
 // SignalWithStartWorkflow provides a mock function with given fields: ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs
-func (_m *Client) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{}, options client.StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (client.WorkflowRun, error) {
-	var _ca []interface{}
+func (_m *Client) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any, options client.StartWorkflowOptions, workflow any, workflowArgs ...any) (client.WorkflowRun, error) {
+	var _ca []any
 	_ca = append(_ca, ctx, workflowID, signalName, signalArg, options, workflow)
 	_ca = append(_ca, workflowArgs...)
 	ret := _m.Called(_ca...)
@@ -982,10 +982,10 @@ func (_m *Client) SignalWithStartWorkflow(ctx context.Context, workflowID string
 
 	var r0 client.WorkflowRun
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, interface{}, client.StartWorkflowOptions, interface{}, ...interface{}) (client.WorkflowRun, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, any, client.StartWorkflowOptions, any, ...any) (client.WorkflowRun, error)); ok {
 		return rf(ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs...)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, interface{}, client.StartWorkflowOptions, interface{}, ...interface{}) client.WorkflowRun); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, any, client.StartWorkflowOptions, any, ...any) client.WorkflowRun); ok {
 		r0 = rf(ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs...)
 	} else {
 		if ret.Get(0) != nil {
@@ -993,7 +993,7 @@ func (_m *Client) SignalWithStartWorkflow(ctx context.Context, workflowID string
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string, string, interface{}, client.StartWorkflowOptions, interface{}, ...interface{}) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, any, client.StartWorkflowOptions, any, ...any) error); ok {
 		r1 = rf(ctx, workflowID, signalName, signalArg, options, workflow, workflowArgs...)
 	} else {
 		r1 = ret.Error(1)
@@ -1003,7 +1003,7 @@ func (_m *Client) SignalWithStartWorkflow(ctx context.Context, workflowID string
 }
 
 // SignalWorkflow provides a mock function with given fields: ctx, workflowID, runID, signalName, arg
-func (_m *Client) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
+func (_m *Client) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error {
 	ret := _m.Called(ctx, workflowID, runID, signalName, arg)
 
 	if len(ret) == 0 {
@@ -1011,7 +1011,7 @@ func (_m *Client) SignalWorkflow(ctx context.Context, workflowID string, runID s
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, interface{}) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, any) error); ok {
 		r0 = rf(ctx, workflowID, runID, signalName, arg)
 	} else {
 		r0 = ret.Error(0)
@@ -1021,8 +1021,8 @@ func (_m *Client) SignalWorkflow(ctx context.Context, workflowID string, runID s
 }
 
 // TerminateWorkflow provides a mock function with given fields: ctx, workflowID, runID, reason, details
-func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
-	var _ca []interface{}
+func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...any) error {
+	var _ca []any
 	_ca = append(_ca, ctx, workflowID, runID, reason)
 	_ca = append(_ca, details...)
 	ret := _m.Called(_ca...)
@@ -1032,7 +1032,7 @@ func (_m *Client) TerminateWorkflow(ctx context.Context, workflowID string, runI
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...interface{}) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, ...any) error); ok {
 		r0 = rf(ctx, workflowID, runID, reason, details...)
 	} else {
 		r0 = ret.Error(0)
@@ -1236,7 +1236,7 @@ func (_m *Client) DescribeWorkflow(ctx context.Context, workflowID string, runID
 }
 
 func (_m *Client) ExecuteActivity(ctx context.Context, options client.StartActivityOptions, activity any, args ...any) (client.ActivityHandle, error) {
-	var _ca []interface{}
+	var _ca []any
 	_ca = append(_ca, ctx, options, activity)
 	_ca = append(_ca, args...)
 	ret := _m.Called(_ca...)
@@ -1247,10 +1247,10 @@ func (_m *Client) ExecuteActivity(ctx context.Context, options client.StartActiv
 
 	var r0 client.ActivityHandle
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, client.StartActivityOptions, interface{}, ...interface{}) (client.ActivityHandle, error)); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.StartActivityOptions, any, ...any) (client.ActivityHandle, error)); ok {
 		return rf(ctx, options, activity, args...)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, client.StartActivityOptions, interface{}, ...interface{}) client.ActivityHandle); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, client.StartActivityOptions, any, ...any) client.ActivityHandle); ok {
 		r0 = rf(ctx, options, activity, args...)
 	} else {
 		if ret.Get(0) != nil {
@@ -1258,7 +1258,7 @@ func (_m *Client) ExecuteActivity(ctx context.Context, options client.StartActiv
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, client.StartActivityOptions, interface{}, ...interface{}) error); ok {
+	if rf, ok := ret.Get(1).(func(context.Context, client.StartActivityOptions, any, ...any) error); ok {
 		r1 = rf(ctx, options, activity, args...)
 	} else {
 		r1 = ret.Error(1)

@@ -17,7 +17,7 @@ func NewJSONPayloadConverter() *JSONPayloadConverter {
 }
 
 // ToPayload converts a single value to a payload.
-func (c *JSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (c *JSONPayloadConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrUnableToEncode, err)
@@ -26,7 +26,7 @@ func (c *JSONPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, 
 }
 
 // FromPayload converts a single payload to a value.
-func (c *JSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (c *JSONPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	err := json.Unmarshal(payload.GetData(), valuePtr)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrUnableToDecode, err)

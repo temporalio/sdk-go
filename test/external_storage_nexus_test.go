@@ -16,7 +16,6 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
-	ilog "go.temporal.io/sdk/internal/log"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
@@ -102,17 +101,15 @@ func (d *transientFailDriver) attempts() (store, retrieve int) {
 // Nexus endpoint targeting a fresh task queue, returning the client, task queue, and
 // endpoint name.
 func newNexusExtStoreClient(t *testing.T, ctx context.Context, driver converter.StorageDriver) (client.Client, string, string) {
-	config := NewConfig()
+	clientBase := ConfigAndClientSuiteBase{}
+	clientBase.initConfig()
+	config := clientBase.config
 	require.NoError(t, WaitForTCP(time.Minute, config.ServiceAddr))
-	c, err := client.DialContext(ctx, client.Options{
-		HostPort:          config.ServiceAddr,
-		Namespace:         config.Namespace,
-		Logger:            ilog.NewDefaultLogger(),
-		ConnectionOptions: client.ConnectionOptions{TLS: config.TLS},
-		ExternalStorage: converter.ExternalStorage{
+	c, err := clientBase.newDefaultClientContext(ctx, func(options *client.Options) {
+		options.ExternalStorage = converter.ExternalStorage{
 			Drivers:              []converter.StorageDriver{driver},
 			PayloadSizeThreshold: extStoreThreshold,
-		},
+		}
 	})
 	require.NoError(t, err)
 
@@ -159,6 +156,7 @@ func startNexusExtStoreCaller(t *testing.T, ctx context.Context, c client.Client
 // TestNexusExternalStorageOperationInput verifies that an operation input offloaded to
 // external storage by the caller is retrieved before the handler runs.
 func TestNexusExternalStorageOperationInput(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "Nexus external-storage tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -181,6 +179,7 @@ func TestNexusExternalStorageOperationInput(t *testing.T) {
 // TestNexusExternalStorageOperationResult verifies that a large synchronous result is
 // offloaded when completing the task and retrieved by the caller.
 func TestNexusExternalStorageOperationResult(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "Nexus external-storage tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -204,6 +203,7 @@ func TestNexusExternalStorageOperationResult(t *testing.T) {
 // storage failure while offloading the result fails the task retryably and then
 // recovers on redelivery.
 func TestNexusExternalStorageTransientStoreFailureRecovers(t *testing.T) {
+	skipOnCloud(t, cloudRequiresProvisioning, "Nexus external-storage tests create namespace endpoints through Operator Service")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

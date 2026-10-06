@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -125,18 +126,19 @@ func TestSequenceAdvancesAcrossFlushes(t *testing.T) {
 }
 
 func TestMaxBatchSizeTriggersFlush(t *testing.T) {
-	fc := &fakeClient{}
-	// Long interval so only the size threshold can trigger a flush.
-	c := NewClient(fc, "wf-1", Options{BatchInterval: time.Hour, MaxBatchSize: 2})
+	synctest.Test(t, func(t *testing.T) {
+		fc := &fakeClient{}
+		// Long interval so only the size threshold can trigger a flush.
+		c := NewClient(fc, "wf-1", Options{BatchInterval: time.Hour, MaxBatchSize: 2})
 
-	c.Topic("t").Publish("a", false)
-	c.Topic("t").Publish("b", false) // reaches MaxBatchSize → flush
+		c.Topic("t").Publish("a", false)
+		c.Topic("t").Publish("b", false) // reaches MaxBatchSize → flush
 
-	require.Eventually(t, func() bool {
-		return len(fc.recorded()) == 1
-	}, time.Second, 5*time.Millisecond)
+		synctest.Wait()
+		require.Len(t, fc.recorded(), 1)
 
-	require.NoError(t, c.Close(context.Background()))
+		require.NoError(t, c.Close(context.Background()))
+	})
 }
 
 func TestCloseDrainsBuffer(t *testing.T) {
@@ -152,36 +154,35 @@ func TestCloseDrainsBuffer(t *testing.T) {
 }
 
 func TestForceFlush(t *testing.T) {
-	fc := &fakeClient{}
-	c := NewClient(fc, "wf-1", Options{BatchInterval: time.Hour})
+	synctest.Test(t, func(t *testing.T) {
+		fc := &fakeClient{}
+		c := NewClient(fc, "wf-1", Options{BatchInterval: time.Hour})
 
-	c.Topic("t").Publish("a", true) // forceFlush
+		c.Topic("t").Publish("a", true) // forceFlush
 
-	require.Eventually(t, func() bool {
-		return len(fc.recorded()) == 1
-	}, time.Second, 5*time.Millisecond)
+		synctest.Wait()
+		require.Len(t, fc.recorded(), 1)
 
-	require.NoError(t, c.Close(context.Background()))
+		require.NoError(t, c.Close(context.Background()))
+	})
 }
 
 func TestFlushTimeoutAfterMaxRetryDuration(t *testing.T) {
-	const retryWindow = time.Millisecond
-	fc := &fakeClient{signalErr: errors.New("boom")}
-	c := NewClient(fc, "wf-1", Options{BatchInterval: time.Hour, MaxRetryDuration: retryWindow})
+	synctest.Test(t, func(t *testing.T) {
+		const retryWindow = time.Millisecond
+		fc := &fakeClient{signalErr: errors.New("boom")}
+		c := NewClient(fc, "wf-1", Options{BatchInterval: time.Hour, MaxRetryDuration: retryWindow})
 
-	c.Topic("t").Publish("a", false)
+		c.Topic("t").Publish("a", false)
 
-	// The first flush sets pending and fails to send (transient "boom").
-	require.Error(t, c.Flush(context.Background()))
+		// The first flush sets pending and fails to send (transient "boom").
+		require.Error(t, c.Flush(context.Background()))
 
-	// Wait past the retry window with ample margin for coarse OS timer
-	// granularity (notably on Windows, where sub-tick durations can read as
-	// zero). The next flush sees the window exceeded and returns
-	// FlushTimeoutError.
-	time.Sleep(50 * time.Millisecond)
+		time.Sleep(retryWindow + time.Nanosecond)
 
-	var fte *FlushTimeoutError
-	require.ErrorAs(t, c.Flush(context.Background()), &fte)
+		var fte *FlushTimeoutError
+		require.ErrorAs(t, c.Flush(context.Background()), &fte)
 
-	require.NoError(t, c.Close(context.Background()))
+		require.NoError(t, c.Close(context.Background()))
+	})
 }

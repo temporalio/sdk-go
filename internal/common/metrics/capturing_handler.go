@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"maps"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -39,12 +40,8 @@ func (c *CapturingHandler) Clear() {
 // WithTags implements Handler.WithTags.
 func (c *CapturingHandler) WithTags(tags map[string]string) Handler {
 	ret := &CapturingHandler{capturedInfo: c.capturedInfo, tags: make(map[string]string)}
-	for k, v := range c.tags {
-		ret.tags[k] = v
-	}
-	for k, v := range tags {
-		ret.tags[k] = v
-	}
+	maps.Copy(ret.tags, c.tags)
+	maps.Copy(ret.tags, tags)
 	return ret
 }
 

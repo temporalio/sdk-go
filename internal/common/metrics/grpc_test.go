@@ -36,7 +36,7 @@ func TestGRPCInterceptor(t *testing.T) {
 	client := grpc_health_v1.NewHealthClient(cc)
 
 	// Make successful call
-	_, err = client.Check(context.Background(), &grpc_health_v1.HealthCheckRequest{Service: "myservice"})
+	_, err = client.Check(t.Context(), &grpc_health_v1.HealthCheckRequest{Service: "myservice"})
 	require.NoError(t, err)
 
 	// Check counters and timers
@@ -53,7 +53,7 @@ func TestGRPCInterceptor(t *testing.T) {
 	// Now clear the metrics and set a handler with tags and long poll on the
 	// context and make a known failing call
 	handler.Clear()
-	ctx := context.WithValue(context.Background(), metrics.HandlerContextKey{},
+	ctx := context.WithValue(t.Context(), metrics.HandlerContextKey{},
 		handler.WithTags(map[string]string{"roottag": "roottagval"}))
 	ctx = context.WithValue(ctx, metrics.LongPollContextKey{}, true)
 	_, err = client.Check(ctx, &grpc_health_v1.HealthCheckRequest{Service: "unknown"})

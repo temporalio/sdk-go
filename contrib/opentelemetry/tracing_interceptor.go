@@ -57,7 +57,7 @@ type TracerOptions struct {
 	// SpanContextKey is the context key used for internal span tracking (not to
 	// be confused with the context key OpenTelemetry uses internally). If not
 	// set, this defaults to an internal key (recommended).
-	SpanContextKey interface{}
+	SpanContextKey any
 
 	// HeaderKey is the Temporal header field key used to serialize spans. If
 	// empty, this defaults to the one used by all SDKs (recommended).
@@ -187,7 +187,7 @@ func SpanFromWorkflowContext(ctx workflow.Context) (trace.Span, bool) {
 	}
 
 	// Fallback to OpenTelemetry span extraction behavior
-	return trace.SpanFromContext(nil), false
+	return trace.SpanFromContext(context.Background()), false
 }
 
 func (t *tracer) StartSpan(opts *interceptor.TracerStartSpanOptions) (interceptor.TracerSpan, error) {

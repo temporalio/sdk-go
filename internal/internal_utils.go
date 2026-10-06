@@ -32,6 +32,8 @@ const (
 
 	temporalPrefix      = "__temporal_"
 	temporalPrefixError = "__temporal_ is a reserved prefix"
+
+	systemNexusEndpoint = "__temporal_system"
 )
 
 func isWorkflowStreamReservedName(name string) bool {
@@ -97,7 +99,7 @@ func grpcLongPoll(isLongPoll bool) func(builder *grpcContextBuilder) {
 	}
 }
 
-func grpcContextValue(key interface{}, val interface{}) func(builder *grpcContextBuilder) {
+func grpcContextValue(key any, val any) func(builder *grpcContextBuilder) {
 	return func(b *grpcContextBuilder) {
 		b.ParentContext = context.WithValue(b.ParentContext, key, val)
 	}
@@ -181,11 +183,11 @@ func awaitWaitGroup(wg *sync.WaitGroup, timeout time.Duration) bool {
 }
 
 // InterruptCh returns channel which will get data when system receives interrupt signal. Pass it to worker.Run() func to stop worker with Ctrl+C.
-func InterruptCh() <-chan interface{} {
+func InterruptCh() <-chan any {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 
-	ret := make(chan interface{}, 1)
+	ret := make(chan any, 1)
 	go func() {
 		s := <-c
 		ret <- s

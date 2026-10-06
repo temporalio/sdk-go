@@ -18,12 +18,12 @@ func NewTestReporter(logger log.Logger) *TestReporter {
 }
 
 // Errorf writes error to the log.
-func (t *TestReporter) Errorf(format string, args ...interface{}) {
+func (t *TestReporter) Errorf(format string, args ...any) {
 	t.logger.Error(fmt.Sprintf(format, args...))
 }
 
 // Fatalf writes error to the log and exits.
-func (t *TestReporter) Fatalf(format string, args ...interface{}) {
+func (t *TestReporter) Fatalf(format string, args ...any) {
 	t.logger.Error(fmt.Sprintf(format, args...))
 	os.Exit(1)
 }

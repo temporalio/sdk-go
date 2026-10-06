@@ -2,8 +2,6 @@ package googleadk
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -13,14 +11,9 @@ import (
 	"google.golang.org/adk/v2/platform"
 )
 
-// wfCtxKey is the private context key under which the workflow.Context for
-// blocking Activity dispatch is stashed. NewContext stores the root
-// workflow.Context here; during concurrent tool fan-out the task runner stores
-// each coroutine's own workflow.Context on that task's context. The TemporalModel
-// and the activity/MCP tools recover it (via workflowContext) so their blocking
-// calls (Future.Get / Channel.Receive) run on the coroutine they belong to —
-// blocking on another coroutine's context triggers "trying to block on coroutine
-// which is already blocked ... wrong Context".
+// wfCtxKey is the private context key for the active workflow.Context.
+// NewContext stores the root context; during concurrent tool fan-out the task
+// runner replaces it with each task coroutine's context.
 type wfCtxKey struct{}
 
 // ContextOption customizes the bridged context produced by NewContext.
@@ -52,16 +45,16 @@ func WithSequentialToolFanout() ContextOption {
 //
 //   - time:  platform.Now resolves to workflow.Now(ctx), so every ADK event
 //     timestamp is deterministic and replay-stable.
-//   - uuid:  platform.NewUUID resolves to a deterministic generator seeded from
-//     a single workflow.SideEffect value plus a per-context counter, so IDs are
+//   - uuid:  platform.NewUUID resolves to a deterministic generator that draws
+//     from the workflow's random stream (workflow.GetRandomStream), so IDs are
 //     replay-stable without emitting one history event per ID.
 //   - tasks: platform.RunTasks resolves to a workflow.Go-based fan-out (or
 //     sequential execution when WithSequentialToolFanout is set), so ADK's tool
 //     fan-out never spawns real goroutines inside the workflow.
 //
-// The workflow.Context itself is also stashed on the returned context so the
-// TemporalModel and the activity/MCP tools can dispatch Activities. Pass the
-// result straight to Run:
+// The workflow.Context itself is also stashed on the returned context so
+// adapter components can inspect workflow state and dispatch commands. Pass
+// the result straight to Run:
 //
 //	for ev, err := range r.Run(googleadk.NewContext(ctx), userID, sessionID, msg, cfg) {
 //	    // ...
@@ -79,10 +72,9 @@ func NewContext(ctx workflow.Context, opts ...ContextOption) context.Context {
 	return base
 }
 
-// workflowContext recovers the currently active workflow.Context from an ADK
-// agent context (which embeds context.Context). During
-// concurrent tool fan-out this is the per-coroutine context the task runner put
-// on each task; otherwise it is the root context stashed by NewContext.
+// workflowContext recovers the active workflow.Context from a context derived
+// from NewContext. During concurrent tool fan-out this is the per-coroutine
+// context the task runner put on each task; otherwise it is the root context.
 func workflowContext(ctx context.Context) (workflow.Context, bool) {
 	if ctx == nil {
 		return nil, false
@@ -94,32 +86,44 @@ func workflowContext(ctx context.Context) (workflow.Context, bool) {
 	return wfCtx, true
 }
 
+// WorkflowContext returns the workflow.Context that the bridged ADK context
+// dispatches its blocking Temporal calls on: during concurrent tool fan-out the
+// calling task's own coroutine context, otherwise the root context stashed by
+// NewContext. It reports false for a context that did not come from NewContext
+// (a local ADK run, say), so a tool can fall back to a non-durable path.
+//
+// In-workflow tools can use it to issue workflow commands of their own — a
+// child workflow, a timer, a signal. Use the returned Context rather than
+// one captured from the enclosing workflow function: workflow.Context values
+// are coroutine-specific, and blocking with another coroutine's Context can
+// panic or stall workflow execution.
+//
+// The returned Context is valid only for the duration of the call that received
+// ctx. Do not retain it or use it from another coroutine; a workflow.Go callback
+// must use the Context passed to that callback.
+func WorkflowContext(ctx context.Context) (workflow.Context, bool) {
+	return workflowContext(ctx)
+}
+
+// uuidRandomStream names the workflow random stream that feeds
+// newDeterministicUUIDProvider.
+const uuidRandomStream = "go.temporal.io/sdk/contrib/googleadk/uuid"
+
 // newDeterministicUUIDProvider returns a platform.UUIDProvider whose output is
-// stable across workflow replays. The seed is captured once through
-// workflow.SideEffect (recorded in history), and each call derives a fresh v5
-// UUID from (seed, counter). Because the values are derived rather than drawn
-// from a random source, no per-ID history event is written.
+// stable across workflow replays. IDs are drawn from the workflow's
+// deterministic random stream (workflow.GetRandomStream), so a replay
+// reproduces them with no per-ID history event. Read-only contexts (query
+// handlers, update validators, side-effect functions) are live,
+// once-per-request operations and get ordinary random UUIDs.
 func newDeterministicUUIDProvider(ctx workflow.Context) platform.UUIDProvider {
-	var (
-		mu        sync.Mutex
-		counter   uint64
-		namespace uuid.UUID
-		seeded    bool
-	)
+	stream := workflow.GetRandomStream(ctx, uuidRandomStream)
 	return func() string {
-		mu.Lock()
-		defer mu.Unlock()
-		if !seeded {
-			var seed string
-			// SideEffect records the seed in history, so replay reuses it.
-			_ = workflow.SideEffect(ctx, func(workflow.Context) interface{} {
-				return uuid.NewString()
-			}).Get(&seed)
-			namespace = uuid.NewSHA1(uuid.Nil, []byte(seed))
-			seeded = true
+		if workflow.IsReadOnly(ctx) {
+			return uuid.New().String()
 		}
-		counter++
-		return uuid.NewSHA1(namespace, []byte(fmt.Sprintf("%d", counter))).String()
+		// The stream is an infinite deterministic reader; the read cannot fail.
+		id, _ := uuid.NewRandomFromReader(stream)
+		return id.String()
 	}
 }
 

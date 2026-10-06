@@ -5,12 +5,16 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
+	"go/build"
+	"go/build/constraint"
 	"go/format"
 	"go/parser"
 	"go/token"
+	"go/version"
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 )
@@ -55,6 +59,14 @@ func run() error {
 			return nil
 		}
 		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			supported, err := supportsGoSyntax(path, build.Default.ReleaseTags[len(build.Default.ReleaseTags)-1])
+			if err != nil {
+				return fmt.Errorf("failed to inspect build constraint in %s: %v", path, err)
+			}
+			if !supported {
+				return nil
+			}
+
 			file, err := os.Open(path)
 			if err != nil {
 				return fmt.Errorf("failed to read file %s: %v", path, err)
@@ -142,6 +154,35 @@ func run() error {
 	return nil
 }
 
+// supportsGoSyntax skips files requiring syntax newer than this toolchain.
+func supportsGoSyntax(path, toolchain string) (supported bool, retErr error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer func() {
+		if err := file.Close(); retErr == nil {
+			retErr = err
+		}
+	}()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if !constraint.IsGoBuild(line) {
+			continue
+		}
+		expr, err := constraint.Parse(line)
+		if err != nil {
+			return false, err
+		}
+		minimum := constraint.GoVersion(expr)
+		return minimum == "" || version.Compare(toolchain, minimum) >= 0, nil
+	}
+
+	return true, scanner.Err()
+}
+
 // Traverse the AST of public packages to identify wrappers for internal objects
 func processPublic(file *os.File) (map[string]string, error) {
 	fs := token.NewFileSet()
@@ -204,8 +245,8 @@ func extractTypeValue(expr ast.Expr) string {
 			}
 		}
 	case *ast.Ident:
-		if strings.HasPrefix(t.Name, "internal.") {
-			return strings.TrimPrefix(t.Name, "internal.")
+		if after, ok := strings.CutPrefix(t.Name, "internal."); ok {
+			return after
 		}
 	case *ast.FuncType:
 		for _, param := range t.Params.List {
@@ -388,11 +429,12 @@ func processInternal(cfg config, file *os.File, pairs map[string]map[string]stri
 					}
 				}
 			}
-			newTrimmedLine := exposedAs
+			var newTrimmedLine strings.Builder
+			newTrimmedLine.WriteString(exposedAs)
 			for i := range newLinks {
-				newTrimmedLine += newLinks[i] + ", "
+				newTrimmedLine.WriteString(newLinks[i] + ", ")
 			}
-			nextLine = strings.TrimSuffix(newTrimmedLine, ", ")
+			nextLine = strings.TrimSuffix(newTrimmedLine.String(), ", ")
 			trimmedNextLine = nextLine
 		}
 
@@ -569,12 +611,7 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 	}
 
 	if strings.HasSuffix(line, " struct {") {
-		for _, strToken := range tokens {
-			if strToken == private {
-				return true
-			}
-		}
-		return false
+		return slices.Contains(tokens, private)
 	}
 
 	if insideStruct {
@@ -591,10 +628,8 @@ func isValidDefinitionWithMatch(line, private string, inGroup string, insideStru
 	if strings.HasPrefix(line, "var ") ||
 		strings.HasPrefix(line, "const ") ||
 		strings.HasPrefix(line, "type ") {
-		for _, strToken := range tokens {
-			if strToken == private {
-				return true
-			}
+		if slices.Contains(tokens, private) {
+			return true
 		}
 	}
 	return false

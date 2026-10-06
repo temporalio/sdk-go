@@ -16,6 +16,7 @@ import (
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/internal/extstore"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/fieldmaskpb"
 )
 
 const pollActivityTimeout = 60 * time.Second
@@ -24,8 +25,6 @@ type (
 	// ClientStartActivityOptions contains configuration parameters for starting an activity execution.
 	// ID and TaskQueue are required. At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
 	// Other parameters are optional.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.StartActivityOptions]
 	ClientStartActivityOptions struct {
@@ -37,9 +36,10 @@ type (
 		//
 		// Required
 		TaskQueue string
-		// ScheduleToCloseTimeout - Total time that a workflow is willing to wait for an Activity to complete.
-		// ScheduleToCloseTimeout limits the total time of an Activity's execution including retries
-		// 		(use StartToCloseTimeout to limit the time of a single attempt).
+		// ScheduleToCloseTimeout - Maximum duration the Temporal Server allows for an Activity Execution
+		// from scheduling through closure, including retries. This does not control how long a client waits
+		// for the result: ExecuteActivity returns after the start RPC, and the context passed to
+		// ActivityHandle.Get controls the client-side wait. Use StartToCloseTimeout to limit a single attempt.
 		// The zero value of this uses default value.
 		// Either this option or StartToCloseTimeout is required: Defaults to unlimited.
 		ScheduleToCloseTimeout time.Duration
@@ -81,10 +81,10 @@ type (
 		// To disable retries, set MaximumAttempts to 1.
 		// The default RetryPolicy provided by the server can be overridden by the dynamic config.
 		RetryPolicy *RetryPolicy
-		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Workflow. Search Attributes are
-		// additional indexed information attributed to workflow and used for search and visibility. The search attributes
-		// can be used in query of List/Scan/Count workflow APIs. The key and its value type must be registered on Temporal
-		// server side. For supported operations on different server versions see [Visibility].
+		// TypedSearchAttributes - Specifies Search Attributes that will be attached to the Activity Execution. Search Attributes
+		// are additional indexed information attributed to the Activity Execution and used for search and visibility. The Search
+		// Attributes can be used in queries to ListActivities and CountActivities. The key and its value type must be registered on
+		// the Temporal Server. For supported operations on different server versions see [Visibility].
 		//
 		// Optional: default to none.
 		//
@@ -94,52 +94,26 @@ type (
 		// in single-line Temporal Markdown format.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
 		Summary string
-		// Details - General fixed details for this workflow execution that will appear in UI/CLI. This can be in
-		// Temporal markdown format and can span multiple lines. This is a fixed value on the workflow that cannot be
-		// updated. For details that can be updated, use SetCurrentDetails within the workflow.
+		// StaticDetails - General fixed details for this Activity Execution that will appear in UI/CLI. This can be in
+		// Temporal Markdown format and can span multiple lines. This value cannot be updated after the Activity Execution starts.
 		//
 		// Optional: defaults to none/empty.
-		//
-		// NOTE: Experimental
-		Details string
+		StaticDetails string
 		// Priority - Optional priority settings that control relative ordering of
 		// task processing when tasks are backed up in a queue.
-		//
-		// WARNING: Task queue priority is currently experimental.
 		Priority Priority
 		// StartDelay - Time to wait before dispatching the activity. This delay is not applied to retry attempts.
 		StartDelay time.Duration
 
-		// responseInfo holds the response Link populated by the server when the activity is started.
-		// Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
-		responseInfo *startActivityResponseInfo
-		// requestID is the request ID used to dedup retried starts.
-		// Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
-		requestID string
 		// callbacks is the set of completion callbacks the server should invoke when the activity
 		// reaches a terminal state. Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
 		callbacks []*commonpb.Callback
-		// links to be associated with the activity. Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
-		links []*commonpb.Link
-		// onConflictOptions configures behavior when ActivityIdConflictPolicy is USE_EXISTING and an
-		// activity with the same ID is already running. Only settable by the SDK - e.g. [temporalnexus.temporalOperation].
-		onConflictOptions *OnConflictOptions
-	}
-
-	// startActivityResponseInfo can be populated by the SDK to receive additional fields from the
-	// StartActivityExecution response. Only settable by the SDK.
-	startActivityResponseInfo struct {
-		// Link to the started activity event.
-		Link *commonpb.Link
 	}
 
 	// ClientGetActivityHandleOptions contains input for GetActivityHandle call.
-	// ActivityID and RunID are required.
-	//
-	// NOTE: Experimental
+	// ActivityID is required. RunID is optional; if empty, the handle targets the latest Activity Execution with the given ID.
+	// To target a specific run when ActivityIDReusePolicy allows reuse of an activity ID, set RunID.
 	//
 	// Exposed as: [go.temporal.io/sdk/client.GetActivityHandleOptions]
 	ClientGetActivityHandleOptions struct {
@@ -149,16 +123,12 @@ type (
 
 	// ClientListActivitiesOptions contains input for ListActivities call.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.ListActivitiesOptions]
 	ClientListActivitiesOptions struct {
 		Query string
 	}
 
 	// ClientListActivitiesResult contains the result of the ListActivities call.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ListActivitiesResult]
 	ClientListActivitiesResult struct {
@@ -167,16 +137,12 @@ type (
 
 	// ClientCountActivitiesOptions contains input for CountActivities call.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.CountActivitiesOptions]
 	ClientCountActivitiesOptions struct {
 		Query string
 	}
 
 	// ClientCountActivitiesResult contains the result of the CountActivities call.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.CountActivitiesResult]
 	ClientCountActivitiesResult struct {
@@ -188,8 +154,6 @@ type (
 	// CountActivityExecutions is grouped by a field.
 	// The list might not be complete, and the counts of each group is approximate.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.CountActivitiesAggregationGroup]
 	ClientCountActivitiesAggregationGroup struct {
 		GroupValues []any
@@ -200,8 +164,6 @@ type (
 	// It can be used to get the result, describe, cancel, or terminate the activity.
 	//
 	// Methods may be added to this interface; implementing it directly is discouraged.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.ActivityHandle]
 	ClientActivityHandle interface {
@@ -225,19 +187,51 @@ type (
 		Cancel(ctx context.Context, options ClientCancelActivityOptions) error
 		// Terminate terminates the activity.
 		Terminate(ctx context.Context, options ClientTerminateActivityOptions) error
+		// Pause pauses the activity. A paused activity stops being retried and, if an attempt is
+		// currently running, that attempt is asked to yield. Pausing an already-paused activity
+		// is a no-op.
+		//
+		// NOTE: Experimental
+		Pause(ctx context.Context, options ClientPauseActivityOptions) error
+		// Unpause resumes a paused activity. Unpausing an activity that is not paused is a no-op.
+		//
+		// NOTE: Experimental
+		Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error
+		// UpdateOptions changes some of the activity's options, leaving the rest untouched, and
+		// returns the options as they stand after the update. At least one change must be set.
+		//
+		// NOTE: Experimental
+		UpdateOptions(ctx context.Context, update ClientActivityOptionsUpdate) (*ClientActivityExecutionOptions, error)
+		// RestoreOriginalOptions reverts every option changed by UpdateOptions back to the value
+		// the activity was scheduled with, and returns the restored options. It is a separate
+		// call because the server does not allow the restore flag to be combined with any
+		// individual option change.
+		//
+		// NOTE: Experimental
+		RestoreOriginalOptions(ctx context.Context) (*ClientActivityExecutionOptions, error)
 	}
 
 	// ClientDescribeActivityOptions contains options for ClientActivityHandle.Describe call.
-	// For future compatibility, currently unused.
 	//
-	// NOTE: Experimental
+	// The payload-bearing fields of the description are opt-in, since payloads are large.
 	//
 	// Exposed as: [go.temporal.io/sdk/client.DescribeActivityOptions]
-	ClientDescribeActivityOptions struct{}
+	ClientDescribeActivityOptions struct {
+		// IncludeInput requests the arguments the activity was scheduled with.
+		// See ClientActivityExecutionDescription.GetInput.
+		IncludeInput bool
+		// IncludeOutcome requests the activity's result or failure, if it has closed.
+		// See ClientActivityExecutionDescription.GetResult and GetOutcomeFailure.
+		IncludeOutcome bool
+		// IncludeHeartbeatDetails requests the most recent heartbeat details.
+		// See ClientActivityExecutionDescription.GetHeartbeatDetails.
+		IncludeHeartbeatDetails bool
+		// IncludeLastFailure requests the failure of the most recent failed attempt.
+		// See ClientActivityExecutionDescription.GetLastFailure.
+		IncludeLastFailure bool
+	}
 
 	// ClientCancelActivityOptions contains options for ClientActivityHandle.Cancel call.
-	//
-	// NOTE: Experimental
 	//
 	// Exposed as: [go.temporal.io/sdk/client.CancelActivityOptions]
 	ClientCancelActivityOptions struct {
@@ -245,25 +239,112 @@ type (
 		Reason string
 	}
 
-	// ClientTerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
+	// ClientPauseActivityOptions contains options for ClientActivityHandle.Pause call.
 	//
 	// NOTE: Experimental
 	//
+	// Exposed as: [go.temporal.io/sdk/client.PauseActivityOptions]
+	ClientPauseActivityOptions struct {
+		// Reason is optional description of the reason for pausing.
+		Reason string
+	}
+
+	// ClientUnpauseActivityOptions contains options for ClientActivityHandle.Unpause call.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.UnpauseActivityOptions]
+	ClientUnpauseActivityOptions struct {
+		// Reason is optional description of the reason for unpausing.
+		Reason string
+		// Jitter, if non-zero, delays the next attempt by a random duration in [0, Jitter). Use it
+		// to spread the load of unpausing many activities at once.
+		Jitter time.Duration
+	}
+
+	// ClientActivityExecutionOptions describes the options an activity is currently running
+	// with. It is returned by ClientActivityHandle.UpdateOptions and RestoreOriginalOptions.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionOptions]
+	ClientActivityExecutionOptions struct {
+		TaskQueue              string
+		ScheduleToCloseTimeout time.Duration
+		ScheduleToStartTimeout time.Duration
+		StartToCloseTimeout    time.Duration
+		HeartbeatTimeout       time.Duration
+		StartDelay             time.Duration
+		RetryPolicy            *RetryPolicy
+		Priority               Priority
+	}
+
+	// ClientActivityOptionsUpdate describes changes to an activity's options in
+	// ClientActivityHandle.UpdateOptions. An entry with a nil pointer means do not change that
+	// option.
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ActivityOptionsUpdate]
+	ClientActivityOptionsUpdate struct {
+		// If non-nil, change the task queue.
+		TaskQueue *ClientActivityOptionChange[string]
+		// If non-nil, change the schedule-to-close timeout.
+		ScheduleToCloseTimeout *ClientActivityOptionChange[time.Duration]
+		// If non-nil, change the schedule-to-start timeout.
+		ScheduleToStartTimeout *ClientActivityOptionChange[time.Duration]
+		// If non-nil, change the start-to-close timeout.
+		StartToCloseTimeout *ClientActivityOptionChange[time.Duration]
+		// If non-nil, change the heartbeat timeout.
+		HeartbeatTimeout *ClientActivityOptionChange[time.Duration]
+		// If non-nil, change the start delay.
+		StartDelay *ClientActivityOptionChange[time.Duration]
+		// If non-nil, change the retry policy.
+		RetryPolicy *ClientActivityOptionChange[RetryPolicy]
+		// If non-nil, change the priority.
+		Priority *ClientActivityOptionChange[Priority]
+	}
+
+	// ClientActivityOptionChange sets or clears one activity option when used with
+	// [ClientActivityOptionsUpdate].
+	//
+	// NOTE: Experimental
+	//
+	// Exposed as: [go.temporal.io/sdk/client.ActivityOptionChange]
+	ClientActivityOptionChange[T any] struct {
+		// Set the option to Value if non-nil. If nil, clear the option so the server applies
+		// its default.
+		Value *T
+	}
+)
+
+func (u ClientActivityOptionsUpdate) isEmpty() bool {
+	return u.TaskQueue == nil &&
+		u.ScheduleToCloseTimeout == nil &&
+		u.ScheduleToStartTimeout == nil &&
+		u.StartToCloseTimeout == nil &&
+		u.HeartbeatTimeout == nil &&
+		u.StartDelay == nil &&
+		u.RetryPolicy == nil &&
+		u.Priority == nil
+}
+
+type (
+	// ClientTerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
+	//
 	// Exposed as: [go.temporal.io/sdk/client.TerminateActivityOptions]
 	ClientTerminateActivityOptions struct {
-		// Reason is optional description of the reason for cancellation.
+		// Reason is optional description of the reason for termination.
 		Reason string
 	}
 
 	// ClientActivityExecutionInfo contains information about an activity execution.
 	// This is returned by ListActivities and embedded in ClientActivityExecutionDescription.
 	//
-	// NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionInfo]
 	ClientActivityExecutionInfo struct {
 		// Raw PB message this struct was built from. This field is nil in the result of ClientActivityHandle.Describe call - use
-		// ClientActivityExecutionDescription.RawExecutionInfo instead.
+		// ClientActivityExecutionDescription.RawResponse instead.
 		RawExecutionListInfo  *activitypb.ActivityExecutionListInfo
 		ActivityID            string
 		ActivityRunID         string
@@ -274,22 +355,27 @@ type (
 		TypedSearchAttributes SearchAttributes
 		TaskQueue             string
 		ExecutionDuration     time.Duration
+		ExecutionTime         time.Time
 	}
 
 	// ClientActivityExecutionDescription contains detailed information about an activity execution.
 	// This is returned by ClientActivityHandle.Describe.
 	//
-	//	NOTE: Experimental
-	//
 	// Exposed as: [go.temporal.io/sdk/client.ActivityExecutionDescription]
 	ClientActivityExecutionDescription struct {
 		ClientActivityExecutionInfo
-		// Raw PB message this struct was built from.
-		RawExecutionInfo        *activitypb.ActivityExecutionInfo
+		// Raw server response this struct was built from.
+		RawResponse             *workflowservice.DescribeActivityExecutionResponse
+		ScheduleToCloseTimeout  time.Duration
+		ScheduleToStartTimeout  time.Duration
+		StartToCloseTimeout     time.Duration
+		HeartbeatTimeout        time.Duration
+		StartDelay              time.Duration
 		RunState                enumspb.PendingActivityState
 		LastHeartbeatTime       time.Time
 		LastStartedTime         time.Time
 		Attempt                 int32
+		TotalHeartbeatCount     int64
 		RetryPolicy             *RetryPolicy
 		ExpirationTime          time.Time
 		LastWorkerIdentity      string
@@ -303,7 +389,7 @@ type (
 		failureConverter        converter.FailureConverter
 		inboundPayloadVisitor   PayloadVisitor
 		summary                 string
-		details                 string
+		staticDetails           string
 	}
 
 	// clientActivityHandleImpl is the default implementation of ClientActivityHandle.
@@ -316,15 +402,17 @@ type (
 )
 
 // HasHeartbeatDetails returns whether heartbeat details are present. Use GetHeartbeatDetails to retrieve them.
+// The details are only returned when ClientDescribeActivityOptions.IncludeHeartbeatDetails was set.
 func (d *ClientActivityExecutionDescription) HasHeartbeatDetails() bool {
-	return len(d.RawExecutionInfo.GetHeartbeatDetails().GetPayloads()) > 0
+	return len(d.RawResponse.GetInfo().GetHeartbeatDetails().GetPayloads()) > 0
 }
 
-// GetHeartbeatDetails retrieves heartbeat details. Returns ErrNoData if heartbeat details are not present.
+// GetHeartbeatDetails retrieves heartbeat details. Returns ErrNoData if heartbeat details are not
+// present (nonexistent or unrequested via IncludeHeartbeatDetails).
 // The details are deserialized into provided pointers using the data converter of the client used to make the Describe call.
 // Returns error if data conversion fails.
 func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...any) error {
-	details := d.RawExecutionInfo.GetHeartbeatDetails()
+	details := d.RawResponse.GetInfo().GetHeartbeatDetails()
 	if details == nil {
 		return ErrNoData
 	}
@@ -334,10 +422,90 @@ func (d *ClientActivityExecutionDescription) GetHeartbeatDetails(valuePtrs ...an
 	return d.dataConverter.FromPayloads(details, valuePtrs...)
 }
 
-// GetLastFailure returns the last failure of the activity execution, using the failure converter of the client used to
-// make the Describe call. Returns nil if there was no failure.
+// HasInput returns whether the activity's input is present. Use GetInput to retrieve it.
+// The input is only returned when ClientDescribeActivityOptions.IncludeInput was set.
+func (d *ClientActivityExecutionDescription) HasInput() bool {
+	return len(d.RawResponse.GetInput().GetPayloads()) > 0
+}
+
+// GetInput retrieves the arguments the activity was scheduled with. Returns ErrNoData if the
+// input is not present (nonexistent or unrequested via IncludeInput).
+// The arguments are deserialized into the provided pointers, one per argument, using the data
+// converter of the client used to make the Describe call. Returns error if data conversion fails.
+func (d *ClientActivityExecutionDescription) GetInput(valuePtrs ...any) error {
+	input := d.RawResponse.GetInput()
+	if input == nil {
+		return ErrNoData
+	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, input, 0); err != nil {
+		return err
+	}
+	return d.dataConverter.FromPayloads(input, valuePtrs...)
+}
+
+// HasResult returns whether the activity completed successfully and its result is present. Use
+// GetResult to retrieve it. The outcome is only returned when
+// ClientDescribeActivityOptions.IncludeOutcome was set.
+func (d *ClientActivityExecutionDescription) HasResult() bool {
+	_, ok := d.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
+	return ok
+}
+
+// GetResult retrieves the result of a successfully completed activity. Returns ErrNoData if the
+// result is not present, which includes an activity that is still running, one that failed, and
+// one whose outcome was not requested via ClientDescribeActivityOptions.IncludeOutcome.
+// The result is deserialized into valuePtr using the data converter of the client used to make
+// the Describe call. Returns error if data conversion fails.
+func (d *ClientActivityExecutionDescription) GetResult(valuePtr any) error {
+	outcome, ok := d.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Result)
+	if !ok {
+		return ErrNoData
+	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, outcome.Result, 0); err != nil {
+		return err
+	}
+	return d.dataConverter.FromPayloads(outcome.Result, valuePtr)
+}
+
+// HasOutcomeFailure returns whether the activity closed with a failure and that failure is
+// present. Use GetOutcomeFailure to retrieve it. The outcome is only returned when
+// ClientDescribeActivityOptions.IncludeOutcome was set.
+func (d *ClientActivityExecutionDescription) HasOutcomeFailure() bool {
+	_, ok := d.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Failure)
+	return ok
+}
+
+// GetOutcomeFailure returns the failure the activity closed with, using the failure converter of
+// the client used to make the Describe call. Returns nil if the activity did not fail, or if the
+// outcome was not requested via ClientDescribeActivityOptions.IncludeOutcome.
+//
+// This is the terminal failure of the execution. It differs from GetLastFailure, which reports
+// the failure of the most recent attempt of an activity that may still be retrying.
+func (d *ClientActivityExecutionDescription) GetOutcomeFailure() error {
+	outcome, ok := d.RawResponse.GetOutcome().GetValue().(*activitypb.ActivityExecutionOutcome_Failure)
+	if !ok {
+		return nil
+	}
+	if err := visitProtoPayloads(context.Background(), d.inboundPayloadVisitor, outcome.Failure, 0); err != nil {
+		return err
+	}
+	return d.failureConverter.FailureToError(outcome.Failure)
+}
+
+// HasLastFailure returns whether the failure of the most recent failed attempt is present. Use
+// GetLastFailure to retrieve it. The last failure is only returned when
+// ClientDescribeActivityOptions.IncludeLastFailure was set.
+func (d *ClientActivityExecutionDescription) HasLastFailure() bool {
+	return d.RawResponse.GetInfo().GetLastFailure() != nil
+}
+
+// GetLastFailure returns the failure of the most recent failed attempt, using the failure converter
+// of the client used to make the Describe call. Returns nil if there was no failure, or if it was
+// not requested via ClientDescribeActivityOptions.IncludeLastFailure.
+//
+// For the terminal failure of a closed execution, see GetOutcomeFailure.
 func (d *ClientActivityExecutionDescription) GetLastFailure() error {
-	failure := d.RawExecutionInfo.GetLastFailure()
+	failure := d.RawResponse.GetInfo().GetLastFailure()
 	if failure == nil {
 		return nil
 	}
@@ -353,7 +521,7 @@ func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 	if d.summary != "" {
 		return d.summary, nil
 	}
-	payload := d.RawExecutionInfo.GetUserMetadata().GetSummary()
+	payload := d.RawResponse.GetInfo().GetUserMetadata().GetSummary()
 	if payload == nil {
 		return "", nil
 	}
@@ -370,13 +538,13 @@ func (d *ClientActivityExecutionDescription) GetSummary() (string, error) {
 	return summary, nil
 }
 
-// GetDetails returns details of the activity. See ClientStartActivityOptions.Details. Returns empty string if there are no details.
+// GetStaticDetails returns details of the activity. See ClientStartActivityOptions.StaticDetails. Returns empty string if there are no details.
 // Uses the data converter of the client used to make the Describe call. Returns error if data conversion fails.
-func (d *ClientActivityExecutionDescription) GetDetails() (string, error) {
-	if d.details != "" {
-		return d.details, nil
+func (d *ClientActivityExecutionDescription) GetStaticDetails() (string, error) {
+	if d.staticDetails != "" {
+		return d.staticDetails, nil
 	}
-	payload := d.RawExecutionInfo.GetUserMetadata().GetDetails()
+	payload := d.RawResponse.GetInfo().GetUserMetadata().GetDetails()
 	if payload == nil {
 		return "", nil
 	}
@@ -384,13 +552,13 @@ func (d *ClientActivityExecutionDescription) GetDetails() (string, error) {
 	if payload, err = visitPayload(context.Background(), d.inboundPayloadVisitor, payload); err != nil {
 		return "", err
 	}
-	var details string
-	err = d.dataConverter.FromPayload(payload, &details)
+	var staticDetails string
+	err = d.dataConverter.FromPayload(payload, &staticDetails)
 	if err != nil {
 		return "", err
 	}
-	d.details = details
-	return details, nil
+	d.staticDetails = staticDetails
+	return staticDetails, nil
 }
 
 func (h *clientActivityHandleImpl) GetID() string {
@@ -447,6 +615,7 @@ func (h *clientActivityHandleImpl) Describe(ctx context.Context, options ClientD
 	out, err := h.client.interceptor.DescribeActivity(ctx, &ClientDescribeActivityInput{
 		ActivityID: h.id,
 		RunID:      h.runID,
+		Options:    &options,
 	})
 	if err != nil {
 		return nil, err
@@ -474,6 +643,66 @@ func (h *clientActivityHandleImpl) Terminate(ctx context.Context, options Client
 		RunID:      h.runID,
 		Reason:     options.Reason,
 	})
+}
+
+func (h *clientActivityHandleImpl) Pause(ctx context.Context, options ClientPauseActivityOptions) error {
+	if err := h.client.ensureInitialized(ctx); err != nil {
+		return err
+	}
+	return h.client.interceptor.PauseActivity(ctx, &ClientPauseActivityInput{
+		ActivityID: h.id,
+		RunID:      h.runID,
+		Options:    &options,
+	})
+}
+
+func (h *clientActivityHandleImpl) Unpause(ctx context.Context, options ClientUnpauseActivityOptions) error {
+	if err := h.client.ensureInitialized(ctx); err != nil {
+		return err
+	}
+	return h.client.interceptor.UnpauseActivity(ctx, &ClientUnpauseActivityInput{
+		ActivityID: h.id,
+		RunID:      h.runID,
+		Options:    &options,
+	})
+}
+
+func (h *clientActivityHandleImpl) UpdateOptions(
+	ctx context.Context,
+	update ClientActivityOptionsUpdate,
+) (*ClientActivityExecutionOptions, error) {
+	// An update naming nothing would send an empty mask and silently change nothing. Fail here
+	// rather than making a round trip that looks like it worked.
+	if update.isEmpty() {
+		return nil, errors.New("UpdateOptions requires at least one option change")
+	}
+	if err := h.client.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	out, err := h.client.interceptor.UpdateActivityOptions(ctx, &ClientUpdateActivityOptionsInput{
+		ActivityID: h.id,
+		RunID:      h.runID,
+		Update:     &update,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out.Options, nil
+}
+
+func (h *clientActivityHandleImpl) RestoreOriginalOptions(ctx context.Context) (*ClientActivityExecutionOptions, error) {
+	if err := h.client.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	out, err := h.client.interceptor.UpdateActivityOptions(ctx, &ClientUpdateActivityOptionsInput{
+		ActivityID:      h.id,
+		RunID:           h.runID,
+		RestoreOriginal: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out.Options, nil
 }
 
 func (wc *WorkflowClient) ExecuteActivity(ctx context.Context, options ClientStartActivityOptions, activity any, args ...any) (ClientActivityHandle, error) {
@@ -532,6 +761,7 @@ func (wc *WorkflowClient) ListActivities(ctx context.Context, options ClientList
 						TypedSearchAttributes: convertToTypedSearchAttributes(wc.logger, ex.SearchAttributes.IndexedFields),
 						TaskQueue:             ex.TaskQueue,
 						ExecutionDuration:     ex.ExecutionDuration.AsDuration(),
+						ExecutionTime:         ex.ExecutionTime.AsTime(),
 					}, nil) {
 						return
 					}
@@ -594,6 +824,12 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	if dataConverter == nil {
 		dataConverter = converter.GetDefaultDataConverter()
 	}
+	dataConverter = converter.WithDataConverterSerializationContext(dataConverter,
+		converter.ActivitySerializationContext{
+			Namespace:    w.client.namespace,
+			ActivityType: in.ActivityType,
+			TaskQueue:    in.Options.TaskQueue,
+		})
 
 	request := &workflowservice.StartActivityExecutionRequest{
 		Namespace:    w.client.namespace,
@@ -601,9 +837,31 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 		RequestId:    uuid.NewString(),
 		ActivityType: &commonpb.ActivityType{Name: in.ActivityType},
 	}
+	// Activity starts from a Nexus handler inherit its normalized request ID. Other
+	// Activity starts keep the fresh request ID initialized above.
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok && nctx.RequestID != "" {
+		request.RequestId = nctx.RequestID
+	}
 	var err error
 	if err = in.Options.validateAndSetInRequest(request, dataConverter); err != nil {
 		return nil, err
+	}
+	// When invoked from inside a Nexus operation handler, attach the operation's inbound caller
+	// links to the start request so the backing activity links back to the caller. Async
+	// Nexus-backed activities carry these on the completion callback instead, so skip when a
+	// callback is already present to avoid duplicating them.
+	if len(request.CompletionCallbacks) == 0 {
+		if links, ok := ctx.Value(NexusOperationRequestLinksKey).([]*commonpb.Link); ok {
+			request.Links = links
+		}
+	}
+	if _, ok := NexusOperationContextFromGoContext(ctx); ok &&
+		(len(request.GetCompletionCallbacks()) > 0 || len(request.GetLinks()) > 0) {
+		request.OnConflictOptions = &commonpb.OnConflictOptions{
+			AttachRequestId:           request.GetRequestId() != "",
+			AttachCompletionCallbacks: len(request.GetCompletionCallbacks()) > 0,
+			AttachLinks:               len(request.GetLinks()) > 0,
+		}
 	}
 	if request.Input, err = encodeArgs(dataConverter, in.Args); err != nil {
 		return nil, err
@@ -632,8 +890,8 @@ func (w *workflowClientInterceptor) ExecuteActivity(
 	} else {
 		runID = resp.RunId
 	}
-	if in.Options.responseInfo != nil {
-		in.Options.responseInfo.Link = resp.Link
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(resp.GetLink())
 	}
 
 	return &clientActivityHandleImpl{
@@ -663,7 +921,7 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	if err != nil {
 		return err
 	}
-	userMetadata, err := buildUserMetadata(options.Summary, options.Details, dataConverter)
+	userMetadata, err := BuildUserMetadata(options.Summary, options.StaticDetails, dataConverter)
 	if err != nil {
 		return err
 	}
@@ -674,75 +932,21 @@ func (options *ClientStartActivityOptions) validateAndSetInRequest(request *work
 	request.ScheduleToStartTimeout = durationpb.New(options.ScheduleToStartTimeout)
 	request.StartToCloseTimeout = durationpb.New(options.StartToCloseTimeout)
 	request.HeartbeatTimeout = durationpb.New(options.HeartbeatTimeout)
-	request.RetryPolicy = convertToPBRetryPolicy(options.RetryPolicy)
+	request.RetryPolicy = ConvertToPBRetryPolicy(options.RetryPolicy)
 	request.IdReusePolicy = options.ActivityIDReusePolicy
 	request.IdConflictPolicy = options.ActivityIDConflictPolicy
 	request.SearchAttributes = searchAttrs
 	request.UserMetadata = userMetadata
-	request.Priority = convertToPBPriority(options.Priority)
+	request.Priority = ConvertToPBPriority(options.Priority)
 	request.StartDelay = durationpb.New(options.StartDelay)
-	if options.requestID != "" {
-		request.RequestId = options.requestID
-	}
 	request.CompletionCallbacks = options.callbacks
-	request.Links = options.links
-	if options.onConflictOptions != nil {
-		request.OnConflictOptions = &commonpb.OnConflictOptions{
-			AttachRequestId:           options.onConflictOptions.AttachRequestID,
-			AttachCompletionCallbacks: options.onConflictOptions.AttachCompletionCallbacks,
-			AttachLinks:               options.onConflictOptions.AttachLinks,
-		}
-	}
 	return nil
-}
-
-// SetRequestIDOnStartActivityOptions is an internal-only method for setting the request ID on
-// ClientStartActivityOptions. Used by [temporalnexus.temporalOperation] for retry idempotency.
-func SetRequestIDOnStartActivityOptions(opts *ClientStartActivityOptions, requestID string) {
-	opts.requestID = requestID
 }
 
 // SetCallbacksOnStartActivityOptions is an internal-only method for setting completion callbacks on
 // ClientStartActivityOptions. Callbacks are purposefully not exposed to users for the time being.
 func SetCallbacksOnStartActivityOptions(opts *ClientStartActivityOptions, callbacks []*commonpb.Callback) {
 	opts.callbacks = callbacks
-}
-
-// SetLinksOnStartActivityOptions is an internal-only method for setting links on
-// ClientStartActivityOptions. Links are purposefully not exposed to users for the time being.
-func SetLinksOnStartActivityOptions(opts *ClientStartActivityOptions, links []*commonpb.Link) {
-	opts.links = links
-}
-
-// SetOnConflictOptionsOnStartActivityOptions is an internal-only method for setting on-conflict
-// options on ClientStartActivityOptions. Used to ensure that when an activity with the same ID is
-// already running and the conflict policy is USE_EXISTING, the caller's request ID, callback, and
-// links are attached to the existing activity.
-func SetOnConflictOptionsOnStartActivityOptions(opts *ClientStartActivityOptions) {
-	opts.onConflictOptions = &OnConflictOptions{
-		AttachRequestID:           true,
-		AttachCompletionCallbacks: true,
-		AttachLinks:               true,
-	}
-}
-
-// SetResponseInfoOnStartActivityOptions is an internal-only method for setting a response info
-// pointer on ClientStartActivityOptions. The returned pointer is populated by ExecuteActivity with
-// the start response's Link.
-func SetResponseInfoOnStartActivityOptions(opts *ClientStartActivityOptions) *startActivityResponseInfo {
-	if opts.responseInfo == nil {
-		opts.responseInfo = &startActivityResponseInfo{}
-	}
-	return opts.responseInfo
-}
-
-// GetResponseLinkFromStartActivityResponseInfo returns the activity start Link captured from the
-// server response, or nil if none was captured.
-func GetResponseLinkFromStartActivityResponseInfo(info *startActivityResponseInfo) *commonpb.Link {
-	if info == nil {
-		return nil
-	}
-	return info.Link
 }
 
 func (w *workflowClientInterceptor) GetActivityHandle(
@@ -780,11 +984,17 @@ func (w *workflowClientInterceptor) PollActivityResult(
 		return nil, err
 	}
 
+	actCtx := converter.ActivitySerializationContext{Namespace: w.client.namespace}
+	dataConverter := converter.WithDataConverterSerializationContext(
+		WithContext(ctx, w.client.dataConverter), actCtx)
+	failureConverter := converter.WithFailureConverterSerializationContext(
+		w.client.failureConverter, actCtx)
+
 	switch v := resp.GetOutcome().GetValue().(type) {
 	case *activitypb.ActivityExecutionOutcome_Result:
-		return &ClientPollActivityResultOutput{Result: newEncodedValue(v.Result, w.client.dataConverter)}, nil
+		return &ClientPollActivityResultOutput{Result: newEncodedValue(v.Result, dataConverter)}, nil
 	case *activitypb.ActivityExecutionOutcome_Failure:
-		return &ClientPollActivityResultOutput{Error: w.client.failureConverter.FailureToError(v.Failure)}, nil
+		return &ClientPollActivityResultOutput{Error: failureConverter.FailureToError(v.Failure)}, nil
 	default:
 		return nil, fmt.Errorf("unexpected activity outcome type: %T", v)
 	}
@@ -798,9 +1008,13 @@ func (w *workflowClientInterceptor) DescribeActivity(
 	defer cancel()
 
 	request := &workflowservice.DescribeActivityExecutionRequest{
-		Namespace:  w.client.namespace,
-		ActivityId: in.ActivityID,
-		RunId:      in.RunID,
+		Namespace:               w.client.namespace,
+		ActivityId:              in.ActivityID,
+		RunId:                   in.RunID,
+		IncludeInput:            in.Options.IncludeInput,
+		IncludeOutcome:          in.Options.IncludeOutcome,
+		IncludeHeartbeatDetails: in.Options.IncludeHeartbeatDetails,
+		IncludeLastFailure:      in.Options.IncludeLastFailure,
 	}
 	resp, err := w.client.WorkflowService().DescribeActivityExecution(grpcCtx, request)
 	if err != nil {
@@ -817,6 +1031,12 @@ func (w *workflowClientInterceptor) DescribeActivity(
 		lastDeploymentVersion = &v
 	}
 
+	actCtx := converter.ActivitySerializationContext{
+		Namespace:    w.client.namespace,
+		ActivityType: info.ActivityType.GetName(),
+		TaskQueue:    info.TaskQueue,
+	}
+
 	return &ClientDescribeActivityOutput{
 		Description: &ClientActivityExecutionDescription{
 			ClientActivityExecutionInfo: ClientActivityExecutionInfo{
@@ -830,12 +1050,19 @@ func (w *workflowClientInterceptor) DescribeActivity(
 				TypedSearchAttributes: convertToTypedSearchAttributes(w.client.logger, info.SearchAttributes.IndexedFields),
 				TaskQueue:             info.TaskQueue,
 				ExecutionDuration:     info.ExecutionDuration.AsDuration(),
+				ExecutionTime:         info.ExecutionTime.AsTime(),
 			},
-			RawExecutionInfo:        info,
+			RawResponse:             resp,
+			ScheduleToCloseTimeout:  info.ScheduleToCloseTimeout.AsDuration(),
+			ScheduleToStartTimeout:  info.ScheduleToStartTimeout.AsDuration(),
+			StartToCloseTimeout:     info.StartToCloseTimeout.AsDuration(),
+			HeartbeatTimeout:        info.HeartbeatTimeout.AsDuration(),
+			StartDelay:              info.StartDelay.AsDuration(),
 			RunState:                info.RunState,
 			LastHeartbeatTime:       info.LastHeartbeatTime.AsTime(),
 			LastStartedTime:         info.LastStartedTime.AsTime(),
 			Attempt:                 info.Attempt,
+			TotalHeartbeatCount:     info.TotalHeartbeatCount,
 			RetryPolicy:             convertFromPBRetryPolicy(info.RetryPolicy),
 			ExpirationTime:          info.ExpirationTime.AsTime(),
 			LastWorkerIdentity:      info.LastWorkerIdentity,
@@ -845,9 +1072,11 @@ func (w *workflowClientInterceptor) DescribeActivity(
 			LastDeploymentVersion:   lastDeploymentVersion,
 			Priority:                convertFromPBPriority(info.Priority),
 			CanceledReason:          info.CanceledReason,
-			dataConverter:           WithContext(ctx, w.client.dataConverter),
-			failureConverter:        w.client.failureConverter,
-			inboundPayloadVisitor:   w.inboundPayloadVisitor,
+			dataConverter: converter.WithDataConverterSerializationContext(
+				WithContext(ctx, w.client.dataConverter), actCtx),
+			failureConverter: converter.WithFailureConverterSerializationContext(
+				w.client.failureConverter, actCtx),
+			inboundPayloadVisitor: w.inboundPayloadVisitor,
 		},
 	}, nil
 }
@@ -869,6 +1098,160 @@ func (w *workflowClientInterceptor) CancelActivity(
 	}
 	_, err := w.client.WorkflowService().RequestCancelActivityExecution(grpcCtx, request)
 	return err
+}
+
+func (w *workflowClientInterceptor) PauseActivity(
+	ctx context.Context,
+	in *ClientPauseActivityInput,
+) error {
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.PauseActivityExecutionRequest{
+		Namespace:  w.client.namespace,
+		ActivityId: in.ActivityID,
+		RunId:      in.RunID,
+		Identity:   w.client.identity,
+		RequestId:  uuid.NewString(),
+		Reason:     in.Options.Reason,
+		ResourceId: getActivityResourceId("", in.ActivityID),
+	}
+	_, err := w.client.WorkflowService().PauseActivityExecution(grpcCtx, request)
+	return err
+}
+
+func (w *workflowClientInterceptor) UnpauseActivity(
+	ctx context.Context,
+	in *ClientUnpauseActivityInput,
+) error {
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.UnpauseActivityExecutionRequest{
+		Namespace:  w.client.namespace,
+		ActivityId: in.ActivityID,
+		RunId:      in.RunID,
+		Identity:   w.client.identity,
+		RequestId:  uuid.NewString(),
+		Reason:     in.Options.Reason,
+		ResourceId: getActivityResourceId("", in.ActivityID),
+	}
+	if in.Options.Jitter != 0 {
+		request.Jitter = durationpb.New(in.Options.Jitter)
+	}
+	_, err := w.client.WorkflowService().UnpauseActivityExecution(grpcCtx, request)
+	return err
+}
+
+func activityOptionsUpdateToProto(update ClientActivityOptionsUpdate) (*activitypb.ActivityOptions, []string) {
+	options := &activitypb.ActivityOptions{}
+	var paths []string
+
+	// Each non-nil change names its path in the mask. A change whose Value is nil leaves the
+	// field absent, which is how the server is told to clear the option.
+	if c := update.TaskQueue; c != nil {
+		paths = append(paths, "task_queue.name")
+		if c.Value != nil {
+			options.TaskQueue = &taskqueuepb.TaskQueue{Name: *c.Value}
+		}
+	}
+	if c := update.ScheduleToCloseTimeout; c != nil {
+		paths = append(paths, "schedule_to_close_timeout")
+		if c.Value != nil {
+			options.ScheduleToCloseTimeout = durationpb.New(*c.Value)
+		}
+	}
+	if c := update.ScheduleToStartTimeout; c != nil {
+		paths = append(paths, "schedule_to_start_timeout")
+		if c.Value != nil {
+			options.ScheduleToStartTimeout = durationpb.New(*c.Value)
+		}
+	}
+	if c := update.StartToCloseTimeout; c != nil {
+		paths = append(paths, "start_to_close_timeout")
+		if c.Value != nil {
+			options.StartToCloseTimeout = durationpb.New(*c.Value)
+		}
+	}
+	if c := update.HeartbeatTimeout; c != nil {
+		paths = append(paths, "heartbeat_timeout")
+		if c.Value != nil {
+			options.HeartbeatTimeout = durationpb.New(*c.Value)
+		}
+	}
+	if c := update.StartDelay; c != nil {
+		paths = append(paths, "start_delay")
+		if c.Value != nil {
+			options.StartDelay = durationpb.New(*c.Value)
+		}
+	}
+	if c := update.RetryPolicy; c != nil {
+		paths = append(paths, "retry_policy")
+		if c.Value != nil {
+			options.RetryPolicy = ConvertToPBRetryPolicy(c.Value)
+		}
+	}
+	if c := update.Priority; c != nil {
+		paths = append(paths, "priority")
+		if c.Value != nil {
+			options.Priority = ConvertToPBPriority(*c.Value)
+		}
+	}
+	return options, paths
+}
+
+func activityOptionsFromProto(options *activitypb.ActivityOptions) *ClientActivityExecutionOptions {
+	return &ClientActivityExecutionOptions{
+		TaskQueue:              options.GetTaskQueue().GetName(),
+		ScheduleToCloseTimeout: options.GetScheduleToCloseTimeout().AsDuration(),
+		ScheduleToStartTimeout: options.GetScheduleToStartTimeout().AsDuration(),
+		StartToCloseTimeout:    options.GetStartToCloseTimeout().AsDuration(),
+		HeartbeatTimeout:       options.GetHeartbeatTimeout().AsDuration(),
+		StartDelay:             options.GetStartDelay().AsDuration(),
+		RetryPolicy:            convertFromPBRetryPolicy(options.GetRetryPolicy()),
+		Priority:               convertFromPBPriority(options.GetPriority()),
+	}
+}
+
+func (w *workflowClientInterceptor) UpdateActivityOptions(
+	ctx context.Context,
+	in *ClientUpdateActivityOptionsInput,
+) (*ClientUpdateActivityOptionsOutput, error) {
+	options := &activitypb.ActivityOptions{}
+	var paths []string
+	if in.Update != nil {
+		options, paths = activityOptionsUpdateToProto(*in.Update)
+	}
+	// The handle doesn't do this, but an interceptor could.
+	if in.RestoreOriginal && len(paths) > 0 {
+		return nil, errors.New("RestoreOriginalOptions cannot be combined with individual option changes")
+	}
+	mask, err := fieldmaskpb.New(&activitypb.ActivityOptions{}, paths...)
+	if err != nil {
+		return nil, fmt.Errorf("invalid field mask for ActivityOptions: %w", err)
+	}
+
+	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
+	defer cancel()
+
+	request := &workflowservice.UpdateActivityExecutionOptionsRequest{
+		Namespace:       w.client.namespace,
+		ActivityId:      in.ActivityID,
+		RunId:           in.RunID,
+		Identity:        w.client.identity,
+		RequestId:       uuid.NewString(),
+		ActivityOptions: options,
+		UpdateMask:      mask,
+		RestoreOriginal: in.RestoreOriginal,
+		ResourceId:      getActivityResourceId("", in.ActivityID),
+	}
+	resp, err := w.client.WorkflowService().UpdateActivityExecutionOptions(grpcCtx, request)
+	if err != nil {
+		return nil, err
+	}
+	return &ClientUpdateActivityOptionsOutput{
+		Options: activityOptionsFromProto(resp.GetActivityOptions()),
+	}, nil
 }
 
 func (w *workflowClientInterceptor) TerminateActivity(

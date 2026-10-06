@@ -64,7 +64,7 @@ func scheduleActivitiesRequest(n int) *workflowservice.RespondWorkflowTaskComple
 func TestVisitProtoPayloads_ConcurrentVisitors(t *testing.T) {
 	const n = 4
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
 	arrived := make(chan struct{}, n)
@@ -116,7 +116,7 @@ func TestVisitProtoPayloads_SequentialVisitors(t *testing.T) {
 		return p, nil
 	})
 
-	require.NoError(t, visitProtoPayloads(context.Background(), visitor, scheduleActivitiesRequest(n), 1))
+	require.NoError(t, visitProtoPayloads(t.Context(), visitor, scheduleActivitiesRequest(n), 1))
 	require.EqualValues(t, 1, peak,
 		"expected at most 1 concurrent visitor call with concurrencyLimit=1")
 }
@@ -210,7 +210,7 @@ func TestCompositePayloadVisitor(t *testing.T) {
 			},
 		}
 		composite := newCompositePayloadVisitor(v).(PayloadVisitorWithContextHook)
-		_, err := composite.ContextHook(context.Background(), &commandpb.RecordMarkerCommandAttributes{})
+		_, err := composite.ContextHook(t.Context(), &commandpb.RecordMarkerCommandAttributes{})
 		require.NoError(t, err)
 		require.True(t, hookCalled)
 	})
@@ -237,7 +237,7 @@ func TestCompositePayloadVisitor(t *testing.T) {
 			},
 		}
 		composite := newCompositePayloadVisitor(v1, v2).(PayloadVisitorWithContextHook)
-		returnedCtx, err := composite.ContextHook(context.Background(), &commandpb.RecordMarkerCommandAttributes{})
+		returnedCtx, err := composite.ContextHook(t.Context(), &commandpb.RecordMarkerCommandAttributes{})
 		require.NoError(t, err)
 		require.True(t, v2SawKey1)
 		require.Equal(t, true, returnedCtx.Value(key2{}))
@@ -264,7 +264,7 @@ func TestCompositePayloadVisitor(t *testing.T) {
 			},
 		}
 		composite := newCompositePayloadVisitor(v1, v2).(PayloadVisitorWithContextHook)
-		_, err := composite.ContextHook(context.Background(), &commandpb.RecordMarkerCommandAttributes{})
+		_, err := composite.ContextHook(t.Context(), &commandpb.RecordMarkerCommandAttributes{})
 		require.ErrorIs(t, err, expectedErr)
 		require.False(t, v2Called)
 	})

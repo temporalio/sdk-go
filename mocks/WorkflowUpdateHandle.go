@@ -16,7 +16,7 @@ type WorkflowUpdateHandle struct {
 }
 
 // Get provides a mock function with given fields: ctx, valuePtr
-func (_m *WorkflowUpdateHandle) Get(ctx context.Context, valuePtr interface{}) error {
+func (_m *WorkflowUpdateHandle) Get(ctx context.Context, valuePtr any) error {
 	ret := _m.Called(ctx, valuePtr)
 
 	if len(ret) == 0 {
@@ -24,7 +24,7 @@ func (_m *WorkflowUpdateHandle) Get(ctx context.Context, valuePtr interface{}) e
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, interface{}) error); ok {
+	if rf, ok := ret.Get(0).(func(context.Context, any) error); ok {
 		r0 = rf(ctx, valuePtr)
 	} else {
 		r0 = ret.Error(0)

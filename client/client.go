@@ -965,75 +965,77 @@ type (
 	// StartActivityOptions contains configuration parameters for starting an activity execution from the client.
 	// ID and TaskQueue are required. At least one of ScheduleToCloseTimeout or StartToCloseTimeout is required.
 	// Other parameters are optional.
-	//
-	// NOTE: Experimental
 	StartActivityOptions = internal.ClientStartActivityOptions
 
 	// GetActivityHandleOptions contains input for GetActivityHandle call.
-	// ActivityID and RunID are required.
-	//
-	// NOTE: Experimental
+	// ActivityID is required. RunID is optional; if empty, the handle targets the latest Activity Execution with the given ID.
+	// To target a specific run when ActivityIDReusePolicy allows reuse of an activity ID, set RunID.
 	GetActivityHandleOptions = internal.ClientGetActivityHandleOptions
 
 	// ListActivitiesOptions contains input for ListActivities call.
-	//
-	// NOTE: Experimental
 	ListActivitiesOptions = internal.ClientListActivitiesOptions
 
 	// ListActivitiesResult contains the result of the ListActivities call.
-	//
-	// NOTE: Experimental
 	ListActivitiesResult = internal.ClientListActivitiesResult
 
 	// CountActivitiesOptions contains input for CountActivities call.
-	//
-	// NOTE: Experimental
 	CountActivitiesOptions = internal.ClientCountActivitiesOptions
 
 	// CountActivitiesResult contains the result of the CountActivities call.
-	//
-	// NOTE: Experimental
 	CountActivitiesResult = internal.ClientCountActivitiesResult
 
 	// CountActivitiesAggregationGroup contains groups of activities if
 	// CountActivityExecutions is grouped by a field.
 	// The list might not be complete, and the counts of each group is approximate.
-	//
-	// NOTE: Experimental
 	CountActivitiesAggregationGroup = internal.ClientCountActivitiesAggregationGroup
 
 	// ActivityHandle represents a running or completed standalone activity execution.
 	// It can be used to get the result, describe, cancel, or terminate the activity.
-	//
-	// NOTE: Experimental
 	ActivityHandle = internal.ClientActivityHandle
 
 	// ActivityExecutionInfo contains information about an activity execution.
 	// This is returned by ListActivities and embedded in ClientActivityExecutionDescription.
-	//
-	// NOTE: Experimental
 	ActivityExecutionInfo = internal.ClientActivityExecutionInfo
 
 	// ActivityExecutionDescription contains detailed information about an activity execution.
 	// This is returned by ClientActivityHandle.Describe.
-	//
-	//	NOTE: Experimental
 	ActivityExecutionDescription = internal.ClientActivityExecutionDescription
 
 	// DescribeActivityOptions contains options for ClientActivityHandle.Describe call.
-	// For future compatibility, currently unused.
-	//
-	// NOTE: Experimental
 	DescribeActivityOptions = internal.ClientDescribeActivityOptions
 
 	// CancelActivityOptions contains options for ClientActivityHandle.Cancel call.
-	//
-	// NOTE: Experimental
 	CancelActivityOptions = internal.ClientCancelActivityOptions
 
-	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
+	// PauseActivityOptions contains options for ClientActivityHandle.Pause call.
 	//
 	// NOTE: Experimental
+	PauseActivityOptions = internal.ClientPauseActivityOptions
+
+	// UnpauseActivityOptions contains options for ClientActivityHandle.Unpause call.
+	//
+	// NOTE: Experimental
+	UnpauseActivityOptions = internal.ClientUnpauseActivityOptions
+
+	// ActivityExecutionOptions describes the options an activity is currently running with, as
+	// returned by ActivityHandle.UpdateOptions and ActivityHandle.RestoreOriginalOptions.
+	//
+	// NOTE: Experimental
+	ActivityExecutionOptions = internal.ClientActivityExecutionOptions
+
+	// ActivityOptionsUpdate describes changes to an activity's options in
+	// ActivityHandle.UpdateOptions. An entry with a nil pointer means do not change that option.
+	//
+	// NOTE: Experimental
+	ActivityOptionsUpdate = internal.ClientActivityOptionsUpdate
+
+	// ActivityOptionChange sets or clears one activity option when used with
+	// ActivityOptionsUpdate.
+	//
+	// NOTE: Experimental
+	ActivityOptionChange[T any] = internal.ClientActivityOptionChange[T]
+
+	// TerminateActivityOptions contains options for ClientActivityHandle.Terminate call.
 	TerminateActivityOptions = internal.ClientTerminateActivityOptions
 
 	// StartNexusOperationOptions contains configuration parameters for starting a Nexus operation execution.
@@ -1139,9 +1141,10 @@ type (
 		//  - serviceerror.Unavailable
 		//  - serviceerror.WorkflowExecutionAlreadyStarted, when WorkflowExecutionErrorWhenAlreadyStarted is specified
 		//
-		// WorkflowRun has 3 methods:
-		//  - GetWorkflowID() string: which return the started workflow ID
+		// WorkflowRun provides:
+		//  - GetID() string: which returns the started workflow ID
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - GetFirstExecutionRunID() string: which returns the first execution run ID in the workflow chain
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
@@ -1154,14 +1157,16 @@ type (
 		// GetRunID() will always return "run ID 1" and  Get(ctx context.Context, valuePtr interface{}) will return the result of second run.
 		//
 		// NOTE: DO NOT USE THIS API INSIDE A WORKFLOW, USE workflow.ExecuteChildWorkflow instead
-		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error)
+		ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow any, args ...any) (WorkflowRun, error)
 
 		// GetWorkflow retrieves a workflow execution and return a WorkflowRun instance (described above)
 		//  - workflow ID of the workflow.
 		//  - runID can be default(empty string). if empty string then it will pick the last running execution of that workflow ID.
 		//
-		// WorkflowRun has 2 methods:
+		// WorkflowRun provides:
+		//  - GetID() string: which returns the workflow ID
 		//  - GetRunID() string: which return the first started workflow run ID (please see below)
+		//  - GetFirstExecutionRunID() string: which is empty for handles returned by GetWorkflow
 		//  - Get(ctx context.Context, valuePtr interface{}) error: which will fill the workflow
 		//    execution result to valuePtr, if workflow execution is a success, or return corresponding
 		//    error. This is a blocking API.
@@ -1183,7 +1188,7 @@ type (
 		//  - serviceerror.NotFound
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error
+		SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error
 
 		// SignalWithStartWorkflow sends a signal to a running workflow.
 		// If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
@@ -1198,12 +1203,12 @@ type (
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
-			options StartWorkflowOptions, workflow interface{}, workflowArgs ...interface{}) (WorkflowRun, error)
+		SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any,
+			options StartWorkflowOptions, workflow any, workflowArgs ...any) (WorkflowRun, error)
 
 		// NewWithStartWorkflowOperation returns a WithStartWorkflowOperation for use with UpdateWithStartWorkflow.
 		// See [client.Client.UpdateWithStartWorkflow].
-		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation
+		NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow any, args ...any) WithStartWorkflowOperation
 
 		// CancelWorkflow request cancellation of a workflow in execution. Cancellation request closes the channel
 		// returned by the workflow.Context.Done() of the workflow that is target of the request.
@@ -1231,7 +1236,7 @@ type (
 		//  - serviceerror.InvalidArgument
 		//  - serviceerror.Internal
 		//  - serviceerror.Unavailable
-		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error
+		TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...any) error
 
 		// TerminateWorkflowWithOptions terminates a workflow execution.
 		// The options can specify the first execution run ID to ensure the request
@@ -1275,7 +1280,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// CompleteActivityWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error
+		CompleteActivity(ctx context.Context, taskToken []byte, result any, err error) error
 
 		// CompleteActivityWithOptions reports activity completed with full context options.
 		// Similar to CompleteActivity but accepts a struct with optional ActivitySerializationContext
@@ -1303,7 +1308,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// CompleteActivityByIDWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result interface{}, err error) error
+		CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string, result any, err error) error
 
 		// CompleteActivityByIDWithOptions reports activity completed with full context options.
 		// Similar to CompleteActivityByID but accepts a struct with optional ActivitySerializationContext
@@ -1329,7 +1334,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// CompleteActivityByActivityIDWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		CompleteActivityByActivityID(ctx context.Context, namespace, activityID, activityRunID string, result interface{}, err error) error
+		CompleteActivityByActivityID(ctx context.Context, namespace, activityID, activityRunID string, result any, err error) error
 
 		// CompleteActivityByActivityIDWithOptions reports standalone activity completed with full context options.
 		// Similar to CompleteActivityByActivityID but accepts a struct with optional
@@ -1350,7 +1355,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// RecordActivityHeartbeatWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error
+		RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...any) error
 
 		// RecordActivityHeartbeatWithOptions records heartbeat with full context options.
 		// Similar to RecordActivityHeartbeat but accepts a struct with optional
@@ -1370,7 +1375,7 @@ type (
 		// FailureConverterWithSerializationContext), consider using
 		// RecordActivityHeartbeatByIDWithOptions to provide full activity metadata
 		// (ActivityType, WorkflowType, TaskQueue) to your codec.
-		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...interface{}) error
+		RecordActivityHeartbeatByID(ctx context.Context, namespace, workflowID, runID, activityID string, details ...any) error
 
 		// RecordActivityHeartbeatByIDWithOptions records heartbeat with full context options.
 		// Similar to RecordActivityHeartbeatByID but accepts a struct with optional
@@ -1471,7 +1476,7 @@ type (
 		//  - serviceerror.Unavailable
 		//  - serviceerror.NotFound
 		//  - serviceerror.QueryFailed
-		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error)
+		QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...any) (converter.EncodedValue, error)
 
 		// QueryWorkflowWithOptions queries a given workflow execution and returns the query result synchronously.
 		// See QueryWorkflowWithOptionsRequest and QueryWorkflowWithOptionsResponse for more information.
@@ -1623,27 +1628,19 @@ type (
 		//
 		// NOTE: Standalone activities are not associated with a workflow execution.
 		// They are scheduled directly on a task queue and executed by a worker.
-		//
-		// NOTE: Experimental
 		ExecuteActivity(ctx context.Context, options StartActivityOptions, activity any, args ...any) (ActivityHandle, error)
 
 		// GetActivityHandle creates a handle to the referenced activity.
-		//
-		// NOTE: Experimental
 		GetActivityHandle(options GetActivityHandleOptions) ActivityHandle
 
 		// ListActivities lists activity executions based on query.
 		//
 		// Currently, all errors are returned in the iterator and not the base level error.
-		//
-		// NOTE: Experimental
 		ListActivities(ctx context.Context, options ListActivitiesOptions) (ListActivitiesResult, error)
 
 		// CountActivities counts activity executions based on query. The result
 		// includes the total count and optionally grouped counts if the query includes
 		// a GROUP BY clause.
-		//
-		// NOTE: Experimental
 		CountActivities(ctx context.Context, options CountActivitiesOptions) (*CountActivitiesResult, error)
 
 		// NewNexusClient creates a new Nexus client bound to the given endpoint and service.

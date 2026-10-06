@@ -11,15 +11,14 @@ import (
 
 func TestLoadClientOptionsFile(t *testing.T) {
 	// Put some data in temp file and set the env var to use that file
-	f, err := os.CreateTemp("", "")
+	f, err := os.CreateTemp(t.TempDir(), "")
 	require.NoError(t, err)
-	defer os.Remove(f.Name())
 	_, err = f.Write([]byte(`
 [profile.default]
 address = "my-address"
 namespace = "my-namespace"`))
-	f.Close()
 	require.NoError(t, err)
+	require.NoError(t, f.Close())
 
 	// Explicitly set
 	opts, err := envconfig.LoadClientOptions(envconfig.LoadClientOptionsRequest{

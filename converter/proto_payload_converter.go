@@ -35,7 +35,7 @@ func NewProtoPayloadConverterWithOptions(options ProtoPayloadConverterOptions) *
 }
 
 // ToPayload converts single proto value to payload.
-func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload, error) {
+func (c *ProtoPayloadConverter) ToPayload(value any) (*commonpb.Payload, error) {
 	// Proto golang structs might be generated with 4 different protoc plugin versions:
 	//   1. github.com/golang/protobuf - ~v1.3.5 is the most recent pre-APIv2 version of APIv1.
 	//   2. github.com/golang/protobuf - ^v1.4.0 is a version of APIv1 implemented in terms of APIv2.
@@ -73,9 +73,9 @@ func (c *ProtoPayloadConverter) ToPayload(value interface{}) (*commonpb.Payload,
 }
 
 // FromPayload converts single proto value from payload.
-func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr interface{}) error {
+func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr any) error {
 	originalValue := reflect.ValueOf(valuePtr)
-	if originalValue.Kind() != reflect.Ptr {
+	if originalValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("type: %T: %w", valuePtr, ErrValuePtrIsNotPointer)
 	}
 
@@ -90,7 +90,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 
 	value := originalValue
 	// If original value is of value type (i.e. commonpb.WorkflowType), create a pointer to it.
-	if originalValue.Kind() != reflect.Ptr {
+	if originalValue.Kind() != reflect.Pointer {
 		value = pointerTo(originalValue.Interface())
 	}
 
@@ -102,7 +102,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 	}
 
 	// If original value is nil, create new instance.
-	if originalValue.Kind() == reflect.Ptr && originalValue.IsNil() {
+	if originalValue.Kind() == reflect.Pointer && originalValue.IsNil() {
 		value = newOfSameType(originalValue)
 		protoValue = value.Interface()
 		if isProtoMessage {
@@ -119,7 +119,7 @@ func (c *ProtoPayloadConverter) FromPayload(payload *commonpb.Payload, valuePtr 
 		err = gogoproto.Unmarshal(payload.GetData(), gogoProtoMessage)
 	}
 	// If original value wasn't a pointer then set value back to where valuePtr points to.
-	if originalValue.Kind() != reflect.Ptr {
+	if originalValue.Kind() != reflect.Pointer {
 		originalValue.Set(value.Elem())
 	}
 

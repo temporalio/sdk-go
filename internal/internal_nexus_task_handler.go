@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/nexus-rpc/sdk-go/nexus"
 	"go.temporal.io/api/common/v1"
 	enumspb "go.temporal.io/api/enums/v1"
@@ -95,26 +96,43 @@ func newNexusTaskHandler(
 
 func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueResponse) (*workflowservice.RespondNexusTaskCompletedRequest, *workflowservice.RespondNexusTaskFailedRequest, error) {
 	failureReasonSupport := getEffectiveTemporalFailureResponses(task.GetRequest().GetCapabilities().GetTemporalFailureResponses())
+	pollerGroupID := task.GetPollerGroupId()
 	nctx, handlerErr := h.newNexusOperationContext(task)
 	if handlerErr != nil {
-		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
+		failureRequest, err := h.fillInFailure(
+			task.TaskToken,
+			handlerErr,
+			failureReasonSupport,
+			h.failureConverter,
+			pollerGroupID,
+		)
 		if err != nil {
 			return nil, nil, err
 		}
 		return nil, failureRequest, nil
 	}
+	failureConverter := converter.WithFailureConverterSerializationContext(
+		h.failureConverter,
+		nctx.nexusSerializationContext,
+	)
 	res, handlerErr, err := h.execute(nctx, task)
 	if err != nil {
 		return nil, nil, err
 	}
 	if handlerErr != nil {
-		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
+		failureRequest, err := h.fillInFailure(
+			task.TaskToken,
+			handlerErr,
+			failureReasonSupport,
+			failureConverter,
+			pollerGroupID,
+		)
 		if err != nil {
 			return nil, nil, err
 		}
 		return nil, failureRequest, nil
 	}
-	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport)
+	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport, pollerGroupID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -123,18 +141,29 @@ func (h *nexusTaskHandler) Execute(task *workflowservice.PollNexusTaskQueueRespo
 
 func (h *nexusTaskHandler) ExecuteContext(nctx *NexusOperationContext, task *workflowservice.PollNexusTaskQueueResponse) (*workflowservice.RespondNexusTaskCompletedRequest, *workflowservice.RespondNexusTaskFailedRequest, error) {
 	failureReasonSupport := getEffectiveTemporalFailureResponses(task.GetRequest().GetCapabilities().GetTemporalFailureResponses())
+	failureConverter := converter.WithFailureConverterSerializationContext(
+		h.failureConverter,
+		nctx.nexusSerializationContext,
+	)
+	pollerGroupID := task.GetPollerGroupId()
 	res, handlerErr, err := h.execute(nctx, task)
 	if err != nil {
 		return nil, nil, err
 	}
 	if handlerErr != nil {
-		failureRequest, err := h.fillInFailure(task.TaskToken, handlerErr, failureReasonSupport)
+		failureRequest, err := h.fillInFailure(
+			task.TaskToken,
+			handlerErr,
+			failureReasonSupport,
+			failureConverter,
+			pollerGroupID,
+		)
 		if err != nil {
 			return nil, nil, err
 		}
 		return nil, failureRequest, nil
 	}
-	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport)
+	completedRequest, err := h.fillInCompletion(task.TaskToken, res, failureReasonSupport, pollerGroupID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -172,8 +201,16 @@ func (h *nexusTaskHandler) handleStartOperation(
 	req *nexuspb.StartOperationRequest,
 	header nexus.Header,
 ) (*nexuspb.Response, *nexus.HandlerError, error) {
+	dataConverter := converter.WithDataConverterSerializationContext(
+		h.dataConverter,
+		nctx.nexusSerializationContext,
+	)
+	failureConverter := converter.WithFailureConverterSerializationContext(
+		h.failureConverter,
+		nctx.nexusSerializationContext,
+	)
 	serializer := &payloadSerializer{
-		converter: h.dataConverter,
+		converter: dataConverter,
 		payload:   req.GetPayload(),
 	}
 	// Create a fake lazy value, Temporal server already converts Nexus content into payloads.
@@ -199,7 +236,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		}
 		linkURL, err := url.Parse(link.GetUrl())
 		if err != nil {
-			nctx.log.Error("Failed to parse link url: %s", link.GetUrl(), tagError, err)
+			nctx.log.Error("Failed to parse link url", tagLinkURL, link.GetUrl(), tagError, err)
 			return nil, nexus.NewHandlerErrorf(nexus.HandlerErrorTypeBadRequest, "failed to parse link url"), nil
 		}
 		nexusLinks = append(nexusLinks, nexus.Link{
@@ -213,8 +250,14 @@ func (h *nexusTaskHandler) handleStartOperation(
 	if len(requestLinks) > 0 {
 		ctx = context.WithValue(ctx, NexusOperationRequestLinksKey, requestLinks)
 	}
+	// Handle old servers that may not send a request ID. Generate one if missing.
+	requestID := req.RequestId
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
+	nctx.RequestID = requestID
 	startOptions := nexus.StartOperationOptions{
-		RequestID:      req.RequestId,
+		RequestID:      requestID,
 		CallbackURL:    req.Callback,
 		Header:         header,
 		CallbackHeader: callbackHeader,
@@ -285,7 +328,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 				Variant: &nexuspb.Response_StartOperation{
 					StartOperation: &nexuspb.StartOperationResponse{
 						Variant: &nexuspb.StartOperationResponse_Failure{
-							Failure: h.failureConverter.ErrorToFailure(tempoErr),
+							Failure: failureConverter.ErrorToFailure(tempoErr),
 						},
 					},
 				},
@@ -338,7 +381,7 @@ func (h *nexusTaskHandler) handleStartOperation(
 		links = append(links, h.responseLinks(nctx)...)
 		// *nexus.HandlerStartOperationResultSync is generic, we can't type switch unfortunately.
 		value := reflect.ValueOf(t).Elem().FieldByName("Value").Interface()
-		payload, err := h.dataConverter.ToPayload(value)
+		payload, err := dataConverter.ToPayload(value)
 		if err != nil {
 			nctx.log.Error("Cannot convert Nexus sync result", tagError, err)
 			return nil, nexus.NewHandlerErrorf(
@@ -479,17 +522,22 @@ func (h *nexusTaskHandler) newNexusOperationContext(response *workflowservice.Po
 	metricsHandler := h.metricsHandler.WithTags(metrics.NexusTags(service, operation, h.taskQueueName))
 
 	return &NexusOperationContext{
-		client:         h.client,
-		Endpoint:       response.GetRequest().GetEndpoint(),
-		Namespace:      h.namespace,
-		TaskQueue:      h.taskQueueName,
+		client:    h.client,
+		Endpoint:  response.GetRequest().GetEndpoint(),
+		Namespace: h.namespace,
+		TaskQueue: h.taskQueueName,
+		nexusSerializationContext: converter.NexusSerializationContext{
+			Endpoint:  response.GetRequest().GetEndpoint(),
+			Service:   service,
+			Operation: operation,
+		},
 		metricsHandler: metricsHandler,
 		log:            logger,
 		registry:       h.registry,
 	}, nil
 }
 
-func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response, failureReasonSupport bool) (*workflowservice.RespondNexusTaskCompletedRequest, error) {
+func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Response, failureReasonSupport bool, pollerGroupID string) (*workflowservice.RespondNexusTaskCompletedRequest, error) {
 	// Handle conversion of Failure to OperationError for backwards compatibility with old servers.
 	if res.GetStartOperation().GetFailure() != nil && !failureReasonSupport {
 		// Convert to operation error for backwards compatibility.
@@ -509,6 +557,7 @@ func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Respo
 		res.Variant = &nexuspb.Response_StartOperation{
 			StartOperation: &nexuspb.StartOperationResponse{
 				Variant: &nexuspb.StartOperationResponse_OperationError{
+					//lint:ignore SA1019 servers without Temporal failure responses require the legacy operation error variant
 					OperationError: &nexuspb.UnsuccessfulOperationError{
 						OperationState: state,
 						Failure:        failure,
@@ -518,23 +567,31 @@ func (h *nexusTaskHandler) fillInCompletion(taskToken []byte, res *nexuspb.Respo
 		}
 	}
 	return &workflowservice.RespondNexusTaskCompletedRequest{
-		Identity:  h.identity,
-		Namespace: h.namespace,
-		TaskToken: taskToken,
-		Response:  res,
+		Identity:      h.identity,
+		Namespace:     h.namespace,
+		TaskToken:     taskToken,
+		Response:      res,
+		PollerGroupId: pollerGroupID,
 	}, nil
 }
 
-func (h *nexusTaskHandler) fillInFailure(taskToken []byte, handlerError *nexus.HandlerError, failureReasonSupport bool) (*workflowservice.RespondNexusTaskFailedRequest, error) {
+func (h *nexusTaskHandler) fillInFailure(
+	taskToken []byte,
+	handlerError *nexus.HandlerError,
+	failureReasonSupport bool,
+	failureConverter converter.FailureConverter,
+	pollerGroupID string,
+) (*workflowservice.RespondNexusTaskFailedRequest, error) {
 	r := &workflowservice.RespondNexusTaskFailedRequest{
-		Identity:  h.identity,
-		Namespace: h.namespace,
-		TaskToken: taskToken,
+		Identity:      h.identity,
+		Namespace:     h.namespace,
+		TaskToken:     taskToken,
+		PollerGroupId: pollerGroupID,
 	}
 	if failureReasonSupport {
-		r.Failure = h.failureConverter.ErrorToFailure(handlerError)
+		r.Failure = failureConverter.ErrorToFailure(handlerError)
 	} else {
-		he, err := h.nexusHandlerErrorToProto(handlerError)
+		he, err := h.nexusHandlerErrorToProto(handlerError, failureConverter)
 		if err != nil {
 			return nil, err
 		}
@@ -547,8 +604,8 @@ func (h *nexusTaskHandler) fillInFailure(taskToken []byte, handlerError *nexus.H
 var nexusFailureTypeString = string((&failurepb.Failure{}).ProtoReflect().Descriptor().FullName())
 var nexusFailureMetadata = map[string]string{"type": nexusFailureTypeString}
 
-func (h *nexusTaskHandler) errorToFailure(err error) (*nexuspb.Failure, error) {
-	failure := h.failureConverter.ErrorToFailure(err)
+func (h *nexusTaskHandler) errorToFailure(err error, failureConverter converter.FailureConverter) (*nexuspb.Failure, error) {
+	failure := failureConverter.ErrorToFailure(err)
 	if failure == nil {
 		return nil, nil
 	}
@@ -583,8 +640,11 @@ func (h *nexusTaskHandler) temporalFailureToNexusFailure(failure *failurepb.Fail
 	}, nil
 }
 
-func (h *nexusTaskHandler) nexusHandlerErrorToProto(handlerErr *nexus.HandlerError) (*nexuspb.HandlerError, error) {
-	failure, err := h.errorToFailure(handlerErr.Cause)
+func (h *nexusTaskHandler) nexusHandlerErrorToProto(
+	handlerErr *nexus.HandlerError,
+	failureConverter converter.FailureConverter,
+) (*nexuspb.HandlerError, error) {
+	failure, err := h.errorToFailure(handlerErr.Cause, failureConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -610,7 +670,35 @@ type payloadSerializer struct {
 }
 
 func (p *payloadSerializer) Deserialize(_ *nexus.Content, v any) error {
-	return p.converter.FromPayload(p.payload, v)
+	err := p.converter.FromPayload(p.payload, v)
+	if err == nil {
+		return nil
+	}
+	// The Nexus SDK propagates serializer errors as-is, so errors that already carry an intent for the caller are
+	// passed through and converted by the regular error handling path. Anything else means the input could not be
+	// read and is reported as a bad request.
+	// Not using errors.As to be consistent ApplicationError checking with the rest of the SDK.
+	if appErr, ok := err.(*ApplicationError); ok {
+		// A non-retryable payload validation error means the input itself is invalid, which is a bad request rather
+		// than a handler failure.
+		if appErr.NonRetryable() && appErr.Type() == payloadValidationErrorType {
+			return &nexus.HandlerError{
+				Type:    nexus.HandlerErrorTypeBadRequest,
+				Message: "invalid operation input",
+				Cause:   err,
+			}
+		}
+		return err
+	}
+	var handlerErr *nexus.HandlerError
+	if errors.As(err, &handlerErr) {
+		return err
+	}
+	return &nexus.HandlerError{
+		Type:    nexus.HandlerErrorTypeBadRequest,
+		Message: "cannot deserialize operation input",
+		Cause:   err,
+	}
 }
 
 func (p *payloadSerializer) Serialize(v any) (*nexus.Content, error) {

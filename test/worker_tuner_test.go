@@ -37,6 +37,7 @@ func (ts *WorkerTunerTestSuite) TearDownSuite() {
 }
 
 func (ts *WorkerTunerTestSuite) SetupTest() {
+	ts.Assertions = require.New(ts.T())
 	ts.taskQueueName = taskQueuePrefix + "-" + ts.T().Name()
 }
 
@@ -132,7 +133,7 @@ func (ts *WorkerTunerTestSuite) TestResourceBasedSmallSlots() {
 	ts.NoError(err)
 
 	// The bug this is verifying was triggered by a race, so run this a bunch to verify it's not hit
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		ts.runTheWorkflow(worker.Options{Tuner: tuner}, ctx, 2*time.Minute)
 	}
 }

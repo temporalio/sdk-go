@@ -160,15 +160,16 @@ func (dfc *DefaultFailureConverter) ErrorToFailure(err error) *failurepb.Failure
 			Endpoint:         err.Endpoint,
 			Service:          err.Service,
 			Operation:        err.Operation,
-			OperationId:      token,
-			OperationToken:   token,
+			//lint:ignore SA1019 populate the legacy operation ID for backwards-compatible failure decoding
+			OperationId:    token,
+			OperationToken: token,
 		}
 		failure.FailureInfo = &failurepb.Failure_NexusOperationExecutionFailureInfo{NexusOperationExecutionFailureInfo: failureInfo}
 	case *nexus.HandlerError:
 		if err.OriginalFailure != nil {
 			f, err := nexusFailureToTemporalFailure(*err.OriginalFailure, true)
-			// If there was an error converting the original failure, we will ignore it 
-			// since we don't want to fail the entire conversion just because we couldn't convert the original failure. 
+			// If there was an error converting the original failure, we will ignore it
+			// since we don't want to fail the entire conversion just because we couldn't convert the original failure.
 			if err == nil {
 				return f
 			}
@@ -239,7 +240,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 				ApplicationErrorOptions{
 					NonRetryable:   applicationFailureInfo.GetNonRetryable(),
 					Cause:          dfc.FailureToError(failure.GetCause()),
-					Details:        []interface{}{details},
+					Details:        []any{details},
 					NextRetryDelay: nextRetryDelay,
 					Category:       ApplicationErrorCategory(applicationFailureInfo.GetCategory()),
 				},
@@ -250,7 +251,7 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 		err = NewCanceledErrorWithOptions(
 			CanceledErrorOptions{
 				Message: message,
-				Details: []interface{}{details},
+				Details: []any{details},
 				Cause:   dfc.FailureToError(failure.GetCause()),
 			},
 		)
@@ -267,7 +268,9 @@ func (dfc *DefaultFailureConverter) FailureToError(failure *failurepb.Failure) e
 	} else if failure.GetServerFailureInfo() != nil {
 		err = NewServerError(message, failure.GetServerFailureInfo().GetNonRetryable(), dfc.FailureToError(failure.GetCause()))
 	} else if failure.GetResetWorkflowFailureInfo() != nil {
-		err = NewApplicationError(message, "", true, dfc.FailureToError(failure.GetCause()), failure.GetResetWorkflowFailureInfo().GetLastHeartbeatDetails())
+		resetWorkflowFailureInfo := failure.GetResetWorkflowFailureInfo()
+		lastHeartbeatDetails := newEncodedValues(resetWorkflowFailureInfo.GetLastHeartbeatDetails(), dfc.dataConverter)
+		err = NewApplicationError(message, "", true, dfc.FailureToError(failure.GetCause()), lastHeartbeatDetails)
 	} else if failure.GetActivityFailureInfo() != nil {
 		activityTaskInfoFailure := failure.GetActivityFailureInfo()
 		err = NewActivityError(

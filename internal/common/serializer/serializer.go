@@ -98,7 +98,7 @@ func DeserializeBatchEvents(data *commonpb.DataBlob) ([]*historypb.HistoryEvent,
 	return events.Events, nil
 }
 
-func serialize(input interface{}, encodingType enumspb.EncodingType) (*commonpb.DataBlob, error) {
+func serialize(input any, encodingType enumspb.EncodingType) (*commonpb.DataBlob, error) {
 	if input == nil {
 		return nil, nil
 	}

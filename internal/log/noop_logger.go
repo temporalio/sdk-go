@@ -14,18 +14,18 @@ func NewNopLogger() *NoopLogger {
 }
 
 // Debug does nothing.
-func (l *NoopLogger) Debug(string, ...interface{}) {}
+func (l *NoopLogger) Debug(string, ...any) {}
 
 // Info does nothing.
-func (l *NoopLogger) Info(string, ...interface{}) {}
+func (l *NoopLogger) Info(string, ...any) {}
 
 // Warn does nothing.
-func (l *NoopLogger) Warn(string, ...interface{}) {}
+func (l *NoopLogger) Warn(string, ...any) {}
 
 // Error does nothing.
-func (l *NoopLogger) Error(string, ...interface{}) {}
+func (l *NoopLogger) Error(string, ...any) {}
 
 // With returns new NoopLogger.
-func (l *NoopLogger) With(...interface{}) log.Logger {
+func (l *NoopLogger) With(...any) log.Logger {
 	return NewNopLogger()
 }

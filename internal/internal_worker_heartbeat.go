@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	commonpb "go.temporal.io/api/common/v1"
+	deploymentpb "go.temporal.io/api/deployment/v1"
 	enumspb "go.temporal.io/api/enums/v1"
 	nexuspb "go.temporal.io/api/nexus/v1"
 	workerservicepb "go.temporal.io/api/nexusservices/workerservice/v1"
@@ -29,21 +30,28 @@ type heartbeatManager struct {
 	client   *WorkflowClient
 	interval time.Duration
 	logger   log.Logger
+	// environmentInfo is reported once per worker, or nil when reporting is disabled.
+	environmentInfo *workerpb.EnvironmentInfo
 
 	workersMutex sync.Mutex
 	workers      map[string]*sharedNamespaceWorker // namespace -> worker
 }
 
 // newHeartbeatManager creates a new heartbeatManager.
-func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger) *heartbeatManager {
+func newHeartbeatManager(client *WorkflowClient, interval time.Duration, logger log.Logger, disableEnvironmentInfo bool) *heartbeatManager {
 	if logger == nil {
 		logger = ilog.NewDefaultLogger()
 	}
+	var environmentInfo *workerpb.EnvironmentInfo
+	if !disableEnvironmentInfo {
+		environmentInfo = detectEnvironmentInfo()
+	}
 	return &heartbeatManager{
-		client:   client,
-		interval: interval,
-		logger:   logger,
-		workers:  make(map[string]*sharedNamespaceWorker),
+		client:          client,
+		interval:        interval,
+		logger:          logger,
+		environmentInfo: environmentInfo,
+		workers:         make(map[string]*sharedNamespaceWorker),
 	}
 }
 
@@ -72,6 +80,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		workerCtx:                     heartbeatCtx,
 		heartbeatCancel:               heartbeatCancel,
 		callbacks:                     make(map[string]func() *workerpb.WorkerHeartbeat),
+		heartbeatSuccessCallbacks:     make(map[string]func()),
 		activityCancellationCallbacks: newActivityCancellationCallbacks(),
 		workerControlTaskQueue:        controlTaskQueue,
 		workerInstanceKey:             uuid.NewString(),
@@ -79,6 +88,7 @@ func (m *heartbeatManager) sharedNamespaceWorkerForLocked(namespace string) *sha
 		stopC:                         make(chan struct{}),
 		stoppedC:                      make(chan struct{}),
 		logger:                        m.logger,
+		pollerGroups:                  newPollerGroupManager(newPollerGroupSnapshotStore()),
 	}
 	m.workers[namespace] = hw
 	return hw
@@ -104,9 +114,11 @@ func (m *heartbeatManager) registerWorker(
 	defer m.workersMutex.Unlock()
 
 	hw := m.sharedNamespaceWorkerForLocked(namespace)
+	hw.pollerGroups.updateGroups(nsData.pollerGroupsInfo)
 
 	hw.callbacksMutex.Lock()
 	hw.callbacks[worker.workerInstanceKey] = worker.heartbeatCallback
+	hw.heartbeatSuccessCallbacks[worker.workerInstanceKey] = worker.heartbeatSuccess
 	hw.callbacksMutex.Unlock()
 
 	if hw.started.CompareAndSwap(false, true) {
@@ -131,6 +143,7 @@ func (m *heartbeatManager) unregisterWorker(worker *AggregatedWorker) {
 
 	hw.callbacksMutex.Lock()
 	delete(hw.callbacks, worker.workerInstanceKey)
+	delete(hw.heartbeatSuccessCallbacks, worker.workerInstanceKey)
 	remaining := len(hw.callbacks)
 	hw.callbacksMutex.Unlock()
 
@@ -153,12 +166,16 @@ type sharedNamespaceWorker struct {
 	// callbacksMutex should only be unlocked under
 	callbacksMutex sync.RWMutex
 	callbacks      map[string]func() *workerpb.WorkerHeartbeat // workerInstanceKey -> callback
+	// heartbeatSuccessCallbacks are invoked after the server accepts a heartbeat batch that
+	// included the corresponding worker. Guarded by callbacksMutex.
+	heartbeatSuccessCallbacks map[string]func() // workerInstanceKey -> callback
 
 	activityCancellationCallbacks *activityCancellationCallbacks
 	workerCommandsSupported       bool
 	workerControlTaskQueue        string
 	workerInstanceKey             string
 	metricsHandler                metrics.Handler
+	pollerGroups                  *pollerGroupManager
 
 	// stopC is created when the namespace heartbeat worker starts and closed by
 	// sharedNamespaceWorker.stop() to tell run() to exit.
@@ -208,9 +225,13 @@ func (hw *sharedNamespaceWorker) run() {
 func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 	hw.callbacksMutex.RLock()
 	callbacks := make([]func() *workerpb.WorkerHeartbeat, 0, len(hw.callbacks))
-	for _, cb := range hw.callbacks {
+	successCallbacks := make([]func(), 0, len(hw.callbacks))
+	for key, cb := range hw.callbacks {
 		if cb != nil {
 			callbacks = append(callbacks, cb)
+			if onSuccess := hw.heartbeatSuccessCallbacks[key]; onSuccess != nil {
+				successCallbacks = append(successCallbacks, onSuccess)
+			}
 		}
 	}
 	hw.callbacksMutex.RUnlock()
@@ -221,16 +242,15 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 
 	heartbeats := make([]*workerpb.WorkerHeartbeat, 0, len(callbacks))
 	for _, cb := range callbacks {
-		hb := cb()
-		heartbeats = append(heartbeats, hb)
+		heartbeats = append(heartbeats, cb())
 	}
 
 	_, err := hw.client.recordWorkerHeartbeat(hw.workerCtx, &workflowservice.RecordWorkerHeartbeatRequest{
 		Namespace:       hw.namespace,
 		Identity:        hw.client.identity,
 		WorkerHeartbeat: heartbeats,
+		ResourceId:      fmt.Sprintf("worker:%s", hw.client.workerGroupingKey),
 	})
-
 	if err != nil {
 		if status.Code(err) == codes.Unimplemented {
 			// Server doesn't support heartbeats; return error to stop the worker.
@@ -238,46 +258,91 @@ func (hw *sharedNamespaceWorker) sendHeartbeats() error {
 		}
 		// For other errors, log and continue heartbeating
 		hw.logger.Warn("Failed to send heartbeat", "Error", err)
+		return nil
+	}
+
+	for _, onSuccess := range successCallbacks {
+		onSuccess()
 	}
 	return nil
 }
 
 func (hw *sharedNamespaceWorker) runWorkerCommands() {
+	pollerRunner := newAutoscalingTaskPollerRunner(
+		newPollerAutoscaler(pollerAutoscalerOptions{
+			initialPollerCount: 1,
+			maxPollerCount:     1,
+			minPollerCount:     1,
+		}),
+		hw.pollerGroups,
+	)
+	var pollWG sync.WaitGroup
+	defer pollWG.Wait()
+
 	for {
-		select {
-		case <-hw.workerCtx.Done():
+		if hw.workerCtx.Err() != nil {
 			return
-		default:
 		}
 
-		task, err := hw.pollWorkerCommandTask()
+		admission, err := pollerRunner.acquire(hw.workerCtx)
 		if err != nil {
-			if hw.workerCtx.Err() != nil {
-				return
-			}
-			hw.logger.Warn("Failed polling worker command task", "Error", err)
-			select {
-			case <-time.After(time.Second):
-			case <-hw.workerCtx.Done():
-				return
-			}
-			continue
-		}
-		if task == nil || len(task.TaskToken) == 0 {
-			continue
-		}
-		if task.GetRequest() == nil {
-			hw.logger.Warn("Received worker command task with nil request")
-			continue
+			return
 		}
 
-		if err := hw.handleWorkerCommandTask(task); err != nil {
-			hw.logger.Warn("Failed handling worker command task", "Error", err)
-		}
+		pollWG.Go(func() {
+			defer admission.release()
+
+			task, err := hw.pollWorkerCommand(admission.groupLease)
+			if err != nil {
+				if hw.workerCtx.Err() == nil {
+					hw.logger.Warn("Failed polling worker command task", "Error", err)
+				}
+				timer := time.NewTimer(time.Second)
+				defer timer.Stop()
+				select {
+				case <-timer.C:
+				case <-hw.workerCtx.Done():
+				}
+				return
+			}
+
+			if task == nil {
+				return
+			}
+
+			if err := hw.handleWorkerCommandTask(task); err != nil {
+				hw.logger.Warn("Failed handling worker command task", "Error", err)
+			}
+		})
 	}
 }
 
-func (hw *sharedNamespaceWorker) pollWorkerCommandTask() (*workflowservice.PollNexusTaskQueueResponse, error) {
+func (hw *sharedNamespaceWorker) pollWorkerCommand(
+	lease pollerGroupLease,
+) (
+	*workflowservice.PollNexusTaskQueueResponse,
+	error,
+) {
+	task, err := hw.pollWorkerCommandTask(lease.groupIDOrEmpty())
+	if err != nil {
+		return nil, err
+	}
+	if task != nil {
+		hw.pollerGroups.updateGroups(task.GetPollerGroupsInfo())
+	}
+	if task == nil || len(task.TaskToken) == 0 {
+		return nil, nil
+	}
+	if task.GetRequest() == nil {
+		hw.logger.Warn("Received worker command task with nil request")
+		return nil, nil
+	}
+	return task, nil
+}
+
+func (hw *sharedNamespaceWorker) pollWorkerCommandTask(
+	pollerGroupID string,
+) (*workflowservice.PollNexusTaskQueueResponse, error) {
 	rpcMetricsHandler := hw.metricsHandler.WithTags(metrics.TaskQueueTags(hw.workerControlTaskQueue))
 	grpcCtx, cancel := newGRPCContext(
 		hw.workerCtx,
@@ -296,9 +361,11 @@ func (hw *sharedNamespaceWorker) pollWorkerCommandTask() (*workflowservice.PollN
 		},
 		Identity:          hw.client.identity,
 		WorkerInstanceKey: hw.workerInstanceKey,
-		WorkerVersionCapabilities: &commonpb.WorkerVersionCapabilities{
-			BuildId: "1.0",
+		DeploymentOptions: &deploymentpb.WorkerDeploymentOptions{
+			BuildId:              "1.0",
+			WorkerVersioningMode: enumspb.WORKER_VERSIONING_MODE_UNVERSIONED,
 		},
+		PollerGroupId: pollerGroupID,
 	})
 }
 

@@ -99,10 +99,11 @@ type (
 		payloadWarningLimits payloadLimits
 	}
 
-	// namespaceData holds cached namespace capabilities and limits.
+	// namespaceData caches DescribeNamespace fields needed when workers start.
 	namespaceData struct {
-		capabilities *namespacepb.NamespaceInfo_Capabilities
-		limits       *namespacepb.NamespaceInfo_Limits
+		capabilities     *namespacepb.NamespaceInfo_Capabilities
+		limits           *namespacepb.NamespaceInfo_Limits
+		pollerGroupsInfo *taskqueuepb.PollerGroupsInfo
 	}
 
 	// namespaceClient is the client for managing namespaces.
@@ -124,6 +125,11 @@ type (
 		// called if there was a later run for this run.
 		GetRunID() string
 
+		// GetFirstExecutionRunID returns the run ID of the first execution in the
+		// workflow execution chain. The value may be empty if the server did not
+		// return it, such as when using GetWorkflow or an older server version.
+		GetFirstExecutionRunID() string
+
 		// Get will fill the workflow execution result to valuePtr, if workflow
 		// execution is a success, or return corresponding error. If valuePtr is
 		// nil, valuePtr will be ignored and only the corresponding error of the
@@ -141,7 +147,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		Get(ctx context.Context, valuePtr interface{}) error
+		Get(ctx context.Context, valuePtr any) error
 
 		// GetWithOptions will fill the workflow execution result to valuePtr, if
 		// workflow execution is a success, or return corresponding error. If
@@ -152,7 +158,7 @@ type (
 		// Note, values should not be reused for extraction here because merging on
 		// top of existing values may result in unexpected behavior similar to
 		// json.Unmarshal.
-		GetWithOptions(ctx context.Context, valuePtr interface{}, options WorkflowRunGetOptions) error
+		GetWithOptions(ctx context.Context, valuePtr any, options WorkflowRunGetOptions) error
 	}
 
 	// WorkflowRunGetOptions are options for WorkflowRun.GetWithOptions.
@@ -169,7 +175,7 @@ type (
 	workflowRunImpl struct {
 		workflowType          string
 		workflowID            string
-		firstRunID            string
+		firstExecutionRunID   string
 		currentRunID          func() string
 		iterFn                func(ctx context.Context, runID string) HistoryEventIterator
 		dataConverter         converter.DataConverter
@@ -226,7 +232,7 @@ type (
 // subjected to change in the future.
 //
 // NOTE: the context.Context should have a fairly large timeout, since workflow execution may take a while to be finished
-func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow interface{}, args ...interface{}) (WorkflowRun, error) {
+func (wc *WorkflowClient) ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow any, args ...any) (WorkflowRun, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -283,7 +289,6 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 	}
 	return &workflowRunImpl{
 		workflowID:            workflowID,
-		firstRunID:            runID,
 		currentRunID:          currentRunID,
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(wc.dataConverter, gwCtx),
@@ -294,7 +299,7 @@ func (wc *WorkflowClient) GetWorkflow(ctx context.Context, workflowID string, ru
 }
 
 // SignalWorkflow signals a workflow in execution.
-func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg interface{}) error {
+func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string, runID string, signalName string, arg any) error {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return err
 	}
@@ -312,8 +317,8 @@ func (wc *WorkflowClient) SignalWorkflow(ctx context.Context, workflowID string,
 
 // SignalWithStartWorkflow sends a signal to a running workflow.
 // If the workflow is not running or not found, it starts the workflow and then sends the signal in transaction.
-func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg interface{},
-	options StartWorkflowOptions, workflowFunc interface{}, workflowArgs ...interface{},
+func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any,
+	options StartWorkflowOptions, workflowFunc any, workflowArgs ...any,
 ) (WorkflowRun, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
@@ -335,7 +340,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	if err := validateFunctionArgs(workflowFunc, workflowArgs, true); err != nil {
 		return nil, err
 	}
-	workflowType, err := getWorkflowFunctionName(wc.registry, workflowFunc)
+	workflowType, err := GetWorkflowFunctionName(wc.registry, workflowFunc)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +358,7 @@ func (wc *WorkflowClient) SignalWithStartWorkflow(ctx context.Context, workflowI
 	})
 }
 
-func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow interface{}, args ...interface{}) WithStartWorkflowOperation {
+func (wc *WorkflowClient) NewWithStartWorkflowOperation(options StartWorkflowOptions, workflow any, args ...any) WithStartWorkflowOperation {
 	op := &withStartWorkflowOperationImpl{doneCh: make(chan struct{})}
 	if options.WorkflowIDConflictPolicy == enumspb.WORKFLOW_ID_CONFLICT_POLICY_UNSPECIFIED {
 		op.err = errors.New("WorkflowIDConflictPolicy must be set in StartWorkflowOptions for update-with-start")
@@ -394,7 +399,7 @@ func (wc *WorkflowClient) CancelWorkflowWithOptions(ctx context.Context, options
 // TerminateWorkflow terminates a workflow execution.
 // workflowID is required, other parameters are optional.
 // If runID is omit, it will terminate currently running workflow (if there is one) based on the workflowID.
-func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...interface{}) error {
+func (wc *WorkflowClient) TerminateWorkflow(ctx context.Context, workflowID string, runID string, reason string, details ...any) error {
 	return wc.TerminateWorkflowWithOptions(ctx, TerminateWorkflowOptions{
 		WorkflowID: workflowID,
 		RunID:      runID,
@@ -507,7 +512,7 @@ func (wc *WorkflowClient) getWorkflowExecutionHistory(ctx context.Context, rpcMe
 // should be called when that activity is completed with the actual result and error. If err is nil, activity task
 // completed event will be reported; if err is CanceledError, activity task canceled event will be reported; otherwise,
 // activity task failed event will be reported.
-func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte, result interface{}, err error) error {
+func (wc *WorkflowClient) CompleteActivity(ctx context.Context, taskToken []byte, result any, err error) error {
 	return wc.CompleteActivityWithOptions(ctx, CompleteActivityOptions{
 		TaskToken: taskToken,
 		Result:    result,
@@ -547,7 +552,8 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 	// We do allow canceled error to be passed here
 	cancelAllowed := true
 	request := convertActivityResultToRespondRequest(wc.identity, opts.TaskToken,
-		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil)
+		data, opts.Err, dataConverter, failureConverter, wc.namespace, cancelAllowed, nil, nil, nil,
+		opts.WorkflowID, "")
 	if msg, ok := request.(proto.Message); ok {
 		storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
 			Namespace:    cmp.Or(opts.Namespace, wc.namespace),
@@ -564,7 +570,7 @@ func (wc *WorkflowClient) CompleteActivityWithOptions(ctx context.Context, opts 
 // CompleteActivityByID reports workflow activity completed. Similar to CompleteActivity
 // It takes namespace name, workflowID, runID, activityID as arguments.
 func (wc *WorkflowClient) CompleteActivityByID(ctx context.Context, namespace, workflowID, runID, activityID string,
-	result interface{}, err error,
+	result any, err error,
 ) error {
 	return wc.CompleteActivityByIDWithOptions(ctx, CompleteActivityByIDOptions{
 		Namespace:  namespace,
@@ -625,7 +631,7 @@ func (wc *WorkflowClient) CompleteActivityByIDWithOptions(ctx context.Context, o
 
 // CompleteActivityByActivityID reports standalone activity completed. Similar to CompleteActivity
 func (wc *WorkflowClient) CompleteActivityByActivityID(ctx context.Context, namespace, activityID, activityRunID string,
-	result interface{}, err error,
+	result any, err error,
 ) error {
 	return wc.CompleteActivityByActivityIDWithOptions(ctx, CompleteActivityByActivityIDOptions{
 		Namespace:     namespace,
@@ -680,7 +686,7 @@ func (wc *WorkflowClient) CompleteActivityByActivityIDWithOptions(ctx context.Co
 }
 
 // RecordActivityHeartbeat records heartbeat for an activity.
-func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...interface{}) error {
+func (wc *WorkflowClient) RecordActivityHeartbeat(ctx context.Context, taskToken []byte, details ...any) error {
 	return wc.RecordActivityHeartbeatWithOptions(ctx, RecordActivityHeartbeatOptions{
 		TaskToken: taskToken,
 		Details:   details,
@@ -707,10 +713,11 @@ func (wc *WorkflowClient) RecordActivityHeartbeatWithOptions(ctx context.Context
 		return err
 	}
 	request := &workflowservice.RecordActivityTaskHeartbeatRequest{
-		TaskToken: opts.TaskToken,
-		Details:   data,
-		Identity:  wc.identity,
-		Namespace: cmp.Or(opts.Namespace, wc.namespace),
+		TaskToken:  opts.TaskToken,
+		Details:    data,
+		Identity:   wc.identity,
+		Namespace:  cmp.Or(opts.Namespace, wc.namespace),
+		ResourceId: getWorkflowResourceId(opts.WorkflowID),
 	}
 	if err := visitProtoPayloads(ctx, wc.newOutboundPayloadVisitor(), request, 0); err != nil {
 		return err
@@ -720,7 +727,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatWithOptions(ctx context.Context
 
 // RecordActivityHeartbeatByID records heartbeat for an activity.
 func (wc *WorkflowClient) RecordActivityHeartbeatByID(ctx context.Context,
-	namespace, workflowID, runID, activityID string, details ...interface{},
+	namespace, workflowID, runID, activityID string, details ...any,
 ) error {
 	return wc.RecordActivityHeartbeatByIDWithOptions(ctx, RecordActivityHeartbeatByIDOptions{
 		Namespace:  namespace,
@@ -757,6 +764,7 @@ func (wc *WorkflowClient) RecordActivityHeartbeatByIDWithOptions(ctx context.Con
 		ActivityId: opts.ActivityID,
 		Details:    data,
 		Identity:   wc.identity,
+		ResourceId: getActivityResourceId(opts.WorkflowID, opts.ActivityID),
 	}
 	if err := visitProtoPayloads(ctx, wc.newOutboundPayloadVisitor(), byIDRequest, 0); err != nil {
 		return err
@@ -969,7 +977,7 @@ func (wc *WorkflowClient) DescribeWorkflow(ctx context.Context, workflowID, runI
 //   - serviceerror.Unavailable
 //   - serviceerror.NotFound
 //   - serviceerror.QueryFailed
-func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...interface{}) (converter.EncodedValue, error) {
+func (wc *WorkflowClient) QueryWorkflow(ctx context.Context, workflowID string, runID string, queryType string, args ...any) (converter.EncodedValue, error) {
 	if err := wc.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
@@ -1007,7 +1015,7 @@ type UpdateWorkflowOptions struct {
 
 	// Args is an optional field used to identify the arguments passed to the
 	// update.
-	Args []interface{}
+	Args []any
 
 	// WaitForStage is a required field which specifies which stage to wait until returning.
 	// See https://docs.temporal.io/develop/go/message-passing#send-update-from-client for more details.
@@ -1083,7 +1091,7 @@ type WorkflowUpdateHandle interface {
 	UpdateID() string
 
 	// Get blocks on the outcome of the update.
-	Get(ctx context.Context, valuePtr interface{}) error
+	Get(ctx context.Context, valuePtr any) error
 }
 
 // GetWorkflowUpdateHandleOptions encapsulates the parameters needed to unambiguously
@@ -1144,7 +1152,7 @@ type QueryWorkflowWithOptionsRequest struct {
 	QueryType string
 
 	// Args is an optional field used to identify the arguments passed to the query.
-	Args []interface{}
+	Args []any
 
 	// QueryRejectCondition is an optional field used to reject queries based on workflow state.
 	// QUERY_REJECT_CONDITION_NONE indicates that query should not be rejected.
@@ -1256,7 +1264,7 @@ func (w *WorkflowExecutionDescription) GetStaticDetails() (string, error) {
 // Returns ErrNoData if the memo is nil or the key is not present.
 //
 // NOTE: Experimental
-func (w *WorkflowExecutionDescription) GetMemoValue(key string, valuePtr interface{}) error {
+func (w *WorkflowExecutionDescription) GetMemoValue(key string, valuePtr any) error {
 	if w.Memo == nil {
 		return ErrNoData
 	}
@@ -1711,6 +1719,7 @@ func (wc *WorkflowClient) loadNamespaceData(metricsHandler metrics.Handler) (nam
 	if resp != nil {
 		data.capabilities = resp.GetNamespaceInfo().GetCapabilities()
 		data.limits = resp.GetNamespaceInfo().GetLimits()
+		data.pollerGroupsInfo = resp.GetPollerGroupsInfo()
 	}
 	if data.capabilities == nil {
 		data.capabilities = &namespacepb.NamespaceInfo_Capabilities{}
@@ -1913,17 +1922,21 @@ func (workflowRun *workflowRunImpl) GetRunID() string {
 	return workflowRun.currentRunID()
 }
 
+func (workflowRun *workflowRunImpl) GetFirstExecutionRunID() string {
+	return workflowRun.firstExecutionRunID
+}
+
 func (workflowRun *workflowRunImpl) GetID() string {
 	return workflowRun.workflowID
 }
 
-func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr interface{}) error {
+func (workflowRun *workflowRunImpl) Get(ctx context.Context, valuePtr any) error {
 	return workflowRun.GetWithOptions(ctx, valuePtr, WorkflowRunGetOptions{})
 }
 
 func (workflowRun *workflowRunImpl) GetWithOptions(
 	ctx context.Context,
-	valuePtr interface{},
+	valuePtr any,
 	options WorkflowRunGetOptions,
 ) error {
 	iter := workflowRun.iterFn(ctx, workflowRun.currentRunID())
@@ -1949,7 +1962,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 			return nil
 		}
 		rf := reflect.ValueOf(valuePtr)
-		if rf.Type().Kind() != reflect.Ptr {
+		if rf.Type().Kind() != reflect.Pointer {
 			return errors.New("value parameter is not a pointer")
 		}
 		return workflowRun.dataConverter.FromPayloads(attributes.Result, valuePtr)
@@ -2008,7 +2021,7 @@ func (workflowRun *workflowRunImpl) GetWithOptions(
 // policy or cron schedule).
 func (workflowRun *workflowRunImpl) follow(
 	ctx context.Context,
-	valuePtr interface{},
+	valuePtr any,
 	newRunID string,
 	options WorkflowRunGetOptions,
 ) error {
@@ -2019,7 +2032,7 @@ func (workflowRun *workflowRunImpl) follow(
 // encodeMemoValue encodes a single memo value. useUserDC controls whether the user's data converter
 // is attempted first. Client-side callers should pass sdkFlagsAllowed[SDKFlagMemoUserDCEncode];
 // workflow-side callers should pass the result of TryUse(SDKFlagMemoUserDCEncode) for replay safety.
-func encodeMemoValue(value interface{}, dc converter.DataConverter, useUserDC bool) (*commonpb.Payload, error) {
+func encodeMemoValue(value any, dc converter.DataConverter, useUserDC bool) (*commonpb.Payload, error) {
 	if useUserDC {
 		payload, dcErr := dc.ToPayload(value)
 		if dcErr == nil {
@@ -2041,10 +2054,10 @@ func encodeMemoValue(value interface{}, dc converter.DataConverter, useUserDC bo
 	return payload, nil
 }
 
-// getWorkflowMemo encodes a memo map into a proto Memo. useUserDC controls whether the user's
+// GetWorkflowMemo encodes a memo map into a proto Memo. useUserDC controls whether the user's
 // data converter is attempted first. Client-side callers should pass sdkFlagsAllowed[SDKFlagMemoUserDCEncode];
 // workflow-side callers should pass the result of TryUse(SDKFlagMemoUserDCEncode) for replay safety.
-func getWorkflowMemo(input map[string]interface{}, dc converter.DataConverter, useUserDC bool) (*commonpb.Memo, error) {
+func GetWorkflowMemo(input map[string]any, dc converter.DataConverter, useUserDC bool) (*commonpb.Memo, error) {
 	if input == nil {
 		return nil, nil
 	}
@@ -2072,8 +2085,8 @@ type workflowClientInterceptor struct {
 
 func createStartWorkflowInput(
 	options StartWorkflowOptions,
-	workflow interface{},
-	args []interface{},
+	workflow any,
+	args []any,
 	registry *registry,
 ) (*ClientExecuteWorkflowInput, error) {
 	if options.ID == "" {
@@ -2082,7 +2095,7 @@ func createStartWorkflowInput(
 	if err := validateFunctionArgs(workflow, args, true); err != nil {
 		return nil, err
 	}
-	workflowType, err := getWorkflowFunctionName(registry, workflow)
+	workflowType, err := GetWorkflowFunctionName(registry, workflow)
 
 	if err != nil {
 		return nil, err
@@ -2123,12 +2136,12 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
+	memo, err := GetWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 	if err != nil {
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
+	searchAttr, err := SerializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -2152,20 +2165,20 @@ func (w *workflowClientInterceptor) createStartWorkflowRequest(
 		Identity:                 w.client.identity,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
-		RetryPolicy:              convertToPBRetryPolicy(in.Options.RetryPolicy),
+		RetryPolicy:              ConvertToPBRetryPolicy(in.Options.RetryPolicy),
 		CronSchedule:             in.Options.CronSchedule,
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		Header:                   header,
 		CompletionCallbacks:      in.Options.callbacks,
 		Links:                    in.Options.links,
-		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
+		VersioningOverride:       VersioningOverrideToProto(in.Options.VersioningOverride),
 		OnConflictOptions:        in.Options.onConflictOptions.ToProto(),
-		Priority:                 convertToPBPriority(in.Options.Priority),
+		Priority:                 ConvertToPBPriority(in.Options.Priority),
 		TimeSkippingConfig:       in.Options.TimeSkippingConfig,
 	}
 
-	startRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
+	startRequest.UserMetadata, err = BuildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -2212,7 +2225,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 		defaultGrpcRetryParameters(ctx))
 	defer cancel()
 
-	var runID string
+	var runID, firstExecutionRunID string
 	response, err := w.client.workflowService.StartWorkflowExecution(grpcCtx, startRequest)
 
 	eagerWorkflowTask := response.GetEagerWorkflowTask()
@@ -2225,10 +2238,12 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	// Allow already-started error
 	if e, ok := err.(*serviceerror.WorkflowExecutionAlreadyStarted); ok && !in.Options.WorkflowExecutionErrorWhenAlreadyStarted {
 		runID = e.RunId
+		firstExecutionRunID = e.FirstExecutionRunId
 	} else if err != nil {
 		return nil, err
 	} else {
-		runID = response.RunId
+		runID = response.GetRunId()
+		firstExecutionRunID = response.GetFirstExecutionRunId()
 	}
 
 	if responseInfo := in.Options.responseInfo; responseInfo != nil {
@@ -2249,7 +2264,7 @@ func (w *workflowClientInterceptor) ExecuteWorkflow(
 	return &workflowRunImpl{
 		workflowType:          in.WorkflowType,
 		workflowID:            workflowID,
-		firstRunID:            runID,
+		firstExecutionRunID:   firstExecutionRunID,
 		currentRunID:          func() string { return runID },
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, wfCtx),
@@ -2307,14 +2322,14 @@ func (w *workflowClientInterceptor) UpdateWithStartWorkflow(
 	onStart := func(startResp *workflowservice.StartWorkflowExecutionResponse) {
 		runID := startResp.RunId
 		startOp.set(&workflowRunImpl{
-			workflowType:     startOp.input.WorkflowType,
-			workflowID:       startOp.input.Options.ID,
-			firstRunID:       runID,
-			currentRunID:     func() string { return runID },
-			iterFn:           iterFn,
-			dataConverter:    converter.WithDataConverterSerializationContext(w.client.dataConverter, startWfCtx),
-			failureConverter: converter.WithFailureConverterSerializationContext(w.client.failureConverter, startWfCtx),
-			registry:         w.client.registry,
+			workflowType:        startOp.input.WorkflowType,
+			workflowID:          startOp.input.Options.ID,
+			firstExecutionRunID: startResp.GetFirstExecutionRunId(),
+			currentRunID:        func() string { return runID },
+			iterFn:              iterFn,
+			dataConverter:       converter.WithDataConverterSerializationContext(w.client.dataConverter, startWfCtx),
+			failureConverter:    converter.WithFailureConverterSerializationContext(w.client.failureConverter, startWfCtx),
+			registry:            w.client.registry,
 		}, nil)
 	}
 
@@ -2360,6 +2375,7 @@ func (w *workflowClientInterceptor) updateWithStartWorkflow(
 			startOp,
 			updateOp,
 		},
+		ResourceId: getWorkflowResourceId(startRequest.WorkflowId),
 	}
 
 	storeCtx := extstore.WithStorageTarget(ctx, extstore.StorageDriverWorkflowInfo{
@@ -2562,12 +2578,12 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		return nil, err
 	}
 
-	memo, err := getWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
+	memo, err := GetWorkflowMemo(in.Options.Memo, dataConverter, sdkFlagsAllowed[SDKFlagMemoUserDCEncode])
 	if err != nil {
 		return nil, err
 	}
 
-	searchAttr, err := serializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
+	searchAttr, err := SerializeSearchAttributes(in.Options.SearchAttributes, in.Options.TypedSearchAttributes)
 	if err != nil {
 		return nil, err
 	}
@@ -2591,15 +2607,15 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		SignalName:               in.SignalName,
 		SignalInput:              signalInput,
 		Identity:                 w.client.identity,
-		RetryPolicy:              convertToPBRetryPolicy(in.Options.RetryPolicy),
+		RetryPolicy:              ConvertToPBRetryPolicy(in.Options.RetryPolicy),
 		CronSchedule:             in.Options.CronSchedule,
 		Memo:                     memo,
 		SearchAttributes:         searchAttr,
 		WorkflowIdReusePolicy:    in.Options.WorkflowIDReusePolicy,
 		WorkflowIdConflictPolicy: in.Options.WorkflowIDConflictPolicy,
 		Header:                   header,
-		VersioningOverride:       versioningOverrideToProto(in.Options.VersioningOverride),
-		Priority:                 convertToPBPriority(in.Options.Priority),
+		VersioningOverride:       VersioningOverrideToProto(in.Options.VersioningOverride),
+		Priority:                 ConvertToPBPriority(in.Options.Priority),
 		TimeSkippingConfig:       in.Options.TimeSkippingConfig,
 	}
 
@@ -2614,7 +2630,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 		signalWithStartRequest.WorkflowStartDelay = durationpb.New(in.Options.StartDelay)
 	}
 
-	signalWithStartRequest.UserMetadata, err = buildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
+	signalWithStartRequest.UserMetadata, err = BuildUserMetadata(in.Options.StaticSummary, in.Options.StaticDetails, dataConverter)
 	if err != nil {
 		return nil, err
 	}
@@ -2662,7 +2678,7 @@ func (w *workflowClientInterceptor) SignalWithStartWorkflow(
 	return &workflowRunImpl{
 		workflowType:          in.WorkflowType,
 		workflowID:            in.Options.ID,
-		firstRunID:            runID,
+		firstExecutionRunID:   response.GetFirstExecutionRunId(),
 		currentRunID:          func() string { return runID },
 		iterFn:                iterFn,
 		dataConverter:         converter.WithDataConverterSerializationContext(w.client.dataConverter, swsCtx),
@@ -2868,6 +2884,9 @@ func (w *workflowClientInterceptor) QueryWorkflow(
 		return nil, err
 	}
 
+	if nctx, ok := NexusOperationContextFromGoContext(ctx); ok {
+		nctx.AddResponseLink(resp.GetLink())
+	}
 	if resp.QueryRejected != nil {
 		return nil, &QueryRejectedError{
 			queryRejected: resp.QueryRejected,
@@ -3148,7 +3167,7 @@ func (uh *baseUpdateHandle) UpdateID() string {
 	return uh.ref.GetUpdateId()
 }
 
-func (ch *completedUpdateHandle) Get(ctx context.Context, valuePtr interface{}) error {
+func (ch *completedUpdateHandle) Get(ctx context.Context, valuePtr any) error {
 	if ch.err != nil || valuePtr == nil {
 		return ch.err
 	}
@@ -3158,7 +3177,7 @@ func (ch *completedUpdateHandle) Get(ctx context.Context, valuePtr interface{}) 
 	return nil
 }
 
-func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr interface{}) error {
+func (luh *lazyUpdateHandle) Get(ctx context.Context, valuePtr any) error {
 	resp, err := luh.client.PollWorkflowUpdate(ctx, luh.ref)
 	if err != nil {
 		return err
@@ -3177,7 +3196,7 @@ func (q *QueryRejectedError) Error() string {
 	return fmt.Sprintf("query rejected: %s", q.queryRejected.Status.String())
 }
 
-func buildUserMetadata(
+func BuildUserMetadata(
 	summary string,
 	details string,
 	dataConverter converter.DataConverter,

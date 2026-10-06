@@ -4,11 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
-
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -52,23 +53,26 @@ func TestDispatcher(t *testing.T) {
 }
 
 func TestDispatcherDeferClose(t *testing.T) {
-	var value atomic.Bool
-	d := createNewDispatcher(func(ctx Context) {
-		// Block all coroutines on this channel
-		c1 := NewChannel(ctx)
-		defer func() {
-			value.Store(true)
-		}()
-		c1.Receive(ctx, nil)
+	synctest.Test(t, func(t *testing.T) {
+		var value atomic.Bool
+		d := createNewDispatcher(func(ctx Context) {
+			// Block all coroutines on this channel
+			c1 := NewChannel(ctx)
+			defer func() {
+				value.Store(true)
+			}()
+			c1.Receive(ctx, nil)
+		})
+		defer d.Close()
+		require.Equal(t, false, value.Load())
+		requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+		// Closing the dispatcher will cause the blocked goroutine to stop executing, but defers
+		// will still run.
+		d.Close()
+		require.True(t, d.IsClosed())
+		synctest.Wait()
+		require.True(t, value.Load())
 	})
-	defer d.Close()
-	require.Equal(t, false, value.Load())
-	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
-	// Closing the dispatcher will cause the blocked goroutine to stop executing, but defers
-	// will still run.
-	d.Close()
-	require.True(t, d.IsClosed())
-	require.Eventually(t, value.Load, time.Second, 10*time.Millisecond)
 }
 
 func TestDispatcherDeadlockedDefer(t *testing.T) {
@@ -93,40 +97,41 @@ func TestDispatcherDeadlockedDefer(t *testing.T) {
 }
 
 func TestDispatcherDeferCloseRace(t *testing.T) {
-	var value atomic.Int32
-	var d dispatcher
-	d = createNewDispatcher(func(ctx Context) {
-		// Block all coroutines on this channel
-		c1 := NewChannel(ctx)
-		for i := 0; i < 100; i++ {
-			index := i
-			id := "coroutine_" + strconv.Itoa(index)
-			d.NewCoroutine(ctx, id, false, func(ctx Context) {
-				defer func() {
-					value.Store(int32(index))
-				}()
-				c1.Receive(ctx, nil)
-			})
-		}
-		c1.Receive(ctx, nil)
-	})
-	defer d.Close()
+	synctest.Test(t, func(t *testing.T) {
+		var value atomic.Int32
+		var d dispatcher
+		d = createNewDispatcher(func(ctx Context) {
+			// Block all coroutines on this channel
+			c1 := NewChannel(ctx)
+			for i := range 100 {
+				index := i
+				id := "coroutine_" + strconv.Itoa(index)
+				d.NewCoroutine(ctx, id, false, func(ctx Context) {
+					defer func() {
+						value.Store(int32(index))
+					}()
+					c1.Receive(ctx, nil)
+				})
+			}
+			c1.Receive(ctx, nil)
+		})
+		defer d.Close()
 
-	require.Equal(t, int32(0), value.Load())
-	requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
-	// Closing the dispatcher will cause the blocked coroutine to stop executing, but defers
-	// will still run.
-	d.Close()
-	require.True(t, d.IsClosed())
-	require.Eventually(t, func() bool {
-		return value.Load() == int32(99)
-	}, time.Second, 10*time.Millisecond)
+		require.Equal(t, int32(0), value.Load())
+		requireNoExecuteErr(t, d.ExecuteUntilAllBlocked(defaultDeadlockDetectionTimeout))
+		// Closing the dispatcher will cause the blocked coroutine to stop executing, but defers
+		// will still run.
+		d.Close()
+		require.True(t, d.IsClosed())
+		synctest.Wait()
+		require.Equal(t, int32(99), value.Load())
+	})
 }
 
 func TestNonBlockingChildren(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			ii := i
 			Go(ctx, func(ctx Context) {
 				history = append(history, fmt.Sprintf("child-%v", ii))
@@ -796,7 +801,7 @@ func TestBlockingSelectAsyncSend(t *testing.T) {
 				c.Receive(ctx, &v)
 				history = append(history, fmt.Sprintf("c1-%v", v))
 			})
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			ii := i // to reference within closure
 			Go(ctx, func(ctx Context) {
 				history = append(history, fmt.Sprintf("add-%v", ii))
@@ -1116,7 +1121,7 @@ func TestDispatchClose(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			ii := i
 			GoNamed(ctx, fmt.Sprintf("c-%v", i), func(ctx Context) {
 				c.Receive(ctx, nil) // blocked forever
@@ -1133,7 +1138,7 @@ func TestDispatchClose(t *testing.T) {
 	// 11 coroutines (3 lines each) + 10 nl
 	require.EqualValues(t, 11*3+10, len(strings.Split(stack, "\n")), stack)
 	require.Contains(t, stack, "coroutine root [blocked on forever_blocked.Receive]:")
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		require.Contains(t, stack, fmt.Sprintf("coroutine c-%v [blocked on forever_blocked.Receive]:", i))
 	}
 	beforeClose := runtime.NumGoroutine()
@@ -1151,7 +1156,7 @@ func TestPanic(t *testing.T) {
 	var history []string
 	d := createNewDispatcher(func(ctx Context) {
 		c := NewNamedChannel(ctx, "forever_blocked")
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			ii := i
 			GoNamed(ctx, fmt.Sprintf("c-%v", i), func(ctx Context) {
 				if ii == 9 {
@@ -1901,7 +1906,7 @@ func TestContextCancelRace(t *testing.T) {
 			_ = Sleep(ctx, time.Hour)
 		}
 		// start a handful to increase odds of a race being detected
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			Go(ctx, racyCancel)
 		}
 
@@ -1929,7 +1934,7 @@ func TestContextChildCancelRace(t *testing.T) {
 			_ = Sleep(ctx, time.Hour)
 		}
 		// start a handful to increase odds of a race being detected
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			Go(ctx, racyCancel)
 		}
 
@@ -1939,6 +1944,179 @@ func TestContextChildCancelRace(t *testing.T) {
 	env.RegisterWorkflow(wf)
 	env.ExecuteWorkflow(wf)
 	require.NoError(t, env.GetWorkflowError())
+}
+
+type orderCanceler struct {
+	index int
+	order *[]int
+}
+
+func (c *orderCanceler) cancel(bool, error) {
+	*c.order = append(*c.order, c.index)
+}
+
+func (c *orderCanceler) Done() Channel {
+	return nil
+}
+
+func assertChildList(t *testing.T, list *childList, expected []*orderCanceler) {
+	t.Helper()
+	require.Len(t, list.nodes, len(expected))
+
+	if len(expected) == 0 {
+		require.Nil(t, list.first)
+		require.Nil(t, list.last)
+		return
+	}
+
+	require.Same(t, expected[0], list.first.child)
+	require.Same(t, expected[len(expected)-1], list.last.child)
+
+	var forward []*orderCanceler
+	var prev *childNode
+	for node := list.first; node != nil; node = node.next {
+		require.Less(t, len(forward), len(expected), "cycle in next links")
+		require.Same(t, prev, node.prev)
+		require.Same(t, node, list.nodes[node.child])
+		forward = append(forward, node.child.(*orderCanceler))
+		prev = node
+	}
+	require.Equal(t, expected, forward)
+	require.Same(t, list.last, prev)
+
+	var backward []*orderCanceler
+	var next *childNode
+	for node := list.last; node != nil; node = node.prev {
+		require.Less(t, len(backward), len(expected), "cycle in previous links")
+		require.Same(t, next, node.next)
+		backward = append(backward, node.child.(*orderCanceler))
+		next = node
+	}
+	slices.Reverse(backward)
+	require.Equal(t, expected, backward)
+	require.Same(t, list.first, next)
+}
+
+func TestChildListAdd(t *testing.T) {
+	children := []*orderCanceler{{index: 0}, {index: 1}, {index: 2}}
+	var list childList
+
+	assertChildList(t, &list, nil)
+	for i, child := range children {
+		list.add(child)
+		assertChildList(t, &list, children[:i+1])
+	}
+
+	list.add(children[1])
+	assertChildList(t, &list, children)
+}
+
+func TestChildListRemove(t *testing.T) {
+	tests := []struct {
+		name   string
+		remove int
+		remain []int
+	}{
+		{name: "head", remove: 0, remain: []int{1, 2}},
+		{name: "middle", remove: 1, remain: []int{0, 2}},
+		{name: "tail", remove: 2, remain: []int{0, 1}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			children := []*orderCanceler{{index: 0}, {index: 1}, {index: 2}}
+			var list childList
+			for _, child := range children {
+				list.add(child)
+			}
+
+			removed := list.nodes[children[tt.remove]]
+			list.remove(children[tt.remove])
+			expected := make([]*orderCanceler, len(tt.remain))
+			for i, index := range tt.remain {
+				expected[i] = children[index]
+			}
+			assertChildList(t, &list, expected)
+			require.Nil(t, removed.prev)
+			require.Nil(t, removed.next)
+		})
+	}
+}
+
+func TestChildListRemoveRepeatedly(t *testing.T) {
+	children := []*orderCanceler{{index: 0}, {index: 1}, {index: 2}}
+	missing := &orderCanceler{index: 3}
+	var list childList
+	for _, child := range children {
+		list.add(child)
+	}
+
+	list.remove(missing)
+	list.remove(children[1])
+	list.remove(children[1])
+	assertChildList(t, &list, []*orderCanceler{children[0], children[2]})
+
+	list.remove(children[0])
+	assertChildList(t, &list, children[2:])
+
+	list.remove(children[2])
+	assertChildList(t, &list, nil)
+
+	list.add(children[1])
+	assertChildList(t, &list, children[1:2])
+}
+
+func TestContextCancelOrderByDefault(t *testing.T) {
+	const childCount = 10
+
+	for range childCount {
+		var suite WorkflowTestSuite
+		env := suite.NewTestWorkflowEnvironment()
+		wf := func(ctx Context) ([]int, error) {
+			ctx, cancel := WithCancel(ctx)
+			order := make([]int, 0, childCount)
+
+			for i := range childCount {
+				propagateCancel(ctx, &orderCanceler{index: i, order: &order})
+			}
+
+			cancel()
+
+			return order, nil
+		}
+		env.RegisterWorkflow(wf)
+		env.ExecuteWorkflow(wf)
+		require.NoError(t, env.GetWorkflowError())
+
+		var order []int
+		require.NoError(t, env.GetWorkflowResult(&order))
+		require.Equal(t, []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9}, order)
+	}
+}
+
+func TestContextCancelOrderAfterRemoval(t *testing.T) {
+	const childCount = 3
+
+	var suite WorkflowTestSuite
+	env := suite.NewTestWorkflowEnvironment()
+	var cancelOrder []int
+	wf := func(ctx Context) error {
+		ctx, cancel := WithCancel(ctx)
+		children := make([]*orderCanceler, childCount)
+		for i := range children {
+			children[i] = &orderCanceler{index: i, order: &cancelOrder}
+			propagateCancel(ctx, children[i])
+		}
+
+		removeChild(ctx, children[1])
+		cancel()
+
+		return nil
+	}
+	env.RegisterWorkflow(wf)
+	env.ExecuteWorkflow(wf)
+	require.NoError(t, env.GetWorkflowError())
+	require.Equal(t, []int{0, 2}, cancelOrder)
 }
 
 func TestDeadlockDetectorStackTrace(t *testing.T) {

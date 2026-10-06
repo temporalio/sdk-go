@@ -22,19 +22,19 @@ func NewStructuredLogger(logger *slog.Logger) Logger {
 	}
 }
 
-func (s *slogLogger) Debug(msg string, keyvals ...interface{}) {
+func (s *slogLogger) Debug(msg string, keyvals ...any) {
 	s.log(context.Background(), slog.LevelDebug, msg, keyvals...)
 }
 
-func (s *slogLogger) Info(msg string, keyvals ...interface{}) {
+func (s *slogLogger) Info(msg string, keyvals ...any) {
 	s.log(context.Background(), slog.LevelInfo, msg, keyvals...)
 }
 
-func (s *slogLogger) Warn(msg string, keyvals ...interface{}) {
+func (s *slogLogger) Warn(msg string, keyvals ...any) {
 	s.log(context.Background(), slog.LevelWarn, msg, keyvals...)
 }
 
-func (s *slogLogger) Error(msg string, keyvals ...interface{}) {
+func (s *slogLogger) Error(msg string, keyvals ...any) {
 	s.log(context.Background(), slog.LevelError, msg, keyvals...)
 }
 
@@ -55,7 +55,7 @@ func (s *slogLogger) log(ctx context.Context, level slog.Level, msg string, args
 	_ = s.logger.Handler().Handle(ctx, record)
 }
 
-func (s *slogLogger) With(keyvals ...interface{}) Logger {
+func (s *slogLogger) With(keyvals ...any) Logger {
 	return &slogLogger{
 		logger: s.logger.With(keyvals...),
 		depth:  s.depth,

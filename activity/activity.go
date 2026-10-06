@@ -74,7 +74,7 @@ func GetMetricsHandler(ctx context.Context) metrics.Handler {
 //
 // Note: If using asynchronous activity completion,
 // after returning [ErrResultPending] users should heartbeat with [go.temporal.io/sdk/client.Client.RecordActivityHeartbeat]
-func RecordHeartbeat(ctx context.Context, details ...interface{}) {
+func RecordHeartbeat(ctx context.Context, details ...any) {
 	internal.RecordActivityHeartbeat(ctx, details...)
 }
 
@@ -92,7 +92,7 @@ func HasHeartbeatDetails(ctx context.Context) bool {
 //
 // Note: Values should not be reused for extraction here because merging on top
 // of existing values may result in unexpected behavior similar to json.Unmarshal.
-func GetHeartbeatDetails(ctx context.Context, d ...interface{}) error {
+func GetHeartbeatDetails(ctx context.Context, d ...any) error {
 	return internal.GetHeartbeatDetails(ctx, d...)
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
@@ -107,7 +108,7 @@ type fakeUpdateHandle struct {
 
 func (h *fakeUpdateHandle) RunID() string { return h.runID }
 
-func (h *fakeUpdateHandle) Get(_ context.Context, valuePtr interface{}) error {
+func (h *fakeUpdateHandle) Get(_ context.Context, valuePtr any) error {
 	if h.err != nil {
 		return h.err
 	}
@@ -238,32 +239,34 @@ func TestSubscribeContinueAsNewRetries(t *testing.T) {
 }
 
 func TestSubscribeRetriesWhileDraining(t *testing.T) {
-	// While the workflow is detaching for continue-as-new, the poll validator
-	// rejects with ErrTypeStreamDraining. Subscribe must back off and retry
-	// rather than surface the rejection; the next poll then lands on the
-	// successor run.
-	draining := temporal.NewApplicationError("workflow is draining", ErrTypeStreamDraining)
-	fc := &fakeSubClient{steps: []pollStep{
-		{runID: "R1", getErr: draining},
-		{runID: "R2", result: PollResult{Items: []WireItem{wireItem(t, "evt", "after-can", 1)}, NextOffset: 2, MoreReady: true}},
-	}}
-	c := newSubClient(fc)
+	synctest.Test(t, func(t *testing.T) {
+		// While the workflow is detaching for continue-as-new, the poll validator
+		// rejects with ErrTypeStreamDraining. Subscribe must back off and retry
+		// rather than surface the rejection; the next poll then lands on the
+		// successor run.
+		draining := temporal.NewApplicationError("workflow is draining", ErrTypeStreamDraining)
+		fc := &fakeSubClient{steps: []pollStep{
+			{runID: "R1", getErr: draining},
+			{runID: "R2", result: PollResult{Items: []WireItem{wireItem(t, "evt", "after-can", 1)}, NextOffset: 2, MoreReady: true}},
+		}}
+		c := newSubClient(fc)
 
-	var got []string
-	var gotErr error
-	for item, err := range c.Subscribe(context.Background(), SubscribeOptions{PollCooldown: time.Millisecond}) {
-		if err != nil {
-			gotErr = err
+		var got []string
+		var gotErr error
+		for item, err := range c.Subscribe(context.Background(), SubscribeOptions{PollCooldown: time.Millisecond}) {
+			if err != nil {
+				gotErr = err
+				break
+			}
+			got = append(got, decodeItem(t, item.Data))
 			break
 		}
-		got = append(got, decodeItem(t, item.Data))
-		break
-	}
 
-	require.NoError(t, gotErr, "a draining rejection must not surface as an error")
-	require.Equal(t, []string{"after-can"}, got)
-	require.GreaterOrEqual(t, len(fc.recordedPolls()), 2, "the poll is retried after the draining rejection")
-	require.Empty(t, fc.recordedDescribeRuns(), "a draining rejection is retried without describing the workflow")
+		require.NoError(t, gotErr, "a draining rejection must not surface as an error")
+		require.Equal(t, []string{"after-can"}, got)
+		require.GreaterOrEqual(t, len(fc.recordedPolls()), 2, "the poll is retried after the draining rejection")
+		require.Empty(t, fc.recordedDescribeRuns(), "a draining rejection is retried without describing the workflow")
+	})
 }
 
 func TestSubscribeSurfacesNonTerminalError(t *testing.T) {
@@ -306,42 +309,47 @@ func TestSubscribeContextCanceledBeforePolling(t *testing.T) {
 }
 
 func TestSubscribeCooldownCanceledByContext(t *testing.T) {
-	// First poll succeeds with no items and MoreReady=false, so the loop enters
-	// the cooldown wait. A long cooldown plus a canceled context proves the wait
-	// is interruptible rather than blocking for the full PollCooldown.
-	fc := &fakeSubClient{steps: []pollStep{
-		{result: PollResult{Items: nil, NextOffset: 1, MoreReady: false}},
-	}}
-	c := newSubClient(fc)
+	synctest.Test(t, func(t *testing.T) {
+		// First poll succeeds with no items and MoreReady=false, so the loop enters
+		// the cooldown wait. A long cooldown plus a canceled context proves the wait
+		// is interruptible rather than blocking for the full PollCooldown.
+		const cancelAfter = 20 * time.Millisecond
+		fc := &fakeSubClient{steps: []pollStep{
+			{result: PollResult{Items: nil, NextOffset: 1, MoreReady: false}},
+		}}
+		c := newSubClient(fc)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	go func() {
-		time.Sleep(20 * time.Millisecond)
-		cancel()
-	}()
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(cancelAfter)
+			cancel()
+		}()
 
-	start := time.Now()
-	var gotErr error
-	for _, err := range c.Subscribe(ctx, SubscribeOptions{PollCooldown: time.Hour}) {
-		gotErr = err
-	}
-	require.ErrorIs(t, gotErr, context.Canceled)
-	require.Less(t, time.Since(start), 5*time.Second, "cooldown wait should be interrupted by context cancellation")
+		start := time.Now()
+		var gotErr error
+		for _, err := range c.Subscribe(ctx, SubscribeOptions{PollCooldown: time.Hour}) {
+			gotErr = err
+		}
+		require.ErrorIs(t, gotErr, context.Canceled)
+		require.Equal(t, cancelAfter, time.Since(start))
+	})
 }
 
 func TestSubscribeCooldownAppliedWhenNotMoreReady(t *testing.T) {
-	const cooldown = 60 * time.Millisecond
-	fc := &fakeSubClient{steps: []pollStep{
-		{result: PollResult{Items: nil, NextOffset: 1, MoreReady: false}}, // triggers cooldown
-		{result: PollResult{Items: []WireItem{wireItem(t, "evt", "a", 1)}, NextOffset: 2, MoreReady: true}},
-	}}
-	c := newSubClient(fc)
+	synctest.Test(t, func(t *testing.T) {
+		const cooldown = 60 * time.Millisecond
+		fc := &fakeSubClient{steps: []pollStep{
+			{result: PollResult{Items: nil, NextOffset: 1, MoreReady: false}}, // triggers cooldown
+			{result: PollResult{Items: []WireItem{wireItem(t, "evt", "a", 1)}, NextOffset: 2, MoreReady: true}},
+		}}
+		c := newSubClient(fc)
 
-	start := time.Now()
-	for item, err := range c.Subscribe(context.Background(), SubscribeOptions{PollCooldown: cooldown}) {
-		require.NoError(t, err)
-		require.Equal(t, "a", decodeItem(t, item.Data))
-		break
-	}
-	require.GreaterOrEqual(t, time.Since(start), cooldown/2, "a cooldown is applied between polls when MoreReady is false")
+		start := time.Now()
+		for item, err := range c.Subscribe(context.Background(), SubscribeOptions{PollCooldown: cooldown}) {
+			require.NoError(t, err)
+			require.Equal(t, "a", decodeItem(t, item.Data))
+			break
+		}
+		require.Equal(t, cooldown, time.Since(start))
+	})
 }

@@ -3,12 +3,15 @@ package retry
 import (
 	"context"
 	"math"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/util/backoffutils"
+	errordetailspb "go.temporal.io/api/errordetails/v1"
+	"go.temporal.io/api/serviceerror"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -112,7 +115,7 @@ var (
 // provided in the context. The atomic bool is checked each call to determine whether internals are included in retry.
 // If not present or false, internals are assumed to be included.
 func NewRetryOptionsInterceptor(excludeInternal *atomic.Bool) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		if rc, ok := ctx.Value(ConfigKey).(*GrpcRetryConfig); ok {
 			if _, ok := ctx.Deadline(); !ok {
 				deadlineCtx, cancel := context.WithDeadline(ctx, time.Now().Add(rc.expirationInterval))
@@ -149,15 +152,18 @@ func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 	if _, ok := err.(*GrpcMessageTooLargeError); ok {
 		return false
 	}
+	// Buffer loss on a paginated completion is recovered by resending every page from page 0, not by
+	// retrying the single failed request, so it must never be retried at the gRPC layer.
+	if IsWorkflowTaskCompletionBufferLost(err) {
+		return false
+	}
 	grpcStatus := status.Convert(err)
 	if grpcStatus == nil {
 		return false
 	}
 	errCode := grpcStatus.Code()
-	for _, retryable := range retryableCodesWithoutInternal {
-		if errCode == retryable {
-			return true
-		}
+	if slices.Contains(retryableCodesWithoutInternal, errCode) {
+		return true
 	}
 	if errCode == codes.Internal {
 		return !excludeInternalFromRetry.Load()
@@ -165,8 +171,28 @@ func IsRetryable(err error, excludeInternalFromRetry *atomic.Bool) bool {
 	return false
 }
 
+// IsWorkflowTaskCompletionBufferLost reports whether err carries the server's
+// WorkflowTaskCompletionBufferLostFailure detail, meaning it dropped the buffered pages of a
+// paginated RespondWorkflowTaskCompleted and they must be resent from page 0.
+func IsWorkflowTaskCompletionBufferLost(err error) bool {
+	// serviceerror.ToStatus (not status.Convert) is required because the client's errorInterceptor has
+	// already converted the error into a *serviceerror.WorkflowTaskCompletionBufferLost by the time it
+	// reaches the resend loop; that type carries the detail on its Status() but not via gRPC's
+	// GRPCStatus(), so status.Convert would drop it and report codes.Unknown.
+	grpcStatus := serviceerror.ToStatus(err)
+	if grpcStatus == nil {
+		return false
+	}
+	for _, detail := range grpcStatus.Details() {
+		if _, ok := detail.(*errordetailspb.WorkflowTaskCompletionBufferLostFailure); ok {
+			return true
+		}
+	}
+	return false
+}
+
 // GrpcMessageTooLargeErrorInterceptor checks if the error is caused by gRPC message being too large and converts it into GrpcMessageTooLargeError.
-func GrpcMessageTooLargeErrorInterceptor(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+func GrpcMessageTooLargeErrorInterceptor(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 	err := invoker(ctx, method, req, reply, cc, opts...)
 	if grpcStatus := status.Convert(err); isGrpcMessageTooLargeStatus(grpcStatus) {
 		err = &GrpcMessageTooLargeError{err: err, status: grpcStatus}

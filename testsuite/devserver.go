@@ -351,7 +351,7 @@ func retryFor(ctx context.Context, maxAttempts int, interval time.Duration, cond
 	defer ticker.Stop()
 
 	var lastErr error
-	for i := 0; i < maxAttempts; i++ {
+	for range maxAttempts {
 		if curE := cond(); curE == nil {
 			return nil
 		} else {

@@ -11,6 +11,10 @@ or Security.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Raised the minimum supported Go version from 1.25.4 to 1.26.0.
+
 ## [0.6.0] - 2026-07-16
 
 ### Changed

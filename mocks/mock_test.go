@@ -1,7 +1,6 @@
 package mocks
 
 import (
-	"context"
 	"testing"
 
 	"github.com/stretchr/testify/mock"
@@ -17,6 +16,7 @@ import (
 func Test_MockClient(t *testing.T) {
 	testWorkflowID := "test-workflowid"
 	testRunID := "test-runid"
+	testFirstExecutionRunID := "test-first-execution-runid"
 	testWorkflowName := "workflow"
 	testWorkflowInput := "input"
 	mockClient := &Client{}
@@ -24,42 +24,47 @@ func Test_MockClient(t *testing.T) {
 	mockWorkflowRun := &WorkflowRun{}
 	mockWorkflowRun.On("GetID").Return(testWorkflowID).Times(4)
 	mockWorkflowRun.On("GetRunID").Return(testRunID).Times(4)
+	mockWorkflowRun.On("GetFirstExecutionRunID").Return(testFirstExecutionRunID).Times(4)
 	mockWorkflowRun.On("Get", mock.Anything, mock.Anything).Return(nil).Times(2)
 
 	mockClient.On("ExecuteWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockWorkflowRun, nil).Once()
-	wr, err := mockClient.ExecuteWorkflow(context.Background(), client.StartWorkflowOptions{}, testWorkflowName, testWorkflowInput)
+	wr, err := mockClient.ExecuteWorkflow(t.Context(), client.StartWorkflowOptions{}, testWorkflowName, testWorkflowInput)
 	mockClient.AssertExpectations(t)
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, wr.GetID())
 	require.Equal(t, testRunID, wr.GetRunID())
-	require.NoError(t, mockWorkflowRun.Get(context.Background(), &testWorkflowID))
+	require.Equal(t, testFirstExecutionRunID, wr.GetFirstExecutionRunID())
+  require.NoError(t, mockWorkflowRun.Get(t.Context(), &testWorkflowID))
 
 	mockClient.On("SignalWithStartWorkflow", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockWorkflowRun, nil).Once()
-	wr, err = mockClient.SignalWithStartWorkflow(context.Background(), "wid", "signal", "val", client.StartWorkflowOptions{}, testWorkflowName, testWorkflowInput)
+	wr, err = mockClient.SignalWithStartWorkflow(t.Context(), "wid", "signal", "val", client.StartWorkflowOptions{}, testWorkflowName, testWorkflowInput)
 	mockClient.AssertExpectations(t)
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, wr.GetID())
 	require.Equal(t, testRunID, wr.GetRunID())
+	require.Equal(t, testFirstExecutionRunID, wr.GetFirstExecutionRunID())
 
 	mockClient.On("CancelWorkflow", mock.Anything, testWorkflowID, testRunID).Return(nil).Once()
-	err = mockClient.CancelWorkflow(context.Background(), testWorkflowID, testRunID)
+	err = mockClient.CancelWorkflow(t.Context(), testWorkflowID, testRunID)
 	mockClient.AssertExpectations(t)
 	require.NoError(t, err)
 	require.Equal(t, testWorkflowID, wr.GetID())
 	require.Equal(t, testRunID, wr.GetRunID())
+	require.Equal(t, testFirstExecutionRunID, wr.GetFirstExecutionRunID())
 
 	mockClient.On("GetWorkflow", mock.Anything, testWorkflowID, testRunID).Return(mockWorkflowRun).Once()
-	wr = mockClient.GetWorkflow(context.Background(), testWorkflowID, testRunID)
+	wr = mockClient.GetWorkflow(t.Context(), testWorkflowID, testRunID)
 	mockClient.AssertExpectations(t)
 	require.Equal(t, testWorkflowID, wr.GetID())
 	require.Equal(t, testRunID, wr.GetRunID())
-	require.NoError(t, wr.Get(context.Background(), &testWorkflowID))
+	require.Equal(t, testFirstExecutionRunID, wr.GetFirstExecutionRunID())
+	require.NoError(t, wr.Get(t.Context(), &testWorkflowID))
 
 	mockHistoryIter := &HistoryEventIterator{}
 	mockHistoryIter.On("HasNext").Return(true).Once()
 	mockHistoryIter.On("Next").Return(&historypb.HistoryEvent{}, nil).Once()
 	mockClient.On("GetWorkflowHistory", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(mockHistoryIter).Once()
-	historyIter := mockClient.GetWorkflowHistory(context.Background(), testWorkflowID, testRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
+	historyIter := mockClient.GetWorkflowHistory(t.Context(), testWorkflowID, testRunID, true, enumspb.HISTORY_EVENT_FILTER_TYPE_CLOSE_EVENT)
 	mockClient.AssertExpectations(t)
 	mockWorkflowRun.AssertExpectations(t)
 
@@ -88,7 +93,7 @@ func Test_MockResetWorkflowExecution(t *testing.T) {
 	}
 
 	mockClient.On("ResetWorkflowExecution", mock.Anything, mock.Anything).Return(resp, nil).Once()
-	actualResp, err := mockClient.ResetWorkflowExecution(context.Background(), req)
+	actualResp, err := mockClient.ResetWorkflowExecution(t.Context(), req)
 	mockClient.AssertExpectations(t)
 	require.NoError(t, err)
 	require.Equal(t, "new-run-id", actualResp.GetRunId())
@@ -102,7 +107,7 @@ func Test_MockScheduleClient(t *testing.T) {
 	mockScheduleHandle.On("GetID").Return(testScheduleID).Times(1)
 
 	mockClient.On("Create", mock.Anything, mock.Anything).Return(mockScheduleHandle, nil).Once()
-	wr, err := mockClient.Create(context.Background(), client.ScheduleOptions{})
+	wr, err := mockClient.Create(t.Context(), client.ScheduleOptions{})
 	mockClient.AssertExpectations(t)
 	require.NoError(t, err)
 	require.Equal(t, testScheduleID, wr.GetID())

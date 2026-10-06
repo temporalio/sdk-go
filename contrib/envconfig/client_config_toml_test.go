@@ -200,8 +200,8 @@ func TestKnownProfileKeysInSync(t *testing.T) {
 	// Extract keys from tomlClientConfigProfile's TOML tags using reflection
 	expected := make(map[string]bool)
 	typ := reflect.TypeFor[tomlClientConfigProfile]()
-	for i := range typ.NumField() {
-		tag := typ.Field(i).Tag.Get("toml")
+	for field := range typ.Fields() {
+		tag := field.Tag.Get("toml")
 		if key, _, _ := strings.Cut(tag, ","); key != "" {
 			expected[key] = true
 		}

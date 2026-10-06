@@ -15,7 +15,7 @@ type Value struct {
 }
 
 // Get provides a mock function with given fields: valuePtr
-func (_m *Value) Get(valuePtr interface{}) error {
+func (_m *Value) Get(valuePtr any) error {
 	ret := _m.Called(valuePtr)
 
 	if len(ret) == 0 {
@@ -23,7 +23,7 @@ func (_m *Value) Get(valuePtr interface{}) error {
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(interface{}) error); ok {
+	if rf, ok := ret.Get(0).(func(any) error); ok {
 		r0 = rf(valuePtr)
 	} else {
 		r0 = ret.Error(0)

@@ -128,7 +128,7 @@ func runWorkerInternal(
 			workTime := time.Until(deadline) - configCtx.ShutdownDeadlineBuffer
 			if workTime <= time.Second {
 				return fmt.Errorf(
-					"Lambda timeout leaves almost no time for work "+
+					"lambda timeout leaves almost no time for work "+
 						"(workTime %v, shutdownBuffer %v); increase the "+
 						"function timeout or decrease the shutdown deadline "+
 						"buffer",

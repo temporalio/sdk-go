@@ -64,7 +64,6 @@ func TestHeaderWriter(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			writer := NewHeaderWriter(test.initial)
@@ -115,7 +114,6 @@ func TestHeaderReader_ForEachKey(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			reader := NewHeaderReader(test.header)
@@ -179,7 +177,6 @@ func TestHeaderReader_Get(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test := test
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			reader := NewHeaderReader(test.header)

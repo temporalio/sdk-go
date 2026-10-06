@@ -26,7 +26,9 @@ type (
 )
 
 // Sample Workflow task handler
-type sampleWorkflowTaskHandler struct{}
+type sampleWorkflowTaskHandler struct {
+	cache *WorkerCache
+}
 
 func (wth sampleWorkflowTaskHandler) ProcessWorkflowTask(
 	workflowTask *workflowTask,
@@ -46,7 +48,7 @@ func (wth sampleWorkflowTaskHandler) GetOrCreateWorkflowContext(
 	retme := &workflowExecutionContextImpl{
 		mutex: sync.Mutex{},
 		wth: &workflowTaskHandlerImpl{
-			cache: NewWorkerCache(),
+			cache: wth.cache,
 		},
 	}
 	// The mutex is expected to already be locked in situations where unlock on the execution
@@ -55,8 +57,8 @@ func (wth sampleWorkflowTaskHandler) GetOrCreateWorkflowContext(
 	return retme, nil
 }
 
-func newSampleWorkflowTaskHandler() *sampleWorkflowTaskHandler {
-	return &sampleWorkflowTaskHandler{}
+func newSampleWorkflowTaskHandler(t testing.TB) *sampleWorkflowTaskHandler {
+	return &sampleWorkflowTaskHandler{cache: newTestWorkerCache(t)}
 }
 
 // Sample ActivityTaskHandler
@@ -66,21 +68,21 @@ func newSampleActivityTaskHandler() *sampleActivityTaskHandler {
 	return &sampleActivityTaskHandler{}
 }
 
-func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollActivityTaskQueueResponse) (interface{}, error) {
+func (ath sampleActivityTaskHandler) Execute(_ string, task *workflowservice.PollActivityTaskQueueResponse) (activityTaskResult, error) {
 	activityImplementation := &greeterActivity{}
 	result, err := activityImplementation.Execute(context.Background(), task.Input)
 	fc := GetDefaultFailureConverter()
 	if err != nil {
 		failure := fc.ErrorToFailure(NewApplicationError(err.Error(), getErrType(err), false, nil))
-		return &workflowservice.RespondActivityTaskFailedRequest{
+		return activityTaskResult{response: &workflowservice.RespondActivityTaskFailedRequest{
 			TaskToken: task.TaskToken,
 			Failure:   failure,
-		}, nil
+		}}, nil
 	}
-	return &workflowservice.RespondActivityTaskCompletedRequest{
+	return activityTaskResult{response: &workflowservice.RespondActivityTaskCompletedRequest{
 		TaskToken: task.TaskToken,
 		Result:    result,
-	}, nil
+	}}, nil
 }
 
 // Test suite.
@@ -109,7 +111,7 @@ func (s *PollLayerInterfacesTestSuite) TestProcessWorkflowTaskInterface() {
 	s.NoError(err)
 
 	// Process task and respond to the service.
-	taskHandler := newSampleWorkflowTaskHandler()
+	taskHandler := newSampleWorkflowTaskHandler(s.T())
 	request, err := taskHandler.ProcessWorkflowTask(&workflowTask{task: response}, nil, nil)
 	completionRequest := request.rawRequest.(*workflowservice.RespondWorkflowTaskCompletedRequest)
 	s.NoError(err)
@@ -131,7 +133,8 @@ func (s *PollLayerInterfacesTestSuite) TestProcessActivityTaskInterface() {
 
 	// Execute activity task and respond to the service.
 	taskHandler := newSampleActivityTaskHandler()
-	request, err := taskHandler.Execute(taskqueue, response)
+	taskResult, err := taskHandler.Execute(taskqueue, response)
+	request := taskResult.response
 	s.NoError(err)
 	switch request := request.(type) {
 	case *workflowservice.RespondActivityTaskCompletedRequest:

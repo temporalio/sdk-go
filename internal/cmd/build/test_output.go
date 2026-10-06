@@ -316,8 +316,16 @@ func writeTestRerunCommands(sb *strings.Builder, rows []testFailureSummaryRow, r
 
 func writeCompleteTestLogLocations(sb *strings.Builder, output testOutput) {
 	startTestReportSection(sb, "Complete logs")
-	fmt.Fprintf(sb, "- Go test: %s\n", output.logPath)
-	fmt.Fprintf(sb, "- Go test JSON: %s\n", output.jsonLogPath)
+	logPath := output.finalLogPath
+	if logPath == "" {
+		logPath = output.logPath
+	}
+	jsonLogPath := output.finalJSONPath
+	if jsonLogPath == "" {
+		jsonLogPath = output.jsonLogPath
+	}
+	fmt.Fprintf(sb, "- Go test: %s\n", logPath)
+	fmt.Fprintf(sb, "- Go test JSON: %s\n", jsonLogPath)
 	if output.combinedLogPath != "" {
 		fmt.Fprintf(sb, "- Combined Go and dev server: %s\n", output.combinedLogPath)
 	}
@@ -462,11 +470,11 @@ func serverLineMatchesTest(line, testName string) bool {
 }
 
 func serverLogTime(line string) (time.Time, bool) {
-	index := strings.Index(line, "time=")
-	if index < 0 {
+	_, after, ok := strings.Cut(line, "time=")
+	if !ok {
 		return time.Time{}, false
 	}
-	value := line[index+len("time="):]
+	value := after
 	if space := strings.IndexByte(value, ' '); space >= 0 {
 		value = value[:space]
 	}
