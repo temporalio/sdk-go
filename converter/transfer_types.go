@@ -8,7 +8,6 @@ import (
 	"sync"
 
 	commonpb "go.temporal.io/api/common/v1"
-	"go.temporal.io/sdk/internal/common/workflowcontext"
 )
 
 // -- USER API -----------------------------------------------------------
@@ -57,11 +56,11 @@ type TransferTypeConverter interface {
 
 	// toTransferTypeWithWorkflowContext converts value into its transfer value
 	// using a workflow context.
-	toTransferTypeWithWorkflowContext(ctx workflowcontext.Context, value any) (any, error)
+	toTransferTypeWithWorkflowContext(ctx WorkflowContext, value any) (any, error)
 
 	// fromTransferTypeWithWorkflowContext reads a transfer value from transferTypePtr
 	// and writes its corresponding model value into valuePtr using a workflow context.
-	fromTransferTypeWithWorkflowContext(ctx workflowcontext.Context, transferTypePtr any, valuePtr any) error
+	fromTransferTypeWithWorkflowContext(ctx WorkflowContext, transferTypePtr any, valuePtr any) error
 }
 
 // NewTransferTypeConverter builds a transfer type converter that can map
@@ -84,10 +83,10 @@ func NewTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any
 		func(_ context.Context, transfer *Transfer, value *Model) error {
 			return fromTransferType(transfer, value)
 		},
-		func(_ workflowcontext.Context, value *Model) (*Transfer, error) {
+		func(_ WorkflowContext, value *Model) (*Transfer, error) {
 			return toTransferType(value)
 		},
-		func(_ workflowcontext.Context, transfer *Transfer, value *Model) error {
+		func(_ WorkflowContext, transfer *Transfer, value *Model) error {
 			return fromTransferType(transfer, value)
 		},
 	)
@@ -106,8 +105,8 @@ func NewTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any
 func NewContextualTransferTypeConverter[Model ValueWithTransferTypeConverter, Transfer any](
 	toTransferType func(context.Context, *Model) (*Transfer, error),
 	fromTransferType func(context.Context, *Transfer, *Model) error,
-	toTransferTypeWithWorkflowContext func(workflowcontext.Context, *Model) (*Transfer, error),
-	fromTransferTypeWithWorkflowContext func(workflowcontext.Context, *Transfer, *Model) error,
+	toTransferTypeWithWorkflowContext func(WorkflowContext, *Model) (*Transfer, error),
+	fromTransferTypeWithWorkflowContext func(WorkflowContext, *Transfer, *Model) error,
 ) (TransferTypeConverter, error) {
 	modelType := reflect.TypeFor[Model]()
 	if modelType.Kind() == reflect.Pointer {
@@ -128,8 +127,8 @@ func NewContextualTransferTypeConverter[Model ValueWithTransferTypeConverter, Tr
 type transferTypeConverterImpl[ModelType, TransferType any] struct {
 	toTransferTypeFn                      func(context.Context, *ModelType) (*TransferType, error)
 	fromTransferTypeFn                    func(context.Context, *TransferType, *ModelType) error
-	toTransferTypeWithWorkflowContextFn   func(workflowcontext.Context, *ModelType) (*TransferType, error)
-	fromTransferTypeWithWorkflowContextFn func(workflowcontext.Context, *TransferType, *ModelType) error
+	toTransferTypeWithWorkflowContextFn   func(WorkflowContext, *ModelType) (*TransferType, error)
+	fromTransferTypeWithWorkflowContextFn func(WorkflowContext, *TransferType, *ModelType) error
 }
 
 func (tc *transferTypeConverterImpl[ModelType, TransferType]) newTransferTypePtr() any {
@@ -167,7 +166,7 @@ func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferType(c
 	return tc.fromTransferTypeFn(ctx, tvp, v)
 }
 
-func (tc *transferTypeConverterImpl[ModelType, TransferType]) toTransferTypeWithWorkflowContext(ctx workflowcontext.Context, value any) (any, error) {
+func (tc *transferTypeConverterImpl[ModelType, TransferType]) toTransferTypeWithWorkflowContext(ctx WorkflowContext, value any) (any, error) {
 	valuePtr, err := modelTypePtr[ModelType](value)
 	if err != nil {
 		return nil, err
@@ -175,7 +174,7 @@ func (tc *transferTypeConverterImpl[ModelType, TransferType]) toTransferTypeWith
 	return tc.toTransferTypeWithWorkflowContextFn(ctx, valuePtr)
 }
 
-func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferTypeWithWorkflowContext(ctx workflowcontext.Context, transferTypePtr any, valuePtr any) error {
+func (tc *transferTypeConverterImpl[ModelType, TransferType]) fromTransferTypeWithWorkflowContext(ctx WorkflowContext, transferTypePtr any, valuePtr any) error {
 	v, ok := valuePtr.(*ModelType)
 	if !ok {
 		return fmt.Errorf("transfer type converter: want value of type %T, got %T", (*ModelType)(nil), valuePtr)
@@ -201,7 +200,7 @@ type transferAwareDataConverter struct {
 	// workflowContext is only set if this data converter was created by
 	// [ContextAware.WithWorkflowContext]. We store it so we can pass it to the
 	// transfer type converter.
-	workflowContext workflowcontext.Context
+	workflowContext WorkflowContext
 	// transferTypeConverters is a cache that maps transfer-convertible types
 	// to their transfer type converters.
 	transferTypeConverters *sync.Map
@@ -418,7 +417,7 @@ func (dc *transferAwareDataConverter) WithSerializationContext(ctx Serialization
 	return &result
 }
 
-func (dc *transferAwareDataConverter) WithWorkflowContext(ctx workflowcontext.Context) DataConverter {
+func (dc *transferAwareDataConverter) WithWorkflowContext(ctx WorkflowContext) DataConverter {
 	result := *dc
 	if parent, ok := dc.parent.(ContextAware); ok {
 		result.parent = parent.WithWorkflowContext(ctx)
