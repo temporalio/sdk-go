@@ -36,6 +36,7 @@ type (
 		shutdownEntered chan struct{}
 		releaseShutdown func()
 		shutdownCalls   atomic.Int32
+		nexusPollCalls  atomic.Int32
 	}
 
 	// lifecycleStopPlugin holds cleanup after child workers stop, so tests can
@@ -56,7 +57,155 @@ type (
 		trigger chan struct{}
 		first   atomic.Bool
 	}
+
+	// lifecycleReturningFatalPoller returns a non-retriable error from its
+	// first poll so the real SDK poll loop invokes the fatal callback.
+	lifecycleReturningFatalPoller struct {
+		worker  *lifecycleWorker
+		cause   error
+		trigger chan struct{}
+		calls   atomic.Int32
+	}
+
+	// lifecycleNexusStartupTuner pauses Nexus construction while other worker
+	// kinds are already polling, so tests can report a fatal error first.
+	lifecycleNexusStartupTuner struct {
+		WorkerTuner
+		entered chan struct{}
+		release chan struct{}
+	}
 )
+
+func TestWorkerLifecycleFatalDuringStartupPreventsLateNexusPolling(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		cause := serviceerror.NewNamespaceNotFound("synthetic-namespace")
+		hookEntered := make(chan struct{})
+		releaseHook := make(chan struct{})
+		unblockHook := sync.OnceFunc(func() { close(releaseHook) })
+		defer unblockHook()
+		tuner, err := NewFixedSizeTuner(FixedSizeTunerOptions{
+			NumWorkflowSlots:      2,
+			NumActivitySlots:      2,
+			NumLocalActivitySlots: 2,
+			NumNexusSlots:         2,
+		})
+		require.NoError(t, err)
+		gatedTuner := &lifecycleNexusStartupTuner{
+			WorkerTuner: tuner,
+			entered:     make(chan struct{}),
+			release:     make(chan struct{}),
+		}
+		releaseNexus := sync.OnceFunc(func() { close(gatedTuner.release) })
+		defer releaseNexus()
+		opts := lifecycleOptions(false, "activity")
+		opts.Tuner = gatedTuner
+		opts.DisableWorkflowWorker = false
+		opts.EnableSessionWorker = true
+		opts.OnFatalError = func(err error) {
+			assert.Same(t, cause, err)
+			close(hookEntered)
+			<-releaseHook
+		}
+		f := newLifecycleWorker(t, opts, []error{cause})
+		svc := nexus.NewService("SyntheticService")
+		require.NoError(t, svc.Register(nexus.NewSyncOperation(
+			"operation", func(context.Context, string, nexus.StartOperationOptions) (string, error) {
+				return "result", nil
+			},
+		)))
+		f.worker.RegisterNexusService(svc)
+		started := make(chan error, 1)
+		go func() { started <- f.worker.Start() }()
+		<-gatedTuner.entered
+		<-f.pollStarted
+		f.triggerFatal()
+		<-hookEntered
+		releaseNexus()
+		require.NoError(t, <-started)
+		synctest.Wait()
+		assert.Zero(t, f.nexusPollCalls.Load(), "late Nexus worker polled after a fatal error")
+		shared := f.worker.executionParams.noRepoll
+		assert.True(t, shared.Load())
+		assert.Same(t, shared, f.worker.workflowWorker.worker.noRepoll)
+		assert.Same(t, shared, f.worker.activityWorker.worker.noRepoll)
+		assert.Same(t, shared, f.worker.sessionWorker.creationWorker.worker.noRepoll)
+		assert.Same(t, shared, f.worker.sessionWorker.activityWorker.worker.noRepoll)
+		assert.Same(t, shared, f.worker.nexusWorker.worker.noRepoll)
+		assert.NotSame(t, shared, f.worker.workflowWorker.localActivityWorker.noRepoll)
+		assert.False(t, f.worker.workflowWorker.localActivityWorker.noRepoll.Load())
+		requireLifecyclePending(t, f.shutdownEntered, "automatic cleanup started before the hook returned")
+		unblockHook()
+		<-f.shutdownEntered
+		f.releaseShutdown()
+		f.worker.Stop()
+	})
+}
+
+func TestWorkerLifecycleFatalErrorPreventsRepollBeforeHookReturns(t *testing.T) {
+	for _, autoscaling := range []bool{false, true} {
+		name := map[bool]string{false: "fixed", true: "autoscaling"}[autoscaling]
+		t.Run(name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				cause := serviceerror.NewNamespaceNotFound("synthetic-namespace")
+				hookEntered := make(chan struct{})
+				releaseHook := make(chan struct{})
+				unblockHook := sync.OnceFunc(func() { close(releaseHook) })
+				defer unblockHook()
+				opts := lifecycleOptions(autoscaling, "activity")
+				opts.ActivityTaskPollerBehavior = NewPollerBehaviorSimpleMaximum(
+					PollerBehaviorSimpleMaximumOptions{MaximumNumberOfPollers: 1},
+				)
+				if autoscaling {
+					opts.ActivityTaskPollerBehavior = NewPollerBehaviorAutoscaling(
+						PollerBehaviorAutoscalingOptions{
+							InitialNumberOfPollers: 1,
+							MinimumNumberOfPollers: 1,
+							MaximumNumberOfPollers: 1,
+						},
+					)
+				}
+				opts.OnFatalError = func(err error) {
+					assert.Same(t, cause, err)
+					close(hookEntered)
+					<-releaseHook
+				}
+				f := newLifecycleWorker(t, opts, nil)
+				producer := &lifecycleReturningFatalPoller{
+					worker:  f,
+					cause:   cause,
+					trigger: make(chan struct{}),
+				}
+				f.triggerFatal = sync.OnceFunc(func() { close(producer.trigger) })
+				base := f.worker.activityWorker.worker
+				base.pollLimiter = nil
+				f.worker.memoizedStart = sync.OnceValue(func() error {
+					base.options.taskPollers = []scalableTaskPoller{newScalableTaskPoller(
+						producer, f.worker.logger, opts.ActivityTaskPollerBehavior,
+						metrics.PollerTypeActivityTask, nil, nil,
+					)}
+					base.Start()
+					return nil
+				})
+				require.NoError(t, f.worker.Start())
+				<-f.pollStarted
+				// Advance the test's virtual clock past the SDK's existing retry
+				// grace period so pollTask treats the returned error as fatal.
+				<-time.After(getRetryLongPollGracePeriod() + time.Nanosecond)
+				f.triggerFatal()
+				<-hookEntered
+				retired := lifecyclePollersRetired(f.worker)
+				synctest.Wait()
+				assert.EqualValues(t, 1, producer.calls.Load(), "fatal poll was followed by another poll")
+				requireLifecycleClosed(t, retired, "pollers remained active while the fatal hook was held")
+				requireLifecyclePending(t, f.shutdownEntered, "automatic cleanup started before the hook returned")
+				unblockHook()
+				<-f.shutdownEntered
+				f.releaseShutdown()
+				f.worker.Stop()
+			})
+		})
+	}
+}
 
 func TestWorkerLifecycleCountedFatalProducerRetiresDuringCleanup(t *testing.T) {
 	for _, autoscaling := range []bool{false, true} {
@@ -362,8 +511,9 @@ func TestWorkerLifecycleIndependentWorkersRetainTheirCauses(t *testing.T) {
 		releaseA()
 		releaseB()
 		a.triggerFatal()
-		b.triggerFatal()
 		<-a.shutdownEntered
+		assert.False(t, b.worker.executionParams.noRepoll.Load(), "another worker's fatal error disabled polling")
+		b.triggerFatal()
 		<-b.shutdownEntered
 		a.releaseShutdown()
 		assert.Same(t, first, <-aResult)
@@ -521,6 +671,7 @@ func newLifecycleWorker(t *testing.T, opts WorkerOptions, causes []error) *lifec
 		}).AnyTimes()
 	service.EXPECT().PollNexusTaskQueue(gomock.Any(), gomock.Any(), gomock.Any()).
 		DoAndReturn(func(context.Context, *genworkflowservice.PollNexusTaskQueueRequest, ...grpc.CallOption) (*genworkflowservice.PollNexusTaskQueueResponse, error) {
+			f.nexusPollCalls.Add(1)
 			poll("nexus")
 			return &genworkflowservice.PollNexusTaskQueueResponse{}, nil
 		}).AnyTimes()
@@ -676,4 +827,20 @@ func (p *lifecycleFatalPoller) PollTask(pollerGroupLease) (taskForWorker, error)
 	}
 	<-p.worker.worker.stopC
 	return nil, nil
+}
+
+func (p *lifecycleReturningFatalPoller) PollTask(pollerGroupLease) (taskForWorker, error) {
+	if p.calls.Add(1) == 1 {
+		close(p.worker.pollStarted)
+		<-p.trigger
+		return nil, p.cause
+	}
+	<-p.worker.worker.stopC
+	return nil, nil
+}
+
+func (t *lifecycleNexusStartupTuner) GetNexusSlotSupplier() SlotSupplier {
+	close(t.entered)
+	<-t.release
+	return t.WorkerTuner.GetNexusSlotSupplier()
 }

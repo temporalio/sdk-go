@@ -211,6 +211,10 @@ type (
 		// the worker.
 		WorkerFatalErrorCallback func(error)
 
+		// noRepoll is shared by the aggregate worker's remote-task pollers.
+		// Local activities keep polling so accepted workflow tasks can finish.
+		noRepoll *atomic.Bool
+
 		// SessionResourceID is a unique identifier of the resource the session will consume
 		SessionResourceID string
 
@@ -390,6 +394,7 @@ func newWorkflowTaskWorkerInternal(
 		logger:                       params.Logger,
 		stopTimeout:                  params.WorkerStopTimeout,
 		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		noRepoll:                     params.noRepoll,
 		metricsHandler:               params.MetricsHandler,
 		workerPollCompleteOnShutdown: params.workerPollCompleteOnShutdown,
 		slotReservationData: slotReservationData{
@@ -628,11 +633,6 @@ func (sw *sessionWorker) getActivityWorkerTaskQueue() string {
 	return sw.activityWorker.executionParameters.TaskQueue
 }
 
-func (sw *sessionWorker) stopPolling() {
-	sw.creationWorker.worker.stopPolling()
-	sw.activityWorker.worker.stopPolling()
-}
-
 func newActivityWorker(
 	client *WorkflowClient,
 	params workerExecutionParameters,
@@ -674,6 +674,7 @@ func newActivityWorker(
 		logger:                       params.Logger,
 		stopTimeout:                  params.WorkerStopTimeout,
 		fatalErrCb:                   params.WorkerFatalErrorCallback,
+		noRepoll:                     params.noRepoll,
 		backgroundContextCancel:      params.BackgroundContextCancel,
 		metricsHandler:               params.MetricsHandler,
 		sessionTokenBucket:           sessionTokenBucket,
@@ -1604,18 +1605,7 @@ func (aw *AggregatedWorker) sealResourceAdmission() {
 	// complete naturally (e.g. long-poll timeout) right after stopC fires
 	// but before ShutdownWorker is sent, causing the poller to loop and
 	// re-poll.
-	if !util.IsInterfaceNil(aw.activityWorker) {
-		aw.activityWorker.worker.stopPolling()
-	}
-	if !util.IsInterfaceNil(aw.workflowWorker) {
-		aw.workflowWorker.worker.stopPolling()
-	}
-	if !util.IsInterfaceNil(aw.nexusWorker) {
-		aw.nexusWorker.worker.stopPolling()
-	}
-	if !util.IsInterfaceNil(aw.sessionWorker) {
-		aw.sessionWorker.stopPolling()
-	}
+	aw.executionParams.noRepoll.Store(true)
 
 	close(aw.stopC)
 }
@@ -2296,12 +2286,16 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 
 	// Pollers retain this callback, keeping the worker and cache lease live until they stop.
 	var aw *AggregatedWorker
+	noRepoll := &atomic.Bool{}
 	fatalErrorCallback := func(err error) {
 		// Set the fatal error if not already set
 		aw.fatalErrLock.Lock()
 		alreadySet := aw.fatalErr != nil
 		if !alreadySet {
 			aw.fatalErr = err
+			// A fatal error signals remote-task polling to stop before notification.
+			// Workers created later during startup share this same flag.
+			noRepoll.Store(true)
 		}
 		aw.fatalErrLock.Unlock()
 		// Only do the rest if not already set
@@ -2387,6 +2381,7 @@ func NewAggregatedWorker(client *WorkflowClient, taskQueue string, options Worke
 		FailureConverter:                 client.failureConverter,
 		WorkerStopTimeout:                options.WorkerStopTimeout,
 		WorkerFatalErrorCallback:         fatalErrorCallback,
+		noRepoll:                         noRepoll,
 		ContextPropagators:               client.contextPropagators,
 		DeadlockDetectionTimeout:         options.DeadlockDetectionTimeout,
 		DefaultHeartbeatThrottleInterval: options.DefaultHeartbeatThrottleInterval,

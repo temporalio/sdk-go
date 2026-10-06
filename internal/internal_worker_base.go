@@ -221,6 +221,7 @@ type (
 		logger                       log.Logger
 		stopTimeout                  time.Duration
 		fatalErrCb                   func(error)
+		noRepoll                     *atomic.Bool
 		backgroundContextCancel      context.CancelCauseFunc
 		metricsHandler               metrics.Handler
 		sessionTokenBucket           *sessionTokenBucket
@@ -260,7 +261,7 @@ type (
 		lastPollTaskErrStarted time.Time
 		lastPollTaskErrLock    sync.Mutex
 
-		noRepoll atomic.Bool
+		noRepoll *atomic.Bool
 		pollerWG sync.WaitGroup
 	}
 
@@ -383,6 +384,11 @@ func newBaseWorker(
 // contexts or channels. A caller can discard the result if shutdown prevents
 // construction without leaving resources that need worker cleanup.
 func prepareBaseWorker(options baseWorkerOptions) *baseWorker {
+	// A separately constructed worker gets its own polling-stop flag. Children
+	// of one SDK worker share its flag so a fatal error stops their remote polls.
+	if options.noRepoll == nil {
+		options.noRepoll = &atomic.Bool{}
+	}
 	logger := log.With(options.logger, tagWorkerType, options.workerType)
 	if heartbeatHandler, isHeartbeat := options.metricsHandler.(*heartbeatMetricsHandler); isHeartbeat {
 		options.metricsHandler = heartbeatHandler.forWorker(options.workerType)
@@ -399,6 +405,7 @@ func prepareBaseWorker(options baseWorkerOptions) *baseWorker {
 		logger:         logger,
 		metricsHandler: metricsHandler,
 		slotSupplier:   tss,
+		noRepoll:       options.noRepoll,
 	}
 }
 
@@ -568,6 +575,10 @@ func (bw *baseWorker) runPoller(taskWorker scalableTaskPoller) {
 				}
 				continue
 			}
+			if bw.noRepoll.Load() {
+				bw.releaseSlot(permit, SlotReleaseReasonUnused)
+				return
+			}
 			if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
 				bw.releaseSlot(permit, SlotReleaseReasonUnused)
 				return
@@ -601,6 +612,12 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 		if err != nil {
 			return
 		}
+		// A fatal poll can release capacity while this manager waits for it.
+		// Return that capacity instead of opening a replacement poll.
+		if bw.noRepoll.Load() {
+			admission.release()
+			return
+		}
 
 		bw.reserveSlotAsync(ctx, reserveChan, taskWorker)
 
@@ -618,6 +635,11 @@ func (bw *baseWorker) runAutoscalingPoller(taskWorker scalableTaskPoller) {
 				time.Sleep(time.Second)
 			}
 			continue
+		}
+		if bw.noRepoll.Load() {
+			bw.releaseSlot(permit, SlotReleaseReasonUnused)
+			admission.release()
+			return
 		}
 
 		if bw.sessionTokenBucket != nil && !bw.sessionTokenBucket.waitForAvailableToken() {
@@ -827,6 +849,11 @@ func (bw *baseWorker) pollTask(
 
 	bw.retrier.Throttle(bw.stopCh)
 	if bw.pollLimiter == nil || bw.pollLimiter.Wait(bw.limiterContext) == nil {
+		// Shutdown or a fatal error may arrive while pacing holds this poll.
+		// The deferred release returns its unused slot without polling.
+		if bw.noRepoll.Load() {
+			return
+		}
 		task, err = taskWorker.taskPoller.PollTask(lease)
 		bw.logPollTaskError(err)
 		if err != nil {
@@ -953,10 +980,6 @@ func (bw *baseWorker) Stop() {
 	}
 
 	bw.isWorkerStarted = false
-}
-
-func (bw *baseWorker) stopPolling() {
-	bw.noRepoll.Store(true)
 }
 
 func newPollerAutoscaler(options pollerAutoscalerOptions) *pollerAutoscaler {

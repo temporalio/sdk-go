@@ -55,6 +55,9 @@ to docs, or any other relevant information.
   SDK contexts during cleanup. Public `Start` called after `Stop` still panics.
 - Fatal worker notification and automatic stopping now run outside polling
   goroutines, allowing pollers to retire without waiting for their own stop.
+  The first fatal error signals remote-task polling to stop before notification.
+  Polling loops recheck that signal after capacity, slot, and pacing waits;
+  attempts already past their final stop check may still start or complete.
   Concurrent `Worker.Stop` calls join one complete SDK cleanup operation, and
   `Worker.Run` joins that cleanup and returns the first fatal cause even when
   interruption races with it. `OnFatalError` may call `Stop`; an independent stop
