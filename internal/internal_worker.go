@@ -1960,7 +1960,7 @@ func NewWorkflowReplayer(options WorkflowReplayerOptions) (*WorkflowReplayer, er
 	registry.interceptors = options.Interceptors
 	return &WorkflowReplayer{
 		registry:                    registry,
-		dataConverter:               options.DataConverter,
+		dataConverter:               converter.MakeTransferAware(options.DataConverter),
 		failureConverter:            options.FailureConverter,
 		contextPropagators:          options.ContextPropagators,
 		enableLoggingInReplay:       options.EnableLoggingInReplay,
@@ -2998,7 +2998,6 @@ func setWorkerOptionsDefaults(options *WorkerOptions) autoEnrollEligibility {
 	return eligibility
 }
 
-// setClientDefaults should be needed only in unit tests.
 func setClientDefaults(client *WorkflowClient) {
 	if client.dataConverter == nil {
 		client.dataConverter = converter.GetDefaultDataConverter()
