@@ -274,7 +274,7 @@ func (dc *deploymentClient) SetCurrent(ctx context.Context, options DeploymentSe
 		Namespace:      dc.workflowClient.namespace,
 		Deployment:     deploymentToProto(options.Deployment),
 		Identity:       dc.workflowClient.identity,
-		UpdateMetadata: deploymentMetadataUpdateToProto(WithContext(ctx, dc.workflowClient.dataConverter), options.MetadataUpdate),
+		UpdateMetadata: deploymentMetadataUpdateToProto(dc.workflowClient.dataConverter, options.MetadataUpdate),
 	}
 	grpcCtx, cancel := newGRPCContext(ctx, defaultGrpcRetryParameters(ctx))
 	defer cancel()

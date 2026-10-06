@@ -61,7 +61,7 @@ to docs, or any other relevant information.
 
 - Context-aware data converters now receive caller context when decoding canceled workflow
   details, workflow description metadata, and schedule action metadata in `Describe` and
-  `Update`, and when encoding deployment metadata.
+  `Update`, and when encoding worker-deployment version metadata.
 - Activity heartbeat details and cancellation details now use the activity-context-bound
   data converter. Nexus handler inputs and synchronous results now use the handler context.
 - Mocked side effects in the workflow test environment now use the workflow-context-bound
